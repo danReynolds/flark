@@ -2,8 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 
 import 'package:sovereign_editor/widgets/sovereign/models/block_node.dart';
-import 'package:sovereign_editor/widgets/sovereign/engine/commonmark_parse_backend.dart';
-import 'package:sovereign_editor/widgets/sovereign/engine/commonmark_syntax_engine_adapter.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/engine/commonmark_parse_backend.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/engine/commonmark_syntax_engine_adapter.dart';
 import 'package:sovereign_editor/widgets/sovereign/engine/syntax_engine.dart';
 import 'package:sovereign_editor/widgets/sovereign/engine/syntax_snapshot.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/sovereign_style.dart';

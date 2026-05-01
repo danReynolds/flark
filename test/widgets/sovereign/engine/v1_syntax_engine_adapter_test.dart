@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:sovereign_editor/widgets/sovereign/engine/syntax_engine.dart';
-import 'package:sovereign_editor/widgets/sovereign/engine/v1_syntax_engine_adapter.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/engine/v1_syntax_engine_adapter.dart';
 
 void main() {
   group('V1SyntaxEngineAdapter', () {

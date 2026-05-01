@@ -1,5 +1,5 @@
-import 'syntax_engine.dart';
-import 'syntax_snapshot.dart';
+import 'package:sovereign_editor/widgets/sovereign/engine/syntax_engine.dart';
+import 'package:sovereign_editor/widgets/sovereign/engine/syntax_snapshot.dart';
 
 /// Authoritative CommonMark parser backend contract.
 ///

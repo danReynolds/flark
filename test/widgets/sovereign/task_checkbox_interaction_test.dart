@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:sovereign_editor/widgets/sovereign/controllers/sovereign_controller.dart';
-import 'package:sovereign_editor/widgets/sovereign/engine/v1_syntax_engine_adapter.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/engine/v1_syntax_engine_adapter.dart';
 import 'package:sovereign_editor/widgets/sovereign/presentation/sovereign_editor.dart';
 import 'package:sovereign_editor/widgets/sovereign/theme/sovereign_editor_theme.dart';
 

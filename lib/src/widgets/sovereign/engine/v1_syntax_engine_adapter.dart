@@ -1,13 +1,12 @@
 import 'package:flutter/services.dart';
-
-import '../logic/block_parser.dart';
-import '../logic/fenced_code_scanner.dart';
-import '../logic/sovereign_markdown_markers.dart';
-import '../logic/sovereign_style_scanner.dart';
-import '../models/block_tree.dart';
-import 'syntax_engine.dart';
-import 'syntax_snapshot.dart';
-import 'syntax_types.dart';
+import 'package:sovereign_editor/widgets/sovereign/engine/syntax_engine.dart';
+import 'package:sovereign_editor/widgets/sovereign/engine/syntax_snapshot.dart';
+import 'package:sovereign_editor/widgets/sovereign/engine/syntax_types.dart';
+import 'package:sovereign_editor/widgets/sovereign/logic/block_parser.dart';
+import 'package:sovereign_editor/widgets/sovereign/logic/fenced_code_scanner.dart';
+import 'package:sovereign_editor/widgets/sovereign/logic/sovereign_markdown_markers.dart';
+import 'package:sovereign_editor/widgets/sovereign/logic/sovereign_style_scanner.dart';
+import 'package:sovereign_editor/widgets/sovereign/models/block_tree.dart';
 
 /// Adapter that exposes Sovereign V1 syntax behavior through the new
 /// [SyntaxEngine] boundary.

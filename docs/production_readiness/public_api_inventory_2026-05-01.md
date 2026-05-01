@@ -132,6 +132,13 @@ Progress:
 - Moved `SyntaxEngineFactory` behind `lib/src`; `SovereignController` remains
   the public entry point for default parser wiring, while apps can still inject
   a public `SyntaxEngine`.
+- Moved parser backend and adapter implementations behind `lib/src`, including
+  `CommonMarkParseBackend`, `CommonMarkSyntaxEngineAdapter`,
+  `ComrakCommonMarkParseBackend`, and `V1SyntaxEngineAdapter`. White-box tests
+  that intentionally exercise those implementations import them through
+  `package:sovereign_editor/src/...`; the public syntax contract remains
+  `SyntaxEngine`, syntax request/snapshot types, native diagnostics, and UTF
+  offset mapping.
 
 ### Wave 3: Naming Cleanup
 

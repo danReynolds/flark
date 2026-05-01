@@ -262,3 +262,19 @@ append-only unless correcting a factual error.
 - `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
   This reran pub get, analysis, native editor CI with the existing host bridge,
   and the full package test suite after moving the syntax engine factory.
+
+### Phase 1 API Shape: Parser Backend/Adapter `lib/src` Migration
+
+- Moved parser backend and adapter implementation classes behind `lib/src`:
+  `CommonMarkParseBackend`, `CommonMarkSyntaxEngineAdapter`,
+  `ComrakCommonMarkParseBackend`, and `V1SyntaxEngineAdapter`.
+- Updated internal engine factory wiring and white-box package tests to import
+  those implementation classes through `package:sovereign_editor/src/...`.
+- Kept public parser customization through `SyntaxEngine` injection and the
+  existing syntax request/snapshot contracts.
+- `flutter analyze lib test`: passed.
+- Focused parser engine tests: passed.
+- `dart doc --dry-run`: passed with 0 warnings and 0 errors.
+- `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
+  This reran pub get, analysis, native editor CI with the existing host bridge,
+  and the full package test suite after moving the parser backend/adapters.

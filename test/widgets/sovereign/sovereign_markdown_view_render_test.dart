@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/presentation/painters/tier1_painter.dart';
 import 'package:sovereign_editor/sovereign_editor.dart';
-import 'package:sovereign_editor/widgets/sovereign/engine/v1_syntax_engine_adapter.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/engine/v1_syntax_engine_adapter.dart';
 
 String _readViewPlainText(WidgetTester tester) {
   final richFinder = find.descendant(

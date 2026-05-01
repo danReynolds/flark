@@ -2,9 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:sovereign_editor/src/widgets/sovereign/engine/syntax_engine_factory.dart';
 import 'package:sovereign_editor/widgets/sovereign/controllers/sovereign_controller.dart';
-import 'package:sovereign_editor/widgets/sovereign/engine/commonmark_syntax_engine_adapter.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/engine/commonmark_syntax_engine_adapter.dart';
 import 'package:sovereign_editor/widgets/sovereign/engine/native_comrak_ffi.dart';
-import 'package:sovereign_editor/widgets/sovereign/engine/native_comrak_parse_backend.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/engine/native_comrak_parse_backend.dart';
 import 'package:sovereign_editor/widgets/sovereign/engine/syntax_engine.dart';
 
 void main() {

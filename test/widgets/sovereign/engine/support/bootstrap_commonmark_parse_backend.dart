@@ -1,10 +1,10 @@
 import 'dart:io';
 
-import 'package:sovereign_editor/widgets/sovereign/engine/commonmark_parse_backend.dart';
-import 'package:sovereign_editor/widgets/sovereign/engine/native_comrak_parse_backend.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/engine/commonmark_parse_backend.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/engine/native_comrak_parse_backend.dart';
 import 'package:sovereign_editor/widgets/sovereign/engine/syntax_engine.dart';
 import 'package:sovereign_editor/widgets/sovereign/engine/syntax_snapshot.dart';
-import 'package:sovereign_editor/widgets/sovereign/engine/v1_syntax_engine_adapter.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/engine/v1_syntax_engine_adapter.dart';
 
 import 'test_paths.dart';
 

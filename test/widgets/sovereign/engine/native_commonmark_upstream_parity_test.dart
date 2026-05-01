@@ -5,8 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:sovereign_editor/widgets/sovereign/engine/commonmark_parse_backend.dart';
-import 'package:sovereign_editor/widgets/sovereign/engine/native_comrak_parse_backend.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/engine/commonmark_parse_backend.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/engine/native_comrak_parse_backend.dart';
 import 'package:sovereign_editor/widgets/sovereign/engine/syntax_engine.dart';
 import 'package:sovereign_editor/widgets/sovereign/engine/syntax_snapshot.dart';
 import 'package:sovereign_editor/widgets/sovereign/engine/syntax_types.dart';

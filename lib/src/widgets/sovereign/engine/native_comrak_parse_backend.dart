@@ -1,17 +1,16 @@
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
-
-import '../logic/sovereign_style_scanner.dart';
-import '../models/block_node.dart';
-import '../models/sovereign_style.dart';
-import 'commonmark_parse_backend.dart';
-import 'native_comrak_bridge_factory.dart';
-import 'native_comrak_ffi.dart';
-import 'syntax_engine.dart';
-import 'syntax_snapshot.dart';
-import 'syntax_types.dart';
-import 'utf8_utf16_offset_mapper.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/engine/commonmark_parse_backend.dart';
+import 'package:sovereign_editor/widgets/sovereign/engine/native_comrak_bridge_factory.dart';
+import 'package:sovereign_editor/widgets/sovereign/engine/native_comrak_ffi.dart';
+import 'package:sovereign_editor/widgets/sovereign/engine/syntax_engine.dart';
+import 'package:sovereign_editor/widgets/sovereign/engine/syntax_snapshot.dart';
+import 'package:sovereign_editor/widgets/sovereign/engine/syntax_types.dart';
+import 'package:sovereign_editor/widgets/sovereign/engine/utf8_utf16_offset_mapper.dart';
+import 'package:sovereign_editor/widgets/sovereign/logic/sovereign_style_scanner.dart';
+import 'package:sovereign_editor/widgets/sovereign/models/block_node.dart';
+import 'package:sovereign_editor/widgets/sovereign/models/sovereign_style.dart';
 
 /// Native comrak backend scaffold.
 ///

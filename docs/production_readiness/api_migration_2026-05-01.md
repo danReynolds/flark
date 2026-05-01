@@ -109,6 +109,20 @@ contracts rather than coordinating parse scheduling directly.
 default `SovereignController` engine wiring or pass a custom public
 `SyntaxEngine` into `SovereignController`/`SovereignMarkdownView`.
 
+## Parser Backend and Adapter Implementations
+
+Parser backend and adapter implementation classes moved behind `lib/src`:
+
+- `CommonMarkParseBackend`;
+- `CommonMarkSyntaxEngineAdapter`;
+- `ComrakCommonMarkParseBackend`;
+- `V1SyntaxEngineAdapter`.
+
+App code should use the public `SyntaxEngine` injection points and syntax
+request/snapshot contracts rather than constructing package backend/adapters
+directly. Native bridge diagnostics and UTF offset mapping remain public where
+they are needed for consumer-safe preflight and integration behavior.
+
 ## Removed App Palette Helper
 
 The extracted package no longer exposes the old app-level `AppColors` helper.

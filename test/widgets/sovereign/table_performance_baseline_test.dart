@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:sovereign_editor/widgets/sovereign/controllers/sovereign_controller.dart';
-import 'package:sovereign_editor/widgets/sovereign/engine/v1_syntax_engine_adapter.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/engine/v1_syntax_engine_adapter.dart';
 
 const int _kLargeTableEnterP95BudgetMicros = 80000;
 const int _kLargeTableTabInsertP95BudgetMicros = 90000;
