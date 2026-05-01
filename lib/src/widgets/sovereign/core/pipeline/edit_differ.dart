@@ -1,6 +1,5 @@
 import 'package:flutter/services.dart';
-
-import '../../models/edit_op.dart';
+import 'package:sovereign_editor/widgets/sovereign/models/edit_op.dart';
 
 class EditDiffer {
   const EditDiffer._();

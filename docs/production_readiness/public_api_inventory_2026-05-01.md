@@ -108,6 +108,8 @@ Progress:
 - Added `test/public_api/sovereign_editor_barrel_test.dart` as a top-level
   import smoke test for the supported editor, command, theme, syntax, native
   diagnostic, and UTF offset APIs.
+- Moved `UndoStack` and `EditDiffer` behind `lib/src` as the first focused
+  implementation-file migration wave.
 
 ### Wave 3: Naming Cleanup
 

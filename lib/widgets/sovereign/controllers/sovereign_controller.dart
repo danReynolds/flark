@@ -1,6 +1,9 @@
 import 'dart:async';
-import 'package:sovereign_editor/src/helpers/logger.dart';
+
 import 'package:flutter/widgets.dart';
+import 'package:sovereign_editor/src/helpers/logger.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/controllers/undo_stack.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/pipeline/edit_differ.dart';
 
 import '../models/sovereign_state.dart';
 import '../models/edit_op.dart';
@@ -14,7 +17,6 @@ import '../engine/syntax_parse_scheduler.dart';
 import '../engine/syntax_snapshot.dart';
 import '../engine/syntax_types.dart';
 
-import 'undo_stack.dart';
 import '../logic/sovereign_style_scanner.dart';
 import '../logic/sovereign_geometry_scanner.dart';
 import '../logic/fenced_code_scanner.dart';
@@ -30,7 +32,6 @@ import '../core/syntax/predictive_edit_range_utils.dart';
 import '../core/pipeline/value_mutation_coordinator.dart';
 import '../core/pipeline/undo_grouping_policy.dart';
 import '../core/pipeline/edit_operation_pipeline.dart';
-import '../core/pipeline/edit_differ.dart';
 import '../core/intents/input_intent_handler.dart';
 import '../core/intents/input_intent_models.dart';
 import '../core/rendering/sovereign_text_renderer.dart';

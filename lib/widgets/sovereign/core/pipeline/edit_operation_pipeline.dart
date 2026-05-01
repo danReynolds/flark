@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/pipeline/edit_differ.dart';
 
 import '../../models/edit_op.dart';
-import 'edit_differ.dart';
 import 'undo_grouping_policy.dart';
 
 class EditOperationResult {

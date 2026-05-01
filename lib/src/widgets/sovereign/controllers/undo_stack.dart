@@ -1,4 +1,4 @@
-import '../models/edit_op.dart';
+import 'package:sovereign_editor/widgets/sovereign/models/edit_op.dart';
 
 class UndoStack {
   final List<EditOp> _undo = [];

@@ -142,3 +142,15 @@ append-only unless correcting a factual error.
 - `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
   This reran pub get, analysis, native editor CI with the existing host bridge,
   and the full package test suite after the barrel export cleanup.
+
+### Phase 1 API Shape: First `lib/src` Migration
+
+- Moved `UndoStack` and `EditDiffer` behind `lib/src` while keeping the public
+  controller and edit pipeline on a single implementation path.
+- Updated internal imports to reference those implementation types through
+  `package:sovereign_editor/src/...`.
+- `flutter analyze lib test`: passed.
+- Focused undo/edit-flow tests: passed.
+- `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
+  This reran pub get, analysis, native editor CI with the existing host bridge,
+  and the full package test suite after moving the undo/edit-diff internals.
