@@ -81,6 +81,7 @@ Tasks:
 - [x] Move presentation/render helper internals into `lib/src`.
 - [x] Move command implementation internals into `lib/src`.
 - [x] Move syntax parse scheduler into `lib/src`.
+- [x] Move syntax engine factory into `lib/src`.
 - [ ] Keep `lib/sovereign_editor.dart` as the main public barrel.
 - [x] Decide whether any secondary public libraries are warranted.
 - [x] Rename Dune-specific public names to Sovereign vocabulary.

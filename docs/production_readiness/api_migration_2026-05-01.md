@@ -103,6 +103,12 @@ deep-importing command implementation files.
 `SovereignController`, `SyntaxEngine`, and the syntax request/snapshot
 contracts rather than coordinating parse scheduling directly.
 
+## Syntax Engine Factory
+
+`SyntaxEngineFactory` moved behind `lib/src`. App code should rely on the
+default `SovereignController` engine wiring or pass a custom public
+`SyntaxEngine` into `SovereignController`/`SovereignMarkdownView`.
+
 ## Removed App Palette Helper
 
 The extracted package no longer exposes the old app-level `AppColors` helper.

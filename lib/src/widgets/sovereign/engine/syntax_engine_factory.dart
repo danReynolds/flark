@@ -1,10 +1,9 @@
 import 'package:flutter/foundation.dart';
-
-import 'commonmark_parse_backend.dart';
-import 'commonmark_syntax_engine_adapter.dart'
+import 'package:sovereign_editor/widgets/sovereign/engine/commonmark_parse_backend.dart';
+import 'package:sovereign_editor/widgets/sovereign/engine/commonmark_syntax_engine_adapter.dart'
     show CommonMarkSyntaxEngineAdapter;
-import 'native_comrak_parse_backend.dart';
-import 'syntax_engine.dart';
+import 'package:sovereign_editor/widgets/sovereign/engine/native_comrak_parse_backend.dart';
+import 'package:sovereign_editor/widgets/sovereign/engine/syntax_engine.dart';
 
 class SyntaxEngineFactory {
   const SyntaxEngineFactory._();

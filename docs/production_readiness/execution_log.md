@@ -249,3 +249,16 @@ append-only unless correcting a factual error.
 - `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
   This reran pub get, analysis, native editor CI with the existing host bridge,
   and the full package test suite after moving the syntax scheduler.
+
+### Phase 1 API Shape: Syntax Engine Factory `lib/src` Migration
+
+- Moved `SyntaxEngineFactory` behind `lib/src` and updated controller and
+  white-box factory test imports.
+- Kept public engine customization through `SyntaxEngine` injection into
+  `SovereignController` and `SovereignMarkdownView`.
+- `flutter analyze lib test`: passed.
+- Focused syntax factory and controller engine wiring tests: passed.
+- `dart doc --dry-run`: passed with 0 warnings and 0 errors.
+- `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
+  This reran pub get, analysis, native editor CI with the existing host bridge,
+  and the full package test suite after moving the syntax engine factory.

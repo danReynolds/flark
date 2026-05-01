@@ -129,6 +129,9 @@ Progress:
   facade.
 - Moved `SyntaxParseScheduler` behind `lib/src`; tests that intentionally
   exercise the scheduler now import it as a white-box implementation detail.
+- Moved `SyntaxEngineFactory` behind `lib/src`; `SovereignController` remains
+  the public entry point for default parser wiring, while apps can still inject
+  a public `SyntaxEngine`.
 
 ### Wave 3: Naming Cleanup
 
