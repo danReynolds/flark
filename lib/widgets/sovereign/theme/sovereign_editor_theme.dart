@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:sovereign_editor/theme/dune_markdown_theme.dart';
+import 'package:sovereign_editor/theme/sovereign_markdown_theme.dart';
 import 'sovereign_editor_theme_link_actions.dart';
 export 'sovereign_editor_theme_link_actions.dart';
 
@@ -312,7 +312,7 @@ class SovereignTaskCheckboxTheme {
 
 @immutable
 class SovereignEditorThemeData {
-  final DuneMarkdownTheme? markdownTheme;
+  final SovereignMarkdownTheme? markdownTheme;
   final TextStyle? textStyle;
   final Color? cursorColor;
   final EdgeInsets editorContentPadding;
@@ -339,7 +339,7 @@ class SovereignEditorThemeData {
   });
 
   SovereignEditorThemeData copyWith({
-    DuneMarkdownTheme? markdownTheme,
+    SovereignMarkdownTheme? markdownTheme,
     TextStyle? textStyle,
     Color? cursorColor,
     EdgeInsets? editorContentPadding,
@@ -370,8 +370,8 @@ class SovereignEditorThemeData {
     );
   }
 
-  DuneMarkdownTheme resolveMarkdownTheme(BuildContext context) {
-    return markdownTheme ?? DuneMarkdownTheme.of(context);
+  SovereignMarkdownTheme resolveMarkdownTheme(BuildContext context) {
+    return markdownTheme ?? SovereignMarkdownTheme.of(context);
   }
 }
 

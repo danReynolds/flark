@@ -114,10 +114,17 @@ Progress:
 ### Wave 3: Naming Cleanup
 
 - Replace public Dune vocabulary:
-  - `DuneMarkdownTheme` -> `SovereignMarkdownTheme`
+  - [x] `DuneMarkdownTheme` -> `SovereignMarkdownTheme`
 - Keep package default palette names private/package-neutral.
 - Keep deprecated aliases only if we need compatibility with Dune during a
   transition.
+
+Progress:
+
+- Renamed `lib/theme/dune_markdown_theme.dart` to
+  `lib/theme/sovereign_markdown_theme.dart`.
+- Replaced the public `DuneMarkdownTheme.dune()` constructor with
+  `SovereignMarkdownTheme.standard()` without adding a compatibility alias.
 
 ### Wave 4: Compatibility and Docs
 

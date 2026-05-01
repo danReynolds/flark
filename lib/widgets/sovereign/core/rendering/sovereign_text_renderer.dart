@@ -3,7 +3,7 @@ import 'dart:collection';
 import 'package:flutter/widgets.dart';
 
 import 'package:sovereign_editor/src/helpers/logger.dart';
-import 'package:sovereign_editor/theme/dune_markdown_theme.dart';
+import 'package:sovereign_editor/theme/sovereign_markdown_theme.dart';
 
 import '../../logic/fenced_code_scanner.dart';
 import '../../logic/markdown_marker_grammar.dart';
@@ -69,7 +69,7 @@ class SovereignTextRenderer {
     final editorThemeIdentity =
         editorTheme == null ? 0 : identityHashCode(editorTheme);
     final markdownTheme = editorTheme?.resolveMarkdownTheme(context) ??
-        DuneMarkdownTheme.of(context);
+        SovereignMarkdownTheme.of(context);
 
     final exclusionsRevision =
         latestDecoration.originRevision == revision ? revision : -1;

@@ -1,4 +1,4 @@
-export 'theme/dune_markdown_theme.dart';
+export 'theme/sovereign_markdown_theme.dart';
 
 // Primary editor API
 export 'widgets/sovereign/controllers/sovereign_controller.dart';

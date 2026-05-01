@@ -1,5 +1,5 @@
 import 'package:flutter/widgets.dart';
-import 'package:sovereign_editor/theme/dune_markdown_theme.dart';
+import 'package:sovereign_editor/theme/sovereign_markdown_theme.dart';
 
 import '../../theme/sovereign_editor_theme.dart';
 
@@ -15,7 +15,7 @@ abstract final class EditorHeadingStylePolicy {
   static TextStyle resolve({
     required TextStyle base,
     required int level,
-    required DuneMarkdownTheme markdownTheme,
+    required SovereignMarkdownTheme markdownTheme,
     SovereignHeadingsTheme? headingTheme,
   }) {
     final themed = markdownTheme

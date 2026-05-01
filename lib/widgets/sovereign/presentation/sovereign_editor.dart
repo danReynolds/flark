@@ -3,7 +3,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:sovereign_editor/theme/dune_markdown_theme.dart';
+import 'package:sovereign_editor/theme/sovereign_markdown_theme.dart';
 
 import '../controllers/sovereign_controller.dart';
 import '../logic/fenced_code_scanner.dart';
@@ -436,7 +436,7 @@ class _SovereignEditorState extends State<SovereignEditor> {
 
   Widget _buildEditorField({
     required DecorationModel decoration,
-    required DuneMarkdownTheme markdownTheme,
+    required SovereignMarkdownTheme markdownTheme,
   }) {
     final cursorHeight = _cursorHeightForSelection(
       tree: decoration.tree,
@@ -542,7 +542,7 @@ class _SovereignEditorState extends State<SovereignEditor> {
 
   double _cursorHeightForSelection({
     required BlockTree tree,
-    required DuneMarkdownTheme markdownTheme,
+    required SovereignMarkdownTheme markdownTheme,
   }) {
     final text = widget.controller.text;
     final selection = widget.controller.selection;

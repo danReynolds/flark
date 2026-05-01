@@ -154,3 +154,19 @@ append-only unless correcting a factual error.
 - `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
   This reran pub get, analysis, native editor CI with the existing host bridge,
   and the full package test suite after moving the undo/edit-diff internals.
+
+### Phase 1 API Shape: Package Vocabulary
+
+- Renamed the public markdown theme from `DuneMarkdownTheme` to
+  `SovereignMarkdownTheme`.
+- Renamed `lib/theme/dune_markdown_theme.dart` to
+  `lib/theme/sovereign_markdown_theme.dart`.
+- Replaced the Dune-named default constructor with
+  `SovereignMarkdownTheme.standard()` and updated internal/test callers.
+- `flutter analyze lib test`: passed.
+- Focused public API/theme/render tests: passed.
+- `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed
+  on rerun. The first full-suite attempt hit the existing predictive inline
+  marker parallel-suite flake after the same test had passed in the script's
+  native-editor subset; the isolated test and full predictive marker file both
+  passed before the successful release-gate rerun.

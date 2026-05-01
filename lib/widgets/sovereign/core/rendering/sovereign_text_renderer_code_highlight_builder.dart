@@ -13,7 +13,7 @@ class _SovereignCodeHighlightRunsBuilder {
 
   List<_CodeStyleRun> buildRuns(
     String fullText,
-    DuneMarkdownTheme markdownTheme, {
+    SovereignMarkdownTheme markdownTheme, {
     required List<FencedCodeBlock> fencedBlocks,
   }) {
     if (fullText.isEmpty) return const [];
@@ -117,7 +117,7 @@ class _SovereignCodeHighlightRunsBuilder {
 
   static TextStyle? _styleForHighlightClass(
     String className,
-    DuneMarkdownTheme markdownTheme,
+    SovereignMarkdownTheme markdownTheme,
   ) {
     return markdownTheme.syntaxStyleForClass(className);
   }
@@ -160,7 +160,7 @@ class _SovereignCodeHighlightRunsBuilder {
   List<_RelativeCodeStyleRun> _computeRelativeHighlightRuns({
     required String code,
     required String? language,
-    required DuneMarkdownTheme markdownTheme,
+    required SovereignMarkdownTheme markdownTheme,
   }) {
     List<CodeHighlightRun> hlRuns;
     try {

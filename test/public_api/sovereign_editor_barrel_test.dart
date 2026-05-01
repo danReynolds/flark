@@ -92,7 +92,7 @@ void main() {
     const preflight = NativeComrakBridgePreflightResult.available();
     expect(preflight.isAvailable, isTrue);
 
-    final theme = DuneMarkdownTheme.dune();
+    final theme = SovereignMarkdownTheme.standard();
     expect(theme.headingScale(1), greaterThan(theme.headingScale(6)));
   });
 }

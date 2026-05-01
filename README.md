@@ -201,7 +201,7 @@ surface:
 - editor and preview widgets;
 - `SovereignController`;
 - command APIs and command result/capability models;
-- theme types;
+- theme types, including `SovereignMarkdownTheme`;
 - syntax contracts for custom engines;
 - native bridge preflight/load diagnostics.
 

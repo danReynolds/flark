@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/theme/dune_markdown_theme.dart';
+import 'package:sovereign_editor/theme/sovereign_markdown_theme.dart';
 
 import 'package:sovereign_editor/widgets/sovereign/controllers/sovereign_controller.dart';
 
@@ -111,7 +111,7 @@ void main() {
     final controller = SovereignController();
     controller.text = '```dart\nfinal x = 1;\n```';
 
-    final base = DuneMarkdownTheme.dune();
+    final base = SovereignMarkdownTheme.standard();
     final firstTheme = base.copyWith(syntaxKeywordColor: Colors.red);
     final secondTheme = base.copyWith(syntaxKeywordColor: Colors.blue);
 

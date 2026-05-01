@@ -9,7 +9,7 @@ class _DefaultMarkdownPalette {
 }
 
 @immutable
-class DuneMarkdownTheme extends ThemeExtension<DuneMarkdownTheme> {
+class SovereignMarkdownTheme extends ThemeExtension<SovereignMarkdownTheme> {
   final double h1Scale;
   final double h2Scale;
   final double h3Scale;
@@ -49,7 +49,7 @@ class DuneMarkdownTheme extends ThemeExtension<DuneMarkdownTheme> {
   final double listIndent;
   final String? monospaceFontFamily;
 
-  const DuneMarkdownTheme({
+  const SovereignMarkdownTheme({
     required this.h1Scale,
     required this.h2Scale,
     required this.h3Scale,
@@ -83,8 +83,8 @@ class DuneMarkdownTheme extends ThemeExtension<DuneMarkdownTheme> {
     required this.monospaceFontFamily,
   });
 
-  factory DuneMarkdownTheme.dune() {
-    return DuneMarkdownTheme(
+  factory SovereignMarkdownTheme.standard() {
+    return SovereignMarkdownTheme(
       h1Scale: 2.00,
       h2Scale: 1.70,
       h3Scale: 1.45,
@@ -133,11 +133,12 @@ class DuneMarkdownTheme extends ThemeExtension<DuneMarkdownTheme> {
     );
   }
 
-  static final DuneMarkdownTheme _defaultDuneTheme = DuneMarkdownTheme.dune();
+  static final SovereignMarkdownTheme _defaultTheme =
+      SovereignMarkdownTheme.standard();
 
-  static DuneMarkdownTheme of(BuildContext context) {
-    return Theme.of(context).extension<DuneMarkdownTheme>() ??
-        _defaultDuneTheme;
+  static SovereignMarkdownTheme of(BuildContext context) {
+    return Theme.of(context).extension<SovereignMarkdownTheme>() ??
+        _defaultTheme;
   }
 
   double headingScale(int level) {
@@ -238,7 +239,7 @@ class DuneMarkdownTheme extends ThemeExtension<DuneMarkdownTheme> {
   }
 
   @override
-  DuneMarkdownTheme copyWith({
+  SovereignMarkdownTheme copyWith({
     double? h1Scale,
     double? h2Scale,
     double? h3Scale,
@@ -271,7 +272,7 @@ class DuneMarkdownTheme extends ThemeExtension<DuneMarkdownTheme> {
     double? listIndent,
     String? monospaceFontFamily,
   }) {
-    return DuneMarkdownTheme(
+    return SovereignMarkdownTheme(
       h1Scale: h1Scale ?? this.h1Scale,
       h2Scale: h2Scale ?? this.h2Scale,
       h3Scale: h3Scale ?? this.h3Scale,
@@ -312,15 +313,15 @@ class DuneMarkdownTheme extends ThemeExtension<DuneMarkdownTheme> {
   }
 
   @override
-  DuneMarkdownTheme lerp(
-    covariant ThemeExtension<DuneMarkdownTheme>? other,
+  SovereignMarkdownTheme lerp(
+    covariant ThemeExtension<SovereignMarkdownTheme>? other,
     double t,
   ) {
-    if (other is! DuneMarkdownTheme) {
+    if (other is! SovereignMarkdownTheme) {
       return this;
     }
 
-    return DuneMarkdownTheme(
+    return SovereignMarkdownTheme(
       h1Scale: lerpDouble(h1Scale, other.h1Scale, t),
       h2Scale: lerpDouble(h2Scale, other.h2Scale, t),
       h3Scale: lerpDouble(h3Scale, other.h3Scale, t),

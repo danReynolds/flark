@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sovereign_editor/widgets/sovereign/controllers/sovereign_controller.dart';
-import 'package:sovereign_editor/theme/dune_markdown_theme.dart';
+import 'package:sovereign_editor/theme/sovereign_markdown_theme.dart';
 import 'package:sovereign_editor/widgets/sovereign/theme/sovereign_editor_theme.dart';
 
 void main() {
@@ -126,7 +126,7 @@ void main() {
     expect(codeSpan.text, "Code");
     expect(
       codeSpan.style!.fontFamily,
-      DuneMarkdownTheme.of(context).monospaceFontFamily,
+      SovereignMarkdownTheme.of(context).monospaceFontFamily,
     );
   });
 
@@ -148,7 +148,7 @@ void main() {
     final leaves = _leafSpans(span);
     final visibleLeaves = leaves.where((leaf) => !_isHiddenLeaf(leaf)).toList();
 
-    final linkTheme = DuneMarkdownTheme.of(context);
+    final linkTheme = SovereignMarkdownTheme.of(context);
     final linkStyledLeaves = leaves.where((leaf) {
       return leaf.style?.decoration == TextDecoration.underline &&
           leaf.style?.color == linkTheme.linkColor;
@@ -195,7 +195,7 @@ void main() {
       final leaves = _leafSpans(span);
       final visibleLeaves =
           leaves.where((leaf) => !_isHiddenLeaf(leaf)).toList();
-      final linkTheme = DuneMarkdownTheme.of(context);
+      final linkTheme = SovereignMarkdownTheme.of(context);
       final linkStyledLeaves = leaves.where((leaf) {
         return leaf.style?.decoration == TextDecoration.underline &&
             leaf.style?.color == linkTheme.linkColor;

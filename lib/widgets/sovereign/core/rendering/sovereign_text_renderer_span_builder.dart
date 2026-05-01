@@ -13,7 +13,7 @@ class _SovereignTextRendererSpanBuilder {
     int codeIndex,
     List<_BlockStyleRun> blockRuns,
     int blockIndex,
-    DuneMarkdownTheme markdownTheme,
+    SovereignMarkdownTheme markdownTheme,
     SovereignHeadingsTheme? headingTheme,
     SovereignTaskCheckboxTheme? taskCheckboxTheme,
   ) {
@@ -262,7 +262,7 @@ class _SovereignTextRendererSpanBuilder {
     int blockIndex,
     List<_CodeStyleRun> codeRuns,
     int codeIndex,
-    DuneMarkdownTheme markdownTheme,
+    SovereignMarkdownTheme markdownTheme,
     SovereignHeadingsTheme? headingTheme,
   ) {
     var current = start;
@@ -377,7 +377,7 @@ class _SovereignTextRendererSpanBuilder {
   static TextStyle _mergeBlockStyle(
     TextStyle base,
     _BlockStyleRun run,
-    DuneMarkdownTheme markdownTheme,
+    SovereignMarkdownTheme markdownTheme,
     SovereignHeadingsTheme? headingTheme,
   ) {
     switch (run.kind) {
