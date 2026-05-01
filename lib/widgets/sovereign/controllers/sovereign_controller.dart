@@ -50,23 +50,23 @@ import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/lis
     as structure;
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/quote_context.dart'
     as structure;
-import 'sovereign_navigation_helpers.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_navigation_helpers.dart';
 
-part 'sovereign_controller_policies.dart';
-part 'sovereign_controller_policies_fence.dart';
-part 'sovereign_controller_policies_fence_navigation.dart';
-part 'sovereign_controller_policies_fence_pairing.dart';
-part 'sovereign_controller_policies_fence_backspace.dart';
-part 'sovereign_controller_policies_quote.dart';
-part 'sovereign_controller_policies_link.dart';
-part 'sovereign_controller_policies_list.dart';
-part 'sovereign_controller_policies_table.dart';
-part 'sovereign_controller_policies_heading.dart';
-part 'sovereign_value_mutation_coordinator.dart';
-part 'sovereign_input_intent_handler.dart';
-part 'sovereign_syntax_sync_coordinator.dart';
-part 'sovereign_controller_diagnostics.dart';
-part 'sovereign_table_tab_intent_host.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_fence.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_fence_navigation.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_fence_pairing.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_fence_backspace.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_quote.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_link.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_list.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_table.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_heading.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_value_mutation_coordinator.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_input_intent_handler.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_syntax_sync_coordinator.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_diagnostics.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_table_tab_intent_host.dart';
 
 /// Text editing controller for Sovereign markdown documents.
 ///

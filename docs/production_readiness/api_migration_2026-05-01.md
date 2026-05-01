@@ -161,6 +161,20 @@ the public syntax/model contracts rather than deep-importing core services.
 White-box package tests may import these through
 `package:sovereign_editor/src/...`.
 
+## Controller and Editor Private Helpers
+
+Controller/editor private helper files moved behind `lib/src`, including:
+
+- controller policy part files;
+- controller host adapter part files;
+- controller diagnostics and table-tab host helpers;
+- the controller navigation helper;
+- editor inline-actions and task-checkbox overlay part files.
+
+These files are not supported app-facing libraries. App code should use
+`SovereignController`, `SovereignEditor`, and `SovereignMarkdownView` through
+the top-level `sovereign_editor.dart` library.
+
 ## Removed App Palette Helper
 
 The extracted package no longer exposes the old app-level `AppColors` helper.

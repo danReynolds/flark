@@ -17,9 +17,9 @@ import '../models/block_node.dart';
 import '../models/block_tree.dart';
 import '../theme/sovereign_editor_theme.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/rendering/editor_heading_style_policy.dart';
-part 'sovereign_editor_inline_actions_overlay.dart';
-part 'sovereign_editor_inline_actions_overlay_entry.dart';
-part 'sovereign_editor_task_checkbox_overlay.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/presentation/sovereign_editor_inline_actions_overlay.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/presentation/sovereign_editor_inline_actions_overlay_entry.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/presentation/sovereign_editor_task_checkbox_overlay.dart';
 
 const Key _kCodeFenceLanguagePickerKey = Key(
   'SovereignCodeFenceLanguagePicker',

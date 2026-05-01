@@ -316,3 +316,19 @@ append-only unless correcting a factual error.
 - `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
   This reran pub get, analysis, native editor CI with the existing host bridge,
   and the full package test suite after moving core internals.
+
+### Phase 1 API Shape: Controller/Editor Helper `lib/src` Migration
+
+- Moved controller/editor private helper files behind `lib/src`, including
+  controller policy parts, controller host adapter parts, diagnostics/table-tab
+  host helpers, the controller navigation helper, and editor inline-actions and
+  task-checkbox overlay parts.
+- Kept `SovereignController`, `SovereignEditor`, and
+  `SovereignMarkdownView` as the public library files while pointing their
+  internal `part` and helper imports at `package:sovereign_editor/src/...`.
+- `flutter analyze lib test`: passed.
+- Focused controller/editor behavior tests: passed.
+- `dart doc --dry-run`: passed with 0 warnings and 0 errors.
+- `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
+  This reran pub get, analysis, native editor CI with the existing host bridge,
+  and the full package test suite after moving controller/editor helpers.

@@ -1,4 +1,4 @@
-part of 'sovereign_editor.dart';
+part of 'package:sovereign_editor/widgets/sovereign/presentation/sovereign_editor.dart';
 
 extension _SovereignEditorInlineActionsOverlay on _SovereignEditorState {
   void _scheduleLinkActionsOverlaySync() {

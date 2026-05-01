@@ -1,4 +1,4 @@
-part of 'sovereign_controller.dart';
+part of 'package:sovereign_editor/widgets/sovereign/controllers/sovereign_controller.dart';
 
 abstract final class _InlinePolicy {
   static const String _inlinePlaceholder = '\u2060';

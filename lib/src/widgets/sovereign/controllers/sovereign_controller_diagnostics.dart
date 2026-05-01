@@ -1,4 +1,4 @@
-part of 'sovereign_controller.dart';
+part of 'package:sovereign_editor/widgets/sovereign/controllers/sovereign_controller.dart';
 
 extension SovereignControllerDiagnostics on SovereignController {
   @visibleForTesting

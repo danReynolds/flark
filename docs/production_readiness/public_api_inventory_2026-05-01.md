@@ -150,6 +150,10 @@ Progress:
   markdown line utilities, table/navigation services, and fence/indented-code
   helpers. `SovereignController`, `SovereignEditor`, and
   `SovereignMarkdownView` remain the supported entry points.
+- Moved controller/editor private helper files behind `lib/src`, including
+  controller policy parts, controller host adapters, controller diagnostics,
+  the navigation helper, and editor overlay parts. Public app code still imports
+  only `SovereignController`, `SovereignEditor`, and `SovereignMarkdownView`.
 
 ### Wave 3: Naming Cleanup
 
