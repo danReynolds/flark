@@ -1,2 +1,17 @@
 /// Block markdown styles represented by command and capability APIs.
-enum SovereignBlockStyle { quote, bulletList, taskList, heading, fence }
+enum SovereignBlockStyle {
+  /// Blockquote style.
+  quote,
+
+  /// Unordered bullet-list style.
+  bulletList,
+
+  /// Task-list style.
+  taskList,
+
+  /// Heading style.
+  heading,
+
+  /// Fenced-code block style.
+  fence,
+}

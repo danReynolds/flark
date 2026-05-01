@@ -6,10 +6,13 @@ import 'block_node.dart';
 /// 1. Blocks are sorted by `start` offset.
 /// 2. Blocks are non-overlapping.
 class BlockTree {
+  /// Sorted, non-overlapping structural blocks.
   final List<BlockNode> blocks;
 
+  /// Creates a block tree from sorted [blocks].
   const BlockTree(this.blocks);
 
+  /// Creates an empty block tree.
   factory BlockTree.empty() => const BlockTree([]);
 
   /// Returns the block containing [offset].

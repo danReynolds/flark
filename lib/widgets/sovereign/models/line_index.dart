@@ -6,11 +6,16 @@
 /// 1. [lineStarts] always contains at least `0`.
 /// 2. [lineStarts] is strictly increasing.
 class LineIndex {
+  /// UTF-16 start offset for each line.
   final List<int> lineStarts;
+
+  /// Maximum UTF-16 column count observed across all lines.
   final int maxColumn;
 
+  /// Creates a line index from sorted [lineStarts] and [maxColumn].
   LineIndex(this.lineStarts, this.maxColumn);
 
+  /// Creates a line index for an empty document.
   factory LineIndex.empty() => LineIndex([0], 0);
 
   /// Rebuilds the index from the full text.
@@ -41,6 +46,7 @@ class LineIndex {
     return LineIndex(starts, maxCol);
   }
 
+  /// Number of indexed visual lines.
   int get lineCount => lineStarts.length;
 
   /// Returns the line number containing [offset].

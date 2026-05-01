@@ -246,3 +246,7 @@ Progress:
 - Added the first primary API prose wave for the top-level library,
   `SovereignController`, `SovereignEditor`, `SovereignMarkdownView`, command
   facade/result/capability/link-edit models, and editor/markdown theme classes.
+- Added package API docs for the remaining exported supporting models and
+  advanced integration contracts, including block/decoration/edit/geometry/
+  line/state/style models, syntax request/snapshot/token contracts, native
+  comrak bridge diagnostics, and UTF offset mapping.

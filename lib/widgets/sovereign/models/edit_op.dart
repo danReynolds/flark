@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 
+/// Kind of editor operation represented by an [EditOp].
 enum EditOpKind {
   /// A text mutation (insert, delete, replace).
   text,
@@ -15,6 +16,7 @@ class EditOp {
   /// Monotonic ID for this operation.
   final int id;
 
+  /// Whether the operation mutated text or selection/composing state only.
   final EditOpKind kind;
 
   /// State before this op applied.
@@ -41,6 +43,7 @@ class EditOp {
   /// Group ID for Atomic Undo actions.
   final int undoGroupId;
 
+  /// Creates a typed editor operation.
   const EditOp({
     required this.id,
     required this.kind,

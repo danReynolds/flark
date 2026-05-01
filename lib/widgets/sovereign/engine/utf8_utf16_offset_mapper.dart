@@ -9,6 +9,7 @@ import 'dart:typed_data';
 /// - Non-boundary offsets map using floor semantics.
 /// - `...Exact` methods require scalar boundaries and throw otherwise.
 class Utf8Utf16OffsetMapper {
+  /// Source text used to build the mapping tables.
   final String text;
   final Uint32List _utf16ToUtf8Floor;
   final Uint32List _utf16Boundaries;
@@ -21,6 +22,7 @@ class Utf8Utf16OffsetMapper {
     this._utf8Boundaries,
   );
 
+  /// Builds offset mapping tables for [text].
   factory Utf8Utf16OffsetMapper.fromText(String text) {
     final utf16ToUtf8Floor = Uint32List(text.length + 1);
     final utf16Boundaries = <int>[0];
@@ -56,20 +58,28 @@ class Utf8Utf16OffsetMapper {
     );
   }
 
+  /// Length of [text] in UTF-16 code units.
   int get utf16Length => text.length;
+
+  /// Length of [text] in UTF-8 bytes.
   int get utf8Length => _utf8Boundaries.last;
 
+  /// Converts a UTF-16 offset to a UTF-8 byte offset using floor semantics.
   int utf16ToUtf8(int utf16Offset) {
     final safe = utf16Offset.clamp(0, utf16Length);
     return _utf16ToUtf8Floor[safe];
   }
 
+  /// Converts a UTF-8 byte offset to a UTF-16 offset using floor semantics.
   int utf8ToUtf16(int utf8Offset) {
     final safe = utf8Offset.clamp(0, utf8Length);
     final floorIndex = _floorBoundaryIndex(_utf8Boundaries, safe);
     return _utf16Boundaries[floorIndex];
   }
 
+  /// Converts a UTF-16 scalar-boundary offset to a UTF-8 byte offset.
+  ///
+  /// Throws [StateError] when [utf16Offset] is not on a scalar boundary.
   int utf16ToUtf8Exact(int utf16Offset) {
     final safe = utf16Offset.clamp(0, utf16Length);
     if (!isUtf16ScalarBoundary(safe)) {
@@ -78,6 +88,9 @@ class Utf8Utf16OffsetMapper {
     return _utf16ToUtf8Floor[safe];
   }
 
+  /// Converts a UTF-8 scalar-boundary offset to a UTF-16 offset.
+  ///
+  /// Throws [StateError] when [utf8Offset] is not on a scalar boundary.
   int utf8ToUtf16Exact(int utf8Offset) {
     final safe = utf8Offset.clamp(0, utf8Length);
     if (!isUtf8ScalarBoundary(safe)) {
@@ -87,11 +100,13 @@ class Utf8Utf16OffsetMapper {
     return _utf16Boundaries[boundaryIndex];
   }
 
+  /// Whether [utf16Offset] falls on a Unicode scalar boundary.
   bool isUtf16ScalarBoundary(int utf16Offset) {
     final safe = utf16Offset.clamp(0, utf16Length);
     return _exactBoundaryIndex(_utf16Boundaries, safe) != -1;
   }
 
+  /// Whether [utf8Offset] falls on a Unicode scalar boundary.
   bool isUtf8ScalarBoundary(int utf8Offset) {
     final safe = utf8Offset.clamp(0, utf8Length);
     return _exactBoundaryIndex(_utf8Boundaries, safe) != -1;

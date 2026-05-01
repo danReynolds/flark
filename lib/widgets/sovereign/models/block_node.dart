@@ -1,11 +1,27 @@
+/// Structural markdown block kinds recognized by Sovereign.
 enum BlockType {
+  /// Plain paragraph text.
   paragraph,
+
+  /// ATX or Setext heading block.
   header,
+
+  /// Thematic break block.
   thematicBreak,
+
+  /// Fenced code block.
   fencedCode,
+
+  /// Blockquote block.
   blockquote,
+
+  /// Unordered list block.
   unorderedList,
+
+  /// Ordered list block.
   orderedList,
+
+  /// Markdown table block.
   table,
 }
 
@@ -13,6 +29,7 @@ enum BlockType {
 ///
 /// Invariant: [end] > [start].
 class BlockNode {
+  /// Structural kind for this block.
   final BlockType type;
 
   /// Start offset (inclusive).
@@ -24,6 +41,7 @@ class BlockNode {
   /// Optional payload (e.g. language, header level).
   final Map<String, dynamic>? payload;
 
+  /// Creates a structural block spanning `[start, end)`.
   const BlockNode({
     required this.type,
     required this.start,
@@ -31,8 +49,10 @@ class BlockNode {
     this.payload,
   });
 
+  /// Number of UTF-16 code units covered by this block.
   int get length => end - start;
 
+  /// Returns a copy with selected fields replaced.
   BlockNode copyWith({
     BlockType? type,
     int? start,

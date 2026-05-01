@@ -90,7 +90,7 @@ Tasks:
 - [x] Decide whether any secondary public libraries are warranted.
 - [x] Rename Dune-specific public names to Sovereign vocabulary.
 - [x] Add migration notes for breaking public API cleanup.
-- [ ] Add package-level API docs for all public classes and methods.
+- [x] Add package-level API docs for all public classes and methods.
 - [x] Add first primary consumer API docs wave.
 
 ## Phase 2: Native Packaging Architecture

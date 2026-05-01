@@ -1,18 +1,43 @@
-enum SovereignStyleType { bold, italic, code, link, image }
+/// Inline style kinds emitted by Sovereign syntax tokens.
+enum SovereignStyleType {
+  /// Bold emphasis.
+  bold,
+
+  /// Italic emphasis.
+  italic,
+
+  /// Inline code span.
+  code,
+
+  /// Link text.
+  link,
+
+  /// Image alt text.
+  image,
+}
 
 /// Value-type defining a specific visual style.
 class SovereignStyle {
+  /// Style kinds included in this value.
   final Set<SovereignStyleType> types;
 
+  /// Creates a style value from [types].
   const SovereignStyle(this.types);
 
+  /// Bold inline text style.
   static const bold = SovereignStyle({SovereignStyleType.bold});
-  static const italic = SovereignStyle({SovereignStyleType.italic});
-  static const code = SovereignStyle({SovereignStyleType.code});
-  static const link = SovereignStyle({SovereignStyleType.link});
-  static const image = SovereignStyle({SovereignStyleType.image});
 
-  // Helpers for merging?
+  /// Italic inline text style.
+  static const italic = SovereignStyle({SovereignStyleType.italic});
+
+  /// Inline code text style.
+  static const code = SovereignStyle({SovereignStyleType.code});
+
+  /// Link text style.
+  static const link = SovereignStyle({SovereignStyleType.link});
+
+  /// Image alt-text style.
+  static const image = SovereignStyle({SovereignStyleType.image});
 
   @override
   bool operator ==(Object other) =>

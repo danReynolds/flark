@@ -353,3 +353,17 @@ append-only unless correcting a factual error.
 - Documented deep imports, `lib/src`, and conditional native implementation
   files as unsupported app contracts even when package tests import them for
   white-box coverage.
+
+### Phase 1 API Shape: Public API Docs
+
+- Added Dart API docs for the remaining exported supporting models and advanced
+  integration contracts: command style enums, block/decoration/edit/geometry/
+  line/state/style models, syntax request/snapshot/token contracts, native
+  comrak bridge diagnostics, native bridge factory helpers, and UTF offset
+  mapping.
+- Replaced stale internal notes in `DecorationModel` with package-facing
+  contract docs.
+- Verification:
+  - `flutter analyze lib test`: passed.
+  - `flutter test test/public_api/sovereign_editor_barrel_test.dart --reporter compact`: passed.
+  - `dart doc --dry-run`: 0 warnings and 0 errors.

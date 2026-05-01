@@ -2,27 +2,15 @@ import 'package:flutter/services.dart';
 import 'block_tree.dart';
 import 'line_index.dart';
 
+/// Render-facing decoration metadata for a controller revision.
 class DecorationModel {
+  /// Structural block tree matched to [originRevision].
   final BlockTree tree;
 
-  /// Semantic LineIndex matched to the request revision.
-  /// Note: The View might use a newer LineIndex from the Controller for Tier 1 mapping,
-  /// but this model carries the index used during parsing if needed (e.g. for block Y calcs).
-  ///
-  /// Actually, Spec 3.7 says: "DecorationModel may carry a stale BlockTree but must reference the current LineIndex".
-  /// So the Painter should pull the current lineIndex from the Controller?
-  /// Or the Controller pushes the *current* LineIndex into this model when emitting?
-  ///
-  /// Let's stick to the model carrying the index it was built with,
-  /// BUT the spec says "must reference the current LineIndex".
-  ///
-  /// Simpler: The Stream emits (Tree, Index).
-  /// If Index is updated synchronously, the Controller pushes a new DecorationModel
-  /// with (OldTree, NewIndex) immediately on every edit?
-  ///
-  /// Yes, that keeps the Painter reactive.
+  /// Line index used to map decoration ranges to visual lines.
   final LineIndex lineIndex;
 
+  /// Controller text revision that produced [tree].
   final int originRevision;
 
   /// Phase 5 active formatting projection.
@@ -34,6 +22,7 @@ class DecorationModel {
   /// forcing a rebuild even if the text revision has not changed.
   final int projectionEpoch;
 
+  /// Creates decoration metadata for render layers.
   const DecorationModel({
     required this.tree,
     required this.lineIndex,
@@ -42,6 +31,7 @@ class DecorationModel {
     this.projectionEpoch = 0,
   });
 
+  /// Creates an empty decoration model.
   factory DecorationModel.empty() {
     return DecorationModel(
       tree: BlockTree.empty(),
@@ -52,6 +42,7 @@ class DecorationModel {
     );
   }
 
+  /// Returns a copy with selected decoration fields replaced.
   DecorationModel copyWith({
     BlockTree? tree,
     LineIndex? lineIndex,

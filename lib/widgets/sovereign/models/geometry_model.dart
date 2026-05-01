@@ -39,6 +39,7 @@ class MeasuredBlock {
   /// skip painting hidden marker lines while keeping source geometry unchanged.
   final int paintEndLine;
 
+  /// Creates measured geometry for a visual markdown block.
   const MeasuredBlock({
     required this.startOffset,
     required this.endOffset,
@@ -90,11 +91,13 @@ class GeometryModel {
   /// The list of blockquote blocks identified by the synchronous scanner.
   final List<MeasuredBlock> quoteBlocks;
 
+  /// Creates geometry metadata for paint-critical block backgrounds.
   const GeometryModel({
     this.codeBlocks = const [],
     this.quoteBlocks = const [],
   });
 
+  /// Empty geometry metadata.
   static const empty = GeometryModel();
 
   @override

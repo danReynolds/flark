@@ -13,6 +13,7 @@ class SovereignState {
   /// Incremented only when `value.text` changes.
   final int revision;
 
+  /// Creates an immutable editor state snapshot.
   const SovereignState({required this.value, required this.revision});
 
   /// Creates an initial empty state.
@@ -20,6 +21,7 @@ class SovereignState {
     return const SovereignState(value: TextEditingValue.empty, revision: 0);
   }
 
+  /// Returns a copy with selected state fields replaced.
   SovereignState copyWith({TextEditingValue? value, int? revision}) {
     return SovereignState(
       value: value ?? this.value,
