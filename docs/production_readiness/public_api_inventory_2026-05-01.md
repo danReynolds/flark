@@ -94,11 +94,17 @@ Hide:
   intentional.
 - Keep consumer examples importing only `package:sovereign_editor/sovereign_editor.dart`.
 
+Progress:
+
+- Started with implementation helpers that are not part of the supported
+  barrel API: moved `Logger` to `lib/src/helpers/logger.dart` and removed the
+  public `AppColors` helper in favor of a private markdown-theme palette.
+
 ### Wave 3: Naming Cleanup
 
 - Replace public Dune vocabulary:
   - `DuneMarkdownTheme` -> `SovereignMarkdownTheme`
-  - `AppColors.dune*` -> package-neutral defaults or private palette names
+- Keep package default palette names private/package-neutral.
 - Keep deprecated aliases only if we need compatibility with Dune during a
   transition.
 

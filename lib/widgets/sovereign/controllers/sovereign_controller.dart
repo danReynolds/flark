@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:sovereign_editor/helpers/logger.dart';
+import 'package:sovereign_editor/src/helpers/logger.dart';
 import 'package:flutter/widgets.dart';
 
 import '../models/sovereign_state.dart';

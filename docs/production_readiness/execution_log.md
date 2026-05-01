@@ -112,3 +112,17 @@ append-only unless correcting a factual error.
   `flutter analyze lib test`, host native bridge build,
   `./scripts/verify_native_editor_ci.sh --skip-build`, full package tests, and
   the enforced benchmark lane.
+
+### Phase 1 API Shape: Helper Surface Cleanup
+
+- Moved internal `Logger` from `lib/helpers/logger.dart` to
+  `lib/src/helpers/logger.dart` and updated internal imports.
+- Removed public `lib/theme/app_colors.dart`; `DuneMarkdownTheme.dune()` now
+  uses a private fallback markdown palette. This eliminates the old app-level
+  `AppColors` deep-import surface without changing the supported
+  `sovereign_editor.dart` barrel API.
+- `flutter analyze lib test`: passed.
+- Focused render/controller/theme tests: passed.
+- `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
+  This reran pub get, analysis, native editor CI with the existing host bridge,
+  and the full package test suite.

@@ -2,7 +2,7 @@ import 'dart:collection';
 
 import 'package:flutter/widgets.dart';
 
-import 'package:sovereign_editor/helpers/logger.dart';
+import 'package:sovereign_editor/src/helpers/logger.dart';
 import 'package:sovereign_editor/theme/dune_markdown_theme.dart';
 
 import '../../logic/fenced_code_scanner.dart';

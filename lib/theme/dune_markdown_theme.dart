@@ -1,6 +1,12 @@
-import 'package:sovereign_editor/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+
+class _DefaultMarkdownPalette {
+  static const Color white = Colors.white;
+  static const Color sand = Color(0xFFD4C5A9);
+  static const Color gold = Color(0xFFC5A065);
+  static const Color brown = Color(0xFF2C241E);
+}
 
 @immutable
 class DuneMarkdownTheme extends ThemeExtension<DuneMarkdownTheme> {
@@ -86,15 +92,29 @@ class DuneMarkdownTheme extends ThemeExtension<DuneMarkdownTheme> {
       h5Scale: 1.16,
       h6Scale: 1.08,
       headingWeight: FontWeight.w700,
-      blockquoteTextColor: AppColors.duneSand.withValues(alpha: 0.88),
-      blockquoteBorderColor: AppColors.duneGold.withValues(alpha: 0.72),
+      blockquoteTextColor: _DefaultMarkdownPalette.sand.withValues(
+        alpha: 0.88,
+      ),
+      blockquoteBorderColor: _DefaultMarkdownPalette.gold.withValues(
+        alpha: 0.72,
+      ),
       taskCheckedColor: Colors.white54,
-      inlineCodeTextColor: AppColors.duneSand.withValues(alpha: 0.94),
-      inlineCodeBackgroundColor: AppColors.duneBrown.withValues(alpha: 0.45),
-      codeBlockTextColor: AppColors.duneWhite.withValues(alpha: 0.94),
-      codeBlockBackgroundColor: AppColors.duneBrown.withValues(alpha: 0.58),
-      codeBlockBorderColor: AppColors.duneSand.withValues(alpha: 0.30),
-      linkColor: AppColors.duneGold,
+      inlineCodeTextColor: _DefaultMarkdownPalette.sand.withValues(
+        alpha: 0.94,
+      ),
+      inlineCodeBackgroundColor: _DefaultMarkdownPalette.brown.withValues(
+        alpha: 0.45,
+      ),
+      codeBlockTextColor: _DefaultMarkdownPalette.white.withValues(
+        alpha: 0.94,
+      ),
+      codeBlockBackgroundColor: _DefaultMarkdownPalette.brown.withValues(
+        alpha: 0.58,
+      ),
+      codeBlockBorderColor: _DefaultMarkdownPalette.sand.withValues(
+        alpha: 0.30,
+      ),
+      linkColor: _DefaultMarkdownPalette.gold,
       syntaxKeywordColor: const Color(0xFFE7C27A),
       syntaxStringColor: const Color(0xFFD9A66B),
       syntaxCommentColor: const Color(0xFF9A8E78),
