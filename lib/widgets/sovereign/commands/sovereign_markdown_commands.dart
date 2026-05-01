@@ -1,8 +1,9 @@
+import 'package:sovereign_editor/src/widgets/sovereign/commands/internal/block_commands.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/commands/internal/fence_commands.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/commands/internal/inline_commands.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/commands/internal/link_commands.dart';
+
 import '../controllers/sovereign_controller.dart';
-import 'internal/block_commands.dart';
-import 'internal/fence_commands.dart';
-import 'internal/inline_commands.dart';
-import 'internal/link_commands.dart';
 import 'models/sovereign_command_capabilities.dart';
 import 'models/sovereign_command_result.dart';
 import 'models/sovereign_inline_style.dart';

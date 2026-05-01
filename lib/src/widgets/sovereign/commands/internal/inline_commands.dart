@@ -1,8 +1,8 @@
 import 'package:flutter/services.dart';
+import 'package:sovereign_editor/widgets/sovereign/commands/models/sovereign_command_result.dart';
+import 'package:sovereign_editor/widgets/sovereign/commands/models/sovereign_inline_style.dart';
+import 'package:sovereign_editor/widgets/sovereign/controllers/sovereign_controller.dart';
 
-import '../../controllers/sovereign_controller.dart';
-import '../models/sovereign_command_result.dart';
-import '../models/sovereign_inline_style.dart';
 import 'command_context.dart';
 import 'command_transaction.dart';
 

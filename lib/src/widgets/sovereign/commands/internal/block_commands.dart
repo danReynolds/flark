@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
+import 'package:sovereign_editor/widgets/sovereign/commands/models/sovereign_command_result.dart';
+import 'package:sovereign_editor/widgets/sovereign/controllers/sovereign_controller.dart';
 
-import '../../controllers/sovereign_controller.dart';
-import '../models/sovereign_command_result.dart';
 import 'command_context.dart';
 import 'command_ranges.dart';
 import 'command_selection.dart';

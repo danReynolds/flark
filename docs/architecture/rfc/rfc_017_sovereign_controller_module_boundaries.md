@@ -328,9 +328,10 @@ abstract class TextRenderer {
 
 - all `controllers/sovereign_text_renderer*.dart`
 
-### 7.6 Keep in `commands/`
+### 7.6 Keep as command internals
 
-- existing `commands/internal/*.dart`
+- existing command implementation helpers under
+  `lib/src/widgets/sovereign/commands/internal/*.dart`
 
 ---
 

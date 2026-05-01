@@ -123,6 +123,10 @@ Progress:
   read-only link tap tracking, and read-only task-checkbox overlay helpers.
   Package tests that intentionally inspect painter behavior now import the
   painter through `package:sovereign_editor/src/...`.
+- Moved command implementation helpers behind `lib/src`, including block,
+  inline, fence, link, transaction, range, selection, and command-context
+  helpers. `SovereignMarkdownCommands` remains the supported public command
+  facade.
 
 ### Wave 3: Naming Cleanup
 

@@ -224,3 +224,17 @@ append-only unless correcting a factual error.
 - `dart doc --dry-run`: passed with 0 warnings and 0 errors.
 - `flutter test test/public_api/sovereign_editor_barrel_test.dart --reporter compact`:
   passed.
+
+### Phase 1 API Shape: Command Helper `lib/src` Migration
+
+- Moved command implementation helpers behind `lib/src`:
+  - block, inline, fence, and link command implementations;
+  - command transaction, selection, range, and context helpers.
+- Kept `SovereignMarkdownCommands` as the supported public command facade and
+  updated it to import those helpers through `package:sovereign_editor/src/...`.
+- `flutter analyze lib test`: passed.
+- Focused command tests: passed.
+- `dart doc --dry-run`: passed with 0 warnings and 0 errors.
+- `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
+  This reran pub get, analysis, native editor CI with the existing host bridge,
+  and the full package test suite after moving command helpers.

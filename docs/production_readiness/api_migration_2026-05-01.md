@@ -88,6 +88,15 @@ These were never part of the supported app-facing API. App code should continue
 to compose `SovereignEditor` and `SovereignMarkdownView` instead of importing
 their render helpers directly.
 
+## Command Implementation Helpers
+
+Command implementation helpers moved behind `lib/src`, including block, inline,
+fence, link, transaction, range, selection, and command-context helpers.
+
+App code should use `SovereignMarkdownCommands`,
+`SovereignController.commands`, and the public command model types instead of
+deep-importing command implementation files.
+
 ## Removed App Palette Helper
 
 The extracted package no longer exposes the old app-level `AppColors` helper.

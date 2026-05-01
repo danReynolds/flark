@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
+import 'package:sovereign_editor/widgets/sovereign/controllers/sovereign_controller.dart';
 
-import '../../controllers/sovereign_controller.dart';
 import 'command_selection.dart';
 
 class SovereignCommandContext {
