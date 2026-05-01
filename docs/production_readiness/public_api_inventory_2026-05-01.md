@@ -144,6 +144,12 @@ Progress:
   scanner, projector, and code highlighter. Public editor/controller widgets
   continue to expose behavior through typed controller, syntax, decoration, and
   theme APIs rather than scanner classes.
+- Moved core service/rendering/pipeline internals behind `lib/src`, including
+  input-intent handlers, edit pipeline/grouping services, renderer helpers,
+  editor-session state carriers, syntax projection/reconciliation helpers,
+  markdown line utilities, table/navigation services, and fence/indented-code
+  helpers. `SovereignController`, `SovereignEditor`, and
+  `SovereignMarkdownView` remain the supported entry points.
 
 ### Wave 3: Naming Cleanup
 

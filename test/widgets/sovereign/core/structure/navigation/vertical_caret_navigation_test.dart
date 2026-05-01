@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/widgets/sovereign/core/structure/navigation/vertical_caret_navigation.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/navigation/vertical_caret_navigation.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/line_index.dart';
 
 void main() {

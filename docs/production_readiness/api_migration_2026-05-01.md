@@ -143,6 +143,24 @@ than deep-importing scanner/parser helpers. Package tests may still import
 these through `package:sovereign_editor/src/...` when they intentionally verify
 white-box behavior.
 
+## Core Service, Rendering, and Pipeline Internals
+
+Core implementation modules moved behind `lib/src`, including:
+
+- input-intent handlers and intent result models;
+- edit operation pipeline, undo grouping policy, and value mutation
+  coordinator;
+- text renderer helpers and heading style policy;
+- editor-session state carriers;
+- syntax projection, prediction, and selection-mask helpers;
+- markdown line, fence, indented-code, table, and navigation services.
+
+App code should continue to use `SovereignController`, `SovereignEditor`,
+`SovereignMarkdownView`, `SovereignMarkdownCommands`, public theme types, and
+the public syntax/model contracts rather than deep-importing core services.
+White-box package tests may import these through
+`package:sovereign_editor/src/...`.
+
 ## Removed App Palette Helper
 
 The extracted package no longer exposes the old app-level `AppColors` helper.

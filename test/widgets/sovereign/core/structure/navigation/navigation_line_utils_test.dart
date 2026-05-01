@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/widgets/sovereign/core/structure/navigation/navigation_line_utils.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/navigation/navigation_line_utils.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/line_index.dart';
 
 void main() {

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/widgets/sovereign/core/structure/table/table_line_parser.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/table/table_line_parser.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/line_index.dart';
 
 void main() {

@@ -1,9 +1,11 @@
-import '../core/intents/input_intent_models.dart';
-import '../core/structure/fence/fence_editing_utils.dart';
-import '../core/structure/models/fence_context.dart' as structure;
-import '../core/structure/models/quote_context.dart' as structure;
-import '../core/structure/navigation/navigation_line_utils.dart';
-import '../core/syntax/projection_range_utils.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/intents/input_intent_models.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/fence/fence_editing_utils.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/fence_context.dart'
+    as structure;
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/quote_context.dart'
+    as structure;
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/navigation/navigation_line_utils.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/projection_range_utils.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/logic/fenced_code_scanner.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_code_highlighter.dart';
 import '../models/geometry_model.dart';

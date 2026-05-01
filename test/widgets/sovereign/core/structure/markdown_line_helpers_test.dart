@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/widgets/sovereign/core/structure/markdown_line_helpers.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/markdown_line_helpers.dart';
 
 void main() {
   group('MarkdownLineHelpers.markdownLinkOrImageTailRangeAt', () {
