@@ -126,3 +126,19 @@ append-only unless correcting a factual error.
 - `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
   This reran pub get, analysis, native editor CI with the existing host bridge,
   and the full package test suite.
+
+### Phase 1 API Shape: Barrel Narrowing
+
+- Narrowed `lib/sovereign_editor.dart` by removing top-level exports for
+  parser implementation adapters, parse backend/scheduler internals, scanners,
+  marker helpers, `UndoStack`, and `EditDiffer`.
+- Kept syntax contracts, native bridge diagnostics, UTF offset mapping, command
+  APIs, editor/preview widgets, theme types, and model types still exposed by
+  public controller/syntax signatures.
+- Added `test/public_api/sovereign_editor_barrel_test.dart` to verify the
+  supported top-level import can construct editor/preview widgets, commands,
+  custom syntax engine snapshots, native preflight result types, markdown
+  theme defaults, and UTF offset mapping.
+- `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
+  This reran pub get, analysis, native editor CI with the existing host bridge,
+  and the full package test suite after the barrel export cleanup.

@@ -195,13 +195,23 @@ App-level composer/route integration tests remain in the app root `test/` tree.
 
 ## Public API surface (pragmatic contract)
 
-Use `package:sovereign_editor/sovereign_editor.dart` for the supported editor
-surface (`SovereignEditor`, `SovereignController`, engine factories/types, theme
-types). Deep imports are acceptable in package tests, but app code should prefer
-the top-level library unless a specific low-level type is intentionally needed.
+Use `package:sovereign_editor/sovereign_editor.dart` for the supported package
+surface:
 
-Rendering internals (for example `Tier1Painter`) are not considered stable app
-API and may move as the projection/painter system evolves.
+- editor and preview widgets;
+- `SovereignController`;
+- command APIs and command result/capability models;
+- theme types;
+- syntax contracts for custom engines;
+- native bridge preflight/load diagnostics.
+
+Deep imports are acceptable in package tests. App code should avoid deep
+imports unless a type has been explicitly documented as a supported secondary
+library.
+
+Rendering internals, scanners, parser adapters, undo/edit-diff internals, and
+marker helpers are not considered stable app API and may move as the
+projection/painter system evolves.
 
 ## Support matrix
 

@@ -23,7 +23,6 @@ These are the likely stable package API after cleanup.
 
 - syntax engine interfaces and snapshots
 - native bridge preflight/load types
-- parse backend types
 - UTF-8/UTF-16 offset mapper
 
 These may remain public if we want consumers to plug in custom parser engines,
@@ -31,14 +30,11 @@ but they need explicit API docs and stability guarantees before release.
 
 ### Implementation/Test Surface Currently Exposed
 
-- block parser
-- fenced-code scanner
-- markdown marker grammar
-- projector
-- code highlighter
-- geometry scanner
-- markdown marker helpers
-- style scanner
+- parser implementation adapters
+- parse backend and scheduler internals
+- block parser and fenced-code scanner
+- markdown marker grammar and marker helpers
+- projector, code highlighter, and geometry scanner
 - block tree/node models
 - decoration/edit/geometry/line-index/state/style models
 - `UndoStack`
@@ -47,6 +43,14 @@ but they need explicit API docs and stability guarantees before release.
 These should probably move behind `lib/src` unless a concrete consumer use case
 is documented. They are useful for internal tests and package tooling, but they
 should not become accidental public contracts.
+
+First cleanup pass:
+
+- removed parser implementation adapters, parse backend/scheduler internals,
+  scanners, marker helpers, `UndoStack`, and `EditDiffer` from
+  `lib/sovereign_editor.dart`;
+- kept model types in the barrel for now because `SovereignController` and the
+  syntax engine contracts still expose them in public signatures.
 
 ## Deep Import Risk
 
@@ -99,6 +103,11 @@ Progress:
 - Started with implementation helpers that are not part of the supported
   barrel API: moved `Logger` to `lib/src/helpers/logger.dart` and removed the
   public `AppColors` helper in favor of a private markdown-theme palette.
+- Narrowed `lib/sovereign_editor.dart` to stop exporting parser
+  implementations, scanners, marker helpers, `UndoStack`, and `EditDiffer`.
+- Added `test/public_api/sovereign_editor_barrel_test.dart` as a top-level
+  import smoke test for the supported editor, command, theme, syntax, native
+  diagnostic, and UTF offset APIs.
 
 ### Wave 3: Naming Cleanup
 
