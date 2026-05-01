@@ -79,9 +79,9 @@ Tasks:
 - [ ] Move implementation files to `lib/src` in focused waves.
 - [x] Move undo/edit-diff internals into `lib/src`.
 - [ ] Keep `lib/sovereign_editor.dart` as the main public barrel.
-- [ ] Decide whether any secondary public libraries are warranted.
+- [x] Decide whether any secondary public libraries are warranted.
 - [x] Rename Dune-specific public names to Sovereign vocabulary.
-- [ ] Add migration notes for breaking public API cleanup.
+- [x] Add migration notes for breaking public API cleanup.
 - [ ] Add package-level API docs for all public classes and methods.
 
 ## Phase 2: Native Packaging Architecture

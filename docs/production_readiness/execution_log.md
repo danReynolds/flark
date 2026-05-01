@@ -170,3 +170,16 @@ append-only unless correcting a factual error.
   marker parallel-suite flake after the same test had passed in the script's
   native-editor subset; the isolated test and full predictive marker file both
   passed before the successful release-gate rerun.
+
+### Phase 1 API Shape: Migration Notes
+
+- Added `docs/production_readiness/api_migration_2026-05-01.md` for the Phase 1
+  breaking API cleanup.
+- Documented the supported import contract: app code should use only
+  `package:sovereign_editor/sovereign_editor.dart` for now.
+- Recorded that no secondary public libraries are warranted in this cleanup
+  pass; deep imports remain package-test and white-box implementation details.
+- Covered the `SovereignMarkdownTheme.standard()` rename, removed top-level
+  internal exports, `UndoStack`/`EditDiffer` moving behind `lib/src`, and the
+  removed app palette helper.
+- `flutter analyze lib test`: passed.

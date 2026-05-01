@@ -213,6 +213,9 @@ Rendering internals, scanners, parser adapters, undo/edit-diff internals, and
 marker helpers are not considered stable app API and may move as the
 projection/painter system evolves.
 
+Phase 1 migration notes are tracked in
+`docs/production_readiness/api_migration_2026-05-01.md`.
+
 ## Support matrix
 
 Current markdown support coverage and prioritized gaps:

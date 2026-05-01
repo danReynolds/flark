@@ -82,6 +82,14 @@ Hide:
 - internal state objects
 - parser backend implementation classes
 
+Secondary public library decision:
+
+- no secondary public libraries are warranted for this cleanup pass;
+- the only supported app-facing import is
+  `package:sovereign_editor/sovereign_editor.dart`;
+- deep imports remain test/white-box implementation details unless a future
+  release explicitly documents a secondary library.
+
 ## Cleanup Waves
 
 ### Wave 1: API Decision
@@ -131,3 +139,10 @@ Progress:
 - Add migration notes for removed exports and renamed types.
 - Add API docs and example snippets.
 - Run `dart pub publish --dry-run` after release metadata exists.
+
+Progress:
+
+- Added `docs/production_readiness/api_migration_2026-05-01.md` covering the
+  theme rename, removed top-level internals, edit-history internals moved to
+  `lib/src`, the removed app palette helper, and the current decision not to
+  add secondary public libraries.
