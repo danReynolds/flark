@@ -1,0 +1,11 @@
+{
+  "core": [
+    {
+      "example": 354,
+      "owner": "sovereign-editor",
+      "reason": "Known strict mismatch in markdown package baseline for emphasis delimiter edge case.",
+      "targetMilestone": "native-comrak-cutover"
+    }
+  ],
+  "gfm": []
+}

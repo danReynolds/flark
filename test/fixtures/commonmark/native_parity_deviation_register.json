@@ -1,0 +1,102 @@
+{
+  "core": [
+    {
+      "example": 520,
+      "owner": "sovereign",
+      "reason": "Visible text parity differs for link rendering semantics in live-editor projection.",
+      "targetMilestone": "commonmark-parity-followup"
+    },
+    {
+      "example": 572,
+      "owner": "sovereign",
+      "reason": "Image syntax visibility/placeholder projection intentionally differs from bootstrap comparator.",
+      "targetMilestone": "commonmark-parity-followup"
+    },
+    {
+      "example": 574,
+      "owner": "sovereign",
+      "reason": "Image syntax visibility/placeholder projection intentionally differs from bootstrap comparator.",
+      "targetMilestone": "commonmark-parity-followup"
+    },
+    {
+      "example": 575,
+      "owner": "sovereign",
+      "reason": "Image syntax visibility/placeholder projection intentionally differs from bootstrap comparator.",
+      "targetMilestone": "commonmark-parity-followup"
+    },
+    {
+      "example": 578,
+      "owner": "sovereign",
+      "reason": "Image syntax visibility/placeholder projection intentionally differs from bootstrap comparator.",
+      "targetMilestone": "commonmark-parity-followup"
+    },
+    {
+      "example": 579,
+      "owner": "sovereign",
+      "reason": "Image syntax visibility/placeholder projection intentionally differs from bootstrap comparator.",
+      "targetMilestone": "commonmark-parity-followup"
+    },
+    {
+      "example": 580,
+      "owner": "sovereign",
+      "reason": "Image syntax visibility/placeholder projection intentionally differs from bootstrap comparator.",
+      "targetMilestone": "commonmark-parity-followup"
+    },
+    {
+      "example": 581,
+      "owner": "sovereign",
+      "reason": "Image syntax visibility/placeholder projection intentionally differs from bootstrap comparator.",
+      "targetMilestone": "commonmark-parity-followup"
+    }
+  ],
+  "gfm": [
+    {
+      "example": 528,
+      "owner": "sovereign",
+      "reason": "Visible text parity differs for link rendering semantics in live-editor projection.",
+      "targetMilestone": "commonmark-parity-followup"
+    },
+    {
+      "example": 580,
+      "owner": "sovereign",
+      "reason": "Image syntax visibility/placeholder projection intentionally differs from bootstrap comparator.",
+      "targetMilestone": "commonmark-parity-followup"
+    },
+    {
+      "example": 582,
+      "owner": "sovereign",
+      "reason": "Image syntax visibility/placeholder projection intentionally differs from bootstrap comparator.",
+      "targetMilestone": "commonmark-parity-followup"
+    },
+    {
+      "example": 583,
+      "owner": "sovereign",
+      "reason": "Image syntax visibility/placeholder projection intentionally differs from bootstrap comparator.",
+      "targetMilestone": "commonmark-parity-followup"
+    },
+    {
+      "example": 586,
+      "owner": "sovereign",
+      "reason": "Image syntax visibility/placeholder projection intentionally differs from bootstrap comparator.",
+      "targetMilestone": "commonmark-parity-followup"
+    },
+    {
+      "example": 587,
+      "owner": "sovereign",
+      "reason": "Image syntax visibility/placeholder projection intentionally differs from bootstrap comparator.",
+      "targetMilestone": "commonmark-parity-followup"
+    },
+    {
+      "example": 588,
+      "owner": "sovereign",
+      "reason": "Image syntax visibility/placeholder projection intentionally differs from bootstrap comparator.",
+      "targetMilestone": "commonmark-parity-followup"
+    },
+    {
+      "example": 589,
+      "owner": "sovereign",
+      "reason": "Image syntax visibility/placeholder projection intentionally differs from bootstrap comparator.",
+      "targetMilestone": "commonmark-parity-followup"
+    }
+  ]
+}

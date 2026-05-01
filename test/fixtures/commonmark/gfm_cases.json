@@ -1,0 +1,35 @@
+[
+  {
+    "id": "strikethrough_extension",
+    "category": "strikethrough",
+    "markdown": "~~gone~~\n",
+    "expectedContains": [
+      "<del>gone</del>"
+    ],
+    "expectedNotContains": [
+      "~~gone~~"
+    ],
+    "requiresGfmDifference": true
+  },
+  {
+    "id": "autolink_extension",
+    "category": "autolink",
+    "markdown": "https://example.com\n",
+    "expectedContains": [
+      "href=\"https://example.com\"",
+      ">https://example.com<"
+    ],
+    "requiresGfmDifference": true
+  },
+  {
+    "id": "task_list_extension",
+    "category": "task_list",
+    "markdown": "- [x] done\n- [ ] todo\n",
+    "expectedContains": [
+      "checkbox",
+      "done",
+      "todo"
+    ],
+    "requiresGfmDifference": true
+  }
+]

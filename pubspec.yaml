@@ -1,0 +1,23 @@
+name: sovereign_editor
+description: A Flutter markdown editor and read-only previewer with native CommonMark/GFM parsing.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  google_fonts: ^8.0.0
+  ffi: ^2.1.4
+  highlight: ^0.7.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  html: ^0.15.6
+
+flutter:
+  uses-material-design: true
