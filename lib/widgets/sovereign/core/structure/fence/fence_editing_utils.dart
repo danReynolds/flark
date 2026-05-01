@@ -1,4 +1,4 @@
-import '../../../logic/sovereign_code_highlighter.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_code_highlighter.dart';
 import '../navigation/navigation_line_utils.dart';
 
 class FenceEditingUtils {

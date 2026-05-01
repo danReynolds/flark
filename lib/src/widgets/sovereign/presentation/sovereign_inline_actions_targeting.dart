@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:sovereign_editor/widgets/sovereign/logic/fenced_code_scanner.dart';
-import 'package:sovereign_editor/widgets/sovereign/logic/sovereign_style_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/fenced_code_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_style_scanner.dart';
 import 'package:sovereign_editor/widgets/sovereign/theme/sovereign_editor_theme.dart';
 
 enum SovereignInlineActionsTargetKind { link, image }

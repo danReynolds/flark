@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/widgets/sovereign/logic/sovereign_style_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_style_scanner.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/sovereign_style.dart';
 
 void main() {

@@ -2,7 +2,7 @@ import 'package:sovereign_editor/src/widgets/sovereign/engine/commonmark_parse_b
 import 'package:sovereign_editor/src/widgets/sovereign/engine/v1_syntax_engine_adapter.dart';
 import 'package:sovereign_editor/widgets/sovereign/engine/syntax_engine.dart';
 import 'package:sovereign_editor/widgets/sovereign/engine/syntax_snapshot.dart';
-import 'package:sovereign_editor/widgets/sovereign/logic/sovereign_style_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_style_scanner.dart';
 
 /// CommonMark adapter that combines authoritative backend parsing with
 /// low-latency predictive scans for in-flight edits.

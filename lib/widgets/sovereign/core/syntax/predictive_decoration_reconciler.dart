@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 
 import '../../engine/syntax_engine.dart';
 import '../../engine/syntax_snapshot.dart';
-import '../../logic/fenced_code_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/fenced_code_scanner.dart';
 import '../../models/edit_op.dart';
 import 'syntax_projection_coordinator.dart';
 

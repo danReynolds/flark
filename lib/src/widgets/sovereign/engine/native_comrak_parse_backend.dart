@@ -8,7 +8,7 @@ import 'package:sovereign_editor/widgets/sovereign/engine/syntax_engine.dart';
 import 'package:sovereign_editor/widgets/sovereign/engine/syntax_snapshot.dart';
 import 'package:sovereign_editor/widgets/sovereign/engine/syntax_types.dart';
 import 'package:sovereign_editor/widgets/sovereign/engine/utf8_utf16_offset_mapper.dart';
-import 'package:sovereign_editor/widgets/sovereign/logic/sovereign_style_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_style_scanner.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/block_node.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/sovereign_style.dart';
 

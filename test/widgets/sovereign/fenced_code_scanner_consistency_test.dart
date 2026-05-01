@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/widgets/sovereign/logic/fenced_code_scanner.dart';
-import 'package:sovereign_editor/widgets/sovereign/logic/block_parser.dart';
-import 'package:sovereign_editor/widgets/sovereign/logic/sovereign_geometry_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/fenced_code_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/block_parser.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_geometry_scanner.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/block_node.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/line_index.dart';
 

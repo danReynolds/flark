@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-import '../models/sovereign_style.dart';
+import 'package:sovereign_editor/widgets/sovereign/models/sovereign_style.dart';
 
 part 'sovereign_style_scanner_link_image_helpers.dart';
 part 'sovereign_style_scanner_models.dart';

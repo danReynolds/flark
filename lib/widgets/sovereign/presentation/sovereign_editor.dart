@@ -8,9 +8,9 @@ import 'package:sovereign_editor/src/widgets/sovereign/presentation/sovereign_in
 import 'package:sovereign_editor/theme/sovereign_markdown_theme.dart';
 
 import '../controllers/sovereign_controller.dart';
-import '../logic/fenced_code_scanner.dart';
-import '../logic/sovereign_code_highlighter.dart';
-import '../logic/sovereign_style_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/fenced_code_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_code_highlighter.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_style_scanner.dart';
 import '../models/decoration_model.dart';
 import '../models/geometry_model.dart';
 import '../models/block_node.dart';

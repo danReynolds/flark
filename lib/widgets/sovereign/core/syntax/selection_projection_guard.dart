@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 
 import '../../engine/syntax_snapshot.dart';
-import '../../logic/projector.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/projector.dart';
 
 abstract class SelectionProjectionGuard {
   TextSelection projectAndSnap({

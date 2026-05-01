@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 
-import '../../logic/sovereign_markdown_markers.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_markdown_markers.dart';
 import 'models/list_marker_context.dart';
 import 'models/task_marker_info.dart';
 

@@ -6,7 +6,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sovereign_editor/widgets/sovereign/controllers/sovereign_controller.dart';
-import 'package:sovereign_editor/widgets/sovereign/logic/sovereign_style_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_style_scanner.dart';
 
 const _enforceSovereignBenchmarkBudgets = bool.fromEnvironment(
   'SOVEREIGN_BENCHMARK_ENFORCE_BUDGETS',

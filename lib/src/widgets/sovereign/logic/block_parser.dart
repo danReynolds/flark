@@ -1,5 +1,5 @@
-import '../models/block_node.dart';
-import '../models/block_tree.dart';
+import 'package:sovereign_editor/widgets/sovereign/models/block_node.dart';
+import 'package:sovereign_editor/widgets/sovereign/models/block_tree.dart';
 import 'fenced_code_scanner.dart';
 
 class BlockParser {

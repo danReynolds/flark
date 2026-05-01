@@ -5,11 +5,11 @@ import 'package:flutter/widgets.dart';
 import 'package:sovereign_editor/src/helpers/logger.dart';
 import 'package:sovereign_editor/theme/sovereign_markdown_theme.dart';
 
-import '../../logic/fenced_code_scanner.dart';
-import '../../logic/markdown_marker_grammar.dart';
-import '../../logic/sovereign_code_highlighter.dart';
-import '../../logic/sovereign_markdown_markers.dart';
-import '../../logic/sovereign_style_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/fenced_code_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/markdown_marker_grammar.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_code_highlighter.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_markdown_markers.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_style_scanner.dart';
 import '../../models/block_node.dart';
 import '../../models/block_tree.dart';
 import '../../models/decoration_model.dart';

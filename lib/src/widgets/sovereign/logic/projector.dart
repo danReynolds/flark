@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 
-import '../models/decoration_model.dart';
+import 'package:sovereign_editor/widgets/sovereign/models/decoration_model.dart';
 
 /// RFC 004 projection logic for active formatting.
 /// Handles coordinate mapping between Storage Space (S) and Presentation Space (P).

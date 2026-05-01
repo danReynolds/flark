@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/widgets/sovereign/logic/projector.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/projector.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/decoration_model.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/block_tree.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/line_index.dart';

@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:sovereign_editor/widgets/sovereign/logic/markdown_marker_grammar.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/markdown_marker_grammar.dart';
 
 void main() {
   group('MarkdownMarkerGrammar', () {

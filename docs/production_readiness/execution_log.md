@@ -278,3 +278,21 @@ append-only unless correcting a factual error.
 - `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
   This reran pub get, analysis, native editor CI with the existing host bridge,
   and the full package test suite after moving the parser backend/adapters.
+
+### Phase 1 API Shape: Markdown Logic/Scanner `lib/src` Migration
+
+- Moved markdown logic and scanner implementation classes behind `lib/src`:
+  block parser, fenced-code scanner, marker grammar/helpers, style scanner,
+  geometry scanner, projector, and code highlighter.
+- Updated controller, presentation, rendering, syntax, engine, and white-box
+  package-test imports to use `package:sovereign_editor/src/...` for those
+  implementation classes.
+- Kept public behavior exposed through `SovereignController`,
+  `SovereignEditor`, `SovereignMarkdownView`, syntax contracts, and model
+  types that are still carried by public signatures.
+- `flutter analyze lib test`: passed.
+- Focused logic/rendering tests: passed.
+- `dart doc --dry-run`: passed with 0 warnings and 0 errors.
+- `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
+  This reran pub get, analysis, native editor CI with the existing host bridge,
+  and the full package test suite after moving markdown logic/scanner internals.

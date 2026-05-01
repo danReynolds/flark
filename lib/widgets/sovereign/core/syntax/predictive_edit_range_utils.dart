@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 
-import '../../logic/fenced_code_scanner.dart';
-import '../../logic/sovereign_style_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/fenced_code_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_style_scanner.dart';
 import '../../models/edit_op.dart';
 import 'projection_range_utils.dart';
 

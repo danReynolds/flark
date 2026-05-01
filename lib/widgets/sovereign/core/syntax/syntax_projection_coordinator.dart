@@ -4,8 +4,8 @@ import 'package:sovereign_editor/src/widgets/sovereign/engine/syntax_parse_sched
 import '../../engine/syntax_engine.dart';
 import '../../engine/syntax_snapshot.dart';
 import '../../engine/syntax_types.dart';
-import '../../logic/fenced_code_scanner.dart';
-import '../../logic/sovereign_style_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/fenced_code_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_style_scanner.dart';
 import '../../models/block_node.dart';
 import '../../models/block_tree.dart';
 import '../../models/decoration_model.dart';

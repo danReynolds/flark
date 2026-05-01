@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 
-import '../../logic/fenced_code_scanner.dart';
-import '../../logic/sovereign_code_highlighter.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/fenced_code_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_code_highlighter.dart';
 import '../../models/geometry_model.dart';
 import '../../models/line_index.dart';
 import 'input_intent_navigation_handler.dart';

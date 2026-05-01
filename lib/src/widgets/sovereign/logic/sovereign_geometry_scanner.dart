@@ -1,5 +1,5 @@
-import '../models/geometry_model.dart';
-import '../models/line_index.dart';
+import 'package:sovereign_editor/widgets/sovereign/models/geometry_model.dart';
+import 'package:sovereign_editor/widgets/sovereign/models/line_index.dart';
 import 'fenced_code_scanner.dart';
 import 'sovereign_code_highlighter.dart';
 

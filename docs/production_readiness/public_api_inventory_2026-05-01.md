@@ -139,6 +139,11 @@ Progress:
   `package:sovereign_editor/src/...`; the public syntax contract remains
   `SyntaxEngine`, syntax request/snapshot types, native diagnostics, and UTF
   offset mapping.
+- Moved markdown logic/scanner internals behind `lib/src`, including the block
+  parser, fenced-code scanner, marker grammar/helpers, style scanner, geometry
+  scanner, projector, and code highlighter. Public editor/controller widgets
+  continue to expose behavior through typed controller, syntax, decoration, and
+  theme APIs rather than scanner classes.
 
 ### Wave 3: Naming Cleanup
 

@@ -123,6 +123,26 @@ request/snapshot contracts rather than constructing package backend/adapters
 directly. Native bridge diagnostics and UTF offset mapping remain public where
 they are needed for consumer-safe preflight and integration behavior.
 
+## Markdown Logic and Scanner Internals
+
+Markdown logic and scanner implementation classes moved behind `lib/src`,
+including:
+
+- `BlockParser`;
+- `FencedCodeScanner`;
+- `MarkdownMarkerGrammar`;
+- `SovereignMarkdownMarkers`;
+- `SovereignStyleScanner`;
+- `SovereignGeometryScanner`;
+- `SovereignCodeHighlighter`;
+- `Projector`.
+
+App code should use `SovereignController`, `SovereignEditor`,
+`SovereignMarkdownView`, public syntax snapshots, and public model types rather
+than deep-importing scanner/parser helpers. Package tests may still import
+these through `package:sovereign_editor/src/...` when they intentionally verify
+white-box behavior.
+
 ## Removed App Palette Helper
 
 The extracted package no longer exposes the old app-level `AppColors` helper.

@@ -17,11 +17,11 @@ import '../engine/syntax_engine.dart';
 import '../engine/syntax_snapshot.dart';
 import '../engine/syntax_types.dart';
 
-import '../logic/sovereign_style_scanner.dart';
-import '../logic/sovereign_geometry_scanner.dart';
-import '../logic/fenced_code_scanner.dart';
-import '../logic/markdown_marker_grammar.dart';
-import '../logic/projector.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_style_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_geometry_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/fenced_code_scanner.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/markdown_marker_grammar.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/projector.dart';
 import '../core/state/editor_session_state.dart';
 import '../core/state/editor_session_state_builder.dart';
 import '../core/syntax/selection_projection_guard.dart';
