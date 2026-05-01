@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:sovereign_editor/src/widgets/sovereign/engine/syntax_parse_scheduler.dart';
 import 'package:sovereign_editor/widgets/sovereign/engine/syntax_engine.dart';
-import 'package:sovereign_editor/widgets/sovereign/engine/syntax_parse_scheduler.dart';
 import 'package:sovereign_editor/widgets/sovereign/engine/syntax_snapshot.dart';
 
 void main() {

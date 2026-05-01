@@ -97,6 +97,12 @@ App code should use `SovereignMarkdownCommands`,
 `SovereignController.commands`, and the public command model types instead of
 deep-importing command implementation files.
 
+## Syntax Parse Scheduler
+
+`SyntaxParseScheduler` moved behind `lib/src`. App code should use
+`SovereignController`, `SyntaxEngine`, and the syntax request/snapshot
+contracts rather than coordinating parse scheduling directly.
+
 ## Removed App Palette Helper
 
 The extracted package no longer exposes the old app-level `AppColors` helper.

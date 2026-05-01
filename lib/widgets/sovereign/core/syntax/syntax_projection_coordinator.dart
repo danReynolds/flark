@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/engine/syntax_parse_scheduler.dart';
 
 import '../../engine/syntax_engine.dart';
-import '../../engine/syntax_parse_scheduler.dart';
 import '../../engine/syntax_snapshot.dart';
 import '../../engine/syntax_types.dart';
 import '../../logic/fenced_code_scanner.dart';

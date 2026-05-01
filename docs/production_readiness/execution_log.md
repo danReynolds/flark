@@ -238,3 +238,14 @@ append-only unless correcting a factual error.
 - `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
   This reran pub get, analysis, native editor CI with the existing host bridge,
   and the full package test suite after moving command helpers.
+
+### Phase 1 API Shape: Syntax Scheduler `lib/src` Migration
+
+- Moved `SyntaxParseScheduler` behind `lib/src` and updated controller,
+  syntax-coordinator, and white-box scheduler test imports.
+- `flutter analyze lib test`: passed.
+- Focused scheduler and controller engine wiring tests: passed.
+- `dart doc --dry-run`: passed with 0 warnings and 0 errors.
+- `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
+  This reran pub get, analysis, native editor CI with the existing host bridge,
+  and the full package test suite after moving the syntax scheduler.

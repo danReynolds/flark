@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:sovereign_editor/src/helpers/logger.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/controllers/undo_stack.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/pipeline/edit_differ.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/engine/syntax_parse_scheduler.dart';
 
 import '../models/sovereign_state.dart';
 import '../models/edit_op.dart';
@@ -13,7 +14,6 @@ import '../models/geometry_model.dart';
 import '../models/block_tree.dart';
 import '../engine/syntax_engine.dart';
 import '../engine/syntax_engine_factory.dart';
-import '../engine/syntax_parse_scheduler.dart';
 import '../engine/syntax_snapshot.dart';
 import '../engine/syntax_types.dart';
 

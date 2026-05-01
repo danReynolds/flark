@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'syntax_engine.dart';
-import 'syntax_snapshot.dart';
+import 'package:sovereign_editor/widgets/sovereign/engine/syntax_engine.dart';
+import 'package:sovereign_editor/widgets/sovereign/engine/syntax_snapshot.dart';
 
 typedef SyntaxParseRunner = Future<SyntaxSnapshot> Function(
     SyntaxParseRequest request);

@@ -127,6 +127,8 @@ Progress:
   inline, fence, link, transaction, range, selection, and command-context
   helpers. `SovereignMarkdownCommands` remains the supported public command
   facade.
+- Moved `SyntaxParseScheduler` behind `lib/src`; tests that intentionally
+  exercise the scheduler now import it as a white-box implementation detail.
 
 ### Wave 3: Naming Cleanup
 
