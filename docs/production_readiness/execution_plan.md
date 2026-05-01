@@ -72,7 +72,7 @@ module.
 
 Tasks:
 
-- [ ] Define stable public API inventory.
+- [x] Define stable public API inventory.
 - [x] Create initial public API inventory.
 - [x] Remove clearly unsupported internals from the top-level public barrel.
 - [x] Add a top-level public API smoke test.

@@ -342,3 +342,14 @@ append-only unless correcting a factual error.
   retained for current public signatures.
 - Marked `lib/sovereign_editor.dart` as the package's single supported
   app-facing barrel; no secondary public libraries are documented for this pass.
+
+### Phase 1 API Shape: Stable Inventory
+
+- Defined the stable API inventory around
+  `package:sovereign_editor/sovereign_editor.dart` as the only supported
+  app-facing import.
+- Classified the barrel exports into stable consumer API, stable supporting
+  model carriers, and advanced supported integration API.
+- Documented deep imports, `lib/src`, and conditional native implementation
+  files as unsupported app contracts even when package tests import them for
+  white-box coverage.

@@ -3,46 +3,79 @@
 Status date: 2026-05-01
 Source: `lib/sovereign_editor.dart`
 
+Supported app-facing import:
+
+- `package:sovereign_editor/sovereign_editor.dart`
+
+Deep imports under `lib/widgets/sovereign/...` and `lib/src/...` are not
+documented package contracts for this release-planning pass. They may exist for
+file organization, conditional imports, and white-box package tests, but the
+top-level barrel is the stable consumer entry point.
+
 ## Current Barrel Exports
 
-The package currently exposes three different categories from one top-level
-library:
+The package exposes three supported categories from one top-level library.
 
-### Intended Consumer Surface
+### Stable Consumer Surface
 
 - `SovereignController`
 - `SovereignEditor`
 - `SovereignMarkdownView`
-- `SovereignEditorThemeData` and related theme types
 - `SovereignMarkdownCommands`
-- command result/capability/link-edit models
+- `SovereignMarkdownCommandControllerExtension`
+- command style/result/capability/link-edit models
+- `SovereignEditorThemeData` and related editor theme types
+- `SovereignMarkdownTheme`
 
-These are the likely stable package API after cleanup.
+These are the primary API that app code should build on.
 
-### Advanced Integration Surface
+### Stable Supporting Model Surface
+
+- `BlockType`, `BlockNode`, and `BlockTree`
+- `DecorationModel`
+- `EditOpKind` and `EditOp`
+- `MeasuredBlock` and `GeometryModel`
+- `LineIndex`
+- `SovereignState`
+- `SovereignStyleType` and `SovereignStyle`
+
+These remain public because the controller, renderer-facing widget contracts,
+and syntax integration contracts currently expose them in public signatures.
+They are supported model carriers, not an invitation to depend on internal
+scanner/parser behavior.
+
+### Advanced Supported Integration Surface
 
 - syntax engine interfaces and snapshots
 - native bridge preflight/load types
 - UTF-8/UTF-16 offset mapper
 
-These may remain public if we want consumers to plug in custom parser engines,
-but they need explicit API docs and stability guarantees before release.
+These are public for custom parser engines, native parser integration,
+diagnostics, and offset conversion. They are supported, but they are advanced
+package integration contracts rather than the normal editor API.
 
-### Implementation/Test Surface Currently Exposed
+### Unsupported Internal Surface
+
+The following categories are not exported by the top-level barrel and are not
+stable package contracts:
 
 - parser implementation adapters
 - parse backend and scheduler internals
 - block parser and fenced-code scanner
 - markdown marker grammar and marker helpers
 - projector, code highlighter, and geometry scanner
-- block tree/node models
-- decoration/edit/geometry/line-index/state/style models
-- `UndoStack`
-- `EditDiffer`
+- renderer internals and painters
+- controller/editor helper parts
+- undo stack implementation
+- edit differ implementation
+- parser backend implementation classes
+- conditional native bridge implementation files such as
+  `native_comrak_bridge_factory_ffi.dart` and
+  `native_comrak_bridge_factory_stub.dart`
 
-These should probably move behind `lib/src` unless a concrete consumer use case
-is documented. They are useful for internal tests and package tooling, but they
-should not become accidental public contracts.
+White-box tests may import these through `package:sovereign_editor/src/...`
+when the implementation contract is intentionally under test. App code should
+not.
 
 First cleanup pass:
 
@@ -70,7 +103,7 @@ Current status after the Phase 1 migration waves:
   and presentation helpers now live under `lib/src`.
 - `lib/sovereign_editor.dart` remains the only supported app-facing import.
 
-## Proposed Stable API Target
+## Stable API Target
 
 Keep:
 
@@ -79,9 +112,10 @@ Keep:
 - controller lifecycle and text/selection APIs
 - typed command API
 - theming API
-- markdown profile and syntax snapshot models only if customization requires
-  them
+- model carriers currently exposed by public signatures
+- markdown profile, syntax engine, syntax snapshot, and syntax token contracts
 - native preflight diagnostics
+- UTF-8/UTF-16 offset mapping
 
 Hide:
 
@@ -108,6 +142,16 @@ Secondary public library decision:
 - Mark each current export as `stable`, `advanced`, or `internal`.
 - Write short docs for every stable public type.
 - Decide compatibility policy for removing deep imports.
+
+Progress:
+
+- Classified the current barrel exports as stable consumer API, stable
+  supporting model carriers, and advanced supported integration API.
+- Defined the compatibility policy for this release-planning pass: only
+  `package:sovereign_editor/sovereign_editor.dart` is the supported app-facing
+  import, while deep imports are implementation or white-box test details.
+- Removed the previous implementation/test exposure bucket from the target
+  public API; remaining implementation-only behavior belongs under `lib/src`.
 
 ### Wave 2: File Layout
 
