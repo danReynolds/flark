@@ -25,13 +25,13 @@ class DecorationModel {
 
   final int originRevision;
 
-  /// [Phase 5] Active Formatting Projection
+  /// Phase 5 active formatting projection.
   /// The hidden ranges (collapsed markers) in Storage Space.
   final List<TextRange> hiddenRanges;
 
-  /// [Phase 5] Active Formatting Projection
+  /// Phase 5 active formatting projection.
   /// Epoch increments whenever [hiddenRanges] changes (pop/collapse),
-  /// forcing a rebuild even if [textRevision] hasn't changed.
+  /// forcing a rebuild even if the text revision has not changed.
   final int projectionEpoch;
 
   const DecorationModel({

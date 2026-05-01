@@ -151,3 +151,5 @@ Progress:
   theme rename, removed top-level internals, edit-history internals moved to
   `lib/src`, the removed app palette helper, and the current decision not to
   add secondary public libraries.
+- Established a clean docs-generation baseline by fixing unresolved Dart doc
+  bracket references; `dart doc --dry-run` now reports 0 warnings and 0 errors.

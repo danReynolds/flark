@@ -3,7 +3,7 @@ import 'block_node.dart';
 /// The read-only metadata overlay (Syntax Tree).
 ///
 /// Invariants:
-/// 1. Blocks are sorted by [startOffset].
+/// 1. Blocks are sorted by `start` offset.
 /// 2. Blocks are non-overlapping.
 class BlockTree {
   final List<BlockNode> blocks;

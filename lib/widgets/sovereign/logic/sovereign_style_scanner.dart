@@ -391,7 +391,7 @@ class SovereignStyleScanner {
     runs.add(StyleRun(start, end, style));
   }
 
-  /// [Phase 5] Post-process runs to extract syntax markers (hidden ranges).
+  /// Phase 5 post-process step for extracting syntax markers.
   static List<TextRange> extractHiddenRanges(String text, List<StyleRun> runs) {
     final hidden = <TextRange>[];
     for (final run in runs) {

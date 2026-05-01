@@ -9,7 +9,7 @@ class BlockParser {
   /// - Fenced Code: Starts with ``` at col 0. Ends with ``` at col 0.
   /// - Header: Starts with #+ at col 0.
   /// - Blockquote: Contiguous lines starting with > at col 0.
-  /// - List: Contiguous lines starting with [-*] or 1. at col 0.
+  /// - List: Contiguous lines starting with `-`, `*`, or `1.` at col 0.
   static BlockTree parse(String text) {
     if (text.isEmpty) return BlockTree.empty();
 

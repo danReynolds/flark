@@ -3,7 +3,7 @@
 /// Allows O(log N) line lookups and O(1) offset lookups.
 ///
 /// Invariants:
-/// 1. [lineStarts] always contains at least [0].
+/// 1. [lineStarts] always contains at least `0`.
 /// 2. [lineStarts] is strictly increasing.
 class LineIndex {
   final List<int> lineStarts;

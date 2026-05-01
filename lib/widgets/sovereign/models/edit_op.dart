@@ -23,11 +23,11 @@ class EditOp {
   /// State after this op applied.
   final TextEditingValue after;
 
-  /// The range in [before.text] that was replaced.
+  /// The range in `before.text` that was replaced.
   /// Empty if [kind] is [EditOpKind.selection].
   final TextRange replacedRange;
 
-  /// The text inserted into [after.text].
+  /// The text inserted into `after.text`.
   /// Empty if [kind] is [EditOpKind.selection].
   final String insertedText;
 
@@ -53,7 +53,7 @@ class EditOp {
     required this.undoGroupId,
   });
 
-  /// Computed range in [after.text] effected by this op.
+  /// Computed range in `after.text` affected by this op.
   ///
   /// Used for Undo Merging logic (detecting if subsequent op is "nearby").
   TextRange get affectedRange {

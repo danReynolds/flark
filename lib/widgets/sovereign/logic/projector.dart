@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 
 import '../models/decoration_model.dart';
 
-/// [RFC 004] projection logic for Active Formatting.
+/// RFC 004 projection logic for active formatting.
 /// Handles coordinate mapping between Storage Space (S) and Presentation Space (P).
 class Projector {
   final DecorationModel model;
@@ -11,10 +11,10 @@ class Projector {
 
   bool get hasHiddenRanges => model.hiddenRanges.isNotEmpty;
 
-  /// The Choke Point: Projects a raw [Selection] (from engine/keyboard)
+  /// The Choke Point: Projects a raw selection (from engine/keyboard)
   /// into a valid Storage Selection (avoiding hidden ranges).
   ///
-  /// [intent] helps disambiguate landing spots (Strategy 2.4).
+  /// Movement direction helps disambiguate landing spots (Strategy 2.4).
   /// - forward: Snap to end
   /// - backward: Snap to start
   TextSelection projectSelection(

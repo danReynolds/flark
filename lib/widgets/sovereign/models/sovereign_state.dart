@@ -10,7 +10,7 @@ class SovereignState {
   final TextEditingValue value;
 
   /// Monotonic text revision number.
-  /// Incremented ONLY when [value.text] changes.
+  /// Incremented only when `value.text` changes.
   final int revision;
 
   const SovereignState({required this.value, required this.revision});

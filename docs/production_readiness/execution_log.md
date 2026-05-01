@@ -201,3 +201,10 @@ append-only unless correcting a factual error.
 - `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
   This reran pub get, analysis, native editor CI with the existing host bridge,
   and the full package test suite after moving presentation helpers.
+
+### Phase 1 API Shape: Docs Generation Baseline
+
+- Fixed unresolved Dart doc bracket references in current public/deep-import
+  libraries so documentation generation has a clean starting point.
+- `dart doc --dry-run`: passed with 0 warnings and 0 errors.
+- `flutter analyze lib test`: passed.
