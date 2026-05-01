@@ -8,6 +8,11 @@ class _DefaultMarkdownPalette {
   static const Color brown = Color(0xFF2C241E);
 }
 
+/// Markdown styling extension used by Sovereign renderers.
+///
+/// Install this as a Flutter [ThemeExtension] or pass it through
+/// `SovereignEditorThemeData` to control heading scale, inline code styling,
+/// link styling, blockquote/code block colors, and syntax highlighting colors.
 @immutable
 class SovereignMarkdownTheme extends ThemeExtension<SovereignMarkdownTheme> {
   final double h1Scale;
@@ -49,6 +54,7 @@ class SovereignMarkdownTheme extends ThemeExtension<SovereignMarkdownTheme> {
   final double listIndent;
   final String? monospaceFontFamily;
 
+  /// Creates a complete markdown theme.
   const SovereignMarkdownTheme({
     required this.h1Scale,
     required this.h2Scale,
@@ -83,6 +89,7 @@ class SovereignMarkdownTheme extends ThemeExtension<SovereignMarkdownTheme> {
     required this.monospaceFontFamily,
   });
 
+  /// Package default markdown theme.
   factory SovereignMarkdownTheme.standard() {
     return SovereignMarkdownTheme(
       h1Scale: 2.00,
@@ -136,11 +143,13 @@ class SovereignMarkdownTheme extends ThemeExtension<SovereignMarkdownTheme> {
   static final SovereignMarkdownTheme _defaultTheme =
       SovereignMarkdownTheme.standard();
 
+  /// Resolves the nearest markdown theme from [context], or the package default.
   static SovereignMarkdownTheme of(BuildContext context) {
     return Theme.of(context).extension<SovereignMarkdownTheme>() ??
         _defaultTheme;
   }
 
+  /// Returns the configured scale for heading [level].
   double headingScale(int level) {
     switch (level.clamp(1, 6)) {
       case 1:
@@ -159,6 +168,7 @@ class SovereignMarkdownTheme extends ThemeExtension<SovereignMarkdownTheme> {
     }
   }
 
+  /// Returns a heading text style for [level] based on [base].
   TextStyle headingStyleFor(TextStyle base, int level) {
     final baseSize = base.fontSize ?? 14.0;
     return base.copyWith(
@@ -167,6 +177,7 @@ class SovereignMarkdownTheme extends ThemeExtension<SovereignMarkdownTheme> {
     );
   }
 
+  /// Returns the blockquote text style based on [base].
   TextStyle blockquoteStyleFor(TextStyle base) {
     return base.copyWith(
       fontStyle: FontStyle.italic,
@@ -174,6 +185,7 @@ class SovereignMarkdownTheme extends ThemeExtension<SovereignMarkdownTheme> {
     );
   }
 
+  /// Returns the task-list checked item text style based on [base].
   TextStyle taskCheckedStyleFor(TextStyle base) {
     return base.copyWith(
       decoration: TextDecoration.lineThrough,
@@ -181,6 +193,7 @@ class SovereignMarkdownTheme extends ThemeExtension<SovereignMarkdownTheme> {
     );
   }
 
+  /// Returns the inline-code text style based on [base].
   TextStyle inlineCodeStyleFor(TextStyle base) {
     return base.copyWith(
       fontFamily: monospaceFontFamily,
@@ -189,6 +202,7 @@ class SovereignMarkdownTheme extends ThemeExtension<SovereignMarkdownTheme> {
     );
   }
 
+  /// Returns the link text style based on [base].
   TextStyle linkStyleFor(TextStyle base) {
     return base.copyWith(
       color: linkColor,
@@ -197,6 +211,7 @@ class SovereignMarkdownTheme extends ThemeExtension<SovereignMarkdownTheme> {
     );
   }
 
+  /// Returns the fenced-code block text style based on [base].
   TextStyle codeBlockStyleFor(TextStyle base) {
     return base.copyWith(
       fontFamily: monospaceFontFamily,
@@ -205,6 +220,7 @@ class SovereignMarkdownTheme extends ThemeExtension<SovereignMarkdownTheme> {
     );
   }
 
+  /// Returns syntax highlighting style for a highlight.js class name.
   TextStyle? syntaxStyleForClass(String className) {
     switch (className) {
       case 'keyword':

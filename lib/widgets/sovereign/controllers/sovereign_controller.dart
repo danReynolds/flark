@@ -65,6 +65,12 @@ part 'sovereign_syntax_sync_coordinator.dart';
 part 'sovereign_controller_diagnostics.dart';
 part 'sovereign_table_tab_intent_host.dart';
 
+/// Text editing controller for Sovereign markdown documents.
+///
+/// The controller owns the canonical text/selection state, synchronous line and
+/// geometry metadata, asynchronous syntax snapshots, undo/redo history, and the
+/// markdown-aware keyboard/editing policies used by `SovereignEditor` and
+/// `SovereignMarkdownView`.
 class SovereignController extends TextEditingController {
   final SovereignTextRenderer _renderer = SovereignTextRenderer();
   final SelectionProjectionGuard _selectionProjectionGuard =
@@ -97,11 +103,13 @@ class SovereignController extends TextEditingController {
   final MarkdownSyntaxProfile _markdownProfile;
   SyntaxParseScheduler? _syntaxParseScheduler;
 
-  /// The Canonical State
+  /// Current immutable state snapshot for the controller.
   SovereignState get state => SovereignState(value: value, revision: _revision);
 
-  /// Decoration Stream (Decoupled Layer)
+  /// Stream of markdown decoration metadata emitted after edits and parses.
   final _decorationController = StreamController<DecorationModel>.broadcast();
+
+  /// Emits the latest block, line, and projection metadata for render layers.
   Stream<DecorationModel> get decorationStream => _decorationController.stream;
 
   /// Tier 2 Rendering State (Inline Styles)
@@ -130,8 +138,10 @@ class SovereignController extends TextEditingController {
   int _predictiveLocalFallbackCount = 0;
   int _predictiveLocalFallbackLastScannedChars = 0;
 
-  /// Local cache of latest decoration for synchronous reads
+  /// Latest decoration metadata available synchronously to widgets.
   DecorationModel _latestDecoration = DecorationModel.empty();
+
+  /// Latest decoration metadata available synchronously to widgets.
   DecorationModel get decoration => _latestDecoration;
 
   // --- Internal State ---
@@ -145,8 +155,14 @@ class SovereignController extends TextEditingController {
   int _suppressFenceExitOnEnterDepth = 0;
 
   // --- Public Getters ---
+
+  /// Current line index for the controller text.
   LineIndex get lineIndex => _lineIndex;
+
+  /// Current geometry model for block backgrounds and quote rails.
   GeometryModel get geometry => _geometry;
+
+  /// Most recent edit operation recorded by the controller, if any.
   EditOp? get lastOp => _lastOp;
 
   /// [Phase 5] Projector
@@ -166,6 +182,11 @@ class SovereignController extends TextEditingController {
   bool _forceUndoBoundaryForNextTextOp = false;
   TextEditingValue? _compositionStartValue;
 
+  /// Creates an editable markdown controller.
+  ///
+  /// [text] seeds the document. [syntaxEngine] can provide a custom parser; if
+  /// omitted, the package default engine is used. [markdownProfile] controls
+  /// whether CommonMark core or GFM syntax is requested from the engine.
   SovereignController({
     String? text,
     SyntaxEngine? syntaxEngine,
@@ -178,6 +199,10 @@ class SovereignController extends TextEditingController {
           bootstrapDecoration: false,
         );
 
+  /// Creates a controller optimized for read-only markdown rendering.
+  ///
+  /// This bootstraps decoration state synchronously so `SovereignMarkdownView`
+  /// can render immediately from an initial markdown string.
   SovereignController.readOnly({
     required String text,
     SyntaxEngine? syntaxEngine,
@@ -719,6 +744,10 @@ class SovereignController extends TextEditingController {
     }
   }
 
+  /// Runs multiple command mutations as one command transaction.
+  ///
+  /// Edits performed inside [action] share command undo grouping so a toolbar
+  /// action can apply several text changes while remaining one logical command.
   T runInCommandTransaction<T>(T Function() action) {
     final isRoot = _commandTransactionDepth == 0;
     _commandTransactionDepth++;
@@ -741,6 +770,10 @@ class SovereignController extends TextEditingController {
     });
   }
 
+  /// Applies the markdown-aware Enter behavior at the current selection.
+  ///
+  /// When [suppressFenceExit] is true, fenced-code exit handling is temporarily
+  /// disabled for this invocation.
   void handleEnter({bool suppressFenceExit = false}) {
     if (!suppressFenceExit) {
       _inputIntents.handleEnter();
@@ -754,24 +787,35 @@ class SovereignController extends TextEditingController {
     }
   }
 
+  /// Applies Tab or Shift+Tab behavior at the current selection.
+  ///
+  /// Returns true when the controller handled the key instead of letting focus
+  /// traversal or the platform default behavior proceed.
   bool handleTabKey({required bool reverse}) =>
       _inputIntents.handleTabKey(reverse: reverse);
 
+  /// Toggles the task checkbox state at the current selection.
   bool toggleTaskCheckboxAtSelection() =>
       _inputIntents.toggleTaskCheckboxAtSelection();
 
+  /// Toggles the task checkbox at [offset].
+  ///
+  /// When [insertIfList] is true, a checkbox marker may be inserted for a list
+  /// item that does not yet have one.
   bool toggleTaskCheckboxAtOffset(int offset, {bool insertIfList = false}) =>
       _inputIntents.toggleTaskCheckboxAtOffset(
         offset,
         insertIfList: insertIfList,
       );
 
+  /// Returns the storage range for the task marker on [line], if one exists.
   TextRange? taskCheckboxMarkerRangeForLine(int line) {
     final info = _taskCheckboxLineInfoForLine(line);
     if (info == null) return null;
     return TextRange(start: info.taskStart, end: info.contentStart);
   }
 
+  /// Returns the visual range used to paint the task marker on [line].
   TextRange? taskCheckboxVisualRangeForLine(int line) {
     final info = _taskCheckboxLineInfoForLine(line);
     if (info == null) return null;
@@ -814,22 +858,29 @@ class SovereignController extends TextEditingController {
     );
   }
 
+  /// Applies Arrow Down markdown navigation behavior.
   bool handleArrowDownKey() => _inputIntents.handleArrowDownKey();
 
+  /// Applies Arrow Up markdown navigation behavior.
   bool handleArrowUpKey() => _inputIntents.handleArrowUpKey();
 
+  /// Attempts to exit a fenced code block with Arrow Down.
   bool tryExitFencedCodeOnArrowDown() =>
       _inputIntents.tryExitFencedCodeOnArrowDown();
 
+  /// Attempts to exit a blockquote with Arrow Down.
   bool tryExitBlockquoteOnArrowDown() =>
       _inputIntents.tryExitBlockquoteOnArrowDown();
 
+  /// Attempts to exit a fenced code block with Arrow Up.
   bool tryExitFencedCodeOnArrowUp() =>
       _inputIntents.tryExitFencedCodeOnArrowUp();
 
+  /// Attempts to exit a blockquote with Arrow Up.
   bool tryExitBlockquoteOnArrowUp() =>
       _inputIntents.tryExitBlockquoteOnArrowUp();
 
+  /// Attempts to exit a fenced code block with Enter.
   bool tryExitFencedCodeOnEnter() => _inputIntents.tryExitFencedCodeOnEnter();
 
   /// Updates the language info string on the opening ``` fence for the fenced
@@ -993,7 +1044,10 @@ class SovereignController extends TextEditingController {
     return true;
   }
 
+  /// Whether an undo operation is currently available.
   bool get canUndo => _undoStack.canUndo;
+
+  /// Whether a redo operation is currently available.
   bool get canRedo => _undoStack.canRedo;
 
   @override

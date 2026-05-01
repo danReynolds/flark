@@ -4,6 +4,7 @@ import 'package:sovereign_editor/theme/sovereign_markdown_theme.dart';
 import 'sovereign_editor_theme_link_actions.dart';
 export 'sovereign_editor_theme_link_actions.dart';
 
+/// Inline markdown text-style overrides.
 @immutable
 class SovereignInlineTextTheme {
   final TextStyle? bold;
@@ -12,6 +13,7 @@ class SovereignInlineTextTheme {
   final TextStyle? link;
   final TextStyle? image;
 
+  /// Creates inline text-style overrides.
   const SovereignInlineTextTheme({
     this.bold,
     this.italic,
@@ -20,6 +22,7 @@ class SovereignInlineTextTheme {
     this.image,
   });
 
+  /// Returns a copy with selected style overrides replaced.
   SovereignInlineTextTheme copyWith({
     TextStyle? bold,
     TextStyle? italic,
@@ -37,6 +40,7 @@ class SovereignInlineTextTheme {
   }
 }
 
+/// Heading text-style overrides for levels 1 through 6.
 @immutable
 class SovereignHeadingsTheme {
   final TextStyle? h1;
@@ -46,6 +50,7 @@ class SovereignHeadingsTheme {
   final TextStyle? h5;
   final TextStyle? h6;
 
+  /// Creates heading text-style overrides.
   const SovereignHeadingsTheme({
     this.h1,
     this.h2,
@@ -55,6 +60,7 @@ class SovereignHeadingsTheme {
     this.h6,
   });
 
+  /// Returns a copy with selected heading styles replaced.
   SovereignHeadingsTheme copyWith({
     TextStyle? h1,
     TextStyle? h2,
@@ -73,6 +79,7 @@ class SovereignHeadingsTheme {
     );
   }
 
+  /// Returns the style configured for heading [level].
   TextStyle? styleForLevel(int level) {
     switch (level.clamp(1, 6)) {
       case 1:
@@ -92,6 +99,7 @@ class SovereignHeadingsTheme {
   }
 }
 
+/// Visual styling for blockquote rails.
 @immutable
 class SovereignBlockquoteTheme {
   final Color? railColor;
@@ -99,6 +107,7 @@ class SovereignBlockquoteTheme {
   final double railInset;
   final Radius railRadius;
 
+  /// Creates blockquote rail styling.
   const SovereignBlockquoteTheme({
     this.railColor,
     this.railWidth = 4.0,
@@ -106,6 +115,7 @@ class SovereignBlockquoteTheme {
     this.railRadius = const Radius.circular(2.0),
   });
 
+  /// Returns a copy with selected blockquote fields replaced.
   SovereignBlockquoteTheme copyWith({
     Color? railColor,
     double? railWidth,
@@ -121,6 +131,7 @@ class SovereignBlockquoteTheme {
   }
 }
 
+/// Visual styling for the fenced-code language picker.
 @immutable
 class SovereignFenceLanguagePickerTheme {
   final EdgeInsets padding;
@@ -139,6 +150,7 @@ class SovereignFenceLanguagePickerTheme {
   final double height;
   final double elevation;
 
+  /// Creates fenced-code language picker styling.
   const SovereignFenceLanguagePickerTheme({
     this.padding = const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
     this.margin = const EdgeInsets.only(top: 2, right: 6),
@@ -166,6 +178,7 @@ class SovereignFenceLanguagePickerTheme {
     this.elevation = 4,
   });
 
+  /// Returns a copy with selected language picker fields replaced.
   SovereignFenceLanguagePickerTheme copyWith({
     EdgeInsets? padding,
     EdgeInsets? margin,
@@ -203,6 +216,7 @@ class SovereignFenceLanguagePickerTheme {
   }
 }
 
+/// Visual styling for fenced-code blocks.
 @immutable
 class SovereignCodeBlockTheme {
   final Color? backgroundColor;
@@ -213,6 +227,7 @@ class SovereignCodeBlockTheme {
   final double backgroundVerticalInset;
   final SovereignFenceLanguagePickerTheme languagePicker;
 
+  /// Creates fenced-code block styling.
   const SovereignCodeBlockTheme({
     this.backgroundColor,
     this.backgroundHorizontalInset = 2.0,
@@ -220,6 +235,7 @@ class SovereignCodeBlockTheme {
     this.languagePicker = const SovereignFenceLanguagePickerTheme(),
   });
 
+  /// Returns a copy with selected code-block fields replaced.
   SovereignCodeBlockTheme copyWith({
     Color? backgroundColor,
     double? backgroundHorizontalInset,
@@ -237,6 +253,7 @@ class SovereignCodeBlockTheme {
   }
 }
 
+/// Visual styling for rendered task checkbox markers.
 @immutable
 class SovereignTaskCheckboxTheme {
   final bool useCustomOverlay;
@@ -255,6 +272,7 @@ class SovereignTaskCheckboxTheme {
   final TextStyle? checked;
   final TextStyle? unchecked;
 
+  /// Creates task checkbox styling.
   const SovereignTaskCheckboxTheme({
     this.useCustomOverlay = true,
     this.size = 14,
@@ -273,6 +291,7 @@ class SovereignTaskCheckboxTheme {
     this.unchecked,
   });
 
+  /// Returns a copy with selected task checkbox fields replaced.
   SovereignTaskCheckboxTheme copyWith({
     bool? useCustomOverlay,
     double? size,
@@ -310,6 +329,10 @@ class SovereignTaskCheckboxTheme {
   }
 }
 
+/// Theme data for Sovereign editor and preview widgets.
+///
+/// This object groups markdown typography, cursor styling, content padding,
+/// block styling, task checkbox styling, and inline link/image action styling.
 @immutable
 class SovereignEditorThemeData {
   final SovereignMarkdownTheme? markdownTheme;
@@ -324,6 +347,7 @@ class SovereignEditorThemeData {
   final SovereignLinkActionsTheme linkActions;
   final SovereignLinkEditDialogTheme linkEditDialog;
 
+  /// Creates editor theme data.
   const SovereignEditorThemeData({
     this.markdownTheme,
     this.textStyle,
@@ -338,6 +362,9 @@ class SovereignEditorThemeData {
     this.linkEditDialog = const SovereignLinkEditDialogTheme(),
   });
 
+  /// Returns a copy with selected theme fields replaced.
+  ///
+  /// Use the `clear*` flags to explicitly remove nullable overrides.
   SovereignEditorThemeData copyWith({
     SovereignMarkdownTheme? markdownTheme,
     TextStyle? textStyle,
@@ -370,26 +397,32 @@ class SovereignEditorThemeData {
     );
   }
 
+  /// Resolves the markdown theme for [context].
   SovereignMarkdownTheme resolveMarkdownTheme(BuildContext context) {
     return markdownTheme ?? SovereignMarkdownTheme.of(context);
   }
 }
 
+/// Inherited theme scope used by Sovereign editor and preview widgets.
 class SovereignEditorThemeScope extends InheritedWidget {
+  /// Theme data made available to descendants.
   final SovereignEditorThemeData data;
 
+  /// Creates a theme scope for [child].
   const SovereignEditorThemeScope({
     super.key,
     required this.data,
     required super.child,
   });
 
+  /// Returns the nearest scope data, if present.
   static SovereignEditorThemeData? maybeOf(BuildContext context) {
     return context
         .dependOnInheritedWidgetOfExactType<SovereignEditorThemeScope>()
         ?.data;
   }
 
+  /// Returns the nearest scope data or the default editor theme.
   static SovereignEditorThemeData of(BuildContext context) {
     return maybeOf(context) ?? const SovereignEditorThemeData();
   }

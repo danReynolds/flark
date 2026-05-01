@@ -153,3 +153,6 @@ Progress:
   add secondary public libraries.
 - Established a clean docs-generation baseline by fixing unresolved Dart doc
   bracket references; `dart doc --dry-run` now reports 0 warnings and 0 errors.
+- Added the first primary API prose wave for the top-level library,
+  `SovereignController`, `SovereignEditor`, `SovereignMarkdownView`, command
+  facade/result/capability/link-edit models, and editor/markdown theme classes.

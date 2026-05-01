@@ -27,24 +27,55 @@ const Key _kCodeFenceLanguagePickerKey = Key(
 const Key _kTaskCheckboxTapTargetKey = Key('SovereignTaskCheckboxTapTarget');
 const Key _kTaskCheckboxVisualKey = Key('SovereignTaskCheckboxVisual');
 
+/// Editable markdown widget backed by a [SovereignController].
+///
+/// The editor renders markdown styling directly in the editing surface while
+/// preserving the controller's plain markdown text as the canonical document.
+/// It also wires markdown-aware keyboard behavior such as list continuation,
+/// fence indentation, task checkbox toggles, and inline link/image actions.
 class SovereignEditor extends StatefulWidget {
+  /// Controller that owns text, selection, syntax state, and undo history.
   final SovereignController controller;
+
+  /// Whether the editor should request focus when inserted into the tree.
   final bool autofocus;
+
+  /// Optional focus node for external focus management.
   final FocusNode? focusNode;
+
+  /// Enables shortcut behavior used by package tests.
   final bool enableTestShortcuts;
+
+  /// Whether the editing surface should soft-wrap long lines.
   final bool wrapText;
+
+  /// Whether the cursor remains visible for expanded selections.
   final bool showCursorForExpandedSelection;
+
+  /// Base text style for editor content.
   final TextStyle? textStyle;
+
+  /// Cursor color override.
   final Color? cursorColor;
+
+  /// Optional scroll controller for the editor's scroll view.
   final ScrollController? scrollController;
+
+  /// Theme overrides for markdown rendering and editor chrome.
   final SovereignEditorThemeData? theme;
+
+  /// Callback used when a link or image target should be opened.
   final Future<void> Function(String url)? onOpenLink;
+
+  /// Callback used to edit an inline link or image target.
   final Future<({String label, String url})?> Function(
     BuildContext context,
     String initialLabel,
     String initialUrl,
     bool isImage,
   )? onEditInlineTarget;
+
+  /// Optional builder for replacing the default inline link/image toolbar.
   final Widget Function(
     BuildContext context, {
     required String? url,
@@ -53,8 +84,11 @@ class SovereignEditor extends StatefulWidget {
     required VoidCallback? onCopy,
     required VoidCallback onEdit,
   })? inlineToolbarBuilder;
+
+  /// Whether the inline link/image action overlay is shown near the caret.
   final bool showLinkActionsOverlay;
 
+  /// Creates an editable Sovereign markdown surface.
   const SovereignEditor({
     super.key,
     required this.controller,

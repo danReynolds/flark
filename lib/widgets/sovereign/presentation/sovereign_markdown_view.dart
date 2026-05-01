@@ -11,8 +11,12 @@ import '../engine/syntax_engine.dart';
 import '../models/decoration_model.dart';
 import '../theme/sovereign_editor_theme.dart';
 
-/// Read-only markdown surface backed by sovereign parse/render contracts.
+/// Read-only markdown surface backed by Sovereign parse/render contracts.
+///
+/// The view uses the same syntax and rendering pipeline as `SovereignEditor`
+/// without exposing an editable text field.
 class SovereignMarkdownView extends StatefulWidget {
+  /// Creates a read-only markdown view for [markdown].
   const SovereignMarkdownView({
     super.key,
     required this.markdown,
@@ -26,19 +30,36 @@ class SovereignMarkdownView extends StatefulWidget {
     this.syntaxEngine,
   });
 
+  /// Markdown source text to render.
   final String markdown;
+
+  /// Syntax profile requested from the parser.
   final MarkdownSyntaxProfile profile;
+
+  /// Theme overrides for markdown rendering and link actions.
   final SovereignEditorThemeData? theme;
+
+  /// Whether rendered text should be selectable.
   final bool selectable;
+
+  /// Whether inline link/image actions are shown after taps.
   final bool showLinkActionsOverlay;
+
+  /// Freezes visual overlays for deterministic tests and snapshots.
   final bool freezeVisualOverlays;
+
+  /// Callback used when a link or image target should be opened.
   final Future<void> Function(String url)? onOpenLink;
+
+  /// Callback used to edit a read-only inline link or image target.
   final Future<void> Function(
     BuildContext context,
     String label,
     String url,
     bool isImage,
   )? onEditInlineTarget;
+
+  /// Optional syntax engine override for custom parsing or tests.
   final SyntaxEngine? syntaxEngine;
 
   @override

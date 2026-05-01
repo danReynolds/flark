@@ -1,3 +1,16 @@
+/// Public API for the Sovereign markdown editor and read-only preview widgets.
+///
+/// App code should import this library instead of deep implementation paths:
+///
+/// ```dart
+/// import 'package:sovereign_editor/sovereign_editor.dart';
+/// ```
+///
+/// The top-level library exposes editor/preview widgets, controller and command
+/// APIs, theme models, syntax integration contracts, native parser diagnostics,
+/// and model types that are currently part of those public signatures.
+library;
+
 export 'theme/sovereign_markdown_theme.dart';
 
 // Primary editor API

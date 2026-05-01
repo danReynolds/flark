@@ -208,3 +208,19 @@ append-only unless correcting a factual error.
   libraries so documentation generation has a clean starting point.
 - `dart doc --dry-run`: passed with 0 warnings and 0 errors.
 - `flutter analyze lib test`: passed.
+
+### Phase 1 API Shape: Primary API Docs
+
+- Added library docs to `lib/sovereign_editor.dart` and an explicit `library;`
+  directive so the top-level barrel has package documentation.
+- Added API prose for the primary consumer surface:
+  - `SovereignController`;
+  - `SovereignEditor`;
+  - `SovereignMarkdownView`;
+  - `SovereignMarkdownCommands` and command result/capability/link-edit models;
+  - `SovereignMarkdownTheme`, `SovereignEditorThemeData`, and related editor
+    theme classes.
+- `flutter analyze lib test`: passed.
+- `dart doc --dry-run`: passed with 0 warnings and 0 errors.
+- `flutter test test/public_api/sovereign_editor_barrel_test.dart --reporter compact`:
+  passed.

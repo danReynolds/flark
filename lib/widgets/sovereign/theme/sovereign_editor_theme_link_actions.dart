@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+/// Visual and layout styling for inline link/image action overlays.
 @immutable
 class SovereignLinkActionsTheme {
   // Overlay layout metrics.
@@ -42,6 +43,7 @@ class SovereignLinkActionsTheme {
   final TextStyle? imageCaptionTextStyle;
   final TextStyle? imageUrlTextStyle;
 
+  /// Creates inline action overlay styling.
   const SovereignLinkActionsTheme({
     this.overlayViewportHorizontalPadding = 16,
     this.overlayMinWidth = 120,
@@ -89,6 +91,7 @@ class SovereignLinkActionsTheme {
     this.imageUrlTextStyle,
   });
 
+  /// Returns a copy with selected link-action fields replaced.
   SovereignLinkActionsTheme copyWith({
     double? overlayViewportHorizontalPadding,
     double? overlayMinWidth,
@@ -188,6 +191,7 @@ class SovereignLinkActionsTheme {
   }
 }
 
+/// Visual styling for the link edit dialog.
 @immutable
 class SovereignLinkEditDialogTheme {
   final Color barrierColor;
@@ -205,6 +209,7 @@ class SovereignLinkEditDialogTheme {
   final double borderRadius;
   final double width;
 
+  /// Creates link edit dialog styling.
   const SovereignLinkEditDialogTheme({
     this.barrierColor = const Color(0x66000000),
     this.backgroundColor = const Color(0xFF1E232B),
@@ -234,6 +239,7 @@ class SovereignLinkEditDialogTheme {
     this.width = 420,
   });
 
+  /// Returns a copy with selected dialog fields replaced.
   SovereignLinkEditDialogTheme copyWith({
     Color? barrierColor,
     Color? backgroundColor,
