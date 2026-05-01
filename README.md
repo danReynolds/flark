@@ -7,6 +7,24 @@ Native bridge crate path:
 
 - `native/comrak_bridge`
 
+## Native packaging model
+
+Sovereign is a Dart/Flutter FFI package. App-facing APIs stay in Dart, while
+the CommonMark/GFM parser bridge is compiled from Rust and exposed through a
+small C ABI.
+
+The package includes `hook/build.dart` for Dart/Flutter native assets. On
+macOS, Linux, and Android, normal app builds can invoke the hook to compile and
+bundle the Rust dynamic library as a `CodeAsset`. iOS remains statically linked
+through the XCFramework flow below because Dart code-assets static linking is
+not supported yet.
+
+The supported app import remains:
+
+```dart
+import 'package:sovereign_editor/sovereign_editor.dart';
+```
+
 ## Read-only markdown view
 
 `SovereignMarkdownView` is the package read-only sovereign surface. It reuses
@@ -95,7 +113,19 @@ SovereignEditor(
 This replaces ad hoc code-fence/quote styling params. Prefer the theme object
 for all visual customization.
 
-## Native build workflow (recommended)
+## Native build workflow (package development)
+
+For app builds on macOS, Linux, and Android, prefer the native-assets hook:
+
+1. Ensure Rust is available on `PATH`.
+2. For Android, ensure an Android NDK is discoverable through
+   `ANDROID_NDK_HOME`, `ANDROID_NDK`, `ANDROID_NDK_ROOT`,
+   `ANDROID_NDK_LATEST_HOME`, or `ANDROID_HOME`.
+3. Build the app normally; the Dart/Flutter build hook compiles and bundles the
+   native library.
+
+For package development and local white-box native tests, the explicit scripts
+remain useful.
 
 After **any** Rust/ABI change in `native/comrak_bridge`, run one command:
 

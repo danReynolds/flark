@@ -99,15 +99,15 @@ Goal: make native parsing installable and verifiable by consumers.
 
 Tasks:
 
-- [ ] Decide final package model: FFI package with native assets hooks unless
+- [x] Decide final package model: FFI package with native assets hooks unless
   a plugin API requirement appears.
-- [ ] Add `hook/build.dart` or equivalent native assets build flow.
-- [ ] Decide whether Dart FFI bindings should be generated with `ffigen`.
-- [ ] Define artifact layout for macOS, Linux, iOS, Android, and unsupported
+- [x] Add `hook/build.dart` or equivalent native assets build flow.
+- [x] Decide whether Dart FFI bindings should be generated with `ffigen`.
+- [x] Define artifact layout for macOS, Linux, iOS, Android, and unsupported
   platforms.
 - [ ] Add a small example app/harness for Android/iOS packaging verification.
-- [ ] Make bridge preflight errors package-neutral and actionable.
-- [ ] Document the consumer integration path.
+- [x] Make bridge preflight errors package-neutral and actionable.
+- [x] Document the consumer integration path.
 
 ## Phase 3: Architecture Hardening
 

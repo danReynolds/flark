@@ -12,6 +12,8 @@ dependencies:
   google_fonts: ^8.0.0
   ffi: ^2.1.4
   highlight: ^0.7.0
+  hooks: ^1.0.3
+  code_assets: ^1.0.0
 
 dev_dependencies:
   flutter_test:

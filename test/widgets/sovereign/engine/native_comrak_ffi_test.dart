@@ -218,7 +218,7 @@ void main() {
               .having(
                 (e) => e.remediationSteps.join('\n'),
                 'remediation',
-                contains('build_comrak_all.sh --strict'),
+                contains('build hook'),
               ),
         ),
       );
@@ -242,6 +242,7 @@ void main() {
           result.error!.toString(),
           allOf(
             contains('NativeComrakBridgeLoadException'),
+            contains('build hook'),
             contains('build_comrak_all.sh --strict'),
           ),
         );

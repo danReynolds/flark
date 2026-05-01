@@ -64,6 +64,7 @@ if [ "$run_build" -eq 1 ]; then
 fi
 
 run_in_pkg flutter analyze \
+  hook \
   lib \
   test/widgets/sovereign/engine \
   test/widgets/sovereign/predictive_inline_markers_test.dart

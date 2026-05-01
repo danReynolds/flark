@@ -5,7 +5,7 @@ NativeComrakBridge createNativeComrakBridge({String? overrideLibraryPath}) {
     kind: NativeComrakBridgeLoadFailureKind.unsupportedFfi,
     message: 'Native comrak bridge is unavailable without dart:ffi support.',
     remediationSteps: const [
-      'Run on a platform/runtime with dart:ffi support (macOS/iOS/Android).',
+      'Run on a platform/runtime with dart:ffi support (macOS, Linux, iOS, or Android).',
     ],
   );
 }
@@ -18,7 +18,7 @@ NativeComrakBridgePreflightResult preflightNativeComrakBridge({
       kind: NativeComrakBridgeLoadFailureKind.unsupportedFfi,
       message: 'Native comrak bridge is unavailable without dart:ffi support.',
       remediationSteps: [
-        'Run on a platform/runtime with dart:ffi support (macOS/iOS/Android).',
+        'Run on a platform/runtime with dart:ffi support (macOS, Linux, iOS, or Android).',
       ],
     ),
   );

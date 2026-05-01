@@ -61,7 +61,7 @@ echo "Sovereign package confidence gate"
 echo "Repo: $REPO_ROOT"
 echo "Package: $PKG_ROOT"
 
-run_in_pkg flutter analyze lib test
+run_in_pkg flutter analyze hook lib test
 
 # High-signal regression suites (fast enough for local confidence).
 run_in_pkg flutter test test/widgets/sovereign/predictive_inline_markers_test.dart

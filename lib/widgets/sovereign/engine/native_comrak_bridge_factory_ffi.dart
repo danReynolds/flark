@@ -252,10 +252,14 @@ class FfiNativeComrakBridge implements NativeComrakBridge {
     Object? cause,
   }) {
     final remediation = <String>[
-      'Run ./scripts/build_comrak_all.sh --strict from the package root.',
+      'For app builds, rebuild the app so sovereign_editor\'s build hook can compile and bundle native assets.',
+      'For local package development, run ./scripts/build_comrak_all.sh --strict from the package root.',
       ...switch (platform) {
         'macos' => const <String>[
-            'Verify libsovereign_comrak_bridge.dylib exists in native/comrak_bridge/target/release and is copied into the app bundle Frameworks for desktop runs.',
+            'Verify libsovereign_comrak_bridge.dylib is bundled with the macOS app or exists in native/comrak_bridge/target/release for local package tests.',
+          ],
+        'linux' => const <String>[
+            'Verify libsovereign_comrak_bridge.so is bundled with the Linux app or exists in native/comrak_bridge/target/release for local package tests.',
           ],
         'ios' => const <String>[
             'Verify native/comrak_bridge/dist/ios/sovereign_comrak_bridge.xcframework exists and is linked in the consuming app.',
@@ -418,7 +422,8 @@ NativeComrakBridgePreflightResult preflightNativeComrakBridge({
         platform: Platform.operatingSystem,
         overrideLibraryPath: overrideLibraryPath,
         remediationSteps: const [
-          'Run ./scripts/build_comrak_all.sh --strict from the package root.',
+          'For app builds, rebuild the app so sovereign_editor\'s build hook can compile and bundle native assets.',
+          'For local package development, run ./scripts/build_comrak_all.sh --strict from the package root.',
         ],
         cause: error,
       ),

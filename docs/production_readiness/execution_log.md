@@ -367,3 +367,28 @@ append-only unless correcting a factual error.
   - `flutter analyze lib test`: passed.
   - `flutter test test/public_api/sovereign_editor_barrel_test.dart --reporter compact`: passed.
   - `dart doc --dry-run`: 0 warnings and 0 errors.
+
+## Phase 2 Native Packaging
+
+### Native Assets Build Hook
+
+- Added `hook/build.dart` using `package:hooks` and `package:code_assets`.
+- The hook compiles the Rust `native/comrak_bridge` crate and emits
+  `DynamicLoadingBundled` code assets for macOS, Linux, and Android dynamic
+  library targets.
+- iOS emits a `LookupInProcess` declaration only; the existing static
+  XCFramework flow remains until Dart code assets support static linking or a
+  Flutter plugin requirement is proven.
+- Added `docs/production_readiness/native_packaging_2026-05-01.md` with the
+  package-model decision, ffigen decision, artifact layout, and consumer
+  integration path.
+- Made native bridge preflight remediation useful for both app builds and local
+  package development.
+- Verification so far:
+  - `flutter analyze hook`: passed.
+  - `flutter test test/public_api/sovereign_editor_barrel_test.dart --reporter compact`: passed and produced a macOS hook `CodeAsset` output.
+  - `flutter analyze hook lib test`: passed.
+  - `flutter test test/widgets/sovereign/engine/native_comrak_ffi_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/engine/syntax_engine_factory_test.dart --reporter compact`: passed.
+  - `dart doc --dry-run`: 0 warnings and 0 errors.
+  - `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
