@@ -1,7 +1,7 @@
 # Sovereign Production Readiness Execution Plan
 
 Status date: 2026-05-01
-Current phase: Phase 0 - extraction and baseline audit
+Current phase: Phase 1 - package shape and public API
 
 ## Objective
 
@@ -38,6 +38,8 @@ Completed in Phase 0:
 - Updated README and scripts from old monorepo paths to root-relative paths.
 - Staged native mobile outputs under `native/comrak_bridge/dist` instead of
   writing into a Dune app.
+- Resolved the enforced benchmark lane blocker and confirmed the default
+  release-readiness gate passes.
 
 ## Phase 0: Extraction and Baseline
 
@@ -61,7 +63,7 @@ Tasks:
 - [x] Run native editor CI gate.
 - [x] Run full package test suite.
 - [x] Record command results in execution log.
-- [ ] Resolve enforced benchmark lane failures.
+- [x] Resolve enforced benchmark lane failures.
 
 ## Phase 1: Package Shape and Public API
 
@@ -160,7 +162,7 @@ Benchmark gate:
 ./scripts/verify_benchmark_lane.sh
 ```
 
-Current status: failing as of 2026-05-01. See
+Current status: passing as of 2026-05-01. See
 `docs/production_readiness/execution_log.md`.
 
 Future release gate:
@@ -168,6 +170,10 @@ Future release gate:
 ```bash
 ./scripts/verify_release.sh
 ```
+
+Current status: passing as of 2026-05-01. This gate currently covers pub get,
+analysis, host native bridge build, native editor CI, full package tests, and
+the enforced benchmark lane.
 
 ## Research Notes
 

@@ -113,9 +113,11 @@ class DuneMarkdownTheme extends ThemeExtension<DuneMarkdownTheme> {
     );
   }
 
+  static final DuneMarkdownTheme _defaultDuneTheme = DuneMarkdownTheme.dune();
+
   static DuneMarkdownTheme of(BuildContext context) {
     return Theme.of(context).extension<DuneMarkdownTheme>() ??
-        DuneMarkdownTheme.dune();
+        _defaultDuneTheme;
   }
 
   double headingScale(int level) {

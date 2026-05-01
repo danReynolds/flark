@@ -13,8 +13,9 @@ class _SovereignCodeHighlightRunsBuilder {
 
   List<_CodeStyleRun> buildRuns(
     String fullText,
-    DuneMarkdownTheme markdownTheme,
-  ) {
+    DuneMarkdownTheme markdownTheme, {
+    required List<FencedCodeBlock> fencedBlocks,
+  }) {
     if (fullText.isEmpty) return const [];
 
     final themeIdentity = identityHashCode(markdownTheme);
@@ -23,14 +24,13 @@ class _SovereignCodeHighlightRunsBuilder {
       _codeHighlightThemeIdentity = themeIdentity;
     }
 
-    final blocks = FencedCodeScanner.scan(fullText);
-    if (blocks.isEmpty) return const [];
+    if (fencedBlocks.isEmpty) return const [];
 
     final runs = <_CodeStyleRun>[];
     final activeSignatures = <String>{};
     var totalChars = 0;
 
-    for (final block in blocks) {
+    for (final block in fencedBlocks) {
       final openLineEnd = FencedCodeScanner.endOfLine(fullText, block.start);
       final openLineContentEnd =
           (openLineEnd > 0 && fullText.codeUnitAt(openLineEnd - 1) == 10)

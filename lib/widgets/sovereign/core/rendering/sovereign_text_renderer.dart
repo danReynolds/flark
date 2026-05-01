@@ -32,6 +32,9 @@ class SovereignTextRenderer {
   List<_CodeStyleRun>? _cachedCodeRuns;
   List<_BlockStyleRun>? _cachedBlockRuns;
   List<TextRange>? _cachedRenderHiddenRanges;
+  TextSpan? _cachedSpan;
+  TextStyle? _cachedSpanStyle;
+  int? _cachedSpanEditorThemeIdentity;
   final _SovereignCodeHighlightRunsBuilder _codeHighlightRunsBuilder =
       _SovereignCodeHighlightRunsBuilder();
   static const _SovereignBlockStyleRunsBuilder _blockStyleRunsBuilder =
@@ -63,6 +66,8 @@ class SovereignTextRenderer {
   }) {
     final sw = Stopwatch()..start();
     final editorTheme = SovereignEditorThemeScope.maybeOf(context);
+    final editorThemeIdentity =
+        editorTheme == null ? 0 : identityHashCode(editorTheme);
     final markdownTheme = editorTheme?.resolveMarkdownTheme(context) ??
         DuneMarkdownTheme.of(context);
 
@@ -71,27 +76,55 @@ class SovereignTextRenderer {
     // Theme identity participates in cache invalidation so syntax-highlight
     // styles refresh immediately when the host theme changes.
     final themeCacheIdentity = identityHashCode(markdownTheme);
-    final cacheKey = '$revision:$exclusionsRevision:$themeCacheIdentity';
+    final canUseAuthoritativeInlineRuns =
+        latestDecoration.originRevision == revision &&
+            authoritativeInlineRunsRevision == revision &&
+            authoritativeInlineRuns != null;
+    final authoritativeInlineRunsIdentity = canUseAuthoritativeInlineRuns
+        ? identityHashCode(authoritativeInlineRuns)
+        : 0;
+    final projectedExclusionRangesKey =
+        latestDecoration.originRevision == revision
+            ? 0
+            : Object.hashAll(
+                projectedExclusionRanges.map(
+                  (range) => Object.hash(range.start, range.end),
+                ),
+              );
+    final cacheKey = '$revision:$exclusionsRevision:$themeCacheIdentity:'
+        '$authoritativeInlineRunsRevision:$authoritativeInlineRunsIdentity:'
+        '$projectedExclusionRangesKey';
+
+    final canUseCachedSpan = _cachedKey == cacheKey &&
+        _cachedSpan != null &&
+        _cachedSpanStyle == style &&
+        _cachedSpanEditorThemeIdentity == editorThemeIdentity;
+    if (canUseCachedSpan) {
+      sw.stop();
+      _recordRenderMicros(sw.elapsedMicroseconds);
+      return _cachedSpan!;
+    }
 
     if (_cachedKey != cacheKey) {
+      _cachedSpan = null;
+      _cachedSpanStyle = null;
+      _cachedSpanEditorThemeIdentity = null;
+      final fencedBlocks = FencedCodeScanner.scan(text);
       final excludedRanges =
           _SovereignTextRendererInlineRuns.inlineExcludedRangesForBuildTextSpan(
         text,
         latestDecoration: latestDecoration,
         revision: revision,
         projectedExclusionRanges: projectedExclusionRanges,
+        fencedBlocks: fencedBlocks,
       );
       final inlineStyleExcludedRanges =
           _SovereignTextRendererInlineRuns.inlineStyleScanExcludedRanges(
         text: text,
         baseExcludedRanges: excludedRanges,
+        fencedBlocks: fencedBlocks,
       );
       List<TextRange>? supplementalInlineHiddenRanges;
-
-      final canUseAuthoritativeInlineRuns =
-          latestDecoration.originRevision == revision &&
-              authoritativeInlineRunsRevision == revision &&
-              authoritativeInlineRuns != null;
 
       if (canUseAuthoritativeInlineRuns) {
         _cachedRuns = _SovereignTextRendererInlineRuns
@@ -123,6 +156,7 @@ class SovereignTextRenderer {
       _cachedCodeRuns = _codeHighlightRunsBuilder.buildRuns(
         text,
         markdownTheme,
+        fencedBlocks: fencedBlocks,
       );
       _cachedBlockRuns = _blockStyleRunsBuilder.buildRuns(
         text,
@@ -257,12 +291,19 @@ class SovereignTextRenderer {
 
     final span = TextSpan(children: children, style: style);
     sw.stop();
+    _cachedSpan = span;
+    _cachedSpanStyle = style;
+    _cachedSpanEditorThemeIdentity = editorThemeIdentity;
+    _recordRenderMicros(sw.elapsedMicroseconds);
+    return span;
+  }
+
+  void _recordRenderMicros(int elapsedMicros) {
     _renderCallCount++;
-    _renderLastMicros = sw.elapsedMicroseconds;
+    _renderLastMicros = elapsedMicros <= 0 ? 1 : elapsedMicros;
     if (_renderLastMicros > _renderMaxMicros) {
       _renderMaxMicros = _renderLastMicros;
     }
-    return span;
   }
 }
 

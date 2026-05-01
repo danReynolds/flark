@@ -3,7 +3,7 @@ library;
 
 // ignore_for_file: avoid_print
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sovereign_editor/widgets/sovereign/controllers/sovereign_controller.dart';
 import 'package:sovereign_editor/widgets/sovereign/logic/sovereign_style_scanner.dart';
@@ -30,10 +30,18 @@ const Map<_BenchmarkMetric, int> _benchmarkBudgetsMicros =
 
 int _budgetFor(_BenchmarkMetric metric) => _benchmarkBudgetsMicros[metric]!;
 
-// Fake Context to satisfy buildTextSpan signature
-class FakeContext implements BuildContext {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => null;
+const _benchmarkContextKey = ValueKey<String>('sovereign-benchmark-context');
+
+Future<BuildContext> _pumpBenchmarkContext(WidgetTester tester) async {
+  await tester.pumpWidget(
+    const MaterialApp(home: SizedBox(key: _benchmarkContextKey)),
+  );
+  return tester.element(find.byKey(_benchmarkContextKey));
+}
+
+int _percentileMicros(List<int> sortedTimes, double percentile) {
+  final index = (sortedTimes.length * percentile).ceil() - 1;
+  return sortedTimes[index.clamp(0, sortedTimes.length - 1)];
 }
 
 void _expectBenchmarkBudget(int actual, int budget, {required String reason}) {
@@ -49,7 +57,6 @@ void _expectBenchmarkBudget(int actual, int budget, {required String reason}) {
 void main() {
   group('Sovereign Benchmarks (10k chars)', () {
     late String text10k;
-    final fakeContext = FakeContext();
 
     setUpAll(() {
       // Generate ~10k chars of Markdown
@@ -70,6 +77,7 @@ void main() {
     });
 
     testWidgets('BuildTextSpan Cold vs Warm (Caching)', (tester) async {
+      final context = await _pumpBenchmarkContext(tester);
       final controller = SovereignController(text: text10k);
 
       // We benchmark cold synchronous rendering behavior for scanner/cache paths.
@@ -78,12 +86,12 @@ void main() {
 
       // 1. Cold Build (Scanner Runs)
       final swCold = Stopwatch()..start();
-      controller.buildTextSpan(context: fakeContext, withComposing: false);
+      controller.buildTextSpan(context: context, withComposing: false);
       swCold.stop();
 
       // 2. Warm Build (Cache Hit)
       final swWarm = Stopwatch()..start();
-      controller.buildTextSpan(context: fakeContext, withComposing: false);
+      controller.buildTextSpan(context: context, withComposing: false);
       swWarm.stop();
 
       print('Cold Build (Scan): ${swCold.elapsedMicroseconds} us');
@@ -127,9 +135,9 @@ void main() {
       }
 
       times.sort();
-      final p50 = times[(iterations * 0.50).floor()];
-      final p95 = times[(iterations * 0.95).floor()];
-      final p99 = times[(iterations * 0.99).floor()];
+      final p50 = _percentileMicros(times, 0.50);
+      final p95 = _percentileMicros(times, 0.95);
+      final p99 = _percentileMicros(times, 0.99);
       final max = times.last;
 
       print('--- Scanner Metrics (10k chars, $iterations samples) ---');
@@ -149,12 +157,22 @@ void main() {
       );
     });
     testWidgets('BuildTextSpan Total p99 (Cold)', (tester) async {
+      final context = await _pumpBenchmarkContext(tester);
       final controller = SovereignController(text: text10k);
       final times = <int>[];
       final iterations = 100;
 
-      // Warmup
-      controller.buildTextSpan(context: fakeContext, withComposing: false);
+      // Warm both text shapes used below. The benchmark still measures cold
+      // renderer cache misses; this keeps JIT compilation out of the samples.
+      for (int i = 0; i < 20; i++) {
+        final warmText = (i % 2 == 0) ? '$text10k ' : text10k;
+        controller.value = controller.value.copyWith(
+          text: warmText,
+          selection: const TextSelection.collapsed(offset: 0),
+          composing: TextRange.empty,
+        );
+        controller.buildTextSpan(context: context, withComposing: false);
+      }
 
       for (int i = 0; i < iterations; i++) {
         // Invalidate Cache by simulating a change
@@ -168,14 +186,14 @@ void main() {
 
         // Measure ONLY buildTextSpan
         final sw = Stopwatch()..start();
-        controller.buildTextSpan(context: fakeContext, withComposing: false);
+        controller.buildTextSpan(context: context, withComposing: false);
         sw.stop();
         times.add(sw.elapsedMicroseconds);
       }
 
       times.sort();
-      final p95 = times[(iterations * 0.95).floor()];
-      final p99 = times[(iterations * 0.99).floor()];
+      final p95 = _percentileMicros(times, 0.95);
+      final p99 = _percentileMicros(times, 0.99);
       final max = times.last;
 
       print('--- BuildTextSpan (Cold) Metrics (10k chars) ---');
@@ -204,6 +222,8 @@ void main() {
       final times = <int>[];
       final iterations = 100;
 
+      SovereignStyleScanner.scan(emojiText);
+
       for (int i = 0; i < iterations; i++) {
         final sw = Stopwatch()..start();
         SovereignStyleScanner.scan(emojiText);
@@ -212,7 +232,7 @@ void main() {
       }
 
       times.sort();
-      final p99 = times[(iterations * 0.99).floor()];
+      final p99 = _percentileMicros(times, 0.99);
 
       print('--- Scanner Emoji Stress ---');
       print('p99: $p99 us');

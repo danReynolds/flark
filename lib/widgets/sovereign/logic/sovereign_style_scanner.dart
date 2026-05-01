@@ -275,6 +275,7 @@ class SovereignStyleScanner {
   }) {
     if (text.isEmpty || validTo <= 0) return baseRuns;
     if (baseRuns.length >= spanBudget) return baseRuns;
+    if (!_mayHaveSupplementalLinkOrImage(text)) return baseRuns;
 
     final limit = validTo.clamp(0, text.length);
     final supplementalRuns = <StyleRun>[];
@@ -356,6 +357,14 @@ class SovereignStyleScanner {
         return a.end.compareTo(b.end);
       });
     return merged;
+  }
+
+  static bool _mayHaveSupplementalLinkOrImage(String text) {
+    return text.contains('[') ||
+        text.contains('<') ||
+        text.contains('http://') ||
+        text.contains('https://') ||
+        text.contains('![');
   }
 
   static bool _overlapsAny(List<StyleRun> runs, int start, int end) {

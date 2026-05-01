@@ -78,5 +78,37 @@ append-only unless correcting a factual error.
   classify current barrel exports and plan public API cleanup waves.
 - `./scripts/verify_release.sh --skip-benchmarks --skip-native-build`: passed.
   This verifies the non-benchmark release baseline against the existing host
-  native artifact. The default release gate still fails because it includes the
-  enforced benchmark lane.
+  native artifact. At this point, the default release gate still failed because
+  it included the enforced benchmark lane.
+
+### Benchmark Lane Remediation
+
+- Stabilized `DuneMarkdownTheme.of(context)` fallback identity so renderer
+  cache keys no longer miss merely because no app-level markdown theme
+  extension is installed.
+- Added a cached final `TextSpan` path in `SovereignTextRenderer` for unchanged
+  revision/theme/style renders, while extending the renderer cache key to
+  distinguish authoritative inline runs and projected exclusion ranges.
+- Reused a single fenced-code scan across render cache miss substeps instead of
+  rescanning separately for editor exclusions, inline scan exclusions, and code
+  highlighting.
+- Skipped supplemental link/image scanning in `SovereignStyleScanner` when the
+  text has no link/image trigger characters.
+- Updated `test/benchmarks/sovereign_benchmark_test.dart` to use a real
+  Flutter `BuildContext`, a nearest-rank percentile helper, emoji scanner
+  warmup, and alternating text-shape warmup before the cold render p99 samples.
+- `./scripts/verify_benchmark_lane.sh`: passed with enforced budgets. Latest
+  release-gate run reported:
+  - warm `buildTextSpan` cache hit: 170us vs 800us budget
+  - scanner p99: 1127us vs 3500us budget
+  - cold `buildTextSpan` p99: 3917us vs 4000us budget
+  - emoji scanner p99: 1091us vs 3000us budget
+
+### Release Gate
+
+- `flutter analyze lib test`: passed.
+- Focused scanner/render/highlighting tests: passed.
+- `./scripts/verify_release.sh`: passed. This covered `flutter pub get`,
+  `flutter analyze lib test`, host native bridge build,
+  `./scripts/verify_native_editor_ci.sh --skip-build`, full package tests, and
+  the enforced benchmark lane.

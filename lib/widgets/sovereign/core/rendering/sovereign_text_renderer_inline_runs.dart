@@ -4,10 +4,10 @@ class _SovereignTextRendererInlineRuns {
   static List<TextRange> inlineStyleScanExcludedRanges({
     required String text,
     required List<TextRange> baseExcludedRanges,
+    required List<FencedCodeBlock> fencedBlocks,
   }) {
     if (text.isEmpty) return const <TextRange>[];
 
-    final fencedBlocks = FencedCodeScanner.scan(text);
     return _SovereignRendererUtils.normalizeHiddenRanges(<TextRange>[
       ...baseExcludedRanges,
       ...SovereignMarkdownMarkers.fencedCodeFenceMarkers(text, fencedBlocks),
@@ -23,6 +23,7 @@ class _SovereignTextRendererInlineRuns {
     required DecorationModel latestDecoration,
     required int revision,
     required List<TextRange> projectedExclusionRanges,
+    required List<FencedCodeBlock> fencedBlocks,
   }) {
     final excludedRanges = <TextRange>[];
 
@@ -46,9 +47,7 @@ class _SovereignTextRendererInlineRuns {
     }
 
     excludedRanges.addAll(
-      FencedCodeScanner.scan(
-        text,
-      ).map((b) => TextRange(start: b.start, end: b.end)),
+      fencedBlocks.map((b) => TextRange(start: b.start, end: b.end)),
     );
     return excludedRanges;
   }
@@ -156,6 +155,7 @@ class _SovereignTextRendererInlineRuns {
     final scanExclusions = inlineStyleScanExcludedRanges(
       text: text,
       baseExcludedRanges: excludedRanges,
+      fencedBlocks: FencedCodeScanner.scan(text),
     );
 
     final localResult = SovereignStyleScanner.scan(
