@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:sovereign_editor/widgets/sovereign/theme/sovereign_editor_theme.dart';
 
-import '../theme/sovereign_editor_theme.dart';
 import 'sovereign_inline_actions_targeting.dart';
 
 export 'sovereign_inline_actions_targeting.dart';

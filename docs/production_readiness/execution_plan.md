@@ -78,6 +78,7 @@ Tasks:
 - [x] Add a top-level public API smoke test.
 - [ ] Move implementation files to `lib/src` in focused waves.
 - [x] Move undo/edit-diff internals into `lib/src`.
+- [x] Move presentation/render helper internals into `lib/src`.
 - [ ] Keep `lib/sovereign_editor.dart` as the main public barrel.
 - [x] Decide whether any secondary public libraries are warranted.
 - [x] Rename Dune-specific public names to Sovereign vocabulary.

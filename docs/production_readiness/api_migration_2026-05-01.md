@@ -75,6 +75,19 @@ controller undo/redo behavior rather than constructing edit-history internals.
 White-box package tests may import `src` while the implementation is still
 being refactored, but that is not an app compatibility contract.
 
+## Presentation and Render Helpers
+
+Several presentation helpers also moved behind `lib/src`:
+
+- `Tier1Painter`;
+- inline-actions overlay and targeting helpers;
+- read-only link tap tracking helpers;
+- read-only task-checkbox overlay helpers.
+
+These were never part of the supported app-facing API. App code should continue
+to compose `SovereignEditor` and `SovereignMarkdownView` instead of importing
+their render helpers directly.
+
 ## Removed App Palette Helper
 
 The extracted package no longer exposes the old app-level `AppColors` helper.

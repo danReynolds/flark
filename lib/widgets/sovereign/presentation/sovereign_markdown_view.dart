@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/presentation/painters/tier1_painter.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/presentation/read_only_markdown_interaction.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/presentation/read_only_task_checkbox_overlay.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/presentation/sovereign_inline_actions_overlay.dart';
 
 import '../controllers/sovereign_controller.dart';
 import '../engine/syntax_engine.dart';
 import '../models/decoration_model.dart';
 import '../theme/sovereign_editor_theme.dart';
-import 'painters/tier1_painter.dart';
-import 'read_only_markdown_interaction.dart';
-import 'read_only_task_checkbox_overlay.dart';
-import 'sovereign_inline_actions_overlay.dart';
 
 /// Read-only markdown surface backed by sovereign parse/render contracts.
 class SovereignMarkdownView extends StatefulWidget {

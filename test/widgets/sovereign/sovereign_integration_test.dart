@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/presentation/painters/tier1_painter.dart';
 import 'package:sovereign_editor/widgets/sovereign/controllers/sovereign_controller.dart';
 import 'package:sovereign_editor/widgets/sovereign/presentation/sovereign_editor.dart';
-import 'package:sovereign_editor/widgets/sovereign/presentation/painters/tier1_painter.dart';
 
 void main() {
   group('Sovereign Integration Level 2 (Contracts & Flows)', () {

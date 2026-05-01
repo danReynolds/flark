@@ -1,6 +1,5 @@
 import 'package:flutter/widgets.dart';
-
-import '../../models/geometry_model.dart';
+import 'package:sovereign_editor/widgets/sovereign/models/geometry_model.dart';
 
 // --- TIER 1 PAINTER (Synchronous Backgrounds) ---
 // Renders active fenced code blocks purely from synchronous geometry.

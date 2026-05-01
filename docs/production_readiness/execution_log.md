@@ -183,3 +183,21 @@ append-only unless correcting a factual error.
   internal exports, `UndoStack`/`EditDiffer` moving behind `lib/src`, and the
   removed app palette helper.
 - `flutter analyze lib test`: passed.
+
+### Phase 1 API Shape: Presentation Helper `lib/src` Migration
+
+- Moved presentation/render helpers behind `lib/src`:
+  - `Tier1Painter`;
+  - inline-actions overlay and targeting helpers;
+  - read-only link tap tracking;
+  - read-only task-checkbox overlay helpers.
+- Kept `SovereignEditor` and `SovereignMarkdownView` as the public presentation
+  widgets while updating them to import the helpers through
+  `package:sovereign_editor/src/...`.
+- Updated package tests that intentionally inspect painter behavior to import
+  `Tier1Painter` through `package:sovereign_editor/src/...`.
+- `flutter analyze lib test`: passed.
+- Focused presentation/render tests: passed.
+- `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
+  This reran pub get, analysis, native editor CI with the existing host bridge,
+  and the full package test suite after moving presentation helpers.

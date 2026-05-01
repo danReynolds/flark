@@ -118,6 +118,11 @@ Progress:
   diagnostic, and UTF offset APIs.
 - Moved `UndoStack` and `EditDiffer` behind `lib/src` as the first focused
   implementation-file migration wave.
+- Moved presentation/render helpers behind `lib/src`, including
+  `Tier1Painter`, inline-actions overlay/targeting helpers,
+  read-only link tap tracking, and read-only task-checkbox overlay helpers.
+  Package tests that intentionally inspect painter behavior now import the
+  painter through `package:sovereign_editor/src/...`.
 
 ### Wave 3: Naming Cleanup
 

@@ -3,6 +3,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/presentation/painters/tier1_painter.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/presentation/sovereign_inline_actions_overlay.dart';
 import 'package:sovereign_editor/theme/sovereign_markdown_theme.dart';
 
 import '../controllers/sovereign_controller.dart';
@@ -15,8 +17,6 @@ import '../models/block_node.dart';
 import '../models/block_tree.dart';
 import '../theme/sovereign_editor_theme.dart';
 import '../core/rendering/editor_heading_style_policy.dart';
-import 'sovereign_inline_actions_overlay.dart';
-import 'painters/tier1_painter.dart';
 part 'sovereign_editor_inline_actions_overlay.dart';
 part 'sovereign_editor_inline_actions_overlay_entry.dart';
 part 'sovereign_editor_task_checkbox_overlay.dart';
