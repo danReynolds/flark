@@ -76,7 +76,7 @@ Tasks:
 - [x] Create initial public API inventory.
 - [x] Remove clearly unsupported internals from the top-level public barrel.
 - [x] Add a top-level public API smoke test.
-- [ ] Move implementation files to `lib/src` in focused waves.
+- [x] Move implementation files to `lib/src` in focused waves.
 - [x] Move undo/edit-diff internals into `lib/src`.
 - [x] Move presentation/render helper internals into `lib/src`.
 - [x] Move command implementation internals into `lib/src`.
@@ -86,7 +86,7 @@ Tasks:
 - [x] Move markdown logic/scanner internals into `lib/src`.
 - [x] Move core service/rendering/pipeline internals into `lib/src`.
 - [x] Move controller/editor private helper files into `lib/src`.
-- [ ] Keep `lib/sovereign_editor.dart` as the main public barrel.
+- [x] Keep `lib/sovereign_editor.dart` as the main public barrel.
 - [x] Decide whether any secondary public libraries are warranted.
 - [x] Rename Dune-specific public names to Sovereign vocabulary.
 - [x] Add migration notes for breaking public API cleanup.

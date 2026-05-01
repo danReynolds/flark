@@ -59,6 +59,17 @@ consumers can import internals even if the barrel stops exporting them. A
 production package should move implementation code into `lib/src` in staged
 waves.
 
+Current status after the Phase 1 migration waves:
+
+- `lib/widgets/sovereign/...` now contains the intended public controller,
+  editor/preview widgets, command facade/models, theme types, advanced syntax
+  and native bridge contracts, and model carriers still exposed by public
+  signatures.
+- implementation-only controllers, editor helpers, command helpers, rendering,
+  core services, scanner/parser logic, parser adapters/backends, edit history,
+  and presentation helpers now live under `lib/src`.
+- `lib/sovereign_editor.dart` remains the only supported app-facing import.
+
 ## Proposed Stable API Target
 
 Keep:
@@ -154,6 +165,10 @@ Progress:
   controller policy parts, controller host adapters, controller diagnostics,
   the navigation helper, and editor overlay parts. Public app code still imports
   only `SovereignController`, `SovereignEditor`, and `SovereignMarkdownView`.
+- Completed the focused `lib/src` migration wave for implementation-only files;
+  the remaining `lib/widgets/sovereign/...` files are the supported public
+  surface or model/advanced contracts intentionally retained for current public
+  signatures.
 
 ### Wave 3: Naming Cleanup
 

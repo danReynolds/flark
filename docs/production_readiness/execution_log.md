@@ -332,3 +332,13 @@ append-only unless correcting a factual error.
 - `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
   This reran pub get, analysis, native editor CI with the existing host bridge,
   and the full package test suite after moving controller/editor helpers.
+
+### Phase 1 API Shape: Public Tree Status
+
+- Completed the focused implementation-file migration wave into `lib/src`.
+- Confirmed the remaining `lib/widgets/sovereign/...` files are the public
+  controller, editor/preview widgets, command facade/models, theme types,
+  advanced syntax/native bridge contracts, and model carriers intentionally
+  retained for current public signatures.
+- Marked `lib/sovereign_editor.dart` as the package's single supported
+  app-facing barrel; no secondary public libraries are documented for this pass.
