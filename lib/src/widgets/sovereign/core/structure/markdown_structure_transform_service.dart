@@ -14,6 +14,7 @@ import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/projection_ra
 import 'package:sovereign_editor/src/widgets/sovereign/logic/fenced_code_scanner.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/logic/markdown_marker_grammar.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/edit_op.dart';
+import 'package:sovereign_editor/widgets/sovereign/models/geometry_model.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/line_index.dart';
 
 typedef BlockquoteArrowExitPredicate = bool Function({
@@ -34,6 +35,13 @@ typedef FenceEnterExitComputer = FenceEnterExitResult? Function({
   required String text,
   required int caret,
   required FenceContext context,
+});
+
+typedef FenceOutdentUnitResolver = String Function({
+  required String text,
+  required MeasuredBlock block,
+  required int line,
+  required String currentIndent,
 });
 
 class MarkdownStructureTransformService {
@@ -787,6 +795,80 @@ class MarkdownStructureTransformService {
     return newValue.copyWith(
       text: wrappedText,
       selection: TextSelection.collapsed(offset: nextCaret),
+      composing: TextRange.empty,
+    );
+  }
+
+  TextEditingValue maybeOutdentFencedCodeOnCloserInsert({
+    required TextEditingValue oldValue,
+    required TextEditingValue newValue,
+    required LineIndex lineIndex,
+    required FenceContext? Function(
+      String text,
+      int caret, {
+      required bool includeUnclosedEof,
+    }) fenceContextForCaret,
+    required FenceOutdentUnitResolver preferredOutdentUnitForLine,
+  }) {
+    if (oldValue.composing.isValid || newValue.composing.isValid) {
+      return newValue;
+    }
+
+    final oldSel = oldValue.selection;
+    if (!oldSel.isValid || !oldSel.isCollapsed) return newValue;
+    final caret = oldSel.baseOffset;
+
+    final oldText = oldValue.text;
+    final newText = newValue.text;
+    if (caret < 0 || caret > oldText.length) return newValue;
+
+    if (newText.length != oldText.length + 1) return newValue;
+    if (caret >= newText.length) return newValue;
+    if (newValue.selection.isValid &&
+        newValue.selection.isCollapsed &&
+        newValue.selection.baseOffset != caret + 1) {
+      return newValue;
+    }
+    if (!newText.startsWith(oldText.substring(0, caret))) return newValue;
+    if (newText.substring(caret + 1) != oldText.substring(caret)) {
+      return newValue;
+    }
+
+    final insertedCu = newText.codeUnitAt(caret);
+    if (!FenceEditingUtils.isAutoOutdentCloser(insertedCu)) return newValue;
+
+    final context = fenceContextForCaret(
+      oldText,
+      caret,
+      includeUnclosedEof: true,
+    );
+    if (context == null) return newValue;
+
+    final caretLine = lineIndex.lineAtOffset(caret);
+    final lineStart = lineIndex.offsetAtLine(caretLine);
+    if (lineStart < 0 || lineStart > caret) return newValue;
+    final leading = oldText.substring(lineStart, caret);
+    if (!NavigationLineUtils.isHorizontalWhitespaceOnly(leading) ||
+        leading.isEmpty) {
+      return newValue;
+    }
+
+    final unit = preferredOutdentUnitForLine(
+      text: oldText,
+      block: context.block,
+      line: caretLine,
+      currentIndent: leading,
+    );
+    final reduced = FenceEditingUtils.removeOneIndentUnit(leading, unit);
+    if (reduced == leading) return newValue;
+
+    final adjustedText = newText.replaceRange(lineStart, caret, reduced);
+    final removed = leading.length - reduced.length;
+    final adjustedCaret =
+        (caret + 1 - removed).clamp(0, adjustedText.length).toInt();
+    return newValue.copyWith(
+      text: adjustedText,
+      selection: TextSelection.collapsed(offset: adjustedCaret),
       composing: TextRange.empty,
     );
   }

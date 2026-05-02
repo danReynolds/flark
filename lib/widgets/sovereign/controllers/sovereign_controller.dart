@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:sovereign_editor/src/helpers/logger.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/controllers/undo_stack.dart';
-import 'package:sovereign_editor/src/widgets/sovereign/core/pipeline/edit_differ.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/engine/syntax_parse_scheduler.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/engine/syntax_engine_factory.dart';
 
@@ -54,7 +53,6 @@ import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/quo
 
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies.dart';
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_fence.dart';
-part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_fence_pairing.dart';
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_quote.dart';
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_link.dart';
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_list.dart';

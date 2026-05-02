@@ -211,7 +211,13 @@ class _PolicyHelpers {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) =>
-      _controller._maybeOutdentFencedCodeOnCloserInsert(oldValue, newValue);
+      _controller._structureTransforms.maybeOutdentFencedCodeOnCloserInsert(
+        oldValue: oldValue,
+        newValue: newValue,
+        lineIndex: lineIndex,
+        fenceContextForCaret: fenceContextForCaret,
+        preferredOutdentUnitForLine: _controller._preferredOutdentUnitForLine,
+      );
 
   TextEditingValue maybeDeleteFencedPairOnBackspace(
     TextEditingValue oldValue,

@@ -694,3 +694,15 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/fence_smart_pairs_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/fence_undo_grouping_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/engine/native_live_editing_regression_test.dart --reporter compact`: passed.
+
+### Phase 3 Architecture Hardening: Fenced-Code Closer-Outdent Transform
+
+- Moved fenced-code closer-triggered auto-outdent from
+  `_FencePairingPolicyOps` into `MarkdownStructureTransformService`.
+- Removed the now-empty fence pairing policy part from the controller.
+- Verification:
+  - `flutter analyze lib/widgets/sovereign/controllers/sovereign_controller.dart lib/src/widgets/sovereign/core/structure/markdown_structure_transform_service.dart lib/src/widgets/sovereign/controllers/sovereign_controller_policies.dart test/widgets/sovereign/fence_auto_indent_test.dart test/widgets/sovereign/fence_smart_pairs_test.dart test/widgets/sovereign/fence_undo_grouping_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/fence_auto_indent_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/fence_smart_pairs_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/fence_undo_grouping_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/engine/native_live_editing_regression_test.dart --reporter compact`: passed.
