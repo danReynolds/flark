@@ -67,6 +67,7 @@ run_in_dir() {
 
 run flutter pub get
 run flutter analyze hook lib test
+run dart doc --dry-run
 run_in_dir "$REPO_ROOT/example" flutter pub get
 run_in_dir "$REPO_ROOT/example" flutter analyze
 run_in_dir "$REPO_ROOT/example" flutter test test --reporter compact

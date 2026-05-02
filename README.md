@@ -275,9 +275,19 @@ Phase 1 migration notes are tracked in
 
 Current markdown support coverage and prioritized gaps:
 
-- `docs/architecture/sovereign_editor_how_it_works.md` (runtime walkthrough + module ownership)
-- `docs/architecture/sovereign_editor_markdown_support_matrix.md`
-- `docs/architecture/sovereign_editor_command_interface.md` (command API ownership + action catalog)
+- `docs/architecture/sovereign/sovereign_editor_how_it_works.md` (runtime walkthrough + module ownership)
+- `docs/architecture/sovereign/sovereign_editor_markdown_support_matrix.md`
+- `docs/architecture/rfc/sovereign_editor_command_interface.md` (command API ownership + action catalog)
+
+## Release status
+
+The package is intentionally unpublished while `publish_to: none` remains in
+`pubspec.yaml`. Release metadata and owner decisions are tracked in:
+
+- `CHANGELOG.md`
+- `docs/production_readiness/release_checklist_2026-05-02.md`
+- `docs/production_readiness/execution_plan.md`
+- `docs/production_readiness/execution_log.md`
 
 ### When rebuild is required
 

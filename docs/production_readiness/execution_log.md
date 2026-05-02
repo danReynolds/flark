@@ -958,3 +958,24 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/commands/table_commands_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/commands test/widgets/sovereign/table_editing_test.dart test/widgets/sovereign/table_key_integration_test.dart test/widgets/sovereign/core/structure/table/table_line_parser_test.dart test/widgets/sovereign/table_fuzz_invariants_test.dart test/widgets/sovereign/table_performance_baseline_test.dart --reporter compact`: passed.
   - `./scripts/verify_package_confidence.sh --skip-native`: passed.
+
+### Phase 5 Release Metadata and Gate Hardening
+
+- Added `CHANGELOG.md` with the initial unreleased `0.1.0` standalone package
+  hardening summary.
+- Added `docs/production_readiness/release_checklist_2026-05-02.md` to document
+  the release dry-run command and the remaining owner-decision blockers:
+  license, canonical public repository/issue/documentation URLs, external
+  screenshots, and removal of `publish_to: none`.
+- Added `dart doc --dry-run` to `scripts/verify_release.sh`.
+- Fixed stale package-doc paths in the README and current architecture docs so
+  they point to the standalone `docs/architecture/sovereign/` and
+  `docs/architecture/rfc/` locations.
+- Updated the execution plan: actionable Phase 5 items are complete; remaining
+  release blockers are owner/legal/hosting decisions, not code-health issues.
+- Verification:
+  - `dart doc --dry-run`: passed with 0 warnings and 0 errors.
+  - `./scripts/verify_release.sh`: passed. `flutter pub get` emitted a
+    non-fatal pub.dev advisory decode warning (`advisoriesUpdated must be a
+    String`) for `http`, but dependency resolution completed and the command
+    exited successfully.

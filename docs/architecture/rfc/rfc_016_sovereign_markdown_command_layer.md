@@ -6,7 +6,7 @@ Define a first-class markdown command API inside `sovereign_editor` and move too
 
 Detailed API/module spec:
 
-- `docs/architecture/sovereign_editor_command_interface.md`
+- `docs/architecture/rfc/sovereign_editor_command_interface.md`
 
 This keeps:
 

@@ -43,7 +43,8 @@ how the runtime pipeline works, and what is currently supported.
 
 ## 3) Parsing Profiles + Contracts
 
-Profiles are defined in `docs/architecture/sovereign_markdown_profile_v1.md`:
+Profiles are defined by the public `MarkdownSyntaxProfile` enum in
+`lib/widgets/sovereign/engine/syntax_engine.dart`:
 
 - `commonMarkCore`
 - `commonMarkGfm`
@@ -58,7 +59,7 @@ Key contracts:
 
 For full matrix with evidence and gaps:
 
-- `docs/architecture/sovereign_editor_markdown_support_matrix.md`
+- `docs/architecture/sovereign/sovereign_editor_markdown_support_matrix.md`
 
 Current headline status:
 
@@ -107,7 +108,7 @@ Primary action surface is `SovereignMarkdownCommands` via:
 
 Detailed interface notes:
 
-- `docs/architecture/sovereign_editor_command_interface.md`
+- `docs/architecture/rfc/sovereign_editor_command_interface.md`
 
 ## 7) Validation and Confidence Gates
 
@@ -129,6 +130,8 @@ Native packaging gate:
 ./scripts/verify_native_editor_ci.sh
 ```
 
-Conformance/parity details:
+Conformance/parity and release-readiness details:
 
-- `docs/architecture/rfc/rfc_009_rollout_verification_summary.md`
+- `docs/production_readiness/public_api_inventory_2026-05-01.md`
+- `docs/production_readiness/native_packaging_2026-05-01.md`
+- `docs/production_readiness/execution_log.md`

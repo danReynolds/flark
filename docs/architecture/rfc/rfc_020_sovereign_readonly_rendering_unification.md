@@ -4,9 +4,8 @@
 **Author**: Codex (draft for Dune engineering review)  
 **Date**: 2026-03-16  
 **Related docs**:
-- `docs/architecture/sovereign_markdown_profile_v1.md`
-- `docs/architecture/sovereign_editor_markdown_support_matrix.md`
-- `docs/architecture/rfc/rfc_009_commonmark_native_execution_plan.md`
+- `docs/architecture/sovereign/sovereign_editor_how_it_works.md`
+- `docs/architecture/sovereign/sovereign_editor_markdown_support_matrix.md`
 - `docs/architecture/rfc/rfc_016_sovereign_markdown_command_layer.md`
 
 Implementation update (2026-03-16):

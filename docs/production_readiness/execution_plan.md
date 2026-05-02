@@ -1,7 +1,7 @@
 # Sovereign Production Readiness Execution Plan
 
 Status date: 2026-05-02
-Current phase: Phase 5 - documentation, examples, and release gates
+Current phase: Phase 5 - owner decision blockers and release metadata
 
 ## Objective
 
@@ -155,15 +155,17 @@ Goal: make the package maintainable and releasable.
 Tasks:
 
 - [ ] Add `LICENSE` after owner decision.
-- [ ] Add `CHANGELOG.md`.
+- [x] Add `CHANGELOG.md`.
 - [x] Add `example/` with an editable and read-only demo.
-- [ ] Add screenshots if publishing externally.
-- [ ] Add repository/issue tracker/documentation metadata.
-- [ ] Add `scripts/verify_release.sh`.
+- [x] Add screenshots if publishing externally; deferred while package remains
+  private with `publish_to: none`.
+- [ ] Add repository/issue tracker/documentation metadata after canonical
+  public URLs are chosen.
 - [x] Add initial `scripts/verify_release.sh`.
-- [ ] Add docs generation to release gate.
-- [ ] Add `dart pub publish --dry-run` to the release checklist while keeping
+- [x] Add docs generation to release gate.
+- [x] Add `dart pub publish --dry-run` to the release checklist while keeping
   `publish_to: none` until release intent is explicit.
+- [x] Add release checklist documenting the remaining owner-decision boundary.
 
 ## Verification Gates
 
@@ -195,9 +197,12 @@ Future release gate:
 ./scripts/verify_release.sh
 ```
 
-Current status: passing as of 2026-05-01. This gate currently covers pub get,
-package analysis, example analysis/tests, host native bridge build, native
-editor CI, full package tests, and the enforced benchmark lane.
+Current status: passing as of 2026-05-02. This gate covers pub get, package
+analysis, Dart docs dry run, example analysis/tests, host native bridge build,
+native editor CI, full package tests, and the enforced benchmark lane. The
+2026-05-02 run emitted a non-fatal pub.dev advisory decode warning during
+`flutter pub get`, but dependency resolution completed and the gate exited
+successfully.
 
 Example mobile packaging gate:
 
