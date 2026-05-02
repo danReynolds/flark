@@ -2,6 +2,7 @@ import 'package:sovereign_editor/src/widgets/sovereign/commands/internal/block_c
 import 'package:sovereign_editor/src/widgets/sovereign/commands/internal/fence_commands.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/commands/internal/inline_commands.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/commands/internal/link_commands.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/commands/internal/table_commands.dart';
 
 import '../controllers/sovereign_controller.dart';
 import 'models/sovereign_command_capabilities.dart';
@@ -78,6 +79,37 @@ class SovereignMarkdownCommands {
   /// Inserts a markdown link at the current selection.
   SovereignCommandResult insertLink() =>
       SovereignLinkCommands.insertLink(controller);
+
+  /// Inserts a source-aligned GFM table at the current selection.
+  ///
+  /// [columns] is clamped to at least two columns because the current table
+  /// editing model only supports multi-column GFM tables. [bodyRows] is
+  /// clamped to at least one editable body row.
+  SovereignCommandResult insertTable({
+    int columns = 2,
+    int bodyRows = 1,
+  }) =>
+      SovereignTableCommands.insertTable(
+        controller,
+        columns: columns,
+        bodyRows: bodyRows,
+      );
+
+  /// Inserts an empty table row after the current editable row.
+  SovereignCommandResult insertTableRowBelow() =>
+      SovereignTableCommands.insertTableRowBelow(controller);
+
+  /// Deletes the current table body row.
+  SovereignCommandResult deleteTableRow() =>
+      SovereignTableCommands.deleteTableRow(controller);
+
+  /// Inserts an empty table column to the right of the current cell.
+  SovereignCommandResult insertTableColumnRight() =>
+      SovereignTableCommands.insertTableColumnRight(controller);
+
+  /// Deletes the current table column when at least two columns remain.
+  SovereignCommandResult deleteTableColumn() =>
+      SovereignTableCommands.deleteTableColumn(controller);
 
   /// Returns command enablement and active-style state for the current selection.
   SovereignCommandCapabilities capabilitiesAtSelection() {

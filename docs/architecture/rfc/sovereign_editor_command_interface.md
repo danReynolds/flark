@@ -1,7 +1,7 @@
 # Sovereign Editor Command Interface
 
 **Status**: implemented (source-of-truth API reference)  
-**Status date**: 2026-03-16  
+**Status date**: 2026-05-02
 **Related RFC**: `docs/architecture/rfc/rfc_016_sovereign_markdown_command_layer.md`  
 **Scope**: live markdown edit actions invoked by external consumers (toolbars, menus, shortcuts)
 
@@ -90,6 +90,11 @@ Facade entry points:
 - `insertHorizontalRule(controller)`
 - `insertFence(controller, {language})`
 - `insertLink(controller)`
+- `insertTable(controller, {columns, bodyRows})`
+- `insertTableRowBelow(controller)`
+- `deleteTableRow(controller)`
+- `insertTableColumnRight(controller)`
+- `deleteTableColumn(controller)`
 - `resolveLinkEditContext(controller)`
 - `applyLinkEdit(controller, context, label, url)`
 - `capabilitiesAtSelection(controller)`
@@ -120,6 +125,7 @@ commands/
     block_commands.dart
     link_commands.dart
     fence_commands.dart
+    table_commands.dart
 ```
 
 Rules:
@@ -167,7 +173,17 @@ Rules:
 | `resolveLinkEditContext()` | caret/selection | detect existing link span or insertion point | no mutation | used by UI modals |
 | `applyLinkEdit(context, label, url)` | validated dialog input | replace/insert `[label](url)` | caret moved after link | `Rejected` on invalid URL/text constraints |
 
-### 5.5 State snapshot and transactions
+### 5.5 Table actions
+
+| Action | Inputs | Behavior | Selection contract | Result notes |
+| --- | --- | --- | --- | --- |
+| `insertTable(columns, bodyRows)` | caret or selection | insert source-aligned GFM table scaffold | caret placed in first body cell | clamps to at least two columns and one body row |
+| `insertTableRowBelow()` | caret in established table | insert aligned empty body row below current editable row | caret placed in new row first cell | `NoOp` outside established tables or fenced code |
+| `deleteTableRow()` | caret in body row | delete current body row and realign remaining table | caret moves to adjacent editable row/cell | `NoOp` on header/separator rows |
+| `insertTableColumnRight()` | caret in established table cell | insert aligned empty column to the right | caret placed in inserted cell | preserves separator alignment markers |
+| `deleteTableColumn()` | caret in established table cell | delete current column and realign remaining table | caret moves to nearest remaining cell | `NoOp` when deletion would leave fewer than two columns |
+
+### 5.6 State snapshot and transactions
 
 | Action | Inputs | Behavior | Selection contract | Result notes |
 | --- | --- | --- | --- | --- |
@@ -208,6 +224,8 @@ No command may perform multiple direct `controller.value = ...` writes.
 2. Block handler cannot parse inline wrappers.
 3. Link handler cannot launch modal/dialog.
 4. Fence handler cannot own arrow/enter exit navigation.
+5. Table handler owns source-first GFM row/column transforms, not a separate
+   grid widget model.
 
 ---
 

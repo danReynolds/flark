@@ -1,7 +1,7 @@
 # Sovereign Editor: How It Works
 
-**Status date**: 2026-03-16  
-**Package**: `packages/sovereign_editor`  
+**Status date**: 2026-05-02
+**Package**: `sovereign_editor`
 **Runtime backend**: native `comrak` (macOS/iOS/Android)
 
 This document is the practical implementation overview: what the editor does,
@@ -63,14 +63,16 @@ For full matrix with evidence and gaps:
 Current headline status:
 
 - **Supported**: headings, blockquotes, unordered/ordered lists, task lists,
-  fenced code blocks, inline bold/italic/code, links/autolinks, strikethrough.
+  fenced code blocks, inline bold/italic/code, links/autolinks, strikethrough,
+  thematic breaks, indented code blocks, escapes/entities, reference links, and
+  source-first GFM tables.
 - **Supported with rich live UX**: fence enter/exit/indent/backspace policies,
   quote/list continuation/exit, command-layer toolbar actions, cursor-safety
-  under predictive/authoritative reconciliation.
-- **Partial**: tables (baseline formatting + cell navigation), images
-  (markdown-source-first preview/actions overlay), reference-link definition UX,
-  escapes/entities explicit UI-level coverage, thematic-break polish.
-- **Out of scope**: raw HTML execution/rendering in editor surface.
+  under predictive/authoritative reconciliation, table continuation/navigation,
+  and table row/column commands.
+- **Supported policy**: images stay markdown-source-first with network previews
+  and non-network placeholders; raw HTML is preserved as literal text and never
+  executed or rendered as HTML.
 
 ## 5) Platform Support
 
@@ -93,6 +95,11 @@ Primary action surface is `SovereignMarkdownCommands` via:
 - `controller.commands.insertHorizontalRule()`
 - `controller.commands.insertFence(...)`
 - `controller.commands.insertLink()`
+- `controller.commands.insertTable(...)`
+- `controller.commands.insertTableRowBelow()`
+- `controller.commands.deleteTableRow()`
+- `controller.commands.insertTableColumnRight()`
+- `controller.commands.deleteTableColumn()`
 - `controller.commands.resolveLinkEditContext()`
 - `controller.commands.applyLinkEdit(...)`
 - `controller.commands.capabilitiesAtSelection()`
@@ -107,19 +114,19 @@ Detailed interface notes:
 Primary package gate:
 
 ```bash
-flutter test packages/sovereign_editor
+flutter test
 ```
 
 Fast maintenance gate:
 
 ```bash
-./packages/sovereign_editor/scripts/verify_package_confidence.sh
+./scripts/verify_package_confidence.sh
 ```
 
 Native packaging gate:
 
 ```bash
-./packages/sovereign_editor/scripts/verify_native_editor_ci.sh
+./scripts/verify_native_editor_ci.sh
 ```
 
 Conformance/parity details:

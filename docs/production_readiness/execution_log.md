@@ -939,3 +939,22 @@ append-only unless correcting a factual error.
 - Verification:
   - `flutter test test/widgets/sovereign/image_actions_overlay_test.dart --reporter compact`: passed.
   - `./scripts/verify_package_confidence.sh --skip-native`: passed.
+
+### Phase 4 Feature Completeness: Table Command Operations
+
+- Closed the remaining table gap as a source-first GFM policy instead of adding
+  a separate WYSIWYG grid model: tables remain parser-backed markdown source
+  with monospace/source-aligned rendering.
+- Added command-layer table operations through `SovereignMarkdownCommands`:
+  table insertion, body-row insertion/deletion, and column insertion/deletion.
+- Kept command-oriented source transforms in `TableCommandEditingService` while
+  reusing `TableEditingService` formatting, so Enter continuation, Tab
+  navigation, and toolbar/menu commands share parser-backed table shape rules
+  without re-inflating the keyboard editing service.
+- Updated the support matrix, command API reference, how-it-works overview, and
+  execution plan to mark the Phase 4 table item complete.
+- Verification:
+  - `flutter analyze lib/src/widgets/sovereign/core/structure/table/table_editing_service.dart lib/src/widgets/sovereign/core/structure/table/table_command_editing_service.dart lib/src/widgets/sovereign/commands/internal/table_commands.dart lib/widgets/sovereign/commands/sovereign_markdown_commands.dart test/widgets/sovereign/commands/table_commands_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/commands/table_commands_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/commands test/widgets/sovereign/table_editing_test.dart test/widgets/sovereign/table_key_integration_test.dart test/widgets/sovereign/core/structure/table/table_line_parser_test.dart test/widgets/sovereign/table_fuzz_invariants_test.dart test/widgets/sovereign/table_performance_baseline_test.dart --reporter compact`: passed.
+  - `./scripts/verify_package_confidence.sh --skip-native`: passed.

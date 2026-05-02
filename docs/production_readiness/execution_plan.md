@@ -1,7 +1,7 @@
 # Sovereign Production Readiness Execution Plan
 
 Status date: 2026-05-02
-Current phase: Phase 3 - architecture hardening
+Current phase: Phase 5 - documentation, examples, and release gates
 
 ## Objective
 
@@ -139,7 +139,8 @@ Goal: close known markdown support gaps according to the support matrix.
 
 Tasks:
 
-- [ ] Tables: true structured rendering and richer row/column operations.
+- [x] Tables: source-first GFM rendering, alignment, navigation, and row/column
+  command operations.
 - [x] Images/media: stronger preview and interaction model.
 - [x] Reference links: full rendering/cursor behavior.
 - [x] Thematic breaks: parser-backed classification and interaction tests.

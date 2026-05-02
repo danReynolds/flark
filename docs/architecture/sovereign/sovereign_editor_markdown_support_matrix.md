@@ -31,7 +31,7 @@ read-only surface (`SovereignMarkdownView`) on focused post detail screens
 | Strikethrough (`~~`) | Yes (GFM) | Inline styling | Standard typing | Supported | fixture/parity tests |
 | Escapes / entities | Parser yes | Escaped delimiters and entities stay source-stable; escaped delimiters do not create hidden marker ranges | Standard typing + predictive cursor safety | Supported | parser, scanner, renderer, and predictive cursor-safety regressions |
 | Thematic breaks (`---`, `***`) | Yes | Divider-style glyph rendering + marker hiding | Standard typing + horizontal-rule command | Supported | parser-backed classification, divider rendering, and command interaction covered |
-| Tables (GFM) | Yes (GFM) | Monospace + source-aligned row formatting baseline (parser-backed table blocks) | Enter row continuation + Tab/Shift-Tab cell navigation baseline | Partial | no true grid layout/column metrics UI; row/column ops still pending |
+| Tables (GFM) | Yes (GFM) | Monospace + source-aligned row formatting (parser-backed table blocks) | Enter row continuation, Tab/Shift-Tab cell navigation, and insert/delete row/column commands | Supported policy | source-first aligned tables; no separate WYSIWYG grid widget |
 | Images (`![alt](url)`) | Parser yes | Alt placeholder + remote preview card; non-network targets use source-first placeholder | Open/copy/edit actions + markdown text editing | Supported policy | image overlay, preview, error, and non-network regressions |
 | Reference links/definitions | Parser yes + scanner resolution | Full, collapsed, and shortcut labels styled with wrapper/definition marker hiding | Open/edit/copy actions + standard cursor behavior | Supported | scanner/rendering/overlay/cursor regressions |
 | Raw HTML blocks/inlines | Parser parses | Literal text only; no HTML execution | Text-only policy | Supported policy | `raw_html_policy_2026-05-02.md`; read/editor rendering tests keep tags literal |
@@ -53,7 +53,11 @@ read-only surface (`SovereignMarkdownView`) on focused post detail screens
 ### Priority A (high product value)
 
 1. **Tables (GFM)**  
-   Build true structured rendering (column metrics/alignment independent of source spacing) and richer editing affordances (row/column ops). Baseline source formatting + Tab navigation now exist.
+   Supported policy: parser-backed GFM tables stay source-first and aligned in
+   monospace rendering. Editing supports Enter continuation, Tab/Shift-Tab
+   navigation, table insertion, body-row insertion/deletion, and column
+   insertion/deletion through the command layer. A separate WYSIWYG grid model is
+   intentionally not part of the current package boundary.
 2. **Images / media markdown UX**  
    Supported policy: markdown images stay source-first, remote URLs get preview cards, and non-network media targets keep open/copy/edit actions without pretending to render embedded media.
 3. **Reference links / definitions**  
