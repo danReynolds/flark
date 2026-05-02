@@ -752,3 +752,16 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/core/syntax/projected_select_all_delete_normalizer_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/commands/command_capabilities_and_transaction_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/sovereign_editor_test.dart --reporter compact`: passed.
+
+### Phase 3 Architecture Hardening: Undo/Redo Coordinator
+
+- Moved undo/redo orchestration from `SovereignController` into
+  `core/pipeline/SovereignUndoRedoCoordinator`.
+- Kept restoration state updates controller-owned for this slice, with a narrow
+  controller host delegating between the facade and pipeline coordinator.
+- Verification:
+  - `flutter analyze lib/widgets/sovereign/controllers/sovereign_controller.dart lib/src/widgets/sovereign/controllers/sovereign_undo_redo_host.dart lib/src/widgets/sovereign/core/pipeline/undo_redo_coordinator.dart test/widgets/sovereign/core/pipeline/undo_redo_coordinator_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/core/pipeline/undo_redo_coordinator_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/commands/command_capabilities_and_transaction_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/ime_composition_undo_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/sovereign_editor_test.dart --reporter compact`: passed.

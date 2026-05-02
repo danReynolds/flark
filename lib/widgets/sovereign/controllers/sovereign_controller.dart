@@ -28,6 +28,7 @@ import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/projected_sel
 import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/syntax_projection_coordinator.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/predictive_edit_range_utils.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/pipeline/undo_stack.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/pipeline/undo_redo_coordinator.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/pipeline/value_mutation_coordinator.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/pipeline/undo_grouping_policy.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/pipeline/edit_operation_pipeline.dart';
@@ -64,6 +65,7 @@ part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_input
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_syntax_sync_coordinator.dart';
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_diagnostics.dart';
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_table_tab_intent_host.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_undo_redo_host.dart';
 
 /// Text editing controller for Sovereign markdown documents.
 ///
@@ -94,6 +96,8 @@ class SovereignController extends TextEditingController {
   late final TableTabIntentService _tableTabIntents = TableTabIntentService(
     _ControllerTableTabIntentHost(this),
   );
+  late final SovereignUndoRedoCoordinator _undoRedo =
+      SovereignUndoRedoCoordinator(_ControllerSovereignUndoRedoHost(this));
   static final Logger _logger = Logger('SovereignController');
 
   // --- State ---
@@ -622,57 +626,9 @@ class SovereignController extends TextEditingController {
 
   // --- Undo / Redo ---
 
-  void undo() {
-    // Phase 4: Gate Undo during composition
-    if (value.composing.isValid) return;
-    if (!_undoStack.canUndo) return;
+  void undo() => _undoRedo.undo();
 
-    final ops =
-        _undoStack.popUndo(); // Returns [C, B] (Reverse application order)
-    if (ops.isEmpty) return;
-
-    // We need to apply the INVERSE of these ops.
-    // Op C: A -> B. Inverse: B -> A.
-    // We act on 'value'.
-
-    TextEditingValue accumulator = value;
-
-    for (final op in ops) {
-      // Ideally: accumulator = op.before
-      // But we must chain them carefully if multiple ops.
-      // Since the stack is strict LIFO of state snapshots,
-      // op.before SHOULD match the state of the previous op's after?
-      // Yes, if we track strict state.
-
-      // Verification:
-      // Ops: [C, B]. C.after == current. C.before == B.after.
-      // So to revert C, we set state to C.before.
-      // Then revert B, we set state to B.before.
-      // Final state is B.before.
-
-      accumulator = op.before;
-    }
-
-    _applyRestoration(accumulator);
-
-    // We do NOT push to UndoStack (we just popped!).
-    // We already moved them to Redo stack inside popUndo.
-  }
-
-  void redo() {
-    // Phase 4: Gate Redo during composition
-    if (value.composing.isValid) return;
-    if (!_undoStack.canRedo) return;
-
-    final ops = _undoStack.popRedo(); // Returns [B, C] (Forward order)
-
-    TextEditingValue accumulator = value;
-    for (final op in ops) {
-      accumulator = op.after;
-    }
-
-    _applyRestoration(accumulator);
-  }
+  void redo() => _undoRedo.redo();
 
   /// [Patterns] Unified Restoration Pipeline
   /// Used by Undo/Redo to bypass standard edit ops but strictly enforce
