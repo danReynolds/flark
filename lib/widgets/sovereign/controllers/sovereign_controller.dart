@@ -818,55 +818,25 @@ class SovereignController extends TextEditingController {
 
   /// Returns the storage range for the task marker on [line], if one exists.
   TextRange? taskCheckboxMarkerRangeForLine(int line) {
-    final info = _taskCheckboxLineInfoForLine(line);
+    final info = _structureQueries.taskCheckboxLineInfoForLine(
+      text: value.text,
+      lineIndex: _lineIndex,
+      line: line,
+    );
     if (info == null) return null;
     return TextRange(start: info.taskStart, end: info.contentStart);
   }
 
   /// Returns the visual range used to paint the task marker on [line].
   TextRange? taskCheckboxVisualRangeForLine(int line) {
-    final info = _taskCheckboxLineInfoForLine(line);
+    final info = _structureQueries.taskCheckboxLineInfoForLine(
+      text: value.text,
+      lineIndex: _lineIndex,
+      line: line,
+    );
     if (info == null) return null;
     final start = info.isOrdered ? info.taskStart : info.markerStart;
     return TextRange(start: start, end: info.contentStart);
-  }
-
-  _TaskCheckboxLineInfo? _taskCheckboxLineInfoForLine(int line) {
-    final text = value.text;
-    if (text.isEmpty) return null;
-    if (line < 0 || line >= _lineIndex.lineCount) return null;
-
-    final lineStart = _lineIndex.offsetAtLine(line);
-    final lineEndWithBreak = _structureQueries.lineEndWithBreak(
-      lineIndex: _lineIndex,
-      text: text,
-      line: line,
-    );
-    final lineEnd = _structureQueries.lineContentEnd(
-      text: text,
-      lineStart: lineStart,
-      lineEndWithBreak: lineEndWithBreak,
-    );
-    if (lineEnd <= lineStart) return null;
-
-    final marker = _structureQueries.listMarkerForLineAllowingQuotePrefix(
-      text,
-      lineStart,
-      lineEnd,
-    );
-    if (marker == null) return null;
-    final task = _structureQueries.taskMarkerInfo(
-      text,
-      marker.markerEnd,
-      lineEnd,
-    );
-    if (task == null) return null;
-    return _TaskCheckboxLineInfo(
-      markerStart: marker.markerStart,
-      taskStart: marker.markerEnd,
-      contentStart: task.contentStart,
-      isOrdered: marker.isOrdered,
-    );
   }
 
   /// Applies Arrow Down markdown navigation behavior.
@@ -1079,18 +1049,4 @@ class SovereignController extends TextEditingController {
       authoritativeInlineRuns: _authoritativeInlineRuns,
     );
   }
-}
-
-class _TaskCheckboxLineInfo {
-  final int markerStart;
-  final int taskStart;
-  final int contentStart;
-  final bool isOrdered;
-
-  const _TaskCheckboxLineInfo({
-    required this.markerStart,
-    required this.taskStart,
-    required this.contentStart,
-    required this.isOrdered,
-  });
 }

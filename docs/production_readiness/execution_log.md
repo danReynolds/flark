@@ -714,3 +714,15 @@ append-only unless correcting a factual error.
   structure transforms behind core services.
 - Verification:
   - `./scripts/verify_package_confidence.sh --skip-native`: passed.
+
+### Phase 3 Architecture Hardening: Task Checkbox Query Extraction
+
+- Moved task-checkbox line range analysis out of `SovereignController` and into
+  `MarkdownStructureQueryService` behind a typed `TaskCheckboxLineInfo` model.
+- Kept the controller's public range API as a thin facade over the structure
+  query service.
+- Verification:
+  - `flutter analyze lib/widgets/sovereign/controllers/sovereign_controller.dart lib/src/widgets/sovereign/core/structure/markdown_structure_query_service.dart lib/src/widgets/sovereign/core/structure/models/task_checkbox_line_info.dart test/widgets/sovereign/core/structure/markdown_structure_query_service_test.dart test/widgets/sovereign/list_policy_editing_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/core/structure/markdown_structure_query_service_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/list_policy_editing_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/task_checkbox_interaction_test.dart --reporter compact`: passed.

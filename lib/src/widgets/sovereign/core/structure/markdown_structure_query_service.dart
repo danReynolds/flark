@@ -5,6 +5,7 @@ import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/lis
     as structure;
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/quote_context.dart'
     as structure;
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/task_checkbox_line_info.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/task_marker_info.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/navigation/navigation_line_utils.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/navigation/sovereign_navigation_helpers.dart';
@@ -46,6 +47,44 @@ class MarkdownStructureQueryService {
 
   TaskMarkerInfo? taskMarkerInfo(String text, int markerEnd, int lineEnd) =>
       MarkdownLineHelpers.taskMarkerInfo(text, markerEnd, lineEnd);
+
+  TaskCheckboxLineInfo? taskCheckboxLineInfoForLine({
+    required String text,
+    required LineIndex lineIndex,
+    required int line,
+  }) {
+    if (text.isEmpty) return null;
+    if (line < 0 || line >= lineIndex.lineCount) return null;
+
+    final lineStart = lineIndex.offsetAtLine(line);
+    final lineEndWithBreak = this.lineEndWithBreak(
+      lineIndex: lineIndex,
+      text: text,
+      line: line,
+    );
+    final lineEnd = lineContentEnd(
+      text: text,
+      lineStart: lineStart,
+      lineEndWithBreak: lineEndWithBreak,
+    );
+    if (lineEnd <= lineStart) return null;
+
+    final marker = listMarkerForLineAllowingQuotePrefix(
+      text,
+      lineStart,
+      lineEnd,
+    );
+    if (marker == null) return null;
+    final task = taskMarkerInfo(text, marker.markerEnd, lineEnd);
+    if (task == null) return null;
+
+    return TaskCheckboxLineInfo(
+      markerStart: marker.markerStart,
+      taskStart: marker.markerEnd,
+      contentStart: task.contentStart,
+      isOrdered: marker.isOrdered,
+    );
+  }
 
   structure.ListMarkerContext? editableListMarkerForLine(
     String text,
