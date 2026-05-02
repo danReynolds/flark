@@ -778,3 +778,22 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/table_key_integration_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/table_fuzz_invariants_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/table_performance_baseline_test.dart --reporter compact`: passed.
+
+### Phase 3 Architecture Hardening: Navigation Query Host Boundary
+
+- Moved fence-body caret/range checks into `MarkdownStructureQueryService` with
+  direct focused tests.
+- Removed controller navigation wrappers for fence context, quote context,
+  quote/fence arrow exits, fence Enter exits, fence language lookup, outdent unit
+  lookup, and trailing blank trimming.
+- Updated policy, input-intent, and table-tab hosts to call structure query and
+  navigation services directly through their host boundary.
+- Verification:
+  - `flutter analyze lib/widgets/sovereign/controllers/sovereign_controller.dart lib/src/widgets/sovereign/controllers/sovereign_controller_policies.dart lib/src/widgets/sovereign/controllers/sovereign_input_intent_handler.dart lib/src/widgets/sovereign/controllers/sovereign_table_tab_intent_host.dart lib/src/widgets/sovereign/core/structure/markdown_structure_query_service.dart test/widgets/sovereign/core/structure/markdown_structure_query_service_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/core/structure/markdown_structure_query_service_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/code_fence_exit_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/blockquote_key_integration_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/fence_smart_pairs_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/fence_auto_indent_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/table_editing_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/blockquote_editing_test.dart --reporter compact`: passed.

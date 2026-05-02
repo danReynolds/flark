@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/markdown_structure_query_service.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_geometry_scanner.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/line_index.dart';
 
 void main() {
@@ -73,6 +74,73 @@ void main() {
           line: 2,
         ),
         isNull,
+      );
+    });
+  });
+
+  group('MarkdownStructureQueryService fence body queries', () {
+    const queries = MarkdownStructureQueryService();
+
+    test('identifies carets inside fenced-code body only', () {
+      const text = 'before\n```\ncode\n```\nafter';
+      final lineIndex = LineIndex.fromText(text);
+      final geometry = const SovereignGeometryScanner().scan(text, lineIndex);
+
+      expect(
+        queries.isCaretInFenceBody(
+          text: text,
+          caret: text.indexOf('code'),
+          lineIndex: lineIndex,
+          geometry: geometry,
+        ),
+        isTrue,
+      );
+      expect(
+        queries.isCaretInFenceBody(
+          text: text,
+          caret: text.indexOf('```'),
+          lineIndex: lineIndex,
+          geometry: geometry,
+        ),
+        isFalse,
+      );
+      expect(
+        queries.isCaretInFenceBody(
+          text: text,
+          caret: text.lastIndexOf('```'),
+          lineIndex: lineIndex,
+          geometry: geometry,
+        ),
+        isFalse,
+      );
+    });
+
+    test('requires ranges to stay within one fenced-code body', () {
+      const text = '```\none\n```\ntext\n```\ntwo\n```';
+      final lineIndex = LineIndex.fromText(text);
+      final geometry = const SovereignGeometryScanner().scan(text, lineIndex);
+      final oneStart = text.indexOf('one');
+      final twoStart = text.indexOf('two');
+
+      expect(
+        queries.isRangeInFenceBody(
+          text: text,
+          start: oneStart,
+          end: oneStart + 3,
+          lineIndex: lineIndex,
+          geometry: geometry,
+        ),
+        isTrue,
+      );
+      expect(
+        queries.isRangeInFenceBody(
+          text: text,
+          start: oneStart,
+          end: twoStart + 3,
+          lineIndex: lineIndex,
+          geometry: geometry,
+        ),
+        isFalse,
       );
     });
   });

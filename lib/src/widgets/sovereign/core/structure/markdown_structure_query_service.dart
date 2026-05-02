@@ -127,6 +127,79 @@ class MarkdownStructureQueryService {
         includeUnclosedEof: includeUnclosedEof,
       );
 
+  bool isCaretInFenceBody({
+    required String text,
+    required int caret,
+    required LineIndex lineIndex,
+    required GeometryModel geometry,
+  }) {
+    if (caret < 0 || caret > text.length) return false;
+    final context = fenceContextForCaret(
+      text: text,
+      caret: caret,
+      lineIndex: lineIndex,
+      geometry: geometry,
+      includeUnclosedEof: true,
+    );
+    if (context == null) return false;
+    final line = lineIndex.lineAtOffset(caret.clamp(0, text.length));
+    if (line <= context.openLine) return false;
+    if (context.closeLine != null && line >= context.closeLine!) return false;
+    return true;
+  }
+
+  bool isRangeInFenceBody({
+    required String text,
+    required int start,
+    required int end,
+    required LineIndex lineIndex,
+    required GeometryModel geometry,
+  }) {
+    if (start < 0 || end < start || end > text.length) return false;
+    if (start == end) {
+      return isCaretInFenceBody(
+        text: text,
+        caret: start,
+        lineIndex: lineIndex,
+        geometry: geometry,
+      );
+    }
+
+    final startContext = fenceContextForCaret(
+      text: text,
+      caret: start,
+      lineIndex: lineIndex,
+      geometry: geometry,
+      includeUnclosedEof: true,
+    );
+    final endContext = fenceContextForCaret(
+      text: text,
+      caret: end - 1,
+      lineIndex: lineIndex,
+      geometry: geometry,
+      includeUnclosedEof: true,
+    );
+    if (startContext == null || endContext == null) return false;
+
+    if (startContext.block.startOffset != endContext.block.startOffset ||
+        startContext.block.endOffset != endContext.block.endOffset) {
+      return false;
+    }
+
+    return isCaretInFenceBody(
+          text: text,
+          caret: start,
+          lineIndex: lineIndex,
+          geometry: geometry,
+        ) &&
+        isCaretInFenceBody(
+          text: text,
+          caret: end - 1,
+          lineIndex: lineIndex,
+          geometry: geometry,
+        );
+  }
+
   structure.QuoteContext? quoteContextForLine({
     required String text,
     required int line,

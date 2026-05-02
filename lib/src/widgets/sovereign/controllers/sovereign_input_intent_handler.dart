@@ -25,7 +25,12 @@ class _ControllerSovereignInputIntentHost implements SovereignInputIntentHost {
 
   @override
   bool isCaretInFenceBody(String text, int caret) =>
-      _c._isCaretInFenceBody(text, caret);
+      _c._structureQueries.isCaretInFenceBody(
+        text: text,
+        caret: caret,
+        lineIndex: _c._lineIndex,
+        geometry: _c._geometry,
+      );
 
   @override
   bool tryHandleIndentedCodeBlockEnter(String text, int caret) =>
@@ -47,9 +52,11 @@ class _ControllerSovereignInputIntentHost implements SovereignInputIntentHost {
     int caret, {
     required bool includeUnclosedEof,
   }) =>
-      _c._fenceContextForCaret(
-        text,
-        caret,
+      _c._structureQueries.fenceContextForCaret(
+        text: text,
+        caret: caret,
+        lineIndex: _c._lineIndex,
+        geometry: _c._geometry,
         includeUnclosedEof: includeUnclosedEof,
       );
 
@@ -60,11 +67,12 @@ class _ControllerSovereignInputIntentHost implements SovereignInputIntentHost {
     required int line,
     required String currentIndent,
   }) =>
-      _c._preferredOutdentUnitForLine(
+      _c._navigationHelpers.preferredOutdentUnitForLine(
         text: text,
         block: block,
         line: line,
         currentIndent: currentIndent,
+        lineIndex: _c._lineIndex,
       );
 
   @override
@@ -89,7 +97,12 @@ class _ControllerSovereignInputIntentHost implements SovereignInputIntentHost {
 
   @override
   structure.QuoteContext? quoteContextForLine(String text, int line) =>
-      _c._quoteContextForLine(text, line);
+      _c._structureQueries.quoteContextForLine(
+        text: text,
+        line: line,
+        lineIndex: _c._lineIndex,
+        geometry: _c._geometry,
+      );
 
   @override
   bool shouldExitFenceOnArrowDown({
@@ -98,11 +111,12 @@ class _ControllerSovereignInputIntentHost implements SovereignInputIntentHost {
     required int fromLine,
     required int toLine,
   }) =>
-      _c._shouldExitFenceOnArrowDown(
+      _c._navigationHelpers.shouldExitFenceOnArrowDown(
         text: text,
         context: context,
         fromLine: fromLine,
         toLine: toLine,
+        lineIndex: _c._lineIndex,
       );
 
   @override
@@ -112,11 +126,13 @@ class _ControllerSovereignInputIntentHost implements SovereignInputIntentHost {
     required int fromLine,
     required int toLine,
   }) =>
-      _c._shouldExitBlockquoteOnArrowDown(
+      _c._navigationHelpers.shouldExitBlockquoteOnArrowDown(
         text: text,
         context: context,
         fromLine: fromLine,
         toLine: toLine,
+        lineIndex: _c._lineIndex,
+        geometry: _c._geometry,
       );
 
   @override
@@ -126,11 +142,12 @@ class _ControllerSovereignInputIntentHost implements SovereignInputIntentHost {
     required int fromLine,
     required int toLine,
   }) =>
-      _c._shouldExitFenceOnArrowUp(
+      _c._navigationHelpers.shouldExitFenceOnArrowUp(
         text: text,
         context: context,
         fromLine: fromLine,
         toLine: toLine,
+        lineIndex: _c._lineIndex,
       );
 
   @override
@@ -140,11 +157,13 @@ class _ControllerSovereignInputIntentHost implements SovereignInputIntentHost {
     required int fromLine,
     required int toLine,
   }) =>
-      _c._shouldExitBlockquoteOnArrowUp(
+      _c._navigationHelpers.shouldExitBlockquoteOnArrowUp(
         text: text,
         context: context,
         fromLine: fromLine,
         toLine: toLine,
+        lineIndex: _c._lineIndex,
+        geometry: _c._geometry,
       );
 
   @override
@@ -172,7 +191,12 @@ class _ControllerSovereignInputIntentHost implements SovereignInputIntentHost {
     required int caret,
     required structure.FenceContext context,
   }) =>
-      _c._computeFenceExitOnEnter(text: text, caret: caret, context: context);
+      _c._navigationHelpers.computeFenceExitOnEnter(
+        text: text,
+        caret: caret,
+        context: context,
+        lineIndex: _c._lineIndex,
+      );
 
   @override
   int trailingBlankTrimStart(
@@ -180,7 +204,12 @@ class _ControllerSovereignInputIntentHost implements SovereignInputIntentHost {
     int openLine,
     int closeLineExclusive,
   ) =>
-      _c._trailingBlankTrimStart(text, openLine, closeLineExclusive);
+      _c._navigationHelpers.trailingBlankTrimStart(
+        text: text,
+        openLine: openLine,
+        closeLineExclusive: closeLineExclusive,
+        lineIndex: _c._lineIndex,
+      );
 
   @override
   bool isWhitespaceLine(String text, int start, int end) =>
@@ -192,5 +221,5 @@ class _ControllerSovereignInputIntentHost implements SovereignInputIntentHost {
 
   @override
   bool isUnclosedFenceAtEof(String text, MeasuredBlock block) =>
-      _c._isUnclosedFenceAtEof(text, block);
+      _c._structureQueries.isUnclosedFenceAtEof(text: text, block: block);
 }

@@ -23,7 +23,14 @@ class _ControllerTableTabIntentHost implements TableTabIntentHost {
 
   @override
   bool isCaretInsideFence(String text, int caret) =>
-      _c._fenceContextForCaret(text, caret, includeUnclosedEof: true) != null;
+      _c._structureQueries.fenceContextForCaret(
+        text: text,
+        caret: caret,
+        lineIndex: _c._lineIndex,
+        geometry: _c._geometry,
+        includeUnclosedEof: true,
+      ) !=
+      null;
 
   @override
   ParsedTableLine? parseTableLineAt(String text, int line) =>

@@ -79,6 +79,7 @@ class _PolicyHelpers {
   const _PolicyHelpers(this._controller);
 
   LineIndex get lineIndex => _controller._lineIndex;
+  GeometryModel get geometry => _controller._geometry;
 
   TextEditingValue maybeExitFencedCodeOnArrowUp(
     TextEditingValue oldValue,
@@ -89,7 +90,7 @@ class _PolicyHelpers {
         newValue: newValue,
         lineIndex: lineIndex,
         fenceContextForCaret: fenceContextForCaret,
-        shouldExitFenceOnArrowUp: _controller._shouldExitFenceOnArrowUp,
+        shouldExitFenceOnArrowUp: shouldExitFenceOnArrowUp,
       );
 
   TextEditingValue maybeExitFencedCodeOnArrowDown(
@@ -101,8 +102,8 @@ class _PolicyHelpers {
         newValue: newValue,
         lineIndex: lineIndex,
         fenceContextForCaret: fenceContextForCaret,
-        shouldExitFenceOnArrowDown: _controller._shouldExitFenceOnArrowDown,
-        trailingBlankTrimStart: _controller._trailingBlankTrimStart,
+        shouldExitFenceOnArrowDown: shouldExitFenceOnArrowDown,
+        trailingBlankTrimStart: trailingBlankTrimStart,
       );
 
   TextEditingValue maybeExitFencedCodeOnEnter(
@@ -117,7 +118,7 @@ class _PolicyHelpers {
         suppressFenceExitOnEnter:
             _controller._suppressFenceExitOnEnterDepth > 0,
         fenceContextForCaret: fenceContextForCaret,
-        computeFenceExitOnEnter: _controller._computeFenceExitOnEnter,
+        computeFenceExitOnEnter: computeFenceExitOnEnter,
       );
 
   TextEditingValue maybeContinueOutsideClosingFenceEof(
@@ -138,7 +139,7 @@ class _PolicyHelpers {
         newValue: newValue,
         lineIndex: lineIndex,
         skipNormalization: _controller._undoBoundaryDepth > 0,
-        isRangeInFenceBody: _controller._isRangeInFenceBody,
+        isRangeInFenceBody: isRangeInFenceBody,
       );
 
   TextEditingValue maybeKeepClosingFenceOnOwnLine(
@@ -160,7 +161,7 @@ class _PolicyHelpers {
         newValue: newValue,
         enterCaret: enterCaret,
         lineIndex: lineIndex,
-        isCaretInFenceBody: _controller._isCaretInFenceBody,
+        isCaretInFenceBody: isCaretInFenceBody,
       );
 
   TextEditingValue maybeAutoIndentFencedCodeOnEnter(
@@ -174,7 +175,7 @@ class _PolicyHelpers {
         enterCaret: enterCaret,
         lineIndex: lineIndex,
         fenceContextForCaret: fenceContextForCaret,
-        fenceLanguageForBlock: _controller._fenceLanguageForBlock,
+        fenceLanguageForBlock: fenceLanguageForBlock,
       );
 
   TextEditingValue maybeWrapFencedSelectionOnOpenerInsert(
@@ -184,7 +185,7 @@ class _PolicyHelpers {
       _controller._structureTransforms.maybeWrapFencedSelectionOnOpenerInsert(
         oldValue: oldValue,
         newValue: newValue,
-        isRangeInFenceBody: _controller._isRangeInFenceBody,
+        isRangeInFenceBody: isRangeInFenceBody,
       );
 
   TextEditingValue maybeAutoPairFencedOpenerInsert(
@@ -194,7 +195,7 @@ class _PolicyHelpers {
       _controller._structureTransforms.maybeAutoPairFencedOpenerInsert(
         oldValue: oldValue,
         newValue: newValue,
-        isCaretInFenceBody: _controller._isCaretInFenceBody,
+        isCaretInFenceBody: isCaretInFenceBody,
       );
 
   TextEditingValue maybeSkipFencedCloserInsert(
@@ -204,7 +205,7 @@ class _PolicyHelpers {
       _controller._structureTransforms.maybeSkipFencedCloserInsert(
         oldValue: oldValue,
         newValue: newValue,
-        isCaretInFenceBody: _controller._isCaretInFenceBody,
+        isCaretInFenceBody: isCaretInFenceBody,
       );
 
   TextEditingValue maybeOutdentFencedCodeOnCloserInsert(
@@ -216,7 +217,7 @@ class _PolicyHelpers {
         newValue: newValue,
         lineIndex: lineIndex,
         fenceContextForCaret: fenceContextForCaret,
-        preferredOutdentUnitForLine: _controller._preferredOutdentUnitForLine,
+        preferredOutdentUnitForLine: preferredOutdentUnitForLine,
       );
 
   TextEditingValue maybeDeleteFencedPairOnBackspace(
@@ -278,14 +279,38 @@ class _PolicyHelpers {
     int caret, {
     required bool includeUnclosedEof,
   }) =>
-      _controller._fenceContextForCaret(
-        text,
-        caret,
+      _controller._structureQueries.fenceContextForCaret(
+        text: text,
+        caret: caret,
+        lineIndex: lineIndex,
+        geometry: geometry,
         includeUnclosedEof: includeUnclosedEof,
       );
 
   structure.QuoteContext? quoteContextForLine(String text, int line) =>
-      _controller._quoteContextForLine(text, line);
+      _controller._structureQueries.quoteContextForLine(
+        text: text,
+        line: line,
+        lineIndex: lineIndex,
+        geometry: geometry,
+      );
+
+  bool isCaretInFenceBody(String text, int caret) =>
+      _controller._structureQueries.isCaretInFenceBody(
+        text: text,
+        caret: caret,
+        lineIndex: lineIndex,
+        geometry: geometry,
+      );
+
+  bool isRangeInFenceBody(String text, int start, int end) =>
+      _controller._structureQueries.isRangeInFenceBody(
+        text: text,
+        start: start,
+        end: end,
+        lineIndex: lineIndex,
+        geometry: geometry,
+      );
 
   TextEditingValue maybeExitEmptyAtxHeadingOnEnter(
     TextEditingValue oldValue,
@@ -401,7 +426,39 @@ class _PolicyHelpers {
       NavigationLineUtils.lineContentEnd(text, lineStart, lineEndWithBreak);
 
   bool isQuoteLineBodyBlank(String text, int line) =>
-      _controller._isQuoteLineBodyBlank(text, line);
+      _controller._structureQueries.isQuoteLineBodyBlank(
+        text: text,
+        line: line,
+        lineIndex: lineIndex,
+      );
+
+  bool shouldExitFenceOnArrowDown({
+    required String text,
+    required structure.FenceContext context,
+    required int fromLine,
+    required int toLine,
+  }) =>
+      _controller._navigationHelpers.shouldExitFenceOnArrowDown(
+        text: text,
+        context: context,
+        fromLine: fromLine,
+        toLine: toLine,
+        lineIndex: lineIndex,
+      );
+
+  bool shouldExitFenceOnArrowUp({
+    required String text,
+    required structure.FenceContext context,
+    required int fromLine,
+    required int toLine,
+  }) =>
+      _controller._navigationHelpers.shouldExitFenceOnArrowUp(
+        text: text,
+        context: context,
+        fromLine: fromLine,
+        toLine: toLine,
+        lineIndex: lineIndex,
+      );
 
   bool shouldExitBlockquoteOnArrowDown({
     required String text,
@@ -409,11 +466,13 @@ class _PolicyHelpers {
     required int fromLine,
     required int toLine,
   }) =>
-      _controller._shouldExitBlockquoteOnArrowDown(
+      _controller._navigationHelpers.shouldExitBlockquoteOnArrowDown(
         text: text,
         context: context,
         fromLine: fromLine,
         toLine: toLine,
+        lineIndex: lineIndex,
+        geometry: geometry,
       );
 
   bool shouldExitBlockquoteOnArrowUp({
@@ -422,11 +481,57 @@ class _PolicyHelpers {
     required int fromLine,
     required int toLine,
   }) =>
-      _controller._shouldExitBlockquoteOnArrowUp(
+      _controller._navigationHelpers.shouldExitBlockquoteOnArrowUp(
         text: text,
         context: context,
         fromLine: fromLine,
         toLine: toLine,
+        lineIndex: lineIndex,
+        geometry: geometry,
+      );
+
+  FenceEnterExitResult? computeFenceExitOnEnter({
+    required String text,
+    required int caret,
+    required structure.FenceContext context,
+  }) =>
+      _controller._navigationHelpers.computeFenceExitOnEnter(
+        text: text,
+        caret: caret,
+        context: context,
+        lineIndex: lineIndex,
+      );
+
+  String? fenceLanguageForBlock(String text, int blockStartOffset) =>
+      _controller._structureQueries.fenceLanguageForBlock(
+        text: text,
+        blockStartOffset: blockStartOffset,
+      );
+
+  String preferredOutdentUnitForLine({
+    required String text,
+    required MeasuredBlock block,
+    required int line,
+    required String currentIndent,
+  }) =>
+      _controller._navigationHelpers.preferredOutdentUnitForLine(
+        text: text,
+        block: block,
+        line: line,
+        currentIndent: currentIndent,
+        lineIndex: lineIndex,
+      );
+
+  int trailingBlankTrimStart(
+    String text,
+    int openLine,
+    int closeLineExclusive,
+  ) =>
+      _controller._navigationHelpers.trailingBlankTrimStart(
+        text: text,
+        openLine: openLine,
+        closeLineExclusive: closeLineExclusive,
+        lineIndex: lineIndex,
       );
 }
 
