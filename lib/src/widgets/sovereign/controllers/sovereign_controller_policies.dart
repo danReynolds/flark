@@ -238,6 +238,15 @@ class _PolicyHelpers {
         newValue,
       );
 
+  TextEditingValue maybeOutdentIndentedCodeOnBackspace(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) =>
+      _controller._inputIntents.maybeOutdentIndentedCodeOnBackspace(
+        oldValue,
+        newValue,
+      );
+
   TextEditingValue maybeCollapseEmptyFenceOnBackspace(
     TextEditingValue oldValue,
     TextEditingValue newValue,
@@ -542,5 +551,6 @@ final List<_EditTransformRule> _kEditTransformRules = <_EditTransformRule>[
   ..._HeadingPolicy.rules,
   ..._TablePolicy.rules,
   ..._InlinePolicy.rules,
+  ..._IndentedCodePolicy.rules,
   ..._ListPolicy.rules,
 ]..sort((a, b) => a.priority.compareTo(b.priority));

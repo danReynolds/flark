@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/fence/fence_editing_utils.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/markdown_line_helpers.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/fence_context.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/navigation/navigation_line_utils.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/projection_range_utils.dart';
@@ -288,6 +289,70 @@ class SovereignBackspaceIntentHandler {
     );
   }
 
+  TextEditingValue maybeOutdentIndentedCodeOnBackspace(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (oldValue.composing.isValid || newValue.composing.isValid) {
+      return newValue;
+    }
+
+    final oldSel = oldValue.selection;
+    if (!oldSel.isValid || !oldSel.isCollapsed) return newValue;
+
+    final oldText = oldValue.text;
+    final newText = newValue.text;
+    final caret = oldSel.baseOffset;
+    if (caret <= 0 || caret > oldText.length) return newValue;
+    if (newText.length != oldText.length - 1) return newValue;
+
+    final deletedOffset = caret - 1;
+    if (deletedOffset < 0 || deletedOffset > newText.length) return newValue;
+    if (!newText.startsWith(oldText.substring(0, deletedOffset))) {
+      return newValue;
+    }
+    if (newText.substring(deletedOffset) != oldText.substring(caret)) {
+      return newValue;
+    }
+
+    final line = _host.lineIndex.lineAtOffset(caret);
+    if (line < 0 || line >= _host.lineIndex.lineCount) return newValue;
+    final lineStart = _host.lineIndex.offsetAtLine(line);
+    if (lineStart < 0 || lineStart > caret) return newValue;
+    if (_isLineInsideFencedGeometry(lineStart)) return newValue;
+
+    final lineEndWithBreak = FencedCodeScanner.endOfLine(oldText, lineStart);
+    final lineEnd = NavigationLineUtils.lineContentEnd(
+      oldText,
+      lineStart,
+      lineEndWithBreak,
+    );
+    final lineText = oldText.substring(lineStart, lineEnd);
+    final leading = NavigationLineUtils.leadingWhitespacePrefix(lineText);
+    if (!_looksLikeCodeIndent(leading)) return newValue;
+
+    final leadingEnd = lineStart + leading.length;
+    if (caret != leadingEnd) return newValue;
+    if (deletedOffset < lineStart || deletedOffset >= leadingEnd) {
+      return newValue;
+    }
+    if (_lineStartsWithListMarkerAfterIndent(oldText, leadingEnd, lineEnd)) {
+      return newValue;
+    }
+
+    final reduced = _removeOneCodeIndentUnit(leading);
+    if (reduced == leading) return newValue;
+
+    final adjustedText = oldText.replaceRange(lineStart, leadingEnd, reduced);
+    final adjustedCaret =
+        (lineStart + reduced.length).clamp(0, adjustedText.length).toInt();
+    return newValue.copyWith(
+      text: adjustedText,
+      selection: TextSelection.collapsed(offset: adjustedCaret),
+      composing: TextRange.empty,
+    );
+  }
+
   TextEditingValue maybeProtectHiddenFenceBackspace(
     TextEditingValue oldValue,
     TextEditingValue newValue,
@@ -354,6 +419,55 @@ class SovereignBackspaceIntentHandler {
       selection: TextSelection.collapsed(offset: target),
       composing: TextRange.empty,
     );
+  }
+
+  bool _isLineInsideFencedGeometry(int lineStartOffset) {
+    for (final block in _host.geometry.codeBlocks) {
+      if (lineStartOffset >= block.startOffset &&
+          lineStartOffset < block.endOffset) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _looksLikeCodeIndent(String indent) {
+    if (indent.isEmpty) return false;
+    if (indent.codeUnitAt(0) == 9) return true;
+    return indent.length >= 4;
+  }
+
+  bool _lineStartsWithListMarkerAfterIndent(
+    String text,
+    int contentStart,
+    int lineEnd,
+  ) {
+    if (contentStart < 0 || lineEnd > text.length || contentStart >= lineEnd) {
+      return false;
+    }
+    return MarkdownLineHelpers.listMarkerForLineAllowingQuotePrefix(
+          text,
+          contentStart,
+          lineEnd,
+        ) !=
+        null;
+  }
+
+  String _removeOneCodeIndentUnit(String indent) {
+    if (indent.isEmpty) return indent;
+    if (indent.codeUnitAt(indent.length - 1) == 9) {
+      return indent.substring(0, indent.length - 1);
+    }
+
+    var trailingSpaces = 0;
+    var cursor = indent.length - 1;
+    while (cursor >= 0 && indent.codeUnitAt(cursor) == 32) {
+      trailingSpaces++;
+      cursor--;
+    }
+    if (trailingSpaces == 0) return indent;
+    final remove = trailingSpaces >= 4 ? 4 : trailingSpaces;
+    return indent.substring(0, indent.length - remove);
   }
 
   TextEditingValue maybeCollapseEmptyFenceOnBackspace(

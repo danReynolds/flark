@@ -60,6 +60,7 @@ part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_contr
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_list.dart';
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_table.dart';
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_heading.dart';
+part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_indented_code.dart';
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_value_mutation_coordinator.dart';
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_input_intent_handler.dart';
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_syntax_sync_coordinator.dart';

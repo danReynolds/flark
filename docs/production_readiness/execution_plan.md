@@ -143,7 +143,7 @@ Tasks:
 - [ ] Images/media: stronger preview and interaction model.
 - [ ] Reference links: full rendering/cursor behavior.
 - [x] Thematic breaks: parser-backed classification and interaction tests.
-- [ ] Indented code: continuation/exit/backspace parity where useful.
+- [x] Indented code: continuation/exit/backspace parity where useful.
 - [ ] Escapes/entities: focused rendering and cursor-safety coverage.
 - [ ] Raw HTML: final text-only/sanitization policy.
 

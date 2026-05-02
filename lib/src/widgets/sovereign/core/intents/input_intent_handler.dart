@@ -195,6 +195,12 @@ class SovereignInputIntentHandler {
   ) =>
       _backspaceHandler.maybeOutdentFencedCodeOnBackspace(oldValue, newValue);
 
+  TextEditingValue maybeOutdentIndentedCodeOnBackspace(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) =>
+      _backspaceHandler.maybeOutdentIndentedCodeOnBackspace(oldValue, newValue);
+
   TextEditingValue maybeCollapseEmptyFenceOnBackspace(
     TextEditingValue oldValue,
     TextEditingValue newValue,

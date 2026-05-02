@@ -63,6 +63,26 @@ class IndentedCodeEnterService {
             ));
     if (!hasCodeContext) return false;
 
+    final isBlankIndentedLine = caret == lineEnd && lineText.trim().isEmpty;
+    if (isBlankIndentedLine &&
+        line > 0 &&
+        _lineLooksLikeIndentedCodeAt(
+          text: text,
+          line: line - 1,
+          lineIndex: lineIndex,
+          geometry: geometry,
+        )) {
+      final newText = text.replaceRange(lineStart, caret, '\n');
+      commitProgrammaticTextEdit(
+        value.copyWith(
+          text: newText,
+          selection: TextSelection.collapsed(offset: lineStart + 1),
+          composing: TextRange.empty,
+        ),
+      );
+      return true;
+    }
+
     final newText = text.replaceRange(caret, caret, '\n$indent');
     commitProgrammaticTextEdit(
       value.copyWith(

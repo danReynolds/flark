@@ -865,3 +865,21 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/commands/command_capabilities_and_transaction_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/engine/commonmark_syntax_engine_adapter_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/block_markdown_rendering_test.dart --reporter compact`: passed.
+
+### Phase 4 Feature Completeness: Indented Code Editing
+
+- Extended indented code handling beyond baseline Enter continuation:
+  - Enter on a blank indented continuation line now exits the code block by
+    removing the carried indent.
+  - Backspace at the code indentation boundary now removes one code indent unit
+    for 4-space and tab indents.
+  - Tab-indented list lines remain list-owned and do not route through indented
+    code outdent behavior.
+- Added a dedicated indented-code backspace policy after fenced-code backspace
+  handling so fenced code keeps its stronger context-specific rules.
+- Updated the support matrix from partial to supported for indented code blocks.
+- Verification:
+  - `flutter analyze lib/widgets/sovereign/controllers/sovereign_controller.dart lib/src/widgets/sovereign/controllers/sovereign_controller_policies.dart lib/src/widgets/sovereign/controllers/sovereign_controller_policies_indented_code.dart lib/src/widgets/sovereign/core/intents/input_intent_handler.dart lib/src/widgets/sovereign/core/intents/input_intent_backspace_handler.dart lib/src/widgets/sovereign/core/structure/indented_code/indented_code_enter_service.dart test/widgets/sovereign/indented_code_editing_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/indented_code_editing_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/fence_auto_indent_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/list_key_integration_test.dart --reporter compact`: passed.

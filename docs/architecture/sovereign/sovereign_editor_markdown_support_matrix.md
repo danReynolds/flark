@@ -25,7 +25,7 @@ read-only surface (`SovereignMarkdownView`) on focused post detail screens
 | GFM task lists (`- [ ]`, `- [x]`) | Yes (GFM) | Checkbox marker hidden + checked styling | List flows + interactive checkbox tap toggle | Supported | `block_markdown_rendering_test.dart`, `list_policy_editing_test.dart`, `task_checkbox_interaction_test.dart` |
 | Fenced code blocks (``` / ~~~) | Yes | Fence markers hidden; exclusion ranges; code styling | Strong UX: auto-open/close, exits, backspace rules, indent/tab/paste | Supported | many `fence_*` tests, `native_live_editing_regression_test.dart` |
 | Fence language info string | Yes | Hidden for recognized tags; dropdown + highlighting integration | Picker changes info tag | Supported (curated) | `code_fence_language_picker*_test.dart`, `fence_info_string_*_test.dart` |
-| Indented code blocks | Yes | Exclusion range behavior | Enter carries indentation on indented code lines (baseline) | Partial | baseline auto-indent added; no full continuation/exit/backspace suite yet |
+| Indented code blocks | Yes | Exclusion range behavior | Enter continuation/exit + Backspace indent-unit outdent | Supported | continuation, blank-line exit, space/tab outdent, and list/fence regressions covered |
 | Inline bold / italic / code | Yes | Markers hidden + inline styling | Toolbar insertion + backspace re-entry | Supported | `predictive_inline_markers_test.dart`, `toolbar_markdown_insert_test.dart`, create-post toolbar tests |
 | Links / autolinks | Yes (GFM autolinks in GFM lane) | Inline link styling + actions overlay | Typing + boundary-exit policy + link edit/open/copy actions | Supported | fixture/parity tests + `link_policy_editing_test.dart` + `link_actions_overlay_test.dart` |
 | Strikethrough (`~~`) | Yes (GFM) | Inline styling | Standard typing | Supported | fixture/parity tests |
@@ -64,7 +64,7 @@ read-only surface (`SovereignMarkdownView`) on focused post detail screens
 4. **Thematic break visual treatment**  
    Supported: parser-backed classification, divider rendering, and horizontal-rule command interaction are covered.
 5. **Indented code block editing niceties**  
-   Extend baseline enter auto-indent into continuation/exit/backspace parity similar to fenced code where needed.
+   Supported: Enter continuation/exit and Backspace indent-unit outdent are covered for space and tab indents.
 6. **Explicit coverage for escapes/entities and nested combinations**  
    Add focused rendering and cursor-safety regressions for tricky combinations.
 
