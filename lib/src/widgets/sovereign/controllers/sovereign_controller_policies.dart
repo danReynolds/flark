@@ -139,7 +139,10 @@ class _PolicyHelpers {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) =>
-      _controller._maybeKeepClosingFenceOnOwnLine(oldValue, newValue);
+      _controller._structureTransforms.maybeKeepClosingFenceOnOwnLine(
+        oldValue: oldValue,
+        newValue: newValue,
+      );
 
   TextEditingValue maybeExpandFencedPairOnEnter(
     TextEditingValue oldValue,
