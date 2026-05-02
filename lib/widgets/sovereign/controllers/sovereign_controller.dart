@@ -24,6 +24,7 @@ import 'package:sovereign_editor/src/widgets/sovereign/core/state/editor_session
 import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/selection_projection_guard.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/selection_mask_utils.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/projection_range_utils.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/projected_select_all_delete_normalizer.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/syntax_projection_coordinator.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/predictive_edit_range_utils.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/pipeline/undo_stack.dart';
@@ -343,52 +344,6 @@ class SovereignController extends TextEditingController {
         textLength: textLength,
         fallbackHiddenRanges: fallbackHiddenRanges,
       );
-
-  TextEditingValue _normalizeProjectedSelectAllDelete(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    if (oldValue.composing.isValid || newValue.composing.isValid) {
-      return newValue;
-    }
-
-    final oldSel = oldValue.selection;
-    final newSel = newValue.selection;
-    if (!oldSel.isValid || !newSel.isValid || oldSel.isCollapsed) {
-      return newValue;
-    }
-    if (!newSel.isCollapsed || newSel.baseOffset != 0) return newValue;
-    if (oldSel.start != 0) return newValue;
-
-    final oldText = oldValue.text;
-    final newText = newValue.text;
-    if (oldText.isEmpty || oldSel.end <= 0 || oldSel.end >= oldText.length) {
-      return newValue;
-    }
-
-    final expectedDelete = oldText.replaceRange(oldSel.start, oldSel.end, '');
-    if (newText != expectedDelete) return newValue;
-
-    final hidden = ProjectionRangeUtils.normalizeHiddenRanges(
-      _projectedHiddenRanges,
-      oldText.length,
-    );
-    if (hidden.isEmpty) return newValue;
-    var hiddenLen = 0;
-    for (final range in hidden) {
-      hiddenLen += range.end - range.start;
-    }
-    final projectedVisibleLength = oldText.length - hiddenLen;
-    if (projectedVisibleLength <= 0 || oldSel.end != projectedVisibleLength) {
-      return newValue;
-    }
-
-    return const TextEditingValue(
-      text: '',
-      selection: TextSelection.collapsed(offset: 0),
-      composing: TextRange.empty,
-    );
-  }
 
   TextEditingValue _applyEditTransformPipeline(
     TextEditingValue oldValue,

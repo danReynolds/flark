@@ -36,7 +36,11 @@ class _ControllerSovereignValueMutationHost
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) =>
-      _controller._normalizeProjectedSelectAllDelete(oldValue, newValue);
+      ProjectedSelectAllDeleteNormalizer.normalize(
+        oldValue: oldValue,
+        newValue: newValue,
+        projectedHiddenRanges: _controller._projectedHiddenRanges,
+      );
 
   @override
   TextSelection clampSelectionToText(TextSelection selection, int textLength) {

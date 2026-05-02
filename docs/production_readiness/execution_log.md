@@ -740,3 +740,15 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/ime_composition_undo_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/fence_undo_grouping_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/sovereign_editor_test.dart --reporter compact`: passed.
+
+### Phase 3 Architecture Hardening: Projected Select-All Normalizer
+
+- Moved projected select-all delete normalization from `SovereignController` into
+  `core/syntax/ProjectedSelectAllDeleteNormalizer`.
+- Removed the controller helper so the value-mutation host delegates directly to
+  syntax code with the current projected hidden ranges.
+- Verification:
+  - `flutter analyze lib/widgets/sovereign/controllers/sovereign_controller.dart lib/src/widgets/sovereign/controllers/sovereign_value_mutation_coordinator.dart lib/src/widgets/sovereign/core/syntax/projected_select_all_delete_normalizer.dart test/widgets/sovereign/core/syntax/projected_select_all_delete_normalizer_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/core/syntax/projected_select_all_delete_normalizer_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/commands/command_capabilities_and_transaction_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/sovereign_editor_test.dart --reporter compact`: passed.
