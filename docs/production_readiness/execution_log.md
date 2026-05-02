@@ -499,3 +499,17 @@ append-only unless correcting a factual error.
   - `flutter analyze lib/widgets/sovereign/controllers/sovereign_controller.dart lib/src/widgets/sovereign/core/structure/markdown_structure_transform_service.dart test/widgets/sovereign/heading_policy_editing_test.dart test/widgets/sovereign/heading_key_integration_test.dart`: passed.
   - `flutter test test/widgets/sovereign/heading_policy_editing_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/heading_key_integration_test.dart --reporter compact`: passed.
+
+### Phase 3 Architecture Hardening: Blockquote Enter Transform
+
+- Moved blockquote Enter continuation/exit behavior from
+  `_QuotePolicy._onEnter` into `MarkdownStructureTransformService`.
+- Kept quote Arrow Up/Down selection transforms in `_QuotePolicy`; this slice
+  only moves the structural Enter behavior.
+- Preserved policy ordering by leaving `_QuotePolicy` as the edit-pipeline rule
+  wrapper.
+- Verification:
+  - `flutter analyze lib/widgets/sovereign/controllers/sovereign_controller.dart lib/src/widgets/sovereign/core/structure/markdown_structure_transform_service.dart test/widgets/sovereign/blockquote_editing_test.dart test/widgets/sovereign/blockquote_key_integration_test.dart test/widgets/sovereign/list_policy_editing_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/blockquote_editing_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/blockquote_key_integration_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/list_policy_editing_test.dart --reporter compact`: passed.

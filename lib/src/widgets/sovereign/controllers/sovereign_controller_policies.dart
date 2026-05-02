@@ -287,6 +287,22 @@ class _PolicyHelpers {
             fenceContextForCaret(text, caret, includeUnclosedEof: true) != null,
       );
 
+  TextEditingValue maybeContinueOrExitBlockquoteOnEnter(
+    TextEditingValue oldValue,
+    TextEditingValue newValue, {
+    required int? enterCaret,
+  }) =>
+      _controller._structureTransforms.maybeContinueOrExitBlockquoteOnEnter(
+        oldValue: oldValue,
+        newValue: newValue,
+        enterCaret: enterCaret,
+        lineIndex: lineIndex,
+        isCaretInFencedCode: (text, caret) =>
+            fenceContextForCaret(text, caret, includeUnclosedEof: true) != null,
+        quoteContextForLine: quoteContextForLine,
+        isQuoteLineBodyBlank: isQuoteLineBodyBlank,
+      );
+
   int lineEndWithBreak(String text, int line) =>
       NavigationLineUtils.lineEndWithBreak(lineIndex, text, line);
 

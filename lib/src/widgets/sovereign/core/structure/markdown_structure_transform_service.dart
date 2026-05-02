@@ -1,5 +1,7 @@
 import 'package:flutter/services.dart';
 
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/quote_context.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/projection_range_utils.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/logic/markdown_marker_grammar.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/line_index.dart';
 
@@ -68,6 +70,78 @@ class MarkdownStructureTransformService {
     return newValue.copyWith(
       text: exited,
       selection: TextSelection.collapsed(offset: targetCaret),
+      composing: TextRange.empty,
+    );
+  }
+
+  TextEditingValue maybeContinueOrExitBlockquoteOnEnter({
+    required TextEditingValue oldValue,
+    required TextEditingValue newValue,
+    required int? enterCaret,
+    required LineIndex lineIndex,
+    required bool Function(String text, int caret) isCaretInFencedCode,
+    required QuoteContext? Function(String text, int line) quoteContextForLine,
+    required bool Function(String text, int line) isQuoteLineBodyBlank,
+  }) {
+    final caret = enterCaret;
+    if (caret == null) return newValue;
+
+    final oldText = oldValue.text;
+    final newText = newValue.text;
+    if (caret < 0 || caret > oldText.length) return newValue;
+
+    if (isCaretInFencedCode(oldText, caret)) return newValue;
+
+    final oldLine = lineIndex.lineAtOffset(caret);
+    final quoteContext = quoteContextForLine(oldText, oldLine);
+    if (quoteContext == null) return newValue;
+
+    final lineStart = lineIndex.offsetAtLine(oldLine);
+    final lineEndWithBreak = (oldLine + 1 < lineIndex.lineCount)
+        ? lineIndex.offsetAtLine(oldLine + 1)
+        : oldText.length;
+    final lineEnd = (lineEndWithBreak > lineStart &&
+            oldText.codeUnitAt(lineEndWithBreak - 1) == 10)
+        ? lineEndWithBreak - 1
+        : lineEndWithBreak;
+    final markerLen = ProjectionRangeUtils.blockquoteMarkerLength(
+      oldText,
+      lineStart,
+      lineEnd,
+    );
+    if (markerLen <= 0) return newValue;
+
+    if (caret < lineStart + markerLen) return newValue;
+
+    if (isQuoteLineBodyBlank(oldText, oldLine)) {
+      if (!newText.startsWith('> ', lineStart)) return newValue;
+      var removeEnd = (lineStart + markerLen).clamp(0, newText.length);
+      while (removeEnd < newText.length) {
+        final cu = newText.codeUnitAt(removeEnd);
+        if (cu == 32 || cu == 9) {
+          removeEnd++;
+          continue;
+        }
+        break;
+      }
+      final exited = newText.replaceRange(lineStart, removeEnd, '');
+      final caretShift = removeEnd - lineStart;
+      final targetCaret = (newValue.selection.baseOffset - caretShift).clamp(
+        0,
+        exited.length,
+      );
+      return newValue.copyWith(
+        text: exited,
+        selection: TextSelection.collapsed(offset: targetCaret),
+        composing: TextRange.empty,
+      );
+    }
+
+    final insertAt = (caret + 1).clamp(0, newText.length);
+    final continued = newText.replaceRange(insertAt, insertAt, '> ');
+    return newValue.copyWith(
+      text: continued,
+      selection: TextSelection.collapsed(offset: insertAt + 2),
       composing: TextRange.empty,
     );
   }
