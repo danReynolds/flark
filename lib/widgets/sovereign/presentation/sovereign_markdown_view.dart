@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/presentation/painters/tier1_painter.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/presentation/read_only_markdown_interaction.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/presentation/read_only_task_checkbox_overlay.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/presentation/read_only_task_checkbox_visual_layer.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/presentation/sovereign_inline_actions_overlay.dart';
 
 import '../controllers/sovereign_controller.dart';
@@ -71,9 +72,6 @@ class _SovereignMarkdownViewState extends State<SovereignMarkdownView> {
   static const double _kFallbackLineHeight = 1.6;
 
   final GlobalKey _textKey = GlobalKey(debugLabel: 'SovereignMarkdownViewText');
-  static const Key _kReadOnlyTaskCheckboxVisualKey = Key(
-    'SovereignMarkdownViewTaskCheckboxVisual',
-  );
   late SovereignController _controller;
   OverlayEntry? _inlineActionsOverlayEntry;
   bool _taskCheckboxVisualRefreshScheduled = false;
@@ -211,46 +209,6 @@ class _SovereignMarkdownViewState extends State<SovereignMarkdownView> {
       renderObject: renderObject,
       markerRangeForLine: _controller.taskCheckboxMarkerRangeForLine,
       visualRangeForLine: _controller.taskCheckboxVisualRangeForLine,
-    );
-  }
-
-  Widget _buildReadOnlyTaskCheckboxVisual(
-    SovereignReadOnlyTaskCheckboxVisualData target,
-    SovereignTaskCheckboxTheme theme,
-  ) {
-    final boxSize = theme.size.clamp(8.0, 28.0);
-    final left = target.markerRect.left + theme.horizontalInset;
-    final top = target.markerRect.top +
-        ((target.markerRect.height - boxSize) / 2) +
-        theme.verticalInset;
-    final fill =
-        target.isChecked ? theme.checkedFillColor : theme.uncheckedFillColor;
-    final border = target.isChecked
-        ? theme.checkedBorderColor
-        : theme.uncheckedBorderColor;
-
-    return Positioned(
-      left: left,
-      top: top,
-      width: boxSize,
-      height: boxSize,
-      child: DecoratedBox(
-        key: _kReadOnlyTaskCheckboxVisualKey,
-        decoration: BoxDecoration(
-          color: fill,
-          borderRadius: BorderRadius.circular(theme.borderRadius),
-          border: Border.all(color: border, width: theme.borderWidth),
-        ),
-        child: target.isChecked
-            ? Center(
-                child: Icon(
-                  Icons.check_rounded,
-                  size: theme.checkIconSize,
-                  color: theme.checkColor,
-                ),
-              )
-            : const SizedBox.shrink(),
-      ),
     );
   }
 
@@ -516,21 +474,10 @@ class _SovereignMarkdownViewState extends State<SovereignMarkdownView> {
             content,
             if (scopedTheme.taskCheckbox.useCustomOverlay &&
                 _taskCheckboxVisuals.isNotEmpty)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: Padding(
-                    padding: scopedTheme.editorContentPadding,
-                    child: Stack(
-                      children: [
-                        for (final visual in _taskCheckboxVisuals)
-                          _buildReadOnlyTaskCheckboxVisual(
-                            visual,
-                            scopedTheme.taskCheckbox,
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
+              SovereignReadOnlyTaskCheckboxVisualLayer(
+                visuals: _taskCheckboxVisuals,
+                theme: scopedTheme.taskCheckbox,
+                padding: scopedTheme.editorContentPadding,
               ),
           ],
         );

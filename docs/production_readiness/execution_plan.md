@@ -123,7 +123,9 @@ Tasks:
   heading, blockquote, list, table, and fenced-code structure transforms
   extracted behind `MarkdownStructureQueryService` and
   `MarkdownStructureTransformService`.
-- [ ] Keep rendering composition pure and widget-facing code thin.
+- [x] Keep rendering composition pure and widget-facing code thin; read-only
+  task-checkbox visuals are isolated in a render-only layer and markdown view
+  code composes typed rendering helpers.
 - [ ] Split Rust bridge into smaller parse/ABI/mapping modules.
 - [ ] Keep behavior-level tests green after each wave.
 

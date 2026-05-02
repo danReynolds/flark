@@ -813,3 +813,19 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/blockquote_key_integration_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/core/structure/navigation/vertical_caret_navigation_test.dart --reporter compact`: passed.
   - `./scripts/verify_package_confidence.sh --skip-native`: passed.
+
+### Phase 3 Architecture Hardening: Read-Only Checkbox Visual Layer
+
+- Extracted read-only task-checkbox visual widget construction from
+  `SovereignMarkdownView` into
+  `SovereignReadOnlyTaskCheckboxVisualLayer`.
+- Kept the markdown view focused on controller lifecycle, pointer interaction,
+  and composition of typed render helpers; the new visual layer is render-only
+  with typed props.
+- Marked the Phase 3 rendering-composition item complete in the execution plan.
+- Verification:
+  - `flutter analyze lib/widgets/sovereign/presentation/sovereign_markdown_view.dart lib/src/widgets/sovereign/presentation/read_only_task_checkbox_visual_layer.dart lib/src/widgets/sovereign/presentation/read_only_task_checkbox_overlay.dart`: passed.
+  - `flutter test test/widgets/sovereign/sovereign_markdown_view_render_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/sovereign_markdown_view_smoke_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/sovereign_markdown_view_parity_test.dart --reporter compact`: passed.
+  - `./scripts/verify_package_confidence.sh --skip-native`: passed.
