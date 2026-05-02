@@ -58,59 +58,6 @@ class _PolicyEditIntent {
   }
 }
 
-class _VerticalArrowEditContext {
-  const _VerticalArrowEditContext({
-    required this.text,
-    required this.oldCaret,
-    required this.newCaret,
-    required this.oldLine,
-    required this.newLine,
-  });
-
-  final String text;
-  final int oldCaret;
-  final int newCaret;
-  final int oldLine;
-  final int newLine;
-
-  static _VerticalArrowEditContext? detect({
-    required TextEditingValue oldValue,
-    required TextEditingValue newValue,
-    required LineIndex lineIndex,
-    required bool movingDown,
-  }) {
-    if (oldValue.composing.isValid || newValue.composing.isValid) {
-      return null;
-    }
-    if (oldValue.text != newValue.text) return null;
-
-    final oldSel = oldValue.selection;
-    final newSel = newValue.selection;
-    if (!oldSel.isValid || !newSel.isValid) return null;
-    if (!oldSel.isCollapsed || !newSel.isCollapsed) return null;
-
-    final text = oldValue.text;
-    final oldCaret = oldSel.baseOffset;
-    final newCaret = newSel.baseOffset;
-    if (oldCaret < 0 || oldCaret > text.length) return null;
-    if (newCaret < 0 || newCaret > text.length) return null;
-    if (oldCaret == newCaret) return null;
-
-    final oldLine = lineIndex.lineAtOffset(oldCaret);
-    final newLine = lineIndex.lineAtOffset(newCaret);
-    final expectedLine = movingDown ? oldLine + 1 : oldLine - 1;
-    if (newLine != expectedLine) return null;
-
-    return _VerticalArrowEditContext(
-      text: text,
-      oldCaret: oldCaret,
-      newCaret: newCaret,
-      oldLine: oldLine,
-      newLine: newLine,
-    );
-  }
-}
-
 class _EditTransformRule {
   final String name;
   final int priority;
@@ -303,6 +250,30 @@ class _PolicyHelpers {
         isQuoteLineBodyBlank: isQuoteLineBodyBlank,
       );
 
+  TextEditingValue maybeExitBlockquoteOnArrowDown(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) =>
+      _controller._structureTransforms.maybeExitBlockquoteOnArrowDown(
+        oldValue: oldValue,
+        newValue: newValue,
+        lineIndex: lineIndex,
+        quoteContextForLine: quoteContextForLine,
+        shouldExitBlockquoteOnArrowDown: shouldExitBlockquoteOnArrowDown,
+      );
+
+  TextEditingValue maybeExitBlockquoteOnArrowUp(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) =>
+      _controller._structureTransforms.maybeExitBlockquoteOnArrowUp(
+        oldValue: oldValue,
+        newValue: newValue,
+        lineIndex: lineIndex,
+        quoteContextForLine: quoteContextForLine,
+        shouldExitBlockquoteOnArrowUp: shouldExitBlockquoteOnArrowUp,
+      );
+
   TextEditingValue maybeContinueOrExitListOnEnter(
     TextEditingValue oldValue,
     TextEditingValue newValue, {
@@ -375,20 +346,6 @@ class _PolicyHelpers {
         context: context,
         fromLine: fromLine,
         toLine: toLine,
-      );
-
-  int columnAlignedOffsetForLineOrBoundary({
-    required String text,
-    required int line,
-    required int column,
-    required bool afterDocument,
-  }) =>
-      NavigationLineUtils.columnAlignedOffsetForLineOrBoundary(
-        text: text,
-        lineIndex: lineIndex,
-        line: line,
-        column: column,
-        afterDocument: afterDocument,
       );
 }
 

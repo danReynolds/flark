@@ -51,6 +51,7 @@ import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/lis
     as structure;
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/quote_context.dart'
     as structure;
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/vertical_arrow_edit_context.dart';
 
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies.dart';
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_fence.dart';

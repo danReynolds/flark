@@ -5,7 +5,7 @@ extension _FenceNavigationPolicyOps on SovereignController {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
-    final arrow = _VerticalArrowEditContext.detect(
+    final arrow = VerticalArrowEditContext.detect(
       oldValue: oldValue,
       newValue: newValue,
       lineIndex: _lineIndex,
@@ -71,7 +71,7 @@ extension _FenceNavigationPolicyOps on SovereignController {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
-    final arrow = _VerticalArrowEditContext.detect(
+    final arrow = VerticalArrowEditContext.detect(
       oldValue: oldValue,
       newValue: newValue,
       lineIndex: _lineIndex,

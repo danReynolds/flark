@@ -3,10 +3,18 @@ import 'package:flutter/services.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/markdown_line_helpers.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/list_marker_context.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/quote_context.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/vertical_arrow_edit_context.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/navigation/navigation_line_utils.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/projection_range_utils.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/logic/markdown_marker_grammar.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/line_index.dart';
+
+typedef BlockquoteArrowExitPredicate = bool Function({
+  required String text,
+  required QuoteContext context,
+  required int fromLine,
+  required int toLine,
+});
 
 class MarkdownStructureTransformService {
   const MarkdownStructureTransformService();
@@ -145,6 +153,81 @@ class MarkdownStructureTransformService {
     return newValue.copyWith(
       text: continued,
       selection: TextSelection.collapsed(offset: insertAt + 2),
+      composing: TextRange.empty,
+    );
+  }
+
+  TextEditingValue maybeExitBlockquoteOnArrowDown({
+    required TextEditingValue oldValue,
+    required TextEditingValue newValue,
+    required LineIndex lineIndex,
+    required QuoteContext? Function(String text, int line) quoteContextForLine,
+    required BlockquoteArrowExitPredicate shouldExitBlockquoteOnArrowDown,
+  }) =>
+      _maybeExitBlockquoteOnVerticalArrow(
+        oldValue: oldValue,
+        newValue: newValue,
+        lineIndex: lineIndex,
+        movingDown: true,
+        quoteContextForLine: quoteContextForLine,
+        shouldExitBlockquote: shouldExitBlockquoteOnArrowDown,
+      );
+
+  TextEditingValue maybeExitBlockquoteOnArrowUp({
+    required TextEditingValue oldValue,
+    required TextEditingValue newValue,
+    required LineIndex lineIndex,
+    required QuoteContext? Function(String text, int line) quoteContextForLine,
+    required BlockquoteArrowExitPredicate shouldExitBlockquoteOnArrowUp,
+  }) =>
+      _maybeExitBlockquoteOnVerticalArrow(
+        oldValue: oldValue,
+        newValue: newValue,
+        lineIndex: lineIndex,
+        movingDown: false,
+        quoteContextForLine: quoteContextForLine,
+        shouldExitBlockquote: shouldExitBlockquoteOnArrowUp,
+      );
+
+  TextEditingValue _maybeExitBlockquoteOnVerticalArrow({
+    required TextEditingValue oldValue,
+    required TextEditingValue newValue,
+    required LineIndex lineIndex,
+    required bool movingDown,
+    required QuoteContext? Function(String text, int line) quoteContextForLine,
+    required BlockquoteArrowExitPredicate shouldExitBlockquote,
+  }) {
+    final arrow = VerticalArrowEditContext.detect(
+      oldValue: oldValue,
+      newValue: newValue,
+      lineIndex: lineIndex,
+      movingDown: movingDown,
+    );
+    if (arrow == null) return newValue;
+
+    final quoteContext = quoteContextForLine(arrow.text, arrow.oldLine);
+    if (quoteContext == null) return newValue;
+    if (!shouldExitBlockquote(
+      text: arrow.text,
+      context: quoteContext,
+      fromLine: arrow.oldLine,
+      toLine: arrow.newLine,
+    )) {
+      return newValue;
+    }
+
+    final column = arrow.oldCaret - lineIndex.offsetAtLine(arrow.oldLine);
+    final exitOffset = NavigationLineUtils.columnAlignedOffsetForLineOrBoundary(
+      text: arrow.text,
+      lineIndex: lineIndex,
+      line: movingDown
+          ? quoteContext.endLineExclusive
+          : quoteContext.startLine - 1,
+      column: column,
+      afterDocument: movingDown,
+    );
+    return newValue.copyWith(
+      selection: TextSelection.collapsed(offset: exitOffset),
       composing: TextRange.empty,
     );
   }

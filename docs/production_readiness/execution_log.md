@@ -540,3 +540,23 @@ append-only unless correcting a factual error.
   - `flutter analyze lib/widgets/sovereign/controllers/sovereign_controller.dart lib/src/widgets/sovereign/core/structure/markdown_structure_transform_service.dart test/widgets/sovereign/list_policy_editing_test.dart test/widgets/sovereign/engine/native_live_editing_regression_test.dart`: passed.
   - `flutter test test/widgets/sovereign/list_policy_editing_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/engine/native_live_editing_regression_test.dart --reporter compact`: passed.
+
+### Phase 3 Architecture Hardening: Structure Transform Checkpoint
+
+- Re-ran the fast package confidence gate after the heading, blockquote Enter,
+  list Enter, and list backspace transform extractions.
+- Verification:
+  - `./scripts/verify_package_confidence.sh --skip-native`: passed.
+
+### Phase 3 Architecture Hardening: Blockquote Arrow Transform
+
+- Moved blockquote Arrow Up/Down exit behavior from `_QuotePolicy` into
+  `MarkdownStructureTransformService`.
+- Promoted the vertical-arrow edit detector into a shared structure model so
+  quote and fence transform paths use the same detection semantics.
+- Verification:
+  - `flutter analyze lib/widgets/sovereign/controllers/sovereign_controller.dart lib/src/widgets/sovereign/core/structure/markdown_structure_transform_service.dart lib/src/widgets/sovereign/core/structure/models/vertical_arrow_edit_context.dart test/widgets/sovereign/blockquote_editing_test.dart test/widgets/sovereign/blockquote_key_integration_test.dart test/widgets/sovereign/code_fence_exit_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/blockquote_editing_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/blockquote_key_integration_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/code_fence_exit_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/engine/native_live_editing_regression_test.dart --reporter compact`: passed.
