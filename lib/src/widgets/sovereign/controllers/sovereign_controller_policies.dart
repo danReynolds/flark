@@ -181,7 +181,11 @@ class _PolicyHelpers {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) =>
-      _controller._maybeWrapFencedSelectionOnOpenerInsert(oldValue, newValue);
+      _controller._structureTransforms.maybeWrapFencedSelectionOnOpenerInsert(
+        oldValue: oldValue,
+        newValue: newValue,
+        isRangeInFenceBody: _controller._isRangeInFenceBody,
+      );
 
   TextEditingValue maybeAutoPairFencedOpenerInsert(
     TextEditingValue oldValue,

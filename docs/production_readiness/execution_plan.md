@@ -121,7 +121,8 @@ Tasks:
   facade plus heading, blockquote Enter/arrow exits, list Enter, and list
   backspace, table Enter/formatting, and fenced-code arrow/Enter-exit/EOF
   continuation/auto-indent/closing-line/paste/pair-expansion/auto-pair/closer
-  skip transforms extracted, broader transform service still pending.
+  skip/selection-wrap transforms extracted, broader transform service still
+  pending.
 - [ ] Keep rendering composition pure and widget-facing code thin.
 - [ ] Split Rust bridge into smaller parse/ABI/mapping modules.
 - [ ] Keep behavior-level tests green after each wave.

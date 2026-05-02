@@ -739,6 +739,58 @@ class MarkdownStructureTransformService {
     );
   }
 
+  TextEditingValue maybeWrapFencedSelectionOnOpenerInsert({
+    required TextEditingValue oldValue,
+    required TextEditingValue newValue,
+    required bool Function(String text, int start, int end) isRangeInFenceBody,
+  }) {
+    if (oldValue.composing.isValid || newValue.composing.isValid) {
+      return newValue;
+    }
+
+    final oldSel = oldValue.selection;
+    if (!oldSel.isValid || oldSel.isCollapsed) return newValue;
+    final oldText = oldValue.text;
+
+    final diff = EditDiffer.diff(
+      oldVal: oldValue,
+      newVal: newValue,
+      nextOpId: 0,
+      isSmart: true,
+      undoGroupId: 0,
+    );
+    if (diff.kind != EditOpKind.text) return newValue;
+    if (diff.insertedText.length != 1) return newValue;
+
+    final selectionStart = oldSel.start;
+    final selectionEnd = oldSel.end;
+    if (diff.replacedRange.start != selectionStart ||
+        diff.replacedRange.end != selectionEnd) {
+      return newValue;
+    }
+    if (!isRangeInFenceBody(oldText, selectionStart, selectionEnd)) {
+      return newValue;
+    }
+
+    final opener = diff.insertedText.codeUnitAt(0);
+    final closer = FenceEditingUtils.smartPairMap[opener];
+    if (closer == null) return newValue;
+
+    final selectedText = oldText.substring(selectionStart, selectionEnd);
+    final wrappedText = oldText.replaceRange(
+      selectionStart,
+      selectionEnd,
+      '${String.fromCharCode(opener)}$selectedText${String.fromCharCode(closer)}',
+    );
+    final nextCaret = selectionStart + selectedText.length + 2;
+
+    return newValue.copyWith(
+      text: wrappedText,
+      selection: TextSelection.collapsed(offset: nextCaret),
+      composing: TextRange.empty,
+    );
+  }
+
   TextEditingValue maybeNormalizeFencedMultilinePaste({
     required TextEditingValue oldValue,
     required TextEditingValue newValue,
