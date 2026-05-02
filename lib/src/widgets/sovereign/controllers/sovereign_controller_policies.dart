@@ -197,7 +197,11 @@ class _PolicyHelpers {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) =>
-      _controller._maybeSkipFencedCloserInsert(oldValue, newValue);
+      _controller._structureTransforms.maybeSkipFencedCloserInsert(
+        oldValue: oldValue,
+        newValue: newValue,
+        isCaretInFenceBody: _controller._isCaretInFenceBody,
+      );
 
   TextEditingValue maybeOutdentFencedCodeOnCloserInsert(
     TextEditingValue oldValue,
