@@ -5,6 +5,7 @@ import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/lis
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/quote_context.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/vertical_arrow_edit_context.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/navigation/navigation_line_utils.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/table/table_editing_service.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/projection_range_utils.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/logic/markdown_marker_grammar.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/line_index.dart';
@@ -18,6 +19,8 @@ typedef BlockquoteArrowExitPredicate = bool Function({
 
 class MarkdownStructureTransformService {
   const MarkdownStructureTransformService();
+
+  static const TableEditingService _tableEditing = TableEditingService();
 
   TextEditingValue maybeExitEmptyAtxHeadingOnEnter({
     required TextEditingValue oldValue,
@@ -443,4 +446,28 @@ class MarkdownStructureTransformService {
       composing: TextRange.empty,
     );
   }
+
+  TextEditingValue maybeContinueEstablishedTableOnEnter({
+    required TextEditingValue oldValue,
+    required TextEditingValue newValue,
+    required int? enterCaret,
+    required LineIndex lineIndex,
+    required bool Function(String text, int caret) isCaretInFencedCode,
+  }) =>
+      _tableEditing.maybeContinueEstablishedTableOnEnter(
+        oldValue: oldValue,
+        newValue: newValue,
+        enterCaret: enterCaret,
+        lineIndex: lineIndex,
+        isCaretInFencedCode: isCaretInFencedCode,
+      );
+
+  String emptyTableRowTemplate(int columns, {required String indent}) =>
+      _tableEditing.emptyRowTemplate(columns, indent: indent);
+
+  TableEditingFormatResult? formatEstablishedTableAroundCaret(
+    String text,
+    int caret,
+  ) =>
+      _tableEditing.formatEstablishedTableAroundCaret(text, caret);
 }

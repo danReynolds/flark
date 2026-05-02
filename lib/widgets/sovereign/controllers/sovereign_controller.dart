@@ -593,7 +593,7 @@ class SovereignController extends TextEditingController {
       line: line,
       lineIndex: _lineIndex,
       geometry: _geometry,
-      rowShapeResolver: _TablePolicy._matchTableRowShape,
+      rowShapeResolver: _structureQueries.matchTableRowShape,
     );
   }
 
@@ -626,6 +626,24 @@ class SovereignController extends TextEditingController {
       skipSeparator: skipSeparator,
       lineIndex: _lineIndex,
       parseLineAt: _parseTableLineAt,
+    );
+  }
+
+  String _emptyTableRowTemplate(int columns, {required String indent}) =>
+      _structureTransforms.emptyTableRowTemplate(columns, indent: indent);
+
+  TableTabFormattingResult? _formatEstablishedTableAroundCaret(
+    String text,
+    int caret,
+  ) {
+    final formatted = _structureTransforms.formatEstablishedTableAroundCaret(
+      text,
+      caret,
+    );
+    if (formatted == null) return null;
+    return TableTabFormattingResult(
+      text: formatted.text,
+      caret: formatted.caret,
     );
   }
 

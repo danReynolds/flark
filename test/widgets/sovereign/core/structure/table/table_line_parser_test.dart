@@ -49,5 +49,41 @@ void main() {
 
       expect(row, isNull);
     });
+
+    test('matches row shapes with escaped pipes and separator cells', () {
+      const rowText = '  | a \\| still a | b |\n';
+      final rowShape = TableLineParser.matchRowShape(
+        rowText,
+        0,
+        rowText.length - 1,
+      );
+
+      expect(rowShape, isNotNull);
+      expect(rowShape!.columnCount, 2);
+      expect(rowShape.indent, '  ');
+      expect(rowShape.isSeparator, isFalse);
+
+      const separatorText = '| :--- | ---: |\n';
+      final separatorShape = TableLineParser.matchRowShape(
+        separatorText,
+        0,
+        separatorText.length - 1,
+      );
+
+      expect(separatorShape, isNotNull);
+      expect(separatorShape!.columnCount, 2);
+      expect(separatorShape.isSeparator, isTrue);
+      expect(TableLineParser.separatorAlignment(':---'), (true, false));
+      expect(TableLineParser.separatorAlignment('---:'), (false, true));
+    });
+
+    test('does not match quoted tables as editable table rows', () {
+      const text = '> | a | b |\n';
+
+      expect(
+        TableLineParser.matchRowShape(text, 0, text.length - 1),
+        isNull,
+      );
+    });
   });
 }

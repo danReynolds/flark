@@ -155,6 +155,13 @@ class MarkdownStructureQueryService {
     );
   }
 
+  TableLineShape? matchTableRowShape(
+    String text,
+    int lineStart,
+    int lineEnd,
+  ) =>
+      TableLineParser.matchRowShape(text, lineStart, lineEnd);
+
   int? tableCellIndexForCaret(ParsedTableLine row, int caret) {
     return TableNavigationService.tableCellIndexForCaret(row, caret);
   }

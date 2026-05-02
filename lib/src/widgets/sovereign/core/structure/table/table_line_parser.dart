@@ -56,6 +56,99 @@ typedef TableRowShapeResolver = TableLineShape? Function(
 class TableLineParser {
   const TableLineParser._();
 
+  static TableLineShape? matchRowShape(
+    String text,
+    int lineStart,
+    int lineEnd,
+  ) {
+    if (lineEnd <= lineStart || lineStart < 0 || lineEnd > text.length) {
+      return null;
+    }
+    final line = text.substring(lineStart, lineEnd);
+    if (line.trim().isEmpty) return null;
+
+    final indent = _leadingWhitespacePrefix(line);
+    final body = line.substring(indent.length);
+    if (body.isEmpty || body.startsWith('>')) {
+      return null;
+    }
+
+    final cells = splitCellTexts(body);
+    if (cells == null || cells.length < 2) return null;
+
+    var separatorCells = 0;
+    for (final cell in cells) {
+      if (isSeparatorCell(cell)) separatorCells++;
+    }
+    final isSeparator = separatorCells == cells.length;
+
+    return TableLineShape(
+      columnCount: cells.length,
+      isSeparator: isSeparator,
+      indent: indent,
+    );
+  }
+
+  static List<String>? splitCellTexts(String body) {
+    final cells = <String>[];
+    var sawPipe = false;
+    var start = 0;
+    var i = 0;
+    while (i < body.length) {
+      final cu = body.codeUnitAt(i);
+      if (cu == 92) {
+        i += 2;
+        continue;
+      }
+      if (cu == 124) {
+        sawPipe = true;
+        cells.add(body.substring(start, i));
+        start = i + 1;
+      }
+      i++;
+    }
+    if (!sawPipe) return null;
+    cells.add(body.substring(start));
+
+    final leftTrimmed = body.trimLeft();
+    final rightTrimmed = body.trimRight();
+    final hasLeadingPipe = leftTrimmed.startsWith('|');
+    final hasTrailingPipe = rightTrimmed.endsWith('|');
+
+    var normalized = List<String>.from(cells);
+    if (hasLeadingPipe &&
+        normalized.isNotEmpty &&
+        normalized.first.trim().isEmpty) {
+      normalized = normalized.sublist(1);
+    }
+    if (hasTrailingPipe &&
+        normalized.isNotEmpty &&
+        normalized.last.trim().isEmpty) {
+      normalized = normalized.sublist(0, normalized.length - 1);
+    }
+    if (normalized.isEmpty) return null;
+
+    return normalized;
+  }
+
+  static bool isSeparatorCell(String rawCell) {
+    var cell = rawCell.trim();
+    if (cell.isEmpty) return false;
+    if (cell.startsWith(':')) cell = cell.substring(1);
+    if (cell.endsWith(':')) cell = cell.substring(0, cell.length - 1);
+    if (cell.isEmpty) return false;
+    for (var i = 0; i < cell.length; i++) {
+      if (cell.codeUnitAt(i) != 45) return false;
+    }
+    return true;
+  }
+
+  static (bool left, bool right) separatorAlignment(String rawCell) {
+    final cell = rawCell.trim();
+    if (cell.isEmpty) return (false, false);
+    return (cell.startsWith(':'), cell.endsWith(':'));
+  }
+
   static ParsedTableLine? parseLineAt({
     required String text,
     required int line,
@@ -195,6 +288,16 @@ class TableLineParser {
       return lineEndWithBreak - 1;
     }
     return lineEndWithBreak;
+  }
+
+  static String _leadingWhitespacePrefix(String text) {
+    var cursor = 0;
+    while (cursor < text.length) {
+      final cu = text.codeUnitAt(cursor);
+      if (cu != 32 && cu != 9) break;
+      cursor++;
+    }
+    return text.substring(0, cursor);
   }
 }
 

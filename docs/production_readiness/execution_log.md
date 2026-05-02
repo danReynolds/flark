@@ -560,3 +560,23 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/blockquote_key_integration_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/code_fence_exit_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/engine/native_live_editing_regression_test.dart --reporter compact`: passed.
+
+### Phase 3 Architecture Hardening: Table Transform Service
+
+- Moved table Enter continuation and established-table formatting out of
+  `_TablePolicy` into `TableEditingService`, surfaced through
+  `MarkdownStructureTransformService`.
+- Moved table row-shape matching into `TableLineParser` so controller table
+  parsing, Enter continuation, and Tab insertion share the same row semantics.
+- Kept `_TablePolicy` as an edit-pipeline wrapper and kept
+  `_ControllerTableTabIntentHost` delegated through controller structure
+  services instead of controller-private table helpers.
+- Verification:
+  - `flutter analyze lib/widgets/sovereign/controllers/sovereign_controller.dart lib/src/widgets/sovereign/core/structure/markdown_structure_query_service.dart lib/src/widgets/sovereign/core/structure/markdown_structure_transform_service.dart lib/src/widgets/sovereign/core/structure/table/table_line_parser.dart lib/src/widgets/sovereign/core/structure/table/table_editing_service.dart test/widgets/sovereign/table_editing_test.dart test/widgets/sovereign/table_key_integration_test.dart test/widgets/sovereign/core/structure/table/table_line_parser_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/table_editing_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/table_key_integration_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/core/structure/table/table_line_parser_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/table_fuzz_invariants_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/table_performance_baseline_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/engine/native_live_editing_regression_test.dart --reporter compact`: passed.
+  - `./scripts/verify_package_confidence.sh --skip-native`: passed.

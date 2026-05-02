@@ -55,21 +55,12 @@ class _ControllerTableTabIntentHost implements TableTabIntentHost {
 
   @override
   String emptyRowTemplate(int columns, {required String indent}) =>
-      _TablePolicy._emptyRowTemplate(columns, indent: indent);
+      _c._emptyTableRowTemplate(columns, indent: indent);
 
   @override
   TableTabFormattingResult? formatEstablishedTableAroundCaret(
     String text,
     int caret,
-  ) {
-    final formatted = _TablePolicy._formatEstablishedTableAroundCaret(
-      text,
-      caret,
-    );
-    if (formatted == null) return null;
-    return TableTabFormattingResult(
-      text: formatted.text,
-      caret: formatted.caret,
-    );
-  }
+  ) =>
+      _c._formatEstablishedTableAroundCaret(text, caret);
 }

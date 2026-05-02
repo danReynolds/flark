@@ -302,6 +302,20 @@ class _PolicyHelpers {
         editableListMarkerForLine: editableListMarkerForLine,
       );
 
+  TextEditingValue maybeContinueEstablishedTableOnEnter(
+    TextEditingValue oldValue,
+    TextEditingValue newValue, {
+    required int? enterCaret,
+  }) =>
+      _controller._structureTransforms.maybeContinueEstablishedTableOnEnter(
+        oldValue: oldValue,
+        newValue: newValue,
+        enterCaret: enterCaret,
+        lineIndex: lineIndex,
+        isCaretInFencedCode: (text, caret) =>
+            fenceContextForCaret(text, caret, includeUnclosedEof: true) != null,
+      );
+
   structure.ListMarkerContext? editableListMarkerForLine(
     String text,
     int lineStart,
