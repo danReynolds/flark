@@ -328,6 +328,28 @@ void main() {
       expect(result.diagnostics, isEmpty);
     });
 
+    test('inline marker extraction ignores escaped delimiters', () async {
+      final libPath = sovereignNativeBridgeLibraryPathForPlatform();
+      if (libPath.isEmpty || !File(libPath).existsSync()) {
+        return;
+      }
+
+      final bridge = createNativeComrakBridge(overrideLibraryPath: libPath);
+      final result = await bridge.parse(
+        NativeComrakParseInput(
+          revision: 24,
+          profile: NativeComrakProfile.commonMarkCore,
+          utf8Text: Uint8List.fromList(
+            utf8.encode(r'\*literal\* \_literal\_ \`code\` &amp;'),
+          ),
+        ),
+      );
+
+      expect(result.markerRanges, isEmpty);
+      expect(result.inlineTokens, isEmpty);
+      expect(result.diagnostics, isEmpty);
+    });
+
     test(
       'supported fenced code info tags are emitted as hidden markers',
       () async {

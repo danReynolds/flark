@@ -113,6 +113,42 @@ void main() {
       );
     });
 
+    test('Escaped inline delimiters stay visible during predictive edit', () {
+      final engine = _StalePredictEngine();
+      final controller = SovereignController(
+        text: '',
+        syntaxEngine: engine,
+      );
+      addTearDown(controller.dispose);
+
+      const text = r'\*literal\* \_literal\_ \`code\` &amp;';
+      controller.value = const TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      );
+
+      final escapedStar = text.indexOf('*');
+      final escapedUnderscore = text.indexOf('_');
+      final escapedBacktick = text.indexOf('`');
+      expect(escapedStar, isNot(-1));
+      expect(escapedUnderscore, isNot(-1));
+      expect(escapedBacktick, isNot(-1));
+
+      expect(controller.decoration.hiddenRanges, isEmpty);
+      controller.selection = TextSelection.collapsed(offset: escapedStar);
+      expect(controller.selection.baseOffset, escapedStar);
+      controller.selection = TextSelection.collapsed(offset: escapedUnderscore);
+      expect(controller.selection.baseOffset, escapedUnderscore);
+      controller.selection = TextSelection.collapsed(offset: escapedBacktick);
+      expect(controller.selection.baseOffset, escapedBacktick);
+      expect(
+        engine.hasPendingParse,
+        isTrue,
+        reason:
+            'Escaped delimiters must remain cursor-safe before authoritative parse completes.',
+      );
+    });
+
     test('Inline markers are not hidden inside fenced code blocks', () {
       final controller = SovereignController(text: '');
       addTearDown(controller.dispose);

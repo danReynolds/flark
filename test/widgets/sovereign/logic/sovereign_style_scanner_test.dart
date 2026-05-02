@@ -87,6 +87,21 @@ void main() {
       expect(result.runs[2].style, SovereignStyle.code);
     });
 
+    test('Escaped inline delimiters stay literal', () {
+      const text =
+          r'\*not italic\* \_not italic\_ \*\*not bold\*\* \`not code\` &amp;';
+      final result = SovereignStyleScanner.scan(text);
+      assertInvariants(result, 250);
+
+      final hidden = SovereignStyleScanner.extractHiddenRanges(
+        text,
+        result.runs,
+      );
+
+      expect(result.runs, isEmpty);
+      expect(hidden, isEmpty);
+    });
+
     test('Prefix Stability (Unclosed Partial)', () {
       final text = 'foo **bar';
       final result = SovereignStyleScanner.scan(text);

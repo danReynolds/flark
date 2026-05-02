@@ -113,6 +113,16 @@ class SovereignStyleScanner {
         }
 
         final char = text.codeUnitAt(currentOffset);
+        final escapedInlineDelimiter = codeStart == null &&
+            (char == 96 || char == 42 || char == 95) &&
+            _ScannerLinkImageParsers._isEscapedAt(text, currentOffset);
+        if (escapedInlineDelimiter) {
+          currentOffset++;
+          if (boldStart == null && italicStart == null) {
+            lastSafeOffset = currentOffset;
+          }
+          continue;
+        }
 
         // Inline Code (`...`)
         if (char == 96) {

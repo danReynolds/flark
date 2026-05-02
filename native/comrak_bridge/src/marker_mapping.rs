@@ -198,6 +198,14 @@ pub(crate) fn collect_inline_marker_ranges(text: &str, exclusions: &[JsonRange])
         }
 
         let byte = bytes[cursor];
+        let escaped_inline_delimiter = code_start.is_none()
+            && matches!(byte, b'`' | b'*' | b'_')
+            && is_escaped_at(bytes, cursor);
+        if escaped_inline_delimiter {
+            cursor += 1;
+            continue;
+        }
+
         if byte == b'`' {
             if code_start.is_none() {
                 code_start = Some(cursor);
@@ -301,6 +309,23 @@ fn add_style_run(
         }
     }
     runs.push(InlineStyleRun { start, end, style });
+}
+
+fn is_escaped_at(bytes: &[u8], offset: usize) -> bool {
+    if offset == 0 || offset > bytes.len() {
+        return false;
+    }
+
+    let mut backslashes = 0usize;
+    let mut cursor = offset;
+    while cursor > 0 {
+        cursor -= 1;
+        if bytes[cursor] != b'\\' {
+            break;
+        }
+        backslashes += 1;
+    }
+    backslashes % 2 == 1
 }
 
 fn match_atx_heading_marker(line: &str) -> Option<(usize, usize)> {

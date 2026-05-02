@@ -130,6 +130,43 @@ void main() {
     );
   });
 
+  testWidgets('SovereignController keeps escaped delimiters literal', (
+    tester,
+  ) async {
+    final controller = SovereignController();
+    controller.text = r'\*literal\* &amp; \`code\` **bold**';
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: Container())));
+    final context = tester.element(find.byType(Container));
+
+    final span = controller.buildTextSpan(
+      context: context,
+      style: const TextStyle(fontSize: 10, color: Colors.black),
+      withComposing: false,
+    );
+
+    final leaves = _leafSpans(span);
+    final visibleText = leaves
+        .where((leaf) => !_isHiddenLeaf(leaf))
+        .map((leaf) => leaf.text ?? '')
+        .join();
+    final literalLeaves = leaves
+        .where((leaf) => (leaf.text ?? '').contains('literal'))
+        .toList(growable: false);
+
+    expect(visibleText, contains(r'\*literal\*'));
+    expect(visibleText, contains('&amp;'));
+    expect(visibleText, contains(r'\`code\`'));
+    expect(visibleText, contains('bold'));
+    expect(visibleText, isNot(contains('**bold**')));
+    expect(literalLeaves, isNotEmpty);
+    for (final literalLeaf in literalLeaves) {
+      expect(literalLeaf.style?.fontStyle, isNot(FontStyle.italic));
+      expect(literalLeaf.style?.fontWeight, isNot(FontWeight.bold));
+    }
+  });
+
   testWidgets('SovereignController buildTextSpan renders links', (
     tester,
   ) async {

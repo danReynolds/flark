@@ -29,7 +29,7 @@ read-only surface (`SovereignMarkdownView`) on focused post detail screens
 | Inline bold / italic / code | Yes | Markers hidden + inline styling | Toolbar insertion + backspace re-entry | Supported | `predictive_inline_markers_test.dart`, `toolbar_markdown_insert_test.dart`, create-post toolbar tests |
 | Links / autolinks | Yes (GFM autolinks in GFM lane) | Inline link styling + actions overlay | Typing + boundary-exit policy + link edit/open/copy actions | Supported | fixture/parity tests + `link_policy_editing_test.dart` + `link_actions_overlay_test.dart` |
 | Strikethrough (`~~`) | Yes (GFM) | Inline styling | Standard typing | Supported | fixture/parity tests |
-| Escapes / entities | Parser yes | Render/projection not explicitly audited | Standard typing | Partial / unverified UI | backend likely handles; editor-specific UI behavior not explicitly covered |
+| Escapes / entities | Parser yes | Escaped delimiters and entities stay source-stable; escaped delimiters do not create hidden marker ranges | Standard typing + predictive cursor safety | Supported | parser, scanner, renderer, and predictive cursor-safety regressions |
 | Thematic breaks (`---`, `***`) | Yes | Divider-style glyph rendering + marker hiding | Standard typing + horizontal-rule command | Supported | parser-backed classification, divider rendering, and command interaction covered |
 | Tables (GFM) | Yes (GFM) | Monospace + source-aligned row formatting baseline (parser-backed table blocks) | Enter row continuation + Tab/Shift-Tab cell navigation baseline | Partial | no true grid layout/column metrics UI; row/column ops still pending |
 | Images (`![alt](url)`) | Parser yes | Placeholder + inline/standalone preview card + actions overlay | Edit/open/copy actions + markdown text editing | Partial | `image_actions_overlay_test.dart`; image node remains markdown-source-first (not full embedded media block model) |
@@ -66,7 +66,7 @@ read-only surface (`SovereignMarkdownView`) on focused post detail screens
 5. **Indented code block editing niceties**  
    Supported: Enter continuation/exit and Backspace indent-unit outdent are covered for space and tab indents.
 6. **Explicit coverage for escapes/entities and nested combinations**  
-   Add focused rendering and cursor-safety regressions for tricky combinations.
+   Supported: escaped inline delimiters and entities have parser, scanner, renderer, and predictive cursor-safety coverage.
 
 ### Priority C (policy decisions)
 

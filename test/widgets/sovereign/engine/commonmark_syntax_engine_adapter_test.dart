@@ -202,6 +202,31 @@ void main() {
     );
 
     test(
+      'parse keeps escaped delimiters and entities marker-free',
+      () async {
+        const adapter = CommonMarkSyntaxEngineAdapter(
+          parseBackend: BootstrapCommonMarkParseBackend(),
+        );
+        const text =
+            r'\*not emphasized\* \_not emphasized\_ \`not code\` &amp;';
+        const request = SyntaxParseRequest(
+          revision: 13,
+          text: text,
+          profile: MarkdownSyntaxProfile.commonMarkCore,
+        );
+
+        final snapshot = await adapter.parse(request);
+        final escapedStar = text.indexOf('*');
+        final entity = text.indexOf('&');
+
+        expect(snapshot.inlineTokens, isEmpty);
+        expect(snapshot.markerRanges, isEmpty);
+        expect(snapshot.cursorMask.snapToSafeOffset(escapedStar), escapedStar);
+        expect(snapshot.cursorMask.snapToSafeOffset(entity), entity);
+      },
+    );
+
+    test(
       'GFM profile emits task checkbox marker range while core does not',
       () async {
         const coreAdapter = CommonMarkSyntaxEngineAdapter(
@@ -213,12 +238,12 @@ void main() {
         const text = '- [x] done\n';
 
         const coreRequest = SyntaxParseRequest(
-          revision: 13,
+          revision: 14,
           text: text,
           profile: MarkdownSyntaxProfile.commonMarkCore,
         );
         const gfmRequest = SyntaxParseRequest(
-          revision: 14,
+          revision: 15,
           text: text,
           profile: MarkdownSyntaxProfile.commonMarkGfm,
         );

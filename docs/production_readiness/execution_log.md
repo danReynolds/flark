@@ -898,3 +898,18 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/sovereign_markdown_view_parity_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/block_markdown_rendering_test.dart --reporter compact`: passed.
   - `./scripts/verify_package_confidence.sh --skip-native`: passed.
+
+### Phase 4 Feature Completeness: Escapes/Entities Coverage
+
+- Tightened the predictive inline scanner so backslash-escaped `*`, `_`, and
+  opening backticks stay literal instead of creating transient hidden marker
+  ranges before authoritative parsing completes.
+- Added parser, scanner, editor rendering, and predictive cursor-safety
+  regressions for escaped inline delimiters and source-stable entities.
+- Updated the support matrix and marked the escapes/entities Phase 4 item
+  complete.
+- Verification:
+  - `cargo test --manifest-path native/comrak_bridge/Cargo.toml`: passed.
+  - `./scripts/build_comrak_all.sh --host-only`: passed.
+  - `flutter test test/widgets/sovereign/logic/sovereign_style_scanner_test.dart test/widgets/sovereign/sovereign_inline_test.dart test/widgets/sovereign/predictive_inline_markers_test.dart test/widgets/sovereign/engine/commonmark_syntax_engine_adapter_test.dart test/widgets/sovereign/engine/native_comrak_ffi_test.dart --reporter compact`: passed.
+  - `./scripts/verify_package_confidence.sh --skip-native`: passed.
