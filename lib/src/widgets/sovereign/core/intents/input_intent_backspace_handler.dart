@@ -1,7 +1,38 @@
-part of 'package:sovereign_editor/widgets/sovereign/controllers/sovereign_controller.dart';
+import 'package:flutter/services.dart';
 
-extension _FenceBackspacePolicyOps on SovereignController {
-  TextEditingValue _maybeReenterInlineWrapperOnBackspace(
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/fence/fence_editing_utils.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/fence_context.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/navigation/navigation_line_utils.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/projection_range_utils.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/fenced_code_scanner.dart';
+import 'package:sovereign_editor/widgets/sovereign/models/geometry_model.dart';
+import 'package:sovereign_editor/widgets/sovereign/models/line_index.dart';
+
+abstract class SovereignBackspaceIntentHost {
+  LineIndex get lineIndex;
+  GeometryModel get geometry;
+  List<TextRange> get projectedHiddenRanges;
+
+  bool isCaretInFenceBody(String text, int caret);
+  FenceContext? fenceContextForCaret(
+    String text,
+    int caret, {
+    required bool includeUnclosedEof,
+  });
+  String preferredOutdentUnitForLine({
+    required String text,
+    required MeasuredBlock block,
+    required int line,
+    required String currentIndent,
+  });
+}
+
+class SovereignBackspaceIntentHandler {
+  SovereignBackspaceIntentHandler(this._host);
+
+  final SovereignBackspaceIntentHost _host;
+
+  TextEditingValue maybeReenterInlineWrapperOnBackspace(
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
@@ -25,7 +56,7 @@ extension _FenceBackspacePolicyOps on SovereignController {
     if (newCaret < 0 || newCaret >= oldText.length) return newValue;
 
     bool isInsideFencedCodeBlock(int caret) {
-      for (final block in _geometry.codeBlocks) {
+      for (final block in _host.geometry.codeBlocks) {
         if (caret >= block.startOffset && caret <= block.endOffset) {
           return true;
         }
@@ -69,7 +100,6 @@ extension _FenceBackspacePolicyOps on SovereignController {
         return null;
       }
 
-      // No room for an opener before the suffix.
       final openerSearchStart = suffixStart - 1;
       if (openerSearchStart < 0) return null;
 
@@ -142,7 +172,7 @@ extension _FenceBackspacePolicyOps on SovereignController {
     return newValue;
   }
 
-  TextEditingValue _maybeDeleteFencedPairOnBackspace(
+  TextEditingValue maybeDeleteFencedPairOnBackspace(
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
@@ -166,7 +196,7 @@ extension _FenceBackspacePolicyOps on SovereignController {
     if (newText.substring(deletedOffset) != oldText.substring(caret)) {
       return newValue;
     }
-    if (!_isCaretInFenceBody(oldText, caret)) return newValue;
+    if (!_host.isCaretInFenceBody(oldText, caret)) return newValue;
 
     if (deletedOffset >= oldText.length - 1) return newValue;
     final opener = oldText.codeUnitAt(deletedOffset);
@@ -187,7 +217,7 @@ extension _FenceBackspacePolicyOps on SovereignController {
     );
   }
 
-  TextEditingValue _maybeOutdentFencedCodeOnBackspace(
+  TextEditingValue maybeOutdentFencedCodeOnBackspace(
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
@@ -213,8 +243,8 @@ extension _FenceBackspacePolicyOps on SovereignController {
       return newValue;
     }
 
-    final line = _lineIndex.lineAtOffset(caret);
-    final lineStart = _lineIndex.offsetAtLine(line);
+    final line = _host.lineIndex.lineAtOffset(caret);
+    final lineStart = _host.lineIndex.offsetAtLine(line);
     if (lineStart < 0 || lineStart > caret) return newValue;
     final lineEnd = FencedCodeScanner.endOfLine(oldText, lineStart);
     final lineText = oldText.substring(lineStart, lineEnd);
@@ -227,7 +257,7 @@ extension _FenceBackspacePolicyOps on SovereignController {
       return newValue;
     }
 
-    final context = _fenceContextForCaret(
+    final context = _host.fenceContextForCaret(
       oldText,
       caret,
       includeUnclosedEof: true,
@@ -238,7 +268,7 @@ extension _FenceBackspacePolicyOps on SovereignController {
       return newValue;
     }
 
-    final unit = _preferredOutdentUnitForLine(
+    final unit = _host.preferredOutdentUnitForLine(
       text: oldText,
       block: context.block,
       line: line,
@@ -258,7 +288,7 @@ extension _FenceBackspacePolicyOps on SovereignController {
     );
   }
 
-  TextEditingValue _maybeProtectHiddenFenceBackspace(
+  TextEditingValue maybeProtectHiddenFenceBackspace(
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
@@ -293,7 +323,7 @@ extension _FenceBackspacePolicyOps on SovereignController {
     if (oldSel.baseOffset != deletedOffset + 1) return newValue;
 
     TextRange? deletedFenceMarker;
-    for (final range in _projectedHiddenRanges) {
+    for (final range in _host.projectedHiddenRanges) {
       if (deletedOffset >= range.start &&
           deletedOffset < range.end &&
           ProjectionRangeUtils.isFenceMarkerRange(oldText, range)) {
@@ -326,7 +356,7 @@ extension _FenceBackspacePolicyOps on SovereignController {
     );
   }
 
-  TextEditingValue _maybeCollapseEmptyFenceOnBackspace(
+  TextEditingValue maybeCollapseEmptyFenceOnBackspace(
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
@@ -412,7 +442,7 @@ extension _FenceBackspacePolicyOps on SovereignController {
     return newValue;
   }
 
-  TextEditingValue _maybeProtectEmptyFenceEntryBackspace(
+  TextEditingValue maybeProtectEmptyFenceEntryBackspace(
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
@@ -460,7 +490,7 @@ extension _FenceBackspacePolicyOps on SovereignController {
       return !hasClosingFence;
     }
 
-    for (final block in _geometry.codeBlocks) {
+    for (final block in _host.geometry.codeBlocks) {
       if (!isUnclosedFenceAtEof(block)) continue;
       if (block.startOffset < 0 || block.startOffset + 3 > oldText.length) {
         continue;

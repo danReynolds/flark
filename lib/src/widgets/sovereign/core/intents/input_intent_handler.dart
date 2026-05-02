@@ -4,12 +4,14 @@ import 'package:sovereign_editor/src/widgets/sovereign/logic/fenced_code_scanner
 import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_code_highlighter.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/geometry_model.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/line_index.dart';
+import 'input_intent_backspace_handler.dart';
 import 'input_intent_enter_handler.dart';
 import 'input_intent_navigation_handler.dart';
 import 'input_intent_tab_handler.dart';
 
 abstract class SovereignInputIntentHost
     implements
+        SovereignBackspaceIntentHost,
         SovereignEnterIntentHost,
         SovereignTabIntentHost,
         SovereignNavigationIntentHost {
@@ -23,9 +25,13 @@ abstract class SovereignInputIntentHost
   LineIndex get lineIndex;
   @override
   GeometryModel get geometry;
+  @override
+  List<TextRange> get projectedHiddenRanges;
 
   @override
   void commitProgrammaticTextEdit(TextEditingValue newValue);
+  @override
+  bool isCaretInFenceBody(String text, int caret);
   @override
   bool tryHandleIndentedCodeBlockEnter(String text, int caret);
   bool hasTaskMarker(String text, int markerEnd, int lineEnd);
@@ -43,6 +49,8 @@ class SovereignInputIntentHandler {
   );
   late final SovereignEnterIntentHandler _enterHandler =
       SovereignEnterIntentHandler(_host);
+  late final SovereignBackspaceIntentHandler _backspaceHandler =
+      SovereignBackspaceIntentHandler(_host);
   late final SovereignArrowExitIntentHandler _arrowExitHandler =
       SovereignArrowExitIntentHandler(_host);
 
@@ -165,6 +173,48 @@ class SovereignInputIntentHandler {
       _arrowExitHandler.tryExitBlockquoteOnArrowUp();
 
   bool tryExitFencedCodeOnEnter() => _enterHandler.tryExitFencedCodeOnEnter();
+
+  TextEditingValue maybeReenterInlineWrapperOnBackspace(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) =>
+      _backspaceHandler.maybeReenterInlineWrapperOnBackspace(
+        oldValue,
+        newValue,
+      );
+
+  TextEditingValue maybeDeleteFencedPairOnBackspace(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) =>
+      _backspaceHandler.maybeDeleteFencedPairOnBackspace(oldValue, newValue);
+
+  TextEditingValue maybeOutdentFencedCodeOnBackspace(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) =>
+      _backspaceHandler.maybeOutdentFencedCodeOnBackspace(oldValue, newValue);
+
+  TextEditingValue maybeCollapseEmptyFenceOnBackspace(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) =>
+      _backspaceHandler.maybeCollapseEmptyFenceOnBackspace(oldValue, newValue);
+
+  TextEditingValue maybeProtectEmptyFenceEntryBackspace(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) =>
+      _backspaceHandler.maybeProtectEmptyFenceEntryBackspace(
+        oldValue,
+        newValue,
+      );
+
+  TextEditingValue maybeProtectHiddenFenceBackspace(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) =>
+      _backspaceHandler.maybeProtectHiddenFenceBackspace(oldValue, newValue);
 
   bool setFencedCodeLanguageForSelection(String? fenceTag) {
     if (_host.value.composing.isValid) return false;

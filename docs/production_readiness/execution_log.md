@@ -439,3 +439,27 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/enter_key_integration_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/code_fence_exit_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/fence_empty_enter_exit_widget_test.dart --reporter compact`: passed.
+
+### Phase 3 Architecture Hardening: Backspace Intent Handler
+
+- Moved fenced-code and inline-wrapper backspace transforms out of the
+  controller-private fence backspace policy extension and into
+  `SovereignBackspaceIntentHandler`.
+- Routed backspace policy transforms through the existing
+  `SovereignInputIntentHandler` facade so Enter, Tab, navigation, and
+  backspace now all have explicit intent handlers.
+- Removed the old `sovereign_controller_policies_fence_backspace.dart` part;
+  the controller now exposes backspace-only state through the typed input-intent
+  host.
+- Marked the Phase 3 input-intent split complete in the execution plan.
+- Verification:
+  - `flutter analyze lib test/widgets/sovereign/fence_empty_backspace_behavior_test.dart test/widgets/sovereign/fence_empty_backspace_widget_test.dart test/widgets/sovereign/fence_hidden_backspace_guard_test.dart test/widgets/sovereign/fence_tab_indent_test.dart test/widgets/sovereign/fence_smart_pairs_test.dart test/widgets/sovereign/toolbar_markdown_insert_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/fence_empty_backspace_behavior_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/fence_empty_backspace_widget_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/fence_hidden_backspace_guard_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/fence_tab_indent_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/fence_smart_pairs_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/toolbar_markdown_insert_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/list_policy_editing_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/delete_range_error_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/select_all_clear_reset_test.dart --reporter compact`: passed.

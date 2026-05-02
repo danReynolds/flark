@@ -1,6 +1,6 @@
 # Sovereign Production Readiness Execution Plan
 
-Status date: 2026-05-01
+Status date: 2026-05-02
 Current phase: Phase 3 - architecture hardening
 
 ## Objective
@@ -116,7 +116,7 @@ Goal: reduce large-file risk and make behavior modules easier to reason about.
 Tasks:
 
 - [ ] Finish controller facade extraction from RFC 017.
-- [ ] Split input intent routing into explicit handlers.
+- [x] Split input intent routing into explicit handlers.
 - [ ] Split markdown structure query and transform services.
 - [ ] Keep rendering composition pure and widget-facing code thin.
 - [ ] Split Rust bridge into smaller parse/ABI/mapping modules.

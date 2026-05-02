@@ -209,37 +209,55 @@ class _PolicyHelpers {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) =>
-      _controller._maybeDeleteFencedPairOnBackspace(oldValue, newValue);
+      _controller._inputIntents.maybeDeleteFencedPairOnBackspace(
+        oldValue,
+        newValue,
+      );
 
   TextEditingValue maybeOutdentFencedCodeOnBackspace(
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) =>
-      _controller._maybeOutdentFencedCodeOnBackspace(oldValue, newValue);
+      _controller._inputIntents.maybeOutdentFencedCodeOnBackspace(
+        oldValue,
+        newValue,
+      );
 
   TextEditingValue maybeCollapseEmptyFenceOnBackspace(
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) =>
-      _controller._maybeCollapseEmptyFenceOnBackspace(oldValue, newValue);
+      _controller._inputIntents.maybeCollapseEmptyFenceOnBackspace(
+        oldValue,
+        newValue,
+      );
 
   TextEditingValue maybeProtectEmptyFenceEntryBackspace(
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) =>
-      _controller._maybeProtectEmptyFenceEntryBackspace(oldValue, newValue);
+      _controller._inputIntents.maybeProtectEmptyFenceEntryBackspace(
+        oldValue,
+        newValue,
+      );
 
   TextEditingValue maybeProtectHiddenFenceBackspace(
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) =>
-      _controller._maybeProtectHiddenFenceBackspace(oldValue, newValue);
+      _controller._inputIntents.maybeProtectHiddenFenceBackspace(
+        oldValue,
+        newValue,
+      );
 
   TextEditingValue maybeReenterInlineWrapperOnBackspace(
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) =>
-      _controller._maybeReenterInlineWrapperOnBackspace(oldValue, newValue);
+      _controller._inputIntents.maybeReenterInlineWrapperOnBackspace(
+        oldValue,
+        newValue,
+      );
 
   structure.FenceContext? fenceContextForCaret(
     String text,

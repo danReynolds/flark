@@ -16,10 +16,16 @@ class _ControllerSovereignInputIntentHost implements SovereignInputIntentHost {
   LineIndex get lineIndex => _c._lineIndex;
   @override
   GeometryModel get geometry => _c._geometry;
+  @override
+  List<TextRange> get projectedHiddenRanges => _c._projectedHiddenRanges;
 
   @override
   void commitProgrammaticTextEdit(TextEditingValue newValue) =>
       _c._commitProgrammaticTextEdit(newValue);
+
+  @override
+  bool isCaretInFenceBody(String text, int caret) =>
+      _c._isCaretInFenceBody(text, caret);
 
   @override
   bool tryHandleIndentedCodeBlockEnter(String text, int caret) =>

@@ -56,7 +56,6 @@ part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_contr
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_fence.dart';
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_fence_navigation.dart';
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_fence_pairing.dart';
-part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_fence_backspace.dart';
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_quote.dart';
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_link.dart';
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_list.dart';
