@@ -513,3 +513,18 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/blockquote_editing_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/blockquote_key_integration_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/list_policy_editing_test.dart --reporter compact`: passed.
+
+### Phase 3 Architecture Hardening: List Enter Transform
+
+- Added `MarkdownStructureQueryService.editableListMarkerForLine` so list
+  continuation and list backspace share the same editable marker query path.
+- Moved list Enter continuation/exit behavior from `_ListPolicy._onEnter` into
+  `MarkdownStructureTransformService`.
+- Kept list backspace boundary behavior in `_ListPolicy` for now, but routed
+  its marker query through the query service.
+- Verification:
+  - `flutter analyze lib/widgets/sovereign/controllers/sovereign_controller.dart lib/src/widgets/sovereign/core/structure/markdown_structure_query_service.dart lib/src/widgets/sovereign/core/structure/markdown_structure_transform_service.dart test/widgets/sovereign/list_policy_editing_test.dart test/widgets/sovereign/blockquote_editing_test.dart test/widgets/sovereign/engine/native_live_editing_regression_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/list_policy_editing_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/blockquote_editing_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/blockquote_key_integration_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/engine/native_live_editing_regression_test.dart --reporter compact`: passed.

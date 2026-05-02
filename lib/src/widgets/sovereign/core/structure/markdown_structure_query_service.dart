@@ -47,6 +47,32 @@ class MarkdownStructureQueryService {
   TaskMarkerInfo? taskMarkerInfo(String text, int markerEnd, int lineEnd) =>
       MarkdownLineHelpers.taskMarkerInfo(text, markerEnd, lineEnd);
 
+  structure.ListMarkerContext? editableListMarkerForLine(
+    String text,
+    int lineStart,
+    int lineEnd,
+  ) {
+    final direct = listMarkerForLineAllowingQuotePrefix(
+      text,
+      lineStart,
+      lineEnd,
+    );
+    if (direct != null) return direct;
+
+    var cursor = lineStart;
+    while (cursor < lineEnd) {
+      final cu = text.codeUnitAt(cursor);
+      if (cu == 32 || cu == 9) {
+        cursor++;
+        continue;
+      }
+      break;
+    }
+    if (cursor == lineStart || cursor >= lineEnd) return null;
+
+    return listMarkerForLineAllowingQuotePrefix(text, cursor, lineEnd);
+  }
+
   structure.FenceContext? fenceContextForCaret({
     required String text,
     required int caret,

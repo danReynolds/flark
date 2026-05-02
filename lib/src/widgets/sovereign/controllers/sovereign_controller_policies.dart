@@ -303,6 +303,32 @@ class _PolicyHelpers {
         isQuoteLineBodyBlank: isQuoteLineBodyBlank,
       );
 
+  TextEditingValue maybeContinueOrExitListOnEnter(
+    TextEditingValue oldValue,
+    TextEditingValue newValue, {
+    required int? enterCaret,
+  }) =>
+      _controller._structureTransforms.maybeContinueOrExitListOnEnter(
+        oldValue: oldValue,
+        newValue: newValue,
+        enterCaret: enterCaret,
+        lineIndex: lineIndex,
+        isCaretInFencedCode: (text, caret) =>
+            fenceContextForCaret(text, caret, includeUnclosedEof: true) != null,
+        editableListMarkerForLine: editableListMarkerForLine,
+      );
+
+  structure.ListMarkerContext? editableListMarkerForLine(
+    String text,
+    int lineStart,
+    int lineEnd,
+  ) =>
+      _controller._structureQueries.editableListMarkerForLine(
+        text,
+        lineStart,
+        lineEnd,
+      );
+
   int lineEndWithBreak(String text, int line) =>
       NavigationLineUtils.lineEndWithBreak(lineIndex, text, line);
 

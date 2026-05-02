@@ -344,106 +344,12 @@ abstract final class _ListPolicy {
   static TextEditingValue _onEnter(
     _PolicyContext context,
     TextEditingValue newValue,
-  ) {
-    final helpers = context.helpers;
-    final oldValue = context.oldValue;
-    final caret = context.intent.enterCaret;
-    if (caret == null) return newValue;
-
-    final oldText = oldValue.text;
-    final newText = newValue.text;
-    if (caret < 0 || caret > oldText.length) return newValue;
-
-    // List-enter policy should not run while typing inside fenced code.
-    if (helpers.fenceContextForCaret(
-          oldText,
-          caret,
-          includeUnclosedEof: true,
-        ) !=
-        null) {
-      return newValue;
-    }
-
-    final oldLine = helpers.lineIndex.lineAtOffset(caret);
-    final lineStart = helpers.lineIndex.offsetAtLine(oldLine);
-    final lineEndWithBreak = helpers.lineEndWithBreak(oldText, oldLine);
-    final lineEnd = helpers.lineContentEnd(
-      oldText,
-      lineStart,
-      lineEndWithBreak,
-    );
-    final marker = _listMarkerForEditableLine(oldText, lineStart, lineEnd);
-    if (marker == null) return newValue;
-
-    // Pressing Enter before list content is a normal split.
-    if (caret < marker.contentStart) return newValue;
-
-    if (MarkdownLineHelpers.isLineBodyBlankFrom(
-      oldText,
-      marker.contentStart,
-      lineEnd,
-    )) {
-      final expectedCaret = (caret + 1).clamp(0, newText.length);
-      final currentCaret =
-          (newValue.selection.isValid && newValue.selection.isCollapsed)
-              ? newValue.selection.baseOffset.clamp(0, newText.length)
-              : expectedCaret;
-      // If an earlier policy already changed the inserted line (for example
-      // quote continuation), keep that structural transform and avoid
-      // unlisting the originating line.
-      if (currentCaret != expectedCaret) return newValue;
-
-      // Enter on an empty list item exits list mode by removing marker.
-      var removeEnd = marker.contentStart;
-      while (removeEnd < newText.length) {
-        final cu = newText.codeUnitAt(removeEnd);
-        if (cu == 32 || cu == 9) {
-          removeEnd++;
-          continue;
-        }
-        break;
-      }
-      final markerStart = marker.markerStart.clamp(0, removeEnd).toInt();
-      final exited = newText.replaceRange(markerStart, removeEnd, '');
-      final caretShift = removeEnd - markerStart;
-      final targetCaret = (newValue.selection.baseOffset - caretShift).clamp(
-        0,
-        exited.length,
+  ) =>
+      context.helpers.maybeContinueOrExitListOnEnter(
+        context.oldValue,
+        newValue,
+        enterCaret: context.intent.enterCaret,
       );
-      return newValue.copyWith(
-        text: exited,
-        selection: TextSelection.collapsed(offset: targetCaret),
-        composing: TextRange.empty,
-      );
-    }
-
-    var insertAt = (caret + 1).clamp(0, newText.length);
-    if (newValue.selection.isValid && newValue.selection.isCollapsed) {
-      final selectionOffset = newValue.selection.baseOffset.clamp(
-        0,
-        newText.length,
-      );
-      if (selectionOffset >= insertAt) {
-        insertAt = selectionOffset;
-      }
-    }
-    var continueMarker = marker.continueMarker;
-    if (marker.markerStart > lineStart) {
-      final prefix = oldText.substring(lineStart, marker.markerStart);
-      if (NavigationLineUtils.isHorizontalWhitespaceOnly(prefix)) {
-        continueMarker = '$prefix$continueMarker';
-      }
-    }
-
-    final continued = newText.replaceRange(insertAt, insertAt, continueMarker);
-    return newValue.copyWith(
-      text: continued,
-      selection: TextSelection.collapsed(
-        offset: insertAt + continueMarker.length,
-      ),
-      composing: TextRange.empty,
-    );
-  }
 
   static TextEditingValue _onBackspaceBoundary(
     _PolicyContext context,
@@ -494,7 +400,11 @@ abstract final class _ListPolicy {
       lineStart,
       lineEndWithBreak,
     );
-    final marker = _listMarkerForEditableLine(oldText, lineStart, lineEnd);
+    final marker = helpers.editableListMarkerForLine(
+      oldText,
+      lineStart,
+      lineEnd,
+    );
     if (marker == null) return newValue;
     if (oldCaret != marker.contentStart) return newValue;
     if (deletedOffset != marker.contentStart - 1) return newValue;
@@ -555,36 +465,6 @@ abstract final class _ListPolicy {
       text: adjustedText,
       selection: TextSelection.collapsed(offset: adjustedCaret),
       composing: TextRange.empty,
-    );
-  }
-
-  static structure.ListMarkerContext? _listMarkerForEditableLine(
-    String text,
-    int lineStart,
-    int lineEnd,
-  ) {
-    final direct = MarkdownLineHelpers.listMarkerForLineAllowingQuotePrefix(
-      text,
-      lineStart,
-      lineEnd,
-    );
-    if (direct != null) return direct;
-
-    var cursor = lineStart;
-    while (cursor < lineEnd) {
-      final cu = text.codeUnitAt(cursor);
-      if (cu == 32 || cu == 9) {
-        cursor++;
-        continue;
-      }
-      break;
-    }
-    if (cursor == lineStart || cursor >= lineEnd) return null;
-
-    return MarkdownLineHelpers.listMarkerForLineAllowingQuotePrefix(
-      text,
-      cursor,
-      lineEnd,
     );
   }
 }
