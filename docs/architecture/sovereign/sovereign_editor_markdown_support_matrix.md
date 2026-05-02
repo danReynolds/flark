@@ -34,7 +34,7 @@ read-only surface (`SovereignMarkdownView`) on focused post detail screens
 | Tables (GFM) | Yes (GFM) | Monospace + source-aligned row formatting baseline (parser-backed table blocks) | Enter row continuation + Tab/Shift-Tab cell navigation baseline | Partial | no true grid layout/column metrics UI; row/column ops still pending |
 | Images (`![alt](url)`) | Parser yes | Placeholder + inline/standalone preview card + actions overlay | Edit/open/copy actions + markdown text editing | Partial | `image_actions_overlay_test.dart`; image node remains markdown-source-first (not full embedded media block model) |
 | Reference links/definitions | Parser likely yes | Definition marker prefix hiding baseline | None | Partial | `[id]:` marker projection hidden; broader ref-link UX still pending |
-| Raw HTML blocks/inlines | Parser parses | No HTML rendering execution in editor | Text-only | Out of scope (for now) | safer to keep textual in live editor |
+| Raw HTML blocks/inlines | Parser parses | Literal text only; no HTML execution | Text-only policy | Supported policy | `raw_html_policy_2026-05-02.md`; read/editor rendering tests keep tags literal |
 
 ## 2) Live-Editing / Projection Safety Matrix
 
@@ -71,7 +71,7 @@ read-only surface (`SovereignMarkdownView`) on focused post detail screens
 ### Priority C (policy decisions)
 
 7. **Raw HTML strategy**  
-   Confirm editor behavior remains text-only and document sanitization/render policy for preview surfaces.
+   Supported policy: raw HTML stays literal text in editor/read-only surfaces; apps that need rendered HTML must sanitize outside Sovereign.
 8. **Extended GFM features (if needed)**  
    Footnotes, tables advanced alignment, task-list interactions beyond current text semantics.
 

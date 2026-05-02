@@ -92,6 +92,21 @@ final x = 1;
       expect(text, isNot(contains('---')));
     });
 
+    testWidgets('keeps raw HTML literal in read text', (tester) async {
+      const markdown = '''
+<script>alert("x")</script>
+
+Inline <span onclick="boom()">label</span>.
+''';
+
+      await _pumpMarkdownView(tester, markdown);
+      await tester.pumpAndSettle();
+
+      final text = _plainText(tester);
+      expect(text, contains('<script>alert("x")</script>'));
+      expect(text, contains('<span onclick="boom()">label</span>'));
+    });
+
     testWidgets('uses forced strut typography for read-only parity', (
       tester,
     ) async {

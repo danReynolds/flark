@@ -374,6 +374,33 @@ void main() {
       expect(urlSpan.style?.fontSize, isNot(equals(0)));
     });
 
+    testWidgets('Raw HTML remains visible literal source text', (
+      WidgetTester tester,
+    ) async {
+      final controller = SovereignController();
+      controller.text =
+          '<script>alert("x")</script>\nInline <span>label</span>.';
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(MaterialApp(home: Scaffold(body: Container())));
+      final context = tester.element(find.byType(Container));
+      await _pumpForParse(tester);
+
+      final span = controller.buildTextSpan(
+        context: context,
+        style: const TextStyle(fontSize: 12, color: Colors.black),
+        withComposing: false,
+      );
+      final visibleText = _leafSpans(span)
+          .where((s) => (s.style?.fontSize ?? 12) > 0)
+          .map((s) => s.text ?? '')
+          .join();
+
+      expect(visibleText, contains('<script>alert("x")</script>'));
+      expect(visibleText, contains('<span>label</span>'));
+      expect(controller.decoration.hiddenRanges, isEmpty);
+    });
+
     testWidgets(
       'Image markdown renders alt text placeholder and hides syntax',
       (WidgetTester tester) async {

@@ -145,7 +145,7 @@ Tasks:
 - [x] Thematic breaks: parser-backed classification and interaction tests.
 - [x] Indented code: continuation/exit/backspace parity where useful.
 - [ ] Escapes/entities: focused rendering and cursor-safety coverage.
-- [ ] Raw HTML: final text-only/sanitization policy.
+- [x] Raw HTML: final text-only/sanitization policy.
 
 ## Phase 5: Documentation, Examples, and Release Gates
 

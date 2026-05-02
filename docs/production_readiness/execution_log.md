@@ -883,3 +883,18 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/indented_code_editing_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/fence_auto_indent_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/list_key_integration_test.dart --reporter compact`: passed.
+
+### Phase 4 Feature Completeness: Raw HTML Text-Only Policy
+
+- Documented the final raw HTML policy in
+  `docs/production_readiness/raw_html_policy_2026-05-02.md`: Sovereign preserves
+  raw HTML as literal source text and does not execute, embed, or sanitize HTML
+  because it does not render HTML.
+- Added read-only and editor rendering regressions that keep raw HTML tags
+  visible as text and verify the editor does not hide them as markdown markers.
+- Updated the support matrix and marked the raw HTML Phase 4 policy item
+  complete.
+- Verification:
+  - `flutter test test/widgets/sovereign/sovereign_markdown_view_parity_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/block_markdown_rendering_test.dart --reporter compact`: passed.
+  - `./scripts/verify_package_confidence.sh --skip-native`: passed.
