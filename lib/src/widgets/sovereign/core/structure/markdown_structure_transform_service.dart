@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 
+import 'package:sovereign_editor/src/widgets/sovereign/core/intents/input_intent_models.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/markdown_line_helpers.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/fence_context.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/list_marker_context.dart';
@@ -23,6 +24,12 @@ typedef FenceArrowExitPredicate = bool Function({
   required FenceContext context,
   required int fromLine,
   required int toLine,
+});
+
+typedef FenceEnterExitComputer = FenceEnterExitResult? Function({
+  required String text,
+  required int caret,
+  required FenceContext context,
 });
 
 class MarkdownStructureTransformService {
@@ -356,6 +363,46 @@ class MarkdownStructureTransformService {
     final exitOffset = context.startOffset.clamp(0, arrow.text.length);
     return newValue.copyWith(
       selection: TextSelection.collapsed(offset: exitOffset),
+      composing: TextRange.empty,
+    );
+  }
+
+  TextEditingValue maybeExitFencedCodeOnEnter({
+    required TextEditingValue oldValue,
+    required TextEditingValue newValue,
+    required int? enterCaret,
+    required bool suppressFenceExitOnEnter,
+    required FenceContext? Function(
+      String text,
+      int caret, {
+      required bool includeUnclosedEof,
+    }) fenceContextForCaret,
+    required FenceEnterExitComputer computeFenceExitOnEnter,
+  }) {
+    if (suppressFenceExitOnEnter) return newValue;
+
+    final caret = enterCaret;
+    if (caret == null) return newValue;
+
+    final oldText = oldValue.text;
+    if (caret < 0 || caret > oldText.length) return newValue;
+
+    final context = fenceContextForCaret(
+      oldText,
+      caret,
+      includeUnclosedEof: true,
+    );
+    if (context == null) return newValue;
+    final exit = computeFenceExitOnEnter(
+      text: oldText,
+      caret: caret,
+      context: context,
+    );
+    if (exit == null) return newValue;
+
+    return newValue.copyWith(
+      text: exit.text,
+      selection: TextSelection.collapsed(offset: exit.caret),
       composing: TextRange.empty,
     );
   }

@@ -107,9 +107,18 @@ class _PolicyHelpers {
 
   TextEditingValue maybeExitFencedCodeOnEnter(
     TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) =>
-      _controller._maybeExitFencedCodeOnEnter(oldValue, newValue);
+    TextEditingValue newValue, {
+    required int? enterCaret,
+  }) =>
+      _controller._structureTransforms.maybeExitFencedCodeOnEnter(
+        oldValue: oldValue,
+        newValue: newValue,
+        enterCaret: enterCaret,
+        suppressFenceExitOnEnter:
+            _controller._suppressFenceExitOnEnterDepth > 0,
+        fenceContextForCaret: fenceContextForCaret,
+        computeFenceExitOnEnter: _controller._computeFenceExitOnEnter,
+      );
 
   TextEditingValue maybeContinueOutsideClosingFenceEof(
     TextEditingValue oldValue,

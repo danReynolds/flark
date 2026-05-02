@@ -1,58 +1,6 @@
 part of 'package:sovereign_editor/widgets/sovereign/controllers/sovereign_controller.dart';
 
 extension _FenceNavigationPolicyOps on SovereignController {
-  TextEditingValue _maybeExitFencedCodeOnEnter(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    if (_suppressFenceExitOnEnterDepth > 0) {
-      return newValue;
-    }
-    if (oldValue.composing.isValid || newValue.composing.isValid) {
-      return newValue;
-    }
-
-    final oldSel = oldValue.selection;
-    if (!oldSel.isValid || !oldSel.isCollapsed) return newValue;
-
-    final caret = oldSel.baseOffset;
-    final oldText = oldValue.text;
-    final newText = newValue.text;
-    if (caret < 0 || caret > oldText.length) return newValue;
-
-    if (newText.length != oldText.length + 1) return newValue;
-    if (caret >= newText.length) return newValue;
-    if (newText.codeUnitAt(caret) != 10) return newValue;
-    if (newValue.selection.isValid &&
-        newValue.selection.isCollapsed &&
-        newValue.selection.baseOffset != caret + 1) {
-      return newValue;
-    }
-    if (!newText.startsWith(oldText.substring(0, caret))) return newValue;
-    if (newText.substring(caret + 1) != oldText.substring(caret)) {
-      return newValue;
-    }
-
-    final context = _fenceContextForCaret(
-      oldText,
-      caret,
-      includeUnclosedEof: true,
-    );
-    if (context == null) return newValue;
-    final exit = _computeFenceExitOnEnter(
-      text: oldText,
-      caret: caret,
-      context: context,
-    );
-    if (exit == null) return newValue;
-
-    return newValue.copyWith(
-      text: exit.text,
-      selection: TextSelection.collapsed(offset: exit.caret),
-      composing: TextRange.empty,
-    );
-  }
-
   TextEditingValue _maybeContinueOutsideClosingFenceEof(
     TextEditingValue oldValue,
     TextEditingValue newValue,

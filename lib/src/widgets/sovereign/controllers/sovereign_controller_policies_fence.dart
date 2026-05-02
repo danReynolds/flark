@@ -19,8 +19,11 @@ abstract final class _FencePolicy {
     _EditTransformRule(
       name: 'exit-enter',
       priority: 30,
-      apply: (context, value) =>
-          context.helpers.maybeExitFencedCodeOnEnter(context.oldValue, value),
+      apply: (context, value) => context.helpers.maybeExitFencedCodeOnEnter(
+        context.oldValue,
+        value,
+        enterCaret: context.intent.enterCaret,
+      ),
     ),
     _EditTransformRule(
       name: 'continue-outside-closing-fence-eof',
