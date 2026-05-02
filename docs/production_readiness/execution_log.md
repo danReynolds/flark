@@ -926,3 +926,16 @@ append-only unless correcting a factual error.
 - Verification:
   - `flutter test test/widgets/sovereign/logic/sovereign_style_scanner_test.dart test/widgets/sovereign/sovereign_inline_test.dart test/widgets/sovereign/link_actions_overlay_test.dart test/widgets/sovereign/link_policy_editing_test.dart --reporter compact`: passed.
   - `./scripts/verify_package_confidence.sh --skip-native`: passed.
+
+### Phase 4 Feature Completeness: Images/Media Source-First Preview Policy
+
+- Kept image markdown source-first while improving preview behavior: `http` and
+  `https` targets render image previews; relative, attachment, and other
+  non-network targets show an explicit preview-unavailable state instead of
+  falling through `Image.network`.
+- Preserved image open/copy/edit actions and standalone preview tapping for
+  non-network media targets.
+- Updated the support matrix and marked the images/media Phase 4 item complete.
+- Verification:
+  - `flutter test test/widgets/sovereign/image_actions_overlay_test.dart --reporter compact`: passed.
+  - `./scripts/verify_package_confidence.sh --skip-native`: passed.

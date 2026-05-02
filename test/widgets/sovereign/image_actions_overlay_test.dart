@@ -325,6 +325,58 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('Relative image target uses source-first preview placeholder', (
+    WidgetTester tester,
+  ) async {
+    final controller =
+        SovereignController(text: '![asset](images/diagram.png)');
+    final focusNode = FocusNode();
+    String? opened;
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 700,
+            child: SovereignEditor(
+              controller: controller,
+              focusNode: focusNode,
+              onOpenLink: (url) async => opened = url,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    focusNode.requestFocus();
+    controller.selection = TextSelection.collapsed(
+      offset: controller.text.indexOf('asset') + 1,
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.byKey(const Key('SovereignInlineImagePreviewUnsupported')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('SovereignInlineImagePreviewRetry')),
+      findsNothing,
+    );
+    expect(find.text('Preview unavailable'), findsOneWidget);
+    expect(find.text('images/diagram.png'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const Key('SovereignInlineImagePreviewImageArea')),
+    );
+    await tester.pump();
+
+    expect(opened, 'images/diagram.png');
+  });
+
   testWidgets('Image edit dialog updates alt text and URL', (
     WidgetTester tester,
   ) async {

@@ -17,6 +17,9 @@ const Key kSovereignInlineImagePreviewImageAreaKey = Key(
 const Key kSovereignInlineImagePreviewRetryKey = Key(
   'SovereignInlineImagePreviewRetry',
 );
+const Key kSovereignInlineImagePreviewUnsupportedKey = Key(
+  'SovereignInlineImagePreviewUnsupported',
+);
 
 typedef SovereignInlineToolbarBuilder = Widget Function(
   BuildContext context, {
@@ -203,6 +206,7 @@ class _SovereignInlineActionsOverlayCardState
     final imageUrl =
         widget.resolvedUrl ?? widget.target.urlText(widget.textSnapshot);
     final altText = widget.target.labelText(widget.textSnapshot);
+    final previewableNetworkImage = _isPreviewableNetworkImageUrl(imageUrl);
     final isStandalone = widget.standaloneImagePreview;
     final previewWidth = widget.maxWidth.clamp(
       180.0,
@@ -241,6 +245,57 @@ class _SovereignInlineActionsOverlayCardState
         );
 
     Widget buildImageSurface() {
+      if (!previewableNetworkImage) {
+        final unsupportedWidget = DecoratedBox(
+          key: kSovereignInlineImagePreviewUnsupportedKey,
+          decoration: BoxDecoration(color: errorBackgroundColor),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 240),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.image_not_supported_outlined,
+                      color: widget.theme.iconColor.withValues(alpha: 0.86),
+                      size: 28,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Preview unavailable',
+                      textAlign: TextAlign.center,
+                      style: widget.theme.textStyle.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: widget.theme.textStyle.color?.withValues(
+                          alpha: 0.9,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        final imageBody = SizedBox(
+          key: kSovereignInlineImagePreviewImageAreaKey,
+          height: previewHeight,
+          child: unsupportedWidget,
+        );
+        if (!isStandalone || widget.onOpen == null) {
+          return imageBody;
+        }
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(onTap: widget.onOpen, child: imageBody),
+        );
+      }
+
       final imageWidget = Image.network(
         imageUrl,
         key: ValueKey<String>(
@@ -520,6 +575,12 @@ class _SovereignInlineActionsOverlayCardState
       ),
     );
   }
+}
+
+bool _isPreviewableNetworkImageUrl(String url) {
+  final uri = Uri.tryParse(url.trim());
+  if (uri == null || !uri.hasScheme || uri.host.isEmpty) return false;
+  return uri.scheme == 'http' || uri.scheme == 'https';
 }
 
 Future<void> copyInlineTargetUrlToClipboard(String? url) async {

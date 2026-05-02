@@ -140,7 +140,7 @@ Goal: close known markdown support gaps according to the support matrix.
 Tasks:
 
 - [ ] Tables: true structured rendering and richer row/column operations.
-- [ ] Images/media: stronger preview and interaction model.
+- [x] Images/media: stronger preview and interaction model.
 - [x] Reference links: full rendering/cursor behavior.
 - [x] Thematic breaks: parser-backed classification and interaction tests.
 - [x] Indented code: continuation/exit/backspace parity where useful.
