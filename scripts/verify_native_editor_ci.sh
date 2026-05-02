@@ -75,16 +75,7 @@ run_in_pkg flutter test test/widgets/sovereign/engine/native_live_editing_regres
 run_in_pkg flutter test test/widgets/sovereign/engine/native_commonmark_upstream_parity_test.dart
 
 if [ "$run_android_verify" -eq 1 ]; then
-  echo
-  echo "==> (cd android && ./gradlew :app:verifySovereignComrakNativeLibs)"
-  if [ ! -d android ]; then
-    echo "Android app verification requested, but no android/ app harness exists in this package repo yet."
-    exit 1
-  fi
-  (
-    cd android
-    ./gradlew :app:verifySovereignComrakNativeLibs
-  )
+  run ./scripts/verify_example_packaging.sh --android
 fi
 
 echo

@@ -150,6 +150,31 @@ Useful options:
 
 `--strict` turns skipped targets into a failing build (good for CI/local release checks).
 
+## Example app and mobile packaging checks
+
+The `example/` app is the package integration harness for mobile builds. It
+depends on the local package, imports only
+`package:sovereign_editor/sovereign_editor.dart`, and includes editable and
+read-only preview surfaces.
+
+Run the example:
+
+```bash
+cd example
+flutter run
+```
+
+Verify example packaging:
+
+```bash
+./scripts/verify_example_packaging.sh --android
+./scripts/verify_example_packaging.sh --ios
+```
+
+The Android check builds the debug APK and fails unless the bundled APK
+contains `lib/**/libsovereign_comrak_bridge.so`. The iOS check verifies the
+XCFramework reference, static-link anchor source, and Xcode workspace shape.
+
 ## One-shot CI gate (local)
 
 Run the native editor verification gate (build + key tests + Android lib check):

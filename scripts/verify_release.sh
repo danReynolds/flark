@@ -54,8 +54,22 @@ run() {
   "$@"
 }
 
+run_in_dir() {
+  local dir="$1"
+  shift
+  echo
+  echo "==> (cd ${dir#$REPO_ROOT/} && $*)"
+  (
+    cd "$dir"
+    "$@"
+  )
+}
+
 run flutter pub get
 run flutter analyze hook lib test
+run_in_dir "$REPO_ROOT/example" flutter pub get
+run_in_dir "$REPO_ROOT/example" flutter analyze
+run_in_dir "$REPO_ROOT/example" flutter test test --reporter compact
 
 if [ "$run_native_build" -eq 1 ]; then
   run ./scripts/build_comrak_all.sh --host-only

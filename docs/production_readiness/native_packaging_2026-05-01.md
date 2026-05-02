@@ -31,6 +31,11 @@ The hook emits the asset ID:
 
 This matches the Dart library that owns the native bridge contract.
 
+When Rust is discovered through `rustup`, the hook resolves the `stable`
+toolchain's `cargo` and `rustc` binaries directly, installs missing target
+standard libraries for that same toolchain, and sets `RUSTC` for Cargo builds.
+This avoids mixing a Homebrew `rustc` with rustup-installed Android targets.
+
 Supported hook outputs:
 
 - macOS arm64/x64: `DynamicLoadingBundled` `.dylib`
@@ -78,6 +83,33 @@ manual mobile packaging:
 - host: `native/comrak_bridge/target/release/libsovereign_comrak_bridge.so`
 - Android: `native/comrak_bridge/dist/android/jniLibs/<abi>/libsovereign_comrak_bridge.so`
 - iOS: `native/comrak_bridge/dist/ios/sovereign_comrak_bridge.xcframework`
+
+## Example Harness
+
+`example/` is the package's mobile integration harness. It depends on
+`sovereign_editor` through `path: ..`, imports only the top-level public barrel,
+and exposes both `SovereignEditor` and `SovereignMarkdownView`.
+
+Android verification:
+
+```bash
+./scripts/verify_example_packaging.sh --android
+```
+
+This runs the example Gradle task
+`:app:verifySovereignComrakNativeLibs`, which builds the debug APK and fails
+unless the APK contains `lib/**/libsovereign_comrak_bridge.so`.
+
+iOS verification:
+
+```bash
+./scripts/verify_example_packaging.sh --ios
+```
+
+This checks that `Runner/SovereignComrakAnchor.c` references the three exported
+bridge symbols, that the Runner target compiles that source file, that the
+project links `sovereign_comrak_bridge.xcframework`, and that Xcode can parse
+the workspace. Use `--strict-ios` when the built XCFramework must already exist.
 
 ## Consumer Integration
 

@@ -392,3 +392,36 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/engine/syntax_engine_factory_test.dart --reporter compact`: passed.
   - `dart doc --dry-run`: 0 warnings and 0 errors.
   - `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
+
+### Phase 2 Native Packaging: Example Harness
+
+- Added `example/` as the package mobile integration harness.
+- The example depends on `sovereign_editor` through `path: ..` and imports only
+  `package:sovereign_editor/sovereign_editor.dart`.
+- Replaced the generated counter app with a compact editable/preview markdown
+  workspace using `SovereignController`, `SovereignEditor`,
+  `SovereignMarkdownView`, and `SovereignMarkdownCommands`.
+- Added a public-contract plain-text fallback syntax engine inside the example
+  so the app can surface native preflight diagnostics instead of crashing before
+  native assets have been built.
+- Added `example/android/app:verifySovereignComrakNativeLibs`, which builds the
+  debug APK and verifies that `libsovereign_comrak_bridge.so` is packaged.
+- Added `example/ios/Runner/SovereignComrakAnchor.c` and linked
+  `native/comrak_bridge/dist/ios/sovereign_comrak_bridge.xcframework` in the
+  Runner project so iOS process-linked builds keep the bridge symbols visible.
+- Added `scripts/verify_example_packaging.sh` for Android APK inspection and
+  iOS project/link-anchor verification.
+- Fixed the native-assets hook to resolve rustup's `stable` `cargo` and
+  `rustc` binaries directly, install missing targets into that same toolchain,
+  and pass `RUSTC` to Cargo. This prevents Android hook builds from mixing
+  Homebrew `rustc` with rustup-installed Android targets.
+- Verification:
+  - `flutter pub get` in `example`: passed.
+  - `flutter analyze` in `example`: passed.
+  - `flutter test test --reporter compact` in `example`: passed.
+  - `./scripts/verify_example_packaging.sh --ios`: passed; the local iOS
+    XCFramework was not built yet, so the non-strict check reported the
+    expected build reminder and `xcodebuild -list` parsed the workspace.
+  - `./scripts/verify_example_packaging.sh --android`: passed; Gradle built
+    `example/build/app/outputs/apk/debug/app-debug.apk` and found packaged
+    `libsovereign_comrak_bridge.so` entries.

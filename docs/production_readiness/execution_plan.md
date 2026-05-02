@@ -1,7 +1,7 @@
 # Sovereign Production Readiness Execution Plan
 
 Status date: 2026-05-01
-Current phase: Phase 1 - package shape and public API
+Current phase: Phase 3 - architecture hardening
 
 ## Objective
 
@@ -105,7 +105,7 @@ Tasks:
 - [x] Decide whether Dart FFI bindings should be generated with `ffigen`.
 - [x] Define artifact layout for macOS, Linux, iOS, Android, and unsupported
   platforms.
-- [ ] Add a small example app/harness for Android/iOS packaging verification.
+- [x] Add a small example app/harness for Android/iOS packaging verification.
 - [x] Make bridge preflight errors package-neutral and actionable.
 - [x] Document the consumer integration path.
 
@@ -144,7 +144,7 @@ Tasks:
 
 - [ ] Add `LICENSE` after owner decision.
 - [ ] Add `CHANGELOG.md`.
-- [ ] Add `example/` with an editable and read-only demo.
+- [x] Add `example/` with an editable and read-only demo.
 - [ ] Add screenshots if publishing externally.
 - [ ] Add repository/issue tracker/documentation metadata.
 - [ ] Add `scripts/verify_release.sh`.
@@ -184,8 +184,20 @@ Future release gate:
 ```
 
 Current status: passing as of 2026-05-01. This gate currently covers pub get,
-analysis, host native bridge build, native editor CI, full package tests, and
-the enforced benchmark lane.
+package analysis, example analysis/tests, host native bridge build, native
+editor CI, full package tests, and the enforced benchmark lane.
+
+Example mobile packaging gate:
+
+```bash
+./scripts/verify_example_packaging.sh --android
+./scripts/verify_example_packaging.sh --ios
+```
+
+Current status: passing as of 2026-05-01. The Android check builds the example
+debug APK and verifies that `libsovereign_comrak_bridge.so` is packaged. The
+iOS check verifies the XCFramework/link-anchor project wiring and parses the
+workspace with `xcodebuild -list`.
 
 ## Research Notes
 

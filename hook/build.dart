@@ -85,8 +85,8 @@ Future<Uri> _buildRustArtifact({
 
   if (cargo.usesRustup) {
     await _run(
-      cargo.executable,
-      ['target', 'add', plan.triple],
+      cargo.rustupExecutable!,
+      ['target', 'add', plan.triple, '--toolchain', 'stable'],
       workingDirectory: packageRootPath,
     );
   }
@@ -103,7 +103,7 @@ Future<Uri> _buildRustArtifact({
       plan.triple,
     ],
     workingDirectory: packageRootPath,
-    environment: plan.environment,
+    environment: cargo.buildEnvironment(plan.environment),
   );
 
   final builtArtifact = packageRoot.resolve(
@@ -131,7 +131,22 @@ Future<Uri> _buildRustArtifact({
 Future<_CargoCommand> _cargoCommand() async {
   final rustup = await _which('rustup');
   if (rustup != null) {
-    return _CargoCommand(rustup, const ['run', 'stable', 'cargo']);
+    final cargo = await _rustupWhich(rustup, 'cargo');
+    final rustc = await _rustupWhich(rustup, 'rustc');
+    if (cargo != null && rustc != null) {
+      return _CargoCommand(
+        cargo,
+        const [],
+        rustupExecutable: rustup,
+        rustcExecutable: rustc,
+        toolchainBinPath: File(rustc).parent.path,
+      );
+    }
+    return _CargoCommand(
+      rustup,
+      const ['run', 'stable', 'cargo'],
+      rustupExecutable: rustup,
+    );
   }
   final cargo = await _which('cargo');
   if (cargo != null) return _CargoCommand(cargo, const []);
@@ -143,6 +158,16 @@ Future<_CargoCommand> _cargoCommand() async {
 
 Future<String?> _which(String executable) async {
   final result = await Process.run('which', [executable]);
+  if (result.exitCode != 0) return null;
+  final path = (result.stdout as String).trim();
+  return path.isEmpty ? null : path;
+}
+
+Future<String?> _rustupWhich(String rustup, String executable) async {
+  final result = await Process.run(
+    rustup,
+    ['which', executable, '--toolchain', 'stable'],
+  );
   if (result.exitCode != 0) return null;
   final path = (result.stdout as String).trim();
   return path.isEmpty ? null : path;
@@ -174,10 +199,39 @@ Future<void> _run(
 final class _CargoCommand {
   final String executable;
   final List<String> leadingArgs;
+  final String? rustupExecutable;
+  final String? rustcExecutable;
+  final String? toolchainBinPath;
 
-  const _CargoCommand(this.executable, this.leadingArgs);
+  const _CargoCommand(
+    this.executable,
+    this.leadingArgs, {
+    this.rustupExecutable,
+    this.rustcExecutable,
+    this.toolchainBinPath,
+  });
 
-  bool get usesRustup => leadingArgs.isNotEmpty;
+  bool get usesRustup => rustupExecutable != null;
+
+  Map<String, String>? buildEnvironment(Map<String, String>? base) {
+    if (base == null && rustcExecutable == null && toolchainBinPath == null) {
+      return null;
+    }
+    final environment = <String, String>{...?base};
+    final rustcPath = rustcExecutable;
+    if (rustcPath != null) {
+      environment['RUSTC'] = rustcPath;
+    }
+    final binPath = toolchainBinPath;
+    if (binPath != null) {
+      final path = Platform.environment['PATH'];
+      environment['PATH'] = [
+        binPath,
+        if (path != null && path.isNotEmpty) path,
+      ].join(Platform.pathSeparator);
+    }
+    return environment;
+  }
 }
 
 final class _RustBuildPlan {
