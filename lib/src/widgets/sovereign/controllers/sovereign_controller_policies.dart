@@ -273,6 +273,20 @@ class _PolicyHelpers {
   structure.QuoteContext? quoteContextForLine(String text, int line) =>
       _controller._quoteContextForLine(text, line);
 
+  TextEditingValue maybeExitEmptyAtxHeadingOnEnter(
+    TextEditingValue oldValue,
+    TextEditingValue newValue, {
+    required int? enterCaret,
+  }) =>
+      _controller._structureTransforms.maybeExitEmptyAtxHeadingOnEnter(
+        oldValue: oldValue,
+        newValue: newValue,
+        enterCaret: enterCaret,
+        lineIndex: lineIndex,
+        isCaretInFencedCode: (text, caret) =>
+            fenceContextForCaret(text, caret, includeUnclosedEof: true) != null,
+      );
+
   int lineEndWithBreak(String text, int line) =>
       NavigationLineUtils.lineEndWithBreak(lineIndex, text, line);
 

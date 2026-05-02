@@ -484,3 +484,18 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/blockquote_key_integration_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/table_editing_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/list_policy_editing_test.dart --reporter compact`: passed.
+
+### Phase 3 Architecture Hardening: Heading Transform Service
+
+- Added `MarkdownStructureTransformService` as the first transform-side
+  structure service.
+- Moved empty ATX heading Enter-exit behavior out of
+  `_HeadingPolicy._onEnter` and into the transform service.
+- Kept `_HeadingPolicy` as the edit-pipeline rule wrapper so transform ordering
+  is unchanged.
+- Left list, quote, table, and fence transforms in their existing policy files;
+  broader transform extraction remains pending in the execution plan.
+- Verification:
+  - `flutter analyze lib/widgets/sovereign/controllers/sovereign_controller.dart lib/src/widgets/sovereign/core/structure/markdown_structure_transform_service.dart test/widgets/sovereign/heading_policy_editing_test.dart test/widgets/sovereign/heading_key_integration_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/heading_policy_editing_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/heading_key_integration_test.dart --reporter compact`: passed.

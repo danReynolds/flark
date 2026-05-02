@@ -323,6 +323,7 @@ abstract class TextRenderer {
 
 - `core/structure/navigation/sovereign_navigation_helpers.dart`
 - `core/structure/markdown_structure_query_service.dart`
+- `core/structure/markdown_structure_transform_service.dart`
 - `controllers/sovereign_markdown_line_helpers.dart`
 - table/fence/list/quote structural helper sections from policy files
 

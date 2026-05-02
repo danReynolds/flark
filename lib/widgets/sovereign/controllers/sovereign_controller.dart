@@ -20,7 +20,6 @@ import '../engine/syntax_types.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_style_scanner.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_geometry_scanner.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/logic/fenced_code_scanner.dart';
-import 'package:sovereign_editor/src/widgets/sovereign/logic/markdown_marker_grammar.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/logic/projector.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/state/editor_session_state.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/state/editor_session_state_builder.dart';
@@ -39,6 +38,7 @@ import 'package:sovereign_editor/src/widgets/sovereign/core/structure/fence/fenc
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/indented_code/indented_code_enter_service.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/markdown_line_helpers.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/markdown_structure_query_service.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/markdown_structure_transform_service.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/navigation/navigation_line_utils.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/navigation/sovereign_navigation_helpers.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/navigation/vertical_caret_navigation.dart';
@@ -81,6 +81,8 @@ class SovereignController extends TextEditingController {
       const SovereignNavigationHelpers();
   final MarkdownStructureQueryService _structureQueries =
       const MarkdownStructureQueryService();
+  final MarkdownStructureTransformService _structureTransforms =
+      const MarkdownStructureTransformService();
   final IndentedCodeEnterService _indentedCodeEnterService =
       const IndentedCodeEnterService();
   late final SovereignValueMutationCoordinator _valueMutation =

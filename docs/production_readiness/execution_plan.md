@@ -118,7 +118,8 @@ Tasks:
 - [ ] Finish controller facade extraction from RFC 017.
 - [x] Split input intent routing into explicit handlers.
 - [ ] Split markdown structure query and transform services; initial query
-  facade extracted, transform service still pending.
+  facade and heading transform extracted, broader transform service still
+  pending.
 - [ ] Keep rendering composition pure and widget-facing code thin.
 - [ ] Split Rust bridge into smaller parse/ABI/mapping modules.
 - [ ] Keep behavior-level tests green after each wave.
