@@ -54,8 +54,12 @@ abstract final class _FencePolicy {
     _EditTransformRule(
       name: 'auto-indent-enter',
       priority: 60,
-      apply: (context, value) => context.helpers
-          .maybeAutoIndentFencedCodeOnEnter(context.oldValue, value),
+      apply: (context, value) =>
+          context.helpers.maybeAutoIndentFencedCodeOnEnter(
+        context.oldValue,
+        value,
+        enterCaret: context.intent.enterCaret,
+      ),
     ),
     _EditTransformRule(
       name: 'wrap-selection-on-opener',

@@ -149,9 +149,17 @@ class _PolicyHelpers {
 
   TextEditingValue maybeAutoIndentFencedCodeOnEnter(
     TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) =>
-      _controller._maybeAutoIndentFencedCodeOnEnter(oldValue, newValue);
+    TextEditingValue newValue, {
+    required int? enterCaret,
+  }) =>
+      _controller._structureTransforms.maybeAutoIndentFencedCodeOnEnter(
+        oldValue: oldValue,
+        newValue: newValue,
+        enterCaret: enterCaret,
+        lineIndex: lineIndex,
+        fenceContextForCaret: fenceContextForCaret,
+        fenceLanguageForBlock: _controller._fenceLanguageForBlock,
+      );
 
   TextEditingValue maybeWrapFencedSelectionOnOpenerInsert(
     TextEditingValue oldValue,

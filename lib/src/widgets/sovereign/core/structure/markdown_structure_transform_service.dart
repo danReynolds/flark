@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 
 import 'package:sovereign_editor/src/widgets/sovereign/core/intents/input_intent_models.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/fence/fence_editing_utils.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/markdown_line_helpers.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/fence_context.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/list_marker_context.dart';
@@ -467,6 +468,95 @@ class MarkdownStructureTransformService {
       selection: TextSelection.collapsed(offset: adjustedText.length),
       composing: TextRange.empty,
     );
+  }
+
+  TextEditingValue maybeAutoIndentFencedCodeOnEnter({
+    required TextEditingValue oldValue,
+    required TextEditingValue newValue,
+    required int? enterCaret,
+    required LineIndex lineIndex,
+    required FenceContext? Function(
+      String text,
+      int caret, {
+      required bool includeUnclosedEof,
+    }) fenceContextForCaret,
+    required String? Function(String text, int blockStartOffset)
+        fenceLanguageForBlock,
+  }) {
+    final caret = enterCaret;
+    if (caret == null) return newValue;
+
+    final oldText = oldValue.text;
+    final newText = newValue.text;
+    if (caret < 0 || caret > oldText.length) return newValue;
+    if (!_isSimpleEnterInsertion(
+      oldValue: oldValue,
+      newValue: newValue,
+      caret: caret,
+    )) {
+      return newValue;
+    }
+
+    final context = fenceContextForCaret(
+      oldText,
+      caret,
+      includeUnclosedEof: true,
+    );
+    if (context == null) return newValue;
+
+    final caretLine = lineIndex.lineAtOffset(caret);
+    final lineStart = lineIndex.offsetAtLine(caretLine);
+    if (lineStart < 0 || lineStart > caret || caret > oldText.length) {
+      return newValue;
+    }
+    final beforeCaret = oldText.substring(lineStart, caret);
+    final baseIndent = NavigationLineUtils.leadingWhitespacePrefix(beforeCaret);
+    final trimmedBeforeCaret =
+        NavigationLineUtils.trimRightHorizontalWhitespace(beforeCaret);
+    final fenceLanguage = fenceLanguageForBlock(oldText, context.startOffset);
+    final shouldIncreaseIndent =
+        FenceEditingUtils.shouldIncreaseIndentForFenceLine(
+      trimmedBeforeCaret,
+      fenceLanguage,
+    );
+
+    var indent = baseIndent;
+    if (shouldIncreaseIndent) {
+      indent = '$indent${FenceEditingUtils.preferredIndentUnit(baseIndent)}';
+    }
+    if (indent.isEmpty) return newValue;
+
+    final indentStart = caret + 1;
+    final indentedText = newText.replaceRange(indentStart, indentStart, indent);
+    final indentedCaret = indentStart + indent.length;
+    return newValue.copyWith(
+      text: indentedText,
+      selection: TextSelection.collapsed(offset: indentedCaret),
+      composing: TextRange.empty,
+    );
+  }
+
+  static bool _isSimpleEnterInsertion({
+    required TextEditingValue oldValue,
+    required TextEditingValue newValue,
+    required int caret,
+  }) {
+    final oldText = oldValue.text;
+    final newText = newValue.text;
+    if (newText.length != oldText.length + 1) return false;
+    if (caret >= newText.length || newText.codeUnitAt(caret) != 10) {
+      return false;
+    }
+    if (newValue.selection.isValid &&
+        newValue.selection.isCollapsed &&
+        newValue.selection.baseOffset != caret + 1) {
+      return false;
+    }
+    if (!newText.startsWith(oldText.substring(0, caret))) return false;
+    if (newText.substring(caret + 1) != oldText.substring(caret)) {
+      return false;
+    }
+    return true;
   }
 
   TextEditingValue maybeContinueOrExitListOnEnter({
