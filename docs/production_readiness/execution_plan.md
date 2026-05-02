@@ -126,8 +126,12 @@ Tasks:
 - [x] Keep rendering composition pure and widget-facing code thin; read-only
   task-checkbox visuals are isolated in a render-only layer and markdown view
   code composes typed rendering helpers.
-- [ ] Split Rust bridge into smaller parse/ABI/mapping modules.
-- [ ] Keep behavior-level tests green after each wave.
+- [x] Split Rust bridge into smaller parse/ABI/mapping modules; the native
+  bridge now keeps C exports in `lib.rs`, ABI allocation/freeing in `abi.rs`,
+  JSON payload models in `payload.rs`, source range normalization in
+  `source_ranges.rs`, marker extraction in `marker_mapping.rs`, and comrak node
+  collection in `parser.rs`.
+- [x] Keep behavior-level tests green after each wave.
 
 ## Phase 4: Feature Completeness and UX Polish
 

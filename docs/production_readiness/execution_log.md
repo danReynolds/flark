@@ -829,3 +829,22 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/sovereign_markdown_view_smoke_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/sovereign_markdown_view_parity_test.dart --reporter compact`: passed.
   - `./scripts/verify_package_confidence.sh --skip-native`: passed.
+
+### Phase 3 Architecture Hardening: Native Comrak Bridge Module Split
+
+- Split the Rust bridge out of a single 1325-line `lib.rs` into focused
+  modules:
+  - `lib.rs`: exported C ABI entrypoints.
+  - `abi.rs`: response layout plus allocation/freeing.
+  - `payload.rs`: serialized native parse payload models.
+  - `source_ranges.rs`: byte-range normalization and line helpers.
+  - `marker_mapping.rs`: markdown marker hiding ranges.
+  - `parser.rs`: comrak document traversal and block/inline token collection.
+- Marked the Rust bridge split and Phase 3 behavior-test upkeep items complete
+  in the execution plan.
+- Verification:
+  - `cargo test --manifest-path native/comrak_bridge/Cargo.toml`: passed.
+  - `./scripts/build_comrak_all.sh --host-only`: passed.
+  - `flutter test test/widgets/sovereign/engine/native_comrak_ffi_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/engine/native_comrak_parse_backend_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/engine/native_live_editing_regression_test.dart --reporter compact`: passed.
