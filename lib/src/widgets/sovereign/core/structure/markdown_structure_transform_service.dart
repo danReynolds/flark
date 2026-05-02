@@ -9,6 +9,7 @@ import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/ver
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/navigation/navigation_line_utils.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/table/table_editing_service.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/projection_range_utils.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/logic/fenced_code_scanner.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/logic/markdown_marker_grammar.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/line_index.dart';
 
@@ -403,6 +404,67 @@ class MarkdownStructureTransformService {
     return newValue.copyWith(
       text: exit.text,
       selection: TextSelection.collapsed(offset: exit.caret),
+      composing: TextRange.empty,
+    );
+  }
+
+  TextEditingValue maybeContinueOutsideClosingFenceEof({
+    required TextEditingValue oldValue,
+    required TextEditingValue newValue,
+  }) {
+    if (oldValue.composing.isValid || newValue.composing.isValid) {
+      return newValue;
+    }
+
+    final oldSel = oldValue.selection;
+    final newSel = newValue.selection;
+    if (!oldSel.isValid ||
+        !newSel.isValid ||
+        !oldSel.isCollapsed ||
+        !newSel.isCollapsed) {
+      return newValue;
+    }
+
+    final oldText = oldValue.text;
+    final newText = newValue.text;
+    final caret = oldSel.baseOffset;
+    if (oldText.isEmpty || caret != oldText.length) return newValue;
+    if (newText.length <= oldText.length) return newValue;
+    if (!newText.startsWith(oldText)) return newValue;
+    if (newSel.baseOffset != newText.length) return newValue;
+
+    final inserted = newText.substring(oldText.length);
+    if (inserted.isEmpty || inserted.contains('\n')) return newValue;
+    if (oldText.codeUnitAt(oldText.length - 1) == 10) return newValue;
+
+    final eofLineStart = ProjectionRangeUtils.lineStartForOffset(
+      oldText,
+      oldText.length - 1,
+    );
+    if (!oldText.startsWith('```', eofLineStart)) return newValue;
+
+    var hasClosingFenceAtEof = false;
+    for (final block in FencedCodeScanner.scan(oldText)) {
+      if (block.end != oldText.length) continue;
+      if (block.end <= 0 || block.end > oldText.length) continue;
+      final closeLineStart = ProjectionRangeUtils.lineStartForOffset(
+        oldText,
+        block.end - 1,
+      );
+      final hasClosingFence = closeLineStart != block.start &&
+          closeLineStart + 3 <= oldText.length &&
+          oldText.startsWith('```', closeLineStart);
+      if (hasClosingFence && closeLineStart == eofLineStart) {
+        hasClosingFenceAtEof = true;
+        break;
+      }
+    }
+    if (!hasClosingFenceAtEof) return newValue;
+
+    final adjustedText = '$oldText\n$inserted';
+    return newValue.copyWith(
+      text: adjustedText,
+      selection: TextSelection.collapsed(offset: adjustedText.length),
       composing: TextRange.empty,
     );
   }

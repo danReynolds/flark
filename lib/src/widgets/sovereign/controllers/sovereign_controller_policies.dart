@@ -124,7 +124,10 @@ class _PolicyHelpers {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) =>
-      _controller._maybeContinueOutsideClosingFenceEof(oldValue, newValue);
+      _controller._structureTransforms.maybeContinueOutsideClosingFenceEof(
+        oldValue: oldValue,
+        newValue: newValue,
+      );
 
   TextEditingValue maybeNormalizeFencedMultilinePaste(
     TextEditingValue oldValue,

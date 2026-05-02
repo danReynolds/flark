@@ -119,8 +119,8 @@ Tasks:
 - [x] Split input intent routing into explicit handlers.
 - [ ] Split markdown structure query and transform services; initial query
   facade plus heading, blockquote Enter/arrow exits, list Enter, and list
-  backspace, table Enter/formatting, and fenced-code arrow/Enter-exit
-  transforms extracted, broader transform service still pending.
+  backspace, table Enter/formatting, and fenced-code arrow/Enter-exit/EOF
+  continuation transforms extracted, broader transform service still pending.
 - [ ] Keep rendering composition pure and widget-facing code thin.
 - [ ] Split Rust bridge into smaller parse/ABI/mapping modules.
 - [ ] Keep behavior-level tests green after each wave.

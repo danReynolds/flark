@@ -605,3 +605,16 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/code_fence_exit_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/fence_empty_enter_exit_widget_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/engine/native_live_editing_regression_test.dart --reporter compact`: passed.
+
+### Phase 3 Architecture Hardening: Fenced-Code EOF Continuation Transform
+
+- Moved the closed-EOF fence continuation rule from
+  `_FenceNavigationPolicyOps` into `MarkdownStructureTransformService`.
+- Kept EOF closing-fence detection behavior unchanged by reusing
+  `FencedCodeScanner` and `ProjectionRangeUtils` inside the structure transform
+  facade.
+- Verification:
+  - `flutter analyze lib/src/widgets/sovereign/core/structure/markdown_structure_transform_service.dart lib/src/widgets/sovereign/controllers/sovereign_controller_policies.dart lib/src/widgets/sovereign/controllers/sovereign_controller_policies_fence_navigation.dart test/widgets/sovereign/code_fence_exit_test.dart test/widgets/sovereign/fence_auto_indent_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/code_fence_exit_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/fence_auto_indent_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/engine/native_live_editing_regression_test.dart --reporter compact`: passed.
