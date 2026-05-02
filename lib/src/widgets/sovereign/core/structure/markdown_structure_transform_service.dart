@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/markdown_line_helpers.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/fence_context.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/list_marker_context.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/quote_context.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/vertical_arrow_edit_context.dart';
@@ -13,6 +14,13 @@ import 'package:sovereign_editor/widgets/sovereign/models/line_index.dart';
 typedef BlockquoteArrowExitPredicate = bool Function({
   required String text,
   required QuoteContext context,
+  required int fromLine,
+  required int toLine,
+});
+
+typedef FenceArrowExitPredicate = bool Function({
+  required String text,
+  required FenceContext context,
   required int fromLine,
   required int toLine,
 });
@@ -229,6 +237,123 @@ class MarkdownStructureTransformService {
       column: column,
       afterDocument: movingDown,
     );
+    return newValue.copyWith(
+      selection: TextSelection.collapsed(offset: exitOffset),
+      composing: TextRange.empty,
+    );
+  }
+
+  TextEditingValue maybeExitFencedCodeOnArrowDown({
+    required TextEditingValue oldValue,
+    required TextEditingValue newValue,
+    required LineIndex lineIndex,
+    required FenceContext? Function(
+      String text,
+      int caret, {
+      required bool includeUnclosedEof,
+    }) fenceContextForCaret,
+    required FenceArrowExitPredicate shouldExitFenceOnArrowDown,
+    required int Function(String text, int openLine, int closeLineExclusive)
+        trailingBlankTrimStart,
+  }) {
+    final arrow = VerticalArrowEditContext.detect(
+      oldValue: oldValue,
+      newValue: newValue,
+      lineIndex: lineIndex,
+      movingDown: true,
+    );
+    if (arrow == null) return newValue;
+
+    final context = fenceContextForCaret(
+      arrow.text,
+      arrow.oldCaret,
+      includeUnclosedEof: false,
+    );
+    if (context == null || !context.hasClosingFence) {
+      return newValue;
+    }
+
+    if (!shouldExitFenceOnArrowDown(
+      text: arrow.text,
+      context: context,
+      fromLine: arrow.oldLine,
+      toLine: arrow.newLine,
+    )) {
+      return newValue;
+    }
+
+    final closeLine = context.closeLine;
+    if (closeLine != null && closeLine > context.openLine) {
+      final closeLineStart = lineIndex.offsetAtLine(closeLine);
+      final trimStart = trailingBlankTrimStart(
+        arrow.text,
+        context.openLine,
+        closeLine,
+      );
+      if (trimStart < closeLineStart) {
+        final deletedLen = closeLineStart - trimStart;
+        var exitText = arrow.text.replaceRange(trimStart, closeLineStart, '');
+        var exitOffset = (context.endOffset - deletedLen).clamp(
+          0,
+          exitText.length,
+        );
+        if (exitOffset == exitText.length &&
+            exitText.isNotEmpty &&
+            exitText.codeUnitAt(exitText.length - 1) != 10) {
+          exitText = '$exitText\n';
+          exitOffset = exitText.length;
+        }
+        return newValue.copyWith(
+          text: exitText,
+          selection: TextSelection.collapsed(offset: exitOffset),
+          composing: TextRange.empty,
+        );
+      }
+    }
+
+    final exitOffset = context.endOffset.clamp(0, arrow.text.length);
+    return newValue.copyWith(
+      selection: TextSelection.collapsed(offset: exitOffset),
+      composing: TextRange.empty,
+    );
+  }
+
+  TextEditingValue maybeExitFencedCodeOnArrowUp({
+    required TextEditingValue oldValue,
+    required TextEditingValue newValue,
+    required LineIndex lineIndex,
+    required FenceContext? Function(
+      String text,
+      int caret, {
+      required bool includeUnclosedEof,
+    }) fenceContextForCaret,
+    required FenceArrowExitPredicate shouldExitFenceOnArrowUp,
+  }) {
+    final arrow = VerticalArrowEditContext.detect(
+      oldValue: oldValue,
+      newValue: newValue,
+      lineIndex: lineIndex,
+      movingDown: false,
+    );
+    if (arrow == null) return newValue;
+
+    final context = fenceContextForCaret(
+      arrow.text,
+      arrow.oldCaret,
+      includeUnclosedEof: false,
+    );
+    if (context == null) return newValue;
+
+    if (!shouldExitFenceOnArrowUp(
+      text: arrow.text,
+      context: context,
+      fromLine: arrow.oldLine,
+      toLine: arrow.newLine,
+    )) {
+      return newValue;
+    }
+
+    final exitOffset = context.startOffset.clamp(0, arrow.text.length);
     return newValue.copyWith(
       selection: TextSelection.collapsed(offset: exitOffset),
       composing: TextRange.empty,

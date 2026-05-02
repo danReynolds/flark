@@ -84,13 +84,26 @@ class _PolicyHelpers {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) =>
-      _controller._maybeExitFencedCodeOnArrowUp(oldValue, newValue);
+      _controller._structureTransforms.maybeExitFencedCodeOnArrowUp(
+        oldValue: oldValue,
+        newValue: newValue,
+        lineIndex: lineIndex,
+        fenceContextForCaret: fenceContextForCaret,
+        shouldExitFenceOnArrowUp: _controller._shouldExitFenceOnArrowUp,
+      );
 
   TextEditingValue maybeExitFencedCodeOnArrowDown(
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) =>
-      _controller._maybeExitFencedCodeOnArrowDown(oldValue, newValue);
+      _controller._structureTransforms.maybeExitFencedCodeOnArrowDown(
+        oldValue: oldValue,
+        newValue: newValue,
+        lineIndex: lineIndex,
+        fenceContextForCaret: fenceContextForCaret,
+        shouldExitFenceOnArrowDown: _controller._shouldExitFenceOnArrowDown,
+        trailingBlankTrimStart: _controller._trailingBlankTrimStart,
+      );
 
   TextEditingValue maybeExitFencedCodeOnEnter(
     TextEditingValue oldValue,

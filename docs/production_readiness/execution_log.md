@@ -580,3 +580,16 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/table_performance_baseline_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/engine/native_live_editing_regression_test.dart --reporter compact`: passed.
   - `./scripts/verify_package_confidence.sh --skip-native`: passed.
+
+### Phase 3 Architecture Hardening: Fenced-Code Arrow Transform
+
+- Moved fenced-code Arrow Up/Down edit-pipeline exits from
+  `_FenceNavigationPolicyOps` into `MarkdownStructureTransformService`.
+- Kept the keyboard-intent path intact while routing edit-transform fence arrow
+  behavior through the shared `VerticalArrowEditContext` and structure query
+  callbacks.
+- Verification:
+  - `flutter analyze lib/src/widgets/sovereign/core/structure/markdown_structure_transform_service.dart lib/src/widgets/sovereign/controllers/sovereign_controller_policies.dart lib/src/widgets/sovereign/controllers/sovereign_controller_policies_fence_navigation.dart test/widgets/sovereign/code_fence_exit_test.dart test/widgets/sovereign/fence_tab_indent_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/code_fence_exit_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/fence_tab_indent_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/engine/native_live_editing_regression_test.dart --reporter compact`: passed.
