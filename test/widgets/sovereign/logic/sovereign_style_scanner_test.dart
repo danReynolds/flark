@@ -230,6 +230,20 @@ void main() {
       );
     });
 
+    test('linkAtCaret resolves shortcut reference-style link', () {
+      const text = '[Docs]\n\n[docs]: https://dune.ai/docs';
+      final caret = text.indexOf('Docs') + 2;
+      final match = SovereignStyleScanner.linkAtCaret(text, caret);
+      expect(match, isNotNull);
+      expect(match!.kind, SovereignLinkMatchKind.reference);
+      expect(match.labelText(text), 'Docs');
+      expect(match.referenceLabelText(text), 'Docs');
+      expect(
+        SovereignStyleScanner.resolveReferenceLinkUrl(text, match),
+        'https://dune.ai/docs',
+      );
+    });
+
     test('referenceDefinitionForLink returns definition span metadata', () {
       const text = '[Docs][api]\n\n[api]: https://dune.ai/docs';
       final match = SovereignStyleScanner.linkAtCaret(
@@ -263,6 +277,19 @@ void main() {
         hidden.any((r) => text.substring(r.start, r.end) == '][api]'),
         isTrue,
       );
+    });
+
+    test('Links: shortcut reference hidden ranges hide brackets', () {
+      const text = '[Docs]\n\n[docs]: https://dune.ai/docs';
+      final result = SovereignStyleScanner.scan(text, timeBudgetMicros: 200000);
+      final hidden = SovereignStyleScanner.extractHiddenRanges(
+        text,
+        result.runs,
+      );
+
+      expect(hidden, contains(const TextRange(start: 0, end: 1)));
+      expect(hidden, contains(const TextRange(start: 5, end: 6)));
+      expect(hidden.any((range) => range.start >= 8), isFalse);
     });
 
     test('Links: markdown image syntax does not style alt text as a link', () {

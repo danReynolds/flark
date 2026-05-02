@@ -176,6 +176,47 @@ void main() {
     expect(opened, 'https://dune.ai/docs');
   });
 
+  testWidgets('Shortcut reference link opens definition URL', (
+    WidgetTester tester,
+  ) async {
+    final controller = SovereignController(
+      text: '[Docs]\n\n[docs]: https://dune.ai/docs',
+    );
+    final focusNode = FocusNode();
+    String? opened;
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SovereignEditor(
+            controller: controller,
+            focusNode: focusNode,
+            onOpenLink: (url) async => opened = url,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    focusNode.requestFocus();
+    controller.selection = TextSelection.collapsed(
+      offset: controller.text.indexOf('Docs') + 1,
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.byKey(const Key('SovereignLinkActionsOverlay')),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pump();
+
+    expect(opened, 'https://dune.ai/docs');
+  });
+
   testWidgets(
     'Reference-style link edit preserves reference syntax and updates definition URL',
     (WidgetTester tester) async {

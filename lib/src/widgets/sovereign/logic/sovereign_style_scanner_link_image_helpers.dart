@@ -143,7 +143,25 @@ class _ScannerLinkImageParsers {
     if (labelEnd == -1 || labelEnd <= offset + 1) return null;
 
     if (labelEnd + 1 >= len || text.codeUnitAt(labelEnd + 1) != 91) {
-      return null; // second [
+      if (labelEnd + 1 < len) {
+        final next = text.codeUnitAt(labelEnd + 1);
+        if (next == 40 || next == 58) return null; // inline link or definition
+      }
+      final rawLabel = text.substring(offset + 1, labelEnd);
+      if (_lookupReferenceDefinition(text, rawLabel) == null) return null;
+
+      return _DetailedLinkMatch(
+        kind: SovereignLinkMatchKind.reference,
+        fullStart: offset,
+        fullEnd: labelEnd + 1,
+        displayStart: offset + 1,
+        displayEnd: labelEnd,
+        urlStart: offset + 1,
+        urlEnd: labelEnd,
+        referenceLabelStart: offset + 1,
+        referenceLabelEnd: labelEnd,
+        nextOffset: labelEnd + 1,
+      );
     }
 
     final refLabelStart = labelEnd + 2;

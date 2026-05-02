@@ -913,3 +913,16 @@ append-only unless correcting a factual error.
   - `./scripts/build_comrak_all.sh --host-only`: passed.
   - `flutter test test/widgets/sovereign/logic/sovereign_style_scanner_test.dart test/widgets/sovereign/sovereign_inline_test.dart test/widgets/sovereign/predictive_inline_markers_test.dart test/widgets/sovereign/engine/commonmark_syntax_engine_adapter_test.dart test/widgets/sovereign/engine/native_comrak_ffi_test.dart --reporter compact`: passed.
   - `./scripts/verify_package_confidence.sh --skip-native`: passed.
+
+### Phase 4 Feature Completeness: Reference Link Rendering and Cursor Behavior
+
+- Added scanner support for CommonMark shortcut reference links (`[label]`
+  resolved by `[label]: url`) while avoiding accidental matches on reference
+  definition lines.
+- Covered full/shortcut reference link rendering, bracket hiding, overlay URL
+  resolution, and source-stable typing at the label boundary.
+- Updated the support matrix and marked the reference-link Phase 4 item
+  complete.
+- Verification:
+  - `flutter test test/widgets/sovereign/logic/sovereign_style_scanner_test.dart test/widgets/sovereign/sovereign_inline_test.dart test/widgets/sovereign/link_actions_overlay_test.dart test/widgets/sovereign/link_policy_editing_test.dart --reporter compact`: passed.
+  - `./scripts/verify_package_confidence.sh --skip-native`: passed.

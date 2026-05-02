@@ -103,6 +103,25 @@ void main() {
       );
     });
 
+    test('Space at shortcut reference-link label boundary is unchanged', () {
+      const initial = '[test]\n\n[test]: https://dune.ai/docs';
+      final controller = SovereignController(text: initial);
+      addTearDown(controller.dispose);
+
+      final boundary = initial.indexOf(']');
+      controller.selection = TextSelection.collapsed(offset: boundary);
+      controller.value = TextEditingValue(
+        text: initial.replaceRange(boundary, boundary, ' '),
+        selection: TextSelection.collapsed(offset: boundary + 1),
+      );
+
+      expect(controller.text, '[test ]\n\n[test]: https://dune.ai/docs');
+      expect(
+        controller.selection,
+        TextSelection.collapsed(offset: boundary + 1),
+      );
+    });
+
     test('Space exits escaped-parenthesis markdown link tail', () {
       const initial = r'[test](https://example.com/\))';
       final controller = SovereignController(text: initial);

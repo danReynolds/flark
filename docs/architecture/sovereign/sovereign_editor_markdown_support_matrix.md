@@ -33,7 +33,7 @@ read-only surface (`SovereignMarkdownView`) on focused post detail screens
 | Thematic breaks (`---`, `***`) | Yes | Divider-style glyph rendering + marker hiding | Standard typing + horizontal-rule command | Supported | parser-backed classification, divider rendering, and command interaction covered |
 | Tables (GFM) | Yes (GFM) | Monospace + source-aligned row formatting baseline (parser-backed table blocks) | Enter row continuation + Tab/Shift-Tab cell navigation baseline | Partial | no true grid layout/column metrics UI; row/column ops still pending |
 | Images (`![alt](url)`) | Parser yes | Placeholder + inline/standalone preview card + actions overlay | Edit/open/copy actions + markdown text editing | Partial | `image_actions_overlay_test.dart`; image node remains markdown-source-first (not full embedded media block model) |
-| Reference links/definitions | Parser likely yes | Definition marker prefix hiding baseline | None | Partial | `[id]:` marker projection hidden; broader ref-link UX still pending |
+| Reference links/definitions | Parser yes + scanner resolution | Full, collapsed, and shortcut labels styled with wrapper/definition marker hiding | Open/edit/copy actions + standard cursor behavior | Supported | scanner/rendering/overlay/cursor regressions |
 | Raw HTML blocks/inlines | Parser parses | Literal text only; no HTML execution | Text-only policy | Supported policy | `raw_html_policy_2026-05-02.md`; read/editor rendering tests keep tags literal |
 
 ## 2) Live-Editing / Projection Safety Matrix
@@ -57,7 +57,7 @@ read-only surface (`SovereignMarkdownView`) on focused post detail screens
 2. **Images / media markdown UX**  
    Expand placeholder support into inline preview/attachment widgets and media-specific interactions.
 3. **Reference links / definitions**  
-   Add full reference link rendering/cursor behavior (definitions now have baseline marker hiding).
+   Supported: full, collapsed, and shortcut reference links render as links, resolve definitions for actions, and keep cursor behavior source-stable.
 
 ### Priority B (polish / completeness)
 

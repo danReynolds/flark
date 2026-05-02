@@ -218,7 +218,8 @@ void main() {
     'SovereignController buildTextSpan renders reference-style links',
     (tester) async {
       final controller = SovereignController();
-      controller.text = '[Docs][api]\n\n[api]: https://dune.ai/docs';
+      controller.text =
+          '[Docs][api] and [Guide]\n\n[api]: https://dune.ai/docs\n[guide]: https://dune.ai/guide';
 
       await tester.pumpWidget(MaterialApp(home: Scaffold(body: Container())));
       final context = tester.element(find.byType(Container));
@@ -243,7 +244,15 @@ void main() {
         isTrue,
       );
       expect(
+        linkStyledLeaves.any((leaf) => (leaf.text ?? '').contains('Guide')),
+        isTrue,
+      );
+      expect(
         visibleLeaves.any((leaf) => (leaf.text ?? '').contains('[Docs][api]')),
+        isFalse,
+      );
+      expect(
+        visibleLeaves.any((leaf) => (leaf.text ?? '').contains('[Guide]')),
         isFalse,
       );
     },
