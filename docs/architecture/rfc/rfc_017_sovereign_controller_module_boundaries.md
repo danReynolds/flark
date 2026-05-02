@@ -313,14 +313,16 @@ abstract class TextRenderer {
 
 ### 7.3 Move into `core/intents`
 
-- `controllers/sovereign_input_intent_handler.dart`
-- `controllers/sovereign_input_intent_tab_handler.dart`
-- `controllers/sovereign_input_intent_navigation_handler.dart`
-- backspace intent logic currently spread in `controllers/sovereign_controller_policies_fence_backspace.dart`
+- `core/intents/input_intent_handler.dart`
+- `core/intents/input_intent_enter_handler.dart`
+- `core/intents/input_intent_tab_handler.dart`
+- `core/intents/input_intent_navigation_handler.dart`
+- `core/intents/input_intent_backspace_handler.dart`
 
 ### 7.4 Move into `core/structure`
 
-- `controllers/sovereign_navigation_helpers.dart`
+- `core/structure/navigation/sovereign_navigation_helpers.dart`
+- `core/structure/markdown_structure_query_service.dart`
 - `controllers/sovereign_markdown_line_helpers.dart`
 - table/fence/list/quote structural helper sections from policy files
 

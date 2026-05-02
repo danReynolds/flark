@@ -463,3 +463,24 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/list_policy_editing_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/delete_range_error_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/select_all_clear_reset_test.dart --reporter compact`: passed.
+
+### Phase 3 Architecture Hardening: Markdown Structure Query Facade
+
+- Added `MarkdownStructureQueryService` as a stateless facade for line, list,
+  task marker, fence, quote, and table query helpers.
+- Routed controller table lookups, task checkbox line info, fence context,
+  quote context, fence language, and hidden-fence geometry queries through the
+  new query service.
+- Moved pure `SovereignNavigationHelpers` from the controller folder into
+  `core/structure/navigation` so structure query code does not depend on the
+  controller layer.
+- Left structural transforms in the existing edit policy pipeline; the
+  execution plan still tracks the transform service as pending.
+- Verification:
+  - `flutter analyze lib/widgets/sovereign/controllers/sovereign_controller.dart lib/src/widgets/sovereign/core/structure/markdown_structure_query_service.dart lib/src/widgets/sovereign/core/structure/navigation/sovereign_navigation_helpers.dart test/widgets/sovereign/table_key_integration_test.dart test/widgets/sovereign/task_checkbox_interaction_test.dart test/widgets/sovereign/code_fence_exit_test.dart test/widgets/sovereign/blockquote_key_integration_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/table_key_integration_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/task_checkbox_interaction_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/code_fence_exit_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/blockquote_key_integration_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/table_editing_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/list_policy_editing_test.dart --reporter compact`: passed.

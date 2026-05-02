@@ -35,13 +35,14 @@ import 'package:sovereign_editor/src/widgets/sovereign/core/pipeline/edit_operat
 import 'package:sovereign_editor/src/widgets/sovereign/core/intents/input_intent_handler.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/intents/input_intent_models.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/rendering/sovereign_text_renderer.dart';
-import 'package:sovereign_editor/src/widgets/sovereign/core/structure/markdown_line_helpers.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/fence/fence_editing_utils.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/indented_code/indented_code_enter_service.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/markdown_line_helpers.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/markdown_structure_query_service.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/navigation/navigation_line_utils.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/structure/navigation/sovereign_navigation_helpers.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/navigation/vertical_caret_navigation.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/table/table_line_parser.dart';
-import 'package:sovereign_editor/src/widgets/sovereign/core/structure/table/table_navigation_service.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/table/table_tab_intent_service.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/syntax_snapshot_mapper.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/fence_context.dart'
@@ -50,7 +51,6 @@ import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/lis
     as structure;
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/quote_context.dart'
     as structure;
-import 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_navigation_helpers.dart';
 
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies.dart';
 part 'package:sovereign_editor/src/widgets/sovereign/controllers/sovereign_controller_policies_fence.dart';
@@ -79,6 +79,8 @@ class SovereignController extends TextEditingController {
       const DefaultSelectionProjectionGuard();
   final SovereignNavigationHelpers _navigationHelpers =
       const SovereignNavigationHelpers();
+  final MarkdownStructureQueryService _structureQueries =
+      const MarkdownStructureQueryService();
   final IndentedCodeEnterService _indentedCodeEnterService =
       const IndentedCodeEnterService();
   late final SovereignValueMutationCoordinator _valueMutation =
@@ -583,21 +585,21 @@ class SovereignController extends TextEditingController {
       );
 
   ParsedTableLine? _parseTableLineAt(String text, int line) {
-    return TableNavigationService.parseLineAt(
+    return _structureQueries.parseTableLineAt(
       text: text,
       line: line,
       lineIndex: _lineIndex,
-      isLineInsideFencedGeometry: _isLineInsideFencedGeometry,
+      geometry: _geometry,
       rowShapeResolver: _TablePolicy._matchTableRowShape,
     );
   }
 
   int? _tableCellIndexForCaret(ParsedTableLine row, int caret) {
-    return TableNavigationService.tableCellIndexForCaret(row, caret);
+    return _structureQueries.tableCellIndexForCaret(row, caret);
   }
 
   bool _tableRegionHasSeparator(String text, int line, int columnCount) {
-    return TableNavigationService.tableRegionHasSeparator(
+    return _structureQueries.tableRegionHasSeparator(
       text: text,
       line: line,
       columnCount: columnCount,
@@ -613,7 +615,7 @@ class SovereignController extends TextEditingController {
     required bool forward,
     bool skipSeparator = false,
   }) {
-    return TableNavigationService.findAdjacentTableLine(
+    return _structureQueries.findAdjacentTableLine(
       text: text,
       line: line,
       columnCount: columnCount,
@@ -831,22 +833,25 @@ class SovereignController extends TextEditingController {
     if (line < 0 || line >= _lineIndex.lineCount) return null;
 
     final lineStart = _lineIndex.offsetAtLine(line);
-    final lineEndWithBreak = (line + 1 < _lineIndex.lineCount)
-        ? _lineIndex.offsetAtLine(line + 1)
-        : text.length;
-    final lineEnd = (lineEndWithBreak > lineStart &&
-            text.codeUnitAt(lineEndWithBreak - 1) == 10)
-        ? lineEndWithBreak - 1
-        : lineEndWithBreak;
+    final lineEndWithBreak = _structureQueries.lineEndWithBreak(
+      lineIndex: _lineIndex,
+      text: text,
+      line: line,
+    );
+    final lineEnd = _structureQueries.lineContentEnd(
+      text: text,
+      lineStart: lineStart,
+      lineEndWithBreak: lineEndWithBreak,
+    );
     if (lineEnd <= lineStart) return null;
 
-    final marker = MarkdownLineHelpers.listMarkerForLineAllowingQuotePrefix(
+    final marker = _structureQueries.listMarkerForLineAllowingQuotePrefix(
       text,
       lineStart,
       lineEnd,
     );
     if (marker == null) return null;
-    final task = MarkdownLineHelpers.taskMarkerInfo(
+    final task = _structureQueries.taskMarkerInfo(
       text,
       marker.markerEnd,
       lineEnd,
@@ -897,7 +902,7 @@ class SovereignController extends TextEditingController {
     int caret, {
     required bool includeUnclosedEof,
   }) =>
-      _navigationHelpers.fenceContextForCaret(
+      _structureQueries.fenceContextForCaret(
         text: text,
         caret: caret,
         lineIndex: _lineIndex,
@@ -906,21 +911,15 @@ class SovereignController extends TextEditingController {
       );
 
   structure.QuoteContext? _quoteContextForLine(String text, int line) =>
-      _navigationHelpers.quoteContextForLine(
+      _structureQueries.quoteContextForLine(
         text: text,
         line: line,
         lineIndex: _lineIndex,
         geometry: _geometry,
       );
 
-  bool _isQuoteLineBodyBlank(String text, int line) => _navigationHelpers
+  bool _isQuoteLineBodyBlank(String text, int line) => _structureQueries
       .isQuoteLineBodyBlank(text: text, line: line, lineIndex: _lineIndex);
-
-  bool _isLineInsideFencedGeometry(int lineStartOffset) =>
-      _navigationHelpers.isLineInsideFencedGeometry(
-        lineStartOffset: lineStartOffset,
-        geometry: _geometry,
-      );
 
   bool _shouldExitBlockquoteOnArrowDown({
     required String text,
@@ -953,7 +952,7 @@ class SovereignController extends TextEditingController {
       );
 
   bool _isUnclosedFenceAtEof(String text, MeasuredBlock block) =>
-      _navigationHelpers.isUnclosedFenceAtEof(text: text, block: block);
+      _structureQueries.isUnclosedFenceAtEof(text: text, block: block);
 
   bool _shouldExitFenceOnArrowDown({
     required String text,
@@ -996,7 +995,7 @@ class SovereignController extends TextEditingController {
       );
 
   String? _fenceLanguageForBlock(String text, int blockStartOffset) =>
-      _navigationHelpers.fenceLanguageForBlock(
+      _structureQueries.fenceLanguageForBlock(
         text: text,
         blockStartOffset: blockStartOffset,
       );
