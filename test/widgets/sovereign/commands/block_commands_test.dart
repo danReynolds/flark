@@ -122,7 +122,8 @@ void main() {
       expect(controller.text, equals('- [ ] item'));
     });
 
-    test('insertHorizontalRule inserts markdown hr and advances caret', () {
+    test('insertHorizontalRule inserts isolated markdown hr and advances caret',
+        () {
       final controller = SovereignController(text: 'alpha');
       addTearDown(controller.dispose);
       controller.selection = const TextSelection.collapsed(offset: 5);
@@ -130,8 +131,74 @@ void main() {
       final result = controller.commands.insertHorizontalRule();
 
       expect(result, isA<SovereignCommandApplied>());
-      expect(controller.text, equals('alpha\n---\n'));
-      expect(controller.selection, const TextSelection.collapsed(offset: 10));
+      expect(controller.text, equals('alpha\n\n---\n'));
+      expect(controller.selection, const TextSelection.collapsed(offset: 11));
+    });
+
+    test('insertHorizontalRule creates parser-backed thematic break', () async {
+      final controller = SovereignController(text: 'alpha');
+      addTearDown(controller.dispose);
+      controller.selection = const TextSelection.collapsed(offset: 5);
+
+      final result = controller.commands.insertHorizontalRule();
+
+      expect(result, isA<SovereignCommandApplied>());
+      await _eventually(() {
+        return controller.decoration.tree.blocks.any(
+          (block) => block.type == BlockType.thematicBreak,
+        );
+      });
+
+      final thematicBreak = controller.decoration.tree.blocks.firstWhere(
+        (block) => block.type == BlockType.thematicBreak,
+      );
+      expect(thematicBreak.start, 7);
+      expect(thematicBreak.end, 11);
+      expect(
+        controller.decoration.hiddenRanges,
+        contains(const TextRange(start: 7, end: 10)),
+      );
+      expect(
+        controller.decoration.tree.blocks.map((block) => block.type),
+        isNot(contains(BlockType.header)),
+      );
+    });
+
+    test('typing after inserted horizontal rule creates following paragraph',
+        () async {
+      final controller = SovereignController(text: 'alpha');
+      addTearDown(controller.dispose);
+      controller.selection = const TextSelection.collapsed(offset: 5);
+      controller.commands.insertHorizontalRule();
+
+      final caret = controller.selection.extentOffset;
+      controller.value = TextEditingValue(
+        text: controller.text.replaceRange(caret, caret, 'omega'),
+        selection: TextSelection.collapsed(offset: caret + 5),
+      );
+
+      expect(controller.text, equals('alpha\n\n---\nomega'));
+      await _eventually(() {
+        final blocks = controller.decoration.tree.blocks;
+        return blocks.any((block) => block.type == BlockType.thematicBreak) &&
+            blocks.any(
+              (block) =>
+                  block.type == BlockType.paragraph &&
+                  block.start >= controller.text.indexOf('omega'),
+            );
+      });
     });
   });
+}
+
+Future<void> _eventually(bool Function() predicate, {int turns = 80}) async {
+  for (var i = 0; i < turns; i++) {
+    if (predicate()) return;
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    if (i % 5 == 4) {
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+  }
+  expect(predicate(), isTrue);
 }

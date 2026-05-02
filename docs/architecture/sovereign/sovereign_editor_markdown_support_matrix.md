@@ -1,6 +1,6 @@
 # Sovereign Editor Markdown Support Matrix
 
-**Status date**: 2026-03-16  
+**Status date**: 2026-05-02  
 **Runtime backend**: native `comrak` (macOS/iOS/Android)  
 **Scope**: live editor parse/projection/render/editing UX plus sovereign
 read-only surface (`SovereignMarkdownView`) on focused post detail screens
@@ -30,7 +30,7 @@ read-only surface (`SovereignMarkdownView`) on focused post detail screens
 | Links / autolinks | Yes (GFM autolinks in GFM lane) | Inline link styling + actions overlay | Typing + boundary-exit policy + link edit/open/copy actions | Supported | fixture/parity tests + `link_policy_editing_test.dart` + `link_actions_overlay_test.dart` |
 | Strikethrough (`~~`) | Yes (GFM) | Inline styling | Standard typing | Supported | fixture/parity tests |
 | Escapes / entities | Parser yes | Render/projection not explicitly audited | Standard typing | Partial / unverified UI | backend likely handles; editor-specific UI behavior not explicitly covered |
-| Thematic breaks (`---`, `***`) | Yes | Divider-style glyph rendering + marker hiding | Standard typing | Partial | baseline divider rendering + tests added; no dedicated editing affordances |
+| Thematic breaks (`---`, `***`) | Yes | Divider-style glyph rendering + marker hiding | Standard typing + horizontal-rule command | Supported | parser-backed classification, divider rendering, and command interaction covered |
 | Tables (GFM) | Yes (GFM) | Monospace + source-aligned row formatting baseline (parser-backed table blocks) | Enter row continuation + Tab/Shift-Tab cell navigation baseline | Partial | no true grid layout/column metrics UI; row/column ops still pending |
 | Images (`![alt](url)`) | Parser yes | Placeholder + inline/standalone preview card + actions overlay | Edit/open/copy actions + markdown text editing | Partial | `image_actions_overlay_test.dart`; image node remains markdown-source-first (not full embedded media block model) |
 | Reference links/definitions | Parser likely yes | Definition marker prefix hiding baseline | None | Partial | `[id]:` marker projection hidden; broader ref-link UX still pending |
@@ -62,7 +62,7 @@ read-only surface (`SovereignMarkdownView`) on focused post detail screens
 ### Priority B (polish / completeness)
 
 4. **Thematic break visual treatment**  
-   Baseline divider rendering exists; add more robust parser-backed classification + interaction tests.
+   Supported: parser-backed classification, divider rendering, and horizontal-rule command interaction are covered.
 5. **Indented code block editing niceties**  
    Extend baseline enter auto-indent into continuation/exit/backspace parity similar to fenced code where needed.
 6. **Explicit coverage for escapes/entities and nested combinations**  

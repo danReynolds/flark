@@ -280,6 +280,32 @@ void main() {
       },
     );
 
+    test(
+      'parse classifies isolated dashes as thematic break, not setext heading',
+      () async {
+        const adapter = CommonMarkSyntaxEngineAdapter(
+          parseBackend: BootstrapCommonMarkParseBackend(),
+        );
+        const request = SyntaxParseRequest(
+          revision: 17,
+          text: 'Heading\n\n---\n\nBody\n',
+          profile: MarkdownSyntaxProfile.commonMarkCore,
+        );
+
+        final snapshot = await adapter.parse(request);
+        final blockTypes =
+            snapshot.blocks.map((block) => block.type).toList(growable: false);
+
+        expect(blockTypes, contains(BlockType.thematicBreak));
+        expect(blockTypes, isNot(contains(BlockType.header)));
+        final thematicBreak = snapshot.blocks.firstWhere(
+          (block) => block.type == BlockType.thematicBreak,
+        );
+        expect(thematicBreak.start, 9);
+        expect(thematicBreak.end, 13);
+      },
+    );
+
     test('parse treats indented code block as exclusion range', () async {
       const adapter = CommonMarkSyntaxEngineAdapter(
         parseBackend: BootstrapCommonMarkParseBackend(),

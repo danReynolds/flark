@@ -74,6 +74,32 @@ final RegExp _leadingQuotePrefixPattern = RegExp(r'^((?:\s*> ?)+)(.*)$');
   return (quotePrefix: match.group(1) ?? '', body: match.group(2) ?? '');
 }
 
+({String text, TextSelection selection}) _insertThematicBreak(
+  SovereignCommandContext context,
+) {
+  final text = context.text;
+  final selection = context.selection;
+  final before = text.substring(0, selection.start);
+  final after = text.substring(selection.end);
+
+  final prefix = before.isEmpty
+      ? ''
+      : before.endsWith('\n\n')
+          ? ''
+          : before.endsWith('\n')
+              ? '\n'
+              : '\n\n';
+  final suffix = after.isNotEmpty && !after.startsWith('\n') ? '\n' : '';
+  final insertion = '$prefix---\n$suffix';
+  final updated = text.replaceRange(selection.start, selection.end, insertion);
+
+  return (
+    text: updated,
+    selection:
+        TextSelection.collapsed(offset: selection.start + insertion.length),
+  );
+}
+
 ({String text, TextSelection selection}) _toggleListLinePrefix(
   SovereignCommandContext context,
   String prefix,
@@ -286,18 +312,10 @@ abstract final class SovereignBlockCommands {
       );
     }
 
-    final text = context.text;
-    final selection = context.selection;
-    final updated = text.replaceRange(
-      selection.start,
-      selection.end,
-      '\n---\n',
-    );
-    final newSelection = TextSelection.collapsed(offset: selection.start + 5);
-
+    final mutation = _insertThematicBreak(context);
     return commitCommandMutation(context, (
-      text: updated,
-      selection: newSelection,
+      text: mutation.text,
+      selection: mutation.selection,
       composing: TextRange.empty,
     ));
   }

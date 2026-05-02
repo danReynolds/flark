@@ -848,3 +848,20 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/engine/native_comrak_ffi_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/engine/native_comrak_parse_backend_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/engine/native_live_editing_regression_test.dart --reporter compact`: passed.
+
+### Phase 4 Feature Completeness: Thematic Break Interaction
+
+- Fixed `insertHorizontalRule` so inserting `---` after a paragraph creates an
+  isolated thematic break instead of accidentally converting the previous
+  paragraph into a setext heading.
+- Added command/controller coverage that verifies the inserted rule is
+  parser-classified as `BlockType.thematicBreak`, keeps the caret outside hidden
+  marker ranges, and supports typing the following paragraph immediately after
+  insertion.
+- Added CommonMark adapter coverage for isolated dash classification and updated
+  the support matrix from partial to supported for thematic breaks.
+- Verification:
+  - `flutter test test/widgets/sovereign/commands/block_commands_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/commands/command_capabilities_and_transaction_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/engine/commonmark_syntax_engine_adapter_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/block_markdown_rendering_test.dart --reporter compact`: passed.

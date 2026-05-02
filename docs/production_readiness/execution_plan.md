@@ -142,7 +142,7 @@ Tasks:
 - [ ] Tables: true structured rendering and richer row/column operations.
 - [ ] Images/media: stronger preview and interaction model.
 - [ ] Reference links: full rendering/cursor behavior.
-- [ ] Thematic breaks: parser-backed classification and interaction tests.
+- [x] Thematic breaks: parser-backed classification and interaction tests.
 - [ ] Indented code: continuation/exit/backspace parity where useful.
 - [ ] Escapes/entities: focused rendering and cursor-safety coverage.
 - [ ] Raw HTML: final text-only/sanitization policy.

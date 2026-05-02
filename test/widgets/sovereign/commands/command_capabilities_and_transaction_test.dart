@@ -125,10 +125,10 @@ void main() {
         controller.commands.insertHorizontalRule();
         controller.commands.insertHorizontalRule();
 
-        expect(controller.text, '\n---\n\n---\n');
+        expect(controller.text, '---\n\n---\n');
 
         controller.undo();
-        expect(controller.text, '\n---\n');
+        expect(controller.text, '---\n');
       },
     );
 
@@ -144,7 +144,7 @@ void main() {
           commands.insertHorizontalRule();
         });
 
-        expect(controller.text, '\n---\n\n---\n');
+        expect(controller.text, '---\n\n---\n');
 
         controller.undo();
         expect(controller.text, '');
