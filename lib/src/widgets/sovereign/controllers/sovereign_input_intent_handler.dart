@@ -182,8 +182,24 @@ class _ControllerSovereignInputIntentHost implements SovereignInputIntentHost {
       );
 
   @override
-  bool moveCaretVertically({required bool forward}) =>
-      _c._moveCaretVertically(forward: forward);
+  bool moveCaretVertically({required bool forward}) {
+    final move = VerticalCaretNavigation.compute(
+      selection: _c.selection,
+      text: _c.value.text,
+      lineIndex: _c._lineIndex,
+      forward: forward,
+      preferredColumn: _c._preferredVerticalCaretColumn,
+    );
+    if (move == null) return false;
+    _c._preferredVerticalCaretColumn = move.preferredColumn;
+    _c._isApplyingVerticalCaretMove = true;
+    try {
+      _c.selection = TextSelection.collapsed(offset: move.targetOffset);
+    } finally {
+      _c._isApplyingVerticalCaretMove = false;
+    }
+    return true;
+  }
 
   @override
   FenceEnterExitResult? computeFenceExitOnEnter({

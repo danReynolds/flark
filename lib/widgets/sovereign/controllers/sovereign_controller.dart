@@ -100,13 +100,9 @@ class SovereignController extends TextEditingController {
       SovereignUndoRedoCoordinator(_ControllerSovereignUndoRedoHost(this));
   static final Logger _logger = Logger('SovereignController');
 
-  // --- State ---
-
-  /// Internal mutable state for revision tracking
   int _revision = 0;
   int _nextOpId = 0;
 
-  /// Syntax Engine boundary (Phase 1).
   final SyntaxEngine _syntaxEngine;
   final MarkdownSyntaxProfile _markdownProfile;
   SyntaxParseScheduler? _syntaxParseScheduler;
@@ -120,11 +116,9 @@ class SovereignController extends TextEditingController {
   /// Emits the latest block, line, and projection metadata for render layers.
   Stream<DecorationModel> get decorationStream => _decorationController.stream;
 
-  /// Tier 2 Rendering State (Inline Styles)
   List<StyleRun>? _authoritativeInlineRuns;
   int _authoritativeInlineRunsRevision = -1;
 
-  /// [Phase 5] Projection State
   List<TextRange> _projectedHiddenRanges = [];
   List<TextRange> _projectedExclusionRanges = [];
   List<TextRange> _authoritativeHiddenRanges = [];
@@ -152,17 +146,13 @@ class SovereignController extends TextEditingController {
   /// Latest decoration metadata available synchronously to widgets.
   DecorationModel get decoration => _latestDecoration;
 
-  // --- Internal State ---
   late LineIndex _lineIndex;
 
-  // RFC 007: Synchronous Geometry Model
   GeometryModel _geometry = GeometryModel.empty;
   final _geometryScanner = const SovereignGeometryScanner();
   int? _preferredVerticalCaretColumn;
   bool _isApplyingVerticalCaretMove = false;
   int _suppressFenceExitOnEnterDepth = 0;
-
-  // --- Public Getters ---
 
   /// Current line index for the controller text.
   LineIndex get lineIndex => _lineIndex;
@@ -173,14 +163,10 @@ class SovereignController extends TextEditingController {
   /// Most recent edit operation recorded by the controller, if any.
   EditOp? get lastOp => _lastOp;
 
-  /// [Phase 5] Projector
   late Projector _projector = Projector(_latestDecoration);
 
-  /// Helpers
   final UndoStack _undoStack = UndoStack();
-  // Redo history is stored inside UndoStack; no duplicate stack here.
 
-  // Undo Merging State
   DateTime? _lastOpTime;
   EditOp? _lastOp;
   int _currentUndoGroup = 0;
@@ -232,12 +218,10 @@ class SovereignController extends TextEditingController {
         _syntaxEngine = syntaxEngine ?? SyntaxEngineFactory.create(),
         super(text: text) {
     if (text != null && text.isNotEmpty) {
-      // Initialize LineIndex
       _lineIndex = LineIndex.fromText(text);
-      // Initialize Geometry
       _geometry = _geometryScanner.scan(text, _lineIndex);
     } else {
-      _lineIndex = LineIndex.fromText(''); // Initialize with empty if no text
+      _lineIndex = LineIndex.fromText('');
     }
 
     final initialMask = PassthroughCursorValidationMask(
@@ -247,7 +231,6 @@ class SovereignController extends TextEditingController {
     _authoritativeCursorMask = initialMask;
     _activeCursorMask = initialMask;
 
-    // Initialize Async Parser
     _initParser(text);
 
     // Bootstrap decoration synchronously so non-edit surfaces (for example
@@ -269,7 +252,6 @@ class SovereignController extends TextEditingController {
       },
     );
 
-    // Initial request if text exists.
     if (initialText != null && initialText.isNotEmpty) {
       _scheduleParse(
         initialText,
@@ -296,8 +278,6 @@ class SovereignController extends TextEditingController {
     _decorationController.close();
     super.dispose();
   }
-
-  // --- Mutation ---
 
   @override
   set selection(TextSelection newSelection) {
@@ -467,8 +447,6 @@ class SovereignController extends TextEditingController {
     }
   }
 
-  // --- Parsing ---
-
   void _scheduleParse(
     String text,
     int revision, {
@@ -490,8 +468,6 @@ class SovereignController extends TextEditingController {
         op: op,
       );
 
-  /// [Phase 5] Re-calculates active hidden ranges based on selection (Pop Scope)
-  /// and emits a new DecorationModel if needed.
   void _updateProjection({
     BlockTree? newTree,
     bool treeIsAuthoritative = false,
@@ -525,36 +501,24 @@ class SovereignController extends TextEditingController {
     return true;
   }
 
-  // --- Undo / Redo ---
-
   void undo() => _undoRedo.undo();
 
   void redo() => _undoRedo.redo();
 
-  /// [Patterns] Unified Restoration Pipeline
-  /// Used by Undo/Redo to bypass standard edit ops but strictly enforce
-  /// synchronous geometry and projection correctness.
   void _applyRestoration(TextEditingValue newValue) {
     _revision++;
 
-    // 1. RFC 007 Sync Geometry
-    // Vital for undoing near fences.
     _lineIndex = LineIndex.fromText(newValue.text);
     _geometry = _geometryScanner.scan(newValue.text, _lineIndex);
 
-    // 2. Commit to Framework
     _preferredVerticalCaretColumn = null;
     super.value = newValue;
 
-    // 3. Update Visual Projection
-    // Ensure hidden ranges (Pop Scope) are recalculated for the restored selection.
     _emitDecoration(tree: _latestDecoration.tree, overrideValue: newValue);
 
-    // 4. Schedule Parse
     _scheduleParse(newValue.text, _revision, currentValue: newValue);
   }
 
-  // --- Public Smart APIs ---
   T _runWithUndoBoundary<T>(T Function() action) {
     _undoBoundaryDepth++;
     try {
@@ -682,25 +646,6 @@ class SovereignController extends TextEditingController {
   /// Pass `null` to clear the info string (Plain text).
   bool setFencedCodeLanguageForSelection(String? fenceTag) =>
       _inputIntents.setFencedCodeLanguageForSelection(fenceTag);
-
-  bool _moveCaretVertically({required bool forward}) {
-    final move = VerticalCaretNavigation.compute(
-      selection: selection,
-      text: value.text,
-      lineIndex: _lineIndex,
-      forward: forward,
-      preferredColumn: _preferredVerticalCaretColumn,
-    );
-    if (move == null) return false;
-    _preferredVerticalCaretColumn = move.preferredColumn;
-    _isApplyingVerticalCaretMove = true;
-    try {
-      selection = TextSelection.collapsed(offset: move.targetOffset);
-    } finally {
-      _isApplyingVerticalCaretMove = false;
-    }
-    return true;
-  }
 
   /// Whether an undo operation is currently available.
   bool get canUndo => _undoStack.canUndo;

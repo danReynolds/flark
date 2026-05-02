@@ -797,3 +797,19 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/fence_auto_indent_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/table_editing_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/blockquote_editing_test.dart --reporter compact`: passed.
+
+### Phase 3 Architecture Hardening: Controller Facade RFC 017 Checkpoint
+
+- Moved vertical caret movement state updates out of `SovereignController` and
+  into the input-intent host that owns the navigation behavior.
+- Trimmed stale phase-label comments from the controller after extracting the
+  referenced responsibilities into services and coordinators.
+- Marked the RFC 017 controller-facade extraction item complete in the execution
+  plan: `SovereignController` is now 680 lines, below the RFC's 700-line
+  acceptance threshold.
+- Verification:
+  - `flutter analyze lib/widgets/sovereign/controllers/sovereign_controller.dart lib/src/widgets/sovereign/controllers/sovereign_input_intent_handler.dart lib/src/widgets/sovereign/controllers/sovereign_controller_policies.dart lib/src/widgets/sovereign/core/structure/markdown_structure_query_service.dart`: passed.
+  - `flutter test test/widgets/sovereign/code_fence_exit_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/blockquote_key_integration_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/core/structure/navigation/vertical_caret_navigation_test.dart --reporter compact`: passed.
+  - `./scripts/verify_package_confidence.sh --skip-native`: passed.

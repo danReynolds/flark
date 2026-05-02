@@ -115,7 +115,9 @@ Goal: reduce large-file risk and make behavior modules easier to reason about.
 
 Tasks:
 
-- [ ] Finish controller facade extraction from RFC 017.
+- [x] Finish controller facade extraction from RFC 017; controller is now a
+  680-line facade with structural query/navigation/pipeline behavior moved
+  behind core services and coordinators.
 - [x] Split input intent routing into explicit handlers.
 - [x] Split markdown structure query and transform services; query facade plus
   heading, blockquote, list, table, and fenced-code structure transforms
