@@ -318,6 +318,19 @@ class _PolicyHelpers {
         editableListMarkerForLine: editableListMarkerForLine,
       );
 
+  TextEditingValue maybeHandleListBackspaceBoundary(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) =>
+      _controller._structureTransforms.maybeHandleListBackspaceBoundary(
+        oldValue: oldValue,
+        newValue: newValue,
+        lineIndex: lineIndex,
+        isCaretInFencedCode: (text, caret) =>
+            fenceContextForCaret(text, caret, includeUnclosedEof: true) != null,
+        editableListMarkerForLine: editableListMarkerForLine,
+      );
+
   structure.ListMarkerContext? editableListMarkerForLine(
     String text,
     int lineStart,

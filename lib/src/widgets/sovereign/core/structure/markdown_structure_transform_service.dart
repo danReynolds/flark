@@ -246,4 +246,118 @@ class MarkdownStructureTransformService {
       composing: TextRange.empty,
     );
   }
+
+  TextEditingValue maybeHandleListBackspaceBoundary({
+    required TextEditingValue oldValue,
+    required TextEditingValue newValue,
+    required LineIndex lineIndex,
+    required bool Function(String text, int caret) isCaretInFencedCode,
+    required ListMarkerContext? Function(
+      String text,
+      int lineStart,
+      int lineEnd,
+    ) editableListMarkerForLine,
+  }) {
+    if (oldValue.composing.isValid || newValue.composing.isValid) {
+      return newValue;
+    }
+    if (oldValue.text.length != newValue.text.length + 1) return newValue;
+
+    final oldSel = oldValue.selection;
+    final newSel = newValue.selection;
+    if (!oldSel.isValid || !newSel.isValid) return newValue;
+    if (!oldSel.isCollapsed || !newSel.isCollapsed) return newValue;
+
+    final oldCaret = oldSel.baseOffset;
+    final newCaret = newSel.baseOffset;
+    if (oldCaret <= 0 || oldCaret > oldValue.text.length) return newValue;
+    if (newCaret != oldCaret - 1) return newValue;
+
+    final oldText = oldValue.text;
+    final newText = newValue.text;
+    final deletedOffset = newCaret;
+    if (!newText.startsWith(oldText.substring(0, deletedOffset))) {
+      return newValue;
+    }
+    if (newText.substring(deletedOffset) !=
+        oldText.substring(deletedOffset + 1)) {
+      return newValue;
+    }
+
+    if (isCaretInFencedCode(oldText, oldCaret)) {
+      return newValue;
+    }
+
+    final line = lineIndex.lineAtOffset(oldCaret);
+    final lineStart = lineIndex.offsetAtLine(line);
+    final lineEndWithBreak = (line + 1 < lineIndex.lineCount)
+        ? lineIndex.offsetAtLine(line + 1)
+        : oldText.length;
+    final lineEnd = (lineEndWithBreak > lineStart &&
+            oldText.codeUnitAt(lineEndWithBreak - 1) == 10)
+        ? lineEndWithBreak - 1
+        : lineEndWithBreak;
+    final marker = editableListMarkerForLine(oldText, lineStart, lineEnd);
+    if (marker == null) return newValue;
+    if (oldCaret != marker.contentStart) return newValue;
+    if (deletedOffset != marker.contentStart - 1) return newValue;
+
+    final emptyListItemAtEof = lineStart > 0 &&
+        lineEndWithBreak == oldText.length &&
+        oldText.codeUnitAt(lineStart - 1) == 10 &&
+        MarkdownLineHelpers.isLineBodyBlankFrom(
+          oldText,
+          marker.contentStart,
+          lineEnd,
+        );
+    if (emptyListItemAtEof) {
+      final collapsedText = oldText.replaceRange(lineStart - 1, lineEnd, '');
+      final collapsedCaret = (lineStart - 1).clamp(0, collapsedText.length);
+      return newValue.copyWith(
+        text: collapsedText,
+        selection: TextSelection.collapsed(offset: collapsedCaret),
+        composing: TextRange.empty,
+      );
+    }
+
+    final taskAtMarker = MarkdownLineHelpers.taskMarkerInfo(
+      oldText,
+      marker.markerEnd,
+      lineEnd,
+    );
+    if (taskAtMarker != null &&
+        marker.contentStart == taskAtMarker.contentStart) {
+      final adjustedText = oldText.replaceRange(
+        marker.markerEnd,
+        marker.contentStart,
+        '',
+      );
+      final removedLen = marker.contentStart - marker.markerEnd;
+      final adjustedCaret = (oldCaret - removedLen).clamp(
+        0,
+        adjustedText.length,
+      );
+      return newValue.copyWith(
+        text: adjustedText,
+        selection: TextSelection.collapsed(offset: adjustedCaret),
+        composing: TextRange.empty,
+      );
+    }
+
+    final adjustedText = oldText.replaceRange(
+      marker.markerStart,
+      marker.contentStart,
+      '',
+    );
+    final adjustedCaret =
+        (oldCaret - (marker.contentStart - marker.markerStart)).clamp(
+      0,
+      adjustedText.length,
+    );
+    return newValue.copyWith(
+      text: adjustedText,
+      selection: TextSelection.collapsed(offset: adjustedCaret),
+      composing: TextRange.empty,
+    );
+  }
 }

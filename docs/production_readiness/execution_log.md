@@ -528,3 +528,15 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/blockquote_editing_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/blockquote_key_integration_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/engine/native_live_editing_regression_test.dart --reporter compact`: passed.
+
+### Phase 3 Architecture Hardening: List Backspace Transform
+
+- Moved list backspace boundary behavior from `_ListPolicy` into
+  `MarkdownStructureTransformService`.
+- `_ListPolicy` now acts as an edit-pipeline rule wrapper for list Enter and
+  list backspace, with shared marker lookup handled by
+  `MarkdownStructureQueryService.editableListMarkerForLine`.
+- Verification:
+  - `flutter analyze lib/widgets/sovereign/controllers/sovereign_controller.dart lib/src/widgets/sovereign/core/structure/markdown_structure_transform_service.dart test/widgets/sovereign/list_policy_editing_test.dart test/widgets/sovereign/engine/native_live_editing_regression_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/list_policy_editing_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/engine/native_live_editing_regression_test.dart --reporter compact`: passed.
