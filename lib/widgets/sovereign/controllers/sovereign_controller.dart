@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:sovereign_editor/src/helpers/logger.dart';
-import 'package:sovereign_editor/src/widgets/sovereign/controllers/undo_stack.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/engine/syntax_parse_scheduler.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/engine/syntax_engine_factory.dart';
 
@@ -27,6 +26,7 @@ import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/selection_mas
 import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/projection_range_utils.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/syntax_projection_coordinator.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/predictive_edit_range_utils.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/pipeline/undo_stack.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/pipeline/value_mutation_coordinator.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/pipeline/undo_grouping_policy.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/pipeline/edit_operation_pipeline.dart';

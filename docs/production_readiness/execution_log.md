@@ -726,3 +726,17 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/core/structure/markdown_structure_query_service_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/list_policy_editing_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/task_checkbox_interaction_test.dart --reporter compact`: passed.
+
+### Phase 3 Architecture Hardening: Undo Stack Pipeline Move
+
+- Moved `UndoStack` from controller internals into `core/pipeline`, matching RFC
+  017's target pipeline boundary.
+- Added direct `UndoStack` coverage for selection-op filtering, grouped undo
+  order, grouped redo order, and redo invalidation on fresh text edits.
+- Verification:
+  - `flutter analyze lib/widgets/sovereign/controllers/sovereign_controller.dart lib/src/widgets/sovereign/core/pipeline/undo_stack.dart test/widgets/sovereign/core/pipeline/undo_stack_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/core/pipeline/undo_stack_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/commands/command_capabilities_and_transaction_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/ime_composition_undo_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/fence_undo_grouping_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/sovereign_editor_test.dart --reporter compact`: passed.
