@@ -652,3 +652,13 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/fence_paste_indent_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/code_fence_exit_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/engine/native_live_editing_regression_test.dart --reporter compact`: passed.
+
+### Phase 3 Architecture Hardening: Fenced-Code Pair Expansion Transform
+
+- Moved fenced-code Enter pair expansion from `_FencePairingPolicyOps` into
+  `MarkdownStructureTransformService`.
+- Verification:
+  - `flutter analyze lib/src/widgets/sovereign/core/structure/markdown_structure_transform_service.dart lib/src/widgets/sovereign/controllers/sovereign_controller_policies.dart lib/src/widgets/sovereign/controllers/sovereign_controller_policies_fence.dart lib/src/widgets/sovereign/controllers/sovereign_controller_policies_fence_pairing.dart test/widgets/sovereign/fence_smart_pairs_test.dart test/widgets/sovereign/fence_undo_grouping_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/fence_smart_pairs_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/fence_undo_grouping_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/engine/native_live_editing_regression_test.dart --reporter compact`: passed.

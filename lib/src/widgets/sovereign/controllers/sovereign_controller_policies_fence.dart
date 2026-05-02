@@ -48,8 +48,11 @@ abstract final class _FencePolicy {
     _EditTransformRule(
       name: 'expand-pair-on-enter',
       priority: 50,
-      apply: (context, value) =>
-          context.helpers.maybeExpandFencedPairOnEnter(context.oldValue, value),
+      apply: (context, value) => context.helpers.maybeExpandFencedPairOnEnter(
+        context.oldValue,
+        value,
+        enterCaret: context.intent.enterCaret,
+      ),
     ),
     _EditTransformRule(
       name: 'auto-indent-enter',

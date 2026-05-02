@@ -144,62 +144,6 @@ extension _FencePairingPolicyOps on SovereignController {
     );
   }
 
-  TextEditingValue _maybeExpandFencedPairOnEnter(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    if (oldValue.composing.isValid || newValue.composing.isValid) {
-      return newValue;
-    }
-
-    final oldSel = oldValue.selection;
-    if (!oldSel.isValid || !oldSel.isCollapsed) return newValue;
-    final caret = oldSel.baseOffset;
-    final oldText = oldValue.text;
-    final newText = newValue.text;
-    if (caret < 0 || caret > oldText.length) return newValue;
-    if (newText.length != oldText.length + 1) return newValue;
-    if (caret >= newText.length || newText.codeUnitAt(caret) != 10) {
-      return newValue;
-    }
-    if (newValue.selection.isValid &&
-        newValue.selection.isCollapsed &&
-        newValue.selection.baseOffset != caret + 1) {
-      return newValue;
-    }
-    if (!newText.startsWith(oldText.substring(0, caret))) return newValue;
-    if (newText.substring(caret + 1) != oldText.substring(caret)) {
-      return newValue;
-    }
-    if (!_isCaretInFenceBody(oldText, caret)) return newValue;
-    if (caret <= 0 || caret >= oldText.length) return newValue;
-
-    final opener = oldText.codeUnitAt(caret - 1);
-    final closer = oldText.codeUnitAt(caret);
-    final expectedCloser = FenceEditingUtils.smartPairMap[opener];
-    if (expectedCloser == null || expectedCloser != closer) return newValue;
-
-    final line = _lineIndex.lineAtOffset(caret);
-    final lineStart = _lineIndex.offsetAtLine(line);
-    if (lineStart < 0 || lineStart > caret) return newValue;
-    final beforeCaret = oldText.substring(lineStart, caret);
-    final baseIndent = NavigationLineUtils.leadingWhitespacePrefix(beforeCaret);
-    final innerIndent =
-        '$baseIndent${FenceEditingUtils.preferredIndentUnit(baseIndent)}';
-
-    final expanded = oldText.replaceRange(
-      caret,
-      caret,
-      '\n$innerIndent\n$baseIndent',
-    );
-    final nextCaret = caret + 1 + innerIndent.length;
-    return newValue.copyWith(
-      text: expanded,
-      selection: TextSelection.collapsed(offset: nextCaret),
-      composing: TextRange.empty,
-    );
-  }
-
   TextEditingValue _maybeOutdentFencedCodeOnCloserInsert(
     TextEditingValue oldValue,
     TextEditingValue newValue,

@@ -597,6 +597,54 @@ class MarkdownStructureTransformService {
     );
   }
 
+  TextEditingValue maybeExpandFencedPairOnEnter({
+    required TextEditingValue oldValue,
+    required TextEditingValue newValue,
+    required int? enterCaret,
+    required LineIndex lineIndex,
+    required bool Function(String text, int caret) isCaretInFenceBody,
+  }) {
+    final caret = enterCaret;
+    if (caret == null) return newValue;
+
+    final oldText = oldValue.text;
+    if (caret < 0 || caret > oldText.length) return newValue;
+    if (!_isSimpleEnterInsertion(
+      oldValue: oldValue,
+      newValue: newValue,
+      caret: caret,
+    )) {
+      return newValue;
+    }
+    if (!isCaretInFenceBody(oldText, caret)) return newValue;
+    if (caret <= 0 || caret >= oldText.length) return newValue;
+
+    final opener = oldText.codeUnitAt(caret - 1);
+    final closer = oldText.codeUnitAt(caret);
+    final expectedCloser = FenceEditingUtils.smartPairMap[opener];
+    if (expectedCloser == null || expectedCloser != closer) return newValue;
+
+    final line = lineIndex.lineAtOffset(caret);
+    final lineStart = lineIndex.offsetAtLine(line);
+    if (lineStart < 0 || lineStart > caret) return newValue;
+    final beforeCaret = oldText.substring(lineStart, caret);
+    final baseIndent = NavigationLineUtils.leadingWhitespacePrefix(beforeCaret);
+    final innerIndent =
+        '$baseIndent${FenceEditingUtils.preferredIndentUnit(baseIndent)}';
+
+    final expanded = oldText.replaceRange(
+      caret,
+      caret,
+      '\n$innerIndent\n$baseIndent',
+    );
+    final nextCaret = caret + 1 + innerIndent.length;
+    return newValue.copyWith(
+      text: expanded,
+      selection: TextSelection.collapsed(offset: nextCaret),
+      composing: TextRange.empty,
+    );
+  }
+
   TextEditingValue maybeNormalizeFencedMultilinePaste({
     required TextEditingValue oldValue,
     required TextEditingValue newValue,

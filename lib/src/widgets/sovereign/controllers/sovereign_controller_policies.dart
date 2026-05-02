@@ -152,9 +152,16 @@ class _PolicyHelpers {
 
   TextEditingValue maybeExpandFencedPairOnEnter(
     TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) =>
-      _controller._maybeExpandFencedPairOnEnter(oldValue, newValue);
+    TextEditingValue newValue, {
+    required int? enterCaret,
+  }) =>
+      _controller._structureTransforms.maybeExpandFencedPairOnEnter(
+        oldValue: oldValue,
+        newValue: newValue,
+        enterCaret: enterCaret,
+        lineIndex: lineIndex,
+        isCaretInFenceBody: _controller._isCaretInFenceBody,
+      );
 
   TextEditingValue maybeAutoIndentFencedCodeOnEnter(
     TextEditingValue oldValue,
