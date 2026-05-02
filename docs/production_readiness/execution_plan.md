@@ -117,12 +117,10 @@ Tasks:
 
 - [ ] Finish controller facade extraction from RFC 017.
 - [x] Split input intent routing into explicit handlers.
-- [ ] Split markdown structure query and transform services; initial query
-  facade plus heading, blockquote Enter/arrow exits, list Enter, and list
-  backspace, table Enter/formatting, and fenced-code arrow/Enter-exit/EOF
-  continuation/auto-indent/closing-line/paste/pair-expansion/auto-pair/closer
-  skip/selection-wrap/closer-outdent transforms extracted, broader transform
-  service still pending.
+- [x] Split markdown structure query and transform services; query facade plus
+  heading, blockquote, list, table, and fenced-code structure transforms
+  extracted behind `MarkdownStructureQueryService` and
+  `MarkdownStructureTransformService`.
 - [ ] Keep rendering composition pure and widget-facing code thin.
 - [ ] Split Rust bridge into smaller parse/ABI/mapping modules.
 - [ ] Keep behavior-level tests green after each wave.

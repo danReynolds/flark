@@ -706,3 +706,11 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/fence_smart_pairs_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/fence_undo_grouping_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/engine/native_live_editing_regression_test.dart --reporter compact`: passed.
+
+### Phase 3 Architecture Hardening: Structure Transform Completion Checkpoint
+
+- Marked the markdown structure query/transform split complete in the execution
+  plan after extracting heading, blockquote, list, table, and fenced-code
+  structure transforms behind core services.
+- Verification:
+  - `./scripts/verify_package_confidence.sh --skip-native`: passed.
