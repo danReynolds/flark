@@ -645,6 +645,56 @@ class MarkdownStructureTransformService {
     );
   }
 
+  TextEditingValue maybeAutoPairFencedOpenerInsert({
+    required TextEditingValue oldValue,
+    required TextEditingValue newValue,
+    required bool Function(String text, int caret) isCaretInFenceBody,
+  }) {
+    if (oldValue.composing.isValid || newValue.composing.isValid) {
+      return newValue;
+    }
+
+    final oldSel = oldValue.selection;
+    if (!oldSel.isValid || !oldSel.isCollapsed) return newValue;
+    final caret = oldSel.baseOffset;
+    if (caret < 0 || caret > oldValue.text.length) return newValue;
+
+    final oldText = oldValue.text;
+    final newText = newValue.text;
+    if (newText.length != oldText.length + 1) return newValue;
+    if (caret >= newText.length) return newValue;
+    if (newValue.selection.isValid &&
+        newValue.selection.isCollapsed &&
+        newValue.selection.baseOffset != caret + 1) {
+      return newValue;
+    }
+    if (!newText.startsWith(oldText.substring(0, caret))) return newValue;
+    if (newText.substring(caret + 1) != oldText.substring(caret)) {
+      return newValue;
+    }
+    if (!isCaretInFenceBody(oldText, caret)) return newValue;
+
+    final inserted = newText.codeUnitAt(caret);
+    final closer = FenceEditingUtils.smartPairMap[inserted];
+    if (closer == null) return newValue;
+
+    if ((inserted == 34 || inserted == 39) &&
+        !_shouldAutoPairFencedQuote(oldText, caret, inserted)) {
+      return newValue;
+    }
+
+    final pairedText = newText.replaceRange(
+      caret + 1,
+      caret + 1,
+      String.fromCharCode(closer),
+    );
+    return newValue.copyWith(
+      text: pairedText,
+      selection: TextSelection.collapsed(offset: caret + 1),
+      composing: TextRange.empty,
+    );
+  }
+
   TextEditingValue maybeNormalizeFencedMultilinePaste({
     required TextEditingValue oldValue,
     required TextEditingValue newValue,
@@ -721,6 +771,23 @@ class MarkdownStructureTransformService {
       return false;
     }
     return true;
+  }
+
+  static bool _shouldAutoPairFencedQuote(
+    String oldText,
+    int caret,
+    int quoteCu,
+  ) {
+    if (caret > 0 && oldText.codeUnitAt(caret - 1) == 92) return false;
+    if (caret >= oldText.length) return true;
+
+    final next = oldText.codeUnitAt(caret);
+    if (next == quoteCu) return true;
+    if (next == 32 || next == 9 || next == 10 || next == 13) return true;
+    if (next == 41 || next == 93 || next == 125 || next == 44 || next == 46) {
+      return true;
+    }
+    return false;
   }
 
   TextEditingValue maybeContinueOrExitListOnEnter({

@@ -187,7 +187,11 @@ class _PolicyHelpers {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) =>
-      _controller._maybeAutoPairFencedOpenerInsert(oldValue, newValue);
+      _controller._structureTransforms.maybeAutoPairFencedOpenerInsert(
+        oldValue: oldValue,
+        newValue: newValue,
+        isCaretInFenceBody: _controller._isCaretInFenceBody,
+      );
 
   TextEditingValue maybeSkipFencedCloserInsert(
     TextEditingValue oldValue,

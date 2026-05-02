@@ -52,55 +52,6 @@ extension _FencePairingPolicyOps on SovereignController {
     );
   }
 
-  TextEditingValue _maybeAutoPairFencedOpenerInsert(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    if (oldValue.composing.isValid || newValue.composing.isValid) {
-      return newValue;
-    }
-
-    final oldSel = oldValue.selection;
-    if (!oldSel.isValid || !oldSel.isCollapsed) return newValue;
-    final caret = oldSel.baseOffset;
-    if (caret < 0 || caret > oldValue.text.length) return newValue;
-
-    final oldText = oldValue.text;
-    final newText = newValue.text;
-    if (newText.length != oldText.length + 1) return newValue;
-    if (caret >= newText.length) return newValue;
-    if (newValue.selection.isValid &&
-        newValue.selection.isCollapsed &&
-        newValue.selection.baseOffset != caret + 1) {
-      return newValue;
-    }
-    if (!newText.startsWith(oldText.substring(0, caret))) return newValue;
-    if (newText.substring(caret + 1) != oldText.substring(caret)) {
-      return newValue;
-    }
-    if (!_isCaretInFenceBody(oldText, caret)) return newValue;
-
-    final inserted = newText.codeUnitAt(caret);
-    final closer = FenceEditingUtils.smartPairMap[inserted];
-    if (closer == null) return newValue;
-
-    if ((inserted == 34 || inserted == 39) &&
-        !_shouldAutoPairFencedQuote(oldText, caret, inserted)) {
-      return newValue;
-    }
-
-    final pairedText = newText.replaceRange(
-      caret + 1,
-      caret + 1,
-      String.fromCharCode(closer),
-    );
-    return newValue.copyWith(
-      text: pairedText,
-      selection: TextSelection.collapsed(offset: caret + 1),
-      composing: TextRange.empty,
-    );
-  }
-
   TextEditingValue _maybeSkipFencedCloserInsert(
     TextEditingValue oldValue,
     TextEditingValue newValue,

@@ -461,19 +461,6 @@ class SovereignController extends TextEditingController {
         _isCaretInFenceBody(text, end - 1);
   }
 
-  bool _shouldAutoPairFencedQuote(String oldText, int caret, int quoteCu) {
-    if (caret > 0 && oldText.codeUnitAt(caret - 1) == 92) return false; // \
-    if (caret >= oldText.length) return true;
-
-    final next = oldText.codeUnitAt(caret);
-    if (next == quoteCu) return true;
-    if (next == 32 || next == 9 || next == 10 || next == 13) return true;
-    if (next == 41 || next == 93 || next == 125 || next == 44 || next == 46) {
-      return true;
-    }
-    return false;
-  }
-
   UndoGroupingState _undoGroupingStateSnapshot() {
     return UndoGroupingState(
       currentUndoGroup: _currentUndoGroup,
