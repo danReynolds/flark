@@ -425,3 +425,17 @@ append-only unless correcting a factual error.
   - `./scripts/verify_example_packaging.sh --android`: passed; Gradle built
     `example/build/app/outputs/apk/debug/app-debug.apk` and found packaged
     `libsovereign_comrak_bridge.so` entries.
+
+### Phase 3 Architecture Hardening: Enter Intent Handler
+
+- Split Enter key behavior out of the umbrella `SovereignInputIntentHandler`
+  into `SovereignEnterIntentHandler`.
+- Added a focused `SovereignEnterIntentHost` contract for plain newline,
+  indented-code Enter, and fenced-code Enter exit behavior.
+- Kept the public controller API unchanged; `SovereignController.handleEnter`
+  still delegates through the existing controller input-intent facade.
+- Verification:
+  - `flutter analyze lib test/widgets/sovereign/enter_key_integration_test.dart test/widgets/sovereign/code_fence_exit_test.dart`: passed.
+  - `flutter test test/widgets/sovereign/enter_key_integration_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/code_fence_exit_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/fence_empty_enter_exit_widget_test.dart --reporter compact`: passed.

@@ -4,11 +4,15 @@ import 'package:sovereign_editor/src/widgets/sovereign/logic/fenced_code_scanner
 import 'package:sovereign_editor/src/widgets/sovereign/logic/sovereign_code_highlighter.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/geometry_model.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/line_index.dart';
+import 'input_intent_enter_handler.dart';
 import 'input_intent_navigation_handler.dart';
 import 'input_intent_tab_handler.dart';
 
 abstract class SovereignInputIntentHost
-    implements SovereignTabIntentHost, SovereignNavigationIntentHost {
+    implements
+        SovereignEnterIntentHost,
+        SovereignTabIntentHost,
+        SovereignNavigationIntentHost {
   @override
   TextEditingValue get value;
   @override
@@ -22,6 +26,7 @@ abstract class SovereignInputIntentHost
 
   @override
   void commitProgrammaticTextEdit(TextEditingValue newValue);
+  @override
   bool tryHandleIndentedCodeBlockEnter(String text, int caret);
   bool hasTaskMarker(String text, int markerEnd, int lineEnd);
   bool isUnclosedFenceAtEof(String text, MeasuredBlock block);
@@ -36,34 +41,12 @@ class SovereignInputIntentHandler {
   late final SovereignTabIntentHandler _tabHandler = SovereignTabIntentHandler(
     _host,
   );
+  late final SovereignEnterIntentHandler _enterHandler =
+      SovereignEnterIntentHandler(_host);
   late final SovereignArrowExitIntentHandler _arrowExitHandler =
       SovereignArrowExitIntentHandler(_host);
 
-  void handleEnter() {
-    if (_host.value.composing.isValid) return;
-
-    final sel = _host.selection;
-    if (!sel.isValid) return;
-
-    final text = _host.value.text;
-    final start = sel.start;
-    final end = sel.end;
-
-    if (sel.isCollapsed && _host.tryHandleIndentedCodeBlockEnter(text, start)) {
-      return;
-    }
-
-    final newText = text.replaceRange(start, end, '\n');
-    final newSelection = TextSelection.collapsed(offset: start + 1);
-
-    _host.commitProgrammaticTextEdit(
-      _host.value.copyWith(
-        text: newText,
-        selection: newSelection,
-        composing: TextRange.empty,
-      ),
-    );
-  }
+  void handleEnter() => _enterHandler.handleEnter();
 
   bool toggleTaskCheckboxAtSelection() {
     final value = _host.value;
@@ -181,36 +164,7 @@ class SovereignInputIntentHandler {
   bool tryExitBlockquoteOnArrowUp() =>
       _arrowExitHandler.tryExitBlockquoteOnArrowUp();
 
-  bool tryExitFencedCodeOnEnter() {
-    if (_host.value.composing.isValid) return false;
-    final sel = _host.selection;
-    if (!sel.isValid || !sel.isCollapsed) return false;
-
-    final caret = sel.baseOffset;
-    final text = _host.value.text;
-    if (caret < 0 || caret > text.length) return false;
-    final context = _host.fenceContextForCaret(
-      text,
-      caret,
-      includeUnclosedEof: true,
-    );
-    if (context == null) return false;
-    final exit = _host.computeFenceExitOnEnter(
-      text: text,
-      caret: caret,
-      context: context,
-    );
-    if (exit == null) return false;
-
-    _host.commitProgrammaticTextEdit(
-      _host.value.copyWith(
-        text: exit.text,
-        selection: TextSelection.collapsed(offset: exit.caret),
-        composing: TextRange.empty,
-      ),
-    );
-    return true;
-  }
+  bool tryExitFencedCodeOnEnter() => _enterHandler.tryExitFencedCodeOnEnter();
 
   bool setFencedCodeLanguageForSelection(String? fenceTag) {
     if (_host.value.composing.isValid) return false;
