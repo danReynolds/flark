@@ -529,66 +529,6 @@ class SovereignController extends TextEditingController {
         op: op,
       );
 
-  ParsedTableLine? _parseTableLineAt(String text, int line) {
-    return _structureQueries.parseTableLineAt(
-      text: text,
-      line: line,
-      lineIndex: _lineIndex,
-      geometry: _geometry,
-      rowShapeResolver: _structureQueries.matchTableRowShape,
-    );
-  }
-
-  int? _tableCellIndexForCaret(ParsedTableLine row, int caret) {
-    return _structureQueries.tableCellIndexForCaret(row, caret);
-  }
-
-  bool _tableRegionHasSeparator(String text, int line, int columnCount) {
-    return _structureQueries.tableRegionHasSeparator(
-      text: text,
-      line: line,
-      columnCount: columnCount,
-      lineIndex: _lineIndex,
-      parseLineAt: _parseTableLineAt,
-    );
-  }
-
-  ParsedTableLine? _findAdjacentTableLine({
-    required String text,
-    required int line,
-    required int columnCount,
-    required bool forward,
-    bool skipSeparator = false,
-  }) {
-    return _structureQueries.findAdjacentTableLine(
-      text: text,
-      line: line,
-      columnCount: columnCount,
-      forward: forward,
-      skipSeparator: skipSeparator,
-      lineIndex: _lineIndex,
-      parseLineAt: _parseTableLineAt,
-    );
-  }
-
-  String _emptyTableRowTemplate(int columns, {required String indent}) =>
-      _structureTransforms.emptyTableRowTemplate(columns, indent: indent);
-
-  TableTabFormattingResult? _formatEstablishedTableAroundCaret(
-    String text,
-    int caret,
-  ) {
-    final formatted = _structureTransforms.formatEstablishedTableAroundCaret(
-      text,
-      caret,
-    );
-    if (formatted == null) return null;
-    return TableTabFormattingResult(
-      text: formatted.text,
-      caret: formatted.caret,
-    );
-  }
-
   /// [Phase 5] Re-calculates active hidden ranges based on selection (Pop Scope)
   /// and emits a new DecorationModel if needed.
   void _updateProjection({

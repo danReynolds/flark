@@ -765,3 +765,16 @@ append-only unless correcting a factual error.
   - `flutter test test/widgets/sovereign/commands/command_capabilities_and_transaction_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/ime_composition_undo_test.dart --reporter compact`: passed.
   - `flutter test test/widgets/sovereign/sovereign_editor_test.dart --reporter compact`: passed.
+
+### Phase 3 Architecture Hardening: Table Tab Host Boundary
+
+- Removed controller table helper wrappers used only by the table Tab intent host.
+- Updated `_ControllerTableTabIntentHost` to call `MarkdownStructureQueryService`
+  and `MarkdownStructureTransformService` directly through the host boundary.
+- Verification:
+  - `flutter analyze lib/widgets/sovereign/controllers/sovereign_controller.dart lib/src/widgets/sovereign/controllers/sovereign_table_tab_intent_host.dart lib/src/widgets/sovereign/core/structure/table/table_tab_intent_service.dart`: passed.
+  - `flutter test test/widgets/sovereign/core/structure/table/table_line_parser_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/table_editing_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/table_key_integration_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/table_fuzz_invariants_test.dart --reporter compact`: passed.
+  - `flutter test test/widgets/sovereign/table_performance_baseline_test.dart --reporter compact`: passed.

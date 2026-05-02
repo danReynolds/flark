@@ -27,15 +27,27 @@ class _ControllerTableTabIntentHost implements TableTabIntentHost {
 
   @override
   ParsedTableLine? parseTableLineAt(String text, int line) =>
-      _c._parseTableLineAt(text, line);
+      _c._structureQueries.parseTableLineAt(
+        text: text,
+        line: line,
+        lineIndex: _c._lineIndex,
+        geometry: _c._geometry,
+        rowShapeResolver: _c._structureQueries.matchTableRowShape,
+      );
 
   @override
   bool tableRegionHasSeparator(String text, int line, int columnCount) =>
-      _c._tableRegionHasSeparator(text, line, columnCount);
+      _c._structureQueries.tableRegionHasSeparator(
+        text: text,
+        line: line,
+        columnCount: columnCount,
+        lineIndex: _c._lineIndex,
+        parseLineAt: parseTableLineAt,
+      );
 
   @override
   int? tableCellIndexForCaret(ParsedTableLine row, int caret) =>
-      _c._tableCellIndexForCaret(row, caret);
+      _c._structureQueries.tableCellIndexForCaret(row, caret);
 
   @override
   ParsedTableLine? findAdjacentTableLine({
@@ -45,22 +57,33 @@ class _ControllerTableTabIntentHost implements TableTabIntentHost {
     required bool forward,
     bool skipSeparator = false,
   }) =>
-      _c._findAdjacentTableLine(
+      _c._structureQueries.findAdjacentTableLine(
         text: text,
         line: line,
         columnCount: columnCount,
         forward: forward,
         skipSeparator: skipSeparator,
+        lineIndex: _c._lineIndex,
+        parseLineAt: parseTableLineAt,
       );
 
   @override
   String emptyRowTemplate(int columns, {required String indent}) =>
-      _c._emptyTableRowTemplate(columns, indent: indent);
+      _c._structureTransforms.emptyTableRowTemplate(columns, indent: indent);
 
   @override
   TableTabFormattingResult? formatEstablishedTableAroundCaret(
     String text,
     int caret,
-  ) =>
-      _c._formatEstablishedTableAroundCaret(text, caret);
+  ) {
+    final formatted = _c._structureTransforms.formatEstablishedTableAroundCaret(
+      text,
+      caret,
+    );
+    if (formatted == null) return null;
+    return TableTabFormattingResult(
+      text: formatted.text,
+      caret: formatted.caret,
+    );
+  }
 }
