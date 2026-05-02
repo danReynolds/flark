@@ -133,7 +133,13 @@ class _PolicyHelpers {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) =>
-      _controller._maybeNormalizeFencedMultilinePaste(oldValue, newValue);
+      _controller._structureTransforms.maybeNormalizeFencedMultilinePaste(
+        oldValue: oldValue,
+        newValue: newValue,
+        lineIndex: lineIndex,
+        skipNormalization: _controller._undoBoundaryDepth > 0,
+        isRangeInFenceBody: _controller._isRangeInFenceBody,
+      );
 
   TextEditingValue maybeKeepClosingFenceOnOwnLine(
     TextEditingValue oldValue,

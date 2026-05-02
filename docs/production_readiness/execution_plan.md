@@ -120,7 +120,7 @@ Tasks:
 - [ ] Split markdown structure query and transform services; initial query
   facade plus heading, blockquote Enter/arrow exits, list Enter, and list
   backspace, table Enter/formatting, and fenced-code arrow/Enter-exit/EOF
-  continuation/auto-indent/closing-line transforms extracted, broader
+  continuation/auto-indent/closing-line/paste transforms extracted, broader
   transform service still pending.
 - [ ] Keep rendering composition pure and widget-facing code thin.
 - [ ] Split Rust bridge into smaller parse/ABI/mapping modules.

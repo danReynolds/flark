@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 
 import 'package:sovereign_editor/src/widgets/sovereign/core/intents/input_intent_models.dart';
+import 'package:sovereign_editor/src/widgets/sovereign/core/pipeline/edit_differ.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/fence/fence_editing_utils.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/markdown_line_helpers.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/core/structure/models/fence_context.dart';
@@ -12,6 +13,7 @@ import 'package:sovereign_editor/src/widgets/sovereign/core/structure/table/tabl
 import 'package:sovereign_editor/src/widgets/sovereign/core/syntax/projection_range_utils.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/logic/fenced_code_scanner.dart';
 import 'package:sovereign_editor/src/widgets/sovereign/logic/markdown_marker_grammar.dart';
+import 'package:sovereign_editor/widgets/sovereign/models/edit_op.dart';
 import 'package:sovereign_editor/widgets/sovereign/models/line_index.dart';
 
 typedef BlockquoteArrowExitPredicate = bool Function({
@@ -591,6 +593,61 @@ class MarkdownStructureTransformService {
     return newValue.copyWith(
       text: adjustedText,
       selection: TextSelection.collapsed(offset: caret + 1),
+      composing: TextRange.empty,
+    );
+  }
+
+  TextEditingValue maybeNormalizeFencedMultilinePaste({
+    required TextEditingValue oldValue,
+    required TextEditingValue newValue,
+    required LineIndex lineIndex,
+    required bool skipNormalization,
+    required bool Function(String text, int start, int end) isRangeInFenceBody,
+  }) {
+    if (oldValue.composing.isValid || newValue.composing.isValid) {
+      return newValue;
+    }
+    if (skipNormalization) return newValue;
+    if (oldValue.text == newValue.text) return newValue;
+
+    final diff = EditDiffer.diff(
+      oldVal: oldValue,
+      newVal: newValue,
+      nextOpId: 0,
+      isSmart: true,
+      undoGroupId: 0,
+    );
+    if (diff.kind != EditOpKind.text) return newValue;
+    if (!diff.insertedText.contains('\n')) return newValue;
+
+    final replaced = diff.replacedRange;
+    final oldText = oldValue.text;
+    final start = replaced.start;
+    final end = replaced.end;
+    if (!isRangeInFenceBody(oldText, start, end)) return newValue;
+
+    final line = lineIndex.lineAtOffset(start);
+    final lineStart = lineIndex.offsetAtLine(line);
+    if (lineStart < 0 || lineStart > start) return newValue;
+    final beforeInsertion = oldText.substring(lineStart, start);
+    if (!NavigationLineUtils.isHorizontalWhitespaceOnly(beforeInsertion)) {
+      return newValue;
+    }
+
+    final normalizedInserted = FenceEditingUtils.normalizeFencedMultilineInsert(
+      insertedText: diff.insertedText,
+      baseIndent: beforeInsertion,
+    );
+    if (normalizedInserted == diff.insertedText) return newValue;
+
+    final adjustedText = oldText.replaceRange(start, end, normalizedInserted);
+    final adjustedCaret = (start + normalizedInserted.length).clamp(
+      0,
+      adjustedText.length,
+    );
+    return newValue.copyWith(
+      text: adjustedText,
+      selection: TextSelection.collapsed(offset: adjustedCaret),
       composing: TextRange.empty,
     );
   }
