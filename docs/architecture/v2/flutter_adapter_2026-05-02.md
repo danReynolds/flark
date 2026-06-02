@@ -1,19 +1,19 @@
-# Sovereign v2 Flutter Adapter
+# Flark v2 Flutter Adapter
 
 Status date: 2026-05-02
 
 ## Scope
 
-The first Flutter adapter slice introduces `SovereignFlutterController` as a
+The first Flutter adapter slice introduces `FlarkFlutterController` as a
 thin `ChangeNotifier` over the headless runtime, projection, and render plan.
 It is intentionally not the editor core.
 
 ## Current Contract
 
-- `SovereignFlutterController` owns a `SovereignEditorRuntime`.
+- `FlarkFlutterController` owns a `FlarkEditorRuntime`.
 - Source edits still flow through headless commands or transactions.
 - Flutter text-input deltas are translated into typed source transactions by
-  `SovereignTextDeltaAdapter`.
+  `FlarkTextDeltaAdapter`.
 - Stale text deltas are rejected when `oldText` does not match the headless
   document.
 - Projection is predicted through source transactions while parser output is
@@ -27,18 +27,18 @@ It is intentionally not the editor core.
   when no inverse transaction is exposed by runtime history.
 - `MarkdownEditor` is the promoted editing widget. It owns a
   controller from `initialMarkdown` for simple use or accepts a shared
-  `SovereignFlutterController` for toolbars and split previews.
+  `FlarkFlutterController` for toolbars and split previews.
 - The concrete raw-source, projected, and live-rendered editing widgets are
   implementation details behind `MarkdownEditor`.
 - Flutter command actions invoke typed v2 commands through
-  `SovereignCommandIntent` and `SovereignCommandAction`.
+  `FlarkCommandIntent` and `FlarkCommandAction`.
 - `MarkdownEditor` can install shortcut maps that dispatch typed
   command invocations.
 - `Markdown` is the promoted read-only widget. It owns a
   controller from `markdown` for standalone preview or consumes a shared
   controller's render plan in split-pane layouts.
-- `SovereignMarkdownEditingMode.liveRendered` routes through
-  `SovereignLiveRenderedEditableText`, which uses projected source edits plus
+- `FlarkMarkdownEditingMode.liveRendered` routes through
+  `FlarkLiveRenderedEditableText`, which uses projected source edits plus
   render-plan-backed block widgets for parsed task lists, fenced code, and GFM
   tables.
 

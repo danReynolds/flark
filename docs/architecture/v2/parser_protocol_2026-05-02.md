@@ -1,4 +1,4 @@
-# Sovereign v2 Parser Protocol
+# Flark v2 Parser Protocol
 
 Status date: 2026-05-02
 

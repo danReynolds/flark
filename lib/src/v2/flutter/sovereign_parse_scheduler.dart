@@ -3,11 +3,11 @@ import 'dart:async';
 import '../markdown/markdown.dart';
 import 'sovereign_flutter_controller.dart';
 
-final class SovereignParseScheduler {
-  SovereignParseScheduler({
-    required SovereignFlutterController controller,
-    required SovereignMarkdownParseBackend backend,
-    SovereignMarkdownProfile profile = SovereignMarkdownProfile.commonMarkGfm,
+final class FlarkParseScheduler {
+  FlarkParseScheduler({
+    required FlarkFlutterController controller,
+    required FlarkMarkdownParseBackend backend,
+    FlarkMarkdownProfile profile = FlarkMarkdownProfile.commonMarkGfm,
     Duration debounce = const Duration(milliseconds: 80),
     void Function(Object error, StackTrace stackTrace)? onError,
   }) : _controller = controller,
@@ -16,9 +16,9 @@ final class SovereignParseScheduler {
        _debounce = debounce,
        _onError = onError;
 
-  final SovereignFlutterController _controller;
-  final SovereignMarkdownParseBackend _backend;
-  final SovereignMarkdownProfile _profile;
+  final FlarkFlutterController _controller;
+  final FlarkMarkdownParseBackend _backend;
+  final FlarkMarkdownProfile _profile;
   final Duration _debounce;
   final void Function(Object error, StackTrace stackTrace)? _onError;
 
@@ -85,7 +85,7 @@ final class SovereignParseScheduler {
     _inFlight = true;
     _inFlightRevision = state.revision;
     try {
-      final request = SovereignMarkdownParseRequest(
+      final request = FlarkMarkdownParseRequest(
         revision: state.revision,
         markdown: state.markdown,
         profile: _profile,

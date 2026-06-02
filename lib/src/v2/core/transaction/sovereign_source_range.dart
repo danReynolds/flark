@@ -1,5 +1,5 @@
-final class SovereignSourceRange {
-  const SovereignSourceRange(this.start, this.end);
+final class FlarkSourceRange {
+  const FlarkSourceRange(this.start, this.end);
 
   final int start;
   final int end;
@@ -10,22 +10,22 @@ final class SovereignSourceRange {
 
   bool containsOffset(int offset) => offset >= start && offset <= end;
 
-  bool containsRange(SovereignSourceRange other) {
+  bool containsRange(FlarkSourceRange other) {
     return other.start >= start && other.end <= end;
   }
 
-  bool intersects(SovereignSourceRange other) {
+  bool intersects(FlarkSourceRange other) {
     return start < other.end && other.start < end;
   }
 
-  SovereignSourceRange union(SovereignSourceRange other) {
-    return SovereignSourceRange(
+  FlarkSourceRange union(FlarkSourceRange other) {
+    return FlarkSourceRange(
       start < other.start ? start : other.start,
       end > other.end ? end : other.end,
     );
   }
 
-  SovereignSourceRange validate(int textLength) {
+  FlarkSourceRange validate(int textLength) {
     _checkOffset(start, textLength, 'start');
     _checkOffset(end, textLength, 'end');
     if (start > end) {
@@ -42,7 +42,7 @@ final class SovereignSourceRange {
 
   @override
   bool operator ==(Object other) {
-    return other is SovereignSourceRange &&
+    return other is FlarkSourceRange &&
         other.start == start &&
         other.end == end;
   }
@@ -51,5 +51,5 @@ final class SovereignSourceRange {
   int get hashCode => Object.hash(start, end);
 
   @override
-  String toString() => 'SovereignSourceRange($start, $end)';
+  String toString() => 'FlarkSourceRange($start, $end)';
 }

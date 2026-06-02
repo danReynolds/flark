@@ -18,11 +18,9 @@ TextSelectionControls? sovereignTextSelectionControlsForPlatform(
     TargetPlatform.iOS => cupertinoTextSelectionHandleControls,
     TargetPlatform.macOS => cupertinoDesktopTextSelectionHandleControls,
     TargetPlatform.android ||
-    TargetPlatform.fuchsia =>
-      materialTextSelectionHandleControls,
+    TargetPlatform.fuchsia => materialTextSelectionHandleControls,
     TargetPlatform.linux ||
-    TargetPlatform.windows =>
-      desktopTextSelectionHandleControls,
+    TargetPlatform.windows => desktopTextSelectionHandleControls,
   };
 }
 
@@ -32,7 +30,7 @@ Widget sovereignEditableTextGestureDetector({
   required Widget child,
 }) {
   return TextSelectionGestureDetectorBuilder(
-    delegate: _SovereignTextSelectionGestureDelegate(editableTextKey),
+    delegate: _FlarkTextSelectionGestureDelegate(editableTextKey),
   ).buildGestureDetector(
     key: key,
     behavior: HitTestBehavior.translucent,
@@ -40,9 +38,9 @@ Widget sovereignEditableTextGestureDetector({
   );
 }
 
-final class _SovereignTextSelectionGestureDelegate
+final class _FlarkTextSelectionGestureDelegate
     implements TextSelectionGestureDetectorBuilderDelegate {
-  const _SovereignTextSelectionGestureDelegate(this.editableTextKey);
+  const _FlarkTextSelectionGestureDelegate(this.editableTextKey);
 
   @override
   final GlobalKey<EditableTextState> editableTextKey;

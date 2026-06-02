@@ -1,8 +1,8 @@
 import 'sovereign_markdown_parse_result.dart';
 import 'sovereign_markdown_profile.dart';
 
-final class SovereignMarkdownParseRequest {
-  const SovereignMarkdownParseRequest({
+final class FlarkMarkdownParseRequest {
+  const FlarkMarkdownParseRequest({
     required this.revision,
     required this.markdown,
     required this.profile,
@@ -10,31 +10,29 @@ final class SovereignMarkdownParseRequest {
 
   final int revision;
   final String markdown;
-  final SovereignMarkdownProfile profile;
+  final FlarkMarkdownProfile profile;
 }
 
-final class SovereignMarkdownParserCapabilities {
-  SovereignMarkdownParserCapabilities({
+final class FlarkMarkdownParserCapabilities {
+  FlarkMarkdownParserCapabilities({
     required this.parserName,
     required this.schemaVersion,
-    required Iterable<SovereignMarkdownProfile> supportedProfiles,
-  }) : supportedProfiles = List<SovereignMarkdownProfile>.unmodifiable(
-          supportedProfiles,
-        );
+    required Iterable<FlarkMarkdownProfile> supportedProfiles,
+  }) : supportedProfiles = List<FlarkMarkdownProfile>.unmodifiable(
+         supportedProfiles,
+       );
 
   final String parserName;
   final int schemaVersion;
-  final List<SovereignMarkdownProfile> supportedProfiles;
+  final List<FlarkMarkdownProfile> supportedProfiles;
 
-  bool supports(SovereignMarkdownProfile profile) {
+  bool supports(FlarkMarkdownProfile profile) {
     return supportedProfiles.contains(profile);
   }
 }
 
-abstract interface class SovereignMarkdownParseBackend {
-  SovereignMarkdownParserCapabilities get capabilities;
+abstract interface class FlarkMarkdownParseBackend {
+  FlarkMarkdownParserCapabilities get capabilities;
 
-  Future<SovereignMarkdownParseResult> parse(
-    SovereignMarkdownParseRequest request,
-  );
+  Future<FlarkMarkdownParseResult> parse(FlarkMarkdownParseRequest request);
 }

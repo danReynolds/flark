@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/sovereign_editor_v2.dart';
+import 'package:flark/flark_advanced.dart';
 
 import '../support/sovereign_test_paths.dart';
 
@@ -20,7 +20,7 @@ void main() {
   const coreThreshold = 0.995;
   const gfmThreshold = 0.99;
 
-  group('Sovereign v2 native upstream contracts', () {
+  group('Flark v2 native upstream contracts', () {
     final libPath = sovereignNativeBridgeLibraryPathForPlatform();
 
     if (libPath.isEmpty || !File(libPath).existsSync()) {
@@ -30,7 +30,7 @@ void main() {
       return;
     }
 
-    final backend = SovereignNativeComrakParseBackend.withNativeBridge(
+    final backend = FlarkNativeComrakParseBackend.withNativeBridge(
       overrideLibraryPath: libPath,
     );
 
@@ -39,7 +39,7 @@ void main() {
         laneName: 'v2-core',
         cases: coreCases,
         deviations: deviations['core']!.map((item) => item.example).toSet(),
-        profile: SovereignMarkdownProfile.commonMarkCore,
+        profile: FlarkMarkdownProfile.commonMarkCore,
         backend: backend,
       );
 
@@ -53,7 +53,7 @@ void main() {
         laneName: 'v2-gfm',
         cases: gfmCases,
         deviations: deviations['gfm']!.map((item) => item.example).toSet(),
-        profile: SovereignMarkdownProfile.commonMarkGfm,
+        profile: FlarkMarkdownProfile.commonMarkGfm,
         backend: backend,
       );
 
@@ -68,8 +68,8 @@ Future<_LaneScore> _scoreLane({
   required String laneName,
   required List<_UpstreamCase> cases,
   required Set<int> deviations,
-  required SovereignMarkdownProfile profile,
-  required SovereignNativeComrakParseBackend backend,
+  required FlarkMarkdownProfile profile,
+  required FlarkNativeComrakParseBackend backend,
 }) async {
   var skipped = 0;
   var compared = 0;
@@ -89,7 +89,7 @@ Future<_LaneScore> _scoreLane({
     }
 
     compared++;
-    final request = SovereignMarkdownParseRequest(
+    final request = FlarkMarkdownParseRequest(
       revision: fixture.example,
       markdown: fixture.markdown,
       profile: profile,
@@ -124,13 +124,7 @@ Future<_LaneScore> _scoreLane({
     if (samples.length < 12) {
       samples.add(
         '$laneName#${fixture.example} section="${fixture.section}" '
-        'reason=${[
-          if (hasErrors) 'diagnostics',
-          if (!rangesValid) 'ranges',
-          if (!projectionValid) 'projection',
-          if (!renderPlanValid) 'renderPlan',
-          if (!deterministic) 'determinism',
-        ].join('+')}',
+        'reason=${[if (hasErrors) 'diagnostics', if (!rangesValid) 'ranges', if (!projectionValid) 'projection', if (!renderPlanValid) 'renderPlan', if (!deterministic) 'determinism'].join('+')}',
       );
     }
   }
@@ -151,15 +145,16 @@ Future<_LaneScore> _scoreLane({
   );
 }
 
-bool _rangesValid(SovereignMarkdownParseResult result, int textLength) {
-  bool validRange(SovereignSourceRange range) {
+bool _rangesValid(FlarkMarkdownParseResult result, int textLength) {
+  bool validRange(FlarkSourceRange range) {
     return range.start >= 0 &&
         range.end <= textLength &&
         range.start < range.end;
   }
 
-  return _allBlocks(result.blocks)
-          .every((block) => validRange(block.sourceRange)) &&
+  return _allBlocks(
+        result.blocks,
+      ).every((block) => validRange(block.sourceRange)) &&
       result.inlineTokens.every((token) => validRange(token.sourceRange)) &&
       result.hiddenRanges.every((range) => validRange(range.sourceRange)) &&
       result.replacementRanges.every(
@@ -169,9 +164,9 @@ bool _rangesValid(SovereignMarkdownParseResult result, int textLength) {
       result.ambiguityZones.every((zone) => validRange(zone.sourceRange));
 }
 
-bool _canBuildProjection(SovereignMarkdownParseResult result, String markdown) {
+bool _canBuildProjection(FlarkMarkdownParseResult result, String markdown) {
   try {
-    final projection = SovereignProjection.fromParseResult(result);
+    final projection = FlarkProjection.fromParseResult(result);
     projection.projectText(markdown);
     return true;
   } catch (_) {
@@ -179,16 +174,16 @@ bool _canBuildProjection(SovereignMarkdownParseResult result, String markdown) {
   }
 }
 
-bool _canBuildRenderPlan(SovereignMarkdownParseResult result) {
+bool _canBuildRenderPlan(FlarkMarkdownParseResult result) {
   try {
-    SovereignRenderPlan.fromParseResult(parseResult: result);
+    FlarkRenderPlan.fromParseResult(parseResult: result);
     return true;
   } catch (_) {
     return false;
   }
 }
 
-String _signature(SovereignMarkdownParseResult result) {
+String _signature(FlarkMarkdownParseResult result) {
   final blockSignature = [
     for (final block in _allBlocks(result.blocks))
       '${block.type}:${block.sourceRange.start}:${block.sourceRange.end}',
@@ -210,8 +205,8 @@ String _signature(SovereignMarkdownParseResult result) {
   ].join(',');
 }
 
-Iterable<SovereignMarkdownBlockNode> _allBlocks(
-  Iterable<SovereignMarkdownBlockNode> blocks,
+Iterable<FlarkMarkdownBlockNode> _allBlocks(
+  Iterable<FlarkMarkdownBlockNode> blocks,
 ) sync* {
   for (final block in blocks) {
     yield block;

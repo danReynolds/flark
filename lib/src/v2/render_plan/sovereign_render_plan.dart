@@ -5,48 +5,52 @@ import '../core/transaction/sovereign_transaction.dart';
 import '../markdown/parse/sovereign_markdown_parse_result.dart';
 import '../projection/sovereign_projection.dart';
 
-abstract base class SovereignRenderPlanExtension extends SovereignExtension {
-  const SovereignRenderPlanExtension();
+abstract base class FlarkRenderPlanExtension extends FlarkExtension {
+  const FlarkRenderPlanExtension();
 
-  SovereignRenderPlan transformRenderPlan(
-    SovereignRenderPlanContext context,
-  ) {
+  FlarkRenderPlan transformRenderPlan(FlarkRenderPlanContext context) {
     return context.renderPlan;
   }
 }
 
-final class SovereignRenderPlanContext {
-  const SovereignRenderPlanContext({
+final class FlarkRenderPlanContext {
+  const FlarkRenderPlanContext({
     required this.parseResult,
     required this.projection,
     required this.renderPlan,
   });
 
-  final SovereignMarkdownParseResult parseResult;
-  final SovereignProjection projection;
-  final SovereignRenderPlan renderPlan;
+  final FlarkMarkdownParseResult parseResult;
+  final FlarkProjection projection;
+  final FlarkRenderPlan renderPlan;
 }
 
-final class SovereignRenderPlan {
-  SovereignRenderPlan({
-    required Iterable<SovereignRenderBlock> blocks,
+final class FlarkRenderPlan {
+  FlarkRenderPlan({
+    required Iterable<FlarkRenderBlock> blocks,
     Map<String, Object?> metadata = const {},
-  })  : blocks = List<SovereignRenderBlock>.unmodifiable(blocks),
-        metadata = Map<String, Object?>.unmodifiable(metadata);
+  }) : blocks = List<FlarkRenderBlock>.unmodifiable(blocks),
+       metadata = Map<String, Object?>.unmodifiable(metadata);
 
-  factory SovereignRenderPlan.fromParseResult({
-    required SovereignMarkdownParseResult parseResult,
-    SovereignProjection? projection,
+  factory FlarkRenderPlan.fromParseResult({
+    required FlarkMarkdownParseResult parseResult,
+    FlarkProjection? projection,
   }) {
     final effectiveProjection =
-        projection ?? SovereignProjection.fromParseResult(parseResult);
-    return SovereignRenderPlan(
-      blocks: parseResult.blocks.map(
-        (block) => SovereignRenderBlock.fromMarkdownBlock(
-          block,
-          projection: effectiveProjection,
-          inlineTokens: parseResult.inlineTokens,
-        ),
+        projection ?? FlarkProjection.fromParseResult(parseResult);
+    final inlineTokens = parseResult.inlineTokens.toList(growable: false)
+      ..sort((left, right) {
+        final startComparison = left.sourceRange.start.compareTo(
+          right.sourceRange.start,
+        );
+        if (startComparison != 0) return startComparison;
+        return left.sourceRange.end.compareTo(right.sourceRange.end);
+      });
+    return FlarkRenderPlan(
+      blocks: _renderBlocksFromMarkdown(
+        parseResult.blocks,
+        projection: effectiveProjection,
+        inlineTokens: inlineTokens,
       ),
       metadata: {
         'schemaVersion': parseResult.schemaVersion,
@@ -55,51 +59,51 @@ final class SovereignRenderPlan {
     );
   }
 
-  final List<SovereignRenderBlock> blocks;
+  final List<FlarkRenderBlock> blocks;
   final Map<String, Object?> metadata;
 
-  Iterable<SovereignRenderBlock> get allBlocks sync* {
+  Iterable<FlarkRenderBlock> get allBlocks sync* {
     for (final block in blocks) {
       yield* _blockAndDescendants(block);
     }
   }
 
-  Iterable<SovereignRenderInlineRun> get allInlineRuns sync* {
+  Iterable<FlarkRenderInlineRun> get allInlineRuns sync* {
     for (final block in allBlocks) {
       yield* block.inlineRuns;
     }
   }
 
-  Iterable<SovereignRenderInlineRun> get linkRuns {
+  Iterable<FlarkRenderInlineRun> get linkRuns {
     return allInlineRuns.where(
-      (run) => run.action?.kind == SovereignRenderInlineActionKind.link,
+      (run) => run.action?.kind == FlarkRenderInlineActionKind.link,
     );
   }
 
-  Iterable<SovereignRenderInlineRun> get imageRuns {
+  Iterable<FlarkRenderInlineRun> get imageRuns {
     return allInlineRuns.where(
-      (run) => run.action?.kind == SovereignRenderInlineActionKind.image,
+      (run) => run.action?.kind == FlarkRenderInlineActionKind.image,
     );
   }
 
-  Iterable<SovereignRenderBlock> get tableBlocks {
+  Iterable<FlarkRenderBlock> get tableBlocks {
     return allBlocks.where((block) => block.table != null);
   }
 
-  Iterable<SovereignRenderBlock> get listItemBlocks {
+  Iterable<FlarkRenderBlock> get listItemBlocks {
     return allBlocks.where((block) => block.listItem != null);
   }
 
-  Iterable<SovereignRenderBlock> get taskListItemBlocks {
+  Iterable<FlarkRenderBlock> get taskListItemBlocks {
     return allBlocks.where((block) => block.taskListItem != null);
   }
 
-  Iterable<SovereignRenderBlock> get codeBlocks {
+  Iterable<FlarkRenderBlock> get codeBlocks {
     return allBlocks.where((block) => block.codeBlock != null);
   }
 
-  SovereignRenderBlock? blockAtDisplayOffset(int displayOffset) {
-    SovereignRenderBlock? best;
+  FlarkRenderBlock? blockAtDisplayOffset(int displayOffset) {
+    FlarkRenderBlock? best;
     for (final block in allBlocks) {
       if (!block.displayRange.containsOffset(displayOffset)) continue;
       if (best == null ||
@@ -110,20 +114,20 @@ final class SovereignRenderPlan {
     return best;
   }
 
-  SovereignRenderInlineRun? inlineRunAtDisplayOffset(int displayOffset) {
+  FlarkRenderInlineRun? inlineRunAtDisplayOffset(int displayOffset) {
     for (final run in allInlineRuns) {
       if (run.displayRange.containsOffset(displayOffset)) return run;
     }
     return null;
   }
 
-  SovereignRenderOverlayPlan overlayPlan() {
-    return SovereignRenderOverlayPlan.fromRenderPlan(this);
+  FlarkRenderOverlayPlan overlayPlan() {
+    return FlarkRenderOverlayPlan.fromRenderPlan(this);
   }
 
-  SovereignRenderPlan predictThroughTransaction({
-    required SovereignTransaction transaction,
-    required SovereignProjection projection,
+  FlarkRenderPlan predictThroughTransaction({
+    required FlarkTransaction transaction,
+    required FlarkProjection projection,
     required int revision,
     required int textLengthAfter,
   }) {
@@ -135,9 +139,9 @@ final class SovereignRenderPlan {
             textLengthAfter: textLengthAfter,
           ),
         )
-        .whereType<SovereignRenderBlock>();
+        .whereType<FlarkRenderBlock>();
 
-    return SovereignRenderPlan(
+    return FlarkRenderPlan(
       blocks: predictedBlocks,
       metadata: {
         ...metadata,
@@ -149,17 +153,16 @@ final class SovereignRenderPlan {
   }
 }
 
-SovereignRenderPlan applySovereignRenderPlanExtensions({
-  required SovereignRenderPlan renderPlan,
-  required SovereignMarkdownParseResult parseResult,
-  required SovereignProjection projection,
-  required SovereignExtensionSet extensions,
+FlarkRenderPlan applyFlarkRenderPlanExtensions({
+  required FlarkRenderPlan renderPlan,
+  required FlarkMarkdownParseResult parseResult,
+  required FlarkProjection projection,
+  required FlarkExtensionSet extensions,
 }) {
   var current = renderPlan;
-  for (final extension
-      in extensions.whereType<SovereignRenderPlanExtension>()) {
+  for (final extension in extensions.whereType<FlarkRenderPlanExtension>()) {
     current = extension.transformRenderPlan(
-      SovereignRenderPlanContext(
+      FlarkRenderPlanContext(
         parseResult: parseResult,
         projection: projection,
         renderPlan: current,
@@ -169,74 +172,60 @@ SovereignRenderPlan applySovereignRenderPlanExtensions({
   return current;
 }
 
-final class SovereignRenderBlock {
-  SovereignRenderBlock({
+final class FlarkRenderBlock {
+  FlarkRenderBlock({
     required this.kind,
     required this.type,
     required this.sourceRange,
     required this.displayRange,
     required this.styleToken,
-    required Iterable<SovereignRenderInlineRun> inlineRuns,
-    required Iterable<SovereignRenderBlock> children,
+    required Iterable<FlarkRenderInlineRun> inlineRuns,
+    required Iterable<FlarkRenderBlock> children,
     this.table,
     this.listItem,
     this.taskListItem,
     this.codeBlock,
     Map<String, Object?> attributes = const {},
-  })  : inlineRuns = List<SovereignRenderInlineRun>.unmodifiable(inlineRuns),
-        children = List<SovereignRenderBlock>.unmodifiable(children),
-        attributes = Map<String, Object?>.unmodifiable(attributes);
+  }) : inlineRuns = List<FlarkRenderInlineRun>.unmodifiable(inlineRuns),
+       children = List<FlarkRenderBlock>.unmodifiable(children),
+       attributes = Map<String, Object?>.unmodifiable(attributes);
 
-  factory SovereignRenderBlock.fromMarkdownBlock(
-    SovereignMarkdownBlockNode block, {
-    required SovereignProjection projection,
-    required Iterable<SovereignMarkdownInlineToken> inlineTokens,
+  factory FlarkRenderBlock.fromMarkdownBlock(
+    FlarkMarkdownBlockNode block, {
+    required FlarkProjection projection,
+    required Iterable<FlarkMarkdownInlineToken> inlineTokens,
   }) {
-    final blockInlineTokens = _directInlineTokens(block, inlineTokens);
-
-    return SovereignRenderBlock(
-      kind: block.kind,
-      type: block.type,
-      sourceRange: block.sourceRange,
-      displayRange: _displayRange(projection, block.sourceRange),
-      styleToken: _blockStyleToken(block),
-      inlineRuns: blockInlineTokens.map(
-        (token) => SovereignRenderInlineRun.fromMarkdownInline(
-          token,
-          projection: projection,
-        ),
-      ),
-      children: block.children.map(
-        (child) => SovereignRenderBlock.fromMarkdownBlock(
-          child,
-          projection: projection,
-          inlineTokens: inlineTokens,
-        ),
-      ),
-      table: _tableDescriptor(block, projection),
-      listItem: _listItemDescriptor(block),
-      taskListItem: _taskListItemDescriptor(block),
-      codeBlock: _codeBlockDescriptor(block),
-      attributes: block.attributes,
+    final sortedInlineTokens = inlineTokens.toList(growable: false)
+      ..sort((left, right) {
+        final startComparison = left.sourceRange.start.compareTo(
+          right.sourceRange.start,
+        );
+        if (startComparison != 0) return startComparison;
+        return left.sourceRange.end.compareTo(right.sourceRange.end);
+      });
+    return _renderBlockFromMarkdown(
+      block,
+      projection: projection,
+      inlineTokens: sortedInlineTokens,
     );
   }
 
-  final SovereignMarkdownBlockKind kind;
+  final FlarkMarkdownBlockKind kind;
   final String type;
-  final SovereignSourceRange sourceRange;
-  final SovereignSourceRange displayRange;
-  final SovereignRenderTextStyleToken styleToken;
-  final List<SovereignRenderInlineRun> inlineRuns;
-  final List<SovereignRenderBlock> children;
-  final SovereignRenderTableDescriptor? table;
-  final SovereignRenderListItemDescriptor? listItem;
-  final SovereignRenderTaskListItemDescriptor? taskListItem;
-  final SovereignRenderCodeBlockDescriptor? codeBlock;
+  final FlarkSourceRange sourceRange;
+  final FlarkSourceRange displayRange;
+  final FlarkRenderTextStyleToken styleToken;
+  final List<FlarkRenderInlineRun> inlineRuns;
+  final List<FlarkRenderBlock> children;
+  final FlarkRenderTableDescriptor? table;
+  final FlarkRenderListItemDescriptor? listItem;
+  final FlarkRenderTaskListItemDescriptor? taskListItem;
+  final FlarkRenderCodeBlockDescriptor? codeBlock;
   final Map<String, Object?> attributes;
 
-  SovereignRenderBlock? predictThroughTransaction({
-    required SovereignTransaction transaction,
-    required SovereignProjection projection,
+  FlarkRenderBlock? predictThroughTransaction({
+    required FlarkTransaction transaction,
+    required FlarkProjection projection,
     required int textLengthAfter,
   }) {
     final predictedSourceRange = _predictRangeThroughTransaction(
@@ -263,7 +252,7 @@ final class SovereignRenderBlock {
               textLengthAfter: textLengthAfter,
             ),
           )
-          .whereType<SovereignRenderInlineRun>(),
+          .whereType<FlarkRenderInlineRun>(),
       children: children
           .map(
             (child) => child.predictThroughTransaction(
@@ -272,19 +261,19 @@ final class SovereignRenderBlock {
               textLengthAfter: textLengthAfter,
             ),
           )
-          .whereType<SovereignRenderBlock>(),
+          .whereType<FlarkRenderBlock>(),
       table: predictedTable,
     );
   }
 
-  SovereignRenderBlock copyWithPredictedRanges({
-    required SovereignSourceRange sourceRange,
-    required SovereignSourceRange displayRange,
-    required Iterable<SovereignRenderInlineRun> inlineRuns,
-    required Iterable<SovereignRenderBlock> children,
-    required SovereignRenderTableDescriptor? table,
+  FlarkRenderBlock copyWithPredictedRanges({
+    required FlarkSourceRange sourceRange,
+    required FlarkSourceRange displayRange,
+    required Iterable<FlarkRenderInlineRun> inlineRuns,
+    required Iterable<FlarkRenderBlock> children,
+    required FlarkRenderTableDescriptor? table,
   }) {
-    return SovereignRenderBlock(
+    return FlarkRenderBlock(
       kind: kind,
       type: type,
       sourceRange: sourceRange,
@@ -301,8 +290,8 @@ final class SovereignRenderBlock {
   }
 }
 
-final class SovereignRenderInlineRun {
-  SovereignRenderInlineRun({
+final class FlarkRenderInlineRun {
+  FlarkRenderInlineRun({
     required this.kind,
     required this.type,
     required this.sourceRange,
@@ -312,11 +301,11 @@ final class SovereignRenderInlineRun {
     Map<String, Object?> attributes = const {},
   }) : attributes = Map<String, Object?>.unmodifiable(attributes);
 
-  factory SovereignRenderInlineRun.fromMarkdownInline(
-    SovereignMarkdownInlineToken token, {
-    required SovereignProjection projection,
+  factory FlarkRenderInlineRun.fromMarkdownInline(
+    FlarkMarkdownInlineToken token, {
+    required FlarkProjection projection,
   }) {
-    return SovereignRenderInlineRun(
+    return FlarkRenderInlineRun(
       kind: token.kind,
       type: token.type,
       sourceRange: token.sourceRange,
@@ -327,17 +316,17 @@ final class SovereignRenderInlineRun {
     );
   }
 
-  final SovereignMarkdownInlineKind kind;
+  final FlarkMarkdownInlineKind kind;
   final String type;
-  final SovereignSourceRange sourceRange;
-  final SovereignSourceRange displayRange;
-  final SovereignRenderTextStyleToken styleToken;
-  final SovereignRenderInlineActionDescriptor? action;
+  final FlarkSourceRange sourceRange;
+  final FlarkSourceRange displayRange;
+  final FlarkRenderTextStyleToken styleToken;
+  final FlarkRenderInlineActionDescriptor? action;
   final Map<String, Object?> attributes;
 
-  SovereignRenderInlineRun? predictThroughTransaction({
-    required SovereignTransaction transaction,
-    required SovereignProjection projection,
+  FlarkRenderInlineRun? predictThroughTransaction({
+    required FlarkTransaction transaction,
+    required FlarkProjection projection,
     required int textLengthAfter,
   }) {
     final predictedSourceRange = _predictRangeThroughTransaction(
@@ -347,7 +336,7 @@ final class SovereignRenderInlineRun {
     );
     if (predictedSourceRange == null) return null;
 
-    return SovereignRenderInlineRun(
+    return FlarkRenderInlineRun(
       kind: kind,
       type: type,
       sourceRange: predictedSourceRange,
@@ -359,7 +348,7 @@ final class SovereignRenderInlineRun {
   }
 }
 
-enum SovereignRenderTextStyleToken {
+enum FlarkRenderTextStyleToken {
   body,
   heading1,
   heading2,
@@ -377,33 +366,26 @@ enum SovereignRenderTextStyleToken {
   unknown,
 }
 
-enum SovereignRenderTableColumnAlignment {
-  none,
-  left,
-  center,
-  right,
-  unknown,
-}
+enum FlarkRenderTableColumnAlignment { none, left, center, right, unknown }
 
-final class SovereignRenderTableDescriptor {
-  SovereignRenderTableDescriptor({
-    required Iterable<SovereignRenderTableColumnAlignment> columnAlignments,
-    Iterable<SovereignRenderTableRowDescriptor> rows = const [],
-  })  : columnAlignments =
-            List<SovereignRenderTableColumnAlignment>.unmodifiable(
-          columnAlignments,
-        ),
-        rows = List<SovereignRenderTableRowDescriptor>.unmodifiable(rows);
+final class FlarkRenderTableDescriptor {
+  FlarkRenderTableDescriptor({
+    required Iterable<FlarkRenderTableColumnAlignment> columnAlignments,
+    Iterable<FlarkRenderTableRowDescriptor> rows = const [],
+  }) : columnAlignments = List<FlarkRenderTableColumnAlignment>.unmodifiable(
+         columnAlignments,
+       ),
+       rows = List<FlarkRenderTableRowDescriptor>.unmodifiable(rows);
 
-  final List<SovereignRenderTableColumnAlignment> columnAlignments;
-  final List<SovereignRenderTableRowDescriptor> rows;
+  final List<FlarkRenderTableColumnAlignment> columnAlignments;
+  final List<FlarkRenderTableRowDescriptor> rows;
 
-  SovereignRenderTableDescriptor predictThroughTransaction({
-    required SovereignTransaction transaction,
-    required SovereignProjection projection,
+  FlarkRenderTableDescriptor predictThroughTransaction({
+    required FlarkTransaction transaction,
+    required FlarkProjection projection,
     required int textLengthAfter,
   }) {
-    return SovereignRenderTableDescriptor(
+    return FlarkRenderTableDescriptor(
       columnAlignments: columnAlignments,
       rows: rows
           .map(
@@ -413,27 +395,27 @@ final class SovereignRenderTableDescriptor {
               textLengthAfter: textLengthAfter,
             ),
           )
-          .whereType<SovereignRenderTableRowDescriptor>(),
+          .whereType<FlarkRenderTableRowDescriptor>(),
     );
   }
 }
 
-final class SovereignRenderTableRowDescriptor {
-  SovereignRenderTableRowDescriptor({
+final class FlarkRenderTableRowDescriptor {
+  FlarkRenderTableRowDescriptor({
     required this.header,
     required this.sourceRange,
     required this.displayRange,
-    required Iterable<SovereignRenderTableCellDescriptor> cells,
-  }) : cells = List<SovereignRenderTableCellDescriptor>.unmodifiable(cells);
+    required Iterable<FlarkRenderTableCellDescriptor> cells,
+  }) : cells = List<FlarkRenderTableCellDescriptor>.unmodifiable(cells);
 
   final bool header;
-  final SovereignSourceRange sourceRange;
-  final SovereignSourceRange displayRange;
-  final List<SovereignRenderTableCellDescriptor> cells;
+  final FlarkSourceRange sourceRange;
+  final FlarkSourceRange displayRange;
+  final List<FlarkRenderTableCellDescriptor> cells;
 
-  SovereignRenderTableRowDescriptor? predictThroughTransaction({
-    required SovereignTransaction transaction,
-    required SovereignProjection projection,
+  FlarkRenderTableRowDescriptor? predictThroughTransaction({
+    required FlarkTransaction transaction,
+    required FlarkProjection projection,
     required int textLengthAfter,
   }) {
     final predictedSourceRange = _predictDescriptorRangeThroughTransaction(
@@ -443,7 +425,7 @@ final class SovereignRenderTableRowDescriptor {
     );
     if (predictedSourceRange == null) return null;
 
-    return SovereignRenderTableRowDescriptor(
+    return FlarkRenderTableRowDescriptor(
       header: header,
       sourceRange: predictedSourceRange,
       displayRange: _displayRange(projection, predictedSourceRange),
@@ -455,23 +437,23 @@ final class SovereignRenderTableRowDescriptor {
               textLengthAfter: textLengthAfter,
             ),
           )
-          .whereType<SovereignRenderTableCellDescriptor>(),
+          .whereType<FlarkRenderTableCellDescriptor>(),
     );
   }
 }
 
-final class SovereignRenderTableCellDescriptor {
-  const SovereignRenderTableCellDescriptor({
+final class FlarkRenderTableCellDescriptor {
+  const FlarkRenderTableCellDescriptor({
     required this.sourceRange,
     required this.displayRange,
   });
 
-  final SovereignSourceRange sourceRange;
-  final SovereignSourceRange displayRange;
+  final FlarkSourceRange sourceRange;
+  final FlarkSourceRange displayRange;
 
-  SovereignRenderTableCellDescriptor? predictThroughTransaction({
-    required SovereignTransaction transaction,
-    required SovereignProjection projection,
+  FlarkRenderTableCellDescriptor? predictThroughTransaction({
+    required FlarkTransaction transaction,
+    required FlarkProjection projection,
     required int textLengthAfter,
   }) {
     final predictedSourceRange = _predictDescriptorRangeThroughTransaction(
@@ -481,73 +463,53 @@ final class SovereignRenderTableCellDescriptor {
     );
     if (predictedSourceRange == null) return null;
 
-    return SovereignRenderTableCellDescriptor(
+    return FlarkRenderTableCellDescriptor(
       sourceRange: predictedSourceRange,
       displayRange: _displayRange(projection, predictedSourceRange),
     );
   }
 }
 
-final class SovereignRenderTaskListItemDescriptor {
-  const SovereignRenderTaskListItemDescriptor({
-    required this.checked,
-  });
+final class FlarkRenderTaskListItemDescriptor {
+  const FlarkRenderTaskListItemDescriptor({required this.checked});
 
   final bool checked;
 }
 
-enum SovereignRenderListKind {
-  unordered,
-  ordered,
-  unknown,
+enum FlarkRenderListKind { unordered, ordered, unknown }
+
+final class FlarkRenderListItemDescriptor {
+  const FlarkRenderListItemDescriptor({required this.kind});
+
+  final FlarkRenderListKind kind;
 }
 
-final class SovereignRenderListItemDescriptor {
-  const SovereignRenderListItemDescriptor({
-    required this.kind,
-  });
-
-  final SovereignRenderListKind kind;
-}
-
-final class SovereignRenderCodeBlockDescriptor {
-  const SovereignRenderCodeBlockDescriptor({
-    this.language,
-  });
+final class FlarkRenderCodeBlockDescriptor {
+  const FlarkRenderCodeBlockDescriptor({this.language});
 
   final String? language;
 }
 
-enum SovereignRenderInlineActionKind {
-  link,
-  image,
-  unknown,
-}
+enum FlarkRenderInlineActionKind { link, image, unknown }
 
-final class SovereignRenderInlineActionDescriptor {
-  const SovereignRenderInlineActionDescriptor({
+final class FlarkRenderInlineActionDescriptor {
+  const FlarkRenderInlineActionDescriptor({
     required this.kind,
     required this.destination,
     this.title,
     this.label,
   });
 
-  final SovereignRenderInlineActionKind kind;
+  final FlarkRenderInlineActionKind kind;
   final String destination;
   final String? title;
   final String? label;
 }
 
-enum SovereignRenderOverlayKind {
-  link,
-  image,
-  taskListItem,
-  table,
-  codeBlock,
-}
+enum FlarkRenderOverlayKind { link, image, taskListItem, table, codeBlock }
 
-final class SovereignRenderOverlayTarget {
-  const SovereignRenderOverlayTarget({
+final class FlarkRenderOverlayTarget {
+  const FlarkRenderOverlayTarget({
     required this.kind,
     required this.sourceRange,
     required this.displayRange,
@@ -557,56 +519,53 @@ final class SovereignRenderOverlayTarget {
     this.codeBlock,
   });
 
-  final SovereignRenderOverlayKind kind;
-  final SovereignSourceRange sourceRange;
-  final SovereignSourceRange displayRange;
-  final SovereignRenderInlineActionDescriptor? action;
-  final SovereignRenderTaskListItemDescriptor? taskListItem;
-  final SovereignRenderTableDescriptor? table;
-  final SovereignRenderCodeBlockDescriptor? codeBlock;
+  final FlarkRenderOverlayKind kind;
+  final FlarkSourceRange sourceRange;
+  final FlarkSourceRange displayRange;
+  final FlarkRenderInlineActionDescriptor? action;
+  final FlarkRenderTaskListItemDescriptor? taskListItem;
+  final FlarkRenderTableDescriptor? table;
+  final FlarkRenderCodeBlockDescriptor? codeBlock;
 }
 
-final class SovereignRenderOverlayPlan {
-  SovereignRenderOverlayPlan({
-    required Iterable<SovereignRenderOverlayTarget> targets,
-  }) : targets = List<SovereignRenderOverlayTarget>.unmodifiable(targets);
+final class FlarkRenderOverlayPlan {
+  FlarkRenderOverlayPlan({required Iterable<FlarkRenderOverlayTarget> targets})
+    : targets = List<FlarkRenderOverlayTarget>.unmodifiable(targets);
 
-  factory SovereignRenderOverlayPlan.fromRenderPlan(
-    SovereignRenderPlan renderPlan,
-  ) {
-    return SovereignRenderOverlayPlan(
+  factory FlarkRenderOverlayPlan.fromRenderPlan(FlarkRenderPlan renderPlan) {
+    return FlarkRenderOverlayPlan(
       targets: [
         for (final run in renderPlan.linkRuns)
-          SovereignRenderOverlayTarget(
-            kind: SovereignRenderOverlayKind.link,
+          FlarkRenderOverlayTarget(
+            kind: FlarkRenderOverlayKind.link,
             sourceRange: run.sourceRange,
             displayRange: run.displayRange,
             action: run.action,
           ),
         for (final run in renderPlan.imageRuns)
-          SovereignRenderOverlayTarget(
-            kind: SovereignRenderOverlayKind.image,
+          FlarkRenderOverlayTarget(
+            kind: FlarkRenderOverlayKind.image,
             sourceRange: run.sourceRange,
             displayRange: run.displayRange,
             action: run.action,
           ),
         for (final block in renderPlan.taskListItemBlocks)
-          SovereignRenderOverlayTarget(
-            kind: SovereignRenderOverlayKind.taskListItem,
+          FlarkRenderOverlayTarget(
+            kind: FlarkRenderOverlayKind.taskListItem,
             sourceRange: block.sourceRange,
             displayRange: block.displayRange,
             taskListItem: block.taskListItem,
           ),
         for (final block in renderPlan.tableBlocks)
-          SovereignRenderOverlayTarget(
-            kind: SovereignRenderOverlayKind.table,
+          FlarkRenderOverlayTarget(
+            kind: FlarkRenderOverlayKind.table,
             sourceRange: block.sourceRange,
             displayRange: block.displayRange,
             table: block.table,
           ),
         for (final block in renderPlan.codeBlocks)
-          SovereignRenderOverlayTarget(
-            kind: SovereignRenderOverlayKind.codeBlock,
+          FlarkRenderOverlayTarget(
+            kind: FlarkRenderOverlayKind.codeBlock,
             sourceRange: block.sourceRange,
             displayRange: block.displayRange,
             codeBlock: block.codeBlock,
@@ -615,28 +574,26 @@ final class SovereignRenderOverlayPlan {
     );
   }
 
-  final List<SovereignRenderOverlayTarget> targets;
+  final List<FlarkRenderOverlayTarget> targets;
 
-  Iterable<SovereignRenderOverlayTarget> ofKind(
-    SovereignRenderOverlayKind kind,
-  ) {
+  Iterable<FlarkRenderOverlayTarget> ofKind(FlarkRenderOverlayKind kind) {
     return targets.where((target) => target.kind == kind);
   }
 }
 
-SovereignSourceRange _displayRange(
-  SovereignProjection projection,
-  SovereignSourceRange sourceRange,
+FlarkSourceRange _displayRange(
+  FlarkProjection projection,
+  FlarkSourceRange sourceRange,
 ) {
-  return SovereignSourceRange(
+  return FlarkSourceRange(
     projection.sourceToDisplayOffset(sourceRange.start),
     projection.sourceToDisplayOffset(sourceRange.end),
   );
 }
 
-SovereignSourceRange? _predictRangeThroughTransaction(
-  SovereignSourceRange range, {
-  required SovereignTransaction transaction,
+FlarkSourceRange? _predictRangeThroughTransaction(
+  FlarkSourceRange range, {
+  required FlarkTransaction transaction,
   required int textLengthAfter,
 }) {
   if (transaction.operations.any(
@@ -649,83 +606,189 @@ SovereignSourceRange? _predictRangeThroughTransaction(
 
   final start = transaction.mapOffset(
     range.start,
-    affinity: SovereignMapAffinity.upstream,
+    affinity: FlarkMapAffinity.upstream,
   );
   final end = transaction.mapOffset(
     range.end,
-    affinity: SovereignMapAffinity.downstream,
+    affinity: FlarkMapAffinity.downstream,
   );
   if (start < 0 || end > textLengthAfter || start >= end) return null;
-  return SovereignSourceRange(start, end);
+  return FlarkSourceRange(start, end);
 }
 
-SovereignSourceRange? _predictDescriptorRangeThroughTransaction(
-  SovereignSourceRange range, {
-  required SovereignTransaction transaction,
+FlarkSourceRange? _predictDescriptorRangeThroughTransaction(
+  FlarkSourceRange range, {
+  required FlarkTransaction transaction,
   required int textLengthAfter,
 }) {
   final start = transaction.mapOffset(
     range.start,
-    affinity: SovereignMapAffinity.upstream,
+    affinity: FlarkMapAffinity.upstream,
   );
   final end = transaction.mapOffset(
     range.end,
-    affinity: SovereignMapAffinity.downstream,
+    affinity: FlarkMapAffinity.downstream,
   );
   if (start < 0 || end > textLengthAfter || start > end) return null;
-  return SovereignSourceRange(start, end);
+  return FlarkSourceRange(start, end);
 }
 
-Iterable<SovereignMarkdownInlineToken> _directInlineTokens(
-  SovereignMarkdownBlockNode block,
-  Iterable<SovereignMarkdownInlineToken> inlineTokens,
+List<FlarkRenderBlock> _renderBlocksFromMarkdown(
+  Iterable<FlarkMarkdownBlockNode> blocks, {
+  required FlarkProjection projection,
+  required List<FlarkMarkdownInlineToken> inlineTokens,
+}) {
+  final blockList = blocks.toList(growable: false);
+  final partition = _partitionInlineTokens(blockList, inlineTokens);
+  return [
+    for (var i = 0; i < blockList.length; i++)
+      _renderBlockFromMarkdown(
+        blockList[i],
+        projection: projection,
+        inlineTokens: partition.buckets[i],
+      ),
+  ];
+}
+
+FlarkRenderBlock _renderBlockFromMarkdown(
+  FlarkMarkdownBlockNode block, {
+  required FlarkProjection projection,
+  required List<FlarkMarkdownInlineToken> inlineTokens,
+}) {
+  final children = block.children.toList(growable: false);
+  final childPartition = _partitionInlineTokens(children, inlineTokens);
+
+  return FlarkRenderBlock(
+    kind: block.kind,
+    type: block.type,
+    sourceRange: block.sourceRange,
+    displayRange: _displayRange(projection, block.sourceRange),
+    styleToken: _blockStyleToken(block),
+    inlineRuns: childPartition.unassigned.map(
+      (token) => FlarkRenderInlineRun.fromMarkdownInline(
+        token,
+        projection: projection,
+      ),
+    ),
+    children: [
+      for (var i = 0; i < children.length; i++)
+        _renderBlockFromMarkdown(
+          children[i],
+          projection: projection,
+          inlineTokens: childPartition.buckets[i],
+        ),
+    ],
+    table: _tableDescriptor(block, projection),
+    listItem: _listItemDescriptor(block),
+    taskListItem: _taskListItemDescriptor(block),
+    codeBlock: _codeBlockDescriptor(block),
+    attributes: block.attributes,
+  );
+}
+
+_InlineTokenPartition _partitionInlineTokens(
+  List<FlarkMarkdownBlockNode> blocks,
+  List<FlarkMarkdownInlineToken> inlineTokens,
 ) {
-  return inlineTokens.where((token) {
-    if (!_contains(block.sourceRange, token.sourceRange)) return false;
-    return !block.children.any(
-      (child) => _contains(child.sourceRange, token.sourceRange),
-    );
-  });
+  final buckets = [
+    for (var i = 0; i < blocks.length; i++) <FlarkMarkdownInlineToken>[],
+  ];
+  if (blocks.isEmpty) {
+    return _InlineTokenPartition(buckets: buckets, unassigned: inlineTokens);
+  }
+
+  final orderedBlocks =
+      [
+        for (var i = 0; i < blocks.length; i++)
+          _IndexedMarkdownBlock(index: i, block: blocks[i]),
+      ]..sort((left, right) {
+        final startComparison = left.block.sourceRange.start.compareTo(
+          right.block.sourceRange.start,
+        );
+        if (startComparison != 0) return startComparison;
+        return left.block.sourceRange.end.compareTo(
+          right.block.sourceRange.end,
+        );
+      });
+
+  final unassigned = <FlarkMarkdownInlineToken>[];
+  var blockCursor = 0;
+  for (final token in inlineTokens) {
+    while (blockCursor < orderedBlocks.length &&
+        orderedBlocks[blockCursor].block.sourceRange.end <
+            token.sourceRange.start) {
+      blockCursor++;
+    }
+
+    var assigned = false;
+    for (var i = blockCursor; i < orderedBlocks.length; i++) {
+      final block = orderedBlocks[i].block;
+      if (block.sourceRange.start > token.sourceRange.start) break;
+      if (!_contains(block.sourceRange, token.sourceRange)) continue;
+      buckets[orderedBlocks[i].index].add(token);
+      assigned = true;
+      break;
+    }
+    if (!assigned) unassigned.add(token);
+  }
+
+  return _InlineTokenPartition(buckets: buckets, unassigned: unassigned);
 }
 
-bool _contains(SovereignSourceRange outer, SovereignSourceRange inner) {
+final class _InlineTokenPartition {
+  const _InlineTokenPartition({
+    required this.buckets,
+    required this.unassigned,
+  });
+
+  final List<List<FlarkMarkdownInlineToken>> buckets;
+  final List<FlarkMarkdownInlineToken> unassigned;
+}
+
+final class _IndexedMarkdownBlock {
+  const _IndexedMarkdownBlock({required this.index, required this.block});
+
+  final int index;
+  final FlarkMarkdownBlockNode block;
+}
+
+bool _contains(FlarkSourceRange outer, FlarkSourceRange inner) {
   return inner.start >= outer.start && inner.end <= outer.end;
 }
 
-SovereignRenderTableDescriptor? _tableDescriptor(
-  SovereignMarkdownBlockNode block,
-  SovereignProjection projection,
+FlarkRenderTableDescriptor? _tableDescriptor(
+  FlarkMarkdownBlockNode block,
+  FlarkProjection projection,
 ) {
-  if (block.kind != SovereignMarkdownBlockKind.table) return null;
+  if (block.kind != FlarkMarkdownBlockKind.table) return null;
   final alignments = block.attributes['alignments'];
   if (alignments is! List) {
-    return SovereignRenderTableDescriptor(
+    return FlarkRenderTableDescriptor(
       columnAlignments: const [],
       rows: _tableRows(block, projection),
     );
   }
-  return SovereignRenderTableDescriptor(
+  return FlarkRenderTableDescriptor(
     columnAlignments: alignments.map(_tableAlignment),
     rows: _tableRows(block, projection),
   );
 }
 
-Iterable<SovereignRenderTableRowDescriptor> _tableRows(
-  SovereignMarkdownBlockNode table,
-  SovereignProjection projection,
+Iterable<FlarkRenderTableRowDescriptor> _tableRows(
+  FlarkMarkdownBlockNode table,
+  FlarkProjection projection,
 ) {
   return table.children
-      .where((row) => row.kind == SovereignMarkdownBlockKind.tableRow)
+      .where((row) => row.kind == FlarkMarkdownBlockKind.tableRow)
       .map(
-        (row) => SovereignRenderTableRowDescriptor(
+        (row) => FlarkRenderTableRowDescriptor(
           header: row.attributes['header'] == true,
           sourceRange: row.sourceRange,
           displayRange: _displayRange(projection, row.sourceRange),
           cells: row.children
-              .where(
-                  (cell) => cell.kind == SovereignMarkdownBlockKind.tableCell)
+              .where((cell) => cell.kind == FlarkMarkdownBlockKind.tableCell)
               .map(
-                (cell) => SovereignRenderTableCellDescriptor(
+                (cell) => FlarkRenderTableCellDescriptor(
                   sourceRange: cell.sourceRange,
                   displayRange: _displayRange(projection, cell.sourceRange),
                 ),
@@ -734,70 +797,73 @@ Iterable<SovereignRenderTableRowDescriptor> _tableRows(
       );
 }
 
-SovereignRenderTableColumnAlignment _tableAlignment(Object? value) {
+FlarkRenderTableColumnAlignment _tableAlignment(Object? value) {
   return switch (value) {
-    'left' => SovereignRenderTableColumnAlignment.left,
-    'center' => SovereignRenderTableColumnAlignment.center,
-    'right' => SovereignRenderTableColumnAlignment.right,
-    'none' || null => SovereignRenderTableColumnAlignment.none,
-    _ => SovereignRenderTableColumnAlignment.unknown,
+    'left' => FlarkRenderTableColumnAlignment.left,
+    'center' => FlarkRenderTableColumnAlignment.center,
+    'right' => FlarkRenderTableColumnAlignment.right,
+    'none' || null => FlarkRenderTableColumnAlignment.none,
+    _ => FlarkRenderTableColumnAlignment.unknown,
   };
 }
 
-SovereignRenderTaskListItemDescriptor? _taskListItemDescriptor(
-  SovereignMarkdownBlockNode block,
+FlarkRenderTaskListItemDescriptor? _taskListItemDescriptor(
+  FlarkMarkdownBlockNode block,
 ) {
-  if (block.kind != SovereignMarkdownBlockKind.listItem) return null;
+  if (block.kind != FlarkMarkdownBlockKind.listItem) return null;
   final checked = block.attributes['checked'];
   if (checked is! bool) return null;
-  return SovereignRenderTaskListItemDescriptor(checked: checked);
+  return FlarkRenderTaskListItemDescriptor(checked: checked);
 }
 
-SovereignRenderListItemDescriptor? _listItemDescriptor(
-  SovereignMarkdownBlockNode block,
+FlarkRenderListItemDescriptor? _listItemDescriptor(
+  FlarkMarkdownBlockNode block,
 ) {
-  if (block.kind != SovereignMarkdownBlockKind.listItem) return null;
-  return SovereignRenderListItemDescriptor(
+  if (block.kind != FlarkMarkdownBlockKind.listItem) return null;
+  return FlarkRenderListItemDescriptor(
     kind: switch (block.attributes['listKind']) {
-      'unordered' => SovereignRenderListKind.unordered,
-      'ordered' => SovereignRenderListKind.ordered,
-      _ => SovereignRenderListKind.unknown,
+      'unordered' => FlarkRenderListKind.unordered,
+      'ordered' => FlarkRenderListKind.ordered,
+      _ => FlarkRenderListKind.unknown,
     },
   );
 }
 
-SovereignRenderCodeBlockDescriptor? _codeBlockDescriptor(
-  SovereignMarkdownBlockNode block,
+FlarkRenderCodeBlockDescriptor? _codeBlockDescriptor(
+  FlarkMarkdownBlockNode block,
 ) {
-  if (block.kind != SovereignMarkdownBlockKind.codeBlock) return null;
-  return SovereignRenderCodeBlockDescriptor(
-    language: _stringAttribute(block.attributes, 'language') ??
+  if (block.kind != FlarkMarkdownBlockKind.codeBlock) return null;
+  return FlarkRenderCodeBlockDescriptor(
+    language:
+        _stringAttribute(block.attributes, 'language') ??
         _stringAttribute(block.attributes, 'fenceInfo'),
   );
 }
 
-SovereignRenderInlineActionDescriptor? _inlineActionDescriptor(
-  SovereignMarkdownInlineToken token,
+FlarkRenderInlineActionDescriptor? _inlineActionDescriptor(
+  FlarkMarkdownInlineToken token,
 ) {
-  final destination = _stringAttribute(token.attributes, 'destination') ??
+  final destination =
+      _stringAttribute(token.attributes, 'destination') ??
       _stringAttribute(token.attributes, 'href') ??
       _stringAttribute(token.attributes, 'src');
   if (destination == null || destination.isEmpty) return null;
 
   return switch (token.kind) {
-    SovereignMarkdownInlineKind.link => SovereignRenderInlineActionDescriptor(
-        kind: SovereignRenderInlineActionKind.link,
-        destination: destination,
-        title: _stringAttribute(token.attributes, 'title'),
-        label: _stringAttribute(token.attributes, 'label'),
-      ),
-    SovereignMarkdownInlineKind.image => SovereignRenderInlineActionDescriptor(
-        kind: SovereignRenderInlineActionKind.image,
-        destination: destination,
-        title: _stringAttribute(token.attributes, 'title'),
-        label: _stringAttribute(token.attributes, 'alt') ??
-            _stringAttribute(token.attributes, 'label'),
-      ),
+    FlarkMarkdownInlineKind.link => FlarkRenderInlineActionDescriptor(
+      kind: FlarkRenderInlineActionKind.link,
+      destination: destination,
+      title: _stringAttribute(token.attributes, 'title'),
+      label: _stringAttribute(token.attributes, 'label'),
+    ),
+    FlarkMarkdownInlineKind.image => FlarkRenderInlineActionDescriptor(
+      kind: FlarkRenderInlineActionKind.image,
+      destination: destination,
+      title: _stringAttribute(token.attributes, 'title'),
+      label:
+          _stringAttribute(token.attributes, 'alt') ??
+          _stringAttribute(token.attributes, 'label'),
+    ),
     _ => null,
   };
 }
@@ -807,48 +873,38 @@ String? _stringAttribute(Map<String, Object?> attributes, String key) {
   return value is String ? value : null;
 }
 
-SovereignRenderTextStyleToken _blockStyleToken(
-  SovereignMarkdownBlockNode block,
-) {
-  if (block.kind != SovereignMarkdownBlockKind.heading) {
-    return SovereignRenderTextStyleToken.body;
+FlarkRenderTextStyleToken _blockStyleToken(FlarkMarkdownBlockNode block) {
+  if (block.kind != FlarkMarkdownBlockKind.heading) {
+    return FlarkRenderTextStyleToken.body;
   }
   final level = block.attributes['level'];
   return switch (level) {
-    1 => SovereignRenderTextStyleToken.heading1,
-    2 => SovereignRenderTextStyleToken.heading2,
-    3 => SovereignRenderTextStyleToken.heading3,
-    4 => SovereignRenderTextStyleToken.heading4,
-    5 => SovereignRenderTextStyleToken.heading5,
-    6 => SovereignRenderTextStyleToken.heading6,
-    _ => SovereignRenderTextStyleToken.heading1,
+    1 => FlarkRenderTextStyleToken.heading1,
+    2 => FlarkRenderTextStyleToken.heading2,
+    3 => FlarkRenderTextStyleToken.heading3,
+    4 => FlarkRenderTextStyleToken.heading4,
+    5 => FlarkRenderTextStyleToken.heading5,
+    6 => FlarkRenderTextStyleToken.heading6,
+    _ => FlarkRenderTextStyleToken.heading1,
   };
 }
 
-SovereignRenderTextStyleToken _inlineStyleToken(
-  SovereignMarkdownInlineToken token,
-) {
+FlarkRenderTextStyleToken _inlineStyleToken(FlarkMarkdownInlineToken token) {
   return switch (token.kind) {
-    SovereignMarkdownInlineKind.emphasis =>
-      SovereignRenderTextStyleToken.emphasis,
-    SovereignMarkdownInlineKind.strong => SovereignRenderTextStyleToken.strong,
-    SovereignMarkdownInlineKind.inlineCode =>
-      SovereignRenderTextStyleToken.inlineCode,
-    SovereignMarkdownInlineKind.strikethrough =>
-      SovereignRenderTextStyleToken.strikethrough,
-    SovereignMarkdownInlineKind.link => SovereignRenderTextStyleToken.link,
-    SovereignMarkdownInlineKind.image => SovereignRenderTextStyleToken.image,
-    SovereignMarkdownInlineKind.htmlInline =>
-      SovereignRenderTextStyleToken.rawHtml,
-    SovereignMarkdownInlineKind.unknown =>
-      SovereignRenderTextStyleToken.unknown,
-    _ => SovereignRenderTextStyleToken.body,
+    FlarkMarkdownInlineKind.emphasis => FlarkRenderTextStyleToken.emphasis,
+    FlarkMarkdownInlineKind.strong => FlarkRenderTextStyleToken.strong,
+    FlarkMarkdownInlineKind.inlineCode => FlarkRenderTextStyleToken.inlineCode,
+    FlarkMarkdownInlineKind.strikethrough =>
+      FlarkRenderTextStyleToken.strikethrough,
+    FlarkMarkdownInlineKind.link => FlarkRenderTextStyleToken.link,
+    FlarkMarkdownInlineKind.image => FlarkRenderTextStyleToken.image,
+    FlarkMarkdownInlineKind.htmlInline => FlarkRenderTextStyleToken.rawHtml,
+    FlarkMarkdownInlineKind.unknown => FlarkRenderTextStyleToken.unknown,
+    _ => FlarkRenderTextStyleToken.body,
   };
 }
 
-Iterable<SovereignRenderBlock> _blockAndDescendants(
-  SovereignRenderBlock block,
-) sync* {
+Iterable<FlarkRenderBlock> _blockAndDescendants(FlarkRenderBlock block) sync* {
   yield block;
   for (final child in block.children) {
     yield* _blockAndDescendants(child);

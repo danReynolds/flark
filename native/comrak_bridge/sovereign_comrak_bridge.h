@@ -7,14 +7,14 @@
 extern "C" {
 #endif
 
-typedef struct SovereignComrakResponse {
+typedef struct FlarkComrakResponse {
   uint32_t abi_version;
   uint32_t revision;
   uint16_t status_code;
   uint16_t reserved;
   uint8_t* payload_ptr;
   uint32_t payload_len;
-} SovereignComrakResponse;
+} FlarkComrakResponse;
 
 uint32_t sovereign_comrak_bridge_version(void);
 
@@ -22,13 +22,13 @@ uint8_t* sovereign_comrak_input_alloc(uint32_t len);
 
 void sovereign_comrak_input_free(uint8_t* ptr, uint32_t len);
 
-SovereignComrakResponse* sovereign_comrak_parse(
+FlarkComrakResponse* sovereign_comrak_parse(
     uint32_t revision,
     uint8_t profile,
     const uint8_t* text_ptr,
     uint32_t text_len);
 
-void sovereign_comrak_response_free(SovereignComrakResponse* response);
+void sovereign_comrak_response_free(FlarkComrakResponse* response);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -4,7 +4,7 @@ import 'package:example/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/sovereign_editor.dart';
+import 'package:flark/flark.dart';
 
 void main() {
   setUp(() {
@@ -15,12 +15,12 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     expect(find.byType(MarkdownEditor), findsOneWidget);
     expect(find.byType(Markdown), findsOneWidget);
-    expect(find.widgetWithText(Flexible, 'Sovereign Markdown'), findsOneWidget);
+    expect(find.widgetWithText(Flexible, 'Flark Markdown'), findsOneWidget);
     expect(find.text('Comrak'), findsOneWidget);
     expect(find.text('Editor'), findsOneWidget);
     expect(find.text('Preview'), findsOneWidget);
@@ -32,7 +32,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(720, 820));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     expect(find.byType(MarkdownEditor), findsOneWidget);
@@ -55,7 +55,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(find.text('Tables'));
@@ -80,7 +80,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -133,14 +133,14 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(find.text('Source'));
     await tester.pump();
 
     final editor = tester.widget<MarkdownEditor>(find.byType(MarkdownEditor));
-    expect(editor.editingMode, SovereignMarkdownEditingMode.source);
+    expect(editor.editingMode, FlarkMarkdownEditingMode.source);
   });
 
   testWidgets('live edit mode keeps rendered editing beside preview', (
@@ -149,14 +149,14 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(find.text('Live Edit'));
     await tester.pump();
 
     final editor = tester.widget<MarkdownEditor>(find.byType(MarkdownEditor));
-    expect(editor.editingMode, SovereignMarkdownEditingMode.liveRendered);
+    expect(editor.editingMode, FlarkMarkdownEditingMode.liveRendered);
     expect(find.byType(Markdown), findsOneWidget);
     expect(find.text('Preview'), findsOneWidget);
   });
@@ -167,7 +167,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(find.text('Rendered'));
@@ -184,7 +184,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -193,7 +193,7 @@ void main() {
     await tester.pump();
 
     final editor = tester.widget<MarkdownEditor>(find.byType(MarkdownEditor));
-    expect(editor.editingMode, SovereignMarkdownEditingMode.liveRendered);
+    expect(editor.editingMode, FlarkMarkdownEditingMode.liveRendered);
 
     final editableFinder = find.byType(EditableText);
     final editable = tester.widget<EditableText>(editableFinder);
@@ -241,7 +241,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -276,7 +276,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -290,21 +290,18 @@ void main() {
 
     final markerEditable = tester.widget<EditableText>(editableFinder);
     expect(markerEditable.controller.text, '>');
-    expect(find.byKey(const Key('SovereignLiveBlockBlockquote')), findsNothing);
+    expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsNothing);
     expect(
-      find.byKey(const Key('SovereignReadOnlyPreviewBlockquote')),
+      find.byKey(const Key('FlarkReadOnlyPreviewBlockquote')),
       findsNothing,
     );
 
     await tester.enterText(editableFinder, '> ');
     await _settleParsing(tester);
 
+    expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsOneWidget);
     expect(
-      find.byKey(const Key('SovereignLiveBlockBlockquote')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('SovereignReadOnlyPreviewBlockquote')),
+      find.byKey(const Key('FlarkReadOnlyPreviewBlockquote')),
       findsOneWidget,
     );
 
@@ -324,7 +321,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -335,12 +332,9 @@ void main() {
     await tester.enterText(find.byType(EditableText), '> first\n> second');
     await _settleParsing(tester);
 
+    expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsOneWidget);
     expect(
-      find.byKey(const Key('SovereignLiveBlockBlockquote')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('SovereignReadOnlyPreviewBlockquote')),
+      find.byKey(const Key('FlarkReadOnlyPreviewBlockquote')),
       findsOneWidget,
     );
     expect(find.byType(EditableText), findsOneWidget);
@@ -356,7 +350,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -367,15 +361,9 @@ void main() {
     await tester.enterText(find.byType(EditableText), '> [!NOTE]\n> useful');
     await _settleParsing(tester);
 
-    expect(
-      find.byKey(const Key('SovereignLiveBlockBlockquote')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('SovereignLiveBlockTaskCheckbox')),
-      findsNothing,
-    );
-    expect(find.byKey(const Key('SovereignLiveBlockCodeFence')), findsNothing);
+    expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsOneWidget);
+    expect(find.byKey(const Key('FlarkLiveBlockTaskCheckbox')), findsNothing);
+    expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsNothing);
     expect(_editorText(tester), '[!NOTE]\nuseful');
 
     await tester.tap(
@@ -391,7 +379,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -406,10 +394,7 @@ void main() {
     await _settleParsing(tester);
 
     expect(_editorText(tester), 'Text[^1]\n\n[^1]: Footnote');
-    expect(
-      find.byKey(const Key('SovereignInlineLinkMenuButton')),
-      findsNothing,
-    );
+    expect(find.byKey(const Key('FlarkInlineLinkMenuButton')), findsNothing);
 
     await tester.tap(
       find.byKey(const ValueKey('sovereign-example-mode-source')),
@@ -424,7 +409,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -435,10 +420,7 @@ void main() {
     await tester.enterText(find.byType(EditableText), '- ');
     await _settleParsing(tester);
 
-    expect(
-      find.byKey(const Key('SovereignLiveBlockListMarker')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
     final editable = tester.widget<EditableText>(find.byType(EditableText));
     expect(editable.controller.text, isEmpty);
   });
@@ -449,7 +431,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -460,10 +442,7 @@ void main() {
     await tester.enterText(find.byType(EditableText), '- one\n\n\n- two');
     await _settleParsing(tester);
 
-    expect(
-      find.byKey(const Key('SovereignLiveBlockListMarker')),
-      findsNWidgets(2),
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsNWidgets(2));
     expect(_editorText(tester), 'one\n\n\ntwo');
 
     await tester.tap(
@@ -479,7 +458,7 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1200, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      await tester.pumpWidget(const SovereignExampleApp());
+      await tester.pumpWidget(const FlarkExampleApp());
       await tester.pump();
 
       await tester.tap(
@@ -498,10 +477,7 @@ void main() {
       await tester.enterText(editableFinder, '*');
       await _settleParsing(tester);
 
-      expect(
-        find.byKey(const Key('SovereignLiveBlockListMarker')),
-        findsNothing,
-      );
+      expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsNothing);
       var editable = tester.widget<EditableText>(find.byType(EditableText));
       expect(editable.controller.text, '*');
       expect(editable.focusNode.hasFocus, isTrue);
@@ -509,28 +485,22 @@ void main() {
       await tester.enterText(find.byType(EditableText), '* ');
       await _settleParsing(tester);
 
-      expect(
-        find.byKey(const Key('SovereignLiveBlockListMarker')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
       editableFinder = find.byType(EditableText);
       editable = tester.widget<EditableText>(editableFinder);
       expect(editable.controller.text, isEmpty);
       expect(editable.focusNode.hasFocus, isTrue);
       final markerElement = tester.element(
-        find.byKey(const Key('SovereignLiveBlockListMarker')),
+        find.byKey(const Key('FlarkLiveBlockListMarker')),
       );
 
       tester.testTextInput.enterText('item');
       await tester.pump();
 
-      expect(
-        find.byKey(const Key('SovereignLiveBlockListMarker')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
       expect(
         identical(
-          tester.element(find.byKey(const Key('SovereignLiveBlockListMarker'))),
+          tester.element(find.byKey(const Key('FlarkLiveBlockListMarker'))),
           markerElement,
         ),
         isTrue,
@@ -546,7 +516,7 @@ void main() {
       await _settleParsing(tester);
 
       expect(
-        find.byKey(const Key('SovereignLiveBlockListMarker')),
+        find.byKey(const Key('FlarkLiveBlockListMarker')),
         findsNWidgets(2),
       );
       expect(find.byType(EditableText), findsNWidgets(2));
@@ -554,10 +524,7 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await _settleParsing(tester);
 
-      expect(
-        find.byKey(const Key('SovereignLiveBlockListMarker')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
       final editors = tester
           .widgetList<EditableText>(find.byType(EditableText))
           .toList(growable: false);
@@ -574,7 +541,7 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1200, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      await tester.pumpWidget(const SovereignExampleApp());
+      await tester.pumpWidget(const FlarkExampleApp());
       await tester.pump();
 
       await tester.tap(
@@ -585,10 +552,7 @@ void main() {
       await tester.enterText(find.byType(EditableText), '1. ');
       await _settleParsing(tester);
 
-      expect(
-        find.byKey(const Key('SovereignLiveBlockListMarker')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
       expect(
         tester.widget<EditableText>(find.byType(EditableText)).controller.text,
         isEmpty,
@@ -602,17 +566,14 @@ void main() {
       await _settleParsing(tester);
 
       expect(
-        find.byKey(const Key('SovereignLiveBlockListMarker')),
+        find.byKey(const Key('FlarkLiveBlockListMarker')),
         findsNWidgets(2),
       );
       await tester.showKeyboard(find.byType(EditableText).at(1));
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await _settleParsing(tester);
 
-      expect(
-        find.byKey(const Key('SovereignLiveBlockListMarker')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
       var editors = tester
           .widgetList<EditableText>(find.byType(EditableText))
           .toList(growable: false);
@@ -636,7 +597,7 @@ void main() {
       await _settleParsing(tester);
 
       expect(
-        find.byKey(const Key('SovereignLiveBlockTaskCheckbox')),
+        find.byKey(const Key('FlarkLiveBlockTaskCheckbox')),
         findsOneWidget,
       );
       expect(
@@ -652,7 +613,7 @@ void main() {
       await _settleParsing(tester);
 
       expect(
-        find.byKey(const Key('SovereignLiveBlockTaskCheckbox')),
+        find.byKey(const Key('FlarkLiveBlockTaskCheckbox')),
         findsNWidgets(2),
       );
       await tester.showKeyboard(find.byType(EditableText).at(1));
@@ -660,7 +621,7 @@ void main() {
       await _settleParsing(tester);
 
       expect(
-        find.byKey(const Key('SovereignLiveBlockTaskCheckbox')),
+        find.byKey(const Key('FlarkLiveBlockTaskCheckbox')),
         findsOneWidget,
       );
       editors = tester
@@ -685,7 +646,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -704,7 +665,7 @@ void main() {
       isTrue,
     );
 
-    await tester.tap(find.byKey(const Key('SovereignLiveBlockTaskCheckbox')));
+    await tester.tap(find.byKey(const Key('FlarkLiveBlockTaskCheckbox')));
     await _settleParsing(tester);
 
     expect(
@@ -733,7 +694,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -752,10 +713,7 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
     await _settleParsing(tester);
 
-    expect(
-      find.byKey(const Key('SovereignLiveBlockListMarker')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
     expect(find.byType(EditableText), findsNWidgets(2));
 
     await tester.tap(
@@ -771,7 +729,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -782,10 +740,7 @@ void main() {
     await tester.enterText(find.byType(EditableText), '```dart\nfoo\n```');
     await _settleParsing(tester);
 
-    expect(
-      find.byKey(const Key('SovereignLiveBlockCodeFence')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsOneWidget);
 
     final codeEditableFinder = _codeEditableFinder();
     final codeEditable = tester.widget<EditableText>(codeEditableFinder);
@@ -822,7 +777,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -864,7 +819,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -875,16 +830,16 @@ void main() {
     await tester.enterText(find.byType(EditableText), '```fffffff');
     await _settleParsing(tester);
 
-    expect(find.byKey(const Key('SovereignLiveBlockCodeFence')), findsNothing);
+    expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsNothing);
     final editable = tester.widget<EditableText>(
       find.descendant(
-        of: find.byKey(const Key('SovereignLiveBlockCodeOpeningEditable')),
+        of: find.byKey(const Key('FlarkLiveBlockCodeOpeningEditable')),
         matching: find.byType(EditableText),
       ),
     );
     expect(editable.controller.text, '```fffffff');
     expect(
-      find.byKey(const Key('SovereignLiveBlockCodeLanguageButton')),
+      find.byKey(const Key('FlarkLiveBlockCodeLanguageButton')),
       findsNothing,
     );
 
@@ -901,7 +856,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -931,7 +886,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -961,7 +916,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -973,12 +928,9 @@ void main() {
     await tester.enterText(editableFinder, '```');
     await _settleParsing(tester);
 
+    expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsOneWidget);
     expect(
-      find.byKey(const Key('SovereignLiveBlockCodeFence')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('SovereignLiveBlockCodeOpeningEditable')),
+      find.byKey(const Key('FlarkLiveBlockCodeOpeningEditable')),
       findsNothing,
     );
     expect(
@@ -999,7 +951,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -1010,15 +962,12 @@ void main() {
     await tester.enterText(find.byType(EditableText), '```');
     await _settleParsing(tester);
 
-    expect(
-      find.byKey(const Key('SovereignLiveBlockCodeFence')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsOneWidget);
     await tester.showKeyboard(_codeEditableFinder());
     await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
     await _settleParsing(tester);
 
-    expect(find.byKey(const Key('SovereignLiveBlockCodeFence')), findsNothing);
+    expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsNothing);
     expect(find.text('```'), findsNothing);
 
     await tester.tap(
@@ -1034,7 +983,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -1082,7 +1031,7 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1200, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      await tester.pumpWidget(const SovereignExampleApp());
+      await tester.pumpWidget(const FlarkExampleApp());
       await tester.pump();
 
       await tester.tap(
@@ -1093,10 +1042,10 @@ void main() {
       await tester.enterText(find.byType(EditableText), '```dart\nfoo\n```');
       await _settleParsing(tester);
 
-      final fenceFinder = find.byKey(const Key('SovereignLiveBlockCodeFence'));
+      final fenceFinder = find.byKey(const Key('FlarkLiveBlockCodeFence'));
       expect(fenceFinder, findsOneWidget);
       expect(
-        find.byKey(const Key('SovereignLiveBlockCodeOpeningEditable')),
+        find.byKey(const Key('FlarkLiveBlockCodeOpeningEditable')),
         findsNothing,
       );
       final fenceElement = tester.element(fenceFinder);
@@ -1136,7 +1085,7 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1200, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      await tester.pumpWidget(const SovereignExampleApp());
+      await tester.pumpWidget(const FlarkExampleApp());
       await tester.pump();
 
       await tester.tap(
@@ -1149,18 +1098,18 @@ void main() {
       await _settleParsing(tester);
 
       await tester.tap(
-        find.byKey(const Key('SovereignLiveBlockCodeLanguageButton')),
+        find.byKey(const Key('FlarkLiveBlockCodeLanguageButton')),
       );
       await tester.pump();
       expect(
-        find.byKey(const Key('SovereignLiveBlockCodeLanguageMenu')),
+        find.byKey(const Key('FlarkLiveBlockCodeLanguageMenu')),
         findsOneWidget,
       );
 
       await tester.tap(_codeEditableFinder());
       await tester.pump();
       expect(
-        find.byKey(const Key('SovereignLiveBlockCodeLanguageMenu')),
+        find.byKey(const Key('FlarkLiveBlockCodeLanguageMenu')),
         findsNothing,
       );
 
@@ -1189,7 +1138,7 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1200, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      await tester.pumpWidget(const SovereignExampleApp());
+      await tester.pumpWidget(const FlarkExampleApp());
       await tester.pump();
 
       await tester.tap(
@@ -1204,14 +1153,14 @@ void main() {
       await _settleParsing(tester);
 
       final buttonFinder = find.byKey(
-        const Key('SovereignLiveBlockCodeLanguageButton'),
+        const Key('FlarkLiveBlockCodeLanguageButton'),
       );
       final buttonRect = tester.getRect(buttonFinder);
       await tester.tap(buttonFinder);
       await tester.pump();
 
       final menuFinder = find.byKey(
-        const Key('SovereignLiveBlockCodeLanguageMenu'),
+        const Key('FlarkLiveBlockCodeLanguageMenu'),
       );
       expect(menuFinder, findsOneWidget);
       final menuRect = tester.getRect(menuFinder);
@@ -1219,7 +1168,7 @@ void main() {
       expect(menuRect.right, moreOrLessEquals(buttonRect.right, epsilon: 1));
 
       await tester.tap(
-        find.byKey(const ValueKey('SovereignLiveBlockCodeLanguageOption:rust')),
+        find.byKey(const ValueKey('FlarkLiveBlockCodeLanguageOption:rust')),
       );
       await _settleParsing(tester);
 
@@ -1249,7 +1198,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -1263,7 +1212,7 @@ void main() {
     );
     await _settleParsing(tester);
 
-    expect(find.byKey(const Key('SovereignLiveBlockTable')), findsOneWidget);
+    expect(find.byKey(const Key('FlarkLiveBlockTable')), findsOneWidget);
     final cellFinder = _tableCellEditableFinder(1, 0);
     await tester.tap(cellFinder);
     await tester.showKeyboard(cellFinder);
@@ -1313,7 +1262,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -1367,7 +1316,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -1421,7 +1370,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -1459,7 +1408,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -1503,7 +1452,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
     await tester.tap(
@@ -1513,10 +1462,7 @@ void main() {
 
     await tester.enterText(find.byType(EditableText), '> quote');
     await _settleParsing(tester);
-    expect(
-      find.byKey(const Key('SovereignLiveBlockBlockquote')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsOneWidget);
 
     await tester.showKeyboard(find.byType(EditableText));
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -1541,10 +1487,7 @@ void main() {
     await _settleParsing(tester);
     await tester.enterText(find.byType(EditableText), '> ');
     await _settleParsing(tester);
-    expect(
-      find.byKey(const Key('SovereignLiveBlockBlockquote')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsOneWidget);
     await tester.showKeyboard(find.byType(EditableText));
     await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
     await _settleParsing(tester);
@@ -1619,7 +1562,7 @@ Future<void> _typeFocusedTextIncrementally(
 
 String _previewCodeText(WidgetTester tester) {
   final codeBlockFinder = find.byKey(
-    const Key('SovereignReadOnlyPreviewCodeBlock'),
+    const Key('FlarkReadOnlyPreviewCodeBlock'),
   );
   final richText = tester
       .widgetList<RichText>(
@@ -1631,14 +1574,14 @@ String _previewCodeText(WidgetTester tester) {
 
 Finder _codeEditableFinder() {
   return find.descendant(
-    of: find.byKey(const Key('SovereignLiveBlockCodeEditable')),
+    of: find.byKey(const Key('FlarkLiveBlockCodeEditable')),
     matching: find.byType(EditableText),
   );
 }
 
 Finder _tableCellEditableFinder(int rowIndex, int columnIndex) {
   return find.descendant(
-    of: find.byKey(Key('SovereignLiveBlockTableCell-$rowIndex-$columnIndex')),
+    of: find.byKey(Key('FlarkLiveBlockTableCell-$rowIndex-$columnIndex')),
     matching: find.byType(EditableText),
   );
 }

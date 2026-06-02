@@ -1,11 +1,11 @@
-# Sovereign Public API Inventory
+# Flark Public API Inventory
 
 Status date: 2026-05-01
-Source: `lib/sovereign_editor.dart`
+Source: `lib/flark.dart`
 
 Supported app-facing import:
 
-- `package:sovereign_editor/sovereign_editor.dart`
+- `package:flark/flark.dart`
 
 Deep imports under `lib/widgets/sovereign/...` and `lib/src/...` are not
 documented package contracts for this release-planning pass. They may exist for
@@ -18,14 +18,14 @@ The package exposes three supported categories from one top-level library.
 
 ### Stable Consumer Surface
 
-- `SovereignController`
-- `SovereignEditor`
-- `SovereignMarkdownView`
-- `SovereignMarkdownCommands`
-- `SovereignMarkdownCommandControllerExtension`
+- `FlarkController`
+- `FlarkEditor`
+- `FlarkMarkdownView`
+- `FlarkMarkdownCommands`
+- `FlarkMarkdownCommandControllerExtension`
 - command style/result/capability/link-edit models
-- `SovereignEditorThemeData` and related editor theme types
-- `SovereignMarkdownTheme`
+- `FlarkEditorThemeData` and related editor theme types
+- `FlarkMarkdownTheme`
 
 These are the primary API that app code should build on.
 
@@ -36,8 +36,8 @@ These are the primary API that app code should build on.
 - `EditOpKind` and `EditOp`
 - `MeasuredBlock` and `GeometryModel`
 - `LineIndex`
-- `SovereignState`
-- `SovereignStyleType` and `SovereignStyle`
+- `FlarkState`
+- `FlarkStyleType` and `FlarkStyle`
 
 These remain public because the controller, renderer-facing widget contracts,
 and syntax integration contracts currently expose them in public signatures.
@@ -73,7 +73,7 @@ stable package contracts:
   `native_comrak_bridge_factory_ffi.dart` and
   `native_comrak_bridge_factory_stub.dart`
 
-White-box tests may import these through `package:sovereign_editor/src/...`
+White-box tests may import these through `package:flark/src/...`
 when the implementation contract is intentionally under test. App code should
 not.
 
@@ -81,8 +81,8 @@ First cleanup pass:
 
 - removed parser implementation adapters, parse backend/scheduler internals,
   scanners, marker helpers, `UndoStack`, and `EditDiffer` from
-  `lib/sovereign_editor.dart`;
-- kept model types in the barrel for now because `SovereignController` and the
+  `lib/flark.dart`;
+- kept model types in the barrel for now because `FlarkController` and the
   syntax engine contracts still expose them in public signatures.
 
 ## Deep Import Risk
@@ -101,13 +101,13 @@ Current status after the Phase 1 migration waves:
 - implementation-only controllers, editor helpers, command helpers, rendering,
   core services, scanner/parser logic, parser adapters/backends, edit history,
   and presentation helpers now live under `lib/src`.
-- `lib/sovereign_editor.dart` remains the only supported app-facing import.
+- `lib/flark.dart` remains the only supported app-facing import.
 
 ## Stable API Target
 
 Keep:
 
-- `package:sovereign_editor/sovereign_editor.dart`
+- `package:flark/flark.dart`
 - editor and preview widgets
 - controller lifecycle and text/selection APIs
 - typed command API
@@ -131,7 +131,7 @@ Secondary public library decision:
 
 - no secondary public libraries are warranted for this cleanup pass;
 - the only supported app-facing import is
-  `package:sovereign_editor/sovereign_editor.dart`;
+  `package:flark/flark.dart`;
 - deep imports remain test/white-box implementation details unless a future
   release explicitly documents a secondary library.
 
@@ -148,7 +148,7 @@ Progress:
 - Classified the current barrel exports as stable consumer API, stable
   supporting model carriers, and advanced supported integration API.
 - Defined the compatibility policy for this release-planning pass: only
-  `package:sovereign_editor/sovereign_editor.dart` is the supported app-facing
+  `package:flark/flark.dart` is the supported app-facing
   import, while deep imports are implementation or white-box test details.
 - Removed the previous implementation/test exposure bucket from the target
   public API; remaining implementation-only behavior belongs under `lib/src`.
@@ -159,14 +159,14 @@ Progress:
 - Move implementation-only files under `lib/src`.
 - Update package tests to import through `src` only where white-box coverage is
   intentional.
-- Keep consumer examples importing only `package:sovereign_editor/sovereign_editor.dart`.
+- Keep consumer examples importing only `package:flark/flark.dart`.
 
 Progress:
 
 - Started with implementation helpers that are not part of the supported
   barrel API: moved `Logger` to `lib/src/helpers/logger.dart` and removed the
   public `AppColors` helper in favor of a private markdown-theme palette.
-- Narrowed `lib/sovereign_editor.dart` to stop exporting parser
+- Narrowed `lib/flark.dart` to stop exporting parser
   implementations, scanners, marker helpers, `UndoStack`, and `EditDiffer`.
 - Added `test/public_api/sovereign_editor_barrel_test.dart` as a top-level
   import smoke test for the supported editor, command, theme, syntax, native
@@ -177,21 +177,21 @@ Progress:
   `Tier1Painter`, inline-actions overlay/targeting helpers,
   read-only link tap tracking, and read-only task-checkbox overlay helpers.
   Package tests that intentionally inspect painter behavior now import the
-  painter through `package:sovereign_editor/src/...`.
+  painter through `package:flark/src/...`.
 - Moved command implementation helpers behind `lib/src`, including block,
   inline, fence, link, transaction, range, selection, and command-context
-  helpers. `SovereignMarkdownCommands` remains the supported public command
+  helpers. `FlarkMarkdownCommands` remains the supported public command
   facade.
 - Moved `SyntaxParseScheduler` behind `lib/src`; tests that intentionally
   exercise the scheduler now import it as a white-box implementation detail.
-- Moved `SyntaxEngineFactory` behind `lib/src`; `SovereignController` remains
+- Moved `SyntaxEngineFactory` behind `lib/src`; `FlarkController` remains
   the public entry point for default parser wiring, while apps can still inject
   a public `SyntaxEngine`.
 - Moved parser backend and adapter implementations behind `lib/src`, including
   `CommonMarkParseBackend`, `CommonMarkSyntaxEngineAdapter`,
   `ComrakCommonMarkParseBackend`, and `V1SyntaxEngineAdapter`. White-box tests
   that intentionally exercise those implementations import them through
-  `package:sovereign_editor/src/...`; the public syntax contract remains
+  `package:flark/src/...`; the public syntax contract remains
   `SyntaxEngine`, syntax request/snapshot types, native diagnostics, and UTF
   offset mapping.
 - Moved markdown logic/scanner internals behind `lib/src`, including the block
@@ -203,12 +203,12 @@ Progress:
   input-intent handlers, edit pipeline/grouping services, renderer helpers,
   editor-session state carriers, syntax projection/reconciliation helpers,
   markdown line utilities, table/navigation services, and fence/indented-code
-  helpers. `SovereignController`, `SovereignEditor`, and
-  `SovereignMarkdownView` remain the supported entry points.
+  helpers. `FlarkController`, `FlarkEditor`, and
+  `FlarkMarkdownView` remain the supported entry points.
 - Moved controller/editor private helper files behind `lib/src`, including
   controller policy parts, controller host adapters, controller diagnostics,
   the navigation helper, and editor overlay parts. Public app code still imports
-  only `SovereignController`, `SovereignEditor`, and `SovereignMarkdownView`.
+  only `FlarkController`, `FlarkEditor`, and `FlarkMarkdownView`.
 - Completed the focused `lib/src` migration wave for implementation-only files;
   the remaining `lib/widgets/sovereign/...` files are the supported public
   surface or model/advanced contracts intentionally retained for current public
@@ -217,7 +217,7 @@ Progress:
 ### Wave 3: Naming Cleanup
 
 - Replace public Dune vocabulary:
-  - [x] `DuneMarkdownTheme` -> `SovereignMarkdownTheme`
+  - [x] `DuneMarkdownTheme` -> `FlarkMarkdownTheme`
 - Keep package default palette names private/package-neutral.
 - Keep deprecated aliases only if we need compatibility with Dune during a
   transition.
@@ -227,7 +227,7 @@ Progress:
 - Renamed `lib/theme/dune_markdown_theme.dart` to
   `lib/theme/sovereign_markdown_theme.dart`.
 - Replaced the public `DuneMarkdownTheme.dune()` constructor with
-  `SovereignMarkdownTheme.standard()` without adding a compatibility alias.
+  `FlarkMarkdownTheme.standard()` without adding a compatibility alias.
 
 ### Wave 4: Compatibility and Docs
 
@@ -244,7 +244,7 @@ Progress:
 - Established a clean docs-generation baseline by fixing unresolved Dart doc
   bracket references; `dart doc --dry-run` now reports 0 warnings and 0 errors.
 - Added the first primary API prose wave for the top-level library,
-  `SovereignController`, `SovereignEditor`, `SovereignMarkdownView`, command
+  `FlarkController`, `FlarkEditor`, `FlarkMarkdownView`, command
   facade/result/capability/link-edit models, and editor/markdown theme classes.
 - Added package API docs for the remaining exported supporting models and
   advanced integration contracts, including block/decoration/edit/geometry/

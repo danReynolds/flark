@@ -1,4 +1,4 @@
-# Sovereign Editor Command Interface
+# Flark Editor Command Interface
 
 **Status**: implemented (source-of-truth API reference)  
 **Status date**: 2026-05-02
@@ -9,12 +9,12 @@
 
 ## 1. Why this layer exists
 
-Sovereign should own markdown mutation semantics, not app surfaces.
+Flark should own markdown mutation semantics, not app surfaces.
 
 The command interface gives consumers a stable API:
 
 - UI triggers intent (`toggle bold`, `insert quote`, `apply link`).
-- Sovereign performs mutation atomically with cursor/selection safety.
+- Flark performs mutation atomically with cursor/selection safety.
 - Mobile and desktop get the same behavior path.
 
 ---
@@ -43,34 +43,34 @@ These are standard command architecture traits, not custom novelty.
 ## 3. Public API shape
 
 ```dart
-enum SovereignInlineStyle { bold, italic, inlineCode }
-enum SovereignBlockStyle { quote, bulletList, taskList, heading, fence }
+enum FlarkInlineStyle { bold, italic, inlineCode }
+enum FlarkBlockStyle { quote, bulletList, taskList, heading, fence }
 
-sealed class SovereignCommandResult {
-  const SovereignCommandResult();
+sealed class FlarkCommandResult {
+  const FlarkCommandResult();
 }
 
-class SovereignCommandApplied extends SovereignCommandResult {
+class FlarkCommandApplied extends FlarkCommandResult {
   final TextSelection selection;
-  const SovereignCommandApplied(this.selection);
+  const FlarkCommandApplied(this.selection);
 }
 
-class SovereignCommandNoOp extends SovereignCommandResult {
+class FlarkCommandNoOp extends FlarkCommandResult {
   final String reason; // stable wire string, e.g. "no_active_inline_style"
-  final SovereignCommandReasonCode reasonCode;
-  const SovereignCommandNoOp(this.reason);
+  final FlarkCommandReasonCode reasonCode;
+  const FlarkCommandNoOp(this.reason);
 }
 
-class SovereignCommandRejected extends SovereignCommandResult {
+class FlarkCommandRejected extends FlarkCommandResult {
   final String reason; // stable wire string, e.g. "ime_composing"
-  final SovereignCommandReasonCode reasonCode;
-  const SovereignCommandRejected(this.reason);
+  final FlarkCommandReasonCode reasonCode;
+  const FlarkCommandRejected(this.reason);
 }
 
-class SovereignCommandCapabilities {
+class FlarkCommandCapabilities {
   final bool isComposing;
   final bool canMutate;
-  final SovereignInlineStyle? activeInlineStyle;
+  final FlarkInlineStyle? activeInlineStyle;
   final int? activeHeadingLevel;
   final bool quoteActive;
 }
@@ -188,7 +188,7 @@ Rules:
 | Action | Inputs | Behavior | Selection contract | Result notes |
 | --- | --- | --- | --- | --- |
 | `capabilitiesAtSelection()` | caret/selection | returns composing/mutation readiness + active inline/block state | no mutation | one-call toolbar snapshot |
-| `runInTransaction(action)` | callback with command facade | executes multiple commands as one undo unit | command-defined | keeps mutation logic in Sovereign |
+| `runInTransaction(action)` | callback with command facade | executes multiple commands as one undo unit | command-defined | keeps mutation logic in Flark |
 
 ---
 

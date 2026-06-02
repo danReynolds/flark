@@ -1,14 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/sovereign_editor_v2.dart';
+import 'package:flark/flark_advanced.dart';
 
 void main() {
-  group('SovereignMarkdownTableCommands', () {
+  group('FlarkMarkdownTableCommands', () {
     test('inserts a formatted GFM table', () {
       final result = _dispatch(
         markdown: 'alpha',
-        selection: const SovereignSelection.collapsed(5),
-        command: SovereignMarkdownTableCommands.insertTable,
-        payload: const SovereignInsertTablePayload(),
+        selection: const FlarkSelection.collapsed(5),
+        command: FlarkMarkdownTableCommands.insertTable,
+        payload: const FlarkInsertTablePayload(),
       );
 
       expect(result.commandResult.isHandled, isTrue);
@@ -26,7 +26,7 @@ void main() {
       );
       expect(
         result.runtime.state.selection,
-        SovereignSelection.collapsed(bodyRowStart + 2),
+        FlarkSelection.collapsed(bodyRowStart + 2),
       );
     });
 
@@ -34,9 +34,9 @@ void main() {
       final source = '| A | B |\n| - | - |\n| x | y |';
       final result = _dispatch(
         markdown: source,
-        selection: SovereignSelection.collapsed(source.indexOf('x')),
-        command: SovereignMarkdownTableCommands.insertRowBelow,
-        payload: const SovereignTableMutationPayload(),
+        selection: FlarkSelection.collapsed(source.indexOf('x')),
+        command: FlarkMarkdownTableCommands.insertRowBelow,
+        payload: const FlarkTableMutationPayload(),
       );
 
       expect(result.commandResult.isHandled, isTrue);
@@ -54,7 +54,7 @@ void main() {
       );
       expect(
         result.runtime.state.selection,
-        SovereignSelection.collapsed(insertedRowStart + 2),
+        FlarkSelection.collapsed(insertedRowStart + 2),
       );
     });
 
@@ -62,9 +62,9 @@ void main() {
       final source = '| A | B |\n| - | - |\n| x | y |';
       final result = _dispatch(
         markdown: source,
-        selection: SovereignSelection.collapsed(source.indexOf('x')),
-        command: SovereignMarkdownTableCommands.insertColumnRight,
-        payload: const SovereignTableMutationPayload(),
+        selection: FlarkSelection.collapsed(source.indexOf('x')),
+        command: FlarkMarkdownTableCommands.insertColumnRight,
+        payload: const FlarkTableMutationPayload(),
       );
 
       expect(result.commandResult.isHandled, isTrue);
@@ -79,7 +79,7 @@ void main() {
       final bodyRowStart = result.runtime.state.markdown.lastIndexOf('| x');
       expect(
         result.runtime.state.selection,
-        SovereignSelection.collapsed(bodyRowStart + 8),
+        FlarkSelection.collapsed(bodyRowStart + 8),
       );
     });
 
@@ -87,9 +87,9 @@ void main() {
       final source = '| A | B | C |\n| - | - | - |\n| x | y | z |';
       final result = _dispatch(
         markdown: source,
-        selection: SovereignSelection.collapsed(source.indexOf('y')),
-        command: SovereignMarkdownTableCommands.deleteColumn,
-        payload: const SovereignTableMutationPayload(),
+        selection: FlarkSelection.collapsed(source.indexOf('y')),
+        command: FlarkMarkdownTableCommands.deleteColumn,
+        payload: const FlarkTableMutationPayload(),
       );
 
       expect(result.commandResult.isHandled, isTrue);
@@ -104,7 +104,7 @@ void main() {
       final bodyRowStart = result.runtime.state.markdown.lastIndexOf('| x');
       expect(
         result.runtime.state.selection,
-        SovereignSelection.collapsed(bodyRowStart + 8),
+        FlarkSelection.collapsed(bodyRowStart + 8),
       );
     });
 
@@ -112,9 +112,9 @@ void main() {
       final source = '| A | B |\n| - | - |\n| x | y |\n| q | r |';
       final result = _dispatch(
         markdown: source,
-        selection: SovereignSelection.collapsed(source.indexOf('x')),
-        command: SovereignMarkdownTableCommands.deleteRow,
-        payload: const SovereignTableMutationPayload(),
+        selection: FlarkSelection.collapsed(source.indexOf('x')),
+        command: FlarkMarkdownTableCommands.deleteRow,
+        payload: const FlarkTableMutationPayload(),
       );
 
       expect(result.commandResult.isHandled, isTrue);
@@ -129,31 +129,33 @@ void main() {
       final bodyRowStart = result.runtime.state.markdown.lastIndexOf('| q');
       expect(
         result.runtime.state.selection,
-        SovereignSelection.collapsed(bodyRowStart + 2),
+        FlarkSelection.collapsed(bodyRowStart + 2),
       );
     });
 
-    test('row and column mutations fall through outside established tables',
-        () {
-      final source = 'not | a | table';
-      final result = _dispatch(
-        markdown: source,
-        selection: const SovereignSelection.collapsed(6),
-        command: SovereignMarkdownTableCommands.insertRowBelow,
-        payload: const SovereignTableMutationPayload(),
-      );
+    test(
+      'row and column mutations fall through outside established tables',
+      () {
+        final source = 'not | a | table';
+        final result = _dispatch(
+          markdown: source,
+          selection: const FlarkSelection.collapsed(6),
+          command: FlarkMarkdownTableCommands.insertRowBelow,
+          payload: const FlarkTableMutationPayload(),
+        );
 
-      expect(result.commandResult.isNotHandled, isTrue);
-      expect(result.runtime.state.markdown, source);
-    });
+        expect(result.commandResult.isNotHandled, isTrue);
+        expect(result.runtime.state.markdown, source);
+      },
+    );
 
     test('row and column mutations fall through inside fenced code', () {
       const source = '```\n| A | B |\n| - | - |\n```';
       final result = _dispatch(
         markdown: source,
-        selection: SovereignSelection.collapsed(source.indexOf('A')),
-        command: SovereignMarkdownTableCommands.insertColumnRight,
-        payload: const SovereignTableMutationPayload(),
+        selection: FlarkSelection.collapsed(source.indexOf('A')),
+        command: FlarkMarkdownTableCommands.insertColumnRight,
+        payload: const FlarkTableMutationPayload(),
       );
 
       expect(result.commandResult.isNotHandled, isTrue);
@@ -162,20 +164,17 @@ void main() {
   });
 }
 
-SovereignEditorRuntimeResult _dispatch<TPayload>({
+FlarkEditorRuntimeResult _dispatch<TPayload>({
   required String markdown,
-  required SovereignSelection selection,
-  required SovereignCommand<TPayload> command,
+  required FlarkSelection selection,
+  required FlarkCommand<TPayload> command,
   required TPayload payload,
 }) {
-  final runtime = SovereignEditorRuntime(
-    state: SovereignEditorState.fromMarkdown(
-      markdown,
-      selection: selection,
-    ),
-    commandRegistry: SovereignExtensionSet(
-      const [SovereignMarkdownTableEditingExtension()],
-    ).commandRegistry(),
+  final runtime = FlarkEditorRuntime(
+    state: FlarkEditorState.fromMarkdown(markdown, selection: selection),
+    commandRegistry: FlarkExtensionSet(const [
+      FlarkMarkdownTableEditingExtension(),
+    ]).commandRegistry(),
   );
   return runtime.dispatch(command: command, payload: payload);
 }

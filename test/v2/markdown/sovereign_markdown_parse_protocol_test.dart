@@ -1,12 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
-import 'package:sovereign_editor/src/v2/markdown/markdown.dart';
+import 'package:flark/src/v2/core/core.dart';
+import 'package:flark/src/v2/markdown/markdown.dart';
 
 void main() {
-  group('SovereignMarkdownParseResult', () {
+  group('FlarkMarkdownParseResult', () {
     test('decodes parser payloads and preserves unknown fields', () {
-      final result = SovereignMarkdownParseResult.fromJson({
-        'schemaVersion': SovereignMarkdownParseProtocol.currentSchemaVersion,
+      final result = FlarkMarkdownParseResult.fromJson({
+        'schemaVersion': FlarkMarkdownParseProtocol.currentSchemaVersion,
         'revision': 4,
         'sourceTextLength': 12,
         'blocks': [
@@ -64,41 +64,41 @@ void main() {
 
       expect(
         result.schemaVersion,
-        SovereignMarkdownParseProtocol.currentSchemaVersion,
+        FlarkMarkdownParseProtocol.currentSchemaVersion,
       );
       expect(result.revision, 4);
       expect(result.sourceTextLength, 12);
-      expect(result.blocks.single.kind, SovereignMarkdownBlockKind.heading);
+      expect(result.blocks.single.kind, FlarkMarkdownBlockKind.heading);
       expect(result.blocks.single.type, 'heading');
-      expect(
-          result.blocks.single.sourceRange, const SovereignSourceRange(0, 7));
+      expect(result.blocks.single.sourceRange, const FlarkSourceRange(0, 7));
       expect(result.blocks.single.attributes['level'], 2);
       expect(result.blocks.single.extensions['futureBlockField'], isTrue);
-      expect(
-          result.inlineTokens.single.kind, SovereignMarkdownInlineKind.strong);
+      expect(result.inlineTokens.single.kind, FlarkMarkdownInlineKind.strong);
       expect(
         result.inlineTokens.single.sourceRange,
-        const SovereignSourceRange(8, 12),
+        const FlarkSourceRange(8, 12),
       );
       expect(result.inlineTokens.single.extensions['futureInlineField'], 42);
       expect(
         result.hiddenRanges.single.kind,
-        SovereignMarkdownHiddenRangeKind.inlineMarker,
+        FlarkMarkdownHiddenRangeKind.inlineMarker,
       );
       expect(
         result.hiddenRanges.single.sourceRange,
-        const SovereignSourceRange(8, 10),
+        const FlarkSourceRange(8, 10),
       );
       expect(result.hiddenRanges.single.attributes['marker'], '**');
       expect(
-          result.hiddenRanges.single.extensions['futureHiddenField'], 'kept');
+        result.hiddenRanges.single.extensions['futureHiddenField'],
+        'kept',
+      );
       expect(
         result.replacementRanges.single.kind,
-        SovereignMarkdownReplacementRangeKind.htmlEntity,
+        FlarkMarkdownReplacementRangeKind.htmlEntity,
       );
       expect(
         result.replacementRanges.single.sourceRange,
-        const SovereignSourceRange(10, 15),
+        const FlarkSourceRange(10, 15),
       );
       expect(result.replacementRanges.single.replacementText, '&');
       expect(result.replacementRanges.single.attributes['raw'], '&amp;');
@@ -108,14 +108,16 @@ void main() {
       );
       expect(
         result.ambiguityZones.single.kind,
-        SovereignMarkdownAmbiguityKind.delimiterRun,
+        FlarkMarkdownAmbiguityKind.delimiterRun,
       );
       expect(
         result.ambiguityZones.single.sourceRange,
-        const SovereignSourceRange(8, 12),
+        const FlarkSourceRange(8, 12),
       );
-      expect(result.ambiguityZones.single.preferredAffinity,
-          SovereignMapAffinity.upstream);
+      expect(
+        result.ambiguityZones.single.preferredAffinity,
+        FlarkMapAffinity.upstream,
+      );
       expect(result.ambiguityZones.single.attributes['candidate'], '**');
       expect(
         result.ambiguityZones.single.extensions['futureAmbiguityField'],
@@ -124,7 +126,7 @@ void main() {
       expect(result.diagnostics.single.code, 'rawHtmlLiteral');
       expect(
         result.diagnostics.single.sourceRange,
-        const SovereignSourceRange(0, 4),
+        const FlarkSourceRange(0, 4),
       );
       expect(
         result.diagnostics.single.extensions['futureDiagnosticField'],
@@ -134,7 +136,7 @@ void main() {
     });
 
     test('maps unknown block and inline variants without crashing', () {
-      final result = SovereignMarkdownParseResult.fromJson({
+      final result = FlarkMarkdownParseResult.fromJson({
         'schemaVersion': 99,
         'revision': 1,
         'sourceTextLength': 3,
@@ -173,39 +175,48 @@ void main() {
       });
 
       expect(result.schemaVersion, 99);
-      expect(result.blocks.single.kind, SovereignMarkdownBlockKind.unknown);
+      expect(result.blocks.single.kind, FlarkMarkdownBlockKind.unknown);
       expect(result.blocks.single.type, 'admonition');
-      expect(
-          result.inlineTokens.single.kind, SovereignMarkdownInlineKind.unknown);
+      expect(result.inlineTokens.single.kind, FlarkMarkdownInlineKind.unknown);
       expect(result.inlineTokens.single.type, 'wikilink');
-      expect(result.hiddenRanges.single.kind,
-          SovereignMarkdownHiddenRangeKind.unknown);
+      expect(
+        result.hiddenRanges.single.kind,
+        FlarkMarkdownHiddenRangeKind.unknown,
+      );
       expect(result.hiddenRanges.single.type, 'mathDelimiter');
-      expect(result.replacementRanges.single.kind,
-          SovereignMarkdownReplacementRangeKind.unknown);
+      expect(
+        result.replacementRanges.single.kind,
+        FlarkMarkdownReplacementRangeKind.unknown,
+      );
       expect(result.replacementRanges.single.type, 'futureReplacement');
-      expect(result.ambiguityZones.single.kind,
-          SovereignMarkdownAmbiguityKind.unknown);
+      expect(
+        result.ambiguityZones.single.kind,
+        FlarkMarkdownAmbiguityKind.unknown,
+      );
       expect(result.ambiguityZones.single.type, 'futureAmbiguity');
-      expect(result.ambiguityZones.single.preferredAffinity,
-          SovereignMapAffinity.downstream);
+      expect(
+        result.ambiguityZones.single.preferredAffinity,
+        FlarkMapAffinity.downstream,
+      );
     });
   });
 
-  group('SovereignMarkdownParserCapabilities', () {
+  group('FlarkMarkdownParserCapabilities', () {
     test('reports supported profiles', () {
-      final capabilities = SovereignMarkdownParserCapabilities(
+      final capabilities = FlarkMarkdownParserCapabilities(
         parserName: 'test',
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
-        supportedProfiles: const [
-          SovereignMarkdownProfile.commonMarkCore,
-        ],
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
+        supportedProfiles: const [FlarkMarkdownProfile.commonMarkCore],
       );
 
-      expect(capabilities.supports(SovereignMarkdownProfile.commonMarkCore),
-          isTrue);
-      expect(capabilities.supports(SovereignMarkdownProfile.commonMarkGfm),
-          isFalse);
+      expect(
+        capabilities.supports(FlarkMarkdownProfile.commonMarkCore),
+        isTrue,
+      );
+      expect(
+        capabilities.supports(FlarkMarkdownProfile.commonMarkGfm),
+        isFalse,
+      );
     });
   });
 }

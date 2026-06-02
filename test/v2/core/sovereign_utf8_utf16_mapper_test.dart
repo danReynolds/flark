@@ -1,12 +1,12 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
+import 'package:flark/src/v2/core/core.dart';
 
 void main() {
-  group('SovereignUtf8Utf16Mapper', () {
+  group('FlarkUtf8Utf16Mapper', () {
     test('maps ASCII offsets directly', () {
-      final mapper = SovereignUtf8Utf16Mapper('abc');
+      final mapper = FlarkUtf8Utf16Mapper('abc');
 
       expect(mapper.utf16Length, 3);
       expect(mapper.utf8Length, 3);
@@ -17,7 +17,7 @@ void main() {
 
     test('maps BMP multibyte characters', () {
       final text = 'aéb';
-      final mapper = SovereignUtf8Utf16Mapper(text);
+      final mapper = FlarkUtf8Utf16Mapper(text);
 
       expect(utf8.encode(text), hasLength(4));
       expect(mapper.utf16Length, 3);
@@ -31,7 +31,7 @@ void main() {
 
     test('maps non-BMP characters across surrogate pairs', () {
       final text = 'a😀b';
-      final mapper = SovereignUtf8Utf16Mapper(text);
+      final mapper = FlarkUtf8Utf16Mapper(text);
 
       expect(text.length, 4);
       expect(utf8.encode(text), hasLength(6));

@@ -1,29 +1,29 @@
-# Sovereign v2 Public API Inventory
+# Flark v2 Public API Inventory
 
 Status date: 2026-05-03
-Source: `lib/sovereign_editor.dart`, `lib/sovereign_editor_core.dart`,
-and `lib/sovereign_editor_v2.dart`
+Source: `lib/flark.dart`, `lib/flark_core.dart`,
+and `lib/flark_advanced.dart`
 Status: v2-only promoted app barrel, headless core barrel, and full v2 barrel
 
 The supported v2 import for application code is now:
 
-- `package:sovereign_editor/sovereign_editor.dart`
+- `package:flark/flark.dart`
 
 The headless Dart import for non-Flutter integrations is:
 
-- `package:sovereign_editor/sovereign_editor_core.dart`
+- `package:flark/flark_core.dart`
 
 The full v2 import remains available for custom parser, native bridge, and
 extension integration work:
 
-- `package:sovereign_editor/sovereign_editor_v2.dart`
+- `package:flark/flark_advanced.dart`
 
 Deep imports under `lib/src/v2/...` are implementation and white-box test
 details unless a type is explicitly promoted through one of the public barrels.
 
 ## Barrel Shape
 
-`lib/sovereign_editor_v2.dart` intentionally exports from six v2 barrels with
+`lib/flark_advanced.dart` intentionally exports from six v2 barrels with
 explicit `show` lists:
 
 - `src/v2/core/core.dart`
@@ -49,17 +49,17 @@ New users and internal examples start on the source-first architecture.
 
 Exported from `src/v2/core/core.dart`:
 
-- command model: `SovereignCommand`, command context, command registry, command
+- command model: `FlarkCommand`, command context, command registry, command
   priorities, command results, and core editing commands;
-- document model: `SovereignDocument`, `SovereignTextBuffer`,
-  `SovereignUtf8Utf16Mapper`;
-- extension model: `SovereignExtension`, extension set;
-- runtime/state: `SovereignEditorRuntime`, `SovereignEditorRuntimeResult`, and
-  `SovereignEditorState`;
-- selection/range/transaction model: `SovereignSelection`,
-  `SovereignMapAffinity`, `SovereignSourceRange`,
-  `SovereignSourceOperation`, `SovereignTransaction`,
-  `SovereignTransactionMetadata`, and `SovereignTransactionIntent`.
+- document model: `FlarkDocument`, `FlarkTextBuffer`,
+  `FlarkUtf8Utf16Mapper`;
+- extension model: `FlarkExtension`, extension set;
+- runtime/state: `FlarkEditorRuntime`, `FlarkEditorRuntimeResult`, and
+  `FlarkEditorState`;
+- selection/range/transaction model: `FlarkSelection`,
+  `FlarkMapAffinity`, `FlarkSourceRange`,
+  `FlarkSourceOperation`, `FlarkTransaction`,
+  `FlarkTransactionMetadata`, and `FlarkTransactionIntent`.
 
 Boundary: this layer must remain pure Dart and must not import Flutter or
 `dart:ui`.
@@ -69,14 +69,14 @@ Boundary: this layer must remain pure Dart and must not import Flutter or
 Exported from `src/v2/markdown/markdown.dart`:
 
 - block, inline, link, table, and task/list command extensions;
-- `SovereignMarkdownEditingExtensions.standard()` for the default v2 markdown
+- `FlarkMarkdownEditingExtensions.standard()` for the default v2 markdown
   editing extension set;
 - command capability query APIs for toolbar and active-mark state;
 - markdown inline style identifiers;
 - parser backend protocol, parse requests/results, parser capabilities,
   profiles, schema version constants, typed block/inline/hidden-range models,
   diagnostics, and ambiguity-zone models;
-- `SovereignNativeComrakParseBackend`, the required default v2 adapter over
+- `FlarkNativeComrakParseBackend`, the required default v2 adapter over
   the Comrak bridge ABI.
 
 Boundary: parser payloads must preserve unknown fields and unknown variants
@@ -92,7 +92,7 @@ Exported from `src/v2/native/native.dart` in the full v2 barrel:
 - `createNativeComrakBridge()` and `preflightNativeComrakBridge()` for advanced
   native integration tests and custom parser wiring.
 
-Boundary: app code should normally use `SovereignNativeComrakParseBackend`.
+Boundary: app code should normally use `FlarkNativeComrakParseBackend`.
 Native bridge types are advanced API because custom bridge injection and
 white-box native tests need stable typed contracts.
 
@@ -100,10 +100,10 @@ white-box native tests need stable typed contracts.
 
 Exported from `src/v2/projection/projection.dart`:
 
-- `SovereignProjection`, hidden ranges, cursor masks, ambiguity zones,
+- `FlarkProjection`, hidden ranges, cursor masks, ambiguity zones,
   predictive projection, and reconciliation;
 - source/display selection mapping helpers;
-- `SovereignProjectedTextEditAdapter`, the headless adapter that converts edits
+- `FlarkProjectedTextEditAdapter`, the headless adapter that converts edits
   to projected display text back into source transactions.
 
 Boundary: projection owns marker hiding and source/display mapping. Flutter
@@ -113,9 +113,9 @@ widgets may consume projection state, but must not duplicate marker mapping.
 
 Exported from `src/v2/render_plan/render_plan.dart`:
 
-- `SovereignRenderPlan`, render blocks, inline runs, table/task/code/link/image
+- `FlarkRenderPlan`, render blocks, inline runs, table/task/code/link/image
   descriptors, text style tokens, overlay target queries, and overlay plans;
-- `SovereignRenderPlanExtension` and `SovereignRenderPlanContext` for semantic
+- `FlarkRenderPlanExtension` and `FlarkRenderPlanContext` for semantic
   render-plan customization from registered extensions.
 
 Boundary: edit and read-only surfaces consume the same render plan; widgets
@@ -126,8 +126,8 @@ plan.
 
 Promoted through the public barrels from `src/v2/flutter/flutter.dart`:
 
-- `SovereignFlutterController`;
-- `SovereignControllerEvent` and `SovereignControllerEventKind` for typed
+- `FlarkFlutterController`;
+- `FlarkControllerEvent` and `FlarkControllerEventKind` for typed
   update streams;
 - `MarkdownEditor`, the promoted source-first editing widget. It can
   own a controller from `initialMarkdown` or use a caller-provided controller;
@@ -136,8 +136,8 @@ Promoted through the public barrels from `src/v2/flutter/flutter.dart`:
   plan;
 - `onParseError` promoted-widget callbacks for scheduled background parser
   failures;
-- `SovereignPreviewBlockWidgetBuilder` for custom read-only block rendering;
-- `SovereignOverlayTargetWidgetBuilder` for custom overlay controls exposed
+- `FlarkPreviewBlockWidgetBuilder` for custom read-only block rendering;
+- `FlarkOverlayTargetWidgetBuilder` for custom overlay controls exposed
   through the promoted widgets;
 - Flutter command `Intent`/`Action` integration.
 
@@ -148,24 +148,24 @@ projection, or render-plan semantics.
 ## Implementation-Only Flutter Types
 
 The raw-source, projected, and live-rendered concrete editing widgets,
-`SovereignReadOnlyPreview`, `SovereignParseScheduler`,
-`SovereignRenderPlanOverlayControls`, and `SovereignTextDeltaAdapter` remain
+`FlarkReadOnlyPreview`, `FlarkParseScheduler`,
+`FlarkRenderPlanOverlayControls`, and `FlarkTextDeltaAdapter` remain
 under `lib/src/v2/flutter` for package implementation and white-box tests. They
-are deliberately not exported by `sovereign_editor.dart` or
-`sovereign_editor_v2.dart`; app code should reach them through
+are deliberately not exported by `flark.dart` or
+`flark_advanced.dart`; app code should reach them through
 `MarkdownEditor` and `Markdown`.
 
 ## Verification
 
 Current API guardrails:
 
-- `test/v2/public_api/sovereign_editor_v2_public_api_test.dart` imports the
+- `test/v2/public_api/flark_advanced_public_api_test.dart` imports the
   experimental v2 barrel, smoke-tests the exported controller, commands, native
   parser adapter, projection, projected edit adapter, render-plan extension
   types, preview block builder, and the two promoted widget surfaces, and checks
   that the barrel uses explicit `show` exports and excludes implementation-only
   Flutter widgets.
-- `test/public_api/sovereign_editor_barrel_test.dart` imports the promoted v2
+- `test/public_api/flark_barrel_test.dart` imports the promoted v2
   barrel and headless core barrel, then smoke-tests each surface.
 - `test/v2/core/v2_core_import_boundary_test.dart` prevents Flutter imports in
   v2 headless layers.

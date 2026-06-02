@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
-import '../core/core.dart' show SovereignExtensionSet;
+import '../core/core.dart' show FlarkExtensionSet;
 import '../markdown/markdown.dart';
 import '../render_plan/render_plan.dart';
 import 'sovereign_command_actions.dart';
@@ -13,7 +13,7 @@ import 'sovereign_parse_scheduler.dart';
 import 'sovereign_projected_editable_text.dart';
 import 'sovereign_render_plan_overlay_controls.dart';
 
-enum SovereignMarkdownEditingMode { source, projected, liveRendered }
+enum FlarkMarkdownEditingMode { source, projected, liveRendered }
 
 final class MarkdownEditor extends StatefulWidget {
   const MarkdownEditor({
@@ -24,9 +24,9 @@ final class MarkdownEditor extends StatefulWidget {
     this.onChanged,
     this.parseBackend,
     this.onParseError,
-    this.profile = SovereignMarkdownProfile.commonMarkGfm,
+    this.profile = FlarkMarkdownProfile.commonMarkGfm,
     this.parseDebounce = const Duration(milliseconds: 80),
-    this.editingMode = SovereignMarkdownEditingMode.projected,
+    this.editingMode = FlarkMarkdownEditingMode.projected,
     this.focusNode,
     this.style,
     this.cursorColor = const Color(0xFF006ADC),
@@ -35,18 +35,18 @@ final class MarkdownEditor extends StatefulWidget {
     this.maxLines,
     this.expands = false,
     this.autofocus = false,
-    this.shortcuts = const <ShortcutActivator, SovereignCommandIntent>{},
+    this.shortcuts = const <ShortcutActivator, FlarkCommandIntent>{},
     this.showOverlayControls = false,
     this.overlayControlBuilder,
     this.onOverlayTargetPressed,
-    this.interactionConfig = const SovereignMarkdownInteractionConfig(),
+    this.interactionConfig = const FlarkMarkdownInteractionConfig(),
   }) : assert(
          controller == null || initialMarkdown == null,
          'Provide either controller or initialMarkdown, not both.',
        ),
        assert(
          controller == null || extensions == null,
-         'Provide extensions through SovereignFlutterController when using a '
+         'Provide extensions through FlarkFlutterController when using a '
          'controller.',
        );
 
@@ -54,7 +54,7 @@ final class MarkdownEditor extends StatefulWidget {
   ///
   /// When omitted, the editor creates and owns a controller initialized from
   /// [initialMarkdown].
-  final SovereignFlutterController? controller;
+  final FlarkFlutterController? controller;
 
   /// Markdown used when this widget creates its own controller.
   ///
@@ -66,7 +66,7 @@ final class MarkdownEditor extends StatefulWidget {
   /// Runtime extensions for the owned controller.
   ///
   /// When [controller] is provided, configure extensions on that controller.
-  final SovereignExtensionSet? extensions;
+  final FlarkExtensionSet? extensions;
 
   /// Called after document-changing controller events.
   final ValueChanged<String>? onChanged;
@@ -76,14 +76,14 @@ final class MarkdownEditor extends StatefulWidget {
   /// When this is null, the widget requires the packaged Comrak backend.
   /// Backend load failures are surfaced directly instead of falling back to a
   /// second markdown implementation.
-  final SovereignMarkdownParseBackend? parseBackend;
+  final FlarkMarkdownParseBackend? parseBackend;
 
   /// Called when a scheduled background parse fails.
   final void Function(Object error, StackTrace stackTrace)? onParseError;
 
-  final SovereignMarkdownProfile profile;
+  final FlarkMarkdownProfile profile;
   final Duration parseDebounce;
-  final SovereignMarkdownEditingMode editingMode;
+  final FlarkMarkdownEditingMode editingMode;
   final FocusNode? focusNode;
   final TextStyle? style;
   final Color cursorColor;
@@ -92,11 +92,11 @@ final class MarkdownEditor extends StatefulWidget {
   final int? maxLines;
   final bool expands;
   final bool autofocus;
-  final Map<ShortcutActivator, SovereignCommandIntent> shortcuts;
+  final Map<ShortcutActivator, FlarkCommandIntent> shortcuts;
   final bool showOverlayControls;
-  final SovereignOverlayTargetWidgetBuilder? overlayControlBuilder;
-  final ValueChanged<SovereignRenderOverlayTarget>? onOverlayTargetPressed;
-  final SovereignMarkdownInteractionConfig interactionConfig;
+  final FlarkOverlayTargetWidgetBuilder? overlayControlBuilder;
+  final ValueChanged<FlarkRenderOverlayTarget>? onOverlayTargetPressed;
+  final FlarkMarkdownInteractionConfig interactionConfig;
 
   @override
   State<MarkdownEditor> createState() {
@@ -105,11 +105,11 @@ final class MarkdownEditor extends StatefulWidget {
 }
 
 final class _MarkdownEditorState extends State<MarkdownEditor> {
-  SovereignFlutterController? _ownedController;
-  SovereignParseScheduler? _parseScheduler;
-  StreamSubscription<SovereignControllerEvent>? _eventSubscription;
+  FlarkFlutterController? _ownedController;
+  FlarkParseScheduler? _parseScheduler;
+  StreamSubscription<FlarkControllerEvent>? _eventSubscription;
 
-  SovereignFlutterController get _controller {
+  FlarkFlutterController get _controller {
     return widget.controller ?? _ownedController!;
   }
 
@@ -166,7 +166,7 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
   Widget build(BuildContext context) {
     final controller = _controller;
     final editor = switch (widget.editingMode) {
-      SovereignMarkdownEditingMode.source => SovereignEditableText(
+      FlarkMarkdownEditingMode.source => FlarkEditableText(
         controller: controller,
         focusNode: widget.focusNode,
         style: widget.style,
@@ -178,7 +178,7 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
         autofocus: widget.autofocus,
         shortcuts: widget.shortcuts,
       ),
-      SovereignMarkdownEditingMode.projected => SovereignProjectedEditableText(
+      FlarkMarkdownEditingMode.projected => FlarkProjectedEditableText(
         controller: controller,
         focusNode: widget.focusNode,
         style: widget.style,
@@ -190,23 +190,22 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
         autofocus: widget.autofocus,
         shortcuts: widget.shortcuts,
       ),
-      SovereignMarkdownEditingMode.liveRendered =>
-        SovereignLiveRenderedEditableText(
-          controller: controller,
-          focusNode: widget.focusNode,
-          style: widget.style,
-          cursorColor: widget.cursorColor,
-          backgroundCursorColor: widget.backgroundCursorColor,
-          minLines: widget.minLines,
-          maxLines: widget.maxLines,
-          expands: widget.expands,
-          autofocus: widget.autofocus,
-          shortcuts: widget.shortcuts,
-        ),
+      FlarkMarkdownEditingMode.liveRendered => FlarkLiveRenderedEditableText(
+        controller: controller,
+        focusNode: widget.focusNode,
+        style: widget.style,
+        cursorColor: widget.cursorColor,
+        backgroundCursorColor: widget.backgroundCursorColor,
+        minLines: widget.minLines,
+        maxLines: widget.maxLines,
+        expands: widget.expands,
+        autofocus: widget.autofocus,
+        shortcuts: widget.shortcuts,
+      ),
     };
 
     if (!widget.showOverlayControls) {
-      return SovereignMarkdownInteractions(
+      return FlarkMarkdownInteractions(
         controller: controller,
         config: widget.interactionConfig,
         editable: true,
@@ -214,7 +213,7 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
       );
     }
 
-    return SovereignMarkdownInteractions(
+    return FlarkMarkdownInteractions(
       controller: controller,
       config: widget.interactionConfig,
       editable: true,
@@ -222,7 +221,7 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          SovereignRenderPlanOverlayControls(
+          FlarkRenderPlanOverlayControls(
             controller: controller,
             builder: widget.overlayControlBuilder,
             onPressed: widget.onOverlayTargetPressed,
@@ -238,8 +237,8 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
     _ownedController = _createOwnedController(widget.initialMarkdown ?? '');
   }
 
-  SovereignFlutterController _createOwnedController(String markdown) {
-    return SovereignFlutterController.fromMarkdown(
+  FlarkFlutterController _createOwnedController(String markdown) {
+    return FlarkFlutterController.fromMarkdown(
       markdown,
       extensions: widget.extensions,
     );
@@ -254,7 +253,7 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
 
   void _configureParseScheduler() {
     final backend = widget.parseBackend ?? _resolveDefaultParseBackend();
-    _parseScheduler = SovereignParseScheduler(
+    _parseScheduler = FlarkParseScheduler(
       controller: _controller,
       backend: backend,
       profile: widget.profile,
@@ -263,7 +262,7 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
     )..start();
   }
 
-  SovereignMarkdownParseBackend _resolveDefaultParseBackend() {
-    return SovereignNativeComrakParseBackend.requiredDefault();
+  FlarkMarkdownParseBackend _resolveDefaultParseBackend() {
+    return FlarkNativeComrakParseBackend.requiredDefault();
   }
 }

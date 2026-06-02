@@ -1,21 +1,21 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
-import 'package:sovereign_editor/src/v2/markdown/markdown.dart';
-import 'package:sovereign_editor/src/v2/projection/projection.dart';
+import 'package:flark/src/v2/core/core.dart';
+import 'package:flark/src/v2/markdown/markdown.dart';
+import 'package:flark/src/v2/projection/projection.dart';
 
 void main() {
-  group('SovereignProjection', () {
+  group('FlarkProjection', () {
     test('maps source offsets to display offsets through hidden ranges', () {
-      final projection = SovereignProjection(
+      final projection = FlarkProjection(
         textLength: 9,
         hiddenRanges: const [
-          SovereignHiddenRange(
-            range: SovereignSourceRange(0, 2),
-            kind: SovereignHiddenRangeKind.inlineMarker,
+          FlarkHiddenRange(
+            range: FlarkSourceRange(0, 2),
+            kind: FlarkHiddenRangeKind.inlineMarker,
           ),
-          SovereignHiddenRange(
-            range: SovereignSourceRange(7, 9),
-            kind: SovereignHiddenRangeKind.inlineMarker,
+          FlarkHiddenRange(
+            range: FlarkSourceRange(7, 9),
+            kind: FlarkHiddenRangeKind.inlineMarker,
           ),
         ],
       );
@@ -29,16 +29,16 @@ void main() {
     });
 
     test('maps display offsets back to source offsets after hidden ranges', () {
-      final projection = SovereignProjection(
+      final projection = FlarkProjection(
         textLength: 9,
         hiddenRanges: const [
-          SovereignHiddenRange(
-            range: SovereignSourceRange(0, 2),
-            kind: SovereignHiddenRangeKind.inlineMarker,
+          FlarkHiddenRange(
+            range: FlarkSourceRange(0, 2),
+            kind: FlarkHiddenRangeKind.inlineMarker,
           ),
-          SovereignHiddenRange(
-            range: SovereignSourceRange(7, 9),
-            kind: SovereignHiddenRangeKind.inlineMarker,
+          FlarkHiddenRange(
+            range: FlarkSourceRange(7, 9),
+            kind: FlarkHiddenRangeKind.inlineMarker,
           ),
         ],
       );
@@ -49,19 +49,19 @@ void main() {
       expect(
         projection.displayToSourceOffset(
           5,
-          affinity: SovereignMapAffinity.upstream,
+          affinity: FlarkMapAffinity.upstream,
         ),
         7,
       );
     });
 
     test('normalizes cursor offsets out of hidden ranges', () {
-      final mask = SovereignCursorMask(
+      final mask = FlarkCursorMask(
         textLength: 9,
         hiddenRanges: const [
-          SovereignHiddenRange(
-            range: SovereignSourceRange(0, 2),
-            kind: SovereignHiddenRangeKind.inlineMarker,
+          FlarkHiddenRange(
+            range: FlarkSourceRange(0, 2),
+            kind: FlarkHiddenRangeKind.inlineMarker,
           ),
         ],
       );
@@ -69,17 +69,17 @@ void main() {
       expect(mask.allows(0), isTrue);
       expect(mask.allows(1), isFalse);
       expect(mask.allows(2), isTrue);
-      expect(mask.normalize(1, affinity: SovereignMapAffinity.upstream), 0);
-      expect(mask.normalize(1, affinity: SovereignMapAffinity.downstream), 2);
+      expect(mask.normalize(1, affinity: FlarkMapAffinity.upstream), 0);
+      expect(mask.normalize(1, affinity: FlarkMapAffinity.downstream), 2);
     });
 
     test('builds cursor masks from single-pass range iterables', () {
-      final mask = SovereignCursorMask(
+      final mask = FlarkCursorMask(
         textLength: 4,
         hiddenRanges: _SinglePassIterable(const [
-          SovereignHiddenRange(
-            range: SovereignSourceRange(1, 3),
-            kind: SovereignHiddenRangeKind.inlineMarker,
+          FlarkHiddenRange(
+            range: FlarkSourceRange(1, 3),
+            kind: FlarkHiddenRangeKind.inlineMarker,
           ),
         ]),
       );
@@ -91,16 +91,16 @@ void main() {
 
     test('rejects overlapping hidden ranges', () {
       expect(
-        () => SovereignProjection(
+        () => FlarkProjection(
           textLength: 10,
           hiddenRanges: const [
-            SovereignHiddenRange(
-              range: SovereignSourceRange(1, 4),
-              kind: SovereignHiddenRangeKind.inlineMarker,
+            FlarkHiddenRange(
+              range: FlarkSourceRange(1, 4),
+              kind: FlarkHiddenRangeKind.inlineMarker,
             ),
-            SovereignHiddenRange(
-              range: SovereignSourceRange(3, 5),
-              kind: SovereignHiddenRangeKind.inlineMarker,
+            FlarkHiddenRange(
+              range: FlarkSourceRange(3, 5),
+              kind: FlarkHiddenRangeKind.inlineMarker,
             ),
           ],
         ),
@@ -109,8 +109,8 @@ void main() {
     });
 
     test('builds hidden ranges from parser projection payloads', () {
-      final parseResult = SovereignMarkdownParseResult.fromJson({
-        'schemaVersion': SovereignMarkdownParseProtocol.currentSchemaVersion,
+      final parseResult = FlarkMarkdownParseResult.fromJson({
+        'schemaVersion': FlarkMarkdownParseProtocol.currentSchemaVersion,
         'revision': 1,
         'sourceTextLength': 8,
         'blocks': const [],
@@ -129,12 +129,12 @@ void main() {
         ],
       });
 
-      final projection = SovereignProjection.fromParseResult(parseResult);
+      final projection = FlarkProjection.fromParseResult(parseResult);
 
       expect(projection.displayLength, 4);
       expect(
         projection.hiddenRanges.first.kind,
-        SovereignHiddenRangeKind.inlineMarker,
+        FlarkHiddenRangeKind.inlineMarker,
       );
       expect(projection.sourceToDisplayOffset(2), 0);
       expect(projection.sourceToDisplayOffset(6), 4);
@@ -148,17 +148,17 @@ void main() {
       final ampEnd = ampStart + '&amp;'.length;
       final emojiStart = source.indexOf('&#x1F600;');
       final emojiEnd = emojiStart + '&#x1F600;'.length;
-      final projection = SovereignProjection(
+      final projection = FlarkProjection(
         textLength: source.length,
         replacementRanges: [
-          SovereignReplacementRange(
-            range: SovereignSourceRange(ampStart, ampEnd),
-            kind: SovereignReplacementRangeKind.htmlEntity,
+          FlarkReplacementRange(
+            range: FlarkSourceRange(ampStart, ampEnd),
+            kind: FlarkReplacementRangeKind.htmlEntity,
             replacementText: '&',
           ),
-          SovereignReplacementRange(
-            range: SovereignSourceRange(emojiStart, emojiEnd),
-            kind: SovereignReplacementRangeKind.htmlEntity,
+          FlarkReplacementRange(
+            range: FlarkSourceRange(emojiStart, emojiEnd),
+            kind: FlarkReplacementRangeKind.htmlEntity,
             replacementText: '😀',
           ),
         ],
@@ -175,14 +175,14 @@ void main() {
       expect(
         projection.displayToSourceOffset(
           7,
-          affinity: SovereignMapAffinity.upstream,
+          affinity: FlarkMapAffinity.upstream,
         ),
         emojiStart,
       );
       expect(
         projection.displayToSourceOffset(
           7,
-          affinity: SovereignMapAffinity.downstream,
+          affinity: FlarkMapAffinity.downstream,
         ),
         emojiEnd,
       );
@@ -191,7 +191,7 @@ void main() {
       expect(
         projection.cursorMask.normalize(
           ampStart + 1,
-          affinity: SovereignMapAffinity.upstream,
+          affinity: FlarkMapAffinity.upstream,
         ),
         ampStart,
       );
@@ -199,8 +199,8 @@ void main() {
     });
 
     test('builds replacement ranges from parser projection payloads', () {
-      final parseResult = SovereignMarkdownParseResult.fromJson({
-        'schemaVersion': SovereignMarkdownParseProtocol.currentSchemaVersion,
+      final parseResult = FlarkMarkdownParseResult.fromJson({
+        'schemaVersion': FlarkMarkdownParseProtocol.currentSchemaVersion,
         'revision': 1,
         'sourceTextLength': 7,
         'blocks': const [],
@@ -214,29 +214,29 @@ void main() {
         ],
       });
 
-      final projection = SovereignProjection.fromParseResult(parseResult);
+      final projection = FlarkProjection.fromParseResult(parseResult);
 
       expect(
         projection.replacementRanges.single.kind,
-        SovereignReplacementRangeKind.htmlEntity,
+        FlarkReplacementRangeKind.htmlEntity,
       );
       expect(projection.projectText('A &amp;'), 'A &');
     });
 
     test('rejects overlapping hidden and replacement ranges', () {
       expect(
-        () => SovereignProjection(
+        () => FlarkProjection(
           textLength: 10,
           hiddenRanges: const [
-            SovereignHiddenRange(
-              range: SovereignSourceRange(2, 4),
-              kind: SovereignHiddenRangeKind.inlineMarker,
+            FlarkHiddenRange(
+              range: FlarkSourceRange(2, 4),
+              kind: FlarkHiddenRangeKind.inlineMarker,
             ),
           ],
           replacementRanges: const [
-            SovereignReplacementRange(
-              range: SovereignSourceRange(3, 8),
-              kind: SovereignReplacementRangeKind.htmlEntity,
+            FlarkReplacementRange(
+              range: FlarkSourceRange(3, 8),
+              kind: FlarkReplacementRangeKind.htmlEntity,
               replacementText: '&',
             ),
           ],
@@ -246,7 +246,7 @@ void main() {
     });
 
     test('keeps unknown parser hidden range kinds forward compatible', () {
-      final parseResult = SovereignMarkdownParseResult.fromJson({
+      final parseResult = FlarkMarkdownParseResult.fromJson({
         'schemaVersion': 99,
         'revision': 1,
         'sourceTextLength': 2,
@@ -260,53 +260,50 @@ void main() {
         ],
       });
 
-      final projection = SovereignProjection.fromParseResult(parseResult);
+      final projection = FlarkProjection.fromParseResult(parseResult);
 
-      expect(
-        projection.hiddenRanges.single.kind,
-        SovereignHiddenRangeKind.unknown,
-      );
+      expect(projection.hiddenRanges.single.kind, FlarkHiddenRangeKind.unknown);
       expect(projection.displayLength, 1);
     });
 
     test('projects escaped delimiters from parser hidden ranges', () {
       const source = r'\*literal\* and **bold**';
-      final parseResult = SovereignMarkdownParseResult(
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+      final parseResult = FlarkMarkdownParseResult(
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
         revision: 1,
         sourceTextLength: source.length,
         blocks: const [],
         inlineTokens: const [],
         hiddenRanges: [
-          SovereignMarkdownHiddenRange(
-            kind: SovereignMarkdownHiddenRangeKind.escapeMarker,
+          FlarkMarkdownHiddenRange(
+            kind: FlarkMarkdownHiddenRangeKind.escapeMarker,
             type: 'escapeMarker',
-            sourceRange: SovereignSourceRange(0, 1),
+            sourceRange: FlarkSourceRange(0, 1),
           ),
-          SovereignMarkdownHiddenRange(
-            kind: SovereignMarkdownHiddenRangeKind.escapeMarker,
+          FlarkMarkdownHiddenRange(
+            kind: FlarkMarkdownHiddenRangeKind.escapeMarker,
             type: 'escapeMarker',
-            sourceRange: SovereignSourceRange(9, 10),
+            sourceRange: FlarkSourceRange(9, 10),
           ),
-          SovereignMarkdownHiddenRange(
-            kind: SovereignMarkdownHiddenRangeKind.inlineMarker,
+          FlarkMarkdownHiddenRange(
+            kind: FlarkMarkdownHiddenRangeKind.inlineMarker,
             type: 'inlineMarker',
-            sourceRange: SovereignSourceRange(16, 18),
+            sourceRange: FlarkSourceRange(16, 18),
           ),
-          SovereignMarkdownHiddenRange(
-            kind: SovereignMarkdownHiddenRangeKind.inlineMarker,
+          FlarkMarkdownHiddenRange(
+            kind: FlarkMarkdownHiddenRangeKind.inlineMarker,
             type: 'inlineMarker',
-            sourceRange: SovereignSourceRange(22, 24),
+            sourceRange: FlarkSourceRange(22, 24),
           ),
         ],
       );
 
-      final projection = SovereignProjection.fromParseResult(parseResult);
+      final projection = FlarkProjection.fromParseResult(parseResult);
 
       expect(projection.projectText(source), '*literal* and bold');
       expect(
         projection.hiddenRanges.first.kind,
-        SovereignHiddenRangeKind.escapeMarker,
+        FlarkHiddenRangeKind.escapeMarker,
       );
       expect(projection.cursorMask.allows(0), isTrue);
       expect(projection.cursorMask.allows(9), isTrue);
@@ -318,45 +315,45 @@ void main() {
       () {
         const source = '[label][id]\n\n[id]: https://example.com "Title"\n';
         final definitionStart = source.indexOf('[id]:');
-        final parseResult = SovereignMarkdownParseResult(
-          schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+        final parseResult = FlarkMarkdownParseResult(
+          schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
           revision: 1,
           sourceTextLength: source.length,
           blocks: const [],
           inlineTokens: const [],
           hiddenRanges: [
-            SovereignMarkdownHiddenRange(
-              kind: SovereignMarkdownHiddenRangeKind.inlineMarker,
+            FlarkMarkdownHiddenRange(
+              kind: FlarkMarkdownHiddenRangeKind.inlineMarker,
               type: 'inlineMarker',
-              sourceRange: SovereignSourceRange(0, 1),
+              sourceRange: FlarkSourceRange(0, 1),
             ),
-            SovereignMarkdownHiddenRange(
-              kind: SovereignMarkdownHiddenRangeKind.inlineMarker,
+            FlarkMarkdownHiddenRange(
+              kind: FlarkMarkdownHiddenRangeKind.inlineMarker,
               type: 'inlineMarker',
-              sourceRange: SovereignSourceRange(6, 11),
+              sourceRange: FlarkSourceRange(6, 11),
             ),
-            SovereignMarkdownHiddenRange(
-              kind: SovereignMarkdownHiddenRangeKind.referenceDefinition,
+            FlarkMarkdownHiddenRange(
+              kind: FlarkMarkdownHiddenRangeKind.referenceDefinition,
               type: 'referenceDefinition',
-              sourceRange: SovereignSourceRange(definitionStart, source.length),
+              sourceRange: FlarkSourceRange(definitionStart, source.length),
             ),
           ],
         );
 
-        final projection = SovereignProjection.fromParseResult(parseResult);
+        final projection = FlarkProjection.fromParseResult(parseResult);
 
         expect(projection.projectText(source), 'label\n\n');
         expect(projection.displayToSourceOffset(0), 1);
         expect(projection.sourceToDisplayOffset(definitionStart), 7);
         expect(
           projection.hiddenRanges.last.kind,
-          SovereignHiddenRangeKind.referenceDefinition,
+          FlarkHiddenRangeKind.referenceDefinition,
         );
       },
     );
 
     test('rejects projecting text with the wrong source length', () {
-      final projection = SovereignProjection(textLength: 4);
+      final projection = FlarkProjection(textLength: 4);
 
       expect(
         () => projection.projectText('too long'),
@@ -365,79 +362,77 @@ void main() {
     });
 
     test('maps source selections to projected display selections', () {
-      final projection = SovereignProjection(
+      final projection = FlarkProjection(
         textLength: 9,
         hiddenRanges: const [
-          SovereignHiddenRange(
-            range: SovereignSourceRange(0, 2),
-            kind: SovereignHiddenRangeKind.inlineMarker,
+          FlarkHiddenRange(
+            range: FlarkSourceRange(0, 2),
+            kind: FlarkHiddenRangeKind.inlineMarker,
           ),
-          SovereignHiddenRange(
-            range: SovereignSourceRange(7, 9),
-            kind: SovereignHiddenRangeKind.inlineMarker,
+          FlarkHiddenRange(
+            range: FlarkSourceRange(7, 9),
+            kind: FlarkHiddenRangeKind.inlineMarker,
           ),
         ],
       );
 
       expect(
         projection.sourceSelectionToDisplay(
-          const SovereignSelection(baseOffset: 2, extentOffset: 7),
+          const FlarkSelection(baseOffset: 2, extentOffset: 7),
         ),
-        const SovereignSelection(baseOffset: 0, extentOffset: 5),
+        const FlarkSelection(baseOffset: 0, extentOffset: 5),
       );
       expect(
         projection.sourceSelectionToDisplay(
-          const SovereignSelection.collapsed(1),
-          affinity: SovereignMapAffinity.upstream,
+          const FlarkSelection.collapsed(1),
+          affinity: FlarkMapAffinity.upstream,
         ),
-        const SovereignSelection.collapsed(0),
+        const FlarkSelection.collapsed(0),
       );
       expect(
-        projection.sourceSelectionToDisplay(
-          const SovereignSelection.collapsed(1),
-        ),
-        const SovereignSelection.collapsed(0),
+        projection.sourceSelectionToDisplay(const FlarkSelection.collapsed(1)),
+        const FlarkSelection.collapsed(0),
       );
     });
 
     test('maps display selections back to source selections', () {
-      final projection = SovereignProjection(
+      final projection = FlarkProjection(
         textLength: 9,
         hiddenRanges: const [
-          SovereignHiddenRange(
-            range: SovereignSourceRange(0, 2),
-            kind: SovereignHiddenRangeKind.inlineMarker,
+          FlarkHiddenRange(
+            range: FlarkSourceRange(0, 2),
+            kind: FlarkHiddenRangeKind.inlineMarker,
           ),
-          SovereignHiddenRange(
-            range: SovereignSourceRange(7, 9),
-            kind: SovereignHiddenRangeKind.inlineMarker,
+          FlarkHiddenRange(
+            range: FlarkSourceRange(7, 9),
+            kind: FlarkHiddenRangeKind.inlineMarker,
           ),
         ],
       );
 
       expect(
         projection.displaySelectionToSource(
-          const SovereignSelection(baseOffset: 0, extentOffset: 5),
+          const FlarkSelection(baseOffset: 0, extentOffset: 5),
         ),
-        const SovereignSelection(baseOffset: 2, extentOffset: 9),
+        const FlarkSelection(baseOffset: 2, extentOffset: 9),
       );
       expect(
         projection.displaySelectionToSource(
-          const SovereignSelection(baseOffset: 0, extentOffset: 5),
-          affinity: SovereignMapAffinity.upstream,
+          const FlarkSelection(baseOffset: 0, extentOffset: 5),
+          affinity: FlarkMapAffinity.upstream,
         ),
-        const SovereignSelection(baseOffset: 0, extentOffset: 7),
+        const FlarkSelection(baseOffset: 0, extentOffset: 7),
       );
     });
 
     test('normalizes offsets inside ambiguity zones', () {
-      final projection = SovereignProjection(
+      final projection = FlarkProjection(
         textLength: 10,
         ambiguityZones: const [
-          SovereignProjectionAmbiguityZone(
-            range: SovereignSourceRange(2, 5),
-            kind: SovereignProjectionAmbiguityKind.delimiterRun,
-            preferredAffinity: SovereignMapAffinity.upstream,
+          FlarkProjectionAmbiguityZone(
+            range: FlarkSourceRange(2, 5),
+            kind: FlarkProjectionAmbiguityKind.delimiterRun,
+            preferredAffinity: FlarkMapAffinity.upstream,
           ),
         ],
       );
@@ -448,8 +443,8 @@ void main() {
     });
 
     test('builds ambiguity zones from parser payloads', () {
-      final parseResult = SovereignMarkdownParseResult.fromJson({
-        'schemaVersion': SovereignMarkdownParseProtocol.currentSchemaVersion,
+      final parseResult = FlarkMarkdownParseResult.fromJson({
+        'schemaVersion': FlarkMarkdownParseProtocol.currentSchemaVersion,
         'revision': 1,
         'sourceTextLength': 6,
         'blocks': const [],
@@ -463,15 +458,15 @@ void main() {
         ],
       });
 
-      final projection = SovereignProjection.fromParseResult(parseResult);
+      final projection = FlarkProjection.fromParseResult(parseResult);
 
       expect(
         projection.ambiguityZones.single.kind,
-        SovereignProjectionAmbiguityKind.linkReference,
+        FlarkProjectionAmbiguityKind.linkReference,
       );
       expect(
         projection.ambiguityZones.single.preferredAffinity,
-        SovereignMapAffinity.upstream,
+        FlarkMapAffinity.upstream,
       );
       expect(projection.normalizeAmbiguousOffset(3), 1);
     });
@@ -479,23 +474,23 @@ void main() {
     test(
       'predicts projection ranges through edits outside sensitive ranges',
       () {
-        final projection = SovereignProjection(
+        final projection = FlarkProjection(
           textLength: 10,
           hiddenRanges: const [
-            SovereignHiddenRange(
-              range: SovereignSourceRange(5, 7),
-              kind: SovereignHiddenRangeKind.inlineMarker,
+            FlarkHiddenRange(
+              range: FlarkSourceRange(5, 7),
+              kind: FlarkHiddenRangeKind.inlineMarker,
             ),
           ],
           ambiguityZones: const [
-            SovereignProjectionAmbiguityZone(
-              range: SovereignSourceRange(8, 10),
-              kind: SovereignProjectionAmbiguityKind.delimiterRun,
+            FlarkProjectionAmbiguityZone(
+              range: FlarkSourceRange(8, 10),
+              kind: FlarkProjectionAmbiguityKind.delimiterRun,
             ),
           ],
         );
-        final transaction = SovereignTransaction.single(
-          SovereignSourceOperation.insert(0, 'XX'),
+        final transaction = FlarkTransaction.single(
+          FlarkSourceOperation.insert(0, 'XX'),
         );
 
         final prediction = projection.predictAfter(
@@ -504,30 +499,30 @@ void main() {
         );
 
         expect(prediction.touchedProjectionSensitiveRange, isFalse);
-        expect(prediction.invalidatedRange, const SovereignSourceRange(0, 0));
+        expect(prediction.invalidatedRange, const FlarkSourceRange(0, 0));
         expect(
           prediction.projection.hiddenRanges.single.range,
-          const SovereignSourceRange(7, 9),
+          const FlarkSourceRange(7, 9),
         );
         expect(
           prediction.projection.ambiguityZones.single.range,
-          const SovereignSourceRange(10, 12),
+          const FlarkSourceRange(10, 12),
         );
       },
     );
 
     test('marks predictions sensitive when edits touch hidden ranges', () {
-      final projection = SovereignProjection(
+      final projection = FlarkProjection(
         textLength: 10,
         hiddenRanges: const [
-          SovereignHiddenRange(
-            range: SovereignSourceRange(5, 7),
-            kind: SovereignHiddenRangeKind.inlineMarker,
+          FlarkHiddenRange(
+            range: FlarkSourceRange(5, 7),
+            kind: FlarkHiddenRangeKind.inlineMarker,
           ),
         ],
       );
-      final transaction = SovereignTransaction.single(
-        SovereignSourceOperation.insert(6, 'x'),
+      final transaction = FlarkTransaction.single(
+        FlarkSourceOperation.insert(6, 'x'),
       );
 
       final prediction = projection.predictAfter(
@@ -538,60 +533,60 @@ void main() {
       expect(prediction.touchedProjectionSensitiveRange, isTrue);
       expect(
         prediction.projection.hiddenRanges.single.range,
-        const SovereignSourceRange(5, 8),
+        const FlarkSourceRange(5, 8),
       );
     });
 
     test('predicts and invalidates replacement ranges through edits', () {
-      final projection = SovereignProjection(
+      final projection = FlarkProjection(
         textLength: 12,
         replacementRanges: const [
-          SovereignReplacementRange(
-            range: SovereignSourceRange(2, 7),
-            kind: SovereignReplacementRangeKind.htmlEntity,
+          FlarkReplacementRange(
+            range: FlarkSourceRange(2, 7),
+            kind: FlarkReplacementRangeKind.htmlEntity,
             replacementText: '&',
           ),
         ],
       );
 
       final shifted = projection.predictAfter(
-        SovereignTransaction.single(SovereignSourceOperation.insert(0, 'X')),
+        FlarkTransaction.single(FlarkSourceOperation.insert(0, 'X')),
         textLengthAfter: 13,
       );
       final touched = projection.predictAfter(
-        SovereignTransaction.single(SovereignSourceOperation.insert(3, '!')),
+        FlarkTransaction.single(FlarkSourceOperation.insert(3, '!')),
         textLengthAfter: 13,
       );
 
       expect(shifted.touchedProjectionSensitiveRange, isFalse);
       expect(
         shifted.projection.replacementRanges.single.range,
-        const SovereignSourceRange(3, 8),
+        const FlarkSourceRange(3, 8),
       );
       expect(touched.touchedProjectionSensitiveRange, isTrue);
       expect(
         touched.projection.replacementRanges.single.range,
-        const SovereignSourceRange(2, 8),
+        const FlarkSourceRange(2, 8),
       );
     });
 
     test('drops hidden ranges replaced by a full-document transaction', () {
-      final projection = SovereignProjection(
+      final projection = FlarkProjection(
         textLength: 10,
         hiddenRanges: const [
-          SovereignHiddenRange(
-            range: SovereignSourceRange(0, 2),
-            kind: SovereignHiddenRangeKind.markdownMarker,
+          FlarkHiddenRange(
+            range: FlarkSourceRange(0, 2),
+            kind: FlarkHiddenRangeKind.markdownMarker,
           ),
-          SovereignHiddenRange(
-            range: SovereignSourceRange(5, 7),
-            kind: SovereignHiddenRangeKind.inlineMarker,
+          FlarkHiddenRange(
+            range: FlarkSourceRange(5, 7),
+            kind: FlarkHiddenRangeKind.inlineMarker,
           ),
         ],
       );
-      final transaction = SovereignTransaction.single(
-        const SovereignSourceOperation.replace(
-          replacedRange: SovereignSourceRange(0, 10),
+      final transaction = FlarkTransaction.single(
+        const FlarkSourceOperation.replace(
+          replacedRange: FlarkSourceRange(0, 10),
           replacementText: 'replacement',
         ),
       );
@@ -606,33 +601,33 @@ void main() {
     });
 
     test('reconciles predicted and authoritative projections', () {
-      final predicted = SovereignProjection(
+      final predicted = FlarkProjection(
         textLength: 10,
         hiddenRanges: const [
-          SovereignHiddenRange(
-            range: SovereignSourceRange(2, 4),
-            kind: SovereignHiddenRangeKind.inlineMarker,
+          FlarkHiddenRange(
+            range: FlarkSourceRange(2, 4),
+            kind: FlarkHiddenRangeKind.inlineMarker,
           ),
         ],
       );
       final stable = predicted.reconcileWith(
-        SovereignProjection(
+        FlarkProjection(
           textLength: 10,
           hiddenRanges: const [
-            SovereignHiddenRange(
-              range: SovereignSourceRange(2, 4),
-              kind: SovereignHiddenRangeKind.inlineMarker,
+            FlarkHiddenRange(
+              range: FlarkSourceRange(2, 4),
+              kind: FlarkHiddenRangeKind.inlineMarker,
             ),
           ],
         ),
       );
       final changed = predicted.reconcileWith(
-        SovereignProjection(
+        FlarkProjection(
           textLength: 10,
           hiddenRanges: const [
-            SovereignHiddenRange(
-              range: SovereignSourceRange(2, 5),
-              kind: SovereignHiddenRangeKind.inlineMarker,
+            FlarkHiddenRange(
+              range: FlarkSourceRange(2, 5),
+              kind: FlarkHiddenRangeKind.inlineMarker,
             ),
           ],
         ),
@@ -645,24 +640,24 @@ void main() {
     });
 
     test('reconciles replacement range changes as unstable', () {
-      final predicted = SovereignProjection(
+      final predicted = FlarkProjection(
         textLength: 7,
         replacementRanges: const [
-          SovereignReplacementRange(
-            range: SovereignSourceRange(2, 7),
-            kind: SovereignReplacementRangeKind.htmlEntity,
+          FlarkReplacementRange(
+            range: FlarkSourceRange(2, 7),
+            kind: FlarkReplacementRangeKind.htmlEntity,
             replacementText: '&',
           ),
         ],
       );
 
       final changed = predicted.reconcileWith(
-        SovereignProjection(
+        FlarkProjection(
           textLength: 7,
           replacementRanges: const [
-            SovereignReplacementRange(
-              range: SovereignSourceRange(2, 7),
-              kind: SovereignReplacementRangeKind.htmlEntity,
+            FlarkReplacementRange(
+              range: FlarkSourceRange(2, 7),
+              kind: FlarkReplacementRangeKind.htmlEntity,
               replacementText: '+',
             ),
           ],
@@ -680,36 +675,36 @@ void main() {
       final bodyStart = source.indexOf('| c');
       final hiddenRanges = [
         ..._pipeHiddenRanges(source.substring(0, separatorStart), 0),
-        SovereignMarkdownHiddenRange(
-          kind: SovereignMarkdownHiddenRangeKind.blockMarker,
+        FlarkMarkdownHiddenRange(
+          kind: FlarkMarkdownHiddenRangeKind.blockMarker,
           type: 'blockMarker',
-          sourceRange: SovereignSourceRange(separatorStart, bodyStart),
+          sourceRange: FlarkSourceRange(separatorStart, bodyStart),
         ),
         ..._pipeHiddenRanges(source.substring(bodyStart), bodyStart),
       ];
-      final parseResult = SovereignMarkdownParseResult(
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+      final parseResult = FlarkMarkdownParseResult(
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
         revision: 1,
         sourceTextLength: source.length,
         blocks: const [],
         inlineTokens: const [],
         hiddenRanges: hiddenRanges,
         ambiguityZones: [
-          SovereignMarkdownAmbiguityZone(
-            kind: SovereignMarkdownAmbiguityKind.tableBoundary,
+          FlarkMarkdownAmbiguityZone(
+            kind: FlarkMarkdownAmbiguityKind.tableBoundary,
             type: 'tableBoundary',
-            sourceRange: SovereignSourceRange(separatorStart, bodyStart),
+            sourceRange: FlarkSourceRange(separatorStart, bodyStart),
           ),
         ],
       );
 
-      final projection = SovereignProjection.fromParseResult(parseResult);
+      final projection = FlarkProjection.fromParseResult(parseResult);
 
       expect(projection.projectText(source), ' A  B \n c  d \n');
       expect(projection.sourceToDisplayOffset(bodyStart), 7);
       expect(
         projection.ambiguityZones.single.kind,
-        SovereignProjectionAmbiguityKind.tableBoundary,
+        FlarkProjectionAmbiguityKind.tableBoundary,
       );
     });
 
@@ -717,32 +712,32 @@ void main() {
       const source = '![alt](image.png "Title")';
       final labelStart = source.indexOf('alt');
       final labelEnd = labelStart + 'alt'.length;
-      final parseResult = SovereignMarkdownParseResult(
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+      final parseResult = FlarkMarkdownParseResult(
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
         revision: 1,
         sourceTextLength: source.length,
         blocks: const [],
         inlineTokens: const [],
         hiddenRanges: [
-          SovereignMarkdownHiddenRange(
-            kind: SovereignMarkdownHiddenRangeKind.inlineMarker,
+          FlarkMarkdownHiddenRange(
+            kind: FlarkMarkdownHiddenRangeKind.inlineMarker,
             type: 'inlineMarker',
-            sourceRange: SovereignSourceRange(0, labelStart),
+            sourceRange: FlarkSourceRange(0, labelStart),
           ),
-          SovereignMarkdownHiddenRange(
-            kind: SovereignMarkdownHiddenRangeKind.linkDestination,
+          FlarkMarkdownHiddenRange(
+            kind: FlarkMarkdownHiddenRangeKind.linkDestination,
             type: 'linkDestination',
-            sourceRange: SovereignSourceRange(labelEnd, source.length),
+            sourceRange: FlarkSourceRange(labelEnd, source.length),
           ),
         ],
       );
 
-      final projection = SovereignProjection.fromParseResult(parseResult);
+      final projection = FlarkProjection.fromParseResult(parseResult);
 
       expect(projection.projectText(source), 'alt');
       expect(
         projection.hiddenRanges.last.kind,
-        SovereignHiddenRangeKind.linkDestination,
+        FlarkHiddenRangeKind.linkDestination,
       );
     });
 
@@ -750,43 +745,40 @@ void main() {
       const source = '<span>raw</span>';
       final textStart = source.indexOf('raw');
       final textEnd = textStart + 'raw'.length;
-      final parseResult = SovereignMarkdownParseResult(
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+      final parseResult = FlarkMarkdownParseResult(
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
         revision: 1,
         sourceTextLength: source.length,
         blocks: const [],
         inlineTokens: const [],
         hiddenRanges: [
-          SovereignMarkdownHiddenRange(
-            kind: SovereignMarkdownHiddenRangeKind.rawHtml,
+          FlarkMarkdownHiddenRange(
+            kind: FlarkMarkdownHiddenRangeKind.rawHtml,
             type: 'rawHtml',
-            sourceRange: SovereignSourceRange(0, textStart),
+            sourceRange: FlarkSourceRange(0, textStart),
           ),
-          SovereignMarkdownHiddenRange(
-            kind: SovereignMarkdownHiddenRangeKind.rawHtml,
+          FlarkMarkdownHiddenRange(
+            kind: FlarkMarkdownHiddenRangeKind.rawHtml,
             type: 'rawHtml',
-            sourceRange: SovereignSourceRange(textEnd, source.length),
+            sourceRange: FlarkSourceRange(textEnd, source.length),
           ),
         ],
         ambiguityZones: [
-          SovereignMarkdownAmbiguityZone(
-            kind: SovereignMarkdownAmbiguityKind.rawHtml,
+          FlarkMarkdownAmbiguityZone(
+            kind: FlarkMarkdownAmbiguityKind.rawHtml,
             type: 'rawHtml',
-            sourceRange: SovereignSourceRange(0, source.length),
+            sourceRange: FlarkSourceRange(0, source.length),
           ),
         ],
       );
 
-      final projection = SovereignProjection.fromParseResult(parseResult);
+      final projection = FlarkProjection.fromParseResult(parseResult);
 
       expect(projection.projectText(source), 'raw');
-      expect(
-        projection.hiddenRanges.first.kind,
-        SovereignHiddenRangeKind.rawHtml,
-      );
+      expect(projection.hiddenRanges.first.kind, FlarkHiddenRangeKind.rawHtml);
       expect(
         projection.ambiguityZones.single.kind,
-        SovereignProjectionAmbiguityKind.rawHtml,
+        FlarkProjectionAmbiguityKind.rawHtml,
       );
     });
   });
@@ -808,16 +800,16 @@ final class _SinglePassIterable<T> extends Iterable<T> {
   }
 }
 
-List<SovereignMarkdownHiddenRange> _pipeHiddenRanges(
+List<FlarkMarkdownHiddenRange> _pipeHiddenRanges(
   String text,
   int sourceOffset,
 ) {
   return [
     for (final match in RegExp(r'\|').allMatches(text))
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.blockMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.blockMarker,
         type: 'blockMarker',
-        sourceRange: SovereignSourceRange(
+        sourceRange: FlarkSourceRange(
           sourceOffset + match.start,
           sourceOffset + match.end,
         ),

@@ -1,20 +1,18 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
-import 'package:sovereign_editor/src/v2/markdown/markdown.dart';
+import 'package:flark/src/v2/core/core.dart';
+import 'package:flark/src/v2/markdown/markdown.dart';
 
 void main() {
-  group('SovereignEditorRuntime', () {
+  group('FlarkEditorRuntime', () {
     test('dispatches extension commands and records history', () {
-      final runtime = SovereignEditorRuntime.fromMarkdown(
+      final runtime = FlarkEditorRuntime.fromMarkdown(
         'hello',
-        extensions: SovereignExtensionSet([
-          const SovereignCoreEditingExtension(),
-        ]),
+        extensions: FlarkExtensionSet([const FlarkCoreEditingExtension()]),
       );
 
       final result = runtime.dispatch(
-        command: SovereignCoreEditingCommands.insertText,
-        payload: const SovereignInsertTextPayload('!'),
+        command: FlarkCoreEditingCommands.insertText,
+        payload: const FlarkInsertTextPayload('!'),
       );
 
       expect(result.commandResult.isHandled, isTrue);
@@ -24,17 +22,17 @@ void main() {
     });
 
     test('does not mutate runtime for rejected commands', () {
-      final runtime = SovereignEditorRuntime.fromMarkdown(
+      final runtime = FlarkEditorRuntime.fromMarkdown(
         'hello',
-        extensions: SovereignExtensionSet([
-          const SovereignMarkdownInlineEditingExtension(),
+        extensions: FlarkExtensionSet([
+          const FlarkMarkdownInlineEditingExtension(),
         ]),
       );
 
       final result = runtime.dispatch(
-        command: SovereignMarkdownInlineCommands.toggleInlineStyle,
-        payload: const SovereignToggleInlineStylePayload(
-          SovereignMarkdownInlineStyle.strong,
+        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+        payload: const FlarkToggleInlineStylePayload(
+          FlarkMarkdownInlineStyle.strong,
         ),
       );
 
@@ -44,23 +42,21 @@ void main() {
     });
 
     test('undoes and redoes runtime changes', () {
-      var runtime = SovereignEditorRuntime.fromMarkdown(
+      var runtime = FlarkEditorRuntime.fromMarkdown(
         '',
-        extensions: SovereignExtensionSet([
-          const SovereignCoreEditingExtension(),
-        ]),
+        extensions: FlarkExtensionSet([const FlarkCoreEditingExtension()]),
       );
 
       runtime = runtime
           .dispatch(
-            command: SovereignCoreEditingCommands.insertText,
-            payload: const SovereignInsertTextPayload('a'),
+            command: FlarkCoreEditingCommands.insertText,
+            payload: const FlarkInsertTextPayload('a'),
           )
           .runtime;
       runtime = runtime
           .dispatch(
-            command: SovereignCoreEditingCommands.insertText,
-            payload: const SovereignInsertTextPayload('b'),
+            command: FlarkCoreEditingCommands.insertText,
+            payload: const FlarkInsertTextPayload('b'),
           )
           .runtime;
 

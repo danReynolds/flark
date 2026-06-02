@@ -1,5 +1,5 @@
-final class SovereignTextBuffer {
-  SovereignTextBuffer(this.text) : _lineStarts = _computeLineStarts(text);
+final class FlarkTextBuffer {
+  FlarkTextBuffer(this.text) : _lineStarts = _computeLineStarts(text);
 
   final String text;
   final List<int> _lineStarts;
@@ -46,9 +46,9 @@ final class SovereignTextBuffer {
     return high;
   }
 
-  SovereignTextBuffer replaceRange(int start, int end, String replacement) {
+  FlarkTextBuffer replaceRange(int start, int end, String replacement) {
     _checkRange(start, end);
-    return SovereignTextBuffer(text.replaceRange(start, end, replacement));
+    return FlarkTextBuffer(text.replaceRange(start, end, replacement));
   }
 
   void _checkOffset(int offset) {

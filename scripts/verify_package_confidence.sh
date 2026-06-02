@@ -11,7 +11,7 @@ run_benchmarks=0
 
 usage() {
   cat <<'EOF'
-Run the Sovereign editor package confidence gate (fast local maintenance checks).
+Run the Flark editor package confidence gate (fast local maintenance checks).
 
 Usage:
   ./scripts/verify_package_confidence.sh [options]
@@ -66,7 +66,7 @@ run_in_example() {
   )
 }
 
-echo "Sovereign package confidence gate"
+echo "Flark package confidence gate"
 echo "Repo: $REPO_ROOT"
 echo "Package: $PKG_ROOT"
 
@@ -105,4 +105,4 @@ if [ "$run_benchmarks" -eq 1 ]; then
 fi
 
 echo
-echo "Sovereign package confidence gate passed."
+echo "Flark package confidence gate passed."

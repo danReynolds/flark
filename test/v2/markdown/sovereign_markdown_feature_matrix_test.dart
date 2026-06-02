@@ -2,12 +2,12 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/sovereign_editor_v2.dart';
+import 'package:flark/flark_advanced.dart';
 
 import '../support/sovereign_test_paths.dart';
 
 void main() {
-  group('Sovereign markdown feature matrix', () {
+  group('Flark markdown feature matrix', () {
     final libPath = sovereignNativeBridgeLibraryPathForPlatform();
 
     if (libPath.isEmpty || !File(libPath).existsSync()) {
@@ -18,72 +18,77 @@ void main() {
       return;
     }
 
-    final backend = SovereignNativeComrakParseBackend.withNativeBridge(
+    final backend = FlarkNativeComrakParseBackend.withNativeBridge(
       overrideLibraryPath: libPath,
     );
 
     for (final featureCase in _featureCases) {
-      test('${featureCase.id} covers parser, projection, and render plan',
-          () async {
-        final result = await backend.parse(
-          SovereignMarkdownParseRequest(
-            revision: featureCase.id.hashCode,
-            markdown: featureCase.markdown,
-            profile: featureCase.profile,
-          ),
-        );
+      test(
+        '${featureCase.id} covers parser, projection, and render plan',
+        () async {
+          final result = await backend.parse(
+            FlarkMarkdownParseRequest(
+              revision: featureCase.id.hashCode,
+              markdown: featureCase.markdown,
+              profile: featureCase.profile,
+            ),
+          );
 
-        _expectNoErrors(result, featureCase.id);
-        _expectRangesValid(result, featureCase.markdown.length);
+          _expectNoErrors(result, featureCase.id);
+          _expectRangesValid(result, featureCase.markdown.length);
 
-        final projection = SovereignProjection.fromParseResult(result);
-        final displayText = projection.projectText(featureCase.markdown);
-        final renderPlan = SovereignRenderPlan.fromParseResult(
-          parseResult: result,
-          projection: projection,
-        );
-
-        _expectContainsAll(
-          _blockTypes(result),
-          featureCase.blockTypes,
-          '${featureCase.id} block types',
-        );
-        _expectContainsAll(
-          _inlineTypes(result),
-          featureCase.inlineTypes,
-          '${featureCase.id} inline types',
-        );
-        _expectContainsAll(
-          _hiddenTypes(result),
-          featureCase.hiddenTypes,
-          '${featureCase.id} hidden range types',
-        );
-        _expectContainsAll(
-          _replacementTypes(result),
-          featureCase.replacementTypes,
-          '${featureCase.id} replacement range types',
-        );
-        _expectContainsAll(
-          _overlayKinds(renderPlan),
-          featureCase.overlayKinds,
-          '${featureCase.id} overlay target kinds',
-        );
-        for (final fragment in featureCase.displayContains) {
-          expect(displayText, contains(fragment), reason: featureCase.id);
-        }
-        for (final fragment in featureCase.displayOmits) {
-          expect(displayText, isNot(contains(fragment)),
-              reason: featureCase.id);
-        }
-        featureCase.verify?.call(
-          _MatrixArtifacts(
-            result: result,
+          final projection = FlarkProjection.fromParseResult(result);
+          final displayText = projection.projectText(featureCase.markdown);
+          final renderPlan = FlarkRenderPlan.fromParseResult(
+            parseResult: result,
             projection: projection,
-            displayText: displayText,
-            renderPlan: renderPlan,
-          ),
-        );
-      });
+          );
+
+          _expectContainsAll(
+            _blockTypes(result),
+            featureCase.blockTypes,
+            '${featureCase.id} block types',
+          );
+          _expectContainsAll(
+            _inlineTypes(result),
+            featureCase.inlineTypes,
+            '${featureCase.id} inline types',
+          );
+          _expectContainsAll(
+            _hiddenTypes(result),
+            featureCase.hiddenTypes,
+            '${featureCase.id} hidden range types',
+          );
+          _expectContainsAll(
+            _replacementTypes(result),
+            featureCase.replacementTypes,
+            '${featureCase.id} replacement range types',
+          );
+          _expectContainsAll(
+            _overlayKinds(renderPlan),
+            featureCase.overlayKinds,
+            '${featureCase.id} overlay target kinds',
+          );
+          for (final fragment in featureCase.displayContains) {
+            expect(displayText, contains(fragment), reason: featureCase.id);
+          }
+          for (final fragment in featureCase.displayOmits) {
+            expect(
+              displayText,
+              isNot(contains(fragment)),
+              reason: featureCase.id,
+            );
+          }
+          featureCase.verify?.call(
+            _MatrixArtifacts(
+              result: result,
+              projection: projection,
+              displayText: displayText,
+              renderPlan: renderPlan,
+            ),
+          );
+        },
+      );
     }
   });
 }
@@ -99,7 +104,7 @@ final _featureCases = [
     verify: (artifacts) {
       expect(
         artifacts.renderPlan.blocks.single.styleToken,
-        SovereignRenderTextStyleToken.heading1,
+        FlarkRenderTextStyleToken.heading1,
       );
     },
   ),
@@ -136,12 +141,14 @@ final _featureCases = [
     verify: (artifacts) {
       expect(
         artifacts.result.blocks.where(
-            (block) => block.kind == SovereignMarkdownBlockKind.blockquote),
+          (block) => block.kind == FlarkMarkdownBlockKind.blockquote,
+        ),
         hasLength(1),
       );
       expect(
         artifacts.renderPlan.blocks.where(
-            (block) => block.kind == SovereignMarkdownBlockKind.blockquote),
+          (block) => block.kind == FlarkMarkdownBlockKind.blockquote,
+        ),
         hasLength(1),
       );
     },
@@ -192,7 +199,7 @@ final _featureCases = [
       expect(artifacts.renderPlan.listItemBlocks, isNotEmpty);
       expect(
         artifacts.renderPlan.listItemBlocks.first.listItem!.kind,
-        SovereignRenderListKind.unordered,
+        FlarkRenderListKind.unordered,
       );
     },
   ),
@@ -207,14 +214,14 @@ final _featureCases = [
       expect(artifacts.renderPlan.listItemBlocks, isNotEmpty);
       expect(
         artifacts.renderPlan.listItemBlocks.first.listItem!.kind,
-        SovereignRenderListKind.ordered,
+        FlarkRenderListKind.ordered,
       );
     },
   ),
   _FeatureCase(
     id: 'task_list',
     markdown: '- [x] done\n',
-    profile: SovereignMarkdownProfile.commonMarkGfm,
+    profile: FlarkMarkdownProfile.commonMarkGfm,
     blockTypes: const {'listItem'},
     hiddenTypes: const {'markdownMarker'},
     overlayKinds: const {'taskListItem'},
@@ -311,7 +318,7 @@ final _featureCases = [
   _FeatureCase(
     id: 'strikethrough',
     markdown: '~~gone~~\n',
-    profile: SovereignMarkdownProfile.commonMarkGfm,
+    profile: FlarkMarkdownProfile.commonMarkGfm,
     inlineTypes: const {'strikethrough'},
     hiddenTypes: const {'markdownMarker'},
     displayContains: const {'gone'},
@@ -352,19 +359,16 @@ final _featureCases = [
   _FeatureCase(
     id: 'gfm_table',
     markdown: '| A | B |\n| :- | -: |\n| x | y |\n',
-    profile: SovereignMarkdownProfile.commonMarkGfm,
+    profile: FlarkMarkdownProfile.commonMarkGfm,
     blockTypes: const {'table'},
     overlayKinds: const {'table'},
     displayContains: const {'A', 'B', 'x', 'y'},
     verify: (artifacts) {
       expect(artifacts.renderPlan.tableBlocks, isNotEmpty);
-      expect(
-        artifacts.renderPlan.tableBlocks.first.table!.columnAlignments,
-        [
-          SovereignRenderTableColumnAlignment.left,
-          SovereignRenderTableColumnAlignment.right,
-        ],
-      );
+      expect(artifacts.renderPlan.tableBlocks.first.table!.columnAlignments, [
+        FlarkRenderTableColumnAlignment.left,
+        FlarkRenderTableColumnAlignment.right,
+      ]);
     },
   ),
   _FeatureCase(
@@ -382,7 +386,7 @@ final class _FeatureCase {
   const _FeatureCase({
     required this.id,
     required this.markdown,
-    this.profile = SovereignMarkdownProfile.commonMarkCore,
+    this.profile = FlarkMarkdownProfile.commonMarkCore,
     this.blockTypes = const {},
     this.inlineTypes = const {},
     this.hiddenTypes = const {},
@@ -395,7 +399,7 @@ final class _FeatureCase {
 
   final String id;
   final String markdown;
-  final SovereignMarkdownProfile profile;
+  final FlarkMarkdownProfile profile;
   final Set<String> blockTypes;
   final Set<String> inlineTypes;
   final Set<String> hiddenTypes;
@@ -414,13 +418,13 @@ final class _MatrixArtifacts {
     required this.renderPlan,
   });
 
-  final SovereignMarkdownParseResult result;
-  final SovereignProjection projection;
+  final FlarkMarkdownParseResult result;
+  final FlarkProjection projection;
   final String displayText;
-  final SovereignRenderPlan renderPlan;
+  final FlarkRenderPlan renderPlan;
 }
 
-void _expectNoErrors(SovereignMarkdownParseResult result, String id) {
+void _expectNoErrors(FlarkMarkdownParseResult result, String id) {
   final errors = result.diagnostics.where(
     (diagnostic) => diagnostic.extensions['isError'] == true,
   );
@@ -433,39 +437,57 @@ void _expectNoErrors(SovereignMarkdownParseResult result, String id) {
   );
 }
 
-void _expectRangesValid(SovereignMarkdownParseResult result, int textLength) {
-  bool validRange(SovereignSourceRange range) {
+void _expectRangesValid(FlarkMarkdownParseResult result, int textLength) {
+  bool validRange(FlarkSourceRange range) {
     return range.start >= 0 &&
         range.start < range.end &&
         range.end <= textLength;
   }
 
   for (final block in _allBlocks(result.blocks)) {
-    expect(validRange(block.sourceRange), isTrue,
-        reason: 'invalid block range ${block.type} ${block.sourceRange}');
+    expect(
+      validRange(block.sourceRange),
+      isTrue,
+      reason: 'invalid block range ${block.type} ${block.sourceRange}',
+    );
   }
   for (final token in result.inlineTokens) {
-    expect(validRange(token.sourceRange), isTrue,
-        reason: 'invalid inline range ${token.type} ${token.sourceRange}');
+    expect(
+      validRange(token.sourceRange),
+      isTrue,
+      reason: 'invalid inline range ${token.type} ${token.sourceRange}',
+    );
   }
   for (final range in result.hiddenRanges) {
-    expect(validRange(range.sourceRange), isTrue,
-        reason: 'invalid hidden range ${range.type} ${range.sourceRange}');
+    expect(
+      validRange(range.sourceRange),
+      isTrue,
+      reason: 'invalid hidden range ${range.type} ${range.sourceRange}',
+    );
   }
   for (final range in result.replacementRanges) {
-    expect(validRange(range.sourceRange), isTrue,
-        reason: 'invalid replacement range ${range.type} ${range.sourceRange}');
-    expect(range.replacementText, isNotEmpty,
-        reason: 'empty replacement text for ${range.sourceRange}');
+    expect(
+      validRange(range.sourceRange),
+      isTrue,
+      reason: 'invalid replacement range ${range.type} ${range.sourceRange}',
+    );
+    expect(
+      range.replacementText,
+      isNotEmpty,
+      reason: 'empty replacement text for ${range.sourceRange}',
+    );
   }
   for (final zone in result.ambiguityZones) {
-    expect(validRange(zone.sourceRange), isTrue,
-        reason: 'invalid ambiguity zone ${zone.type} ${zone.sourceRange}');
+    expect(
+      validRange(zone.sourceRange),
+      isTrue,
+      reason: 'invalid ambiguity zone ${zone.type} ${zone.sourceRange}',
+    );
   }
 }
 
-Iterable<SovereignMarkdownBlockNode> _allBlocks(
-  Iterable<SovereignMarkdownBlockNode> blocks,
+Iterable<FlarkMarkdownBlockNode> _allBlocks(
+  Iterable<FlarkMarkdownBlockNode> blocks,
 ) sync* {
   for (final block in blocks) {
     yield block;
@@ -473,23 +495,23 @@ Iterable<SovereignMarkdownBlockNode> _allBlocks(
   }
 }
 
-Set<String> _blockTypes(SovereignMarkdownParseResult result) {
+Set<String> _blockTypes(FlarkMarkdownParseResult result) {
   return _allBlocks(result.blocks).map((block) => block.type).toSet();
 }
 
-Set<String> _inlineTypes(SovereignMarkdownParseResult result) {
+Set<String> _inlineTypes(FlarkMarkdownParseResult result) {
   return result.inlineTokens.map((token) => token.type).toSet();
 }
 
-Set<String> _hiddenTypes(SovereignMarkdownParseResult result) {
+Set<String> _hiddenTypes(FlarkMarkdownParseResult result) {
   return result.hiddenRanges.map((range) => range.type).toSet();
 }
 
-Set<String> _replacementTypes(SovereignMarkdownParseResult result) {
+Set<String> _replacementTypes(FlarkMarkdownParseResult result) {
   return result.replacementRanges.map((range) => range.type).toSet();
 }
 
-Set<String> _overlayKinds(SovereignRenderPlan renderPlan) {
+Set<String> _overlayKinds(FlarkRenderPlan renderPlan) {
   return renderPlan
       .overlayPlan()
       .targets

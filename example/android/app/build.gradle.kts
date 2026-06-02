@@ -38,9 +38,9 @@ flutter {
     source = "../.."
 }
 
-tasks.register("verifySovereignComrakNativeLibs") {
+tasks.register("verifyFlarkComrakNativeLibs") {
     group = "verification"
-    description = "Builds the debug APK and checks for the Sovereign native parser library."
+    description = "Builds the debug APK and checks for the Flark native parser library."
     dependsOn("assembleDebug")
 
     doLast {
@@ -58,7 +58,7 @@ tasks.register("verifySovereignComrakNativeLibs") {
         }.files
 
         check(packagedBridgeFiles.isNotEmpty()) {
-            "Sovereign native parser library was not packaged in ${apk.path}."
+            "Flark native parser library was not packaged in ${apk.path}."
         }
 
         logger.lifecycle(

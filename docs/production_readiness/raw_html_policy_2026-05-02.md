@@ -2,9 +2,9 @@
 
 Status: accepted for production readiness on 2026-05-02.
 
-Sovereign does not render markdown raw HTML as executable UI. Raw HTML blocks
+Flark does not render markdown raw HTML as executable UI. Raw HTML blocks
 and inline HTML are preserved as literal markdown source text in both the
-editable `SovereignEditor` pipeline and the read-only `SovereignMarkdownView`
+editable `FlarkEditor` pipeline and the read-only `FlarkMarkdownView`
 surface.
 
 This means:
@@ -17,6 +17,6 @@ This means:
   embed raw HTML into a web view.
 
 If a consuming app needs rendered HTML, that should be an explicit app-level
-feature outside Sovereign's live editor surface. That renderer must sanitize
-untrusted HTML before display and must not reuse Sovereign's text-only preview
+feature outside Flark's live editor surface. That renderer must sanitize
+untrusted HTML before display and must not reuse Flark's text-only preview
 as evidence of HTML safety.

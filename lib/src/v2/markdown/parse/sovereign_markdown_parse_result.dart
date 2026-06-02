@@ -1,7 +1,7 @@
 import '../../core/selection/sovereign_selection.dart';
 import '../../core/transaction/sovereign_source_range.dart';
 
-enum SovereignMarkdownBlockKind {
+enum FlarkMarkdownBlockKind {
   document,
   paragraph,
   heading,
@@ -17,7 +17,7 @@ enum SovereignMarkdownBlockKind {
   unknown,
 }
 
-enum SovereignMarkdownInlineKind {
+enum FlarkMarkdownInlineKind {
   text,
   emphasis,
   strong,
@@ -30,7 +30,7 @@ enum SovereignMarkdownInlineKind {
   unknown,
 }
 
-enum SovereignMarkdownHiddenRangeKind {
+enum FlarkMarkdownHiddenRangeKind {
   markdownMarker,
   blockMarker,
   inlineMarker,
@@ -42,12 +42,9 @@ enum SovereignMarkdownHiddenRangeKind {
   unknown,
 }
 
-enum SovereignMarkdownReplacementRangeKind {
-  htmlEntity,
-  unknown,
-}
+enum FlarkMarkdownReplacementRangeKind { htmlEntity, unknown }
 
-enum SovereignMarkdownAmbiguityKind {
+enum FlarkMarkdownAmbiguityKind {
   delimiterRun,
   linkReference,
   tableBoundary,
@@ -55,58 +52,51 @@ enum SovereignMarkdownAmbiguityKind {
   unknown,
 }
 
-final class SovereignMarkdownParseResult {
-  SovereignMarkdownParseResult({
+final class FlarkMarkdownParseResult {
+  FlarkMarkdownParseResult({
     required this.schemaVersion,
     required this.revision,
     required this.sourceTextLength,
-    required Iterable<SovereignMarkdownBlockNode> blocks,
-    required Iterable<SovereignMarkdownInlineToken> inlineTokens,
-    Iterable<SovereignMarkdownHiddenRange> hiddenRanges = const [],
-    Iterable<SovereignMarkdownReplacementRange> replacementRanges = const [],
-    Iterable<SovereignMarkdownAmbiguityZone> ambiguityZones = const [],
-    Iterable<SovereignMarkdownDiagnostic> diagnostics = const [],
+    required Iterable<FlarkMarkdownBlockNode> blocks,
+    required Iterable<FlarkMarkdownInlineToken> inlineTokens,
+    Iterable<FlarkMarkdownHiddenRange> hiddenRanges = const [],
+    Iterable<FlarkMarkdownReplacementRange> replacementRanges = const [],
+    Iterable<FlarkMarkdownAmbiguityZone> ambiguityZones = const [],
+    Iterable<FlarkMarkdownDiagnostic> diagnostics = const [],
     Map<String, Object?> extensions = const {},
-  })  : blocks = List<SovereignMarkdownBlockNode>.unmodifiable(blocks),
-        inlineTokens = List<SovereignMarkdownInlineToken>.unmodifiable(
-          inlineTokens,
-        ),
-        hiddenRanges = List<SovereignMarkdownHiddenRange>.unmodifiable(
-          hiddenRanges,
-        ),
-        replacementRanges =
-            List<SovereignMarkdownReplacementRange>.unmodifiable(
-          replacementRanges,
-        ),
-        ambiguityZones = List<SovereignMarkdownAmbiguityZone>.unmodifiable(
-          ambiguityZones,
-        ),
-        diagnostics = List<SovereignMarkdownDiagnostic>.unmodifiable(
-          diagnostics,
-        ),
-        extensions = Map<String, Object?>.unmodifiable(extensions);
+  }) : blocks = List<FlarkMarkdownBlockNode>.unmodifiable(blocks),
+       inlineTokens = List<FlarkMarkdownInlineToken>.unmodifiable(inlineTokens),
+       hiddenRanges = List<FlarkMarkdownHiddenRange>.unmodifiable(hiddenRanges),
+       replacementRanges = List<FlarkMarkdownReplacementRange>.unmodifiable(
+         replacementRanges,
+       ),
+       ambiguityZones = List<FlarkMarkdownAmbiguityZone>.unmodifiable(
+         ambiguityZones,
+       ),
+       diagnostics = List<FlarkMarkdownDiagnostic>.unmodifiable(diagnostics),
+       extensions = Map<String, Object?>.unmodifiable(extensions);
 
-  factory SovereignMarkdownParseResult.fromJson(Map<String, Object?> json) {
-    return SovereignMarkdownParseResult(
+  factory FlarkMarkdownParseResult.fromJson(Map<String, Object?> json) {
+    return FlarkMarkdownParseResult(
       schemaVersion: _int(json['schemaVersion']) ?? 0,
       revision: _int(json['revision']) ?? 0,
       sourceTextLength: _int(json['sourceTextLength']) ?? 0,
-      blocks: _list(json['blocks']).map(SovereignMarkdownBlockNode.fromJson),
+      blocks: _list(json['blocks']).map(FlarkMarkdownBlockNode.fromJson),
       inlineTokens: _list(
         json['inlineTokens'],
-      ).map(SovereignMarkdownInlineToken.fromJson),
+      ).map(FlarkMarkdownInlineToken.fromJson),
       hiddenRanges: _list(
         json['hiddenRanges'],
-      ).map(SovereignMarkdownHiddenRange.fromJson),
+      ).map(FlarkMarkdownHiddenRange.fromJson),
       replacementRanges: _list(
         json['replacementRanges'],
-      ).map(SovereignMarkdownReplacementRange.fromJson),
+      ).map(FlarkMarkdownReplacementRange.fromJson),
       ambiguityZones: _list(
         json['ambiguityZones'],
-      ).map(SovereignMarkdownAmbiguityZone.fromJson),
+      ).map(FlarkMarkdownAmbiguityZone.fromJson),
       diagnostics: _list(
         json['diagnostics'],
-      ).map(SovereignMarkdownDiagnostic.fromJson),
+      ).map(FlarkMarkdownDiagnostic.fromJson),
       extensions: _unknownFields(json, const {
         'schemaVersion',
         'revision',
@@ -124,36 +114,35 @@ final class SovereignMarkdownParseResult {
   final int schemaVersion;
   final int revision;
   final int sourceTextLength;
-  final List<SovereignMarkdownBlockNode> blocks;
-  final List<SovereignMarkdownInlineToken> inlineTokens;
-  final List<SovereignMarkdownHiddenRange> hiddenRanges;
-  final List<SovereignMarkdownReplacementRange> replacementRanges;
-  final List<SovereignMarkdownAmbiguityZone> ambiguityZones;
-  final List<SovereignMarkdownDiagnostic> diagnostics;
+  final List<FlarkMarkdownBlockNode> blocks;
+  final List<FlarkMarkdownInlineToken> inlineTokens;
+  final List<FlarkMarkdownHiddenRange> hiddenRanges;
+  final List<FlarkMarkdownReplacementRange> replacementRanges;
+  final List<FlarkMarkdownAmbiguityZone> ambiguityZones;
+  final List<FlarkMarkdownDiagnostic> diagnostics;
   final Map<String, Object?> extensions;
 }
 
-final class SovereignMarkdownBlockNode {
-  SovereignMarkdownBlockNode({
+final class FlarkMarkdownBlockNode {
+  FlarkMarkdownBlockNode({
     required this.kind,
     required this.type,
     required this.sourceRange,
     Map<String, Object?> attributes = const {},
-    Iterable<SovereignMarkdownBlockNode> children = const [],
+    Iterable<FlarkMarkdownBlockNode> children = const [],
     Map<String, Object?> extensions = const {},
-  })  : attributes = Map<String, Object?>.unmodifiable(attributes),
-        children = List<SovereignMarkdownBlockNode>.unmodifiable(children),
-        extensions = Map<String, Object?>.unmodifiable(extensions);
+  }) : attributes = Map<String, Object?>.unmodifiable(attributes),
+       children = List<FlarkMarkdownBlockNode>.unmodifiable(children),
+       extensions = Map<String, Object?>.unmodifiable(extensions);
 
-  factory SovereignMarkdownBlockNode.fromJson(Map<String, Object?> json) {
+  factory FlarkMarkdownBlockNode.fromJson(Map<String, Object?> json) {
     final type = json['type'] as String? ?? 'unknown';
-    return SovereignMarkdownBlockNode(
+    return FlarkMarkdownBlockNode(
       kind: _blockKind(type),
       type: type,
       sourceRange: _sourceRange(json['sourceRange']),
       attributes: _map(json['attributes']),
-      children:
-          _list(json['children']).map(SovereignMarkdownBlockNode.fromJson),
+      children: _list(json['children']).map(FlarkMarkdownBlockNode.fromJson),
       extensions: _unknownFields(json, const {
         'type',
         'sourceRange',
@@ -163,27 +152,27 @@ final class SovereignMarkdownBlockNode {
     );
   }
 
-  final SovereignMarkdownBlockKind kind;
+  final FlarkMarkdownBlockKind kind;
   final String type;
-  final SovereignSourceRange sourceRange;
+  final FlarkSourceRange sourceRange;
   final Map<String, Object?> attributes;
-  final List<SovereignMarkdownBlockNode> children;
+  final List<FlarkMarkdownBlockNode> children;
   final Map<String, Object?> extensions;
 }
 
-final class SovereignMarkdownInlineToken {
-  SovereignMarkdownInlineToken({
+final class FlarkMarkdownInlineToken {
+  FlarkMarkdownInlineToken({
     required this.kind,
     required this.type,
     required this.sourceRange,
     Map<String, Object?> attributes = const {},
     Map<String, Object?> extensions = const {},
-  })  : attributes = Map<String, Object?>.unmodifiable(attributes),
-        extensions = Map<String, Object?>.unmodifiable(extensions);
+  }) : attributes = Map<String, Object?>.unmodifiable(attributes),
+       extensions = Map<String, Object?>.unmodifiable(extensions);
 
-  factory SovereignMarkdownInlineToken.fromJson(Map<String, Object?> json) {
+  factory FlarkMarkdownInlineToken.fromJson(Map<String, Object?> json) {
     final type = json['type'] as String? ?? 'unknown';
-    return SovereignMarkdownInlineToken(
+    return FlarkMarkdownInlineToken(
       kind: _inlineKind(type),
       type: type,
       sourceRange: _sourceRange(json['sourceRange']),
@@ -196,26 +185,26 @@ final class SovereignMarkdownInlineToken {
     );
   }
 
-  final SovereignMarkdownInlineKind kind;
+  final FlarkMarkdownInlineKind kind;
   final String type;
-  final SovereignSourceRange sourceRange;
+  final FlarkSourceRange sourceRange;
   final Map<String, Object?> attributes;
   final Map<String, Object?> extensions;
 }
 
-final class SovereignMarkdownHiddenRange {
-  SovereignMarkdownHiddenRange({
+final class FlarkMarkdownHiddenRange {
+  FlarkMarkdownHiddenRange({
     required this.kind,
     required this.type,
     required this.sourceRange,
     Map<String, Object?> attributes = const {},
     Map<String, Object?> extensions = const {},
-  })  : attributes = Map<String, Object?>.unmodifiable(attributes),
-        extensions = Map<String, Object?>.unmodifiable(extensions);
+  }) : attributes = Map<String, Object?>.unmodifiable(attributes),
+       extensions = Map<String, Object?>.unmodifiable(extensions);
 
-  factory SovereignMarkdownHiddenRange.fromJson(Map<String, Object?> json) {
+  factory FlarkMarkdownHiddenRange.fromJson(Map<String, Object?> json) {
     final type = json['type'] as String? ?? 'unknown';
-    return SovereignMarkdownHiddenRange(
+    return FlarkMarkdownHiddenRange(
       kind: _hiddenRangeKind(type),
       type: type,
       sourceRange: _sourceRange(json['sourceRange']),
@@ -228,29 +217,27 @@ final class SovereignMarkdownHiddenRange {
     );
   }
 
-  final SovereignMarkdownHiddenRangeKind kind;
+  final FlarkMarkdownHiddenRangeKind kind;
   final String type;
-  final SovereignSourceRange sourceRange;
+  final FlarkSourceRange sourceRange;
   final Map<String, Object?> attributes;
   final Map<String, Object?> extensions;
 }
 
-final class SovereignMarkdownReplacementRange {
-  SovereignMarkdownReplacementRange({
+final class FlarkMarkdownReplacementRange {
+  FlarkMarkdownReplacementRange({
     required this.kind,
     required this.type,
     required this.sourceRange,
     required this.replacementText,
     Map<String, Object?> attributes = const {},
     Map<String, Object?> extensions = const {},
-  })  : attributes = Map<String, Object?>.unmodifiable(attributes),
-        extensions = Map<String, Object?>.unmodifiable(extensions);
+  }) : attributes = Map<String, Object?>.unmodifiable(attributes),
+       extensions = Map<String, Object?>.unmodifiable(extensions);
 
-  factory SovereignMarkdownReplacementRange.fromJson(
-    Map<String, Object?> json,
-  ) {
+  factory FlarkMarkdownReplacementRange.fromJson(Map<String, Object?> json) {
     final type = json['type'] as String? ?? 'unknown';
-    return SovereignMarkdownReplacementRange(
+    return FlarkMarkdownReplacementRange(
       kind: _replacementRangeKind(type),
       type: type,
       sourceRange: _sourceRange(json['sourceRange']),
@@ -265,28 +252,28 @@ final class SovereignMarkdownReplacementRange {
     );
   }
 
-  final SovereignMarkdownReplacementRangeKind kind;
+  final FlarkMarkdownReplacementRangeKind kind;
   final String type;
-  final SovereignSourceRange sourceRange;
+  final FlarkSourceRange sourceRange;
   final String replacementText;
   final Map<String, Object?> attributes;
   final Map<String, Object?> extensions;
 }
 
-final class SovereignMarkdownAmbiguityZone {
-  SovereignMarkdownAmbiguityZone({
+final class FlarkMarkdownAmbiguityZone {
+  FlarkMarkdownAmbiguityZone({
     required this.kind,
     required this.type,
     required this.sourceRange,
-    this.preferredAffinity = SovereignMapAffinity.downstream,
+    this.preferredAffinity = FlarkMapAffinity.downstream,
     Map<String, Object?> attributes = const {},
     Map<String, Object?> extensions = const {},
-  })  : attributes = Map<String, Object?>.unmodifiable(attributes),
-        extensions = Map<String, Object?>.unmodifiable(extensions);
+  }) : attributes = Map<String, Object?>.unmodifiable(attributes),
+       extensions = Map<String, Object?>.unmodifiable(extensions);
 
-  factory SovereignMarkdownAmbiguityZone.fromJson(Map<String, Object?> json) {
+  factory FlarkMarkdownAmbiguityZone.fromJson(Map<String, Object?> json) {
     final type = json['type'] as String? ?? 'unknown';
-    return SovereignMarkdownAmbiguityZone(
+    return FlarkMarkdownAmbiguityZone(
       kind: _ambiguityKind(type),
       type: type,
       sourceRange: _sourceRange(json['sourceRange']),
@@ -301,24 +288,24 @@ final class SovereignMarkdownAmbiguityZone {
     );
   }
 
-  final SovereignMarkdownAmbiguityKind kind;
+  final FlarkMarkdownAmbiguityKind kind;
   final String type;
-  final SovereignSourceRange sourceRange;
-  final SovereignMapAffinity preferredAffinity;
+  final FlarkSourceRange sourceRange;
+  final FlarkMapAffinity preferredAffinity;
   final Map<String, Object?> attributes;
   final Map<String, Object?> extensions;
 }
 
-final class SovereignMarkdownDiagnostic {
-  SovereignMarkdownDiagnostic({
+final class FlarkMarkdownDiagnostic {
+  FlarkMarkdownDiagnostic({
     required this.code,
     required this.message,
     this.sourceRange,
     Map<String, Object?> extensions = const {},
   }) : extensions = Map<String, Object?>.unmodifiable(extensions);
 
-  factory SovereignMarkdownDiagnostic.fromJson(Map<String, Object?> json) {
-    return SovereignMarkdownDiagnostic(
+  factory FlarkMarkdownDiagnostic.fromJson(Map<String, Object?> json) {
+    return FlarkMarkdownDiagnostic(
       code: json['code'] as String? ?? 'unknown',
       message: json['message'] as String? ?? '',
       sourceRange: json['sourceRange'] == null
@@ -334,96 +321,95 @@ final class SovereignMarkdownDiagnostic {
 
   final String code;
   final String message;
-  final SovereignSourceRange? sourceRange;
+  final FlarkSourceRange? sourceRange;
   final Map<String, Object?> extensions;
 }
 
-SovereignMarkdownBlockKind _blockKind(String type) {
+FlarkMarkdownBlockKind _blockKind(String type) {
   return switch (type) {
-    'document' => SovereignMarkdownBlockKind.document,
-    'paragraph' => SovereignMarkdownBlockKind.paragraph,
-    'heading' => SovereignMarkdownBlockKind.heading,
-    'blockquote' => SovereignMarkdownBlockKind.blockquote,
-    'list' => SovereignMarkdownBlockKind.list,
-    'listItem' => SovereignMarkdownBlockKind.listItem,
-    'thematicBreak' => SovereignMarkdownBlockKind.thematicBreak,
-    'codeBlock' => SovereignMarkdownBlockKind.codeBlock,
-    'htmlBlock' => SovereignMarkdownBlockKind.htmlBlock,
-    'table' => SovereignMarkdownBlockKind.table,
-    'tableRow' => SovereignMarkdownBlockKind.tableRow,
-    'tableCell' => SovereignMarkdownBlockKind.tableCell,
-    _ => SovereignMarkdownBlockKind.unknown,
+    'document' => FlarkMarkdownBlockKind.document,
+    'paragraph' => FlarkMarkdownBlockKind.paragraph,
+    'heading' => FlarkMarkdownBlockKind.heading,
+    'blockquote' => FlarkMarkdownBlockKind.blockquote,
+    'list' => FlarkMarkdownBlockKind.list,
+    'listItem' => FlarkMarkdownBlockKind.listItem,
+    'thematicBreak' => FlarkMarkdownBlockKind.thematicBreak,
+    'codeBlock' => FlarkMarkdownBlockKind.codeBlock,
+    'htmlBlock' => FlarkMarkdownBlockKind.htmlBlock,
+    'table' => FlarkMarkdownBlockKind.table,
+    'tableRow' => FlarkMarkdownBlockKind.tableRow,
+    'tableCell' => FlarkMarkdownBlockKind.tableCell,
+    _ => FlarkMarkdownBlockKind.unknown,
   };
 }
 
-SovereignMarkdownInlineKind _inlineKind(String type) {
+FlarkMarkdownInlineKind _inlineKind(String type) {
   return switch (type) {
-    'text' => SovereignMarkdownInlineKind.text,
-    'emphasis' => SovereignMarkdownInlineKind.emphasis,
-    'strong' => SovereignMarkdownInlineKind.strong,
-    'inlineCode' => SovereignMarkdownInlineKind.inlineCode,
-    'link' => SovereignMarkdownInlineKind.link,
-    'image' => SovereignMarkdownInlineKind.image,
-    'autolink' => SovereignMarkdownInlineKind.autolink,
-    'strikethrough' => SovereignMarkdownInlineKind.strikethrough,
-    'htmlInline' => SovereignMarkdownInlineKind.htmlInline,
-    _ => SovereignMarkdownInlineKind.unknown,
+    'text' => FlarkMarkdownInlineKind.text,
+    'emphasis' => FlarkMarkdownInlineKind.emphasis,
+    'strong' => FlarkMarkdownInlineKind.strong,
+    'inlineCode' => FlarkMarkdownInlineKind.inlineCode,
+    'link' => FlarkMarkdownInlineKind.link,
+    'image' => FlarkMarkdownInlineKind.image,
+    'autolink' => FlarkMarkdownInlineKind.autolink,
+    'strikethrough' => FlarkMarkdownInlineKind.strikethrough,
+    'htmlInline' => FlarkMarkdownInlineKind.htmlInline,
+    _ => FlarkMarkdownInlineKind.unknown,
   };
 }
 
-SovereignMarkdownHiddenRangeKind _hiddenRangeKind(String type) {
+FlarkMarkdownHiddenRangeKind _hiddenRangeKind(String type) {
   return switch (type) {
-    'markdownMarker' => SovereignMarkdownHiddenRangeKind.markdownMarker,
-    'blockMarker' => SovereignMarkdownHiddenRangeKind.blockMarker,
-    'inlineMarker' => SovereignMarkdownHiddenRangeKind.inlineMarker,
-    'escapeMarker' => SovereignMarkdownHiddenRangeKind.escapeMarker,
-    'linkDestination' => SovereignMarkdownHiddenRangeKind.linkDestination,
-    'linkTitle' => SovereignMarkdownHiddenRangeKind.linkTitle,
-    'referenceDefinition' =>
-      SovereignMarkdownHiddenRangeKind.referenceDefinition,
-    'rawHtml' => SovereignMarkdownHiddenRangeKind.rawHtml,
-    _ => SovereignMarkdownHiddenRangeKind.unknown,
+    'markdownMarker' => FlarkMarkdownHiddenRangeKind.markdownMarker,
+    'blockMarker' => FlarkMarkdownHiddenRangeKind.blockMarker,
+    'inlineMarker' => FlarkMarkdownHiddenRangeKind.inlineMarker,
+    'escapeMarker' => FlarkMarkdownHiddenRangeKind.escapeMarker,
+    'linkDestination' => FlarkMarkdownHiddenRangeKind.linkDestination,
+    'linkTitle' => FlarkMarkdownHiddenRangeKind.linkTitle,
+    'referenceDefinition' => FlarkMarkdownHiddenRangeKind.referenceDefinition,
+    'rawHtml' => FlarkMarkdownHiddenRangeKind.rawHtml,
+    _ => FlarkMarkdownHiddenRangeKind.unknown,
   };
 }
 
-SovereignMarkdownReplacementRangeKind _replacementRangeKind(String type) {
+FlarkMarkdownReplacementRangeKind _replacementRangeKind(String type) {
   return switch (type) {
-    'htmlEntity' => SovereignMarkdownReplacementRangeKind.htmlEntity,
-    _ => SovereignMarkdownReplacementRangeKind.unknown,
+    'htmlEntity' => FlarkMarkdownReplacementRangeKind.htmlEntity,
+    _ => FlarkMarkdownReplacementRangeKind.unknown,
   };
 }
 
-SovereignMarkdownAmbiguityKind _ambiguityKind(String type) {
+FlarkMarkdownAmbiguityKind _ambiguityKind(String type) {
   return switch (type) {
-    'delimiterRun' => SovereignMarkdownAmbiguityKind.delimiterRun,
-    'linkReference' => SovereignMarkdownAmbiguityKind.linkReference,
-    'tableBoundary' => SovereignMarkdownAmbiguityKind.tableBoundary,
-    'rawHtml' => SovereignMarkdownAmbiguityKind.rawHtml,
-    _ => SovereignMarkdownAmbiguityKind.unknown,
+    'delimiterRun' => FlarkMarkdownAmbiguityKind.delimiterRun,
+    'linkReference' => FlarkMarkdownAmbiguityKind.linkReference,
+    'tableBoundary' => FlarkMarkdownAmbiguityKind.tableBoundary,
+    'rawHtml' => FlarkMarkdownAmbiguityKind.rawHtml,
+    _ => FlarkMarkdownAmbiguityKind.unknown,
   };
 }
 
-SovereignMapAffinity _affinity(Object? value) {
+FlarkMapAffinity _affinity(Object? value) {
   return switch (value) {
-    'upstream' => SovereignMapAffinity.upstream,
-    'downstream' => SovereignMapAffinity.downstream,
-    _ => SovereignMapAffinity.downstream,
+    'upstream' => FlarkMapAffinity.upstream,
+    'downstream' => FlarkMapAffinity.downstream,
+    _ => FlarkMapAffinity.downstream,
   };
 }
 
-SovereignSourceRange _sourceRange(Object? value) {
+FlarkSourceRange _sourceRange(Object? value) {
   final map = _map(value);
-  return SovereignSourceRange(
-    _int(map['start']) ?? 0,
-    _int(map['end']) ?? 0,
-  );
+  return FlarkSourceRange(_int(map['start']) ?? 0, _int(map['end']) ?? 0);
 }
 
 List<Map<String, Object?>> _list(Object? value) {
   if (value is! List) return const [];
-  return value.whereType<Map>().map((item) {
-    return item.cast<String, Object?>();
-  }).toList(growable: false);
+  return value
+      .whereType<Map>()
+      .map((item) {
+        return item.cast<String, Object?>();
+      })
+      .toList(growable: false);
 }
 
 Map<String, Object?> _map(Object? value) {

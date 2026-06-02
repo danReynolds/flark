@@ -1,14 +1,15 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
-import 'package:sovereign_editor/src/v2/flutter/flutter.dart';
-import 'package:sovereign_editor/src/v2/markdown/markdown.dart';
+import 'package:flark/src/v2/core/core.dart';
+import 'package:flark/src/v2/flutter/flutter.dart';
+import 'package:flark/src/v2/markdown/markdown.dart';
 
 void main() {
-  group('SovereignCommandActions', () {
-    testWidgets('invokes typed commands through Flutter Actions',
-        (tester) async {
+  group('FlarkCommandActions', () {
+    testWidgets('invokes typed commands through Flutter Actions', (
+      tester,
+    ) async {
       final controller = _markdownController();
       late BuildContext actionContext;
       addTearDown(controller.dispose);
@@ -16,7 +17,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SovereignCommandActions(
+          child: FlarkCommandActions(
             controller: controller,
             child: Builder(
               builder: (context) {
@@ -28,40 +29,44 @@ void main() {
         ),
       );
 
-      final result = Actions.invoke(
-        actionContext,
-        const SovereignCommandIntent(
-          SovereignTypedCommandInvocation(
-            command: SovereignMarkdownInlineCommands.toggleInlineStyle,
-            payload: SovereignToggleInlineStylePayload(
-              SovereignMarkdownInlineStyle.strong,
-            ),
-          ),
-        ),
-      ) as SovereignEditorRuntimeResult;
+      final result =
+          Actions.invoke(
+                actionContext,
+                const FlarkCommandIntent(
+                  FlarkTypedCommandInvocation(
+                    command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+                    payload: FlarkToggleInlineStylePayload(
+                      FlarkMarkdownInlineStyle.strong,
+                    ),
+                  ),
+                ),
+              )
+              as FlarkEditorRuntimeResult;
 
       expect(result.commandResult.isHandled, isTrue);
       expect(controller.markdown, '**bold**');
     });
 
-    testWidgets(
-        'SovereignEditableText installs command actions for descendants',
-        (tester) async {
+    testWidgets('FlarkEditableText installs command actions for descendants', (
+      tester,
+    ) async {
       final controller = _markdownController();
       addTearDown(controller.dispose);
 
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SovereignEditableText(
+          child: FlarkEditableText(
             controller: controller,
             shortcuts: const {
-              SingleActivator(LogicalKeyboardKey.keyB, meta: true):
-                  SovereignCommandIntent(
-                SovereignTypedCommandInvocation(
-                  command: SovereignMarkdownInlineCommands.toggleInlineStyle,
-                  payload: SovereignToggleInlineStylePayload(
-                    SovereignMarkdownInlineStyle.strong,
+              SingleActivator(
+                LogicalKeyboardKey.keyB,
+                meta: true,
+              ): FlarkCommandIntent(
+                FlarkTypedCommandInvocation(
+                  command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+                  payload: FlarkToggleInlineStylePayload(
+                    FlarkMarkdownInlineStyle.strong,
                   ),
                 ),
               ),
@@ -70,17 +75,19 @@ void main() {
         ),
       );
 
-      final result = Actions.invoke(
-        tester.element(find.byType(EditableText)),
-        const SovereignCommandIntent(
-          SovereignTypedCommandInvocation(
-            command: SovereignMarkdownInlineCommands.toggleInlineStyle,
-            payload: SovereignToggleInlineStylePayload(
-              SovereignMarkdownInlineStyle.strong,
-            ),
-          ),
-        ),
-      ) as SovereignEditorRuntimeResult;
+      final result =
+          Actions.invoke(
+                tester.element(find.byType(EditableText)),
+                const FlarkCommandIntent(
+                  FlarkTypedCommandInvocation(
+                    command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+                    payload: FlarkToggleInlineStylePayload(
+                      FlarkMarkdownInlineStyle.strong,
+                    ),
+                  ),
+                ),
+              )
+              as FlarkEditorRuntimeResult;
 
       expect(result.commandResult.isHandled, isTrue);
       expect(controller.markdown, '**bold**');
@@ -89,15 +96,15 @@ void main() {
   });
 }
 
-SovereignFlutterController _markdownController() {
-  return SovereignFlutterController(
-    runtime: SovereignEditorRuntime(
-      state: SovereignEditorState.fromMarkdown(
+FlarkFlutterController _markdownController() {
+  return FlarkFlutterController(
+    runtime: FlarkEditorRuntime(
+      state: FlarkEditorState.fromMarkdown(
         'bold',
-        selection: const SovereignSelection(baseOffset: 0, extentOffset: 4),
+        selection: const FlarkSelection(baseOffset: 0, extentOffset: 4),
       ),
-      commandRegistry: SovereignExtensionSet([
-        const SovereignMarkdownInlineEditingExtension(),
+      commandRegistry: FlarkExtensionSet([
+        const FlarkMarkdownInlineEditingExtension(),
       ]).commandRegistry(),
     ),
   );

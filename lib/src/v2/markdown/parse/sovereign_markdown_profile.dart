@@ -1,21 +1,18 @@
-enum SovereignMarkdownProfile {
-  commonMarkCore,
-  commonMarkGfm,
-}
+enum FlarkMarkdownProfile { commonMarkCore, commonMarkGfm }
 
-extension SovereignMarkdownProfileWire on SovereignMarkdownProfile {
+extension FlarkMarkdownProfileWire on FlarkMarkdownProfile {
   String get wireName {
     return switch (this) {
-      SovereignMarkdownProfile.commonMarkCore => 'commonMarkCore',
-      SovereignMarkdownProfile.commonMarkGfm => 'commonMarkGfm',
+      FlarkMarkdownProfile.commonMarkCore => 'commonMarkCore',
+      FlarkMarkdownProfile.commonMarkGfm => 'commonMarkGfm',
     };
   }
 
-  static SovereignMarkdownProfile fromWireName(String value) {
+  static FlarkMarkdownProfile fromWireName(String value) {
     return switch (value) {
-      'commonMarkCore' => SovereignMarkdownProfile.commonMarkCore,
-      'commonMarkGfm' => SovereignMarkdownProfile.commonMarkGfm,
-      _ => SovereignMarkdownProfile.commonMarkCore,
+      'commonMarkCore' => FlarkMarkdownProfile.commonMarkCore,
+      'commonMarkGfm' => FlarkMarkdownProfile.commonMarkGfm,
+      _ => FlarkMarkdownProfile.commonMarkCore,
     };
   }
 }

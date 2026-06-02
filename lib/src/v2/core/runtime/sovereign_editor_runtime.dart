@@ -6,39 +6,39 @@ import '../history/sovereign_history_stack.dart';
 import '../state/sovereign_editor_state.dart';
 import '../transaction/sovereign_transaction.dart';
 
-final class SovereignEditorRuntime {
-  SovereignEditorRuntime({
+final class FlarkEditorRuntime {
+  FlarkEditorRuntime({
     required this.state,
-    SovereignHistoryStack? history,
-    SovereignExtensionSet? extensions,
-    SovereignCommandRegistry? commandRegistry,
-  })  : history = history ?? const SovereignHistoryStack(),
-        extensions = extensions ?? const SovereignExtensionSet.empty(),
-        commandRegistry = commandRegistry ??
-            (extensions ?? const SovereignExtensionSet.empty())
-                .commandRegistry();
+    FlarkHistoryStack? history,
+    FlarkExtensionSet? extensions,
+    FlarkCommandRegistry? commandRegistry,
+  }) : history = history ?? const FlarkHistoryStack(),
+       extensions = extensions ?? const FlarkExtensionSet.empty(),
+       commandRegistry =
+           commandRegistry ??
+           (extensions ?? const FlarkExtensionSet.empty()).commandRegistry();
 
-  factory SovereignEditorRuntime.fromMarkdown(
+  factory FlarkEditorRuntime.fromMarkdown(
     String markdown, {
-    SovereignExtensionSet? extensions,
+    FlarkExtensionSet? extensions,
   }) {
-    return SovereignEditorRuntime(
-      state: SovereignEditorState.fromMarkdown(markdown),
+    return FlarkEditorRuntime(
+      state: FlarkEditorState.fromMarkdown(markdown),
       extensions: extensions,
     );
   }
 
-  final SovereignEditorState state;
-  final SovereignHistoryStack history;
-  final SovereignExtensionSet extensions;
-  final SovereignCommandRegistry commandRegistry;
+  final FlarkEditorState state;
+  final FlarkHistoryStack history;
+  final FlarkExtensionSet extensions;
+  final FlarkCommandRegistry commandRegistry;
 
   bool get canUndo => history.canUndo;
 
   bool get canRedo => history.canRedo;
 
-  SovereignEditorRuntimeResult dispatch<TPayload>({
-    required SovereignCommand<TPayload> command,
+  FlarkEditorRuntimeResult dispatch<TPayload>({
+    required FlarkCommand<TPayload> command,
     required TPayload payload,
   }) {
     final commandResult = commandRegistry.dispatch(
@@ -49,21 +49,18 @@ final class SovereignEditorRuntime {
 
     final transaction = commandResult.transaction;
     if (!commandResult.isHandled || transaction == null) {
-      return SovereignEditorRuntimeResult(
+      return FlarkEditorRuntimeResult(
         runtime: this,
         commandResult: commandResult,
       );
     }
 
-    return applyTransaction(
-      transaction,
-      commandResult: commandResult,
-    );
+    return applyTransaction(transaction, commandResult: commandResult);
   }
 
-  SovereignEditorRuntimeResult applyTransaction(
-    SovereignTransaction transaction, {
-    SovereignCommandResult? commandResult,
+  FlarkEditorRuntimeResult applyTransaction(
+    FlarkTransaction transaction, {
+    FlarkCommandResult? commandResult,
   }) {
     final nextState = state.applyTransaction(transaction);
     final nextHistory = history.record(
@@ -71,44 +68,42 @@ final class SovereignEditorRuntime {
       documentBefore: state.document,
     );
 
-    return SovereignEditorRuntimeResult(
-      runtime: copyWith(
-        state: nextState,
-        history: nextHistory,
-      ),
-      commandResult: commandResult ??
-          SovereignCommandResult.handled(transaction: transaction),
+    return FlarkEditorRuntimeResult(
+      runtime: copyWith(state: nextState, history: nextHistory),
+      commandResult:
+          commandResult ?? FlarkCommandResult.handled(transaction: transaction),
     );
   }
 
-  SovereignEditorRuntimeResult undo() {
+  FlarkEditorRuntimeResult undo() {
     final result = history.undo(state);
-    return SovereignEditorRuntimeResult(
+    return FlarkEditorRuntimeResult(
       runtime: copyWith(state: result.state, history: result.history),
-      commandResult: SovereignCommandResult.handled(),
+      commandResult: FlarkCommandResult.handled(),
     );
   }
 
-  SovereignEditorRuntimeResult redo() {
+  FlarkEditorRuntimeResult redo() {
     final result = history.redo(state);
-    return SovereignEditorRuntimeResult(
+    return FlarkEditorRuntimeResult(
       runtime: copyWith(state: result.state, history: result.history),
-      commandResult: SovereignCommandResult.handled(),
+      commandResult: FlarkCommandResult.handled(),
     );
   }
 
-  SovereignEditorRuntime copyWith({
-    SovereignEditorState? state,
-    SovereignHistoryStack? history,
-    SovereignExtensionSet? extensions,
-    SovereignCommandRegistry? commandRegistry,
+  FlarkEditorRuntime copyWith({
+    FlarkEditorState? state,
+    FlarkHistoryStack? history,
+    FlarkExtensionSet? extensions,
+    FlarkCommandRegistry? commandRegistry,
   }) {
     final nextExtensions = extensions ?? this.extensions;
-    return SovereignEditorRuntime(
+    return FlarkEditorRuntime(
       state: state ?? this.state,
       history: history ?? this.history,
       extensions: nextExtensions,
-      commandRegistry: commandRegistry ??
+      commandRegistry:
+          commandRegistry ??
           (identical(nextExtensions, this.extensions)
               ? this.commandRegistry
               : nextExtensions.commandRegistry()),
@@ -116,12 +111,12 @@ final class SovereignEditorRuntime {
   }
 }
 
-final class SovereignEditorRuntimeResult {
-  const SovereignEditorRuntimeResult({
+final class FlarkEditorRuntimeResult {
+  const FlarkEditorRuntimeResult({
     required this.runtime,
     required this.commandResult,
   });
 
-  final SovereignEditorRuntime runtime;
-  final SovereignCommandResult commandResult;
+  final FlarkEditorRuntime runtime;
+  final FlarkCommandResult commandResult;
 }

@@ -4,7 +4,7 @@ Date: 2026-05-10
 
 ## Goal
 
-Sovereign v2 should make fenced code blocks feel like a strong Markdown editor,
+Flark v2 should make fenced code blocks feel like a strong Markdown editor,
 not a language IDE. The source remains Markdown, the parser remains Comrak, and
 the editor adds only portable text-editing behavior that is expected inside
 code fences.
@@ -37,16 +37,16 @@ code fences.
 
 ## Architecture
 
-- `SovereignMarkdownFencedCodeScanner` is the single source-level fence scanner
+- `FlarkMarkdownFencedCodeScanner` is the single source-level fence scanner
   for v2 editing. It identifies opener info, body range, closer, and shared line
   helpers without depending on Flutter.
-- `SovereignMarkdownFencedCodePolicy` owns source mutations for fenced code:
+- `FlarkMarkdownFencedCodePolicy` owns source mutations for fenced code:
   Enter, closer outdent, multiline paste indentation, Tab indentation, and
   Shift+Tab outdent.
 - Flutter adapters map local editable selections into source ranges and call
   the source policy. Widgets do not parse fence syntax or own code semantics.
 - Rendered interactions such as language selectors remain overlay chrome driven
-  by `SovereignMarkdownInteractions` and source commands.
+  by `FlarkMarkdownInteractions` and source commands.
 - Comrak remains the authoritative parse layer. The scanner exists only for
   edit-time local context where waiting for a parser cycle would make keyboard
   input unstable.

@@ -1,14 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
+import 'package:flark/src/v2/core/core.dart';
 
 void main() {
-  group('SovereignCommandRegistry', () {
-    const insertText = SovereignCommand<String>('test.insertText');
-    const maybeInsert = SovereignCommand<String>('test.maybeInsert');
+  group('FlarkCommandRegistry', () {
+    const insertText = FlarkCommand<String>('test.insertText');
+    const maybeInsert = FlarkCommand<String>('test.maybeInsert');
 
     test('returns not handled when no command handler is registered', () {
-      final state = SovereignEditorState.fromMarkdown('');
-      final result = const SovereignCommandRegistry().dispatch(
+      final state = FlarkEditorState.fromMarkdown('');
+      final result = const FlarkCommandRegistry().dispatch(
         state: state,
         command: insertText,
         payload: 'a',
@@ -18,25 +18,25 @@ void main() {
     });
 
     test('dispatches the highest-priority handled command', () {
-      final state = SovereignEditorState.fromMarkdown('');
-      final registry = const SovereignCommandRegistry()
+      final state = FlarkEditorState.fromMarkdown('');
+      final registry = const FlarkCommandRegistry()
           .register<String>(
             insertText,
-            (context) => SovereignCommandResult.handled(
-              transaction: SovereignTransaction.single(
-                SovereignSourceOperation.insert(0, 'low'),
+            (context) => FlarkCommandResult.handled(
+              transaction: FlarkTransaction.single(
+                FlarkSourceOperation.insert(0, 'low'),
               ),
             ),
-            priority: SovereignCommandPriority.normal,
+            priority: FlarkCommandPriority.normal,
           )
           .register<String>(
             insertText,
-            (context) => SovereignCommandResult.handled(
-              transaction: SovereignTransaction.single(
-                SovereignSourceOperation.insert(0, context.payload),
+            (context) => FlarkCommandResult.handled(
+              transaction: FlarkTransaction.single(
+                FlarkSourceOperation.insert(0, context.payload),
               ),
             ),
-            priority: SovereignCommandPriority.high,
+            priority: FlarkCommandPriority.high,
           );
 
       final result = registry.dispatch(
@@ -51,21 +51,21 @@ void main() {
     });
 
     test('falls through not-handled handlers by priority order', () {
-      final state = SovereignEditorState.fromMarkdown('');
-      final registry = const SovereignCommandRegistry()
+      final state = FlarkEditorState.fromMarkdown('');
+      final registry = const FlarkCommandRegistry()
           .register<String>(
             maybeInsert,
-            (context) => const SovereignCommandResult.notHandled(),
-            priority: SovereignCommandPriority.high,
+            (context) => const FlarkCommandResult.notHandled(),
+            priority: FlarkCommandPriority.high,
           )
           .register<String>(
             maybeInsert,
-            (context) => SovereignCommandResult.handled(
-              transaction: SovereignTransaction.single(
-                SovereignSourceOperation.insert(0, context.payload),
+            (context) => FlarkCommandResult.handled(
+              transaction: FlarkTransaction.single(
+                FlarkSourceOperation.insert(0, context.payload),
               ),
             ),
-            priority: SovereignCommandPriority.normal,
+            priority: FlarkCommandPriority.normal,
           );
 
       final result = registry.dispatch(
@@ -79,18 +79,18 @@ void main() {
     });
 
     test('rejected handlers stop dispatch', () {
-      final state = SovereignEditorState.fromMarkdown('');
-      final registry = const SovereignCommandRegistry()
+      final state = FlarkEditorState.fromMarkdown('');
+      final registry = const FlarkCommandRegistry()
           .register<String>(
             insertText,
-            (context) => SovereignCommandResult.rejected('blocked'),
-            priority: SovereignCommandPriority.high,
+            (context) => FlarkCommandResult.rejected('blocked'),
+            priority: FlarkCommandPriority.high,
           )
           .register<String>(
             insertText,
-            (context) => SovereignCommandResult.handled(
-              transaction: SovereignTransaction.single(
-                SovereignSourceOperation.insert(0, context.payload),
+            (context) => FlarkCommandResult.handled(
+              transaction: FlarkTransaction.single(
+                FlarkSourceOperation.insert(0, context.payload),
               ),
             ),
           );

@@ -1,25 +1,25 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
-import 'package:sovereign_editor/src/v2/flutter/flutter.dart';
-import 'package:sovereign_editor/src/v2/markdown/markdown.dart';
+import 'package:flark/src/v2/core/core.dart';
+import 'package:flark/src/v2/flutter/flutter.dart';
+import 'package:flark/src/v2/markdown/markdown.dart';
 
 void main() {
-  group('Sovereign markdown input policy contract', () {
+  group('Flark markdown input policy contract', () {
     for (final surface in _EditingSurface.values) {
       for (final contractCase in _backspaceCases) {
         testWidgets(
           '${surface.label}: Backspace at ${contractCase.label} boundary',
           (tester) async {
-            final controller = SovereignFlutterController.fromMarkdown(
+            final controller = FlarkFlutterController.fromMarkdown(
               contractCase.markdown,
-              extensions: SovereignMarkdownEditingExtensions.standard(),
+              extensions: FlarkMarkdownEditingExtensions.standard(),
             );
             addTearDown(controller.dispose);
             await _pumpSurface(tester, surface, controller);
             controller.applySelection(
-              SovereignSelection.collapsed(contractCase.caret),
+              FlarkSelection.collapsed(contractCase.caret),
               userEvent: 'test',
             );
             await tester.pump();
@@ -34,8 +34,9 @@ void main() {
             expect(
               editable.controller.selection,
               TextSelection.collapsed(
-                offset:
-                    surface == _EditingSurface.source ? contractCase.caret : 0,
+                offset: surface == _EditingSurface.source
+                    ? contractCase.caret
+                    : 0,
               ),
             );
 
@@ -46,22 +47,23 @@ void main() {
             expect(controller.markdown, contractCase.expectedMarkdown);
             expect(
               controller.selection,
-              SovereignSelection.collapsed(contractCase.expectedCaret),
+              FlarkSelection.collapsed(contractCase.expectedCaret),
             );
           },
         );
       }
 
-      testWidgets('${surface.label}: Enter continues quote structure',
-          (tester) async {
-        final controller = SovereignFlutterController.fromMarkdown(
+      testWidgets('${surface.label}: Enter continues quote structure', (
+        tester,
+      ) async {
+        final controller = FlarkFlutterController.fromMarkdown(
           '> quote',
-          extensions: SovereignMarkdownEditingExtensions.standard(),
+          extensions: FlarkMarkdownEditingExtensions.standard(),
         );
         addTearDown(controller.dispose);
         await _pumpSurface(tester, surface, controller);
         controller.applySelection(
-          const SovereignSelection.collapsed(7),
+          const FlarkSelection.collapsed(7),
           userEvent: 'test',
         );
         await tester.pump();
@@ -71,19 +73,20 @@ void main() {
         await _settle(tester);
 
         expect(controller.markdown, '> quote\n> ');
-        expect(controller.selection, const SovereignSelection.collapsed(10));
+        expect(controller.selection, const FlarkSelection.collapsed(10));
       });
 
-      testWidgets('${surface.label}: Shift+Enter inserts a soft line break',
-          (tester) async {
-        final controller = SovereignFlutterController.fromMarkdown(
+      testWidgets('${surface.label}: Shift+Enter inserts a soft line break', (
+        tester,
+      ) async {
+        final controller = FlarkFlutterController.fromMarkdown(
           '- item',
-          extensions: SovereignMarkdownEditingExtensions.standard(),
+          extensions: FlarkMarkdownEditingExtensions.standard(),
         );
         addTearDown(controller.dispose);
         await _pumpSurface(tester, surface, controller);
         controller.applySelection(
-          const SovereignSelection.collapsed(6),
+          const FlarkSelection.collapsed(6),
           userEvent: 'test',
         );
         await tester.pump();
@@ -95,7 +98,7 @@ void main() {
         await _settle(tester);
 
         expect(controller.markdown, '- item\n');
-        expect(controller.selection, const SovereignSelection.collapsed(7));
+        expect(controller.selection, const FlarkSelection.collapsed(7));
       });
     }
   });
@@ -106,7 +109,7 @@ Finder _editableFinder() => find.byType(EditableText).first;
 Future<void> _pumpSurface(
   WidgetTester tester,
   _EditingSurface surface,
-  SovereignFlutterController controller,
+  FlarkFlutterController controller,
 ) async {
   if (surface != _EditingSurface.source) {
     await _applyComrakParseResult(controller);
@@ -115,36 +118,33 @@ Future<void> _pumpSurface(
     Directionality(
       textDirection: TextDirection.ltr,
       child: switch (surface) {
-        _EditingSurface.source => SovereignEditableText(
-            controller: controller,
-            autofocus: true,
-            style: const TextStyle(fontSize: 14),
-          ),
-        _EditingSurface.projected => SovereignProjectedEditableText(
-            controller: controller,
-            autofocus: true,
-            style: const TextStyle(fontSize: 14),
-          ),
-        _EditingSurface.liveRendered => SovereignLiveRenderedEditableText(
-            controller: controller,
-            autofocus: true,
-            style: const TextStyle(fontSize: 14),
-          ),
+        _EditingSurface.source => FlarkEditableText(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(fontSize: 14),
+        ),
+        _EditingSurface.projected => FlarkProjectedEditableText(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(fontSize: 14),
+        ),
+        _EditingSurface.liveRendered => FlarkLiveRenderedEditableText(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(fontSize: 14),
+        ),
       },
     ),
   );
   await _settle(tester);
 }
 
-Future<void> _applyComrakParseResult(
-  SovereignFlutterController controller,
-) async {
-  final result =
-      await SovereignNativeComrakParseBackend.withNativeBridge().parse(
-    SovereignMarkdownParseRequest(
+Future<void> _applyComrakParseResult(FlarkFlutterController controller) async {
+  final result = await FlarkNativeComrakParseBackend.withNativeBridge().parse(
+    FlarkMarkdownParseRequest(
       revision: controller.state.revision,
       markdown: controller.markdown,
-      profile: SovereignMarkdownProfile.commonMarkGfm,
+      profile: FlarkMarkdownProfile.commonMarkGfm,
     ),
   );
   expect(controller.applyParseResult(result), isTrue);

@@ -1,4 +1,4 @@
-# Sovereign Execution Log
+# Flark Execution Log
 
 This log records work completed toward production readiness. Keep entries
 append-only unless correcting a factual error.
@@ -9,8 +9,8 @@ append-only unless correcting a factual error.
 
 - Created `/Users/dan/Coding/sovereign`.
 - Initialized a new git repo.
-- Copied tracked files from `dune_gemini/packages/sovereign_editor`.
-- Copied Sovereign architecture docs from Dune:
+- Copied tracked files from `dune_gemini/packages/flark`.
+- Copied Flark architecture docs from Dune:
   - `docs/architecture/sovereign/`
   - selected RFCs under `docs/architecture/rfc/`
 - Confirmed `dune_gemini` had unrelated dirty changes and did not modify them.
@@ -86,13 +86,13 @@ append-only unless correcting a factual error.
 - Stabilized `DuneMarkdownTheme.of(context)` fallback identity so renderer
   cache keys no longer miss merely because no app-level markdown theme
   extension is installed.
-- Added a cached final `TextSpan` path in `SovereignTextRenderer` for unchanged
+- Added a cached final `TextSpan` path in `FlarkTextRenderer` for unchanged
   revision/theme/style renders, while extending the renderer cache key to
   distinguish authoritative inline runs and projected exclusion ranges.
 - Reused a single fenced-code scan across render cache miss substeps instead of
   rescanning separately for editor exclusions, inline scan exclusions, and code
   highlighting.
-- Skipped supplemental link/image scanning in `SovereignStyleScanner` when the
+- Skipped supplemental link/image scanning in `FlarkStyleScanner` when the
   text has no link/image trigger characters.
 - Updated `test/benchmarks/sovereign_benchmark_test.dart` to use a real
   Flutter `BuildContext`, a nearest-rank percentile helper, emoji scanner
@@ -120,7 +120,7 @@ append-only unless correcting a factual error.
 - Removed public `lib/theme/app_colors.dart`; `DuneMarkdownTheme.dune()` now
   uses a private fallback markdown palette. This eliminates the old app-level
   `AppColors` deep-import surface without changing the supported
-  `sovereign_editor.dart` barrel API.
+  `flark.dart` barrel API.
 - `flutter analyze lib test`: passed.
 - Focused render/controller/theme tests: passed.
 - `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
@@ -129,7 +129,7 @@ append-only unless correcting a factual error.
 
 ### Phase 1 API Shape: Barrel Narrowing
 
-- Narrowed `lib/sovereign_editor.dart` by removing top-level exports for
+- Narrowed `lib/flark.dart` by removing top-level exports for
   parser implementation adapters, parse backend/scheduler internals, scanners,
   marker helpers, `UndoStack`, and `EditDiffer`.
 - Kept syntax contracts, native bridge diagnostics, UTF offset mapping, command
@@ -148,7 +148,7 @@ append-only unless correcting a factual error.
 - Moved `UndoStack` and `EditDiffer` behind `lib/src` while keeping the public
   controller and edit pipeline on a single implementation path.
 - Updated internal imports to reference those implementation types through
-  `package:sovereign_editor/src/...`.
+  `package:flark/src/...`.
 - `flutter analyze lib test`: passed.
 - Focused undo/edit-flow tests: passed.
 - `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
@@ -158,11 +158,11 @@ append-only unless correcting a factual error.
 ### Phase 1 API Shape: Package Vocabulary
 
 - Renamed the public markdown theme from `DuneMarkdownTheme` to
-  `SovereignMarkdownTheme`.
+  `FlarkMarkdownTheme`.
 - Renamed `lib/theme/dune_markdown_theme.dart` to
   `lib/theme/sovereign_markdown_theme.dart`.
 - Replaced the Dune-named default constructor with
-  `SovereignMarkdownTheme.standard()` and updated internal/test callers.
+  `FlarkMarkdownTheme.standard()` and updated internal/test callers.
 - `flutter analyze lib test`: passed.
 - Focused public API/theme/render tests: passed.
 - `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed
@@ -176,10 +176,10 @@ append-only unless correcting a factual error.
 - Added `docs/production_readiness/api_migration_2026-05-01.md` for the Phase 1
   breaking API cleanup.
 - Documented the supported import contract: app code should use only
-  `package:sovereign_editor/sovereign_editor.dart` for now.
+  `package:flark/flark.dart` for now.
 - Recorded that no secondary public libraries are warranted in this cleanup
   pass; deep imports remain package-test and white-box implementation details.
-- Covered the `SovereignMarkdownTheme.standard()` rename, removed top-level
+- Covered the `FlarkMarkdownTheme.standard()` rename, removed top-level
   internal exports, `UndoStack`/`EditDiffer` moving behind `lib/src`, and the
   removed app palette helper.
 - `flutter analyze lib test`: passed.
@@ -191,11 +191,11 @@ append-only unless correcting a factual error.
   - inline-actions overlay and targeting helpers;
   - read-only link tap tracking;
   - read-only task-checkbox overlay helpers.
-- Kept `SovereignEditor` and `SovereignMarkdownView` as the public presentation
+- Kept `FlarkEditor` and `FlarkMarkdownView` as the public presentation
   widgets while updating them to import the helpers through
-  `package:sovereign_editor/src/...`.
+  `package:flark/src/...`.
 - Updated package tests that intentionally inspect painter behavior to import
-  `Tier1Painter` through `package:sovereign_editor/src/...`.
+  `Tier1Painter` through `package:flark/src/...`.
 - `flutter analyze lib test`: passed.
 - Focused presentation/render tests: passed.
 - `./scripts/verify_release.sh --skip-native-build --skip-benchmarks`: passed.
@@ -211,14 +211,14 @@ append-only unless correcting a factual error.
 
 ### Phase 1 API Shape: Primary API Docs
 
-- Added library docs to `lib/sovereign_editor.dart` and an explicit `library;`
+- Added library docs to `lib/flark.dart` and an explicit `library;`
   directive so the top-level barrel has package documentation.
 - Added API prose for the primary consumer surface:
-  - `SovereignController`;
-  - `SovereignEditor`;
-  - `SovereignMarkdownView`;
-  - `SovereignMarkdownCommands` and command result/capability/link-edit models;
-  - `SovereignMarkdownTheme`, `SovereignEditorThemeData`, and related editor
+  - `FlarkController`;
+  - `FlarkEditor`;
+  - `FlarkMarkdownView`;
+  - `FlarkMarkdownCommands` and command result/capability/link-edit models;
+  - `FlarkMarkdownTheme`, `FlarkEditorThemeData`, and related editor
     theme classes.
 - `flutter analyze lib test`: passed.
 - `dart doc --dry-run`: passed with 0 warnings and 0 errors.
@@ -230,8 +230,8 @@ append-only unless correcting a factual error.
 - Moved command implementation helpers behind `lib/src`:
   - block, inline, fence, and link command implementations;
   - command transaction, selection, range, and context helpers.
-- Kept `SovereignMarkdownCommands` as the supported public command facade and
-  updated it to import those helpers through `package:sovereign_editor/src/...`.
+- Kept `FlarkMarkdownCommands` as the supported public command facade and
+  updated it to import those helpers through `package:flark/src/...`.
 - `flutter analyze lib test`: passed.
 - Focused command tests: passed.
 - `dart doc --dry-run`: passed with 0 warnings and 0 errors.
@@ -255,7 +255,7 @@ append-only unless correcting a factual error.
 - Moved `SyntaxEngineFactory` behind `lib/src` and updated controller and
   white-box factory test imports.
 - Kept public engine customization through `SyntaxEngine` injection into
-  `SovereignController` and `SovereignMarkdownView`.
+  `FlarkController` and `FlarkMarkdownView`.
 - `flutter analyze lib test`: passed.
 - Focused syntax factory and controller engine wiring tests: passed.
 - `dart doc --dry-run`: passed with 0 warnings and 0 errors.
@@ -269,7 +269,7 @@ append-only unless correcting a factual error.
   `CommonMarkParseBackend`, `CommonMarkSyntaxEngineAdapter`,
   `ComrakCommonMarkParseBackend`, and `V1SyntaxEngineAdapter`.
 - Updated internal engine factory wiring and white-box package tests to import
-  those implementation classes through `package:sovereign_editor/src/...`.
+  those implementation classes through `package:flark/src/...`.
 - Kept public parser customization through `SyntaxEngine` injection and the
   existing syntax request/snapshot contracts.
 - `flutter analyze lib test`: passed.
@@ -285,10 +285,10 @@ append-only unless correcting a factual error.
   block parser, fenced-code scanner, marker grammar/helpers, style scanner,
   geometry scanner, projector, and code highlighter.
 - Updated controller, presentation, rendering, syntax, engine, and white-box
-  package-test imports to use `package:sovereign_editor/src/...` for those
+  package-test imports to use `package:flark/src/...` for those
   implementation classes.
-- Kept public behavior exposed through `SovereignController`,
-  `SovereignEditor`, `SovereignMarkdownView`, syntax contracts, and model
+- Kept public behavior exposed through `FlarkController`,
+  `FlarkEditor`, `FlarkMarkdownView`, syntax contracts, and model
   types that are still carried by public signatures.
 - `flutter analyze lib test`: passed.
 - Focused logic/rendering tests: passed.
@@ -305,11 +305,11 @@ append-only unless correcting a factual error.
   markdown line utilities, table/navigation services, and fence/indented-code
   helpers.
 - Preserved the supported app-facing entry points:
-  `SovereignController`, `SovereignEditor`, `SovereignMarkdownView`,
-  `SovereignMarkdownCommands`, theme types, syntax contracts, and public model
+  `FlarkController`, `FlarkEditor`, `FlarkMarkdownView`,
+  `FlarkMarkdownCommands`, theme types, syntax contracts, and public model
   carriers.
 - Updated controller, editor, navigation helper, and white-box package-test
-  imports to use `package:sovereign_editor/src/...` for those internals.
+  imports to use `package:flark/src/...` for those internals.
 - `flutter analyze lib test`: passed.
 - Focused core/controller/rendering tests: passed.
 - `dart doc --dry-run`: passed with 0 warnings and 0 errors.
@@ -323,9 +323,9 @@ append-only unless correcting a factual error.
   controller policy parts, controller host adapter parts, diagnostics/table-tab
   host helpers, the controller navigation helper, and editor inline-actions and
   task-checkbox overlay parts.
-- Kept `SovereignController`, `SovereignEditor`, and
-  `SovereignMarkdownView` as the public library files while pointing their
-  internal `part` and helper imports at `package:sovereign_editor/src/...`.
+- Kept `FlarkController`, `FlarkEditor`, and
+  `FlarkMarkdownView` as the public library files while pointing their
+  internal `part` and helper imports at `package:flark/src/...`.
 - `flutter analyze lib test`: passed.
 - Focused controller/editor behavior tests: passed.
 - `dart doc --dry-run`: passed with 0 warnings and 0 errors.
@@ -340,13 +340,13 @@ append-only unless correcting a factual error.
   controller, editor/preview widgets, command facade/models, theme types,
   advanced syntax/native bridge contracts, and model carriers intentionally
   retained for current public signatures.
-- Marked `lib/sovereign_editor.dart` as the package's single supported
+- Marked `lib/flark.dart` as the package's single supported
   app-facing barrel; no secondary public libraries are documented for this pass.
 
 ### Phase 1 API Shape: Stable Inventory
 
 - Defined the stable API inventory around
-  `package:sovereign_editor/sovereign_editor.dart` as the only supported
+  `package:flark/flark.dart` as the only supported
   app-facing import.
 - Classified the barrel exports into stable consumer API, stable supporting
   model carriers, and advanced supported integration API.
@@ -396,17 +396,17 @@ append-only unless correcting a factual error.
 ### Phase 2 Native Packaging: Example Harness
 
 - Added `example/` as the package mobile integration harness.
-- The example depends on `sovereign_editor` through `path: ..` and imports only
-  `package:sovereign_editor/sovereign_editor.dart`.
+- The example depends on `flark` through `path: ..` and imports only
+  `package:flark/flark.dart`.
 - Replaced the generated counter app with a compact editable/preview markdown
-  workspace using `SovereignController`, `SovereignEditor`,
-  `SovereignMarkdownView`, and `SovereignMarkdownCommands`.
+  workspace using `FlarkController`, `FlarkEditor`,
+  `FlarkMarkdownView`, and `FlarkMarkdownCommands`.
 - Added a public-contract plain-text fallback syntax engine inside the example
   so the app can surface native preflight diagnostics instead of crashing before
   native assets have been built.
-- Added `example/android/app:verifySovereignComrakNativeLibs`, which builds the
+- Added `example/android/app:verifyFlarkComrakNativeLibs`, which builds the
   debug APK and verifies that `libsovereign_comrak_bridge.so` is packaged.
-- Added `example/ios/Runner/SovereignComrakAnchor.c` and linked
+- Added `example/ios/Runner/FlarkComrakAnchor.c` and linked
   `native/comrak_bridge/dist/ios/sovereign_comrak_bridge.xcframework` in the
   Runner project so iOS process-linked builds keep the bridge symbols visible.
 - Added `scripts/verify_example_packaging.sh` for Android APK inspection and
@@ -428,11 +428,11 @@ append-only unless correcting a factual error.
 
 ### Phase 3 Architecture Hardening: Enter Intent Handler
 
-- Split Enter key behavior out of the umbrella `SovereignInputIntentHandler`
-  into `SovereignEnterIntentHandler`.
-- Added a focused `SovereignEnterIntentHost` contract for plain newline,
+- Split Enter key behavior out of the umbrella `FlarkInputIntentHandler`
+  into `FlarkEnterIntentHandler`.
+- Added a focused `FlarkEnterIntentHost` contract for plain newline,
   indented-code Enter, and fenced-code Enter exit behavior.
-- Kept the public controller API unchanged; `SovereignController.handleEnter`
+- Kept the public controller API unchanged; `FlarkController.handleEnter`
   still delegates through the existing controller input-intent facade.
 - Verification:
   - `flutter analyze lib test/widgets/sovereign/enter_key_integration_test.dart test/widgets/sovereign/code_fence_exit_test.dart`: passed.
@@ -444,9 +444,9 @@ append-only unless correcting a factual error.
 
 - Moved fenced-code and inline-wrapper backspace transforms out of the
   controller-private fence backspace policy extension and into
-  `SovereignBackspaceIntentHandler`.
+  `FlarkBackspaceIntentHandler`.
 - Routed backspace policy transforms through the existing
-  `SovereignInputIntentHandler` facade so Enter, Tab, navigation, and
+  `FlarkInputIntentHandler` facade so Enter, Tab, navigation, and
   backspace now all have explicit intent handlers.
 - Removed the old `sovereign_controller_policies_fence_backspace.dart` part;
   the controller now exposes backspace-only state through the typed input-intent
@@ -471,7 +471,7 @@ append-only unless correcting a factual error.
 - Routed controller table lookups, task checkbox line info, fence context,
   quote context, fence language, and hidden-fence geometry queries through the
   new query service.
-- Moved pure `SovereignNavigationHelpers` from the controller folder into
+- Moved pure `FlarkNavigationHelpers` from the controller folder into
   `core/structure/navigation` so structure query code does not depend on the
   controller layer.
 - Left structural transforms in the existing edit policy pipeline; the
@@ -717,7 +717,7 @@ append-only unless correcting a factual error.
 
 ### Phase 3 Architecture Hardening: Task Checkbox Query Extraction
 
-- Moved task-checkbox line range analysis out of `SovereignController` and into
+- Moved task-checkbox line range analysis out of `FlarkController` and into
   `MarkdownStructureQueryService` behind a typed `TaskCheckboxLineInfo` model.
 - Kept the controller's public range API as a thin facade over the structure
   query service.
@@ -743,7 +743,7 @@ append-only unless correcting a factual error.
 
 ### Phase 3 Architecture Hardening: Projected Select-All Normalizer
 
-- Moved projected select-all delete normalization from `SovereignController` into
+- Moved projected select-all delete normalization from `FlarkController` into
   `core/syntax/ProjectedSelectAllDeleteNormalizer`.
 - Removed the controller helper so the value-mutation host delegates directly to
   syntax code with the current projected hidden ranges.
@@ -755,8 +755,8 @@ append-only unless correcting a factual error.
 
 ### Phase 3 Architecture Hardening: Undo/Redo Coordinator
 
-- Moved undo/redo orchestration from `SovereignController` into
-  `core/pipeline/SovereignUndoRedoCoordinator`.
+- Moved undo/redo orchestration from `FlarkController` into
+  `core/pipeline/FlarkUndoRedoCoordinator`.
 - Kept restoration state updates controller-owned for this slice, with a narrow
   controller host delegating between the facade and pipeline coordinator.
 - Verification:
@@ -800,12 +800,12 @@ append-only unless correcting a factual error.
 
 ### Phase 3 Architecture Hardening: Controller Facade RFC 017 Checkpoint
 
-- Moved vertical caret movement state updates out of `SovereignController` and
+- Moved vertical caret movement state updates out of `FlarkController` and
   into the input-intent host that owns the navigation behavior.
 - Trimmed stale phase-label comments from the controller after extracting the
   referenced responsibilities into services and coordinators.
 - Marked the RFC 017 controller-facade extraction item complete in the execution
-  plan: `SovereignController` is now 680 lines, below the RFC's 700-line
+  plan: `FlarkController` is now 680 lines, below the RFC's 700-line
   acceptance threshold.
 - Verification:
   - `flutter analyze lib/widgets/sovereign/controllers/sovereign_controller.dart lib/src/widgets/sovereign/controllers/sovereign_input_intent_handler.dart lib/src/widgets/sovereign/controllers/sovereign_controller_policies.dart lib/src/widgets/sovereign/core/structure/markdown_structure_query_service.dart`: passed.
@@ -817,8 +817,8 @@ append-only unless correcting a factual error.
 ### Phase 3 Architecture Hardening: Read-Only Checkbox Visual Layer
 
 - Extracted read-only task-checkbox visual widget construction from
-  `SovereignMarkdownView` into
-  `SovereignReadOnlyTaskCheckboxVisualLayer`.
+  `FlarkMarkdownView` into
+  `FlarkReadOnlyTaskCheckboxVisualLayer`.
 - Kept the markdown view focused on controller lifecycle, pointer interaction,
   and composition of typed render helpers; the new visual layer is render-only
   with typed props.
@@ -887,7 +887,7 @@ append-only unless correcting a factual error.
 ### Phase 4 Feature Completeness: Raw HTML Text-Only Policy
 
 - Documented the final raw HTML policy in
-  `docs/production_readiness/raw_html_policy_2026-05-02.md`: Sovereign preserves
+  `docs/production_readiness/raw_html_policy_2026-05-02.md`: Flark preserves
   raw HTML as literal source text and does not execute, embed, or sanitize HTML
   because it does not render HTML.
 - Added read-only and editor rendering regressions that keep raw HTML tags
@@ -945,7 +945,7 @@ append-only unless correcting a factual error.
 - Closed the remaining table gap as a source-first GFM policy instead of adding
   a separate WYSIWYG grid model: tables remain parser-backed markdown source
   with monospace/source-aligned rendering.
-- Added command-layer table operations through `SovereignMarkdownCommands`:
+- Added command-layer table operations through `FlarkMarkdownCommands`:
   table insertion, body-row insertion/deletion, and column insertion/deletion.
 - Kept command-oriented source transforms in `TableCommandEditingService` while
   reusing `TableEditingService` formatting, so Enter continuation, Tab
@@ -1142,7 +1142,7 @@ append-only unless correcting a factual error.
 
 ### V2 Research Audit: Markdown Live Editor Gotchas
 
-- Cross-checked Sovereign's live-rendered editor against first-party notes from
+- Cross-checked Flark's live-rendered editor against first-party notes from
   mature Markdown/editor projects: TOAST UI's parser redesign notes, ProseMirror
   position/selection mapping and embedded editor examples, CodeMirror widget
   decoration guidance, Lexical state/selection/update guidance, Tiptap
@@ -1208,20 +1208,20 @@ append-only unless correcting a factual error.
 
 ### V2 DX Ergonomics Pass: Controller-Owned Field Surface
 
-- Compared Sovereign's app-facing setup against peer editor leaders. Lexical
+- Compared Flark's app-facing setup against peer editor leaders. Lexical
   emphasizes a modular composer/editor instance split with plugin-like feature
   registration; Tiptap's entrypoint accepts initial content plus extensions;
   CodeMirror's core is configured from extension bundles; and ProseMirror
   keeps the transaction/plugin model explicit for advanced integrations.
-- Sovereign already had the advanced half of that shape: a
-  `SovereignFlutterController`, command registry, extension set, parse
+- Flark already had the advanced half of that shape: a
+  `FlarkFlutterController`, command registry, extension set, parse
   scheduler, projected editing, and shared render plans. The ergonomic gap was
   the first-run app path: even the quick start required manually creating and
   disposing a controller before rendering an editor.
-- Added `SovereignMarkdownField` as the low-ceremony app API. It owns a
-  `SovereignFlutterController`, starts from `initialMarkdown`, forwards the
+- Added `FlarkMarkdownField` as the low-ceremony app API. It owns a
+  `FlarkFlutterController`, starts from `initialMarkdown`, forwards the
   existing editor configuration knobs, and reports source changes through
-  `onChanged`. `SovereignMarkdownEditor` remains the controller-owned surface
+  `onChanged`. `FlarkMarkdownEditor` remains the controller-owned surface
   for split panes, command toolbars, and custom runtime sharing.
 - Tightened the field semantics after review: `initialMarkdown` is now
   initial-only for an existing widget state, so a parent that stores `onChanged`
@@ -1234,7 +1234,7 @@ append-only unless correcting a factual error.
 - Verification:
   - `flutter test test/v2/flutter/sovereign_markdown_surface_test.dart --reporter compact`: passed with 5 tests.
   - `flutter test test/v2/public_api/sovereign_editor_v2_public_api_test.dart test/public_api/sovereign_editor_barrel_test.dart --reporter compact`: passed with 5 tests.
-  - `flutter analyze lib/src/v2/flutter/sovereign_markdown_field.dart lib/src/v2/flutter/flutter.dart lib/sovereign_editor.dart lib/sovereign_editor_v2.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart test/public_api/sovereign_editor_barrel_test.dart`: passed.
+  - `flutter analyze lib/src/v2/flutter/sovereign_markdown_field.dart lib/src/v2/flutter/flutter.dart lib/flark.dart lib/flark_advanced.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart test/public_api/sovereign_editor_barrel_test.dart`: passed.
   - `flutter test test/v2/flutter --reporter compact`: passed with 204 tests.
   - `dart doc --dry-run`: passed with 0 warnings and 0 errors.
   - Follow-up after tightening `initialMarkdown` semantics:
@@ -1247,15 +1247,15 @@ append-only unless correcting a factual error.
 
 - Continued the peer comparison from the controller-owned field pass. The
   advanced editor frameworks all make simple integration possible while still
-  leaving a precise transaction/extension path for advanced users. Sovereign's
+  leaving a precise transaction/extension path for advanced users. Flark's
   v2 architecture already had the precise command layer, but everyday toolbar
   code still had to import command ids and construct payload objects for common
   Markdown actions.
-- Added `SovereignMarkdownControllerCommands`, a public extension on
-  `SovereignFlutterController`, for common Markdown toolbar/menu actions:
+- Added `FlarkMarkdownControllerCommands`, a public extension on
+  `FlarkFlutterController`, for common Markdown toolbar/menu actions:
   heading changes, inline styles, quote/list/task toggles, thematic breaks,
   code fences, tables, and link editing. The helpers are intentionally thin and
-  return `SovereignEditorRuntimeResult`, so apps can start with
+  return `FlarkEditorRuntimeResult`, so apps can start with
   `controller.toggleStrong()` without giving up command rejection details.
 - Exported the helper extension through the promoted app barrel and advanced v2
   barrel, updated the README toolbar example, and refactored the example app
@@ -1264,60 +1264,60 @@ append-only unless correcting a factual error.
 - The first helper test found a real command-level ergonomics bug: inserting a
   fenced code block at the end of a paragraph produced
   `paragraph```dart` instead of a separated block. Fixed
-  `SovereignMarkdownBlockCommands.insertFence` to add block-safe surrounding
+  `FlarkMarkdownBlockCommands.insertFence` to add block-safe surrounding
   newlines when the caret is embedded in paragraph text, while preserving the
   existing line-start behavior.
 - Verification:
   - `flutter test test/v2/markdown/sovereign_markdown_block_commands_test.dart test/v2/flutter/sovereign_markdown_controller_commands_test.dart --reporter compact`: passed with 21 tests.
   - `flutter test test/v2/public_api/sovereign_editor_v2_public_api_test.dart test/public_api/sovereign_editor_barrel_test.dart --reporter compact`: passed with 5 tests.
-  - `flutter analyze lib/src/v2/flutter/sovereign_markdown_controller_commands.dart lib/src/v2/flutter/sovereign_markdown_field.dart lib/src/v2/flutter/flutter.dart lib/src/v2/markdown/commands/sovereign_markdown_block_commands.dart lib/sovereign_editor.dart lib/sovereign_editor_v2.dart example/lib/main.dart test/v2/flutter/sovereign_markdown_controller_commands_test.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/markdown/sovereign_markdown_block_commands_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart test/public_api/sovereign_editor_barrel_test.dart`: passed.
+  - `flutter analyze lib/src/v2/flutter/sovereign_markdown_controller_commands.dart lib/src/v2/flutter/sovereign_markdown_field.dart lib/src/v2/flutter/flutter.dart lib/src/v2/markdown/commands/sovereign_markdown_block_commands.dart lib/flark.dart lib/flark_advanced.dart example/lib/main.dart test/v2/flutter/sovereign_markdown_controller_commands_test.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/markdown/sovereign_markdown_block_commands_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart test/public_api/sovereign_editor_barrel_test.dart`: passed.
   - `flutter test test/v2/flutter --reporter compact`: passed with 206 tests.
   - `flutter test test/v2/markdown --reporter compact`: passed with 233 tests.
   - `(cd example && flutter test test/widget_test.dart --reporter compact)`: passed with 36 tests.
   - `dart doc --dry-run`: passed with 0 warnings and 0 errors.
-  - `git diff --check -- README.md docs/production_readiness/execution_log.md lib/sovereign_editor.dart lib/sovereign_editor_v2.dart lib/src/v2/flutter/flutter.dart lib/src/v2/flutter/sovereign_markdown_field.dart lib/src/v2/flutter/sovereign_markdown_controller_commands.dart lib/src/v2/markdown/commands/sovereign_markdown_block_commands.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/flutter/sovereign_markdown_controller_commands_test.dart test/v2/markdown/sovereign_markdown_block_commands_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart test/public_api/sovereign_editor_barrel_test.dart example/lib/main.dart`: clean.
+  - `git diff --check -- README.md docs/production_readiness/execution_log.md lib/flark.dart lib/flark_advanced.dart lib/src/v2/flutter/flutter.dart lib/src/v2/flutter/sovereign_markdown_field.dart lib/src/v2/flutter/sovereign_markdown_controller_commands.dart lib/src/v2/markdown/commands/sovereign_markdown_block_commands.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/flutter/sovereign_markdown_controller_commands_test.dart test/v2/markdown/sovereign_markdown_block_commands_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart test/public_api/sovereign_editor_barrel_test.dart example/lib/main.dart`: clean.
 
 ### V2 DX Ergonomics Pass: Widget Surface Clarification
 
 - Tightened the app-facing widget story after review showed the surface still
-  felt overlapping. The top-level `sovereign_editor.dart` barrel now presents
-  the opinionated app path: `SovereignMarkdownField`,
-  `SovereignMarkdownEditor`, `SovereignMarkdownPreview`,
-  `SovereignReadOnlyPreview`, controller APIs, command helpers, and callback
+  felt overlapping. The top-level `flark.dart` barrel now presents
+  the opinionated app path: `FlarkMarkdownField`,
+  `FlarkMarkdownEditor`, `FlarkMarkdownPreview`,
+  `FlarkReadOnlyPreview`, controller APIs, command helpers, and callback
   types.
 - Kept the mode-specific implementation widgets
-  (`SovereignEditableText`, `SovereignProjectedEditableText`, and
-  `SovereignLiveRenderedEditableText`) in `sovereign_editor_v2.dart` for
+  (`FlarkEditableText`, `FlarkProjectedEditableText`, and
+  `FlarkLiveRenderedEditableText`) in `flark_advanced.dart` for
   advanced custom shells, but removed them from the top-level app barrel so
   first-time users do not see four editable widgets as equivalent choices.
 - Added a README widget guide that names the four primary widgets, their state
   owner, and when to choose each. The guide also tells app developers to use
-  `SovereignMarkdownEditor(editingMode: ...)` instead of directly choosing the
+  `FlarkMarkdownEditor(editingMode: ...)` instead of directly choosing the
   raw/source/projected/live implementation widgets.
 - Verification:
   - `flutter test test/public_api/sovereign_editor_barrel_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart --reporter compact`: passed with 5 tests.
-  - `flutter analyze lib/sovereign_editor.dart test/public_api/sovereign_editor_barrel_test.dart`: passed.
+  - `flutter analyze lib/flark.dart test/public_api/sovereign_editor_barrel_test.dart`: passed.
   - `(cd example && flutter analyze lib/main.dart test/widget_test.dart)`: passed.
   - `dart doc --dry-run`: passed with 0 warnings and 0 errors.
-  - `git diff --check -- README.md docs/production_readiness/execution_log.md lib/sovereign_editor.dart test/public_api/sovereign_editor_barrel_test.dart`: clean.
+  - `git diff --check -- README.md docs/production_readiness/execution_log.md lib/flark.dart test/public_api/sovereign_editor_barrel_test.dart`: clean.
 
 ### V2 DX Ergonomics Pass: Two-Widget Public Surface
 
 - Removed the remaining public widget overlap instead of preserving aliases.
-  The app-facing path is now two widgets: `SovereignMarkdownEditor` for
-  editable Markdown and `SovereignMarkdownPreview` for read-only Markdown.
-  `SovereignMarkdownField` is gone, and `SovereignReadOnlyPreview` is no
+  The app-facing path is now two widgets: `FlarkMarkdownEditor` for
+  editable Markdown and `FlarkMarkdownPreview` for read-only Markdown.
+  `FlarkMarkdownField` is gone, and `FlarkReadOnlyPreview` is no
   longer exported through the app or v2 public barrels.
-- Merged the field convenience path into `SovereignMarkdownEditor`. Apps can
+- Merged the field convenience path into `FlarkMarkdownEditor`. Apps can
   pass `initialMarkdown` and `onChanged` for the simple owned-controller case,
   or pass `controller` for split panes, toolbars, undo/redo UI, and document
   sharing. Constructor asserts reject ambiguous ownership such as
   `controller` plus `initialMarkdown` or `extensions`.
-- Made `SovereignMarkdownPreview` match the same Flutter convention: pass
+- Made `FlarkMarkdownPreview` match the same Flutter convention: pass
   `markdown` for standalone preview, or `controller` to render the same plan as
   an editor. Shared-controller previews no longer schedule parsing or accept a
   `parseBackend`; parser scheduling has one owner.
-- Pruned `sovereign_editor_v2.dart` so implementation widgets and helpers stay
+- Pruned `flark_advanced.dart` so implementation widgets and helpers stay
   behind deep imports for package tests: raw/projected/live concrete editing
   widgets, parser scheduler, render-plan overlay widget, and text-delta adapter
   are no longer part of the public v2 barrel.
@@ -1327,7 +1327,7 @@ append-only unless correcting a factual error.
   import `src/v2/flutter/flutter.dart`.
 - Verification:
   - `flutter test test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/flutter/sovereign_read_only_preview_test.dart test/v2/flutter/sovereign_render_plan_parity_test.dart test/public_api/sovereign_editor_barrel_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart --reporter compact`: passed.
-  - `flutter analyze lib/src/v2/flutter/sovereign_markdown_editor.dart lib/src/v2/flutter/sovereign_markdown_preview.dart lib/src/v2/flutter/flutter.dart lib/sovereign_editor.dart lib/sovereign_editor_v2.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/flutter/sovereign_read_only_preview_test.dart test/v2/flutter/sovereign_render_plan_parity_test.dart test/public_api/sovereign_editor_barrel_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart example/lib/main.dart example/test/widget_test.dart`: passed.
+  - `flutter analyze lib/src/v2/flutter/sovereign_markdown_editor.dart lib/src/v2/flutter/sovereign_markdown_preview.dart lib/src/v2/flutter/flutter.dart lib/flark.dart lib/flark_advanced.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/flutter/sovereign_read_only_preview_test.dart test/v2/flutter/sovereign_render_plan_parity_test.dart test/public_api/sovereign_editor_barrel_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart example/lib/main.dart example/test/widget_test.dart`: passed.
   - `flutter test test/v2/flutter/sovereign_live_rendered_visual_layout_test.dart --reporter compact`: passed with 4 tests after moving the white-box test to deep imports.
   - `flutter test test/v2/flutter --reporter compact`: passed with 207 tests.
   - `(cd example && flutter test test/widget_test.dart --reporter compact)`: passed with 36 tests.
@@ -1337,9 +1337,9 @@ append-only unless correcting a factual error.
 
 - Renamed the two public widget entry points to the clean names requested for
   the app API: `Markdown` renders read-only Markdown, and `MarkdownEditor`
-  edits Markdown. The old `SovereignMarkdownEditor` and
-  `SovereignMarkdownPreview` names are not exported as aliases.
-- Kept the existing Sovereign-prefixed controller, command, parser, and render
+  edits Markdown. The old `FlarkMarkdownEditor` and
+  `FlarkMarkdownPreview` names are not exported as aliases.
+- Kept the existing Flark-prefixed controller, command, parser, and render
   model types. Those names are still useful because they are framework-specific
   contracts; the widgets are the low-friction app entry points.
 - Updated the README, migration guide, public API inventory, Flutter adapter
@@ -1347,8 +1347,41 @@ append-only unless correcting a factual error.
   public API guards to use `Markdown` / `MarkdownEditor`.
 - Verification:
   - `flutter test test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/flutter/sovereign_read_only_preview_test.dart test/v2/flutter/sovereign_render_plan_parity_test.dart test/public_api/sovereign_editor_barrel_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart --reporter compact`: passed.
-  - `flutter analyze lib/src/v2/flutter/sovereign_markdown_editor.dart lib/src/v2/flutter/sovereign_markdown_preview.dart lib/src/v2/flutter/flutter.dart lib/sovereign_editor.dart lib/sovereign_editor_v2.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/flutter/sovereign_read_only_preview_test.dart test/v2/flutter/sovereign_render_plan_parity_test.dart test/public_api/sovereign_editor_barrel_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart example/lib/main.dart example/test/widget_test.dart`: passed.
+  - `flutter analyze lib/src/v2/flutter/sovereign_markdown_editor.dart lib/src/v2/flutter/sovereign_markdown_preview.dart lib/src/v2/flutter/flutter.dart lib/flark.dart lib/flark_advanced.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/flutter/sovereign_read_only_preview_test.dart test/v2/flutter/sovereign_render_plan_parity_test.dart test/public_api/sovereign_editor_barrel_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart example/lib/main.dart example/test/widget_test.dart`: passed.
   - `flutter test test/v2/flutter --reporter compact`: passed with 207 tests.
   - `(cd example && flutter test test/widget_test.dart --reporter compact)`: passed with 36 tests.
   - `dart doc --dry-run`: passed with 0 warnings and 0 errors.
-  - `git diff --check -- README.md docs/architecture/v2/migration_guide_2026-05-02.md docs/architecture/v2/public_api_inventory_2026-05-02.md docs/architecture/v2/flutter_adapter_2026-05-02.md docs/architecture/v2/quality_journal_2026-05-31.md docs/architecture/v2/quality_audit_2026-05-05.md docs/production_readiness/execution_log.md lib/sovereign_editor.dart lib/sovereign_editor_v2.dart lib/src/v2/flutter/sovereign_markdown_editor.dart lib/src/v2/flutter/sovereign_markdown_preview.dart example/lib/main.dart example/test/widget_test.dart example/integration_test/markdown_flow_test.dart test/public_api/sovereign_editor_barrel_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/flutter/sovereign_render_plan_parity_test.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart test/v2/flutter/sovereign_v2_visual_golden_test.dart test/v2/flutter/sovereign_markdown_web_smoke_test.dart test/v2/flutter/sovereign_read_only_preview_test.dart`: clean.
+  - `git diff --check -- README.md docs/architecture/v2/migration_guide_2026-05-02.md docs/architecture/v2/public_api_inventory_2026-05-02.md docs/architecture/v2/flutter_adapter_2026-05-02.md docs/architecture/v2/quality_journal_2026-05-31.md docs/architecture/v2/quality_audit_2026-05-05.md docs/production_readiness/execution_log.md lib/flark.dart lib/flark_advanced.dart lib/src/v2/flutter/sovereign_markdown_editor.dart lib/src/v2/flutter/sovereign_markdown_preview.dart example/lib/main.dart example/test/widget_test.dart example/integration_test/markdown_flow_test.dart test/public_api/sovereign_editor_barrel_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/flutter/sovereign_render_plan_parity_test.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart test/v2/flutter/sovereign_v2_visual_golden_test.dart test/v2/flutter/sovereign_markdown_web_smoke_test.dart test/v2/flutter/sovereign_read_only_preview_test.dart`: clean.
+
+### Package Rename: Flark Public Identity
+
+- Renamed the package from `sovereign_editor` to `flark` and moved the public
+  library entry points to `flark.dart`, `flark_core.dart`, and
+  `flark_advanced.dart`.
+- Renamed the public framework-specific API types from `Sovereign*` to
+  `Flark*` while keeping the two app widgets clean: `Markdown` and
+  `MarkdownEditor`.
+- Updated the example app, tests, public API guards, scripts, native packaging
+  references, and docs to import `package:flark/flark.dart` and to use the
+  Flark type names.
+- Replaced the README with a concise package front door and added a docs setup:
+  `docs/README.md`, `docs/getting_started.md`, `docs/api_surface.md`,
+  `docs/parser_and_platforms.md`, and `docs/development.md`.
+- Kept the existing `sovereign_comrak_bridge` Rust artifact and ABI symbol
+  names as native implementation details rather than forcing a separate native
+  packaging migration into the Dart package rename.
+- Optimized render-plan construction by partitioning inline tokens into
+  sibling block buckets before rendering. This removes the old repeated scan
+  of the full inline-token list for every parsed block and restored the
+  render-plan performance budget.
+- Verification:
+  - `flutter pub get`: passed for the package and example.
+  - `dart format lib test example/lib example/test example/integration_test hook`: passed.
+  - `flutter analyze hook lib test example`: passed.
+  - `flutter test test/public_api/flark_barrel_test.dart test/v2/public_api/flark_advanced_public_api_test.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/flutter/sovereign_read_only_preview_test.dart test/v2/flutter/sovereign_render_plan_parity_test.dart --reporter compact`: passed with 35 tests.
+  - `dart doc --dry-run`: passed with 0 warnings and 0 errors.
+  - `flutter test test/v2/performance/sovereign_v2_performance_budget_test.dart --reporter compact`: passed on rerun after render-plan token partitioning. A prior run exposed cold/timing sensitivity in the parse-adoption budget and the old render-plan repeated scan.
+  - `flutter test test --exclude-tags benchmark --reporter compact`: passed with 543 tests.
+  - `(cd example && flutter test test/widget_test.dart --reporter compact)`: passed with 36 tests.
+  - Stale public-name scan for old package imports and `Sovereign*` public symbols: clean.
+  - `git diff --check`: clean.

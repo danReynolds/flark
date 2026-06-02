@@ -1,163 +1,164 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
-import 'package:sovereign_editor/src/v2/markdown/markdown.dart';
-import 'package:sovereign_editor/src/v2/projection/projection.dart';
-import 'package:sovereign_editor/src/v2/render_plan/render_plan.dart';
+import 'package:flark/src/v2/core/core.dart';
+import 'package:flark/src/v2/markdown/markdown.dart';
+import 'package:flark/src/v2/projection/projection.dart';
+import 'package:flark/src/v2/render_plan/render_plan.dart';
 
 void main() {
-  group('SovereignRenderPlan', () {
-    test('builds platform-neutral block and inline ranges from parse output',
-        () {
-      final parseResult = SovereignMarkdownParseResult(
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
-        revision: 3,
-        sourceTextLength: 9,
-        blocks: [
-          SovereignMarkdownBlockNode(
-            kind: SovereignMarkdownBlockKind.paragraph,
-            type: 'paragraph',
-            sourceRange: const SovereignSourceRange(0, 9),
-          ),
-        ],
-        inlineTokens: [
-          SovereignMarkdownInlineToken(
-            kind: SovereignMarkdownInlineKind.strong,
-            type: 'strong',
-            sourceRange: const SovereignSourceRange(0, 9),
-            attributes: const {'marker': '**'},
-          ),
-        ],
-        hiddenRanges: [
-          SovereignMarkdownHiddenRange(
-            kind: SovereignMarkdownHiddenRangeKind.inlineMarker,
-            type: 'inlineMarker',
-            sourceRange: const SovereignSourceRange(0, 2),
-            attributes: const {'marker': '**'},
-          ),
-          SovereignMarkdownHiddenRange(
-            kind: SovereignMarkdownHiddenRangeKind.inlineMarker,
-            type: 'inlineMarker',
-            sourceRange: const SovereignSourceRange(7, 9),
-            attributes: const {'marker': '**'},
-          ),
-        ],
-      );
+  group('FlarkRenderPlan', () {
+    test(
+      'builds platform-neutral block and inline ranges from parse output',
+      () {
+        final parseResult = FlarkMarkdownParseResult(
+          schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
+          revision: 3,
+          sourceTextLength: 9,
+          blocks: [
+            FlarkMarkdownBlockNode(
+              kind: FlarkMarkdownBlockKind.paragraph,
+              type: 'paragraph',
+              sourceRange: const FlarkSourceRange(0, 9),
+            ),
+          ],
+          inlineTokens: [
+            FlarkMarkdownInlineToken(
+              kind: FlarkMarkdownInlineKind.strong,
+              type: 'strong',
+              sourceRange: const FlarkSourceRange(0, 9),
+              attributes: const {'marker': '**'},
+            ),
+          ],
+          hiddenRanges: [
+            FlarkMarkdownHiddenRange(
+              kind: FlarkMarkdownHiddenRangeKind.inlineMarker,
+              type: 'inlineMarker',
+              sourceRange: const FlarkSourceRange(0, 2),
+              attributes: const {'marker': '**'},
+            ),
+            FlarkMarkdownHiddenRange(
+              kind: FlarkMarkdownHiddenRangeKind.inlineMarker,
+              type: 'inlineMarker',
+              sourceRange: const FlarkSourceRange(7, 9),
+              attributes: const {'marker': '**'},
+            ),
+          ],
+        );
 
-      final plan = SovereignRenderPlan.fromParseResult(
-        parseResult: parseResult,
-      );
+        final plan = FlarkRenderPlan.fromParseResult(parseResult: parseResult);
 
-      expect(plan.metadata['revision'], 3);
-      expect(plan.blocks.single.kind, SovereignMarkdownBlockKind.paragraph);
-      expect(plan.blocks.single.sourceRange, const SovereignSourceRange(0, 9));
-      expect(plan.blocks.single.displayRange, const SovereignSourceRange(0, 5));
-      expect(plan.blocks.single.inlineRuns.single.kind,
-          SovereignMarkdownInlineKind.strong);
-      expect(plan.blocks.single.styleToken, SovereignRenderTextStyleToken.body);
-      expect(plan.blocks.single.inlineRuns.single.styleToken,
-          SovereignRenderTextStyleToken.strong);
-      expect(
-        plan.blocks.single.inlineRuns.single.displayRange,
-        const SovereignSourceRange(0, 5),
-      );
-    });
+        expect(plan.metadata['revision'], 3);
+        expect(plan.blocks.single.kind, FlarkMarkdownBlockKind.paragraph);
+        expect(plan.blocks.single.sourceRange, const FlarkSourceRange(0, 9));
+        expect(plan.blocks.single.displayRange, const FlarkSourceRange(0, 5));
+        expect(
+          plan.blocks.single.inlineRuns.single.kind,
+          FlarkMarkdownInlineKind.strong,
+        );
+        expect(plan.blocks.single.styleToken, FlarkRenderTextStyleToken.body);
+        expect(
+          plan.blocks.single.inlineRuns.single.styleToken,
+          FlarkRenderTextStyleToken.strong,
+        );
+        expect(
+          plan.blocks.single.inlineRuns.single.displayRange,
+          const FlarkSourceRange(0, 5),
+        );
+      },
+    );
 
     test('preserves unknown render node types for forward compatibility', () {
-      final parseResult = SovereignMarkdownParseResult(
+      final parseResult = FlarkMarkdownParseResult(
         schemaVersion: 99,
         revision: 1,
         sourceTextLength: 3,
         blocks: [
-          SovereignMarkdownBlockNode(
-            kind: SovereignMarkdownBlockKind.unknown,
+          FlarkMarkdownBlockNode(
+            kind: FlarkMarkdownBlockKind.unknown,
             type: 'admonition',
-            sourceRange: const SovereignSourceRange(0, 3),
+            sourceRange: const FlarkSourceRange(0, 3),
           ),
         ],
         inlineTokens: const [],
       );
 
-      final plan = SovereignRenderPlan.fromParseResult(
+      final plan = FlarkRenderPlan.fromParseResult(
         parseResult: parseResult,
-        projection: SovereignProjection(textLength: 3),
+        projection: FlarkProjection(textLength: 3),
       );
 
-      expect(plan.blocks.single.kind, SovereignMarkdownBlockKind.unknown);
+      expect(plan.blocks.single.kind, FlarkMarkdownBlockKind.unknown);
       expect(plan.blocks.single.type, 'admonition');
     });
 
     test('maps block and inline display ranges through replacements', () {
       const source = 'A &amp; B';
-      final parseResult = SovereignMarkdownParseResult(
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+      final parseResult = FlarkMarkdownParseResult(
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
         revision: 4,
         sourceTextLength: source.length,
         blocks: [
-          SovereignMarkdownBlockNode(
-            kind: SovereignMarkdownBlockKind.paragraph,
+          FlarkMarkdownBlockNode(
+            kind: FlarkMarkdownBlockKind.paragraph,
             type: 'paragraph',
-            sourceRange: SovereignSourceRange(0, source.length),
+            sourceRange: FlarkSourceRange(0, source.length),
           ),
         ],
         inlineTokens: [
-          SovereignMarkdownInlineToken(
-            kind: SovereignMarkdownInlineKind.emphasis,
+          FlarkMarkdownInlineToken(
+            kind: FlarkMarkdownInlineKind.emphasis,
             type: 'emphasis',
-            sourceRange: const SovereignSourceRange(2, 7),
+            sourceRange: const FlarkSourceRange(2, 7),
           ),
         ],
         replacementRanges: [
-          SovereignMarkdownReplacementRange(
-            kind: SovereignMarkdownReplacementRangeKind.htmlEntity,
+          FlarkMarkdownReplacementRange(
+            kind: FlarkMarkdownReplacementRangeKind.htmlEntity,
             type: 'htmlEntity',
-            sourceRange: const SovereignSourceRange(2, 7),
+            sourceRange: const FlarkSourceRange(2, 7),
             replacementText: '&',
           ),
         ],
       );
 
-      final projection = SovereignProjection.fromParseResult(parseResult);
-      final plan = SovereignRenderPlan.fromParseResult(
+      final projection = FlarkProjection.fromParseResult(parseResult);
+      final plan = FlarkRenderPlan.fromParseResult(
         parseResult: parseResult,
         projection: projection,
       );
 
       expect(projection.projectText(source), 'A & B');
-      expect(
-        plan.blocks.single.displayRange,
-        const SovereignSourceRange(0, 5),
-      );
+      expect(plan.blocks.single.displayRange, const FlarkSourceRange(0, 5));
       expect(
         plan.blocks.single.inlineRuns.single.displayRange,
-        const SovereignSourceRange(2, 3),
+        const FlarkSourceRange(2, 3),
       );
     });
 
     test('applies render-plan extensions in registration order', () {
-      final parseResult = SovereignMarkdownParseResult(
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+      final parseResult = FlarkMarkdownParseResult(
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
         revision: 7,
         sourceTextLength: 4,
         blocks: [
-          SovereignMarkdownBlockNode(
-            kind: SovereignMarkdownBlockKind.paragraph,
+          FlarkMarkdownBlockNode(
+            kind: FlarkMarkdownBlockKind.paragraph,
             type: 'paragraph',
-            sourceRange: const SovereignSourceRange(0, 4),
+            sourceRange: const FlarkSourceRange(0, 4),
           ),
         ],
         inlineTokens: const [],
       );
-      final projection = SovereignProjection(textLength: 4);
-      final renderPlan = SovereignRenderPlan.fromParseResult(
+      final projection = FlarkProjection(textLength: 4);
+      final renderPlan = FlarkRenderPlan.fromParseResult(
         parseResult: parseResult,
         projection: projection,
       );
 
-      final transformed = applySovereignRenderPlanExtensions(
+      final transformed = applyFlarkRenderPlanExtensions(
         renderPlan: renderPlan,
         parseResult: parseResult,
         projection: projection,
-        extensions: SovereignExtensionSet([
+        extensions: FlarkExtensionSet([
           const _MetadataRenderPlanExtension('first'),
           const _MetadataRenderPlanExtension('second'),
         ]),
@@ -168,96 +169,95 @@ void main() {
     });
 
     test('assigns renderer-neutral heading style tokens', () {
-      final parseResult = SovereignMarkdownParseResult(
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+      final parseResult = FlarkMarkdownParseResult(
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
         revision: 1,
         sourceTextLength: 8,
         blocks: [
-          SovereignMarkdownBlockNode(
-            kind: SovereignMarkdownBlockKind.heading,
+          FlarkMarkdownBlockNode(
+            kind: FlarkMarkdownBlockKind.heading,
             type: 'heading',
-            sourceRange: const SovereignSourceRange(0, 8),
+            sourceRange: const FlarkSourceRange(0, 8),
             attributes: const {'level': 2},
           ),
         ],
         inlineTokens: const [],
       );
 
-      final plan = SovereignRenderPlan.fromParseResult(
-        parseResult: parseResult,
-      );
+      final plan = FlarkRenderPlan.fromParseResult(parseResult: parseResult);
 
-      expect(plan.blocks.single.styleToken,
-          SovereignRenderTextStyleToken.heading2);
+      expect(plan.blocks.single.styleToken, FlarkRenderTextStyleToken.heading2);
     });
 
     test('attaches inline runs to the deepest owning block only', () {
-      final parseResult = SovereignMarkdownParseResult(
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+      final parseResult = FlarkMarkdownParseResult(
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
         revision: 1,
         sourceTextLength: 10,
         blocks: [
-          SovereignMarkdownBlockNode(
-            kind: SovereignMarkdownBlockKind.blockquote,
+          FlarkMarkdownBlockNode(
+            kind: FlarkMarkdownBlockKind.blockquote,
             type: 'blockquote',
-            sourceRange: const SovereignSourceRange(0, 10),
+            sourceRange: const FlarkSourceRange(0, 10),
             children: [
-              SovereignMarkdownBlockNode(
-                kind: SovereignMarkdownBlockKind.paragraph,
+              FlarkMarkdownBlockNode(
+                kind: FlarkMarkdownBlockKind.paragraph,
                 type: 'paragraph',
-                sourceRange: const SovereignSourceRange(2, 10),
+                sourceRange: const FlarkSourceRange(2, 10),
               ),
             ],
           ),
         ],
         inlineTokens: [
-          SovereignMarkdownInlineToken(
-            kind: SovereignMarkdownInlineKind.emphasis,
+          FlarkMarkdownInlineToken(
+            kind: FlarkMarkdownInlineKind.emphasis,
             type: 'emphasis',
-            sourceRange: const SovereignSourceRange(2, 8),
+            sourceRange: const FlarkSourceRange(2, 8),
           ),
         ],
       );
 
-      final plan = SovereignRenderPlan.fromParseResult(
+      final plan = FlarkRenderPlan.fromParseResult(
         parseResult: parseResult,
-        projection: SovereignProjection(textLength: 10),
+        projection: FlarkProjection(textLength: 10),
       );
 
       expect(plan.blocks.single.inlineRuns, isEmpty);
-      expect(plan.blocks.single.children.single.inlineRuns.single.kind,
-          SovereignMarkdownInlineKind.emphasis);
+      expect(
+        plan.blocks.single.children.single.inlineRuns.single.kind,
+        FlarkMarkdownInlineKind.emphasis,
+      );
     });
 
     test('exposes typed table descriptors from parser attributes', () {
-      final parseResult = SovereignMarkdownParseResult(
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+      final parseResult = FlarkMarkdownParseResult(
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
         revision: 1,
         sourceTextLength: 32,
         blocks: [
-          SovereignMarkdownBlockNode(
-            kind: SovereignMarkdownBlockKind.table,
+          FlarkMarkdownBlockNode(
+            kind: FlarkMarkdownBlockKind.table,
             type: 'table',
-            sourceRange: const SovereignSourceRange(0, 32),
+            sourceRange: const FlarkSourceRange(0, 32),
             attributes: const {
               'alignments': ['left', 'right', 'future'],
             },
             children: [
-              SovereignMarkdownBlockNode(
-                kind: SovereignMarkdownBlockKind.tableRow,
+              FlarkMarkdownBlockNode(
+                kind: FlarkMarkdownBlockKind.tableRow,
                 type: 'tableRow',
-                sourceRange: const SovereignSourceRange(0, 16),
+                sourceRange: const FlarkSourceRange(0, 16),
                 attributes: const {'header': true},
                 children: [
-                  SovereignMarkdownBlockNode(
-                    kind: SovereignMarkdownBlockKind.tableCell,
+                  FlarkMarkdownBlockNode(
+                    kind: FlarkMarkdownBlockKind.tableCell,
                     type: 'tableCell',
-                    sourceRange: const SovereignSourceRange(2, 6),
+                    sourceRange: const FlarkSourceRange(2, 6),
                   ),
-                  SovereignMarkdownBlockNode(
-                    kind: SovereignMarkdownBlockKind.tableCell,
+                  FlarkMarkdownBlockNode(
+                    kind: FlarkMarkdownBlockKind.tableCell,
                     type: 'tableCell',
-                    sourceRange: const SovereignSourceRange(9, 15),
+                    sourceRange: const FlarkSourceRange(9, 15),
                   ),
                 ],
               ),
@@ -267,359 +267,354 @@ void main() {
         inlineTokens: const [],
       );
 
-      final plan = SovereignRenderPlan.fromParseResult(
-        parseResult: parseResult,
-      );
+      final plan = FlarkRenderPlan.fromParseResult(parseResult: parseResult);
 
       expect(plan.blocks.single.table, isNotNull);
       expect(plan.blocks.single.table!.columnAlignments, const [
-        SovereignRenderTableColumnAlignment.left,
-        SovereignRenderTableColumnAlignment.right,
-        SovereignRenderTableColumnAlignment.unknown,
+        FlarkRenderTableColumnAlignment.left,
+        FlarkRenderTableColumnAlignment.right,
+        FlarkRenderTableColumnAlignment.unknown,
       ]);
       expect(plan.blocks.single.table!.rows, hasLength(1));
       expect(plan.blocks.single.table!.rows.single.header, isTrue);
       expect(plan.blocks.single.table!.rows.single.cells, hasLength(2));
       expect(
         plan.blocks.single.table!.rows.single.cells.first.sourceRange,
-        const SovereignSourceRange(2, 6),
+        const FlarkSourceRange(2, 6),
       );
     });
 
     test('exposes list, task-list, and code-fence descriptors', () {
-      final parseResult = SovereignMarkdownParseResult(
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+      final parseResult = FlarkMarkdownParseResult(
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
         revision: 1,
         sourceTextLength: 43,
         blocks: [
-          SovereignMarkdownBlockNode(
-            kind: SovereignMarkdownBlockKind.listItem,
+          FlarkMarkdownBlockNode(
+            kind: FlarkMarkdownBlockKind.listItem,
             type: 'listItem',
-            sourceRange: const SovereignSourceRange(0, 10),
+            sourceRange: const FlarkSourceRange(0, 10),
             attributes: const {'listKind': 'unordered'},
           ),
-          SovereignMarkdownBlockNode(
-            kind: SovereignMarkdownBlockKind.listItem,
+          FlarkMarkdownBlockNode(
+            kind: FlarkMarkdownBlockKind.listItem,
             type: 'listItem',
-            sourceRange: const SovereignSourceRange(11, 21),
+            sourceRange: const FlarkSourceRange(11, 21),
             attributes: const {'listKind': 'ordered'},
           ),
-          SovereignMarkdownBlockNode(
-            kind: SovereignMarkdownBlockKind.listItem,
+          FlarkMarkdownBlockNode(
+            kind: FlarkMarkdownBlockKind.listItem,
             type: 'listItem',
-            sourceRange: const SovereignSourceRange(22, 32),
+            sourceRange: const FlarkSourceRange(22, 32),
             attributes: const {'checked': true, 'listKind': 'unordered'},
           ),
-          SovereignMarkdownBlockNode(
-            kind: SovereignMarkdownBlockKind.codeBlock,
+          FlarkMarkdownBlockNode(
+            kind: FlarkMarkdownBlockKind.codeBlock,
             type: 'codeBlock',
-            sourceRange: const SovereignSourceRange(33, 43),
+            sourceRange: const FlarkSourceRange(33, 43),
             attributes: const {'language': 'dart'},
           ),
         ],
         inlineTokens: const [],
       );
 
-      final plan = SovereignRenderPlan.fromParseResult(
-        parseResult: parseResult,
-      );
+      final plan = FlarkRenderPlan.fromParseResult(parseResult: parseResult);
 
-      expect(plan.blocks[0].listItem!.kind, SovereignRenderListKind.unordered);
-      expect(plan.blocks[1].listItem!.kind, SovereignRenderListKind.ordered);
-      expect(plan.blocks[2].listItem!.kind, SovereignRenderListKind.unordered);
+      expect(plan.blocks[0].listItem!.kind, FlarkRenderListKind.unordered);
+      expect(plan.blocks[1].listItem!.kind, FlarkRenderListKind.ordered);
+      expect(plan.blocks[2].listItem!.kind, FlarkRenderListKind.unordered);
       expect(plan.blocks[2].taskListItem!.checked, isTrue);
       expect(plan.blocks.last.codeBlock!.language, 'dart');
     });
 
     test('exposes link and image action descriptors on inline runs', () {
-      final parseResult = SovereignMarkdownParseResult(
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+      final parseResult = FlarkMarkdownParseResult(
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
         revision: 1,
         sourceTextLength: 35,
         blocks: [
-          SovereignMarkdownBlockNode(
-            kind: SovereignMarkdownBlockKind.paragraph,
+          FlarkMarkdownBlockNode(
+            kind: FlarkMarkdownBlockKind.paragraph,
             type: 'paragraph',
-            sourceRange: const SovereignSourceRange(0, 35),
+            sourceRange: const FlarkSourceRange(0, 35),
           ),
         ],
         inlineTokens: [
-          SovereignMarkdownInlineToken(
-            kind: SovereignMarkdownInlineKind.link,
+          FlarkMarkdownInlineToken(
+            kind: FlarkMarkdownInlineKind.link,
             type: 'link',
-            sourceRange: const SovereignSourceRange(0, 15),
+            sourceRange: const FlarkSourceRange(0, 15),
             attributes: const {
               'destination': 'https://example.com',
               'title': 'Example',
               'label': 'link',
             },
           ),
-          SovereignMarkdownInlineToken(
-            kind: SovereignMarkdownInlineKind.image,
+          FlarkMarkdownInlineToken(
+            kind: FlarkMarkdownInlineKind.image,
             type: 'image',
-            sourceRange: const SovereignSourceRange(16, 35),
-            attributes: const {
-              'src': 'asset://image.png',
-              'alt': 'Alt text',
-            },
+            sourceRange: const FlarkSourceRange(16, 35),
+            attributes: const {'src': 'asset://image.png', 'alt': 'Alt text'},
           ),
         ],
       );
 
-      final plan = SovereignRenderPlan.fromParseResult(
-        parseResult: parseResult,
-      );
+      final plan = FlarkRenderPlan.fromParseResult(parseResult: parseResult);
 
       final link = plan.blocks.single.inlineRuns.first.action!;
-      expect(link.kind, SovereignRenderInlineActionKind.link);
+      expect(link.kind, FlarkRenderInlineActionKind.link);
       expect(link.destination, 'https://example.com');
       expect(link.title, 'Example');
       expect(link.label, 'link');
 
       final image = plan.blocks.single.inlineRuns.last.action!;
-      expect(image.kind, SovereignRenderInlineActionKind.image);
+      expect(image.kind, FlarkRenderInlineActionKind.image);
       expect(image.destination, 'asset://image.png');
       expect(image.label, 'Alt text');
     });
 
-    test('predicts stable semantic block descriptors through content edits',
-        () {
-      final cases = [
-        _PredictionCase(
-          id: 'heading',
-          block: _block(
-            kind: SovereignMarkdownBlockKind.heading,
-            type: 'heading',
-            styleToken: SovereignRenderTextStyleToken.heading2,
-            sourceEnd: 8,
-            displayEnd: 6,
-            attributes: const {'level': 2},
-          ),
-          projection: SovereignProjection(
-            textLength: 8,
-            hiddenRanges: const [
-              SovereignHiddenRange(
-                range: SovereignSourceRange(0, 2),
-                kind: SovereignHiddenRangeKind.markdownMarker,
-              ),
-            ],
-          ),
-          verify: (block) {
-            expect(block.kind, SovereignMarkdownBlockKind.heading);
-            expect(block.styleToken, SovereignRenderTextStyleToken.heading2);
-            expect(block.attributes['level'], 2);
-          },
-        ),
-        _PredictionCase(
-          id: 'blockquote',
-          block: _block(
-            kind: SovereignMarkdownBlockKind.blockquote,
-            type: 'blockquote',
-            sourceEnd: 9,
-            displayEnd: 7,
-          ),
-          projection: SovereignProjection(
-            textLength: 9,
-            hiddenRanges: const [
-              SovereignHiddenRange(
-                range: SovereignSourceRange(0, 2),
-                kind: SovereignHiddenRangeKind.blockMarker,
-              ),
-            ],
-          ),
-          verify: (block) {
-            expect(block.kind, SovereignMarkdownBlockKind.blockquote);
-          },
-        ),
-        _PredictionCase(
-          id: 'unordered list item',
-          block: _block(
-            kind: SovereignMarkdownBlockKind.listItem,
-            type: 'listItem',
-            sourceEnd: 6,
-            displayEnd: 4,
-            listItem: const SovereignRenderListItemDescriptor(
-              kind: SovereignRenderListKind.unordered,
+    test(
+      'predicts stable semantic block descriptors through content edits',
+      () {
+        final cases = [
+          _PredictionCase(
+            id: 'heading',
+            block: _block(
+              kind: FlarkMarkdownBlockKind.heading,
+              type: 'heading',
+              styleToken: FlarkRenderTextStyleToken.heading2,
+              sourceEnd: 8,
+              displayEnd: 6,
+              attributes: const {'level': 2},
             ),
-          ),
-          projection: SovereignProjection(
-            textLength: 6,
-            hiddenRanges: const [
-              SovereignHiddenRange(
-                range: SovereignSourceRange(0, 2),
-                kind: SovereignHiddenRangeKind.markdownMarker,
-              ),
-            ],
-          ),
-          verify: (block) {
-            expect(block.listItem, isNotNull);
-            expect(
-              block.listItem!.kind,
-              SovereignRenderListKind.unordered,
-            );
-          },
-        ),
-        _PredictionCase(
-          id: 'ordered list item',
-          block: _block(
-            kind: SovereignMarkdownBlockKind.listItem,
-            type: 'listItem',
-            sourceEnd: 8,
-            displayEnd: 5,
-            listItem: const SovereignRenderListItemDescriptor(
-              kind: SovereignRenderListKind.ordered,
-            ),
-          ),
-          projection: SovereignProjection(
-            textLength: 8,
-            hiddenRanges: const [
-              SovereignHiddenRange(
-                range: SovereignSourceRange(0, 3),
-                kind: SovereignHiddenRangeKind.markdownMarker,
-              ),
-            ],
-          ),
-          verify: (block) {
-            expect(block.listItem, isNotNull);
-            expect(block.listItem!.kind, SovereignRenderListKind.ordered);
-          },
-        ),
-        _PredictionCase(
-          id: 'task list item',
-          block: _block(
-            kind: SovereignMarkdownBlockKind.listItem,
-            type: 'listItem',
-            sourceEnd: 12,
-            displayEnd: 6,
-            listItem: const SovereignRenderListItemDescriptor(
-              kind: SovereignRenderListKind.unordered,
-            ),
-            taskListItem: const SovereignRenderTaskListItemDescriptor(
-              checked: false,
-            ),
-          ),
-          projection: SovereignProjection(
-            textLength: 12,
-            hiddenRanges: const [
-              SovereignHiddenRange(
-                range: SovereignSourceRange(0, 6),
-                kind: SovereignHiddenRangeKind.blockMarker,
-              ),
-            ],
-          ),
-          verify: (block) {
-            expect(block.listItem, isNotNull);
-            expect(block.taskListItem, isNotNull);
-            expect(block.taskListItem!.checked, isFalse);
-          },
-        ),
-        _PredictionCase(
-          id: 'code block',
-          block: _block(
-            kind: SovereignMarkdownBlockKind.codeBlock,
-            type: 'codeBlock',
-            sourceEnd: 18,
-            displayEnd: 4,
-            codeBlock: const SovereignRenderCodeBlockDescriptor(
-              language: 'dart',
-            ),
-          ),
-          projection: SovereignProjection(
-            textLength: 18,
-            hiddenRanges: const [
-              SovereignHiddenRange(
-                range: SovereignSourceRange(0, 8),
-                kind: SovereignHiddenRangeKind.markdownMarker,
-              ),
-              SovereignHiddenRange(
-                range: SovereignSourceRange(12, 18),
-                kind: SovereignHiddenRangeKind.markdownMarker,
-              ),
-            ],
-          ),
-          insertOffset: 12,
-          verify: (block) {
-            expect(block.codeBlock, isNotNull);
-            expect(block.codeBlock!.language, 'dart');
-          },
-        ),
-        _PredictionCase(
-          id: 'table',
-          block: _block(
-            kind: SovereignMarkdownBlockKind.table,
-            type: 'table',
-            sourceEnd: 40,
-            displayEnd: 40,
-            table: SovereignRenderTableDescriptor(
-              columnAlignments: const [
-                SovereignRenderTableColumnAlignment.left,
-                SovereignRenderTableColumnAlignment.right,
+            projection: FlarkProjection(
+              textLength: 8,
+              hiddenRanges: const [
+                FlarkHiddenRange(
+                  range: FlarkSourceRange(0, 2),
+                  kind: FlarkHiddenRangeKind.markdownMarker,
+                ),
               ],
             ),
+            verify: (block) {
+              expect(block.kind, FlarkMarkdownBlockKind.heading);
+              expect(block.styleToken, FlarkRenderTextStyleToken.heading2);
+              expect(block.attributes['level'], 2);
+            },
           ),
-          projection: SovereignProjection(textLength: 40),
-          insertOffset: 28,
-          verify: (block) {
-            expect(block.table, isNotNull);
-            expect(block.table!.columnAlignments, const [
-              SovereignRenderTableColumnAlignment.left,
-              SovereignRenderTableColumnAlignment.right,
-            ]);
-          },
-        ),
-      ];
+          _PredictionCase(
+            id: 'blockquote',
+            block: _block(
+              kind: FlarkMarkdownBlockKind.blockquote,
+              type: 'blockquote',
+              sourceEnd: 9,
+              displayEnd: 7,
+            ),
+            projection: FlarkProjection(
+              textLength: 9,
+              hiddenRanges: const [
+                FlarkHiddenRange(
+                  range: FlarkSourceRange(0, 2),
+                  kind: FlarkHiddenRangeKind.blockMarker,
+                ),
+              ],
+            ),
+            verify: (block) {
+              expect(block.kind, FlarkMarkdownBlockKind.blockquote);
+            },
+          ),
+          _PredictionCase(
+            id: 'unordered list item',
+            block: _block(
+              kind: FlarkMarkdownBlockKind.listItem,
+              type: 'listItem',
+              sourceEnd: 6,
+              displayEnd: 4,
+              listItem: const FlarkRenderListItemDescriptor(
+                kind: FlarkRenderListKind.unordered,
+              ),
+            ),
+            projection: FlarkProjection(
+              textLength: 6,
+              hiddenRanges: const [
+                FlarkHiddenRange(
+                  range: FlarkSourceRange(0, 2),
+                  kind: FlarkHiddenRangeKind.markdownMarker,
+                ),
+              ],
+            ),
+            verify: (block) {
+              expect(block.listItem, isNotNull);
+              expect(block.listItem!.kind, FlarkRenderListKind.unordered);
+            },
+          ),
+          _PredictionCase(
+            id: 'ordered list item',
+            block: _block(
+              kind: FlarkMarkdownBlockKind.listItem,
+              type: 'listItem',
+              sourceEnd: 8,
+              displayEnd: 5,
+              listItem: const FlarkRenderListItemDescriptor(
+                kind: FlarkRenderListKind.ordered,
+              ),
+            ),
+            projection: FlarkProjection(
+              textLength: 8,
+              hiddenRanges: const [
+                FlarkHiddenRange(
+                  range: FlarkSourceRange(0, 3),
+                  kind: FlarkHiddenRangeKind.markdownMarker,
+                ),
+              ],
+            ),
+            verify: (block) {
+              expect(block.listItem, isNotNull);
+              expect(block.listItem!.kind, FlarkRenderListKind.ordered);
+            },
+          ),
+          _PredictionCase(
+            id: 'task list item',
+            block: _block(
+              kind: FlarkMarkdownBlockKind.listItem,
+              type: 'listItem',
+              sourceEnd: 12,
+              displayEnd: 6,
+              listItem: const FlarkRenderListItemDescriptor(
+                kind: FlarkRenderListKind.unordered,
+              ),
+              taskListItem: const FlarkRenderTaskListItemDescriptor(
+                checked: false,
+              ),
+            ),
+            projection: FlarkProjection(
+              textLength: 12,
+              hiddenRanges: const [
+                FlarkHiddenRange(
+                  range: FlarkSourceRange(0, 6),
+                  kind: FlarkHiddenRangeKind.blockMarker,
+                ),
+              ],
+            ),
+            verify: (block) {
+              expect(block.listItem, isNotNull);
+              expect(block.taskListItem, isNotNull);
+              expect(block.taskListItem!.checked, isFalse);
+            },
+          ),
+          _PredictionCase(
+            id: 'code block',
+            block: _block(
+              kind: FlarkMarkdownBlockKind.codeBlock,
+              type: 'codeBlock',
+              sourceEnd: 18,
+              displayEnd: 4,
+              codeBlock: const FlarkRenderCodeBlockDescriptor(language: 'dart'),
+            ),
+            projection: FlarkProjection(
+              textLength: 18,
+              hiddenRanges: const [
+                FlarkHiddenRange(
+                  range: FlarkSourceRange(0, 8),
+                  kind: FlarkHiddenRangeKind.markdownMarker,
+                ),
+                FlarkHiddenRange(
+                  range: FlarkSourceRange(12, 18),
+                  kind: FlarkHiddenRangeKind.markdownMarker,
+                ),
+              ],
+            ),
+            insertOffset: 12,
+            verify: (block) {
+              expect(block.codeBlock, isNotNull);
+              expect(block.codeBlock!.language, 'dart');
+            },
+          ),
+          _PredictionCase(
+            id: 'table',
+            block: _block(
+              kind: FlarkMarkdownBlockKind.table,
+              type: 'table',
+              sourceEnd: 40,
+              displayEnd: 40,
+              table: FlarkRenderTableDescriptor(
+                columnAlignments: const [
+                  FlarkRenderTableColumnAlignment.left,
+                  FlarkRenderTableColumnAlignment.right,
+                ],
+              ),
+            ),
+            projection: FlarkProjection(textLength: 40),
+            insertOffset: 28,
+            verify: (block) {
+              expect(block.table, isNotNull);
+              expect(block.table!.columnAlignments, const [
+                FlarkRenderTableColumnAlignment.left,
+                FlarkRenderTableColumnAlignment.right,
+              ]);
+            },
+          ),
+        ];
 
-      for (final predictionCase in cases) {
-        final transaction = SovereignTransaction.single(
-          SovereignSourceOperation.insert(predictionCase.insertOffset, '!'),
-        );
-        final projectionPrediction = predictionCase.projection.predictAfter(
-          transaction,
-          textLengthAfter: predictionCase.projection.textLength + 1,
-        );
-        final predicted = SovereignRenderPlan(
-          blocks: [predictionCase.block],
-          metadata: const {'revision': 1},
-        ).predictThroughTransaction(
-          transaction: transaction,
-          projection: projectionPrediction.projection,
-          revision: 2,
-          textLengthAfter: predictionCase.projection.textLength + 1,
-        );
+        for (final predictionCase in cases) {
+          final transaction = FlarkTransaction.single(
+            FlarkSourceOperation.insert(predictionCase.insertOffset, '!'),
+          );
+          final projectionPrediction = predictionCase.projection.predictAfter(
+            transaction,
+            textLengthAfter: predictionCase.projection.textLength + 1,
+          );
+          final predicted =
+              FlarkRenderPlan(
+                blocks: [predictionCase.block],
+                metadata: const {'revision': 1},
+              ).predictThroughTransaction(
+                transaction: transaction,
+                projection: projectionPrediction.projection,
+                revision: 2,
+                textLengthAfter: predictionCase.projection.textLength + 1,
+              );
 
-        expect(predicted.metadata['predictive'], isTrue,
-            reason: predictionCase.id);
-        expect(predicted.metadata['revision'], 2, reason: predictionCase.id);
-        expect(predicted.blocks, hasLength(1), reason: predictionCase.id);
-        final block = predicted.blocks.single;
-        expect(block.sourceRange.end, predictionCase.block.sourceRange.end + 1,
-            reason: predictionCase.id);
-        expect(
-          block.displayRange.end,
-          predictionCase.block.displayRange.end + 1,
-          reason: predictionCase.id,
-        );
-        predictionCase.verify(block);
-      }
-    });
+          expect(
+            predicted.metadata['predictive'],
+            isTrue,
+            reason: predictionCase.id,
+          );
+          expect(predicted.metadata['revision'], 2, reason: predictionCase.id);
+          expect(predicted.blocks, hasLength(1), reason: predictionCase.id);
+          final block = predicted.blocks.single;
+          expect(
+            block.sourceRange.end,
+            predictionCase.block.sourceRange.end + 1,
+            reason: predictionCase.id,
+          );
+          expect(
+            block.displayRange.end,
+            predictionCase.block.displayRange.end + 1,
+            reason: predictionCase.id,
+          );
+          predictionCase.verify(block);
+        }
+      },
+    );
 
     test('predicts inline semantic actions through content edits', () {
-      final plan = SovereignRenderPlan(
+      final plan = FlarkRenderPlan(
         blocks: [
           _block(
-            kind: SovereignMarkdownBlockKind.paragraph,
+            kind: FlarkMarkdownBlockKind.paragraph,
             type: 'paragraph',
             sourceEnd: 16,
             displayEnd: 12,
             inlineRuns: [
-              SovereignRenderInlineRun(
-                kind: SovereignMarkdownInlineKind.link,
+              FlarkRenderInlineRun(
+                kind: FlarkMarkdownInlineKind.link,
                 type: 'link',
-                sourceRange: const SovereignSourceRange(1, 10),
-                displayRange: const SovereignSourceRange(0, 4),
-                styleToken: SovereignRenderTextStyleToken.link,
-                action: const SovereignRenderInlineActionDescriptor(
-                  kind: SovereignRenderInlineActionKind.link,
+                sourceRange: const FlarkSourceRange(1, 10),
+                displayRange: const FlarkSourceRange(0, 4),
+                styleToken: FlarkRenderTextStyleToken.link,
+                action: const FlarkRenderInlineActionDescriptor(
+                  kind: FlarkRenderInlineActionKind.link,
                   destination: 'https://example.com',
                   label: 'link',
                 ),
@@ -629,21 +624,21 @@ void main() {
           ),
         ],
       );
-      final projection = SovereignProjection(
+      final projection = FlarkProjection(
         textLength: 16,
         hiddenRanges: const [
-          SovereignHiddenRange(
-            range: SovereignSourceRange(0, 1),
-            kind: SovereignHiddenRangeKind.inlineMarker,
+          FlarkHiddenRange(
+            range: FlarkSourceRange(0, 1),
+            kind: FlarkHiddenRangeKind.inlineMarker,
           ),
-          SovereignHiddenRange(
-            range: SovereignSourceRange(5, 10),
-            kind: SovereignHiddenRangeKind.linkDestination,
+          FlarkHiddenRange(
+            range: FlarkSourceRange(5, 10),
+            kind: FlarkHiddenRangeKind.linkDestination,
           ),
         ],
       );
-      final transaction = SovereignTransaction.single(
-        SovereignSourceOperation.insert(4, '!'),
+      final transaction = FlarkTransaction.single(
+        FlarkSourceOperation.insert(4, '!'),
       );
       final projectionPrediction = projection.predictAfter(
         transaction,
@@ -658,144 +653,143 @@ void main() {
       );
 
       final run = predicted.blocks.single.inlineRuns.single;
-      expect(run.kind, SovereignMarkdownInlineKind.link);
-      expect(run.styleToken, SovereignRenderTextStyleToken.link);
+      expect(run.kind, FlarkMarkdownInlineKind.link);
+      expect(run.styleToken, FlarkRenderTextStyleToken.link);
       expect(run.action, isNotNull);
-      expect(run.action!.kind, SovereignRenderInlineActionKind.link);
+      expect(run.action!.kind, FlarkRenderInlineActionKind.link);
       expect(run.action!.destination, 'https://example.com');
-      expect(run.sourceRange, const SovereignSourceRange(1, 11));
-      expect(run.displayRange, const SovereignSourceRange(0, 5));
+      expect(run.sourceRange, const FlarkSourceRange(1, 11));
+      expect(run.displayRange, const FlarkSourceRange(0, 5));
     });
 
     test('queries overlay-oriented blocks and inline action runs', () {
-      final parseResult = SovereignMarkdownParseResult(
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+      final parseResult = FlarkMarkdownParseResult(
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
         revision: 1,
         sourceTextLength: 48,
         blocks: [
-          SovereignMarkdownBlockNode(
-            kind: SovereignMarkdownBlockKind.table,
+          FlarkMarkdownBlockNode(
+            kind: FlarkMarkdownBlockKind.table,
             type: 'table',
-            sourceRange: const SovereignSourceRange(0, 20),
+            sourceRange: const FlarkSourceRange(0, 20),
             attributes: const {
               'alignments': ['left'],
             },
           ),
-          SovereignMarkdownBlockNode(
-            kind: SovereignMarkdownBlockKind.list,
+          FlarkMarkdownBlockNode(
+            kind: FlarkMarkdownBlockKind.list,
             type: 'list',
-            sourceRange: const SovereignSourceRange(21, 48),
+            sourceRange: const FlarkSourceRange(21, 48),
             children: [
-              SovereignMarkdownBlockNode(
-                kind: SovereignMarkdownBlockKind.listItem,
+              FlarkMarkdownBlockNode(
+                kind: FlarkMarkdownBlockKind.listItem,
                 type: 'listItem',
-                sourceRange: const SovereignSourceRange(23, 35),
+                sourceRange: const FlarkSourceRange(23, 35),
                 attributes: const {'checked': false},
               ),
-              SovereignMarkdownBlockNode(
-                kind: SovereignMarkdownBlockKind.codeBlock,
+              FlarkMarkdownBlockNode(
+                kind: FlarkMarkdownBlockKind.codeBlock,
                 type: 'codeBlock',
-                sourceRange: const SovereignSourceRange(36, 48),
+                sourceRange: const FlarkSourceRange(36, 48),
                 attributes: const {'language': 'dart'},
               ),
             ],
           ),
         ],
         inlineTokens: [
-          SovereignMarkdownInlineToken(
-            kind: SovereignMarkdownInlineKind.link,
+          FlarkMarkdownInlineToken(
+            kind: FlarkMarkdownInlineKind.link,
             type: 'link',
-            sourceRange: const SovereignSourceRange(2, 8),
+            sourceRange: const FlarkSourceRange(2, 8),
             attributes: const {'destination': 'https://example.com'},
           ),
-          SovereignMarkdownInlineToken(
-            kind: SovereignMarkdownInlineKind.image,
+          FlarkMarkdownInlineToken(
+            kind: FlarkMarkdownInlineKind.image,
             type: 'image',
-            sourceRange: const SovereignSourceRange(24, 32),
+            sourceRange: const FlarkSourceRange(24, 32),
             attributes: const {'src': 'asset://image.png'},
           ),
         ],
       );
 
-      final plan = SovereignRenderPlan.fromParseResult(
-        parseResult: parseResult,
-      );
+      final plan = FlarkRenderPlan.fromParseResult(parseResult: parseResult);
 
       expect(plan.allBlocks.length, 4);
-      expect(plan.tableBlocks.single.kind, SovereignMarkdownBlockKind.table);
+      expect(plan.tableBlocks.single.kind, FlarkMarkdownBlockKind.table);
       expect(plan.taskListItemBlocks.single.taskListItem!.checked, isFalse);
       expect(plan.codeBlocks.single.codeBlock!.language, 'dart');
       expect(plan.linkRuns.single.action!.destination, 'https://example.com');
       expect(plan.imageRuns.single.action!.destination, 'asset://image.png');
       expect(
         plan.blockAtDisplayOffset(24)!.kind,
-        SovereignMarkdownBlockKind.listItem,
+        FlarkMarkdownBlockKind.listItem,
       );
       expect(
         plan.inlineRunAtDisplayOffset(4)!.action!.kind,
-        SovereignRenderInlineActionKind.link,
+        FlarkRenderInlineActionKind.link,
       );
     });
 
     test('builds overlay targets from render descriptors', () {
-      final parseResult = SovereignMarkdownParseResult(
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+      final parseResult = FlarkMarkdownParseResult(
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
         revision: 1,
         sourceTextLength: 32,
         blocks: [
-          SovereignMarkdownBlockNode(
-            kind: SovereignMarkdownBlockKind.table,
+          FlarkMarkdownBlockNode(
+            kind: FlarkMarkdownBlockKind.table,
             type: 'table',
-            sourceRange: const SovereignSourceRange(0, 10),
+            sourceRange: const FlarkSourceRange(0, 10),
             attributes: const {
               'alignments': ['left'],
             },
           ),
-          SovereignMarkdownBlockNode(
-            kind: SovereignMarkdownBlockKind.listItem,
+          FlarkMarkdownBlockNode(
+            kind: FlarkMarkdownBlockKind.listItem,
             type: 'listItem',
-            sourceRange: const SovereignSourceRange(11, 20),
+            sourceRange: const FlarkSourceRange(11, 20),
             attributes: const {'checked': true},
           ),
-          SovereignMarkdownBlockNode(
-            kind: SovereignMarkdownBlockKind.codeBlock,
+          FlarkMarkdownBlockNode(
+            kind: FlarkMarkdownBlockKind.codeBlock,
             type: 'codeBlock',
-            sourceRange: const SovereignSourceRange(21, 32),
+            sourceRange: const FlarkSourceRange(21, 32),
             attributes: const {'language': 'dart'},
           ),
         ],
         inlineTokens: [
-          SovereignMarkdownInlineToken(
-            kind: SovereignMarkdownInlineKind.link,
+          FlarkMarkdownInlineToken(
+            kind: FlarkMarkdownInlineKind.link,
             type: 'link',
-            sourceRange: const SovereignSourceRange(1, 5),
+            sourceRange: const FlarkSourceRange(1, 5),
             attributes: const {'destination': 'https://example.com'},
           ),
-          SovereignMarkdownInlineToken(
-            kind: SovereignMarkdownInlineKind.image,
+          FlarkMarkdownInlineToken(
+            kind: FlarkMarkdownInlineKind.image,
             type: 'image',
-            sourceRange: const SovereignSourceRange(12, 18),
+            sourceRange: const FlarkSourceRange(12, 18),
             attributes: const {'src': 'asset://image.png'},
           ),
         ],
       );
 
-      final overlayPlan = SovereignRenderPlan.fromParseResult(
+      final overlayPlan = FlarkRenderPlan.fromParseResult(
         parseResult: parseResult,
       ).overlayPlan();
 
       expect(
-          overlayPlan.targets.map((target) => target.kind),
-          containsAll([
-            SovereignRenderOverlayKind.link,
-            SovereignRenderOverlayKind.image,
-            SovereignRenderOverlayKind.taskListItem,
-            SovereignRenderOverlayKind.table,
-            SovereignRenderOverlayKind.codeBlock,
-          ]));
+        overlayPlan.targets.map((target) => target.kind),
+        containsAll([
+          FlarkRenderOverlayKind.link,
+          FlarkRenderOverlayKind.image,
+          FlarkRenderOverlayKind.taskListItem,
+          FlarkRenderOverlayKind.table,
+          FlarkRenderOverlayKind.codeBlock,
+        ]),
+      );
       expect(
         overlayPlan
-            .ofKind(SovereignRenderOverlayKind.link)
+            .ofKind(FlarkRenderOverlayKind.link)
             .single
             .action!
             .destination,
@@ -803,19 +797,19 @@ void main() {
       );
       expect(
         overlayPlan
-            .ofKind(SovereignRenderOverlayKind.taskListItem)
+            .ofKind(FlarkRenderOverlayKind.taskListItem)
             .single
             .taskListItem!
             .checked,
         isTrue,
       );
       expect(
-        overlayPlan.ofKind(SovereignRenderOverlayKind.table).single.table,
+        overlayPlan.ofKind(FlarkRenderOverlayKind.table).single.table,
         isNotNull,
       );
       expect(
         overlayPlan
-            .ofKind(SovereignRenderOverlayKind.codeBlock)
+            .ofKind(FlarkRenderOverlayKind.codeBlock)
             .single
             .codeBlock!
             .language,
@@ -825,25 +819,25 @@ void main() {
   });
 }
 
-SovereignRenderBlock _block({
-  required SovereignMarkdownBlockKind kind,
+FlarkRenderBlock _block({
+  required FlarkMarkdownBlockKind kind,
   required String type,
   required int sourceEnd,
   required int displayEnd,
-  SovereignRenderTextStyleToken styleToken = SovereignRenderTextStyleToken.body,
-  Iterable<SovereignRenderInlineRun> inlineRuns = const [],
-  Iterable<SovereignRenderBlock> children = const [],
-  SovereignRenderTableDescriptor? table,
-  SovereignRenderListItemDescriptor? listItem,
-  SovereignRenderTaskListItemDescriptor? taskListItem,
-  SovereignRenderCodeBlockDescriptor? codeBlock,
+  FlarkRenderTextStyleToken styleToken = FlarkRenderTextStyleToken.body,
+  Iterable<FlarkRenderInlineRun> inlineRuns = const [],
+  Iterable<FlarkRenderBlock> children = const [],
+  FlarkRenderTableDescriptor? table,
+  FlarkRenderListItemDescriptor? listItem,
+  FlarkRenderTaskListItemDescriptor? taskListItem,
+  FlarkRenderCodeBlockDescriptor? codeBlock,
   Map<String, Object?> attributes = const {},
 }) {
-  return SovereignRenderBlock(
+  return FlarkRenderBlock(
     kind: kind,
     type: type,
-    sourceRange: SovereignSourceRange(0, sourceEnd),
-    displayRange: SovereignSourceRange(0, displayEnd),
+    sourceRange: FlarkSourceRange(0, sourceEnd),
+    displayRange: FlarkSourceRange(0, displayEnd),
     styleToken: styleToken,
     inlineRuns: inlineRuns,
     children: children,
@@ -865,31 +859,26 @@ final class _PredictionCase {
   }) : insertOffset = insertOffset ?? block.sourceRange.end;
 
   final String id;
-  final SovereignRenderBlock block;
-  final SovereignProjection projection;
+  final FlarkRenderBlock block;
+  final FlarkProjection projection;
   final int insertOffset;
-  final void Function(SovereignRenderBlock block) verify;
+  final void Function(FlarkRenderBlock block) verify;
 }
 
-final class _MetadataRenderPlanExtension extends SovereignRenderPlanExtension {
+final class _MetadataRenderPlanExtension extends FlarkRenderPlanExtension {
   const _MetadataRenderPlanExtension(this.id);
 
   @override
   final String id;
 
   @override
-  SovereignRenderPlan transformRenderPlan(
-    SovereignRenderPlanContext context,
-  ) {
+  FlarkRenderPlan transformRenderPlan(FlarkRenderPlanContext context) {
     final previous = context.renderPlan.metadata['extensions'];
-    return SovereignRenderPlan(
+    return FlarkRenderPlan(
       blocks: context.renderPlan.blocks,
       metadata: {
         ...context.renderPlan.metadata,
-        'extensions': [
-          if (previous is List) ...previous,
-          id,
-        ],
+        'extensions': [if (previous is List) ...previous, id],
       },
     );
   }

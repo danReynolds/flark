@@ -1,11 +1,11 @@
-# Sovereign v2 Rewrite Plan
+# Flark v2 Rewrite Plan
 
 Status date: 2026-05-02
 Decision: bold rewrite with controlled migration
 
 ## Objective
 
-Build Sovereign v2 into the ideal Dart/Flutter library for markdown editing
+Build Flark v2 into the ideal Dart/Flutter library for markdown editing
 and previewing: source-faithful, spec-backed, reliable under real text input,
 fast enough for production documents, easy to integrate, and architecturally
 clean enough that the community can trust it as infrastructure.
@@ -21,15 +21,15 @@ The existing package is not thrown away. It remains:
 ## Core Thesis
 
 The current v1 architecture became much better during production hardening, but
-it is still centered on `SovereignController extends TextEditingController`.
+it is still centered on `FlarkController extends TextEditingController`.
 For a best-in-class library, that is the wrong center of gravity.
 
-Sovereign v2 should put a pure editor runtime at the center:
+Flark v2 should put a pure editor runtime at the center:
 
 ```text
 lib/
-  sovereign_editor.dart              public Flutter package surface
-  sovereign_editor_core.dart         optional headless core public surface
+  flark.dart              public Flutter package surface
+  flark_core.dart         optional headless core public surface
   src/
     core/
       document/
@@ -91,12 +91,12 @@ Initial v2 API names are placeholders, but the shape should be stable before
 implementation:
 
 ```dart
-final document = SovereignDocument.fromMarkdown(source);
-final state = SovereignEditorState(document: document);
+final document = FlarkDocument.fromMarkdown(source);
+final state = FlarkEditorState(document: document);
 
 final result = engine.dispatch(
   state,
-  SovereignCommand.toggleInlineStyle(SovereignInlineStyle.bold),
+  FlarkCommand.toggleInlineStyle(FlarkInlineStyle.bold),
 );
 
 final renderPlan = markdownRuntime.renderPlanFor(result.state);
@@ -105,34 +105,34 @@ final renderPlan = markdownRuntime.renderPlanFor(result.state);
 Flutter integration should look like:
 
 ```dart
-final controller = SovereignFlutterController(
+final controller = FlarkFlutterController(
   initialMarkdown: source,
   profile: MarkdownSyntaxProfile.commonMarkGfm,
   extensions: [
-    SovereignTablesExtension(),
-    SovereignTaskListsExtension(),
+    FlarkTablesExtension(),
+    FlarkTaskListsExtension(),
   ],
 );
 
-SovereignEditor(controller: controller);
-SovereignMarkdownView(markdown: source);
+FlarkEditor(controller: controller);
+FlarkMarkdownView(markdown: source);
 ```
 
 The public API should expose:
 
-- `SovereignDocument`
-- `SovereignTextBuffer`
-- `SovereignSelection`
-- `SovereignEditorState`
-- `SovereignTransaction`
-- `SovereignSourceOperation`
-- `SovereignCommand`
-- `SovereignExtension`
-- `SovereignMarkdownRuntime`
-- `SovereignRenderPlan`
-- `SovereignFlutterController`
-- `SovereignEditor`
-- `SovereignMarkdownView`
+- `FlarkDocument`
+- `FlarkTextBuffer`
+- `FlarkSelection`
+- `FlarkEditorState`
+- `FlarkTransaction`
+- `FlarkSourceOperation`
+- `FlarkCommand`
+- `FlarkExtension`
+- `FlarkMarkdownRuntime`
+- `FlarkRenderPlan`
+- `FlarkFlutterController`
+- `FlarkEditor`
+- `FlarkMarkdownView`
 
 It should not expose parser bridge structs, predictive reconciliation internals,
 Flutter adapter hosts, or low-level scanner helpers.
@@ -164,7 +164,7 @@ support:
 
 ### Transactions
 
-Every change flows through `SovereignTransaction`:
+Every change flows through `FlarkTransaction`:
 
 - source operations: insert, delete, replace, multi-replace;
 - old and new selection;
@@ -176,7 +176,7 @@ Every change flows through `SovereignTransaction`:
 - optional extension effects.
 
 Transactions are created by commands, input policies, paste handlers, or
-adapter deltas. Applying a transaction returns a new `SovereignEditorState`.
+adapter deltas. Applying a transaction returns a new `FlarkEditorState`.
 
 ### Commands
 
@@ -271,11 +271,11 @@ Exit criteria:
 
 Deliverables:
 
-- `SovereignDocument`;
-- `SovereignSelection`;
-- `SovereignEditorState`;
-- `SovereignSourceOperation`;
-- `SovereignTransaction`;
+- `FlarkDocument`;
+- `FlarkSelection`;
+- `FlarkEditorState`;
+- `FlarkSourceOperation`;
+- `FlarkTransaction`;
 - transaction apply/map/invert basics;
 - core-only tests.
 
@@ -353,7 +353,7 @@ Exit criteria:
 
 Deliverables:
 
-- `SovereignFlutterController`;
+- `FlarkFlutterController`;
 - `EditableText` adapter;
 - v1 compatibility bridge where useful;
 - widget layer for editor and preview;

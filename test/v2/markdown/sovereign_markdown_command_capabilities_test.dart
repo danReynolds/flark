@@ -1,75 +1,79 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/sovereign_editor_v2.dart';
+import 'package:flark/flark_advanced.dart';
 
 void main() {
-  group('SovereignMarkdownCommandQueries', () {
+  group('FlarkMarkdownCommandQueries', () {
     test('reports active inline and heading state at the caret', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         '## **alpha**',
-        selection: const SovereignSelection.collapsed(6),
+        selection: const FlarkSelection.collapsed(6),
       );
 
-      final capabilities =
-          SovereignMarkdownCommandQueries.capabilitiesAtSelection(state);
+      final capabilities = FlarkMarkdownCommandQueries.capabilitiesAtSelection(
+        state,
+      );
 
       expect(capabilities.activeHeadingLevel, 2);
       expect(
-        capabilities.isInlineStyleActive(SovereignMarkdownInlineStyle.strong),
+        capabilities.isInlineStyleActive(FlarkMarkdownInlineStyle.strong),
         isTrue,
       );
       expect(
-        capabilities.isInlineStyleActive(SovereignMarkdownInlineStyle.emphasis),
+        capabilities.isInlineStyleActive(FlarkMarkdownInlineStyle.emphasis),
         isFalse,
       );
       expect(capabilities.quoteActive, isFalse);
     });
 
     test('reports selected text surrounded by inline markers as active', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         '**alpha**',
-        selection: const SovereignSelection(baseOffset: 2, extentOffset: 7),
+        selection: const FlarkSelection(baseOffset: 2, extentOffset: 7),
       );
 
-      final capabilities =
-          SovereignMarkdownCommandQueries.capabilitiesAtSelection(state);
+      final capabilities = FlarkMarkdownCommandQueries.capabilitiesAtSelection(
+        state,
+      );
 
       expect(
-        capabilities.isInlineStyleActive(SovereignMarkdownInlineStyle.strong),
+        capabilities.isInlineStyleActive(FlarkMarkdownInlineStyle.strong),
         isTrue,
       );
     });
 
     test('does not report escaped inline markers as active', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         r'\**alpha**',
-        selection: const SovereignSelection.collapsed(4),
+        selection: const FlarkSelection.collapsed(4),
       );
 
-      final capabilities =
-          SovereignMarkdownCommandQueries.capabilitiesAtSelection(state);
+      final capabilities = FlarkMarkdownCommandQueries.capabilitiesAtSelection(
+        state,
+      );
 
       expect(capabilities.activeInlineStyles, isEmpty);
     });
 
     test('reports quote, bullet, ordered, and task-list state', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         '> - [ ] item',
-        selection: const SovereignSelection.collapsed(7),
+        selection: const FlarkSelection.collapsed(7),
       );
 
-      final capabilities =
-          SovereignMarkdownCommandQueries.capabilitiesAtSelection(state);
+      final capabilities = FlarkMarkdownCommandQueries.capabilitiesAtSelection(
+        state,
+      );
 
       expect(capabilities.quoteActive, isTrue);
       expect(capabilities.bulletListActive, isTrue);
       expect(capabilities.taskListActive, isTrue);
 
-      final ordered = SovereignEditorState.fromMarkdown(
+      final ordered = FlarkEditorState.fromMarkdown(
         '> 1. item',
-        selection: const SovereignSelection.collapsed(5),
+        selection: const FlarkSelection.collapsed(5),
       );
       final orderedCapabilities =
-          SovereignMarkdownCommandQueries.capabilitiesAtSelection(ordered);
+          FlarkMarkdownCommandQueries.capabilitiesAtSelection(ordered);
       expect(orderedCapabilities.quoteActive, isTrue);
       expect(orderedCapabilities.orderedListActive, isTrue);
       expect(orderedCapabilities.bulletListActive, isFalse);
@@ -77,13 +81,14 @@ void main() {
 
     test('reports table context around separator rows', () {
       const markdown = '| A | B |\n| - | - |\n| x | y |';
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         markdown,
-        selection: SovereignSelection.collapsed(markdown.indexOf('x')),
+        selection: FlarkSelection.collapsed(markdown.indexOf('x')),
       );
 
-      final capabilities =
-          SovereignMarkdownCommandQueries.capabilitiesAtSelection(state);
+      final capabilities = FlarkMarkdownCommandQueries.capabilitiesAtSelection(
+        state,
+      );
 
       expect(capabilities.tableActive, isTrue);
     });

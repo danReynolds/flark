@@ -2,10 +2,10 @@ import 'package:flutter/services.dart';
 
 import '../core/core.dart';
 
-final class SovereignTextDeltaAdapter {
-  const SovereignTextDeltaAdapter();
+final class FlarkTextDeltaAdapter {
+  const FlarkTextDeltaAdapter();
 
-  SovereignTransaction? transactionFromDelta(
+  FlarkTransaction? transactionFromDelta(
     TextEditingDelta delta, {
     required String currentMarkdown,
   }) {
@@ -24,16 +24,16 @@ final class SovereignTextDeltaAdapter {
     }
 
     final operations = operation == null
-        ? const <SovereignSourceOperation>[]
-        : <SovereignSourceOperation>[operation];
+        ? const <FlarkSourceOperation>[]
+        : <FlarkSourceOperation>[operation];
     final selectionAfter = _selection(delta.selection);
-    return SovereignTransaction(
+    return FlarkTransaction(
       operations: operations,
       selectionAfter: selectionAfter,
-      metadata: SovereignTransactionMetadata(
+      metadata: FlarkTransactionMetadata(
         intent: operation == null
-            ? SovereignTransactionIntent.selection
-            : SovereignTransactionIntent.input,
+            ? FlarkTransactionIntent.selection
+            : FlarkTransactionIntent.input,
         userEvent: operation == null ? 'input.selection' : 'input.delta',
         addToHistory: operation != null,
         parseInvalidationRange: operation?.replacedRange,
@@ -42,29 +42,29 @@ final class SovereignTextDeltaAdapter {
     );
   }
 
-  SovereignSourceOperation? _insertion(TextEditingDeltaInsertion delta) {
+  FlarkSourceOperation? _insertion(TextEditingDeltaInsertion delta) {
     if (delta.insertionOffset < 0 ||
         delta.insertionOffset > delta.oldText.length) {
       return null;
     }
-    return SovereignSourceOperation.insert(
+    return FlarkSourceOperation.insert(
       delta.insertionOffset,
       delta.textInserted,
     );
   }
 
-  SovereignSourceOperation? _deletion(TextEditingDeltaDeletion delta) {
+  FlarkSourceOperation? _deletion(TextEditingDeltaDeletion delta) {
     if (!_validRange(delta.deletedRange, delta.oldText.length)) return null;
-    return SovereignSourceOperation.delete(
+    return FlarkSourceOperation.delete(
       delta.deletedRange.start,
       delta.deletedRange.end,
     );
   }
 
-  SovereignSourceOperation? _replacement(TextEditingDeltaReplacement delta) {
+  FlarkSourceOperation? _replacement(TextEditingDeltaReplacement delta) {
     if (!_validRange(delta.replacedRange, delta.oldText.length)) return null;
-    return SovereignSourceOperation.replace(
-      replacedRange: SovereignSourceRange(
+    return FlarkSourceOperation.replace(
+      replacedRange: FlarkSourceRange(
         delta.replacedRange.start,
         delta.replacedRange.end,
       ),
@@ -72,9 +72,9 @@ final class SovereignTextDeltaAdapter {
     );
   }
 
-  SovereignSelection? _selection(TextSelection selection) {
+  FlarkSelection? _selection(TextSelection selection) {
     if (!selection.isValid) return null;
-    return SovereignSelection(
+    return FlarkSelection(
       baseOffset: selection.baseOffset,
       extentOffset: selection.extentOffset,
     );

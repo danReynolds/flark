@@ -12,21 +12,21 @@ import '../../core/transaction/sovereign_transaction_metadata.dart';
 final RegExp _linkPattern = RegExp(r'\[([^\]\n]*)\]\(([^)\n]*)\)');
 final RegExp _exactLinkPattern = RegExp(r'^\[([^\]\n]*)\]\(([^)\n]*)\)$');
 
-abstract final class SovereignMarkdownLinkCommands {
-  static const insertLink = SovereignCommand<SovereignInsertLinkPayload>(
+abstract final class FlarkMarkdownLinkCommands {
+  static const insertLink = FlarkCommand<FlarkInsertLinkPayload>(
     'markdown.insertLink',
   );
 
-  static const applyLinkEdit = SovereignCommand<SovereignApplyLinkEditPayload>(
+  static const applyLinkEdit = FlarkCommand<FlarkApplyLinkEditPayload>(
     'markdown.applyLinkEdit',
   );
 
-  static const removeLink = SovereignCommand<SovereignRemoveLinkPayload>(
+  static const removeLink = FlarkCommand<FlarkRemoveLinkPayload>(
     'markdown.removeLink',
   );
 
-  static SovereignMarkdownLinkEditContext resolveLinkEditContext(
-    SovereignEditorState state,
+  static FlarkMarkdownLinkEditContext resolveLinkEditContext(
+    FlarkEditorState state,
   ) {
     final text = state.markdown;
     final selection = state.selection;
@@ -35,15 +35,15 @@ abstract final class SovereignMarkdownLinkCommands {
       final selectedText = text.substring(selection.start, selection.end);
       final exact = _exactLinkPattern.firstMatch(selectedText);
       if (exact != null) {
-        return SovereignMarkdownLinkEditContext(
-          replaceRange: SovereignSourceRange(selection.start, selection.end),
+        return FlarkMarkdownLinkEditContext(
+          replaceRange: FlarkSourceRange(selection.start, selection.end),
           label: exact.group(1) ?? '',
           url: exact.group(2) ?? '',
           isExisting: true,
         );
       }
-      return SovereignMarkdownLinkEditContext(
-        replaceRange: SovereignSourceRange(selection.start, selection.end),
+      return FlarkMarkdownLinkEditContext(
+        replaceRange: FlarkSourceRange(selection.start, selection.end),
         label: selectedText,
         url: 'https://',
         isExisting: false,
@@ -53,16 +53,16 @@ abstract final class SovereignMarkdownLinkCommands {
     final cursor = selection.extentOffset.clamp(0, text.length);
     for (final match in _linkPattern.allMatches(text)) {
       if (cursor < match.start || cursor > match.end) continue;
-      return SovereignMarkdownLinkEditContext(
-        replaceRange: SovereignSourceRange(match.start, match.end),
+      return FlarkMarkdownLinkEditContext(
+        replaceRange: FlarkSourceRange(match.start, match.end),
         label: match.group(1) ?? '',
         url: match.group(2) ?? '',
         isExisting: true,
       );
     }
 
-    return SovereignMarkdownLinkEditContext(
-      replaceRange: SovereignSourceRange(cursor, cursor),
+    return FlarkMarkdownLinkEditContext(
+      replaceRange: FlarkSourceRange(cursor, cursor),
       label: '',
       url: 'https://',
       isExisting: false,
@@ -70,99 +70,99 @@ abstract final class SovereignMarkdownLinkCommands {
   }
 }
 
-final class SovereignMarkdownLinkEditContext {
-  const SovereignMarkdownLinkEditContext({
+final class FlarkMarkdownLinkEditContext {
+  const FlarkMarkdownLinkEditContext({
     required this.replaceRange,
     required this.label,
     required this.url,
     required this.isExisting,
   });
 
-  final SovereignSourceRange replaceRange;
+  final FlarkSourceRange replaceRange;
   final String label;
   final String url;
   final bool isExisting;
 }
 
-final class SovereignInsertLinkPayload {
-  const SovereignInsertLinkPayload({
-    this.userEvent = 'command.insertLink',
-  });
+final class FlarkInsertLinkPayload {
+  const FlarkInsertLinkPayload({this.userEvent = 'command.insertLink'});
 
   final String userEvent;
 }
 
-final class SovereignApplyLinkEditPayload {
-  const SovereignApplyLinkEditPayload({
+final class FlarkApplyLinkEditPayload {
+  const FlarkApplyLinkEditPayload({
     required this.context,
     required this.label,
     required this.url,
     this.userEvent = 'command.applyLinkEdit',
   });
 
-  final SovereignMarkdownLinkEditContext context;
+  final FlarkMarkdownLinkEditContext context;
   final String label;
   final String url;
   final String userEvent;
 }
 
-final class SovereignRemoveLinkPayload {
-  const SovereignRemoveLinkPayload({
+final class FlarkRemoveLinkPayload {
+  const FlarkRemoveLinkPayload({
     required this.linkRange,
     this.userEvent = 'command.removeLink',
   });
 
-  final SovereignSourceRange linkRange;
+  final FlarkSourceRange linkRange;
   final String userEvent;
 }
 
-final class SovereignMarkdownLinkEditingExtension extends SovereignExtension {
-  const SovereignMarkdownLinkEditingExtension();
+final class FlarkMarkdownLinkEditingExtension extends FlarkExtension {
+  const FlarkMarkdownLinkEditingExtension();
 
   @override
   String get id => 'markdown.linkEditing';
 
   @override
-  SovereignCommandRegistry registerCommands(SovereignCommandRegistry registry) {
+  FlarkCommandRegistry registerCommands(FlarkCommandRegistry registry) {
     return registry
-        .register<SovereignInsertLinkPayload>(
-          SovereignMarkdownLinkCommands.insertLink,
+        .register<FlarkInsertLinkPayload>(
+          FlarkMarkdownLinkCommands.insertLink,
           _insertLink,
         )
-        .register<SovereignApplyLinkEditPayload>(
-          SovereignMarkdownLinkCommands.applyLinkEdit,
+        .register<FlarkApplyLinkEditPayload>(
+          FlarkMarkdownLinkCommands.applyLinkEdit,
           _applyLinkEdit,
         )
-        .register<SovereignRemoveLinkPayload>(
-          SovereignMarkdownLinkCommands.removeLink,
+        .register<FlarkRemoveLinkPayload>(
+          FlarkMarkdownLinkCommands.removeLink,
           _removeLink,
         );
   }
 
-  SovereignCommandResult _insertLink(
-    SovereignCommandContext<SovereignInsertLinkPayload> context,
+  FlarkCommandResult _insertLink(
+    FlarkCommandContext<FlarkInsertLinkPayload> context,
   ) {
-    final linkContext =
-        SovereignMarkdownLinkCommands.resolveLinkEditContext(context.state);
-    final label =
-        linkContext.label.trim().isEmpty ? 'link text' : linkContext.label;
+    final linkContext = FlarkMarkdownLinkCommands.resolveLinkEditContext(
+      context.state,
+    );
+    final label = linkContext.label.trim().isEmpty
+        ? 'link text'
+        : linkContext.label;
     final replacement = '[$label]()';
     final selectionOffset = linkContext.replaceRange.start + replacement.length;
     return _replaceLinkRange(
       state: context.state,
       range: linkContext.replaceRange,
       replacement: replacement,
-      selectionAfter: SovereignSelection.collapsed(selectionOffset),
+      selectionAfter: FlarkSelection.collapsed(selectionOffset),
       userEvent: context.payload.userEvent,
     );
   }
 
-  SovereignCommandResult _applyLinkEdit(
-    SovereignCommandContext<SovereignApplyLinkEditPayload> context,
+  FlarkCommandResult _applyLinkEdit(
+    FlarkCommandContext<FlarkApplyLinkEditPayload> context,
   ) {
     final cleanUrl = context.payload.url.trim();
     if (cleanUrl.isEmpty) {
-      return SovereignCommandResult.rejected('Link URL cannot be empty.');
+      return FlarkCommandResult.rejected('Link URL cannot be empty.');
     }
 
     final cleanLabel = context.payload.label.trim().isEmpty
@@ -178,15 +178,15 @@ final class SovereignMarkdownLinkEditingExtension extends SovereignExtension {
       state: context.state,
       range: range,
       replacement: replacement,
-      selectionAfter: SovereignSelection.collapsed(
+      selectionAfter: FlarkSelection.collapsed(
         range.start + replacement.length,
       ),
       userEvent: context.payload.userEvent,
     );
   }
 
-  SovereignCommandResult _removeLink(
-    SovereignCommandContext<SovereignRemoveLinkPayload> context,
+  FlarkCommandResult _removeLink(
+    FlarkCommandContext<FlarkRemoveLinkPayload> context,
   ) {
     final range = _clampedRange(
       context.payload.linkRange,
@@ -195,7 +195,7 @@ final class SovereignMarkdownLinkEditingExtension extends SovereignExtension {
     final source = context.state.markdown.substring(range.start, range.end);
     final match = _exactLinkPattern.firstMatch(source);
     if (match == null) {
-      return SovereignCommandResult.rejected(
+      return FlarkCommandResult.rejected(
         'Link range does not contain a markdown link.',
       );
     }
@@ -205,23 +205,23 @@ final class SovereignMarkdownLinkEditingExtension extends SovereignExtension {
       state: context.state,
       range: range,
       replacement: label,
-      selectionAfter: SovereignSelection.collapsed(range.start + label.length),
+      selectionAfter: FlarkSelection.collapsed(range.start + label.length),
       userEvent: context.payload.userEvent,
     );
   }
 }
 
-SovereignCommandResult _replaceLinkRange({
-  required SovereignEditorState state,
-  required SovereignSourceRange range,
+FlarkCommandResult _replaceLinkRange({
+  required FlarkEditorState state,
+  required FlarkSourceRange range,
   required String replacement,
-  required SovereignSelection selectionAfter,
+  required FlarkSelection selectionAfter,
   required String userEvent,
 }) {
   final safeRange = _clampedRange(range, state.markdown.length);
-  return SovereignCommandResult.handled(
-    transaction: SovereignTransaction.single(
-      SovereignSourceOperation.replace(
+  return FlarkCommandResult.handled(
+    transaction: FlarkTransaction.single(
+      FlarkSourceOperation.replace(
         replacedRange: safeRange,
         replacementText: replacement,
       ),
@@ -229,8 +229,8 @@ SovereignCommandResult _replaceLinkRange({
       selectionAfter: selectionAfter.validate(
         state.markdown.length - safeRange.length + replacement.length,
       ),
-      metadata: SovereignTransactionMetadata(
-        intent: SovereignTransactionIntent.command,
+      metadata: FlarkTransactionMetadata(
+        intent: FlarkTransactionIntent.command,
         userEvent: userEvent,
         parseInvalidationRange: safeRange,
         projectionInvalidationRange: safeRange,
@@ -239,8 +239,8 @@ SovereignCommandResult _replaceLinkRange({
   );
 }
 
-SovereignSourceRange _clampedRange(SovereignSourceRange range, int textLength) {
+FlarkSourceRange _clampedRange(FlarkSourceRange range, int textLength) {
   final start = range.start.clamp(0, textLength);
   final end = range.end.clamp(start, textLength);
-  return SovereignSourceRange(start, end);
+  return FlarkSourceRange(start, end);
 }

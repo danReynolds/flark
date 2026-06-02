@@ -5,7 +5,7 @@ mod payload;
 mod source_ranges;
 
 use abi::{
-    allocate_response, free_response, SovereignComrakResponse, ABI_VERSION, STATUS_ERROR, STATUS_OK,
+    allocate_response, free_response, FlarkComrakResponse, ABI_VERSION, STATUS_ERROR, STATUS_OK,
 };
 use parser::parse_to_payload;
 use payload::diagnostic_payload;
@@ -45,7 +45,7 @@ pub extern "C" fn sovereign_comrak_parse(
     profile: u8,
     text_ptr: *const u8,
     text_len: u32,
-) -> *mut SovereignComrakResponse {
+) -> *mut FlarkComrakResponse {
     if profile > 1 {
         return allocate_response(
             revision,
@@ -87,6 +87,6 @@ pub extern "C" fn sovereign_comrak_parse(
 }
 
 #[no_mangle]
-pub extern "C" fn sovereign_comrak_response_free(response_ptr: *mut SovereignComrakResponse) {
+pub extern "C" fn sovereign_comrak_response_free(response_ptr: *mut FlarkComrakResponse) {
     free_response(response_ptr);
 }

@@ -1,15 +1,15 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
-import 'package:sovereign_editor/src/v2/flutter/flutter.dart';
-import 'package:sovereign_editor/src/v2/markdown/markdown.dart';
+import 'package:flark/src/v2/core/core.dart';
+import 'package:flark/src/v2/flutter/flutter.dart';
+import 'package:flark/src/v2/markdown/markdown.dart';
 
 void main() {
-  group('Sovereign render-plan parity', () {
+  group('Flark render-plan parity', () {
     testWidgets('editable and preview surfaces share controller render state', (
       tester,
     ) async {
-      final controller = SovereignFlutterController.fromMarkdown('**bold**');
+      final controller = FlarkFlutterController.fromMarkdown('**bold**');
       addTearDown(controller.dispose);
       controller.applyParseResult(_strongParseResult(controller));
 
@@ -18,7 +18,7 @@ void main() {
           textDirection: TextDirection.ltr,
           child: Column(
             children: [
-              SovereignEditableText(controller: controller, maxLines: null),
+              FlarkEditableText(controller: controller, maxLines: null),
               Markdown(controller: controller),
             ],
           ),
@@ -40,37 +40,35 @@ void main() {
   });
 }
 
-SovereignMarkdownParseResult _strongParseResult(
-  SovereignFlutterController controller,
-) {
-  return SovereignMarkdownParseResult(
-    schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+FlarkMarkdownParseResult _strongParseResult(FlarkFlutterController controller) {
+  return FlarkMarkdownParseResult(
+    schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
     revision: controller.state.revision,
     sourceTextLength: controller.state.document.length,
     blocks: [
-      SovereignMarkdownBlockNode(
-        kind: SovereignMarkdownBlockKind.paragraph,
+      FlarkMarkdownBlockNode(
+        kind: FlarkMarkdownBlockKind.paragraph,
         type: 'paragraph',
-        sourceRange: const SovereignSourceRange(0, 8),
+        sourceRange: const FlarkSourceRange(0, 8),
       ),
     ],
     inlineTokens: [
-      SovereignMarkdownInlineToken(
-        kind: SovereignMarkdownInlineKind.strong,
+      FlarkMarkdownInlineToken(
+        kind: FlarkMarkdownInlineKind.strong,
         type: 'strong',
-        sourceRange: const SovereignSourceRange(0, 8),
+        sourceRange: const FlarkSourceRange(0, 8),
       ),
     ],
     hiddenRanges: [
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.inlineMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.inlineMarker,
         type: 'inlineMarker',
-        sourceRange: const SovereignSourceRange(0, 2),
+        sourceRange: const FlarkSourceRange(0, 2),
       ),
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.inlineMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.inlineMarker,
         type: 'inlineMarker',
-        sourceRange: const SovereignSourceRange(6, 8),
+        sourceRange: const FlarkSourceRange(6, 8),
       ),
     ],
   );

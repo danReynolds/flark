@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$PKG_ROOT"
 
-echo "Sovereign benchmark lane (enforced budgets)"
+echo "Flark benchmark lane (enforced budgets)"
 echo "Repo: $REPO_ROOT"
 echo "Package: $PKG_ROOT"
 
@@ -21,4 +21,4 @@ echo "==> (cd . && flutter test --tags benchmark test/v2/performance --dart-defi
 )
 
 echo
-echo "Sovereign benchmark lane passed."
+echo "Flark benchmark lane passed."

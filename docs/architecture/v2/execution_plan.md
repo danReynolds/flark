@@ -1,11 +1,11 @@
-# Sovereign v2 Execution Plan
+# Flark v2 Execution Plan
 
 Status date: 2026-05-08
 Current phase: Phase 17 - markdown coverage matrix and Comrak-only hardening
 
 ## Objective
 
-Build Sovereign v2 as a best-in-class Dart/Flutter markdown editing and
+Build Flark v2 as a best-in-class Dart/Flutter markdown editing and
 previewing library with a headless source-first markdown engine, Flutter
 adapters, shared edit/read render planning, spec-backed conformance, and a
 small durable public API.
@@ -54,12 +54,12 @@ Goal: establish the pure Dart core and transaction model.
 Tasks:
 
 - [x] Add `lib/src/v2/core/document`.
-- [x] Add `SovereignDocument`.
-- [x] Add `SovereignTextBuffer` with UTF-16 offsets and line indexing.
-- [x] Add `SovereignSelection`.
-- [x] Add `SovereignSourceOperation`.
-- [x] Add `SovereignTransaction`.
-- [x] Add `SovereignEditorState`.
+- [x] Add `FlarkDocument`.
+- [x] Add `FlarkTextBuffer` with UTF-16 offsets and line indexing.
+- [x] Add `FlarkSelection`.
+- [x] Add `FlarkSourceOperation`.
+- [x] Add `FlarkTransaction`.
+- [x] Add `FlarkEditorState`.
 - [x] Implement transaction apply/map/invert basics.
 - [x] Add core tests for insert/delete/replace.
 - [x] Add core tests for selection mapping.
@@ -71,7 +71,7 @@ Tasks:
 - [x] Add undo/redo grouping for adjacent transactions with the same undo group.
 - [x] Add richer source-position mapping tests for multi-operation edge cases.
 - [x] Document core transaction/history invariants.
-- [x] Decide history ownership: keep `SovereignHistoryStack` companion-owned
+- [x] Decide history ownership: keep `FlarkHistoryStack` companion-owned
   until a future engine/runtime state composes it.
 - [x] Add headless runtime object to compose editor state, history, extensions,
   and command dispatch.
@@ -163,7 +163,7 @@ Goal: wire core state into Flutter without making Flutter the core.
 
 Tasks:
 
-- [x] Add `SovereignFlutterController`.
+- [x] Add `FlarkFlutterController`.
 - [x] Add Flutter adapter design note.
 - [x] Add adapter from Flutter input changes to core transactions.
 - [x] Add `EditableText` surface around core state.
@@ -265,11 +265,11 @@ Tasks:
 
 - [x] Split v1 compatibility into `sovereign_editor_legacy.dart` during the
   migration window.
-- [x] Keep `sovereign_editor.dart` v2-first with explicit promoted exports.
-- [x] Add `sovereign_editor_core.dart` for headless Dart integrations.
-- [x] Keep `sovereign_editor_v2.dart` as the full advanced v2 integration
+- [x] Keep `flark.dart` v2-first with explicit promoted exports.
+- [x] Add `flark_core.dart` for headless Dart integrations.
+- [x] Keep `flark_advanced.dart` as the full advanced v2 integration
   barrel.
-- [x] Add typed `SovereignFlutterController.events` for surgical extension
+- [x] Add typed `FlarkFlutterController.events` for surgical extension
   reactions.
 - [x] Avoid repeated transaction operation sorting during selection mapping.
 - [x] Remove `google_fonts` from default package dependencies.
@@ -330,11 +330,11 @@ Tasks:
 - [x] Refactor projected editing through one shared host so projected and live
   rendered editing share source/display edit mapping, selection mapping, input
   policies, focus handling, and scroll wiring.
-- [x] Add `SovereignLiveRenderedEditableText`, backed by projected text plus
+- [x] Add `FlarkLiveRenderedEditableText`, backed by projected text plus
   render-plan-derived styled `TextSpan` segments.
 - [x] Paint render-plan block chrome for editable code fences and blockquotes
   behind the live editable text without reparsing Markdown in Flutter.
-- [x] Add `SovereignMarkdownEditingMode.liveRendered` and expose it through
+- [x] Add `FlarkMarkdownEditingMode.liveRendered` and expose it through
   the promoted app barrel and full v2 barrel.
 - [x] Preserve render-plan continuity through selection-only changes and carry
   predictive render-plan ranges across source edits until authoritative parsing
@@ -355,7 +355,7 @@ Tasks:
 
 - [x] Re-check block-widget/editor-decoration architecture against Flutter,
   CodeMirror, and ProseMirror constraints.
-- [x] Recompose `SovereignMarkdownEditingMode.liveRendered` around a parsed
+- [x] Recompose `FlarkMarkdownEditingMode.liveRendered` around a parsed
   block editor when a render plan exists.
 - [x] Render task-list items as interactive checkbox rows that toggle the
   canonical Markdown marker.

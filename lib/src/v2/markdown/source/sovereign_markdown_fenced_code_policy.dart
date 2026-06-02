@@ -2,23 +2,24 @@ import '../../core/core.dart';
 import 'sovereign_markdown_editing_result.dart';
 import 'sovereign_markdown_fenced_code_scanner.dart';
 
-final class SovereignMarkdownFencedCodePolicy {
-  const SovereignMarkdownFencedCodePolicy._();
+final class FlarkMarkdownFencedCodePolicy {
+  const FlarkMarkdownFencedCodePolicy._();
 
-  static SovereignMarkdownSourceEdit? enter({
+  static FlarkMarkdownSourceEdit? enter({
     required String markdown,
     required int caret,
   }) {
-    final context = SovereignMarkdownFencedCodeScanner.contextAt(
+    final context = FlarkMarkdownFencedCodeScanner.contextAt(markdown, caret);
+    if (context == null) return null;
+
+    final lineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
       markdown,
       caret,
     );
-    if (context == null) return null;
-
-    final lineStart =
-        SovereignMarkdownFencedCodeScanner.lineStartForOffset(markdown, caret);
-    final lineEnd =
-        SovereignMarkdownFencedCodeScanner.lineContentEnd(markdown, lineStart);
+    final lineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
+      markdown,
+      lineStart,
+    );
     if (_isTrailingBlankFenceLine(
       markdown: markdown,
       context: context,
@@ -33,53 +34,46 @@ final class SovereignMarkdownFencedCodePolicy {
     }
 
     final beforeCaret = markdown.substring(lineStart, caret);
-    final indent =
-        SovereignMarkdownFencedCodeScanner.leadingHorizontalWhitespace(
+    final indent = FlarkMarkdownFencedCodeScanner.leadingHorizontalWhitespace(
       beforeCaret,
     );
     final trimmedBeforeCaret = beforeCaret.trimRight();
-    final extraIndent = _shouldIncreaseIndent(
-      trimmedBeforeCaret,
-      context.language,
-    )
+    final extraIndent =
+        _shouldIncreaseIndent(trimmedBeforeCaret, context.language)
         ? _preferredIndentUnit(indent)
         : '';
     final replacement = '\n$indent$extraIndent';
-    return SovereignMarkdownSourceEdit(
-      range: SovereignSourceRange(caret, caret),
+    return FlarkMarkdownSourceEdit(
+      range: FlarkSourceRange(caret, caret),
       replacementText: replacement,
-      selectionAfter: SovereignSelection.collapsed(
-        caret + replacement.length,
-      ),
+      selectionAfter: FlarkSelection.collapsed(caret + replacement.length),
     );
   }
 
-  static SovereignMarkdownSourceEdit? autoOutdentCloserInsertion({
+  static FlarkMarkdownSourceEdit? autoOutdentCloserInsertion({
     required String markdown,
     required int insertionOffset,
     required String insertedText,
   }) {
     if (!_isAutoOutdentCloser(insertedText)) return null;
-    final context = SovereignMarkdownFencedCodeScanner.contextAt(
+    final context = FlarkMarkdownFencedCodeScanner.contextAt(
       markdown,
       insertionOffset,
     );
     if (context == null) return null;
 
-    final lineStart = SovereignMarkdownFencedCodeScanner.lineStartForOffset(
+    final lineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
       markdown,
       insertionOffset,
     );
-    final lineEnd =
-        SovereignMarkdownFencedCodeScanner.lineContentEnd(markdown, lineStart);
+    final lineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
+      markdown,
+      lineStart,
+    );
     final beforeCaret = markdown.substring(lineStart, insertionOffset);
     final afterCaret = markdown.substring(insertionOffset, lineEnd);
-    if (!SovereignMarkdownFencedCodeScanner.isHorizontalWhitespace(
-          beforeCaret,
-        ) ||
-        !SovereignMarkdownFencedCodeScanner.isHorizontalWhitespace(
-          afterCaret,
-        ) ||
+    if (!FlarkMarkdownFencedCodeScanner.isHorizontalWhitespace(beforeCaret) ||
+        !FlarkMarkdownFencedCodeScanner.isHorizontalWhitespace(afterCaret) ||
         beforeCaret.isEmpty) {
       return null;
     }
@@ -94,90 +88,84 @@ final class SovereignMarkdownFencedCodePolicy {
     if (outdented == beforeCaret) return null;
 
     final replacement = '$outdented$insertedText';
-    return SovereignMarkdownSourceEdit(
-      range: SovereignSourceRange(lineStart, insertionOffset),
+    return FlarkMarkdownSourceEdit(
+      range: FlarkSourceRange(lineStart, insertionOffset),
       replacementText: replacement,
-      selectionAfter: SovereignSelection.collapsed(
-        lineStart + replacement.length,
-      ),
+      selectionAfter: FlarkSelection.collapsed(lineStart + replacement.length),
     );
   }
 
-  static SovereignMarkdownSourceEdit? multilinePasteIndentation({
+  static FlarkMarkdownSourceEdit? multilinePasteIndentation({
     required String markdown,
     required int insertionOffset,
     required String insertedText,
   }) {
     if (!insertedText.contains('\n')) return null;
-    final context = SovereignMarkdownFencedCodeScanner.contextAt(
+    final context = FlarkMarkdownFencedCodeScanner.contextAt(
       markdown,
       insertionOffset,
     );
     if (context == null) return null;
 
-    final lineStart = SovereignMarkdownFencedCodeScanner.lineStartForOffset(
+    final lineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
       markdown,
       insertionOffset,
     );
     final beforeCaret = markdown.substring(lineStart, insertionOffset);
     final baseIndent =
-        SovereignMarkdownFencedCodeScanner.leadingHorizontalWhitespace(
-      beforeCaret,
-    );
+        FlarkMarkdownFencedCodeScanner.leadingHorizontalWhitespace(beforeCaret);
     if (baseIndent.isEmpty) return null;
 
     final normalized = _prefixLinesAfterNewline(insertedText, baseIndent);
     if (normalized == insertedText) return null;
-    return SovereignMarkdownSourceEdit(
-      range: SovereignSourceRange(insertionOffset, insertionOffset),
+    return FlarkMarkdownSourceEdit(
+      range: FlarkSourceRange(insertionOffset, insertionOffset),
       replacementText: normalized,
-      selectionAfter: SovereignSelection.collapsed(
+      selectionAfter: FlarkSelection.collapsed(
         insertionOffset + normalized.length,
       ),
     );
   }
 
-  static SovereignMarkdownInputResult? backspace({
+  static FlarkMarkdownInputResult? backspace({
     required String markdown,
     required int caret,
   }) {
     final previousFence = _closedFenceBeforeCaret(markdown, caret);
     if (previousFence != null) {
       final bodyRange = previousFence.bodyContentRange(markdown);
-      return SovereignMarkdownSelectionMove(
-        selectionAfter: SovereignSelection.collapsed(bodyRange.end),
+      return FlarkMarkdownSelectionMove(
+        selectionAfter: FlarkSelection.collapsed(bodyRange.end),
       );
     }
 
-    final context = SovereignMarkdownFencedCodeScanner.contextAt(
-          markdown,
-          caret,
-        ) ??
+    final context =
+        FlarkMarkdownFencedCodeScanner.contextAt(markdown, caret) ??
         _emptyClosedFenceContextAtBodyStart(markdown, caret);
     if (context == null) return null;
     if (caret != context.bodyStart) return null;
 
     final bodyEnd = context.bodyEnd(markdown);
     final bodyText = markdown.substring(context.bodyStart, bodyEnd);
-    if (!SovereignMarkdownFencedCodeScanner.isWhitespace(bodyText)) {
+    if (!FlarkMarkdownFencedCodeScanner.isWhitespace(bodyText)) {
       return null;
     }
 
     final removeEnd = context.closingLineEndWithBreak ?? markdown.length;
-    return SovereignMarkdownSourceEdit(
-      range: SovereignSourceRange(context.openingLineStart, removeEnd),
+    return FlarkMarkdownSourceEdit(
+      range: FlarkSourceRange(context.openingLineStart, removeEnd),
       replacementText: '',
-      selectionAfter: SovereignSelection.collapsed(context.openingLineStart),
+      selectionAfter: FlarkSelection.collapsed(context.openingLineStart),
     );
   }
 
-  static List<SovereignSourceOperation> indentOperations({
+  static List<FlarkSourceOperation> indentOperations({
     required String markdown,
-    required SovereignSourceRange bodyRange,
-    required SovereignSelection selection,
+    required FlarkSourceRange bodyRange,
+    required FlarkSelection selection,
   }) {
     if (selection.isCollapsed) {
-      return [SovereignSourceOperation.insert(selection.start, '  ')];
+      return [FlarkSourceOperation.insert(selection.start, '  ')];
     }
 
     return [
@@ -186,16 +174,16 @@ final class SovereignMarkdownFencedCodePolicy {
         bodyRange: bodyRange,
         selection: selection,
       ))
-        SovereignSourceOperation.insert(lineStart, '  '),
+        FlarkSourceOperation.insert(lineStart, '  '),
     ];
   }
 
-  static List<SovereignSourceOperation> outdentOperations({
+  static List<FlarkSourceOperation> outdentOperations({
     required String markdown,
-    required SovereignSourceRange bodyRange,
-    required SovereignSelection selection,
+    required FlarkSourceRange bodyRange,
+    required FlarkSelection selection,
   }) {
-    final operations = <SovereignSourceOperation>[];
+    final operations = <FlarkSourceOperation>[];
     for (final lineStart in _selectedCodeLineStarts(
       markdown: markdown,
       bodyRange: bodyRange,
@@ -204,9 +192,7 @@ final class SovereignMarkdownFencedCodePolicy {
       if (lineStart >= bodyRange.end) continue;
       final first = markdown.codeUnitAt(lineStart);
       if (first == 9) {
-        operations.add(
-          SovereignSourceOperation.delete(lineStart, lineStart + 1),
-        );
+        operations.add(FlarkSourceOperation.delete(lineStart, lineStart + 1));
         continue;
       }
       if (first != 32) continue;
@@ -214,13 +200,13 @@ final class SovereignMarkdownFencedCodePolicy {
       if (deleteEnd < bodyRange.end && markdown.codeUnitAt(deleteEnd) == 32) {
         deleteEnd++;
       }
-      operations.add(SovereignSourceOperation.delete(lineStart, deleteEnd));
+      operations.add(FlarkSourceOperation.delete(lineStart, deleteEnd));
     }
     return operations;
   }
 }
 
-SovereignMarkdownFencedCodeContext? _closedFenceBeforeCaret(
+FlarkMarkdownFencedCodeContext? _closedFenceBeforeCaret(
   String markdown,
   int caret,
 ) {
@@ -228,7 +214,7 @@ SovereignMarkdownFencedCodeContext? _closedFenceBeforeCaret(
 
   var scanLineStart = 0;
   while (scanLineStart < caret) {
-    final context = SovereignMarkdownFencedCodeScanner.contextForOpeningLine(
+    final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
       markdown,
       scanLineStart,
     );
@@ -239,7 +225,7 @@ SovereignMarkdownFencedCodeContext? _closedFenceBeforeCaret(
       return context;
     }
 
-    final next = SovereignMarkdownFencedCodeScanner.lineEndWithBreak(
+    final next = FlarkMarkdownFencedCodeScanner.lineEndWithBreak(
       markdown,
       scanLineStart,
     );
@@ -249,12 +235,12 @@ SovereignMarkdownFencedCodeContext? _closedFenceBeforeCaret(
   return null;
 }
 
-SovereignMarkdownFencedCodeContext? _emptyClosedFenceContextAtBodyStart(
+FlarkMarkdownFencedCodeContext? _emptyClosedFenceContextAtBodyStart(
   String markdown,
   int caret,
 ) {
   if (markdown.isEmpty) return null;
-  final lineStart = SovereignMarkdownFencedCodeScanner.lineStartForOffset(
+  final lineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
     markdown,
     caret,
   );
@@ -262,7 +248,7 @@ SovereignMarkdownFencedCodeContext? _emptyClosedFenceContextAtBodyStart(
 
   var scanLineStart = 0;
   while (scanLineStart < lineStart) {
-    final context = SovereignMarkdownFencedCodeScanner.contextForOpeningLine(
+    final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
       markdown,
       scanLineStart,
     );
@@ -272,7 +258,7 @@ SovereignMarkdownFencedCodeContext? _emptyClosedFenceContextAtBodyStart(
       return context;
     }
 
-    final next = SovereignMarkdownFencedCodeScanner.lineEndWithBreak(
+    final next = FlarkMarkdownFencedCodeScanner.lineEndWithBreak(
       markdown,
       scanLineStart,
     );
@@ -282,9 +268,9 @@ SovereignMarkdownFencedCodeContext? _emptyClosedFenceContextAtBodyStart(
   return null;
 }
 
-SovereignMarkdownSourceEdit? _exitFenceOnBlankLine({
+FlarkMarkdownSourceEdit? _exitFenceOnBlankLine({
   required String markdown,
-  required SovereignMarkdownFencedCodeContext context,
+  required FlarkMarkdownFencedCodeContext context,
   required int lineStart,
 }) {
   if (context.closingLineStart != null) {
@@ -294,41 +280,37 @@ SovereignMarkdownSourceEdit? _exitFenceOnBlankLine({
     final hasBreakAfterClose = closeLineEndWithBreak > closeLineEnd;
     final closingLine = markdown.substring(closeLineStart, closeLineEnd);
     final replacement = '$closingLine${hasBreakAfterClose ? '' : '\n'}';
-    return SovereignMarkdownSourceEdit(
-      range: SovereignSourceRange(lineStart, closeLineEnd),
+    return FlarkMarkdownSourceEdit(
+      range: FlarkSourceRange(lineStart, closeLineEnd),
       replacementText: replacement,
-      selectionAfter: SovereignSelection.collapsed(
-        lineStart + replacement.length,
-      ),
+      selectionAfter: FlarkSelection.collapsed(lineStart + replacement.length),
     );
   }
 
   final closingLine =
       '${context.openingIndent}${_repeat(context.marker, context.markerLength)}';
   final replacement = '$closingLine\n';
-  return SovereignMarkdownSourceEdit(
-    range: SovereignSourceRange(lineStart, markdown.length),
+  return FlarkMarkdownSourceEdit(
+    range: FlarkSourceRange(lineStart, markdown.length),
     replacementText: replacement,
-    selectionAfter: SovereignSelection.collapsed(
-      lineStart + replacement.length,
-    ),
+    selectionAfter: FlarkSelection.collapsed(lineStart + replacement.length),
   );
 }
 
 bool _isTrailingBlankFenceLine({
   required String markdown,
-  required SovereignMarkdownFencedCodeContext context,
+  required FlarkMarkdownFencedCodeContext context,
   required int lineStart,
   required int lineEnd,
 }) {
-  if (!SovereignMarkdownFencedCodeScanner.isWhitespace(
+  if (!FlarkMarkdownFencedCodeScanner.isWhitespace(
     markdown.substring(lineStart, lineEnd),
   )) {
     return false;
   }
   final bodyEnd = context.bodyEnd(markdown);
   if (lineStart < context.bodyStart || lineStart > bodyEnd) return false;
-  return SovereignMarkdownFencedCodeScanner.isWhitespace(
+  return FlarkMarkdownFencedCodeScanner.isWhitespace(
     markdown.substring(lineStart, bodyEnd),
   );
 }
@@ -354,7 +336,7 @@ String _preferredIndentUnit(String currentIndent) {
 
 String _preferredOutdentUnitForLine({
   required String markdown,
-  required SovereignMarkdownFencedCodeContext context,
+  required FlarkMarkdownFencedCodeContext context,
   required int lineStart,
   required String currentIndent,
 }) {
@@ -363,27 +345,26 @@ String _preferredOutdentUnitForLine({
   final currentWidth = currentIndent.length;
   var scanEnd = lineStart;
   while (scanEnd > context.bodyStart) {
-    final previousLineStart =
-        SovereignMarkdownFencedCodeScanner.lineStartForOffset(
+    final previousLineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
       markdown,
       scanEnd - 1,
     );
     if (previousLineStart < context.bodyStart) break;
-    final previousLineEnd = SovereignMarkdownFencedCodeScanner.lineContentEnd(
+    final previousLineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
       markdown,
       previousLineStart,
     );
     final previousLine = markdown.substring(previousLineStart, previousLineEnd);
     scanEnd = previousLineStart;
-    if (SovereignMarkdownFencedCodeScanner.isWhitespace(previousLine)) {
+    if (FlarkMarkdownFencedCodeScanner.isWhitespace(previousLine)) {
       continue;
     }
 
     final previousIndent =
-        SovereignMarkdownFencedCodeScanner.leadingHorizontalWhitespace(
-      previousLine,
-    );
-    if (!SovereignMarkdownFencedCodeScanner.isHorizontalWhitespace(
+        FlarkMarkdownFencedCodeScanner.leadingHorizontalWhitespace(
+          previousLine,
+        );
+    if (!FlarkMarkdownFencedCodeScanner.isHorizontalWhitespace(
       previousIndent,
     )) {
       continue;
@@ -403,8 +384,8 @@ String _removeOneIndentUnit(String indent, String unit) {
   if (indent.startsWith('\t')) return indent.substring(1);
 
   var leadingSpaces = 0;
-  while (
-      leadingSpaces < indent.length && indent.codeUnitAt(leadingSpaces) == 32) {
+  while (leadingSpaces < indent.length &&
+      indent.codeUnitAt(leadingSpaces) == 32) {
     leadingSpaces++;
   }
   if (leadingSpaces == 0) return indent;
@@ -433,8 +414,8 @@ String _prefixLinesAfterNewline(String text, String prefix) {
 
 List<int> _selectedCodeLineStarts({
   required String markdown,
-  required SovereignSourceRange bodyRange,
-  required SovereignSelection selection,
+  required FlarkSourceRange bodyRange,
+  required FlarkSelection selection,
 }) {
   final starts = <int>[];
   final selectionStart = selection.start.clamp(bodyRange.start, bodyRange.end);

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:sovereign_editor/sovereign_editor.dart';
+import 'package:flark/flark.dart';
 
-const _sampleMarkdown = '''# Sovereign Markdown
+const _sampleMarkdown = '''# Flark Markdown
 
 Native Comrak parsing with live source-first editing.
 
@@ -12,7 +12,7 @@ Native Comrak parsing with live source-first editing.
 > A package consumer should import only the public barrel.
 
 ```dart
-final controller = SovereignFlutterController.fromMarkdown(markdown);
+final controller = FlarkFlutterController.fromMarkdown(markdown);
 ```
 ''';
 
@@ -26,7 +26,7 @@ const _tableMarkdown = '''# Tables
 
 const _articleMarkdown = '''# Release Notes
 
-Sovereign keeps Markdown as the canonical source while exposing rendered block
+Flark keeps Markdown as the canonical source while exposing rendered block
 widgets for common editing flows.
 
 ## Highlights
@@ -38,17 +38,17 @@ widgets for common editing flows.
 ```dart
 final editor = MarkdownEditor(
   controller: controller,
-  editingMode: SovereignMarkdownEditingMode.liveRendered,
+  editingMode: FlarkMarkdownEditingMode.liveRendered,
 );
 ```
 ''';
 
 void main() {
-  runApp(const SovereignExampleApp());
+  runApp(const FlarkExampleApp());
 }
 
-class SovereignExampleApp extends StatelessWidget {
-  const SovereignExampleApp({super.key});
+class FlarkExampleApp extends StatelessWidget {
+  const FlarkExampleApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +57,7 @@ class SovereignExampleApp extends StatelessWidget {
       brightness: Brightness.light,
     );
     return MaterialApp(
-      title: 'Sovereign',
+      title: 'Flark',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -91,29 +91,29 @@ class SovereignExampleApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const SovereignExampleScreen(),
+      home: const FlarkExampleScreen(),
     );
   }
 }
 
 enum _WorkspaceMode { source, liveRendered, rendered }
 
-class SovereignExampleScreen extends StatefulWidget {
-  const SovereignExampleScreen({super.key});
+class FlarkExampleScreen extends StatefulWidget {
+  const FlarkExampleScreen({super.key});
 
   @override
-  State<SovereignExampleScreen> createState() => _SovereignExampleScreenState();
+  State<FlarkExampleScreen> createState() => _FlarkExampleScreenState();
 }
 
-class _SovereignExampleScreenState extends State<SovereignExampleScreen> {
-  late SovereignFlutterController _controller;
+class _FlarkExampleScreenState extends State<FlarkExampleScreen> {
+  late FlarkFlutterController _controller;
   final FocusNode _focusNode = FocusNode();
   _WorkspaceMode _mode = _WorkspaceMode.liveRendered;
 
   @override
   void initState() {
     super.initState();
-    _controller = SovereignFlutterController.fromMarkdown(_sampleMarkdown);
+    _controller = FlarkFlutterController.fromMarkdown(_sampleMarkdown);
   }
 
   @override
@@ -160,7 +160,7 @@ class _SovereignExampleScreenState extends State<SovereignExampleScreen> {
     setState(() {
       _focusNode.unfocus();
       _controller.dispose();
-      _controller = SovereignFlutterController.fromMarkdown(markdown);
+      _controller = FlarkFlutterController.fromMarkdown(markdown);
       _mode = _WorkspaceMode.liveRendered;
     });
   }
@@ -220,7 +220,7 @@ class _PlaygroundToolbar extends StatelessWidget {
     required this.onCommand,
   });
 
-  final SovereignFlutterController controller;
+  final FlarkFlutterController controller;
   final _WorkspaceMode mode;
   final ValueChanged<_WorkspaceMode> onModeChanged;
   final VoidCallback onSample;
@@ -282,7 +282,7 @@ class _ToolbarHeader extends StatelessWidget {
     required this.onModeChanged,
   });
 
-  final SovereignFlutterController controller;
+  final FlarkFlutterController controller;
   final _WorkspaceMode mode;
   final ValueChanged<_WorkspaceMode> onModeChanged;
 
@@ -302,7 +302,7 @@ class _ToolbarHeader extends StatelessWidget {
               const SizedBox(width: 10),
               Flexible(
                 child: Text(
-                  'Sovereign Markdown',
+                  'Flark Markdown',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -527,7 +527,7 @@ class _StatusChip extends StatelessWidget {
 class _ControllerStats extends StatelessWidget {
   const _ControllerStats({required this.controller});
 
-  final SovereignFlutterController controller;
+  final FlarkFlutterController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -648,7 +648,7 @@ class _Workspace extends StatelessWidget {
     required this.mode,
   });
 
-  final SovereignFlutterController controller;
+  final FlarkFlutterController controller;
   final FocusNode focusNode;
   final _WorkspaceMode mode;
 
@@ -664,8 +664,8 @@ class _Workspace extends StatelessWidget {
           controller: controller,
           focusNode: focusNode,
           editingMode: mode == _WorkspaceMode.source
-              ? SovereignMarkdownEditingMode.source
-              : SovereignMarkdownEditingMode.liveRendered,
+              ? FlarkMarkdownEditingMode.source
+              : FlarkMarkdownEditingMode.liveRendered,
         );
         final preview = _PreviewPane(controller: controller, title: 'Preview');
 
@@ -700,9 +700,9 @@ class _EditorPane extends StatelessWidget {
     required this.editingMode,
   });
 
-  final SovereignFlutterController controller;
+  final FlarkFlutterController controller;
   final FocusNode focusNode;
-  final SovereignMarkdownEditingMode editingMode;
+  final FlarkMarkdownEditingMode editingMode;
 
   @override
   Widget build(BuildContext context) {
@@ -732,7 +732,7 @@ class _EditorPane extends StatelessWidget {
 class _PreviewPane extends StatelessWidget {
   const _PreviewPane({required this.controller, required this.title});
 
-  final SovereignFlutterController controller;
+  final FlarkFlutterController controller;
   final String title;
 
   @override
@@ -744,7 +744,7 @@ class _PreviewPane extends StatelessWidget {
 class _PreviewPaneBody extends StatefulWidget {
   const _PreviewPaneBody({required this.controller, required this.title});
 
-  final SovereignFlutterController controller;
+  final FlarkFlutterController controller;
   final String title;
 
   @override
@@ -861,14 +861,14 @@ class _WorkbenchPane extends StatelessWidget {
 class _PaneModeLabel extends StatelessWidget {
   const _PaneModeLabel({required this.editingMode});
 
-  final SovereignMarkdownEditingMode editingMode;
+  final FlarkMarkdownEditingMode editingMode;
 
   @override
   Widget build(BuildContext context) {
     final label = switch (editingMode) {
-      SovereignMarkdownEditingMode.source => 'Source',
-      SovereignMarkdownEditingMode.projected => 'Projected',
-      SovereignMarkdownEditingMode.liveRendered => 'Live',
+      FlarkMarkdownEditingMode.source => 'Source',
+      FlarkMarkdownEditingMode.projected => 'Projected',
+      FlarkMarkdownEditingMode.liveRendered => 'Live',
     };
     return Text(
       label,
@@ -884,7 +884,7 @@ class _PaneModeLabel extends StatelessWidget {
 class _EditorFooter extends StatelessWidget {
   const _EditorFooter({required this.controller});
 
-  final SovereignFlutterController controller;
+  final FlarkFlutterController controller;
 
   @override
   Widget build(BuildContext context) {

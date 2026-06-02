@@ -1,4 +1,4 @@
-# Sovereign v2 Projection Core
+# Flark v2 Projection Core
 
 Status date: 2026-05-02
 
@@ -9,23 +9,23 @@ cursor masks, and source/display offset mapping.
 
 ## Current Contract
 
-- `SovereignHiddenRange` identifies source ranges hidden from display.
-- Parser-provided hidden ranges can build a `SovereignProjection` directly.
+- `FlarkHiddenRange` identifies source ranges hidden from display.
+- Parser-provided hidden ranges can build a `FlarkProjection` directly.
 - Hidden ranges are sorted and must not overlap.
-- `SovereignCursorMask` rejects cursor positions inside hidden ranges.
+- `FlarkCursorMask` rejects cursor positions inside hidden ranges.
 - Cursor normalization can snap upstream or downstream out of hidden ranges.
-- `SovereignProjection.sourceToDisplayOffset` subtracts hidden source length
+- `FlarkProjection.sourceToDisplayOffset` subtracts hidden source length
   before the given source offset.
-- `SovereignProjection.displayToSourceOffset` maps display offsets back to
+- `FlarkProjection.displayToSourceOffset` maps display offsets back to
   source offsets after hidden ranges.
-- `SovereignProjection.projectText` builds display text from canonical source
+- `FlarkProjection.projectText` builds display text from canonical source
   text and hidden ranges.
 - Ambiguity zones mark delimiter/link/table/raw-HTML spans where predictive
   projection should use a declared source affinity.
-- `SovereignProjection.predictAfter` rebases hidden ranges and ambiguity zones
+- `FlarkProjection.predictAfter` rebases hidden ranges and ambiguity zones
   through source transactions and flags edits that touched projection-sensitive
   ranges.
-- `SovereignProjection.reconcileWith` compares predicted and authoritative
+- `FlarkProjection.reconcileWith` compares predicted and authoritative
   projections for hidden-range, ambiguity-zone, and display-length changes.
 - Selection helpers map source selections into display-space selections and
   display selections back into source offsets for cursor/selection overlays.

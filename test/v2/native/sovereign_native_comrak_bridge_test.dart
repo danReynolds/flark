@@ -4,8 +4,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:sovereign_editor/src/v2/native/native_comrak_bridge_factory.dart';
-import 'package:sovereign_editor/src/v2/native/native_comrak_ffi.dart';
+import 'package:flark/src/v2/native/native_comrak_bridge_factory.dart';
+import 'package:flark/src/v2/native/native_comrak_ffi.dart';
 
 import '../support/sovereign_test_paths.dart';
 

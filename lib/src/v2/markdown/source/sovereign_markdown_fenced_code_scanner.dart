@@ -1,7 +1,7 @@
 import '../../core/core.dart';
 
-final class SovereignMarkdownFenceLine {
-  const SovereignMarkdownFenceLine({
+final class FlarkMarkdownFenceLine {
+  const FlarkMarkdownFenceLine({
     required this.indent,
     required this.marker,
     required this.markerLength,
@@ -17,15 +17,15 @@ final class SovereignMarkdownFenceLine {
   final String? language;
   final bool canClose;
 
-  bool closes(SovereignMarkdownFencedCodeContext open) {
+  bool closes(FlarkMarkdownFencedCodeContext open) {
     return canClose &&
         marker == open.marker &&
         markerLength >= open.markerLength;
   }
 }
 
-final class SovereignMarkdownFencedCodeContext {
-  const SovereignMarkdownFencedCodeContext({
+final class FlarkMarkdownFencedCodeContext {
+  const FlarkMarkdownFencedCodeContext({
     required this.openingLineStart,
     required this.openingLineEndWithBreak,
     required this.bodyStart,
@@ -55,7 +55,7 @@ final class SovereignMarkdownFencedCodeContext {
 
   int bodyEnd(String markdown) => closingLineStart ?? markdown.length;
 
-  SovereignSourceRange bodyContentRange(String markdown) {
+  FlarkSourceRange bodyContentRange(String markdown) {
     var end = bodyEnd(markdown);
     if (isClosed &&
         _bodyHasContentBeforeFinalLineBreak(markdown, bodyStart, end)) {
@@ -66,19 +66,19 @@ final class SovereignMarkdownFencedCodeContext {
         end--;
       }
     }
-    return SovereignSourceRange(bodyStart, end).validate(markdown.length);
+    return FlarkSourceRange(bodyStart, end).validate(markdown.length);
   }
 }
 
-abstract final class SovereignMarkdownFencedCodeScanner {
-  static SovereignMarkdownFencedCodeContext? contextAt(
+abstract final class FlarkMarkdownFencedCodeScanner {
+  static FlarkMarkdownFencedCodeContext? contextAt(
     String markdown,
     int rawCaret,
   ) {
     if (markdown.isEmpty) return null;
     final caret = rawCaret.clamp(0, markdown.length);
     final caretLineStart = lineStartForOffset(markdown, caret);
-    SovereignMarkdownFencedCodeContext? active;
+    FlarkMarkdownFencedCodeContext? active;
     var lineStart = 0;
 
     while (lineStart <= caretLineStart && lineStart <= markdown.length) {
@@ -110,7 +110,7 @@ abstract final class SovereignMarkdownFencedCodeScanner {
     return _withClosingFence(markdown, open);
   }
 
-  static SovereignMarkdownFencedCodeContext? contextForOpeningLine(
+  static FlarkMarkdownFencedCodeContext? contextForOpeningLine(
     String markdown,
     int openingLineStart,
   ) {
@@ -130,7 +130,7 @@ abstract final class SovereignMarkdownFencedCodeScanner {
     return _withClosingFence(markdown, open);
   }
 
-  static SovereignMarkdownFenceLine? fenceLine(String lineText) {
+  static FlarkMarkdownFenceLine? fenceLine(String lineText) {
     var index = 0;
     while (index < lineText.length && index < 3) {
       final codeUnit = lineText.codeUnitAt(index);
@@ -154,7 +154,7 @@ abstract final class SovereignMarkdownFencedCodeScanner {
     if (markerCodeUnit == 96 && tail.contains('`')) return null;
     final trimmedTail = tail.trim();
     final language = trimmedTail.isEmpty ? null : firstWord(trimmedTail);
-    return SovereignMarkdownFenceLine(
+    return FlarkMarkdownFenceLine(
       indent: lineText.substring(0, markerStart),
       marker: String.fromCharCode(markerCodeUnit),
       markerLength: markerLength,
@@ -223,12 +223,12 @@ abstract final class SovereignMarkdownFencedCodeScanner {
     return true;
   }
 
-  static SovereignMarkdownFencedCodeContext _openContext({
+  static FlarkMarkdownFencedCodeContext _openContext({
     required String markdown,
     required int lineStart,
-    required SovereignMarkdownFenceLine fence,
+    required FlarkMarkdownFenceLine fence,
   }) {
-    return SovereignMarkdownFencedCodeContext(
+    return FlarkMarkdownFencedCodeContext(
       openingLineStart: lineStart,
       openingLineEndWithBreak: lineEndWithBreak(markdown, lineStart),
       bodyStart: lineEndWithBreak(markdown, lineStart),
@@ -243,9 +243,9 @@ abstract final class SovereignMarkdownFencedCodeScanner {
     );
   }
 
-  static SovereignMarkdownFencedCodeContext _withClosingFence(
+  static FlarkMarkdownFencedCodeContext _withClosingFence(
     String markdown,
-    SovereignMarkdownFencedCodeContext open,
+    FlarkMarkdownFencedCodeContext open,
   ) {
     int? closingLineStart;
     int? closingLineEnd;
@@ -258,7 +258,7 @@ abstract final class SovereignMarkdownFencedCodeScanner {
         closingLineStart = lineStart;
         closingLineEnd = lineEnd;
         closingLineEndWithBreak =
-            SovereignMarkdownFencedCodeScanner.lineEndWithBreak(
+            FlarkMarkdownFencedCodeScanner.lineEndWithBreak(
               markdown,
               lineStart,
             );
@@ -269,7 +269,7 @@ abstract final class SovereignMarkdownFencedCodeScanner {
       lineStart = next;
     }
 
-    return SovereignMarkdownFencedCodeContext(
+    return FlarkMarkdownFencedCodeContext(
       openingLineStart: open.openingLineStart,
       openingLineEndWithBreak: open.openingLineEndWithBreak,
       bodyStart: open.bodyStart,

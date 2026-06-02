@@ -2,15 +2,15 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/sovereign_editor_v2.dart';
+import 'package:flark/flark_advanced.dart';
 
 void main() {
-  group('Sovereign v2 performance budgets', () {
+  group('Flark v2 performance budgets', () {
     test('applies a localized source transaction within budget', () {
       final markdown = List.filled(2000, 'line').join('\n');
-      final state = SovereignEditorState.fromMarkdown(markdown);
-      final transaction = SovereignTransaction.single(
-        SovereignSourceOperation.insert(markdown.length ~/ 2, '**'),
+      final state = FlarkEditorState.fromMarkdown(markdown);
+      final transaction = FlarkTransaction.single(
+        FlarkSourceOperation.insert(markdown.length ~/ 2, '**'),
       );
 
       final elapsed = _measure(() {
@@ -23,14 +23,14 @@ void main() {
     test('builds projection and maps offsets within budget', () {
       final hiddenRanges = [
         for (var i = 0; i < 1000; i++)
-          SovereignHiddenRange(
-            range: SovereignSourceRange(i * 10, i * 10 + 2),
-            kind: SovereignHiddenRangeKind.inlineMarker,
+          FlarkHiddenRange(
+            range: FlarkSourceRange(i * 10, i * 10 + 2),
+            kind: FlarkHiddenRangeKind.inlineMarker,
           ),
       ];
 
       final elapsed = _measure(() {
-        final projection = SovereignProjection(
+        final projection = FlarkProjection(
           textLength: 10000,
           hiddenRanges: hiddenRanges,
         );
@@ -45,38 +45,38 @@ void main() {
 
     test('adopts parse results into controller state within budget', () {
       final markdown = List.filled(1000, '**line**').join('\n');
-      final controller = SovereignFlutterController.fromMarkdown(markdown);
-      final parseResult = SovereignMarkdownParseResult(
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+      final controller = FlarkFlutterController.fromMarkdown(markdown);
+      final parseResult = FlarkMarkdownParseResult(
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
         revision: controller.state.revision,
         sourceTextLength: markdown.length,
         blocks: [
           for (var i = 0; i < 1000; i++)
-            SovereignMarkdownBlockNode(
-              kind: SovereignMarkdownBlockKind.paragraph,
+            FlarkMarkdownBlockNode(
+              kind: FlarkMarkdownBlockKind.paragraph,
               type: 'paragraph',
-              sourceRange: SovereignSourceRange(i * 9, i * 9 + 8),
+              sourceRange: FlarkSourceRange(i * 9, i * 9 + 8),
             ),
         ],
         inlineTokens: [
           for (var i = 0; i < 1000; i++)
-            SovereignMarkdownInlineToken(
-              kind: SovereignMarkdownInlineKind.strong,
+            FlarkMarkdownInlineToken(
+              kind: FlarkMarkdownInlineKind.strong,
               type: 'strong',
-              sourceRange: SovereignSourceRange(i * 9 + 2, i * 9 + 6),
+              sourceRange: FlarkSourceRange(i * 9 + 2, i * 9 + 6),
             ),
         ],
         hiddenRanges: [
           for (var i = 0; i < 1000; i++) ...[
-            SovereignMarkdownHiddenRange(
-              kind: SovereignMarkdownHiddenRangeKind.inlineMarker,
+            FlarkMarkdownHiddenRange(
+              kind: FlarkMarkdownHiddenRangeKind.inlineMarker,
               type: 'inlineMarker',
-              sourceRange: SovereignSourceRange(i * 9, i * 9 + 2),
+              sourceRange: FlarkSourceRange(i * 9, i * 9 + 2),
             ),
-            SovereignMarkdownHiddenRange(
-              kind: SovereignMarkdownHiddenRangeKind.inlineMarker,
+            FlarkMarkdownHiddenRange(
+              kind: FlarkMarkdownHiddenRangeKind.inlineMarker,
               type: 'inlineMarker',
-              sourceRange: SovereignSourceRange(i * 9 + 6, i * 9 + 8),
+              sourceRange: FlarkSourceRange(i * 9 + 6, i * 9 + 8),
             ),
           ],
         ],
@@ -90,30 +90,30 @@ void main() {
     });
 
     test('builds render plans from parsed blocks within budget', () {
-      final parseResult = SovereignMarkdownParseResult(
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+      final parseResult = FlarkMarkdownParseResult(
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
         revision: 1,
         sourceTextLength: 12000,
         blocks: [
           for (var i = 0; i < 1000; i++)
-            SovereignMarkdownBlockNode(
-              kind: SovereignMarkdownBlockKind.paragraph,
+            FlarkMarkdownBlockNode(
+              kind: FlarkMarkdownBlockKind.paragraph,
               type: 'paragraph',
-              sourceRange: SovereignSourceRange(i * 12, i * 12 + 8),
+              sourceRange: FlarkSourceRange(i * 12, i * 12 + 8),
             ),
         ],
         inlineTokens: [
           for (var i = 0; i < 1000; i++)
-            SovereignMarkdownInlineToken(
-              kind: SovereignMarkdownInlineKind.strong,
+            FlarkMarkdownInlineToken(
+              kind: FlarkMarkdownInlineKind.strong,
               type: 'strong',
-              sourceRange: SovereignSourceRange(i * 12, i * 12 + 8),
+              sourceRange: FlarkSourceRange(i * 12, i * 12 + 8),
             ),
         ],
       );
 
       final elapsed = _measure(() {
-        SovereignRenderPlan.fromParseResult(parseResult: parseResult);
+        FlarkRenderPlan.fromParseResult(parseResult: parseResult);
       });
 
       expect(elapsed, lessThan(const Duration(milliseconds: 200)));

@@ -7,8 +7,8 @@ import 'sovereign_flutter_controller.dart';
 import 'sovereign_markdown_input_policy.dart';
 import 'sovereign_text_selection_gestures.dart';
 
-final class SovereignEditableText extends StatefulWidget {
-  const SovereignEditableText({
+final class FlarkEditableText extends StatefulWidget {
+  const FlarkEditableText({
     super.key,
     required this.controller,
     this.focusNode,
@@ -19,10 +19,10 @@ final class SovereignEditableText extends StatefulWidget {
     this.maxLines,
     this.expands = false,
     this.autofocus = false,
-    this.shortcuts = const <ShortcutActivator, SovereignCommandIntent>{},
+    this.shortcuts = const <ShortcutActivator, FlarkCommandIntent>{},
   });
 
-  final SovereignFlutterController controller;
+  final FlarkFlutterController controller;
   final FocusNode? focusNode;
   final TextStyle? style;
   final Color cursorColor;
@@ -31,13 +31,13 @@ final class SovereignEditableText extends StatefulWidget {
   final int? maxLines;
   final bool expands;
   final bool autofocus;
-  final Map<ShortcutActivator, SovereignCommandIntent> shortcuts;
+  final Map<ShortcutActivator, FlarkCommandIntent> shortcuts;
 
   @override
-  State<SovereignEditableText> createState() => _SovereignEditableTextState();
+  State<FlarkEditableText> createState() => _FlarkEditableTextState();
 }
 
-final class _SovereignEditableTextState extends State<SovereignEditableText> {
+final class _FlarkEditableTextState extends State<FlarkEditableText> {
   static int _nextCompositionUndoGroupId = 1;
 
   final _editableStateKey = GlobalKey<EditableTextState>();
@@ -59,7 +59,7 @@ final class _SovereignEditableTextState extends State<SovereignEditableText> {
   }
 
   @override
-  void didUpdateWidget(SovereignEditableText oldWidget) {
+  void didUpdateWidget(FlarkEditableText oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_syncFromRuntime);
@@ -111,9 +111,9 @@ final class _SovereignEditableTextState extends State<SovereignEditableText> {
     editor = _markdownInputPolicy.wrapKeyboardShortcuts(
       child: editor,
       currentSelection: () =>
-          SovereignMarkdownInputPolicy.selectionFromTextSelection(
-        _textController.selection,
-      ),
+          FlarkMarkdownInputPolicy.selectionFromTextSelection(
+            _textController.selection,
+          ),
       applySelection: (selection) {
         widget.controller.applySelection(
           selection,
@@ -121,10 +121,7 @@ final class _SovereignEditableTextState extends State<SovereignEditableText> {
         );
       },
     );
-    editor = SovereignCommandActions(
-      controller: widget.controller,
-      child: editor,
-    );
+    editor = FlarkCommandActions(controller: widget.controller, child: editor);
     if (widget.shortcuts.isNotEmpty) {
       editor = Shortcuts(
         shortcuts: <ShortcutActivator, Intent>{...widget.shortcuts},
@@ -195,14 +192,14 @@ final class _SovereignEditableTextState extends State<SovereignEditableText> {
     _syncingFromRuntime = false;
   }
 
-  TextSelection _textSelection(SovereignSelection selection) {
+  TextSelection _textSelection(FlarkSelection selection) {
     return TextSelection(
       baseOffset: selection.baseOffset,
       extentOffset: selection.extentOffset,
     );
   }
 
-  SovereignTransaction? _transactionForTextChange(
+  FlarkTransaction? _transactionForTextChange(
     String before,
     String after,
     TextSelection selection, {
@@ -211,8 +208,9 @@ final class _SovereignEditableTextState extends State<SovereignEditableText> {
     if (before == after) return null;
 
     var prefix = 0;
-    final shortest =
-        before.length < after.length ? before.length : after.length;
+    final shortest = before.length < after.length
+        ? before.length
+        : after.length;
     while (prefix < shortest &&
         before.codeUnitAt(prefix) == after.codeUnitAt(prefix)) {
       prefix++;
@@ -229,18 +227,18 @@ final class _SovereignEditableTextState extends State<SovereignEditableText> {
     }
 
     final replacementText = after.substring(prefix, afterSuffix);
-    return SovereignTransaction.single(
-      SovereignSourceOperation.replace(
-        replacedRange: SovereignSourceRange(prefix, beforeSuffix),
+    return FlarkTransaction.single(
+      FlarkSourceOperation.replace(
+        replacedRange: FlarkSourceRange(prefix, beforeSuffix),
         replacementText: replacementText,
       ),
       selectionAfter: _selectionFromTextSelection(selection),
-      metadata: SovereignTransactionMetadata(
-        intent: SovereignTransactionIntent.input,
+      metadata: FlarkTransactionMetadata(
+        intent: FlarkTransactionIntent.input,
         userEvent: 'input.editableText',
         undoGroupId: undoGroupId,
-        parseInvalidationRange: SovereignSourceRange(prefix, beforeSuffix),
-        projectionInvalidationRange: SovereignSourceRange(prefix, beforeSuffix),
+        parseInvalidationRange: FlarkSourceRange(prefix, beforeSuffix),
+        projectionInvalidationRange: FlarkSourceRange(prefix, beforeSuffix),
       ),
     );
   }
@@ -259,12 +257,12 @@ final class _SovereignEditableTextState extends State<SovereignEditableText> {
     }
   }
 
-  SovereignSelection? _selectionFromTextSelection(TextSelection selection) {
-    return SovereignMarkdownInputPolicy.selectionFromTextSelection(selection);
+  FlarkSelection? _selectionFromTextSelection(TextSelection selection) {
+    return FlarkMarkdownInputPolicy.selectionFromTextSelection(selection);
   }
 
-  SovereignMarkdownInputPolicy get _markdownInputPolicy {
-    return SovereignMarkdownInputPolicy(
+  FlarkMarkdownInputPolicy get _markdownInputPolicy {
+    return FlarkMarkdownInputPolicy(
       controller: widget.controller,
       enterUserEvent: 'input.editableText.enter',
       backspaceUserEvent: 'input.editableText.backspace',

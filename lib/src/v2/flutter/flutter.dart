@@ -7,7 +7,6 @@ export 'sovereign_markdown_interactions.dart';
 export 'sovereign_markdown_preview.dart';
 export 'sovereign_projected_editable_text.dart';
 export 'sovereign_parse_scheduler.dart';
-export 'sovereign_read_only_preview.dart'
-    show SovereignPreviewBlockWidgetBuilder;
+export 'sovereign_read_only_preview.dart' show FlarkPreviewBlockWidgetBuilder;
 export 'sovereign_render_plan_overlay_controls.dart';
 export 'sovereign_text_delta_adapter.dart';

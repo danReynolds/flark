@@ -1,20 +1,20 @@
-# Sovereign v2 Migration Guide
+# Flark v2 Migration Guide
 
 Status date: 2026-05-03
 
-Sovereign is now v2-only from the stable package import:
+Flark is now v2-only from the stable package import:
 
 ```dart
-import 'package:sovereign_editor/sovereign_editor.dart';
+import 'package:flark/flark.dart';
 ```
 
 The legacy v1 API has been removed. Use the source-first API:
 
-- `SovereignFlutterController`
-- `SovereignMarkdownEditingExtensions.standard()`
+- `FlarkFlutterController`
+- `FlarkMarkdownEditingExtensions.standard()`
 - `MarkdownEditor`
 - `Markdown`
-- `SovereignNativeComrakParseBackend`
+- `FlarkNativeComrakParseBackend`
 - render-plan descriptors and preview block builders
 
 ## Why v2 Exists
@@ -35,9 +35,9 @@ render plan.
 Create a controller with the standard markdown editing extension set:
 
 ```dart
-final controller = SovereignFlutterController.fromMarkdown(
+final controller = FlarkFlutterController.fromMarkdown(
   initialMarkdown,
-  extensions: SovereignMarkdownEditingExtensions.standard(),
+  extensions: FlarkMarkdownEditingExtensions.standard(),
 );
 ```
 
@@ -46,7 +46,7 @@ Render the editor:
 ```dart
 MarkdownEditor(
   controller: controller,
-  editingMode: SovereignMarkdownEditingMode.liveRendered,
+  editingMode: FlarkMarkdownEditingMode.liveRendered,
 )
 ```
 
@@ -66,7 +66,7 @@ Markdown(
 ```
 
 For split-pane editor/preview experiences, share one
-`SovereignFlutterController` and use `Markdown(controller: ...)`
+`FlarkFlutterController` and use `Markdown(controller: ...)`
 so the preview tracks the editor's parse/render state. The mounted editor owns
 parser scheduling when `parseBackend` is omitted:
 
@@ -100,7 +100,7 @@ Markdown(
 ```
 
 For semantic render-plan changes that should travel with the editor runtime,
-register a `SovereignRenderPlanExtension` in the controller's extension set.
+register a `FlarkRenderPlanExtension` in the controller's extension set.
 
 ## Command Migration
 
@@ -114,9 +114,9 @@ v2:
 
 ```dart
 final result = controller.dispatch(
-  command: SovereignMarkdownInlineCommands.toggleInlineStyle,
-  payload: const SovereignToggleInlineStylePayload(
-    SovereignMarkdownInlineStyle.strong,
+  command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+  payload: const FlarkToggleInlineStylePayload(
+    FlarkMarkdownInlineStyle.strong,
   ),
 );
 ```
@@ -128,20 +128,20 @@ runtime plus command status.
 Use capability queries for toolbar state:
 
 ```dart
-final capabilities = SovereignMarkdownCommandQueries.capabilitiesAtSelection(
+final capabilities = FlarkMarkdownCommandQueries.capabilitiesAtSelection(
   controller.state,
 );
 ```
 
 ## Typed Controller Events
 
-`SovereignFlutterController` is still a `ChangeNotifier` for Flutter widget
+`FlarkFlutterController` is still a `ChangeNotifier` for Flutter widget
 rebuilds, but integrations that need surgical reactions should listen to the
 typed event stream:
 
 ```dart
 final subscription = controller.events.listen((event) {
-  if (event.kind == SovereignControllerEventKind.parseAdopted) {
+  if (event.kind == FlarkControllerEventKind.parseAdopted) {
     // Recompute parser-dependent extension state.
   }
 });
@@ -152,13 +152,13 @@ changes, undo, redo, and generic runtime changes.
 
 ## Projection and Source Text
 
-`SovereignFlutterController.markdown` is always the canonical source document.
+`FlarkFlutterController.markdown` is always the canonical source document.
 Projected editing hides parser-provided marker ranges from the editing surface
 but maps selections and edits back to source offsets.
 
-Use `SovereignMarkdownEditingMode.source` when users must see literal markdown
-syntax, `SovereignMarkdownEditingMode.projected` when they should edit clean
-marker-hidden text, and `SovereignMarkdownEditingMode.liveRendered` when they
+Use `FlarkMarkdownEditingMode.source` when users must see literal markdown
+syntax, `FlarkMarkdownEditingMode.projected` when they should edit clean
+marker-hidden text, and `FlarkMarkdownEditingMode.liveRendered` when they
 should get rendered-in-place inline styling and editable task, code-fence, and
 table block widgets while still editing canonical Markdown source.
 
@@ -178,16 +178,16 @@ MarkdownEditor(
 ```
 
 Applications with their own design system should prefer custom
-`SovereignOverlayTargetWidgetBuilder` controls on `MarkdownEditor` or
+`FlarkOverlayTargetWidgetBuilder` controls on `MarkdownEditor` or
 `Markdown` over deep imports or reparsing.
 
 ## Compatibility Boundary
 
 There is no compatibility layer in this package. Keep migrations explicit:
 
-- replace `SovereignController` with `SovereignFlutterController`;
-- replace `SovereignEditor` with `MarkdownEditor`;
-- replace `SovereignMarkdownView` with `Markdown`;
+- replace `FlarkController` with `FlarkFlutterController`;
+- replace `FlarkEditor` with `MarkdownEditor`;
+- replace `FlarkMarkdownView` with `Markdown`;
 - replace toolbar helpers with typed command dispatch;
 - replace widget-local styling hooks with Flutter text styles, preview
   `blockBuilder`s, or render-plan extensions.

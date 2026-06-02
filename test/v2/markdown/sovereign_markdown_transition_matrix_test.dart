@@ -2,12 +2,12 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/sovereign_editor_v2.dart';
+import 'package:flark/flark_advanced.dart';
 
 import '../support/sovereign_test_paths.dart';
 
 void main() {
-  group('Sovereign markdown transition matrix', () {
+  group('Flark markdown transition matrix', () {
     final libPath = sovereignNativeBridgeLibraryPathForPlatform();
 
     if (libPath.isEmpty || !File(libPath).existsSync()) {
@@ -20,7 +20,7 @@ void main() {
       return;
     }
 
-    final backend = SovereignNativeComrakParseBackend.withNativeBridge(
+    final backend = FlarkNativeComrakParseBackend.withNativeBridge(
       overrideLibraryPath: libPath,
     );
 
@@ -29,16 +29,16 @@ void main() {
         '${transitionCase.id} preserves the expected boundary state',
         () async {
           final result = await backend.parse(
-            SovereignMarkdownParseRequest(
+            FlarkMarkdownParseRequest(
               revision: transitionCase.id.hashCode,
               markdown: transitionCase.markdown,
               profile: transitionCase.profile,
             ),
           );
 
-          final projection = SovereignProjection.fromParseResult(result);
+          final projection = FlarkProjection.fromParseResult(result);
           final displayText = projection.projectText(transitionCase.markdown);
-          final renderPlan = SovereignRenderPlan.fromParseResult(
+          final renderPlan = FlarkRenderPlan.fromParseResult(
             parseResult: result,
             projection: projection,
           );
@@ -111,7 +111,7 @@ final _transitionCases = [
       expect(artifacts.displayText, isEmpty);
       expect(
         artifacts.renderPlan.blocks.single.styleToken,
-        SovereignRenderTextStyleToken.heading1,
+        FlarkRenderTextStyleToken.heading1,
       );
     },
   ),
@@ -125,7 +125,7 @@ final _transitionCases = [
       expect(
         _allBlocks(
           artifacts.result.blocks,
-        ).where((block) => block.kind == SovereignMarkdownBlockKind.heading),
+        ).where((block) => block.kind == FlarkMarkdownBlockKind.heading),
         isEmpty,
       );
     },
@@ -156,7 +156,7 @@ final _transitionCases = [
       expect(
         _allBlocks(
           artifacts.result.blocks,
-        ).where((block) => block.kind == SovereignMarkdownBlockKind.blockquote),
+        ).where((block) => block.kind == FlarkMarkdownBlockKind.blockquote),
         hasLength(1),
       );
     },
@@ -171,13 +171,13 @@ final _transitionCases = [
       expect(
         _allBlocks(
           artifacts.result.blocks,
-        ).where((block) => block.kind == SovereignMarkdownBlockKind.blockquote),
+        ).where((block) => block.kind == FlarkMarkdownBlockKind.blockquote),
         hasLength(1),
       );
       expect(
         _allBlocks(
           artifacts.result.blocks,
-        ).where((block) => block.kind == SovereignMarkdownBlockKind.paragraph),
+        ).where((block) => block.kind == FlarkMarkdownBlockKind.paragraph),
         isNotEmpty,
       );
     },
@@ -185,7 +185,7 @@ final _transitionCases = [
   _TransitionCase(
     id: 'github_alert_marker_stays_literal_blockquote',
     markdown: '> [!NOTE]\n> useful',
-    profile: SovereignMarkdownProfile.commonMarkGfm,
+    profile: FlarkMarkdownProfile.commonMarkGfm,
     blockTypes: const {'blockquote'},
     hiddenTypes: const {'markdownMarker'},
     displayContains: const {'[!NOTE]\nuseful'},
@@ -214,7 +214,7 @@ final _transitionCases = [
       expect(artifacts.renderPlan.listItemBlocks, hasLength(1));
       expect(
         artifacts.renderPlan.listItemBlocks.single.listItem!.kind,
-        SovereignRenderListKind.unordered,
+        FlarkRenderListKind.unordered,
       );
     },
   ),
@@ -278,7 +278,7 @@ final _transitionCases = [
       expect(
         _allBlocks(
           artifacts.result.blocks,
-        ).where((block) => block.kind == SovereignMarkdownBlockKind.blockquote),
+        ).where((block) => block.kind == FlarkMarkdownBlockKind.blockquote),
         isEmpty,
       );
       expect(artifacts.renderPlan.codeBlocks, hasLength(1));
@@ -313,7 +313,7 @@ final _transitionCases = [
       expect(artifacts.renderPlan.listItemBlocks, hasLength(1));
       expect(
         artifacts.renderPlan.listItemBlocks.single.listItem!.kind,
-        SovereignRenderListKind.ordered,
+        FlarkRenderListKind.ordered,
       );
     },
   ),
@@ -338,7 +338,7 @@ final _transitionCases = [
       expect(artifacts.renderPlan.listItemBlocks, hasLength(1));
       expect(
         artifacts.renderPlan.listItemBlocks.single.listItem!.kind,
-        SovereignRenderListKind.ordered,
+        FlarkRenderListKind.ordered,
       );
     },
   ),
@@ -365,7 +365,7 @@ final _transitionCases = [
   _TransitionCase(
     id: 'task_marker_partial_open',
     markdown: '- [',
-    profile: SovereignMarkdownProfile.commonMarkGfm,
+    profile: FlarkMarkdownProfile.commonMarkGfm,
     blockTypes: const {'listItem'},
     hiddenTypes: const {'markdownMarker'},
     displayContains: const {'['},
@@ -377,7 +377,7 @@ final _transitionCases = [
   _TransitionCase(
     id: 'task_marker_complete_empty',
     markdown: '- [ ] ',
-    profile: SovereignMarkdownProfile.commonMarkGfm,
+    profile: FlarkMarkdownProfile.commonMarkGfm,
     blockTypes: const {'listItem'},
     hiddenTypes: const {'markdownMarker'},
     overlayKinds: const {'taskListItem'},
@@ -441,7 +441,7 @@ final _transitionCases = [
       expect(
         _allBlocks(
           artifacts.result.blocks,
-        ).where((block) => block.kind == SovereignMarkdownBlockKind.paragraph),
+        ).where((block) => block.kind == FlarkMarkdownBlockKind.paragraph),
         isEmpty,
       );
     },
@@ -457,7 +457,7 @@ final _transitionCases = [
       expect(
         _allBlocks(
           artifacts.result.blocks,
-        ).where((block) => block.kind == SovereignMarkdownBlockKind.paragraph),
+        ).where((block) => block.kind == FlarkMarkdownBlockKind.paragraph),
         isNotEmpty,
       );
     },
@@ -481,14 +481,14 @@ final _transitionCases = [
     displayContains: const {'Title'},
     verify: (artifacts) {
       expect(
-        _allBlocks(artifacts.result.blocks).any(
-          (block) => block.kind == SovereignMarkdownBlockKind.thematicBreak,
-        ),
+        _allBlocks(
+          artifacts.result.blocks,
+        ).any((block) => block.kind == FlarkMarkdownBlockKind.thematicBreak),
         isFalse,
       );
       expect(
         artifacts.renderPlan.blocks.single.styleToken,
-        SovereignRenderTextStyleToken.heading2,
+        FlarkRenderTextStyleToken.heading2,
       );
     },
   ),
@@ -501,7 +501,7 @@ final _transitionCases = [
       expect(
         _allBlocks(
           artifacts.result.blocks,
-        ).any((block) => block.kind == SovereignMarkdownBlockKind.heading),
+        ).any((block) => block.kind == FlarkMarkdownBlockKind.heading),
         isFalse,
       );
     },
@@ -509,7 +509,7 @@ final _transitionCases = [
   _TransitionCase(
     id: 'table_partial_header_only',
     markdown: '| A | B |',
-    profile: SovereignMarkdownProfile.commonMarkGfm,
+    profile: FlarkMarkdownProfile.commonMarkGfm,
     blockTypes: const {'paragraph'},
     displayContains: const {'A', 'B'},
     verify: (artifacts) => expect(artifacts.renderPlan.tableBlocks, isEmpty),
@@ -517,7 +517,7 @@ final _transitionCases = [
   _TransitionCase(
     id: 'table_complete_separator',
     markdown: '| A | B |\n| --- | --- |\n',
-    profile: SovereignMarkdownProfile.commonMarkGfm,
+    profile: FlarkMarkdownProfile.commonMarkGfm,
     blockTypes: const {'table'},
     overlayKinds: const {'table'},
     displayContains: const {'A', 'B'},
@@ -527,7 +527,7 @@ final _transitionCases = [
   _TransitionCase(
     id: 'table_header_delimiter_cell_mismatch_stays_paragraph',
     markdown: '| A | B |\n| --- |\n| x | y |\n',
-    profile: SovereignMarkdownProfile.commonMarkGfm,
+    profile: FlarkMarkdownProfile.commonMarkGfm,
     blockTypes: const {'paragraph'},
     displayContains: const {'| A | B |', '| --- |'},
     verify: (artifacts) {
@@ -535,7 +535,7 @@ final _transitionCases = [
       expect(
         _allBlocks(
           artifacts.result.blocks,
-        ).where((block) => block.kind == SovereignMarkdownBlockKind.table),
+        ).where((block) => block.kind == FlarkMarkdownBlockKind.table),
         isEmpty,
       );
     },
@@ -543,7 +543,7 @@ final _transitionCases = [
   _TransitionCase(
     id: 'table_body_cell_count_variance_keeps_header_columns',
     markdown: '| A | B |\n| --- | --- |\n| x |\n| y | z | ignored |\n',
-    profile: SovereignMarkdownProfile.commonMarkGfm,
+    profile: FlarkMarkdownProfile.commonMarkGfm,
     blockTypes: const {'table'},
     overlayKinds: const {'table'},
     displayContains: const {'A', 'B', 'x', 'y', 'z'},
@@ -720,8 +720,7 @@ final _transitionCases = [
       expect(
         artifacts.result.hiddenRanges.where(
           (range) =>
-              range.kind ==
-              SovereignMarkdownHiddenRangeKind.referenceDefinition,
+              range.kind == FlarkMarkdownHiddenRangeKind.referenceDefinition,
         ),
         isEmpty,
       );
@@ -730,22 +729,21 @@ final _transitionCases = [
   _TransitionCase(
     id: 'github_footnote_syntax_stays_source_visible',
     markdown: 'Text[^1]\n\n[^1]: Footnote',
-    profile: SovereignMarkdownProfile.commonMarkGfm,
+    profile: FlarkMarkdownProfile.commonMarkGfm,
     blockTypes: const {'paragraph'},
     displayContains: const {'Text[^1]', '[^1]: Footnote'},
     overlayKinds: const {},
     verify: (artifacts) {
       expect(
         artifacts.result.inlineTokens.where(
-          (token) => token.kind == SovereignMarkdownInlineKind.link,
+          (token) => token.kind == FlarkMarkdownInlineKind.link,
         ),
         isEmpty,
       );
       expect(
         artifacts.result.hiddenRanges.where(
           (range) =>
-              range.kind ==
-              SovereignMarkdownHiddenRangeKind.referenceDefinition,
+              range.kind == FlarkMarkdownHiddenRangeKind.referenceDefinition,
         ),
         isEmpty,
       );
@@ -754,7 +752,7 @@ final _transitionCases = [
   _TransitionCase(
     id: 'gfm_bare_url_autolink',
     markdown: 'https://example.com',
-    profile: SovereignMarkdownProfile.commonMarkGfm,
+    profile: FlarkMarkdownProfile.commonMarkGfm,
     inlineTypes: const {'link'},
     overlayKinds: const {'link'},
     displayContains: const {'https://example.com'},
@@ -762,13 +760,13 @@ final _transitionCases = [
   _TransitionCase(
     id: 'gfm_bare_url_autolink_trims_trailing_punctuation',
     markdown: 'Visit www.commonmark.org.',
-    profile: SovereignMarkdownProfile.commonMarkGfm,
+    profile: FlarkMarkdownProfile.commonMarkGfm,
     inlineTypes: const {'link'},
     overlayKinds: const {'link'},
     displayContains: const {'Visit www.commonmark.org.'},
     verify: (artifacts) {
       final target = artifacts.renderPlan.overlayPlan().targets.single;
-      expect(target.sourceRange, const SovereignSourceRange(6, 24));
+      expect(target.sourceRange, const FlarkSourceRange(6, 24));
       expect(target.action?.destination, 'http://www.commonmark.org');
     },
   ),
@@ -832,7 +830,7 @@ void _expectNoInlineOrHiddenRanges(_TransitionArtifacts artifacts) {
   expect(artifacts.result.hiddenRanges, isEmpty);
 }
 
-void _expectNoErrors(SovereignMarkdownParseResult result, String id) {
+void _expectNoErrors(FlarkMarkdownParseResult result, String id) {
   expect(
     result.diagnostics.where((diagnostic) {
       return diagnostic.extensions['isError'] == true;
@@ -842,7 +840,7 @@ void _expectNoErrors(SovereignMarkdownParseResult result, String id) {
   );
 }
 
-void _expectRangesValid(SovereignMarkdownParseResult result, int sourceLength) {
+void _expectRangesValid(FlarkMarkdownParseResult result, int sourceLength) {
   for (final range in [
     for (final block in _allBlocks(result.blocks)) block.sourceRange,
     for (final token in result.inlineTokens) token.sourceRange,
@@ -856,8 +854,8 @@ void _expectRangesValid(SovereignMarkdownParseResult result, int sourceLength) {
   }
 }
 
-Iterable<SovereignMarkdownBlockNode> _allBlocks(
-  Iterable<SovereignMarkdownBlockNode> blocks,
+Iterable<FlarkMarkdownBlockNode> _allBlocks(
+  Iterable<FlarkMarkdownBlockNode> blocks,
 ) sync* {
   for (final block in blocks) {
     yield block;
@@ -871,26 +869,26 @@ void _expectContainsAll(Set<String> actual, Set<String> expected, String id) {
   }
 }
 
-Set<String> _blockTypes(SovereignMarkdownParseResult result) {
+Set<String> _blockTypes(FlarkMarkdownParseResult result) {
   return {for (final block in _allBlocks(result.blocks)) block.type};
 }
 
-Set<String> _inlineTypes(SovereignMarkdownParseResult result) {
+Set<String> _inlineTypes(FlarkMarkdownParseResult result) {
   return {for (final token in result.inlineTokens) token.type};
 }
 
-Set<String> _hiddenTypes(SovereignMarkdownParseResult result) {
+Set<String> _hiddenTypes(FlarkMarkdownParseResult result) {
   return {for (final hiddenRange in result.hiddenRanges) hiddenRange.type};
 }
 
-Set<String> _replacementTypes(SovereignMarkdownParseResult result) {
+Set<String> _replacementTypes(FlarkMarkdownParseResult result) {
   return {
     for (final replacementRange in result.replacementRanges)
       replacementRange.type,
   };
 }
 
-Set<String> _overlayKinds(SovereignRenderPlan renderPlan) {
+Set<String> _overlayKinds(FlarkRenderPlan renderPlan) {
   return {
     for (final target in renderPlan.overlayPlan().targets) target.kind.name,
   };
@@ -900,7 +898,7 @@ final class _TransitionCase {
   const _TransitionCase({
     required this.id,
     required this.markdown,
-    this.profile = SovereignMarkdownProfile.commonMarkCore,
+    this.profile = FlarkMarkdownProfile.commonMarkCore,
     this.blockTypes = const {},
     this.inlineTypes = const {},
     this.hiddenTypes = const {},
@@ -913,7 +911,7 @@ final class _TransitionCase {
 
   final String id;
   final String markdown;
-  final SovereignMarkdownProfile profile;
+  final FlarkMarkdownProfile profile;
   final Set<String> blockTypes;
   final Set<String> inlineTypes;
   final Set<String> hiddenTypes;
@@ -931,7 +929,7 @@ final class _TransitionArtifacts {
     required this.renderPlan,
   });
 
-  final SovereignMarkdownParseResult result;
+  final FlarkMarkdownParseResult result;
   final String displayText;
-  final SovereignRenderPlan renderPlan;
+  final FlarkRenderPlan renderPlan;
 }

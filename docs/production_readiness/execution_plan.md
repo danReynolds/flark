@@ -1,11 +1,11 @@
-# Sovereign Production Readiness Execution Plan
+# Flark Production Readiness Execution Plan
 
 Status date: 2026-05-02
 Current phase: Phase 5 - owner decision blockers and release metadata
 
 ## Objective
 
-Turn Sovereign into a standalone, production-quality Flutter markdown editor
+Turn Flark into a standalone, production-quality Flutter markdown editor
 and preview package with a clear public API, reliable native packaging, strong
 tests, and durable execution records.
 
@@ -29,7 +29,7 @@ Completed in Phase 0:
 
 - Created `/Users/dan/Coding/sovereign` as a new git repo.
 - Copied tracked package source, tests, scripts, native bridge, fixtures, and
-  Sovereign architecture docs from Dune.
+  Flark architecture docs from Dune.
 - Excluded generated build state (`.dart_tool`, `build`, `coverage`, Rust
   `target`).
 - Removed `resolution: workspace` so dependency resolution can work outside the
@@ -49,8 +49,8 @@ condition.
 Tasks:
 
 - [x] Create `/Users/dan/Coding/sovereign`.
-- [x] Copy tracked Sovereign package files from Dune.
-- [x] Copy relevant Sovereign architecture docs.
+- [x] Copy tracked Flark package files from Dune.
+- [x] Copy relevant Flark architecture docs.
 - [x] Initialize git repo.
 - [x] Remove workspace-only pubspec setting.
 - [x] Add gitignore and analysis options.
@@ -86,9 +86,9 @@ Tasks:
 - [x] Move markdown logic/scanner internals into `lib/src`.
 - [x] Move core service/rendering/pipeline internals into `lib/src`.
 - [x] Move controller/editor private helper files into `lib/src`.
-- [x] Keep `lib/sovereign_editor.dart` as the main public barrel.
+- [x] Keep `lib/flark.dart` as the main public barrel.
 - [x] Decide whether any secondary public libraries are warranted.
-- [x] Rename Dune-specific public names to Sovereign vocabulary.
+- [x] Rename Dune-specific public names to Flark vocabulary.
 - [x] Add migration notes for breaking public API cleanup.
 - [x] Add package-level API docs for all public classes and methods.
 - [x] Add first primary consumer API docs wave.

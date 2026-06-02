@@ -1,24 +1,24 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/markdown/source/sovereign_markdown_fenced_code_policy.dart';
-import 'package:sovereign_editor/sovereign_editor_v2.dart';
+import 'package:flark/src/v2/markdown/source/sovereign_markdown_fenced_code_policy.dart';
+import 'package:flark/flark_advanced.dart';
 
 void main() {
-  group('SovereignMarkdownInputCommands', () {
+  group('FlarkMarkdownInputCommands', () {
     test('inserts a plain newline outside markdown continuations', () {
       final next = _enter('alpha', 5);
 
       expect(next.markdown, 'alpha\n');
-      expect(next.selection, const SovereignSelection.collapsed(6));
+      expect(next.selection, const FlarkSelection.collapsed(6));
     });
 
     test('continues blockquotes and exits empty quote lines', () {
       final quoted = _enter('> alpha', 7);
       expect(quoted.markdown, '> alpha\n> ');
-      expect(quoted.selection, const SovereignSelection.collapsed(10));
+      expect(quoted.selection, const FlarkSelection.collapsed(10));
 
       final exited = _enter(quoted.markdown, quoted.selection.extentOffset);
       expect(exited.markdown, '> alpha\n\n');
-      expect(exited.selection, const SovereignSelection.collapsed(9));
+      expect(exited.selection, const FlarkSelection.collapsed(9));
     });
 
     test('continues nested blockquotes and quoted list items', () {
@@ -27,11 +27,11 @@ void main() {
       final quotedTask = _enter('> - [x] done', 12);
 
       expect(nestedQuote.markdown, '> > alpha\n> > ');
-      expect(nestedQuote.selection, const SovereignSelection.collapsed(14));
+      expect(nestedQuote.selection, const FlarkSelection.collapsed(14));
       expect(quotedList.markdown, '> - item\n> - ');
-      expect(quotedList.selection, const SovereignSelection.collapsed(13));
+      expect(quotedList.selection, const FlarkSelection.collapsed(13));
       expect(quotedTask.markdown, '> - [x] done\n> - [ ] ');
-      expect(quotedTask.selection, const SovereignSelection.collapsed(21));
+      expect(quotedTask.selection, const FlarkSelection.collapsed(21));
     });
 
     test('continues unordered, ordered, and task list markers', () {
@@ -62,7 +62,7 @@ void main() {
       final next = _enter('  - ', 4);
 
       expect(next.markdown, '  \n');
-      expect(next.selection, const SovereignSelection.collapsed(3));
+      expect(next.selection, const FlarkSelection.collapsed(3));
     });
 
     test('exits empty quoted list items but keeps quote mode', () {
@@ -72,31 +72,28 @@ void main() {
       final nested = _enter('>   - ', 6);
 
       expect(unordered.markdown, '> \n> ');
-      expect(unordered.selection, const SovereignSelection.collapsed(5));
+      expect(unordered.selection, const FlarkSelection.collapsed(5));
       expect(ordered.markdown, '> \n> ');
-      expect(ordered.selection, const SovereignSelection.collapsed(5));
+      expect(ordered.selection, const FlarkSelection.collapsed(5));
       expect(task.markdown, '> \n> ');
-      expect(task.selection, const SovereignSelection.collapsed(5));
+      expect(task.selection, const FlarkSelection.collapsed(5));
       expect(nested.markdown, '>   \n>   ');
-      expect(nested.selection, const SovereignSelection.collapsed(9));
+      expect(nested.selection, const FlarkSelection.collapsed(9));
     });
 
     test('replaces selected source with a newline', () {
       final runtime = _runtime(
         'alpha',
-        const SovereignSelection(baseOffset: 1, extentOffset: 4),
+        const FlarkSelection(baseOffset: 1, extentOffset: 4),
       );
 
       final result = runtime.dispatch(
-        command: SovereignMarkdownInputCommands.handleEnter,
-        payload: const SovereignHandleEnterPayload(),
+        command: FlarkMarkdownInputCommands.handleEnter,
+        payload: const FlarkHandleEnterPayload(),
       );
 
       expect(result.runtime.state.markdown, 'a\na');
-      expect(
-        result.runtime.state.selection,
-        const SovereignSelection.collapsed(2),
-      );
+      expect(result.runtime.state.selection, const FlarkSelection.collapsed(2));
     });
 
     test('exits empty ATX headings on Enter', () {
@@ -104,60 +101,60 @@ void main() {
       final indented = _enter('  ## ', 5);
 
       expect(heading.markdown, '\n');
-      expect(heading.selection, const SovereignSelection.collapsed(1));
+      expect(heading.selection, const FlarkSelection.collapsed(1));
       expect(indented.markdown, '  \n');
-      expect(indented.selection, const SovereignSelection.collapsed(3));
+      expect(indented.selection, const FlarkSelection.collapsed(3));
     });
 
     test('continues and exits indented code blocks on Enter', () {
       final continued = _enter('    final x = 1;', 16);
       expect(continued.markdown, '    final x = 1;\n    ');
-      expect(continued.selection, const SovereignSelection.collapsed(21));
+      expect(continued.selection, const FlarkSelection.collapsed(21));
 
       final exited = _enter(
         continued.markdown,
         continued.selection.extentOffset,
       );
       expect(exited.markdown, '    final x = 1;\n\n');
-      expect(exited.selection, const SovereignSelection.collapsed(18));
+      expect(exited.selection, const FlarkSelection.collapsed(18));
     });
 
     test('preserves fenced code indentation on Enter', () {
       final next = _enter('```\n  foo\n```', 9);
 
       expect(next.markdown, '```\n  foo\n  \n```');
-      expect(next.selection, const SovereignSelection.collapsed(12));
+      expect(next.selection, const FlarkSelection.collapsed(12));
     });
 
     test('indents fenced code after language block openers', () {
       const spaces = '```\nif (x) {\n```';
       final indentedSpaces = _enter(spaces, spaces.indexOf('{') + 1);
       expect(indentedSpaces.markdown, '```\nif (x) {\n  \n```');
-      expect(indentedSpaces.selection, const SovereignSelection.collapsed(15));
+      expect(indentedSpaces.selection, const FlarkSelection.collapsed(15));
 
       const tabs = '```\n\tif (x) {\n```';
       final indentedTabs = _enter(tabs, tabs.indexOf('{') + 1);
       expect(indentedTabs.markdown, '```\n\tif (x) {\n\t\t\n```');
-      expect(indentedTabs.selection, const SovereignSelection.collapsed(16));
+      expect(indentedTabs.selection, const FlarkSelection.collapsed(16));
     });
 
     test('language aware colon indentation only applies where expected', () {
       const python = '```python\nif ready:\n```';
       final indentedPython = _enter(python, python.indexOf(':') + 1);
       expect(indentedPython.markdown, '```python\nif ready:\n  \n```');
-      expect(indentedPython.selection, const SovereignSelection.collapsed(22));
+      expect(indentedPython.selection, const FlarkSelection.collapsed(22));
 
       const dart = '```dart\nlabel:\n```';
       final plainDart = _enter(dart, dart.indexOf(':') + 1);
       expect(plainDart.markdown, '```dart\nlabel:\n\n```');
-      expect(plainDart.selection, const SovereignSelection.collapsed(15));
+      expect(plainDart.selection, const FlarkSelection.collapsed(15));
     });
 
     test('exits fenced code from trailing blank lines', () {
       const closed = '```\nfoo\n\n```';
       final closedExit = _enter(closed, closed.indexOf('\n\n') + 1);
       expect(closedExit.markdown, '```\nfoo\n```\n');
-      expect(closedExit.selection, const SovereignSelection.collapsed(12));
+      expect(closedExit.selection, const FlarkSelection.collapsed(12));
 
       const multipleBlanks = '```\nfoo\n\n\n```';
       final multipleBlankExit = _enter(
@@ -165,38 +162,35 @@ void main() {
         multipleBlanks.indexOf('\n\n') + 1,
       );
       expect(multipleBlankExit.markdown, '```\nfoo\n```\n');
-      expect(
-        multipleBlankExit.selection,
-        const SovereignSelection.collapsed(12),
-      );
+      expect(multipleBlankExit.selection, const FlarkSelection.collapsed(12));
 
       const unclosed = '```\nfoo\n\n\n';
       final unclosedExit = _enter(unclosed, unclosed.indexOf('\n\n') + 1);
       expect(unclosedExit.markdown, '```\nfoo\n```\n');
-      expect(unclosedExit.selection, const SovereignSelection.collapsed(12));
+      expect(unclosedExit.selection, const FlarkSelection.collapsed(12));
     });
 
     test('auto outdents closer insertion on indentation-only fenced lines', () {
       const shallow = '```\nif (x) {\n  \n```';
       final shallowLineStart = shallow.indexOf('  \n');
       final shallowEdit =
-          SovereignMarkdownFencedCodePolicy.autoOutdentCloserInsertion(
+          FlarkMarkdownFencedCodePolicy.autoOutdentCloserInsertion(
             markdown: shallow,
             insertionOffset: shallowLineStart + 2,
             insertedText: '}',
           );
       expect(shallowEdit, isNotNull);
-      expect(shallowEdit!.range, SovereignSourceRange(shallowLineStart, 15));
+      expect(shallowEdit!.range, FlarkSourceRange(shallowLineStart, 15));
       expect(shallowEdit.replacementText, '}');
       expect(
         shallowEdit.selectionAfter,
-        SovereignSelection.collapsed(shallowLineStart + 1),
+        FlarkSelection.collapsed(shallowLineStart + 1),
       );
 
       const nested = '```\n  if (x) {\n    \n```';
       final nestedLineStart = nested.indexOf('    \n');
       final nestedEdit =
-          SovereignMarkdownFencedCodePolicy.autoOutdentCloserInsertion(
+          FlarkMarkdownFencedCodePolicy.autoOutdentCloserInsertion(
             markdown: nested,
             insertionOffset: nestedLineStart + 4,
             insertedText: '}',
@@ -205,7 +199,7 @@ void main() {
       expect(nestedEdit!.replacementText, '  }');
       expect(
         nestedEdit.selectionAfter,
-        SovereignSelection.collapsed(nestedLineStart + 3),
+        FlarkSelection.collapsed(nestedLineStart + 3),
       );
     });
 
@@ -215,23 +209,18 @@ void main() {
       const expectedReplacement = 'if (x) {\n  print(1);\n  }';
       final insertionOffset = markdown.indexOf('  \n') + 2;
 
-      final edit = SovereignMarkdownFencedCodePolicy.multilinePasteIndentation(
+      final edit = FlarkMarkdownFencedCodePolicy.multilinePasteIndentation(
         markdown: markdown,
         insertionOffset: insertionOffset,
         insertedText: insertedText,
       );
 
       expect(edit, isNotNull);
-      expect(
-        edit!.range,
-        SovereignSourceRange(insertionOffset, insertionOffset),
-      );
+      expect(edit!.range, FlarkSourceRange(insertionOffset, insertionOffset));
       expect(edit.replacementText, expectedReplacement);
       expect(
         edit.selectionAfter,
-        SovereignSelection.collapsed(
-          insertionOffset + expectedReplacement.length,
-        ),
+        FlarkSelection.collapsed(insertionOffset + expectedReplacement.length),
       );
     });
 
@@ -241,12 +230,11 @@ void main() {
         const markdown = '```\n  \n```';
         final insertionOffset = markdown.indexOf('  \n') + 2;
 
-        final edit =
-            SovereignMarkdownFencedCodePolicy.multilinePasteIndentation(
-              markdown: markdown,
-              insertionOffset: insertionOffset,
-              insertedText: 'line\n',
-            );
+        final edit = FlarkMarkdownFencedCodePolicy.multilinePasteIndentation(
+          markdown: markdown,
+          insertionOffset: insertionOffset,
+          insertedText: 'line\n',
+        );
 
         expect(edit, isNotNull);
         expect(edit!.replacementText, 'line\n  ');
@@ -261,13 +249,13 @@ void main() {
       final between = _backspace(betweenBlocks, 11);
 
       expect(unclosed.markdown, isEmpty);
-      expect(unclosed.selection, const SovereignSelection.collapsed(0));
+      expect(unclosed.selection, const FlarkSelection.collapsed(0));
       expect(closed.markdown, isEmpty);
-      expect(closed.selection, const SovereignSelection.collapsed(0));
+      expect(closed.selection, const FlarkSelection.collapsed(0));
       expect(language.markdown, isEmpty);
-      expect(language.selection, const SovereignSelection.collapsed(0));
+      expect(language.selection, const FlarkSelection.collapsed(0));
       expect(between.markdown, 'before\nafter');
-      expect(between.selection, const SovereignSelection.collapsed(7));
+      expect(between.selection, const FlarkSelection.collapsed(7));
     });
 
     test('Backspace at a closed fence boundary moves into the code body', () {
@@ -277,38 +265,35 @@ void main() {
       final afterLeadingBlock = _backspace(nested, 23);
 
       expect(terminal.markdown, '```dart\nfoo\n```');
-      expect(terminal.selection, const SovereignSelection.collapsed(11));
+      expect(terminal.selection, const FlarkSelection.collapsed(11));
       expect(beforeParagraph.markdown, '```dart\nfoo\n```\nafter');
-      expect(beforeParagraph.selection, const SovereignSelection.collapsed(11));
+      expect(beforeParagraph.selection, const FlarkSelection.collapsed(11));
       expect(afterLeadingBlock.markdown, nested);
-      expect(
-        afterLeadingBlock.selection,
-        const SovereignSelection.collapsed(18),
-      );
+      expect(afterLeadingBlock.selection, const FlarkSelection.collapsed(18));
     });
 
     test(
       'builds fenced-code indent and outdent operations from source policy',
       () {
         const markdown = '```dart\none\n  two\n```';
-        const bodyRange = SovereignSourceRange(8, 17);
+        const bodyRange = FlarkSourceRange(8, 17);
 
-        final indent = SovereignMarkdownFencedCodePolicy.indentOperations(
+        final indent = FlarkMarkdownFencedCodePolicy.indentOperations(
           markdown: markdown,
           bodyRange: bodyRange,
-          selection: const SovereignSelection(baseOffset: 8, extentOffset: 17),
+          selection: const FlarkSelection(baseOffset: 8, extentOffset: 17),
         );
         expect(indent, [
-          SovereignSourceOperation.insert(8, '  '),
-          SovereignSourceOperation.insert(12, '  '),
+          FlarkSourceOperation.insert(8, '  '),
+          FlarkSourceOperation.insert(12, '  '),
         ]);
 
-        final outdent = SovereignMarkdownFencedCodePolicy.outdentOperations(
+        final outdent = FlarkMarkdownFencedCodePolicy.outdentOperations(
           markdown: markdown,
           bodyRange: bodyRange,
-          selection: const SovereignSelection(baseOffset: 8, extentOffset: 17),
+          selection: const FlarkSelection(baseOffset: 8, extentOffset: 17),
         );
-        expect(outdent, [SovereignSourceOperation.delete(12, 14)]);
+        expect(outdent, [FlarkSourceOperation.delete(12, 14)]);
       },
     );
 
@@ -322,19 +307,19 @@ void main() {
       final quotedTask = _backspace('> - [x] done', 8);
 
       expect(unordered.markdown, 'item');
-      expect(unordered.selection, const SovereignSelection.collapsed(0));
+      expect(unordered.selection, const FlarkSelection.collapsed(0));
       expect(ordered.markdown, 'item');
-      expect(ordered.selection, const SovereignSelection.collapsed(0));
+      expect(ordered.selection, const FlarkSelection.collapsed(0));
       expect(nested.markdown, '  item');
-      expect(nested.selection, const SovereignSelection.collapsed(2));
+      expect(nested.selection, const FlarkSelection.collapsed(2));
       expect(task.markdown, '- done');
-      expect(task.selection, const SovereignSelection.collapsed(2));
+      expect(task.selection, const FlarkSelection.collapsed(2));
       expect(quotedUnordered.markdown, '> item');
-      expect(quotedUnordered.selection, const SovereignSelection.collapsed(2));
+      expect(quotedUnordered.selection, const FlarkSelection.collapsed(2));
       expect(quotedOrdered.markdown, '> item');
-      expect(quotedOrdered.selection, const SovereignSelection.collapsed(2));
+      expect(quotedOrdered.selection, const FlarkSelection.collapsed(2));
       expect(quotedTask.markdown, '> - done');
-      expect(quotedTask.selection, const SovereignSelection.collapsed(4));
+      expect(quotedTask.selection, const FlarkSelection.collapsed(4));
     });
 
     test('Backspace removes full list markers with custom padding', () {
@@ -343,11 +328,11 @@ void main() {
       final task = _backspace('-   [x] done', 8);
 
       expect(unordered.markdown, 'item');
-      expect(unordered.selection, const SovereignSelection.collapsed(0));
+      expect(unordered.selection, const FlarkSelection.collapsed(0));
       expect(ordered.markdown, 'item');
-      expect(ordered.selection, const SovereignSelection.collapsed(0));
+      expect(ordered.selection, const FlarkSelection.collapsed(0));
       expect(task.markdown, '-   done');
-      expect(task.selection, const SovereignSelection.collapsed(4));
+      expect(task.selection, const FlarkSelection.collapsed(4));
     });
 
     test('Backspace at heading boundaries removes heading markers', () {
@@ -356,11 +341,11 @@ void main() {
       final indented = _backspace('  ### Heading', 6);
 
       expect(empty.markdown, isEmpty);
-      expect(empty.selection, const SovereignSelection.collapsed(0));
+      expect(empty.selection, const FlarkSelection.collapsed(0));
       expect(text.markdown, 'Heading');
-      expect(text.selection, const SovereignSelection.collapsed(0));
+      expect(text.selection, const FlarkSelection.collapsed(0));
       expect(indented.markdown, '  Heading');
-      expect(indented.selection, const SovereignSelection.collapsed(2));
+      expect(indented.selection, const FlarkSelection.collapsed(2));
     });
 
     test('Backspace on an empty quote line removes the quote region', () {
@@ -369,11 +354,11 @@ void main() {
       final nested = _backspace('> > ', 4);
 
       expect(empty.markdown, isEmpty);
-      expect(empty.selection, const SovereignSelection.collapsed(0));
+      expect(empty.selection, const FlarkSelection.collapsed(0));
       expect(continued.markdown, '> alpha\n');
-      expect(continued.selection, const SovereignSelection.collapsed(8));
+      expect(continued.selection, const FlarkSelection.collapsed(8));
       expect(nested.markdown, '> ');
-      expect(nested.selection, const SovereignSelection.collapsed(2));
+      expect(nested.selection, const FlarkSelection.collapsed(2));
     });
 
     test('Backspace at quote content start unwraps one quote level', () {
@@ -382,11 +367,11 @@ void main() {
       final nestedCompact = _backspace('>> quote', 3);
 
       expect(plain.markdown, 'quote');
-      expect(plain.selection, const SovereignSelection.collapsed(0));
+      expect(plain.selection, const FlarkSelection.collapsed(0));
       expect(nestedSpaced.markdown, '> quote');
-      expect(nestedSpaced.selection, const SovereignSelection.collapsed(2));
+      expect(nestedSpaced.selection, const FlarkSelection.collapsed(2));
       expect(nestedCompact.markdown, '> quote');
-      expect(nestedCompact.selection, const SovereignSelection.collapsed(1));
+      expect(nestedCompact.selection, const FlarkSelection.collapsed(1));
     });
 
     test('Backspace removes indented code units', () {
@@ -395,11 +380,11 @@ void main() {
       final tabIndent = _backspace('\tcode', 1);
 
       expect(doubleIndent.markdown, '    code');
-      expect(doubleIndent.selection, const SovereignSelection.collapsed(4));
+      expect(doubleIndent.selection, const FlarkSelection.collapsed(4));
       expect(singleIndent.markdown, 'code');
-      expect(singleIndent.selection, const SovereignSelection.collapsed(0));
+      expect(singleIndent.selection, const FlarkSelection.collapsed(0));
       expect(tabIndent.markdown, 'code');
-      expect(tabIndent.selection, const SovereignSelection.collapsed(0));
+      expect(tabIndent.selection, const FlarkSelection.collapsed(0));
     });
 
     test(
@@ -410,41 +395,41 @@ void main() {
         final list = _backspace('- item', 4);
 
         expect(quote.markdown, '> qote');
-        expect(quote.selection, const SovereignSelection.collapsed(3));
+        expect(quote.selection, const FlarkSelection.collapsed(3));
         expect(heading.markdown, '## Hading');
-        expect(heading.selection, const SovereignSelection.collapsed(4));
+        expect(heading.selection, const FlarkSelection.collapsed(4));
         expect(list.markdown, '- iem');
-        expect(list.selection, const SovereignSelection.collapsed(3));
+        expect(list.selection, const FlarkSelection.collapsed(3));
       },
     );
   });
 }
 
-SovereignEditorState _enter(String markdown, int caret) {
-  final runtime = _runtime(markdown, SovereignSelection.collapsed(caret));
+FlarkEditorState _enter(String markdown, int caret) {
+  final runtime = _runtime(markdown, FlarkSelection.collapsed(caret));
   final result = runtime.dispatch(
-    command: SovereignMarkdownInputCommands.handleEnter,
-    payload: const SovereignHandleEnterPayload(),
+    command: FlarkMarkdownInputCommands.handleEnter,
+    payload: const FlarkHandleEnterPayload(),
   );
   expect(result.commandResult.isHandled, isTrue);
   return result.runtime.state;
 }
 
-SovereignEditorState _backspace(String markdown, int caret) {
-  final runtime = _runtime(markdown, SovereignSelection.collapsed(caret));
+FlarkEditorState _backspace(String markdown, int caret) {
+  final runtime = _runtime(markdown, FlarkSelection.collapsed(caret));
   final result = runtime.dispatch(
-    command: SovereignMarkdownInputCommands.handleBackspace,
-    payload: const SovereignHandleBackspacePayload(),
+    command: FlarkMarkdownInputCommands.handleBackspace,
+    payload: const FlarkHandleBackspacePayload(),
   );
   expect(result.commandResult.isHandled, isTrue);
   return result.runtime.state;
 }
 
-SovereignEditorRuntime _runtime(String markdown, SovereignSelection selection) {
-  return SovereignEditorRuntime(
-    state: SovereignEditorState.fromMarkdown(markdown, selection: selection),
-    commandRegistry: SovereignExtensionSet([
-      const SovereignMarkdownInputEditingExtension(),
+FlarkEditorRuntime _runtime(String markdown, FlarkSelection selection) {
+  return FlarkEditorRuntime(
+    state: FlarkEditorState.fromMarkdown(markdown, selection: selection),
+    commandRegistry: FlarkExtensionSet([
+      const FlarkMarkdownInputEditingExtension(),
     ]).commandRegistry(),
   );
 }

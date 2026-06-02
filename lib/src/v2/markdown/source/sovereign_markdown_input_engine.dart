@@ -2,16 +2,16 @@ import '../../core/core.dart';
 import 'sovereign_markdown_editing_result.dart';
 import 'sovereign_markdown_fenced_code_policy.dart';
 
-final class SovereignMarkdownInputEngine {
-  const SovereignMarkdownInputEngine._();
+final class FlarkMarkdownInputEngine {
+  const FlarkMarkdownInputEngine._();
 
-  static SovereignMarkdownSourceEdit enter({
+  static FlarkMarkdownSourceEdit enter({
     required String markdown,
-    required SovereignSelection selection,
+    required FlarkSelection selection,
   }) {
     if (!selection.isCollapsed) {
       return _sourceEdit(
-        range: SovereignSourceRange(selection.start, selection.end),
+        range: FlarkSourceRange(selection.start, selection.end),
         replacementText: '\n',
       );
     }
@@ -21,7 +21,7 @@ final class SovereignMarkdownInputEngine {
     final quotePrefix = _quotePrefix(beforeCaret);
     final content = beforeCaret.substring(quotePrefix.length);
 
-    final fencedCodeEnter = SovereignMarkdownFencedCodePolicy.enter(
+    final fencedCodeEnter = FlarkMarkdownFencedCodePolicy.enter(
       markdown: markdown,
       caret: selection.start,
     );
@@ -58,30 +58,30 @@ final class SovereignMarkdownInputEngine {
     if (quotePrefix.isNotEmpty) {
       final replacement = content.trim().isEmpty ? '\n' : '\n$quotePrefix';
       final range = content.trim().isEmpty
-          ? SovereignSourceRange(line.start, line.end)
-          : SovereignSourceRange(selection.start, selection.start);
+          ? FlarkSourceRange(line.start, line.end)
+          : FlarkSourceRange(selection.start, selection.start);
       return _sourceEdit(range: range, replacementText: replacement);
     }
 
     return _sourceEdit(
-      range: SovereignSourceRange(selection.start, selection.start),
+      range: FlarkSourceRange(selection.start, selection.start),
       replacementText: '\n',
     );
   }
 
-  static SovereignMarkdownInputResult? backspace({
+  static FlarkMarkdownInputResult? backspace({
     required String markdown,
-    required SovereignSelection selection,
+    required FlarkSelection selection,
   }) {
     if (!selection.isCollapsed) {
       return _sourceEdit(
-        range: SovereignSourceRange(selection.start, selection.end),
+        range: FlarkSourceRange(selection.start, selection.end),
         replacementText: '',
       );
     }
     if (selection.start == 0) return null;
 
-    final fencedCodeBackspace = SovereignMarkdownFencedCodePolicy.backspace(
+    final fencedCodeBackspace = FlarkMarkdownFencedCodePolicy.backspace(
       markdown: markdown,
       caret: selection.start,
     );
@@ -124,28 +124,28 @@ final class SovereignMarkdownInputEngine {
     if (quoteBoundaryBackspace != null) return quoteBoundaryBackspace;
 
     return _sourceEdit(
-      range: SovereignSourceRange(selection.start - 1, selection.start),
+      range: FlarkSourceRange(selection.start - 1, selection.start),
       replacementText: '',
     );
   }
 }
 
-SovereignMarkdownSourceEdit _sourceEdit({
-  required SovereignSourceRange range,
+FlarkMarkdownSourceEdit _sourceEdit({
+  required FlarkSourceRange range,
   required String replacementText,
-  SovereignSelection? selectionAfter,
+  FlarkSelection? selectionAfter,
 }) {
-  return SovereignMarkdownSourceEdit(
+  return FlarkMarkdownSourceEdit(
     range: range,
     replacementText: replacementText,
     selectionAfter:
         selectionAfter ??
-        SovereignSelection.collapsed(range.start + replacementText.length),
+        FlarkSelection.collapsed(range.start + replacementText.length),
   );
 }
 
-SovereignMarkdownSourceEdit _handleListEnter({
-  required SovereignSelection selection,
+FlarkMarkdownSourceEdit _handleListEnter({
+  required FlarkSelection selection,
   required _Line line,
   required String quotePrefix,
   required _ListContinuation list,
@@ -153,25 +153,25 @@ SovereignMarkdownSourceEdit _handleListEnter({
   if (list.isEmptyItem) {
     if (quotePrefix.isEmpty) {
       return _sourceEdit(
-        range: SovereignSourceRange(line.start, line.end),
+        range: FlarkSourceRange(line.start, line.end),
         replacementText: '${list.indent}\n',
       );
     }
     return _sourceEdit(
-      range: SovereignSourceRange(line.start + quotePrefix.length, line.end),
+      range: FlarkSourceRange(line.start + quotePrefix.length, line.end),
       replacementText: '${list.indent}\n$quotePrefix${list.indent}',
     );
   }
 
   return _sourceEdit(
-    range: SovereignSourceRange(selection.start, selection.start),
+    range: FlarkSourceRange(selection.start, selection.start),
     replacementText: '\n$quotePrefix${list.indent}${list.nextMarker}',
   );
 }
 
-SovereignMarkdownSourceEdit? _emptyHeadingExit({
+FlarkMarkdownSourceEdit? _emptyHeadingExit({
   required String markdown,
-  required SovereignSelection selection,
+  required FlarkSelection selection,
   required _Line line,
   required String beforeCaret,
   required String quotePrefix,
@@ -184,14 +184,14 @@ SovereignMarkdownSourceEdit? _emptyHeadingExit({
   if (headingIndent == null) return null;
 
   return _sourceEdit(
-    range: SovereignSourceRange(line.start, line.end),
+    range: FlarkSourceRange(line.start, line.end),
     replacementText: '$headingIndent\n',
   );
 }
 
-SovereignMarkdownSourceEdit? _indentedCodeContinuation({
+FlarkMarkdownSourceEdit? _indentedCodeContinuation({
   required String markdown,
-  required SovereignSelection selection,
+  required FlarkSelection selection,
   required _Line line,
   required String beforeCaret,
   required String quotePrefix,
@@ -204,18 +204,18 @@ SovereignMarkdownSourceEdit? _indentedCodeContinuation({
   final body = beforeCaret.substring(codeIndent.length) + afterCaret;
   if (body.trim().isEmpty) {
     return _sourceEdit(
-      range: SovereignSourceRange(line.start, line.end),
+      range: FlarkSourceRange(line.start, line.end),
       replacementText: '\n',
     );
   }
 
   return _sourceEdit(
-    range: SovereignSourceRange(selection.start, selection.start),
+    range: FlarkSourceRange(selection.start, selection.start),
     replacementText: '\n$codeIndent',
   );
 }
 
-SovereignMarkdownSourceEdit? _listBoundaryBackspace({
+FlarkMarkdownSourceEdit? _listBoundaryBackspace({
   required _Line line,
   required String quotePrefix,
   required _ListContinuation? list,
@@ -225,7 +225,7 @@ SovereignMarkdownSourceEdit? _listBoundaryBackspace({
   final markerStart = line.start + quotePrefix.length + list.indent.length;
   if (list.taskMarker != null) {
     return _sourceEdit(
-      range: SovereignSourceRange(
+      range: FlarkSourceRange(
         markerStart + list.marker.length,
         markerStart + list.marker.length + list.taskMarker!.length,
       ),
@@ -234,16 +234,16 @@ SovereignMarkdownSourceEdit? _listBoundaryBackspace({
   }
 
   return _sourceEdit(
-    range: SovereignSourceRange(markerStart, markerStart + list.marker.length),
+    range: FlarkSourceRange(markerStart, markerStart + list.marker.length),
     replacementText: '',
   );
 }
 
-SovereignMarkdownSourceEdit? _headingBoundaryBackspace({
+FlarkMarkdownSourceEdit? _headingBoundaryBackspace({
   required _Line line,
   required String beforeCaret,
   required String quotePrefix,
-  required SovereignSelection selection,
+  required FlarkSelection selection,
 }) {
   if (quotePrefix.isNotEmpty) return null;
   final headingIndent = _emptyHeadingIndent(beforeCaret);
@@ -251,15 +251,15 @@ SovereignMarkdownSourceEdit? _headingBoundaryBackspace({
 
   final markerStart = line.start + headingIndent.length;
   return _sourceEdit(
-    range: SovereignSourceRange(markerStart, selection.start),
+    range: FlarkSourceRange(markerStart, selection.start),
     replacementText: '',
   );
 }
 
-SovereignMarkdownSourceEdit? _indentedCodeBackspace({
+FlarkMarkdownSourceEdit? _indentedCodeBackspace({
   required String beforeCaret,
   required String quotePrefix,
-  required SovereignSelection selection,
+  required FlarkSelection selection,
 }) {
   if (quotePrefix.isNotEmpty) return null;
   if (beforeCaret.isEmpty || beforeCaret.trim().isNotEmpty) return null;
@@ -267,7 +267,7 @@ SovereignMarkdownSourceEdit? _indentedCodeBackspace({
   final caret = selection.start;
   if (beforeCaret.endsWith('\t')) {
     return _sourceEdit(
-      range: SovereignSourceRange(caret - 1, caret),
+      range: FlarkSourceRange(caret - 1, caret),
       replacementText: '',
     );
   }
@@ -278,14 +278,14 @@ SovereignMarkdownSourceEdit? _indentedCodeBackspace({
   if (removableSpaces <= 1 || beforeCaret.length < 4) return null;
 
   return _sourceEdit(
-    range: SovereignSourceRange(caret - removableSpaces, caret),
+    range: FlarkSourceRange(caret - removableSpaces, caret),
     replacementText: '',
   );
 }
 
-SovereignMarkdownSourceEdit? _quoteBoundaryBackspace({
+FlarkMarkdownSourceEdit? _quoteBoundaryBackspace({
   required String markdown,
-  required SovereignSelection selection,
+  required FlarkSelection selection,
   required _Line line,
   required String beforeCaret,
   required String quotePrefix,
@@ -302,12 +302,12 @@ SovereignMarkdownSourceEdit? _quoteBoundaryBackspace({
   }
 
   return _sourceEdit(
-    range: SovereignSourceRange(line.start, line.end),
+    range: FlarkSourceRange(line.start, line.end),
     replacementText: '',
   );
 }
 
-SovereignSourceRange? _lastQuoteMarkerRange(int lineStart, String quotePrefix) {
+FlarkSourceRange? _lastQuoteMarkerRange(int lineStart, String quotePrefix) {
   final markerStart = quotePrefix.lastIndexOf('>');
   if (markerStart < 0) return null;
   var markerEnd = markerStart + 1;
@@ -316,7 +316,7 @@ SovereignSourceRange? _lastQuoteMarkerRange(int lineStart, String quotePrefix) {
       (markerStart == 0 || quotePrefix.codeUnitAt(markerStart - 1) == 32)) {
     markerEnd++;
   }
-  return SovereignSourceRange(lineStart + markerStart, lineStart + markerEnd);
+  return FlarkSourceRange(lineStart + markerStart, lineStart + markerEnd);
 }
 
 int _quoteDepth(String quotePrefix) {
@@ -426,7 +426,7 @@ final class _ListContinuation {
   }
 }
 
-_Line _lineAtSelection(String markdown, SovereignSelection selection) {
+_Line _lineAtSelection(String markdown, FlarkSelection selection) {
   final previousBreak = selection.start == 0
       ? -1
       : markdown.lastIndexOf('\n', selection.start - 1);

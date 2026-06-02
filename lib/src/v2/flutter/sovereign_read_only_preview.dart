@@ -8,24 +8,25 @@ import 'sovereign_code_syntax_highlighting.dart';
 import 'sovereign_flutter_controller.dart';
 import 'sovereign_markdown_interactions.dart';
 
-typedef SovereignPreviewBlockWidgetBuilder = Widget? Function(
-  BuildContext context,
-  SovereignRenderBlock block,
-  String displayText,
-  TextStyle baseStyle,
-);
+typedef FlarkPreviewBlockWidgetBuilder =
+    Widget? Function(
+      BuildContext context,
+      FlarkRenderBlock block,
+      String displayText,
+      TextStyle baseStyle,
+    );
 
-final class SovereignReadOnlyPreview extends StatelessWidget {
-  const SovereignReadOnlyPreview({
+final class FlarkReadOnlyPreview extends StatelessWidget {
+  const FlarkReadOnlyPreview({
     super.key,
     required this.controller,
     this.textStyle,
     this.blockBuilder,
   });
 
-  final SovereignFlutterController controller;
+  final FlarkFlutterController controller;
   final TextStyle? textStyle;
-  final SovereignPreviewBlockWidgetBuilder? blockBuilder;
+  final FlarkPreviewBlockWidgetBuilder? blockBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -71,7 +72,7 @@ final class _PreviewBlock extends StatelessWidget {
     required this.baseStyle,
   });
 
-  final SovereignRenderBlock block;
+  final FlarkRenderBlock block;
   final String displayText;
   final TextStyle baseStyle;
 
@@ -79,22 +80,16 @@ final class _PreviewBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final blockStyle = _blockStyle(baseStyle, block);
     final textSpan = block.codeBlock == null
-        ? TextSpan(
-            style: blockStyle,
-            children: _inlineSpans(context),
-          )
-        : buildSovereignHighlightedCodeSpan(
-              source: displayText.substring(
-                block.displayRange.start,
-                block.displayRange.end,
-              ),
-              language: block.codeBlock?.language,
-              baseStyle: blockStyle,
-            ) ??
-            TextSpan(
-              style: blockStyle,
-              children: _inlineSpans(context),
-            );
+        ? TextSpan(style: blockStyle, children: _inlineSpans(context))
+        : buildFlarkHighlightedCodeSpan(
+                source: displayText.substring(
+                  block.displayRange.start,
+                  block.displayRange.end,
+                ),
+                language: block.codeBlock?.language,
+                baseStyle: blockStyle,
+              ) ??
+              TextSpan(style: blockStyle, children: _inlineSpans(context));
     final content = Text.rich(textSpan);
 
     if (block.codeBlock != null) {
@@ -105,7 +100,7 @@ final class _PreviewBlock extends StatelessWidget {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: SizedBox(
-          key: const Key('SovereignReadOnlyPreviewCodeBlock'),
+          key: const Key('FlarkReadOnlyPreviewCodeBlock'),
           width: double.infinity,
           child: DecoratedBox(
             decoration: BoxDecoration(
@@ -134,11 +129,11 @@ final class _PreviewBlock extends StatelessWidget {
       );
     }
 
-    if (block.kind == SovereignMarkdownBlockKind.blockquote) {
+    if (block.kind == FlarkMarkdownBlockKind.blockquote) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: SizedBox(
-          key: const Key('SovereignReadOnlyPreviewBlockquote'),
+          key: const Key('FlarkReadOnlyPreviewBlockquote'),
           width: double.infinity,
           child: DecoratedBox(
             decoration: const BoxDecoration(
@@ -190,22 +185,16 @@ final class _PreviewBlock extends StatelessWidget {
     for (final run in runs) {
       if (run.displayRange.start > cursor) {
         spans.add(
-          TextSpan(
-            text: displayText.substring(cursor, run.displayRange.start),
-          ),
+          TextSpan(text: displayText.substring(cursor, run.displayRange.start)),
         );
       }
-      spans.add(
-        _inlineSpanForRun(context, run),
-      );
+      spans.add(_inlineSpanForRun(context, run));
       cursor = run.displayRange.end;
     }
 
     if (cursor < block.displayRange.end) {
       spans.add(
-        TextSpan(
-          text: displayText.substring(cursor, block.displayRange.end),
-        ),
+        TextSpan(text: displayText.substring(cursor, block.displayRange.end)),
       );
     }
     if (spans.isEmpty) {
@@ -221,18 +210,15 @@ final class _PreviewBlock extends StatelessWidget {
     return spans;
   }
 
-  InlineSpan _inlineSpanForRun(
-    BuildContext context,
-    SovereignRenderInlineRun run,
-  ) {
+  InlineSpan _inlineSpanForRun(BuildContext context, FlarkRenderInlineRun run) {
     final text = displayText.substring(
       run.displayRange.start,
       run.displayRange.end,
     );
     final action = run.action;
-    if (action?.kind == SovereignRenderInlineActionKind.image) {
-      final target = SovereignRenderOverlayTarget(
-        kind: SovereignRenderOverlayKind.image,
+    if (action?.kind == FlarkRenderInlineActionKind.image) {
+      final target = FlarkRenderOverlayTarget(
+        kind: FlarkRenderOverlayKind.image,
         sourceRange: run.sourceRange,
         displayRange: run.displayRange,
         action: action,
@@ -243,21 +229,21 @@ final class _PreviewBlock extends StatelessWidget {
           label: action!.label ?? text,
           destination: action.destination,
           title: action.title,
-          interactions: SovereignMarkdownInteractions.maybeOf(context),
+          interactions: FlarkMarkdownInteractions.maybeOf(context),
           target: target,
         ),
       );
     }
-    if (action?.kind == SovereignRenderInlineActionKind.link) {
-      final interactions = SovereignMarkdownInteractions.maybeOf(context);
+    if (action?.kind == FlarkRenderInlineActionKind.link) {
+      final interactions = FlarkMarkdownInteractions.maybeOf(context);
       if (interactions != null && interactions.config.enableLinkMenus) {
         return WidgetSpan(
           alignment: PlaceholderAlignment.baseline,
           baseline: TextBaseline.alphabetic,
           child: _InlineLinkMenu(
             interactions: interactions,
-            target: SovereignRenderOverlayTarget(
-              kind: SovereignRenderOverlayKind.link,
+            target: FlarkRenderOverlayTarget(
+              kind: FlarkRenderOverlayKind.link,
               sourceRange: run.sourceRange,
               displayRange: run.displayRange,
               action: action,
@@ -269,10 +255,7 @@ final class _PreviewBlock extends StatelessWidget {
       }
     }
 
-    return TextSpan(
-      text: text,
-      style: _inlineStyle(run),
-    );
+    return TextSpan(text: text, style: _inlineStyle(run));
   }
 }
 
@@ -284,8 +267,8 @@ final class _InlineLinkMenu extends StatefulWidget {
     required this.style,
   });
 
-  final SovereignMarkdownInteractions interactions;
-  final SovereignRenderOverlayTarget target;
+  final FlarkMarkdownInteractions interactions;
+  final FlarkRenderOverlayTarget target;
   final String text;
   final TextStyle? style;
 
@@ -306,7 +289,7 @@ final class _InlineLinkMenuState extends State<_InlineLinkMenu> {
         mainAxisSize: MainAxisSize.min,
         children: [
           GestureDetector(
-            key: const Key('SovereignInlineLinkMenuButton'),
+            key: const Key('FlarkInlineLinkMenuButton'),
             behavior: HitTestBehavior.opaque,
             onTap: () => setState(() => _open = !_open),
             child: Text(widget.text, style: style),
@@ -315,7 +298,7 @@ final class _InlineLinkMenuState extends State<_InlineLinkMenu> {
             Padding(
               padding: const EdgeInsets.only(top: 3),
               child: DecoratedBox(
-                key: const Key('SovereignInlineLinkMenu'),
+                key: const Key('FlarkInlineLinkMenu'),
                 decoration: BoxDecoration(
                   color: const Color(0xFFFFFFFF),
                   border: Border.all(color: const Color(0xFFD7DEE8)),
@@ -413,7 +396,7 @@ final class _PreviewCodeCopyButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _InlineLinkMenuAction(
-      key: const Key('SovereignReadOnlyPreviewCodeCopyButton'),
+      key: const Key('FlarkReadOnlyPreviewCodeCopyButton'),
       label: 'Copy',
       onTap: () {
         Clipboard.setData(ClipboardData(text: source));
@@ -430,7 +413,7 @@ final class _PreviewTaskCheckbox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      key: const Key('SovereignReadOnlyPreviewTaskCheckbox'),
+      key: const Key('FlarkReadOnlyPreviewTaskCheckbox'),
       width: 14,
       height: 14,
       child: DecoratedBox(
@@ -466,7 +449,7 @@ final class _PreviewTable extends StatelessWidget {
     required this.baseStyle,
   });
 
-  final SovereignRenderBlock block;
+  final FlarkRenderBlock block;
   final String displayText;
   final TextStyle baseStyle;
 
@@ -483,7 +466,7 @@ final class _PreviewTable extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: DecoratedBox(
-        key: const Key('SovereignReadOnlyPreviewTable'),
+        key: const Key('FlarkReadOnlyPreviewTable'),
         decoration: BoxDecoration(
           border: Border.all(color: const Color(0xFFD7DEE8)),
           borderRadius: const BorderRadius.all(Radius.circular(6)),
@@ -513,9 +496,7 @@ final class _PreviewTable extends StatelessWidget {
                         child: Text(
                           cell,
                           style: rowIndex == 0
-                              ? baseStyle.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                )
+                              ? baseStyle.copyWith(fontWeight: FontWeight.w700)
                               : baseStyle,
                         ),
                       ),
@@ -541,8 +522,8 @@ final class _PreviewImageCard extends StatelessWidget {
   final String label;
   final String destination;
   final String? title;
-  final SovereignMarkdownInteractions? interactions;
-  final SovereignRenderOverlayTarget? target;
+  final FlarkMarkdownInteractions? interactions;
+  final FlarkRenderOverlayTarget? target;
 
   @override
   Widget build(BuildContext context) {
@@ -553,7 +534,7 @@ final class _PreviewImageCard extends StatelessWidget {
       label: 'Image: $effectiveLabel',
       value: destination,
       child: DecoratedBox(
-        key: const Key('SovereignReadOnlyPreviewImageCard'),
+        key: const Key('FlarkReadOnlyPreviewImageCard'),
         decoration: BoxDecoration(
           color: const Color(0xFFF8FAFC),
           border: Border.all(color: const Color(0xFFD7DEE8)),
@@ -638,8 +619,8 @@ final class _PreviewImageActionMenu extends StatefulWidget {
     required this.child,
   });
 
-  final SovereignMarkdownInteractions interactions;
-  final SovereignRenderOverlayTarget target;
+  final FlarkMarkdownInteractions interactions;
+  final FlarkRenderOverlayTarget target;
   final Widget child;
 
   @override
@@ -660,7 +641,7 @@ final class _PreviewImageActionMenuState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           GestureDetector(
-            key: const Key('SovereignReadOnlyPreviewImageMenuButton'),
+            key: const Key('FlarkReadOnlyPreviewImageMenuButton'),
             behavior: HitTestBehavior.opaque,
             onTap: () => setState(() => _open = !_open),
             child: widget.child,
@@ -669,7 +650,7 @@ final class _PreviewImageActionMenuState
             Padding(
               padding: const EdgeInsets.only(top: 3),
               child: DecoratedBox(
-                key: const Key('SovereignReadOnlyPreviewImageMenu'),
+                key: const Key('FlarkReadOnlyPreviewImageMenu'),
                 decoration: BoxDecoration(
                   color: const Color(0xFFFFFFFF),
                   border: Border.all(color: const Color(0xFFD7DEE8)),
@@ -718,7 +699,7 @@ final class _PreviewImageActionMenuState
 }
 
 List<List<String>> _tableRowsFromRenderPlan(
-  SovereignRenderBlock block,
+  FlarkRenderBlock block,
   String displayText,
 ) {
   final table = block.table;
@@ -739,7 +720,7 @@ List<List<String>> _tableRowsFromRenderPlan(
   ];
 }
 
-int _resolvedRenderTableColumnCount(SovereignRenderTableDescriptor table) {
+int _resolvedRenderTableColumnCount(FlarkRenderTableDescriptor table) {
   if (table.columnAlignments.isNotEmpty) return table.columnAlignments.length;
   var columnCount = 0;
   for (final row in table.rows) {
@@ -748,13 +729,13 @@ int _resolvedRenderTableColumnCount(SovereignRenderTableDescriptor table) {
   return columnCount;
 }
 
-String _displayCellText(String displayText, SovereignSourceRange range) {
+String _displayCellText(String displayText, FlarkSourceRange range) {
   final start = range.start.clamp(0, displayText.length);
   final end = range.end.clamp(start, displayText.length);
   return displayText.substring(start, end).trim();
 }
 
-TextStyle _blockStyle(TextStyle baseStyle, SovereignRenderBlock block) {
+TextStyle _blockStyle(TextStyle baseStyle, FlarkRenderBlock block) {
   if (block.codeBlock != null) {
     return baseStyle.copyWith(
       color: const Color(0xFF17202A),
@@ -763,17 +744,17 @@ TextStyle _blockStyle(TextStyle baseStyle, SovereignRenderBlock block) {
     );
   }
 
-  if (block.kind == SovereignMarkdownBlockKind.blockquote) {
+  if (block.kind == FlarkMarkdownBlockKind.blockquote) {
     return baseStyle.copyWith(color: const Color(0xFF42526E));
   }
 
   final headingLevel = switch (block.styleToken) {
-    SovereignRenderTextStyleToken.heading1 => 1,
-    SovereignRenderTextStyleToken.heading2 => 2,
-    SovereignRenderTextStyleToken.heading3 => 3,
-    SovereignRenderTextStyleToken.heading4 => 4,
-    SovereignRenderTextStyleToken.heading5 => 5,
-    SovereignRenderTextStyleToken.heading6 => 6,
+    FlarkRenderTextStyleToken.heading1 => 1,
+    FlarkRenderTextStyleToken.heading2 => 2,
+    FlarkRenderTextStyleToken.heading3 => 3,
+    FlarkRenderTextStyleToken.heading4 => 4,
+    FlarkRenderTextStyleToken.heading5 => 5,
+    FlarkRenderTextStyleToken.heading6 => 6,
     _ => null,
   };
   if (headingLevel == null) return baseStyle;
@@ -784,21 +765,24 @@ TextStyle _blockStyle(TextStyle baseStyle, SovereignRenderBlock block) {
   );
 }
 
-TextStyle? _inlineStyle(SovereignRenderInlineRun run) {
+TextStyle? _inlineStyle(FlarkRenderInlineRun run) {
   return switch (run.styleToken) {
-    SovereignRenderTextStyleToken.emphasis =>
-      const TextStyle(fontStyle: FontStyle.italic),
-    SovereignRenderTextStyleToken.strong =>
-      const TextStyle(fontWeight: FontWeight.w700),
-    SovereignRenderTextStyleToken.inlineCode =>
-      const TextStyle(fontFamily: 'monospace'),
-    SovereignRenderTextStyleToken.strikethrough => const TextStyle(
-        decoration: TextDecoration.lineThrough,
-      ),
-    SovereignRenderTextStyleToken.link => const TextStyle(
-        color: Color(0xFF0057B8),
-        decoration: TextDecoration.underline,
-      ),
+    FlarkRenderTextStyleToken.emphasis => const TextStyle(
+      fontStyle: FontStyle.italic,
+    ),
+    FlarkRenderTextStyleToken.strong => const TextStyle(
+      fontWeight: FontWeight.w700,
+    ),
+    FlarkRenderTextStyleToken.inlineCode => const TextStyle(
+      fontFamily: 'monospace',
+    ),
+    FlarkRenderTextStyleToken.strikethrough => const TextStyle(
+      decoration: TextDecoration.lineThrough,
+    ),
+    FlarkRenderTextStyleToken.link => const TextStyle(
+      color: Color(0xFF0057B8),
+      decoration: TextDecoration.underline,
+    ),
     _ => null,
   };
 }

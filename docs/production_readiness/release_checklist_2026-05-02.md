@@ -1,4 +1,4 @@
-# Sovereign Release Checklist
+# Flark Release Checklist
 
 Status date: 2026-05-31
 

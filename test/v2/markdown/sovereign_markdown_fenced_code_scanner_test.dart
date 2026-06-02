@@ -1,13 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/markdown/source/sovereign_markdown_fenced_code_scanner.dart';
-import 'package:sovereign_editor/sovereign_editor_v2.dart';
+import 'package:flark/src/v2/markdown/source/sovereign_markdown_fenced_code_scanner.dart';
+import 'package:flark/flark_advanced.dart';
 
 void main() {
-  group('SovereignMarkdownFencedCodeScanner', () {
+  group('FlarkMarkdownFencedCodeScanner', () {
     test('extracts opening context, language, and editable body range', () {
       const markdown = '```dart meta\nfoo\n```\n';
 
-      final context = SovereignMarkdownFencedCodeScanner.contextForOpeningLine(
+      final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
         markdown,
         0,
       );
@@ -21,30 +21,27 @@ void main() {
       expect(context.closingLineStart, 17);
       expect(
         context.bodyContentRange(markdown),
-        const SovereignSourceRange(13, 16),
+        const FlarkSourceRange(13, 16),
       );
     });
 
     test('keeps trailing EOF newlines editable in unclosed fences', () {
       const markdown = '```dart\nfoo\n';
 
-      final context = SovereignMarkdownFencedCodeScanner.contextForOpeningLine(
+      final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
         markdown,
         0,
       );
 
       expect(context, isNotNull);
       expect(context!.isClosed, isFalse);
-      expect(
-        context.bodyContentRange(markdown),
-        const SovereignSourceRange(8, 12),
-      );
+      expect(context.bodyContentRange(markdown), const FlarkSourceRange(8, 12));
     });
 
     test('supports tilde fences and longer closing fence markers', () {
       const markdown = '~~~js\nx\n~~~~\n';
 
-      final context = SovereignMarkdownFencedCodeScanner.contextAt(
+      final context = FlarkMarkdownFencedCodeScanner.contextAt(
         markdown,
         markdown.indexOf('x'),
       );
@@ -60,7 +57,7 @@ void main() {
     test('does not treat info-string fence lines as closers', () {
       const markdown = '```\n```not close\nok\n```\n';
 
-      final context = SovereignMarkdownFencedCodeScanner.contextAt(
+      final context = FlarkMarkdownFencedCodeScanner.contextAt(
         markdown,
         markdown.indexOf('ok'),
       );
@@ -70,7 +67,7 @@ void main() {
     });
 
     test('rejects backtick info strings that contain backticks', () {
-      final line = SovereignMarkdownFencedCodeScanner.fenceLine('``` `bad`');
+      final line = FlarkMarkdownFencedCodeScanner.fenceLine('``` `bad`');
 
       expect(line, isNull);
     });
@@ -78,9 +75,9 @@ void main() {
     test('returns no body context on opening or closing fence lines', () {
       const markdown = '```dart\nfoo\n```\n';
 
-      expect(SovereignMarkdownFencedCodeScanner.contextAt(markdown, 0), isNull);
+      expect(FlarkMarkdownFencedCodeScanner.contextAt(markdown, 0), isNull);
       expect(
-        SovereignMarkdownFencedCodeScanner.contextAt(
+        FlarkMarkdownFencedCodeScanner.contextAt(
           markdown,
           markdown.indexOf('\n```') + 1,
         ),

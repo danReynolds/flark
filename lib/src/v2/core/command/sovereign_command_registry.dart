@@ -2,46 +2,43 @@ import '../state/sovereign_editor_state.dart';
 import 'sovereign_command.dart';
 import 'sovereign_command_result.dart';
 
-final class SovereignCommandRegistry {
-  const SovereignCommandRegistry() : _handlers = const {};
+final class FlarkCommandRegistry {
+  const FlarkCommandRegistry() : _handlers = const {};
 
-  const SovereignCommandRegistry._(this._handlers);
+  const FlarkCommandRegistry._(this._handlers);
 
-  final Map<String, List<_SovereignCommandHandlerEntryBase>> _handlers;
+  final Map<String, List<_FlarkCommandHandlerEntryBase>> _handlers;
 
-  SovereignCommandRegistry register<TPayload>(
-    SovereignCommand<TPayload> command,
-    SovereignCommandHandler<TPayload> handler, {
-    int priority = SovereignCommandPriority.normal,
+  FlarkCommandRegistry register<TPayload>(
+    FlarkCommand<TPayload> command,
+    FlarkCommandHandler<TPayload> handler, {
+    int priority = FlarkCommandPriority.normal,
   }) {
-    final nextHandlers = <String, List<_SovereignCommandHandlerEntryBase>>{
+    final nextHandlers = <String, List<_FlarkCommandHandlerEntryBase>>{
       for (final entry in _handlers.entries) entry.key: [...entry.value],
     };
     final commandHandlers = nextHandlers.putIfAbsent(command.id, () => []);
     commandHandlers.add(
-      _SovereignCommandHandlerEntry<TPayload>(
-        priority: priority,
-        handler: handler,
-      ),
+      _FlarkCommandHandlerEntry<TPayload>(priority: priority, handler: handler),
     );
     commandHandlers.sort((a, b) => b.priority.compareTo(a.priority));
 
-    return SovereignCommandRegistry._(nextHandlers);
+    return FlarkCommandRegistry._(nextHandlers);
   }
 
-  SovereignCommandResult dispatch<TPayload>({
-    required SovereignEditorState state,
-    required SovereignCommand<TPayload> command,
+  FlarkCommandResult dispatch<TPayload>({
+    required FlarkEditorState state,
+    required FlarkCommand<TPayload> command,
     required TPayload payload,
   }) {
     final commandHandlers = _handlers[command.id];
     if (commandHandlers == null || commandHandlers.isEmpty) {
-      return const SovereignCommandResult.notHandled();
+      return const FlarkCommandResult.notHandled();
     }
 
     for (final entry in commandHandlers) {
       final result = entry.invoke(
-        SovereignCommandContext<TPayload>(
+        FlarkCommandContext<TPayload>(
           state: state,
           command: command,
           payload: payload,
@@ -50,21 +47,19 @@ final class SovereignCommandRegistry {
       if (!result.isNotHandled) return result;
     }
 
-    return const SovereignCommandResult.notHandled();
+    return const FlarkCommandResult.notHandled();
   }
 }
 
-abstract interface class _SovereignCommandHandlerEntryBase {
+abstract interface class _FlarkCommandHandlerEntryBase {
   int get priority;
 
-  SovereignCommandResult invoke<TPayload>(
-    SovereignCommandContext<TPayload> context,
-  );
+  FlarkCommandResult invoke<TPayload>(FlarkCommandContext<TPayload> context);
 }
 
-final class _SovereignCommandHandlerEntry<TPayload>
-    implements _SovereignCommandHandlerEntryBase {
-  const _SovereignCommandHandlerEntry({
+final class _FlarkCommandHandlerEntry<TPayload>
+    implements _FlarkCommandHandlerEntryBase {
+  const _FlarkCommandHandlerEntry({
     required this.priority,
     required this.handler,
   });
@@ -72,22 +67,22 @@ final class _SovereignCommandHandlerEntry<TPayload>
   @override
   final int priority;
 
-  final SovereignCommandHandler<TPayload> handler;
+  final FlarkCommandHandler<TPayload> handler;
 
   @override
-  SovereignCommandResult invoke<TContextPayload>(
-    SovereignCommandContext<TContextPayload> context,
+  FlarkCommandResult invoke<TContextPayload>(
+    FlarkCommandContext<TContextPayload> context,
   ) {
     if (context.payload is! TPayload) {
-      return SovereignCommandResult.rejected(
+      return FlarkCommandResult.rejected(
         'Command payload for ${context.command.id} is not $TPayload.',
       );
     }
 
     return handler(
-      SovereignCommandContext<TPayload>(
+      FlarkCommandContext<TPayload>(
         state: context.state,
-        command: SovereignCommand<TPayload>(context.command.id),
+        command: FlarkCommand<TPayload>(context.command.id),
         payload: context.payload as TPayload,
       ),
     );

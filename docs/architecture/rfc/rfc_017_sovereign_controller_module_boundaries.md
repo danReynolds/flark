@@ -1,23 +1,23 @@
-# RFC 017: Sovereign Controller Module Boundaries
+# RFC 017: Flark Controller Module Boundaries
 
 ## 1. Summary
 
-Define the final module lines for the Sovereign editor controller breakout so
-`SovereignController` becomes a thin orchestrator and all behavior lives in
+Define the final module lines for the Flark editor controller breakout so
+`FlarkController` becomes a thin orchestrator and all behavior lives in
 explicit, testable modules (not `part`-coupled internals).
 
 This RFC is based on the current code shape in:
 
-- `packages/sovereign_editor/lib/widgets/sovereign/controllers/`
-- `packages/sovereign_editor/lib/widgets/sovereign/commands/`
-- `packages/sovereign_editor/lib/widgets/sovereign/logic/`
-- `packages/sovereign_editor/lib/widgets/sovereign/engine/`
+- `packages/flark/lib/widgets/sovereign/controllers/`
+- `packages/flark/lib/widgets/sovereign/commands/`
+- `packages/flark/lib/widgets/sovereign/logic/`
+- `packages/flark/lib/widgets/sovereign/engine/`
 
 ---
 
 ## 2. Current State (What still leaks into controller)
 
-`SovereignController` is reduced compared to earlier versions but still owns:
+`FlarkController` is reduced compared to earlier versions but still owns:
 
 1. Selection guard and cursor-mask snapping.
 2. Edit-op creation, merge policy, undo/redo grouping.
@@ -37,7 +37,7 @@ These are the correct submodules to keep long-term, with one adjustment:
 
 ### 3.1 Controller facade
 
-- `SovereignController` (thin orchestrator, public API surface)
+- `FlarkController` (thin orchestrator, public API surface)
 - No business logic beyond delegation and guardrails.
 - Owns framework-facing objects:
   - `StreamController<DecorationModel>` for decoration emissions,
@@ -108,7 +108,7 @@ State mutability contract:
 ### 3.8 Commands (already right direction)
 
 - Keep command facade in `commands/`:
-  - `SovereignMarkdownCommands`
+  - `FlarkMarkdownCommands`
   - block/inline/link/fence command handlers
 - Commands use controller API, not private internals.
 
@@ -122,7 +122,7 @@ intentionally omitted from code until they have concrete, wired implementations
 `markdown_structure_query_service.dart`, `markdown_structure_transform_service.dart`).
 
 ```text
-packages/sovereign_editor/lib/widgets/sovereign/
+packages/flark/lib/widgets/sovereign/
   controller/
     sovereign_controller.dart
     controller_dependencies.dart
@@ -354,7 +354,7 @@ abstract class TextRenderer {
 
 ## 9. Acceptance Criteria
 
-1. `SovereignController` <= 700 LOC and no structural helper implementations.
+1. `FlarkController` <= 700 LOC and no structural helper implementations.
 2. No `part` references to moved modules.
 3. Existing behavior/test suite remains green.
 4. Focused tests exist for each module boundary:

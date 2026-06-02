@@ -12,7 +12,7 @@ run_xcode_list=1
 
 usage() {
   cat <<'EOF'
-Verify the Sovereign example app native packaging harness.
+Verify the Flark example app native packaging harness.
 
 Usage:
   ./scripts/verify_example_packaging.sh [options]
@@ -94,15 +94,15 @@ if [ "$run_android" -eq 1 ]; then
     flutter pub get
   )
   echo
-  echo "==> (cd example/android && ./gradlew :app:verifySovereignComrakNativeLibs)"
+  echo "==> (cd example/android && ./gradlew :app:verifyFlarkComrakNativeLibs)"
   (
     cd "$EXAMPLE_DIR/android"
-    ./gradlew :app:verifySovereignComrakNativeLibs
+    ./gradlew :app:verifyFlarkComrakNativeLibs
   )
 fi
 
 if [ "$run_ios" -eq 1 ]; then
-  anchor="$EXAMPLE_DIR/ios/Runner/SovereignComrakAnchor.c"
+  anchor="$EXAMPLE_DIR/ios/Runner/FlarkComrakAnchor.c"
   project="$EXAMPLE_DIR/ios/Runner.xcodeproj/project.pbxproj"
   workspace="$EXAMPLE_DIR/ios/Runner.xcworkspace"
   xcframework="$REPO_ROOT/native/comrak_bridge/dist/ios/sovereign_comrak_bridge.xcframework"
@@ -123,8 +123,8 @@ if [ "$run_ios" -eq 1 ]; then
     echo "iOS anchor does not reference sovereign_comrak_response_free."
     exit 1
   fi
-  if ! grep -q "SovereignComrakAnchor.c in Sources" "$project"; then
-    echo "iOS project does not build SovereignComrakAnchor.c."
+  if ! grep -q "FlarkComrakAnchor.c in Sources" "$project"; then
+    echo "iOS project does not build FlarkComrakAnchor.c."
     exit 1
   fi
   if ! grep -q "sovereign_comrak_bridge.xcframework in Frameworks" "$project"; then
@@ -150,4 +150,4 @@ if [ "$run_ios" -eq 1 ]; then
 fi
 
 echo
-echo "Sovereign example packaging harness checks passed."
+echo "Flark example packaging harness checks passed."

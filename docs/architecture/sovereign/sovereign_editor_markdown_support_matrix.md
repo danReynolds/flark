@@ -1,9 +1,9 @@
-# Sovereign Editor Markdown Support Matrix
+# Flark Editor Markdown Support Matrix
 
 **Status date**: 2026-05-02  
 **Runtime backend**: native `comrak` (macOS/iOS/Android)  
 **Scope**: live editor parse/projection/render/editing UX plus sovereign
-read-only surface (`SovereignMarkdownView`) on focused post detail screens
+read-only surface (`FlarkMarkdownView`) on focused post detail screens
 (not HTML export UI)
 
 ## Legend
@@ -75,7 +75,7 @@ read-only surface (`SovereignMarkdownView`) on focused post detail screens
 ### Priority C (policy decisions)
 
 7. **Raw HTML strategy**  
-   Supported policy: raw HTML stays literal text in editor/read-only surfaces; apps that need rendered HTML must sanitize outside Sovereign.
+   Supported policy: raw HTML stays literal text in editor/read-only surfaces; apps that need rendered HTML must sanitize outside Flark.
 8. **Extended GFM features (if needed)**  
    Footnotes, tables advanced alignment, task-list interactions beyond current text semantics.
 
@@ -88,14 +88,14 @@ For each new feature, add all of:
 - live editing interaction regression (enter/backspace/selection behavior)
 - rendering test (`buildTextSpan` / widget output)
 
-## 5) Read-Only Sovereign Surface Status
+## 5) Read-Only Flark Surface Status
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| `SovereignMarkdownView` package API | Supported | Exposed from `package:sovereign_editor/sovereign_editor.dart` |
-| Parse/render parity (same sovereign pipeline) | Supported | Uses `SovereignController` + `SovereignTextRenderer` + `Tier1Painter` |
+| `FlarkMarkdownView` package API | Supported | Exposed from `package:flark/flark.dart` |
+| Parse/render parity (same sovereign pipeline) | Supported | Uses `FlarkController` + `FlarkTextRenderer` + `Tier1Painter` |
 | Read-only parity regression suite | Supported | `sovereign_markdown_view_parity_test.dart` validates heading/quote/list/task/fence/link/image/thematic-break semantics |
-| Focused post detail rollout | Supported | `view_post_screen.dart` now renders body via `SovereignMarkdownView` |
+| Focused post detail rollout | Supported | `view_post_screen.dart` now renders body via `FlarkMarkdownView` |
 | Link open interaction | Supported | Tap-to-open via `onOpenLink` callback when enabled |
-| Link/image copy/edit overlay actions | Supported | `SovereignMarkdownView` read overlay provides open/copy/edit actions for link and image targets |
+| Link/image copy/edit overlay actions | Supported | `FlarkMarkdownView` read overlay provides open/copy/edit actions for link and image targets |
 | Feed/card rollout | Supported (current app surfaces) | Feed excerpt markdown previews now render through `PostReadMarkdown` with sovereign clamp + read-more overlay |

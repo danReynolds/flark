@@ -5,7 +5,7 @@ class MainFlutterWindow: NSWindow {
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
     self.contentViewController = flutterViewController
-    self.title = "Sovereign Markdown"
+    self.title = "Flark Markdown"
     self.minSize = NSSize(width: 1040, height: 720)
     if let screenFrame = NSScreen.main?.visibleFrame {
       let initialSize = NSSize(width: 1280, height: 840)

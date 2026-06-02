@@ -1,25 +1,25 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
-import 'package:sovereign_editor/src/v2/markdown/markdown.dart';
+import 'package:flark/src/v2/core/core.dart';
+import 'package:flark/src/v2/markdown/markdown.dart';
 
 void main() {
-  group('SovereignMarkdownBlockCommands', () {
-    SovereignCommandRegistry registry() {
-      return SovereignExtensionSet([
-        const SovereignMarkdownBlockEditingExtension(),
+  group('FlarkMarkdownBlockCommands', () {
+    FlarkCommandRegistry registry() {
+      return FlarkExtensionSet([
+        const FlarkMarkdownBlockEditingExtension(),
       ]).commandRegistry();
     }
 
     test('sets heading level on the selected line', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         'Title',
-        selection: const SovereignSelection.collapsed(0),
+        selection: const FlarkSelection.collapsed(0),
       );
 
       final result = registry().dispatch(
         state: state,
-        command: SovereignMarkdownBlockCommands.setHeadingLevel,
-        payload: const SovereignSetHeadingLevelPayload(2),
+        command: FlarkMarkdownBlockCommands.setHeadingLevel,
+        payload: const FlarkSetHeadingLevelPayload(2),
       );
       final next = state.applyTransaction(result.transaction!);
 
@@ -27,20 +27,20 @@ void main() {
       expect(next.markdown, '## Title');
       expect(
         result.transaction!.metadata.parseInvalidationRange,
-        const SovereignSourceRange(0, 0),
+        const FlarkSourceRange(0, 0),
       );
     });
 
     test('changes an existing heading marker', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         '# Title',
-        selection: const SovereignSelection.collapsed(3),
+        selection: const FlarkSelection.collapsed(3),
       );
 
       final result = registry().dispatch(
         state: state,
-        command: SovereignMarkdownBlockCommands.setHeadingLevel,
-        payload: const SovereignSetHeadingLevelPayload(3),
+        command: FlarkMarkdownBlockCommands.setHeadingLevel,
+        payload: const FlarkSetHeadingLevelPayload(3),
       );
       final next = state.applyTransaction(result.transaction!);
 
@@ -48,15 +48,15 @@ void main() {
     });
 
     test('removes an existing heading marker with level zero', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         '### Title',
-        selection: const SovereignSelection.collapsed(5),
+        selection: const FlarkSelection.collapsed(5),
       );
 
       final result = registry().dispatch(
         state: state,
-        command: SovereignMarkdownBlockCommands.setHeadingLevel,
-        payload: const SovereignSetHeadingLevelPayload(0),
+        command: FlarkMarkdownBlockCommands.setHeadingLevel,
+        payload: const FlarkSetHeadingLevelPayload(0),
       );
       final next = state.applyTransaction(result.transaction!);
 
@@ -64,12 +64,12 @@ void main() {
     });
 
     test('rejects invalid heading levels', () {
-      final state = SovereignEditorState.fromMarkdown('Title');
+      final state = FlarkEditorState.fromMarkdown('Title');
 
       final result = registry().dispatch(
         state: state,
-        command: SovereignMarkdownBlockCommands.setHeadingLevel,
-        payload: const SovereignSetHeadingLevelPayload(7),
+        command: FlarkMarkdownBlockCommands.setHeadingLevel,
+        payload: const FlarkSetHeadingLevelPayload(7),
       );
 
       expect(result.isRejected, isTrue);
@@ -77,15 +77,15 @@ void main() {
     });
 
     test('toggles blockquote markers across selected lines', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         'one\ntwo',
-        selection: const SovereignSelection(baseOffset: 0, extentOffset: 7),
+        selection: const FlarkSelection(baseOffset: 0, extentOffset: 7),
       );
 
       final quotedResult = registry().dispatch(
         state: state,
-        command: SovereignMarkdownBlockCommands.toggleQuote,
-        payload: const SovereignToggleQuotePayload(),
+        command: FlarkMarkdownBlockCommands.toggleQuote,
+        payload: const FlarkToggleQuotePayload(),
       );
       final quoted = state.applyTransaction(quotedResult.transaction!);
 
@@ -93,8 +93,8 @@ void main() {
 
       final unquotedResult = registry().dispatch(
         state: quoted,
-        command: SovereignMarkdownBlockCommands.toggleQuote,
-        payload: const SovereignToggleQuotePayload(),
+        command: FlarkMarkdownBlockCommands.toggleQuote,
+        payload: const FlarkToggleQuotePayload(),
       );
       final unquoted = quoted.applyTransaction(unquotedResult.transaction!);
 
@@ -102,15 +102,15 @@ void main() {
     });
 
     test('toggles bullet list markers across selected lines', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         'one\ntwo',
-        selection: const SovereignSelection(baseOffset: 0, extentOffset: 7),
+        selection: const FlarkSelection(baseOffset: 0, extentOffset: 7),
       );
 
       final listedResult = registry().dispatch(
         state: state,
-        command: SovereignMarkdownBlockCommands.toggleBulletList,
-        payload: const SovereignToggleBulletListPayload(),
+        command: FlarkMarkdownBlockCommands.toggleBulletList,
+        payload: const FlarkToggleBulletListPayload(),
       );
       final listed = state.applyTransaction(listedResult.transaction!);
 
@@ -118,8 +118,8 @@ void main() {
 
       final plainResult = registry().dispatch(
         state: listed,
-        command: SovereignMarkdownBlockCommands.toggleBulletList,
-        payload: const SovereignToggleBulletListPayload(),
+        command: FlarkMarkdownBlockCommands.toggleBulletList,
+        payload: const FlarkToggleBulletListPayload(),
       );
       final plain = listed.applyTransaction(plainResult.transaction!);
 
@@ -127,15 +127,15 @@ void main() {
     });
 
     test('toggles bullet list markers after quote prefixes', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         '> item',
-        selection: const SovereignSelection.collapsed(3),
+        selection: const FlarkSelection.collapsed(3),
       );
 
       final listedResult = registry().dispatch(
         state: state,
-        command: SovereignMarkdownBlockCommands.toggleBulletList,
-        payload: const SovereignToggleBulletListPayload(),
+        command: FlarkMarkdownBlockCommands.toggleBulletList,
+        payload: const FlarkToggleBulletListPayload(),
       );
       final listed = state.applyTransaction(listedResult.transaction!);
 
@@ -143,8 +143,8 @@ void main() {
 
       final plainResult = registry().dispatch(
         state: listed,
-        command: SovereignMarkdownBlockCommands.toggleBulletList,
-        payload: const SovereignToggleBulletListPayload(),
+        command: FlarkMarkdownBlockCommands.toggleBulletList,
+        payload: const FlarkToggleBulletListPayload(),
       );
       final plain = listed.applyTransaction(plainResult.transaction!);
 
@@ -152,15 +152,15 @@ void main() {
     });
 
     test('toggles ordered list markers across selected lines', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         'one\ntwo',
-        selection: const SovereignSelection(baseOffset: 0, extentOffset: 7),
+        selection: const FlarkSelection(baseOffset: 0, extentOffset: 7),
       );
 
       final listedResult = registry().dispatch(
         state: state,
-        command: SovereignMarkdownBlockCommands.toggleOrderedList,
-        payload: const SovereignToggleOrderedListPayload(),
+        command: FlarkMarkdownBlockCommands.toggleOrderedList,
+        payload: const FlarkToggleOrderedListPayload(),
       );
       final listed = state.applyTransaction(listedResult.transaction!);
 
@@ -168,8 +168,8 @@ void main() {
 
       final plainResult = registry().dispatch(
         state: listed,
-        command: SovereignMarkdownBlockCommands.toggleOrderedList,
-        payload: const SovereignToggleOrderedListPayload(),
+        command: FlarkMarkdownBlockCommands.toggleOrderedList,
+        payload: const FlarkToggleOrderedListPayload(),
       );
       final plain = listed.applyTransaction(plainResult.transaction!);
 
@@ -177,15 +177,15 @@ void main() {
     });
 
     test('toggles ordered list markers after quote prefixes', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         '> item',
-        selection: const SovereignSelection.collapsed(3),
+        selection: const FlarkSelection.collapsed(3),
       );
 
       final listedResult = registry().dispatch(
         state: state,
-        command: SovereignMarkdownBlockCommands.toggleOrderedList,
-        payload: const SovereignToggleOrderedListPayload(),
+        command: FlarkMarkdownBlockCommands.toggleOrderedList,
+        payload: const FlarkToggleOrderedListPayload(),
       );
       final listed = state.applyTransaction(listedResult.transaction!);
 
@@ -193,8 +193,8 @@ void main() {
 
       final plainResult = registry().dispatch(
         state: listed,
-        command: SovereignMarkdownBlockCommands.toggleOrderedList,
-        payload: const SovereignToggleOrderedListPayload(),
+        command: FlarkMarkdownBlockCommands.toggleOrderedList,
+        payload: const FlarkToggleOrderedListPayload(),
       );
       final plain = listed.applyTransaction(plainResult.transaction!);
 
@@ -202,42 +202,42 @@ void main() {
     });
 
     test('toggles task list markers for plain, quoted, and bullet lines', () {
-      final plain = SovereignEditorState.fromMarkdown(
+      final plain = FlarkEditorState.fromMarkdown(
         'item',
-        selection: const SovereignSelection.collapsed(0),
+        selection: const FlarkSelection.collapsed(0),
       );
       final plainResult = registry().dispatch(
         state: plain,
-        command: SovereignMarkdownBlockCommands.toggleTaskList,
-        payload: const SovereignToggleTaskListPayload(),
+        command: FlarkMarkdownBlockCommands.toggleTaskList,
+        payload: const FlarkToggleTaskListPayload(),
       );
       expect(
         plain.applyTransaction(plainResult.transaction!).markdown,
         '- [ ] item',
       );
 
-      final quoted = SovereignEditorState.fromMarkdown(
+      final quoted = FlarkEditorState.fromMarkdown(
         '> item',
-        selection: const SovereignSelection.collapsed(3),
+        selection: const FlarkSelection.collapsed(3),
       );
       final quotedResult = registry().dispatch(
         state: quoted,
-        command: SovereignMarkdownBlockCommands.toggleTaskList,
-        payload: const SovereignToggleTaskListPayload(),
+        command: FlarkMarkdownBlockCommands.toggleTaskList,
+        payload: const FlarkToggleTaskListPayload(),
       );
       expect(
         quoted.applyTransaction(quotedResult.transaction!).markdown,
         '> - [ ] item',
       );
 
-      final bullet = SovereignEditorState.fromMarkdown(
+      final bullet = FlarkEditorState.fromMarkdown(
         '- item',
-        selection: const SovereignSelection.collapsed(2),
+        selection: const FlarkSelection.collapsed(2),
       );
       final bulletResult = registry().dispatch(
         state: bullet,
-        command: SovereignMarkdownBlockCommands.toggleTaskList,
-        payload: const SovereignToggleTaskListPayload(),
+        command: FlarkMarkdownBlockCommands.toggleTaskList,
+        payload: const FlarkToggleTaskListPayload(),
       );
       expect(
         bullet.applyTransaction(bulletResult.transaction!).markdown,
@@ -246,14 +246,14 @@ void main() {
     });
 
     test('toggles task checkbox state', () {
-      final unchecked = SovereignEditorState.fromMarkdown(
+      final unchecked = FlarkEditorState.fromMarkdown(
         '- [ ] item',
-        selection: const SovereignSelection.collapsed(4),
+        selection: const FlarkSelection.collapsed(4),
       );
       final checkedResult = registry().dispatch(
         state: unchecked,
-        command: SovereignMarkdownBlockCommands.toggleTaskList,
-        payload: const SovereignToggleTaskListPayload(),
+        command: FlarkMarkdownBlockCommands.toggleTaskList,
+        payload: const FlarkToggleTaskListPayload(),
       );
       final checked = unchecked.applyTransaction(checkedResult.transaction!);
 
@@ -261,8 +261,8 @@ void main() {
 
       final uncheckedResult = registry().dispatch(
         state: checked,
-        command: SovereignMarkdownBlockCommands.toggleTaskList,
-        payload: const SovereignToggleTaskListPayload(),
+        command: FlarkMarkdownBlockCommands.toggleTaskList,
+        payload: const FlarkToggleTaskListPayload(),
       );
       expect(
         checked.applyTransaction(uncheckedResult.transaction!).markdown,
@@ -271,16 +271,16 @@ void main() {
     });
 
     test('sets task checkbox state from an explicit task item range', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         '- [ ] item',
-        selection: const SovereignSelection.collapsed(8),
+        selection: const FlarkSelection.collapsed(8),
       );
 
       final checkedResult = registry().dispatch(
         state: state,
-        command: SovereignMarkdownBlockCommands.setTaskListChecked,
-        payload: const SovereignSetTaskListCheckedPayload(
-          taskItemRange: SovereignSourceRange(0, 10),
+        command: FlarkMarkdownBlockCommands.setTaskListChecked,
+        payload: const FlarkSetTaskListCheckedPayload(
+          taskItemRange: FlarkSourceRange(0, 10),
           checked: true,
         ),
       );
@@ -289,9 +289,9 @@ void main() {
 
       final uncheckedResult = registry().dispatch(
         state: checked,
-        command: SovereignMarkdownBlockCommands.setTaskListChecked,
-        payload: const SovereignSetTaskListCheckedPayload(
-          taskItemRange: SovereignSourceRange(0, 10),
+        command: FlarkMarkdownBlockCommands.setTaskListChecked,
+        payload: const FlarkSetTaskListCheckedPayload(
+          taskItemRange: FlarkSourceRange(0, 10),
           checked: false,
         ),
       );
@@ -300,79 +300,79 @@ void main() {
     });
 
     test('inserts thematic break without creating setext heading text', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         'Title',
-        selection: const SovereignSelection.collapsed(5),
+        selection: const FlarkSelection.collapsed(5),
       );
 
       final result = registry().dispatch(
         state: state,
-        command: SovereignMarkdownBlockCommands.insertThematicBreak,
-        payload: const SovereignInsertThematicBreakPayload(),
+        command: FlarkMarkdownBlockCommands.insertThematicBreak,
+        payload: const FlarkInsertThematicBreakPayload(),
       );
       final next = state.applyTransaction(result.transaction!);
 
       expect(next.markdown, 'Title\n\n---\n');
-      expect(next.selection, const SovereignSelection.collapsed(11));
+      expect(next.selection, const FlarkSelection.collapsed(11));
     });
 
     test('inserts empty fenced code block at the cursor', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         'before\n',
-        selection: const SovereignSelection.collapsed(7),
+        selection: const FlarkSelection.collapsed(7),
       );
 
       final result = registry().dispatch(
         state: state,
-        command: SovereignMarkdownBlockCommands.insertFence,
-        payload: const SovereignInsertFencePayload(language: 'dart'),
+        command: FlarkMarkdownBlockCommands.insertFence,
+        payload: const FlarkInsertFencePayload(language: 'dart'),
       );
       final next = state.applyTransaction(result.transaction!);
 
       expect(next.markdown, 'before\n```dart\n\n```');
-      expect(next.selection, const SovereignSelection.collapsed(15));
+      expect(next.selection, const FlarkSelection.collapsed(15));
     });
 
     test('separates inserted fenced code block from inline paragraph text', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         'before',
-        selection: const SovereignSelection.collapsed(6),
+        selection: const FlarkSelection.collapsed(6),
       );
 
       final result = registry().dispatch(
         state: state,
-        command: SovereignMarkdownBlockCommands.insertFence,
-        payload: const SovereignInsertFencePayload(language: 'dart'),
+        command: FlarkMarkdownBlockCommands.insertFence,
+        payload: const FlarkInsertFencePayload(language: 'dart'),
       );
       final next = state.applyTransaction(result.transaction!);
 
       expect(next.markdown, 'before\n\n```dart\n\n```');
-      expect(next.selection, const SovereignSelection.collapsed(16));
+      expect(next.selection, const FlarkSelection.collapsed(16));
     });
 
     test('sets and clears a fenced code language', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         '```dart\nprint(1);\n```',
-        selection: const SovereignSelection.collapsed(8),
+        selection: const FlarkSelection.collapsed(8),
       );
 
       final rustResult = registry().dispatch(
         state: state,
-        command: SovereignMarkdownBlockCommands.setFenceLanguage,
-        payload: const SovereignSetFenceLanguagePayload(
-          codeBlockRange: SovereignSourceRange(0, 21),
+        command: FlarkMarkdownBlockCommands.setFenceLanguage,
+        payload: const FlarkSetFenceLanguagePayload(
+          codeBlockRange: FlarkSourceRange(0, 21),
           language: 'rust',
         ),
       );
       final rust = state.applyTransaction(rustResult.transaction!);
       expect(rust.markdown, '```rust\nprint(1);\n```');
-      expect(rust.selection, const SovereignSelection.collapsed(8));
+      expect(rust.selection, const FlarkSelection.collapsed(8));
 
       final plainResult = registry().dispatch(
         state: rust,
-        command: SovereignMarkdownBlockCommands.setFenceLanguage,
-        payload: const SovereignSetFenceLanguagePayload(
-          codeBlockRange: SovereignSourceRange(0, 21),
+        command: FlarkMarkdownBlockCommands.setFenceLanguage,
+        payload: const FlarkSetFenceLanguagePayload(
+          codeBlockRange: FlarkSourceRange(0, 21),
           language: '',
         ),
       );
@@ -381,16 +381,16 @@ void main() {
     });
 
     test('sets fenced code language while preserving fence marker shape', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         '  ~~~~\nbody\n~~~~',
-        selection: const SovereignSelection.collapsed(7),
+        selection: const FlarkSelection.collapsed(7),
       );
 
       final result = registry().dispatch(
         state: state,
-        command: SovereignMarkdownBlockCommands.setFenceLanguage,
-        payload: const SovereignSetFenceLanguagePayload(
-          codeBlockRange: SovereignSourceRange(0, 16),
+        command: FlarkMarkdownBlockCommands.setFenceLanguage,
+        payload: const FlarkSetFenceLanguagePayload(
+          codeBlockRange: FlarkSourceRange(0, 16),
           language: 'sql',
         ),
       );
@@ -400,13 +400,13 @@ void main() {
     });
 
     test('rejects invalid fenced code language edits', () {
-      final state = SovereignEditorState.fromMarkdown('```dart\ncode\n```');
+      final state = FlarkEditorState.fromMarkdown('```dart\ncode\n```');
 
       final notFence = registry().dispatch(
         state: state,
-        command: SovereignMarkdownBlockCommands.setFenceLanguage,
-        payload: const SovereignSetFenceLanguagePayload(
-          codeBlockRange: SovereignSourceRange(1, 16),
+        command: FlarkMarkdownBlockCommands.setFenceLanguage,
+        payload: const FlarkSetFenceLanguagePayload(
+          codeBlockRange: FlarkSourceRange(1, 16),
           language: 'rust',
         ),
       );
@@ -414,9 +414,9 @@ void main() {
 
       final invalidInfo = registry().dispatch(
         state: state,
-        command: SovereignMarkdownBlockCommands.setFenceLanguage,
-        payload: const SovereignSetFenceLanguagePayload(
-          codeBlockRange: SovereignSourceRange(0, 16),
+        command: FlarkMarkdownBlockCommands.setFenceLanguage,
+        payload: const FlarkSetFenceLanguagePayload(
+          codeBlockRange: FlarkSourceRange(0, 16),
           language: 'bad`info',
         ),
       );
@@ -424,22 +424,22 @@ void main() {
     });
 
     test('wraps selected source in fenced code block', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         'print(1);',
-        selection: const SovereignSelection(baseOffset: 0, extentOffset: 9),
+        selection: const FlarkSelection(baseOffset: 0, extentOffset: 9),
       );
 
       final result = registry().dispatch(
         state: state,
-        command: SovereignMarkdownBlockCommands.insertFence,
-        payload: const SovereignInsertFencePayload(language: 'dart'),
+        command: FlarkMarkdownBlockCommands.insertFence,
+        payload: const FlarkInsertFencePayload(language: 'dart'),
       );
       final next = state.applyTransaction(result.transaction!);
 
       expect(next.markdown, '```dart\nprint(1);\n```');
       expect(
         next.selection,
-        const SovereignSelection(baseOffset: 8, extentOffset: 17),
+        const FlarkSelection(baseOffset: 8, extentOffset: 17),
       );
     });
   });

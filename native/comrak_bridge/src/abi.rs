@@ -3,7 +3,7 @@ pub(crate) const STATUS_OK: u16 = 0;
 pub(crate) const STATUS_ERROR: u16 = 1;
 
 #[repr(C)]
-pub struct SovereignComrakResponse {
+pub struct FlarkComrakResponse {
     pub abi_version: u32,
     pub revision: u32,
     pub status_code: u16,
@@ -16,7 +16,7 @@ pub(crate) fn allocate_response(
     revision: u32,
     status_code: u16,
     payload: Vec<u8>,
-) -> *mut SovereignComrakResponse {
+) -> *mut FlarkComrakResponse {
     let payload_len = payload.len() as u32;
     let payload_ptr = if payload.is_empty() {
         std::ptr::null_mut()
@@ -30,7 +30,7 @@ pub(crate) fn allocate_response(
         payload_len
     };
 
-    let response = SovereignComrakResponse {
+    let response = FlarkComrakResponse {
         abi_version: ABI_VERSION,
         revision,
         status_code,
@@ -41,7 +41,7 @@ pub(crate) fn allocate_response(
     Box::into_raw(Box::new(response))
 }
 
-pub(crate) fn free_response(response_ptr: *mut SovereignComrakResponse) {
+pub(crate) fn free_response(response_ptr: *mut FlarkComrakResponse) {
     if response_ptr.is_null() {
         return;
     }

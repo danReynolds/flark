@@ -1,146 +1,145 @@
-import '../core/core.dart'
-    show SovereignEditorRuntimeResult, SovereignSourceRange;
+import '../core/core.dart' show FlarkEditorRuntimeResult, FlarkSourceRange;
 import '../markdown/markdown.dart';
 import 'sovereign_flutter_controller.dart';
 
-/// High-level Markdown editing helpers for [SovereignFlutterController].
+/// High-level Markdown editing helpers for [FlarkFlutterController].
 ///
 /// These helpers are intentionally thin wrappers around the command layer.
 /// They keep toolbar and menu code readable while preserving the normal
 /// command result for callers that need rejection details.
-extension SovereignMarkdownControllerCommands on SovereignFlutterController {
-  SovereignEditorRuntimeResult setHeadingLevel(
+extension FlarkMarkdownControllerCommands on FlarkFlutterController {
+  FlarkEditorRuntimeResult setHeadingLevel(
     int level, {
     String userEvent = 'command.setHeadingLevel',
   }) {
     return dispatch(
-      command: SovereignMarkdownBlockCommands.setHeadingLevel,
-      payload: SovereignSetHeadingLevelPayload(level, userEvent: userEvent),
+      command: FlarkMarkdownBlockCommands.setHeadingLevel,
+      payload: FlarkSetHeadingLevelPayload(level, userEvent: userEvent),
     );
   }
 
-  SovereignEditorRuntimeResult clearHeading({
+  FlarkEditorRuntimeResult clearHeading({
     String userEvent = 'command.clearHeading',
   }) {
     return setHeadingLevel(0, userEvent: userEvent);
   }
 
-  SovereignEditorRuntimeResult toggleInlineStyle(
-    SovereignMarkdownInlineStyle style, {
+  FlarkEditorRuntimeResult toggleInlineStyle(
+    FlarkMarkdownInlineStyle style, {
     String userEvent = 'command.toggleInlineStyle',
   }) {
     return dispatch(
-      command: SovereignMarkdownInlineCommands.toggleInlineStyle,
-      payload: SovereignToggleInlineStylePayload(style, userEvent: userEvent),
+      command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+      payload: FlarkToggleInlineStylePayload(style, userEvent: userEvent),
     );
   }
 
-  SovereignEditorRuntimeResult toggleStrong({
+  FlarkEditorRuntimeResult toggleStrong({
     String userEvent = 'command.toggleStrong',
   }) {
     return toggleInlineStyle(
-      SovereignMarkdownInlineStyle.strong,
+      FlarkMarkdownInlineStyle.strong,
       userEvent: userEvent,
     );
   }
 
-  SovereignEditorRuntimeResult toggleEmphasis({
+  FlarkEditorRuntimeResult toggleEmphasis({
     String userEvent = 'command.toggleEmphasis',
   }) {
     return toggleInlineStyle(
-      SovereignMarkdownInlineStyle.emphasis,
+      FlarkMarkdownInlineStyle.emphasis,
       userEvent: userEvent,
     );
   }
 
-  SovereignEditorRuntimeResult toggleInlineCode({
+  FlarkEditorRuntimeResult toggleInlineCode({
     String userEvent = 'command.toggleInlineCode',
   }) {
     return toggleInlineStyle(
-      SovereignMarkdownInlineStyle.inlineCode,
+      FlarkMarkdownInlineStyle.inlineCode,
       userEvent: userEvent,
     );
   }
 
-  SovereignEditorRuntimeResult toggleStrikethrough({
+  FlarkEditorRuntimeResult toggleStrikethrough({
     String userEvent = 'command.toggleStrikethrough',
   }) {
     return toggleInlineStyle(
-      SovereignMarkdownInlineStyle.strikethrough,
+      FlarkMarkdownInlineStyle.strikethrough,
       userEvent: userEvent,
     );
   }
 
-  SovereignEditorRuntimeResult toggleQuote({
+  FlarkEditorRuntimeResult toggleQuote({
     String userEvent = 'command.toggleQuote',
   }) {
     return dispatch(
-      command: SovereignMarkdownBlockCommands.toggleQuote,
-      payload: SovereignToggleQuotePayload(userEvent: userEvent),
+      command: FlarkMarkdownBlockCommands.toggleQuote,
+      payload: FlarkToggleQuotePayload(userEvent: userEvent),
     );
   }
 
-  SovereignEditorRuntimeResult toggleBulletList({
+  FlarkEditorRuntimeResult toggleBulletList({
     String userEvent = 'command.toggleBulletList',
   }) {
     return dispatch(
-      command: SovereignMarkdownBlockCommands.toggleBulletList,
-      payload: SovereignToggleBulletListPayload(userEvent: userEvent),
+      command: FlarkMarkdownBlockCommands.toggleBulletList,
+      payload: FlarkToggleBulletListPayload(userEvent: userEvent),
     );
   }
 
-  SovereignEditorRuntimeResult toggleOrderedList({
+  FlarkEditorRuntimeResult toggleOrderedList({
     int startNumber = 1,
     String userEvent = 'command.toggleOrderedList',
   }) {
     return dispatch(
-      command: SovereignMarkdownBlockCommands.toggleOrderedList,
-      payload: SovereignToggleOrderedListPayload(
+      command: FlarkMarkdownBlockCommands.toggleOrderedList,
+      payload: FlarkToggleOrderedListPayload(
         startNumber: startNumber,
         userEvent: userEvent,
       ),
     );
   }
 
-  SovereignEditorRuntimeResult toggleTaskList({
+  FlarkEditorRuntimeResult toggleTaskList({
     String userEvent = 'command.toggleTaskList',
   }) {
     return dispatch(
-      command: SovereignMarkdownBlockCommands.toggleTaskList,
-      payload: SovereignToggleTaskListPayload(userEvent: userEvent),
+      command: FlarkMarkdownBlockCommands.toggleTaskList,
+      payload: FlarkToggleTaskListPayload(userEvent: userEvent),
     );
   }
 
-  SovereignEditorRuntimeResult insertThematicBreak({
+  FlarkEditorRuntimeResult insertThematicBreak({
     String userEvent = 'command.insertThematicBreak',
   }) {
     return dispatch(
-      command: SovereignMarkdownBlockCommands.insertThematicBreak,
-      payload: SovereignInsertThematicBreakPayload(userEvent: userEvent),
+      command: FlarkMarkdownBlockCommands.insertThematicBreak,
+      payload: FlarkInsertThematicBreakPayload(userEvent: userEvent),
     );
   }
 
-  SovereignEditorRuntimeResult insertCodeFence({
+  FlarkEditorRuntimeResult insertCodeFence({
     String? language,
     String userEvent = 'command.insertFence',
   }) {
     return dispatch(
-      command: SovereignMarkdownBlockCommands.insertFence,
-      payload: SovereignInsertFencePayload(
+      command: FlarkMarkdownBlockCommands.insertFence,
+      payload: FlarkInsertFencePayload(
         language: language,
         userEvent: userEvent,
       ),
     );
   }
 
-  SovereignEditorRuntimeResult insertTable({
+  FlarkEditorRuntimeResult insertTable({
     int columns = 2,
     int bodyRows = 1,
     String userEvent = 'command.insertTable',
   }) {
     return dispatch(
-      command: SovereignMarkdownTableCommands.insertTable,
-      payload: SovereignInsertTablePayload(
+      command: FlarkMarkdownTableCommands.insertTable,
+      payload: FlarkInsertTablePayload(
         columns: columns,
         bodyRows: bodyRows,
         userEvent: userEvent,
@@ -148,28 +147,28 @@ extension SovereignMarkdownControllerCommands on SovereignFlutterController {
     );
   }
 
-  SovereignMarkdownLinkEditContext resolveLinkEditContext() {
-    return SovereignMarkdownLinkCommands.resolveLinkEditContext(state);
+  FlarkMarkdownLinkEditContext resolveLinkEditContext() {
+    return FlarkMarkdownLinkCommands.resolveLinkEditContext(state);
   }
 
-  SovereignEditorRuntimeResult insertLink({
+  FlarkEditorRuntimeResult insertLink({
     String userEvent = 'command.insertLink',
   }) {
     return dispatch(
-      command: SovereignMarkdownLinkCommands.insertLink,
-      payload: SovereignInsertLinkPayload(userEvent: userEvent),
+      command: FlarkMarkdownLinkCommands.insertLink,
+      payload: FlarkInsertLinkPayload(userEvent: userEvent),
     );
   }
 
-  SovereignEditorRuntimeResult applyLinkEdit({
-    required SovereignMarkdownLinkEditContext context,
+  FlarkEditorRuntimeResult applyLinkEdit({
+    required FlarkMarkdownLinkEditContext context,
     required String label,
     required String url,
     String userEvent = 'command.applyLinkEdit',
   }) {
     return dispatch(
-      command: SovereignMarkdownLinkCommands.applyLinkEdit,
-      payload: SovereignApplyLinkEditPayload(
+      command: FlarkMarkdownLinkCommands.applyLinkEdit,
+      payload: FlarkApplyLinkEditPayload(
         context: context,
         label: label,
         url: url,
@@ -178,13 +177,13 @@ extension SovereignMarkdownControllerCommands on SovereignFlutterController {
     );
   }
 
-  SovereignEditorRuntimeResult removeLink({
-    required SovereignSourceRange linkRange,
+  FlarkEditorRuntimeResult removeLink({
+    required FlarkSourceRange linkRange,
     String userEvent = 'command.removeLink',
   }) {
     return dispatch(
-      command: SovereignMarkdownLinkCommands.removeLink,
-      payload: SovereignRemoveLinkPayload(
+      command: FlarkMarkdownLinkCommands.removeLink,
+      payload: FlarkRemoveLinkPayload(
         linkRange: linkRange,
         userEvent: userEvent,
       ),

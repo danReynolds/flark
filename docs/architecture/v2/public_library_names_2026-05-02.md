@@ -1,4 +1,4 @@
-# Sovereign v2 Public Library Names
+# Flark v2 Public Library Names
 
 Status date: 2026-05-02
 
@@ -7,13 +7,13 @@ Status date: 2026-05-02
 Expose the experimental v2 surface from:
 
 ```dart
-import 'package:sovereign_editor/sovereign_editor_v2.dart';
+import 'package:flark/flark_advanced.dart';
 ```
 
 Keep v1 as the stable default:
 
 ```dart
-import 'package:sovereign_editor/sovereign_editor.dart';
+import 'package:flark/flark.dart';
 ```
 
 ## Rationale
@@ -27,7 +27,7 @@ import 'package:sovereign_editor/sovereign_editor.dart';
 
 ## Promotion Rule
 
-`sovereign_editor_v2.dart` can become the default export only after v2 has:
+`flark_advanced.dart` can become the default export only after v2 has:
 
 - native parser protocol parity,
 - editable/read-only widget parity,

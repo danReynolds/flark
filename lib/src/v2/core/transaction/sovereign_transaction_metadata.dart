@@ -1,6 +1,6 @@
 import 'sovereign_source_range.dart';
 
-enum SovereignTransactionIntent {
+enum FlarkTransactionIntent {
   input,
   command,
   paste,
@@ -11,9 +11,9 @@ enum SovereignTransactionIntent {
   unknown,
 }
 
-final class SovereignTransactionMetadata {
-  const SovereignTransactionMetadata({
-    this.intent = SovereignTransactionIntent.unknown,
+final class FlarkTransactionMetadata {
+  const FlarkTransactionMetadata({
+    this.intent = FlarkTransactionIntent.unknown,
     this.userEvent,
     this.undoGroupId,
     this.parseInvalidationRange,
@@ -21,22 +21,22 @@ final class SovereignTransactionMetadata {
     this.addToHistory = true,
   });
 
-  final SovereignTransactionIntent intent;
+  final FlarkTransactionIntent intent;
   final String? userEvent;
   final int? undoGroupId;
-  final SovereignSourceRange? parseInvalidationRange;
-  final SovereignSourceRange? projectionInvalidationRange;
+  final FlarkSourceRange? parseInvalidationRange;
+  final FlarkSourceRange? projectionInvalidationRange;
   final bool addToHistory;
 
-  SovereignTransactionMetadata copyWith({
-    SovereignTransactionIntent? intent,
+  FlarkTransactionMetadata copyWith({
+    FlarkTransactionIntent? intent,
     String? userEvent,
     int? undoGroupId,
-    SovereignSourceRange? parseInvalidationRange,
-    SovereignSourceRange? projectionInvalidationRange,
+    FlarkSourceRange? parseInvalidationRange,
+    FlarkSourceRange? projectionInvalidationRange,
     bool? addToHistory,
   }) {
-    return SovereignTransactionMetadata(
+    return FlarkTransactionMetadata(
       intent: intent ?? this.intent,
       userEvent: userEvent ?? this.userEvent,
       undoGroupId: undoGroupId ?? this.undoGroupId,

@@ -2,27 +2,23 @@ import '../document/sovereign_document.dart';
 import '../state/sovereign_editor_state.dart';
 import '../transaction/sovereign_transaction.dart';
 
-final class SovereignHistoryEntry {
-  SovereignHistoryEntry({
-    required List<SovereignTransaction> redoTransactions,
-    required List<SovereignTransaction> undoTransactions,
+final class FlarkHistoryEntry {
+  FlarkHistoryEntry({
+    required List<FlarkTransaction> redoTransactions,
+    required List<FlarkTransaction> undoTransactions,
     this.undoGroupId,
-  })  : redoTransactions = List<SovereignTransaction>.unmodifiable(
-          redoTransactions,
-        ),
-        undoTransactions = List<SovereignTransaction>.unmodifiable(
-          undoTransactions,
-        );
+  }) : redoTransactions = List<FlarkTransaction>.unmodifiable(redoTransactions),
+       undoTransactions = List<FlarkTransaction>.unmodifiable(undoTransactions);
 
-  final List<SovereignTransaction> redoTransactions;
-  final List<SovereignTransaction> undoTransactions;
+  final List<FlarkTransaction> redoTransactions;
+  final List<FlarkTransaction> undoTransactions;
   final int? undoGroupId;
 
-  SovereignHistoryEntry append(
-    SovereignTransaction transaction,
-    SovereignTransaction inverse,
+  FlarkHistoryEntry append(
+    FlarkTransaction transaction,
+    FlarkTransaction inverse,
   ) {
-    return SovereignHistoryEntry(
+    return FlarkHistoryEntry(
       redoTransactions: [...redoTransactions, transaction],
       undoTransactions: [inverse, ...undoTransactions],
       undoGroupId: undoGroupId,
@@ -30,32 +26,29 @@ final class SovereignHistoryEntry {
   }
 }
 
-final class SovereignHistoryResult {
-  const SovereignHistoryResult({
-    required this.state,
-    required this.history,
-  });
+final class FlarkHistoryResult {
+  const FlarkHistoryResult({required this.state, required this.history});
 
-  final SovereignEditorState state;
-  final SovereignHistoryStack history;
+  final FlarkEditorState state;
+  final FlarkHistoryStack history;
 }
 
-final class SovereignHistoryStack {
-  const SovereignHistoryStack({
-    this.undoEntries = const <SovereignHistoryEntry>[],
-    this.redoEntries = const <SovereignHistoryEntry>[],
+final class FlarkHistoryStack {
+  const FlarkHistoryStack({
+    this.undoEntries = const <FlarkHistoryEntry>[],
+    this.redoEntries = const <FlarkHistoryEntry>[],
   });
 
-  final List<SovereignHistoryEntry> undoEntries;
-  final List<SovereignHistoryEntry> redoEntries;
+  final List<FlarkHistoryEntry> undoEntries;
+  final List<FlarkHistoryEntry> redoEntries;
 
   bool get canUndo => undoEntries.isNotEmpty;
 
   bool get canRedo => redoEntries.isNotEmpty;
 
-  SovereignHistoryStack record({
-    required SovereignTransaction transaction,
-    required SovereignDocument documentBefore,
+  FlarkHistoryStack record({
+    required FlarkTransaction transaction,
+    required FlarkDocument documentBefore,
   }) {
     if (!transaction.metadata.addToHistory || !transaction.changesDocument) {
       return this;
@@ -74,11 +67,13 @@ final class SovereignHistoryStack {
     if (groupId != null &&
         nextUndoEntries.isNotEmpty &&
         nextUndoEntries.last.undoGroupId == groupId) {
-      nextUndoEntries[nextUndoEntries.length - 1] =
-          nextUndoEntries.last.append(transaction, inverse);
+      nextUndoEntries[nextUndoEntries.length - 1] = nextUndoEntries.last.append(
+        transaction,
+        inverse,
+      );
     } else {
       nextUndoEntries.add(
-        SovereignHistoryEntry(
+        FlarkHistoryEntry(
           redoTransactions: [transaction],
           undoTransactions: [inverse],
           undoGroupId: groupId,
@@ -86,12 +81,12 @@ final class SovereignHistoryStack {
       );
     }
 
-    return SovereignHistoryStack(undoEntries: nextUndoEntries);
+    return FlarkHistoryStack(undoEntries: nextUndoEntries);
   }
 
-  SovereignHistoryResult undo(SovereignEditorState state) {
+  FlarkHistoryResult undo(FlarkEditorState state) {
     if (undoEntries.isEmpty) {
-      return SovereignHistoryResult(state: state, history: this);
+      return FlarkHistoryResult(state: state, history: this);
     }
 
     final entry = undoEntries.last;
@@ -100,18 +95,18 @@ final class SovereignHistoryStack {
       nextState = nextState.applyTransaction(transaction);
     }
 
-    return SovereignHistoryResult(
+    return FlarkHistoryResult(
       state: nextState,
-      history: SovereignHistoryStack(
+      history: FlarkHistoryStack(
         undoEntries: undoEntries.sublist(0, undoEntries.length - 1),
         redoEntries: [...redoEntries, entry],
       ),
     );
   }
 
-  SovereignHistoryResult redo(SovereignEditorState state) {
+  FlarkHistoryResult redo(FlarkEditorState state) {
     if (redoEntries.isEmpty) {
-      return SovereignHistoryResult(state: state, history: this);
+      return FlarkHistoryResult(state: state, history: this);
     }
 
     final entry = redoEntries.last;
@@ -120,9 +115,9 @@ final class SovereignHistoryStack {
       nextState = nextState.applyTransaction(transaction);
     }
 
-    return SovereignHistoryResult(
+    return FlarkHistoryResult(
       state: nextState,
-      history: SovereignHistoryStack(
+      history: FlarkHistoryStack(
         undoEntries: [...undoEntries, entry],
         redoEntries: redoEntries.sublist(0, redoEntries.length - 1),
       ),

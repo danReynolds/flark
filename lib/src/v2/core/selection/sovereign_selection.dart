@@ -1,17 +1,11 @@
-enum SovereignMapAffinity {
-  upstream,
-  downstream,
-}
+enum FlarkMapAffinity { upstream, downstream }
 
-final class SovereignSelection {
-  const SovereignSelection({
-    required this.baseOffset,
-    required this.extentOffset,
-  });
+final class FlarkSelection {
+  const FlarkSelection({required this.baseOffset, required this.extentOffset});
 
-  const SovereignSelection.collapsed(int offset)
-      : baseOffset = offset,
-        extentOffset = offset;
+  const FlarkSelection.collapsed(int offset)
+    : baseOffset = offset,
+      extentOffset = offset;
 
   final int baseOffset;
   final int extentOffset;
@@ -22,17 +16,14 @@ final class SovereignSelection {
 
   int get end => baseOffset > extentOffset ? baseOffset : extentOffset;
 
-  SovereignSelection copyWith({
-    int? baseOffset,
-    int? extentOffset,
-  }) {
-    return SovereignSelection(
+  FlarkSelection copyWith({int? baseOffset, int? extentOffset}) {
+    return FlarkSelection(
       baseOffset: baseOffset ?? this.baseOffset,
       extentOffset: extentOffset ?? this.extentOffset,
     );
   }
 
-  SovereignSelection validate(int textLength) {
+  FlarkSelection validate(int textLength) {
     _checkOffset(baseOffset, textLength, 'baseOffset');
     _checkOffset(extentOffset, textLength, 'extentOffset');
     return this;
@@ -46,7 +37,7 @@ final class SovereignSelection {
 
   @override
   bool operator ==(Object other) {
-    return other is SovereignSelection &&
+    return other is FlarkSelection &&
         other.baseOffset == baseOffset &&
         other.extentOffset == extentOffset;
   }
@@ -56,7 +47,7 @@ final class SovereignSelection {
 
   @override
   String toString() {
-    if (isCollapsed) return 'SovereignSelection.collapsed($baseOffset)';
-    return 'SovereignSelection($baseOffset, $extentOffset)';
+    if (isCollapsed) return 'FlarkSelection.collapsed($baseOffset)';
+    return 'FlarkSelection($baseOffset, $extentOffset)';
   }
 }

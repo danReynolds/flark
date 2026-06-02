@@ -1,8 +1,8 @@
-# RFC 016: Sovereign Markdown Command Layer
+# RFC 016: Flark Markdown Command Layer
 
 ## 1. Summary
 
-Define a first-class markdown command API inside `sovereign_editor` and move toolbar/edit-intent behavior out of app-local `MarkdownFormatting`.
+Define a first-class markdown command API inside `flark` and move toolbar/edit-intent behavior out of app-local `MarkdownFormatting`.
 
 Detailed API/module spec:
 
@@ -11,7 +11,7 @@ Detailed API/module spec:
 This keeps:
 
 - **UI intent orchestration** in app code (mobile/desktop toolbar widgets, dialogs).
-- **Markdown mutation semantics** in Sovereign (single source of truth).
+- **Markdown mutation semantics** in Flark (single source of truth).
 
 Primary outcome: one canonical implementation path for markdown actions across mobile and desktop, with fewer cursor/selection regressions.
 
@@ -25,7 +25,7 @@ Today, app-level `lib/routes/posts/create/logic/markdown_formatting.dart` perfor
 - block transforms (quote/list/heading/fence),
 - link editing insert/replace behavior.
 
-Sovereign simultaneously owns projection, marker hiding, cursor safety, and edit policies. This split causes drift:
+Flark simultaneously owns projection, marker hiding, cursor safety, and edit policies. This split causes drift:
 
 1. UI commands can violate engine assumptions (cursor projection, hidden marker boundaries).
 2. Mobile/desktop behavior can diverge unless both explicitly normalize state.
@@ -42,7 +42,7 @@ Sovereign simultaneously owns projection, marker hiding, cursor safety, and edit
 
 ## 4. Non-goals
 
-1. Replacing Sovereign rendering architecture.
+1. Replacing Flark rendering architecture.
 2. Rewriting native parser integration.
 3. Introducing feature flags for migration (greenfield assumption).
 
@@ -54,35 +54,35 @@ Sovereign simultaneously owns projection, marker hiding, cursor safety, and edit
 
 Expose a single typed facade in package API:
 
-- `class SovereignMarkdownCommands`
-- `enum SovereignInlineStyle { bold, italic, inlineCode }`
-- `enum SovereignBlockStyle { quote, bulletList, taskList, heading, fence }`
-- `class SovereignLinkEditContext`
-- `class SovereignCommandCapabilities`
-- `sealed class SovereignCommandResult`
+- `class FlarkMarkdownCommands`
+- `enum FlarkInlineStyle { bold, italic, inlineCode }`
+- `enum FlarkBlockStyle { quote, bulletList, taskList, heading, fence }`
+- `class FlarkLinkEditContext`
+- `class FlarkCommandCapabilities`
+- `sealed class FlarkCommandResult`
   - `Applied`
   - `NoOp`
   - `Rejected`
-  - typed reason code (`SovereignCommandReasonCode`) + stable wire string
+  - typed reason code (`FlarkCommandReasonCode`) + stable wire string
 
 Primary methods:
 
-- `toggleInlineStyle(SovereignController, SovereignInlineStyle)`
-- `deactivateInlineStyle(SovereignController)`
-- `getInlineStyleAtSelection(SovereignController)`
-- `setHeadingLevel(SovereignController, int? level)`
-- `getHeadingLevelAtSelection(SovereignController)`
-- `toggleQuote(SovereignController)`
-- `isQuoteActiveAtSelection(SovereignController)`
-- `toggleBulletList(SovereignController)`
-- `toggleTaskList(SovereignController)`
-- `insertHorizontalRule(SovereignController)`
-- `insertFence(SovereignController, {String language = 'plain'})`
-- `insertLink(SovereignController)`
-- `resolveLinkEditContext(SovereignController)`
-- `applyLinkEdit(SovereignController, ...)`
-- `capabilitiesAtSelection(SovereignController)`
-- `runInTransaction(SovereignController, action)` (group multiple commands into one undo unit)
+- `toggleInlineStyle(FlarkController, FlarkInlineStyle)`
+- `deactivateInlineStyle(FlarkController)`
+- `getInlineStyleAtSelection(FlarkController)`
+- `setHeadingLevel(FlarkController, int? level)`
+- `getHeadingLevelAtSelection(FlarkController)`
+- `toggleQuote(FlarkController)`
+- `isQuoteActiveAtSelection(FlarkController)`
+- `toggleBulletList(FlarkController)`
+- `toggleTaskList(FlarkController)`
+- `insertHorizontalRule(FlarkController)`
+- `insertFence(FlarkController, {String language = 'plain'})`
+- `insertLink(FlarkController)`
+- `resolveLinkEditContext(FlarkController)`
+- `applyLinkEdit(FlarkController, ...)`
+- `capabilitiesAtSelection(FlarkController)`
+- `runInTransaction(FlarkController, action)` (group multiple commands into one undo unit)
 
 Optional ergonomics (no new semantics):
 
@@ -113,7 +113,7 @@ All commands MUST:
 1. Read from normalized context (text, safe selection, composing state).
 2. Produce at most one atomic mutation payload (`nextText`, `nextSelection`).
 3. Commit through a shared transaction helper only.
-4. Return `SovereignCommandResult` (no silent failures).
+4. Return `FlarkCommandResult` (no silent failures).
 
 Transaction helper MUST guarantee:
 
@@ -144,7 +144,7 @@ Hard boundaries:
   - toolbar button state,
   - modal presentation,
   - UX choreography (which dialog to show).
-- Sovereign keeps:
+- Flark keeps:
   - markdown mutation logic,
   - active-inline detection logic,
   - wrapper exit/switch edge cases.
@@ -158,7 +158,7 @@ Follow-up (hardening): remove dependence on expanded placeholder selection as mo
 ### 5.7 Suggested package layout
 
 ```
-packages/sovereign_editor/lib/widgets/sovereign/commands/
+packages/flark/lib/widgets/sovereign/commands/
   sovereign_markdown_commands.dart
   models/
     sovereign_inline_style.dart

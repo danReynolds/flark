@@ -1,7 +1,7 @@
-# Sovereign Editor: How It Works
+# Flark Editor: How It Works
 
 **Status date**: 2026-05-02
-**Package**: `sovereign_editor`
+**Package**: `flark`
 **Runtime backend**: native `comrak` (macOS/iOS/Android)
 
 This document is the practical implementation overview: what the editor does,
@@ -9,8 +9,8 @@ how the runtime pipeline works, and what is currently supported.
 
 ## 1) Runtime Architecture (end-to-end)
 
-1. `SovereignEditor` (editable) and `SovereignMarkdownView` (read-only)
-   both use `SovereignController` as the parse/projection/render driver.
+1. `FlarkEditor` (editable) and `FlarkMarkdownView` (read-only)
+   both use `FlarkController` as the parse/projection/render driver.
 2. For editable mode, user input is routed through input-intent policies
    (enter/tab/arrows/backspace).
 3. `EditOperationPipeline` computes edit ops and undo grouping.
@@ -19,7 +19,7 @@ how the runtime pipeline works, and what is currently supported.
    one in-flight parse + one latest pending parse.
 6. Native `comrak` parse result is normalized into `SyntaxSnapshot`.
 7. `SyntaxProjectionCoordinator` reconciles authoritative ranges/tokens with local predictive state.
-8. Rendering uses `SovereignTextRenderer` + painter overlays (quote rails,
+8. Rendering uses `FlarkTextRenderer` + painter overlays (quote rails,
    code blocks, checkbox visuals in edit mode, link actions as configured).
 
 ## 2) Core Modules and Ownership
@@ -85,7 +85,7 @@ Current headline status:
 
 ## 6) Command Surface (consumer API)
 
-Primary action surface is `SovereignMarkdownCommands` via:
+Primary action surface is `FlarkMarkdownCommands` via:
 
 - `controller.commands.toggleInlineStyle(...)`
 - `controller.commands.deactivateInlineStyle()`

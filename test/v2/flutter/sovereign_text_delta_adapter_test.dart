@@ -1,11 +1,11 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
-import 'package:sovereign_editor/src/v2/flutter/flutter.dart';
+import 'package:flark/src/v2/core/core.dart';
+import 'package:flark/src/v2/flutter/flutter.dart';
 
 void main() {
-  group('SovereignTextDeltaAdapter', () {
-    const adapter = SovereignTextDeltaAdapter();
+  group('FlarkTextDeltaAdapter', () {
+    const adapter = FlarkTextDeltaAdapter();
 
     test('maps insertion deltas to source transactions', () {
       final transaction = adapter.transactionFromDelta(
@@ -20,10 +20,12 @@ void main() {
       );
 
       expect(transaction, isNotNull);
-      expect(transaction!.operations.single,
-          SovereignSourceOperation.insert(2, 'c'));
-      expect(transaction.selectionAfter, const SovereignSelection.collapsed(3));
-      expect(transaction.metadata.intent, SovereignTransactionIntent.input);
+      expect(
+        transaction!.operations.single,
+        FlarkSourceOperation.insert(2, 'c'),
+      );
+      expect(transaction.selectionAfter, const FlarkSelection.collapsed(3));
+      expect(transaction.metadata.intent, FlarkTransactionIntent.input);
       expect(transaction.metadata.addToHistory, isTrue);
     });
 
@@ -39,10 +41,7 @@ void main() {
       );
 
       expect(transaction, isNotNull);
-      expect(
-        transaction!.operations.single,
-        SovereignSourceOperation.delete(1, 3),
-      );
+      expect(transaction!.operations.single, FlarkSourceOperation.delete(1, 3));
     });
 
     test('maps replacement deltas to source transactions', () {
@@ -60,8 +59,8 @@ void main() {
       expect(transaction, isNotNull);
       expect(
         transaction!.operations.single,
-        const SovereignSourceOperation.replace(
-          replacedRange: SovereignSourceRange(1, 3),
+        const FlarkSourceOperation.replace(
+          replacedRange: FlarkSourceRange(1, 3),
           replacementText: 'XY',
         ),
       );
@@ -79,9 +78,11 @@ void main() {
 
       expect(transaction, isNotNull);
       expect(transaction!.operations, isEmpty);
-      expect(transaction.selectionAfter,
-          const SovereignSelection(baseOffset: 1, extentOffset: 3));
-      expect(transaction.metadata.intent, SovereignTransactionIntent.selection);
+      expect(
+        transaction.selectionAfter,
+        const FlarkSelection(baseOffset: 1, extentOffset: 3),
+      );
+      expect(transaction.metadata.intent, FlarkTransactionIntent.selection);
       expect(transaction.metadata.addToHistory, isFalse);
     });
 

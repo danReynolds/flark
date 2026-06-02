@@ -18,7 +18,7 @@ const _autoHighlightMinimumSourceLength = 8;
 const _autoHighlightMinimumRelevance = 4;
 const _autoHighlightMinimumRelevanceMargin = 2;
 
-TextSpan? buildSovereignHighlightedCodeSpan({
+TextSpan? buildFlarkHighlightedCodeSpan({
   required String source,
   required String? language,
   required TextStyle baseStyle,
@@ -249,9 +249,7 @@ void _appendStyledText(
   spans.add(
     TextSpan(
       text: source.substring(composingStart, composingEnd),
-      style: style.merge(
-        const TextStyle(decoration: TextDecoration.underline),
-      ),
+      style: style.merge(const TextStyle(decoration: TextDecoration.underline)),
     ),
   );
   if (composingEnd < end) {

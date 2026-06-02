@@ -3,19 +3,19 @@ import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
-import 'package:sovereign_editor/src/v2/flutter/flutter.dart';
-import 'package:sovereign_editor/src/v2/markdown/markdown.dart';
+import 'package:flark/src/v2/core/core.dart';
+import 'package:flark/src/v2/flutter/flutter.dart';
+import 'package:flark/src/v2/markdown/markdown.dart';
 
 void main() {
   testWidgets(
     'styles projected inline markdown while editing canonical source',
     (tester) async {
-      final controller = SovereignFlutterController(
-        runtime: SovereignEditorRuntime(
-          state: SovereignEditorState.fromMarkdown(
+      final controller = FlarkFlutterController(
+        runtime: FlarkEditorRuntime(
+          state: FlarkEditorState.fromMarkdown(
             '**bold** and *em* and `code`',
-            selection: const SovereignSelection.collapsed(6),
+            selection: const FlarkSelection.collapsed(6),
           ),
         ),
       );
@@ -28,7 +28,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
           ),
@@ -71,14 +71,14 @@ void main() {
   testWidgets(
     'keeps partial bold delimiters literal until closing marker is complete',
     (tester) async {
-      final controller = SovereignFlutterController.fromMarkdown('**wow*');
+      final controller = FlarkFlutterController.fromMarkdown('**wow*');
       addTearDown(controller.dispose);
       await _applyComrakParseResult(controller);
 
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
           ),
@@ -172,7 +172,7 @@ void main() {
     ];
 
     for (final inlineCase in cases) {
-      final controller = SovereignFlutterController.fromMarkdown(
+      final controller = FlarkFlutterController.fromMarkdown(
         inlineCase.markdown,
       );
       addTearDown(controller.dispose);
@@ -181,7 +181,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
           ),
@@ -221,11 +221,11 @@ void main() {
   testWidgets('keeps inline code text selectable in live editing', (
     tester,
   ) async {
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           '**bold** and *em* and `code`',
-          selection: const SovereignSelection.collapsed(0),
+          selection: const FlarkSelection.collapsed(0),
         ),
       ),
     );
@@ -237,7 +237,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: SizedBox(
           width: 320,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
           ),
@@ -267,11 +267,11 @@ void main() {
   testWidgets('keeps trailing newlines editable in plain live documents', (
     tester,
   ) async {
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           'A\n',
-          selection: const SovereignSelection.collapsed(2),
+          selection: const FlarkSelection.collapsed(2),
         ),
       ),
     );
@@ -284,7 +284,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
@@ -304,11 +304,11 @@ void main() {
   testWidgets('renders and edits HTML entities through replacement ranges', (
     tester,
   ) async {
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           'A &amp; B',
-          selection: const SovereignSelection.collapsed(7),
+          selection: const FlarkSelection.collapsed(7),
         ),
       ),
     );
@@ -318,7 +318,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
@@ -335,11 +335,11 @@ void main() {
   });
 
   testWidgets('keeps marker-only quote lines source-visible', (tester) async {
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           '>',
-          selection: const SovereignSelection.collapsed(1),
+          selection: const FlarkSelection.collapsed(1),
         ),
       ),
     );
@@ -352,14 +352,14 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
       ),
     );
 
-    expect(find.byKey(const Key('SovereignLiveBlockEditor')), findsNothing);
+    expect(find.byKey(const Key('FlarkLiveBlockEditor')), findsNothing);
     final editable = tester.widget<EditableText>(find.byType(EditableText));
     expect(editable.controller.text, '>');
     expect(editable.textInputAction, TextInputAction.newline);
@@ -373,11 +373,11 @@ void main() {
   testWidgets('renders empty quote blocks immediately after marker space', (
     tester,
   ) async {
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           '> ',
-          selection: const SovereignSelection.collapsed(2),
+          selection: const FlarkSelection.collapsed(2),
         ),
       ),
     );
@@ -390,18 +390,15 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
       ),
     );
 
-    expect(find.byKey(const Key('SovereignLiveBlockEditor')), findsOneWidget);
-    expect(
-      find.byKey(const Key('SovereignLiveBlockBlockquote')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockEditor')), findsOneWidget);
+    expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsOneWidget);
     final editable = tester.widget<EditableText>(find.byType(EditableText));
     expect(editable.controller.text, isEmpty);
 
@@ -415,11 +412,11 @@ void main() {
     tester,
   ) async {
     const markdown = '> first\n> second';
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           markdown,
-          selection: const SovereignSelection.collapsed(markdown.length),
+          selection: const FlarkSelection.collapsed(markdown.length),
         ),
       ),
     );
@@ -432,17 +429,14 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
       ),
     );
 
-    expect(
-      find.byKey(const Key('SovereignLiveBlockBlockquote')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsOneWidget);
     expect(find.byType(EditableText), findsOneWidget);
     expect(
       tester.widget<EditableText>(find.byType(EditableText)).controller.text,
@@ -458,13 +452,13 @@ void main() {
   testWidgets('routes Enter through live blockquotes to continue and exit', (
     tester,
   ) async {
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           '> quote',
-          selection: const SovereignSelection.collapsed(7),
+          selection: const FlarkSelection.collapsed(7),
         ),
-        extensions: SovereignMarkdownEditingExtensions.standard(),
+        extensions: FlarkMarkdownEditingExtensions.standard(),
       ),
     );
     addTearDown(controller.dispose);
@@ -473,7 +467,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
           autofocus: true,
@@ -482,10 +476,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(
-      find.byKey(const Key('SovereignLiveBlockBlockquote')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsOneWidget);
     expect(
       tester.widget<EditableText>(find.byType(EditableText)).controller.text,
       'quote',
@@ -497,34 +488,31 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.markdown, '> quote\n> ');
-    expect(
-      find.byKey(const Key('SovereignLiveBlockBlockquote')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsOneWidget);
     expect(find.byType(EditableText), findsOneWidget);
     expect(
       tester.widget<EditableText>(find.byType(EditableText)).controller.text,
       'quote\n',
     );
-    expect(controller.selection, const SovereignSelection.collapsed(10));
+    expect(controller.selection, const FlarkSelection.collapsed(10));
 
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
 
     expect(controller.markdown, '> quote\n\n');
-    expect(controller.selection, const SovereignSelection.collapsed(9));
+    expect(controller.selection, const FlarkSelection.collapsed(9));
   });
 
   testWidgets('routes Backspace from empty live blockquotes to remove them', (
     tester,
   ) async {
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           '> ',
-          selection: const SovereignSelection.collapsed(2),
+          selection: const FlarkSelection.collapsed(2),
         ),
-        extensions: SovereignMarkdownEditingExtensions.standard(),
+        extensions: FlarkMarkdownEditingExtensions.standard(),
       ),
     );
     addTearDown(controller.dispose);
@@ -536,7 +524,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
           autofocus: true,
@@ -545,10 +533,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(
-      find.byKey(const Key('SovereignLiveBlockBlockquote')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsOneWidget);
     await tester.showKeyboard(find.byType(EditableText));
     await tester.pump();
 
@@ -556,20 +541,20 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.markdown, isEmpty);
-    expect(find.byKey(const Key('SovereignLiveBlockBlockquote')), findsNothing);
+    expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsNothing);
     expect(find.byType(EditableText), findsOneWidget);
   });
 
   testWidgets('routes Backspace at live quote content start to unwrap it', (
     tester,
   ) async {
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           '> quote',
-          selection: const SovereignSelection.collapsed(2),
+          selection: const FlarkSelection.collapsed(2),
         ),
-        extensions: SovereignMarkdownEditingExtensions.standard(),
+        extensions: FlarkMarkdownEditingExtensions.standard(),
       ),
     );
     addTearDown(controller.dispose);
@@ -578,7 +563,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
           autofocus: true,
@@ -587,10 +572,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(
-      find.byKey(const Key('SovereignLiveBlockBlockquote')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsOneWidget);
     await tester.showKeyboard(find.byType(EditableText));
     await tester.pump();
 
@@ -598,7 +580,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.markdown, 'quote');
-    expect(find.byKey(const Key('SovereignLiveBlockBlockquote')), findsNothing);
+    expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsNothing);
     expect(
       tester.widget<EditableText>(find.byType(EditableText)).controller.text,
       'quote',
@@ -608,21 +590,21 @@ void main() {
   testWidgets('routes live heading Backspace through hidden marker policy', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(
+    final controller = FlarkFlutterController.fromMarkdown(
       '## Heading',
-      extensions: SovereignMarkdownEditingExtensions.standard(),
+      extensions: FlarkMarkdownEditingExtensions.standard(),
     );
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
     controller.applySelection(
-      const SovereignSelection.collapsed(3),
+      const FlarkSelection.collapsed(3),
       userEvent: 'test',
     );
 
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
           autofocus: true,
@@ -642,27 +624,27 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.markdown, 'Heading');
-    expect(controller.selection, const SovereignSelection.collapsed(0));
+    expect(controller.selection, const FlarkSelection.collapsed(0));
   });
 
   testWidgets('routes live list Backspace through hidden marker policy', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(
+    final controller = FlarkFlutterController.fromMarkdown(
       '- item',
-      extensions: SovereignMarkdownEditingExtensions.standard(),
+      extensions: FlarkMarkdownEditingExtensions.standard(),
     );
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
     controller.applySelection(
-      const SovereignSelection.collapsed(2),
+      const FlarkSelection.collapsed(2),
       userEvent: 'test',
     );
 
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
           autofocus: true,
@@ -682,15 +664,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.markdown, 'item');
-    expect(controller.selection, const SovereignSelection.collapsed(0));
+    expect(controller.selection, const FlarkSelection.collapsed(0));
   });
 
   testWidgets('renders live unordered list marker beside editable item text', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(
+    final controller = FlarkFlutterController.fromMarkdown(
       '- item',
-      extensions: SovereignMarkdownEditingExtensions.standard(),
+      extensions: FlarkMarkdownEditingExtensions.standard(),
     );
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
@@ -698,7 +680,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
@@ -706,10 +688,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(
-      find.byKey(const Key('SovereignLiveBlockListMarker')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
     final editable = tester.widget<EditableText>(find.byType(EditableText));
     expect(editable.controller.text, 'item');
   });
@@ -717,9 +696,9 @@ void main() {
   testWidgets('keeps marker-only unordered list input source-visible', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(
+    final controller = FlarkFlutterController.fromMarkdown(
       '*',
-      extensions: SovereignMarkdownEditingExtensions.standard(),
+      extensions: FlarkMarkdownEditingExtensions.standard(),
     );
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
@@ -727,7 +706,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
@@ -735,7 +714,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byKey(const Key('SovereignLiveBlockListMarker')), findsNothing);
+    expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsNothing);
     final editable = tester.widget<EditableText>(find.byType(EditableText));
     expect(editable.controller.text, '*');
   });
@@ -743,9 +722,9 @@ void main() {
   testWidgets('renders live unordered marker immediately after marker space', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(
+    final controller = FlarkFlutterController.fromMarkdown(
       '- ',
-      extensions: SovereignMarkdownEditingExtensions.standard(),
+      extensions: FlarkMarkdownEditingExtensions.standard(),
     );
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
@@ -753,7 +732,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
@@ -761,10 +740,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(
-      find.byKey(const Key('SovereignLiveBlockListMarker')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
     final editable = tester.widget<EditableText>(find.byType(EditableText));
     expect(editable.controller.text, isEmpty);
   });
@@ -772,9 +748,9 @@ void main() {
   testWidgets('keeps unordered marker element stable while typing item text', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(
+    final controller = FlarkFlutterController.fromMarkdown(
       '* item',
-      extensions: SovereignMarkdownEditingExtensions.standard(),
+      extensions: FlarkMarkdownEditingExtensions.standard(),
     );
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
@@ -782,7 +758,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
@@ -790,7 +766,7 @@ void main() {
     );
     await tester.pump();
 
-    final markerFinder = find.byKey(const Key('SovereignLiveBlockListMarker'));
+    final markerFinder = find.byKey(const Key('FlarkLiveBlockListMarker'));
     expect(markerFinder, findsOneWidget);
     final markerElement = tester.element(markerFinder);
 
@@ -812,13 +788,13 @@ void main() {
   testWidgets('moves focus to the continued unordered list item after Enter', (
     tester,
   ) async {
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           '* item',
-          selection: const SovereignSelection.collapsed(6),
+          selection: const FlarkSelection.collapsed(6),
         ),
-        extensions: SovereignMarkdownEditingExtensions.standard(),
+        extensions: FlarkMarkdownEditingExtensions.standard(),
       ),
     );
     addTearDown(controller.dispose);
@@ -827,7 +803,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
           autofocus: true,
@@ -845,7 +821,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.markdown, '* item\n* ');
-    expect(controller.selection, const SovereignSelection.collapsed(9));
+    expect(controller.selection, const FlarkSelection.collapsed(9));
     expect(find.byType(EditableText), findsNWidgets(2));
     final editors = tester
         .widgetList<EditableText>(find.byType(EditableText))
@@ -863,13 +839,13 @@ void main() {
   testWidgets('undoes and redoes live list continuation from Enter', (
     tester,
   ) async {
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           '* item',
-          selection: const SovereignSelection.collapsed(6),
+          selection: const FlarkSelection.collapsed(6),
         ),
-        extensions: SovereignMarkdownEditingExtensions.standard(),
+        extensions: FlarkMarkdownEditingExtensions.standard(),
       ),
     );
     addTearDown(controller.dispose);
@@ -878,7 +854,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
           autofocus: true,
@@ -899,24 +875,24 @@ void main() {
     controller.undo();
     await tester.pump();
     expect(controller.markdown, '* item');
-    expect(controller.selection, const SovereignSelection.collapsed(6));
+    expect(controller.selection, const FlarkSelection.collapsed(6));
 
     controller.redo();
     await tester.pump();
     expect(controller.markdown, '* item\n* ');
-    expect(controller.selection, const SovereignSelection.collapsed(9));
+    expect(controller.selection, const FlarkSelection.collapsed(9));
   });
 
   testWidgets(
     'moves focus out of an empty final unordered list item after Enter',
     (tester) async {
-      final controller = SovereignFlutterController(
-        runtime: SovereignEditorRuntime(
-          state: SovereignEditorState.fromMarkdown(
+      final controller = FlarkFlutterController(
+        runtime: FlarkEditorRuntime(
+          state: FlarkEditorState.fromMarkdown(
             '* item\n* ',
-            selection: const SovereignSelection.collapsed(9),
+            selection: const FlarkSelection.collapsed(9),
           ),
-          extensions: SovereignMarkdownEditingExtensions.standard(),
+          extensions: FlarkMarkdownEditingExtensions.standard(),
         ),
       );
       addTearDown(controller.dispose);
@@ -925,7 +901,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
             autofocus: true,
@@ -942,11 +918,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(controller.markdown, '* item\n\n');
-      expect(controller.selection, const SovereignSelection.collapsed(8));
-      expect(
-        find.byKey(const Key('SovereignLiveBlockListMarker')),
-        findsOneWidget,
-      );
+      expect(controller.selection, const FlarkSelection.collapsed(8));
+      expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
       expect(find.byType(EditableText), findsNWidgets(3));
       final editors = tester
           .widgetList<EditableText>(find.byType(EditableText))
@@ -965,9 +938,9 @@ void main() {
   testWidgets('renders parser-omitted blank lines between live block widgets', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(
+    final controller = FlarkFlutterController.fromMarkdown(
       '* one\n\n\n* two',
-      extensions: SovereignMarkdownEditingExtensions.standard(),
+      extensions: FlarkMarkdownEditingExtensions.standard(),
     );
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
@@ -975,7 +948,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
@@ -983,10 +956,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(
-      find.byKey(const Key('SovereignLiveBlockListMarker')),
-      findsNWidgets(2),
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsNWidgets(2));
     final editors = tester
         .widgetList<EditableText>(find.byType(EditableText))
         .toList(growable: false);
@@ -999,13 +969,13 @@ void main() {
   testWidgets('adds repeated empty lines from parser-omitted live gap hosts', (
     tester,
   ) async {
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           '* item\n\n',
-          selection: const SovereignSelection.collapsed(8),
+          selection: const FlarkSelection.collapsed(8),
         ),
-        extensions: SovereignMarkdownEditingExtensions.standard(),
+        extensions: FlarkMarkdownEditingExtensions.standard(),
       ),
     );
     addTearDown(controller.dispose);
@@ -1014,7 +984,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
           autofocus: true,
@@ -1029,7 +999,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.markdown, '* item\n\n\n');
-    expect(controller.selection, const SovereignSelection.collapsed(9));
+    expect(controller.selection, const FlarkSelection.collapsed(9));
     expect(find.byType(EditableText), findsNWidgets(4));
     final editors = tester
         .widgetList<EditableText>(find.byType(EditableText))
@@ -1045,13 +1015,13 @@ void main() {
   testWidgets(
     'keeps typing in parser-omitted live blank lines source-visible',
     (tester) async {
-      final controller = SovereignFlutterController(
-        runtime: SovereignEditorRuntime(
-          state: SovereignEditorState.fromMarkdown(
+      final controller = FlarkFlutterController(
+        runtime: FlarkEditorRuntime(
+          state: FlarkEditorState.fromMarkdown(
             '* one\n\n\n* two',
-            selection: const SovereignSelection.collapsed(7),
+            selection: const FlarkSelection.collapsed(7),
           ),
-          extensions: SovereignMarkdownEditingExtensions.standard(),
+          extensions: FlarkMarkdownEditingExtensions.standard(),
         ),
       );
       addTearDown(controller.dispose);
@@ -1060,7 +1030,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
             autofocus: true,
@@ -1100,13 +1070,13 @@ void main() {
   testWidgets(
     'moves focus out of an empty final ordered list item after Enter',
     (tester) async {
-      final controller = SovereignFlutterController(
-        runtime: SovereignEditorRuntime(
-          state: SovereignEditorState.fromMarkdown(
+      final controller = FlarkFlutterController(
+        runtime: FlarkEditorRuntime(
+          state: FlarkEditorState.fromMarkdown(
             '1. item\n2. ',
-            selection: const SovereignSelection.collapsed(11),
+            selection: const FlarkSelection.collapsed(11),
           ),
-          extensions: SovereignMarkdownEditingExtensions.standard(),
+          extensions: FlarkMarkdownEditingExtensions.standard(),
         ),
       );
       addTearDown(controller.dispose);
@@ -1115,7 +1085,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
             autofocus: true,
@@ -1132,11 +1102,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(controller.markdown, '1. item\n\n');
-      expect(controller.selection, const SovereignSelection.collapsed(9));
-      expect(
-        find.byKey(const Key('SovereignLiveBlockListMarker')),
-        findsOneWidget,
-      );
+      expect(controller.selection, const FlarkSelection.collapsed(9));
+      expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
       expect(find.byType(EditableText), findsNWidgets(3));
       final editors = tester
           .widgetList<EditableText>(find.byType(EditableText))
@@ -1155,13 +1122,13 @@ void main() {
   testWidgets('moves focus out of an empty final task item after Enter', (
     tester,
   ) async {
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           '- [ ] item\n- [ ] ',
-          selection: const SovereignSelection.collapsed(17),
+          selection: const FlarkSelection.collapsed(17),
         ),
-        extensions: SovereignMarkdownEditingExtensions.standard(),
+        extensions: FlarkMarkdownEditingExtensions.standard(),
       ),
     );
     addTearDown(controller.dispose);
@@ -1170,7 +1137,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
           autofocus: true,
@@ -1187,11 +1154,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.markdown, '- [ ] item\n\n');
-    expect(controller.selection, const SovereignSelection.collapsed(12));
-    expect(
-      find.byKey(const Key('SovereignLiveBlockTaskCheckbox')),
-      findsOneWidget,
-    );
+    expect(controller.selection, const FlarkSelection.collapsed(12));
+    expect(find.byKey(const Key('FlarkLiveBlockTaskCheckbox')), findsOneWidget);
     expect(find.byType(EditableText), findsNWidgets(3));
     final editors = tester
         .widgetList<EditableText>(find.byType(EditableText))
@@ -1209,13 +1173,13 @@ void main() {
   testWidgets('select all delete clears hidden live list markers', (
     tester,
   ) async {
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           '* one\n* two',
-          selection: const SovereignSelection.collapsed(11),
+          selection: const FlarkSelection.collapsed(11),
         ),
-        extensions: SovereignMarkdownEditingExtensions.standard(),
+        extensions: FlarkMarkdownEditingExtensions.standard(),
       ),
     );
     addTearDown(controller.dispose);
@@ -1224,7 +1188,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
           autofocus: true,
@@ -1246,7 +1210,7 @@ void main() {
 
     expect(
       controller.selection,
-      const SovereignSelection(baseOffset: 0, extentOffset: 11),
+      const FlarkSelection(baseOffset: 0, extentOffset: 11),
     );
     final selectedEditors = tester
         .widgetList<EditableText>(editableFinder)
@@ -1267,28 +1231,28 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.markdown, isEmpty);
-    expect(controller.selection, const SovereignSelection.collapsed(0));
+    expect(controller.selection, const FlarkSelection.collapsed(0));
     expect(find.byType(EditableText), findsOneWidget);
     expect(
       tester.widget<EditableText>(editableFinder).controller.text,
       isEmpty,
     );
-    expect(find.byKey(const Key('SovereignLiveBlockListMarker')), findsNothing);
+    expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsNothing);
   });
 
   testWidgets('keeps focus while completing a bare star into a list marker', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(
+    final controller = FlarkFlutterController.fromMarkdown(
       '',
-      extensions: SovereignMarkdownEditingExtensions.standard(),
+      extensions: FlarkMarkdownEditingExtensions.standard(),
     );
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
@@ -1307,7 +1271,7 @@ void main() {
     await tester.enterText(editableFinder, '*');
     await tester.pump();
 
-    expect(find.byKey(const Key('SovereignLiveBlockListMarker')), findsNothing);
+    expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsNothing);
     var editable = tester.widget<EditableText>(find.byType(EditableText));
     expect(editable.controller.text, '*');
     expect(editable.focusNode.hasFocus, isTrue);
@@ -1317,10 +1281,7 @@ void main() {
     await _applyComrakParseResult(controller);
     await tester.pump();
 
-    expect(
-      find.byKey(const Key('SovereignLiveBlockListMarker')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
     editableFinder = find.byType(EditableText);
     editable = tester.widget<EditableText>(editableFinder);
     expect(editable.controller.text, isEmpty);
@@ -1337,9 +1298,9 @@ void main() {
   testWidgets('renders live ordered list marker beside editable item text', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(
+    final controller = FlarkFlutterController.fromMarkdown(
       '3. item',
-      extensions: SovereignMarkdownEditingExtensions.standard(),
+      extensions: FlarkMarkdownEditingExtensions.standard(),
     );
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
@@ -1347,7 +1308,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
@@ -1355,10 +1316,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(
-      find.byKey(const Key('SovereignLiveBlockListMarker')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
     expect(find.text('3.'), findsOneWidget);
     final editable = tester.widget<EditableText>(find.byType(EditableText));
     expect(editable.controller.text, 'item');
@@ -1367,7 +1325,7 @@ void main() {
   testWidgets('renders code fences and quotes as editable block widgets', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(_blockMarkdown);
+    final controller = FlarkFlutterController.fromMarkdown(_blockMarkdown);
     addTearDown(controller.dispose);
     expect(controller.applyParseResult(_blockParseResult(controller)), isTrue);
 
@@ -1380,7 +1338,7 @@ void main() {
               builder: (context) => SizedBox(
                 width: 320,
                 height: 240,
-                child: SovereignLiveRenderedEditableText(
+                child: FlarkLiveRenderedEditableText(
                   controller: controller,
                   style: const TextStyle(fontSize: 14, height: 1.4),
                   expands: true,
@@ -1396,14 +1354,8 @@ void main() {
     final codeEditable = tester.widget<EditableText>(_codeEditableFinder());
     expect(codeEditable.controller.text, 'print(1);');
     expect(codeEditable.textInputAction, TextInputAction.newline);
-    expect(
-      find.byKey(const Key('SovereignLiveBlockCodeFence')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('SovereignLiveBlockBlockquote')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsOneWidget);
+    expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsOneWidget);
 
     await tester.enterText(_codeEditableFinder(), 'print(2);');
     await tester.pump();
@@ -1427,7 +1379,7 @@ void main() {
     addTearDown(() {
       messenger.setMockMethodCallHandler(SystemChannels.platform, null);
     });
-    final controller = SovereignFlutterController.fromMarkdown(_blockMarkdown);
+    final controller = FlarkFlutterController.fromMarkdown(_blockMarkdown);
     addTearDown(controller.dispose);
     expect(controller.applyParseResult(_blockParseResult(controller)), isTrue);
 
@@ -1437,7 +1389,7 @@ void main() {
         child: SizedBox(
           width: 360,
           height: 240,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14, height: 1.4),
             expands: true,
@@ -1447,7 +1399,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.byKey(const Key('SovereignLiveBlockCodeCopyButton')));
+    await tester.tap(find.byKey(const Key('FlarkLiveBlockCodeCopyButton')));
     await tester.runAsync(() async {
       await Future<void>.delayed(Duration.zero);
     });
@@ -1462,7 +1414,7 @@ void main() {
   testWidgets('code fence language selector edits the opening fence info', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(_blockMarkdown);
+    final controller = FlarkFlutterController.fromMarkdown(_blockMarkdown);
     addTearDown(controller.dispose);
     expect(controller.applyParseResult(_blockParseResult(controller)), isTrue);
 
@@ -1472,14 +1424,14 @@ void main() {
         child: Overlay(
           initialEntries: [
             OverlayEntry(
-              builder: (context) => SovereignMarkdownInteractions(
+              builder: (context) => FlarkMarkdownInteractions(
                 controller: controller,
-                config: const SovereignMarkdownInteractionConfig(),
+                config: const FlarkMarkdownInteractionConfig(),
                 editable: true,
                 child: SizedBox(
                   width: 320,
                   height: 240,
-                  child: SovereignLiveRenderedEditableText(
+                  child: FlarkLiveRenderedEditableText(
                     controller: controller,
                     style: const TextStyle(fontSize: 14, height: 1.4),
                     expands: true,
@@ -1494,34 +1446,32 @@ void main() {
     );
 
     expect(
-      find.byKey(const Key('SovereignLiveBlockCodeLanguageButton')),
+      find.byKey(const Key('FlarkLiveBlockCodeLanguageButton')),
       findsOneWidget,
     );
     final buttonRect = tester.getRect(
-      find.byKey(const Key('SovereignLiveBlockCodeLanguageButton')),
+      find.byKey(const Key('FlarkLiveBlockCodeLanguageButton')),
     );
     final fenceRect = tester.getRect(
-      find.byKey(const Key('SovereignLiveBlockCodeFence')),
+      find.byKey(const Key('FlarkLiveBlockCodeFence')),
     );
     final codeRect = tester.getRect(_codeEditableFinder());
     expect(buttonRect.center.dx, greaterThan(fenceRect.center.dx));
     expect(buttonRect.top, lessThan(fenceRect.top + 14));
     expect(codeRect.right, lessThan(buttonRect.left));
 
-    await tester.tap(
-      find.byKey(const Key('SovereignLiveBlockCodeLanguageButton')),
-    );
+    await tester.tap(find.byKey(const Key('FlarkLiveBlockCodeLanguageButton')));
     await tester.pump();
 
     expect(
-      find.byKey(const Key('SovereignLiveBlockCodeLanguageMenu')),
+      find.byKey(const Key('FlarkLiveBlockCodeLanguageMenu')),
       findsOneWidget,
     );
     final openFenceRect = tester.getRect(
-      find.byKey(const Key('SovereignLiveBlockCodeFence')),
+      find.byKey(const Key('FlarkLiveBlockCodeFence')),
     );
     final menuRect = tester.getRect(
-      find.byKey(const Key('SovereignLiveBlockCodeLanguageMenu')),
+      find.byKey(const Key('FlarkLiveBlockCodeLanguageMenu')),
     );
     expect(openFenceRect.height, fenceRect.height);
     expect(menuRect.top, lessThan(openFenceRect.bottom));
@@ -1529,7 +1479,7 @@ void main() {
     expect(menuRect.right, moreOrLessEquals(buttonRect.right, epsilon: 1));
 
     await tester.tap(
-      find.byKey(const ValueKey('SovereignLiveBlockCodeLanguageOption:rust')),
+      find.byKey(const ValueKey('FlarkLiveBlockCodeLanguageOption:rust')),
     );
     await tester.pump();
 
@@ -1540,7 +1490,7 @@ void main() {
   testWidgets('undoes and redoes code fence language selections', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(_blockMarkdown);
+    final controller = FlarkFlutterController.fromMarkdown(_blockMarkdown);
     addTearDown(controller.dispose);
     expect(controller.applyParseResult(_blockParseResult(controller)), isTrue);
 
@@ -1550,14 +1500,14 @@ void main() {
         child: Overlay(
           initialEntries: [
             OverlayEntry(
-              builder: (context) => SovereignMarkdownInteractions(
+              builder: (context) => FlarkMarkdownInteractions(
                 controller: controller,
-                config: const SovereignMarkdownInteractionConfig(),
+                config: const FlarkMarkdownInteractionConfig(),
                 editable: true,
                 child: SizedBox(
                   width: 320,
                   height: 240,
-                  child: SovereignLiveRenderedEditableText(
+                  child: FlarkLiveRenderedEditableText(
                     controller: controller,
                     style: const TextStyle(fontSize: 14, height: 1.4),
                     expands: true,
@@ -1571,12 +1521,10 @@ void main() {
       ),
     );
 
-    await tester.tap(
-      find.byKey(const Key('SovereignLiveBlockCodeLanguageButton')),
-    );
+    await tester.tap(find.byKey(const Key('FlarkLiveBlockCodeLanguageButton')));
     await tester.pump();
     await tester.tap(
-      find.byKey(const ValueKey('SovereignLiveBlockCodeLanguageOption:rust')),
+      find.byKey(const ValueKey('FlarkLiveBlockCodeLanguageOption:rust')),
     );
     await tester.pump();
 
@@ -1594,9 +1542,7 @@ void main() {
   testWidgets(
     'keeps code body as the active text input after language changes',
     (tester) async {
-      final controller = SovereignFlutterController.fromMarkdown(
-        _blockMarkdown,
-      );
+      final controller = FlarkFlutterController.fromMarkdown(_blockMarkdown);
       addTearDown(controller.dispose);
       expect(
         controller.applyParseResult(_blockParseResult(controller)),
@@ -1609,14 +1555,14 @@ void main() {
           child: Overlay(
             initialEntries: [
               OverlayEntry(
-                builder: (context) => SovereignMarkdownInteractions(
+                builder: (context) => FlarkMarkdownInteractions(
                   controller: controller,
-                  config: const SovereignMarkdownInteractionConfig(),
+                  config: const FlarkMarkdownInteractionConfig(),
                   editable: true,
                   child: SizedBox(
                     width: 320,
                     height: 240,
-                    child: SovereignLiveRenderedEditableText(
+                    child: FlarkLiveRenderedEditableText(
                       controller: controller,
                       style: const TextStyle(fontSize: 14, height: 1.4),
                       expands: true,
@@ -1635,11 +1581,11 @@ void main() {
       await tester.pump();
 
       await tester.tap(
-        find.byKey(const Key('SovereignLiveBlockCodeLanguageButton')),
+        find.byKey(const Key('FlarkLiveBlockCodeLanguageButton')),
       );
       await tester.pump();
       await tester.tap(
-        find.byKey(const ValueKey('SovereignLiveBlockCodeLanguageOption:rust')),
+        find.byKey(const ValueKey('FlarkLiveBlockCodeLanguageOption:rust')),
       );
       await tester.pump();
       await tester.pump();
@@ -1660,9 +1606,7 @@ void main() {
   testWidgets(
     'focuses the code body when dismissing the language menu into it',
     (tester) async {
-      final controller = SovereignFlutterController.fromMarkdown(
-        _blockMarkdown,
-      );
+      final controller = FlarkFlutterController.fromMarkdown(_blockMarkdown);
       addTearDown(controller.dispose);
       expect(
         controller.applyParseResult(_blockParseResult(controller)),
@@ -1675,14 +1619,14 @@ void main() {
           child: Overlay(
             initialEntries: [
               OverlayEntry(
-                builder: (context) => SovereignMarkdownInteractions(
+                builder: (context) => FlarkMarkdownInteractions(
                   controller: controller,
-                  config: const SovereignMarkdownInteractionConfig(),
+                  config: const FlarkMarkdownInteractionConfig(),
                   editable: true,
                   child: SizedBox(
                     width: 320,
                     height: 240,
-                    child: SovereignLiveRenderedEditableText(
+                    child: FlarkLiveRenderedEditableText(
                       controller: controller,
                       style: const TextStyle(fontSize: 14, height: 1.4),
                       expands: true,
@@ -1702,11 +1646,11 @@ void main() {
       );
 
       await tester.tap(
-        find.byKey(const Key('SovereignLiveBlockCodeLanguageButton')),
+        find.byKey(const Key('FlarkLiveBlockCodeLanguageButton')),
       );
       await tester.pump();
       expect(
-        find.byKey(const Key('SovereignLiveBlockCodeLanguageMenu')),
+        find.byKey(const Key('FlarkLiveBlockCodeLanguageMenu')),
         findsOneWidget,
       );
 
@@ -1714,7 +1658,7 @@ void main() {
       await tester.pump();
 
       expect(
-        find.byKey(const Key('SovereignLiveBlockCodeLanguageMenu')),
+        find.byKey(const Key('FlarkLiveBlockCodeLanguageMenu')),
         findsNothing,
       );
       expect(
@@ -1733,13 +1677,13 @@ void main() {
     'keeps a manually typed code fence opener source-visible as plain editing',
     (tester) async {
       const markdown = '```fffffff';
-      final controller = SovereignFlutterController(
-        runtime: SovereignEditorRuntime(
-          state: SovereignEditorState.fromMarkdown(
+      final controller = FlarkFlutterController(
+        runtime: FlarkEditorRuntime(
+          state: FlarkEditorState.fromMarkdown(
             markdown,
-            selection: const SovereignSelection.collapsed(markdown.length),
+            selection: const FlarkSelection.collapsed(markdown.length),
           ),
-          extensions: SovereignMarkdownEditingExtensions.standard(),
+          extensions: FlarkMarkdownEditingExtensions.standard(),
         ),
       );
       addTearDown(controller.dispose);
@@ -1753,11 +1697,11 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SovereignMarkdownInteractions(
+          child: FlarkMarkdownInteractions(
             controller: controller,
-            config: const SovereignMarkdownInteractionConfig(),
+            config: const FlarkMarkdownInteractionConfig(),
             editable: true,
-            child: SovereignLiveRenderedEditableText(
+            child: FlarkLiveRenderedEditableText(
               controller: controller,
               style: const TextStyle(fontSize: 14, height: 1.4),
               autofocus: true,
@@ -1767,13 +1711,10 @@ void main() {
       );
       await tester.pump();
 
-      expect(
-        find.byKey(const Key('SovereignLiveBlockCodeFence')),
-        findsNothing,
-      );
+      expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsNothing);
       final editable = tester.widget<EditableText>(
         find.descendant(
-          of: find.byKey(const Key('SovereignLiveBlockCodeOpeningEditable')),
+          of: find.byKey(const Key('FlarkLiveBlockCodeOpeningEditable')),
           matching: find.byType(EditableText),
         ),
       );
@@ -1783,7 +1724,7 @@ void main() {
         const TextSelection.collapsed(offset: markdown.length),
       );
       expect(
-        find.byKey(const Key('SovereignLiveBlockCodeLanguageButton')),
+        find.byKey(const Key('FlarkLiveBlockCodeLanguageButton')),
         findsNothing,
       );
     },
@@ -1793,13 +1734,13 @@ void main() {
     tester,
   ) async {
     const markdown = '```dart\n';
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           markdown,
-          selection: const SovereignSelection.collapsed(markdown.length),
+          selection: const FlarkSelection.collapsed(markdown.length),
         ),
-        extensions: SovereignMarkdownEditingExtensions.standard(),
+        extensions: FlarkMarkdownEditingExtensions.standard(),
       ),
     );
     addTearDown(controller.dispose);
@@ -1813,11 +1754,11 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignMarkdownInteractions(
+        child: FlarkMarkdownInteractions(
           controller: controller,
-          config: const SovereignMarkdownInteractionConfig(),
+          config: const FlarkMarkdownInteractionConfig(),
           editable: true,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14, height: 1.4),
             autofocus: true,
@@ -1827,12 +1768,9 @@ void main() {
     );
     await tester.pump();
 
+    expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsOneWidget);
     expect(
-      find.byKey(const Key('SovereignLiveBlockCodeFence')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('SovereignLiveBlockCodeOpeningEditable')),
+      find.byKey(const Key('FlarkLiveBlockCodeOpeningEditable')),
       findsNothing,
     );
     final editable = tester.widget<EditableText>(_codeEditableFinder());
@@ -1844,13 +1782,13 @@ void main() {
     'Backspace removes an empty live code fence instead of exposing markers',
     (tester) async {
       const markdown = '```\n';
-      final controller = SovereignFlutterController(
-        runtime: SovereignEditorRuntime(
-          state: SovereignEditorState.fromMarkdown(
+      final controller = FlarkFlutterController(
+        runtime: FlarkEditorRuntime(
+          state: FlarkEditorState.fromMarkdown(
             markdown,
-            selection: const SovereignSelection.collapsed(markdown.length),
+            selection: const FlarkSelection.collapsed(markdown.length),
           ),
-          extensions: SovereignMarkdownEditingExtensions.standard(),
+          extensions: FlarkMarkdownEditingExtensions.standard(),
         ),
       );
       addTearDown(controller.dispose);
@@ -1870,7 +1808,7 @@ void main() {
                 builder: (context) => SizedBox(
                   width: 320,
                   height: 180,
-                  child: SovereignLiveRenderedEditableText(
+                  child: FlarkLiveRenderedEditableText(
                     controller: controller,
                     style: const TextStyle(fontSize: 14, height: 1.4),
                     expands: true,
@@ -1883,20 +1821,14 @@ void main() {
         ),
       );
 
-      expect(
-        find.byKey(const Key('SovereignLiveBlockCodeFence')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsOneWidget);
       await tester.showKeyboard(_codeEditableFinder());
       await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
       await tester.pump();
 
       expect(controller.markdown, isEmpty);
-      expect(controller.selection, const SovereignSelection.collapsed(0));
-      expect(
-        find.byKey(const Key('SovereignLiveBlockCodeFence')),
-        findsNothing,
-      );
+      expect(controller.selection, const FlarkSelection.collapsed(0));
+      expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsNothing);
       expect(find.text('```'), findsNothing);
     },
   );
@@ -1905,7 +1837,7 @@ void main() {
     'Backspace after a terminal live code fence moves into the fence',
     (tester) async {
       const markdown = '```dart\nfoo\n```';
-      final controller = SovereignFlutterController.fromMarkdown(markdown);
+      final controller = FlarkFlutterController.fromMarkdown(markdown);
       addTearDown(controller.dispose);
       await _applyComrakParseResult(controller);
 
@@ -1919,7 +1851,7 @@ void main() {
                   builder: (context) => SizedBox(
                     width: 320,
                     height: 240,
-                    child: SovereignLiveRenderedEditableText(
+                    child: FlarkLiveRenderedEditableText(
                       controller: controller,
                       style: const TextStyle(fontSize: 14, height: 1.4),
                       expands: true,
@@ -1944,14 +1876,14 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      expect(controller.selection, const SovereignSelection.collapsed(15));
+      expect(controller.selection, const FlarkSelection.collapsed(15));
 
       await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
       await tester.pump();
       await tester.pump();
 
       expect(controller.markdown, markdown);
-      expect(controller.selection, const SovereignSelection.collapsed(11));
+      expect(controller.selection, const FlarkSelection.collapsed(11));
       expect(
         tester.widget<EditableText>(_codeEditableFinder()).controller.text,
         'foo',
@@ -1968,7 +1900,7 @@ void main() {
     'Backspace from following live text enters a code fence without markers',
     (tester) async {
       const markdown = '```dart\nfoo\n```\nafter';
-      final controller = SovereignFlutterController.fromMarkdown(markdown);
+      final controller = FlarkFlutterController.fromMarkdown(markdown);
       addTearDown(controller.dispose);
       await _applyComrakParseResult(controller);
 
@@ -1982,7 +1914,7 @@ void main() {
                   builder: (context) => SizedBox(
                     width: 320,
                     height: 240,
-                    child: SovereignLiveRenderedEditableText(
+                    child: FlarkLiveRenderedEditableText(
                       controller: controller,
                       style: const TextStyle(fontSize: 14, height: 1.4),
                       expands: true,
@@ -2010,7 +1942,7 @@ void main() {
       await tester.pump();
 
       expect(controller.markdown, markdown);
-      expect(controller.selection, const SovereignSelection.collapsed(11));
+      expect(controller.selection, const FlarkSelection.collapsed(11));
       expect(
         tester.widget<EditableText>(_codeEditableFinder()).controller.text,
         'foo',
@@ -2027,7 +1959,7 @@ void main() {
     tester,
   ) async {
     const markdown = '```dart\nfinal value = 1;\n```';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     expect(
       controller.applyParseResult(_codeOnlyParseResult(controller)),
@@ -2040,7 +1972,7 @@ void main() {
         child: SizedBox(
           width: 320,
           height: 160,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(
               color: Color(0xFF17202A),
@@ -2065,7 +1997,7 @@ void main() {
     tester,
   ) async {
     const markdown = '```\n{"name":"Ada","count":2}\n```';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     expect(
       controller.applyParseResult(_codeOnlyParseResult(controller)),
@@ -2078,7 +2010,7 @@ void main() {
         child: SizedBox(
           width: 320,
           height: 160,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(
               color: Color(0xFF17202A),
@@ -2104,7 +2036,7 @@ void main() {
     tester,
   ) async {
     const markdown = '```\nfoo\n```';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     expect(
       controller.applyParseResult(_codeOnlyParseResult(controller)),
@@ -2117,7 +2049,7 @@ void main() {
         child: SizedBox(
           width: 320,
           height: 160,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(
               color: Color(0xFF17202A),
@@ -2142,7 +2074,7 @@ void main() {
     tester,
   ) async {
     const markdown = '```text\n{"name":"Ada","count":2}\n```';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     expect(
       controller.applyParseResult(_codeOnlyParseResult(controller)),
@@ -2155,7 +2087,7 @@ void main() {
         child: SizedBox(
           width: 320,
           height: 160,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(
               color: Color(0xFF17202A),
@@ -2177,7 +2109,7 @@ void main() {
   });
 
   testWidgets('indents live code blocks with Tab', (tester) async {
-    final controller = SovereignFlutterController.fromMarkdown(_blockMarkdown);
+    final controller = FlarkFlutterController.fromMarkdown(_blockMarkdown);
     addTearDown(controller.dispose);
     expect(controller.applyParseResult(_blockParseResult(controller)), isTrue);
 
@@ -2190,7 +2122,7 @@ void main() {
               builder: (context) => SizedBox(
                 width: 320,
                 height: 240,
-                child: SovereignLiveRenderedEditableText(
+                child: FlarkLiveRenderedEditableText(
                   controller: controller,
                   style: const TextStyle(fontSize: 14, height: 1.4),
                   expands: true,
@@ -2205,7 +2137,7 @@ void main() {
 
     final codeEditable = _codeEditableFinder();
     await tester.tap(codeEditable);
-    controller.applySelection(const SovereignSelection.collapsed(8));
+    controller.applySelection(const FlarkSelection.collapsed(8));
     await tester.pump();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
@@ -2218,7 +2150,7 @@ void main() {
     tester,
   ) async {
     const markdown = '```dart\nprint(1);\nprint(2);\n```';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     expect(
       controller.applyParseResult(_codeOnlyParseResult(controller)),
@@ -2234,7 +2166,7 @@ void main() {
               builder: (context) => SizedBox(
                 width: 320,
                 height: 180,
-                child: SovereignLiveRenderedEditableText(
+                child: FlarkLiveRenderedEditableText(
                   controller: controller,
                   style: const TextStyle(fontSize: 14, height: 1.4),
                   expands: true,
@@ -2250,7 +2182,7 @@ void main() {
     final codeEditable = _codeEditableFinder();
     await tester.tap(codeEditable);
     controller.applySelection(
-      const SovereignSelection(baseOffset: 8, extentOffset: 27),
+      const FlarkSelection(baseOffset: 8, extentOffset: 27),
     );
     await tester.pump();
 
@@ -2264,7 +2196,7 @@ void main() {
     tester,
   ) async {
     const markdown = '```dart\n  foo\n```';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     expect(
       controller.applyParseResult(_codeOnlyParseResult(controller)),
@@ -2280,7 +2212,7 @@ void main() {
               builder: (context) => SizedBox(
                 width: 320,
                 height: 180,
-                child: SovereignLiveRenderedEditableText(
+                child: FlarkLiveRenderedEditableText(
                   controller: controller,
                   style: const TextStyle(fontSize: 14, height: 1.4),
                   expands: true,
@@ -2295,7 +2227,7 @@ void main() {
 
     final codeEditable = _codeEditableFinder();
     await tester.tap(codeEditable);
-    controller.applySelection(const SovereignSelection.collapsed(13));
+    controller.applySelection(const FlarkSelection.collapsed(13));
     await tester.pump();
     final codeHeightBeforeEnter = tester.getRect(codeEditable).height;
 
@@ -2303,7 +2235,7 @@ void main() {
     await tester.pump();
 
     expect(controller.markdown, '```dart\n  foo\n  \n```');
-    expect(controller.selection, const SovereignSelection.collapsed(16));
+    expect(controller.selection, const FlarkSelection.collapsed(16));
     final codeEditableAfterEnter = tester.widget<EditableText>(
       _codeEditableFinder(),
     );
@@ -2318,7 +2250,7 @@ void main() {
     tester,
   ) async {
     const markdown = '```dart\nfoo';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     expect(
       controller.applyParseResult(
@@ -2336,7 +2268,7 @@ void main() {
               builder: (context) => SizedBox(
                 width: 320,
                 height: 180,
-                child: SovereignLiveRenderedEditableText(
+                child: FlarkLiveRenderedEditableText(
                   controller: controller,
                   style: const TextStyle(fontSize: 14, height: 1.4),
                   expands: true,
@@ -2351,7 +2283,7 @@ void main() {
 
     final codeEditable = _codeEditableFinder();
     await tester.tap(codeEditable);
-    controller.applySelection(const SovereignSelection.collapsed(11));
+    controller.applySelection(const FlarkSelection.collapsed(11));
     await tester.pump();
     final codeHeightBeforeEnter = tester.getRect(codeEditable).height;
 
@@ -2359,7 +2291,7 @@ void main() {
     await tester.pump();
 
     expect(controller.markdown, '```dart\nfoo\n');
-    expect(controller.selection, const SovereignSelection.collapsed(12));
+    expect(controller.selection, const FlarkSelection.collapsed(12));
     final codeEditableAfterEnter = tester.widget<EditableText>(
       _codeEditableFinder(),
     );
@@ -2374,7 +2306,7 @@ void main() {
     'keeps an empty code line visible after Enter in an empty fence',
     (tester) async {
       const markdown = '```dart\n```';
-      final controller = SovereignFlutterController.fromMarkdown(markdown);
+      final controller = FlarkFlutterController.fromMarkdown(markdown);
       addTearDown(controller.dispose);
       expect(
         controller.applyParseResult(_codeOnlyParseResult(controller)),
@@ -2390,7 +2322,7 @@ void main() {
                 builder: (context) => SizedBox(
                   width: 320,
                   height: 180,
-                  child: SovereignLiveRenderedEditableText(
+                  child: FlarkLiveRenderedEditableText(
                     controller: controller,
                     style: const TextStyle(fontSize: 14, height: 1.4),
                     expands: true,
@@ -2405,7 +2337,7 @@ void main() {
 
       final codeEditable = _codeEditableFinder();
       await tester.tap(codeEditable);
-      controller.applySelection(const SovereignSelection.collapsed(8));
+      controller.applySelection(const FlarkSelection.collapsed(8));
       await tester.pump();
       final codeHeightBeforeEnter = tester.getRect(codeEditable).height;
 
@@ -2413,7 +2345,7 @@ void main() {
       await tester.pump();
 
       expect(controller.markdown, '```dart\n\n```');
-      expect(controller.selection, const SovereignSelection.collapsed(9));
+      expect(controller.selection, const FlarkSelection.collapsed(9));
       final codeEditableAfterEnter = tester.widget<EditableText>(
         _codeEditableFinder(),
       );
@@ -2429,7 +2361,7 @@ void main() {
     tester,
   ) async {
     const markdown = '```dart\n  \n```';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     expect(
       controller.applyParseResult(_codeOnlyParseResult(controller)),
@@ -2445,7 +2377,7 @@ void main() {
               builder: (context) => SizedBox(
                 width: 320,
                 height: 180,
-                child: SovereignLiveRenderedEditableText(
+                child: FlarkLiveRenderedEditableText(
                   controller: controller,
                   style: const TextStyle(fontSize: 14, height: 1.4),
                   expands: true,
@@ -2460,7 +2392,7 @@ void main() {
 
     final codeEditable = _codeEditableFinder();
     await tester.tap(codeEditable);
-    controller.applySelection(const SovereignSelection.collapsed(10));
+    controller.applySelection(const FlarkSelection.collapsed(10));
     await tester.pump();
 
     await tester.enterText(codeEditable, '  if (x) {\nprint(1);\n}');
@@ -2470,7 +2402,7 @@ void main() {
     expect(controller.markdown, expected);
     expect(
       controller.selection,
-      SovereignSelection.collapsed(expected.indexOf('\n```')),
+      FlarkSelection.collapsed(expected.indexOf('\n```')),
     );
     final codeEditableAfterPaste = tester.widget<EditableText>(
       _codeEditableFinder(),
@@ -2485,7 +2417,7 @@ void main() {
     tester,
   ) async {
     const markdown = '```dart\nprint(1);\n```';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     expect(
       controller.applyParseResult(_codeOnlyParseResult(controller)),
@@ -2501,7 +2433,7 @@ void main() {
               builder: (context) => SizedBox(
                 width: 320,
                 height: 180,
-                child: SovereignLiveRenderedEditableText(
+                child: FlarkLiveRenderedEditableText(
                   controller: controller,
                   style: const TextStyle(fontSize: 14, height: 1.4),
                   expands: true,
@@ -2551,7 +2483,7 @@ void main() {
     tester,
   ) async {
     const markdown = 'before\n```dart\nfirst\nsecond\n```\nafter';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
 
@@ -2565,7 +2497,7 @@ void main() {
                 builder: (context) => SizedBox(
                   width: 320,
                   height: 240,
-                  child: SovereignLiveRenderedEditableText(
+                  child: FlarkLiveRenderedEditableText(
                     controller: controller,
                     style: const TextStyle(fontSize: 14, height: 1.4),
                     expands: true,
@@ -2583,7 +2515,7 @@ void main() {
     await tester.tap(codeEditableFinder);
     await tester.showKeyboard(codeEditableFinder);
     final bodyStart = markdown.indexOf('first');
-    controller.applySelection(SovereignSelection.collapsed(bodyStart));
+    controller.applySelection(FlarkSelection.collapsed(bodyStart));
     await tester.pump();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
@@ -2600,7 +2532,7 @@ void main() {
     await tester.tap(codeEditableFinder);
     await tester.pump();
     final bodyEnd = markdown.indexOf('\n```');
-    controller.applySelection(SovereignSelection.collapsed(bodyEnd));
+    controller.applySelection(FlarkSelection.collapsed(bodyEnd));
     await tester.pump();
     await tester.pump();
     await tester.showKeyboard(codeEditableFinder);
@@ -2622,7 +2554,7 @@ void main() {
     tester,
   ) async {
     const markdown = '```dart\nfoo\n```';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
 
@@ -2636,7 +2568,7 @@ void main() {
                 builder: (context) => SizedBox(
                   width: 320,
                   height: 240,
-                  child: SovereignLiveRenderedEditableText(
+                  child: FlarkLiveRenderedEditableText(
                     controller: controller,
                     style: const TextStyle(fontSize: 14, height: 1.4),
                     expands: true,
@@ -2654,7 +2586,7 @@ void main() {
     await tester.tap(codeEditableFinder);
     await tester.showKeyboard(codeEditableFinder);
     final bodyEnd = markdown.indexOf('\n```');
-    controller.applySelection(SovereignSelection.collapsed(bodyEnd));
+    controller.applySelection(FlarkSelection.collapsed(bodyEnd));
     await tester.pump();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
@@ -2665,7 +2597,7 @@ void main() {
       tester.widget<EditableText>(codeEditableFinder).focusNode.hasFocus,
       isFalse,
     );
-    expect(controller.selection, const SovereignSelection.collapsed(15));
+    expect(controller.selection, const FlarkSelection.collapsed(15));
     expect(
       tester
           .widgetList<EditableText>(find.byType(EditableText))
@@ -2686,7 +2618,7 @@ void main() {
     tester,
   ) async {
     const markdown = '```dart\nfoo\n```';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
 
@@ -2699,7 +2631,7 @@ void main() {
               builder: (context) => SizedBox(
                 width: 320,
                 height: 240,
-                child: SovereignLiveRenderedEditableText(
+                child: FlarkLiveRenderedEditableText(
                   controller: controller,
                   style: const TextStyle(fontSize: 14, height: 1.4),
                   expands: true,
@@ -2713,13 +2645,13 @@ void main() {
     );
 
     final fenceRect = tester.getRect(
-      find.byKey(const Key('SovereignLiveBlockCodeFence')),
+      find.byKey(const Key('FlarkLiveBlockCodeFence')),
     );
     await tester.tapAt(fenceRect.bottomLeft + const Offset(8, 24));
     await tester.pump();
     await tester.pump();
 
-    expect(controller.selection, const SovereignSelection.collapsed(15));
+    expect(controller.selection, const FlarkSelection.collapsed(15));
     final focused = tester
         .widgetList<EditableText>(find.byType(EditableText))
         .where((editable) => editable.focusNode.hasFocus)
@@ -2737,7 +2669,7 @@ void main() {
     'typing below a terminal live code fence preserves focus per keystroke',
     (tester) async {
       const markdown = '```dart\nfoo\n```';
-      final controller = SovereignFlutterController.fromMarkdown(markdown);
+      final controller = FlarkFlutterController.fromMarkdown(markdown);
       addTearDown(controller.dispose);
       await _applyComrakParseResult(controller);
 
@@ -2750,7 +2682,7 @@ void main() {
                 builder: (context) => SizedBox(
                   width: 320,
                   height: 240,
-                  child: SovereignLiveRenderedEditableText(
+                  child: FlarkLiveRenderedEditableText(
                     controller: controller,
                     style: const TextStyle(fontSize: 14, height: 1.4),
                     expands: true,
@@ -2764,7 +2696,7 @@ void main() {
       );
 
       final fenceRect = tester.getRect(
-        find.byKey(const Key('SovereignLiveBlockCodeFence')),
+        find.byKey(const Key('FlarkLiveBlockCodeFence')),
       );
       await tester.tapAt(fenceRect.bottomLeft + const Offset(8, 24));
       await tester.pump();
@@ -2809,7 +2741,7 @@ void main() {
     'typing after blank lines below a terminal live code fence keeps caret on latest line',
     (tester) async {
       const markdown = '```dart\nfoo\n```';
-      final controller = SovereignFlutterController.fromMarkdown(markdown);
+      final controller = FlarkFlutterController.fromMarkdown(markdown);
       addTearDown(controller.dispose);
       await _applyComrakParseResult(controller);
 
@@ -2822,7 +2754,7 @@ void main() {
                 builder: (context) => SizedBox(
                   width: 320,
                   height: 240,
-                  child: SovereignLiveRenderedEditableText(
+                  child: FlarkLiveRenderedEditableText(
                     controller: controller,
                     style: const TextStyle(fontSize: 14, height: 1.4),
                     expands: true,
@@ -2836,7 +2768,7 @@ void main() {
       );
 
       final fenceRect = tester.getRect(
-        find.byKey(const Key('SovereignLiveBlockCodeFence')),
+        find.byKey(const Key('FlarkLiveBlockCodeFence')),
       );
       await tester.tapAt(fenceRect.bottomLeft + const Offset(8, 24));
       await tester.pump();
@@ -2851,7 +2783,7 @@ void main() {
         expect(controller.markdown, '```dart\nfoo\n```$blankLines');
         expect(
           controller.selection,
-          SovereignSelection.collapsed(15 + blankLineCount),
+          FlarkSelection.collapsed(15 + blankLineCount),
         );
         final focused = tester
             .widgetList<EditableText>(find.byType(EditableText))
@@ -2865,7 +2797,7 @@ void main() {
       await tester.pump();
 
       expect(controller.markdown, '```dart\nfoo\n```\n\n\n\nx');
-      expect(controller.selection, const SovereignSelection.collapsed(20));
+      expect(controller.selection, const FlarkSelection.collapsed(20));
       final focused = tester
           .widgetList<EditableText>(find.byType(EditableText))
           .singleWhere((editable) => editable.focusNode.hasFocus);
@@ -2896,7 +2828,7 @@ void main() {
       await tester.pump();
 
       expect(controller.markdown, '```dart\nfoo\n```\n\n\n\nxyz');
-      expect(controller.selection, const SovereignSelection.collapsed(22));
+      expect(controller.selection, const FlarkSelection.collapsed(22));
       final syntheticFastTypedFocused = tester
           .widgetList<EditableText>(find.byType(EditableText))
           .singleWhere((editable) => editable.focusNode.hasFocus);
@@ -2911,7 +2843,7 @@ void main() {
       await tester.pump();
 
       expect(controller.markdown, '```dart\nfoo\n```\n\n\n\nxyz');
-      expect(controller.selection, const SovereignSelection.collapsed(22));
+      expect(controller.selection, const FlarkSelection.collapsed(22));
       final reconciledFocused = tester
           .widgetList<EditableText>(find.byType(EditableText))
           .singleWhere((editable) => editable.focusNode.hasFocus);
@@ -2933,7 +2865,7 @@ void main() {
       await tester.pump();
 
       expect(controller.markdown, '```dart\nfoo\n```\n\n\n\nxyzw');
-      expect(controller.selection, const SovereignSelection.collapsed(23));
+      expect(controller.selection, const FlarkSelection.collapsed(23));
       final fastTypedFocused = tester
           .widgetList<EditableText>(find.byType(EditableText))
           .singleWhere((editable) => editable.focusNode.hasFocus);
@@ -2949,7 +2881,7 @@ void main() {
     'typing after blank lines from a live code fence exit keeps caret on latest line',
     (tester) async {
       const markdown = '```dart\nfoo\n\n```';
-      final controller = SovereignFlutterController.fromMarkdown(markdown);
+      final controller = FlarkFlutterController.fromMarkdown(markdown);
       addTearDown(controller.dispose);
       await _applyComrakParseResult(controller);
 
@@ -2962,7 +2894,7 @@ void main() {
                 builder: (context) => SizedBox(
                   width: 320,
                   height: 260,
-                  child: SovereignLiveRenderedEditableText(
+                  child: FlarkLiveRenderedEditableText(
                     controller: controller,
                     style: const TextStyle(fontSize: 14, height: 1.4),
                     expands: true,
@@ -2978,7 +2910,7 @@ void main() {
       final codeEditable = _codeEditableFinder();
       await tester.tap(codeEditable);
       await tester.showKeyboard(codeEditable);
-      controller.applySelection(const SovereignSelection.collapsed(12));
+      controller.applySelection(const FlarkSelection.collapsed(12));
       await tester.pump();
 
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -2986,7 +2918,7 @@ void main() {
       await tester.pump();
 
       expect(controller.markdown, '```dart\nfoo\n```\n');
-      expect(controller.selection, const SovereignSelection.collapsed(16));
+      expect(controller.selection, const FlarkSelection.collapsed(16));
 
       for (var blankLineCount = 2; blankLineCount <= 4; blankLineCount++) {
         await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -2997,7 +2929,7 @@ void main() {
         expect(controller.markdown, '```dart\nfoo\n```$blankLines');
         expect(
           controller.selection,
-          SovereignSelection.collapsed(15 + blankLineCount),
+          FlarkSelection.collapsed(15 + blankLineCount),
         );
         final focused = tester
             .widgetList<EditableText>(find.byType(EditableText))
@@ -3011,7 +2943,7 @@ void main() {
       await tester.pump();
 
       expect(controller.markdown, '```dart\nfoo\n```\n\n\n\nx');
-      expect(controller.selection, const SovereignSelection.collapsed(20));
+      expect(controller.selection, const FlarkSelection.collapsed(20));
       final focused = tester
           .widgetList<EditableText>(find.byType(EditableText))
           .singleWhere((editable) => editable.focusNode.hasFocus);
@@ -3026,7 +2958,7 @@ void main() {
       await tester.pump();
 
       expect(controller.markdown, '```dart\nfoo\n```\n\n\n\nx');
-      expect(controller.selection, const SovereignSelection.collapsed(20));
+      expect(controller.selection, const FlarkSelection.collapsed(20));
       final reconciledFocused = tester
           .widgetList<EditableText>(find.byType(EditableText))
           .singleWhere((editable) => editable.focusNode.hasFocus);
@@ -3042,7 +2974,7 @@ void main() {
     tester,
   ) async {
     const markdown = '- item';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
 
@@ -3055,7 +2987,7 @@ void main() {
               builder: (context) => SizedBox(
                 width: 320,
                 height: 200,
-                child: SovereignLiveRenderedEditableText(
+                child: FlarkLiveRenderedEditableText(
                   controller: controller,
                   style: const TextStyle(fontSize: 14, height: 1.4),
                   expands: true,
@@ -3069,13 +3001,13 @@ void main() {
     );
 
     final listMarkerRect = tester.getRect(
-      find.byKey(const Key('SovereignLiveBlockListMarker')),
+      find.byKey(const Key('FlarkLiveBlockListMarker')),
     );
     await tester.tapAt(listMarkerRect.bottomLeft + const Offset(8, 28));
     await tester.pump();
     await tester.pump();
 
-    expect(controller.selection, const SovereignSelection.collapsed(6));
+    expect(controller.selection, const FlarkSelection.collapsed(6));
     final focused = tester
         .widgetList<EditableText>(find.byType(EditableText))
         .where((editable) => editable.focusNode.hasFocus)
@@ -3093,7 +3025,7 @@ void main() {
     tester,
   ) async {
     const markdown = '```dart\nfoo\n```\nafter';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
 
@@ -3107,7 +3039,7 @@ void main() {
                 builder: (context) => SizedBox(
                   width: 320,
                   height: 240,
-                  child: SovereignLiveRenderedEditableText(
+                  child: FlarkLiveRenderedEditableText(
                     controller: controller,
                     style: const TextStyle(fontSize: 14, height: 1.4),
                     expands: true,
@@ -3141,14 +3073,14 @@ void main() {
       tester.widget<EditableText>(codeEditableFinder).focusNode.hasFocus,
       isTrue,
     );
-    expect(controller.selection, const SovereignSelection.collapsed(11));
+    expect(controller.selection, const FlarkSelection.collapsed(11));
   });
 
   testWidgets('live code fences use a visible selection highlight', (
     tester,
   ) async {
     const markdown = '```dart\nfoo\n```';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     expect(
       controller.applyParseResult(_codeOnlyParseResult(controller)),
@@ -3161,7 +3093,7 @@ void main() {
         child: SizedBox(
           width: 320,
           height: 160,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14, height: 1.4),
           ),
@@ -3175,7 +3107,7 @@ void main() {
   });
 
   testWidgets('drag selection works in plain live documents', (tester) async {
-    final controller = SovereignFlutterController.fromMarkdown('foo bar');
+    final controller = FlarkFlutterController.fromMarkdown('foo bar');
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
@@ -3184,7 +3116,7 @@ void main() {
         child: SizedBox(
           width: 420,
           height: 160,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 20, height: 1.4),
           ),
@@ -3209,7 +3141,7 @@ void main() {
 
   testWidgets('drag selection works inside live code fences', (tester) async {
     const markdown = '```dart\nfoo bar\n```';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
 
@@ -3219,7 +3151,7 @@ void main() {
         child: SizedBox(
           width: 420,
           height: 160,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 20, height: 1.4),
           ),
@@ -3246,7 +3178,7 @@ void main() {
     tester,
   ) async {
     const markdown = '```dart\nfoo bar\n```';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
 
@@ -3256,7 +3188,7 @@ void main() {
         child: SizedBox(
           width: 420,
           height: 160,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 20, height: 1.4),
           ),
@@ -3281,7 +3213,7 @@ void main() {
     tester,
   ) async {
     const markdown = 'before\n```dart\none\ntwo\nthree\n```\nafter';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
 
@@ -3295,7 +3227,7 @@ void main() {
                 builder: (context) => SizedBox(
                   width: 320,
                   height: 240,
-                  child: SovereignLiveRenderedEditableText(
+                  child: FlarkLiveRenderedEditableText(
                     controller: controller,
                     style: const TextStyle(fontSize: 14, height: 1.4),
                     expands: true,
@@ -3313,7 +3245,7 @@ void main() {
     await tester.tap(codeEditableFinder);
     await tester.showKeyboard(codeEditableFinder);
     final middleLineStart = markdown.indexOf('two');
-    controller.applySelection(SovereignSelection.collapsed(middleLineStart));
+    controller.applySelection(FlarkSelection.collapsed(middleLineStart));
     await tester.pump();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
@@ -3327,7 +3259,7 @@ void main() {
       inInclusiveRange(markdown.indexOf('one'), markdown.indexOf('three')),
     );
 
-    controller.applySelection(SovereignSelection.collapsed(middleLineStart));
+    controller.applySelection(FlarkSelection.collapsed(middleLineStart));
     await tester.pump();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
@@ -3344,7 +3276,7 @@ void main() {
 
   testWidgets('outdents live code blocks with Shift+Tab', (tester) async {
     const markdown = '```dart\n  print(1);\n```';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     expect(
       controller.applyParseResult(_codeOnlyParseResult(controller)),
@@ -3357,7 +3289,7 @@ void main() {
         child: SizedBox(
           width: 320,
           height: 180,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14, height: 1.4),
             expands: true,
@@ -3369,7 +3301,7 @@ void main() {
 
     final codeEditable = _codeEditableFinder();
     await tester.tap(codeEditable);
-    controller.applySelection(const SovereignSelection.collapsed(10));
+    controller.applySelection(const FlarkSelection.collapsed(10));
     await tester.pump();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
@@ -3383,46 +3315,42 @@ void main() {
   testWidgets('toggles task checkboxes through live block widgets', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(
-      '- [ ] Write tests',
-    );
+    final controller = FlarkFlutterController.fromMarkdown('- [ ] Write tests');
     addTearDown(controller.dispose);
     expect(controller.applyParseResult(_taskParseResult(controller)), isTrue);
 
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
       ),
     );
 
-    await tester.tap(find.byKey(const Key('SovereignLiveBlockTaskCheckbox')));
+    await tester.tap(find.byKey(const Key('FlarkLiveBlockTaskCheckbox')));
     await tester.pump();
 
     expect(controller.markdown, '- [x] Write tests');
   });
 
   testWidgets('undoes and redoes task checkbox toggles', (tester) async {
-    final controller = SovereignFlutterController.fromMarkdown(
-      '- [ ] Write tests',
-    );
+    final controller = FlarkFlutterController.fromMarkdown('- [ ] Write tests');
     addTearDown(controller.dispose);
     expect(controller.applyParseResult(_taskParseResult(controller)), isTrue);
 
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
       ),
     );
 
-    await tester.tap(find.byKey(const Key('SovereignLiveBlockTaskCheckbox')));
+    await tester.tap(find.byKey(const Key('FlarkLiveBlockTaskCheckbox')));
     await tester.pump();
 
     expect(controller.markdown, '- [x] Write tests');
@@ -3441,16 +3369,14 @@ void main() {
   testWidgets('checkbox toggles preserve focused task text editing', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(
-      '- [ ] Write tests',
-    );
+    final controller = FlarkFlutterController.fromMarkdown('- [ ] Write tests');
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
 
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
@@ -3468,7 +3394,7 @@ void main() {
       isTrue,
     );
 
-    await tester.tap(find.byKey(const Key('SovereignLiveBlockTaskCheckbox')));
+    await tester.tap(find.byKey(const Key('FlarkLiveBlockTaskCheckbox')));
     await tester.pump();
 
     expect(controller.markdown, '- [x] Write tests');
@@ -3480,20 +3406,20 @@ void main() {
       tester.widget<EditableText>(editableFinder).controller.text,
       'Write tests',
     );
-    expect(controller.selection, const SovereignSelection.collapsed(11));
+    expect(controller.selection, const FlarkSelection.collapsed(11));
   });
 
   testWidgets('continues checked live task items as unchecked focused rows', (
     tester,
   ) async {
     const markdown = '- [x] done';
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           markdown,
-          selection: const SovereignSelection.collapsed(markdown.length),
+          selection: const FlarkSelection.collapsed(markdown.length),
         ),
-        extensions: SovereignMarkdownEditingExtensions.standard(),
+        extensions: FlarkMarkdownEditingExtensions.standard(),
       ),
     );
     addTearDown(controller.dispose);
@@ -3502,7 +3428,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
           autofocus: true,
@@ -3516,9 +3442,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.markdown, '- [x] done\n- [ ] ');
-    expect(controller.selection, const SovereignSelection.collapsed(17));
+    expect(controller.selection, const FlarkSelection.collapsed(17));
     expect(
-      find.byKey(const Key('SovereignLiveBlockTaskCheckbox')),
+      find.byKey(const Key('FlarkLiveBlockTaskCheckbox')),
       findsNWidgets(2),
     );
     final editors = tester
@@ -3532,13 +3458,13 @@ void main() {
   testWidgets('Backspace degrades empty live task items before removing list', (
     tester,
   ) async {
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           '- [ ] ',
-          selection: const SovereignSelection.collapsed(6),
+          selection: const FlarkSelection.collapsed(6),
         ),
-        extensions: SovereignMarkdownEditingExtensions.standard(),
+        extensions: FlarkMarkdownEditingExtensions.standard(),
       ),
     );
     addTearDown(controller.dispose);
@@ -3547,7 +3473,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
           autofocus: true,
@@ -3561,17 +3487,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.markdown, '- ');
-    expect(controller.selection, const SovereignSelection.collapsed(2));
+    expect(controller.selection, const FlarkSelection.collapsed(2));
     await _applyComrakParseResult(controller);
     await tester.pump();
-    expect(
-      find.byKey(const Key('SovereignLiveBlockTaskCheckbox')),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const Key('SovereignLiveBlockListMarker')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockTaskCheckbox')), findsNothing);
+    expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
     expect(
       tester.widget<EditableText>(find.byType(EditableText)).controller.text,
       isEmpty,
@@ -3582,22 +3502,22 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.markdown, isEmpty);
-    expect(controller.selection, const SovereignSelection.collapsed(0));
-    expect(find.byKey(const Key('SovereignLiveBlockListMarker')), findsNothing);
+    expect(controller.selection, const FlarkSelection.collapsed(0));
+    expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsNothing);
   });
 
   testWidgets('toggling one live checkbox leaves sibling tasks unchanged', (
     tester,
   ) async {
     const markdown = '- [ ] first\n- [x] second';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
 
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
@@ -3606,13 +3526,11 @@ void main() {
     await tester.pump();
 
     expect(
-      find.byKey(const Key('SovereignLiveBlockTaskCheckbox')),
+      find.byKey(const Key('FlarkLiveBlockTaskCheckbox')),
       findsNWidgets(2),
     );
 
-    await tester.tap(
-      find.byKey(const Key('SovereignLiveBlockTaskCheckbox')).at(1),
-    );
+    await tester.tap(find.byKey(const Key('FlarkLiveBlockTaskCheckbox')).at(1));
     await tester.pump();
 
     expect(controller.markdown, '- [ ] first\n- [ ] second');
@@ -3628,7 +3546,7 @@ void main() {
   });
 
   testWidgets('edits table cells through live block widgets', (tester) async {
-    final controller = SovereignFlutterController.fromMarkdown(_tableMarkdown);
+    final controller = FlarkFlutterController.fromMarkdown(_tableMarkdown);
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
 
@@ -3637,7 +3555,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: SizedBox(
           width: 420,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
           ),
@@ -3645,10 +3563,10 @@ void main() {
       ),
     );
 
-    expect(find.byKey(const Key('SovereignLiveBlockTable')), findsOneWidget);
+    expect(find.byKey(const Key('FlarkLiveBlockTable')), findsOneWidget);
 
     await tester.enterText(
-      find.byKey(const Key('SovereignLiveBlockTableCell-1-1')),
+      find.byKey(const Key('FlarkLiveBlockTableCell-1-1')),
       'Done',
     );
     await tester.pump();
@@ -3662,7 +3580,7 @@ void main() {
   testWidgets('pads irregular table rows with editable source insertions', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(
+    final controller = FlarkFlutterController.fromMarkdown(
       _irregularTableMarkdown,
     );
     addTearDown(controller.dispose);
@@ -3673,7 +3591,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: SizedBox(
           width: 420,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
           ),
@@ -3681,14 +3599,14 @@ void main() {
       ),
     );
 
-    expect(find.byKey(const Key('SovereignLiveBlockTable')), findsOneWidget);
+    expect(find.byKey(const Key('FlarkLiveBlockTable')), findsOneWidget);
     expect(
-      find.byKey(const Key('SovereignLiveBlockTableCell-1-1')),
+      find.byKey(const Key('FlarkLiveBlockTableCell-1-1')),
       findsOneWidget,
     );
 
     await tester.enterText(
-      find.byKey(const Key('SovereignLiveBlockTableCell-1-1')),
+      find.byKey(const Key('FlarkLiveBlockTableCell-1-1')),
       'Done',
     );
     await tester.pump();
@@ -3706,16 +3624,15 @@ void main() {
         '| Area | Status |\n'
         '| --- | --- |\n'
         '| Preview | Guarded | Ignored |';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
-    final result = await SovereignNativeComrakParseBackend.withNativeBridge()
-        .parse(
-          SovereignMarkdownParseRequest(
-            revision: controller.state.revision,
-            markdown: markdown,
-            profile: SovereignMarkdownProfile.commonMarkGfm,
-          ),
-        );
+    final result = await FlarkNativeComrakParseBackend.withNativeBridge().parse(
+      FlarkMarkdownParseRequest(
+        revision: controller.state.revision,
+        markdown: markdown,
+        profile: FlarkMarkdownProfile.commonMarkGfm,
+      ),
+    );
     expect(controller.applyParseResult(result), isTrue);
     expect(controller.renderPlan.tableBlocks.single.table!.rows, isNotEmpty);
 
@@ -3724,7 +3641,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: SizedBox(
           width: 420,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
           ),
@@ -3732,22 +3649,19 @@ void main() {
       ),
     );
 
-    expect(find.byKey(const Key('SovereignLiveBlockTable')), findsOneWidget);
+    expect(find.byKey(const Key('FlarkLiveBlockTable')), findsOneWidget);
     expect(
-      find.byKey(const Key('SovereignLiveBlockTableCell-1-0')),
+      find.byKey(const Key('FlarkLiveBlockTableCell-1-0')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const Key('SovereignLiveBlockTableCell-1-1')),
+      find.byKey(const Key('FlarkLiveBlockTableCell-1-1')),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const Key('SovereignLiveBlockTableCell-1-2')),
-      findsNothing,
-    );
+    expect(find.byKey(const Key('FlarkLiveBlockTableCell-1-2')), findsNothing);
 
     await tester.enterText(
-      find.byKey(const Key('SovereignLiveBlockTableCell-1-1')),
+      find.byKey(const Key('FlarkLiveBlockTableCell-1-1')),
       'Done',
     );
     await tester.pump();
@@ -3762,7 +3676,7 @@ void main() {
     tester,
   ) async {
     const markdown = '| Area | Status |\n| --- | --- |\n| --- | --- |';
-    final controller = SovereignFlutterController.fromMarkdown(markdown);
+    final controller = FlarkFlutterController.fromMarkdown(markdown);
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
 
@@ -3771,7 +3685,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: SizedBox(
           width: 420,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
           ),
@@ -3779,13 +3693,13 @@ void main() {
       ),
     );
 
-    expect(find.byKey(const Key('SovereignLiveBlockTable')), findsOneWidget);
+    expect(find.byKey(const Key('FlarkLiveBlockTable')), findsOneWidget);
     expect(
-      find.byKey(const Key('SovereignLiveBlockTableCell-1-0')),
+      find.byKey(const Key('FlarkLiveBlockTableCell-1-0')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const Key('SovereignLiveBlockTableCell-1-1')),
+      find.byKey(const Key('FlarkLiveBlockTableCell-1-1')),
       findsOneWidget,
     );
   });
@@ -3793,7 +3707,7 @@ void main() {
   testWidgets('keeps table cell selection local after mid-cell edits', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(_tableMarkdown);
+    final controller = FlarkFlutterController.fromMarkdown(_tableMarkdown);
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
 
@@ -3802,7 +3716,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: SizedBox(
           width: 420,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
           ),
@@ -3830,7 +3744,7 @@ void main() {
       '| Area | Status |\n| --- | --- |\n| Pre-view | Guarded |',
     );
     final sourceStart = controller.markdown.indexOf('Pre-view');
-    expect(controller.selection, SovereignSelection.collapsed(sourceStart + 4));
+    expect(controller.selection, FlarkSelection.collapsed(sourceStart + 4));
     expect(
       tester.widget<EditableText>(cellFinder).controller.selection,
       const TextSelection.collapsed(offset: 4),
@@ -3840,9 +3754,7 @@ void main() {
   testWidgets(
     'groups live table cell IME composition updates into one undo step',
     (tester) async {
-      final controller = SovereignFlutterController.fromMarkdown(
-        _tableMarkdown,
-      );
+      final controller = FlarkFlutterController.fromMarkdown(_tableMarkdown);
       addTearDown(controller.dispose);
       await _applyComrakParseResult(controller);
 
@@ -3851,7 +3763,7 @@ void main() {
           textDirection: TextDirection.ltr,
           child: SizedBox(
             width: 420,
-            child: SovereignLiveRenderedEditableText(
+            child: FlarkLiveRenderedEditableText(
               controller: controller,
               style: const TextStyle(fontSize: 14),
             ),
@@ -3899,7 +3811,7 @@ void main() {
   testWidgets('maps table cell selection through escaped pipes', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(_tableMarkdown);
+    final controller = FlarkFlutterController.fromMarkdown(_tableMarkdown);
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
 
@@ -3908,7 +3820,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: SizedBox(
           width: 420,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
           ),
@@ -3936,7 +3848,7 @@ void main() {
       r'| A\|B | Guarded |',
     );
     final sourceStart = controller.markdown.indexOf(r'A\|B');
-    expect(controller.selection, SovereignSelection.collapsed(sourceStart + 3));
+    expect(controller.selection, FlarkSelection.collapsed(sourceStart + 3));
     expect(
       tester.widget<EditableText>(cellFinder).controller.selection,
       const TextSelection.collapsed(offset: 2),
@@ -3946,7 +3858,7 @@ void main() {
   testWidgets('normalizes pasted table cell newlines and escaped pipes', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(_tableMarkdown);
+    final controller = FlarkFlutterController.fromMarkdown(_tableMarkdown);
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
 
@@ -3955,7 +3867,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: SizedBox(
           width: 420,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
           ),
@@ -3985,7 +3897,7 @@ void main() {
     final sourceStart = controller.markdown.indexOf(r'A B\|C');
     expect(
       controller.selection,
-      SovereignSelection.collapsed(sourceStart + r'A B\|C'.length),
+      FlarkSelection.collapsed(sourceStart + r'A B\|C'.length),
     );
     expect(
       tester.widget<EditableText>(cellFinder).controller.selection,
@@ -3996,7 +3908,7 @@ void main() {
   testWidgets('undoes and redoes table cell edits through escaped source', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(_tableMarkdown);
+    final controller = FlarkFlutterController.fromMarkdown(_tableMarkdown);
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
 
@@ -4005,7 +3917,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: SizedBox(
           width: 420,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
           ),
@@ -4044,7 +3956,7 @@ void main() {
   testWidgets('keeps table selection stable across source and live widgets', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(_tableMarkdown);
+    final controller = FlarkFlutterController.fromMarkdown(_tableMarkdown);
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
 
@@ -4053,7 +3965,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: SizedBox(
           width: 420,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
           ),
@@ -4068,14 +3980,14 @@ void main() {
     await tester.pump();
 
     final sourceOffset = _tableMarkdown.indexOf('Preview') + 3;
-    expect(controller.selection, SovereignSelection.collapsed(sourceOffset));
+    expect(controller.selection, FlarkSelection.collapsed(sourceOffset));
 
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
         child: SizedBox(
           width: 420,
-          child: SovereignEditableText(
+          child: FlarkEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
           ),
@@ -4097,7 +4009,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: SizedBox(
           width: 420,
-          child: SovereignLiveRenderedEditableText(
+          child: FlarkLiveRenderedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
           ),
@@ -4118,7 +4030,7 @@ void main() {
   testWidgets('high-level markdown editor exposes live rendered editing mode', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown('hello');
+    final controller = FlarkFlutterController.fromMarkdown('hello');
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
@@ -4126,12 +4038,12 @@ void main() {
         textDirection: TextDirection.ltr,
         child: MarkdownEditor(
           controller: controller,
-          editingMode: SovereignMarkdownEditingMode.liveRendered,
+          editingMode: FlarkMarkdownEditingMode.liveRendered,
         ),
       ),
     );
 
-    expect(find.byType(SovereignLiveRenderedEditableText), findsOneWidget);
+    expect(find.byType(FlarkLiveRenderedEditableText), findsOneWidget);
     expect(find.byType(EditableText), findsOneWidget);
   });
 
@@ -4140,9 +4052,9 @@ void main() {
       testWidgets(
         '${stabilityCase.id} keeps the same rendered surface mounted',
         (tester) async {
-          final controller = SovereignFlutterController.fromMarkdown(
+          final controller = FlarkFlutterController.fromMarkdown(
             stabilityCase.markdown,
-            extensions: SovereignMarkdownEditingExtensions.standard(),
+            extensions: FlarkMarkdownEditingExtensions.standard(),
           );
           addTearDown(controller.dispose);
           await _applyComrakParseResult(controller);
@@ -4152,7 +4064,7 @@ void main() {
               textDirection: TextDirection.ltr,
               child: SizedBox(
                 width: 520,
-                child: SovereignLiveRenderedEditableText(
+                child: FlarkLiveRenderedEditableText(
                   controller: controller,
                   style: const TextStyle(fontSize: 14),
                 ),
@@ -4199,271 +4111,260 @@ void main() {
   });
 }
 
-Future<void> _applyComrakParseResult(
-  SovereignFlutterController controller,
-) async {
-  final result = await SovereignNativeComrakParseBackend.withNativeBridge()
-      .parse(
-        SovereignMarkdownParseRequest(
-          revision: controller.state.revision,
-          markdown: controller.markdown,
-          profile: SovereignMarkdownProfile.commonMarkGfm,
-        ),
-      );
+Future<void> _applyComrakParseResult(FlarkFlutterController controller) async {
+  final result = await FlarkNativeComrakParseBackend.withNativeBridge().parse(
+    FlarkMarkdownParseRequest(
+      revision: controller.state.revision,
+      markdown: controller.markdown,
+      profile: FlarkMarkdownProfile.commonMarkGfm,
+    ),
+  );
   expect(controller.applyParseResult(result), isTrue);
 }
 
-SovereignMarkdownParseResult _bareQuoteParseResult(
-  SovereignFlutterController controller,
+FlarkMarkdownParseResult _bareQuoteParseResult(
+  FlarkFlutterController controller,
 ) {
-  return SovereignMarkdownParseResult(
-    schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+  return FlarkMarkdownParseResult(
+    schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
     revision: controller.state.revision,
     sourceTextLength: controller.markdown.length,
     blocks: [
-      SovereignMarkdownBlockNode(
-        kind: SovereignMarkdownBlockKind.paragraph,
+      FlarkMarkdownBlockNode(
+        kind: FlarkMarkdownBlockKind.paragraph,
         type: 'paragraph',
-        sourceRange: const SovereignSourceRange(0, 1),
+        sourceRange: const FlarkSourceRange(0, 1),
       ),
     ],
     inlineTokens: const [],
   );
 }
 
-SovereignMarkdownParseResult _emptyQuoteParseResult(
-  SovereignFlutterController controller,
+FlarkMarkdownParseResult _emptyQuoteParseResult(
+  FlarkFlutterController controller,
 ) {
-  return SovereignMarkdownParseResult(
-    schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+  return FlarkMarkdownParseResult(
+    schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
     revision: controller.state.revision,
     sourceTextLength: controller.markdown.length,
     blocks: [
-      SovereignMarkdownBlockNode(
-        kind: SovereignMarkdownBlockKind.blockquote,
+      FlarkMarkdownBlockNode(
+        kind: FlarkMarkdownBlockKind.blockquote,
         type: 'blockquote',
-        sourceRange: const SovereignSourceRange(0, 2),
+        sourceRange: const FlarkSourceRange(0, 2),
       ),
     ],
     inlineTokens: const [],
     hiddenRanges: [
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.blockMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.blockMarker,
         type: 'blockMarker',
-        sourceRange: const SovereignSourceRange(0, 2),
+        sourceRange: const FlarkSourceRange(0, 2),
       ),
     ],
   );
 }
 
-SovereignMarkdownParseResult _quoteParseResult(
-  SovereignFlutterController controller,
-) {
-  return SovereignMarkdownParseResult(
-    schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+FlarkMarkdownParseResult _quoteParseResult(FlarkFlutterController controller) {
+  return FlarkMarkdownParseResult(
+    schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
     revision: controller.state.revision,
     sourceTextLength: controller.markdown.length,
     blocks: [
-      SovereignMarkdownBlockNode(
-        kind: SovereignMarkdownBlockKind.blockquote,
+      FlarkMarkdownBlockNode(
+        kind: FlarkMarkdownBlockKind.blockquote,
         type: 'blockquote',
-        sourceRange: SovereignSourceRange(0, controller.markdown.length),
+        sourceRange: FlarkSourceRange(0, controller.markdown.length),
       ),
     ],
     inlineTokens: const [],
     hiddenRanges: [
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.blockMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.blockMarker,
         type: 'blockMarker',
-        sourceRange: const SovereignSourceRange(0, 2),
+        sourceRange: const FlarkSourceRange(0, 2),
       ),
     ],
   );
 }
 
-SovereignMarkdownParseResult _multiLineQuoteParseResult(
-  SovereignFlutterController controller,
+FlarkMarkdownParseResult _multiLineQuoteParseResult(
+  FlarkFlutterController controller,
 ) {
-  return SovereignMarkdownParseResult(
-    schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+  return FlarkMarkdownParseResult(
+    schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
     revision: controller.state.revision,
     sourceTextLength: controller.markdown.length,
     blocks: [
-      SovereignMarkdownBlockNode(
-        kind: SovereignMarkdownBlockKind.blockquote,
+      FlarkMarkdownBlockNode(
+        kind: FlarkMarkdownBlockKind.blockquote,
         type: 'blockquote',
-        sourceRange: SovereignSourceRange(0, controller.markdown.length),
+        sourceRange: FlarkSourceRange(0, controller.markdown.length),
       ),
     ],
     inlineTokens: const [],
     hiddenRanges: [
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.blockMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.blockMarker,
         type: 'blockMarker',
-        sourceRange: const SovereignSourceRange(0, 2),
+        sourceRange: const FlarkSourceRange(0, 2),
       ),
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.blockMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.blockMarker,
         type: 'blockMarker',
-        sourceRange: const SovereignSourceRange(8, 10),
+        sourceRange: const FlarkSourceRange(8, 10),
       ),
     ],
   );
 }
 
-SovereignMarkdownParseResult _paragraphParseResult(
-  SovereignFlutterController controller,
+FlarkMarkdownParseResult _paragraphParseResult(
+  FlarkFlutterController controller,
 ) {
-  return SovereignMarkdownParseResult(
-    schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+  return FlarkMarkdownParseResult(
+    schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
     revision: controller.state.revision,
     sourceTextLength: controller.markdown.length,
     blocks: [
-      SovereignMarkdownBlockNode(
-        kind: SovereignMarkdownBlockKind.paragraph,
+      FlarkMarkdownBlockNode(
+        kind: FlarkMarkdownBlockKind.paragraph,
         type: 'paragraph',
-        sourceRange: const SovereignSourceRange(0, 1),
+        sourceRange: const FlarkSourceRange(0, 1),
       ),
     ],
     inlineTokens: const [],
   );
 }
 
-SovereignMarkdownParseResult _entityParseResult(
-  SovereignFlutterController controller,
-) {
-  return SovereignMarkdownParseResult(
-    schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+FlarkMarkdownParseResult _entityParseResult(FlarkFlutterController controller) {
+  return FlarkMarkdownParseResult(
+    schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
     revision: controller.state.revision,
     sourceTextLength: controller.markdown.length,
     blocks: [
-      SovereignMarkdownBlockNode(
-        kind: SovereignMarkdownBlockKind.paragraph,
+      FlarkMarkdownBlockNode(
+        kind: FlarkMarkdownBlockKind.paragraph,
         type: 'paragraph',
-        sourceRange: SovereignSourceRange(0, controller.markdown.length),
+        sourceRange: FlarkSourceRange(0, controller.markdown.length),
       ),
     ],
     inlineTokens: const [],
     replacementRanges: [
-      SovereignMarkdownReplacementRange(
-        kind: SovereignMarkdownReplacementRangeKind.htmlEntity,
+      FlarkMarkdownReplacementRange(
+        kind: FlarkMarkdownReplacementRangeKind.htmlEntity,
         type: 'htmlEntity',
-        sourceRange: const SovereignSourceRange(2, 7),
+        sourceRange: const FlarkSourceRange(2, 7),
         replacementText: '&',
       ),
     ],
   );
 }
 
-SovereignMarkdownParseResult _inlineParseResult(
-  SovereignFlutterController controller,
-) {
-  return SovereignMarkdownParseResult(
-    schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+FlarkMarkdownParseResult _inlineParseResult(FlarkFlutterController controller) {
+  return FlarkMarkdownParseResult(
+    schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
     revision: controller.state.revision,
     sourceTextLength: controller.markdown.length,
     blocks: [
-      SovereignMarkdownBlockNode(
-        kind: SovereignMarkdownBlockKind.paragraph,
+      FlarkMarkdownBlockNode(
+        kind: FlarkMarkdownBlockKind.paragraph,
         type: 'paragraph',
-        sourceRange: SovereignSourceRange(0, controller.markdown.length),
+        sourceRange: FlarkSourceRange(0, controller.markdown.length),
       ),
     ],
     inlineTokens: [
-      SovereignMarkdownInlineToken(
-        kind: SovereignMarkdownInlineKind.strong,
+      FlarkMarkdownInlineToken(
+        kind: FlarkMarkdownInlineKind.strong,
         type: 'strong',
-        sourceRange: SovereignSourceRange(0, 8),
+        sourceRange: FlarkSourceRange(0, 8),
       ),
-      SovereignMarkdownInlineToken(
-        kind: SovereignMarkdownInlineKind.emphasis,
+      FlarkMarkdownInlineToken(
+        kind: FlarkMarkdownInlineKind.emphasis,
         type: 'emphasis',
-        sourceRange: SovereignSourceRange(13, 17),
+        sourceRange: FlarkSourceRange(13, 17),
       ),
-      SovereignMarkdownInlineToken(
-        kind: SovereignMarkdownInlineKind.inlineCode,
+      FlarkMarkdownInlineToken(
+        kind: FlarkMarkdownInlineKind.inlineCode,
         type: 'inlineCode',
-        sourceRange: SovereignSourceRange(22, 28),
+        sourceRange: FlarkSourceRange(22, 28),
       ),
     ],
     hiddenRanges: [
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.inlineMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.inlineMarker,
         type: 'inlineMarker',
-        sourceRange: SovereignSourceRange(0, 2),
+        sourceRange: FlarkSourceRange(0, 2),
       ),
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.inlineMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.inlineMarker,
         type: 'inlineMarker',
-        sourceRange: SovereignSourceRange(6, 8),
+        sourceRange: FlarkSourceRange(6, 8),
       ),
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.inlineMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.inlineMarker,
         type: 'inlineMarker',
-        sourceRange: SovereignSourceRange(13, 14),
+        sourceRange: FlarkSourceRange(13, 14),
       ),
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.inlineMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.inlineMarker,
         type: 'inlineMarker',
-        sourceRange: SovereignSourceRange(16, 17),
+        sourceRange: FlarkSourceRange(16, 17),
       ),
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.inlineMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.inlineMarker,
         type: 'inlineMarker',
-        sourceRange: SovereignSourceRange(22, 23),
+        sourceRange: FlarkSourceRange(22, 23),
       ),
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.inlineMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.inlineMarker,
         type: 'inlineMarker',
-        sourceRange: SovereignSourceRange(27, 28),
+        sourceRange: FlarkSourceRange(27, 28),
       ),
     ],
   );
 }
 
-SovereignMarkdownParseResult _blockParseResult(
-  SovereignFlutterController controller,
-) {
-  return SovereignMarkdownParseResult(
-    schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+FlarkMarkdownParseResult _blockParseResult(FlarkFlutterController controller) {
+  return FlarkMarkdownParseResult(
+    schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
     revision: controller.state.revision,
     sourceTextLength: controller.markdown.length,
     blocks: [
-      SovereignMarkdownBlockNode(
-        kind: SovereignMarkdownBlockKind.codeBlock,
+      FlarkMarkdownBlockNode(
+        kind: FlarkMarkdownBlockKind.codeBlock,
         type: 'codeBlock',
-        sourceRange: SovereignSourceRange(0, 21),
+        sourceRange: FlarkSourceRange(0, 21),
         attributes: {'language': 'dart'},
       ),
-      SovereignMarkdownBlockNode(
-        kind: SovereignMarkdownBlockKind.blockquote,
+      FlarkMarkdownBlockNode(
+        kind: FlarkMarkdownBlockKind.blockquote,
         type: 'blockquote',
-        sourceRange: SovereignSourceRange(23, 30),
+        sourceRange: FlarkSourceRange(23, 30),
       ),
     ],
     inlineTokens: const [],
     hiddenRanges: [
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.markdownMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.markdownMarker,
         type: 'markdownMarker',
-        sourceRange: SovereignSourceRange(0, 8),
+        sourceRange: FlarkSourceRange(0, 8),
       ),
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.markdownMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.markdownMarker,
         type: 'markdownMarker',
-        sourceRange: SovereignSourceRange(17, 21),
+        sourceRange: FlarkSourceRange(17, 21),
       ),
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.blockMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.blockMarker,
         type: 'blockMarker',
-        sourceRange: SovereignSourceRange(23, 25),
+        sourceRange: FlarkSourceRange(23, 25),
       ),
     ],
   );
 }
 
-SovereignMarkdownParseResult _codeOnlyParseResult(
-  SovereignFlutterController controller,
+FlarkMarkdownParseResult _codeOnlyParseResult(
+  FlarkFlutterController controller,
 ) {
   final openerEnd = controller.markdown.indexOf('\n');
   final openerLine = openerEnd < 0
@@ -4481,15 +4382,15 @@ SovereignMarkdownParseResult _codeOnlyParseResult(
       _containsNonLineBreak(rawBody) && closerStart > bodyStart
       ? closerStart - 1
       : closerStart;
-  return SovereignMarkdownParseResult(
-    schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+  return FlarkMarkdownParseResult(
+    schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
     revision: controller.state.revision,
     sourceTextLength: controller.markdown.length,
     blocks: [
-      SovereignMarkdownBlockNode(
-        kind: SovereignMarkdownBlockKind.codeBlock,
+      FlarkMarkdownBlockNode(
+        kind: FlarkMarkdownBlockKind.codeBlock,
         type: 'codeBlock',
-        sourceRange: SovereignSourceRange(0, controller.markdown.length),
+        sourceRange: FlarkSourceRange(0, controller.markdown.length),
         attributes: language.isEmpty
             ? const <String, Object?>{}
             : <String, Object?>{'language': language},
@@ -4497,15 +4398,15 @@ SovereignMarkdownParseResult _codeOnlyParseResult(
     ],
     inlineTokens: const [],
     hiddenRanges: [
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.markdownMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.markdownMarker,
         type: 'markdownMarker',
-        sourceRange: SovereignSourceRange(0, bodyStart),
+        sourceRange: FlarkSourceRange(0, bodyStart),
       ),
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.markdownMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.markdownMarker,
         type: 'markdownMarker',
-        sourceRange: SovereignSourceRange(
+        sourceRange: FlarkSourceRange(
           closingHiddenStart,
           controller.markdown.length,
         ),
@@ -4514,34 +4415,34 @@ SovereignMarkdownParseResult _codeOnlyParseResult(
   );
 }
 
-SovereignMarkdownParseResult _unclosedCodeFenceOpenerParseResult(
-  SovereignFlutterController controller,
+FlarkMarkdownParseResult _unclosedCodeFenceOpenerParseResult(
+  FlarkFlutterController controller,
 ) {
-  return SovereignMarkdownParseResult(
-    schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+  return FlarkMarkdownParseResult(
+    schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
     revision: controller.state.revision,
     sourceTextLength: controller.markdown.length,
     blocks: [
-      SovereignMarkdownBlockNode(
-        kind: SovereignMarkdownBlockKind.codeBlock,
+      FlarkMarkdownBlockNode(
+        kind: FlarkMarkdownBlockKind.codeBlock,
         type: 'codeBlock',
-        sourceRange: SovereignSourceRange(0, controller.markdown.length),
+        sourceRange: FlarkSourceRange(0, controller.markdown.length),
         attributes: {'language': controller.markdown.substring(3)},
       ),
     ],
     inlineTokens: const [],
     hiddenRanges: [
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.markdownMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.markdownMarker,
         type: 'markdownMarker',
-        sourceRange: SovereignSourceRange(0, controller.markdown.length),
+        sourceRange: FlarkSourceRange(0, controller.markdown.length),
       ),
     ],
   );
 }
 
-SovereignMarkdownParseResult _unclosedCodeFenceBodyParseResult(
-  SovereignFlutterController controller,
+FlarkMarkdownParseResult _unclosedCodeFenceBodyParseResult(
+  FlarkFlutterController controller,
 ) {
   final openerEnd = controller.markdown.indexOf('\n');
   final openerHiddenEnd = openerEnd < 0
@@ -4549,24 +4450,24 @@ SovereignMarkdownParseResult _unclosedCodeFenceBodyParseResult(
       : openerEnd + 1;
   final opener = controller.markdown.substring(0, openerHiddenEnd).trimRight();
   final language = opener.length > 3 ? opener.substring(3) : '';
-  return SovereignMarkdownParseResult(
-    schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+  return FlarkMarkdownParseResult(
+    schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
     revision: controller.state.revision,
     sourceTextLength: controller.markdown.length,
     blocks: [
-      SovereignMarkdownBlockNode(
-        kind: SovereignMarkdownBlockKind.codeBlock,
+      FlarkMarkdownBlockNode(
+        kind: FlarkMarkdownBlockKind.codeBlock,
         type: 'codeBlock',
-        sourceRange: SovereignSourceRange(0, controller.markdown.length),
+        sourceRange: FlarkSourceRange(0, controller.markdown.length),
         attributes: {'language': language},
       ),
     ],
     inlineTokens: const [],
     hiddenRanges: [
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.markdownMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.markdownMarker,
         type: 'markdownMarker',
-        sourceRange: SovereignSourceRange(0, openerHiddenEnd),
+        sourceRange: FlarkSourceRange(0, openerHiddenEnd),
       ),
     ],
   );
@@ -4580,27 +4481,25 @@ bool _containsNonLineBreak(String text) {
   return false;
 }
 
-SovereignMarkdownParseResult _taskParseResult(
-  SovereignFlutterController controller,
-) {
-  return SovereignMarkdownParseResult(
-    schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+FlarkMarkdownParseResult _taskParseResult(FlarkFlutterController controller) {
+  return FlarkMarkdownParseResult(
+    schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
     revision: controller.state.revision,
     sourceTextLength: controller.markdown.length,
     blocks: [
-      SovereignMarkdownBlockNode(
-        kind: SovereignMarkdownBlockKind.listItem,
+      FlarkMarkdownBlockNode(
+        kind: FlarkMarkdownBlockKind.listItem,
         type: 'listItem',
-        sourceRange: SovereignSourceRange(0, controller.markdown.length),
+        sourceRange: FlarkSourceRange(0, controller.markdown.length),
         attributes: const {'checked': false},
       ),
     ],
     inlineTokens: const [],
     hiddenRanges: [
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.blockMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.blockMarker,
         type: 'blockMarker',
-        sourceRange: const SovereignSourceRange(0, 6),
+        sourceRange: const FlarkSourceRange(0, 6),
       ),
     ],
   );
@@ -4657,14 +4556,14 @@ bool _anyTextSpan(InlineSpan span, bool Function(TextSpan span) test) {
 
 Finder _codeEditableFinder() {
   return find.descendant(
-    of: find.byKey(const Key('SovereignLiveBlockCodeEditable')),
+    of: find.byKey(const Key('FlarkLiveBlockCodeEditable')),
     matching: find.byType(EditableText),
   );
 }
 
 Finder _tableCellEditableFinder(int rowIndex, int columnIndex) {
   return find.descendant(
-    of: find.byKey(Key('SovereignLiveBlockTableCell-$rowIndex-$columnIndex')),
+    of: find.byKey(Key('FlarkLiveBlockTableCell-$rowIndex-$columnIndex')),
     matching: find.byType(EditableText),
   );
 }
@@ -4699,7 +4598,7 @@ final _liveSurfaceStabilityCases = [
   _LiveSurfaceStabilityCase(
     id: 'blockquote',
     markdown: '> quote',
-    surfaceKey: const Key('SovereignLiveBlockBlockquote'),
+    surfaceKey: const Key('FlarkLiveBlockBlockquote'),
     updatedText: 'quote!',
     expectedMarkdownAfterEdit: '> quote!',
     editableFinder: () => find.byType(EditableText),
@@ -4707,7 +4606,7 @@ final _liveSurfaceStabilityCases = [
   _LiveSurfaceStabilityCase(
     id: 'unordered list',
     markdown: '* item',
-    surfaceKey: const Key('SovereignLiveBlockListMarker'),
+    surfaceKey: const Key('FlarkLiveBlockListMarker'),
     updatedText: 'items',
     expectedMarkdownAfterEdit: '* items',
     editableFinder: () => find.byType(EditableText),
@@ -4715,7 +4614,7 @@ final _liveSurfaceStabilityCases = [
   _LiveSurfaceStabilityCase(
     id: 'ordered list',
     markdown: '1. item',
-    surfaceKey: const Key('SovereignLiveBlockListMarker'),
+    surfaceKey: const Key('FlarkLiveBlockListMarker'),
     updatedText: 'items',
     expectedMarkdownAfterEdit: '1. items',
     editableFinder: () => find.byType(EditableText),
@@ -4723,7 +4622,7 @@ final _liveSurfaceStabilityCases = [
   _LiveSurfaceStabilityCase(
     id: 'task list',
     markdown: '- [ ] done',
-    surfaceKey: const Key('SovereignLiveBlockTaskCheckbox'),
+    surfaceKey: const Key('FlarkLiveBlockTaskCheckbox'),
     updatedText: 'done!',
     expectedMarkdownAfterEdit: '- [ ] done!',
     editableFinder: () => find.byType(EditableText),
@@ -4731,7 +4630,7 @@ final _liveSurfaceStabilityCases = [
   _LiveSurfaceStabilityCase(
     id: 'code block',
     markdown: _blockMarkdown,
-    surfaceKey: const Key('SovereignLiveBlockCodeFence'),
+    surfaceKey: const Key('FlarkLiveBlockCodeFence'),
     updatedText: 'print(2);',
     expectedMarkdownAfterEdit: '```dart\nprint(2);\n```\n\n> quote',
     editableFinder: _codeEditableFinder,
@@ -4739,12 +4638,11 @@ final _liveSurfaceStabilityCases = [
   _LiveSurfaceStabilityCase(
     id: 'table',
     markdown: _tableMarkdown,
-    surfaceKey: const Key('SovereignLiveBlockTable'),
+    surfaceKey: const Key('FlarkLiveBlockTable'),
     updatedText: 'Done',
     expectedMarkdownAfterEdit:
         '| Area | Status |\n| --- | --- |\n| Preview | Done |',
-    editableFinder: () =>
-        find.byKey(const Key('SovereignLiveBlockTableCell-1-1')),
+    editableFinder: () => find.byKey(const Key('FlarkLiveBlockTableCell-1-1')),
   ),
 ];
 

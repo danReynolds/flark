@@ -15,14 +15,14 @@ final class Markdown extends StatefulWidget {
     this.controller,
     this.parseBackend,
     this.onParseError,
-    this.profile = SovereignMarkdownProfile.commonMarkGfm,
+    this.profile = FlarkMarkdownProfile.commonMarkGfm,
     this.parseDebounce = const Duration(milliseconds: 80),
     this.textStyle,
     this.blockBuilder,
     this.showOverlayControls = false,
     this.overlayControlBuilder,
     this.onOverlayTargetPressed,
-    this.interactionConfig = const SovereignMarkdownInteractionConfig(),
+    this.interactionConfig = const FlarkMarkdownInteractionConfig(),
   }) : assert(
          (markdown == null) != (controller == null),
          'Provide exactly one of markdown or controller.',
@@ -43,7 +43,7 @@ final class Markdown extends StatefulWidget {
   ///
   /// Provide either this or [markdown], not both. When a controller is
   /// provided, this widget only consumes the controller's current render plan.
-  final SovereignFlutterController? controller;
+  final FlarkFlutterController? controller;
 
   /// Parser backend used by standalone [markdown] previews.
   ///
@@ -52,19 +52,19 @@ final class Markdown extends StatefulWidget {
   /// When this is null for a standalone preview, the widget requires the
   /// packaged Comrak backend. Backend load failures are surfaced directly
   /// instead of falling back to a second markdown implementation.
-  final SovereignMarkdownParseBackend? parseBackend;
+  final FlarkMarkdownParseBackend? parseBackend;
 
   /// Called when a scheduled background parse fails.
   final void Function(Object error, StackTrace stackTrace)? onParseError;
 
-  final SovereignMarkdownProfile profile;
+  final FlarkMarkdownProfile profile;
   final Duration parseDebounce;
   final TextStyle? textStyle;
-  final SovereignPreviewBlockWidgetBuilder? blockBuilder;
+  final FlarkPreviewBlockWidgetBuilder? blockBuilder;
   final bool showOverlayControls;
-  final SovereignOverlayTargetWidgetBuilder? overlayControlBuilder;
-  final ValueChanged<SovereignRenderOverlayTarget>? onOverlayTargetPressed;
-  final SovereignMarkdownInteractionConfig interactionConfig;
+  final FlarkOverlayTargetWidgetBuilder? overlayControlBuilder;
+  final ValueChanged<FlarkRenderOverlayTarget>? onOverlayTargetPressed;
+  final FlarkMarkdownInteractionConfig interactionConfig;
 
   @override
   State<Markdown> createState() {
@@ -73,10 +73,10 @@ final class Markdown extends StatefulWidget {
 }
 
 final class _MarkdownState extends State<Markdown> {
-  SovereignFlutterController? _ownedController;
-  SovereignParseScheduler? _parseScheduler;
+  FlarkFlutterController? _ownedController;
+  FlarkParseScheduler? _parseScheduler;
 
-  SovereignFlutterController get _controller {
+  FlarkFlutterController get _controller {
     return widget.controller ?? _ownedController!;
   }
 
@@ -97,7 +97,7 @@ final class _MarkdownState extends State<Markdown> {
       _parseScheduler?.dispose();
       if (widget.controller == null) {
         _ownedController?.dispose();
-        _ownedController = SovereignFlutterController.fromMarkdown(
+        _ownedController = FlarkFlutterController.fromMarkdown(
           widget.markdown!,
         );
       } else {
@@ -127,12 +127,12 @@ final class _MarkdownState extends State<Markdown> {
   @override
   Widget build(BuildContext context) {
     final preview = _previewWithOptionalOverlay();
-    if (SovereignMarkdownInteractions.maybeOf(context) != null) {
+    if (FlarkMarkdownInteractions.maybeOf(context) != null) {
       return preview;
     }
 
     if (!widget.showOverlayControls) {
-      return SovereignMarkdownInteractions(
+      return FlarkMarkdownInteractions(
         controller: _controller,
         config: widget.interactionConfig,
         editable: false,
@@ -140,7 +140,7 @@ final class _MarkdownState extends State<Markdown> {
       );
     }
 
-    return SovereignMarkdownInteractions(
+    return FlarkMarkdownInteractions(
       controller: _controller,
       config: widget.interactionConfig,
       editable: false,
@@ -149,7 +149,7 @@ final class _MarkdownState extends State<Markdown> {
   }
 
   Widget _previewWithOptionalOverlay() {
-    final preview = SovereignReadOnlyPreview(
+    final preview = FlarkReadOnlyPreview(
       controller: _controller,
       textStyle: widget.textStyle,
       blockBuilder: widget.blockBuilder,
@@ -159,7 +159,7 @@ final class _MarkdownState extends State<Markdown> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        SovereignRenderPlanOverlayControls(
+        FlarkRenderPlanOverlayControls(
           controller: _controller,
           builder: widget.overlayControlBuilder,
           onPressed: widget.onOverlayTargetPressed,
@@ -171,9 +171,7 @@ final class _MarkdownState extends State<Markdown> {
 
   void _ensureOwnedController() {
     if (widget.controller != null) return;
-    _ownedController = SovereignFlutterController.fromMarkdown(
-      widget.markdown!,
-    );
+    _ownedController = FlarkFlutterController.fromMarkdown(widget.markdown!);
   }
 
   void _configureParseSchedulerIfNeeded() {
@@ -182,7 +180,7 @@ final class _MarkdownState extends State<Markdown> {
       return;
     }
     final backend = widget.parseBackend ?? _resolveDefaultParseBackend();
-    _parseScheduler = SovereignParseScheduler(
+    _parseScheduler = FlarkParseScheduler(
       controller: _controller,
       backend: backend,
       profile: widget.profile,
@@ -191,7 +189,7 @@ final class _MarkdownState extends State<Markdown> {
     )..start();
   }
 
-  SovereignMarkdownParseBackend _resolveDefaultParseBackend() {
-    return SovereignNativeComrakParseBackend.requiredDefault();
+  FlarkMarkdownParseBackend _resolveDefaultParseBackend() {
+    return FlarkNativeComrakParseBackend.requiredDefault();
   }
 }

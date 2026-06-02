@@ -9,7 +9,7 @@ run_android_verify=0
 
 usage() {
   cat <<'EOF'
-Verify the Sovereign native editor end-to-end CI gate locally.
+Verify the Flark native editor end-to-end CI gate locally.
 
 Usage:
   ./scripts/verify_native_editor_ci.sh [options]
@@ -78,4 +78,4 @@ if [ "$run_android_verify" -eq 1 ]; then
 fi
 
 echo
-echo "Sovereign native editor CI gate passed."
+echo "Flark native editor CI gate passed."

@@ -1,4 +1,4 @@
-# Sovereign v2 Core Invariants
+# Flark v2 Core Invariants
 
 Status date: 2026-05-02
 
@@ -18,8 +18,8 @@ the transaction, selection, history, projection, or command contracts change.
 ## Document
 
 - Markdown source text is canonical.
-- `SovereignDocument.markdown` returns the durable source text.
-- `SovereignTextBuffer` indexes source offsets as Dart/Flutter-compatible
+- `FlarkDocument.markdown` returns the durable source text.
+- `FlarkTextBuffer` indexes source offsets as Dart/Flutter-compatible
   UTF-16 code units.
 - Line starts are derived from source text and recomputed with immutable buffer
   replacement.
@@ -27,7 +27,7 @@ the transaction, selection, history, projection, or command contracts change.
 
 ## Selection
 
-- `SovereignSelection` is source-offset based.
+- `FlarkSelection` is source-offset based.
 - Selection offsets are validated against document text length.
 - A selection may be collapsed or ranged.
 - `start` and `end` are normalized views; `baseOffset` and `extentOffset`
@@ -35,7 +35,7 @@ the transaction, selection, history, projection, or command contracts change.
 
 ## Source Operations
 
-- `SovereignSourceOperation` is currently a replace-range primitive with
+- `FlarkSourceOperation` is currently a replace-range primitive with
   insert/delete convenience factories.
 - Operation ranges use offsets in the document state before the transaction.
 - Replacement text length and deleted range length define the operation delta.
@@ -43,7 +43,7 @@ the transaction, selection, history, projection, or command contracts change.
 
 ## Transactions
 
-- A `SovereignTransaction` is an atomic list of non-overlapping source
+- A `FlarkTransaction` is an atomic list of non-overlapping source
   operations.
 - Multi-operation transactions are applied against original offsets, not
   sequentially shifted offsets.
@@ -54,12 +54,12 @@ the transaction, selection, history, projection, or command contracts change.
   transaction.
 - Transaction inversion uses the original document to recover deleted source
   text and produces undo transactions with `addToHistory: false`.
-- Transaction metadata is typed through `SovereignTransactionMetadata`.
+- Transaction metadata is typed through `FlarkTransactionMetadata`.
 
 ## History
 
-- `SovereignHistoryStack` is immutable.
-- History is a companion state object, not a field on `SovereignEditorState`.
+- `FlarkHistoryStack` is immutable.
+- History is a companion state object, not a field on `FlarkEditorState`.
 - A future engine/runtime state should compose editor state, history, command
   state, and extension state.
 - Recording a transaction stores both redo transactions and inverse undo

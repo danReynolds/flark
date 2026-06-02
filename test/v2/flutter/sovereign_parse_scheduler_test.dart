@@ -1,19 +1,19 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
-import 'package:sovereign_editor/src/v2/flutter/flutter.dart';
-import 'package:sovereign_editor/src/v2/markdown/markdown.dart';
+import 'package:flark/src/v2/core/core.dart';
+import 'package:flark/src/v2/flutter/flutter.dart';
+import 'package:flark/src/v2/markdown/markdown.dart';
 
 void main() {
-  group('SovereignParseScheduler', () {
+  group('FlarkParseScheduler', () {
     test(
       'parses the current controller revision and applies fresh results',
       () async {
-        final controller = SovereignFlutterController.fromMarkdown('hello');
+        final controller = FlarkFlutterController.fromMarkdown('hello');
         addTearDown(controller.dispose);
         final backend = _FakeParseBackend();
-        final scheduler = SovereignParseScheduler(
+        final scheduler = FlarkParseScheduler(
           controller: controller,
           backend: backend,
           debounce: Duration.zero,
@@ -29,7 +29,7 @@ void main() {
         expect(controller.hasAuthoritativeRenderPlan, isTrue);
         expect(
           controller.renderPlan.blocks.single.sourceRange,
-          const SovereignSourceRange(0, 5),
+          const FlarkSourceRange(0, 5),
         );
       },
     );
@@ -37,10 +37,10 @@ void main() {
     test(
       'reparses latest revision after stale in-flight parse completes',
       () async {
-        final controller = SovereignFlutterController.fromMarkdown('a');
+        final controller = FlarkFlutterController.fromMarkdown('a');
         addTearDown(controller.dispose);
         final backend = _FakeParseBackend();
-        final scheduler = SovereignParseScheduler(
+        final scheduler = FlarkParseScheduler(
           controller: controller,
           backend: backend,
           debounce: Duration.zero,
@@ -51,7 +51,7 @@ void main() {
         expect(backend.requests.single.revision, controller.state.revision);
 
         controller.applyTransaction(
-          SovereignTransaction.single(SovereignSourceOperation.insert(1, '!')),
+          FlarkTransaction.single(FlarkSourceOperation.insert(1, '!')),
         );
 
         backend.complete(0);
@@ -73,11 +73,11 @@ void main() {
     test(
       'reports scheduled parse failures and recovers on later revisions',
       () async {
-        final controller = SovereignFlutterController.fromMarkdown('a');
+        final controller = FlarkFlutterController.fromMarkdown('a');
         addTearDown(controller.dispose);
         final backend = _FakeParseBackend();
         final errors = <Object>[];
-        final scheduler = SovereignParseScheduler(
+        final scheduler = FlarkParseScheduler(
           controller: controller,
           backend: backend,
           debounce: Duration.zero,
@@ -95,7 +95,7 @@ void main() {
         expect(controller.hasAuthoritativeRenderPlan, isFalse);
 
         controller.applyTransaction(
-          SovereignTransaction.single(SovereignSourceOperation.insert(1, '!')),
+          FlarkTransaction.single(FlarkSourceOperation.insert(1, '!')),
         );
         await _pumpMicrotasks();
 
@@ -109,10 +109,10 @@ void main() {
     );
 
     test('parseNow surfaces parser failures to awaiters', () async {
-      final controller = SovereignFlutterController.fromMarkdown('a');
+      final controller = FlarkFlutterController.fromMarkdown('a');
       addTearDown(controller.dispose);
       final backend = _FakeParseBackend();
-      final scheduler = SovereignParseScheduler(
+      final scheduler = FlarkParseScheduler(
         controller: controller,
         backend: backend,
         debounce: Duration.zero,
@@ -132,24 +132,22 @@ void main() {
   });
 }
 
-final class _FakeParseBackend implements SovereignMarkdownParseBackend {
-  final requests = <SovereignMarkdownParseRequest>[];
-  final _completers = <Completer<SovereignMarkdownParseResult>>[];
+final class _FakeParseBackend implements FlarkMarkdownParseBackend {
+  final requests = <FlarkMarkdownParseRequest>[];
+  final _completers = <Completer<FlarkMarkdownParseResult>>[];
 
   @override
-  SovereignMarkdownParserCapabilities get capabilities =>
-      SovereignMarkdownParserCapabilities(
+  FlarkMarkdownParserCapabilities get capabilities =>
+      FlarkMarkdownParserCapabilities(
         parserName: 'fake',
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
-        supportedProfiles: const [SovereignMarkdownProfile.commonMarkGfm],
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
+        supportedProfiles: const [FlarkMarkdownProfile.commonMarkGfm],
       );
 
   @override
-  Future<SovereignMarkdownParseResult> parse(
-    SovereignMarkdownParseRequest request,
-  ) {
+  Future<FlarkMarkdownParseResult> parse(FlarkMarkdownParseRequest request) {
     requests.add(request);
-    final completer = Completer<SovereignMarkdownParseResult>();
+    final completer = Completer<FlarkMarkdownParseResult>();
     _completers.add(completer);
     return completer.future;
   }
@@ -157,15 +155,15 @@ final class _FakeParseBackend implements SovereignMarkdownParseBackend {
   void complete(int index) {
     final request = requests[index];
     _completers[index].complete(
-      SovereignMarkdownParseResult(
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+      FlarkMarkdownParseResult(
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
         revision: request.revision,
         sourceTextLength: request.markdown.length,
         blocks: [
-          SovereignMarkdownBlockNode(
-            kind: SovereignMarkdownBlockKind.paragraph,
+          FlarkMarkdownBlockNode(
+            kind: FlarkMarkdownBlockKind.paragraph,
             type: 'paragraph',
-            sourceRange: SovereignSourceRange(0, request.markdown.length),
+            sourceRange: FlarkSourceRange(0, request.markdown.length),
           ),
         ],
         inlineTokens: const [],

@@ -15,19 +15,16 @@ final _listItemMarkerPattern = RegExp(
   r'^[ ]{0,3}(?:(\d{1,9}[.)])|([-*+]))[ \t]+(?:\[([ xX])\][ \t]+)?',
 );
 
-final class SovereignNativeComrakParseBackend
-    implements SovereignMarkdownParseBackend {
-  const SovereignNativeComrakParseBackend({required NativeComrakBridge bridge})
+final class FlarkNativeComrakParseBackend implements FlarkMarkdownParseBackend {
+  const FlarkNativeComrakParseBackend({required NativeComrakBridge bridge})
     : _bridge = bridge;
 
-  static SovereignNativeComrakParseBackend? tryLoad({
-    String? overrideLibraryPath,
-  }) {
+  static FlarkNativeComrakParseBackend? tryLoad({String? overrideLibraryPath}) {
     final preflight = preflightNativeComrakBridge(
       overrideLibraryPath: overrideLibraryPath,
     );
     if (!preflight.isAvailable) return null;
-    return SovereignNativeComrakParseBackend.withNativeBridge(
+    return FlarkNativeComrakParseBackend.withNativeBridge(
       overrideLibraryPath: overrideLibraryPath,
     );
   }
@@ -40,41 +37,41 @@ final class SovereignNativeComrakParseBackend
     );
   }
 
-  factory SovereignNativeComrakParseBackend.withNativeBridge({
+  factory FlarkNativeComrakParseBackend.withNativeBridge({
     String? overrideLibraryPath,
   }) {
-    return SovereignNativeComrakParseBackend(
+    return FlarkNativeComrakParseBackend(
       bridge: createNativeComrakBridge(
         overrideLibraryPath: overrideLibraryPath,
       ),
     );
   }
 
-  static SovereignNativeComrakParseBackend requiredDefault() {
+  static FlarkNativeComrakParseBackend requiredDefault() {
     return _requiredDefaultBackend ??=
-        SovereignNativeComrakParseBackend.withNativeBridge();
+        FlarkNativeComrakParseBackend.withNativeBridge();
   }
 
   final NativeComrakBridge _bridge;
 
   @override
-  SovereignMarkdownParserCapabilities get capabilities =>
-      SovereignMarkdownParserCapabilities(
+  FlarkMarkdownParserCapabilities get capabilities =>
+      FlarkMarkdownParserCapabilities(
         parserName: 'comrak_native_v2_adapter',
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
         supportedProfiles: const [
-          SovereignMarkdownProfile.commonMarkCore,
-          SovereignMarkdownProfile.commonMarkGfm,
+          FlarkMarkdownProfile.commonMarkCore,
+          FlarkMarkdownProfile.commonMarkGfm,
         ],
       );
 
   @override
-  Future<SovereignMarkdownParseResult> parse(
-    SovereignMarkdownParseRequest request,
+  Future<FlarkMarkdownParseResult> parse(
+    FlarkMarkdownParseRequest request,
   ) async {
     if (request.markdown.isEmpty) {
-      return SovereignMarkdownParseResult(
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+      return FlarkMarkdownParseResult(
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
         revision: request.revision,
         sourceTextLength: 0,
         blocks: const [],
@@ -93,13 +90,13 @@ final class SovereignNativeComrakParseBackend
   }
 }
 
-SovereignNativeComrakParseBackend? _requiredDefaultBackend;
+FlarkNativeComrakParseBackend? _requiredDefaultBackend;
 
-SovereignMarkdownParseResult _mapNativeResult(
-  SovereignMarkdownParseRequest request,
+FlarkMarkdownParseResult _mapNativeResult(
+  FlarkMarkdownParseRequest request,
   NativeComrakParseResult native,
 ) {
-  final mapper = SovereignUtf8Utf16Mapper(request.markdown);
+  final mapper = FlarkUtf8Utf16Mapper(request.markdown);
   final renderBlocks = _normalizeNativeCodeBlockRanges(
     request.markdown,
     mapper,
@@ -211,46 +208,46 @@ SovereignMarkdownParseResult _mapNativeResult(
       ]);
   final hiddenRanges = [
     for (final range in referenceDefinitionRanges)
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.referenceDefinition,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.referenceDefinition,
         type: 'referenceDefinition',
         sourceRange: range,
       ),
     for (final range in rawHtmlRanges)
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.rawHtml,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.rawHtml,
         type: 'rawHtml',
         sourceRange: range,
       ),
     ...nativeInlineHiddenRanges,
     ...nativeMarkdownMarkerRanges,
     for (final range in codeFenceOpeningMarkerRanges)
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.markdownMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.markdownMarker,
         type: 'markdownMarker',
         sourceRange: range,
       ),
     for (final range in codeFenceOpeningInfoRanges)
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.markdownMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.markdownMarker,
         type: 'markdownMarker',
         sourceRange: range,
       ),
     for (final range in codeFenceOpeningLineBreakRanges)
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.markdownMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.markdownMarker,
         type: 'markdownMarker',
         sourceRange: range,
       ),
     for (final range in codeFenceClosingLineRanges)
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.markdownMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.markdownMarker,
         type: 'markdownMarker',
         sourceRange: range,
       ),
     for (final range in syntheticListMarkerRanges)
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.blockMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.blockMarker,
         type: 'blockMarker',
         sourceRange: range,
       ),
@@ -307,17 +304,17 @@ SovereignMarkdownParseResult _mapNativeResult(
         if (startCompare != 0) return startCompare;
         return a.sourceRange.length.compareTo(b.sourceRange.length);
       });
-  final diagnostics = <SovereignMarkdownDiagnostic>[
+  final diagnostics = <FlarkMarkdownDiagnostic>[
     if (native.revision != request.revision)
-      SovereignMarkdownDiagnostic(
+      FlarkMarkdownDiagnostic(
         code: 'COMRAK_REVISION_MISMATCH',
         message: 'Native parse revision mismatch.',
-        sourceRange: const SovereignSourceRange(0, 0),
+        sourceRange: const FlarkSourceRange(0, 0),
       ),
   ];
 
-  return SovereignMarkdownParseResult(
-    schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+  return FlarkMarkdownParseResult(
+    schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
     revision: request.revision,
     sourceTextLength: request.markdown.length,
     blocks: blocks,
@@ -331,7 +328,7 @@ SovereignMarkdownParseResult _mapNativeResult(
     diagnostics: [
       ...diagnostics,
       for (final diagnostic in native.diagnostics)
-        SovereignMarkdownDiagnostic(
+        FlarkMarkdownDiagnostic(
           code: diagnostic.code ?? 'COMRAK_DIAGNOSTIC',
           message: diagnostic.message,
           sourceRange: _mapRange(mapper, diagnostic.range),
@@ -407,13 +404,13 @@ final class _SyntheticListItem {
     required this.attributes,
   });
 
-  final SovereignSourceRange sourceRange;
-  final SovereignSourceRange markerRange;
+  final FlarkSourceRange sourceRange;
+  final FlarkSourceRange markerRange;
   final Map<String, Object?> attributes;
 
-  SovereignMarkdownBlockNode toBlock() {
-    return SovereignMarkdownBlockNode(
-      kind: SovereignMarkdownBlockKind.listItem,
+  FlarkMarkdownBlockNode toBlock() {
+    return FlarkMarkdownBlockNode(
+      kind: FlarkMarkdownBlockKind.listItem,
       type: 'listItem',
       sourceRange: sourceRange,
       attributes: attributes,
@@ -423,7 +420,7 @@ final class _SyntheticListItem {
 
 List<_SyntheticListItem> _syntheticListItems(
   String markdown,
-  SovereignUtf8Utf16Mapper mapper,
+  FlarkUtf8Utf16Mapper mapper,
   List<NativeComrakBlockSpan> renderBlocks,
 ) {
   final nativeListItemRanges = [
@@ -439,7 +436,7 @@ List<_SyntheticListItem> _syntheticListItems(
     if (line.endsWith('\r')) line = line.substring(0, line.length - 1);
     final match = _listItemMarkerPattern.firstMatch(line);
     if (match != null) {
-      final sourceRange = SovereignSourceRange(lineStart, lineEnd);
+      final sourceRange = FlarkSourceRange(lineStart, lineEnd);
       final hasNativeListItem = nativeListItemRanges.any(
         (range) => range.intersects(sourceRange),
       );
@@ -449,7 +446,7 @@ List<_SyntheticListItem> _syntheticListItems(
         items.add(
           _SyntheticListItem(
             sourceRange: sourceRange,
-            markerRange: SovereignSourceRange(lineStart, lineStart + match.end),
+            markerRange: FlarkSourceRange(lineStart, lineStart + match.end),
             attributes: {
               'listKind': orderedMarker == null ? 'unordered' : 'ordered',
               if (checkedMarker != null)
@@ -467,7 +464,7 @@ List<_SyntheticListItem> _syntheticListItems(
 
 bool _isReplacedBySyntheticListItem(
   NativeComrakBlockSpan block,
-  SovereignUtf8Utf16Mapper mapper,
+  FlarkUtf8Utf16Mapper mapper,
   List<_SyntheticListItem> syntheticItems,
 ) {
   final type = _blockType(block.type);
@@ -478,7 +475,7 @@ bool _isReplacedBySyntheticListItem(
 
 bool _isMarkerOnlyNativeBlockquote(
   String markdown,
-  SovereignUtf8Utf16Mapper mapper,
+  FlarkUtf8Utf16Mapper mapper,
   NativeComrakBlockSpan block,
   List<NativeComrakRange> markerRanges,
 ) {
@@ -497,8 +494,8 @@ bool _isMarkerOnlyNativeBlockquote(
 
 bool _nativeMarkerExtendsBlockSource(
   String markdown,
-  SovereignUtf8Utf16Mapper mapper,
-  SovereignSourceRange blockRange,
+  FlarkUtf8Utf16Mapper mapper,
+  FlarkSourceRange blockRange,
   List<NativeComrakRange> markerRanges,
 ) {
   for (final markerRange in markerRanges) {
@@ -515,10 +512,7 @@ bool _nativeMarkerExtendsBlockSource(
   return false;
 }
 
-bool _isMarkerOnlyBlockquoteSource(
-  String markdown,
-  SovereignSourceRange range,
-) {
+bool _isMarkerOnlyBlockquoteSource(String markdown, FlarkSourceRange range) {
   if (range.start < 0 ||
       range.end > markdown.length ||
       range.start >= range.end) {
@@ -541,7 +535,7 @@ bool _isMarkerOnlyBlockquoteLine(String text) {
 
 bool _isMarkerOnlyNativeHeading(
   String markdown,
-  SovereignUtf8Utf16Mapper mapper,
+  FlarkUtf8Utf16Mapper mapper,
   NativeComrakBlockSpan block,
   List<NativeComrakRange> markerRanges,
 ) {
@@ -558,7 +552,7 @@ bool _isMarkerOnlyNativeHeading(
   return _isMarkerOnlyHeadingSource(markdown, sourceRange);
 }
 
-bool _isMarkerOnlyHeadingSource(String markdown, SovereignSourceRange range) {
+bool _isMarkerOnlyHeadingSource(String markdown, FlarkSourceRange range) {
   if (range.start < 0 ||
       range.end > markdown.length ||
       range.start >= range.end) {
@@ -579,7 +573,7 @@ bool _isMarkerOnlyHeadingLine(String text) {
 
 bool _isMarkerOnlyNativeListItem(
   String markdown,
-  SovereignUtf8Utf16Mapper mapper,
+  FlarkUtf8Utf16Mapper mapper,
   NativeComrakBlockSpan block,
   List<NativeComrakRange> markerRanges,
 ) {
@@ -596,7 +590,7 @@ bool _isMarkerOnlyNativeListItem(
   return _isMarkerOnlyListItemSource(markdown, sourceRange);
 }
 
-bool _isMarkerOnlyListItemSource(String markdown, SovereignSourceRange range) {
+bool _isMarkerOnlyListItemSource(String markdown, FlarkSourceRange range) {
   if (range.start < 0 ||
       range.end > markdown.length ||
       range.start >= range.end) {
@@ -615,18 +609,18 @@ bool _isMarkerOnlyListItemLine(String text) {
   return RegExp(r'^[ \t]*(?:[-*+]|\d{1,9}[.)])$').hasMatch(text);
 }
 
-List<SovereignMarkdownHiddenRange> _nativeMarkdownMarkerHiddenRanges(
-  SovereignUtf8Utf16Mapper mapper,
+List<FlarkMarkdownHiddenRange> _nativeMarkdownMarkerHiddenRanges(
+  FlarkUtf8Utf16Mapper mapper,
   List<NativeComrakRange> markerRanges,
-  List<SovereignSourceRange> excludedRanges,
+  List<FlarkSourceRange> excludedRanges,
 ) {
-  final hiddenRanges = <SovereignMarkdownHiddenRange>[];
+  final hiddenRanges = <FlarkMarkdownHiddenRange>[];
   for (final range in markerRanges) {
     final sourceRange = _mapRange(mapper, range);
     if (_overlapsAny(sourceRange, excludedRanges)) continue;
     hiddenRanges.add(
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.markdownMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.markdownMarker,
         type: 'markdownMarker',
         sourceRange: sourceRange,
       ),
@@ -635,13 +629,13 @@ List<SovereignMarkdownHiddenRange> _nativeMarkdownMarkerHiddenRanges(
   return hiddenRanges;
 }
 
-List<SovereignSourceRange> _codeFenceOpeningLineBreakRanges(
+List<FlarkSourceRange> _codeFenceOpeningLineBreakRanges(
   String markdown,
-  SovereignUtf8Utf16Mapper mapper,
+  FlarkUtf8Utf16Mapper mapper,
   List<NativeComrakBlockSpan> renderBlocks,
   List<NativeComrakRange> nativeMarkerRanges,
 ) {
-  final hiddenRanges = <SovereignSourceRange>[];
+  final hiddenRanges = <FlarkSourceRange>[];
   final markerRanges = [
     for (final range in nativeMarkerRanges) _mapRange(mapper, range),
   ];
@@ -665,18 +659,18 @@ List<SovereignSourceRange> _codeFenceOpeningLineBreakRanges(
         newline > range.start && markdown.codeUnitAt(newline - 1) == 0x0D
         ? newline - 1
         : newline;
-    hiddenRanges.add(SovereignSourceRange(lineBreakStart, newline + 1));
+    hiddenRanges.add(FlarkSourceRange(lineBreakStart, newline + 1));
   }
 
   return hiddenRanges;
 }
 
-List<SovereignSourceRange> _codeFenceOpeningInfoRanges(
+List<FlarkSourceRange> _codeFenceOpeningInfoRanges(
   String markdown,
-  SovereignUtf8Utf16Mapper mapper,
+  FlarkUtf8Utf16Mapper mapper,
   List<NativeComrakBlockSpan> renderBlocks,
 ) {
-  final hiddenRanges = <SovereignSourceRange>[];
+  final hiddenRanges = <FlarkSourceRange>[];
 
   for (final block in renderBlocks) {
     if (_blockType(block.type) != 'codeBlock') continue;
@@ -697,18 +691,18 @@ List<SovereignSourceRange> _codeFenceOpeningInfoRanges(
         ? newline - 1
         : newline;
     if (infoEnd <= infoStart) continue;
-    hiddenRanges.add(SovereignSourceRange(infoStart, infoEnd));
+    hiddenRanges.add(FlarkSourceRange(infoStart, infoEnd));
   }
 
   return hiddenRanges;
 }
 
-List<SovereignSourceRange> _codeFenceOpeningMarkerRanges(
+List<FlarkSourceRange> _codeFenceOpeningMarkerRanges(
   String markdown,
-  SovereignUtf8Utf16Mapper mapper,
+  FlarkUtf8Utf16Mapper mapper,
   List<NativeComrakBlockSpan> renderBlocks,
 ) {
-  final hiddenRanges = <SovereignSourceRange>[];
+  final hiddenRanges = <FlarkSourceRange>[];
 
   for (final block in renderBlocks) {
     if (_blockType(block.type) != 'codeBlock') continue;
@@ -722,21 +716,19 @@ List<SovereignSourceRange> _codeFenceOpeningMarkerRanges(
       markdown.substring(range.start, newline),
     );
     if (markerEnd == null || markerEnd <= 0) continue;
-    hiddenRanges.add(
-      SovereignSourceRange(range.start, range.start + markerEnd),
-    );
+    hiddenRanges.add(FlarkSourceRange(range.start, range.start + markerEnd));
   }
 
   return hiddenRanges;
 }
 
-List<SovereignSourceRange> _codeFenceClosingLineRanges(
+List<FlarkSourceRange> _codeFenceClosingLineRanges(
   String markdown,
-  SovereignUtf8Utf16Mapper mapper,
+  FlarkUtf8Utf16Mapper mapper,
   List<NativeComrakBlockSpan> renderBlocks,
   List<NativeComrakRange> nativeMarkerRanges,
 ) {
-  final hiddenRanges = <SovereignSourceRange>[];
+  final hiddenRanges = <FlarkSourceRange>[];
   final markerRanges = [
     for (final range in nativeMarkerRanges) _mapRange(mapper, range),
   ];
@@ -749,7 +741,7 @@ List<SovereignSourceRange> _codeFenceClosingLineRanges(
     final openingNewline = markdown.indexOf('\n', range.start);
     if (openingNewline < 0 || openingNewline >= range.end) continue;
 
-    SovereignSourceRange? closingMarker;
+    FlarkSourceRange? closingMarker;
     for (final marker in markerRanges) {
       if (marker.start <= openingNewline) continue;
       if (marker.start < range.start || marker.end > range.end) continue;
@@ -767,18 +759,18 @@ List<SovereignSourceRange> _codeFenceClosingLineRanges(
         : newline > range.start && markdown.codeUnitAt(newline - 1) == 0x0D
         ? newline - 1
         : newline;
-    hiddenRanges.add(SovereignSourceRange(lineBreakStart, closingMarker.end));
+    hiddenRanges.add(FlarkSourceRange(lineBreakStart, closingMarker.end));
   }
 
   return hiddenRanges;
 }
 
-List<SovereignMarkdownHiddenRange> _nativeInlineHiddenRanges(
+List<FlarkMarkdownHiddenRange> _nativeInlineHiddenRanges(
   String markdown,
-  SovereignUtf8Utf16Mapper mapper,
+  FlarkUtf8Utf16Mapper mapper,
   List<NativeComrakInlineToken> tokens,
 ) {
-  final ranges = <SovereignMarkdownHiddenRange>[];
+  final ranges = <FlarkMarkdownHiddenRange>[];
   for (final token in tokens) {
     final isImage = token.styles.any((style) => _inlineType(style) == 'image');
     final isLink = token.styles.any((style) => _inlineType(style) == 'link');
@@ -808,17 +800,17 @@ List<SovereignMarkdownHiddenRange> _nativeInlineHiddenRanges(
     if (destinationEnd == null || destinationEnd + 1 > end) continue;
 
     ranges.add(
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.inlineMarker,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.inlineMarker,
         type: 'inlineMarker',
-        sourceRange: SovereignSourceRange(start, start + markerLength),
+        sourceRange: FlarkSourceRange(start, start + markerLength),
       ),
     );
     ranges.add(
-      SovereignMarkdownHiddenRange(
-        kind: SovereignMarkdownHiddenRangeKind.linkDestination,
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.linkDestination,
         type: 'linkDestination',
-        sourceRange: SovereignSourceRange(labelEnd, destinationEnd + 1),
+        sourceRange: FlarkSourceRange(labelEnd, destinationEnd + 1),
       ),
     );
   }
@@ -862,7 +854,7 @@ bool _isEscapedAt(String source, int index) {
 
 List<NativeComrakBlockSpan> _normalizeNativeCodeBlockRanges(
   String markdown,
-  SovereignUtf8Utf16Mapper mapper,
+  FlarkUtf8Utf16Mapper mapper,
   List<NativeComrakBlockSpan> blocks,
 ) {
   return [
@@ -873,7 +865,7 @@ List<NativeComrakBlockSpan> _normalizeNativeCodeBlockRanges(
 
 NativeComrakBlockSpan _normalizeNativeCodeBlockRange(
   String markdown,
-  SovereignUtf8Utf16Mapper mapper,
+  FlarkUtf8Utf16Mapper mapper,
   NativeComrakBlockSpan block,
 ) {
   if (_blockType(block.type) != 'codeBlock') return block;
@@ -1002,14 +994,14 @@ final class _FenceInfo {
   final int length;
 }
 
-SovereignMarkdownBlockNode _mapBlock(
-  SovereignUtf8Utf16Mapper mapper,
+FlarkMarkdownBlockNode _mapBlock(
+  FlarkUtf8Utf16Mapper mapper,
   NativeComrakBlockSpan block, {
-  Iterable<SovereignMarkdownBlockNode> children = const [],
+  Iterable<FlarkMarkdownBlockNode> children = const [],
   String? overrideType,
 }) {
   final mapped = overrideType ?? _blockType(block.type);
-  return SovereignMarkdownBlockNode(
+  return FlarkMarkdownBlockNode(
     kind: _blockKind(mapped),
     type: mapped,
     sourceRange: _mapRange(mapper, block.range),
@@ -1023,8 +1015,8 @@ SovereignMarkdownBlockNode _mapBlock(
   );
 }
 
-List<SovereignMarkdownBlockNode> _tableChildBlocks(
-  SovereignUtf8Utf16Mapper mapper,
+List<FlarkMarkdownBlockNode> _tableChildBlocks(
+  FlarkUtf8Utf16Mapper mapper,
   NativeComrakBlockSpan table,
   List<NativeComrakBlockSpan> blocks,
 ) {
@@ -1052,9 +1044,9 @@ List<SovereignMarkdownBlockNode> _tableChildBlocks(
   ];
 }
 
-Iterable<SovereignMarkdownInlineToken> _mapInlineToken(
+Iterable<FlarkMarkdownInlineToken> _mapInlineToken(
   String markdown,
-  SovereignUtf8Utf16Mapper mapper,
+  FlarkUtf8Utf16Mapper mapper,
   NativeComrakInlineToken token,
 ) sync* {
   final range = _mapRange(mapper, token.range);
@@ -1063,7 +1055,7 @@ Iterable<SovereignMarkdownInlineToken> _mapInlineToken(
     if (mapped == 'link' && _isFootnoteShortcutReference(markdown, range)) {
       continue;
     }
-    yield SovereignMarkdownInlineToken(
+    yield FlarkMarkdownInlineToken(
       kind: _inlineKind(mapped),
       type: mapped,
       sourceRange: range,
@@ -1077,7 +1069,7 @@ Iterable<SovereignMarkdownInlineToken> _mapInlineToken(
 
 bool _isPartialStrongIntentEmphasis(
   String markdown,
-  SovereignUtf8Utf16Mapper mapper,
+  FlarkUtf8Utf16Mapper mapper,
   NativeComrakInlineToken token,
 ) {
   final styles = token.styles.map(_inlineType).toSet();
@@ -1088,9 +1080,9 @@ bool _isPartialStrongIntentEmphasis(
   ).isNotEmpty;
 }
 
-List<SovereignSourceRange> _partialStrongIntentMarkerRanges(
+List<FlarkSourceRange> _partialStrongIntentMarkerRanges(
   String markdown,
-  SovereignSourceRange range,
+  FlarkSourceRange range,
 ) {
   if (range.start < 0 || range.end > markdown.length) return const [];
   if (range.end - range.start < 3) return const [];
@@ -1106,17 +1098,17 @@ List<SovereignSourceRange> _partialStrongIntentMarkerRanges(
   if (!hasSameMarkerBefore && !hasSameMarkerAfter) return const [];
 
   return [
-    SovereignSourceRange(range.start, range.start + 1),
-    SovereignSourceRange(range.end - 1, range.end),
+    FlarkSourceRange(range.start, range.start + 1),
+    FlarkSourceRange(range.end - 1, range.end),
   ];
 }
 
-SovereignMarkdownReplacementRange _mapReplacementRange(
-  SovereignUtf8Utf16Mapper mapper,
+FlarkMarkdownReplacementRange _mapReplacementRange(
+  FlarkUtf8Utf16Mapper mapper,
   NativeComrakReplacementRange replacementRange,
 ) {
   final type = _replacementType(replacementRange.type);
-  return SovereignMarkdownReplacementRange(
+  return FlarkMarkdownReplacementRange(
     kind: _replacementKind(type),
     type: type,
     sourceRange: _mapRange(mapper, replacementRange.range),
@@ -1124,11 +1116,10 @@ SovereignMarkdownReplacementRange _mapReplacementRange(
   );
 }
 
-NativeComrakProfile _nativeProfile(SovereignMarkdownProfile profile) {
+NativeComrakProfile _nativeProfile(FlarkMarkdownProfile profile) {
   return switch (profile) {
-    SovereignMarkdownProfile.commonMarkCore =>
-      NativeComrakProfile.commonMarkCore,
-    SovereignMarkdownProfile.commonMarkGfm => NativeComrakProfile.commonMarkGfm,
+    FlarkMarkdownProfile.commonMarkCore => NativeComrakProfile.commonMarkCore,
+    FlarkMarkdownProfile.commonMarkGfm => NativeComrakProfile.commonMarkGfm,
   };
 }
 
@@ -1150,20 +1141,20 @@ String _blockType(String type) {
   };
 }
 
-SovereignMarkdownBlockKind _blockKind(String type) {
+FlarkMarkdownBlockKind _blockKind(String type) {
   return switch (type) {
-    'paragraph' => SovereignMarkdownBlockKind.paragraph,
-    'heading' => SovereignMarkdownBlockKind.heading,
-    'blockquote' => SovereignMarkdownBlockKind.blockquote,
-    'list' => SovereignMarkdownBlockKind.list,
-    'listItem' => SovereignMarkdownBlockKind.listItem,
-    'thematicBreak' => SovereignMarkdownBlockKind.thematicBreak,
-    'codeBlock' => SovereignMarkdownBlockKind.codeBlock,
-    'htmlBlock' => SovereignMarkdownBlockKind.htmlBlock,
-    'table' => SovereignMarkdownBlockKind.table,
-    'tableRow' => SovereignMarkdownBlockKind.tableRow,
-    'tableCell' => SovereignMarkdownBlockKind.tableCell,
-    _ => SovereignMarkdownBlockKind.unknown,
+    'paragraph' => FlarkMarkdownBlockKind.paragraph,
+    'heading' => FlarkMarkdownBlockKind.heading,
+    'blockquote' => FlarkMarkdownBlockKind.blockquote,
+    'list' => FlarkMarkdownBlockKind.list,
+    'listItem' => FlarkMarkdownBlockKind.listItem,
+    'thematicBreak' => FlarkMarkdownBlockKind.thematicBreak,
+    'codeBlock' => FlarkMarkdownBlockKind.codeBlock,
+    'htmlBlock' => FlarkMarkdownBlockKind.htmlBlock,
+    'table' => FlarkMarkdownBlockKind.table,
+    'tableRow' => FlarkMarkdownBlockKind.tableRow,
+    'tableCell' => FlarkMarkdownBlockKind.tableCell,
+    _ => FlarkMarkdownBlockKind.unknown,
   };
 }
 
@@ -1181,17 +1172,17 @@ String _inlineType(String style) {
   };
 }
 
-SovereignMarkdownInlineKind _inlineKind(String type) {
+FlarkMarkdownInlineKind _inlineKind(String type) {
   return switch (type) {
-    'emphasis' => SovereignMarkdownInlineKind.emphasis,
-    'strong' => SovereignMarkdownInlineKind.strong,
-    'inlineCode' => SovereignMarkdownInlineKind.inlineCode,
-    'link' => SovereignMarkdownInlineKind.link,
-    'image' => SovereignMarkdownInlineKind.image,
-    'autolink' => SovereignMarkdownInlineKind.autolink,
-    'strikethrough' => SovereignMarkdownInlineKind.strikethrough,
-    'htmlInline' => SovereignMarkdownInlineKind.htmlInline,
-    _ => SovereignMarkdownInlineKind.unknown,
+    'emphasis' => FlarkMarkdownInlineKind.emphasis,
+    'strong' => FlarkMarkdownInlineKind.strong,
+    'inlineCode' => FlarkMarkdownInlineKind.inlineCode,
+    'link' => FlarkMarkdownInlineKind.link,
+    'image' => FlarkMarkdownInlineKind.image,
+    'autolink' => FlarkMarkdownInlineKind.autolink,
+    'strikethrough' => FlarkMarkdownInlineKind.strikethrough,
+    'htmlInline' => FlarkMarkdownInlineKind.htmlInline,
+    _ => FlarkMarkdownInlineKind.unknown,
   };
 }
 
@@ -1202,10 +1193,10 @@ String _replacementType(String type) {
   };
 }
 
-SovereignMarkdownReplacementRangeKind _replacementKind(String type) {
+FlarkMarkdownReplacementRangeKind _replacementKind(String type) {
   return switch (type) {
-    'htmlEntity' => SovereignMarkdownReplacementRangeKind.htmlEntity,
-    _ => SovereignMarkdownReplacementRangeKind.unknown,
+    'htmlEntity' => FlarkMarkdownReplacementRangeKind.htmlEntity,
+    _ => FlarkMarkdownReplacementRangeKind.unknown,
   };
 }
 
@@ -1232,24 +1223,24 @@ List<String> _orderedStyles(Set<String> styles) {
   ];
 }
 
-SovereignSourceRange _mapRange(
-  SovereignUtf8Utf16Mapper mapper,
+FlarkSourceRange _mapRange(
+  FlarkUtf8Utf16Mapper mapper,
   NativeComrakRange range,
 ) {
   final startByte = range.startByte.clamp(0, mapper.utf8Length);
   final endByte = range.endByte.clamp(0, mapper.utf8Length);
   final start = mapper.utf16OffsetForUtf8Offset(startByte);
   final end = mapper.utf16OffsetForUtf8Offset(endByte);
-  if (end < start) return SovereignSourceRange(start, start);
-  return SovereignSourceRange(start, end);
+  if (end < start) return FlarkSourceRange(start, start);
+  return FlarkSourceRange(start, end);
 }
 
-Map<String, int> _rangeJson(SovereignSourceRange range) {
+Map<String, int> _rangeJson(FlarkSourceRange range) {
   return {'start': range.start, 'end': range.end};
 }
 
-List<SovereignSourceRange> _referenceDefinitionRanges(String markdown) {
-  final ranges = <SovereignSourceRange>[];
+List<FlarkSourceRange> _referenceDefinitionRanges(String markdown) {
+  final ranges = <FlarkSourceRange>[];
   var lineStart = 0;
   while (lineStart <= markdown.length) {
     final nextBreak = markdown.indexOf('\n', lineStart);
@@ -1257,7 +1248,7 @@ List<SovereignSourceRange> _referenceDefinitionRanges(String markdown) {
     final lineEndWithBreak = nextBreak == -1 ? lineEnd : nextBreak + 1;
     final line = markdown.substring(lineStart, lineEnd);
     if (_isReferenceDefinitionLine(line)) {
-      ranges.add(SovereignSourceRange(lineStart, lineEndWithBreak));
+      ranges.add(FlarkSourceRange(lineStart, lineEndWithBreak));
     }
     if (nextBreak == -1) break;
     lineStart = nextBreak + 1;
@@ -1274,7 +1265,7 @@ bool _isReferenceDefinitionLine(String line) {
 
 bool _isFootnoteShortcutReference(
   String markdown,
-  SovereignSourceRange sourceRange,
+  FlarkSourceRange sourceRange,
 ) {
   if (sourceRange.start < 0 ||
       sourceRange.end > markdown.length ||
@@ -1285,10 +1276,7 @@ bool _isFootnoteShortcutReference(
   return RegExp(r'^\[\^[^\]\n]+\]$').hasMatch(source);
 }
 
-bool _overlapsAny(
-  SovereignSourceRange range,
-  Iterable<SovereignSourceRange> ranges,
-) {
+bool _overlapsAny(FlarkSourceRange range, Iterable<FlarkSourceRange> ranges) {
   return ranges.any(
     (other) => range.start < other.end && other.start < range.end,
   );

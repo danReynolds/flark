@@ -3,13 +3,11 @@ import 'package:flutter/widgets.dart';
 import '../render_plan/render_plan.dart';
 import 'sovereign_flutter_controller.dart';
 
-typedef SovereignOverlayTargetWidgetBuilder = Widget Function(
-  BuildContext context,
-  SovereignRenderOverlayTarget target,
-);
+typedef FlarkOverlayTargetWidgetBuilder =
+    Widget Function(BuildContext context, FlarkRenderOverlayTarget target);
 
-final class SovereignRenderPlanOverlayControls extends StatelessWidget {
-  const SovereignRenderPlanOverlayControls({
+final class FlarkRenderPlanOverlayControls extends StatelessWidget {
+  const FlarkRenderPlanOverlayControls({
     super.key,
     required this.controller,
     this.builder,
@@ -18,9 +16,9 @@ final class SovereignRenderPlanOverlayControls extends StatelessWidget {
     this.runSpacing = 6,
   });
 
-  final SovereignFlutterController controller;
-  final SovereignOverlayTargetWidgetBuilder? builder;
-  final ValueChanged<SovereignRenderOverlayTarget>? onPressed;
+  final FlarkFlutterController controller;
+  final FlarkOverlayTargetWidgetBuilder? builder;
+  final ValueChanged<FlarkRenderOverlayTarget>? onPressed;
   final double spacing;
   final double runSpacing;
 
@@ -56,12 +54,9 @@ final class SovereignRenderPlanOverlayControls extends StatelessWidget {
 }
 
 final class _DefaultOverlayTargetControl extends StatelessWidget {
-  const _DefaultOverlayTargetControl({
-    required this.target,
-    this.onPressed,
-  });
+  const _DefaultOverlayTargetControl({required this.target, this.onPressed});
 
-  final SovereignRenderOverlayTarget target;
+  final FlarkRenderOverlayTarget target;
   final VoidCallback? onPressed;
 
   @override
@@ -88,8 +83,9 @@ final class _DefaultOverlayTargetControl extends StatelessWidget {
       label: label,
       value: value,
       child: MouseRegion(
-        cursor:
-            onPressed == null ? MouseCursor.defer : SystemMouseCursors.click,
+        cursor: onPressed == null
+            ? MouseCursor.defer
+            : SystemMouseCursors.click,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: onPressed,
@@ -100,26 +96,26 @@ final class _DefaultOverlayTargetControl extends StatelessWidget {
   }
 }
 
-String _targetLabel(SovereignRenderOverlayTarget target) {
+String _targetLabel(FlarkRenderOverlayTarget target) {
   return switch (target.kind) {
-    SovereignRenderOverlayKind.link => 'Link',
-    SovereignRenderOverlayKind.image => 'Image',
-    SovereignRenderOverlayKind.taskListItem => 'Task',
-    SovereignRenderOverlayKind.table => 'Table',
-    SovereignRenderOverlayKind.codeBlock => 'Code',
+    FlarkRenderOverlayKind.link => 'Link',
+    FlarkRenderOverlayKind.image => 'Image',
+    FlarkRenderOverlayKind.taskListItem => 'Task',
+    FlarkRenderOverlayKind.table => 'Table',
+    FlarkRenderOverlayKind.codeBlock => 'Code',
   };
 }
 
-String _targetValue(SovereignRenderOverlayTarget target) {
+String _targetValue(FlarkRenderOverlayTarget target) {
   return switch (target.kind) {
-    SovereignRenderOverlayKind.link => target.action?.destination ?? '',
-    SovereignRenderOverlayKind.image =>
+    FlarkRenderOverlayKind.link => target.action?.destination ?? '',
+    FlarkRenderOverlayKind.image =>
       target.action?.label ?? target.action?.destination ?? '',
-    SovereignRenderOverlayKind.taskListItem =>
+    FlarkRenderOverlayKind.taskListItem =>
       target.taskListItem?.checked == true ? 'checked' : 'unchecked',
-    SovereignRenderOverlayKind.table =>
+    FlarkRenderOverlayKind.table =>
       '${target.table?.columnAlignments.length ?? 0} columns',
-    SovereignRenderOverlayKind.codeBlock =>
+    FlarkRenderOverlayKind.codeBlock =>
       target.codeBlock?.language ?? 'plain text',
   };
 }

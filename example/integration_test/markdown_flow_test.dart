@@ -2,18 +2,18 @@ import 'package:example/main.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:sovereign_editor/sovereign_editor.dart';
+import 'package:flark/flark.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('example supports common markdown editing flows', (tester) async {
-    await tester.pumpWidget(const SovereignExampleApp());
+    await tester.pumpWidget(const FlarkExampleApp());
     await _settleParsing(tester);
 
     expect(find.text('Comrak'), findsOneWidget);
-    expect(_editorText(tester), contains('Sovereign Markdown'));
-    expect(_editorText(tester), isNot(contains('# Sovereign Markdown')));
+    expect(_editorText(tester), contains('Flark Markdown'));
+    expect(_editorText(tester), isNot(contains('# Flark Markdown')));
 
     await tester.tap(_key('sovereign-example-scenario-article'));
     await _settleParsing(tester);
@@ -27,7 +27,7 @@ void main() {
     await tester.tap(_key('sovereign-example-scenario-scratch'));
     await _settleParsing(tester);
     expect(_editorText(tester), isEmpty);
-    expect(_editingMode(tester), SovereignMarkdownEditingMode.liveRendered);
+    expect(_editingMode(tester), FlarkMarkdownEditingMode.liveRendered);
 
     await tester.enterText(find.byType(EditableText), 'A\n\nB\nC');
     await _settleParsing(tester);
@@ -45,11 +45,11 @@ void main() {
     await _settleParsing(tester);
     expect(find.byType(MarkdownEditor), findsNothing);
     expect(
-      find.byKey(const Key('SovereignReadOnlyPreviewCodeBlock')),
+      find.byKey(const Key('FlarkReadOnlyPreviewCodeBlock')),
       findsWidgets,
     );
     expect(
-      find.byKey(const Key('SovereignReadOnlyPreviewBlockquote')),
+      find.byKey(const Key('FlarkReadOnlyPreviewBlockquote')),
       findsWidgets,
     );
 
@@ -90,7 +90,7 @@ String _editorText(WidgetTester tester) {
       .join('\n');
 }
 
-SovereignMarkdownEditingMode _editingMode(WidgetTester tester) {
+FlarkMarkdownEditingMode _editingMode(WidgetTester tester) {
   return tester.widget<MarkdownEditor>(find.byType(MarkdownEditor)).editingMode;
 }
 

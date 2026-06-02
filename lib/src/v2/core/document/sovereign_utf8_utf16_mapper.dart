@@ -1,9 +1,9 @@
 import 'dart:convert';
 
-final class SovereignUtf8Utf16Mapper {
-  SovereignUtf8Utf16Mapper(String text)
-      : _utf16ToUtf8 = _buildUtf16ToUtf8(text),
-        _utf8ToUtf16 = _buildUtf8ToUtf16(text);
+final class FlarkUtf8Utf16Mapper {
+  FlarkUtf8Utf16Mapper(String text)
+    : _utf16ToUtf8 = _buildUtf16ToUtf8(text),
+      _utf8ToUtf16 = _buildUtf8ToUtf16(text);
 
   final List<int> _utf16ToUtf8;
   final List<int> _utf8ToUtf16;

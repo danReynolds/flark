@@ -3,63 +3,57 @@ import 'package:flutter/widgets.dart';
 import '../core/core.dart';
 import 'sovereign_flutter_controller.dart';
 
-abstract interface class SovereignCommandInvocation {
-  SovereignEditorRuntimeResult invoke(SovereignFlutterController controller);
+abstract interface class FlarkCommandInvocation {
+  FlarkEditorRuntimeResult invoke(FlarkFlutterController controller);
 }
 
-final class SovereignTypedCommandInvocation<TPayload>
-    implements SovereignCommandInvocation {
-  const SovereignTypedCommandInvocation({
+final class FlarkTypedCommandInvocation<TPayload>
+    implements FlarkCommandInvocation {
+  const FlarkTypedCommandInvocation({
     required this.command,
     required this.payload,
   });
 
-  final SovereignCommand<TPayload> command;
+  final FlarkCommand<TPayload> command;
   final TPayload payload;
 
   @override
-  SovereignEditorRuntimeResult invoke(SovereignFlutterController controller) {
+  FlarkEditorRuntimeResult invoke(FlarkFlutterController controller) {
     return controller.dispatch(command: command, payload: payload);
   }
 }
 
-final class SovereignCommandIntent extends Intent {
-  const SovereignCommandIntent(this.invocation);
+final class FlarkCommandIntent extends Intent {
+  const FlarkCommandIntent(this.invocation);
 
-  final SovereignCommandInvocation invocation;
+  final FlarkCommandInvocation invocation;
 }
 
-final class SovereignCommandAction extends Action<SovereignCommandIntent> {
-  SovereignCommandAction({
-    required this.controller,
-  });
+final class FlarkCommandAction extends Action<FlarkCommandIntent> {
+  FlarkCommandAction({required this.controller});
 
-  final SovereignFlutterController controller;
+  final FlarkFlutterController controller;
 
   @override
-  Object? invoke(SovereignCommandIntent intent) {
+  Object? invoke(FlarkCommandIntent intent) {
     return intent.invocation.invoke(controller);
   }
 }
 
-final class SovereignCommandActions extends StatelessWidget {
-  const SovereignCommandActions({
+final class FlarkCommandActions extends StatelessWidget {
+  const FlarkCommandActions({
     super.key,
     required this.controller,
     required this.child,
   });
 
-  final SovereignFlutterController controller;
+  final FlarkFlutterController controller;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
     return Actions(
-      actions: {
-        SovereignCommandIntent: SovereignCommandAction(
-          controller: controller,
-        ),
-      },
+      actions: {FlarkCommandIntent: FlarkCommandAction(controller: controller)},
       child: child,
     );
   }

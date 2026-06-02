@@ -10,53 +10,48 @@ import '../../core/transaction/sovereign_transaction.dart';
 import '../../core/transaction/sovereign_transaction_metadata.dart';
 import '../source/sovereign_markdown_line_selection.dart';
 
-abstract final class SovereignMarkdownBlockCommands {
-  static const setHeadingLevel =
-      SovereignCommand<SovereignSetHeadingLevelPayload>(
-        'markdown.setHeadingLevel',
-      );
+abstract final class FlarkMarkdownBlockCommands {
+  static const setHeadingLevel = FlarkCommand<FlarkSetHeadingLevelPayload>(
+    'markdown.setHeadingLevel',
+  );
 
-  static const toggleQuote = SovereignCommand<SovereignToggleQuotePayload>(
+  static const toggleQuote = FlarkCommand<FlarkToggleQuotePayload>(
     'markdown.toggleQuote',
   );
 
-  static const toggleBulletList =
-      SovereignCommand<SovereignToggleBulletListPayload>(
-        'markdown.toggleBulletList',
-      );
+  static const toggleBulletList = FlarkCommand<FlarkToggleBulletListPayload>(
+    'markdown.toggleBulletList',
+  );
 
-  static const toggleOrderedList =
-      SovereignCommand<SovereignToggleOrderedListPayload>(
-        'markdown.toggleOrderedList',
-      );
+  static const toggleOrderedList = FlarkCommand<FlarkToggleOrderedListPayload>(
+    'markdown.toggleOrderedList',
+  );
 
-  static const toggleTaskList =
-      SovereignCommand<SovereignToggleTaskListPayload>(
-        'markdown.toggleTaskList',
-      );
+  static const toggleTaskList = FlarkCommand<FlarkToggleTaskListPayload>(
+    'markdown.toggleTaskList',
+  );
 
   static const setTaskListChecked =
-      SovereignCommand<SovereignSetTaskListCheckedPayload>(
+      FlarkCommand<FlarkSetTaskListCheckedPayload>(
         'markdown.setTaskListChecked',
       );
 
   static const insertThematicBreak =
-      SovereignCommand<SovereignInsertThematicBreakPayload>(
+      FlarkCommand<FlarkInsertThematicBreakPayload>(
         'markdown.insertThematicBreak',
       );
 
-  static const insertFence = SovereignCommand<SovereignInsertFencePayload>(
+  static const insertFence = FlarkCommand<FlarkInsertFencePayload>(
     'markdown.insertFence',
   );
 
-  static const setFenceLanguage =
-      SovereignCommand<SovereignSetFenceLanguagePayload>(
-        'markdown.setFenceLanguage',
-      );
+  static const setFenceLanguage = FlarkCommand<FlarkSetFenceLanguagePayload>(
+    'markdown.setFenceLanguage',
+  );
 }
 
-final class SovereignSetHeadingLevelPayload {
-  const SovereignSetHeadingLevelPayload(
+final class FlarkSetHeadingLevelPayload {
+  const FlarkSetHeadingLevelPayload(
     this.level, {
     this.userEvent = 'command.setHeadingLevel',
   });
@@ -65,22 +60,22 @@ final class SovereignSetHeadingLevelPayload {
   final String userEvent;
 }
 
-final class SovereignToggleQuotePayload {
-  const SovereignToggleQuotePayload({this.userEvent = 'command.toggleQuote'});
+final class FlarkToggleQuotePayload {
+  const FlarkToggleQuotePayload({this.userEvent = 'command.toggleQuote'});
 
   final String userEvent;
 }
 
-final class SovereignToggleBulletListPayload {
-  const SovereignToggleBulletListPayload({
+final class FlarkToggleBulletListPayload {
+  const FlarkToggleBulletListPayload({
     this.userEvent = 'command.toggleBulletList',
   });
 
   final String userEvent;
 }
 
-final class SovereignToggleOrderedListPayload {
-  const SovereignToggleOrderedListPayload({
+final class FlarkToggleOrderedListPayload {
+  const FlarkToggleOrderedListPayload({
     this.startNumber = 1,
     this.userEvent = 'command.toggleOrderedList',
   }) : assert(startNumber > 0);
@@ -89,36 +84,34 @@ final class SovereignToggleOrderedListPayload {
   final String userEvent;
 }
 
-final class SovereignToggleTaskListPayload {
-  const SovereignToggleTaskListPayload({
-    this.userEvent = 'command.toggleTaskList',
-  });
+final class FlarkToggleTaskListPayload {
+  const FlarkToggleTaskListPayload({this.userEvent = 'command.toggleTaskList'});
 
   final String userEvent;
 }
 
-final class SovereignSetTaskListCheckedPayload {
-  const SovereignSetTaskListCheckedPayload({
+final class FlarkSetTaskListCheckedPayload {
+  const FlarkSetTaskListCheckedPayload({
     required this.taskItemRange,
     required this.checked,
     this.userEvent = 'command.setTaskListChecked',
   });
 
-  final SovereignSourceRange taskItemRange;
+  final FlarkSourceRange taskItemRange;
   final bool checked;
   final String userEvent;
 }
 
-final class SovereignInsertThematicBreakPayload {
-  const SovereignInsertThematicBreakPayload({
+final class FlarkInsertThematicBreakPayload {
+  const FlarkInsertThematicBreakPayload({
     this.userEvent = 'command.insertThematicBreak',
   });
 
   final String userEvent;
 }
 
-final class SovereignInsertFencePayload {
-  const SovereignInsertFencePayload({
+final class FlarkInsertFencePayload {
+  const FlarkInsertFencePayload({
     this.language,
     this.userEvent = 'command.insertFence',
   });
@@ -127,84 +120,84 @@ final class SovereignInsertFencePayload {
   final String userEvent;
 }
 
-final class SovereignSetFenceLanguagePayload {
-  const SovereignSetFenceLanguagePayload({
+final class FlarkSetFenceLanguagePayload {
+  const FlarkSetFenceLanguagePayload({
     required this.codeBlockRange,
     required this.language,
     this.userEvent = 'command.setFenceLanguage',
   });
 
-  final SovereignSourceRange codeBlockRange;
+  final FlarkSourceRange codeBlockRange;
   final String? language;
   final String userEvent;
 }
 
-final class SovereignMarkdownBlockEditingExtension extends SovereignExtension {
-  const SovereignMarkdownBlockEditingExtension();
+final class FlarkMarkdownBlockEditingExtension extends FlarkExtension {
+  const FlarkMarkdownBlockEditingExtension();
 
   @override
   String get id => 'markdown.blockEditing';
 
   @override
-  SovereignCommandRegistry registerCommands(SovereignCommandRegistry registry) {
+  FlarkCommandRegistry registerCommands(FlarkCommandRegistry registry) {
     return registry
-        .register<SovereignSetHeadingLevelPayload>(
-          SovereignMarkdownBlockCommands.setHeadingLevel,
+        .register<FlarkSetHeadingLevelPayload>(
+          FlarkMarkdownBlockCommands.setHeadingLevel,
           _setHeadingLevel,
         )
-        .register<SovereignToggleQuotePayload>(
-          SovereignMarkdownBlockCommands.toggleQuote,
+        .register<FlarkToggleQuotePayload>(
+          FlarkMarkdownBlockCommands.toggleQuote,
           _toggleQuote,
         )
-        .register<SovereignToggleBulletListPayload>(
-          SovereignMarkdownBlockCommands.toggleBulletList,
+        .register<FlarkToggleBulletListPayload>(
+          FlarkMarkdownBlockCommands.toggleBulletList,
           _toggleBulletList,
         )
-        .register<SovereignToggleOrderedListPayload>(
-          SovereignMarkdownBlockCommands.toggleOrderedList,
+        .register<FlarkToggleOrderedListPayload>(
+          FlarkMarkdownBlockCommands.toggleOrderedList,
           _toggleOrderedList,
         )
-        .register<SovereignToggleTaskListPayload>(
-          SovereignMarkdownBlockCommands.toggleTaskList,
+        .register<FlarkToggleTaskListPayload>(
+          FlarkMarkdownBlockCommands.toggleTaskList,
           _toggleTaskList,
         )
-        .register<SovereignSetTaskListCheckedPayload>(
-          SovereignMarkdownBlockCommands.setTaskListChecked,
+        .register<FlarkSetTaskListCheckedPayload>(
+          FlarkMarkdownBlockCommands.setTaskListChecked,
           _setTaskListChecked,
         )
-        .register<SovereignInsertThematicBreakPayload>(
-          SovereignMarkdownBlockCommands.insertThematicBreak,
+        .register<FlarkInsertThematicBreakPayload>(
+          FlarkMarkdownBlockCommands.insertThematicBreak,
           _insertThematicBreak,
         )
-        .register<SovereignInsertFencePayload>(
-          SovereignMarkdownBlockCommands.insertFence,
+        .register<FlarkInsertFencePayload>(
+          FlarkMarkdownBlockCommands.insertFence,
           _insertFence,
         )
-        .register<SovereignSetFenceLanguagePayload>(
-          SovereignMarkdownBlockCommands.setFenceLanguage,
+        .register<FlarkSetFenceLanguagePayload>(
+          FlarkMarkdownBlockCommands.setFenceLanguage,
           _setFenceLanguage,
         );
   }
 
-  SovereignCommandResult _setHeadingLevel(
-    SovereignCommandContext<SovereignSetHeadingLevelPayload> context,
+  FlarkCommandResult _setHeadingLevel(
+    FlarkCommandContext<FlarkSetHeadingLevelPayload> context,
   ) {
     final level = context.payload.level;
     if (level < 0 || level > 6) {
-      return SovereignCommandResult.rejected(
+      return FlarkCommandResult.rejected(
         'Heading level must be between 0 and 6.',
       );
     }
 
     final marker = level == 0 ? '' : '${List.filled(level, '#').join()} ';
-    final operations = <SovereignSourceOperation>[];
+    final operations = <FlarkSourceOperation>[];
     final lines = selectedMarkdownLines(context.state);
 
     for (final line in lines) {
       final headingMarker = _headingMarker(line);
       operations.add(
-        SovereignSourceOperation.replace(
-          replacedRange: SovereignSourceRange(
+        FlarkSourceOperation.replace(
+          replacedRange: FlarkSourceRange(
             line.start,
             line.start + headingMarker.length,
           ),
@@ -220,28 +213,28 @@ final class SovereignMarkdownBlockEditingExtension extends SovereignExtension {
     );
   }
 
-  SovereignCommandResult _setTaskListChecked(
-    SovereignCommandContext<SovereignSetTaskListCheckedPayload> context,
+  FlarkCommandResult _setTaskListChecked(
+    FlarkCommandContext<FlarkSetTaskListCheckedPayload> context,
   ) {
     final line = _lineAtRangeStart(
       context.state,
       context.payload.taskItemRange,
     );
     if (line == null) {
-      return SovereignCommandResult.rejected(
+      return FlarkCommandResult.rejected(
         'Task item range does not start on a valid source line.',
       );
     }
     final taskMarker = _taskMarker(line);
     if (taskMarker == null) {
-      return SovereignCommandResult.rejected(
+      return FlarkCommandResult.rejected(
         'Task item range does not contain a task marker.',
       );
     }
 
     return _handledBlockTransaction(context.state.selection, [
-      SovereignSourceOperation.replace(
-        replacedRange: SovereignSourceRange(
+      FlarkSourceOperation.replace(
+        replacedRange: FlarkSourceRange(
           line.start + taskMarker.checkStart,
           line.start + taskMarker.checkEnd,
         ),
@@ -250,24 +243,21 @@ final class SovereignMarkdownBlockEditingExtension extends SovereignExtension {
     ], context.payload.userEvent);
   }
 
-  SovereignCommandResult _toggleQuote(
-    SovereignCommandContext<SovereignToggleQuotePayload> context,
+  FlarkCommandResult _toggleQuote(
+    FlarkCommandContext<FlarkToggleQuotePayload> context,
   ) {
     final lines = selectedMarkdownLines(context.state);
     final shouldRemove = lines.every((line) => _quoteMarker(line).isNotEmpty);
-    final operations = <SovereignSourceOperation>[];
+    final operations = <FlarkSourceOperation>[];
 
     for (final line in lines) {
       final marker = _quoteMarker(line);
       if (shouldRemove) {
         operations.add(
-          SovereignSourceOperation.delete(
-            line.start,
-            line.start + marker.length,
-          ),
+          FlarkSourceOperation.delete(line.start, line.start + marker.length),
         );
       } else if (marker.isEmpty) {
-        operations.add(SovereignSourceOperation.insert(line.start, '> '));
+        operations.add(FlarkSourceOperation.insert(line.start, '> '));
       }
     }
 
@@ -278,12 +268,12 @@ final class SovereignMarkdownBlockEditingExtension extends SovereignExtension {
     );
   }
 
-  SovereignCommandResult _toggleBulletList(
-    SovereignCommandContext<SovereignToggleBulletListPayload> context,
+  FlarkCommandResult _toggleBulletList(
+    FlarkCommandContext<FlarkToggleBulletListPayload> context,
   ) {
     final lines = selectedMarkdownLines(context.state);
     final shouldRemove = lines.every((line) => _bulletMarker(line) != null);
-    final operations = <SovereignSourceOperation>[];
+    final operations = <FlarkSourceOperation>[];
 
     for (final line in lines) {
       final marker = _bulletMarker(line);
@@ -291,14 +281,14 @@ final class SovereignMarkdownBlockEditingExtension extends SovereignExtension {
         final marker = _bulletMarker(line);
         if (marker == null) continue;
         operations.add(
-          SovereignSourceOperation.delete(
+          FlarkSourceOperation.delete(
             line.start + marker.start,
             line.start + marker.end,
           ),
         );
       } else if (marker == null) {
         operations.add(
-          SovereignSourceOperation.insert(
+          FlarkSourceOperation.insert(
             line.start + _quotePrefixLength(line.text),
             '- ',
           ),
@@ -313,26 +303,26 @@ final class SovereignMarkdownBlockEditingExtension extends SovereignExtension {
     );
   }
 
-  SovereignCommandResult _toggleOrderedList(
-    SovereignCommandContext<SovereignToggleOrderedListPayload> context,
+  FlarkCommandResult _toggleOrderedList(
+    FlarkCommandContext<FlarkToggleOrderedListPayload> context,
   ) {
     final lines = selectedMarkdownLines(context.state);
     final shouldRemove = lines.every((line) => _orderedMarker(line) != null);
-    final operations = <SovereignSourceOperation>[];
+    final operations = <FlarkSourceOperation>[];
 
     for (final (index, line) in lines.indexed) {
       final marker = _orderedMarker(line);
       if (shouldRemove) {
         if (marker == null) continue;
         operations.add(
-          SovereignSourceOperation.delete(
+          FlarkSourceOperation.delete(
             line.start + marker.start,
             line.start + marker.end,
           ),
         );
       } else if (marker == null) {
         operations.add(
-          SovereignSourceOperation.insert(
+          FlarkSourceOperation.insert(
             line.start + _quotePrefixLength(line.text),
             '${context.payload.startNumber + index}. ',
           ),
@@ -347,18 +337,18 @@ final class SovereignMarkdownBlockEditingExtension extends SovereignExtension {
     );
   }
 
-  SovereignCommandResult _toggleTaskList(
-    SovereignCommandContext<SovereignToggleTaskListPayload> context,
+  FlarkCommandResult _toggleTaskList(
+    FlarkCommandContext<FlarkToggleTaskListPayload> context,
   ) {
     final lines = selectedMarkdownLines(context.state);
-    final operations = <SovereignSourceOperation>[];
+    final operations = <FlarkSourceOperation>[];
 
     for (final line in lines) {
       final taskMarker = _taskMarker(line);
       if (taskMarker != null) {
         operations.add(
-          SovereignSourceOperation.replace(
-            replacedRange: SovereignSourceRange(
+          FlarkSourceOperation.replace(
+            replacedRange: FlarkSourceRange(
               line.start + taskMarker.checkStart,
               line.start + taskMarker.checkEnd,
             ),
@@ -371,16 +361,13 @@ final class SovereignMarkdownBlockEditingExtension extends SovereignExtension {
       final bulletMarker = _bulletMarker(line);
       if (bulletMarker != null) {
         operations.add(
-          SovereignSourceOperation.insert(
-            line.start + bulletMarker.end,
-            '[ ] ',
-          ),
+          FlarkSourceOperation.insert(line.start + bulletMarker.end, '[ ] '),
         );
         continue;
       }
 
       operations.add(
-        SovereignSourceOperation.insert(
+        FlarkSourceOperation.insert(
           line.start + _quotePrefixLength(line.text),
           '- [ ] ',
         ),
@@ -394,8 +381,8 @@ final class SovereignMarkdownBlockEditingExtension extends SovereignExtension {
     );
   }
 
-  SovereignCommandResult _insertThematicBreak(
-    SovereignCommandContext<SovereignInsertThematicBreakPayload> context,
+  FlarkCommandResult _insertThematicBreak(
+    FlarkCommandContext<FlarkInsertThematicBreakPayload> context,
   ) {
     final selection = context.state.selection;
     final lineIndex = context.state.document.buffer.lineAtOffset(
@@ -409,16 +396,16 @@ final class SovereignMarkdownBlockEditingExtension extends SovereignExtension {
 
     return _handledBlockTransaction(
       selection,
-      [SovereignSourceOperation.insert(insertOffset, insertText)],
+      [FlarkSourceOperation.insert(insertOffset, insertText)],
       context.payload.userEvent,
-      selectionAfter: SovereignSelection.collapsed(
+      selectionAfter: FlarkSelection.collapsed(
         insertOffset + insertText.length,
       ),
     );
   }
 
-  SovereignCommandResult _insertFence(
-    SovereignCommandContext<SovereignInsertFencePayload> context,
+  FlarkCommandResult _insertFence(
+    FlarkCommandContext<FlarkInsertFencePayload> context,
   ) {
     final selection = context.state.selection;
     final text = context.state.markdown;
@@ -434,9 +421,9 @@ final class SovereignMarkdownBlockEditingExtension extends SovereignExtension {
       final fenceText = '$prefix$opener\n\n```$suffix';
       return _handledBlockTransaction(
         selection,
-        [SovereignSourceOperation.insert(selection.start, fenceText)],
+        [FlarkSourceOperation.insert(selection.start, fenceText)],
         context.payload.userEvent,
-        selectionAfter: SovereignSelection.collapsed(
+        selectionAfter: FlarkSelection.collapsed(
           selection.start + prefix.length + opener.length + 1,
         ),
       );
@@ -446,13 +433,13 @@ final class SovereignMarkdownBlockEditingExtension extends SovereignExtension {
     return _handledBlockTransaction(
       selection,
       [
-        SovereignSourceOperation.replace(
-          replacedRange: SovereignSourceRange(selection.start, selection.end),
+        FlarkSourceOperation.replace(
+          replacedRange: FlarkSourceRange(selection.start, selection.end),
           replacementText: fenceText,
         ),
       ],
       context.payload.userEvent,
-      selectionAfter: SovereignSelection(
+      selectionAfter: FlarkSelection(
         baseOffset: selection.start + prefix.length + opener.length + 1,
         extentOffset:
             selection.start +
@@ -464,27 +451,27 @@ final class SovereignMarkdownBlockEditingExtension extends SovereignExtension {
     );
   }
 
-  SovereignCommandResult _setFenceLanguage(
-    SovereignCommandContext<SovereignSetFenceLanguagePayload> context,
+  FlarkCommandResult _setFenceLanguage(
+    FlarkCommandContext<FlarkSetFenceLanguagePayload> context,
   ) {
     final opener = _fenceOpeningLine(
       context.state,
       context.payload.codeBlockRange,
     );
     if (opener == null) {
-      return SovereignCommandResult.rejected(
+      return FlarkCommandResult.rejected(
         'Code block range does not start with a fenced code opener.',
       );
     }
 
     final language = context.payload.language?.trim() ?? '';
     if (language.contains('\n') || language.contains('\r')) {
-      return SovereignCommandResult.rejected(
+      return FlarkCommandResult.rejected(
         'Fence language cannot contain line breaks.',
       );
     }
     if (opener.marker.startsWith('`') && language.contains('`')) {
-      return SovereignCommandResult.rejected(
+      return FlarkCommandResult.rejected(
         'Backtick fence language cannot contain backticks.',
       );
     }
@@ -492,31 +479,31 @@ final class SovereignMarkdownBlockEditingExtension extends SovereignExtension {
     final replacement =
         '${opener.indent}${opener.marker}${language.isEmpty ? '' : language}';
     return _handledBlockTransaction(context.state.selection, [
-      SovereignSourceOperation.replace(
-        replacedRange: SovereignSourceRange(opener.start, opener.end),
+      FlarkSourceOperation.replace(
+        replacedRange: FlarkSourceRange(opener.start, opener.end),
         replacementText: replacement,
       ),
     ], context.payload.userEvent);
   }
 
-  SovereignCommandResult _handledBlockTransaction(
-    SovereignSelection selection,
-    List<SovereignSourceOperation> operations,
+  FlarkCommandResult _handledBlockTransaction(
+    FlarkSelection selection,
+    List<FlarkSourceOperation> operations,
     String userEvent, {
-    SovereignSelection? selectionAfter,
+    FlarkSelection? selectionAfter,
   }) {
     if (operations.isEmpty) {
-      return SovereignCommandResult.handled();
+      return FlarkCommandResult.handled();
     }
 
     final invalidationRange = _invalidationRange(operations);
-    return SovereignCommandResult.handled(
-      transaction: SovereignTransaction(
+    return FlarkCommandResult.handled(
+      transaction: FlarkTransaction(
         operations: operations,
         selectionBefore: selection,
         selectionAfter: selectionAfter,
-        metadata: SovereignTransactionMetadata(
-          intent: SovereignTransactionIntent.command,
+        metadata: FlarkTransactionMetadata(
+          intent: FlarkTransactionIntent.command,
           userEvent: userEvent,
           parseInvalidationRange: invalidationRange,
           projectionInvalidationRange: invalidationRange,
@@ -525,9 +512,7 @@ final class SovereignMarkdownBlockEditingExtension extends SovereignExtension {
     );
   }
 
-  SovereignSourceRange _invalidationRange(
-    List<SovereignSourceOperation> operations,
-  ) {
+  FlarkSourceRange _invalidationRange(List<FlarkSourceOperation> operations) {
     var start = operations.first.replacedRange.start;
     var end = operations.first.replacedRange.end;
     for (final operation in operations.skip(1)) {
@@ -538,20 +523,20 @@ final class SovereignMarkdownBlockEditingExtension extends SovereignExtension {
         end = operation.replacedRange.end;
       }
     }
-    return SovereignSourceRange(start, end);
+    return FlarkSourceRange(start, end);
   }
 
-  String _headingMarker(SovereignSelectedLine line) {
+  String _headingMarker(FlarkSelectedLine line) {
     final match = RegExp(r'^(#{1,6})(?:\s+|$)').firstMatch(line.text);
     return match?.group(0) ?? '';
   }
 
-  String _quoteMarker(SovereignSelectedLine line) {
+  String _quoteMarker(FlarkSelectedLine line) {
     final match = RegExp(r'^>\s?').firstMatch(line.text);
     return match?.group(0) ?? '';
   }
 
-  _MarkerRange? _bulletMarker(SovereignSelectedLine line) {
+  _MarkerRange? _bulletMarker(FlarkSelectedLine line) {
     final prefixLength = _quotePrefixLength(line.text);
     final match = RegExp(
       r'^[-+*]\s+',
@@ -560,7 +545,7 @@ final class SovereignMarkdownBlockEditingExtension extends SovereignExtension {
     return _MarkerRange(prefixLength + match.start, prefixLength + match.end);
   }
 
-  _MarkerRange? _orderedMarker(SovereignSelectedLine line) {
+  _MarkerRange? _orderedMarker(FlarkSelectedLine line) {
     final prefixLength = _quotePrefixLength(line.text);
     final match = RegExp(
       r'^\d{1,9}[.)]\s+',
@@ -585,8 +570,8 @@ final class _FenceOpeningLine {
 }
 
 _FenceOpeningLine? _fenceOpeningLine(
-  SovereignEditorState state,
-  SovereignSourceRange codeBlockRange,
+  FlarkEditorState state,
+  FlarkSourceRange codeBlockRange,
 ) {
   if (state.markdown.isEmpty ||
       codeBlockRange.start < 0 ||
@@ -609,9 +594,9 @@ _FenceOpeningLine? _fenceOpeningLine(
   );
 }
 
-SovereignSelectedLine? _lineAtRangeStart(
-  SovereignEditorState state,
-  SovereignSourceRange range,
+FlarkSelectedLine? _lineAtRangeStart(
+  FlarkEditorState state,
+  FlarkSourceRange range,
 ) {
   if (state.markdown.isEmpty ||
       range.start < 0 ||
@@ -623,7 +608,7 @@ SovereignSelectedLine? _lineAtRangeStart(
   final lineStart = state.document.buffer.lineStart(lineIndex);
   final lineEnd = state.document.buffer.lineEnd(lineIndex);
   if (lineStart != range.start) return null;
-  return SovereignSelectedLine(
+  return FlarkSelectedLine(
     index: lineIndex,
     start: lineStart,
     end: lineEnd,
@@ -646,7 +631,7 @@ String _blockInsertionSuffix(String after) {
   return '\n\n';
 }
 
-_TaskMarkerRange? _taskMarker(SovereignSelectedLine line) {
+_TaskMarkerRange? _taskMarker(FlarkSelectedLine line) {
   final prefixLength = _quotePrefixLength(line.text);
   final match = RegExp(
     r'^[-+*]\s+\[([ xX])\]\s+',

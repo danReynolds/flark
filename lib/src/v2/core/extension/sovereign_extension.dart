@@ -1,36 +1,36 @@
 import '../command/sovereign_command_registry.dart';
 
-abstract base class SovereignExtension {
-  const SovereignExtension();
+abstract base class FlarkExtension {
+  const FlarkExtension();
 
   String get id;
 
-  SovereignCommandRegistry registerCommands(SovereignCommandRegistry registry) {
+  FlarkCommandRegistry registerCommands(FlarkCommandRegistry registry) {
     return registry;
   }
 }
 
-final class SovereignExtensionSet {
-  const SovereignExtensionSet.empty() : extensions = const [];
+final class FlarkExtensionSet {
+  const FlarkExtensionSet.empty() : extensions = const [];
 
-  SovereignExtensionSet(Iterable<SovereignExtension> extensions)
-      : extensions = List<SovereignExtension>.unmodifiable(extensions) {
+  FlarkExtensionSet(Iterable<FlarkExtension> extensions)
+    : extensions = List<FlarkExtension>.unmodifiable(extensions) {
     final ids = <String>{};
     for (final extension in this.extensions) {
       if (!ids.add(extension.id)) {
-        throw StateError('Duplicate Sovereign extension id: ${extension.id}');
+        throw StateError('Duplicate Flark extension id: ${extension.id}');
       }
     }
   }
 
-  final List<SovereignExtension> extensions;
+  final List<FlarkExtension> extensions;
 
-  Iterable<T> whereType<T extends SovereignExtension>() {
+  Iterable<T> whereType<T extends FlarkExtension>() {
     return extensions.whereType<T>();
   }
 
-  SovereignCommandRegistry commandRegistry({
-    SovereignCommandRegistry base = const SovereignCommandRegistry(),
+  FlarkCommandRegistry commandRegistry({
+    FlarkCommandRegistry base = const FlarkCommandRegistry(),
   }) {
     var registry = base;
     for (final extension in extensions) {

@@ -1,17 +1,17 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/sovereign_editor.dart';
+import 'package:flark/flark.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('native Comrak backend loads the required WASM bridge on web', () async {
-    final backend = SovereignNativeComrakParseBackend.withNativeBridge();
+    final backend = FlarkNativeComrakParseBackend.withNativeBridge();
     final result = await backend.parse(
-      const SovereignMarkdownParseRequest(
+      const FlarkMarkdownParseRequest(
         revision: 7,
         markdown: '| A | B |\n| - | - |\n| **x** | y |\n',
-        profile: SovereignMarkdownProfile.commonMarkGfm,
+        profile: FlarkMarkdownProfile.commonMarkGfm,
       ),
     );
 
@@ -33,7 +33,7 @@ void main() {
   testWidgets('promoted v2 surfaces require Comrak by default on web', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown('# Web');
+    final controller = FlarkFlutterController.fromMarkdown('# Web');
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
@@ -62,16 +62,16 @@ void main() {
   });
 
   testWidgets('promoted v2 surfaces render Comrak WASM plans', (tester) async {
-    final backend = SovereignNativeComrakParseBackend.withNativeBridge();
-    final controller = SovereignFlutterController.fromMarkdown('# Web');
+    final backend = FlarkNativeComrakParseBackend.withNativeBridge();
+    final controller = FlarkFlutterController.fromMarkdown('# Web');
     addTearDown(controller.dispose);
 
     final parseResult = await tester.runAsync(() async {
       return backend.parse(
-        SovereignMarkdownParseRequest(
+        FlarkMarkdownParseRequest(
           revision: controller.state.revision,
           markdown: '# Web',
-          profile: SovereignMarkdownProfile.commonMarkGfm,
+          profile: FlarkMarkdownProfile.commonMarkGfm,
         ),
       );
     });
@@ -96,7 +96,7 @@ void main() {
 
 Future<void> _waitForAuthoritativeRenderPlan(
   WidgetTester tester,
-  SovereignFlutterController controller,
+  FlarkFlutterController controller,
 ) async {
   await tester.pump();
   for (var attempt = 0; attempt < 50; attempt++) {

@@ -1,4 +1,4 @@
-# Sovereign v2 Command Runtime
+# Flark v2 Command Runtime
 
 Status date: 2026-05-02
 
@@ -10,14 +10,14 @@ commands will build on this layer in Phase 2.
 
 ## Current Contract
 
-- `SovereignCommand<TPayload>` identifies a typed command by stable string id.
-- `SovereignCommandContext<TPayload>` passes immutable editor state, command,
+- `FlarkCommand<TPayload>` identifies a typed command by stable string id.
+- `FlarkCommandContext<TPayload>` passes immutable editor state, command,
   and payload to handlers.
-- `SovereignCommandResult` can be:
+- `FlarkCommandResult` can be:
   - handled, optionally with a transaction;
   - not handled, allowing lower-priority handlers to run;
   - rejected, stopping dispatch with a typed reason string.
-- `SovereignCommandRegistry` is immutable. Registering a handler returns a new
+- `FlarkCommandRegistry` is immutable. Registering a handler returns a new
   registry.
 - Handlers are ordered by integer priority. Higher priority runs first.
 - Handlers return transactions rather than mutating editor state.

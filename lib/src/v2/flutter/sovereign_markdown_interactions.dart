@@ -6,24 +6,19 @@ import '../markdown/markdown.dart';
 import '../render_plan/render_plan.dart';
 import 'sovereign_flutter_controller.dart';
 
-typedef SovereignLinkOpenCallback = void Function(String destination);
-typedef SovereignLinkEditCallback = void Function(
-  BuildContext context,
-  SovereignRenderOverlayTarget target,
-);
+typedef FlarkLinkOpenCallback = void Function(String destination);
+typedef FlarkLinkEditCallback =
+    void Function(BuildContext context, FlarkRenderOverlayTarget target);
 
-final class SovereignCodeLanguageOption {
-  const SovereignCodeLanguageOption({
-    required this.value,
-    required this.label,
-  });
+final class FlarkCodeLanguageOption {
+  const FlarkCodeLanguageOption({required this.value, required this.label});
 
   final String value;
   final String label;
 }
 
-final class SovereignMarkdownInteractionConfig {
-  const SovereignMarkdownInteractionConfig({
+final class FlarkMarkdownInteractionConfig {
+  const FlarkMarkdownInteractionConfig({
     this.codeLanguages = standardCodeLanguages,
     this.enableCodeFenceLanguagePicker = true,
     this.enableLinkMenus = true,
@@ -32,33 +27,33 @@ final class SovereignMarkdownInteractionConfig {
     this.onEditLink,
   });
 
-  static const standardCodeLanguages = <SovereignCodeLanguageOption>[
-    SovereignCodeLanguageOption(value: '', label: 'Auto'),
-    SovereignCodeLanguageOption(value: 'text', label: 'Plain text'),
-    SovereignCodeLanguageOption(value: 'dart', label: 'Dart'),
-    SovereignCodeLanguageOption(value: 'markdown', label: 'Markdown'),
-    SovereignCodeLanguageOption(value: 'json', label: 'JSON'),
-    SovereignCodeLanguageOption(value: 'yaml', label: 'YAML'),
-    SovereignCodeLanguageOption(value: 'sql', label: 'SQL'),
-    SovereignCodeLanguageOption(value: 'javascript', label: 'JavaScript'),
-    SovereignCodeLanguageOption(value: 'typescript', label: 'TypeScript'),
-    SovereignCodeLanguageOption(value: 'python', label: 'Python'),
-    SovereignCodeLanguageOption(value: 'rust', label: 'Rust'),
-    SovereignCodeLanguageOption(value: 'swift', label: 'Swift'),
-    SovereignCodeLanguageOption(value: 'kotlin', label: 'Kotlin'),
-    SovereignCodeLanguageOption(value: 'shell', label: 'Shell'),
+  static const standardCodeLanguages = <FlarkCodeLanguageOption>[
+    FlarkCodeLanguageOption(value: '', label: 'Auto'),
+    FlarkCodeLanguageOption(value: 'text', label: 'Plain text'),
+    FlarkCodeLanguageOption(value: 'dart', label: 'Dart'),
+    FlarkCodeLanguageOption(value: 'markdown', label: 'Markdown'),
+    FlarkCodeLanguageOption(value: 'json', label: 'JSON'),
+    FlarkCodeLanguageOption(value: 'yaml', label: 'YAML'),
+    FlarkCodeLanguageOption(value: 'sql', label: 'SQL'),
+    FlarkCodeLanguageOption(value: 'javascript', label: 'JavaScript'),
+    FlarkCodeLanguageOption(value: 'typescript', label: 'TypeScript'),
+    FlarkCodeLanguageOption(value: 'python', label: 'Python'),
+    FlarkCodeLanguageOption(value: 'rust', label: 'Rust'),
+    FlarkCodeLanguageOption(value: 'swift', label: 'Swift'),
+    FlarkCodeLanguageOption(value: 'kotlin', label: 'Kotlin'),
+    FlarkCodeLanguageOption(value: 'shell', label: 'Shell'),
   ];
 
-  final List<SovereignCodeLanguageOption> codeLanguages;
+  final List<FlarkCodeLanguageOption> codeLanguages;
   final bool enableCodeFenceLanguagePicker;
   final bool enableLinkMenus;
   final bool enableTaskCheckboxToggles;
-  final SovereignLinkOpenCallback? onOpenLink;
-  final SovereignLinkEditCallback? onEditLink;
+  final FlarkLinkOpenCallback? onOpenLink;
+  final FlarkLinkEditCallback? onEditLink;
 }
 
-final class SovereignMarkdownInteractions extends InheritedWidget {
-  const SovereignMarkdownInteractions({
+final class FlarkMarkdownInteractions extends InheritedWidget {
+  const FlarkMarkdownInteractions({
     super.key,
     required this.controller,
     required this.config,
@@ -66,24 +61,21 @@ final class SovereignMarkdownInteractions extends InheritedWidget {
     required super.child,
   });
 
-  final SovereignFlutterController controller;
-  final SovereignMarkdownInteractionConfig config;
+  final FlarkFlutterController controller;
+  final FlarkMarkdownInteractionConfig config;
   final bool editable;
 
-  static SovereignMarkdownInteractions? maybeOf(BuildContext context) {
+  static FlarkMarkdownInteractions? maybeOf(BuildContext context) {
     return context
-        .dependOnInheritedWidgetOfExactType<SovereignMarkdownInteractions>();
+        .dependOnInheritedWidgetOfExactType<FlarkMarkdownInteractions>();
   }
 
-  bool setCodeFenceLanguage(
-    SovereignRenderBlock block,
-    String language,
-  ) {
+  bool setCodeFenceLanguage(FlarkRenderBlock block, String language) {
     if (!editable || block.codeBlock == null) return false;
     return _handled(
       controller.dispatch(
-        command: SovereignMarkdownBlockCommands.setFenceLanguage,
-        payload: SovereignSetFenceLanguagePayload(
+        command: FlarkMarkdownBlockCommands.setFenceLanguage,
+        payload: FlarkSetFenceLanguagePayload(
           codeBlockRange: block.sourceRange,
           language: language,
         ),
@@ -91,15 +83,12 @@ final class SovereignMarkdownInteractions extends InheritedWidget {
     );
   }
 
-  bool setTaskListChecked(
-    SovereignRenderBlock block,
-    bool checked,
-  ) {
+  bool setTaskListChecked(FlarkRenderBlock block, bool checked) {
     if (!editable || block.taskListItem == null) return false;
     return _handled(
       controller.dispatch(
-        command: SovereignMarkdownBlockCommands.setTaskListChecked,
-        payload: SovereignSetTaskListCheckedPayload(
+        command: FlarkMarkdownBlockCommands.setTaskListChecked,
+        payload: FlarkSetTaskListCheckedPayload(
           taskItemRange: block.sourceRange,
           checked: checked,
         ),
@@ -107,64 +96,63 @@ final class SovereignMarkdownInteractions extends InheritedWidget {
     );
   }
 
-  void openLink(SovereignRenderOverlayTarget target) {
+  void openLink(FlarkRenderOverlayTarget target) {
     openTarget(target);
   }
 
-  void openTarget(SovereignRenderOverlayTarget target) {
+  void openTarget(FlarkRenderOverlayTarget target) {
     final destination = target.action?.destination;
     if (destination == null || destination.isEmpty) return;
     config.onOpenLink?.call(destination);
   }
 
-  void editLink(BuildContext context, SovereignRenderOverlayTarget target) {
+  void editLink(BuildContext context, FlarkRenderOverlayTarget target) {
     editTarget(context, target);
   }
 
-  void editTarget(BuildContext context, SovereignRenderOverlayTarget target) {
+  void editTarget(BuildContext context, FlarkRenderOverlayTarget target) {
     if (!editable) return;
     controller.applySelection(
-      SovereignSelection(
+      FlarkSelection(
         baseOffset: target.sourceRange.start,
         extentOffset: target.sourceRange.end,
       ),
       userEvent: 'selection.inlineAction',
     );
-    if (target.action?.kind == SovereignRenderInlineActionKind.link) {
+    if (target.action?.kind == FlarkRenderInlineActionKind.link) {
       config.onEditLink?.call(context, target);
     }
   }
 
-  Future<void> copyLink(SovereignRenderOverlayTarget target) async {
+  Future<void> copyLink(FlarkRenderOverlayTarget target) async {
     await copyTarget(target);
   }
 
-  Future<void> copyTarget(SovereignRenderOverlayTarget target) async {
+  Future<void> copyTarget(FlarkRenderOverlayTarget target) async {
     final destination = target.action?.destination;
     if (destination == null || destination.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: destination));
   }
 
-  bool removeLink(SovereignRenderOverlayTarget target) {
-    if (!editable ||
-        target.action?.kind != SovereignRenderInlineActionKind.link) {
+  bool removeLink(FlarkRenderOverlayTarget target) {
+    if (!editable || target.action?.kind != FlarkRenderInlineActionKind.link) {
       return false;
     }
     return _handled(
       controller.dispatch(
-        command: SovereignMarkdownLinkCommands.removeLink,
-        payload: SovereignRemoveLinkPayload(linkRange: target.sourceRange),
+        command: FlarkMarkdownLinkCommands.removeLink,
+        payload: FlarkRemoveLinkPayload(linkRange: target.sourceRange),
       ),
     );
   }
 
-  bool _handled(SovereignEditorRuntimeResult result) {
+  bool _handled(FlarkEditorRuntimeResult result) {
     return result.commandResult.isHandled &&
         result.commandResult.transaction != null;
   }
 
   @override
-  bool updateShouldNotify(SovereignMarkdownInteractions oldWidget) {
+  bool updateShouldNotify(FlarkMarkdownInteractions oldWidget) {
     return oldWidget.controller != controller ||
         oldWidget.config != config ||
         oldWidget.editable != editable;

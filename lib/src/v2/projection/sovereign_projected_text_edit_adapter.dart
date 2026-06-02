@@ -1,18 +1,17 @@
 import '../core/core.dart';
 import 'sovereign_projection.dart';
 
-final class SovereignProjectedTextEditAdapter {
-  const SovereignProjectedTextEditAdapter();
+final class FlarkProjectedTextEditAdapter {
+  const FlarkProjectedTextEditAdapter();
 
-  SovereignTransaction? transactionFromDisplayEdit({
+  FlarkTransaction? transactionFromDisplayEdit({
     required String currentMarkdown,
-    required SovereignProjection projection,
+    required FlarkProjection projection,
     required String oldDisplayText,
     required String newDisplayText,
-    SovereignSelection? sourceSelectionBefore,
+    FlarkSelection? sourceSelectionBefore,
     int? undoGroupId,
-    SovereignMapAffinity fallbackInsertionAffinity =
-        SovereignMapAffinity.downstream,
+    FlarkMapAffinity fallbackInsertionAffinity = FlarkMapAffinity.downstream,
   }) {
     if (currentMarkdown.length != projection.textLength) return null;
     if (projection.projectText(currentMarkdown) != oldDisplayText) return null;
@@ -32,17 +31,17 @@ final class SovereignProjectedTextEditAdapter {
       return null;
     }
 
-    return SovereignTransaction.single(
-      SovereignSourceOperation.replace(
+    return FlarkTransaction.single(
+      FlarkSourceOperation.replace(
         replacedRange: sourceRange,
         replacementText: diff.replacementText,
       ),
       selectionBefore: sourceSelectionBefore,
-      selectionAfter: SovereignSelection.collapsed(
+      selectionAfter: FlarkSelection.collapsed(
         sourceRange.start + diff.replacementText.length,
       ),
-      metadata: SovereignTransactionMetadata(
-        intent: SovereignTransactionIntent.input,
+      metadata: FlarkTransactionMetadata(
+        intent: FlarkTransactionIntent.input,
         userEvent: 'input.projected',
         undoGroupId: undoGroupId,
         parseInvalidationRange: sourceRange,
@@ -51,11 +50,11 @@ final class SovereignProjectedTextEditAdapter {
     );
   }
 
-  SovereignSourceRange? _sourceRangeForDiff(
+  FlarkSourceRange? _sourceRangeForDiff(
     _DisplayTextDiff diff, {
-    required SovereignProjection projection,
-    required SovereignMapAffinity fallbackInsertionAffinity,
-    SovereignSelection? sourceSelectionBefore,
+    required FlarkProjection projection,
+    required FlarkMapAffinity fallbackInsertionAffinity,
+    FlarkSelection? sourceSelectionBefore,
   }) {
     final selectionRange = _matchingSourceSelectionRange(
       sourceSelectionBefore,
@@ -70,43 +69,43 @@ final class SovereignProjectedTextEditAdapter {
         diff.oldStart,
         affinity: fallbackInsertionAffinity,
       );
-      return SovereignSourceRange(sourceOffset, sourceOffset);
+      return FlarkSourceRange(sourceOffset, sourceOffset);
     }
 
     final sourceStart = projection.displayToSourceOffset(
       diff.oldStart,
-      affinity: SovereignMapAffinity.downstream,
+      affinity: FlarkMapAffinity.downstream,
     );
     final sourceEnd = projection.displayToSourceOffset(
       diff.oldEnd,
-      affinity: SovereignMapAffinity.upstream,
+      affinity: FlarkMapAffinity.upstream,
     );
     if (sourceStart > sourceEnd) return null;
-    return SovereignSourceRange(sourceStart, sourceEnd);
+    return FlarkSourceRange(sourceStart, sourceEnd);
   }
 
-  SovereignSourceRange? _matchingSourceSelectionRange(
-    SovereignSelection? sourceSelectionBefore, {
+  FlarkSourceRange? _matchingSourceSelectionRange(
+    FlarkSelection? sourceSelectionBefore, {
     required int displayStart,
     required int displayEnd,
-    required SovereignProjection projection,
+    required FlarkProjection projection,
   }) {
     if (sourceSelectionBefore == null) return null;
-    final normalized = SovereignSelection(
+    final normalized = FlarkSelection(
       baseOffset: projection.cursorMask.normalize(
         sourceSelectionBefore.start,
-        affinity: SovereignMapAffinity.downstream,
+        affinity: FlarkMapAffinity.downstream,
       ),
       extentOffset: projection.cursorMask.normalize(
         sourceSelectionBefore.end,
-        affinity: SovereignMapAffinity.upstream,
+        affinity: FlarkMapAffinity.upstream,
       ),
     );
     if (projection.sourceToDisplayOffset(normalized.start) != displayStart ||
         projection.sourceToDisplayOffset(normalized.end) != displayEnd) {
       return null;
     }
-    return SovereignSourceRange(normalized.start, normalized.end);
+    return FlarkSourceRange(normalized.start, normalized.end);
   }
 }
 

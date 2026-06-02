@@ -1,26 +1,23 @@
 import '../../core/core.dart';
 
-sealed class SovereignMarkdownInputResult {
-  const SovereignMarkdownInputResult();
+sealed class FlarkMarkdownInputResult {
+  const FlarkMarkdownInputResult();
 }
 
-final class SovereignMarkdownSourceEdit extends SovereignMarkdownInputResult {
-  const SovereignMarkdownSourceEdit({
+final class FlarkMarkdownSourceEdit extends FlarkMarkdownInputResult {
+  const FlarkMarkdownSourceEdit({
     required this.range,
     required this.replacementText,
     required this.selectionAfter,
   });
 
-  final SovereignSourceRange range;
+  final FlarkSourceRange range;
   final String replacementText;
-  final SovereignSelection selectionAfter;
+  final FlarkSelection selectionAfter;
 }
 
-final class SovereignMarkdownSelectionMove
-    extends SovereignMarkdownInputResult {
-  const SovereignMarkdownSelectionMove({
-    required this.selectionAfter,
-  });
+final class FlarkMarkdownSelectionMove extends FlarkMarkdownInputResult {
+  const FlarkMarkdownSelectionMove({required this.selectionAfter});
 
-  final SovereignSelection selectionAfter;
+  final FlarkSelection selectionAfter;
 }

@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
-import 'package:sovereign_editor/src/v2/projection/projection.dart';
+import 'package:flark/src/v2/core/core.dart';
+import 'package:flark/src/v2/projection/projection.dart';
 
 void main() {
-  group('SovereignProjectedTextEditAdapter', () {
-    const adapter = SovereignProjectedTextEditAdapter();
+  group('FlarkProjectedTextEditAdapter', () {
+    const adapter = FlarkProjectedTextEditAdapter();
 
     test('rejects stale display edits', () {
       final projection = _boldProjection();
@@ -27,7 +27,7 @@ void main() {
         projection: projection,
         oldDisplayText: 'bold',
         newDisplayText: 'text',
-        sourceSelectionBefore: const SovereignSelection(
+        sourceSelectionBefore: const FlarkSelection(
           baseOffset: 2,
           extentOffset: 6,
         ),
@@ -36,18 +36,18 @@ void main() {
       expect(transaction, isNotNull);
       expect(
         transaction!.operations.single,
-        const SovereignSourceOperation.replace(
-          replacedRange: SovereignSourceRange(2, 6),
+        const FlarkSourceOperation.replace(
+          replacedRange: FlarkSourceRange(2, 6),
           replacementText: 'text',
         ),
       );
       expect(
         transaction
-            .applyToDocument(SovereignDocument.fromMarkdown('**bold**'))
+            .applyToDocument(FlarkDocument.fromMarkdown('**bold**'))
             .markdown,
         '**text**',
       );
-      expect(transaction.selectionAfter, const SovereignSelection.collapsed(6));
+      expect(transaction.selectionAfter, const FlarkSelection.collapsed(6));
     });
 
     test('uses exact source selection to insert inside a styled span', () {
@@ -57,19 +57,21 @@ void main() {
         projection: projection,
         oldDisplayText: 'bold',
         newDisplayText: 'bold!',
-        sourceSelectionBefore: const SovereignSelection.collapsed(6),
+        sourceSelectionBefore: const FlarkSelection.collapsed(6),
       );
 
       expect(transaction, isNotNull);
-      expect(transaction!.operations.single,
-          SovereignSourceOperation.insert(6, '!'));
+      expect(
+        transaction!.operations.single,
+        FlarkSourceOperation.insert(6, '!'),
+      );
       expect(
         transaction
-            .applyToDocument(SovereignDocument.fromMarkdown('**bold**'))
+            .applyToDocument(FlarkDocument.fromMarkdown('**bold**'))
             .markdown,
         '**bold!**',
       );
-      expect(transaction.selectionAfter, const SovereignSelection.collapsed(7));
+      expect(transaction.selectionAfter, const FlarkSelection.collapsed(7));
     });
 
     test('uses exact source selection to insert after a styled span', () {
@@ -79,28 +81,30 @@ void main() {
         projection: projection,
         oldDisplayText: 'bold',
         newDisplayText: 'bold!',
-        sourceSelectionBefore: const SovereignSelection.collapsed(8),
+        sourceSelectionBefore: const FlarkSelection.collapsed(8),
       );
 
       expect(transaction, isNotNull);
-      expect(transaction!.operations.single,
-          SovereignSourceOperation.insert(8, '!'));
+      expect(
+        transaction!.operations.single,
+        FlarkSourceOperation.insert(8, '!'),
+      );
       expect(
         transaction
-            .applyToDocument(SovereignDocument.fromMarkdown('**bold**'))
+            .applyToDocument(FlarkDocument.fromMarkdown('**bold**'))
             .markdown,
         '**bold**!',
       );
-      expect(transaction.selectionAfter, const SovereignSelection.collapsed(9));
+      expect(transaction.selectionAfter, const FlarkSelection.collapsed(9));
     });
 
     test('replaces a visible entity through its source replacement range', () {
-      final projection = SovereignProjection(
+      final projection = FlarkProjection(
         textLength: 'A &amp; B'.length,
         replacementRanges: const [
-          SovereignReplacementRange(
-            range: SovereignSourceRange(2, 7),
-            kind: SovereignReplacementRangeKind.htmlEntity,
+          FlarkReplacementRange(
+            range: FlarkSourceRange(2, 7),
+            kind: FlarkReplacementRangeKind.htmlEntity,
             replacementText: '&',
           ),
         ],
@@ -116,18 +120,18 @@ void main() {
       expect(transaction, isNotNull);
       expect(
         transaction!.operations.single,
-        const SovereignSourceOperation.replace(
-          replacedRange: SovereignSourceRange(2, 7),
+        const FlarkSourceOperation.replace(
+          replacedRange: FlarkSourceRange(2, 7),
           replacementText: 'X',
         ),
       );
       expect(
         transaction
-            .applyToDocument(SovereignDocument.fromMarkdown('A &amp; B'))
+            .applyToDocument(FlarkDocument.fromMarkdown('A &amp; B'))
             .markdown,
         'A X B',
       );
-      expect(transaction.selectionAfter, const SovereignSelection.collapsed(3));
+      expect(transaction.selectionAfter, const FlarkSelection.collapsed(3));
     });
 
     test('falls back to downstream insertion affinity at opening markers', () {
@@ -140,11 +144,13 @@ void main() {
       );
 
       expect(transaction, isNotNull);
-      expect(transaction!.operations.single,
-          SovereignSourceOperation.insert(2, '!'));
+      expect(
+        transaction!.operations.single,
+        FlarkSourceOperation.insert(2, '!'),
+      );
       expect(
         transaction
-            .applyToDocument(SovereignDocument.fromMarkdown('**bold**'))
+            .applyToDocument(FlarkDocument.fromMarkdown('**bold**'))
             .markdown,
         '**!bold**',
       );
@@ -157,15 +163,17 @@ void main() {
         projection: projection,
         oldDisplayText: 'bold',
         newDisplayText: 'bold!',
-        fallbackInsertionAffinity: SovereignMapAffinity.upstream,
+        fallbackInsertionAffinity: FlarkMapAffinity.upstream,
       );
 
       expect(transaction, isNotNull);
-      expect(transaction!.operations.single,
-          SovereignSourceOperation.insert(6, '!'));
+      expect(
+        transaction!.operations.single,
+        FlarkSourceOperation.insert(6, '!'),
+      );
       expect(
         transaction
-            .applyToDocument(SovereignDocument.fromMarkdown('**bold**'))
+            .applyToDocument(FlarkDocument.fromMarkdown('**bold**'))
             .markdown,
         '**bold!**',
       );
@@ -173,17 +181,17 @@ void main() {
   });
 }
 
-SovereignProjection _boldProjection() {
-  return SovereignProjection(
+FlarkProjection _boldProjection() {
+  return FlarkProjection(
     textLength: 8,
     hiddenRanges: const [
-      SovereignHiddenRange(
-        range: SovereignSourceRange(0, 2),
-        kind: SovereignHiddenRangeKind.inlineMarker,
+      FlarkHiddenRange(
+        range: FlarkSourceRange(0, 2),
+        kind: FlarkHiddenRangeKind.inlineMarker,
       ),
-      SovereignHiddenRange(
-        range: SovereignSourceRange(6, 8),
-        kind: SovereignHiddenRangeKind.inlineMarker,
+      FlarkHiddenRange(
+        range: FlarkSourceRange(6, 8),
+        kind: FlarkHiddenRangeKind.inlineMarker,
       ),
     ],
   );

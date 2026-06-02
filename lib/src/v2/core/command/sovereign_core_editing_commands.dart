@@ -8,13 +8,14 @@ import 'sovereign_command.dart';
 import 'sovereign_command_registry.dart';
 import 'sovereign_command_result.dart';
 
-abstract final class SovereignCoreEditingCommands {
-  static const insertText =
-      SovereignCommand<SovereignInsertTextPayload>('core.insertText');
+abstract final class FlarkCoreEditingCommands {
+  static const insertText = FlarkCommand<FlarkInsertTextPayload>(
+    'core.insertText',
+  );
 }
 
-final class SovereignInsertTextPayload {
-  const SovereignInsertTextPayload(
+final class FlarkInsertTextPayload {
+  const FlarkInsertTextPayload(
     this.text, {
     this.userEvent = 'input.insertText',
   });
@@ -23,37 +24,37 @@ final class SovereignInsertTextPayload {
   final String userEvent;
 }
 
-final class SovereignCoreEditingExtension extends SovereignExtension {
-  const SovereignCoreEditingExtension();
+final class FlarkCoreEditingExtension extends FlarkExtension {
+  const FlarkCoreEditingExtension();
 
   @override
   String get id => 'core.editing';
 
   @override
-  SovereignCommandRegistry registerCommands(SovereignCommandRegistry registry) {
-    return registry.register<SovereignInsertTextPayload>(
-      SovereignCoreEditingCommands.insertText,
+  FlarkCommandRegistry registerCommands(FlarkCommandRegistry registry) {
+    return registry.register<FlarkInsertTextPayload>(
+      FlarkCoreEditingCommands.insertText,
       _insertText,
     );
   }
 
-  SovereignCommandResult _insertText(
-    SovereignCommandContext<SovereignInsertTextPayload> context,
+  FlarkCommandResult _insertText(
+    FlarkCommandContext<FlarkInsertTextPayload> context,
   ) {
     final selection = context.state.selection;
-    final range = SovereignSourceRange(selection.start, selection.end);
+    final range = FlarkSourceRange(selection.start, selection.end);
     final nextOffset = selection.start + context.payload.text.length;
 
-    return SovereignCommandResult.handled(
-      transaction: SovereignTransaction.single(
-        SovereignSourceOperation.replace(
+    return FlarkCommandResult.handled(
+      transaction: FlarkTransaction.single(
+        FlarkSourceOperation.replace(
           replacedRange: range,
           replacementText: context.payload.text,
         ),
         selectionBefore: selection,
-        selectionAfter: SovereignSelection.collapsed(nextOffset),
-        metadata: SovereignTransactionMetadata(
-          intent: SovereignTransactionIntent.input,
+        selectionAfter: FlarkSelection.collapsed(nextOffset),
+        metadata: FlarkTransactionMetadata(
+          intent: FlarkTransactionIntent.input,
           userEvent: context.payload.userEvent,
           parseInvalidationRange: range,
           projectionInvalidationRange: range,

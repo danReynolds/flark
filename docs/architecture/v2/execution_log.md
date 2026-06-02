@@ -1,4 +1,4 @@
-# Sovereign v2 Execution Log
+# Flark v2 Execution Log
 
 ## 2026-05-02
 
@@ -11,7 +11,7 @@
   `docs/architecture/sovereign/sovereign_editor_how_it_works.md`, and
   `docs/architecture/rfc/rfc_017_sovereign_controller_module_boundaries.md`.
 - Confirmed the current v1 architecture is production-hardened but still
-  centered on `SovereignController extends TextEditingController`, which should
+  centered on `FlarkController extends TextEditingController`, which should
   not be the v2 center of gravity.
 - Researched markdown/spec sources: CommonMark, GitHub Flavored Markdown,
   Comrak, Dart `markdown`, and `flutter_markdown_plus`.
@@ -27,9 +27,9 @@
 - Added this execution log.
 - Started Phase 1 by adding the first pure Dart v2 core slice under
   `lib/src/v2/core`.
-- Added `SovereignTextBuffer`, `SovereignDocument`, `SovereignSelection`,
-  `SovereignSourceRange`, `SovereignSourceOperation`,
-  `SovereignTransaction`, and `SovereignEditorState`.
+- Added `FlarkTextBuffer`, `FlarkDocument`, `FlarkSelection`,
+  `FlarkSourceRange`, `FlarkSourceOperation`,
+  `FlarkTransaction`, and `FlarkEditorState`.
 - Added headless v2 tests for text-buffer line indexing, immutable replacement,
   insert/delete/replace transactions, selection mapping, explicit transaction
   selections, atomic multi-operation application, inversion, overlapping
@@ -39,8 +39,8 @@
 - Ran `flutter analyze lib/src/v2 test/v2`: passed after fixing the
   `prefer_initializing_formals` lint.
 - Continued Phase 1 by adding typed transaction metadata:
-  `SovereignTransactionMetadata` and `SovereignTransactionIntent`.
-- Added `SovereignHistoryStack` and `SovereignHistoryEntry` with immutable
+  `FlarkTransactionMetadata` and `FlarkTransactionIntent`.
+- Added `FlarkHistoryStack` and `FlarkHistoryEntry` with immutable
   undo/redo batches, redo clearing on new edits, opt-out handling, and adjacent
   undo-group merging.
 - Added history tests for undo, redo, grouped undo, redo clearing, and
@@ -60,12 +60,12 @@
 - Re-ran `flutter analyze lib/src/v2 test/v2`: passed.
 - Added `docs/architecture/v2/public_api_sketch_2026-05-02.md` as a draft RFC
   for the eventual headless core, Flutter, and testing public libraries.
-- Decided that `SovereignHistoryStack` remains a companion/runtime-owned state
-  object rather than a field on `SovereignEditorState`; a future runtime state
+- Decided that `FlarkHistoryStack` remains a companion/runtime-owned state
+  object rather than a field on `FlarkEditorState`; a future runtime state
   should compose editor state, history, command state, and extension state.
 - Started Phase 2 by adding the first command runtime slice:
-  `SovereignCommand`, `SovereignCommandContext`,
-  `SovereignCommandResult`, `SovereignCommandRegistry`, and command priority
+  `FlarkCommand`, `FlarkCommandContext`,
+  `FlarkCommandResult`, `FlarkCommandRegistry`, and command priority
   constants.
 - Added command registry tests for unhandled dispatch, priority ordering,
   not-handled fallthrough, rejected-result stop behavior, and transaction
@@ -74,19 +74,19 @@
 - Re-ran `dart format lib/src/v2 test/v2`.
 - Re-ran `flutter test test/v2/core --reporter compact`: passed.
 - Re-ran `flutter analyze lib/src/v2 test/v2`: passed.
-- Added `SovereignExtension`, `SovereignExtensionSet`, and duplicate extension
+- Added `FlarkExtension`, `FlarkExtensionSet`, and duplicate extension
   id validation.
-- Added `SovereignCoreEditingCommands.insertText`,
-  `SovereignInsertTextPayload`, and `SovereignCoreEditingExtension`.
+- Added `FlarkCoreEditingCommands.insertText`,
+  `FlarkInsertTextPayload`, and `FlarkCoreEditingExtension`.
 - Added extension tests for duplicate id rejection and registry composition
   through a source-edit command.
 - Re-ran `dart format lib/src/v2 test/v2`.
 - Re-ran `flutter test test/v2/core --reporter compact`: passed.
 - Re-ran `flutter analyze lib/src/v2 test/v2`: passed.
 - Added the first headless markdown command slice under `lib/src/v2/markdown`:
-  inline style markers, `SovereignMarkdownInlineCommands.toggleInlineStyle`,
-  `SovereignToggleInlineStylePayload`, and
-  `SovereignMarkdownInlineEditingExtension`.
+  inline style markers, `FlarkMarkdownInlineCommands.toggleInlineStyle`,
+  `FlarkToggleInlineStylePayload`, and
+  `FlarkMarkdownInlineEditingExtension`.
 - Implemented source-level inline style wrapping/unwrapping for selected ranges
   and rejected collapsed selections until active-mark state is designed.
 - Added markdown inline command tests for wrap, unwrap, and collapsed-selection
@@ -102,7 +102,7 @@
 - Re-ran `dart format lib/src/v2 test/v2`.
 - Re-ran `flutter test test/v2 --reporter compact`: passed.
 - Re-ran `flutter analyze lib/src/v2 test/v2`: passed.
-- Extended `SovereignTransactionMetadata` with optional
+- Extended `FlarkTransactionMetadata` with optional
   `parseInvalidationRange` and `projectionInvalidationRange`.
 - Attached initial invalidation ranges to core insert-text and markdown inline
   style command transactions.
@@ -120,16 +120,16 @@
   surrounding markers.
 - Added tests for partial selected markers, partial surrounding markers, and
   escaped markers.
-- Added `SovereignEditorRuntime`, an immutable headless runtime that composes
-  `SovereignEditorState`, `SovereignHistoryStack`, and
-  `SovereignCommandRegistry`.
+- Added `FlarkEditorRuntime`, an immutable headless runtime that composes
+  `FlarkEditorState`, `FlarkHistoryStack`, and
+  `FlarkCommandRegistry`.
 - Added runtime tests for extension command dispatch, rejected-command
   immutability, and undo/redo.
 - Added `docs/architecture/v2/runtime_2026-05-02.md`.
 - Re-ran `dart format lib/src/v2 test/v2`.
 - Re-ran `flutter test test/v2 --reporter compact`: passed.
 - Re-ran `flutter analyze lib/src/v2 test/v2`: passed.
-- Added `SovereignMarkdownBlockEditingExtension` with heading, blockquote,
+- Added `FlarkMarkdownBlockEditingExtension` with heading, blockquote,
   bullet list, thematic break, and fenced-code source commands.
 - Added selected-line helpers for headless markdown block commands.
 - Added block command tests for heading set/change/remove/rejection,
@@ -147,21 +147,21 @@
 - Re-ran `dart format lib/src/v2 test/v2`.
 - Re-ran `flutter test test/v2 --reporter compact`: passed.
 - Re-ran `flutter analyze lib/src/v2 test/v2`: passed.
-- Added first projection core slice: `SovereignHiddenRange`,
-  `SovereignCursorMask`, and `SovereignProjection`.
+- Added first projection core slice: `FlarkHiddenRange`,
+  `FlarkCursorMask`, and `FlarkProjection`.
 - Added source/display mapping, cursor normalization, and overlapping hidden
   range tests.
 - Added `docs/architecture/v2/projection_core_2026-05-02.md`.
 - Re-ran `dart format lib/src/v2 test/v2`.
 - Re-ran `flutter test test/v2 --reporter compact`: passed.
 - Re-ran `flutter analyze lib/src/v2 test/v2`: passed.
-- Added `SovereignUtf8Utf16Mapper` with ASCII, BMP multibyte, and non-BMP
+- Added `FlarkUtf8Utf16Mapper` with ASCII, BMP multibyte, and non-BMP
   surrogate-pair contract tests.
 - Re-ran `dart format lib/src/v2 test/v2`.
 - Re-ran `flutter test test/v2 --reporter compact`: passed.
 - Re-ran `flutter analyze lib/src/v2 test/v2`: passed.
-- Added first render-plan slice: `SovereignRenderPlan`,
-  `SovereignRenderBlock`, and `SovereignRenderInlineRun`.
+- Added first render-plan slice: `FlarkRenderPlan`,
+  `FlarkRenderBlock`, and `FlarkRenderInlineRun`.
 - Added render-plan construction from parse results plus projection, including
   source/display ranges and unknown node preservation.
 - Added `docs/architecture/v2/render_plan_2026-05-02.md`.
@@ -172,10 +172,10 @@
   harness.
 - Re-ran `flutter test test/v2 --reporter compact`: passed with 58 tests.
 - Re-ran `flutter analyze lib/src/v2 test/v2`: passed.
-- Added parser-provided hidden ranges to `SovereignMarkdownParseResult`,
+- Added parser-provided hidden ranges to `FlarkMarkdownParseResult`,
   including typed hidden range kinds, raw type preservation, attribute maps,
   unknown-field preservation, and forward-compatible unknown kinds.
-- Added `SovereignProjection.fromParseResult` so marker hiding and cursor masks
+- Added `FlarkProjection.fromParseResult` so marker hiding and cursor masks
   can be derived from the parser contract instead of adapter-local state.
 - Added projection tests for parser-derived hidden ranges and unknown hidden
   range kinds.
@@ -184,7 +184,7 @@
 - Re-ran `flutter analyze lib/src/v2 test/v2`: passed.
 - Tightened render-plan construction so nested container blocks do not duplicate
   inline runs owned by child blocks.
-- Updated `SovereignRenderPlan.fromParseResult` to derive projection from parse
+- Updated `FlarkRenderPlan.fromParseResult` to derive projection from parse
   results by default while still accepting an explicit projection override.
 - Added render-plan tests for parser-derived projection and deepest-block inline
   ownership.
@@ -195,7 +195,7 @@
   items.
 - Ran `flutter test test/v2/markdown/sovereign_markdown_fixture_loader_test.dart
   --reporter compact`: passed.
-- Added `SovereignProjection.projectText` and projection fixtures for escaped
+- Added `FlarkProjection.projectText` and projection fixtures for escaped
   delimiters, inline strong markers, reference-link inline markers, and hidden
   reference definitions.
 - Added `escapeMarker` as a parser/projection hidden range kind.
@@ -208,7 +208,7 @@
 - Ran `flutter test test/v2/render_plan --reporter compact`: passed.
 - Added core range helpers for containment, intersection, and union.
 - Exposed transaction offset mapping for downstream projection rebasing.
-- Added parser ambiguity zones to `SovereignMarkdownParseResult`, including
+- Added parser ambiguity zones to `FlarkMarkdownParseResult`, including
   typed kinds, preferred affinity, unknown-kind tolerance, and unknown-field
   preservation.
 - Added projection ambiguity zones, ambiguity offset normalization, predictive
@@ -224,7 +224,7 @@
 - Re-ran `dart format lib/src/v2 test/v2`.
 - Ran `flutter test test/v2/projection --reporter compact`: passed.
 - Added the first Flutter adapter slice:
-  `SovereignFlutterController`, a `ChangeNotifier` over headless runtime,
+  `FlarkFlutterController`, a `ChangeNotifier` over headless runtime,
   projection, and render plan.
 - Updated the v2 import-boundary test so headless packages remain
   Flutter-free while the adapter can live under `lib/src/v2/flutter`.
@@ -239,18 +239,18 @@
 - Re-ran `dart format lib/src/v2 test/v2`.
 - Ran focused Flutter/projection/import-boundary tests: passed.
 - Re-ran `flutter analyze lib/src/v2 test/v2`: passed.
-- Added `SovereignTextDeltaAdapter` to map Flutter
+- Added `FlarkTextDeltaAdapter` to map Flutter
   `TextEditingDeltaInsertion`, deletion, replacement, and non-text selection
   updates into typed source transactions.
-- Added `SovereignFlutterController.applyTextEditingDelta`, including stale
+- Added `FlarkFlutterController.applyTextEditingDelta`, including stale
   `oldText` rejection before source mutation.
 - Added delta-adapter tests for insert/delete/replace/selection/stale/invalid
   delta cases and controller tests for applying current deltas.
 - Re-ran `dart format lib/src/v2 test/v2`.
 - Ran `flutter test test/v2/flutter --reporter compact`: passed.
 - Re-ran `flutter analyze lib/src/v2 test/v2`: passed.
-- Added `SovereignEditableText`, the first raw-source Flutter editing surface
-  over `SovereignFlutterController`.
+- Added `FlarkEditableText`, the first raw-source Flutter editing surface
+  over `FlarkFlutterController`.
 - The widget keeps Flutter text state synchronized from headless runtime state
   and converts `EditableText.onChanged` updates into minimal source-range
   replacement transactions.
@@ -259,16 +259,16 @@
 - Re-ran `dart format lib/src/v2 test/v2`.
 - Ran `flutter test test/v2/flutter --reporter compact`: passed.
 - Re-ran `flutter analyze lib/src/v2 test/v2`: passed.
-- Added `SovereignCommandInvocation`, `SovereignCommandIntent`,
-  `SovereignCommandAction`, and `SovereignCommandActions` for Flutter
+- Added `FlarkCommandInvocation`, `FlarkCommandIntent`,
+  `FlarkCommandAction`, and `FlarkCommandActions` for Flutter
   `Intent`/`Action` integration over typed v2 commands.
-- Added optional shortcut installation to `SovereignEditableText`.
+- Added optional shortcut installation to `FlarkEditableText`.
 - Added Flutter action tests for invoking markdown inline commands through
   Actions and through the editable widget's installed action scope.
 - Re-ran `dart format lib/src/v2 test/v2`.
 - Ran `flutter test test/v2/flutter --reporter compact`: passed.
 - Re-ran `flutter analyze lib/src/v2 test/v2`: passed.
-- Added `SovereignReadOnlyPreview`, a read-only Flutter adapter that consumes
+- Added `FlarkReadOnlyPreview`, a read-only Flutter adapter that consumes
   controller projection/render-plan state instead of reparsing markdown in the
   widget layer.
 - Added preview tests for stale projected text fallback, strong inline style
@@ -276,8 +276,8 @@
 - Re-ran `dart format lib/src/v2 test/v2`.
 - Ran `flutter test test/v2/flutter --reporter compact`: passed.
 - Re-ran `flutter analyze lib/src/v2 test/v2`: passed.
-- Added the first read/edit render-plan parity fixture: `SovereignEditableText`
-  and `SovereignReadOnlyPreview` share one controller/render-plan source, and
+- Added the first read/edit render-plan parity fixture: `FlarkEditableText`
+  and `FlarkReadOnlyPreview` share one controller/render-plan source, and
   source edits through the editable surface mark preview render state stale
   until parse adoption.
 - Re-ran `dart format lib/src/v2 test/v2`.
@@ -291,7 +291,7 @@
 - Added render-plan query tests covering nested blocks and action descriptors.
 - Re-ran `dart format lib/src/v2/render_plan test/v2/render_plan`.
 - Ran `flutter test test/v2/render_plan --reporter compact`: passed.
-- Added `SovereignRenderOverlayPlan` and `SovereignRenderOverlayTarget` for
+- Added `FlarkRenderOverlayPlan` and `FlarkRenderOverlayTarget` for
   stable overlay targets from link/image/task/table/code render descriptors.
 - Added overlay-target tests covering action destinations, checked task state,
   table descriptors, and code-block language.
@@ -304,7 +304,7 @@
 - Re-ran `dart format lib/src/v2/projection test/v2/projection`.
 - Ran `flutter test test/v2/projection --reporter compact`: passed.
 - Added renderer-neutral text style tokens to render blocks and inline runs.
-- Updated `SovereignReadOnlyPreview` to map render style tokens into Flutter
+- Updated `FlarkReadOnlyPreview` to map render style tokens into Flutter
   `TextStyle` instead of switching directly on markdown parser kinds.
 - Added render-plan tests for block/inline style tokens and reran preview style
   coverage.
@@ -312,16 +312,16 @@
 - Ran focused render-plan and preview tests: passed.
 - Re-ran `flutter analyze lib/src/v2 test/v2`: passed.
 - Added `docs/architecture/v2/public_library_names_2026-05-02.md`.
-- Added experimental public v2 library export at `lib/sovereign_editor_v2.dart`
-  while keeping v1 as the stable `sovereign_editor.dart` entry point.
+- Added experimental public v2 library export at `lib/flark_advanced.dart`
+  while keeping v1 as the stable `flark.dart` entry point.
 - Added public API smoke coverage that imports
-  `package:sovereign_editor/sovereign_editor_v2.dart`.
+  `package:flark/flark_advanced.dart`.
 - Ran `flutter test test/v2/public_api --reporter compact`: passed.
-- Ran `flutter analyze lib/sovereign_editor_v2.dart lib/src/v2 test/v2`:
+- Ran `flutter analyze lib/flark_advanced.dart lib/src/v2 test/v2`:
   passed.
 - Added a v1/v2 implementation switch to the example app.
-- v2 mode uses `package:sovereign_editor/sovereign_editor_v2.dart`, the v2
-  controller, `SovereignEditableText`, and `SovereignReadOnlyPreview`.
+- v2 mode uses `package:flark/flark_advanced.dart`, the v2
+  controller, `FlarkEditableText`, and `FlarkReadOnlyPreview`.
 - Added example widget coverage for switching into the v2 surfaces.
 - `flutter test example/test --reporter compact` from the repo root failed
   because the example test imports `package:example/main.dart`; reran from
@@ -332,7 +332,7 @@
 - Oracle coverage compares public v1 and public v2 APIs for selected strong
   text wrapping, heading level, blockquote toggling, and bullet-list toggling.
 - Ran `flutter test test/v2/oracle --reporter compact`: passed.
-- Ran `flutter analyze lib/sovereign_editor_v2.dart lib/src/v2 test/v2`:
+- Ran `flutter analyze lib/flark_advanced.dart lib/src/v2 test/v2`:
   passed.
 - Added performance budget coverage for controller parse-result adoption, so
   the Phase 7 budget lane now covers localized source transactions,
@@ -342,7 +342,7 @@
   meeting the performance budget.
 - Made the existing native Comrak bridge model pure Dart by removing the
   Flutter foundation dependency from `native_comrak_ffi.dart`.
-- Added `SovereignNativeComrakParseBackend`, a v2 parser adapter over the
+- Added `FlarkNativeComrakParseBackend`, a v2 parser adapter over the
   existing native bridge ABI. The adapter maps native UTF-8 ranges into v2
   source ranges, preserves unknown native block/inline variants, carries native
   diagnostics, and exposes native exclusion ranges through result extensions.
@@ -360,23 +360,23 @@
 - Wired the example app's v2 mode to the public v2 link/table/task command
   extensions and toolbar buttons.
 - Re-ran `flutter test test/v2 --reporter compact`: passed with 138 tests.
-- Re-ran `flutter analyze lib/sovereign_editor_v2.dart lib/src/v2 test/v2`:
+- Re-ran `flutter analyze lib/flark_advanced.dart lib/src/v2 test/v2`:
   passed.
 - Ran `flutter analyze` in `example/`: passed.
 - Ran `flutter test test --reporter compact` in `example/`: passed.
-- Added `SovereignMarkdownCommandQueries.capabilitiesAtSelection` and
-  `SovereignMarkdownCommandCapabilities` for active inline style, heading,
+- Added `FlarkMarkdownCommandQueries.capabilitiesAtSelection` and
+  `FlarkMarkdownCommandCapabilities` for active inline style, heading,
   quote, bullet-list, task-list, and table state.
 - Added projection boundary affinity so display offsets at hidden marker
   boundaries can map upstream or downstream.
-- Added `SovereignProjectedTextEditAdapter`, a headless projected-edit adapter
+- Added `FlarkProjectedTextEditAdapter`, a headless projected-edit adapter
   that maps display-text diffs back into source transactions while preserving
   exact source-selection ambiguity when available.
-- Added `SovereignFlutterController.applyProjectedTextEdit`,
+- Added `FlarkFlutterController.applyProjectedTextEdit`,
   `applyProjectedSelection`, and `applySelection`.
-- Added `SovereignProjectedEditableText`, a projection-backed Flutter editing
+- Added `FlarkProjectedEditableText`, a projection-backed Flutter editing
   surface over the same controller/runtime architecture.
-- Fixed `SovereignEditableText` so caret movement updates controller selection
+- Fixed `FlarkEditableText` so caret movement updates controller selection
   even when text does not change; this prevents toolbar commands from using stale
   source selections.
 - Added Flutter selection/accessibility behavior coverage for raw editing,
@@ -386,10 +386,10 @@
 - Added the v2 native packaging contract and native Comrak v2 adapter tests to
   `scripts/verify_native_editor_ci.sh` and `scripts/verify_package_confidence.sh`.
 - Added `docs/architecture/v2/public_api_inventory_2026-05-02.md` and a
-  barrel-shape public API test for `lib/sovereign_editor_v2.dart`.
+  barrel-shape public API test for `lib/flark_advanced.dart`.
 - Ran `flutter test test/v2/flutter --reporter compact`: passed.
 - Ran focused v2 projection/packaging/markdown-native/public-api tests: passed.
-- Ran `flutter analyze lib/sovereign_editor_v2.dart lib/src/v2 test/v2`:
+- Ran `flutter analyze lib/flark_advanced.dart lib/src/v2 test/v2`:
   passed.
 - Ran `dart doc --dry-run`: passed with 0 warnings and 0 errors.
 - Ported the v1 markdown support matrix into
@@ -404,31 +404,31 @@
 - Added v2 ordered-list command support, ordered-list active capability state,
   public API smoke coverage, and example toolbar wiring.
 - Ran focused v2 block-command/capability/public-api tests: passed.
-- Ran `flutter analyze lib/sovereign_editor_v2.dart lib/src/v2 test/v2`:
+- Ran `flutter analyze lib/flark_advanced.dart lib/src/v2 test/v2`:
   passed.
 - Ran `flutter analyze` in `example/`: passed.
-- Added `SovereignMarkdownInputCommands.handleEnter` and
-  `SovereignMarkdownInputCommands.handleBackspace` coverage for empty heading
+- Added `FlarkMarkdownInputCommands.handleEnter` and
+  `FlarkMarkdownInputCommands.handleBackspace` coverage for empty heading
   exit, blockquote/list continuation, structural list/task Backspace, indented
   code Enter/Backspace, and basic fenced-code indentation.
-- Wired both `SovereignEditableText` and `SovereignProjectedEditableText` so
+- Wired both `FlarkEditableText` and `FlarkProjectedEditableText` so
   platform Enter/Backspace changes dispatch through the same typed headless
   markdown input policy before falling back to generic source/display diffs.
-- Added render-plan-backed `SovereignRenderPlanOverlayControls`, a
+- Added render-plan-backed `FlarkRenderPlanOverlayControls`, a
   design-system-neutral Flutter adapter over link, image, task, table, and code
   overlay targets.
-- Added `SovereignParseScheduler`, which listens to a v2 Flutter controller,
+- Added `FlarkParseScheduler`, which listens to a v2 Flutter controller,
   debounces parser requests, applies fresh parse results, and reparses the
   latest revision after stale in-flight results complete.
 - Wired the example app's v2 mode to the native parse scheduler when the native
   bridge is available and added v2 render-plan overlay controls to the preview
   pane.
-- Narrowed `lib/sovereign_editor_v2.dart` from wildcard module exports to
+- Narrowed `lib/flark_advanced.dart` from wildcard module exports to
   explicit `show` exports for the experimental public surface.
 - Ran focused input, projected/raw widget, overlay-control, parse-scheduler,
   and public API tests: passed.
 - Ran `flutter test test/v2 --reporter compact`: passed with 183 tests.
-- Ran `flutter analyze lib/sovereign_editor_v2.dart lib/src/v2 test/v2`:
+- Ran `flutter analyze lib/flark_advanced.dart lib/src/v2 test/v2`:
   passed.
 - Ran `flutter analyze` in `example/`: passed.
 - Ran `flutter test test --reporter compact` in `example/`: passed.
@@ -458,19 +458,19 @@
 
 Next action:
 
-- Promoted the v2 API through the stable `sovereign_editor.dart` barrel while
+- Promoted the v2 API through the stable `flark.dart` barrel while
   keeping v1 symbols available as compatibility APIs.
-- Added `SovereignMarkdownEditingExtensions.standard()` as the default v2
+- Added `FlarkMarkdownEditingExtensions.standard()` as the default v2
   markdown editing extension set.
-- Added promoted high-level v2 widgets: `SovereignMarkdownEditor` and
-  `SovereignMarkdownPreview`.
+- Added promoted high-level v2 widgets: `FlarkMarkdownEditor` and
+  `FlarkMarkdownPreview`.
 - Updated the example app so v2 mode imports only the stable package barrel and
   uses the standard v2 markdown extension set.
 - Added stable-barrel and widget tests covering the promoted v2 editor,
   preview, controller, parser wiring, and native backend surface.
 - Re-ran `flutter test test/v2 --reporter compact`: passed with 188 tests.
 - Ran focused stable/v2 public API and promoted surface tests: passed.
-- Ran `flutter analyze lib/sovereign_editor.dart lib/sovereign_editor_v2.dart
+- Ran `flutter analyze lib/flark.dart lib/flark_advanced.dart
   lib/src/v2 test/v2 test/public_api/sovereign_editor_barrel_test.dart`:
   passed.
 - Ran `flutter analyze` in `example/`: passed.
@@ -504,8 +504,8 @@ Phase 9 quality hardening:
   render-plan overlay controls side by side.
 - Added the visual golden to `scripts/verify_package_confidence.sh`.
 - Added no-throw native backend probing via
-  `SovereignNativeComrakParseBackend.preflight()` and `.tryLoad()`.
-- Updated `SovereignMarkdownEditor` and `SovereignMarkdownPreview` so they
+  `FlarkNativeComrakParseBackend.preflight()` and `.tryLoad()`.
+- Updated `FlarkMarkdownEditor` and `FlarkMarkdownPreview` so they
   automatically use native Comrak when available, degrade to source-only
   behavior when unavailable, and expose `autoLoadNativeParseBackend` for
   deterministic/custom-backend contexts.
@@ -519,13 +519,13 @@ Phase 9 quality hardening:
 - Fixed invalid reference-definition-looking paragraph handling in the v2
   native adapter: reference-definition hidden ranges are now dropped when they
   overlap native parser-owned block ranges.
-- Added render-plan extension hooks through `SovereignRenderPlanExtension` and
-  `SovereignRenderPlanContext`; `SovereignFlutterController.applyParseResult`
+- Added render-plan extension hooks through `FlarkRenderPlanExtension` and
+  `FlarkRenderPlanContext`; `FlarkFlutterController.applyParseResult`
   now applies render-plan extensions from the runtime extension set.
-- Added `SovereignReadOnlyPreview.blockBuilder` and
-  `SovereignPreviewBlockWidgetBuilder` for custom block rendering.
+- Added `FlarkReadOnlyPreview.blockBuilder` and
+  `FlarkPreviewBlockWidgetBuilder` for custom block rendering.
 - Dogfooded shared-controller v2 parsing in the example by disabling duplicate
-  widget auto-loading where the example owns a `SovereignParseScheduler`, and
+  widget auto-loading where the example owns a `FlarkParseScheduler`, and
   added custom read-only code-block rendering through `blockBuilder`.
 - Updated README, migration guide, public API inventory, execution plan, and
   release checklist for the new visual/backend/web/extensibility contracts.
@@ -584,17 +584,17 @@ Phase 10 comprehensive visual regression hardening:
 Phase 11 community-library surface and packaging hardening:
 
 - Split the public API into intent-based barrels:
-  - `lib/sovereign_editor.dart` is now the promoted v2 app API.
-  - `lib/sovereign_editor_core.dart` exposes the headless Dart runtime,
+  - `lib/flark.dart` is now the promoted v2 app API.
+  - `lib/flark_core.dart` exposes the headless Dart runtime,
     parser DTOs, projection, and render-plan APIs without Flutter widgets.
-  - `lib/sovereign_editor_v2.dart` remains the complete advanced v2 surface.
+  - `lib/flark_advanced.dart` remains the complete advanced v2 surface.
   - `lib/sovereign_editor_legacy.dart` owns the v1 compatibility API.
 - Updated v1 tests and the example app to import legacy symbols explicitly from
   `sovereign_editor_legacy.dart`.
-- Added typed `SovereignFlutterController.events` so extensions can react to
+- Added typed `FlarkFlutterController.events` so extensions can react to
   projection prediction, parser adoption, selection-only changes, undo, redo,
   and generic runtime changes without diffing `ChangeNotifier` state.
-- Avoided repeated operation sorting in `SovereignTransaction.mapSelection`.
+- Avoided repeated operation sorting in `FlarkTransaction.mapSelection`.
 - Removed the default `google_fonts` dependency. Package defaults now use a
   generic monospace family; consumers can still override typography through
   widget styles and markdown/editor themes.
@@ -617,7 +617,7 @@ Phase 11 community-library surface and packaging hardening:
   - `flutter analyze` in `example/` passed.
   - `flutter test test --reporter compact` in `example/` passed.
   - `dart doc --dry-run` initially exposed ambiguous re-export warnings between
-    `sovereign_editor_core.dart` and `sovereign_editor_v2.dart`; added
+    `flark_core.dart` and `flark_advanced.dart`; added
     canonical dartdoc directives to the full v2 barrel and reran with 0
     warnings and 0 errors.
   - `./scripts/verify_release.sh` passed end to end after the doc fix, covering
@@ -638,8 +638,8 @@ Phase 12 v2-only cleanup and interactive validation:
   `lib/src/v2/native`, with a `native.dart` barrel for the full v2 API.
 - Updated `hook/build.dart` so the code asset name follows the v2 native bridge
   path: `src/v2/native/native_comrak_ffi.dart`.
-- Updated public barrels so `sovereign_editor.dart` and
-  `sovereign_editor_v2.dart` are v2-only and no longer reference legacy
+- Updated public barrels so `flark.dart` and
+  `flark_advanced.dart` are v2-only and no longer reference legacy
   symbols.
 - Removed the default `highlight` dependency along with the old renderer.
 - Rebuilt `example/lib/main.dart` as a v2-only integration harness with:
@@ -663,8 +663,8 @@ Phase 12 interactive example validation:
 - Manual visual inspection exposed a real editor contrast defect: passing a
   partial `TextStyle` to the v2 editables discarded the ambient text color and
   rendered the editor text nearly white on the pale example surface.
-- Fixed the issue in `SovereignEditableText` and
-  `SovereignProjectedEditableText` by merging partial widget styles with
+- Fixed the issue in `FlarkEditableText` and
+  `FlarkProjectedEditableText` by merging partial widget styles with
   `DefaultTextStyle.of(context).style`.
 - Added focused regression coverage for partial-style merging in source and
   projected editable widgets.
@@ -706,7 +706,7 @@ Phase 13 macOS desktop dogfood app:
   - split editor/preview panes;
   - native parser and event status surfaces;
   - compact fallback layout for mobile/integration test devices.
-- Updated the macOS shell to launch as `Sovereign Markdown` with a 1280x840
+- Updated the macOS shell to launch as `Flark Markdown` with a 1280x840
   initial window and 1040x720 minimum size.
 - Manual macOS run initially exposed that the native-assets build bundled
   `sovereign_comrak_bridge.framework`, but the FFI loader only checked the
@@ -724,7 +724,7 @@ Phase 13 macOS desktop dogfood app:
   - `flutter test test --reporter compact` in `example/`: passed.
   - `flutter test test/v2/native/sovereign_native_comrak_bridge_test.dart --reporter compact`: passed.
   - `flutter run -d macos`: built and launched
-    `build/macos/Build/Products/Debug/Sovereign Markdown.app`.
+    `build/macos/Build/Products/Debug/Flark Markdown.app`.
   - `flutter test integration_test/markdown_flow_test.dart -d macos --reporter compact`: passed.
 
 Phase 13 scratch document follow-up:
@@ -753,15 +753,15 @@ Phase 13 scratch document follow-up:
   - `flutter test test --reporter compact` in `example/`: passed.
   - `flutter test integration_test/markdown_flow_test.dart -d macos --reporter compact`: passed.
   - `flutter build macos --debug` in `example/`: passed and rebuilt the normal
-    standalone `Sovereign Markdown.app` after the integration-test host run.
+    standalone `Flark Markdown.app` after the integration-test host run.
 
 Phase 13 rendered live mode follow-up:
 
 - Promoted parsing ownership in the example app from per-widget parser
-  schedulers to one screen-level `SovereignParseScheduler` attached to the
-  shared `SovereignFlutterController`.
-- Switched the preview pane from standalone `SovereignMarkdownPreview` to
-  `SovereignReadOnlyPreview(controller: ...)` so editor, preview, and rendered
+  schedulers to one screen-level `FlarkParseScheduler` attached to the
+  shared `FlarkFlutterController`.
+- Switched the preview pane from standalone `FlarkMarkdownPreview` to
+  `FlarkReadOnlyPreview(controller: ...)` so editor, preview, and rendered
   mode all consume the same live projection/render-plan state.
 - Added a third workbench mode, `Rendered`, beside `Source` and `Projected`.
   `Projected` remains text editing with hidden Markdown markers; `Rendered`
@@ -795,11 +795,11 @@ Phase 14 live rendered editing surface:
   - CodeMirror and ProseMirror both reinforce decorations as view data layered
     over canonical editor state, with mapped/persistent decoration sets for
     efficient updates.
-- Refactored `SovereignProjectedEditableText` around one shared projected
+- Refactored `FlarkProjectedEditableText` around one shared projected
   editing host. Projected and live-rendered editing now share source/display
   edit mapping, projected selection mapping, Enter/Backspace Markdown input
   policies, focus ownership, shortcuts/actions, and editable scroll wiring.
-- Added `SovereignLiveRenderedEditableText`, which edits projected text but
+- Added `FlarkLiveRenderedEditableText`, which edits projected text but
   builds styled editable `TextSpan` segments from the current render plan:
   headings, strong, emphasis, inline code, strikethrough, links, code-block
   text, and blockquote text are styled without reparsing Markdown in Flutter.
@@ -810,7 +810,7 @@ Phase 14 live rendered editing surface:
 - Cached live render segmentation per display text/render-plan identity so
   focus, cursor, and parent-layout rebuilds do not recompute styled span
   ranges unnecessarily.
-- Promoted `SovereignMarkdownEditingMode.liveRendered` through the high-level
+- Promoted `FlarkMarkdownEditingMode.liveRendered` through the high-level
   editor and public barrels. The example app's `Live Edit` mode and `Scratch`
   scenario now use rendered-in-place editing beside the shared live preview.
 - Fixed controller render-plan continuity:
@@ -866,21 +866,21 @@ Phase 16 quality audit and release boundary:
 
 Post-audit prioritized hardening, slice 1: Dart fallback parser backend:
 
-- Added `SovereignDartMarkdownParseBackend`, a pure Dart
-  `SovereignMarkdownParseBackend` implementation for web and unsupported native
+- Added `FlarkDartMarkdownParseBackend`, a pure Dart
+  `FlarkMarkdownParseBackend` implementation for web and unsupported native
   environments where FFI Comrak cannot load.
 - The fallback is source-position preserving and emits parser DTOs, hidden
   ranges, projection-compatible marker elision, render-plan blocks, link/image
   action descriptors, task metadata, code-fence metadata, and table alignment
   metadata for common Markdown structures.
 - Promoted the fallback through the public barrels and wired
-  `SovereignMarkdownEditor` / `SovereignMarkdownPreview` to use it after native
+  `FlarkMarkdownEditor` / `FlarkMarkdownPreview` to use it after native
   backend probing fails.
 - Kept the web parser strategy honest: native Comrak remains authoritative, the
   Dart backend is a useful fallback rather than a full conformance claim, and
   Comrak WASM remains the full-conformance web target.
 - Verification:
-  - `flutter analyze lib/src/v2/markdown/parse/sovereign_dart_markdown_parse_backend.dart lib/src/v2/flutter/sovereign_markdown_editor.dart lib/src/v2/flutter/sovereign_markdown_preview.dart lib/sovereign_editor.dart lib/sovereign_editor_v2.dart test/v2/markdown/sovereign_dart_markdown_parse_backend_test.dart test/v2/flutter/sovereign_markdown_web_smoke_test.dart`: passed.
+  - `flutter analyze lib/src/v2/markdown/parse/sovereign_dart_markdown_parse_backend.dart lib/src/v2/flutter/sovereign_markdown_editor.dart lib/src/v2/flutter/sovereign_markdown_preview.dart lib/flark.dart lib/flark_advanced.dart test/v2/markdown/sovereign_dart_markdown_parse_backend_test.dart test/v2/flutter/sovereign_markdown_web_smoke_test.dart`: passed.
   - `flutter test test/v2/markdown/sovereign_dart_markdown_parse_backend_test.dart test/v2/flutter/sovereign_markdown_web_smoke_test.dart --reporter compact`: passed.
   - `flutter test test --exclude-tags benchmark --reporter compact`: passed.
   - `flutter build macos --debug` in `example/`: passed.
@@ -896,7 +896,7 @@ Phase 15 editable block widgets:
   editor state; CodeMirror's block decorations and ProseMirror's node views
   both reinforce that widgets must map back to document transactions rather
   than mutate a parallel rendered model.
-- Reworked `SovereignLiveRenderedEditableText` so parsed documents use a
+- Reworked `FlarkLiveRenderedEditableText` so parsed documents use a
   render-plan-backed block editor:
   - ordinary blocks, headings, and blockquotes are block-local editable text
     surfaces that still apply projected text edits back to canonical Markdown;
@@ -904,7 +904,7 @@ Phase 15 editable block widgets:
     projected editable host, so source-only/web fallback remains usable.
 - Added interactive task-list block widgets. Tapping the checkbox replaces the
   source marker check character (`[ ]`/`[x]`) through a normal
-  `SovereignTransaction`.
+  `FlarkTransaction`.
 - Added editable fenced-code block widgets. The widget shows language metadata
   and an editable code body while source edits preserve the opener, language
   info string, and closing fence through projected edit mapping.
@@ -948,11 +948,11 @@ Post-audit prioritized hardening, slices 2-4:
 
 - Added Tab and Shift-Tab handling to live-rendered code-block widgets. The
   widget now applies code-body indentation/outdent operations through normal
-  `SovereignTransaction`s and preserves the surrounding fence opener/info and
+  `FlarkTransaction`s and preserves the surrounding fence opener/info and
   closer.
 - Added widget coverage for code-block Tab indentation and Shift-Tab outdent in
-  `SovereignLiveRenderedEditableText`.
-- Extended `SovereignDartMarkdownParseBackend` so full reference links,
+  `FlarkLiveRenderedEditableText`.
+- Extended `FlarkDartMarkdownParseBackend` so full reference links,
   collapsed reference links, shortcut reference links, and reference-style
   images resolve through collected reference definitions. The fallback now hides
   reference definition lines and emits the same render-plan action metadata
@@ -1003,7 +1003,7 @@ Comrak WASM web backend:
   the packaged WASM asset through Flutter web asset URLs, uses Dart JS interop
   to `fetch` and instantiate WebAssembly, calls the exported C ABI functions,
   and decodes the same JSON payload schema as the native FFI path.
-- Added Chrome coverage proving `SovereignNativeComrakParseBackend.tryLoad()`
+- Added Chrome coverage proving `FlarkNativeComrakParseBackend.tryLoad()`
   reaches Comrak WASM on web, parses GFM tables/strong text, and feeds promoted
   editor rendering with a Comrak-produced render plan.
 - Updated packaging contracts, README, native bridge docs, and this web parser
@@ -1074,7 +1074,7 @@ Replacement-capable projection and HTML entities:
   so escaped entities such as `\&amp;` display as literal entity text rather
   than decoding or showing the backslash.
 - Updated the Dart Comrak adapter to map native replacements into
-  `SovereignMarkdownReplacementRange` values and filter replacements that
+  `FlarkMarkdownReplacementRange` values and filter replacements that
   overlap hidden link/image/reference/raw-HTML regions.
 - Reworked projection from hidden-range-only elision into a unified projection
   span model. Hidden ranges still display as empty text; replacement ranges
@@ -1100,7 +1100,7 @@ Replacement-capable projection and HTML entities:
 Predictive live-edit invariants and structured source ranges:
 
 - Moved predictive render-plan mapping into the platform-neutral render-plan
-  model so `SovereignRenderPlan`, blocks, and inline runs preserve descriptors
+  model so `FlarkRenderPlan`, blocks, and inline runs preserve descriptors
   and action metadata while mapping ranges through pending transactions.
 - Simplified the Flutter controller prediction path to delegate render-plan
   prediction to the render model instead of manually recreating block and inline
@@ -1139,7 +1139,7 @@ Live block focus ownership after structural edits:
   moved the controller source selection there, but the old block-local
   `EditableText` retained focus.
 - Added `_LiveRenderedBlockFocusCoordinator` under
-  `_SovereignLiveRenderedBlockEditor` so rendered block widgets use stable,
+  `_FlarkLiveRenderedBlockEditor` so rendered block widgets use stable,
   reconciled focus nodes and focus follows the block whose source line owns the
   current controller selection after rebuilds.
 - Trimmed trailing separator newlines from block-local display ranges so a
@@ -1291,7 +1291,7 @@ Parser-omitted source-line hosts for live blank spacing:
 - Verification:
   - `dart format lib/src/v2/flutter/sovereign_projected_editable_text.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart example/test/widget_test.dart`: passed.
   - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/flutter/sovereign_live_rendered_transition_matrix_test.dart --plain-name 'Sovereign live-rendered transition matrix fenced code preserves typing through activation' --reporter compact`: passed.
+  - `flutter test test/v2/flutter/sovereign_live_rendered_transition_matrix_test.dart --plain-name 'Flark live-rendered transition matrix fenced code preserves typing through activation' --reporter compact`: passed.
   - `flutter analyze`: passed.
   - `flutter test test/v2 --reporter compact`: passed.
   - `flutter test --platform chrome test/widget_test.dart --reporter compact` in `example/`: passed.
@@ -1302,7 +1302,7 @@ Parser-omitted source-line hosts for live blank spacing:
 
 Rich rendered interaction architecture:
 
-- Added a source-first `SovereignMarkdownInteractions` layer that wraps editor
+- Added a source-first `FlarkMarkdownInteractions` layer that wraps editor
   and preview surfaces with shared interaction configuration for rendered UI
   affordances. The first targets are code-fence language selection, link menus,
   and task checkbox toggles.
@@ -1315,12 +1315,12 @@ Rich rendered interaction architecture:
   - `markdown.removeLink` removes markdown link syntax while preserving the
     visible label.
 - Made Flutter convenience controllers default to
-  `SovereignMarkdownEditingExtensions.standard()` so rendered UI controls work
+  `FlarkMarkdownEditingExtensions.standard()` so rendered UI controls work
   out of the box, while the headless runtime still keeps explicit extension
   registration for command-surface tests.
 - Added live code-fence language selector chrome backed by the canonical source
   command. The selector is configurable through
-  `SovereignMarkdownInteractionConfig.codeLanguages`.
+  `FlarkMarkdownInteractionConfig.codeLanguages`.
 - Routed live task checkbox widgets through the same command path and made the
   interaction config authoritative when checkbox toggles are disabled.
 - Added inline link menu support for rendered preview runs with Open, Edit,
@@ -1515,10 +1515,10 @@ Best-in-class fenced-code boundary and scanner extraction:
   language chrome, highlighting, Enter indentation, blank-line exit, closer
   outdent, multiline paste indentation, Tab/Shift+Tab, boundary arrows, and
   ordinary selectable body text.
-- Added `SovereignMarkdownFencedCodeScanner` as the shared source-level scanner
+- Added `FlarkMarkdownFencedCodeScanner` as the shared source-level scanner
   for opening fence metadata, body ranges, closing fence detection, and line
   helpers. This removes the live widget's duplicate regex-based fence scanner.
-- Extended `SovereignMarkdownFencedCodePolicy` so fenced-code source behavior
+- Extended `FlarkMarkdownFencedCodePolicy` so fenced-code source behavior
   lives in one headless policy: Enter, blank-line exit, closer outdent,
   multiline paste indentation, Tab indentation, and Shift+Tab outdent.
 - Routed platform insertion handling through the shared fenced-code policy for

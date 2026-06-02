@@ -1,17 +1,12 @@
-enum SovereignMarkdownInlineStyle {
-  emphasis,
-  strong,
-  inlineCode,
-  strikethrough,
-}
+enum FlarkMarkdownInlineStyle { emphasis, strong, inlineCode, strikethrough }
 
-extension SovereignMarkdownInlineStyleMarker on SovereignMarkdownInlineStyle {
+extension FlarkMarkdownInlineStyleMarker on FlarkMarkdownInlineStyle {
   String get marker {
     return switch (this) {
-      SovereignMarkdownInlineStyle.emphasis => '*',
-      SovereignMarkdownInlineStyle.strong => '**',
-      SovereignMarkdownInlineStyle.inlineCode => '`',
-      SovereignMarkdownInlineStyle.strikethrough => '~~',
+      FlarkMarkdownInlineStyle.emphasis => '*',
+      FlarkMarkdownInlineStyle.strong => '**',
+      FlarkMarkdownInlineStyle.inlineCode => '`',
+      FlarkMarkdownInlineStyle.strikethrough => '~~',
     };
   }
 }

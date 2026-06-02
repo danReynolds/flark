@@ -1,40 +1,39 @@
 import '../state/sovereign_editor_state.dart';
 import 'sovereign_command_result.dart';
 
-final class SovereignCommand<TPayload> {
-  const SovereignCommand(this.id);
+final class FlarkCommand<TPayload> {
+  const FlarkCommand(this.id);
 
   final String id;
 
   @override
   bool operator ==(Object other) {
-    return other is SovereignCommand<TPayload> && other.id == id;
+    return other is FlarkCommand<TPayload> && other.id == id;
   }
 
   @override
   int get hashCode => Object.hash(TPayload, id);
 
   @override
-  String toString() => 'SovereignCommand<$TPayload>($id)';
+  String toString() => 'FlarkCommand<$TPayload>($id)';
 }
 
-final class SovereignCommandContext<TPayload> {
-  const SovereignCommandContext({
+final class FlarkCommandContext<TPayload> {
+  const FlarkCommandContext({
     required this.state,
     required this.command,
     required this.payload,
   });
 
-  final SovereignEditorState state;
-  final SovereignCommand<TPayload> command;
+  final FlarkEditorState state;
+  final FlarkCommand<TPayload> command;
   final TPayload payload;
 }
 
-typedef SovereignCommandHandler<TPayload> = SovereignCommandResult Function(
-  SovereignCommandContext<TPayload> context,
-);
+typedef FlarkCommandHandler<TPayload> =
+    FlarkCommandResult Function(FlarkCommandContext<TPayload> context);
 
-abstract final class SovereignCommandPriority {
+abstract final class FlarkCommandPriority {
   static const fallback = -100;
   static const normal = 0;
   static const high = 100;

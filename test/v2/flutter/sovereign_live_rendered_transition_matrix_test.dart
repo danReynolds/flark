@@ -1,16 +1,17 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/flutter/flutter.dart';
-import 'package:sovereign_editor/src/v2/markdown/markdown.dart';
+import 'package:flark/src/v2/flutter/flutter.dart';
+import 'package:flark/src/v2/markdown/markdown.dart';
 
 void main() {
-  group('Sovereign live-rendered transition matrix', () {
+  group('Flark live-rendered transition matrix', () {
     for (final transitionCase in _sourceToRenderedCases) {
-      testWidgets('${transitionCase.id} preserves typing through activation',
-          (tester) async {
-        final controller = SovereignFlutterController.fromMarkdown(
+      testWidgets('${transitionCase.id} preserves typing through activation', (
+        tester,
+      ) async {
+        final controller = FlarkFlutterController.fromMarkdown(
           '',
-          extensions: SovereignMarkdownEditingExtensions.standard(),
+          extensions: FlarkMarkdownEditingExtensions.standard(),
         );
         addTearDown(controller.dispose);
 
@@ -68,43 +69,47 @@ void main() {
       });
     }
 
-    testWidgets('task list marker preserves typing through checkbox activation',
-        (tester) async {
-      final controller = SovereignFlutterController.fromMarkdown(
-        '',
-        extensions: SovereignMarkdownEditingExtensions.standard(),
-      );
-      addTearDown(controller.dispose);
+    testWidgets(
+      'task list marker preserves typing through checkbox activation',
+      (tester) async {
+        final controller = FlarkFlutterController.fromMarkdown(
+          '',
+          extensions: FlarkMarkdownEditingExtensions.standard(),
+        );
+        addTearDown(controller.dispose);
 
-      await _pumpLiveEditor(tester, controller);
-      await tester.showKeyboard(_editableFinder());
-      await tester.pump();
+        await _pumpLiveEditor(tester, controller);
+        await tester.showKeyboard(_editableFinder());
+        await tester.pump();
 
-      tester.testTextInput.enterText('- ');
-      await tester.pump();
-      await _applyComrakParseResult(controller);
-      await tester.pump();
-      expect(find.byKey(const Key('SovereignLiveBlockListMarker')),
-          findsOneWidget);
-      expect(_activeEditable(tester).controller.text, isEmpty);
+        tester.testTextInput.enterText('- ');
+        await tester.pump();
+        await _applyComrakParseResult(controller);
+        await tester.pump();
+        expect(
+          find.byKey(const Key('FlarkLiveBlockListMarker')),
+          findsOneWidget,
+        );
+        expect(_activeEditable(tester).controller.text, isEmpty);
 
-      tester.testTextInput.enterText('[ ] ');
-      await tester.pump();
-      await _applyComrakParseResult(controller);
-      await tester.pump();
-      expect(
-        find.byKey(const Key('SovereignLiveBlockTaskCheckbox')),
-        findsOneWidget,
-      );
-      expect(_activeEditable(tester).controller.text, isEmpty);
-      expect(_activeEditable(tester).focusNode.hasFocus, isTrue);
+        tester.testTextInput.enterText('[ ] ');
+        await tester.pump();
+        await _applyComrakParseResult(controller);
+        await tester.pump();
+        expect(
+          find.byKey(const Key('FlarkLiveBlockTaskCheckbox')),
+          findsOneWidget,
+        );
+        expect(_activeEditable(tester).controller.text, isEmpty);
+        expect(_activeEditable(tester).focusNode.hasFocus, isTrue);
 
-      tester.testTextInput.enterText('done');
-      await tester.pump();
+        tester.testTextInput.enterText('done');
+        await tester.pump();
 
-      expect(controller.markdown, '- [ ] done');
-      expect(_activeEditable(tester).controller.text, 'done');
-    });
+        expect(controller.markdown, '- [ ] done');
+        expect(_activeEditable(tester).controller.text, 'done');
+      },
+    );
   });
 }
 
@@ -127,12 +132,10 @@ final _sourceToRenderedCases = [
     bodyText: 'quote',
     expectedMarkdownAfterBody: '> quote',
     expectMarkerOnly: (tester) {
-      expect(
-          find.byKey(const Key('SovereignLiveBlockBlockquote')), findsNothing);
+      expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsNothing);
     },
     expectActivated: (tester) {
-      expect(find.byKey(const Key('SovereignLiveBlockBlockquote')),
-          findsOneWidget);
+      expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsOneWidget);
     },
   ),
   _LiveTransitionCase(
@@ -144,12 +147,10 @@ final _sourceToRenderedCases = [
     bodyText: 'item',
     expectedMarkdownAfterBody: '* item',
     expectMarkerOnly: (tester) {
-      expect(
-          find.byKey(const Key('SovereignLiveBlockListMarker')), findsNothing);
+      expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsNothing);
     },
     expectActivated: (tester) {
-      expect(find.byKey(const Key('SovereignLiveBlockListMarker')),
-          findsOneWidget);
+      expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
     },
   ),
   _LiveTransitionCase(
@@ -161,12 +162,10 @@ final _sourceToRenderedCases = [
     bodyText: 'item',
     expectedMarkdownAfterBody: '1. item',
     expectMarkerOnly: (tester) {
-      expect(
-          find.byKey(const Key('SovereignLiveBlockListMarker')), findsNothing);
+      expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsNothing);
     },
     expectActivated: (tester) {
-      expect(find.byKey(const Key('SovereignLiveBlockListMarker')),
-          findsOneWidget);
+      expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
     },
   ),
   _LiveTransitionCase(
@@ -178,24 +177,22 @@ final _sourceToRenderedCases = [
     bodyText: 'code',
     expectedMarkdownAfterBody: '```\ncode',
     expectMarkerOnly: (tester) {
-      expect(
-          find.byKey(const Key('SovereignLiveBlockCodeFence')), findsNothing);
+      expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsNothing);
     },
     expectActivated: (tester) {
-      expect(
-          find.byKey(const Key('SovereignLiveBlockCodeFence')), findsOneWidget);
+      expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsOneWidget);
     },
   ),
 ];
 
 Future<void> _pumpLiveEditor(
   WidgetTester tester,
-  SovereignFlutterController controller,
+  FlarkFlutterController controller,
 ) async {
   await tester.pumpWidget(
     Directionality(
       textDirection: TextDirection.ltr,
-      child: SovereignLiveRenderedEditableText(
+      child: FlarkLiveRenderedEditableText(
         controller: controller,
         style: const TextStyle(fontSize: 14),
       ),
@@ -204,15 +201,12 @@ Future<void> _pumpLiveEditor(
   await tester.pump();
 }
 
-Future<void> _applyComrakParseResult(
-  SovereignFlutterController controller,
-) async {
-  final result =
-      await SovereignNativeComrakParseBackend.withNativeBridge().parse(
-    SovereignMarkdownParseRequest(
+Future<void> _applyComrakParseResult(FlarkFlutterController controller) async {
+  final result = await FlarkNativeComrakParseBackend.withNativeBridge().parse(
+    FlarkMarkdownParseRequest(
       revision: controller.state.revision,
       markdown: controller.markdown,
-      profile: SovereignMarkdownProfile.commonMarkGfm,
+      profile: FlarkMarkdownProfile.commonMarkGfm,
     ),
   );
   expect(controller.applyParseResult(result), isTrue);

@@ -1,4 +1,4 @@
-# Sovereign v2 Visual Goldens
+# Flark v2 Visual Goldens
 
 These PNG baselines cover visual regressions that ordinary widget assertions do
 not catch well: paint, spacing, wrapping, block affordances, and overlay

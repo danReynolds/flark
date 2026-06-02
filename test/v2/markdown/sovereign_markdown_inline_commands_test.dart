@@ -1,23 +1,23 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
-import 'package:sovereign_editor/src/v2/markdown/markdown.dart';
+import 'package:flark/src/v2/core/core.dart';
+import 'package:flark/src/v2/markdown/markdown.dart';
 
 void main() {
-  group('SovereignMarkdownInlineCommands', () {
+  group('FlarkMarkdownInlineCommands', () {
     test('wraps a selected source range with style markers', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         'hello world',
-        selection: const SovereignSelection(baseOffset: 6, extentOffset: 11),
+        selection: const FlarkSelection(baseOffset: 6, extentOffset: 11),
       );
-      final registry = SovereignExtensionSet([
-        const SovereignMarkdownInlineEditingExtension(),
+      final registry = FlarkExtensionSet([
+        const FlarkMarkdownInlineEditingExtension(),
       ]).commandRegistry();
 
       final result = registry.dispatch(
         state: state,
-        command: SovereignMarkdownInlineCommands.toggleInlineStyle,
-        payload: const SovereignToggleInlineStylePayload(
-          SovereignMarkdownInlineStyle.strong,
+        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+        payload: const FlarkToggleInlineStylePayload(
+          FlarkMarkdownInlineStyle.strong,
         ),
       );
       final next = state.applyTransaction(result.transaction!);
@@ -25,98 +25,106 @@ void main() {
       expect(result.isHandled, isTrue);
       expect(
         result.transaction!.metadata.projectionInvalidationRange,
-        const SovereignSourceRange(6, 11),
+        const FlarkSourceRange(6, 11),
       );
       expect(next.markdown, 'hello **world**');
-      expect(next.selection,
-          const SovereignSelection(baseOffset: 8, extentOffset: 13));
+      expect(
+        next.selection,
+        const FlarkSelection(baseOffset: 8, extentOffset: 13),
+      );
     });
 
     test('unwraps markers around a selected source range', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         '**world**',
-        selection: const SovereignSelection(baseOffset: 2, extentOffset: 7),
+        selection: const FlarkSelection(baseOffset: 2, extentOffset: 7),
       );
-      final registry = SovereignExtensionSet([
-        const SovereignMarkdownInlineEditingExtension(),
+      final registry = FlarkExtensionSet([
+        const FlarkMarkdownInlineEditingExtension(),
       ]).commandRegistry();
 
       final result = registry.dispatch(
         state: state,
-        command: SovereignMarkdownInlineCommands.toggleInlineStyle,
-        payload: const SovereignToggleInlineStylePayload(
-          SovereignMarkdownInlineStyle.strong,
+        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+        payload: const FlarkToggleInlineStylePayload(
+          FlarkMarkdownInlineStyle.strong,
         ),
       );
       final next = state.applyTransaction(result.transaction!);
 
       expect(result.isHandled, isTrue);
       expect(next.markdown, 'world');
-      expect(next.selection,
-          const SovereignSelection(baseOffset: 0, extentOffset: 5));
+      expect(
+        next.selection,
+        const FlarkSelection(baseOffset: 0, extentOffset: 5),
+      );
     });
 
     test('unwraps markers included in the selected source range', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         '**world**',
-        selection: const SovereignSelection(baseOffset: 0, extentOffset: 9),
+        selection: const FlarkSelection(baseOffset: 0, extentOffset: 9),
       );
-      final registry = SovereignExtensionSet([
-        const SovereignMarkdownInlineEditingExtension(),
+      final registry = FlarkExtensionSet([
+        const FlarkMarkdownInlineEditingExtension(),
       ]).commandRegistry();
 
       final result = registry.dispatch(
         state: state,
-        command: SovereignMarkdownInlineCommands.toggleInlineStyle,
-        payload: const SovereignToggleInlineStylePayload(
-          SovereignMarkdownInlineStyle.strong,
+        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+        payload: const FlarkToggleInlineStylePayload(
+          FlarkMarkdownInlineStyle.strong,
         ),
       );
       final next = state.applyTransaction(result.transaction!);
 
       expect(result.isHandled, isTrue);
       expect(next.markdown, 'world');
-      expect(next.selection,
-          const SovereignSelection(baseOffset: 0, extentOffset: 5));
+      expect(
+        next.selection,
+        const FlarkSelection(baseOffset: 0, extentOffset: 5),
+      );
     });
 
     test('wraps selected text with inline code markers', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         'use code',
-        selection: const SovereignSelection(baseOffset: 4, extentOffset: 8),
+        selection: const FlarkSelection(baseOffset: 4, extentOffset: 8),
       );
-      final registry = SovereignExtensionSet([
-        const SovereignMarkdownInlineEditingExtension(),
+      final registry = FlarkExtensionSet([
+        const FlarkMarkdownInlineEditingExtension(),
       ]).commandRegistry();
 
       final result = registry.dispatch(
         state: state,
-        command: SovereignMarkdownInlineCommands.toggleInlineStyle,
-        payload: const SovereignToggleInlineStylePayload(
-          SovereignMarkdownInlineStyle.inlineCode,
+        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+        payload: const FlarkToggleInlineStylePayload(
+          FlarkMarkdownInlineStyle.inlineCode,
         ),
       );
       final next = state.applyTransaction(result.transaction!);
 
       expect(next.markdown, 'use `code`');
-      expect(next.selection,
-          const SovereignSelection(baseOffset: 5, extentOffset: 9));
+      expect(
+        next.selection,
+        const FlarkSelection(baseOffset: 5, extentOffset: 9),
+      );
     });
 
     test('rejects selections that include only the opening marker', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         '**world**',
-        selection: const SovereignSelection(baseOffset: 0, extentOffset: 7),
+        selection: const FlarkSelection(baseOffset: 0, extentOffset: 7),
       );
-      final registry = SovereignExtensionSet([
-        const SovereignMarkdownInlineEditingExtension(),
+      final registry = FlarkExtensionSet([
+        const FlarkMarkdownInlineEditingExtension(),
       ]).commandRegistry();
 
       final result = registry.dispatch(
         state: state,
-        command: SovereignMarkdownInlineCommands.toggleInlineStyle,
-        payload: const SovereignToggleInlineStylePayload(
-          SovereignMarkdownInlineStyle.strong,
+        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+        payload: const FlarkToggleInlineStylePayload(
+          FlarkMarkdownInlineStyle.strong,
         ),
       );
 
@@ -126,19 +134,19 @@ void main() {
     });
 
     test('rejects selections with only one surrounding marker', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         '**world',
-        selection: const SovereignSelection(baseOffset: 2, extentOffset: 7),
+        selection: const FlarkSelection(baseOffset: 2, extentOffset: 7),
       );
-      final registry = SovereignExtensionSet([
-        const SovereignMarkdownInlineEditingExtension(),
+      final registry = FlarkExtensionSet([
+        const FlarkMarkdownInlineEditingExtension(),
       ]).commandRegistry();
 
       final result = registry.dispatch(
         state: state,
-        command: SovereignMarkdownInlineCommands.toggleInlineStyle,
-        payload: const SovereignToggleInlineStylePayload(
-          SovereignMarkdownInlineStyle.strong,
+        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+        payload: const FlarkToggleInlineStylePayload(
+          FlarkMarkdownInlineStyle.strong,
         ),
       );
 
@@ -147,40 +155,42 @@ void main() {
     });
 
     test('does not unwrap escaped surrounding markers', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         r'\*world\*',
-        selection: const SovereignSelection(baseOffset: 2, extentOffset: 7),
+        selection: const FlarkSelection(baseOffset: 2, extentOffset: 7),
       );
-      final registry = SovereignExtensionSet([
-        const SovereignMarkdownInlineEditingExtension(),
+      final registry = FlarkExtensionSet([
+        const FlarkMarkdownInlineEditingExtension(),
       ]).commandRegistry();
 
       final result = registry.dispatch(
         state: state,
-        command: SovereignMarkdownInlineCommands.toggleInlineStyle,
-        payload: const SovereignToggleInlineStylePayload(
-          SovereignMarkdownInlineStyle.emphasis,
+        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+        payload: const FlarkToggleInlineStylePayload(
+          FlarkMarkdownInlineStyle.emphasis,
         ),
       );
       final next = state.applyTransaction(result.transaction!);
 
       expect(result.isHandled, isTrue);
       expect(next.markdown, r'\**world*\*');
-      expect(next.selection,
-          const SovereignSelection(baseOffset: 3, extentOffset: 8));
+      expect(
+        next.selection,
+        const FlarkSelection(baseOffset: 3, extentOffset: 8),
+      );
     });
 
     test('rejects collapsed selections until active mark state exists', () {
-      final state = SovereignEditorState.fromMarkdown('world');
-      final registry = SovereignExtensionSet([
-        const SovereignMarkdownInlineEditingExtension(),
+      final state = FlarkEditorState.fromMarkdown('world');
+      final registry = FlarkExtensionSet([
+        const FlarkMarkdownInlineEditingExtension(),
       ]).commandRegistry();
 
       final result = registry.dispatch(
         state: state,
-        command: SovereignMarkdownInlineCommands.toggleInlineStyle,
-        payload: const SovereignToggleInlineStylePayload(
-          SovereignMarkdownInlineStyle.emphasis,
+        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+        payload: const FlarkToggleInlineStylePayload(
+          FlarkMarkdownInlineStyle.emphasis,
         ),
       );
 

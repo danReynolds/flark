@@ -2,29 +2,29 @@
 
 ## 0.1.0 - Unreleased
 
-Initial standalone `sovereign_editor` package hardening release.
+Initial standalone `flark` package hardening release.
 
 - Promoted the v2 source-first editor architecture:
   - canonical Markdown source document;
   - pure Dart runtime, transactions, commands, projection, and render plans;
-  - Flutter widgets as adapters over `SovereignFlutterController`.
+  - Flutter widgets as adapters over `FlarkFlutterController`.
 - Split the public API by integration intent:
-  - `sovereign_editor.dart` for promoted v2 app APIs;
-  - `sovereign_editor_core.dart` for headless Dart/runtime APIs;
-  - `sovereign_editor_v2.dart` for the full v2 integration surface.
+  - `flark.dart` for promoted v2 app APIs;
+  - `flark_core.dart` for headless Dart/runtime APIs;
+  - `flark_advanced.dart` for the full v2 integration surface.
 - Removed the v1 compatibility layer, including the old
-  `SovereignController`/`SovereignEditor` public API, legacy implementation
+  `FlarkController`/`FlarkEditor` public API, legacy implementation
   tree, v1 oracle tests, and compatibility barrels.
-- Added typed `SovereignFlutterController.events` for parse adoption,
+- Added typed `FlarkFlutterController.events` for parse adoption,
   projection prediction, selection changes, undo, redo, and runtime changes.
-- Added `SovereignMarkdownEditor.onParseError` and
-  `SovereignMarkdownPreview.onParseError` so apps can observe scheduled
+- Added `MarkdownEditor.onParseError` and `Markdown.onParseError` so apps can
+  observe scheduled
   background parser failures.
 - Extracted the editor and read-only previewer into a standalone Flutter
   package workspace.
 - Added native `comrak` parsing through the package FFI/native-assets flow, with
   iOS XCFramework and Android JNI packaging verification.
-- Added the example app with editable and read-only Sovereign surfaces.
+- Added the example app with editable and read-only Flark surfaces.
 - Hardened controller, rendering, syntax, native bridge, markdown structure, and
   command module boundaries.
 - Completed the Phase 4 markdown support policy for thematic breaks, indented
@@ -34,7 +34,7 @@ Initial standalone `sovereign_editor` package hardening release.
   task list items, table grids, and overlay target controls.
 - Added preview image-card actions for opening, copying, and selecting source
   image markdown, while keeping canonical Markdown source as the edit target.
-- Added v2 live rendered editing through `SovereignMarkdownEditingMode.liveRendered`,
+- Added v2 live rendered editing through `FlarkMarkdownEditingMode.liveRendered`,
   preserving canonical source edits while styling projected Markdown in place
   and painting editable code-fence/blockquote chrome from the render plan.
 - Promoted live rendered editing to true block-widget editing for parsed

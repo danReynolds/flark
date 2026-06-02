@@ -4,34 +4,34 @@ import 'sovereign_source_operation.dart';
 import 'sovereign_source_range.dart';
 import 'sovereign_transaction_metadata.dart';
 
-final class SovereignTransaction {
-  SovereignTransaction({
-    required List<SovereignSourceOperation> operations,
+final class FlarkTransaction {
+  FlarkTransaction({
+    required List<FlarkSourceOperation> operations,
     this.selectionBefore,
     this.selectionAfter,
-    SovereignTransactionMetadata? metadata,
+    FlarkTransactionMetadata? metadata,
     String? userEvent,
     int? undoGroupId,
     bool addToHistory = true,
   }) : metadata =
            metadata ??
-           SovereignTransactionMetadata(
+           FlarkTransactionMetadata(
              userEvent: userEvent,
              undoGroupId: undoGroupId,
              addToHistory: addToHistory,
            ),
-       operations = List<SovereignSourceOperation>.unmodifiable(operations);
+       operations = List<FlarkSourceOperation>.unmodifiable(operations);
 
-  factory SovereignTransaction.single(
-    SovereignSourceOperation operation, {
-    SovereignSelection? selectionBefore,
-    SovereignSelection? selectionAfter,
-    SovereignTransactionMetadata? metadata,
+  factory FlarkTransaction.single(
+    FlarkSourceOperation operation, {
+    FlarkSelection? selectionBefore,
+    FlarkSelection? selectionAfter,
+    FlarkTransactionMetadata? metadata,
     String? userEvent,
     int? undoGroupId,
     bool addToHistory = true,
   }) {
-    return SovereignTransaction(
+    return FlarkTransaction(
       operations: [operation],
       selectionBefore: selectionBefore,
       selectionAfter: selectionAfter,
@@ -42,10 +42,10 @@ final class SovereignTransaction {
     );
   }
 
-  final List<SovereignSourceOperation> operations;
-  final SovereignSelection? selectionBefore;
-  final SovereignSelection? selectionAfter;
-  final SovereignTransactionMetadata metadata;
+  final List<FlarkSourceOperation> operations;
+  final FlarkSelection? selectionBefore;
+  final FlarkSelection? selectionAfter;
+  final FlarkTransactionMetadata metadata;
 
   String? get userEvent => metadata.userEvent;
 
@@ -55,7 +55,7 @@ final class SovereignTransaction {
 
   bool get changesDocument => operations.isNotEmpty;
 
-  SovereignDocument applyToDocument(SovereignDocument document) {
+  FlarkDocument applyToDocument(FlarkDocument document) {
     if (operations.isEmpty) return document;
 
     final text = document.markdown;
@@ -69,28 +69,25 @@ final class SovereignTransaction {
     );
   }
 
-  SovereignSelection mapSelection(SovereignSelection selection) {
+  FlarkSelection mapSelection(FlarkSelection selection) {
     final sorted = _sortedOperations();
     final mappedBase = _mapOffset(selection.baseOffset, sorted: sorted);
     final mappedExtent = _mapOffset(selection.extentOffset, sorted: sorted);
-    return SovereignSelection(
-      baseOffset: mappedBase,
-      extentOffset: mappedExtent,
-    );
+    return FlarkSelection(baseOffset: mappedBase, extentOffset: mappedExtent);
   }
 
   int mapOffset(
     int offset, {
-    SovereignMapAffinity affinity = SovereignMapAffinity.downstream,
+    FlarkMapAffinity affinity = FlarkMapAffinity.downstream,
   }) {
     return _mapOffset(offset, affinity: affinity);
   }
 
-  SovereignTransaction invert(SovereignDocument before) {
+  FlarkTransaction invert(FlarkDocument before) {
     final text = before.markdown;
     final sorted = _validatedOperations(text.length);
     var delta = 0;
-    final inverseOperations = <SovereignSourceOperation>[];
+    final inverseOperations = <FlarkSourceOperation>[];
 
     for (final operation in sorted) {
       final range = operation.replacedRange;
@@ -98,20 +95,20 @@ final class SovereignTransaction {
       final mappedStart = range.start + delta;
       final mappedEnd = mappedStart + operation.insertedLength;
       inverseOperations.add(
-        SovereignSourceOperation.replace(
-          replacedRange: SovereignSourceRange(mappedStart, mappedEnd),
+        FlarkSourceOperation.replace(
+          replacedRange: FlarkSourceRange(mappedStart, mappedEnd),
           replacementText: deletedText,
         ),
       );
       delta += operation.delta;
     }
 
-    return SovereignTransaction(
+    return FlarkTransaction(
       operations: inverseOperations,
       selectionBefore: selectionAfter,
       selectionAfter: selectionBefore,
-      metadata: SovereignTransactionMetadata(
-        intent: SovereignTransactionIntent.undo,
+      metadata: FlarkTransactionMetadata(
+        intent: FlarkTransactionIntent.undo,
         userEvent: metadata.userEvent == null
             ? null
             : 'undo:${metadata.userEvent}',
@@ -121,7 +118,7 @@ final class SovereignTransaction {
     );
   }
 
-  List<SovereignSourceOperation> _validatedOperations(int textLength) {
+  List<FlarkSourceOperation> _validatedOperations(int textLength) {
     final sorted = _sortedOperations();
 
     var previousEnd = 0;
@@ -129,7 +126,7 @@ final class SovereignTransaction {
       operation.validate(textLength);
       if (operation.replacedRange.start < previousEnd) {
         throw StateError(
-          'Sovereign transactions cannot contain overlapping '
+          'Flark transactions cannot contain overlapping '
           'source operations.',
         );
       }
@@ -138,7 +135,7 @@ final class SovereignTransaction {
     return sorted;
   }
 
-  List<SovereignSourceOperation> _sortedOperations() {
+  List<FlarkSourceOperation> _sortedOperations() {
     final indexed = [
       for (var index = 0; index < operations.length; index += 1)
         _IndexedSourceOperation(index, operations[index]),
@@ -149,7 +146,7 @@ final class SovereignTransaction {
 
   static String _applyAtomic(
     String text,
-    List<SovereignSourceOperation> operations,
+    List<FlarkSourceOperation> operations,
   ) {
     final buffer = StringBuffer();
     var cursor = 0;
@@ -167,8 +164,8 @@ final class SovereignTransaction {
 
   int _mapOffset(
     int offset, {
-    SovereignMapAffinity affinity = SovereignMapAffinity.downstream,
-    List<SovereignSourceOperation>? sorted,
+    FlarkMapAffinity affinity = FlarkMapAffinity.downstream,
+    List<FlarkSourceOperation>? sorted,
   }) {
     var delta = 0;
     for (final operation in sorted ?? _sortedOperations()) {
@@ -184,16 +181,15 @@ final class SovereignTransaction {
 
       if (range.isCollapsed) {
         return switch (affinity) {
-          SovereignMapAffinity.upstream => start + delta,
-          SovereignMapAffinity.downstream =>
+          FlarkMapAffinity.upstream => start + delta,
+          FlarkMapAffinity.downstream =>
             start + delta + operation.insertedLength,
         };
       }
 
       return switch (affinity) {
-        SovereignMapAffinity.upstream => start + delta,
-        SovereignMapAffinity.downstream =>
-          start + delta + operation.insertedLength,
+        FlarkMapAffinity.upstream => start + delta,
+        FlarkMapAffinity.downstream => start + delta + operation.insertedLength,
       };
     }
     return offset + delta;
@@ -204,7 +200,7 @@ final class _IndexedSourceOperation {
   const _IndexedSourceOperation(this.index, this.operation);
 
   final int index;
-  final SovereignSourceOperation operation;
+  final FlarkSourceOperation operation;
 }
 
 int _compareIndexedOperations(

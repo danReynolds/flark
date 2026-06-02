@@ -1,4 +1,4 @@
-name: sovereign_editor
+name: flark
 description: A Flutter markdown editor and read-only previewer with native CommonMark/GFM parsing.
 publish_to: none
 version: 0.1.0

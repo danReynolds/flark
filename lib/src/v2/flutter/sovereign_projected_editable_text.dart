@@ -16,8 +16,8 @@ import 'sovereign_markdown_input_policy.dart';
 import 'sovereign_markdown_interactions.dart';
 import 'sovereign_text_selection_gestures.dart';
 
-final class SovereignProjectedEditableText extends StatefulWidget {
-  const SovereignProjectedEditableText({
+final class FlarkProjectedEditableText extends StatefulWidget {
+  const FlarkProjectedEditableText({
     super.key,
     required this.controller,
     this.focusNode,
@@ -28,10 +28,10 @@ final class SovereignProjectedEditableText extends StatefulWidget {
     this.maxLines,
     this.expands = false,
     this.autofocus = false,
-    this.shortcuts = const <ShortcutActivator, SovereignCommandIntent>{},
+    this.shortcuts = const <ShortcutActivator, FlarkCommandIntent>{},
   });
 
-  final SovereignFlutterController controller;
+  final FlarkFlutterController controller;
   final FocusNode? focusNode;
   final TextStyle? style;
   final Color cursorColor;
@@ -40,19 +40,19 @@ final class SovereignProjectedEditableText extends StatefulWidget {
   final int? maxLines;
   final bool expands;
   final bool autofocus;
-  final Map<ShortcutActivator, SovereignCommandIntent> shortcuts;
+  final Map<ShortcutActivator, FlarkCommandIntent> shortcuts;
 
   @override
-  State<SovereignProjectedEditableText> createState() {
-    return _SovereignProjectedEditableTextState();
+  State<FlarkProjectedEditableText> createState() {
+    return _FlarkProjectedEditableTextState();
   }
 }
 
-final class _SovereignProjectedEditableTextState
-    extends State<SovereignProjectedEditableText> {
+final class _FlarkProjectedEditableTextState
+    extends State<FlarkProjectedEditableText> {
   @override
   Widget build(BuildContext context) {
-    return _SovereignProjectedEditableHost(
+    return _FlarkProjectedEditableHost(
       controller: widget.controller,
       focusNode: widget.focusNode,
       style: widget.style,
@@ -67,8 +67,8 @@ final class _SovereignProjectedEditableTextState
   }
 }
 
-final class SovereignLiveRenderedEditableText extends StatefulWidget {
-  const SovereignLiveRenderedEditableText({
+final class FlarkLiveRenderedEditableText extends StatefulWidget {
+  const FlarkLiveRenderedEditableText({
     super.key,
     required this.controller,
     this.focusNode,
@@ -79,10 +79,10 @@ final class SovereignLiveRenderedEditableText extends StatefulWidget {
     this.maxLines,
     this.expands = false,
     this.autofocus = false,
-    this.shortcuts = const <ShortcutActivator, SovereignCommandIntent>{},
+    this.shortcuts = const <ShortcutActivator, FlarkCommandIntent>{},
   });
 
-  final SovereignFlutterController controller;
+  final FlarkFlutterController controller;
   final FocusNode? focusNode;
   final TextStyle? style;
   final Color cursorColor;
@@ -91,16 +91,16 @@ final class SovereignLiveRenderedEditableText extends StatefulWidget {
   final int? maxLines;
   final bool expands;
   final bool autofocus;
-  final Map<ShortcutActivator, SovereignCommandIntent> shortcuts;
+  final Map<ShortcutActivator, FlarkCommandIntent> shortcuts;
 
   @override
-  State<SovereignLiveRenderedEditableText> createState() {
-    return _SovereignLiveRenderedEditableTextState();
+  State<FlarkLiveRenderedEditableText> createState() {
+    return _FlarkLiveRenderedEditableTextState();
   }
 }
 
-final class _SovereignLiveRenderedEditableTextState
-    extends State<SovereignLiveRenderedEditableText> {
+final class _FlarkLiveRenderedEditableTextState
+    extends State<FlarkLiveRenderedEditableText> {
   FocusNode? _ownedFocusNode;
 
   FocusNode get _focusNode => widget.focusNode ?? _ownedFocusNode!;
@@ -112,7 +112,7 @@ final class _SovereignLiveRenderedEditableTextState
   }
 
   @override
-  void didUpdateWidget(SovereignLiveRenderedEditableText oldWidget) {
+  void didUpdateWidget(FlarkLiveRenderedEditableText oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.focusNode == null && widget.focusNode != null) {
       _ownedFocusNode?.dispose();
@@ -130,7 +130,7 @@ final class _SovereignLiveRenderedEditableTextState
 
   @override
   Widget build(BuildContext context) {
-    return _SovereignLiveRenderedBlockEditor(
+    return _FlarkLiveRenderedBlockEditor(
       controller: widget.controller,
       focusNode: _focusNode,
       style: widget.style,
@@ -145,8 +145,8 @@ final class _SovereignLiveRenderedEditableTextState
   }
 }
 
-final class _SovereignProjectedEditableHost extends StatefulWidget {
-  const _SovereignProjectedEditableHost({
+final class _FlarkProjectedEditableHost extends StatefulWidget {
+  const _FlarkProjectedEditableHost({
     required this.controller,
     this.focusNode,
     this.style,
@@ -156,11 +156,11 @@ final class _SovereignProjectedEditableHost extends StatefulWidget {
     this.maxLines,
     this.expands = false,
     this.autofocus = false,
-    this.shortcuts = const <ShortcutActivator, SovereignCommandIntent>{},
+    this.shortcuts = const <ShortcutActivator, FlarkCommandIntent>{},
     this.liveRendered = false,
   });
 
-  final SovereignFlutterController controller;
+  final FlarkFlutterController controller;
   final FocusNode? focusNode;
   final TextStyle? style;
   final Color cursorColor;
@@ -169,28 +169,28 @@ final class _SovereignProjectedEditableHost extends StatefulWidget {
   final int? maxLines;
   final bool expands;
   final bool autofocus;
-  final Map<ShortcutActivator, SovereignCommandIntent> shortcuts;
+  final Map<ShortcutActivator, FlarkCommandIntent> shortcuts;
   final bool liveRendered;
 
   @override
-  State<_SovereignProjectedEditableHost> createState() {
-    return _SovereignProjectedEditableHostState();
+  State<_FlarkProjectedEditableHost> createState() {
+    return _FlarkProjectedEditableHostState();
   }
 }
 
-final class _SovereignProjectedEditableHostState
-    extends State<_SovereignProjectedEditableHost> {
+final class _FlarkProjectedEditableHostState
+    extends State<_FlarkProjectedEditableHost> {
   late final TextEditingController _textController;
   late final ScrollController _scrollController;
   final _editableStateKey = GlobalKey<EditableTextState>();
   FocusNode? _ownedFocusNode;
   bool _syncingFromRuntime = false;
   bool _keyboardSyncScheduled = false;
-  final _compositionUndoGrouping = _SovereignCompositionUndoGrouping();
+  final _compositionUndoGrouping = _FlarkCompositionUndoGrouping();
   String? _cachedLiveDisplayText;
-  SovereignRenderPlan? _cachedLiveRenderPlan;
+  FlarkRenderPlan? _cachedLiveRenderPlan;
   bool? _cachedLiveHasRenderPlan;
-  _SovereignLiveRenderedTextState? _cachedLiveRenderState;
+  _FlarkLiveRenderedTextState? _cachedLiveRenderState;
 
   FocusNode get _focusNode => widget.focusNode ?? _ownedFocusNode!;
 
@@ -198,7 +198,7 @@ final class _SovereignProjectedEditableHostState
   void initState() {
     super.initState();
     _textController = widget.liveRendered
-        ? _SovereignLiveRenderedTextController()
+        ? _FlarkLiveRenderedTextController()
         : TextEditingController();
     _scrollController = ScrollController();
     _textController.addListener(_handleTextEditingValueChanged);
@@ -208,7 +208,7 @@ final class _SovereignProjectedEditableHostState
   }
 
   @override
-  void didUpdateWidget(_SovereignProjectedEditableHost oldWidget) {
+  void didUpdateWidget(_FlarkProjectedEditableHost oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_syncFromRuntime);
@@ -241,7 +241,7 @@ final class _SovereignProjectedEditableHostState
     final hasRenderPlan =
         widget.controller.hasAuthoritativeRenderPlan ||
         widget.controller.renderPlan.blocks.isNotEmpty;
-    if (_textController is _SovereignLiveRenderedTextController) {
+    if (_textController is _FlarkLiveRenderedTextController) {
       _textController.renderState = _liveRenderState(
         displayText: displayText,
         renderPlan: widget.controller.renderPlan,
@@ -273,7 +273,7 @@ final class _SovereignProjectedEditableHostState
     );
     _scheduleKeyboardConnectionForInheritedFocus();
     if (widget.liveRendered) {
-      editor = _SovereignLiveRenderedEditableChrome(
+      editor = _FlarkLiveRenderedEditableChrome(
         textController: _textController,
         scrollController: _scrollController,
         renderPlan: widget.controller.renderPlan,
@@ -286,15 +286,12 @@ final class _SovereignProjectedEditableHostState
     editor = _markdownInputPolicy.wrapKeyboardShortcuts(
       child: editor,
       currentSelection: () =>
-          SovereignMarkdownInputPolicy.selectionFromTextSelection(
+          FlarkMarkdownInputPolicy.selectionFromTextSelection(
             _textController.selection,
           ),
       applySelection: _applyProjectedSelection,
     );
-    editor = SovereignCommandActions(
-      controller: widget.controller,
-      child: editor,
-    );
+    editor = FlarkCommandActions(controller: widget.controller, child: editor);
     if (widget.shortcuts.isNotEmpty) {
       editor = Shortcuts(
         shortcuts: <ShortcutActivator, Intent>{...widget.shortcuts},
@@ -314,9 +311,9 @@ final class _SovereignProjectedEditableHostState
     });
   }
 
-  _SovereignLiveRenderedTextState _liveRenderState({
+  _FlarkLiveRenderedTextState _liveRenderState({
     required String displayText,
-    required SovereignRenderPlan renderPlan,
+    required FlarkRenderPlan renderPlan,
     required bool hasRenderPlan,
   }) {
     final cached = _cachedLiveRenderState;
@@ -327,7 +324,7 @@ final class _SovereignProjectedEditableHostState
       return cached;
     }
 
-    final next = _SovereignLiveRenderedTextState.fromRenderPlan(
+    final next = _FlarkLiveRenderedTextState.fromRenderPlan(
       displayText: displayText,
       renderPlan: renderPlan,
       hasRenderPlan: hasRenderPlan,
@@ -442,15 +439,15 @@ final class _SovereignProjectedEditableHostState
     );
   }
 
-  void _applyProjectedSelection(SovereignSelection displaySelection) {
+  void _applyProjectedSelection(FlarkSelection displaySelection) {
     widget.controller.applyProjectedSelection(
       displaySelection,
-      affinity: SovereignMapAffinity.downstream,
+      affinity: FlarkMapAffinity.downstream,
     );
   }
 
-  SovereignMarkdownInputPolicy get _markdownInputPolicy {
-    return SovereignMarkdownInputPolicy(
+  FlarkMarkdownInputPolicy get _markdownInputPolicy {
+    return FlarkMarkdownInputPolicy(
       controller: widget.controller,
       enterUserEvent: 'input.projected.enter',
       backspaceUserEvent: 'input.projected.backspace',
@@ -458,30 +455,30 @@ final class _SovereignProjectedEditableHostState
     );
   }
 
-  TextSelection _textSelection(SovereignSelection selection) {
+  TextSelection _textSelection(FlarkSelection selection) {
     return TextSelection(
       baseOffset: selection.baseOffset,
       extentOffset: selection.extentOffset,
     );
   }
 
-  SovereignSelection? _selectionFromTextSelection(TextSelection selection) {
-    return SovereignMarkdownInputPolicy.selectionFromTextSelection(selection);
+  FlarkSelection? _selectionFromTextSelection(TextSelection selection) {
+    return FlarkMarkdownInputPolicy.selectionFromTextSelection(selection);
   }
 }
 
 void _adoptImmediateComrakParseForController(
-  SovereignFlutterController controller, {
+  FlarkFlutterController controller, {
   required bool Function() isMounted,
 }) {
   final revision = controller.state.revision;
   final markdown = controller.markdown;
   _requiredLiveParseBackend()
       .parse(
-        SovereignMarkdownParseRequest(
+        FlarkMarkdownParseRequest(
           revision: revision,
           markdown: markdown,
-          profile: SovereignMarkdownProfile.commonMarkGfm,
+          profile: FlarkMarkdownProfile.commonMarkGfm,
         ),
       )
       .then((result) {
@@ -490,15 +487,14 @@ void _adoptImmediateComrakParseForController(
       });
 }
 
-SovereignMarkdownParseBackend? _liveParseBackend;
+FlarkMarkdownParseBackend? _liveParseBackend;
 
-SovereignMarkdownParseBackend _requiredLiveParseBackend() {
-  return _liveParseBackend ??=
-      SovereignNativeComrakParseBackend.requiredDefault();
+FlarkMarkdownParseBackend _requiredLiveParseBackend() {
+  return _liveParseBackend ??= FlarkNativeComrakParseBackend.requiredDefault();
 }
 
-final class _SovereignLiveRenderedBlockEditor extends StatefulWidget {
-  const _SovereignLiveRenderedBlockEditor({
+final class _FlarkLiveRenderedBlockEditor extends StatefulWidget {
+  const _FlarkLiveRenderedBlockEditor({
     required this.controller,
     this.focusNode,
     this.style,
@@ -508,10 +504,10 @@ final class _SovereignLiveRenderedBlockEditor extends StatefulWidget {
     this.maxLines,
     this.expands = false,
     this.autofocus = false,
-    this.shortcuts = const <ShortcutActivator, SovereignCommandIntent>{},
+    this.shortcuts = const <ShortcutActivator, FlarkCommandIntent>{},
   });
 
-  final SovereignFlutterController controller;
+  final FlarkFlutterController controller;
   final FocusNode? focusNode;
   final TextStyle? style;
   final Color cursorColor;
@@ -520,16 +516,16 @@ final class _SovereignLiveRenderedBlockEditor extends StatefulWidget {
   final int? maxLines;
   final bool expands;
   final bool autofocus;
-  final Map<ShortcutActivator, SovereignCommandIntent> shortcuts;
+  final Map<ShortcutActivator, FlarkCommandIntent> shortcuts;
 
   @override
-  State<_SovereignLiveRenderedBlockEditor> createState() {
-    return _SovereignLiveRenderedBlockEditorState();
+  State<_FlarkLiveRenderedBlockEditor> createState() {
+    return _FlarkLiveRenderedBlockEditorState();
   }
 }
 
-final class _SovereignLiveRenderedBlockEditorState
-    extends State<_SovereignLiveRenderedBlockEditor> {
+final class _FlarkLiveRenderedBlockEditorState
+    extends State<_FlarkLiveRenderedBlockEditor> {
   final _focusCoordinator = _LiveRenderedBlockFocusCoordinator();
   final _contentBoundsKey = GlobalKey();
   int? _appendHostOffset;
@@ -559,10 +555,10 @@ final class _SovereignLiveRenderedBlockEditorState
                   )
                   .where((block) => _isVisibleEditableBlock(block, displayText))
                   .toList(growable: false)
-            : const <SovereignRenderBlock>[];
+            : const <FlarkRenderBlock>[];
 
         if (blocks.isEmpty || !_requiresBlockWidgetEditing(blocks)) {
-          return _SovereignProjectedEditableHost(
+          return _FlarkProjectedEditableHost(
             controller: widget.controller,
             focusNode: widget.focusNode,
             style: widget.style,
@@ -606,12 +602,12 @@ final class _SovereignLiveRenderedBlockEditorState
         final content = KeyedSubtree(
           key: _contentBoundsKey,
           child: Column(
-            key: const Key('SovereignLiveBlockEditor'),
+            key: const Key('FlarkLiveBlockEditor'),
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
               for (var index = 0; index < blockEntries.length; index++)
-                _SovereignLiveRenderedBlock(
+                _FlarkLiveRenderedBlock(
                   key: ValueKey(blockEntries[index].id),
                   controller: widget.controller,
                   block: blockEntries[index].block,
@@ -663,7 +659,7 @@ final class _SovereignLiveRenderedBlockEditorState
           onTapUp: _handleEditorTapUp,
           child: editor,
         );
-        editor = SovereignCommandActions(
+        editor = FlarkCommandActions(
           controller: widget.controller,
           child: editor,
         );
@@ -678,19 +674,17 @@ final class _SovereignLiveRenderedBlockEditorState
     );
   }
 
-  static bool _requiresBlockWidgetEditing(
-    Iterable<SovereignRenderBlock> blocks,
-  ) {
+  static bool _requiresBlockWidgetEditing(Iterable<FlarkRenderBlock> blocks) {
     return blocks.any((block) {
       return block.table != null ||
           block.codeBlock != null ||
           block.listItem != null ||
           block.taskListItem != null ||
-          block.kind == SovereignMarkdownBlockKind.blockquote;
+          block.kind == FlarkMarkdownBlockKind.blockquote;
     });
   }
 
-  static String _projectedText(SovereignFlutterController controller) {
+  static String _projectedText(FlarkFlutterController controller) {
     try {
       return controller.projection.projectText(controller.markdown);
     } on ArgumentError {
@@ -699,11 +693,11 @@ final class _SovereignLiveRenderedBlockEditorState
   }
 
   void _moveSelectionToBlockBoundary(
-    SovereignRenderBlock block, {
+    FlarkRenderBlock block, {
     required bool after,
   }) {
     widget.controller.applySelection(
-      SovereignSelection.collapsed(
+      FlarkSelection.collapsed(
         _sourceNavigationBoundaryOffset(
           markdown: widget.controller.markdown,
           block: block,
@@ -717,14 +711,14 @@ final class _SovereignLiveRenderedBlockEditorState
   }
 
   void _moveSelectionToDocumentBoundary(
-    SovereignRenderBlock block, {
+    FlarkRenderBlock block, {
     required bool after,
   }) {
     final offset = (after ? block.sourceRange.end : block.sourceRange.start)
         .clamp(0, widget.controller.markdown.length);
     _appendHostOffset = after ? offset : null;
     widget.controller.applySelection(
-      SovereignSelection.collapsed(offset),
+      FlarkSelection.collapsed(offset),
       userEvent: after
           ? 'selection.liveBlock.verticalBoundary.documentEnd'
           : 'selection.liveBlock.verticalBoundary.documentStart',
@@ -767,7 +761,7 @@ final class _SovereignLiveRenderedBlockEditorState
       final offset = widget.controller.markdown.length;
       _appendHostOffset = offset;
       widget.controller.applySelection(
-        SovereignSelection.collapsed(offset),
+        FlarkSelection.collapsed(offset),
         userEvent: 'selection.liveBlock.appendHost',
       );
       if (mounted) setState(() {});
@@ -796,9 +790,9 @@ final class _SovereignLiveRenderedBlockEditorState
     return renderObject.globalToLocal(childBottomGlobal).dy;
   }
 
-  static List<SovereignRenderBlock> _editableBlocks(
-    Iterable<SovereignRenderBlock> blocks, {
-    required SovereignFlutterController controller,
+  static List<FlarkRenderBlock> _editableBlocks(
+    Iterable<FlarkRenderBlock> blocks, {
+    required FlarkFlutterController controller,
   }) {
     return [
       for (final block in blocks)
@@ -808,8 +802,8 @@ final class _SovereignLiveRenderedBlockEditorState
   }
 
   static bool _selectionTargetsTerminalAppendHost(
-    Iterable<SovereignRenderBlock> blocks,
-    SovereignFlutterController controller,
+    Iterable<FlarkRenderBlock> blocks,
+    FlarkFlutterController controller,
   ) {
     final selection = controller.selection;
     if (!selection.isCollapsed) return false;
@@ -825,28 +819,28 @@ final class _SovereignLiveRenderedBlockEditorState
     });
   }
 
-  static SovereignRenderBlock _normalizePredictedEditableBlock(
-    SovereignRenderBlock block,
-    SovereignFlutterController controller,
+  static FlarkRenderBlock _normalizePredictedEditableBlock(
+    FlarkRenderBlock block,
+    FlarkFlutterController controller,
   ) {
     if (block.codeBlock == null) return block;
     final markdown = controller.markdown;
-    final context = SovereignMarkdownFencedCodeScanner.contextForOpeningLine(
+    final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
       markdown,
       block.sourceRange.start,
     );
     if (context == null || !context.isClosed) return block;
     final closedEnd = context.closingLineEndWithBreak ?? context.closingLineEnd;
     if (closedEnd == null || closedEnd >= block.sourceRange.end) return block;
-    final sourceRange = SovereignSourceRange(
+    final sourceRange = FlarkSourceRange(
       block.sourceRange.start,
       closedEnd,
     ).validate(markdown.length);
-    return SovereignRenderBlock(
+    return FlarkRenderBlock(
       kind: block.kind,
       type: block.type,
       sourceRange: sourceRange,
-      displayRange: SovereignSourceRange(
+      displayRange: FlarkSourceRange(
         controller.projection.sourceToDisplayOffset(sourceRange.start),
         controller.projection.sourceToDisplayOffset(sourceRange.end),
       ),
@@ -861,11 +855,11 @@ final class _SovereignLiveRenderedBlockEditorState
     );
   }
 
-  static Iterable<SovereignRenderBlock> _editableBlockAndDescendants(
-    SovereignRenderBlock block,
+  static Iterable<FlarkRenderBlock> _editableBlockAndDescendants(
+    FlarkRenderBlock block,
   ) sync* {
-    if (block.kind == SovereignMarkdownBlockKind.document ||
-        block.kind == SovereignMarkdownBlockKind.list) {
+    if (block.kind == FlarkMarkdownBlockKind.document ||
+        block.kind == FlarkMarkdownBlockKind.list) {
       for (final child in block.children) {
         yield* _editableBlockAndDescendants(child);
       }
@@ -874,9 +868,9 @@ final class _SovereignLiveRenderedBlockEditorState
     yield block;
   }
 
-  static List<SovereignRenderBlock> _blocksWithSourceGapHosts({
-    required List<SovereignRenderBlock> blocks,
-    required SovereignFlutterController controller,
+  static List<FlarkRenderBlock> _blocksWithSourceGapHosts({
+    required List<FlarkRenderBlock> blocks,
+    required FlarkFlutterController controller,
     required int? appendHostOffset,
   }) {
     final next = [
@@ -925,12 +919,12 @@ final class _SovereignLiveRenderedBlockEditorState
       0,
       controller.projection.textLength,
     );
-    final selectionHost = SovereignRenderBlock(
-      kind: SovereignMarkdownBlockKind.paragraph,
+    final selectionHost = FlarkRenderBlock(
+      kind: FlarkMarkdownBlockKind.paragraph,
       type: 'syntheticSelectionHost',
-      sourceRange: SovereignSourceRange(sourceOffset, sourceOffset),
-      displayRange: SovereignSourceRange(displayOffset, displayOffset),
-      styleToken: SovereignRenderTextStyleToken.body,
+      sourceRange: FlarkSourceRange(sourceOffset, sourceOffset),
+      displayRange: FlarkSourceRange(displayOffset, displayOffset),
+      styleToken: FlarkRenderTextStyleToken.body,
       inlineRuns: const [],
       children: const [],
       attributes: const {'synthetic': true, 'reason': 'selectionHost'},
@@ -939,9 +933,9 @@ final class _SovereignLiveRenderedBlockEditorState
     return _sortedBlocks(next);
   }
 
-  static SovereignRenderBlock? _terminalAppendHost({
-    required List<SovereignRenderBlock> blocks,
-    required SovereignFlutterController controller,
+  static FlarkRenderBlock? _terminalAppendHost({
+    required List<FlarkRenderBlock> blocks,
+    required FlarkFlutterController controller,
     required int? appendHostOffset,
   }) {
     if (appendHostOffset == null) return null;
@@ -952,12 +946,12 @@ final class _SovereignLiveRenderedBlockEditorState
     final displayOffset = controller.projection.sourceToDisplayOffset(
       appendHostOffset,
     );
-    return SovereignRenderBlock(
-      kind: SovereignMarkdownBlockKind.paragraph,
+    return FlarkRenderBlock(
+      kind: FlarkMarkdownBlockKind.paragraph,
       type: 'syntheticSelectionHost',
-      sourceRange: SovereignSourceRange(appendHostOffset, appendHostOffset),
-      displayRange: SovereignSourceRange(displayOffset, displayOffset),
-      styleToken: SovereignRenderTextStyleToken.body,
+      sourceRange: FlarkSourceRange(appendHostOffset, appendHostOffset),
+      displayRange: FlarkSourceRange(displayOffset, displayOffset),
+      styleToken: FlarkRenderTextStyleToken.body,
       inlineRuns: const [],
       children: const [],
       attributes: {
@@ -969,11 +963,11 @@ final class _SovereignLiveRenderedBlockEditorState
     );
   }
 
-  static SovereignRenderBlock? _terminalEditableBlock(
-    List<SovereignRenderBlock> blocks,
+  static FlarkRenderBlock? _terminalEditableBlock(
+    List<FlarkRenderBlock> blocks,
     int sourceOffset,
   ) {
-    SovereignRenderBlock? best;
+    FlarkRenderBlock? best;
     for (final block in blocks) {
       if (block.sourceRange.end != sourceOffset) continue;
       if (best == null || block.sourceRange.start > best.sourceRange.start) {
@@ -983,14 +977,11 @@ final class _SovereignLiveRenderedBlockEditorState
     return best;
   }
 
-  static String _terminalAppendPrefix(
-    String markdown,
-    SovereignRenderBlock block,
-  ) {
+  static String _terminalAppendPrefix(String markdown, FlarkRenderBlock block) {
     final requiredBreaks =
         block.listItem != null ||
             block.taskListItem != null ||
-            block.kind == SovereignMarkdownBlockKind.blockquote
+            block.kind == FlarkMarkdownBlockKind.blockquote
         ? 2
         : 1;
     final missingBreaks = requiredBreaks - _trailingLineBreakCount(markdown);
@@ -1018,13 +1009,13 @@ final class _SovereignLiveRenderedBlockEditorState
 
   static bool _selectionIsAfterTerminalCodeFence({
     required String markdown,
-    required List<SovereignRenderBlock> blocks,
-    required SovereignSelection selection,
+    required List<FlarkRenderBlock> blocks,
+    required FlarkSelection selection,
   }) {
     if (!selection.isCollapsed) return false;
     final offset = selection.extentOffset;
     if (offset < 0 || offset > markdown.length) return false;
-    if (!SovereignMarkdownFencedCodeScanner.isWhitespace(
+    if (!FlarkMarkdownFencedCodeScanner.isWhitespace(
       markdown.substring(offset),
     )) {
       return false;
@@ -1034,7 +1025,7 @@ final class _SovereignLiveRenderedBlockEditorState
       if (block.codeBlock == null || block.sourceRange.end != offset) {
         continue;
       }
-      final context = SovereignMarkdownFencedCodeScanner.contextForOpeningLine(
+      final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
         markdown,
         block.sourceRange.start,
       );
@@ -1043,9 +1034,9 @@ final class _SovereignLiveRenderedBlockEditorState
     return false;
   }
 
-  static Iterable<SovereignRenderBlock> _parserOmittedLineHosts({
-    required List<SovereignRenderBlock> blocks,
-    required SovereignFlutterController controller,
+  static Iterable<FlarkRenderBlock> _parserOmittedLineHosts({
+    required List<FlarkRenderBlock> blocks,
+    required FlarkFlutterController controller,
     required int? appendHostOffset,
   }) sync* {
     final markdown = controller.markdown;
@@ -1056,7 +1047,7 @@ final class _SovereignLiveRenderedBlockEditorState
       final newline = markdown.indexOf('\n', lineStart);
       final lineEnd = newline < 0 ? markdown.length : newline;
       final lineText = markdown.substring(lineStart, lineEnd);
-      final lineRange = SovereignSourceRange(lineStart, lineEnd);
+      final lineRange = FlarkSourceRange(lineStart, lineEnd);
       final selectedLine =
           selection.isCollapsed &&
           selection.extentOffset >= lineRange.start &&
@@ -1083,8 +1074,8 @@ final class _SovereignLiveRenderedBlockEditorState
   }
 
   static bool _sourceRangeCoveredByBlocks(
-    SovereignSourceRange range,
-    Iterable<SovereignRenderBlock> blocks,
+    FlarkSourceRange range,
+    Iterable<FlarkRenderBlock> blocks,
   ) {
     for (final block in blocks) {
       final blockRange = block.sourceRange;
@@ -1104,7 +1095,7 @@ final class _SovereignLiveRenderedBlockEditorState
 
   static bool _sourceOffsetHasCollapsedBlock(
     int sourceOffset,
-    Iterable<SovereignRenderBlock> blocks,
+    Iterable<FlarkRenderBlock> blocks,
   ) {
     return blocks.any(
       (block) =>
@@ -1113,9 +1104,9 @@ final class _SovereignLiveRenderedBlockEditorState
     );
   }
 
-  static SovereignRenderBlock _syntheticSourceLineHost({
-    required SovereignFlutterController controller,
-    required SovereignSourceRange sourceRange,
+  static FlarkRenderBlock _syntheticSourceLineHost({
+    required FlarkFlutterController controller,
+    required FlarkSourceRange sourceRange,
     String? stableId,
   }) {
     final displayStart = controller.projection.sourceToDisplayOffset(
@@ -1124,12 +1115,12 @@ final class _SovereignLiveRenderedBlockEditorState
     final displayEnd = controller.projection.sourceToDisplayOffset(
       sourceRange.end,
     );
-    return SovereignRenderBlock(
-      kind: SovereignMarkdownBlockKind.paragraph,
+    return FlarkRenderBlock(
+      kind: FlarkMarkdownBlockKind.paragraph,
       type: 'syntheticSourceLineHost',
       sourceRange: sourceRange,
-      displayRange: SovereignSourceRange(displayStart, displayEnd),
-      styleToken: SovereignRenderTextStyleToken.body,
+      displayRange: FlarkSourceRange(displayStart, displayEnd),
+      styleToken: FlarkRenderTextStyleToken.body,
       inlineRuns: const [],
       children: const [],
       attributes: stableId == null
@@ -1144,10 +1135,10 @@ final class _SovereignLiveRenderedBlockEditorState
 
   static String? _appendContinuationStableId({
     required int? appendHostOffset,
-    required List<SovereignRenderBlock> blocks,
+    required List<FlarkRenderBlock> blocks,
     required String markdown,
-    required SovereignSourceRange lineRange,
-    required SovereignSelection selection,
+    required FlarkSourceRange lineRange,
+    required FlarkSelection selection,
   }) {
     if (!selection.isCollapsed) return null;
     final stableOffset =
@@ -1167,9 +1158,9 @@ final class _SovereignLiveRenderedBlockEditorState
   }
 
   static int? _inferredAppendContinuationOffset({
-    required List<SovereignRenderBlock> blocks,
+    required List<FlarkRenderBlock> blocks,
     required String markdown,
-    required SovereignSourceRange lineRange,
+    required FlarkSourceRange lineRange,
   }) {
     if (lineRange.start <= 0 || lineRange.start > markdown.length) {
       return null;
@@ -1183,7 +1174,7 @@ final class _SovereignLiveRenderedBlockEditorState
         lineStart: lineRange.start,
       );
       if (appendOffset == null) continue;
-      if (!SovereignMarkdownFencedCodeScanner.isWhitespace(
+      if (!FlarkMarkdownFencedCodeScanner.isWhitespace(
         markdown.substring(appendOffset, lineRange.start),
       )) {
         continue;
@@ -1195,7 +1186,7 @@ final class _SovereignLiveRenderedBlockEditorState
 
   static int? _appendContinuationBaseOffset({
     required String markdown,
-    required SovereignRenderBlock block,
+    required FlarkRenderBlock block,
     required int lineStart,
   }) {
     final end = block.sourceRange.end;
@@ -1207,16 +1198,14 @@ final class _SovereignLiveRenderedBlockEditorState
     return end;
   }
 
-  static bool _supportsTerminalAppendContinuation(SovereignRenderBlock block) {
+  static bool _supportsTerminalAppendContinuation(FlarkRenderBlock block) {
     return block.codeBlock != null ||
         block.listItem != null ||
         block.taskListItem != null ||
-        block.kind == SovereignMarkdownBlockKind.blockquote;
+        block.kind == FlarkMarkdownBlockKind.blockquote;
   }
 
-  static List<SovereignRenderBlock> _sortedBlocks(
-    List<SovereignRenderBlock> blocks,
-  ) {
+  static List<FlarkRenderBlock> _sortedBlocks(List<FlarkRenderBlock> blocks) {
     blocks.sort((a, b) {
       final bySource = a.sourceRange.start.compareTo(b.sourceRange.start);
       if (bySource != 0) return bySource;
@@ -1232,7 +1221,7 @@ final class _LiveRenderedBlockEntry {
   const _LiveRenderedBlockEntry({required this.id, required this.block});
 
   final String id;
-  final SovereignRenderBlock block;
+  final FlarkRenderBlock block;
 }
 
 final class _LiveRenderedBlockFocusCoordinator {
@@ -1278,7 +1267,7 @@ final class _LiveRenderedBlockFocusCoordinator {
 
   void scheduleSelectionSync({
     required List<_LiveRenderedBlockEntry> entries,
-    required SovereignFlutterController controller,
+    required FlarkFlutterController controller,
     required bool autofocus,
     required bool restoreSelectionFocus,
     required FocusNode? externalFirstFocusNode,
@@ -1334,7 +1323,7 @@ final class _LiveRenderedBlockFocusCoordinator {
 
   _LiveRenderedBlockEntry? _blockEntryForSelection(
     List<_LiveRenderedBlockEntry> entries,
-    SovereignFlutterController controller,
+    FlarkFlutterController controller,
   ) {
     _LiveRenderedBlockEntry? best;
     for (final entry in entries) {
@@ -1348,8 +1337,8 @@ final class _LiveRenderedBlockFocusCoordinator {
   }
 
   bool _blockOwnsSelection(
-    SovereignRenderBlock block,
-    SovereignFlutterController controller,
+    FlarkRenderBlock block,
+    FlarkFlutterController controller,
   ) {
     return _blockOwnsSourceSelection(
       markdown: controller.markdown,
@@ -1361,16 +1350,16 @@ final class _LiveRenderedBlockFocusCoordinator {
 
 bool _blockOwnsSourceSelection({
   required String markdown,
-  required SovereignRenderBlock block,
-  required SovereignSelection selection,
+  required FlarkRenderBlock block,
+  required FlarkSelection selection,
 }) {
   final focusRange = _sourceFocusRangeForBlock(markdown, block);
   return selection.start >= focusRange.start && selection.end <= focusRange.end;
 }
 
-SovereignSourceRange _sourceFocusRangeForBlock(
+FlarkSourceRange _sourceFocusRangeForBlock(
   String markdown,
-  SovereignRenderBlock block,
+  FlarkRenderBlock block,
 ) {
   final start = block.sourceRange.start.clamp(0, markdown.length);
   var end = block.sourceRange.end.clamp(start, markdown.length);
@@ -1380,12 +1369,12 @@ SovereignSourceRange _sourceFocusRangeForBlock(
   } else if (lineEnd >= start && lineEnd > end) {
     end = lineEnd;
   }
-  return SovereignSourceRange(start, end);
+  return FlarkSourceRange(start, end);
 }
 
 int _sourceNavigationBoundaryOffset({
   required String markdown,
-  required SovereignRenderBlock block,
+  required FlarkRenderBlock block,
   required bool after,
 }) {
   if (block.codeBlock != null) {
@@ -1398,7 +1387,7 @@ int _sourceNavigationBoundaryOffset({
       : focusRange.start;
 }
 
-int _sourceRangeEditableEnd(String markdown, SovereignSourceRange range) {
+int _sourceRangeEditableEnd(String markdown, FlarkSourceRange range) {
   var end = range.end.clamp(range.start, markdown.length);
   while (end > range.start &&
       _isLineBreakCodeUnit(markdown.codeUnitAt(end - 1))) {
@@ -1415,26 +1404,28 @@ Color _selectionColorForCursor(Color cursorColor) {
   return cursorColor.withValues(alpha: 0.24);
 }
 
-String _liveRenderedBlockId(SovereignRenderBlock block) {
+String _liveRenderedBlockId(FlarkRenderBlock block) {
   final stableId = block.attributes['stableId'];
   if (stableId is String) return 'live-block:$stableId';
   return 'live-block:${block.type}:${block.sourceRange.start}';
 }
 
-bool _isVisibleEditableBlock(SovereignRenderBlock block, String displayText) {
+bool _isVisibleEditableBlock(FlarkRenderBlock block, String displayText) {
   if (_rangeOverlapsText(block.displayRange, displayText)) return true;
-  return (block.kind == SovereignMarkdownBlockKind.blockquote ||
-          block.kind == SovereignMarkdownBlockKind.listItem ||
-          block.kind == SovereignMarkdownBlockKind.codeBlock) &&
+  return (block.kind == FlarkMarkdownBlockKind.blockquote ||
+          block.kind == FlarkMarkdownBlockKind.listItem ||
+          block.kind == FlarkMarkdownBlockKind.codeBlock) &&
       block.displayRange.isCollapsed;
 }
 
 bool _hasImmediatelyRenderableBlockLine(String text) {
   var lineStart = 0;
   while (lineStart <= text.length) {
-    final lineEndWithBreak =
-        SovereignMarkdownFencedCodeScanner.lineEndWithBreak(text, lineStart);
-    final lineEnd = SovereignMarkdownFencedCodeScanner.lineContentEnd(
+    final lineEndWithBreak = FlarkMarkdownFencedCodeScanner.lineEndWithBreak(
+      text,
+      lineStart,
+    );
+    final lineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
       text,
       lineStart,
     );
@@ -1482,7 +1473,7 @@ bool _isImmediatelyRenderableCodeFenceLine(
   required bool hasLineBreak,
 }) {
   if (!hasLineBreak) return false;
-  return SovereignMarkdownFencedCodeScanner.fenceLine(line) != null;
+  return FlarkMarkdownFencedCodeScanner.fenceLine(line) != null;
 }
 
 String? _displayTextAfterCompletingStandaloneCodeFenceOpener({
@@ -1495,11 +1486,11 @@ String? _displayTextAfterCompletingStandaloneCodeFenceOpener({
   final caret = selection.extentOffset;
   if (caret < 0 || caret > text.length) return null;
 
-  final lineStart = SovereignMarkdownFencedCodeScanner.lineStartForOffset(
+  final lineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
     text,
     caret,
   );
-  final lineEnd = SovereignMarkdownFencedCodeScanner.lineContentEnd(
+  final lineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
     text,
     lineStart,
   );
@@ -1507,7 +1498,7 @@ String? _displayTextAfterCompletingStandaloneCodeFenceOpener({
   if (lineEnd < text.length && text.codeUnitAt(lineEnd) == 0x0A) return null;
 
   final line = text.substring(lineStart, lineEnd);
-  final fence = SovereignMarkdownFencedCodeScanner.fenceLine(line);
+  final fence = FlarkMarkdownFencedCodeScanner.fenceLine(line);
   if (fence == null || fence.infoString != null) return null;
   if (_lineClosesExistingCodeFence(
     text: text,
@@ -1517,12 +1508,12 @@ String? _displayTextAfterCompletingStandaloneCodeFenceOpener({
     return null;
   }
 
-  final oldLineStart = SovereignMarkdownFencedCodeScanner.lineStartForOffset(
+  final oldLineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
     oldDisplayText,
     caret.clamp(0, oldDisplayText.length),
   );
   final oldLineEnd = oldLineStart <= oldDisplayText.length
-      ? SovereignMarkdownFencedCodeScanner.lineContentEnd(
+      ? FlarkMarkdownFencedCodeScanner.lineContentEnd(
           oldDisplayText,
           oldLineStart,
         )
@@ -1536,7 +1527,7 @@ String? _displayTextAfterCompletingStandaloneCodeFenceOpener({
     )) {
       return null;
     }
-    final oldFence = SovereignMarkdownFencedCodeScanner.fenceLine(oldLine);
+    final oldFence = FlarkMarkdownFencedCodeScanner.fenceLine(oldLine);
     if (oldFence != null && oldFence.infoString == null) return null;
   }
 
@@ -1546,7 +1537,7 @@ String? _displayTextAfterCompletingStandaloneCodeFenceOpener({
 bool _justCompletedFenceMarkerBySingleCharacter({
   required String oldLine,
   required String line,
-  required SovereignMarkdownFenceLine fence,
+  required FlarkMarkdownFenceLine fence,
 }) {
   if (fence.infoString != null) return false;
   if (line.length != oldLine.length + 1) return false;
@@ -1560,17 +1551,17 @@ bool _justCompletedFenceMarkerBySingleCharacter({
 bool _lineClosesExistingCodeFence({
   required String text,
   required int lineStart,
-  required SovereignMarkdownFenceLine closingFence,
+  required FlarkMarkdownFenceLine closingFence,
 }) {
-  SovereignMarkdownFenceLine? openFence;
+  FlarkMarkdownFenceLine? openFence;
   var scanLineStart = 0;
   while (scanLineStart < lineStart && scanLineStart < text.length) {
-    final scanLineEnd = SovereignMarkdownFencedCodeScanner.lineContentEnd(
+    final scanLineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
       text,
       scanLineStart,
     );
     final line = text.substring(scanLineStart, scanLineEnd);
-    final fence = SovereignMarkdownFencedCodeScanner.fenceLine(line);
+    final fence = FlarkMarkdownFencedCodeScanner.fenceLine(line);
     if (fence != null) {
       if (openFence == null) {
         openFence = fence;
@@ -1579,7 +1570,7 @@ bool _lineClosesExistingCodeFence({
       }
     }
 
-    final next = SovereignMarkdownFencedCodeScanner.lineEndWithBreak(
+    final next = FlarkMarkdownFencedCodeScanner.lineEndWithBreak(
       text,
       scanLineStart,
     );
@@ -1591,23 +1582,23 @@ bool _lineClosesExistingCodeFence({
 }
 
 bool _fenceLineCloses(
-  SovereignMarkdownFenceLine openFence,
-  SovereignMarkdownFenceLine candidate,
+  FlarkMarkdownFenceLine openFence,
+  FlarkMarkdownFenceLine candidate,
 ) {
   return candidate.canClose &&
       candidate.marker == openFence.marker &&
       candidate.markerLength >= openFence.markerLength;
 }
 
-bool _isSyntheticSourceHost(SovereignRenderBlock block) {
+bool _isSyntheticSourceHost(FlarkRenderBlock block) {
   return block.attributes['synthetic'] == true &&
       (block.type == 'syntheticSourceLineHost' ||
           block.type == 'syntheticSelectionHost');
 }
 
-SovereignSourceRange? _syntheticSourceHostRange(
+FlarkSourceRange? _syntheticSourceHostRange(
   String markdown,
-  SovereignRenderBlock block,
+  FlarkRenderBlock block,
 ) {
   if (!_isSyntheticSourceHost(block)) return null;
   if (block.sourceRange.start < 0 ||
@@ -1620,8 +1611,8 @@ SovereignSourceRange? _syntheticSourceHostRange(
 
 _SourceEdit _syntheticSourceHostEdit({
   required String markdown,
-  required SovereignRenderBlock block,
-  required SovereignSourceRange range,
+  required FlarkRenderBlock block,
+  required FlarkSourceRange range,
   required TextEditingValue value,
 }) {
   final sourcePrefix = block.attributes['sourcePrefix'];
@@ -1638,19 +1629,19 @@ _SourceEdit _syntheticSourceHostEdit({
   return _SourceEdit(
     range: range,
     replacementText: '$prefix${value.text}',
-    editableRangeAfter: SovereignSourceRange(
+    editableRangeAfter: FlarkSourceRange(
       range.start + prefixLength,
       range.start + prefixLength + value.text.length,
     ),
-    selectionAfter: SovereignSelection(
+    selectionAfter: FlarkSelection(
       baseOffset: range.start + prefixLength + value.selection.baseOffset,
       extentOffset: range.start + prefixLength + value.selection.extentOffset,
     ),
   );
 }
 
-final class _SovereignLiveRenderedBlock extends StatelessWidget {
-  const _SovereignLiveRenderedBlock({
+final class _FlarkLiveRenderedBlock extends StatelessWidget {
+  const _FlarkLiveRenderedBlock({
     super.key,
     required this.controller,
     required this.block,
@@ -1664,8 +1655,8 @@ final class _SovereignLiveRenderedBlock extends StatelessWidget {
     this.onMoveToNextBlock,
   });
 
-  final SovereignFlutterController controller;
-  final SovereignRenderBlock block;
+  final FlarkFlutterController controller;
+  final FlarkRenderBlock block;
   final String displayText;
   final TextStyle style;
   final Color cursorColor;
@@ -1728,11 +1719,11 @@ final class _SovereignLiveRenderedBlock extends StatelessWidget {
         onMoveToNextBlock: onMoveToNextBlock,
       );
     }
-    if (block.kind == SovereignMarkdownBlockKind.blockquote) {
+    if (block.kind == FlarkMarkdownBlockKind.blockquote) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: DecoratedBox(
-          key: const Key('SovereignLiveBlockBlockquote'),
+          key: const Key('FlarkLiveBlockBlockquote'),
           decoration: const BoxDecoration(
             color: Color(0xFFF8FAFC),
             border: Border(
@@ -1783,8 +1774,8 @@ final class _SovereignLiveRenderedBlock extends StatelessWidget {
     );
   }
 
-  EdgeInsets _plainBlockPadding(SovereignRenderBlock block) {
-    if (block.kind == SovereignMarkdownBlockKind.heading) {
+  EdgeInsets _plainBlockPadding(FlarkRenderBlock block) {
+    if (block.kind == FlarkMarkdownBlockKind.heading) {
       return const EdgeInsets.only(bottom: 6);
     }
     return const EdgeInsets.symmetric(vertical: 2);
@@ -1810,8 +1801,8 @@ final class _EditableProjectedBlockText extends StatefulWidget {
     this.onMoveToNextBlock,
   });
 
-  final SovereignFlutterController controller;
-  final SovereignRenderBlock block;
+  final FlarkFlutterController controller;
+  final FlarkRenderBlock block;
   final String displayText;
   final TextStyle style;
   final Color cursorColor;
@@ -1820,15 +1811,12 @@ final class _EditableProjectedBlockText extends StatefulWidget {
   final bool autofocus;
   final Key? editableKey;
   final bool markdownInputPolicy;
-  final SovereignSourceRange? Function(
-    String markdown,
-    SovereignRenderBlock block,
-  )?
+  final FlarkSourceRange? Function(String markdown, FlarkRenderBlock block)?
   sourceRangeForEdits;
   final _SourceEdit Function({
     required String markdown,
-    required SovereignRenderBlock block,
-    required SovereignSourceRange range,
+    required FlarkRenderBlock block,
+    required FlarkSourceRange range,
     required TextEditingValue value,
   })?
   sourceEditForReplacement;
@@ -1844,19 +1832,19 @@ final class _EditableProjectedBlockText extends StatefulWidget {
 
 final class _EditableProjectedBlockTextState
     extends State<_EditableProjectedBlockText> {
-  late final _SovereignBlockTextController _textController;
+  late final _FlarkBlockTextController _textController;
   FocusNode? _ownedFocusNode;
   bool _syncing = false;
-  final _compositionUndoGrouping = _SovereignCompositionUndoGrouping();
+  final _compositionUndoGrouping = _FlarkCompositionUndoGrouping();
   TextEditingValue? _localValueSnapshot;
-  SovereignSourceRange? _directSourceRangeSnapshot;
+  FlarkSourceRange? _directSourceRangeSnapshot;
 
   FocusNode get _focusNode => widget.focusNode ?? _ownedFocusNode!;
 
   @override
   void initState() {
     super.initState();
-    _textController = _SovereignBlockTextController();
+    _textController = _FlarkBlockTextController();
     _textController.addListener(_handleTextChanged);
     if (widget.focusNode == null) _ownedFocusNode = FocusNode();
     _syncFromController();
@@ -1914,7 +1902,7 @@ final class _EditableProjectedBlockTextState
     return _markdownInputPolicy.wrapKeyboardShortcuts(
       child: editor,
       currentSelection: () =>
-          SovereignMarkdownInputPolicy.selectionFromTextSelection(
+          FlarkMarkdownInputPolicy.selectionFromTextSelection(
             _textController.selection,
           ),
       applySelection: _applyLocalDisplaySelectionToController,
@@ -1940,10 +1928,9 @@ final class _EditableProjectedBlockTextState
         if (_markdownInputPolicy.handlePlatformTextChange(
           oldText: oldLocalText,
           newValue: value,
-          oldTextSelection:
-              SovereignMarkdownInputPolicy.selectionFromTextSelection(
-                oldLocalSelection,
-              ),
+          oldTextSelection: FlarkMarkdownInputPolicy.selectionFromTextSelection(
+            oldLocalSelection,
+          ),
           applyOldTextSelection: _applyLocalDisplaySelectionToController,
         )) {
           _compositionUndoGrouping.clearIfCommitted(value);
@@ -1962,7 +1949,7 @@ final class _EditableProjectedBlockTextState
             _SourceEdit(
               range: sourceRange,
               replacementText: value.text,
-              editableRangeAfter: SovereignSourceRange(
+              editableRangeAfter: FlarkSourceRange(
                 sourceRange.start,
                 sourceRange.start + value.text.length,
               ),
@@ -2012,7 +1999,7 @@ final class _EditableProjectedBlockTextState
     final sourceRange = snapshot.directSourceRange ?? directSourceRange;
     if (sourceRange != null) {
       widget.controller.applySelection(
-        SovereignSelection(
+        FlarkSelection(
           baseOffset: sourceRange.start + selection.baseOffset,
           extentOffset: sourceRange.start + selection.extentOffset,
         ),
@@ -2024,7 +2011,7 @@ final class _EditableProjectedBlockTextState
     }
     final range = _clampedDisplayRange(widget.block, widget.displayText);
     widget.controller.applyProjectedSelection(
-      SovereignSelection(
+      FlarkSelection(
         baseOffset: range.start + selection.baseOffset,
         extentOffset: range.start + selection.extentOffset,
       ),
@@ -2033,13 +2020,11 @@ final class _EditableProjectedBlockTextState
     _compositionUndoGrouping.clearIfCommitted(value);
   }
 
-  void _applyLocalDisplaySelectionToController(
-    SovereignSelection localSelection,
-  ) {
+  void _applyLocalDisplaySelectionToController(FlarkSelection localSelection) {
     final directSourceRange = _sourceEditRange();
     if (directSourceRange != null) {
       widget.controller.applySelection(
-        SovereignSelection(
+        FlarkSelection(
           baseOffset: directSourceRange.start + localSelection.baseOffset,
           extentOffset: directSourceRange.start + localSelection.extentOffset,
         ),
@@ -2049,15 +2034,15 @@ final class _EditableProjectedBlockTextState
     }
     final range = _clampedDisplayRange(widget.block, widget.displayText);
     widget.controller.applyProjectedSelection(
-      SovereignSelection(
+      FlarkSelection(
         baseOffset: range.start + localSelection.baseOffset,
         extentOffset: range.start + localSelection.extentOffset,
       ),
     );
   }
 
-  SovereignMarkdownInputPolicy get _markdownInputPolicy {
-    return SovereignMarkdownInputPolicy(
+  FlarkMarkdownInputPolicy get _markdownInputPolicy {
+    return FlarkMarkdownInputPolicy(
       controller: widget.controller,
       enterUserEvent: 'input.liveBlock.enter',
       backspaceUserEvent: 'input.liveBlock.backspace',
@@ -2091,7 +2076,7 @@ final class _EditableProjectedBlockTextState
   }
 
   _LocalTextEditSnapshot _localEditSnapshot(
-    SovereignSourceRange? directSourceRange,
+    FlarkSourceRange? directSourceRange,
   ) {
     final snapshotValue = _localValueSnapshot;
     final snapshotRange = _directSourceRangeSnapshot;
@@ -2116,7 +2101,7 @@ final class _EditableProjectedBlockTextState
     );
   }
 
-  bool _sourceRangeStillMatches(SovereignSourceRange range, String text) {
+  bool _sourceRangeStillMatches(FlarkSourceRange range, String text) {
     final markdown = widget.controller.markdown;
     if (range.start < 0 ||
         range.start > range.end ||
@@ -2135,7 +2120,7 @@ final class _EditableProjectedBlockTextState
 
   void _rememberLocalEditSnapshot(
     TextEditingValue value, {
-    required SovereignSourceRange? directSourceRange,
+    required FlarkSourceRange? directSourceRange,
   }) {
     _localValueSnapshot = value;
     _directSourceRangeSnapshot = directSourceRange;
@@ -2207,7 +2192,7 @@ final class _EditableProjectedBlockTextState
     _textController.selection = localSelection;
     _syncing = false;
     widget.controller.applySelection(
-      SovereignSelection(
+      FlarkSelection(
         baseOffset: 0,
         extentOffset: widget.controller.markdown.length,
       ),
@@ -2218,8 +2203,8 @@ final class _EditableProjectedBlockTextState
   bool _deleteControllerSelection() {
     if (widget.controller.selection.isCollapsed) return false;
     final result = widget.controller.dispatch(
-      command: SovereignMarkdownInputCommands.handleBackspace,
-      payload: const SovereignHandleBackspacePayload(
+      command: FlarkMarkdownInputCommands.handleBackspace,
+      payload: const FlarkHandleBackspacePayload(
         userEvent: 'input.liveBlock.deleteSelection',
       ),
     );
@@ -2303,20 +2288,20 @@ final class _EditableProjectedBlockTextState
     return KeyEventResult.ignored;
   }
 
-  bool _sourceSelectionCoversBlock(SovereignSelection selection) {
+  bool _sourceSelectionCoversBlock(FlarkSelection selection) {
     return _sourceSelectionCoversRange(selection, widget.block.sourceRange);
   }
 
   bool _sourceSelectionCoversRange(
-    SovereignSelection selection,
-    SovereignSourceRange range,
+    FlarkSelection selection,
+    FlarkSourceRange range,
   ) {
     return !selection.isCollapsed &&
         selection.start <= range.start &&
         selection.end >= range.end;
   }
 
-  SovereignSourceRange? _sourceEditRange() {
+  FlarkSourceRange? _sourceEditRange() {
     final resolver = widget.sourceRangeForEdits;
     if (resolver == null) return null;
     final range = resolver(widget.controller.markdown, widget.block);
@@ -2396,10 +2381,10 @@ final class _LocalTextEditSnapshot {
   });
 
   final TextEditingValue value;
-  final SovereignSourceRange? directSourceRange;
+  final FlarkSourceRange? directSourceRange;
 }
 
-final class _SovereignCompositionUndoGrouping {
+final class _FlarkCompositionUndoGrouping {
   static int _nextUndoGroupId = 1;
 
   int? _undoGroupId;
@@ -2629,8 +2614,8 @@ final class _KeyboardSyncedEditableTextState
   }
 }
 
-final class _SovereignBlockTextController extends TextEditingController {
-  SovereignRenderBlock? block;
+final class _FlarkBlockTextController extends TextEditingController {
+  FlarkRenderBlock? block;
   String displayText = '';
   String? codeSyntaxLanguage;
 
@@ -2649,7 +2634,7 @@ final class _SovereignBlockTextController extends TextEditingController {
       return _plainTextSpan(effectiveStyle, composingRange);
     }
     if (renderBlock.codeBlock != null) {
-      final highlighted = buildSovereignHighlightedCodeSpan(
+      final highlighted = buildFlarkHighlightedCodeSpan(
         source: text,
         language: codeSyntaxLanguage ?? renderBlock.codeBlock?.language,
         baseStyle: effectiveStyle,
@@ -2768,8 +2753,8 @@ final class _EditableListItemBlock extends StatelessWidget {
     this.onMoveToNextBlock,
   });
 
-  final SovereignFlutterController controller;
-  final SovereignRenderBlock block;
+  final FlarkFlutterController controller;
+  final FlarkRenderBlock block;
   final String displayText;
   final TextStyle style;
   final Color cursorColor;
@@ -2821,7 +2806,7 @@ final class _ListMarkerGlyph extends StatelessWidget {
     final markerText = marker.orderedLabel;
     if (markerText != null) {
       return SizedBox(
-        key: const Key('SovereignLiveBlockListMarker'),
+        key: const Key('FlarkLiveBlockListMarker'),
         width: 24,
         child: Text(
           markerText,
@@ -2831,7 +2816,7 @@ final class _ListMarkerGlyph extends StatelessWidget {
       );
     }
     return SizedBox(
-      key: const Key('SovereignLiveBlockListMarker'),
+      key: const Key('FlarkLiveBlockListMarker'),
       width: 16,
       height: (style.fontSize ?? 14) * (style.height ?? 1.2),
       child: CustomPaint(painter: const _BulletMarkerPainter()),
@@ -2866,8 +2851,8 @@ final class _EditableTaskListItemBlock extends StatefulWidget {
     this.onMoveToNextBlock,
   });
 
-  final SovereignFlutterController controller;
-  final SovereignRenderBlock block;
+  final FlarkFlutterController controller;
+  final FlarkRenderBlock block;
   final String displayText;
   final TextStyle style;
   final Color cursorColor;
@@ -2898,7 +2883,7 @@ final class _EditableTaskListItemBlockState
               top: ((widget.style.fontSize ?? 14) * 0.18),
             ),
             child: GestureDetector(
-              key: const Key('SovereignLiveBlockTaskCheckbox'),
+              key: const Key('FlarkLiveBlockTaskCheckbox'),
               behavior: HitTestBehavior.opaque,
               onTap: () => _toggle(context),
               child: _TaskCheckboxGlyph(checked: checked),
@@ -2926,7 +2911,7 @@ final class _EditableTaskListItemBlockState
   }
 
   void _toggle(BuildContext context) {
-    final interactions = SovereignMarkdownInteractions.maybeOf(context);
+    final interactions = FlarkMarkdownInteractions.maybeOf(context);
     final checked = widget.block.taskListItem?.checked ?? false;
     if (interactions != null) {
       if (!interactions.config.enableTaskCheckboxToggles) return;
@@ -2935,8 +2920,8 @@ final class _EditableTaskListItemBlockState
       return;
     }
     widget.controller.dispatch(
-      command: SovereignMarkdownBlockCommands.setTaskListChecked,
-      payload: SovereignSetTaskListCheckedPayload(
+      command: FlarkMarkdownBlockCommands.setTaskListChecked,
+      payload: FlarkSetTaskListCheckedPayload(
         taskItemRange: widget.block.sourceRange,
         checked: !checked,
         userEvent: 'input.liveBlock.taskToggle',
@@ -3023,8 +3008,8 @@ final class _EditableCodeBlock extends StatelessWidget {
     this.onMoveToNextBlock,
   });
 
-  final SovereignFlutterController controller;
-  final SovereignRenderBlock block;
+  final FlarkFlutterController controller;
+  final FlarkRenderBlock block;
   final String displayText;
   final TextStyle style;
   final Color cursorColor;
@@ -3051,7 +3036,7 @@ final class _EditableCodeBlock extends StatelessWidget {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),
         child: _EditableProjectedBlockText(
-          editableKey: const Key('SovereignLiveBlockCodeOpeningEditable'),
+          editableKey: const Key('FlarkLiveBlockCodeOpeningEditable'),
           controller: controller,
           block: block,
           displayText: displayText,
@@ -3067,7 +3052,7 @@ final class _EditableCodeBlock extends StatelessWidget {
         ),
       );
     }
-    final interactions = SovereignMarkdownInteractions.maybeOf(context);
+    final interactions = FlarkMarkdownInteractions.maybeOf(context);
     final showLanguageSelector =
         interactions != null &&
         interactions.editable &&
@@ -3079,7 +3064,7 @@ final class _EditableCodeBlock extends StatelessWidget {
         _copyChromeReserveWidth +
         (hasLanguageChrome ? _languageChromeReserveWidth : 0);
     final editable = _EditableProjectedBlockText(
-      editableKey: const Key('SovereignLiveBlockCodeEditable'),
+      editableKey: const Key('FlarkLiveBlockCodeEditable'),
       controller: controller,
       block: block,
       displayText: displayText,
@@ -3102,7 +3087,7 @@ final class _EditableCodeBlock extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: DecoratedBox(
-        key: const Key('SovereignLiveBlockCodeFence'),
+        key: const Key('FlarkLiveBlockCodeFence'),
         decoration: BoxDecoration(
           color: const Color(0xFFF1F4F8),
           border: Border.all(color: const Color(0xFFD7DEE8)),
@@ -3178,12 +3163,12 @@ final class _EditableCodeBlock extends StatelessWidget {
     }
 
     final operations = indent
-        ? SovereignMarkdownFencedCodePolicy.indentOperations(
+        ? FlarkMarkdownFencedCodePolicy.indentOperations(
             markdown: controller.markdown,
             bodyRange: bodyRange,
             selection: selection,
           )
-        : SovereignMarkdownFencedCodePolicy.outdentOperations(
+        : FlarkMarkdownFencedCodePolicy.outdentOperations(
             markdown: controller.markdown,
             bodyRange: bodyRange,
             selection: selection,
@@ -3191,11 +3176,11 @@ final class _EditableCodeBlock extends StatelessWidget {
     if (operations.isEmpty) return false;
 
     controller.applyTransaction(
-      SovereignTransaction(
+      FlarkTransaction(
         operations: operations,
         selectionBefore: selection,
-        metadata: SovereignTransactionMetadata(
-          intent: SovereignTransactionIntent.input,
+        metadata: FlarkTransactionMetadata(
+          intent: FlarkTransactionIntent.input,
           userEvent: indent
               ? 'input.liveBlock.codeIndent'
               : 'input.liveBlock.codeOutdent',
@@ -3228,7 +3213,7 @@ final class _CodeCopyButton extends StatelessWidget {
       fontWeight: FontWeight.w700,
     );
     return GestureDetector(
-      key: const Key('SovereignLiveBlockCodeCopyButton'),
+      key: const Key('FlarkLiveBlockCodeCopyButton'),
       behavior: HitTestBehavior.opaque,
       onTap: () {
         Clipboard.setData(ClipboardData(text: source));
@@ -3293,8 +3278,8 @@ final class _CodeLanguageSelector extends StatefulWidget {
     required this.focusNode,
   });
 
-  final SovereignMarkdownInteractions interactions;
-  final SovereignRenderBlock block;
+  final FlarkMarkdownInteractions interactions;
+  final FlarkRenderBlock block;
   final String? language;
   final TextStyle style;
   final FocusNode? focusNode;
@@ -3334,7 +3319,7 @@ final class _CodeLanguageSelectorState extends State<_CodeLanguageSelector> {
     return CompositedTransformTarget(
       link: _menuAnchor,
       child: KeyedSubtree(
-        key: const Key('SovereignLiveBlockCodeLanguageButton'),
+        key: const Key('FlarkLiveBlockCodeLanguageButton'),
         child: GestureDetector(
           key: _buttonBoundsKey,
           behavior: HitTestBehavior.opaque,
@@ -3384,7 +3369,7 @@ final class _CodeLanguageSelectorState extends State<_CodeLanguageSelector> {
         child: SizedBox(
           width: _menuWidth,
           child: KeyedSubtree(
-            key: const Key('SovereignLiveBlockCodeLanguageMenu'),
+            key: const Key('FlarkLiveBlockCodeLanguageMenu'),
             child: DecoratedBox(
               key: _menuBoundsKey,
               decoration: BoxDecoration(
@@ -3502,7 +3487,7 @@ final class _CodeLanguageOptionButton extends StatelessWidget {
     required this.onTap,
   });
 
-  final SovereignCodeLanguageOption option;
+  final FlarkCodeLanguageOption option;
   final bool selected;
   final TextStyle style;
   final VoidCallback onTap;
@@ -3510,7 +3495,7 @@ final class _CodeLanguageOptionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      key: ValueKey('SovereignLiveBlockCodeLanguageOption:${option.value}'),
+      key: ValueKey('FlarkLiveBlockCodeLanguageOption:${option.value}'),
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Padding(
@@ -3543,8 +3528,8 @@ final class _EditableTableBlock extends StatelessWidget {
     required this.backgroundCursorColor,
   });
 
-  final SovereignFlutterController controller;
-  final SovereignRenderBlock block;
+  final FlarkFlutterController controller;
+  final FlarkRenderBlock block;
   final TextStyle style;
   final Color cursorColor;
   final Color backgroundCursorColor;
@@ -3556,7 +3541,7 @@ final class _EditableTableBlock extends StatelessWidget {
       block,
     );
     if (table == null || table.rows.isEmpty) {
-      final displayText = _SovereignLiveRenderedBlockEditorState._projectedText(
+      final displayText = _FlarkLiveRenderedBlockEditorState._projectedText(
         controller,
       );
       return _EditableProjectedBlockText(
@@ -3572,7 +3557,7 @@ final class _EditableTableBlock extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: DecoratedBox(
-        key: const Key('SovereignLiveBlockTable'),
+        key: const Key('FlarkLiveBlockTable'),
         decoration: BoxDecoration(
           border: Border.all(color: const Color(0xFFD7DEE8)),
           borderRadius: const BorderRadius.all(Radius.circular(6)),
@@ -3615,7 +3600,7 @@ final class _EditableTableBlock extends StatelessWidget {
                           cursorColor: cursorColor,
                           backgroundCursorColor: backgroundCursorColor,
                           editableKey: Key(
-                            'SovereignLiveBlockTableCell-$rowIndex-'
+                            'FlarkLiveBlockTableCell-$rowIndex-'
                             '$columnIndex',
                           ),
                         ),
@@ -3634,15 +3619,15 @@ final class _EditableTableBlock extends StatelessWidget {
     return base.copyWith(fontWeight: FontWeight.w700);
   }
 
-  TextAlign _tableTextAlign(SovereignRenderBlock block, int columnIndex) {
+  TextAlign _tableTextAlign(FlarkRenderBlock block, int columnIndex) {
     final alignments = block.table?.columnAlignments ?? const [];
     if (columnIndex >= alignments.length) return TextAlign.left;
     return switch (alignments[columnIndex]) {
-      SovereignRenderTableColumnAlignment.center => TextAlign.center,
-      SovereignRenderTableColumnAlignment.right => TextAlign.right,
-      SovereignRenderTableColumnAlignment.left ||
-      SovereignRenderTableColumnAlignment.none ||
-      SovereignRenderTableColumnAlignment.unknown => TextAlign.left,
+      FlarkRenderTableColumnAlignment.center => TextAlign.center,
+      FlarkRenderTableColumnAlignment.right => TextAlign.right,
+      FlarkRenderTableColumnAlignment.left ||
+      FlarkRenderTableColumnAlignment.none ||
+      FlarkRenderTableColumnAlignment.unknown => TextAlign.left,
     };
   }
 }
@@ -3659,7 +3644,7 @@ final class _EditableTableCell extends StatefulWidget {
     required this.editableKey,
   });
 
-  final SovereignFlutterController controller;
+  final FlarkFlutterController controller;
   final _ParsedEditableTableCell cell;
   final TextStyle style;
   final TextAlign textAlign;
@@ -3675,7 +3660,7 @@ final class _EditableTableCellState extends State<_EditableTableCell> {
   final _editableStateKey = GlobalKey<EditableTextState>();
   late final TextEditingController _textController;
   late final FocusNode _focusNode;
-  final _compositionUndoGrouping = _SovereignCompositionUndoGrouping();
+  final _compositionUndoGrouping = _FlarkCompositionUndoGrouping();
   bool _syncing = false;
 
   @override
@@ -3760,7 +3745,7 @@ final class _EditableTableCellState extends State<_EditableTableCell> {
       return;
     }
     widget.controller.applySelection(
-      SovereignSelection(
+      FlarkSelection(
         baseOffset: widget.cell.range.start + selection.baseOffset,
         extentOffset: widget.cell.range.start + selection.extentOffset,
       ),
@@ -3824,7 +3809,7 @@ final class _ParsedEditableTable {
 
   static _ParsedEditableTable? fromRenderBlock(
     String markdown,
-    SovereignRenderBlock block,
+    FlarkRenderBlock block,
   ) {
     final table = block.table;
     if (table == null || table.rows.isEmpty) return null;
@@ -3849,9 +3834,7 @@ final class _ParsedEditableTable {
     );
   }
 
-  static int _resolvedRenderTableColumnCount(
-    SovereignRenderTableDescriptor table,
-  ) {
+  static int _resolvedRenderTableColumnCount(FlarkRenderTableDescriptor table) {
     if (table.columnAlignments.isNotEmpty) return table.columnAlignments.length;
     var columnCount = 0;
     for (final row in table.rows) {
@@ -3862,7 +3845,7 @@ final class _ParsedEditableTable {
 
   static int _rowInsertionOffset(
     String markdown,
-    SovereignRenderTableRowDescriptor row,
+    FlarkRenderTableRowDescriptor row,
   ) {
     if (row.cells.isNotEmpty) {
       return _trimmedCellRange(markdown, row.cells.last.sourceRange).end;
@@ -3872,7 +3855,7 @@ final class _ParsedEditableTable {
 
   static _ParsedEditableTableCell _cellFromDescriptor(
     String markdown,
-    SovereignRenderTableCellDescriptor cell,
+    FlarkRenderTableCellDescriptor cell,
   ) {
     final contentRange = _trimmedCellRange(markdown, cell.sourceRange);
     return _ParsedEditableTableCell(
@@ -3883,9 +3866,9 @@ final class _ParsedEditableTable {
     );
   }
 
-  static SovereignSourceRange _trimmedCellRange(
+  static FlarkSourceRange _trimmedCellRange(
     String markdown,
-    SovereignSourceRange range,
+    FlarkSourceRange range,
   ) {
     var start = range.start.clamp(0, markdown.length);
     var end = range.end.clamp(start, markdown.length);
@@ -3895,17 +3878,17 @@ final class _ParsedEditableTable {
     while (end > start && _isWhitespace(markdown.codeUnitAt(end - 1))) {
       end--;
     }
-    return SovereignSourceRange(start, end);
+    return FlarkSourceRange(start, end);
   }
 
   static _ParsedEditableTableCell _emptyCellAfterDescriptor(
     String markdown,
-    SovereignRenderTableRowDescriptor row,
+    FlarkRenderTableRowDescriptor row,
   ) {
     final insertionOffset = _rowInsertionOffset(markdown, row);
     return _ParsedEditableTableCell(
       text: '',
-      range: SovereignSourceRange(insertionOffset, insertionOffset),
+      range: FlarkSourceRange(insertionOffset, insertionOffset),
       replacementPrefix: ' | ',
     );
   }
@@ -3937,7 +3920,7 @@ final class _ParsedEditableTableCell {
   });
 
   final String text;
-  final SovereignSourceRange range;
+  final FlarkSourceRange range;
   final String replacementPrefix;
 
   String replacementText(String value) {
@@ -3948,7 +3931,7 @@ final class _ParsedEditableTableCell {
 List<_LiveRenderedTextSegment> _blockTextSegments({
   required int textLength,
   required int globalDisplayStart,
-  required SovereignRenderBlock block,
+  required FlarkRenderBlock block,
 }) {
   if (textLength <= 0) return const [];
 
@@ -3998,7 +3981,7 @@ List<_LiveRenderedTextSegment> _blockTextSegments({
   return List.unmodifiable(segments);
 }
 
-TextStyle _blockTextStyle(TextStyle baseStyle, SovereignRenderBlock block) {
+TextStyle _blockTextStyle(TextStyle baseStyle, FlarkRenderBlock block) {
   final signature = _LiveRenderedTextStyleSignature.forRange(
     block.displayRange.start,
     block.displayRange.end,
@@ -4008,25 +3991,25 @@ TextStyle _blockTextStyle(TextStyle baseStyle, SovereignRenderBlock block) {
   return signature.resolve(baseStyle);
 }
 
-bool _rangeOverlapsText(SovereignSourceRange range, String text) {
+bool _rangeOverlapsText(FlarkSourceRange range, String text) {
   return range.end > 0 && range.start < text.length && range.start < range.end;
 }
 
-SovereignSourceRange _clampedDisplayRange(
-  SovereignRenderBlock block,
+FlarkSourceRange _clampedDisplayRange(
+  FlarkRenderBlock block,
   String displayText,
 ) {
   final start = block.displayRange.start.clamp(0, displayText.length);
   var end = block.displayRange.end.clamp(start, displayText.length);
-  if (block.kind == SovereignMarkdownBlockKind.blockquote) {
-    return SovereignSourceRange(start, end);
+  if (block.kind == FlarkMarkdownBlockKind.blockquote) {
+    return FlarkSourceRange(start, end);
   }
   while (end > start) {
     final unit = displayText.codeUnitAt(end - 1);
     if (unit != 0x0A && unit != 0x0D) break;
     end--;
   }
-  return SovereignSourceRange(start, end);
+  return FlarkSourceRange(start, end);
 }
 
 final class _ListMarkerInfo {
@@ -4036,11 +4019,10 @@ final class _ListMarkerInfo {
   final String? orderedLabel;
 }
 
-_ListMarkerInfo _listMarkerInfo(String markdown, SovereignRenderBlock block) {
+_ListMarkerInfo _listMarkerInfo(String markdown, FlarkRenderBlock block) {
   final line = _sourceLineForBlock(markdown, block);
   final ordered = _orderedListMarkerLabel(line);
-  if (block.listItem?.kind == SovereignRenderListKind.ordered ||
-      ordered != null) {
+  if (block.listItem?.kind == FlarkRenderListKind.ordered || ordered != null) {
     return _ListMarkerInfo.ordered(ordered ?? '1.');
   }
   return const _ListMarkerInfo.unordered();
@@ -4091,7 +4073,7 @@ bool _isAsciiDigit(int codeUnit) {
   return codeUnit >= 0x30 && codeUnit <= 0x39;
 }
 
-String _sourceLineForBlock(String markdown, SovereignRenderBlock block) {
+String _sourceLineForBlock(String markdown, FlarkRenderBlock block) {
   if (block.sourceRange.start < 0 ||
       block.sourceRange.start >= markdown.length ||
       block.sourceRange.start >= block.sourceRange.end) {
@@ -4105,26 +4087,26 @@ String _sourceLineForBlock(String markdown, SovereignRenderBlock block) {
 }
 
 void _replaceSourceRange({
-  required SovereignFlutterController controller,
-  required SovereignSourceRange range,
+  required FlarkFlutterController controller,
+  required FlarkSourceRange range,
   required String replacementText,
   required String userEvent,
   int? undoGroupId,
-  SovereignSelection? selectionAfter,
+  FlarkSelection? selectionAfter,
 }) {
   range.validate(controller.markdown.length);
   controller.applyTransaction(
-    SovereignTransaction.single(
-      SovereignSourceOperation.replace(
+    FlarkTransaction.single(
+      FlarkSourceOperation.replace(
         replacedRange: range,
         replacementText: replacementText,
       ),
       selectionBefore: controller.selection,
       selectionAfter:
           selectionAfter ??
-          SovereignSelection.collapsed(range.start + replacementText.length),
-      metadata: SovereignTransactionMetadata(
-        intent: SovereignTransactionIntent.input,
+          FlarkSelection.collapsed(range.start + replacementText.length),
+      metadata: FlarkTransactionMetadata(
+        intent: FlarkTransactionIntent.input,
         userEvent: userEvent,
         undoGroupId: undoGroupId,
         parseInvalidationRange: range,
@@ -4142,21 +4124,21 @@ final class _SourceEdit {
     required this.selectionAfter,
   });
 
-  final SovereignSourceRange range;
+  final FlarkSourceRange range;
   final String replacementText;
-  final SovereignSourceRange editableRangeAfter;
-  final SovereignSelection selectionAfter;
+  final FlarkSourceRange editableRangeAfter;
+  final FlarkSelection selectionAfter;
 }
 
-SovereignSelection _sourceSelectionAfterReplacement({
-  required SovereignSourceRange range,
+FlarkSelection _sourceSelectionAfterReplacement({
+  required FlarkSourceRange range,
   required TextSelection localSelection,
   required int replacementTextLength,
 }) {
   if (!localSelection.isValid) {
-    return SovereignSelection.collapsed(range.start + replacementTextLength);
+    return FlarkSelection.collapsed(range.start + replacementTextLength);
   }
-  return SovereignSelection(
+  return FlarkSelection(
     baseOffset:
         range.start + localSelection.baseOffset.clamp(0, replacementTextLength),
     extentOffset:
@@ -4167,14 +4149,14 @@ SovereignSelection _sourceSelectionAfterReplacement({
 
 _SourceEdit _codeBodySourceEdit({
   required String markdown,
-  required SovereignRenderBlock block,
-  required SovereignSourceRange range,
+  required FlarkRenderBlock block,
+  required FlarkSourceRange range,
   required TextEditingValue value,
 }) {
   var replacementText = value.text;
   final replacementTextLengthForSelection = replacementText.length;
 
-  final context = SovereignMarkdownFencedCodeScanner.contextForOpeningLine(
+  final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
     markdown,
     block.sourceRange.start,
   );
@@ -4187,11 +4169,10 @@ _SourceEdit _codeBodySourceEdit({
       value.text,
       typedClosingLineStart,
     );
-    final typedClosingLineEnd =
-        SovereignMarkdownFencedCodeScanner.lineContentEnd(
-          value.text,
-          typedClosingLineStart,
-        );
+    final typedClosingLineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
+      value.text,
+      typedClosingLineStart,
+    );
     final typedClosingLine = value.text.substring(
       typedClosingLineStart,
       typedClosingLineEnd,
@@ -4206,11 +4187,11 @@ _SourceEdit _codeBodySourceEdit({
     return _SourceEdit(
       range: range,
       replacementText: closeReplacementText,
-      editableRangeAfter: SovereignSourceRange(
+      editableRangeAfter: FlarkSourceRange(
         range.start,
         range.start + bodyText.length,
       ),
-      selectionAfter: SovereignSelection.collapsed(selectionAfter),
+      selectionAfter: FlarkSelection.collapsed(selectionAfter),
     );
   }
   if (closingLineStart != null &&
@@ -4223,7 +4204,7 @@ _SourceEdit _codeBodySourceEdit({
   return _SourceEdit(
     range: range,
     replacementText: replacementText,
-    editableRangeAfter: SovereignSourceRange(
+    editableRangeAfter: FlarkSourceRange(
       range.start,
       range.start + replacementTextLengthForSelection,
     ),
@@ -4237,23 +4218,23 @@ _SourceEdit _codeBodySourceEdit({
 
 int? _typedCodeBodyClosingLineStart({
   required TextEditingValue value,
-  required SovereignMarkdownFencedCodeContext context,
+  required FlarkMarkdownFencedCodeContext context,
 }) {
   final selection = value.selection;
   if (!selection.isValid || !selection.isCollapsed) return null;
   final caret = selection.extentOffset;
   if (caret < 0 || caret > value.text.length) return null;
-  final lineStart = SovereignMarkdownFencedCodeScanner.lineStartForOffset(
+  final lineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
     value.text,
     caret,
   );
-  final lineEnd = SovereignMarkdownFencedCodeScanner.lineContentEnd(
+  final lineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
     value.text,
     lineStart,
   );
   if (caret != lineEnd) return null;
   final line = value.text.substring(lineStart, lineEnd);
-  final fence = SovereignMarkdownFencedCodeScanner.fenceLine(line);
+  final fence = FlarkMarkdownFencedCodeScanner.fenceLine(line);
   if (fence == null) return null;
   if (fence.closes(context)) return lineStart;
   return null;
@@ -4277,14 +4258,11 @@ bool _endsWithLineBreak(String text) {
   return codeUnit == 0x0A || codeUnit == 0x0D;
 }
 
-SovereignSourceRange? _codeBodyRange(
-  String markdown,
-  SovereignRenderBlock block,
-) {
+FlarkSourceRange? _codeBodyRange(String markdown, FlarkRenderBlock block) {
   if (block.sourceRange.start < 0 || block.sourceRange.end > markdown.length) {
     return null;
   }
-  final context = SovereignMarkdownFencedCodeScanner.contextForOpeningLine(
+  final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
     markdown,
     block.sourceRange.start,
   );
@@ -4297,39 +4275,39 @@ SovereignSourceRange? _codeBodyRange(
   final bodyStart = openerEnd + 1;
   final closerStart = markdown.lastIndexOf('\n', block.sourceRange.end - 1);
   final bodyEnd = closerStart > bodyStart ? closerStart : block.sourceRange.end;
-  return SovereignSourceRange(bodyStart, bodyEnd).validate(markdown.length);
+  return FlarkSourceRange(bodyStart, bodyEnd).validate(markdown.length);
 }
 
-String _codeCopyText(String markdown, SovereignRenderBlock block) {
+String _codeCopyText(String markdown, FlarkRenderBlock block) {
   final range = _codeBodyRange(markdown, block);
   if (range == null) return '';
   return markdown.substring(range.start, range.end);
 }
 
-SovereignSourceRange? _codeFenceOpeningLineRange(
+FlarkSourceRange? _codeFenceOpeningLineRange(
   String markdown,
-  SovereignRenderBlock block,
+  FlarkRenderBlock block,
 ) {
   if (block.sourceRange.start < 0 ||
       block.sourceRange.start > markdown.length) {
     return null;
   }
-  final lineStart = SovereignMarkdownFencedCodeScanner.lineStartForOffset(
+  final lineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
     markdown,
     block.sourceRange.start,
   );
   if (lineStart != block.sourceRange.start) return null;
-  final lineEnd = SovereignMarkdownFencedCodeScanner.lineContentEnd(
+  final lineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
     markdown,
     lineStart,
   );
-  return SovereignSourceRange(lineStart, lineEnd).validate(markdown.length);
+  return FlarkSourceRange(lineStart, lineEnd).validate(markdown.length);
 }
 
 bool _selectionInCodeFenceOpeningLine(
   String markdown,
-  SovereignRenderBlock block,
-  SovereignSelection selection,
+  FlarkRenderBlock block,
+  FlarkSelection selection,
 ) {
   if (block.codeBlock == null) return false;
   final openingLineRange = _codeFenceOpeningLineRange(markdown, block);
@@ -4338,16 +4316,13 @@ bool _selectionInCodeFenceOpeningLine(
       selection.end <= openingLineRange.end;
 }
 
-String? _codeFenceLanguageFromSource(
-  String markdown,
-  SovereignRenderBlock block,
-) {
+String? _codeFenceLanguageFromSource(String markdown, FlarkRenderBlock block) {
   if (block.sourceRange.start < 0 ||
       block.sourceRange.start >= markdown.length ||
       block.sourceRange.end > markdown.length) {
     return null;
   }
-  return SovereignMarkdownFencedCodeScanner.contextForOpeningLine(
+  return FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
     markdown,
     block.sourceRange.start,
   )?.language;
@@ -4357,18 +4332,16 @@ String _sanitizeTableCell(String value) {
   return value.replaceAll('\n', ' ').replaceAll('|', r'\|');
 }
 
-SovereignSelection _tableCellSelectionAfterReplacement({
+FlarkSelection _tableCellSelectionAfterReplacement({
   required _ParsedEditableTableCell cell,
   required TextEditingValue value,
 }) {
   final selection = value.selection;
   final replacementText = cell.replacementText(value.text);
   if (!selection.isValid) {
-    return SovereignSelection.collapsed(
-      cell.range.start + replacementText.length,
-    );
+    return FlarkSelection.collapsed(cell.range.start + replacementText.length);
   }
-  return SovereignSelection(
+  return FlarkSelection(
     baseOffset:
         cell.range.start +
         cell.replacementPrefix.length +
@@ -4469,9 +4442,8 @@ final class _TableCellInputFormatter extends TextInputFormatter {
   }
 }
 
-final class _SovereignLiveRenderedTextController extends TextEditingController {
-  _SovereignLiveRenderedTextState renderState =
-      _SovereignLiveRenderedTextState.empty;
+final class _FlarkLiveRenderedTextController extends TextEditingController {
+  _FlarkLiveRenderedTextState renderState = _FlarkLiveRenderedTextState.empty;
 
   @override
   TextSpan buildTextSpan({
@@ -4584,20 +4556,20 @@ final class _SovereignLiveRenderedTextController extends TextEditingController {
   }
 }
 
-final class _SovereignLiveRenderedTextState {
-  const _SovereignLiveRenderedTextState({
+final class _FlarkLiveRenderedTextState {
+  const _FlarkLiveRenderedTextState({
     required this.displayText,
     required this.renderPlan,
     required this.hasRenderPlan,
     required this.segments,
   });
 
-  factory _SovereignLiveRenderedTextState.fromRenderPlan({
+  factory _FlarkLiveRenderedTextState.fromRenderPlan({
     required String displayText,
-    required SovereignRenderPlan renderPlan,
+    required FlarkRenderPlan renderPlan,
     required bool hasRenderPlan,
   }) {
-    return _SovereignLiveRenderedTextState(
+    return _FlarkLiveRenderedTextState(
       displayText: displayText,
       renderPlan: renderPlan,
       hasRenderPlan: hasRenderPlan,
@@ -4610,15 +4582,15 @@ final class _SovereignLiveRenderedTextState {
     );
   }
 
-  static final empty = _SovereignLiveRenderedTextState(
+  static final empty = _FlarkLiveRenderedTextState(
     displayText: '',
-    renderPlan: SovereignRenderPlan(blocks: const []),
+    renderPlan: FlarkRenderPlan(blocks: const []),
     hasRenderPlan: false,
     segments: const [],
   );
 
   final String displayText;
-  final SovereignRenderPlan renderPlan;
+  final FlarkRenderPlan renderPlan;
   final bool hasRenderPlan;
   final List<_LiveRenderedTextSegment> segments;
 }
@@ -4636,7 +4608,7 @@ final class _LiveRenderedTextSegment {
 
   static List<_LiveRenderedTextSegment> buildSegments({
     required String displayText,
-    required SovereignRenderPlan renderPlan,
+    required FlarkRenderPlan renderPlan,
   }) {
     if (displayText.isEmpty) return const [];
 
@@ -4697,7 +4669,7 @@ final class _LiveRenderedTextSegment {
   }
 
   static bool _isCollapsedOrOutside(
-    SovereignSourceRange range,
+    FlarkSourceRange range,
     String displayText,
   ) {
     return range.isCollapsed ||
@@ -4730,8 +4702,8 @@ final class _LiveRenderedTextStyleSignature {
   static _LiveRenderedTextStyleSignature forRange(
     int start,
     int end, {
-    required List<SovereignRenderBlock> blocks,
-    required List<SovereignRenderInlineRun> runs,
+    required List<FlarkRenderBlock> blocks,
+    required List<FlarkRenderInlineRun> runs,
   }) {
     int? headingLevel;
     var codeBlock = false;
@@ -4739,7 +4711,7 @@ final class _LiveRenderedTextStyleSignature {
     for (final block in blocks) {
       if (!_covers(block.displayRange, start, end)) continue;
       if (block.codeBlock != null) codeBlock = true;
-      if (block.kind == SovereignMarkdownBlockKind.blockquote) {
+      if (block.kind == FlarkMarkdownBlockKind.blockquote) {
         blockquote = true;
       }
       headingLevel ??= _headingLevel(block.styleToken);
@@ -4753,26 +4725,26 @@ final class _LiveRenderedTextStyleSignature {
     for (final run in runs) {
       if (!_covers(run.displayRange, start, end)) continue;
       switch (run.styleToken) {
-        case SovereignRenderTextStyleToken.strong:
+        case FlarkRenderTextStyleToken.strong:
           strong = true;
-        case SovereignRenderTextStyleToken.emphasis:
+        case FlarkRenderTextStyleToken.emphasis:
           emphasis = true;
-        case SovereignRenderTextStyleToken.inlineCode:
+        case FlarkRenderTextStyleToken.inlineCode:
           inlineCode = true;
-        case SovereignRenderTextStyleToken.strikethrough:
+        case FlarkRenderTextStyleToken.strikethrough:
           strikethrough = true;
-        case SovereignRenderTextStyleToken.link:
+        case FlarkRenderTextStyleToken.link:
           link = true;
-        case SovereignRenderTextStyleToken.body:
-        case SovereignRenderTextStyleToken.heading1:
-        case SovereignRenderTextStyleToken.heading2:
-        case SovereignRenderTextStyleToken.heading3:
-        case SovereignRenderTextStyleToken.heading4:
-        case SovereignRenderTextStyleToken.heading5:
-        case SovereignRenderTextStyleToken.heading6:
-        case SovereignRenderTextStyleToken.image:
-        case SovereignRenderTextStyleToken.rawHtml:
-        case SovereignRenderTextStyleToken.unknown:
+        case FlarkRenderTextStyleToken.body:
+        case FlarkRenderTextStyleToken.heading1:
+        case FlarkRenderTextStyleToken.heading2:
+        case FlarkRenderTextStyleToken.heading3:
+        case FlarkRenderTextStyleToken.heading4:
+        case FlarkRenderTextStyleToken.heading5:
+        case FlarkRenderTextStyleToken.heading6:
+        case FlarkRenderTextStyleToken.image:
+        case FlarkRenderTextStyleToken.rawHtml:
+        case FlarkRenderTextStyleToken.unknown:
           break;
       }
     }
@@ -4855,25 +4827,25 @@ final class _LiveRenderedTextStyleSignature {
     );
   }
 
-  static bool _covers(SovereignSourceRange range, int start, int end) {
+  static bool _covers(FlarkSourceRange range, int start, int end) {
     return range.start <= start && range.end >= end;
   }
 
-  static int? _headingLevel(SovereignRenderTextStyleToken token) {
+  static int? _headingLevel(FlarkRenderTextStyleToken token) {
     return switch (token) {
-      SovereignRenderTextStyleToken.heading1 => 1,
-      SovereignRenderTextStyleToken.heading2 => 2,
-      SovereignRenderTextStyleToken.heading3 => 3,
-      SovereignRenderTextStyleToken.heading4 => 4,
-      SovereignRenderTextStyleToken.heading5 => 5,
-      SovereignRenderTextStyleToken.heading6 => 6,
+      FlarkRenderTextStyleToken.heading1 => 1,
+      FlarkRenderTextStyleToken.heading2 => 2,
+      FlarkRenderTextStyleToken.heading3 => 3,
+      FlarkRenderTextStyleToken.heading4 => 4,
+      FlarkRenderTextStyleToken.heading5 => 5,
+      FlarkRenderTextStyleToken.heading6 => 6,
       _ => null,
     };
   }
 }
 
-final class _SovereignLiveRenderedEditableChrome extends StatelessWidget {
-  const _SovereignLiveRenderedEditableChrome({
+final class _FlarkLiveRenderedEditableChrome extends StatelessWidget {
+  const _FlarkLiveRenderedEditableChrome({
     required this.textController,
     required this.scrollController,
     required this.renderPlan,
@@ -4885,7 +4857,7 @@ final class _SovereignLiveRenderedEditableChrome extends StatelessWidget {
 
   final TextEditingController textController;
   final ScrollController scrollController;
-  final SovereignRenderPlan renderPlan;
+  final FlarkRenderPlan renderPlan;
   final String displayText;
   final bool hasRenderPlan;
   final TextStyle style;
@@ -4905,8 +4877,8 @@ final class _SovereignLiveRenderedEditableChrome extends StatelessWidget {
           child: IgnorePointer(
             child: RepaintBoundary(
               child: CustomPaint(
-                key: const Key('SovereignLiveRenderedEditableChrome'),
-                painter: _SovereignLiveRenderedBlockPainter(
+                key: const Key('FlarkLiveRenderedEditableChrome'),
+                painter: _FlarkLiveRenderedBlockPainter(
                   renderPlan: renderPlan,
                   displayText: displayText,
                   textSpan: textSpan,
@@ -4925,8 +4897,8 @@ final class _SovereignLiveRenderedEditableChrome extends StatelessWidget {
   }
 }
 
-final class _SovereignLiveRenderedBlockPainter extends CustomPainter {
-  _SovereignLiveRenderedBlockPainter({
+final class _FlarkLiveRenderedBlockPainter extends CustomPainter {
+  _FlarkLiveRenderedBlockPainter({
     required this.renderPlan,
     required this.displayText,
     required this.textSpan,
@@ -4936,7 +4908,7 @@ final class _SovereignLiveRenderedBlockPainter extends CustomPainter {
     required this.hasRenderPlan,
   }) : super(repaint: scrollController);
 
-  final SovereignRenderPlan renderPlan;
+  final FlarkRenderPlan renderPlan;
   final String displayText;
   final TextSpan textSpan;
   final TextDirection textDirection;
@@ -4962,7 +4934,7 @@ final class _SovereignLiveRenderedBlockPainter extends CustomPainter {
     }
 
     for (final block in renderPlan.allBlocks) {
-      if (block.kind == SovereignMarkdownBlockKind.blockquote) {
+      if (block.kind == FlarkMarkdownBlockKind.blockquote) {
         _paintBlockquote(canvas, size, textPainter, block);
       }
     }
@@ -4977,7 +4949,7 @@ final class _SovereignLiveRenderedBlockPainter extends CustomPainter {
     Canvas canvas,
     Size size,
     TextPainter textPainter,
-    SovereignRenderBlock block,
+    FlarkRenderBlock block,
   ) {
     final rect = _rectForBlock(textPainter, block.displayRange, size.width);
     if (rect == null) return;
@@ -5003,7 +4975,7 @@ final class _SovereignLiveRenderedBlockPainter extends CustomPainter {
     Canvas canvas,
     Size size,
     TextPainter textPainter,
-    SovereignRenderBlock block,
+    FlarkRenderBlock block,
   ) {
     final rect = _rectForBlock(textPainter, block.displayRange, size.width);
     if (rect == null) return;
@@ -5025,7 +4997,7 @@ final class _SovereignLiveRenderedBlockPainter extends CustomPainter {
 
   Rect? _rectForBlock(
     TextPainter textPainter,
-    SovereignSourceRange range,
+    FlarkSourceRange range,
     double width,
   ) {
     final start = range.start.clamp(0, displayText.length);
@@ -5048,7 +5020,7 @@ final class _SovereignLiveRenderedBlockPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_SovereignLiveRenderedBlockPainter oldDelegate) {
+  bool shouldRepaint(_FlarkLiveRenderedBlockPainter oldDelegate) {
     return oldDelegate.renderPlan != renderPlan ||
         oldDelegate.displayText != displayText ||
         oldDelegate.textSpan != textSpan ||

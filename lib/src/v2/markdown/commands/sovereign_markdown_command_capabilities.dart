@@ -2,9 +2,9 @@ import '../../core/state/sovereign_editor_state.dart';
 import '../inline/sovereign_markdown_inline_style.dart';
 import '../source/sovereign_markdown_line_selection.dart';
 
-final class SovereignMarkdownCommandCapabilities {
-  SovereignMarkdownCommandCapabilities({
-    Iterable<SovereignMarkdownInlineStyle> activeInlineStyles = const [],
+final class FlarkMarkdownCommandCapabilities {
+  FlarkMarkdownCommandCapabilities({
+    Iterable<FlarkMarkdownInlineStyle> activeInlineStyles = const [],
     this.activeHeadingLevel,
     this.quoteActive = false,
     this.bulletListActive = false,
@@ -12,11 +12,11 @@ final class SovereignMarkdownCommandCapabilities {
     this.taskListActive = false,
     this.tableActive = false,
     this.canMutate = true,
-  }) : activeInlineStyles = Set<SovereignMarkdownInlineStyle>.unmodifiable(
-          activeInlineStyles,
-        );
+  }) : activeInlineStyles = Set<FlarkMarkdownInlineStyle>.unmodifiable(
+         activeInlineStyles,
+       );
 
-  final Set<SovereignMarkdownInlineStyle> activeInlineStyles;
+  final Set<FlarkMarkdownInlineStyle> activeInlineStyles;
   final int? activeHeadingLevel;
   final bool quoteActive;
   final bool bulletListActive;
@@ -25,17 +25,17 @@ final class SovereignMarkdownCommandCapabilities {
   final bool tableActive;
   final bool canMutate;
 
-  bool isInlineStyleActive(SovereignMarkdownInlineStyle style) {
+  bool isInlineStyleActive(FlarkMarkdownInlineStyle style) {
     return activeInlineStyles.contains(style);
   }
 }
 
-abstract final class SovereignMarkdownCommandQueries {
-  static SovereignMarkdownCommandCapabilities capabilitiesAtSelection(
-    SovereignEditorState state,
+abstract final class FlarkMarkdownCommandQueries {
+  static FlarkMarkdownCommandCapabilities capabilitiesAtSelection(
+    FlarkEditorState state,
   ) {
     final line = selectedMarkdownLines(state).first;
-    return SovereignMarkdownCommandCapabilities(
+    return FlarkMarkdownCommandCapabilities(
       activeInlineStyles: _activeInlineStyles(state),
       activeHeadingLevel: _headingLevel(line.text),
       quoteActive: _quotePrefixLength(line.text) > 0,
@@ -47,12 +47,10 @@ abstract final class SovereignMarkdownCommandQueries {
   }
 }
 
-Set<SovereignMarkdownInlineStyle> _activeInlineStyles(
-  SovereignEditorState state,
-) {
+Set<FlarkMarkdownInlineStyle> _activeInlineStyles(FlarkEditorState state) {
   final selection = state.selection;
   final text = state.markdown;
-  final styles = <SovereignMarkdownInlineStyle>{};
+  final styles = <FlarkMarkdownInlineStyle>{};
   if (text.isEmpty) return styles;
 
   final rangeStart = selection.start.clamp(0, text.length);
@@ -60,17 +58,17 @@ Set<SovereignMarkdownInlineStyle> _activeInlineStyles(
   final probeOffset = selection.isCollapsed ? rangeStart : rangeStart;
 
   if (_isInsideInlineCode(text, probeOffset, rangeStart, rangeEnd)) {
-    styles.add(SovereignMarkdownInlineStyle.inlineCode);
+    styles.add(FlarkMarkdownInlineStyle.inlineCode);
   }
   if (_isInsideDelimitedSpan(text, probeOffset, rangeStart, rangeEnd, '**')) {
-    styles.add(SovereignMarkdownInlineStyle.strong);
+    styles.add(FlarkMarkdownInlineStyle.strong);
   }
   if (_isInsideDelimitedSpan(text, probeOffset, rangeStart, rangeEnd, '*') ||
       _isInsideDelimitedSpan(text, probeOffset, rangeStart, rangeEnd, '_')) {
-    styles.add(SovereignMarkdownInlineStyle.emphasis);
+    styles.add(FlarkMarkdownInlineStyle.emphasis);
   }
   if (_isInsideDelimitedSpan(text, probeOffset, rangeStart, rangeEnd, '~~')) {
-    styles.add(SovereignMarkdownInlineStyle.strikethrough);
+    styles.add(FlarkMarkdownInlineStyle.strikethrough);
   }
   return styles;
 }
@@ -177,12 +175,12 @@ RegExpMatch? _orderedMarker(String line) {
 
 RegExpMatch? _taskMarker(String line) {
   final prefixLength = _quotePrefixLength(line);
-  return RegExp(r'^[-+*]\s+\[[ xX]\]\s+').firstMatch(
-    line.substring(prefixLength),
-  );
+  return RegExp(
+    r'^[-+*]\s+\[[ xX]\]\s+',
+  ).firstMatch(line.substring(prefixLength));
 }
 
-bool _isInsideTable(SovereignEditorState state) {
+bool _isInsideTable(FlarkEditorState state) {
   final line = selectedMarkdownLines(state).first;
   if (!_looksLikeTableRow(line.text)) return false;
   final buffer = state.document.buffer;

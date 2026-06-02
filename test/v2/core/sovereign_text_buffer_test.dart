@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
+import 'package:flark/src/v2/core/core.dart';
 
 void main() {
-  group('SovereignTextBuffer', () {
+  group('FlarkTextBuffer', () {
     test('indexes UTF-16 offsets by line', () {
-      final buffer = SovereignTextBuffer('a\nbc\n');
+      final buffer = FlarkTextBuffer('a\nbc\n');
 
       expect(buffer.length, 5);
       expect(buffer.lineCount, 3);
@@ -22,11 +22,11 @@ void main() {
     });
 
     test('replaces a source range immutably', () {
-      final buffer = SovereignTextBuffer('hello world');
-      final next = buffer.replaceRange(6, 11, 'Sovereign');
+      final buffer = FlarkTextBuffer('hello world');
+      final next = buffer.replaceRange(6, 11, 'Flark');
 
       expect(buffer.text, 'hello world');
-      expect(next.text, 'hello Sovereign');
+      expect(next.text, 'hello Flark');
       expect(next.lineCount, 1);
     });
   });

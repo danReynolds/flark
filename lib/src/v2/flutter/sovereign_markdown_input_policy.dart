@@ -6,40 +6,37 @@ import '../markdown/markdown.dart';
 import '../markdown/source/sovereign_markdown_fenced_code_policy.dart';
 import 'sovereign_flutter_controller.dart';
 
-typedef SovereignTextSelectionReader = SovereignSelection? Function();
-typedef SovereignTextSelectionApplier = void Function(
-  SovereignSelection selection,
-);
+typedef FlarkTextSelectionReader = FlarkSelection? Function();
+typedef FlarkTextSelectionApplier = void Function(FlarkSelection selection);
 
-final class SovereignMarkdownInputPolicy {
-  const SovereignMarkdownInputPolicy({
+final class FlarkMarkdownInputPolicy {
+  const FlarkMarkdownInputPolicy({
     required this.controller,
     required this.enterUserEvent,
     required this.backspaceUserEvent,
     this.onHandled,
   });
 
-  final SovereignFlutterController controller;
+  final FlarkFlutterController controller;
   final String enterUserEvent;
   final String backspaceUserEvent;
   final VoidCallback? onHandled;
 
   bool get isEnabled {
     return controller.runtime.extensions
-        .whereType<SovereignMarkdownInputEditingExtension>()
+        .whereType<FlarkMarkdownInputEditingExtension>()
         .isNotEmpty;
   }
 
   Widget wrapKeyboardShortcuts({
     required Widget child,
-    required SovereignTextSelectionReader currentSelection,
-    required SovereignTextSelectionApplier applySelection,
+    required FlarkTextSelectionReader currentSelection,
+    required FlarkTextSelectionApplier applySelection,
   }) {
     if (!isEnabled) return child;
     return Actions(
       actions: {
-        _SovereignMarkdownEnterIntent:
-            CallbackAction<_SovereignMarkdownEnterIntent>(
+        _FlarkMarkdownEnterIntent: CallbackAction<_FlarkMarkdownEnterIntent>(
           onInvoke: (intent) {
             dispatchEnter(
               currentSelection: currentSelection,
@@ -48,27 +45,27 @@ final class SovereignMarkdownInputPolicy {
             return null;
           },
         ),
-        _SovereignMarkdownSoftLineBreakIntent:
-            CallbackAction<_SovereignMarkdownSoftLineBreakIntent>(
-          onInvoke: (intent) {
-            dispatchSoftLineBreak(
-              currentSelection: currentSelection,
-              applySelection: applySelection,
-            );
-            return null;
-          },
-        ),
-        _SovereignMarkdownBackspaceIntent:
-            CallbackAction<_SovereignMarkdownBackspaceIntent>(
-          onInvoke: (intent) {
-            dispatchBackspace(
-              currentSelection: currentSelection,
-              applySelection: applySelection,
-            );
-            return null;
-          },
-        ),
-        DeleteCharacterIntent: _SovereignMarkdownDeleteCharacterAction(
+        _FlarkMarkdownSoftLineBreakIntent:
+            CallbackAction<_FlarkMarkdownSoftLineBreakIntent>(
+              onInvoke: (intent) {
+                dispatchSoftLineBreak(
+                  currentSelection: currentSelection,
+                  applySelection: applySelection,
+                );
+                return null;
+              },
+            ),
+        _FlarkMarkdownBackspaceIntent:
+            CallbackAction<_FlarkMarkdownBackspaceIntent>(
+              onInvoke: (intent) {
+                dispatchBackspace(
+                  currentSelection: currentSelection,
+                  applySelection: applySelection,
+                );
+                return null;
+              },
+            ),
+        DeleteCharacterIntent: _FlarkMarkdownDeleteCharacterAction(
           onBackspace: () {
             return dispatchBackspace(
               currentSelection: currentSelection,
@@ -80,15 +77,15 @@ final class SovereignMarkdownInputPolicy {
       child: Shortcuts(
         shortcuts: const {
           SingleActivator(LogicalKeyboardKey.enter):
-              _SovereignMarkdownEnterIntent(),
+              _FlarkMarkdownEnterIntent(),
           SingleActivator(LogicalKeyboardKey.numpadEnter):
-              _SovereignMarkdownEnterIntent(),
+              _FlarkMarkdownEnterIntent(),
           SingleActivator(LogicalKeyboardKey.enter, shift: true):
-              _SovereignMarkdownSoftLineBreakIntent(),
+              _FlarkMarkdownSoftLineBreakIntent(),
           SingleActivator(LogicalKeyboardKey.numpadEnter, shift: true):
-              _SovereignMarkdownSoftLineBreakIntent(),
+              _FlarkMarkdownSoftLineBreakIntent(),
           SingleActivator(LogicalKeyboardKey.backspace):
-              _SovereignMarkdownBackspaceIntent(),
+              _FlarkMarkdownBackspaceIntent(),
         },
         child: child,
       ),
@@ -98,18 +95,18 @@ final class SovereignMarkdownInputPolicy {
   bool handlePlatformTextChange({
     required String oldText,
     required TextEditingValue newValue,
-    required SovereignSelection? oldTextSelection,
-    required SovereignTextSelectionApplier applyOldTextSelection,
+    required FlarkSelection? oldTextSelection,
+    required FlarkTextSelectionApplier applyOldTextSelection,
   }) {
     if (!isEnabled) return false;
-    final diff = _SovereignTextEditDiff.between(oldText, newValue.text);
+    final diff = _FlarkTextEditDiff.between(oldText, newValue.text);
     if (diff == null) return false;
 
     final oldSelection = oldTextSelection;
     if (diff.isNewlineInsertion) {
       final fallbackSelection = diff.isInsertion
-          ? SovereignSelection.collapsed(diff.oldStart)
-          : SovereignSelection(
+          ? FlarkSelection.collapsed(diff.oldStart)
+          : FlarkSelection(
               baseOffset: diff.oldStart,
               extentOffset: diff.oldEnd,
             );
@@ -123,18 +120,18 @@ final class SovereignMarkdownInputPolicy {
 
     if (diff.isInsertion) {
       final selectionBefore =
-          oldSelection ?? SovereignSelection.collapsed(diff.oldStart);
+          oldSelection ?? FlarkSelection.collapsed(diff.oldStart);
       if (!_selectionMatchesDiff(selectionBefore, diff)) return false;
       applyOldTextSelection(selectionBefore);
       final sourceInsertionOffset = controller.selection.start;
       final closerEdit =
-          SovereignMarkdownFencedCodePolicy.autoOutdentCloserInsertion(
-        markdown: controller.markdown,
-        insertionOffset: sourceInsertionOffset,
-        insertedText: diff.replacementText,
-      );
+          FlarkMarkdownFencedCodePolicy.autoOutdentCloserInsertion(
+            markdown: controller.markdown,
+            insertionOffset: sourceInsertionOffset,
+            insertedText: diff.replacementText,
+          );
       final pasteEdit = closerEdit == null
-          ? SovereignMarkdownFencedCodePolicy.multilinePasteIndentation(
+          ? FlarkMarkdownFencedCodePolicy.multilinePasteIndentation(
               markdown: controller.markdown,
               insertionOffset: sourceInsertionOffset,
               insertedText: diff.replacementText,
@@ -144,17 +141,17 @@ final class SovereignMarkdownInputPolicy {
       if (edit == null) return false;
       final isPaste = pasteEdit != null;
       controller.applyTransaction(
-        SovereignTransaction.single(
-          SovereignSourceOperation.replace(
+        FlarkTransaction.single(
+          FlarkSourceOperation.replace(
             replacedRange: edit.range,
             replacementText: edit.replacementText,
           ),
           selectionBefore: controller.selection,
           selectionAfter: edit.selectionAfter,
-          metadata: SovereignTransactionMetadata(
+          metadata: FlarkTransactionMetadata(
             intent: isPaste
-                ? SovereignTransactionIntent.paste
-                : SovereignTransactionIntent.input,
+                ? FlarkTransactionIntent.paste
+                : FlarkTransactionIntent.input,
             userEvent: isPaste
                 ? '$enterUserEvent.fencedCodePaste'
                 : '$enterUserEvent.fencedCodeCloser',
@@ -169,7 +166,7 @@ final class SovereignMarkdownInputPolicy {
 
     if (!diff.isDeletion) return false;
     final selectionBefore =
-        oldSelection ?? SovereignSelection.collapsed(diff.oldEnd);
+        oldSelection ?? FlarkSelection.collapsed(diff.oldEnd);
     if (!_selectionMatchesDiff(selectionBefore, diff)) return false;
     return dispatchBackspace(
       currentSelection: () => selectionBefore,
@@ -178,42 +175,39 @@ final class SovereignMarkdownInputPolicy {
   }
 
   bool dispatchEnter({
-    required SovereignTextSelectionReader currentSelection,
-    required SovereignTextSelectionApplier applySelection,
+    required FlarkTextSelectionReader currentSelection,
+    required FlarkTextSelectionApplier applySelection,
   }) {
     if (!isEnabled) return false;
     final selection = currentSelection();
     if (selection != null) applySelection(selection);
     final result = controller.dispatch(
-      command: SovereignMarkdownInputCommands.handleEnter,
-      payload: SovereignHandleEnterPayload(userEvent: enterUserEvent),
+      command: FlarkMarkdownInputCommands.handleEnter,
+      payload: FlarkHandleEnterPayload(userEvent: enterUserEvent),
     );
     return _finish(result);
   }
 
   bool dispatchSoftLineBreak({
-    required SovereignTextSelectionReader currentSelection,
-    required SovereignTextSelectionApplier applySelection,
+    required FlarkTextSelectionReader currentSelection,
+    required FlarkTextSelectionApplier applySelection,
   }) {
     if (!isEnabled) return false;
     final selection = currentSelection();
     if (selection != null) applySelection(selection);
 
     final sourceSelection = controller.selection;
-    final range = SovereignSourceRange(
-      sourceSelection.start,
-      sourceSelection.end,
-    );
+    final range = FlarkSourceRange(sourceSelection.start, sourceSelection.end);
     controller.applyTransaction(
-      SovereignTransaction.single(
-        SovereignSourceOperation.replace(
+      FlarkTransaction.single(
+        FlarkSourceOperation.replace(
           replacedRange: range,
           replacementText: '\n',
         ),
         selectionBefore: sourceSelection,
-        selectionAfter: SovereignSelection.collapsed(range.start + 1),
-        metadata: SovereignTransactionMetadata(
-          intent: SovereignTransactionIntent.input,
+        selectionAfter: FlarkSelection.collapsed(range.start + 1),
+        metadata: FlarkTransactionMetadata(
+          intent: FlarkTransactionIntent.input,
           userEvent: '$enterUserEvent.softLineBreak',
           parseInvalidationRange: range,
           projectionInvalidationRange: range,
@@ -225,22 +219,22 @@ final class SovereignMarkdownInputPolicy {
   }
 
   bool dispatchBackspace({
-    required SovereignTextSelectionReader currentSelection,
-    required SovereignTextSelectionApplier applySelection,
+    required FlarkTextSelectionReader currentSelection,
+    required FlarkTextSelectionApplier applySelection,
   }) {
     if (!isEnabled) return false;
     final selection = currentSelection();
     if (selection != null) applySelection(selection);
     final result = controller.dispatch(
-      command: SovereignMarkdownInputCommands.handleBackspace,
-      payload: SovereignHandleBackspacePayload(userEvent: backspaceUserEvent),
+      command: FlarkMarkdownInputCommands.handleBackspace,
+      payload: FlarkHandleBackspacePayload(userEvent: backspaceUserEvent),
     );
     return _finish(result);
   }
 
   bool _selectionMatchesDiff(
-    SovereignSelection selection,
-    _SovereignTextEditDiff diff,
+    FlarkSelection selection,
+    _FlarkTextEditDiff diff,
   ) {
     if (selection.isCollapsed) {
       return diff.isInsertion
@@ -250,26 +244,25 @@ final class SovereignMarkdownInputPolicy {
     return selection.start == diff.oldStart && selection.end == diff.oldEnd;
   }
 
-  bool _finish(SovereignEditorRuntimeResult result) {
-    final handled = result.commandResult.isHandled &&
+  bool _finish(FlarkEditorRuntimeResult result) {
+    final handled =
+        result.commandResult.isHandled &&
         result.commandResult.transaction != null;
     if (handled) onHandled?.call();
     return handled;
   }
 
-  static SovereignSelection? selectionFromTextSelection(
-    TextSelection selection,
-  ) {
+  static FlarkSelection? selectionFromTextSelection(TextSelection selection) {
     if (!selection.isValid) return null;
-    return SovereignSelection(
+    return FlarkSelection(
       baseOffset: selection.baseOffset,
       extentOffset: selection.extentOffset,
     );
   }
 }
 
-final class _SovereignTextEditDiff {
-  const _SovereignTextEditDiff({
+final class _FlarkTextEditDiff {
+  const _FlarkTextEditDiff({
     required this.oldStart,
     required this.oldEnd,
     required this.replacementText,
@@ -285,12 +278,13 @@ final class _SovereignTextEditDiff {
 
   bool get isNewlineInsertion => replacementText == '\n';
 
-  static _SovereignTextEditDiff? between(String oldText, String newText) {
+  static _FlarkTextEditDiff? between(String oldText, String newText) {
     if (oldText == newText) return null;
 
     var prefixLength = 0;
-    final sharedPrefixLimit =
-        oldText.length < newText.length ? oldText.length : newText.length;
+    final sharedPrefixLimit = oldText.length < newText.length
+        ? oldText.length
+        : newText.length;
     while (prefixLength < sharedPrefixLimit &&
         oldText.codeUnitAt(prefixLength) == newText.codeUnitAt(prefixLength)) {
       prefixLength++;
@@ -306,7 +300,7 @@ final class _SovereignTextEditDiff {
       newSuffix--;
     }
 
-    return _SovereignTextEditDiff(
+    return _FlarkTextEditDiff(
       oldStart: prefixLength,
       oldEnd: oldSuffix,
       replacementText: newText.substring(prefixLength, newSuffix),
@@ -314,21 +308,21 @@ final class _SovereignTextEditDiff {
   }
 }
 
-final class _SovereignMarkdownEnterIntent extends Intent {
-  const _SovereignMarkdownEnterIntent();
+final class _FlarkMarkdownEnterIntent extends Intent {
+  const _FlarkMarkdownEnterIntent();
 }
 
-final class _SovereignMarkdownSoftLineBreakIntent extends Intent {
-  const _SovereignMarkdownSoftLineBreakIntent();
+final class _FlarkMarkdownSoftLineBreakIntent extends Intent {
+  const _FlarkMarkdownSoftLineBreakIntent();
 }
 
-final class _SovereignMarkdownBackspaceIntent extends Intent {
-  const _SovereignMarkdownBackspaceIntent();
+final class _FlarkMarkdownBackspaceIntent extends Intent {
+  const _FlarkMarkdownBackspaceIntent();
 }
 
-final class _SovereignMarkdownDeleteCharacterAction
+final class _FlarkMarkdownDeleteCharacterAction
     extends Action<DeleteCharacterIntent> {
-  _SovereignMarkdownDeleteCharacterAction({required this.onBackspace});
+  _FlarkMarkdownDeleteCharacterAction({required this.onBackspace});
 
   final bool Function() onBackspace;
 

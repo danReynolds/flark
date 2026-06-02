@@ -10,8 +10,8 @@ import 'native_comrak_ffi.dart';
 const int _kAbiVersion = 1;
 const int _kStatusOk = 0;
 const String _kLocalAssetBase = 'lib/assets/wasm/';
-const String _kPackageAssetBase = 'packages/sovereign_editor/lib/assets/wasm/';
-const String _kPackageFileAssetBase = 'packages/sovereign_editor/assets/wasm/';
+const String _kPackageAssetBase = 'packages/flark/lib/assets/wasm/';
+const String _kPackageFileAssetBase = 'packages/flark/assets/wasm/';
 
 extension type _FetchResponse(JSObject _) implements JSObject {
   external JSBoolean get ok;
@@ -34,7 +34,7 @@ extension type _WasmMemory(JSObject _) implements JSObject {
 
 final class WasmNativeComrakBridge implements NativeComrakBridge {
   WasmNativeComrakBridge._({required List<_WasmAssetKeys> assetKeys})
-      : _assetKeys = assetKeys;
+    : _assetKeys = assetKeys;
 
   final List<_WasmAssetKeys> _assetKeys;
 
@@ -262,9 +262,10 @@ String _assetUrl(_WasmAssetKeys keys) {
 
 Future<_WasmInstance> _instantiateWasmAsset(String wasmUrl) async {
   final fetch = globalContext.getProperty<JSFunction>('fetch'.toJS);
-  final response = await (fetch.callAsFunction(globalContext, wasmUrl.toJS)
-          as JSPromise<_FetchResponse>)
-      .toDart;
+  final response =
+      await (fetch.callAsFunction(globalContext, wasmUrl.toJS)
+              as JSPromise<_FetchResponse>)
+          .toDart;
   if (!response.ok.toDart) {
     throw StateError(
       'Failed to load Comrak WASM bridge from $wasmUrl: '
@@ -275,9 +276,10 @@ Future<_WasmInstance> _instantiateWasmAsset(String wasmUrl) async {
   final bytes = await response.arrayBuffer().toDart;
   final webAssembly = globalContext.getProperty<JSObject>('WebAssembly'.toJS);
   final instantiate = webAssembly.getProperty<JSFunction>('instantiate'.toJS);
-  final result = await (instantiate.callAsFunction(
-          webAssembly, bytes, JSObject()) as JSPromise<_WasmInstantiateResult>)
-      .toDart;
+  final result =
+      await (instantiate.callAsFunction(webAssembly, bytes, JSObject())
+              as JSPromise<_WasmInstantiateResult>)
+          .toDart;
   return result.instance;
 }
 

@@ -1,27 +1,27 @@
 import '../selection/sovereign_selection.dart';
 import 'sovereign_source_range.dart';
 
-final class SovereignSourceOperation {
-  const SovereignSourceOperation.replace({
+final class FlarkSourceOperation {
+  const FlarkSourceOperation.replace({
     required this.replacedRange,
     required this.replacementText,
   });
 
-  factory SovereignSourceOperation.insert(int offset, String text) {
-    return SovereignSourceOperation.replace(
-      replacedRange: SovereignSourceRange(offset, offset),
+  factory FlarkSourceOperation.insert(int offset, String text) {
+    return FlarkSourceOperation.replace(
+      replacedRange: FlarkSourceRange(offset, offset),
       replacementText: text,
     );
   }
 
-  factory SovereignSourceOperation.delete(int start, int end) {
-    return SovereignSourceOperation.replace(
-      replacedRange: SovereignSourceRange(start, end),
+  factory FlarkSourceOperation.delete(int start, int end) {
+    return FlarkSourceOperation.replace(
+      replacedRange: FlarkSourceRange(start, end),
       replacementText: '',
     );
   }
 
-  final SovereignSourceRange replacedRange;
+  final FlarkSourceRange replacedRange;
   final String replacementText;
 
   int get insertedLength => replacementText.length;
@@ -44,14 +44,14 @@ final class SovereignSourceOperation {
     );
   }
 
-  SovereignSourceOperation validate(int textLength) {
+  FlarkSourceOperation validate(int textLength) {
     replacedRange.validate(textLength);
     return this;
   }
 
   int mapOffset(
     int offset, {
-    SovereignMapAffinity affinity = SovereignMapAffinity.downstream,
+    FlarkMapAffinity affinity = FlarkMapAffinity.downstream,
   }) {
     final start = replacedRange.start;
     final end = replacedRange.end;
@@ -61,20 +61,20 @@ final class SovereignSourceOperation {
 
     if (replacedRange.isCollapsed) {
       return switch (affinity) {
-        SovereignMapAffinity.upstream => start,
-        SovereignMapAffinity.downstream => start + insertedLength,
+        FlarkMapAffinity.upstream => start,
+        FlarkMapAffinity.downstream => start + insertedLength,
       };
     }
 
     return switch (affinity) {
-      SovereignMapAffinity.upstream => start,
-      SovereignMapAffinity.downstream => start + insertedLength,
+      FlarkMapAffinity.upstream => start,
+      FlarkMapAffinity.downstream => start + insertedLength,
     };
   }
 
   @override
   bool operator ==(Object other) {
-    return other is SovereignSourceOperation &&
+    return other is FlarkSourceOperation &&
         other.replacedRange == replacedRange &&
         other.replacementText == replacementText;
   }
@@ -84,7 +84,7 @@ final class SovereignSourceOperation {
 
   @override
   String toString() {
-    return 'SovereignSourceOperation.replace('
+    return 'FlarkSourceOperation.replace('
         'range: $replacedRange, replacementText: "$replacementText")';
   }
 }

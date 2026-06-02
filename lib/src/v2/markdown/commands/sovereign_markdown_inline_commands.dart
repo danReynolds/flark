@@ -9,43 +9,42 @@ import '../../core/transaction/sovereign_transaction.dart';
 import '../../core/transaction/sovereign_transaction_metadata.dart';
 import '../inline/sovereign_markdown_inline_style.dart';
 
-abstract final class SovereignMarkdownInlineCommands {
-  static const toggleInlineStyle =
-      SovereignCommand<SovereignToggleInlineStylePayload>(
+abstract final class FlarkMarkdownInlineCommands {
+  static const toggleInlineStyle = FlarkCommand<FlarkToggleInlineStylePayload>(
     'markdown.toggleInlineStyle',
   );
 }
 
-final class SovereignToggleInlineStylePayload {
-  const SovereignToggleInlineStylePayload(
+final class FlarkToggleInlineStylePayload {
+  const FlarkToggleInlineStylePayload(
     this.style, {
     this.userEvent = 'command.toggleInlineStyle',
   });
 
-  final SovereignMarkdownInlineStyle style;
+  final FlarkMarkdownInlineStyle style;
   final String userEvent;
 }
 
-final class SovereignMarkdownInlineEditingExtension extends SovereignExtension {
-  const SovereignMarkdownInlineEditingExtension();
+final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
+  const FlarkMarkdownInlineEditingExtension();
 
   @override
   String get id => 'markdown.inlineEditing';
 
   @override
-  SovereignCommandRegistry registerCommands(SovereignCommandRegistry registry) {
-    return registry.register<SovereignToggleInlineStylePayload>(
-      SovereignMarkdownInlineCommands.toggleInlineStyle,
+  FlarkCommandRegistry registerCommands(FlarkCommandRegistry registry) {
+    return registry.register<FlarkToggleInlineStylePayload>(
+      FlarkMarkdownInlineCommands.toggleInlineStyle,
       _toggleInlineStyle,
     );
   }
 
-  SovereignCommandResult _toggleInlineStyle(
-    SovereignCommandContext<SovereignToggleInlineStylePayload> context,
+  FlarkCommandResult _toggleInlineStyle(
+    FlarkCommandContext<FlarkToggleInlineStylePayload> context,
   ) {
     final selection = context.state.selection;
     if (selection.isCollapsed) {
-      return SovereignCommandResult.rejected(
+      return FlarkCommandResult.rejected(
         'Inline style toggling requires a selected source range.',
       );
     }
@@ -60,8 +59,9 @@ final class SovereignMarkdownInlineEditingExtension extends SovereignExtension {
     final markerEnd = end + markerLength;
     final selectionStartsWithMarker =
         _hasUnescapedMarkerAt(text, start, marker) &&
-            end - start >= markerLength;
-    final selectionEndsWithMarker = end >= markerLength &&
+        end - start >= markerLength;
+    final selectionEndsWithMarker =
+        end >= markerLength &&
         _hasUnescapedMarkerAt(text, end - markerLength, marker);
     final hasLeadingMarker =
         markerStart >= 0 && _hasUnescapedMarkerAt(text, markerStart, marker);
@@ -69,13 +69,13 @@ final class SovereignMarkdownInlineEditingExtension extends SovereignExtension {
         markerEnd <= text.length && _hasUnescapedMarkerAt(text, end, marker);
 
     if (selectionStartsWithMarker != selectionEndsWithMarker) {
-      return SovereignCommandResult.rejected(
+      return FlarkCommandResult.rejected(
         'Inline style toggling cannot partially overlap source markers.',
       );
     }
 
     if (hasLeadingMarker != hasTrailingMarker) {
-      return SovereignCommandResult.rejected(
+      return FlarkCommandResult.rejected(
         'Inline style toggling cannot partially overlap source markers.',
       );
     }
@@ -85,47 +85,44 @@ final class SovereignMarkdownInlineEditingExtension extends SovereignExtension {
         markerLength,
         selectedText.length - markerLength,
       );
-      return SovereignCommandResult.handled(
-        transaction: SovereignTransaction.single(
-          SovereignSourceOperation.replace(
-            replacedRange: SovereignSourceRange(start, end),
+      return FlarkCommandResult.handled(
+        transaction: FlarkTransaction.single(
+          FlarkSourceOperation.replace(
+            replacedRange: FlarkSourceRange(start, end),
             replacementText: innerText,
           ),
           selectionBefore: selection,
-          selectionAfter: SovereignSelection(
+          selectionAfter: FlarkSelection(
             baseOffset: start,
             extentOffset: start + innerText.length,
           ),
-          metadata: SovereignTransactionMetadata(
-            intent: SovereignTransactionIntent.command,
+          metadata: FlarkTransactionMetadata(
+            intent: FlarkTransactionIntent.command,
             userEvent: context.payload.userEvent,
-            parseInvalidationRange: SovereignSourceRange(start, end),
-            projectionInvalidationRange: SovereignSourceRange(start, end),
+            parseInvalidationRange: FlarkSourceRange(start, end),
+            projectionInvalidationRange: FlarkSourceRange(start, end),
           ),
         ),
       );
     }
 
     if (hasLeadingMarker && hasTrailingMarker) {
-      return SovereignCommandResult.handled(
-        transaction: SovereignTransaction.single(
-          SovereignSourceOperation.replace(
-            replacedRange: SovereignSourceRange(markerStart, markerEnd),
+      return FlarkCommandResult.handled(
+        transaction: FlarkTransaction.single(
+          FlarkSourceOperation.replace(
+            replacedRange: FlarkSourceRange(markerStart, markerEnd),
             replacementText: selectedText,
           ),
           selectionBefore: selection,
-          selectionAfter: SovereignSelection(
+          selectionAfter: FlarkSelection(
             baseOffset: markerStart,
             extentOffset: markerStart + selectedText.length,
           ),
-          metadata: SovereignTransactionMetadata(
-            intent: SovereignTransactionIntent.command,
+          metadata: FlarkTransactionMetadata(
+            intent: FlarkTransactionIntent.command,
             userEvent: context.payload.userEvent,
-            parseInvalidationRange: SovereignSourceRange(
-              markerStart,
-              markerEnd,
-            ),
-            projectionInvalidationRange: SovereignSourceRange(
+            parseInvalidationRange: FlarkSourceRange(markerStart, markerEnd),
+            projectionInvalidationRange: FlarkSourceRange(
               markerStart,
               markerEnd,
             ),
@@ -134,22 +131,22 @@ final class SovereignMarkdownInlineEditingExtension extends SovereignExtension {
       );
     }
 
-    return SovereignCommandResult.handled(
-      transaction: SovereignTransaction.single(
-        SovereignSourceOperation.replace(
-          replacedRange: SovereignSourceRange(start, end),
+    return FlarkCommandResult.handled(
+      transaction: FlarkTransaction.single(
+        FlarkSourceOperation.replace(
+          replacedRange: FlarkSourceRange(start, end),
           replacementText: '$marker$selectedText$marker',
         ),
         selectionBefore: selection,
-        selectionAfter: SovereignSelection(
+        selectionAfter: FlarkSelection(
           baseOffset: start + markerLength,
           extentOffset: start + markerLength + selectedText.length,
         ),
-        metadata: SovereignTransactionMetadata(
-          intent: SovereignTransactionIntent.command,
+        metadata: FlarkTransactionMetadata(
+          intent: FlarkTransactionIntent.command,
           userEvent: context.payload.userEvent,
-          parseInvalidationRange: SovereignSourceRange(start, end),
-          projectionInvalidationRange: SovereignSourceRange(start, end),
+          parseInvalidationRange: FlarkSourceRange(start, end),
+          projectionInvalidationRange: FlarkSourceRange(start, end),
         ),
       ),
     );

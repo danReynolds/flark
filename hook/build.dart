@@ -33,7 +33,8 @@ void main(List<String> args) async {
     final plan = _RustBuildPlan.resolve(code);
     if (plan == null) {
       throw BuildError(
-        message: 'Sovereign native comrak bridge does not support '
+        message:
+            'Flark native comrak bridge does not support '
             '${code.targetOS}/${code.targetArchitecture}. Supported hook '
             'targets are macOS arm64/x64, Linux arm64/x64, Android '
             'arm/arm64/x64, and iOS process-linked XCFramework builds.',
@@ -65,9 +66,11 @@ Iterable<Uri> _nativeDependencyUris(Uri crateRoot) sync* {
     if (entity is! File) continue;
     final path = entity.path;
     if (path.contains(
-            '${Platform.pathSeparator}target${Platform.pathSeparator}') ||
+          '${Platform.pathSeparator}target${Platform.pathSeparator}',
+        ) ||
         path.contains(
-            '${Platform.pathSeparator}dist${Platform.pathSeparator}')) {
+          '${Platform.pathSeparator}dist${Platform.pathSeparator}',
+        )) {
       continue;
     }
     yield entity.uri;
@@ -84,11 +87,13 @@ Future<Uri> _buildRustArtifact({
   final cargo = await _cargoCommand();
 
   if (cargo.usesRustup) {
-    await _run(
-      cargo.rustupExecutable!,
-      ['target', 'add', plan.triple, '--toolchain', 'stable'],
-      workingDirectory: packageRootPath,
-    );
+    await _run(cargo.rustupExecutable!, [
+      'target',
+      'add',
+      plan.triple,
+      '--toolchain',
+      'stable',
+    ], workingDirectory: packageRootPath);
   }
 
   await _run(
@@ -112,7 +117,8 @@ Future<Uri> _buildRustArtifact({
   final builtFile = File.fromUri(builtArtifact);
   if (!builtFile.existsSync()) {
     throw BuildError(
-      message: 'Rust build completed but expected artifact was missing: '
+      message:
+          'Rust build completed but expected artifact was missing: '
           '${builtFile.path}',
     );
   }
@@ -142,17 +148,18 @@ Future<_CargoCommand> _cargoCommand() async {
         toolchainBinPath: File(rustc).parent.path,
       );
     }
-    return _CargoCommand(
-      rustup,
-      const ['run', 'stable', 'cargo'],
-      rustupExecutable: rustup,
-    );
+    return _CargoCommand(rustup, const [
+      'run',
+      'stable',
+      'cargo',
+    ], rustupExecutable: rustup);
   }
   final cargo = await _which('cargo');
   if (cargo != null) return _CargoCommand(cargo, const []);
   throw BuildError(
-    message: 'Unable to find cargo or rustup on PATH. Install Rust before '
-        'building sovereign_editor native assets.',
+    message:
+        'Unable to find cargo or rustup on PATH. Install Rust before '
+        'building flark native assets.',
   );
 }
 
@@ -164,10 +171,12 @@ Future<String?> _which(String executable) async {
 }
 
 Future<String?> _rustupWhich(String rustup, String executable) async {
-  final result = await Process.run(
-    rustup,
-    ['which', executable, '--toolchain', 'stable'],
-  );
+  final result = await Process.run(rustup, [
+    'which',
+    executable,
+    '--toolchain',
+    'stable',
+  ]);
   if (result.exitCode != 0) return null;
   final path = (result.stdout as String).trim();
   return path.isEmpty ? null : path;
@@ -298,17 +307,17 @@ final class _AndroidTarget {
   static _AndroidTarget? resolve(Architecture architecture) {
     return switch (architecture) {
       Architecture.arm64 => const _AndroidTarget(
-          'aarch64-linux-android',
-          'aarch64-linux-android',
-        ),
+        'aarch64-linux-android',
+        'aarch64-linux-android',
+      ),
       Architecture.arm => const _AndroidTarget(
-          'armv7-linux-androideabi',
-          'armv7a-linux-androideabi',
-        ),
+        'armv7-linux-androideabi',
+        'armv7a-linux-androideabi',
+      ),
       Architecture.x64 => const _AndroidTarget(
-          'x86_64-linux-android',
-          'x86_64-linux-android',
-        ),
+        'x86_64-linux-android',
+        'x86_64-linux-android',
+      ),
       _ => null,
     };
   }
@@ -318,7 +327,8 @@ Map<String, String> _androidEnvironment(_AndroidTarget target, int apiLevel) {
   final ndk = _findAndroidNdk();
   if (ndk == null) {
     throw BuildError(
-      message: 'Android native asset build requires ANDROID_NDK_HOME, '
+      message:
+          'Android native asset build requires ANDROID_NDK_HOME, '
           'ANDROID_NDK, ANDROID_NDK_ROOT, ANDROID_NDK_LATEST_HOME, or '
           'ANDROID_HOME with an installed NDK.',
     );
@@ -327,7 +337,8 @@ Map<String, String> _androidEnvironment(_AndroidTarget target, int apiLevel) {
   final hostTag = _androidHostTag(ndk);
   if (hostTag == null) {
     throw BuildError(
-      message: 'Unable to find a supported Android NDK prebuilt toolchain '
+      message:
+          'Unable to find a supported Android NDK prebuilt toolchain '
           'under ${ndk.path}/toolchains/llvm/prebuilt.',
     );
   }

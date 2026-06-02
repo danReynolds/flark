@@ -9,7 +9,7 @@ run_native_build=1
 
 usage() {
   cat <<'EOF'
-Run the Sovereign release-readiness gate.
+Run the Flark release-readiness gate.
 
 Usage:
   ./scripts/verify_release.sh [options]
@@ -88,4 +88,4 @@ else
 fi
 
 echo
-echo "Sovereign release-readiness gate passed."
+echo "Flark release-readiness gate passed."

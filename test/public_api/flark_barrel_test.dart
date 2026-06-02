@@ -2,92 +2,90 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/sovereign_editor.dart';
-import 'package:sovereign_editor/sovereign_editor_core.dart' as core;
+import 'package:flark/flark.dart';
+import 'package:flark/flark_core.dart' as core;
 
 void main() {
   test('top-level barrel exposes the promoted v2 app API', () {
-    final controller = SovereignFlutterController.fromMarkdown(
+    final controller = FlarkFlutterController.fromMarkdown(
       'hello',
-      extensions: SovereignMarkdownEditingExtensions.standard(),
+      extensions: FlarkMarkdownEditingExtensions.standard(),
     );
     addTearDown(controller.dispose);
 
     final result = controller.dispatch(
-      command: SovereignCoreEditingCommands.insertText,
-      payload: const SovereignInsertTextPayload('!'),
+      command: FlarkCoreEditingCommands.insertText,
+      payload: const FlarkInsertTextPayload('!'),
     );
 
     expect(result.commandResult.isHandled, isTrue);
     expect(controller.markdown, 'hello!');
     controller.applySelection(
-      const SovereignSelection(baseOffset: 0, extentOffset: 5),
+      const FlarkSelection(baseOffset: 0, extentOffset: 5),
     );
     expect(controller.toggleStrong().commandResult.isHandled, isTrue);
     expect(controller.markdown, '**hello**!');
     expect(MarkdownEditor, isA<Type>());
     expect(Markdown, isA<Type>());
     expect(
-      const SovereignMarkdownInteractionConfig(),
-      isA<SovereignMarkdownInteractionConfig>(),
+      const FlarkMarkdownInteractionConfig(),
+      isA<FlarkMarkdownInteractionConfig>(),
     );
     expect(
-      const SovereignCodeLanguageOption(value: 'dart', label: 'Dart'),
-      isA<SovereignCodeLanguageOption>(),
+      const FlarkCodeLanguageOption(value: 'dart', label: 'Dart'),
+      isA<FlarkCodeLanguageOption>(),
     );
     expect(
-      SovereignMarkdownBlockCommands.setFenceLanguage.id,
+      FlarkMarkdownBlockCommands.setFenceLanguage.id,
       'markdown.setFenceLanguage',
     );
     expect(
-      SovereignMarkdownBlockCommands.setTaskListChecked.id,
+      FlarkMarkdownBlockCommands.setTaskListChecked.id,
       'markdown.setTaskListChecked',
     );
-    expect(SovereignMarkdownLinkCommands.removeLink.id, 'markdown.removeLink');
-    expect(SovereignNativeComrakParseBackend, isA<Type>());
+    expect(FlarkMarkdownLinkCommands.removeLink.id, 'markdown.removeLink');
+    expect(FlarkNativeComrakParseBackend, isA<Type>());
     expect(NativeComrakBridge, isA<Type>());
     expect(NativeComrakBridgePreflightResult.available().isAvailable, isTrue);
   });
 
   test('core barrel exposes headless v2 types without Flutter widgets', () {
-    final state = core.SovereignEditorState.fromMarkdown('hello');
+    final state = core.FlarkEditorState.fromMarkdown('hello');
     final next = state.applyTransaction(
-      core.SovereignTransaction.single(
-        core.SovereignSourceOperation.insert(5, '!'),
-      ),
+      core.FlarkTransaction.single(core.FlarkSourceOperation.insert(5, '!')),
     );
 
     expect(next.markdown, 'hello!');
-    expect(core.SovereignRenderPlan, isA<Type>());
-    expect(core.SovereignProjection, isA<Type>());
+    expect(core.FlarkRenderPlan, isA<Type>());
+    expect(core.FlarkProjection, isA<Type>());
   });
 
   test(
     'top-level barrel exposes only the two promoted widget entry points',
     () {
-      final barrel = File('lib/sovereign_editor.dart').readAsStringSync();
+      final barrel = File('lib/flark.dart').readAsStringSync();
 
       expect(barrel, contains('MarkdownEditor'));
       expect(barrel, contains('Markdown,'));
-      expect(barrel, isNot(contains('SovereignMarkdownField')));
-      expect(barrel, isNot(contains('SovereignMarkdownEditor')));
-      expect(barrel, isNot(contains('SovereignMarkdownPreview')));
-      expect(barrel, isNot(contains('SovereignReadOnlyPreview')));
-      expect(barrel, isNot(contains('SovereignEditableText')));
-      expect(barrel, isNot(contains('SovereignProjectedEditableText')));
-      expect(barrel, isNot(contains('SovereignLiveRenderedEditableText')));
-      expect(barrel, isNot(contains('SovereignParseScheduler')));
-      expect(barrel, isNot(contains('SovereignRenderPlanOverlayControls')));
-      expect(barrel, isNot(contains('SovereignTextDeltaAdapter')));
+      expect(barrel, isNot(contains('FlarkMarkdownField')));
+      expect(barrel, isNot(contains('FlarkMarkdownEditor')));
+      expect(barrel, isNot(contains('FlarkMarkdownPreview')));
+      expect(barrel, isNot(contains('FlarkReadOnlyPreview')));
+      expect(barrel, isNot(contains('FlarkEditableText')));
+      expect(barrel, isNot(contains('FlarkProjectedEditableText')));
+      expect(barrel, isNot(contains('FlarkLiveRenderedEditableText')));
+      expect(barrel, isNot(contains('FlarkParseScheduler')));
+      expect(barrel, isNot(contains('FlarkRenderPlanOverlayControls')));
+      expect(barrel, isNot(contains('FlarkTextDeltaAdapter')));
     },
   );
 
   testWidgets('top-level widgets render without legacy imports', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(
+    final controller = FlarkFlutterController.fromMarkdown(
       '# Title\n\n**bold**',
-      extensions: SovereignMarkdownEditingExtensions.standard(),
+      extensions: FlarkMarkdownEditingExtensions.standard(),
     );
     final parseErrors = <Object>[];
     addTearDown(controller.dispose);
@@ -104,7 +102,7 @@ void main() {
                   onParseError: (error, stackTrace) {
                     parseErrors.add(error);
                   },
-                  editingMode: SovereignMarkdownEditingMode.source,
+                  editingMode: FlarkMarkdownEditingMode.source,
                 ),
               ),
               Expanded(
@@ -128,22 +126,22 @@ void main() {
   });
 }
 
-final class _IdentityParseBackend implements SovereignMarkdownParseBackend {
+final class _IdentityParseBackend implements FlarkMarkdownParseBackend {
   const _IdentityParseBackend();
 
   @override
-  SovereignMarkdownParserCapabilities get capabilities =>
-      SovereignMarkdownParserCapabilities(
+  FlarkMarkdownParserCapabilities get capabilities =>
+      FlarkMarkdownParserCapabilities(
         parserName: 'identity-test',
         schemaVersion: 1,
-        supportedProfiles: const [SovereignMarkdownProfile.commonMarkGfm],
+        supportedProfiles: const [FlarkMarkdownProfile.commonMarkGfm],
       );
 
   @override
-  Future<SovereignMarkdownParseResult> parse(
-    SovereignMarkdownParseRequest request,
+  Future<FlarkMarkdownParseResult> parse(
+    FlarkMarkdownParseRequest request,
   ) async {
-    return SovereignMarkdownParseResult(
+    return FlarkMarkdownParseResult(
       schemaVersion: 1,
       revision: request.revision,
       sourceTextLength: request.markdown.length,

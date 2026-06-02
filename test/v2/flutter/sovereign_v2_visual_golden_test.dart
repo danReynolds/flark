@@ -3,14 +3,14 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/sovereign_editor_v2.dart';
+import 'package:flark/flark_advanced.dart';
 
 void main() {
   setUpAll(() async {
     await _loadGoldenFonts();
   });
 
-  group('Sovereign v2 visual contracts', () {
+  group('Flark v2 visual contracts', () {
     testWidgets('overview surfaces stay visually stable', (tester) async {
       await _pumpTriptych(tester, _overviewMarkdown);
 
@@ -254,7 +254,7 @@ Future<void> _pumpTriptych(
                 controller: sourceController,
                 parseBackend: const _GoldenParseBackend(),
                 parseDebounce: Duration.zero,
-                editingMode: SovereignMarkdownEditingMode.source,
+                editingMode: FlarkMarkdownEditingMode.source,
                 style: _editorStyle,
                 maxLines: 24,
               ),
@@ -268,7 +268,7 @@ Future<void> _pumpTriptych(
                 controller: projectedController,
                 parseBackend: const _GoldenParseBackend(),
                 parseDebounce: Duration.zero,
-                editingMode: SovereignMarkdownEditingMode.projected,
+                editingMode: FlarkMarkdownEditingMode.projected,
                 style: _editorStyle,
                 maxLines: 24,
               ),
@@ -343,7 +343,7 @@ Future<void> _pumpLiveRenderedOnly(
           controller: controller,
           parseBackend: const _GoldenParseBackend(),
           parseDebounce: Duration.zero,
-          editingMode: SovereignMarkdownEditingMode.liveRendered,
+          editingMode: FlarkMarkdownEditingMode.liveRendered,
           style: _editorStyle,
           maxLines: 28,
         ),
@@ -425,10 +425,10 @@ void _setGoldenSurface(WidgetTester tester, double width, double height) {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
-SovereignFlutterController _controller(String markdown) {
-  return SovereignFlutterController.fromMarkdown(
+FlarkFlutterController _controller(String markdown) {
+  return FlarkFlutterController.fromMarkdown(
     markdown,
-    extensions: SovereignMarkdownEditingExtensions.standard(),
+    extensions: FlarkMarkdownEditingExtensions.standard(),
   );
 }
 
@@ -506,7 +506,7 @@ final class _LiveEdgeCase {
     : controller = _controller(markdown);
 
   final String label;
-  final SovereignFlutterController controller;
+  final FlarkFlutterController controller;
 }
 
 final class _LiveEdgeCasePanel extends StatelessWidget {
@@ -541,7 +541,7 @@ final class _LiveEdgeCasePanel extends StatelessWidget {
                 controller: edgeCase.controller,
                 parseBackend: const _GoldenParseBackend(),
                 parseDebounce: Duration.zero,
-                editingMode: SovereignMarkdownEditingMode.liveRendered,
+                editingMode: FlarkMarkdownEditingMode.liveRendered,
                 style: _editorStyle,
                 expands: true,
                 maxLines: null,
@@ -554,20 +554,20 @@ final class _LiveEdgeCasePanel extends StatelessWidget {
   }
 }
 
-final class _GoldenParseBackend implements SovereignMarkdownParseBackend {
+final class _GoldenParseBackend implements FlarkMarkdownParseBackend {
   const _GoldenParseBackend();
 
   @override
-  SovereignMarkdownParserCapabilities get capabilities =>
-      SovereignMarkdownParserCapabilities(
+  FlarkMarkdownParserCapabilities get capabilities =>
+      FlarkMarkdownParserCapabilities(
         parserName: 'golden-fixture',
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
-        supportedProfiles: const [SovereignMarkdownProfile.commonMarkGfm],
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
+        supportedProfiles: const [FlarkMarkdownProfile.commonMarkGfm],
       );
 
   @override
-  Future<SovereignMarkdownParseResult> parse(
-    SovereignMarkdownParseRequest request,
+  Future<FlarkMarkdownParseResult> parse(
+    FlarkMarkdownParseRequest request,
   ) async {
     return _FixtureParser(request.markdown, request.revision).parse();
   }
@@ -578,18 +578,18 @@ final class _FixtureParser {
 
   final String source;
   final int revision;
-  final List<SovereignMarkdownBlockNode> _blocks = [];
-  final List<SovereignMarkdownInlineToken> _inlineTokens = [];
-  final List<SovereignMarkdownHiddenRange> _hiddenRanges = [];
+  final List<FlarkMarkdownBlockNode> _blocks = [];
+  final List<FlarkMarkdownInlineToken> _inlineTokens = [];
+  final List<FlarkMarkdownHiddenRange> _hiddenRanges = [];
 
-  SovereignMarkdownParseResult parse() {
+  FlarkMarkdownParseResult parse() {
     _scanBlocks();
     _scanInlineTokens();
     _hiddenRanges.sort(
       (a, b) => a.sourceRange.start.compareTo(b.sourceRange.start),
     );
-    return SovereignMarkdownParseResult(
-      schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+    return FlarkMarkdownParseResult(
+      schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
       revision: revision,
       sourceTextLength: source.length,
       blocks: _blocks,
@@ -615,13 +615,13 @@ final class _FixtureParser {
       if (line.startsWith('# ')) {
         _blocks.add(
           _block(
-            SovereignMarkdownBlockKind.heading,
+            FlarkMarkdownBlockKind.heading,
             'heading',
-            SovereignSourceRange(offset, lineEnd),
+            FlarkSourceRange(offset, lineEnd),
             attributes: const {'level': 1},
           ),
         );
-        _hide(offset, offset + 2, SovereignMarkdownHiddenRangeKind.blockMarker);
+        _hide(offset, offset + 2, FlarkMarkdownHiddenRangeKind.blockMarker);
         offset = _lineAfter(lineEnd);
         continue;
       }
@@ -639,16 +639,16 @@ final class _FixtureParser {
         final checked = _taskChecked(line);
         _blocks.add(
           _block(
-            SovereignMarkdownBlockKind.listItem,
+            FlarkMarkdownBlockKind.listItem,
             'listItem',
-            SovereignSourceRange(offset, lineEnd),
+            FlarkSourceRange(offset, lineEnd),
             attributes: checked == null ? const {} : {'checked': checked},
           ),
         );
         _hide(
           offset,
           offset + listMarkerLength,
-          SovereignMarkdownHiddenRangeKind.blockMarker,
+          FlarkMarkdownHiddenRangeKind.blockMarker,
         );
         offset = _lineAfter(lineEnd);
         continue;
@@ -676,22 +676,22 @@ final class _FixtureParser {
     final language = openLine.substring(3).trim();
     _blocks.add(
       _block(
-        SovereignMarkdownBlockKind.codeBlock,
+        FlarkMarkdownBlockKind.codeBlock,
         'codeBlock',
-        SovereignSourceRange(start, closeEnd),
+        FlarkSourceRange(start, closeEnd),
         attributes: language.isEmpty ? const {} : {'language': language},
       ),
     );
     _hide(
       start,
       _lineAfter(openLineEnd),
-      SovereignMarkdownHiddenRangeKind.markdownMarker,
+      FlarkMarkdownHiddenRangeKind.markdownMarker,
     );
     if (closeStart < source.length) {
       _hide(
         closeStart > start ? closeStart - 1 : closeStart,
         closeEnd,
-        SovereignMarkdownHiddenRangeKind.markdownMarker,
+        FlarkMarkdownHiddenRangeKind.markdownMarker,
       );
       return _lineAfter(closeEnd);
     }
@@ -709,16 +709,16 @@ final class _FixtureParser {
       _hide(
         cursor,
         cursor + markerLength,
-        SovereignMarkdownHiddenRangeKind.blockMarker,
+        FlarkMarkdownHiddenRangeKind.blockMarker,
       );
       blockEnd = lineEnd;
       cursor = _lineAfter(lineEnd);
     }
     _blocks.add(
       _block(
-        SovereignMarkdownBlockKind.blockquote,
+        FlarkMarkdownBlockKind.blockquote,
         'blockquote',
-        SovereignSourceRange(start, blockEnd),
+        FlarkSourceRange(start, blockEnd),
       ),
     );
     return cursor;
@@ -734,7 +734,7 @@ final class _FixtureParser {
     var cursor = start;
     var blockEnd = start;
     var rowIndex = 0;
-    final rows = <SovereignMarkdownBlockNode>[];
+    final rows = <FlarkMarkdownBlockNode>[];
     while (cursor < source.length) {
       final lineEnd = _lineEnd(cursor);
       final line = source.substring(cursor, lineEnd);
@@ -742,9 +742,9 @@ final class _FixtureParser {
       if (rowIndex != 1) {
         rows.add(
           _block(
-            SovereignMarkdownBlockKind.tableRow,
+            FlarkMarkdownBlockKind.tableRow,
             'tableRow',
-            SovereignSourceRange(cursor, lineEnd),
+            FlarkSourceRange(cursor, lineEnd),
             attributes: {'header': rowIndex == 0},
             children: _tableCellBlocks(cursor, line),
           ),
@@ -757,9 +757,9 @@ final class _FixtureParser {
 
     _blocks.add(
       _block(
-        SovereignMarkdownBlockKind.table,
+        FlarkMarkdownBlockKind.table,
         'table',
-        SovereignSourceRange(start, blockEnd),
+        FlarkSourceRange(start, blockEnd),
         attributes: {'alignments': alignments},
         children: rows,
       ),
@@ -779,9 +779,9 @@ final class _FixtureParser {
     }
     _blocks.add(
       _block(
-        SovereignMarkdownBlockKind.paragraph,
+        FlarkMarkdownBlockKind.paragraph,
         'paragraph',
-        SovereignSourceRange(start, blockEnd),
+        FlarkSourceRange(start, blockEnd),
       ),
     );
     return cursor;
@@ -804,10 +804,10 @@ final class _FixtureParser {
   }
 
   void _scanInlineTokens() {
-    _scanDelimited('**', SovereignMarkdownInlineKind.strong, 'strong');
+    _scanDelimited('**', FlarkMarkdownInlineKind.strong, 'strong');
     _scanDelimited(
       '~~',
-      SovereignMarkdownInlineKind.strikethrough,
+      FlarkMarkdownInlineKind.strikethrough,
       'strikethrough',
     );
     _scanInlineCode();
@@ -817,7 +817,7 @@ final class _FixtureParser {
 
   void _scanDelimited(
     String marker,
-    SovereignMarkdownInlineKind kind,
+    FlarkMarkdownInlineKind kind,
     String type,
   ) {
     var cursor = 0;
@@ -827,17 +827,17 @@ final class _FixtureParser {
       final end = source.indexOf(marker, start + marker.length);
       if (end < 0) return;
       _inlineTokens.add(
-        _inline(kind, type, SovereignSourceRange(start, end + marker.length)),
+        _inline(kind, type, FlarkSourceRange(start, end + marker.length)),
       );
       _hide(
         start,
         start + marker.length,
-        SovereignMarkdownHiddenRangeKind.inlineMarker,
+        FlarkMarkdownHiddenRangeKind.inlineMarker,
       );
       _hide(
         end,
         end + marker.length,
-        SovereignMarkdownHiddenRangeKind.inlineMarker,
+        FlarkMarkdownHiddenRangeKind.inlineMarker,
       );
       cursor = end + marker.length;
     }
@@ -852,13 +852,13 @@ final class _FixtureParser {
       if (end < 0) return;
       _inlineTokens.add(
         _inline(
-          SovereignMarkdownInlineKind.inlineCode,
+          FlarkMarkdownInlineKind.inlineCode,
           'inlineCode',
-          SovereignSourceRange(start, end + 1),
+          FlarkSourceRange(start, end + 1),
         ),
       );
-      _hide(start, start + 1, SovereignMarkdownHiddenRangeKind.inlineMarker);
-      _hide(end, end + 1, SovereignMarkdownHiddenRangeKind.inlineMarker);
+      _hide(start, start + 1, FlarkMarkdownHiddenRangeKind.inlineMarker);
+      _hide(end, end + 1, FlarkMarkdownHiddenRangeKind.inlineMarker);
       cursor = end + 1;
     }
   }
@@ -872,13 +872,13 @@ final class _FixtureParser {
       if (end < 0) return;
       _inlineTokens.add(
         _inline(
-          SovereignMarkdownInlineKind.emphasis,
+          FlarkMarkdownInlineKind.emphasis,
           'emphasis',
-          SovereignSourceRange(start, end + 1),
+          FlarkSourceRange(start, end + 1),
         ),
       );
-      _hide(start, start + 1, SovereignMarkdownHiddenRangeKind.inlineMarker);
-      _hide(end, end + 1, SovereignMarkdownHiddenRangeKind.inlineMarker);
+      _hide(start, start + 1, FlarkMarkdownHiddenRangeKind.inlineMarker);
+      _hide(end, end + 1, FlarkMarkdownHiddenRangeKind.inlineMarker);
       cursor = end + 1;
     }
   }
@@ -916,10 +916,10 @@ final class _FixtureParser {
       _inlineTokens.add(
         _inline(
           isImage
-              ? SovereignMarkdownInlineKind.image
-              : SovereignMarkdownInlineKind.link,
+              ? FlarkMarkdownInlineKind.image
+              : FlarkMarkdownInlineKind.link,
           isImage ? 'image' : 'link',
-          SovereignSourceRange(start, tokenEnd),
+          FlarkSourceRange(start, tokenEnd),
           attributes: isImage
               ? {'src': destination, 'alt': label}
               : {'destination': destination, 'label': label},
@@ -928,13 +928,9 @@ final class _FixtureParser {
       _hide(
         start,
         start + (isImage ? 2 : 1),
-        SovereignMarkdownHiddenRangeKind.inlineMarker,
+        FlarkMarkdownHiddenRangeKind.inlineMarker,
       );
-      _hide(
-        labelEnd,
-        tokenEnd,
-        SovereignMarkdownHiddenRangeKind.linkDestination,
-      );
+      _hide(labelEnd, tokenEnd, FlarkMarkdownHiddenRangeKind.linkDestination);
       cursor = tokenEnd;
     }
   }
@@ -982,14 +978,14 @@ final class _FixtureParser {
     return lineEnd < source.length ? lineEnd + 1 : lineEnd;
   }
 
-  SovereignMarkdownBlockNode _block(
-    SovereignMarkdownBlockKind kind,
+  FlarkMarkdownBlockNode _block(
+    FlarkMarkdownBlockKind kind,
     String type,
-    SovereignSourceRange range, {
+    FlarkSourceRange range, {
     Map<String, Object?> attributes = const {},
-    Iterable<SovereignMarkdownBlockNode> children = const [],
+    Iterable<FlarkMarkdownBlockNode> children = const [],
   }) {
-    return SovereignMarkdownBlockNode(
+    return FlarkMarkdownBlockNode(
       kind: kind,
       type: type,
       sourceRange: range,
@@ -998,13 +994,13 @@ final class _FixtureParser {
     );
   }
 
-  SovereignMarkdownInlineToken _inline(
-    SovereignMarkdownInlineKind kind,
+  FlarkMarkdownInlineToken _inline(
+    FlarkMarkdownInlineKind kind,
     String type,
-    SovereignSourceRange range, {
+    FlarkSourceRange range, {
     Map<String, Object?> attributes = const {},
   }) {
-    return SovereignMarkdownInlineToken(
+    return FlarkMarkdownInlineToken(
       kind: kind,
       type: type,
       sourceRange: range,
@@ -1012,24 +1008,24 @@ final class _FixtureParser {
     );
   }
 
-  void _hide(int start, int end, SovereignMarkdownHiddenRangeKind kind) {
+  void _hide(int start, int end, FlarkMarkdownHiddenRangeKind kind) {
     if (start >= end) return;
     _hiddenRanges.add(
-      SovereignMarkdownHiddenRange(
+      FlarkMarkdownHiddenRange(
         kind: kind,
         type: switch (kind) {
-          SovereignMarkdownHiddenRangeKind.blockMarker => 'blockMarker',
-          SovereignMarkdownHiddenRangeKind.inlineMarker => 'inlineMarker',
-          SovereignMarkdownHiddenRangeKind.linkDestination => 'linkDestination',
-          SovereignMarkdownHiddenRangeKind.linkTitle => 'linkTitle',
-          SovereignMarkdownHiddenRangeKind.markdownMarker => 'markdownMarker',
-          SovereignMarkdownHiddenRangeKind.referenceDefinition =>
+          FlarkMarkdownHiddenRangeKind.blockMarker => 'blockMarker',
+          FlarkMarkdownHiddenRangeKind.inlineMarker => 'inlineMarker',
+          FlarkMarkdownHiddenRangeKind.linkDestination => 'linkDestination',
+          FlarkMarkdownHiddenRangeKind.linkTitle => 'linkTitle',
+          FlarkMarkdownHiddenRangeKind.markdownMarker => 'markdownMarker',
+          FlarkMarkdownHiddenRangeKind.referenceDefinition =>
             'referenceDefinition',
-          SovereignMarkdownHiddenRangeKind.rawHtml => 'rawHtml',
-          SovereignMarkdownHiddenRangeKind.escapeMarker => 'escapeMarker',
-          SovereignMarkdownHiddenRangeKind.unknown => 'unknown',
+          FlarkMarkdownHiddenRangeKind.rawHtml => 'rawHtml',
+          FlarkMarkdownHiddenRangeKind.escapeMarker => 'escapeMarker',
+          FlarkMarkdownHiddenRangeKind.unknown => 'unknown',
         },
-        sourceRange: SovereignSourceRange(start, end),
+        sourceRange: FlarkSourceRange(start, end),
       ),
     );
   }
@@ -1069,13 +1065,13 @@ List<String> _tableCells(String line) {
   return normalized.split('|').map((cell) => cell.trim()).toList();
 }
 
-List<SovereignMarkdownBlockNode> _tableCellBlocks(int lineStart, String line) {
+List<FlarkMarkdownBlockNode> _tableCellBlocks(int lineStart, String line) {
   var start = 0;
   var end = line.length;
   if (line.startsWith('|')) start = 1;
   if (end > start && line.endsWith('|')) end--;
 
-  final cells = <SovereignMarkdownBlockNode>[];
+  final cells = <FlarkMarkdownBlockNode>[];
   var cellStart = start;
   for (var index = start; index < end; index++) {
     if (line.codeUnitAt(index) != 124) continue;
@@ -1086,7 +1082,7 @@ List<SovereignMarkdownBlockNode> _tableCellBlocks(int lineStart, String line) {
   return cells;
 }
 
-SovereignMarkdownBlockNode _tableCellBlock(
+FlarkMarkdownBlockNode _tableCellBlock(
   int lineStart,
   String line,
   int start,
@@ -1104,10 +1100,10 @@ SovereignMarkdownBlockNode _tableCellBlock(
           line.codeUnitAt(contentEnd - 1) == 9)) {
     contentEnd--;
   }
-  return SovereignMarkdownBlockNode(
-    kind: SovereignMarkdownBlockKind.tableCell,
+  return FlarkMarkdownBlockNode(
+    kind: FlarkMarkdownBlockKind.tableCell,
     type: 'tableCell',
-    sourceRange: SovereignSourceRange(
+    sourceRange: FlarkSourceRange(
       lineStart + contentStart,
       lineStart + contentEnd,
     ),

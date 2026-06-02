@@ -1,17 +1,17 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
-import 'package:sovereign_editor/src/v2/flutter/flutter.dart';
-import 'package:sovereign_editor/src/v2/markdown/markdown.dart';
+import 'package:flark/src/v2/core/core.dart';
+import 'package:flark/src/v2/flutter/flutter.dart';
+import 'package:flark/src/v2/markdown/markdown.dart';
 
 void main() {
   testWidgets('blank live rows remain visible between list blocks', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown(
+    final controller = FlarkFlutterController.fromMarkdown(
       '- one\n\n\n- two',
-      extensions: SovereignMarkdownEditingExtensions.standard(),
+      extensions: FlarkMarkdownEditingExtensions.standard(),
     );
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
@@ -40,13 +40,13 @@ void main() {
   testWidgets('empty final list item exits into a visible focused blank row', (
     tester,
   ) async {
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           '- item\n- ',
-          selection: const SovereignSelection.collapsed(9),
+          selection: const FlarkSelection.collapsed(9),
         ),
-        extensions: SovereignMarkdownEditingExtensions.standard(),
+        extensions: FlarkMarkdownEditingExtensions.standard(),
       ),
     );
     addTearDown(controller.dispose);
@@ -76,9 +76,9 @@ void main() {
     'closed code fence stays visually bounded before following quote',
     (tester) async {
       const markdown = '```dart\ncode\n```\n\n> quote';
-      final controller = SovereignFlutterController.fromMarkdown(
+      final controller = FlarkFlutterController.fromMarkdown(
         markdown,
-        extensions: SovereignMarkdownEditingExtensions.standard(),
+        extensions: FlarkMarkdownEditingExtensions.standard(),
       );
       addTearDown(controller.dispose);
       await _applyComrakParseResult(controller);
@@ -110,9 +110,9 @@ void main() {
     tester,
   ) async {
     const markdown = '- before\n\n```\nopen fence\n  code';
-    final controller = SovereignFlutterController.fromMarkdown(
+    final controller = FlarkFlutterController.fromMarkdown(
       markdown,
-      extensions: SovereignMarkdownEditingExtensions.standard(),
+      extensions: FlarkMarkdownEditingExtensions.standard(),
     );
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
@@ -128,14 +128,14 @@ void main() {
   });
 }
 
-const _blockquoteKey = Key('SovereignLiveBlockBlockquote');
-const _codeEditableKey = Key('SovereignLiveBlockCodeEditable');
-const _codeFenceKey = Key('SovereignLiveBlockCodeFence');
-const _listMarkerKey = Key('SovereignLiveBlockListMarker');
+const _blockquoteKey = Key('FlarkLiveBlockBlockquote');
+const _codeEditableKey = Key('FlarkLiveBlockCodeEditable');
+const _codeFenceKey = Key('FlarkLiveBlockCodeFence');
+const _listMarkerKey = Key('FlarkLiveBlockListMarker');
 
 Future<void> _pumpLiveEditor(
   WidgetTester tester,
-  SovereignFlutterController controller, {
+  FlarkFlutterController controller, {
   double width = 360,
   double height = 220,
   bool autofocus = false,
@@ -146,7 +146,7 @@ Future<void> _pumpLiveEditor(
       child: SizedBox(
         width: width,
         height: height,
-        child: SovereignLiveRenderedEditableText(
+        child: FlarkLiveRenderedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14, height: 1.4),
           autofocus: autofocus,
@@ -157,17 +157,14 @@ Future<void> _pumpLiveEditor(
   await tester.pump();
 }
 
-Future<void> _applyComrakParseResult(
-  SovereignFlutterController controller,
-) async {
-  final result = await SovereignNativeComrakParseBackend.withNativeBridge()
-      .parse(
-        SovereignMarkdownParseRequest(
-          revision: controller.state.revision,
-          markdown: controller.markdown,
-          profile: SovereignMarkdownProfile.commonMarkGfm,
-        ),
-      );
+Future<void> _applyComrakParseResult(FlarkFlutterController controller) async {
+  final result = await FlarkNativeComrakParseBackend.withNativeBridge().parse(
+    FlarkMarkdownParseRequest(
+      revision: controller.state.revision,
+      markdown: controller.markdown,
+      profile: FlarkMarkdownProfile.commonMarkGfm,
+    ),
+  );
   expect(controller.applyParseResult(result), isTrue);
 }
 

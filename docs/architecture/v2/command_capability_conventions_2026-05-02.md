@@ -1,4 +1,4 @@
-# Sovereign v2 Command Capability Conventions
+# Flark v2 Command Capability Conventions
 
 Status date: 2026-05-02
 
@@ -6,7 +6,7 @@ Status date: 2026-05-02
 
 Commands need predictable behavior when a feature is unavailable, irrelevant,
 or invalid for the current selection. This note defines the current result
-conventions for `SovereignCommandResult`.
+conventions for `FlarkCommandResult`.
 
 ## Result Meanings
 

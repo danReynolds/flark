@@ -1,20 +1,20 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/sovereign_editor_v2.dart';
+import 'package:flark/flark_advanced.dart';
 
 void main() {
   test('controller markdown helpers wrap common toolbar commands', () {
-    final controller = SovereignFlutterController.fromMarkdown('hello world');
+    final controller = FlarkFlutterController.fromMarkdown('hello world');
     addTearDown(controller.dispose);
 
     controller.applySelection(
-      const SovereignSelection(baseOffset: 0, extentOffset: 5),
+      const FlarkSelection(baseOffset: 0, extentOffset: 5),
     );
 
     expect(controller.toggleStrong().commandResult.isHandled, isTrue);
     expect(controller.markdown, '**hello** world');
 
     controller.applySelection(
-      SovereignSelection.collapsed(controller.markdown.length),
+      FlarkSelection.collapsed(controller.markdown.length),
     );
     expect(
       controller.insertCodeFence(language: 'dart').commandResult.isHandled,
@@ -22,7 +22,7 @@ void main() {
     );
     expect(controller.markdown, '**hello** world\n\n```dart\n\n```');
 
-    final tableController = SovereignFlutterController.fromMarkdown('');
+    final tableController = FlarkFlutterController.fromMarkdown('');
     addTearDown(tableController.dispose);
     expect(
       tableController
@@ -38,15 +38,15 @@ void main() {
   });
 
   test('controller markdown helpers expose block and link editing', () {
-    final controller = SovereignFlutterController.fromMarkdown('title\nlink');
+    final controller = FlarkFlutterController.fromMarkdown('title\nlink');
     addTearDown(controller.dispose);
 
-    controller.applySelection(const SovereignSelection.collapsed(0));
+    controller.applySelection(const FlarkSelection.collapsed(0));
     expect(controller.setHeadingLevel(2).commandResult.isHandled, isTrue);
     expect(controller.markdown, '## title\nlink');
 
     controller.applySelection(
-      const SovereignSelection(baseOffset: 9, extentOffset: 13),
+      const FlarkSelection(baseOffset: 9, extentOffset: 13),
     );
     final linkContext = controller.resolveLinkEditContext();
     expect(linkContext.label, 'link');
@@ -64,7 +64,7 @@ void main() {
     expect(controller.markdown, '## title\n[Docs](https://example.com)');
 
     controller.applySelection(
-      const SovereignSelection(baseOffset: 9, extentOffset: 36),
+      const FlarkSelection(baseOffset: 9, extentOffset: 36),
     );
     final existingLink = controller.resolveLinkEditContext();
     expect(existingLink.isExisting, isTrue);
@@ -78,7 +78,7 @@ void main() {
     expect(controller.markdown, '## title\nDocs');
 
     controller.applySelection(
-      const SovereignSelection(baseOffset: 0, extentOffset: 5),
+      const FlarkSelection(baseOffset: 0, extentOffset: 5),
     );
     expect(controller.toggleQuote().commandResult.isHandled, isTrue);
     expect(controller.markdown, '> ## title\nDocs');

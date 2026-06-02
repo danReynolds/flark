@@ -11,81 +11,76 @@ import '../../core/transaction/sovereign_transaction_metadata.dart';
 import '../source/sovereign_markdown_editing_result.dart';
 import '../source/sovereign_markdown_input_engine.dart';
 
-abstract final class SovereignMarkdownInputCommands {
-  static const handleEnter = SovereignCommand<SovereignHandleEnterPayload>(
+abstract final class FlarkMarkdownInputCommands {
+  static const handleEnter = FlarkCommand<FlarkHandleEnterPayload>(
     'markdown.handleEnter',
   );
 
-  static const handleBackspace =
-      SovereignCommand<SovereignHandleBackspacePayload>(
+  static const handleBackspace = FlarkCommand<FlarkHandleBackspacePayload>(
     'markdown.handleBackspace',
   );
 }
 
-final class SovereignHandleEnterPayload {
-  const SovereignHandleEnterPayload({
-    this.userEvent = 'input.enter',
-  });
+final class FlarkHandleEnterPayload {
+  const FlarkHandleEnterPayload({this.userEvent = 'input.enter'});
 
   final String userEvent;
 }
 
-final class SovereignHandleBackspacePayload {
-  const SovereignHandleBackspacePayload({
-    this.userEvent = 'input.backspace',
-  });
+final class FlarkHandleBackspacePayload {
+  const FlarkHandleBackspacePayload({this.userEvent = 'input.backspace'});
 
   final String userEvent;
 }
 
-final class SovereignMarkdownInputEditingExtension extends SovereignExtension {
-  const SovereignMarkdownInputEditingExtension();
+final class FlarkMarkdownInputEditingExtension extends FlarkExtension {
+  const FlarkMarkdownInputEditingExtension();
 
   @override
   String get id => 'markdown.inputEditing';
 
   @override
-  SovereignCommandRegistry registerCommands(SovereignCommandRegistry registry) {
+  FlarkCommandRegistry registerCommands(FlarkCommandRegistry registry) {
     return registry
-        .register<SovereignHandleEnterPayload>(
-          SovereignMarkdownInputCommands.handleEnter,
+        .register<FlarkHandleEnterPayload>(
+          FlarkMarkdownInputCommands.handleEnter,
           _handleEnter,
         )
-        .register<SovereignHandleBackspacePayload>(
-          SovereignMarkdownInputCommands.handleBackspace,
+        .register<FlarkHandleBackspacePayload>(
+          FlarkMarkdownInputCommands.handleBackspace,
           _handleBackspace,
         );
   }
 
-  SovereignCommandResult _handleEnter(
-    SovereignCommandContext<SovereignHandleEnterPayload> context,
+  FlarkCommandResult _handleEnter(
+    FlarkCommandContext<FlarkHandleEnterPayload> context,
   ) {
     final state = context.state;
-    final result = SovereignMarkdownInputEngine.enter(
+    final result = FlarkMarkdownInputEngine.enter(
       markdown: state.markdown,
       selection: state.selection,
     );
     return _resultForInputResult(state, result, context.payload.userEvent);
   }
 
-  SovereignCommandResult _handleBackspace(
-    SovereignCommandContext<SovereignHandleBackspacePayload> context,
+  FlarkCommandResult _handleBackspace(
+    FlarkCommandContext<FlarkHandleBackspacePayload> context,
   ) {
     final state = context.state;
-    final result = SovereignMarkdownInputEngine.backspace(
+    final result = FlarkMarkdownInputEngine.backspace(
       markdown: state.markdown,
       selection: state.selection,
     );
-    if (result == null) return const SovereignCommandResult.notHandled();
+    if (result == null) return const FlarkCommandResult.notHandled();
     return _resultForInputResult(state, result, context.payload.userEvent);
   }
 
-  SovereignCommandResult _resultForInputResult(
-    SovereignEditorState state,
-    SovereignMarkdownInputResult result,
+  FlarkCommandResult _resultForInputResult(
+    FlarkEditorState state,
+    FlarkMarkdownInputResult result,
     String userEvent,
   ) {
-    if (result is SovereignMarkdownSourceEdit) {
+    if (result is FlarkMarkdownSourceEdit) {
       return _singleEdit(
         state,
         result.range,
@@ -94,33 +89,32 @@ final class SovereignMarkdownInputEditingExtension extends SovereignExtension {
         selectionAfter: result.selectionAfter,
       );
     }
-    if (result is SovereignMarkdownSelectionMove) {
+    if (result is FlarkMarkdownSelectionMove) {
       return _selectionOnly(state, result.selectionAfter, userEvent);
     }
     throw StateError('Unhandled markdown input result: $result');
   }
 
-  SovereignCommandResult _singleEdit(
-    SovereignEditorState state,
-    SovereignSourceRange range,
+  FlarkCommandResult _singleEdit(
+    FlarkEditorState state,
+    FlarkSourceRange range,
     String replacement,
     String userEvent, {
-    SovereignSelection? selectionAfter,
+    FlarkSelection? selectionAfter,
   }) {
-    final nextSelection = selectionAfter ??
-        SovereignSelection.collapsed(
-          range.start + replacement.length,
-        );
-    return SovereignCommandResult.handled(
-      transaction: SovereignTransaction.single(
-        SovereignSourceOperation.replace(
+    final nextSelection =
+        selectionAfter ??
+        FlarkSelection.collapsed(range.start + replacement.length);
+    return FlarkCommandResult.handled(
+      transaction: FlarkTransaction.single(
+        FlarkSourceOperation.replace(
           replacedRange: range,
           replacementText: replacement,
         ),
         selectionBefore: state.selection,
         selectionAfter: nextSelection,
-        metadata: SovereignTransactionMetadata(
-          intent: SovereignTransactionIntent.input,
+        metadata: FlarkTransactionMetadata(
+          intent: FlarkTransactionIntent.input,
           userEvent: userEvent,
           parseInvalidationRange: range,
           projectionInvalidationRange: range,
@@ -129,18 +123,18 @@ final class SovereignMarkdownInputEditingExtension extends SovereignExtension {
     );
   }
 
-  SovereignCommandResult _selectionOnly(
-    SovereignEditorState state,
-    SovereignSelection selection,
+  FlarkCommandResult _selectionOnly(
+    FlarkEditorState state,
+    FlarkSelection selection,
     String userEvent,
   ) {
-    return SovereignCommandResult.handled(
-      transaction: SovereignTransaction(
+    return FlarkCommandResult.handled(
+      transaction: FlarkTransaction(
         operations: const [],
         selectionBefore: state.selection,
         selectionAfter: selection,
-        metadata: SovereignTransactionMetadata(
-          intent: SovereignTransactionIntent.selection,
+        metadata: FlarkTransactionMetadata(
+          intent: FlarkTransactionIntent.selection,
           userEvent: userEvent,
           addToHistory: false,
         ),

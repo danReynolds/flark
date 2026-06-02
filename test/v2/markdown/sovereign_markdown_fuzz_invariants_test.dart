@@ -3,37 +3,39 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/sovereign_editor_v2.dart';
+import 'package:flark/flark_advanced.dart';
 
 import '../support/sovereign_test_paths.dart';
 
 void main() {
-  group('Sovereign markdown editing fuzz invariants', () {
+  group('Flark markdown editing fuzz invariants', () {
     for (final seed in [11, 29, 47, 83]) {
-      test('mixed editing session stays internally consistent for seed $seed',
-          () {
-        var runtime = SovereignEditorRuntime.fromMarkdown(
-          '',
-          extensions: SovereignMarkdownEditingExtensions.standard(),
-        );
-        final random = Random(seed);
+      test(
+        'mixed editing session stays internally consistent for seed $seed',
+        () {
+          var runtime = FlarkEditorRuntime.fromMarkdown(
+            '',
+            extensions: FlarkMarkdownEditingExtensions.standard(),
+          );
+          final random = Random(seed);
 
-        for (var step = 0; step < 240; step++) {
-          try {
-            runtime = _nextRuntime(runtime, random);
-            _expectRuntimeInvariants(runtime);
-          } catch (error, stackTrace) {
-            fail(
-              'Seed $seed failed at step $step with markdown '
-              '${runtime.state.markdown}: $error\n$stackTrace',
-            );
+          for (var step = 0; step < 240; step++) {
+            try {
+              runtime = _nextRuntime(runtime, random);
+              _expectRuntimeInvariants(runtime);
+            } catch (error, stackTrace) {
+              fail(
+                'Seed $seed failed at step $step with markdown '
+                '${runtime.state.markdown}: $error\n$stackTrace',
+              );
+            }
           }
-        }
-      });
+        },
+      );
     }
   });
 
-  group('Sovereign parser-backed markdown editing fuzz invariants', () {
+  group('Flark parser-backed markdown editing fuzz invariants', () {
     final libPath = sovereignNativeBridgeLibraryPathForPlatform();
 
     if (libPath.isEmpty || !File(libPath).existsSync()) {
@@ -46,43 +48,42 @@ void main() {
       return;
     }
 
-    final backend = SovereignNativeComrakParseBackend.withNativeBridge(
+    final backend = FlarkNativeComrakParseBackend.withNativeBridge(
       overrideLibraryPath: libPath,
     );
 
     for (final seed in [101, 202, 303]) {
-      test('mixed live-edit parse adoption stays consistent for seed $seed',
-          () async {
-        final controller = SovereignFlutterController.fromMarkdown(
-          '',
-          extensions: SovereignMarkdownEditingExtensions.standard(),
-        );
-        addTearDown(controller.dispose);
-        final random = Random(seed);
+      test(
+        'mixed live-edit parse adoption stays consistent for seed $seed',
+        () async {
+          final controller = FlarkFlutterController.fromMarkdown(
+            '',
+            extensions: FlarkMarkdownEditingExtensions.standard(),
+          );
+          addTearDown(controller.dispose);
+          final random = Random(seed);
 
-        for (var step = 0; step < 120; step++) {
-          try {
-            _nextControllerState(controller, random);
-            await _expectParserBackedControllerInvariants(
-              controller,
-              backend,
-            );
-          } catch (error, stackTrace) {
-            fail(
-              'Seed $seed failed at step $step with markdown '
-              '${controller.markdown}: $error\n$stackTrace',
-            );
+          for (var step = 0; step < 120; step++) {
+            try {
+              _nextControllerState(controller, random);
+              await _expectParserBackedControllerInvariants(
+                controller,
+                backend,
+              );
+            } catch (error, stackTrace) {
+              fail(
+                'Seed $seed failed at step $step with markdown '
+                '${controller.markdown}: $error\n$stackTrace',
+              );
+            }
           }
-        }
-      });
+        },
+      );
     }
   });
 }
 
-SovereignEditorRuntime _nextRuntime(
-  SovereignEditorRuntime runtime,
-  Random random,
-) {
+FlarkEditorRuntime _nextRuntime(FlarkEditorRuntime runtime, Random random) {
   final action = random.nextInt(12);
   return switch (action) {
     0 || 1 || 2 || 3 => _insertRandomText(runtime, random),
@@ -97,8 +98,8 @@ SovereignEditorRuntime _nextRuntime(
   };
 }
 
-SovereignEditorRuntime _insertRandomText(
-  SovereignEditorRuntime runtime,
+FlarkEditorRuntime _insertRandomText(
+  FlarkEditorRuntime runtime,
   Random random,
 ) {
   const samples = [
@@ -118,34 +119,34 @@ SovereignEditorRuntime _insertRandomText(
   ];
   return runtime
       .dispatch(
-        command: SovereignCoreEditingCommands.insertText,
-        payload: SovereignInsertTextPayload(
+        command: FlarkCoreEditingCommands.insertText,
+        payload: FlarkInsertTextPayload(
           samples[random.nextInt(samples.length)],
         ),
       )
       .runtime;
 }
 
-SovereignEditorRuntime _dispatchEnter(SovereignEditorRuntime runtime) {
+FlarkEditorRuntime _dispatchEnter(FlarkEditorRuntime runtime) {
   return runtime
       .dispatch(
-        command: SovereignMarkdownInputCommands.handleEnter,
-        payload: const SovereignHandleEnterPayload(),
+        command: FlarkMarkdownInputCommands.handleEnter,
+        payload: const FlarkHandleEnterPayload(),
       )
       .runtime;
 }
 
-SovereignEditorRuntime _dispatchBackspace(SovereignEditorRuntime runtime) {
+FlarkEditorRuntime _dispatchBackspace(FlarkEditorRuntime runtime) {
   return runtime
       .dispatch(
-        command: SovereignMarkdownInputCommands.handleBackspace,
-        payload: const SovereignHandleBackspacePayload(),
+        command: FlarkMarkdownInputCommands.handleBackspace,
+        payload: const FlarkHandleBackspacePayload(),
       )
       .runtime;
 }
 
-SovereignEditorRuntime _applyRandomSelection(
-  SovereignEditorRuntime runtime,
+FlarkEditorRuntime _applyRandomSelection(
+  FlarkEditorRuntime runtime,
   Random random,
 ) {
   final length = runtime.state.markdown.length;
@@ -153,14 +154,14 @@ SovereignEditorRuntime _applyRandomSelection(
   final extent = random.nextInt(length + 1);
   return runtime
       .applyTransaction(
-        SovereignTransaction(
+        FlarkTransaction(
           operations: const [],
-          selectionAfter: SovereignSelection(
+          selectionAfter: FlarkSelection(
             baseOffset: base,
             extentOffset: extent,
           ),
-          metadata: const SovereignTransactionMetadata(
-            intent: SovereignTransactionIntent.selection,
+          metadata: const FlarkTransactionMetadata(
+            intent: FlarkTransactionIntent.selection,
             userEvent: 'test.fuzz.selection',
             addToHistory: false,
           ),
@@ -169,8 +170,8 @@ SovereignEditorRuntime _applyRandomSelection(
       .runtime;
 }
 
-SovereignEditorRuntime _replaceRandomRange(
-  SovereignEditorRuntime runtime,
+FlarkEditorRuntime _replaceRandomRange(
+  FlarkEditorRuntime runtime,
   Random random,
 ) {
   final length = runtime.state.markdown.length;
@@ -182,70 +183,72 @@ SovereignEditorRuntime _replaceRandomRange(
   final replacement = replacements[random.nextInt(replacements.length)];
   return runtime
       .applyTransaction(
-        SovereignTransaction.single(
-          SovereignSourceOperation.replace(
-            replacedRange: SovereignSourceRange(start, end),
+        FlarkTransaction.single(
+          FlarkSourceOperation.replace(
+            replacedRange: FlarkSourceRange(start, end),
             replacementText: replacement,
           ),
-          selectionAfter: SovereignSelection.collapsed(
-            start + replacement.length,
-          ),
-          metadata: SovereignTransactionMetadata(
-            intent: SovereignTransactionIntent.input,
+          selectionAfter: FlarkSelection.collapsed(start + replacement.length),
+          metadata: FlarkTransactionMetadata(
+            intent: FlarkTransactionIntent.input,
             userEvent: 'test.fuzz.replace',
-            parseInvalidationRange: SovereignSourceRange(start, end),
-            projectionInvalidationRange: SovereignSourceRange(start, end),
+            parseInvalidationRange: FlarkSourceRange(start, end),
+            projectionInvalidationRange: FlarkSourceRange(start, end),
           ),
         ),
       )
       .runtime;
 }
 
-SovereignEditorRuntime _toggleInlineStrong(SovereignEditorRuntime runtime) {
+FlarkEditorRuntime _toggleInlineStrong(FlarkEditorRuntime runtime) {
   return runtime
       .dispatch(
-        command: SovereignMarkdownInlineCommands.toggleInlineStyle,
-        payload: const SovereignToggleInlineStylePayload(
-          SovereignMarkdownInlineStyle.strong,
+        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+        payload: const FlarkToggleInlineStylePayload(
+          FlarkMarkdownInlineStyle.strong,
         ),
       )
       .runtime;
 }
 
-SovereignEditorRuntime _toggleBlockShape(
-  SovereignEditorRuntime runtime,
+FlarkEditorRuntime _toggleBlockShape(
+  FlarkEditorRuntime runtime,
   Random random,
 ) {
   final command = random.nextInt(4);
   return switch (command) {
-    0 => runtime
-        .dispatch(
-          command: SovereignMarkdownBlockCommands.toggleBulletList,
-          payload: const SovereignToggleBulletListPayload(),
-        )
-        .runtime,
-    1 => runtime
-        .dispatch(
-          command: SovereignMarkdownBlockCommands.toggleOrderedList,
-          payload: const SovereignToggleOrderedListPayload(),
-        )
-        .runtime,
-    2 => runtime
-        .dispatch(
-          command: SovereignMarkdownBlockCommands.toggleQuote,
-          payload: const SovereignToggleQuotePayload(),
-        )
-        .runtime,
-    _ => runtime
-        .dispatch(
-          command: SovereignMarkdownBlockCommands.toggleTaskList,
-          payload: const SovereignToggleTaskListPayload(),
-        )
-        .runtime,
+    0 =>
+      runtime
+          .dispatch(
+            command: FlarkMarkdownBlockCommands.toggleBulletList,
+            payload: const FlarkToggleBulletListPayload(),
+          )
+          .runtime,
+    1 =>
+      runtime
+          .dispatch(
+            command: FlarkMarkdownBlockCommands.toggleOrderedList,
+            payload: const FlarkToggleOrderedListPayload(),
+          )
+          .runtime,
+    2 =>
+      runtime
+          .dispatch(
+            command: FlarkMarkdownBlockCommands.toggleQuote,
+            payload: const FlarkToggleQuotePayload(),
+          )
+          .runtime,
+    _ =>
+      runtime
+          .dispatch(
+            command: FlarkMarkdownBlockCommands.toggleTaskList,
+            payload: const FlarkToggleTaskListPayload(),
+          )
+          .runtime,
   };
 }
 
-void _expectRuntimeInvariants(SovereignEditorRuntime runtime) {
+void _expectRuntimeInvariants(FlarkEditorRuntime runtime) {
   final state = runtime.state;
   final length = state.markdown.length;
   expect(state.document.length, length);
@@ -256,10 +259,7 @@ void _expectRuntimeInvariants(SovereignEditorRuntime runtime) {
   expect(state.document.markdown, state.markdown);
 }
 
-void _nextControllerState(
-  SovereignFlutterController controller,
-  Random random,
-) {
+void _nextControllerState(FlarkFlutterController controller, Random random) {
   final action = random.nextInt(16);
   switch (action) {
     case 0:
@@ -271,14 +271,14 @@ void _nextControllerState(
       return;
     case 5:
       controller.dispatch(
-        command: SovereignMarkdownInputCommands.handleEnter,
-        payload: const SovereignHandleEnterPayload(),
+        command: FlarkMarkdownInputCommands.handleEnter,
+        payload: const FlarkHandleEnterPayload(),
       );
       return;
     case 6:
       controller.dispatch(
-        command: SovereignMarkdownInputCommands.handleBackspace,
-        payload: const SovereignHandleBackspacePayload(),
+        command: FlarkMarkdownInputCommands.handleBackspace,
+        payload: const FlarkHandleBackspacePayload(),
       );
       return;
     case 7:
@@ -295,17 +295,17 @@ void _nextControllerState(
       return;
     case 11:
       controller.dispatch(
-        command: SovereignMarkdownInlineCommands.toggleInlineStyle,
-        payload: const SovereignToggleInlineStylePayload(
-          SovereignMarkdownInlineStyle.strong,
+        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+        payload: const FlarkToggleInlineStylePayload(
+          FlarkMarkdownInlineStyle.strong,
         ),
       );
       return;
     case 12:
       controller.dispatch(
-        command: SovereignMarkdownInlineCommands.toggleInlineStyle,
-        payload: const SovereignToggleInlineStylePayload(
-          SovereignMarkdownInlineStyle.inlineCode,
+        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+        payload: const FlarkToggleInlineStylePayload(
+          FlarkMarkdownInlineStyle.inlineCode,
         ),
       );
       return;
@@ -315,7 +315,7 @@ void _nextControllerState(
 }
 
 void _controllerInsertRandomText(
-  SovereignFlutterController controller,
+  FlarkFlutterController controller,
   Random random,
 ) {
   const samples = [
@@ -341,29 +341,24 @@ void _controllerInsertRandomText(
     '| A | B |\n| --- | --- |\n',
   ];
   controller.dispatch(
-    command: SovereignCoreEditingCommands.insertText,
-    payload: SovereignInsertTextPayload(
-      samples[random.nextInt(samples.length)],
-    ),
+    command: FlarkCoreEditingCommands.insertText,
+    payload: FlarkInsertTextPayload(samples[random.nextInt(samples.length)]),
   );
 }
 
 void _controllerApplyRandomSelection(
-  SovereignFlutterController controller,
+  FlarkFlutterController controller,
   Random random,
 ) {
   final length = controller.markdown.length;
   final base = random.nextInt(length + 1);
   final extent = random.nextInt(length + 1);
   controller.applyTransaction(
-    SovereignTransaction(
+    FlarkTransaction(
       operations: const [],
-      selectionAfter: SovereignSelection(
-        baseOffset: base,
-        extentOffset: extent,
-      ),
-      metadata: const SovereignTransactionMetadata(
-        intent: SovereignTransactionIntent.selection,
+      selectionAfter: FlarkSelection(baseOffset: base, extentOffset: extent),
+      metadata: const FlarkTransactionMetadata(
+        intent: FlarkTransactionIntent.selection,
         userEvent: 'test.parserFuzz.selection',
         addToHistory: false,
       ),
@@ -372,7 +367,7 @@ void _controllerApplyRandomSelection(
 }
 
 void _controllerReplaceRandomRange(
-  SovereignFlutterController controller,
+  FlarkFlutterController controller,
   Random random,
 ) {
   final length = controller.markdown.length;
@@ -393,88 +388,83 @@ void _controllerReplaceRandomRange(
   ];
   final replacement = replacements[random.nextInt(replacements.length)];
   controller.applyTransaction(
-    SovereignTransaction.single(
-      SovereignSourceOperation.replace(
-        replacedRange: SovereignSourceRange(start, end),
+    FlarkTransaction.single(
+      FlarkSourceOperation.replace(
+        replacedRange: FlarkSourceRange(start, end),
         replacementText: replacement,
       ),
-      selectionAfter: SovereignSelection.collapsed(
-        start + replacement.length,
-      ),
-      metadata: SovereignTransactionMetadata(
-        intent: SovereignTransactionIntent.input,
+      selectionAfter: FlarkSelection.collapsed(start + replacement.length),
+      metadata: FlarkTransactionMetadata(
+        intent: FlarkTransactionIntent.input,
         userEvent: 'test.parserFuzz.replace',
-        parseInvalidationRange: SovereignSourceRange(start, end),
-        projectionInvalidationRange: SovereignSourceRange(start, end),
+        parseInvalidationRange: FlarkSourceRange(start, end),
+        projectionInvalidationRange: FlarkSourceRange(start, end),
       ),
     ),
   );
 }
 
 void _controllerToggleBlockShape(
-  SovereignFlutterController controller,
+  FlarkFlutterController controller,
   Random random,
 ) {
   switch (random.nextInt(5)) {
     case 0:
       controller.dispatch(
-        command: SovereignMarkdownBlockCommands.toggleBulletList,
-        payload: const SovereignToggleBulletListPayload(),
+        command: FlarkMarkdownBlockCommands.toggleBulletList,
+        payload: const FlarkToggleBulletListPayload(),
       );
       return;
     case 1:
       controller.dispatch(
-        command: SovereignMarkdownBlockCommands.toggleOrderedList,
-        payload: const SovereignToggleOrderedListPayload(),
+        command: FlarkMarkdownBlockCommands.toggleOrderedList,
+        payload: const FlarkToggleOrderedListPayload(),
       );
       return;
     case 2:
       controller.dispatch(
-        command: SovereignMarkdownBlockCommands.toggleQuote,
-        payload: const SovereignToggleQuotePayload(),
+        command: FlarkMarkdownBlockCommands.toggleQuote,
+        payload: const FlarkToggleQuotePayload(),
       );
       return;
     case 3:
       controller.dispatch(
-        command: SovereignMarkdownBlockCommands.toggleTaskList,
-        payload: const SovereignToggleTaskListPayload(),
+        command: FlarkMarkdownBlockCommands.toggleTaskList,
+        payload: const FlarkToggleTaskListPayload(),
       );
       return;
     default:
       controller.dispatch(
-        command: SovereignMarkdownBlockCommands.insertThematicBreak,
-        payload: const SovereignInsertThematicBreakPayload(),
+        command: FlarkMarkdownBlockCommands.insertThematicBreak,
+        payload: const FlarkInsertThematicBreakPayload(),
       );
   }
 }
 
 Future<void> _expectParserBackedControllerInvariants(
-  SovereignFlutterController controller,
-  SovereignMarkdownParseBackend backend,
+  FlarkFlutterController controller,
+  FlarkMarkdownParseBackend backend,
 ) async {
   _expectRuntimeInvariants(controller.runtime);
   final result = await backend.parse(
-    SovereignMarkdownParseRequest(
+    FlarkMarkdownParseRequest(
       revision: controller.state.revision,
       markdown: controller.markdown,
-      profile: SovereignMarkdownProfile.commonMarkGfm,
+      profile: FlarkMarkdownProfile.commonMarkGfm,
     ),
   );
   _expectNoParseErrors(result);
   _expectParseRangesValid(result, controller.markdown.length);
 
-  final projection = SovereignProjection.fromParseResult(result);
+  final projection = FlarkProjection.fromParseResult(result);
   projection.projectText(controller.markdown);
-  SovereignRenderPlan.fromParseResult(
-    parseResult: result,
-    projection: projection,
-  );
+  FlarkRenderPlan.fromParseResult(parseResult: result, projection: projection);
 
   expect(controller.applyParseResult(result), isTrue);
   expect(controller.hasAuthoritativeRenderPlan, isTrue);
 }
 
-void _expectNoParseErrors(SovereignMarkdownParseResult result) {
+void _expectNoParseErrors(FlarkMarkdownParseResult result) {
   expect(
     result.diagnostics.where(
       (diagnostic) => diagnostic.extensions['isError'] == true,
@@ -484,41 +474,59 @@ void _expectNoParseErrors(SovereignMarkdownParseResult result) {
 }
 
 void _expectParseRangesValid(
-  SovereignMarkdownParseResult result,
+  FlarkMarkdownParseResult result,
   int sourceLength,
 ) {
-  bool validRange(SovereignSourceRange range) {
+  bool validRange(FlarkSourceRange range) {
     return range.start >= 0 &&
         range.end <= sourceLength &&
         range.start < range.end;
   }
 
   for (final block in _allBlocks(result.blocks)) {
-    expect(validRange(block.sourceRange), isTrue,
-        reason: 'invalid block ${block.type} ${block.sourceRange}');
+    expect(
+      validRange(block.sourceRange),
+      isTrue,
+      reason: 'invalid block ${block.type} ${block.sourceRange}',
+    );
   }
   for (final token in result.inlineTokens) {
-    expect(validRange(token.sourceRange), isTrue,
-        reason: 'invalid inline ${token.type} ${token.sourceRange}');
+    expect(
+      validRange(token.sourceRange),
+      isTrue,
+      reason: 'invalid inline ${token.type} ${token.sourceRange}',
+    );
   }
   for (final range in result.hiddenRanges) {
-    expect(validRange(range.sourceRange), isTrue,
-        reason: 'invalid hidden ${range.type} ${range.sourceRange}');
+    expect(
+      validRange(range.sourceRange),
+      isTrue,
+      reason: 'invalid hidden ${range.type} ${range.sourceRange}',
+    );
   }
   for (final range in result.replacementRanges) {
-    expect(validRange(range.sourceRange), isTrue,
-        reason: 'invalid replacement ${range.type} ${range.sourceRange}');
-    expect(range.replacementText, isNotEmpty,
-        reason: 'empty replacement ${range.type} ${range.sourceRange}');
+    expect(
+      validRange(range.sourceRange),
+      isTrue,
+      reason: 'invalid replacement ${range.type} ${range.sourceRange}',
+    );
+    expect(
+      range.replacementText,
+      isNotEmpty,
+      reason: 'empty replacement ${range.type} ${range.sourceRange}',
+    );
   }
   for (final zone in result.ambiguityZones) {
-    expect(validRange(zone.sourceRange), isTrue,
-        reason: 'invalid ambiguity ${zone.type} ${zone.sourceRange}');
+    expect(
+      validRange(zone.sourceRange),
+      isTrue,
+      reason: 'invalid ambiguity ${zone.type} ${zone.sourceRange}',
+    );
   }
 }
 
-Iterable<SovereignMarkdownBlockNode> _allBlocks(
-  Iterable<SovereignMarkdownBlockNode> blocks,
+Iterable<FlarkMarkdownBlockNode> _allBlocks(
+  Iterable<FlarkMarkdownBlockNode> blocks,
 ) sync* {
   for (final block in blocks) {
     yield block;

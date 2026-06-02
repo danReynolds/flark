@@ -1,4 +1,4 @@
-# Sovereign v2 Quality Audit
+# Flark v2 Quality Audit
 
 Status date: 2026-05-05
 Scope: current standalone package worktree after Phase 15 editable block
@@ -6,7 +6,7 @@ widgets.
 
 ## Objective Restatement
 
-Sovereign should be a best-in-class live Markdown editor and previewer for
+Flark should be a best-in-class live Markdown editor and previewer for
 Flutter:
 
 - read-only preview mode renders Markdown efficiently and predictably;
@@ -41,12 +41,12 @@ first-class extensions beyond CommonMark/GFM.
 
 | Requirement | Current evidence | Assessment |
 | --- | --- | --- |
-| Efficient read-only preview mode | `Markdown`, `SovereignReadOnlyPreview`, shared `SovereignRenderPlan`, `test/v2/flutter/sovereign_read_only_preview_test.dart`, `test/v2/flutter/sovereign_render_plan_parity_test.dart`, render-plan performance budget | Satisfied for required Comrak-backed paths |
-| Render-as-you-type live editing | `SovereignMarkdownEditingMode.liveRendered`, `SovereignLiveRenderedEditableText`, block widgets in `lib/src/v2/flutter/sovereign_projected_editable_text.dart`, `test/v2/flutter/sovereign_live_rendered_editable_text_test.dart`, `sovereign_v2_live_rendered_editing.png` | Satisfied for current supported blocks and inline styling |
-| Canonical Markdown source | `SovereignDocument`, `SovereignTransaction`, projected edit adapter, live block source-range transactions | Satisfied |
+| Efficient read-only preview mode | `Markdown`, `FlarkReadOnlyPreview`, shared `FlarkRenderPlan`, `test/v2/flutter/sovereign_read_only_preview_test.dart`, `test/v2/flutter/sovereign_render_plan_parity_test.dart`, render-plan performance budget | Satisfied for required Comrak-backed paths |
+| Render-as-you-type live editing | `FlarkMarkdownEditingMode.liveRendered`, `FlarkLiveRenderedEditableText`, block widgets in `lib/src/v2/flutter/sovereign_projected_editable_text.dart`, `test/v2/flutter/sovereign_live_rendered_editable_text_test.dart`, `sovereign_v2_live_rendered_editing.png` | Satisfied for current supported blocks and inline styling |
+| Canonical Markdown source | `FlarkDocument`, `FlarkTransaction`, projected edit adapter, live block source-range transactions | Satisfied |
 | First-principled architecture | V2 core/import boundary, parser protocol, projection core, render plan, command runtime, public API inventory | Satisfied |
 | CommonMark/GFM confidence | Native Comrak backend, upstream fixture contracts, curated GFM fixtures, deviation register | Satisfied with documented policy gaps |
-| Consumer delight | Top-level `sovereign_editor.dart`, headless core barrel, full V2 barrel, README quick start, example desktop workbench, public API tests | Strong, with publication metadata still pending |
+| Consumer delight | Top-level `flark.dart`, headless core barrel, full V2 barrel, README quick start, example desktop workbench, public API tests | Strong, with publication metadata still pending |
 | Performance | `test/v2/performance/sovereign_v2_performance_budget_test.dart`, `scripts/verify_benchmark_lane.sh` | Current budgets pass |
 | Visual/user-facing quality | Seven-PNG visual golden suite and macOS example integration flow | Strong for covered scenarios |
 | Release readiness | `scripts/verify_release.sh`, release checklist, native/editor/web/example gates | Engineering gate passes; public publishing still blocked on owner decisions |

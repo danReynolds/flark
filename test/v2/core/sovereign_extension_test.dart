@@ -1,44 +1,41 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
+import 'package:flark/src/v2/core/core.dart';
 
 void main() {
-  group('SovereignExtensionSet', () {
+  group('FlarkExtensionSet', () {
     test('rejects duplicate extension ids', () {
       expect(
-        () => SovereignExtensionSet([
-          const SovereignCoreEditingExtension(),
-          const SovereignCoreEditingExtension(),
+        () => FlarkExtensionSet([
+          const FlarkCoreEditingExtension(),
+          const FlarkCoreEditingExtension(),
         ]),
         throwsA(isA<StateError>()),
       );
     });
 
     test('builds a command registry from extensions', () {
-      final state = SovereignEditorState.fromMarkdown(
+      final state = FlarkEditorState.fromMarkdown(
         'hello',
-        selection: const SovereignSelection(baseOffset: 1, extentOffset: 4),
+        selection: const FlarkSelection(baseOffset: 1, extentOffset: 4),
       );
-      final registry = SovereignExtensionSet([
-        const SovereignCoreEditingExtension(),
+      final registry = FlarkExtensionSet([
+        const FlarkCoreEditingExtension(),
       ]).commandRegistry();
 
       final result = registry.dispatch(
         state: state,
-        command: SovereignCoreEditingCommands.insertText,
-        payload: const SovereignInsertTextPayload('i'),
+        command: FlarkCoreEditingCommands.insertText,
+        payload: const FlarkInsertTextPayload('i'),
       );
       final next = state.applyTransaction(result.transaction!);
 
       expect(result.isHandled, isTrue);
       expect(next.markdown, 'hio');
-      expect(next.selection, const SovereignSelection.collapsed(2));
-      expect(
-        result.transaction!.metadata.intent,
-        SovereignTransactionIntent.input,
-      );
+      expect(next.selection, const FlarkSelection.collapsed(2));
+      expect(result.transaction!.metadata.intent, FlarkTransactionIntent.input);
       expect(
         result.transaction!.metadata.parseInvalidationRange,
-        const SovereignSourceRange(1, 4),
+        const FlarkSourceRange(1, 4),
       );
     });
   });

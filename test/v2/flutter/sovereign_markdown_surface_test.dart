@@ -1,15 +1,15 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/sovereign_editor_v2.dart';
+import 'package:flark/flark_advanced.dart';
 
 void main() {
   testWidgets('MarkdownEditor wires parsing into projected editing', (
     tester,
   ) async {
     final backend = _ImmediateParseBackend();
-    final controller = SovereignFlutterController.fromMarkdown(
+    final controller = FlarkFlutterController.fromMarkdown(
       '# Title',
-      extensions: SovereignMarkdownEditingExtensions.standard(),
+      extensions: FlarkMarkdownEditingExtensions.standard(),
     );
     addTearDown(controller.dispose);
 
@@ -68,7 +68,7 @@ void main() {
           initialMarkdown: 'hello',
           parseBackend: _ImmediateParagraphParseBackend(),
           parseDebounce: Duration.zero,
-          editingMode: SovereignMarkdownEditingMode.source,
+          editingMode: FlarkMarkdownEditingMode.source,
           onChanged: changes.add,
         ),
       ),
@@ -94,7 +94,7 @@ void main() {
           initialMarkdown: 'reset',
           parseBackend: _ImmediateParagraphParseBackend(),
           parseDebounce: Duration.zero,
-          editingMode: SovereignMarkdownEditingMode.source,
+          editingMode: FlarkMarkdownEditingMode.source,
           onChanged: changes.add,
         ),
       ),
@@ -115,7 +115,7 @@ void main() {
           initialMarkdown: 'reset',
           parseBackend: _ImmediateParagraphParseBackend(),
           parseDebounce: Duration.zero,
-          editingMode: SovereignMarkdownEditingMode.source,
+          editingMode: FlarkMarkdownEditingMode.source,
           onChanged: changes.add,
         ),
       ),
@@ -130,7 +130,7 @@ void main() {
   });
 
   test('high-level surface constructors reject ambiguous ownership', () {
-    final controller = SovereignFlutterController.fromMarkdown('hello');
+    final controller = FlarkFlutterController.fromMarkdown('hello');
     addTearDown(controller.dispose);
 
     expect(
@@ -140,7 +140,7 @@ void main() {
     expect(
       () => MarkdownEditor(
         controller: controller,
-        extensions: SovereignMarkdownEditingExtensions.standard(),
+        extensions: FlarkMarkdownEditingExtensions.standard(),
       ),
       throwsAssertionError,
     );
@@ -160,7 +160,7 @@ void main() {
   testWidgets('high-level surfaces require default Comrak parsing', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown('# Title');
+    final controller = FlarkFlutterController.fromMarkdown('# Title');
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
@@ -191,7 +191,7 @@ void main() {
   testWidgets('high-level surfaces report background parse failures', (
     tester,
   ) async {
-    final controller = SovereignFlutterController.fromMarkdown('# Title');
+    final controller = FlarkFlutterController.fromMarkdown('# Title');
     final editorErrors = <Object>[];
     final previewErrors = <Object>[];
     addTearDown(controller.dispose);
@@ -233,28 +233,28 @@ void main() {
 }
 
 final class _ImmediateParagraphParseBackend
-    implements SovereignMarkdownParseBackend {
+    implements FlarkMarkdownParseBackend {
   @override
-  SovereignMarkdownParserCapabilities get capabilities =>
-      SovereignMarkdownParserCapabilities(
+  FlarkMarkdownParserCapabilities get capabilities =>
+      FlarkMarkdownParserCapabilities(
         parserName: 'immediate-paragraph',
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
-        supportedProfiles: const [SovereignMarkdownProfile.commonMarkGfm],
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
+        supportedProfiles: const [FlarkMarkdownProfile.commonMarkGfm],
       );
 
   @override
-  Future<SovereignMarkdownParseResult> parse(
-    SovereignMarkdownParseRequest request,
+  Future<FlarkMarkdownParseResult> parse(
+    FlarkMarkdownParseRequest request,
   ) async {
-    return SovereignMarkdownParseResult(
-      schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+    return FlarkMarkdownParseResult(
+      schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
       revision: request.revision,
       sourceTextLength: request.markdown.length,
       blocks: [
-        SovereignMarkdownBlockNode(
-          kind: SovereignMarkdownBlockKind.paragraph,
+        FlarkMarkdownBlockNode(
+          kind: FlarkMarkdownBlockKind.paragraph,
           type: 'paragraph',
-          sourceRange: SovereignSourceRange(0, request.markdown.length),
+          sourceRange: FlarkSourceRange(0, request.markdown.length),
         ),
       ],
       inlineTokens: const [],
@@ -263,60 +263,60 @@ final class _ImmediateParagraphParseBackend
   }
 }
 
-final class _ImmediateParseBackend implements SovereignMarkdownParseBackend {
-  final requests = <SovereignMarkdownParseRequest>[];
+final class _ImmediateParseBackend implements FlarkMarkdownParseBackend {
+  final requests = <FlarkMarkdownParseRequest>[];
 
   @override
-  SovereignMarkdownParserCapabilities get capabilities =>
-      SovereignMarkdownParserCapabilities(
+  FlarkMarkdownParserCapabilities get capabilities =>
+      FlarkMarkdownParserCapabilities(
         parserName: 'immediate',
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
-        supportedProfiles: const [SovereignMarkdownProfile.commonMarkGfm],
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
+        supportedProfiles: const [FlarkMarkdownProfile.commonMarkGfm],
       );
 
   @override
-  Future<SovereignMarkdownParseResult> parse(
-    SovereignMarkdownParseRequest request,
+  Future<FlarkMarkdownParseResult> parse(
+    FlarkMarkdownParseRequest request,
   ) async {
     requests.add(request);
-    return SovereignMarkdownParseResult(
-      schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+    return FlarkMarkdownParseResult(
+      schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
       revision: request.revision,
       sourceTextLength: request.markdown.length,
       blocks: [
-        SovereignMarkdownBlockNode(
-          kind: SovereignMarkdownBlockKind.heading,
+        FlarkMarkdownBlockNode(
+          kind: FlarkMarkdownBlockKind.heading,
           type: 'heading',
-          sourceRange: SovereignSourceRange(0, request.markdown.length),
+          sourceRange: FlarkSourceRange(0, request.markdown.length),
           attributes: const {'level': 1},
         ),
       ],
       inlineTokens: const [],
       hiddenRanges: [
-        SovereignMarkdownHiddenRange(
-          kind: SovereignMarkdownHiddenRangeKind.markdownMarker,
+        FlarkMarkdownHiddenRange(
+          kind: FlarkMarkdownHiddenRangeKind.markdownMarker,
           type: 'markdownMarker',
-          sourceRange: SovereignSourceRange(0, 2),
+          sourceRange: FlarkSourceRange(0, 2),
         ),
       ],
     );
   }
 }
 
-final class _FailingParseBackend implements SovereignMarkdownParseBackend {
+final class _FailingParseBackend implements FlarkMarkdownParseBackend {
   const _FailingParseBackend();
 
   @override
-  SovereignMarkdownParserCapabilities get capabilities =>
-      SovereignMarkdownParserCapabilities(
+  FlarkMarkdownParserCapabilities get capabilities =>
+      FlarkMarkdownParserCapabilities(
         parserName: 'failing',
-        schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
-        supportedProfiles: const [SovereignMarkdownProfile.commonMarkGfm],
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
+        supportedProfiles: const [FlarkMarkdownProfile.commonMarkGfm],
       );
 
   @override
-  Future<SovereignMarkdownParseResult> parse(
-    SovereignMarkdownParseRequest request,
+  Future<FlarkMarkdownParseResult> parse(
+    FlarkMarkdownParseRequest request,
   ) async {
     throw StateError('parse failed');
   }

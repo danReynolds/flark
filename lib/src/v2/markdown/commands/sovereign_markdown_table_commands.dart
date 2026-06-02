@@ -10,31 +10,30 @@ import '../../core/transaction/sovereign_source_range.dart';
 import '../../core/transaction/sovereign_transaction.dart';
 import '../../core/transaction/sovereign_transaction_metadata.dart';
 
-abstract final class SovereignMarkdownTableCommands {
-  static const insertTable = SovereignCommand<SovereignInsertTablePayload>(
+abstract final class FlarkMarkdownTableCommands {
+  static const insertTable = FlarkCommand<FlarkInsertTablePayload>(
     'markdown.insertTable',
   );
 
-  static const insertRowBelow = SovereignCommand<SovereignTableMutationPayload>(
+  static const insertRowBelow = FlarkCommand<FlarkTableMutationPayload>(
     'markdown.insertTableRowBelow',
   );
 
-  static const deleteRow = SovereignCommand<SovereignTableMutationPayload>(
+  static const deleteRow = FlarkCommand<FlarkTableMutationPayload>(
     'markdown.deleteTableRow',
   );
 
-  static const insertColumnRight =
-      SovereignCommand<SovereignTableMutationPayload>(
+  static const insertColumnRight = FlarkCommand<FlarkTableMutationPayload>(
     'markdown.insertTableColumnRight',
   );
 
-  static const deleteColumn = SovereignCommand<SovereignTableMutationPayload>(
+  static const deleteColumn = FlarkCommand<FlarkTableMutationPayload>(
     'markdown.deleteTableColumn',
   );
 }
 
-final class SovereignInsertTablePayload {
-  const SovereignInsertTablePayload({
+final class FlarkInsertTablePayload {
+  const FlarkInsertTablePayload({
     this.columns = 2,
     this.bodyRows = 1,
     this.userEvent = 'command.insertTable',
@@ -45,62 +44,64 @@ final class SovereignInsertTablePayload {
   final String userEvent;
 }
 
-final class SovereignTableMutationPayload {
-  const SovereignTableMutationPayload({
-    this.userEvent = 'command.mutateTable',
-  });
+final class FlarkTableMutationPayload {
+  const FlarkTableMutationPayload({this.userEvent = 'command.mutateTable'});
 
   final String userEvent;
 }
 
-final class SovereignMarkdownTableEditingExtension extends SovereignExtension {
-  const SovereignMarkdownTableEditingExtension();
+final class FlarkMarkdownTableEditingExtension extends FlarkExtension {
+  const FlarkMarkdownTableEditingExtension();
 
   @override
   String get id => 'markdown.tableEditing';
 
   @override
-  SovereignCommandRegistry registerCommands(SovereignCommandRegistry registry) {
+  FlarkCommandRegistry registerCommands(FlarkCommandRegistry registry) {
     return registry
-        .register<SovereignInsertTablePayload>(
-          SovereignMarkdownTableCommands.insertTable,
+        .register<FlarkInsertTablePayload>(
+          FlarkMarkdownTableCommands.insertTable,
           _insertTable,
         )
-        .register<SovereignTableMutationPayload>(
-          SovereignMarkdownTableCommands.insertRowBelow,
+        .register<FlarkTableMutationPayload>(
+          FlarkMarkdownTableCommands.insertRowBelow,
           _insertRowBelow,
         )
-        .register<SovereignTableMutationPayload>(
-          SovereignMarkdownTableCommands.deleteRow,
+        .register<FlarkTableMutationPayload>(
+          FlarkMarkdownTableCommands.deleteRow,
           _deleteRow,
         )
-        .register<SovereignTableMutationPayload>(
-          SovereignMarkdownTableCommands.insertColumnRight,
+        .register<FlarkTableMutationPayload>(
+          FlarkMarkdownTableCommands.insertColumnRight,
           _insertColumnRight,
         )
-        .register<SovereignTableMutationPayload>(
-          SovereignMarkdownTableCommands.deleteColumn,
+        .register<FlarkTableMutationPayload>(
+          FlarkMarkdownTableCommands.deleteColumn,
           _deleteColumn,
         );
   }
 
-  SovereignCommandResult _insertTable(
-    SovereignCommandContext<SovereignInsertTablePayload> context,
+  FlarkCommandResult _insertTable(
+    FlarkCommandContext<FlarkInsertTablePayload> context,
   ) {
     final state = context.state;
     final selection = state.selection;
     final text = state.markdown;
     final columns = context.payload.columns < 2 ? 2 : context.payload.columns;
-    final bodyRows =
-        context.payload.bodyRows < 1 ? 1 : context.payload.bodyRows;
+    final bodyRows = context.payload.bodyRows < 1
+        ? 1
+        : context.payload.bodyRows;
     final before = text.substring(0, selection.start);
     final after = text.substring(selection.end);
     final prefix = _blockPrefix(before);
     final suffix = _blockSuffix(after);
     final template = _tableTemplate(columns: columns, bodyRows: bodyRows);
     final insertion = '$prefix$template\n$suffix';
-    final updated =
-        text.replaceRange(selection.start, selection.end, insertion);
+    final updated = text.replaceRange(
+      selection.start,
+      selection.end,
+      insertion,
+    );
     final firstBodyOffset = _firstBodyCellOffsetInTemplate(template);
     final caret = (selection.start + prefix.length + firstBodyOffset).clamp(
       0,
@@ -112,7 +113,8 @@ final class SovereignMarkdownTableEditingExtension extends SovereignExtension {
       _lineStarts(outputText),
       (selection.start + prefix.length).clamp(0, outputText.length),
     );
-    final outputCaret = _preferredCaretForCell(
+    final outputCaret =
+        _preferredCaretForCell(
           outputText,
           targetLine: headerLine + 2,
           targetCell: 0,
@@ -122,16 +124,16 @@ final class SovereignMarkdownTableEditingExtension extends SovereignExtension {
     return _handledTextReplacement(
       state: state,
       updatedText: outputText,
-      selectionAfter: SovereignSelection.collapsed(outputCaret),
+      selectionAfter: FlarkSelection.collapsed(outputCaret),
       userEvent: context.payload.userEvent,
     );
   }
 
-  SovereignCommandResult _insertRowBelow(
-    SovereignCommandContext<SovereignTableMutationPayload> context,
+  FlarkCommandResult _insertRowBelow(
+    FlarkCommandContext<FlarkTableMutationPayload> context,
   ) {
     final table = _establishedTableAtSelection(context.state);
-    if (table == null) return const SovereignCommandResult.notHandled();
+    if (table == null) return const FlarkCommandResult.notHandled();
 
     final anchorIndex = table.currentRowIndex <= table.separatorRowIndex
         ? table.separatorRowIndex
@@ -139,10 +141,8 @@ final class SovereignMarkdownTableEditingExtension extends SovereignExtension {
     final anchor = table.rows[anchorIndex];
     final prefix = anchor.hasLineBreak ? '' : '\n';
     final suffix = anchor.hasLineBreak ? '\n' : '';
-    final insertion = '$prefix${_emptyRowTemplate(
-      table.columnCount,
-      indent: anchor.indent,
-    )}$suffix';
+    final insertion =
+        '$prefix${_emptyRowTemplate(table.columnCount, indent: anchor.indent)}$suffix';
     final updated = context.state.markdown.replaceRange(
       anchor.lineEndWithBreak,
       anchor.lineEndWithBreak,
@@ -150,7 +150,8 @@ final class SovereignMarkdownTableEditingExtension extends SovereignExtension {
     );
     final targetLine = anchor.line + 1;
     final targetCell = 0;
-    final caret = _preferredCaretForCell(
+    final caret =
+        _preferredCaretForCell(
           updated,
           targetLine: targetLine,
           targetCell: targetCell,
@@ -167,12 +168,12 @@ final class SovereignMarkdownTableEditingExtension extends SovereignExtension {
     );
   }
 
-  SovereignCommandResult _deleteRow(
-    SovereignCommandContext<SovereignTableMutationPayload> context,
+  FlarkCommandResult _deleteRow(
+    FlarkCommandContext<FlarkTableMutationPayload> context,
   ) {
     final table = _establishedTableAtSelection(context.state);
     if (table == null || table.currentRowIndex <= table.separatorRowIndex) {
-      return const SovereignCommandResult.notHandled();
+      return const FlarkCommandResult.notHandled();
     }
 
     final row = table.currentRow;
@@ -182,10 +183,12 @@ final class SovereignMarkdownTableEditingExtension extends SovereignExtension {
       '',
     );
     final targetRow = _targetRowAfterDeletingCurrentRow(table);
-    final targetLine =
-        targetRow.line > row.line ? targetRow.line - 1 : targetRow.line;
+    final targetLine = targetRow.line > row.line
+        ? targetRow.line - 1
+        : targetRow.line;
     final targetCell = table.currentColumnIndex.clamp(0, table.columnCount - 1);
-    final caret = _preferredCaretForCell(
+    final caret =
+        _preferredCaretForCell(
           updated,
           targetLine: targetLine,
           targetCell: targetCell,
@@ -202,24 +205,28 @@ final class SovereignMarkdownTableEditingExtension extends SovereignExtension {
     );
   }
 
-  SovereignCommandResult _insertColumnRight(
-    SovereignCommandContext<SovereignTableMutationPayload> context,
+  FlarkCommandResult _insertColumnRight(
+    FlarkCommandContext<FlarkTableMutationPayload> context,
   ) {
     final table = _establishedTableAtSelection(context.state);
-    if (table == null) return const SovereignCommandResult.notHandled();
+    if (table == null) return const FlarkCommandResult.notHandled();
 
     final insertIndex = table.currentColumnIndex + 1;
     final rowTexts = <String>[];
     for (final row in table.rows) {
       final cells = _cellTexts(context.state.markdown, row);
-      if (cells == null) return const SovereignCommandResult.notHandled();
+      if (cells == null) return const FlarkCommandResult.notHandled();
       cells.insert(insertIndex, row.isSeparator ? '---' : '');
       rowTexts.add(_formatSourceRow(cells, indent: row.indent));
     }
 
-    final updated =
-        _replaceTableRows(context.state.markdown, table.rows, rowTexts);
-    final caret = _preferredCaretForCell(
+    final updated = _replaceTableRows(
+      context.state.markdown,
+      table.rows,
+      rowTexts,
+    );
+    final caret =
+        _preferredCaretForCell(
           updated,
           targetLine: table.currentRow.line,
           targetCell: insertIndex,
@@ -236,12 +243,12 @@ final class SovereignMarkdownTableEditingExtension extends SovereignExtension {
     );
   }
 
-  SovereignCommandResult _deleteColumn(
-    SovereignCommandContext<SovereignTableMutationPayload> context,
+  FlarkCommandResult _deleteColumn(
+    FlarkCommandContext<FlarkTableMutationPayload> context,
   ) {
     final table = _establishedTableAtSelection(context.state);
     if (table == null || table.columnCount <= 2) {
-      return const SovereignCommandResult.notHandled();
+      return const FlarkCommandResult.notHandled();
     }
 
     final deleteIndex = table.currentColumnIndex;
@@ -249,16 +256,20 @@ final class SovereignMarkdownTableEditingExtension extends SovereignExtension {
     for (final row in table.rows) {
       final cells = _cellTexts(context.state.markdown, row);
       if (cells == null || deleteIndex >= cells.length) {
-        return const SovereignCommandResult.notHandled();
+        return const FlarkCommandResult.notHandled();
       }
       cells.removeAt(deleteIndex);
       rowTexts.add(_formatSourceRow(cells, indent: row.indent));
     }
 
     final targetCell = deleteIndex.clamp(0, table.columnCount - 2);
-    final updated =
-        _replaceTableRows(context.state.markdown, table.rows, rowTexts);
-    final caret = _preferredCaretForCell(
+    final updated = _replaceTableRows(
+      context.state.markdown,
+      table.rows,
+      rowTexts,
+    );
+    final caret =
+        _preferredCaretForCell(
           updated,
           targetLine: table.currentRow.line,
           targetCell: targetCell,
@@ -276,8 +287,8 @@ final class SovereignMarkdownTableEditingExtension extends SovereignExtension {
   }
 }
 
-SovereignCommandResult _formatAndCommit({
-  required SovereignEditorState state,
+FlarkCommandResult _formatAndCommit({
+  required FlarkEditorState state,
   required String text,
   required int caret,
   required int targetLine,
@@ -286,7 +297,8 @@ SovereignCommandResult _formatAndCommit({
 }) {
   final formatted = _formatEstablishedTableAroundCaret(text, caret);
   final outputText = formatted?.text ?? text;
-  final outputCaret = _preferredCaretForCell(
+  final outputCaret =
+      _preferredCaretForCell(
         outputText,
         targetLine: targetLine,
         targetCell: targetCell,
@@ -295,32 +307,32 @@ SovereignCommandResult _formatAndCommit({
   return _handledTextReplacement(
     state: state,
     updatedText: outputText,
-    selectionAfter: SovereignSelection.collapsed(outputCaret),
+    selectionAfter: FlarkSelection.collapsed(outputCaret),
     userEvent: userEvent,
   );
 }
 
-SovereignCommandResult _handledTextReplacement({
-  required SovereignEditorState state,
+FlarkCommandResult _handledTextReplacement({
+  required FlarkEditorState state,
   required String updatedText,
-  required SovereignSelection selectionAfter,
+  required FlarkSelection selectionAfter,
   required String userEvent,
 }) {
   final original = state.markdown;
-  if (updatedText == original) return SovereignCommandResult.handled();
+  if (updatedText == original) return FlarkCommandResult.handled();
 
   final edit = _minimalReplacement(original, updatedText);
-  final invalidationRange = SovereignSourceRange(edit.start, edit.end);
-  return SovereignCommandResult.handled(
-    transaction: SovereignTransaction.single(
-      SovereignSourceOperation.replace(
+  final invalidationRange = FlarkSourceRange(edit.start, edit.end);
+  return FlarkCommandResult.handled(
+    transaction: FlarkTransaction.single(
+      FlarkSourceOperation.replace(
         replacedRange: invalidationRange,
         replacementText: edit.replacement,
       ),
       selectionBefore: state.selection,
       selectionAfter: selectionAfter,
-      metadata: SovereignTransactionMetadata(
-        intent: SovereignTransactionIntent.command,
+      metadata: FlarkTransactionMetadata(
+        intent: FlarkTransactionIntent.command,
         userEvent: userEvent,
         parseInvalidationRange: invalidationRange,
         projectionInvalidationRange: invalidationRange,
@@ -390,7 +402,7 @@ String _emptyRowTemplate(int columns, {required String indent}) {
   return '$indent| ${List<String>.filled(safeColumns, '').join(' | ')} |';
 }
 
-_EstablishedTable? _establishedTableAtSelection(SovereignEditorState state) {
+_EstablishedTable? _establishedTableAtSelection(FlarkEditorState state) {
   final selection = state.selection;
   if (!selection.isCollapsed) return null;
   final text = state.markdown;
@@ -443,17 +455,14 @@ _EstablishedTable? _establishedTableAtSelection(SovereignEditorState state) {
   );
 }
 
-_ParsedTableLine? _parseTableLineAt(
-  String text,
-  _LineLookup buffer,
-  int line,
-) {
+_ParsedTableLine? _parseTableLineAt(String text, _LineLookup buffer, int line) {
   if (line < 0 || line >= buffer.lineCount) return null;
   final lineStart = buffer.lineStart(line);
   if (_isLineInsideFencedCode(text, lineStart)) return null;
   final lineEnd = buffer.lineEnd(line);
-  final lineEndWithBreak =
-      line + 1 < buffer.lineCount ? buffer.lineStart(line + 1) : text.length;
+  final lineEndWithBreak = line + 1 < buffer.lineCount
+      ? buffer.lineStart(line + 1)
+      : text.length;
   final lineText = text.substring(lineStart, lineEnd);
   if (lineText.trim().isEmpty) return null;
   final indent = _leadingWhitespacePrefix(lineText);
@@ -582,9 +591,11 @@ String _formatSourceRow(List<String> cells, {required String indent}) {
 }
 
 _ParsedTableLine _targetRowAfterDeletingCurrentRow(_EstablishedTable table) {
-  for (var scan = table.currentRowIndex + 1;
-      scan < table.rows.length;
-      scan += 1) {
+  for (
+    var scan = table.currentRowIndex + 1;
+    scan < table.rows.length;
+    scan += 1
+  ) {
     final row = table.rows[scan];
     if (!row.isSeparator) return row;
   }
@@ -651,24 +662,19 @@ _TableFormatResult? _formatEstablishedTableAroundCaret(String text, int caret) {
   for (final row in rows) {
     if (row.shape.isSeparator) {
       formattedLines.add(
-        '${row.shape.indent}| ${[
-          for (var i = 0; i < row.cells.length; i += 1)
-            _formatSeparatorCell(widths[i], row.cells[i])
-        ].join(' | ')} |',
+        '${row.shape.indent}| ${[for (var i = 0; i < row.cells.length; i += 1) _formatSeparatorCell(widths[i], row.cells[i])].join(' | ')} |',
       );
     } else {
       formattedLines.add(
-        '${row.shape.indent}| ${[
-          for (var i = 0; i < row.cells.length; i += 1)
-            _formatBodyCell(widths[i], row.cells[i])
-        ].join(' | ')} |',
+        '${row.shape.indent}| ${[for (var i = 0; i < row.cells.length; i += 1) _formatBodyCell(widths[i], row.cells[i])].join(' | ')} |',
       );
     }
   }
 
   final regionStart = rows.first.bounds.start;
   final regionEnd = rows.last.bounds.endWithBreak;
-  final preserveTrailingNewline = regionEnd > rows.last.bounds.end &&
+  final preserveTrailingNewline =
+      regionEnd > rows.last.bounds.end &&
       regionEnd <= text.length &&
       text.codeUnitAt(regionEnd - 1) == 10;
   var regionText = formattedLines.join('\n');
@@ -825,8 +831,9 @@ int _lineAtOffset(List<int> starts, int offset) {
 _LineBounds? _lineBounds(String text, List<int> starts, int line) {
   if (line < 0 || line >= starts.length) return null;
   final start = starts[line];
-  final endWithBreak =
-      line + 1 < starts.length ? starts[line + 1] : text.length;
+  final endWithBreak = line + 1 < starts.length
+      ? starts[line + 1]
+      : text.length;
   var end = endWithBreak;
   if (end > start && text.codeUnitAt(end - 1) == 10) {
     end -= 1;
@@ -1006,7 +1013,7 @@ abstract interface class _LineLookup {
 final class _DocumentLineLookup implements _LineLookup {
   const _DocumentLineLookup(this.buffer);
 
-  final SovereignTextBuffer buffer;
+  final FlarkTextBuffer buffer;
 
   @override
   int get lineCount => buffer.lineCount;

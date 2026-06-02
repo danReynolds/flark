@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  group('Sovereign v2 native packaging contract', () {
+  group('Flark v2 native packaging contract', () {
     test('v2 native backend shares the hook-owned native bridge asset', () {
       final hook = _read('hook/build.dart');
       final v2Backend = _read(
@@ -31,7 +31,7 @@ void main() {
     test('native ABI symbols are present in all packaging anchors', () {
       final rustExports = _read('native/comrak_bridge/src/lib.rs');
       final header = _read('native/comrak_bridge/sovereign_comrak_bridge.h');
-      final iosAnchor = _read('example/ios/Runner/SovereignComrakAnchor.c');
+      final iosAnchor = _read('example/ios/Runner/FlarkComrakAnchor.c');
 
       for (final symbol in _abiSymbols) {
         expect(rustExports, contains('fn $symbol'));

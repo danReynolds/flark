@@ -1,4 +1,4 @@
-# Sovereign v2 Markdown Test Matrix
+# Flark v2 Markdown Test Matrix
 
 Status date: 2026-05-14
 Runtime target: Comrak-required source-first editor and previewer. The native

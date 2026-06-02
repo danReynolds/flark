@@ -9,7 +9,7 @@ import '../projection/projection.dart';
 import '../render_plan/render_plan.dart';
 import 'sovereign_text_delta_adapter.dart';
 
-enum SovereignControllerEventKind {
+enum FlarkControllerEventKind {
   runtimeChanged,
   selectionChanged,
   projectionPredicted,
@@ -18,8 +18,8 @@ enum SovereignControllerEventKind {
   redo,
 }
 
-final class SovereignControllerEvent {
-  const SovereignControllerEvent({
+final class FlarkControllerEvent {
+  const FlarkControllerEvent({
     required this.kind,
     required this.revision,
     required this.previousRevision,
@@ -27,68 +27,67 @@ final class SovereignControllerEvent {
     required this.selectionChanged,
   });
 
-  final SovereignControllerEventKind kind;
+  final FlarkControllerEventKind kind;
   final int revision;
   final int previousRevision;
   final bool markdownChanged;
   final bool selectionChanged;
 }
 
-final class SovereignFlutterController extends ChangeNotifier {
-  SovereignFlutterController({
-    required SovereignEditorRuntime runtime,
-    SovereignProjection? projection,
-    SovereignRenderPlan? renderPlan,
-    SovereignTextDeltaAdapter textDeltaAdapter =
-        const SovereignTextDeltaAdapter(),
-    SovereignProjectedTextEditAdapter projectedTextEditAdapter =
-        const SovereignProjectedTextEditAdapter(),
+final class FlarkFlutterController extends ChangeNotifier {
+  FlarkFlutterController({
+    required FlarkEditorRuntime runtime,
+    FlarkProjection? projection,
+    FlarkRenderPlan? renderPlan,
+    FlarkTextDeltaAdapter textDeltaAdapter = const FlarkTextDeltaAdapter(),
+    FlarkProjectedTextEditAdapter projectedTextEditAdapter =
+        const FlarkProjectedTextEditAdapter(),
   }) : _runtime = runtime,
        _projection =
            projection ??
-           SovereignProjection(textLength: runtime.state.document.length),
+           FlarkProjection(textLength: runtime.state.document.length),
        _renderPlan = renderPlan ?? _staleRenderPlan(runtime.state.revision),
        _renderPlanRevision = renderPlan == null ? null : runtime.state.revision,
        _textDeltaAdapter = textDeltaAdapter,
        _projectedTextEditAdapter = projectedTextEditAdapter;
 
-  factory SovereignFlutterController.fromMarkdown(
+  factory FlarkFlutterController.fromMarkdown(
     String markdown, {
-    SovereignExtensionSet? extensions,
+    FlarkExtensionSet? extensions,
   }) {
-    return SovereignFlutterController(
-      runtime: SovereignEditorRuntime.fromMarkdown(
+    return FlarkFlutterController(
+      runtime: FlarkEditorRuntime.fromMarkdown(
         markdown,
-        extensions: extensions ?? SovereignMarkdownEditingExtensions.standard(),
+        extensions: extensions ?? FlarkMarkdownEditingExtensions.standard(),
       ),
     );
   }
 
-  SovereignEditorRuntime _runtime;
-  SovereignProjection _projection;
-  SovereignRenderPlan _renderPlan;
+  FlarkEditorRuntime _runtime;
+  FlarkProjection _projection;
+  FlarkRenderPlan _renderPlan;
   int? _renderPlanRevision;
-  SovereignProjectionPrediction? _lastProjectionPrediction;
-  final SovereignTextDeltaAdapter _textDeltaAdapter;
-  final SovereignProjectedTextEditAdapter _projectedTextEditAdapter;
-  final StreamController<SovereignControllerEvent> _events =
-      StreamController<SovereignControllerEvent>.broadcast();
+  FlarkProjectionPrediction? _lastProjectionPrediction;
+  final FlarkTextDeltaAdapter _textDeltaAdapter;
+  final FlarkProjectedTextEditAdapter _projectedTextEditAdapter;
+  final StreamController<FlarkControllerEvent> _events =
+      StreamController<FlarkControllerEvent>.broadcast();
 
-  SovereignEditorRuntime get runtime => _runtime;
+  FlarkEditorRuntime get runtime => _runtime;
 
-  Stream<SovereignControllerEvent> get events => _events.stream;
+  Stream<FlarkControllerEvent> get events => _events.stream;
 
-  SovereignEditorState get state => _runtime.state;
+  FlarkEditorState get state => _runtime.state;
 
   String get markdown => state.markdown;
 
-  SovereignSelection get selection => state.selection;
+  FlarkSelection get selection => state.selection;
 
-  SovereignProjection get projection => _projection;
+  FlarkProjection get projection => _projection;
 
-  SovereignRenderPlan get renderPlan => _renderPlan;
+  FlarkRenderPlan get renderPlan => _renderPlan;
 
-  SovereignProjectionPrediction? get lastProjectionPrediction {
+  FlarkProjectionPrediction? get lastProjectionPrediction {
     return _lastProjectionPrediction;
   }
 
@@ -96,8 +95,8 @@ final class SovereignFlutterController extends ChangeNotifier {
     return _renderPlanRevision == state.revision;
   }
 
-  SovereignEditorRuntimeResult dispatch<TPayload>({
-    required SovereignCommand<TPayload> command,
+  FlarkEditorRuntimeResult dispatch<TPayload>({
+    required FlarkCommand<TPayload> command,
     required TPayload payload,
   }) {
     final result = _runtime.dispatch(command: command, payload: payload);
@@ -105,9 +104,7 @@ final class SovereignFlutterController extends ChangeNotifier {
     return result;
   }
 
-  SovereignEditorRuntimeResult applyTransaction(
-    SovereignTransaction transaction,
-  ) {
+  FlarkEditorRuntimeResult applyTransaction(FlarkTransaction transaction) {
     final result = _runtime.applyTransaction(transaction);
     _adoptRuntimeResult(result);
     return result;
@@ -127,8 +124,7 @@ final class SovereignFlutterController extends ChangeNotifier {
     required String oldDisplayText,
     required String newDisplayText,
     int? undoGroupId,
-    SovereignMapAffinity fallbackInsertionAffinity =
-        SovereignMapAffinity.downstream,
+    FlarkMapAffinity fallbackInsertionAffinity = FlarkMapAffinity.downstream,
   }) {
     final transaction = _projectedTextEditAdapter.transactionFromDisplayEdit(
       currentMarkdown: markdown,
@@ -145,8 +141,8 @@ final class SovereignFlutterController extends ChangeNotifier {
   }
 
   bool applyProjectedSelection(
-    SovereignSelection displaySelection, {
-    SovereignMapAffinity affinity = SovereignMapAffinity.downstream,
+    FlarkSelection displaySelection, {
+    FlarkMapAffinity affinity = FlarkMapAffinity.downstream,
   }) {
     final sourceSelection = projection.displaySelectionToSource(
       displaySelection,
@@ -156,17 +152,17 @@ final class SovereignFlutterController extends ChangeNotifier {
   }
 
   bool applySelection(
-    SovereignSelection sourceSelection, {
+    FlarkSelection sourceSelection, {
     String userEvent = 'selection',
   }) {
     sourceSelection.validate(state.document.length);
     if (sourceSelection == selection) return false;
     applyTransaction(
-      SovereignTransaction(
+      FlarkTransaction(
         operations: const [],
         selectionAfter: sourceSelection,
-        metadata: SovereignTransactionMetadata(
-          intent: SovereignTransactionIntent.selection,
+        metadata: FlarkTransactionMetadata(
+          intent: FlarkTransactionIntent.selection,
           userEvent: userEvent,
           addToHistory: false,
         ),
@@ -175,31 +171,31 @@ final class SovereignFlutterController extends ChangeNotifier {
     return true;
   }
 
-  SovereignEditorRuntimeResult undo() {
+  FlarkEditorRuntimeResult undo() {
     final result = _runtime.undo();
-    _adoptRuntimeResult(result, eventKind: SovereignControllerEventKind.undo);
+    _adoptRuntimeResult(result, eventKind: FlarkControllerEventKind.undo);
     return result;
   }
 
-  SovereignEditorRuntimeResult redo() {
+  FlarkEditorRuntimeResult redo() {
     final result = _runtime.redo();
-    _adoptRuntimeResult(result, eventKind: SovereignControllerEventKind.redo);
+    _adoptRuntimeResult(result, eventKind: FlarkControllerEventKind.redo);
     return result;
   }
 
-  bool applyParseResult(SovereignMarkdownParseResult parseResult) {
+  bool applyParseResult(FlarkMarkdownParseResult parseResult) {
     if (parseResult.revision != state.revision ||
         parseResult.sourceTextLength != state.document.length) {
       return false;
     }
 
-    final nextProjection = SovereignProjection.fromParseResult(parseResult);
+    final nextProjection = FlarkProjection.fromParseResult(parseResult);
     _projection = nextProjection;
-    final baseRenderPlan = SovereignRenderPlan.fromParseResult(
+    final baseRenderPlan = FlarkRenderPlan.fromParseResult(
       parseResult: parseResult,
       projection: nextProjection,
     );
-    _renderPlan = applySovereignRenderPlanExtensions(
+    _renderPlan = applyFlarkRenderPlanExtensions(
       renderPlan: baseRenderPlan,
       parseResult: parseResult,
       projection: nextProjection,
@@ -208,7 +204,7 @@ final class SovereignFlutterController extends ChangeNotifier {
     _renderPlanRevision = parseResult.revision;
     _lastProjectionPrediction = null;
     _emitEvent(
-      kind: SovereignControllerEventKind.parseAdopted,
+      kind: FlarkControllerEventKind.parseAdopted,
       previousState: state,
     );
     notifyListeners();
@@ -216,8 +212,8 @@ final class SovereignFlutterController extends ChangeNotifier {
   }
 
   void _adoptRuntimeResult(
-    SovereignEditorRuntimeResult result, {
-    SovereignControllerEventKind? eventKind,
+    FlarkEditorRuntimeResult result, {
+    FlarkControllerEventKind? eventKind,
   }) {
     if (identical(result.runtime, _runtime)) return;
 
@@ -227,7 +223,7 @@ final class SovereignFlutterController extends ChangeNotifier {
     final previousState = state;
     _runtime = result.runtime;
     if (transaction == null) {
-      _projection = SovereignProjection(textLength: state.document.length);
+      _projection = FlarkProjection(textLength: state.document.length);
       _lastProjectionPrediction = null;
       _renderPlan = _staleRenderPlan(state.revision);
       _renderPlanRevision = null;
@@ -257,26 +253,26 @@ final class SovereignFlutterController extends ChangeNotifier {
     notifyListeners();
   }
 
-  SovereignControllerEventKind _eventKindForRuntimeChange(
-    SovereignEditorState previousState,
+  FlarkControllerEventKind _eventKindForRuntimeChange(
+    FlarkEditorState previousState,
   ) {
     if (previousState.markdown == state.markdown &&
         previousState.selection != state.selection) {
-      return SovereignControllerEventKind.selectionChanged;
+      return FlarkControllerEventKind.selectionChanged;
     }
     if (_lastProjectionPrediction != null) {
-      return SovereignControllerEventKind.projectionPredicted;
+      return FlarkControllerEventKind.projectionPredicted;
     }
-    return SovereignControllerEventKind.runtimeChanged;
+    return FlarkControllerEventKind.runtimeChanged;
   }
 
   void _emitEvent({
-    required SovereignControllerEventKind kind,
-    required SovereignEditorState previousState,
+    required FlarkControllerEventKind kind,
+    required FlarkEditorState previousState,
   }) {
     if (_events.isClosed) return;
     _events.add(
-      SovereignControllerEvent(
+      FlarkControllerEvent(
         kind: kind,
         revision: state.revision,
         previousRevision: previousState.revision,
@@ -292,17 +288,17 @@ final class SovereignFlutterController extends ChangeNotifier {
     super.dispose();
   }
 
-  static SovereignRenderPlan _staleRenderPlan(int revision) {
-    return SovereignRenderPlan(
+  static FlarkRenderPlan _staleRenderPlan(int revision) {
+    return FlarkRenderPlan(
       blocks: const [],
       metadata: {'revision': revision, 'stale': true},
     );
   }
 
-  static SovereignRenderPlan _predictRenderPlan({
-    required SovereignRenderPlan previousRenderPlan,
-    required SovereignTransaction transaction,
-    required SovereignProjection projection,
+  static FlarkRenderPlan _predictRenderPlan({
+    required FlarkRenderPlan previousRenderPlan,
+    required FlarkTransaction transaction,
+    required FlarkProjection projection,
     required int revision,
     required int textLengthAfter,
   }) {

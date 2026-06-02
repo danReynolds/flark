@@ -1,6 +1,6 @@
-# Sovereign Comrak Bridge
+# Flark Comrak Bridge
 
-This crate hosts the native parser bridge for Sovereign's CommonMark adapter.
+This crate hosts the native parser bridge for Flark's CommonMark adapter.
 
 Developer workflow:
 

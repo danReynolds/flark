@@ -1,4 +1,4 @@
-# RFC 020: Sovereign Read-Only Rendering Unification
+# RFC 020: Flark Read-Only Rendering Unification
 
 **Status**: IN PROGRESS (Waves 1-4 detail-surface scope delivered)  
 **Author**: Codex (draft for Dune engineering review)  
@@ -10,9 +10,9 @@
 
 Implementation update (2026-03-16):
 
-- `SovereignMarkdownView` now exists in package API and uses sovereign
+- `FlarkMarkdownView` now exists in package API and uses sovereign
   parse/render primitives.
-- Focused post detail screens are cut over to `SovereignMarkdownView`.
+- Focused post detail screens are cut over to `FlarkMarkdownView`.
 - Read-only inline action overlay now supports open/copy/edit actions for
   link and image markdown targets.
 - Dedicated read-only parity regression suite added for
@@ -33,7 +33,7 @@ Rollout decision status (current):
 
 Dune currently uses two different markdown rendering stacks:
 
-1. **Edit mode**: Sovereign editor path (`SovereignEditor` + native `comrak` parse + sovereign projection/rendering).
+1. **Edit mode**: Flark editor path (`FlarkEditor` + native `comrak` parse + sovereign projection/rendering).
 2. **Read-only mode**: `flutter_markdown`/`package:markdown` path (`PostMarkdownBody`).
 
 Even with theme harmonization, discrepancies persist because the systems differ in:
@@ -74,22 +74,22 @@ Result: edit/read visual drift, ongoing parity patches, and recurring regression
 - Ongoing maintenance tax.
 - Regressions likely reappear with new markdown features.
 
-### Option B: Add `readOnly` flag directly to `SovereignEditor`
+### Option B: Add `readOnly` flag directly to `FlarkEditor`
 
 **Pros**
 - Reuses existing sovereign render path quickly.
 - Improves parity immediately for many cases.
 
 **Cons**
-- `SovereignEditor` is editing-first (`TextField`, caret/focus/shortcuts, edit overlays).
+- `FlarkEditor` is editing-first (`TextField`, caret/focus/shortcuts, edit overlays).
 - Risk of carrying unnecessary edit machinery into read-only surfaces.
 - Potential perf and semantics overhead in feed contexts.
 - Tends toward mode-branch complexity inside one widget.
 
-### Option C (Recommended): Introduce dedicated `SovereignMarkdownView`
+### Option C (Recommended): Introduce dedicated `FlarkMarkdownView`
 
 **Pros**
-- True parser/render parity with Sovereign while keeping a read-only-optimized widget.
+- True parser/render parity with Flark while keeping a read-only-optimized widget.
 - Cleaner architecture: edit and read share core renderer/snapshot contracts, not UI plumbing.
 - Better long-term surface for performance tuning and feature parity tests.
 
@@ -100,7 +100,7 @@ Result: edit/read visual drift, ongoing parity patches, and recurring regression
 ## 5. Decision Summary
 
 Proceed with **Option C**: build a dedicated read-only sovereign renderer surface
-(`SovereignMarkdownView`) instead of retrofitting `SovereignEditor` with a
+(`FlarkMarkdownView`) instead of retrofitting `FlarkEditor` with a
 simple `readOnly` toggle.
 
 Rationale: parity needs parser+renderer unification, but read-only surfaces
@@ -118,10 +118,10 @@ Rollout constraint:
 ### 6.1 Public API (draft)
 
 ```dart
-class SovereignMarkdownView extends StatelessWidget {
+class FlarkMarkdownView extends StatelessWidget {
   final String markdown;
   final MarkdownSyntaxProfile profile;
-  final SovereignEditorThemeData? theme;
+  final FlarkEditorThemeData? theme;
   final bool selectable;
   final bool showLinkActionsOverlay;
   final Future<void> Function(String url)? onOpenLink;
@@ -148,9 +148,9 @@ class SovereignMarkdownView extends StatelessWidget {
 
 ## 7. Migration Plan
 
-### Phase 1: Build and validate `SovereignMarkdownView`
+### Phase 1: Build and validate `FlarkMarkdownView`
 
-1. Add new view widget in `sovereign_editor` package.
+1. Add new view widget in `flark` package.
 2. Wire rendering from authoritative syntax snapshot + existing renderer.
 3. Add focused tests:
    - visual parity with editor theme contracts,

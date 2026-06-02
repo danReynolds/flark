@@ -31,18 +31,20 @@ final class _NativeComrakResponse extends Struct {
 typedef _NativeVersionFn = Uint32 Function();
 typedef _NativeVersionDart = int Function();
 
-typedef _NativeParseFn = Pointer<_NativeComrakResponse> Function(
-  Uint32 revision,
-  Uint8 profile,
-  Pointer<Uint8> textPtr,
-  Uint32 textLen,
-);
-typedef _NativeParseDart = Pointer<_NativeComrakResponse> Function(
-  int revision,
-  int profile,
-  Pointer<Uint8> textPtr,
-  int textLen,
-);
+typedef _NativeParseFn =
+    Pointer<_NativeComrakResponse> Function(
+      Uint32 revision,
+      Uint8 profile,
+      Pointer<Uint8> textPtr,
+      Uint32 textLen,
+    );
+typedef _NativeParseDart =
+    Pointer<_NativeComrakResponse> Function(
+      int revision,
+      int profile,
+      Pointer<Uint8> textPtr,
+      int textLen,
+    );
 
 typedef _NativeFreeFn = Void Function(Pointer<_NativeComrakResponse>);
 typedef _NativeFreeDart = void Function(Pointer<_NativeComrakResponse>);
@@ -60,10 +62,10 @@ class _NativeComrakSymbols {
 
   factory _NativeComrakSymbols.fromLibrary(DynamicLibrary library) {
     return _NativeComrakSymbols(
-      bridgeVersion:
-          library.lookupFunction<_NativeVersionFn, _NativeVersionDart>(
-        'sovereign_comrak_bridge_version',
-      ),
+      bridgeVersion: library
+          .lookupFunction<_NativeVersionFn, _NativeVersionDart>(
+            'sovereign_comrak_bridge_version',
+          ),
       parse: library.lookupFunction<_NativeParseFn, _NativeParseDart>(
         'sovereign_comrak_parse',
       ),
@@ -134,13 +136,13 @@ class FfiNativeComrakBridge implements NativeComrakBridge {
       'macos' => 'libsovereign_comrak_bridge.dylib',
       'windows' => 'sovereign_comrak_bridge.dll',
       _ => throw _buildLoadException(
-          kind: NativeComrakBridgeLoadFailureKind.unsupportedPlatform,
-          platform: platform,
-          libraryName: null,
-          overrideLibraryPath: overrideLibraryPath,
-          candidates: const [],
-          message: 'Unsupported platform for native comrak bridge.',
-        ),
+        kind: NativeComrakBridgeLoadFailureKind.unsupportedPlatform,
+        platform: platform,
+        libraryName: null,
+        overrideLibraryPath: overrideLibraryPath,
+        candidates: const [],
+        message: 'Unsupported platform for native comrak bridge.',
+      ),
     };
     final candidates = _candidateLibraryPaths(libName);
 
@@ -270,23 +272,23 @@ class FfiNativeComrakBridge implements NativeComrakBridge {
     Object? cause,
   }) {
     final remediation = <String>[
-      'For app builds, rebuild the app so sovereign_editor\'s build hook can compile and bundle native assets.',
+      'For app builds, rebuild the app so flark\'s build hook can compile and bundle native assets.',
       'For local package development, run ./scripts/build_comrak_all.sh --strict from the package root.',
       ...switch (platform) {
         'macos' => const <String>[
-            'Verify libsovereign_comrak_bridge.dylib is bundled with the macOS app or exists in native/comrak_bridge/target/release for local package tests.',
-          ],
+          'Verify libsovereign_comrak_bridge.dylib is bundled with the macOS app or exists in native/comrak_bridge/target/release for local package tests.',
+        ],
         'linux' => const <String>[
-            'Verify libsovereign_comrak_bridge.so is bundled with the Linux app or exists in native/comrak_bridge/target/release for local package tests.',
-          ],
+          'Verify libsovereign_comrak_bridge.so is bundled with the Linux app or exists in native/comrak_bridge/target/release for local package tests.',
+        ],
         'ios' => const <String>[
-            'Verify native/comrak_bridge/dist/ios/sovereign_comrak_bridge.xcframework exists and is linked in the consuming app.',
-            'Rebuild/reinstall the app so Dart FFI can resolve symbols via DynamicLibrary.process().',
-          ],
+          'Verify native/comrak_bridge/dist/ios/sovereign_comrak_bridge.xcframework exists and is linked in the consuming app.',
+          'Rebuild/reinstall the app so Dart FFI can resolve symbols via DynamicLibrary.process().',
+        ],
         'android' => const <String>[
-            'Verify native/comrak_bridge/dist/android/jniLibs/*/libsovereign_comrak_bridge.so exists and is packaged by the consuming app.',
-            'Rebuild/reinstall the app after staging JNI libs.',
-          ],
+          'Verify native/comrak_bridge/dist/android/jniLibs/*/libsovereign_comrak_bridge.so exists and is packaged by the consuming app.',
+          'Rebuild/reinstall the app after staging JNI libs.',
+        ],
         _ => const <String>[],
       },
       if (kind == NativeComrakBridgeLoadFailureKind.symbolLookupFailed ||
@@ -440,7 +442,7 @@ NativeComrakBridgePreflightResult preflightNativeComrakBridge({
         platform: Platform.operatingSystem,
         overrideLibraryPath: overrideLibraryPath,
         remediationSteps: const [
-          'For app builds, rebuild the app so sovereign_editor\'s build hook can compile and bundle native assets.',
+          'For app builds, rebuild the app so flark\'s build hook can compile and bundle native assets.',
           'For local package development, run ./scripts/build_comrak_all.sh --strict from the package root.',
         ],
         cause: error,

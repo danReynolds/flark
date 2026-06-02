@@ -1,44 +1,38 @@
 import '../transaction/sovereign_transaction.dart';
 
-enum SovereignCommandResultKind {
-  handled,
-  notHandled,
-  rejected,
-}
+enum FlarkCommandResultKind { handled, notHandled, rejected }
 
-final class SovereignCommandResult {
-  const SovereignCommandResult._({
+final class FlarkCommandResult {
+  const FlarkCommandResult._({
     required this.kind,
     this.transaction,
     this.reason,
   });
 
-  factory SovereignCommandResult.handled({
-    SovereignTransaction? transaction,
-  }) {
-    return SovereignCommandResult._(
-      kind: SovereignCommandResultKind.handled,
+  factory FlarkCommandResult.handled({FlarkTransaction? transaction}) {
+    return FlarkCommandResult._(
+      kind: FlarkCommandResultKind.handled,
       transaction: transaction,
     );
   }
 
-  const SovereignCommandResult.notHandled()
-      : this._(kind: SovereignCommandResultKind.notHandled);
+  const FlarkCommandResult.notHandled()
+    : this._(kind: FlarkCommandResultKind.notHandled);
 
-  factory SovereignCommandResult.rejected(String reason) {
-    return SovereignCommandResult._(
-      kind: SovereignCommandResultKind.rejected,
+  factory FlarkCommandResult.rejected(String reason) {
+    return FlarkCommandResult._(
+      kind: FlarkCommandResultKind.rejected,
       reason: reason,
     );
   }
 
-  final SovereignCommandResultKind kind;
-  final SovereignTransaction? transaction;
+  final FlarkCommandResultKind kind;
+  final FlarkTransaction? transaction;
   final String? reason;
 
-  bool get isHandled => kind == SovereignCommandResultKind.handled;
+  bool get isHandled => kind == FlarkCommandResultKind.handled;
 
-  bool get isNotHandled => kind == SovereignCommandResultKind.notHandled;
+  bool get isNotHandled => kind == FlarkCommandResultKind.notHandled;
 
-  bool get isRejected => kind == SovereignCommandResultKind.rejected;
+  bool get isRejected => kind == FlarkCommandResultKind.rejected;
 }

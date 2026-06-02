@@ -1,4 +1,4 @@
-# Sovereign v2 Public API Sketch
+# Flark v2 Public API Sketch
 
 Status date: 2026-05-02
 Status: draft RFC
@@ -12,11 +12,11 @@ stays under `lib/src/v2` until the API is stable enough to expose.
 ## Proposed Libraries
 
 ```text
-lib/sovereign_editor.dart
+lib/flark.dart
   Existing primary Flutter package surface. It should eventually use v2 behind
   the same high-level widgets and controller concepts where possible.
 
-lib/sovereign_editor_core.dart
+lib/flark_core.dart
   Proposed headless core surface for non-Flutter tests, server-side tooling,
   command processing, markdown transforms, and advanced integrations.
 
@@ -32,37 +32,37 @@ history, command, projection, and render-plan slices.
 
 The headless library should expose:
 
-- `SovereignDocument`
-- `SovereignTextBuffer`
-- `SovereignSelection`
-- `SovereignSourceRange`
-- `SovereignSourceOperation`
-- `SovereignTransaction`
-- `SovereignTransactionMetadata`
-- `SovereignTransactionIntent`
-- `SovereignHistoryStack`
-- `SovereignEditorState`
-- `SovereignCommand`
-- `SovereignCommandResult`
-- `SovereignCommandRegistry`
-- `SovereignExtension`
-- `SovereignMarkdownRuntime`
-- `SovereignMarkdownProfile`
-- `SovereignProjection`
-- `SovereignRenderPlan`
+- `FlarkDocument`
+- `FlarkTextBuffer`
+- `FlarkSelection`
+- `FlarkSourceRange`
+- `FlarkSourceOperation`
+- `FlarkTransaction`
+- `FlarkTransactionMetadata`
+- `FlarkTransactionIntent`
+- `FlarkHistoryStack`
+- `FlarkEditorState`
+- `FlarkCommand`
+- `FlarkCommandResult`
+- `FlarkCommandRegistry`
+- `FlarkExtension`
+- `FlarkMarkdownRuntime`
+- `FlarkMarkdownProfile`
+- `FlarkProjection`
+- `FlarkRenderPlan`
 
 ## Flutter Public Concepts
 
 The Flutter library should expose:
 
-- `SovereignFlutterController`
-- `SovereignEditor`
-- `SovereignMarkdownView`
-- `SovereignEditorThemeData`
-- `SovereignMarkdownCommands`
-- `SovereignLinkAction`
-- `SovereignMediaResolver`
-- `SovereignEditorDiagnostics`
+- `FlarkFlutterController`
+- `FlarkEditor`
+- `FlarkMarkdownView`
+- `FlarkEditorThemeData`
+- `FlarkMarkdownCommands`
+- `FlarkLinkAction`
+- `FlarkMediaResolver`
+- `FlarkEditorDiagnostics`
 
 The existing v1 names should be preserved where they are already reasonable.
 New v2 names should only be added when they describe a durable concept, not a
@@ -89,7 +89,7 @@ These should remain internal:
 - Unknown extension results and unknown parse payload fields must degrade
   gracefully.
 - Avoid public constructors that make invalid states easy to create.
-- Keep Flutter types out of `sovereign_editor_core.dart`.
+- Keep Flutter types out of `flark_core.dart`.
 - Keep native parser details out of both public libraries except through
   diagnostics and capabilities.
 
@@ -100,19 +100,19 @@ These should remain internal:
 3. Add command registry and command result tests.
 4. Add parser/projection/render-plan types.
 5. Run an API review against this sketch.
-6. Add `lib/sovereign_editor_core.dart` only when the exported names have
+6. Add `lib/flark_core.dart` only when the exported names have
    enough behavior to be useful.
-7. Migrate `lib/sovereign_editor.dart` internals to v2 after adapter parity.
+7. Migrate `lib/flark.dart` internals to v2 after adapter parity.
 
 ## Open Questions
 
-- Should `SovereignHistoryStack` be public, or should history be mediated only
-  through a future `SovereignEditorEngine`? Current direction: keep it as a
-  companion/runtime-owned object, not inside `SovereignEditorState`.
-- Should `SovereignTextBuffer` be public if it remains a simple immutable
+- Should `FlarkHistoryStack` be public, or should history be mediated only
+  through a future `FlarkEditorEngine`? Current direction: keep it as a
+  companion/runtime-owned object, not inside `FlarkEditorState`.
+- Should `FlarkTextBuffer` be public if it remains a simple immutable
   string wrapper, or should it stay internal until benchmarks require a richer
   implementation?
 - Should command extension APIs be stable in the first v2 release, or staged as
   experimental?
-- Should `SovereignMarkdownProfile` replace the current public
+- Should `FlarkMarkdownProfile` replace the current public
   `MarkdownSyntaxProfile`, or should v2 preserve the existing name?

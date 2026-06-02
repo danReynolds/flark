@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/sovereign_editor_v2.dart';
+import 'package:flark/flark_advanced.dart';
 
 import '../support/sovereign_test_paths.dart';
 
@@ -20,9 +20,9 @@ class _FakeNativeComrakBridge implements NativeComrakBridge {
 }
 
 void main() {
-  group('SovereignNativeComrakParseBackend', () {
+  group('FlarkNativeComrakParseBackend', () {
     test('reports v2 parser capabilities', () {
-      final backend = SovereignNativeComrakParseBackend(
+      final backend = FlarkNativeComrakParseBackend(
         bridge: _FakeNativeComrakBridge(
           const NativeComrakParseResult(revision: 0),
         ),
@@ -31,10 +31,10 @@ void main() {
       expect(backend.capabilities.parserName, 'comrak_native_v2_adapter');
       expect(
         backend.capabilities.schemaVersion,
-        SovereignMarkdownParseProtocol.currentSchemaVersion,
+        FlarkMarkdownParseProtocol.currentSchemaVersion,
       );
       expect(
-        backend.capabilities.supports(SovereignMarkdownProfile.commonMarkGfm),
+        backend.capabilities.supports(FlarkMarkdownProfile.commonMarkGfm),
         isTrue,
       );
     });
@@ -43,7 +43,7 @@ void main() {
       final missingPath =
           '${Directory.systemTemp.path}/sovereign_missing_comrak_bridge.dylib';
 
-      final preflight = SovereignNativeComrakParseBackend.preflight(
+      final preflight = FlarkNativeComrakParseBackend.preflight(
         overrideLibraryPath: missingPath,
       );
 
@@ -53,9 +53,7 @@ void main() {
         NativeComrakBridgeLoadFailureKind.libraryNotFound,
       );
       expect(
-        SovereignNativeComrakParseBackend.tryLoad(
-          overrideLibraryPath: missingPath,
-        ),
+        FlarkNativeComrakParseBackend.tryLoad(overrideLibraryPath: missingPath),
         isNull,
       );
     });
@@ -64,13 +62,13 @@ void main() {
       final bridge = _FakeNativeComrakBridge(
         const NativeComrakParseResult(revision: 9),
       );
-      final backend = SovereignNativeComrakParseBackend(bridge: bridge);
+      final backend = FlarkNativeComrakParseBackend(bridge: bridge);
 
       await backend.parse(
-        const SovereignMarkdownParseRequest(
+        const FlarkMarkdownParseRequest(
           revision: 9,
           markdown: '## hello',
-          profile: SovereignMarkdownProfile.commonMarkGfm,
+          profile: FlarkMarkdownProfile.commonMarkGfm,
         ),
       );
 
@@ -82,7 +80,7 @@ void main() {
 
     test('maps utf8 native ranges into v2 parse results', () async {
       const text = '🎨\n# **T**\n';
-      final mapper = SovereignUtf8Utf16Mapper(text);
+      final mapper = FlarkUtf8Utf16Mapper(text);
       final bridge = _FakeNativeComrakBridge(
         NativeComrakParseResult(
           revision: 12,
@@ -127,41 +125,38 @@ void main() {
           ],
         ),
       );
-      final backend = SovereignNativeComrakParseBackend(bridge: bridge);
+      final backend = FlarkNativeComrakParseBackend(bridge: bridge);
 
       final result = await backend.parse(
-        const SovereignMarkdownParseRequest(
+        const FlarkMarkdownParseRequest(
           revision: 12,
           markdown: text,
-          profile: SovereignMarkdownProfile.commonMarkCore,
+          profile: FlarkMarkdownProfile.commonMarkCore,
         ),
       );
 
       expect(
         result.schemaVersion,
-        SovereignMarkdownParseProtocol.currentSchemaVersion,
+        FlarkMarkdownParseProtocol.currentSchemaVersion,
       );
       expect(result.revision, 12);
       expect(result.sourceTextLength, text.length);
-      expect(result.blocks.single.kind, SovereignMarkdownBlockKind.heading);
+      expect(result.blocks.single.kind, FlarkMarkdownBlockKind.heading);
       expect(result.blocks.single.type, 'heading');
       expect(
         result.blocks.single.sourceRange,
-        SovereignSourceRange(3, text.length),
+        FlarkSourceRange(3, text.length),
       );
       expect(result.blocks.single.attributes['level'], 1);
-      expect(
-        result.inlineTokens.single.kind,
-        SovereignMarkdownInlineKind.strong,
-      );
+      expect(result.inlineTokens.single.kind, FlarkMarkdownInlineKind.strong);
       expect(
         result.inlineTokens.single.sourceRange,
-        const SovereignSourceRange(6, 7),
+        const FlarkSourceRange(6, 7),
       );
       expect(result.hiddenRanges.map((range) => range.sourceRange), const [
-        SovereignSourceRange(3, 4),
-        SovereignSourceRange(4, 6),
-        SovereignSourceRange(7, 9),
+        FlarkSourceRange(3, 4),
+        FlarkSourceRange(4, 6),
+        FlarkSourceRange(7, 9),
       ]);
       expect(result.extensions['nativeParser'], 'comrak');
       expect(result.extensions['nativeExclusionRanges'], [
@@ -171,7 +166,7 @@ void main() {
 
     test('keeps partial strong delimiter intent literal', () async {
       const text = '**wow*';
-      final mapper = SovereignUtf8Utf16Mapper(text);
+      final mapper = FlarkUtf8Utf16Mapper(text);
       final bridge = _FakeNativeComrakBridge(
         NativeComrakParseResult(
           revision: 13,
@@ -205,29 +200,26 @@ void main() {
           ],
         ),
       );
-      final backend = SovereignNativeComrakParseBackend(bridge: bridge);
+      final backend = FlarkNativeComrakParseBackend(bridge: bridge);
 
       final result = await backend.parse(
-        const SovereignMarkdownParseRequest(
+        const FlarkMarkdownParseRequest(
           revision: 13,
           markdown: text,
-          profile: SovereignMarkdownProfile.commonMarkCore,
+          profile: FlarkMarkdownProfile.commonMarkCore,
         ),
       );
 
       expect(result.inlineTokens, isEmpty);
       expect(result.hiddenRanges, isEmpty);
-      expect(
-        SovereignProjection.fromParseResult(result).projectText(text),
-        text,
-      );
+      expect(FlarkProjection.fromParseResult(result).projectText(text), text);
     });
 
     test(
       'maps native replacement ranges and filters hidden overlaps',
       () async {
         const text = 'A &amp; [x](/a&amp;b)';
-        final mapper = SovereignUtf8Utf16Mapper(text);
+        final mapper = FlarkUtf8Utf16Mapper(text);
         final firstEntityStart = text.indexOf('&amp;');
         final secondEntityStart = text.lastIndexOf('&amp;');
         final linkStart = text.indexOf('[x]');
@@ -277,28 +269,28 @@ void main() {
             ],
           ),
         );
-        final backend = SovereignNativeComrakParseBackend(bridge: bridge);
+        final backend = FlarkNativeComrakParseBackend(bridge: bridge);
 
         final result = await backend.parse(
-          const SovereignMarkdownParseRequest(
+          const FlarkMarkdownParseRequest(
             revision: 15,
             markdown: text,
-            profile: SovereignMarkdownProfile.commonMarkCore,
+            profile: FlarkMarkdownProfile.commonMarkCore,
           ),
         );
 
         expect(result.replacementRanges, hasLength(1));
         expect(
           result.replacementRanges.single.kind,
-          SovereignMarkdownReplacementRangeKind.htmlEntity,
+          FlarkMarkdownReplacementRangeKind.htmlEntity,
         );
         expect(
           result.replacementRanges.single.sourceRange,
-          SovereignSourceRange(firstEntityStart, firstEntityStart + 5),
+          FlarkSourceRange(firstEntityStart, firstEntityStart + 5),
         );
         expect(result.replacementRanges.single.replacementText, '&');
         expect(
-          SovereignProjection.fromParseResult(result).projectText(text),
+          FlarkProjection.fromParseResult(result).projectText(text),
           'A & x',
         );
       },
@@ -306,7 +298,7 @@ void main() {
 
     test('keeps marker-only native blockquotes source-visible', () async {
       const markerOnlyText = '>';
-      final markerOnlyMapper = SovereignUtf8Utf16Mapper(markerOnlyText);
+      final markerOnlyMapper = FlarkUtf8Utf16Mapper(markerOnlyText);
       final markerOnlyBridge = _FakeNativeComrakBridge(
         NativeComrakParseResult(
           revision: 16,
@@ -331,32 +323,27 @@ void main() {
           ],
         ),
       );
-      final markerOnlyBackend = SovereignNativeComrakParseBackend(
+      final markerOnlyBackend = FlarkNativeComrakParseBackend(
         bridge: markerOnlyBridge,
       );
 
       final markerOnly = await markerOnlyBackend.parse(
-        const SovereignMarkdownParseRequest(
+        const FlarkMarkdownParseRequest(
           revision: 16,
           markdown: markerOnlyText,
-          profile: SovereignMarkdownProfile.commonMarkCore,
+          profile: FlarkMarkdownProfile.commonMarkCore,
         ),
       );
 
-      expect(
-        markerOnly.blocks.single.kind,
-        SovereignMarkdownBlockKind.paragraph,
-      );
+      expect(markerOnly.blocks.single.kind, FlarkMarkdownBlockKind.paragraph);
       expect(markerOnly.hiddenRanges, isEmpty);
       expect(
-        SovereignProjection.fromParseResult(
-          markerOnly,
-        ).projectText(markerOnlyText),
+        FlarkProjection.fromParseResult(markerOnly).projectText(markerOnlyText),
         markerOnlyText,
       );
 
       const emptyQuoteText = '> ';
-      final emptyQuoteMapper = SovereignUtf8Utf16Mapper(emptyQuoteText);
+      final emptyQuoteMapper = FlarkUtf8Utf16Mapper(emptyQuoteText);
       final emptyQuoteBridge = _FakeNativeComrakBridge(
         NativeComrakParseResult(
           revision: 17,
@@ -379,32 +366,27 @@ void main() {
           ],
         ),
       );
-      final emptyQuoteBackend = SovereignNativeComrakParseBackend(
+      final emptyQuoteBackend = FlarkNativeComrakParseBackend(
         bridge: emptyQuoteBridge,
       );
 
       final emptyQuote = await emptyQuoteBackend.parse(
-        const SovereignMarkdownParseRequest(
+        const FlarkMarkdownParseRequest(
           revision: 17,
           markdown: emptyQuoteText,
-          profile: SovereignMarkdownProfile.commonMarkCore,
+          profile: FlarkMarkdownProfile.commonMarkCore,
         ),
       );
 
-      expect(
-        emptyQuote.blocks.single.kind,
-        SovereignMarkdownBlockKind.blockquote,
-      );
+      expect(emptyQuote.blocks.single.kind, FlarkMarkdownBlockKind.blockquote);
       expect(emptyQuote.hiddenRanges, isNotEmpty);
       expect(
-        SovereignProjection.fromParseResult(
-          emptyQuote,
-        ).projectText(emptyQuoteText),
+        FlarkProjection.fromParseResult(emptyQuote).projectText(emptyQuoteText),
         isEmpty,
       );
 
       const quoteText = '> quote';
-      final quoteMapper = SovereignUtf8Utf16Mapper(quoteText);
+      final quoteMapper = FlarkUtf8Utf16Mapper(quoteText);
       final quoteBridge = _FakeNativeComrakBridge(
         NativeComrakParseResult(
           revision: 18,
@@ -432,30 +414,28 @@ void main() {
           ],
         ),
       );
-      final quoteBackend = SovereignNativeComrakParseBackend(
-        bridge: quoteBridge,
-      );
+      final quoteBackend = FlarkNativeComrakParseBackend(bridge: quoteBridge);
 
       final quote = await quoteBackend.parse(
-        const SovereignMarkdownParseRequest(
+        const FlarkMarkdownParseRequest(
           revision: 18,
           markdown: quoteText,
-          profile: SovereignMarkdownProfile.commonMarkCore,
+          profile: FlarkMarkdownProfile.commonMarkCore,
         ),
       );
 
-      expect(quote.blocks.single.kind, SovereignMarkdownBlockKind.blockquote);
+      expect(quote.blocks.single.kind, FlarkMarkdownBlockKind.blockquote);
       expect(
-        SovereignProjection.fromParseResult(quote).projectText(quoteText),
+        FlarkProjection.fromParseResult(quote).projectText(quoteText),
         'quote',
       );
     });
 
     test('keeps multiline native blockquotes as one semantic block', () async {
       const text = '> first\n> second\ncontinued';
-      final mapper = SovereignUtf8Utf16Mapper(text);
+      final mapper = FlarkUtf8Utf16Mapper(text);
       final secondMarkerStart = text.indexOf('> second');
-      final backend = SovereignNativeComrakParseBackend(
+      final backend = FlarkNativeComrakParseBackend(
         bridge: _FakeNativeComrakBridge(
           NativeComrakParseResult(
             revision: 19,
@@ -490,28 +470,28 @@ void main() {
       );
 
       final result = await backend.parse(
-        const SovereignMarkdownParseRequest(
+        const FlarkMarkdownParseRequest(
           revision: 19,
           markdown: text,
-          profile: SovereignMarkdownProfile.commonMarkCore,
+          profile: FlarkMarkdownProfile.commonMarkCore,
         ),
       );
 
       final quotes = result.blocks
-          .where((block) => block.kind == SovereignMarkdownBlockKind.blockquote)
+          .where((block) => block.kind == FlarkMarkdownBlockKind.blockquote)
           .toList(growable: false);
       expect(quotes, hasLength(1));
-      expect(quotes.single.sourceRange, const SovereignSourceRange(0, 26));
+      expect(quotes.single.sourceRange, const FlarkSourceRange(0, 26));
       expect(
-        SovereignProjection.fromParseResult(result).projectText(text),
+        FlarkProjection.fromParseResult(result).projectText(text),
         'first\nsecond\ncontinued',
       );
     });
 
     test('keeps marker-only native list items source-visible', () async {
       for (final markerOnlyText in const ['*', '-', '+', '1.']) {
-        final markerOnlyMapper = SovereignUtf8Utf16Mapper(markerOnlyText);
-        final markerOnlyBackend = SovereignNativeComrakParseBackend(
+        final markerOnlyMapper = FlarkUtf8Utf16Mapper(markerOnlyText);
+        final markerOnlyBackend = FlarkNativeComrakParseBackend(
           bridge: _FakeNativeComrakBridge(
             NativeComrakParseResult(
               revision: 19,
@@ -539,21 +519,21 @@ void main() {
         );
 
         final markerOnly = await markerOnlyBackend.parse(
-          SovereignMarkdownParseRequest(
+          FlarkMarkdownParseRequest(
             revision: 19,
             markdown: markerOnlyText,
-            profile: SovereignMarkdownProfile.commonMarkGfm,
+            profile: FlarkMarkdownProfile.commonMarkGfm,
           ),
         );
 
         expect(
           markerOnly.blocks.single.kind,
-          SovereignMarkdownBlockKind.paragraph,
+          FlarkMarkdownBlockKind.paragraph,
           reason: markerOnlyText,
         );
         expect(markerOnly.hiddenRanges, isEmpty, reason: markerOnlyText);
         expect(
-          SovereignProjection.fromParseResult(
+          FlarkProjection.fromParseResult(
             markerOnly,
           ).projectText(markerOnlyText),
           markerOnlyText,
@@ -564,8 +544,8 @@ void main() {
 
     test('keeps complete empty native list markers rendered', () async {
       const completeMarkerText = '* ';
-      final completeMarkerMapper = SovereignUtf8Utf16Mapper(completeMarkerText);
-      final completeMarkerBackend = SovereignNativeComrakParseBackend(
+      final completeMarkerMapper = FlarkUtf8Utf16Mapper(completeMarkerText);
+      final completeMarkerBackend = FlarkNativeComrakParseBackend(
         bridge: _FakeNativeComrakBridge(
           NativeComrakParseResult(
             revision: 20,
@@ -592,23 +572,23 @@ void main() {
       );
 
       final completeMarker = await completeMarkerBackend.parse(
-        const SovereignMarkdownParseRequest(
+        const FlarkMarkdownParseRequest(
           revision: 20,
           markdown: completeMarkerText,
-          profile: SovereignMarkdownProfile.commonMarkGfm,
+          profile: FlarkMarkdownProfile.commonMarkGfm,
         ),
       );
 
       expect(
         completeMarker.blocks.single.kind,
-        SovereignMarkdownBlockKind.listItem,
+        FlarkMarkdownBlockKind.listItem,
       );
       expect(
         completeMarker.hiddenRanges.single.sourceRange,
-        const SovereignSourceRange(0, 2),
+        const FlarkSourceRange(0, 2),
       );
       expect(
-        SovereignProjection.fromParseResult(
+        FlarkProjection.fromParseResult(
           completeMarker,
         ).projectText(completeMarkerText),
         isEmpty,
@@ -617,11 +597,11 @@ void main() {
 
     test('keeps fenced code delimiters out of editable code content', () async {
       const text = '```dart\ncode\n```';
-      final mapper = SovereignUtf8Utf16Mapper(text);
+      final mapper = FlarkUtf8Utf16Mapper(text);
       final openingMarkerEnd = text.indexOf('\n');
       final closingLineBreak = text.lastIndexOf('\n');
       final closingMarkerStart = closingLineBreak + 1;
-      final backend = SovereignNativeComrakParseBackend(
+      final backend = FlarkNativeComrakParseBackend(
         bridge: _FakeNativeComrakBridge(
           NativeComrakParseResult(
             revision: 21,
@@ -649,35 +629,32 @@ void main() {
       );
 
       final result = await backend.parse(
-        const SovereignMarkdownParseRequest(
+        const FlarkMarkdownParseRequest(
           revision: 21,
           markdown: text,
-          profile: SovereignMarkdownProfile.commonMarkGfm,
+          profile: FlarkMarkdownProfile.commonMarkGfm,
         ),
       );
 
       expect(result.hiddenRanges.map((range) => range.sourceRange), [
-        const SovereignSourceRange(0, 3),
-        SovereignSourceRange(3, openingMarkerEnd),
-        SovereignSourceRange(openingMarkerEnd, openingMarkerEnd + 1),
-        SovereignSourceRange(closingLineBreak, text.length),
+        const FlarkSourceRange(0, 3),
+        FlarkSourceRange(3, openingMarkerEnd),
+        FlarkSourceRange(openingMarkerEnd, openingMarkerEnd + 1),
+        FlarkSourceRange(closingLineBreak, text.length),
       ]);
-      expect(
-        SovereignProjection.fromParseResult(result).projectText(text),
-        'code',
-      );
+      expect(FlarkProjection.fromParseResult(result).projectText(text), 'code');
     });
 
     test(
       'hides fenced code info strings when native markers omit them',
       () async {
         const text = '```rust\ncode\n```';
-        final mapper = SovereignUtf8Utf16Mapper(text);
+        final mapper = FlarkUtf8Utf16Mapper(text);
         final openingMarkerEnd = text.indexOf('rust');
         final openingLineBreak = text.indexOf('\n');
         final closingLineBreak = text.lastIndexOf('\n');
         final closingMarkerStart = closingLineBreak + 1;
-        final backend = SovereignNativeComrakParseBackend(
+        final backend = FlarkNativeComrakParseBackend(
           bridge: _FakeNativeComrakBridge(
             NativeComrakParseResult(
               revision: 23,
@@ -707,21 +684,21 @@ void main() {
         );
 
         final result = await backend.parse(
-          const SovereignMarkdownParseRequest(
+          const FlarkMarkdownParseRequest(
             revision: 23,
             markdown: text,
-            profile: SovereignMarkdownProfile.commonMarkGfm,
+            profile: FlarkMarkdownProfile.commonMarkGfm,
           ),
         );
 
         expect(result.hiddenRanges.map((range) => range.sourceRange), [
-          SovereignSourceRange(0, openingMarkerEnd),
-          SovereignSourceRange(openingMarkerEnd, openingLineBreak),
-          SovereignSourceRange(openingLineBreak, openingLineBreak + 1),
-          SovereignSourceRange(closingLineBreak, text.length),
+          FlarkSourceRange(0, openingMarkerEnd),
+          FlarkSourceRange(openingMarkerEnd, openingLineBreak),
+          FlarkSourceRange(openingLineBreak, openingLineBreak + 1),
+          FlarkSourceRange(closingLineBreak, text.length),
         ]);
         expect(
-          SovereignProjection.fromParseResult(result).projectText(text),
+          FlarkProjection.fromParseResult(result).projectText(text),
           'code',
         );
       },
@@ -731,10 +708,10 @@ void main() {
       'does not overlap hidden ranges for an empty closed code fence',
       () async {
         const text = '```dart\n```';
-        final mapper = SovereignUtf8Utf16Mapper(text);
+        final mapper = FlarkUtf8Utf16Mapper(text);
         final openingMarkerEnd = text.indexOf('\n');
         final closingMarkerStart = openingMarkerEnd + 1;
-        final backend = SovereignNativeComrakParseBackend(
+        final backend = FlarkNativeComrakParseBackend(
           bridge: _FakeNativeComrakBridge(
             NativeComrakParseResult(
               revision: 22,
@@ -764,21 +741,21 @@ void main() {
         );
 
         final result = await backend.parse(
-          const SovereignMarkdownParseRequest(
+          const FlarkMarkdownParseRequest(
             revision: 22,
             markdown: text,
-            profile: SovereignMarkdownProfile.commonMarkGfm,
+            profile: FlarkMarkdownProfile.commonMarkGfm,
           ),
         );
 
         expect(result.hiddenRanges.map((range) => range.sourceRange), [
-          const SovereignSourceRange(0, 3),
-          SovereignSourceRange(3, openingMarkerEnd),
-          SovereignSourceRange(openingMarkerEnd, openingMarkerEnd + 1),
-          SovereignSourceRange(closingMarkerStart, text.length),
+          const FlarkSourceRange(0, 3),
+          FlarkSourceRange(3, openingMarkerEnd),
+          FlarkSourceRange(openingMarkerEnd, openingMarkerEnd + 1),
+          FlarkSourceRange(closingMarkerStart, text.length),
         ]);
         expect(
-          SovereignProjection.fromParseResult(result).projectText(text),
+          FlarkProjection.fromParseResult(result).projectText(text),
           isEmpty,
         );
       },
@@ -786,10 +763,10 @@ void main() {
 
     test('extends unclosed fenced code ranges to the end of source', () async {
       const text = '```\nopen fence\n  code';
-      final mapper = SovereignUtf8Utf16Mapper(text);
+      final mapper = FlarkUtf8Utf16Mapper(text);
       final openingMarkerEnd = text.indexOf('\n');
       final truncatedNativeEnd = text.indexOf('\n  code');
-      final backend = SovereignNativeComrakParseBackend(
+      final backend = FlarkNativeComrakParseBackend(
         bridge: _FakeNativeComrakBridge(
           NativeComrakParseResult(
             revision: 22,
@@ -813,19 +790,19 @@ void main() {
       );
 
       final result = await backend.parse(
-        const SovereignMarkdownParseRequest(
+        const FlarkMarkdownParseRequest(
           revision: 22,
           markdown: text,
-          profile: SovereignMarkdownProfile.commonMarkGfm,
+          profile: FlarkMarkdownProfile.commonMarkGfm,
         ),
       );
 
       expect(
         result.blocks.single.sourceRange,
-        const SovereignSourceRange(0, text.length),
+        const FlarkSourceRange(0, text.length),
       );
       expect(
-        SovereignProjection.fromParseResult(result).projectText(text),
+        FlarkProjection.fromParseResult(result).projectText(text),
         'open fence\n  code',
       );
     });
@@ -834,8 +811,8 @@ void main() {
       'synthesizes editable list items when native output omits them',
       () async {
         const markerOnlyText = '- ';
-        final markerOnlyMapper = SovereignUtf8Utf16Mapper(markerOnlyText);
-        final markerOnlyBackend = SovereignNativeComrakParseBackend(
+        final markerOnlyMapper = FlarkUtf8Utf16Mapper(markerOnlyText);
+        final markerOnlyBackend = FlarkNativeComrakParseBackend(
           bridge: _FakeNativeComrakBridge(
             NativeComrakParseResult(
               revision: 41,
@@ -855,32 +832,29 @@ void main() {
         );
 
         final markerOnly = await markerOnlyBackend.parse(
-          const SovereignMarkdownParseRequest(
+          const FlarkMarkdownParseRequest(
             revision: 41,
             markdown: markerOnlyText,
-            profile: SovereignMarkdownProfile.commonMarkGfm,
+            profile: FlarkMarkdownProfile.commonMarkGfm,
           ),
         );
 
-        expect(
-          markerOnly.blocks.single.kind,
-          SovereignMarkdownBlockKind.listItem,
-        );
+        expect(markerOnly.blocks.single.kind, FlarkMarkdownBlockKind.listItem);
         expect(markerOnly.blocks.single.attributes['listKind'], 'unordered');
         expect(
           markerOnly.hiddenRanges.single.sourceRange,
-          const SovereignSourceRange(0, 2),
+          const FlarkSourceRange(0, 2),
         );
         expect(
-          SovereignProjection.fromParseResult(
+          FlarkProjection.fromParseResult(
             markerOnly,
           ).projectText(markerOnlyText),
           '',
         );
 
         const itemText = '3. ordered';
-        final itemMapper = SovereignUtf8Utf16Mapper(itemText);
-        final itemBackend = SovereignNativeComrakParseBackend(
+        final itemMapper = FlarkUtf8Utf16Mapper(itemText);
+        final itemBackend = FlarkNativeComrakParseBackend(
           bridge: _FakeNativeComrakBridge(
             NativeComrakParseResult(
               revision: 42,
@@ -900,17 +874,17 @@ void main() {
         );
 
         final item = await itemBackend.parse(
-          const SovereignMarkdownParseRequest(
+          const FlarkMarkdownParseRequest(
             revision: 42,
             markdown: itemText,
-            profile: SovereignMarkdownProfile.commonMarkGfm,
+            profile: FlarkMarkdownProfile.commonMarkGfm,
           ),
         );
 
-        expect(item.blocks.single.kind, SovereignMarkdownBlockKind.listItem);
+        expect(item.blocks.single.kind, FlarkMarkdownBlockKind.listItem);
         expect(item.blocks.single.attributes['listKind'], 'ordered');
         expect(
-          SovereignProjection.fromParseResult(item).projectText(itemText),
+          FlarkProjection.fromParseResult(item).projectText(itemText),
           'ordered',
         );
       },
@@ -920,7 +894,7 @@ void main() {
       'maps native link and image metadata into inline attributes',
       () async {
         const text = '[OpenAI](https://openai.com) ![Logo](asset://logo.png)';
-        final mapper = SovereignUtf8Utf16Mapper(text);
+        final mapper = FlarkUtf8Utf16Mapper(text);
         final bridge = _FakeNativeComrakBridge(
           NativeComrakParseResult(
             revision: 13,
@@ -948,23 +922,23 @@ void main() {
             ],
           ),
         );
-        final backend = SovereignNativeComrakParseBackend(bridge: bridge);
+        final backend = FlarkNativeComrakParseBackend(bridge: bridge);
 
         final result = await backend.parse(
-          const SovereignMarkdownParseRequest(
+          const FlarkMarkdownParseRequest(
             revision: 13,
             markdown: text,
-            profile: SovereignMarkdownProfile.commonMarkGfm,
+            profile: FlarkMarkdownProfile.commonMarkGfm,
           ),
         );
 
         final link = result.inlineTokens.first;
         final image = result.inlineTokens.last;
-        expect(link.kind, SovereignMarkdownInlineKind.link);
+        expect(link.kind, FlarkMarkdownInlineKind.link);
         expect(link.attributes['destination'], 'https://openai.com');
         expect(link.attributes['title'], 'OpenAI');
         expect(link.attributes['label'], 'OpenAI');
-        expect(image.kind, SovereignMarkdownInlineKind.image);
+        expect(image.kind, FlarkMarkdownInlineKind.image);
         expect(image.attributes['src'], 'asset://logo.png');
         expect(image.attributes['alt'], 'Logo');
       },
@@ -975,7 +949,7 @@ void main() {
       () async {
         const text =
             '[OpenAI](https://openai.com) and ![Logo](asset://logo.png)';
-        final mapper = SovereignUtf8Utf16Mapper(text);
+        final mapper = FlarkUtf8Utf16Mapper(text);
         final imageStart = text.indexOf('![');
         final bridge = _FakeNativeComrakBridge(
           NativeComrakParseResult(
@@ -1014,25 +988,25 @@ void main() {
             ],
           ),
         );
-        final backend = SovereignNativeComrakParseBackend(bridge: bridge);
+        final backend = FlarkNativeComrakParseBackend(bridge: bridge);
 
         final result = await backend.parse(
-          const SovereignMarkdownParseRequest(
+          const FlarkMarkdownParseRequest(
             revision: 14,
             markdown: text,
-            profile: SovereignMarkdownProfile.commonMarkGfm,
+            profile: FlarkMarkdownProfile.commonMarkGfm,
           ),
         );
 
         expect(
           result.hiddenRanges.map((range) => range.kind),
           containsAll(const [
-            SovereignMarkdownHiddenRangeKind.inlineMarker,
-            SovereignMarkdownHiddenRangeKind.linkDestination,
+            FlarkMarkdownHiddenRangeKind.inlineMarker,
+            FlarkMarkdownHiddenRangeKind.linkDestination,
           ]),
         );
         expect(
-          SovereignProjection.fromParseResult(result).projectText(text),
+          FlarkProjection.fromParseResult(result).projectText(text),
           'OpenAI and Logo',
         );
       },
@@ -1050,7 +1024,7 @@ void main() {
             '| Area | Status |\n'
             '| --- | --- |\n'
             '| Inline | Good |';
-        final mapper = SovereignUtf8Utf16Mapper(text);
+        final mapper = FlarkUtf8Utf16Mapper(text);
         final firstItemEnd = text.indexOf('\n');
         final taskStart = text.indexOf('- [x]');
         final taskEnd = text.indexOf('\n\n');
@@ -1143,32 +1117,32 @@ void main() {
             ],
           ),
         );
-        final backend = SovereignNativeComrakParseBackend(bridge: bridge);
+        final backend = FlarkNativeComrakParseBackend(bridge: bridge);
 
         final result = await backend.parse(
-          const SovereignMarkdownParseRequest(
+          const FlarkMarkdownParseRequest(
             revision: 15,
             markdown: text,
-            profile: SovereignMarkdownProfile.commonMarkGfm,
+            profile: FlarkMarkdownProfile.commonMarkGfm,
           ),
         );
 
         expect(result.blocks.map((block) => block.kind), const [
-          SovereignMarkdownBlockKind.listItem,
-          SovereignMarkdownBlockKind.listItem,
-          SovereignMarkdownBlockKind.blockquote,
-          SovereignMarkdownBlockKind.table,
+          FlarkMarkdownBlockKind.listItem,
+          FlarkMarkdownBlockKind.listItem,
+          FlarkMarkdownBlockKind.blockquote,
+          FlarkMarkdownBlockKind.table,
         ]);
         expect(result.blocks[1].attributes['checked'], isTrue);
         final table = result.blocks.singleWhere(
-          (block) => block.kind == SovereignMarkdownBlockKind.table,
+          (block) => block.kind == FlarkMarkdownBlockKind.table,
         );
         expect(table.children.map((block) => block.kind), const [
-          SovereignMarkdownBlockKind.tableRow,
+          FlarkMarkdownBlockKind.tableRow,
         ]);
         expect(
           table.children.single.children.map((block) => block.kind),
-          const [SovereignMarkdownBlockKind.tableCell],
+          const [FlarkMarkdownBlockKind.tableCell],
         );
       },
     );
@@ -1176,7 +1150,7 @@ void main() {
     test('adds reference-definition and raw-html hidden ranges', () async {
       const text =
           '[id]: https://example.com\n\n<div>raw</div>\n\ntext <span>x</span>';
-      final mapper = SovereignUtf8Utf16Mapper(text);
+      final mapper = FlarkUtf8Utf16Mapper(text);
       final htmlBlockStart = text.indexOf('<div>');
       final htmlBlockEnd = htmlBlockStart + '<div>raw</div>'.length;
       final htmlInlineStart = text.indexOf('<span>');
@@ -1204,21 +1178,21 @@ void main() {
           ],
         ),
       );
-      final backend = SovereignNativeComrakParseBackend(bridge: bridge);
+      final backend = FlarkNativeComrakParseBackend(bridge: bridge);
 
       final result = await backend.parse(
-        const SovereignMarkdownParseRequest(
+        const FlarkMarkdownParseRequest(
           revision: 14,
           markdown: text,
-          profile: SovereignMarkdownProfile.commonMarkGfm,
+          profile: FlarkMarkdownProfile.commonMarkGfm,
         ),
       );
 
       expect(
         result.hiddenRanges.map((range) => range.kind),
         containsAll(const [
-          SovereignMarkdownHiddenRangeKind.referenceDefinition,
-          SovereignMarkdownHiddenRangeKind.rawHtml,
+          FlarkMarkdownHiddenRangeKind.referenceDefinition,
+          FlarkMarkdownHiddenRangeKind.rawHtml,
         ]),
       );
       expect(
@@ -1226,15 +1200,15 @@ void main() {
             .where(
               (range) =>
                   range.kind ==
-                  SovereignMarkdownHiddenRangeKind.referenceDefinition,
+                  FlarkMarkdownHiddenRangeKind.referenceDefinition,
             )
             .single
             .sourceRange,
-        const SovereignSourceRange(0, 26),
+        const FlarkSourceRange(0, 26),
       );
       expect(
         result.inlineTokens.single.kind,
-        SovereignMarkdownInlineKind.htmlInline,
+        FlarkMarkdownInlineKind.htmlInline,
       );
     });
 
@@ -1242,7 +1216,7 @@ void main() {
       'keeps invalid reference-definition-looking paragraphs visible',
       () async {
         const text = '[foo]: <bar>(baz)\n\n[foo]\n';
-        final mapper = SovereignUtf8Utf16Mapper(text);
+        final mapper = FlarkUtf8Utf16Mapper(text);
         final firstParagraphEnd = text.indexOf('\n');
         final secondParagraphStart = text.lastIndexOf('[foo]');
         final bridge = _FakeNativeComrakBridge(
@@ -1268,34 +1242,30 @@ void main() {
             ],
           ),
         );
-        final backend = SovereignNativeComrakParseBackend(bridge: bridge);
+        final backend = FlarkNativeComrakParseBackend(bridge: bridge);
 
         final result = await backend.parse(
-          const SovereignMarkdownParseRequest(
+          const FlarkMarkdownParseRequest(
             revision: 15,
             markdown: text,
-            profile: SovereignMarkdownProfile.commonMarkGfm,
+            profile: FlarkMarkdownProfile.commonMarkGfm,
           ),
         );
 
         expect(
           result.hiddenRanges.where(
             (range) =>
-                range.kind ==
-                SovereignMarkdownHiddenRangeKind.referenceDefinition,
+                range.kind == FlarkMarkdownHiddenRangeKind.referenceDefinition,
           ),
           isEmpty,
         );
-        expect(
-          SovereignProjection.fromParseResult(result).projectText(text),
-          text,
-        );
+        expect(FlarkProjection.fromParseResult(result).projectText(text), text);
       },
     );
 
     test('keeps unsupported GitHub footnote syntax source-visible', () async {
       const text = 'Text[^1]\n\n[^1]: Footnote\n';
-      final mapper = SovereignUtf8Utf16Mapper(text);
+      final mapper = FlarkUtf8Utf16Mapper(text);
       final bridge = _FakeNativeComrakBridge(
         NativeComrakParseResult(
           revision: 16,
@@ -1320,34 +1290,30 @@ void main() {
           ],
         ),
       );
-      final backend = SovereignNativeComrakParseBackend(bridge: bridge);
+      final backend = FlarkNativeComrakParseBackend(bridge: bridge);
 
       final result = await backend.parse(
-        const SovereignMarkdownParseRequest(
+        const FlarkMarkdownParseRequest(
           revision: 16,
           markdown: text,
-          profile: SovereignMarkdownProfile.commonMarkGfm,
+          profile: FlarkMarkdownProfile.commonMarkGfm,
         ),
       );
 
       expect(
         result.inlineTokens.where(
-          (token) => token.kind == SovereignMarkdownInlineKind.link,
+          (token) => token.kind == FlarkMarkdownInlineKind.link,
         ),
         isEmpty,
       );
       expect(
         result.hiddenRanges.where(
           (range) =>
-              range.kind ==
-              SovereignMarkdownHiddenRangeKind.referenceDefinition,
+              range.kind == FlarkMarkdownHiddenRangeKind.referenceDefinition,
         ),
         isEmpty,
       );
-      expect(
-        SovereignProjection.fromParseResult(result).projectText(text),
-        text,
-      );
+      expect(FlarkProjection.fromParseResult(result).projectText(text), text);
     });
 
     test('preserves unknown native variants without crashing', () async {
@@ -1375,38 +1341,35 @@ void main() {
           ],
         ),
       );
-      final backend = SovereignNativeComrakParseBackend(bridge: bridge);
+      final backend = FlarkNativeComrakParseBackend(bridge: bridge);
 
       final result = await backend.parse(
-        const SovereignMarkdownParseRequest(
+        const FlarkMarkdownParseRequest(
           revision: 3,
           markdown: 'test',
-          profile: SovereignMarkdownProfile.commonMarkCore,
+          profile: FlarkMarkdownProfile.commonMarkCore,
         ),
       );
 
-      expect(result.blocks.single.kind, SovereignMarkdownBlockKind.unknown);
+      expect(result.blocks.single.kind, FlarkMarkdownBlockKind.unknown);
       expect(result.blocks.single.attributes['nativeType'], 'admonition');
-      expect(
-        result.inlineTokens.single.kind,
-        SovereignMarkdownInlineKind.unknown,
-      );
+      expect(result.inlineTokens.single.kind, FlarkMarkdownInlineKind.unknown);
       expect(result.inlineTokens.single.attributes['nativeStyle'], 'wikilink');
       expect(result.diagnostics.single.code, 'NATIVE_WARNING');
     });
 
     test('records a diagnostic when native revisions do not match', () async {
-      final backend = SovereignNativeComrakParseBackend(
+      final backend = FlarkNativeComrakParseBackend(
         bridge: _FakeNativeComrakBridge(
           const NativeComrakParseResult(revision: 1),
         ),
       );
 
       final result = await backend.parse(
-        const SovereignMarkdownParseRequest(
+        const FlarkMarkdownParseRequest(
           revision: 2,
           markdown: 'text',
-          profile: SovereignMarkdownProfile.commonMarkCore,
+          profile: FlarkMarkdownProfile.commonMarkCore,
         ),
       );
 
@@ -1420,13 +1383,13 @@ void main() {
       final bridge = _FakeNativeComrakBridge(
         const NativeComrakParseResult(revision: 0),
       );
-      final backend = SovereignNativeComrakParseBackend(bridge: bridge);
+      final backend = FlarkNativeComrakParseBackend(bridge: bridge);
 
       final result = await backend.parse(
-        const SovereignMarkdownParseRequest(
+        const FlarkMarkdownParseRequest(
           revision: 4,
           markdown: '',
-          profile: SovereignMarkdownProfile.commonMarkCore,
+          profile: FlarkMarkdownProfile.commonMarkCore,
         ),
       );
 
@@ -1442,15 +1405,15 @@ void main() {
         return;
       }
 
-      final backend = SovereignNativeComrakParseBackend.withNativeBridge(
+      final backend = FlarkNativeComrakParseBackend.withNativeBridge(
         overrideLibraryPath: libPath,
       );
 
       final result = await backend.parse(
-        const SovereignMarkdownParseRequest(
+        const FlarkMarkdownParseRequest(
           revision: 21,
           markdown: '# Title\n\n| a |\n| - |\n| b |\n\n**bold**\n',
-          profile: SovereignMarkdownProfile.commonMarkGfm,
+          profile: FlarkMarkdownProfile.commonMarkGfm,
         ),
       );
 
@@ -1458,13 +1421,13 @@ void main() {
       expect(
         result.blocks.map((block) => block.kind),
         containsAll(const [
-          SovereignMarkdownBlockKind.heading,
-          SovereignMarkdownBlockKind.table,
+          FlarkMarkdownBlockKind.heading,
+          FlarkMarkdownBlockKind.table,
         ]),
       );
       expect(
         result.inlineTokens.map((token) => token.kind),
-        contains(SovereignMarkdownInlineKind.strong),
+        contains(FlarkMarkdownInlineKind.strong),
       );
       expect(result.hiddenRanges, isNotEmpty);
       expect(
@@ -1483,24 +1446,24 @@ void main() {
           return;
         }
 
-        final backend = SovereignNativeComrakParseBackend.withNativeBridge(
+        final backend = FlarkNativeComrakParseBackend.withNativeBridge(
           overrideLibraryPath: libPath,
         );
 
         final result = await backend.parse(
-          const SovereignMarkdownParseRequest(
+          const FlarkMarkdownParseRequest(
             revision: 22,
             markdown:
                 '[OpenAI](https://openai.com "AI")\n\n![Logo](asset://logo.png)\n\n- [x] done\n\n| A | B |\n| :- | -: |\n| 1 | 2 |\n\n[id]: https://example.com\n\n<div>raw</div>\n',
-            profile: SovereignMarkdownProfile.commonMarkGfm,
+            profile: FlarkMarkdownProfile.commonMarkGfm,
           ),
         );
 
         final link = result.inlineTokens.firstWhere(
-          (token) => token.kind == SovereignMarkdownInlineKind.link,
+          (token) => token.kind == FlarkMarkdownInlineKind.link,
         );
         final image = result.inlineTokens.firstWhere(
-          (token) => token.kind == SovereignMarkdownInlineKind.image,
+          (token) => token.kind == FlarkMarkdownInlineKind.image,
         );
         expect(link.attributes['destination'], 'https://openai.com');
         expect(link.attributes['title'], 'AI');
@@ -1510,32 +1473,30 @@ void main() {
         expect(
           result.blocks.map((block) => block.kind),
           containsAll(const [
-            SovereignMarkdownBlockKind.listItem,
-            SovereignMarkdownBlockKind.table,
+            FlarkMarkdownBlockKind.listItem,
+            FlarkMarkdownBlockKind.table,
           ]),
         );
         final table = result.blocks.singleWhere(
-          (block) => block.kind == SovereignMarkdownBlockKind.table,
+          (block) => block.kind == FlarkMarkdownBlockKind.table,
         );
         expect(table.children, isNotEmpty);
-        expect(table.children.first.kind, SovereignMarkdownBlockKind.tableRow);
+        expect(table.children.first.kind, FlarkMarkdownBlockKind.tableRow);
         expect(
           table.children.first.children.map((block) => block.kind),
-          contains(SovereignMarkdownBlockKind.tableCell),
+          contains(FlarkMarkdownBlockKind.tableCell),
         );
         expect(
           result.blocks
-              .where(
-                (block) => block.kind == SovereignMarkdownBlockKind.listItem,
-              )
+              .where((block) => block.kind == FlarkMarkdownBlockKind.listItem)
               .any((block) => block.attributes['checked'] == true),
           isTrue,
         );
         expect(
           result.hiddenRanges.map((range) => range.kind),
           containsAll(const [
-            SovereignMarkdownHiddenRangeKind.referenceDefinition,
-            SovereignMarkdownHiddenRangeKind.rawHtml,
+            FlarkMarkdownHiddenRangeKind.referenceDefinition,
+            FlarkMarkdownHiddenRangeKind.rawHtml,
           ]),
         );
       },
@@ -1549,42 +1510,39 @@ void main() {
           return;
         }
 
-        final backend = SovereignNativeComrakParseBackend.withNativeBridge(
+        final backend = FlarkNativeComrakParseBackend.withNativeBridge(
           overrideLibraryPath: libPath,
         );
 
         final markerOnly = await backend.parse(
-          const SovereignMarkdownParseRequest(
+          const FlarkMarkdownParseRequest(
             revision: 23,
             markdown: '*',
-            profile: SovereignMarkdownProfile.commonMarkGfm,
+            profile: FlarkMarkdownProfile.commonMarkGfm,
           ),
         );
 
-        expect(
-          markerOnly.blocks.single.kind,
-          SovereignMarkdownBlockKind.paragraph,
-        );
+        expect(markerOnly.blocks.single.kind, FlarkMarkdownBlockKind.paragraph);
         expect(markerOnly.hiddenRanges, isEmpty);
         expect(
-          SovereignProjection.fromParseResult(markerOnly).projectText('*'),
+          FlarkProjection.fromParseResult(markerOnly).projectText('*'),
           '*',
         );
 
         final completeMarker = await backend.parse(
-          const SovereignMarkdownParseRequest(
+          const FlarkMarkdownParseRequest(
             revision: 24,
             markdown: '* ',
-            profile: SovereignMarkdownProfile.commonMarkGfm,
+            profile: FlarkMarkdownProfile.commonMarkGfm,
           ),
         );
 
         expect(
           completeMarker.blocks.single.kind,
-          SovereignMarkdownBlockKind.listItem,
+          FlarkMarkdownBlockKind.listItem,
         );
         expect(
-          SovereignProjection.fromParseResult(completeMarker).projectText('* '),
+          FlarkProjection.fromParseResult(completeMarker).projectText('* '),
           isEmpty,
         );
       },
@@ -1599,27 +1557,27 @@ void main() {
         }
 
         const text = '```dart\ncode\n```\n\n> quote';
-        final backend = SovereignNativeComrakParseBackend.withNativeBridge(
+        final backend = FlarkNativeComrakParseBackend.withNativeBridge(
           overrideLibraryPath: libPath,
         );
 
         final result = await backend.parse(
-          const SovereignMarkdownParseRequest(
+          const FlarkMarkdownParseRequest(
             revision: 25,
             markdown: text,
-            profile: SovereignMarkdownProfile.commonMarkGfm,
+            profile: FlarkMarkdownProfile.commonMarkGfm,
           ),
         );
 
         expect(
           result.blocks.map((block) => block.kind),
           containsAll(const [
-            SovereignMarkdownBlockKind.codeBlock,
-            SovereignMarkdownBlockKind.blockquote,
+            FlarkMarkdownBlockKind.codeBlock,
+            FlarkMarkdownBlockKind.blockquote,
           ]),
         );
         expect(
-          SovereignProjection.fromParseResult(result).projectText(text),
+          FlarkProjection.fromParseResult(result).projectText(text),
           'code\n\nquote',
         );
       },
@@ -1634,27 +1592,24 @@ void main() {
         }
 
         const text = '```\nopen fence\n  code';
-        final backend = SovereignNativeComrakParseBackend.withNativeBridge(
+        final backend = FlarkNativeComrakParseBackend.withNativeBridge(
           overrideLibraryPath: libPath,
         );
 
         final result = await backend.parse(
-          const SovereignMarkdownParseRequest(
+          const FlarkMarkdownParseRequest(
             revision: 26,
             markdown: text,
-            profile: SovereignMarkdownProfile.commonMarkGfm,
+            profile: FlarkMarkdownProfile.commonMarkGfm,
           ),
         );
 
         final codeBlock = result.blocks.singleWhere(
-          (block) => block.kind == SovereignMarkdownBlockKind.codeBlock,
+          (block) => block.kind == FlarkMarkdownBlockKind.codeBlock,
         );
+        expect(codeBlock.sourceRange, const FlarkSourceRange(0, text.length));
         expect(
-          codeBlock.sourceRange,
-          const SovereignSourceRange(0, text.length),
-        );
-        expect(
-          SovereignProjection.fromParseResult(result).projectText(text),
+          FlarkProjection.fromParseResult(result).projectText(text),
           'open fence\n  code',
         );
       },

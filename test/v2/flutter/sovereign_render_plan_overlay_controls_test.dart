@@ -1,25 +1,26 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
-import 'package:sovereign_editor/src/v2/flutter/flutter.dart';
-import 'package:sovereign_editor/src/v2/markdown/markdown.dart';
-import 'package:sovereign_editor/src/v2/render_plan/render_plan.dart';
+import 'package:flark/src/v2/core/core.dart';
+import 'package:flark/src/v2/flutter/flutter.dart';
+import 'package:flark/src/v2/markdown/markdown.dart';
+import 'package:flark/src/v2/render_plan/render_plan.dart';
 
 void main() {
-  group('SovereignRenderPlanOverlayControls', () {
-    testWidgets('renders typed controls from render-plan overlay targets',
-        (tester) async {
-      final controller = SovereignFlutterController.fromMarkdown(
+  group('FlarkRenderPlanOverlayControls', () {
+    testWidgets('renders typed controls from render-plan overlay targets', (
+      tester,
+    ) async {
+      final controller = FlarkFlutterController.fromMarkdown(
         'link image task table code',
       );
       addTearDown(controller.dispose);
       controller.applyParseResult(_overlayParseResult(controller));
-      final pressed = <SovereignRenderOverlayTarget>[];
+      final pressed = <FlarkRenderOverlayTarget>[];
 
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SovereignRenderPlanOverlayControls(
+          child: FlarkRenderPlanOverlayControls(
             controller: controller,
             onPressed: pressed.add,
           ),
@@ -35,73 +36,74 @@ void main() {
       await tester.tap(find.text('Link: https://example.com'));
       await tester.pump();
 
-      expect(pressed.single.kind, SovereignRenderOverlayKind.link);
+      expect(pressed.single.kind, FlarkRenderOverlayKind.link);
       expect(pressed.single.action!.destination, 'https://example.com');
     });
 
-    testWidgets('hides controls while render-plan state is stale',
-        (tester) async {
-      final controller = SovereignFlutterController.fromMarkdown('link');
+    testWidgets('hides controls while render-plan state is stale', (
+      tester,
+    ) async {
+      final controller = FlarkFlutterController.fromMarkdown('link');
       addTearDown(controller.dispose);
 
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SovereignRenderPlanOverlayControls(controller: controller),
+          child: FlarkRenderPlanOverlayControls(controller: controller),
         ),
       );
 
-      expect(find.byType(SovereignRenderPlanOverlayControls), findsOneWidget);
+      expect(find.byType(FlarkRenderPlanOverlayControls), findsOneWidget);
       expect(find.textContaining('Link'), findsNothing);
     });
   });
 }
 
-SovereignMarkdownParseResult _overlayParseResult(
-  SovereignFlutterController controller,
+FlarkMarkdownParseResult _overlayParseResult(
+  FlarkFlutterController controller,
 ) {
-  return SovereignMarkdownParseResult(
-    schemaVersion: SovereignMarkdownParseProtocol.currentSchemaVersion,
+  return FlarkMarkdownParseResult(
+    schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
     revision: controller.state.revision,
     sourceTextLength: controller.state.document.length,
     blocks: [
-      SovereignMarkdownBlockNode(
-        kind: SovereignMarkdownBlockKind.paragraph,
+      FlarkMarkdownBlockNode(
+        kind: FlarkMarkdownBlockKind.paragraph,
         type: 'paragraph',
-        sourceRange: const SovereignSourceRange(0, 10),
+        sourceRange: const FlarkSourceRange(0, 10),
       ),
-      SovereignMarkdownBlockNode(
-        kind: SovereignMarkdownBlockKind.listItem,
+      FlarkMarkdownBlockNode(
+        kind: FlarkMarkdownBlockKind.listItem,
         type: 'listItem',
-        sourceRange: const SovereignSourceRange(11, 15),
+        sourceRange: const FlarkSourceRange(11, 15),
         attributes: const {'checked': true},
       ),
-      SovereignMarkdownBlockNode(
-        kind: SovereignMarkdownBlockKind.table,
+      FlarkMarkdownBlockNode(
+        kind: FlarkMarkdownBlockKind.table,
         type: 'table',
-        sourceRange: const SovereignSourceRange(16, 21),
+        sourceRange: const FlarkSourceRange(16, 21),
         attributes: const {
           'alignments': ['left', 'right'],
         },
       ),
-      SovereignMarkdownBlockNode(
-        kind: SovereignMarkdownBlockKind.codeBlock,
+      FlarkMarkdownBlockNode(
+        kind: FlarkMarkdownBlockKind.codeBlock,
         type: 'codeBlock',
-        sourceRange: const SovereignSourceRange(22, 26),
+        sourceRange: const FlarkSourceRange(22, 26),
         attributes: const {'language': 'dart'},
       ),
     ],
     inlineTokens: [
-      SovereignMarkdownInlineToken(
-        kind: SovereignMarkdownInlineKind.link,
+      FlarkMarkdownInlineToken(
+        kind: FlarkMarkdownInlineKind.link,
         type: 'link',
-        sourceRange: const SovereignSourceRange(0, 4),
+        sourceRange: const FlarkSourceRange(0, 4),
         attributes: const {'destination': 'https://example.com'},
       ),
-      SovereignMarkdownInlineToken(
-        kind: SovereignMarkdownInlineKind.image,
+      FlarkMarkdownInlineToken(
+        kind: FlarkMarkdownInlineKind.image,
         type: 'image',
-        sourceRange: const SovereignSourceRange(5, 10),
+        sourceRange: const FlarkSourceRange(5, 10),
         attributes: const {'src': 'asset://diagram.png', 'alt': 'diagram'},
       ),
     ],

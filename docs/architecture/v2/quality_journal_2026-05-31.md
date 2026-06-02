@@ -1,4 +1,4 @@
-# Sovereign v2 Quality Journal
+# Flark v2 Quality Journal
 
 Status date: 2026-05-31
 Scope: iterative code-quality, correctness, architecture, and performance
@@ -28,7 +28,7 @@ Focus: headless source transaction correctness.
 
 What changed:
 
-- Made `SovereignTransaction` sort operations stably by original operation
+- Made `FlarkTransaction` sort operations stably by original operation
   order when multiple operations have the same source range.
 - Added regression coverage for same-offset multi-insert transactions.
 
@@ -50,9 +50,9 @@ Focus: projection/cursor-mask performance and range-input robustness.
 
 What changed:
 
-- Converted `SovereignCursorMask` to validate hidden and replacement ranges
+- Converted `FlarkCursorMask` to validate hidden and replacement ranges
   once, then build projection spans from the validated lists.
-- Let `SovereignProjection` construct its `cursorMask` from already validated
+- Let `FlarkProjection` construct its `cursorMask` from already validated
   ranges and spans instead of redoing validation work.
 - Added regression coverage that cursor masks can be built from single-pass
   range iterables.
@@ -123,7 +123,7 @@ Focus: Flutter controller/scheduler architecture and async lifecycle safety.
 
 What changed:
 
-- Added an optional `onError` callback to `SovereignParseScheduler`.
+- Added an optional `onError` callback to `FlarkParseScheduler`.
 - Made scheduled background parses catch failures and report them through that
   callback instead of allowing unhandled async errors.
 - Kept explicit `parseNow()` awaitable so direct callers can still observe

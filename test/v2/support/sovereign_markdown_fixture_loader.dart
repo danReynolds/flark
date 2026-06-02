@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
-final class SovereignMarkdownFixtureCase {
-  const SovereignMarkdownFixtureCase({
+final class FlarkMarkdownFixtureCase {
+  const FlarkMarkdownFixtureCase({
     required this.id,
     required this.category,
     required this.markdown,
@@ -12,8 +12,8 @@ final class SovereignMarkdownFixtureCase {
     this.requiresGfmDifference = false,
   });
 
-  factory SovereignMarkdownFixtureCase.fromJson(Map<String, Object?> json) {
-    return SovereignMarkdownFixtureCase(
+  factory FlarkMarkdownFixtureCase.fromJson(Map<String, Object?> json) {
+    return FlarkMarkdownFixtureCase(
       id: json['id'] as String? ?? '',
       category: json['category'] as String? ?? 'uncategorized',
       markdown: json['markdown'] as String? ?? '',
@@ -33,9 +33,7 @@ final class SovereignMarkdownFixtureCase {
   final bool requiresGfmDifference;
 }
 
-List<SovereignMarkdownFixtureCase> loadSovereignMarkdownFixtureLane(
-  String path,
-) {
+List<FlarkMarkdownFixtureCase> loadFlarkMarkdownFixtureLane(String path) {
   final decoded = jsonDecode(File(path).readAsStringSync());
   if (decoded is! List) {
     throw FormatException('Expected fixture lane to be a JSON list: $path');
@@ -43,7 +41,7 @@ List<SovereignMarkdownFixtureCase> loadSovereignMarkdownFixtureLane(
   return decoded
       .whereType<Map>()
       .map((entry) => entry.cast<String, Object?>())
-      .map(SovereignMarkdownFixtureCase.fromJson)
+      .map(FlarkMarkdownFixtureCase.fromJson)
       .toList(growable: false);
 }
 

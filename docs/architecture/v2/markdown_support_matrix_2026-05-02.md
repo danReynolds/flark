@@ -1,4 +1,4 @@
-# Sovereign v2 Markdown Support Matrix
+# Flark v2 Markdown Support Matrix
 
 Status date: 2026-05-14
 Runtime target: source-first v2 architecture with required Comrak parsing,
@@ -40,7 +40,7 @@ contract that maps each feature to concrete tests.
 
 ## GitHub-Only Extension Policy
 
-Sovereign's required parser profile is CommonMark plus the GFM extensions that
+Flark's required parser profile is CommonMark plus the GFM extensions that
 Comrak exposes for tables, task lists, strikethrough, and autolinks. GitHub.com
 also supports product-level features that are not part of that core profile.
 Until a feature has a typed parser/render/edit contract, v2 keeps it
@@ -60,16 +60,16 @@ source-visible and editable instead of partially rendering it.
 | Canonical source transactions | Supported | Core transaction/runtime/history tests |
 | Undo/redo grouping | Supported headless | History stack tests |
 | Parser result adoption | Supported | Flutter controller tests and performance budget |
-| Parser scheduling | Supported | `SovereignParseScheduler` tests and example app wiring |
+| Parser scheduling | Supported | `FlarkParseScheduler` tests and example app wiring |
 | Comrak on web | Supported | Chrome WASM smoke tests and rebuilt example web bundle |
 | Stale parse rejection | Supported | Flutter controller tests |
 | Hidden marker source/display mapping | Supported | Projection tests and feature matrix |
 | Boundary affinity at hidden markers | Supported | Projection affinity tests |
-| Projected text editing | Supported | `SovereignProjectedTextEditAdapter` tests and `SovereignProjectedEditableText` tests |
-| Live rendered editing | Supported | `SovereignLiveRenderedEditableText` tests, visual goldens, example widget/browser-path tests |
-| Raw-source caret synchronization | Supported | `SovereignEditableText` selection behavior tests |
+| Projected text editing | Supported | `FlarkProjectedTextEditAdapter` tests and `FlarkProjectedEditableText` tests |
+| Live rendered editing | Supported | `FlarkLiveRenderedEditableText` tests, visual goldens, example widget/browser-path tests |
+| Raw-source caret synchronization | Supported | `FlarkEditableText` selection behavior tests |
 | Read-only/edit render-plan parity | Supported | Flutter render-plan parity test |
-| Render-plan overlay controls | Supported | `SovereignRenderPlanOverlayControls` tests |
+| Render-plan overlay controls | Supported | `FlarkRenderPlanOverlayControls` tests |
 | Native bridge packaging contract | Supported | v2 packaging contract test |
 | Performance budgets | Supported | v2 performance budget test |
 

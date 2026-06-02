@@ -1,8 +1,8 @@
 import '../../core/selection/sovereign_selection.dart';
 import '../../core/state/sovereign_editor_state.dart';
 
-final class SovereignSelectedLine {
-  const SovereignSelectedLine({
+final class FlarkSelectedLine {
+  const FlarkSelectedLine({
     required this.index,
     required this.start,
     required this.end,
@@ -15,19 +15,19 @@ final class SovereignSelectedLine {
   final String text;
 }
 
-List<SovereignSelectedLine> selectedMarkdownLines(SovereignEditorState state) {
+List<FlarkSelectedLine> selectedMarkdownLines(FlarkEditorState state) {
   final selection = state.selection;
   final buffer = state.document.buffer;
   final startLine = buffer.lineAtOffset(selection.start);
   final endOffset = _inclusiveSelectionEnd(selection);
   final endLine = buffer.lineAtOffset(endOffset);
-  final lines = <SovereignSelectedLine>[];
+  final lines = <FlarkSelectedLine>[];
 
   for (var lineIndex = startLine; lineIndex <= endLine; lineIndex += 1) {
     final start = buffer.lineStart(lineIndex);
     final end = buffer.lineEnd(lineIndex);
     lines.add(
-      SovereignSelectedLine(
+      FlarkSelectedLine(
         index: lineIndex,
         start: start,
         end: end,
@@ -39,7 +39,7 @@ List<SovereignSelectedLine> selectedMarkdownLines(SovereignEditorState state) {
   return lines;
 }
 
-int _inclusiveSelectionEnd(SovereignSelection selection) {
+int _inclusiveSelectionEnd(FlarkSelection selection) {
   if (selection.isCollapsed) return selection.extentOffset;
   return selection.end - 1;
 }

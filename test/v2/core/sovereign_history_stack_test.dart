@@ -1,20 +1,20 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
+import 'package:flark/src/v2/core/core.dart';
 
 void main() {
-  group('SovereignHistoryStack', () {
+  group('FlarkHistoryStack', () {
     test('undoes and redoes a recorded transaction', () {
-      final initial = SovereignEditorState.fromMarkdown('abc');
-      final transaction = SovereignTransaction.single(
-        SovereignSourceOperation.insert(3, 'd'),
-        metadata: const SovereignTransactionMetadata(
-          intent: SovereignTransactionIntent.input,
+      final initial = FlarkEditorState.fromMarkdown('abc');
+      final transaction = FlarkTransaction.single(
+        FlarkSourceOperation.insert(3, 'd'),
+        metadata: const FlarkTransactionMetadata(
+          intent: FlarkTransactionIntent.input,
           userEvent: 'input.type',
         ),
       );
 
       final edited = initial.applyTransaction(transaction);
-      final history = const SovereignHistoryStack().record(
+      final history = const FlarkHistoryStack().record(
         transaction: transaction,
         documentBefore: initial.document,
       );
@@ -32,12 +32,12 @@ void main() {
     });
 
     test('groups adjacent transactions with the same undo group id', () {
-      var state = SovereignEditorState.fromMarkdown('');
-      var history = const SovereignHistoryStack();
+      var state = FlarkEditorState.fromMarkdown('');
+      var history = const FlarkHistoryStack();
 
-      final first = SovereignTransaction.single(
-        SovereignSourceOperation.insert(0, 'a'),
-        metadata: const SovereignTransactionMetadata(undoGroupId: 7),
+      final first = FlarkTransaction.single(
+        FlarkSourceOperation.insert(0, 'a'),
+        metadata: const FlarkTransactionMetadata(undoGroupId: 7),
       );
       final afterFirst = state.applyTransaction(first);
       history = history.record(
@@ -46,9 +46,9 @@ void main() {
       );
       state = afterFirst;
 
-      final second = SovereignTransaction.single(
-        SovereignSourceOperation.insert(1, 'b'),
-        metadata: const SovereignTransactionMetadata(undoGroupId: 7),
+      final second = FlarkTransaction.single(
+        FlarkSourceOperation.insert(1, 'b'),
+        metadata: const FlarkTransactionMetadata(undoGroupId: 7),
       );
       final afterSecond = state.applyTransaction(second);
       history = history.record(
@@ -65,19 +65,19 @@ void main() {
     });
 
     test('recording a new transaction clears redo history', () {
-      final initial = SovereignEditorState.fromMarkdown('a');
-      final first = SovereignTransaction.single(
-        SovereignSourceOperation.insert(1, 'b'),
+      final initial = FlarkEditorState.fromMarkdown('a');
+      final first = FlarkTransaction.single(
+        FlarkSourceOperation.insert(1, 'b'),
       );
       final afterFirst = initial.applyTransaction(first);
-      final history = const SovereignHistoryStack().record(
+      final history = const FlarkHistoryStack().record(
         transaction: first,
         documentBefore: initial.document,
       );
       final undone = history.undo(afterFirst);
 
-      final replacement = SovereignTransaction.single(
-        SovereignSourceOperation.insert(1, 'c'),
+      final replacement = FlarkTransaction.single(
+        FlarkSourceOperation.insert(1, 'c'),
       );
       final afterReplacement = undone.state.applyTransaction(replacement);
       final nextHistory = undone.history.record(
@@ -91,13 +91,13 @@ void main() {
     });
 
     test('does not record transactions that opt out of history', () {
-      final initial = SovereignEditorState.fromMarkdown('abc');
-      final transaction = SovereignTransaction.single(
-        SovereignSourceOperation.insert(3, '!'),
-        metadata: const SovereignTransactionMetadata(addToHistory: false),
+      final initial = FlarkEditorState.fromMarkdown('abc');
+      final transaction = FlarkTransaction.single(
+        FlarkSourceOperation.insert(3, '!'),
+        metadata: const FlarkTransactionMetadata(addToHistory: false),
       );
 
-      final history = const SovereignHistoryStack().record(
+      final history = const FlarkHistoryStack().record(
         transaction: transaction,
         documentBefore: initial.document,
       );
@@ -107,15 +107,15 @@ void main() {
     });
 
     test('does not record source-neutral transactions', () {
-      final initial = SovereignEditorState.fromMarkdown('abc');
-      final transaction = SovereignTransaction.single(
-        const SovereignSourceOperation.replace(
-          replacedRange: SovereignSourceRange(0, 3),
+      final initial = FlarkEditorState.fromMarkdown('abc');
+      final transaction = FlarkTransaction.single(
+        const FlarkSourceOperation.replace(
+          replacedRange: FlarkSourceRange(0, 3),
           replacementText: 'abc',
         ),
       );
 
-      final history = const SovereignHistoryStack().record(
+      final history = const FlarkHistoryStack().record(
         transaction: transaction,
         documentBefore: initial.document,
       );

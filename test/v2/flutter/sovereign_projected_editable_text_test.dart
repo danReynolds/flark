@@ -1,20 +1,20 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sovereign_editor/src/v2/core/core.dart';
-import 'package:sovereign_editor/src/v2/flutter/flutter.dart';
-import 'package:sovereign_editor/src/v2/markdown/markdown.dart';
-import 'package:sovereign_editor/src/v2/projection/projection.dart';
+import 'package:flark/src/v2/core/core.dart';
+import 'package:flark/src/v2/flutter/flutter.dart';
+import 'package:flark/src/v2/markdown/markdown.dart';
+import 'package:flark/src/v2/projection/projection.dart';
 
 void main() {
   testWidgets('renders projected text and applies edits to source markdown', (
     tester,
   ) async {
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           '**bold**',
-          selection: const SovereignSelection.collapsed(6),
+          selection: const FlarkSelection.collapsed(6),
         ),
       ),
       projection: _boldProjection(),
@@ -24,7 +24,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignProjectedEditableText(
+        child: FlarkProjectedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
@@ -49,11 +49,11 @@ void main() {
   testWidgets('groups projected IME composition updates into one undo step', (
     tester,
   ) async {
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           '**bold**',
-          selection: const SovereignSelection.collapsed(6),
+          selection: const FlarkSelection.collapsed(6),
         ),
       ),
       projection: _boldProjection(),
@@ -63,7 +63,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignProjectedEditableText(
+        child: FlarkProjectedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
@@ -102,11 +102,11 @@ void main() {
   testWidgets('maps projected selection updates back to source offsets', (
     tester,
   ) async {
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown(
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
           '**bold**',
-          selection: const SovereignSelection.collapsed(6),
+          selection: const FlarkSelection.collapsed(6),
         ),
       ),
       projection: _boldProjection(),
@@ -116,7 +116,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignProjectedEditableText(
+        child: FlarkProjectedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
@@ -127,15 +127,15 @@ void main() {
     editable.controller.selection = const TextSelection.collapsed(offset: 0);
     await tester.pump();
 
-    expect(controller.selection, const SovereignSelection.collapsed(2));
+    expect(controller.selection, const FlarkSelection.collapsed(2));
   });
 
   testWidgets('merges partial style with ambient text defaults', (
     tester,
   ) async {
-    final controller = SovereignFlutterController(
-      runtime: SovereignEditorRuntime(
-        state: SovereignEditorState.fromMarkdown('**bold**'),
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown('**bold**'),
       ),
       projection: _boldProjection(),
     );
@@ -146,7 +146,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: DefaultTextStyle(
           style: const TextStyle(color: Color(0xFF17202A), fontSize: 18),
-          child: SovereignProjectedEditableText(
+          child: FlarkProjectedEditableText(
             controller: controller,
             style: const TextStyle(fontFamily: 'monospace'),
           ),
@@ -161,7 +161,7 @@ void main() {
   });
 
   testWidgets('can expand to fill a document pane', (tester) async {
-    final controller = SovereignFlutterController.fromMarkdown('');
+    final controller = FlarkFlutterController.fromMarkdown('');
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
@@ -169,7 +169,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: SizedBox(
           height: 240,
-          child: SovereignProjectedEditableText(
+          child: FlarkProjectedEditableText(
             controller: controller,
             expands: true,
             maxLines: null,
@@ -186,10 +186,10 @@ void main() {
   });
 
   testWidgets('routes Enter through markdown input policy', (tester) async {
-    final controller = SovereignFlutterController.fromMarkdown(
+    final controller = FlarkFlutterController.fromMarkdown(
       '- item',
-      extensions: SovereignExtensionSet([
-        const SovereignMarkdownInputEditingExtension(),
+      extensions: FlarkExtensionSet([
+        const FlarkMarkdownInputEditingExtension(),
       ]),
     );
     addTearDown(controller.dispose);
@@ -197,7 +197,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignProjectedEditableText(
+        child: FlarkProjectedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
@@ -208,14 +208,14 @@ void main() {
     await tester.pump();
 
     expect(controller.markdown, '- item\n- ');
-    expect(controller.selection, const SovereignSelection.collapsed(9));
+    expect(controller.selection, const FlarkSelection.collapsed(9));
   });
 
   testWidgets('routes Backspace through markdown input policy', (tester) async {
-    final controller = SovereignFlutterController.fromMarkdown(
+    final controller = FlarkFlutterController.fromMarkdown(
       '- item',
-      extensions: SovereignExtensionSet([
-        const SovereignMarkdownInputEditingExtension(),
+      extensions: FlarkExtensionSet([
+        const FlarkMarkdownInputEditingExtension(),
       ]),
     );
     addTearDown(controller.dispose);
@@ -223,7 +223,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: SovereignProjectedEditableText(
+        child: FlarkProjectedEditableText(
           controller: controller,
           style: const TextStyle(fontSize: 14),
         ),
@@ -231,7 +231,7 @@ void main() {
     );
 
     controller.applySelection(
-      const SovereignSelection.collapsed(2),
+      const FlarkSelection.collapsed(2),
       userEvent: 'test',
     );
     await tester.pump();
@@ -240,27 +240,27 @@ void main() {
     await tester.pump();
 
     expect(controller.markdown, 'item');
-    expect(controller.selection, const SovereignSelection.collapsed(0));
+    expect(controller.selection, const FlarkSelection.collapsed(0));
   });
 
   testWidgets(
     'routes hardware Backspace at projected quote text start through policy',
     (tester) async {
-      final controller = SovereignFlutterController.fromMarkdown(
+      final controller = FlarkFlutterController.fromMarkdown(
         '> quote',
-        extensions: SovereignMarkdownEditingExtensions.standard(),
+        extensions: FlarkMarkdownEditingExtensions.standard(),
       );
       addTearDown(controller.dispose);
       await _applyComrakParseResult(controller);
       controller.applySelection(
-        const SovereignSelection.collapsed(2),
+        const FlarkSelection.collapsed(2),
         userEvent: 'test',
       );
 
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SovereignProjectedEditableText(
+          child: FlarkProjectedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
             autofocus: true,
@@ -281,28 +281,28 @@ void main() {
       await tester.pump();
 
       expect(controller.markdown, 'quote');
-      expect(controller.selection, const SovereignSelection.collapsed(0));
+      expect(controller.selection, const FlarkSelection.collapsed(0));
     },
   );
 
   testWidgets(
     'routes hardware Backspace at projected heading text start through policy',
     (tester) async {
-      final controller = SovereignFlutterController.fromMarkdown(
+      final controller = FlarkFlutterController.fromMarkdown(
         '## Heading',
-        extensions: SovereignMarkdownEditingExtensions.standard(),
+        extensions: FlarkMarkdownEditingExtensions.standard(),
       );
       addTearDown(controller.dispose);
       await _applyComrakParseResult(controller);
       controller.applySelection(
-        const SovereignSelection.collapsed(3),
+        const FlarkSelection.collapsed(3),
         userEvent: 'test',
       );
 
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SovereignProjectedEditableText(
+          child: FlarkProjectedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
             autofocus: true,
@@ -323,28 +323,28 @@ void main() {
       await tester.pump();
 
       expect(controller.markdown, 'Heading');
-      expect(controller.selection, const SovereignSelection.collapsed(0));
+      expect(controller.selection, const FlarkSelection.collapsed(0));
     },
   );
 
   testWidgets(
     'routes hardware Backspace at projected list text start through policy',
     (tester) async {
-      final controller = SovereignFlutterController.fromMarkdown(
+      final controller = FlarkFlutterController.fromMarkdown(
         '- item',
-        extensions: SovereignMarkdownEditingExtensions.standard(),
+        extensions: FlarkMarkdownEditingExtensions.standard(),
       );
       addTearDown(controller.dispose);
       await _applyComrakParseResult(controller);
       controller.applySelection(
-        const SovereignSelection.collapsed(2),
+        const FlarkSelection.collapsed(2),
         userEvent: 'test',
       );
 
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SovereignProjectedEditableText(
+          child: FlarkProjectedEditableText(
             controller: controller,
             style: const TextStyle(fontSize: 14),
             autofocus: true,
@@ -365,37 +365,34 @@ void main() {
       await tester.pump();
 
       expect(controller.markdown, 'item');
-      expect(controller.selection, const SovereignSelection.collapsed(0));
+      expect(controller.selection, const FlarkSelection.collapsed(0));
     },
   );
 }
 
-SovereignProjection _boldProjection() {
-  return SovereignProjection(
+FlarkProjection _boldProjection() {
+  return FlarkProjection(
     textLength: 8,
     hiddenRanges: const [
-      SovereignHiddenRange(
-        range: SovereignSourceRange(0, 2),
-        kind: SovereignHiddenRangeKind.inlineMarker,
+      FlarkHiddenRange(
+        range: FlarkSourceRange(0, 2),
+        kind: FlarkHiddenRangeKind.inlineMarker,
       ),
-      SovereignHiddenRange(
-        range: SovereignSourceRange(6, 8),
-        kind: SovereignHiddenRangeKind.inlineMarker,
+      FlarkHiddenRange(
+        range: FlarkSourceRange(6, 8),
+        kind: FlarkHiddenRangeKind.inlineMarker,
       ),
     ],
   );
 }
 
-Future<void> _applyComrakParseResult(
-  SovereignFlutterController controller,
-) async {
-  final result = await SovereignNativeComrakParseBackend.withNativeBridge()
-      .parse(
-        SovereignMarkdownParseRequest(
-          revision: controller.state.revision,
-          markdown: controller.markdown,
-          profile: SovereignMarkdownProfile.commonMarkGfm,
-        ),
-      );
+Future<void> _applyComrakParseResult(FlarkFlutterController controller) async {
+  final result = await FlarkNativeComrakParseBackend.withNativeBridge().parse(
+    FlarkMarkdownParseRequest(
+      revision: controller.state.revision,
+      markdown: controller.markdown,
+      profile: FlarkMarkdownProfile.commonMarkGfm,
+    ),
+  );
   expect(controller.applyParseResult(result), isTrue);
 }
