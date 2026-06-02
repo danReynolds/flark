@@ -10,12 +10,12 @@ echo "Repo: $REPO_ROOT"
 echo "Package: $PKG_ROOT"
 
 echo
-echo "==> (cd . && flutter test --tags benchmark test/benchmarks --dart-define=SOVEREIGN_BENCHMARK_ENFORCE_BUDGETS=true --reporter compact)"
+echo "==> (cd . && flutter test --tags benchmark test/v2/performance --dart-define=SOVEREIGN_BENCHMARK_ENFORCE_BUDGETS=true --reporter compact)"
 (
   cd "$PKG_ROOT"
   flutter test \
     --tags benchmark \
-    test/benchmarks \
+    test/v2/performance \
     --dart-define=SOVEREIGN_BENCHMARK_ENFORCE_BUDGETS=true \
     --reporter compact
 )

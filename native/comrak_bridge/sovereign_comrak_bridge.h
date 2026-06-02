@@ -18,6 +18,10 @@ typedef struct SovereignComrakResponse {
 
 uint32_t sovereign_comrak_bridge_version(void);
 
+uint8_t* sovereign_comrak_input_alloc(uint32_t len);
+
+void sovereign_comrak_input_free(uint8_t* ptr, uint32_t len);
+
 SovereignComrakResponse* sovereign_comrak_parse(
     uint32_t revision,
     uint8_t profile,

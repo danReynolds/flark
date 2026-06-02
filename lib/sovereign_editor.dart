@@ -1,44 +1,103 @@
-/// Public API for the Sovereign markdown editor and read-only preview widgets.
+/// Sovereign source-first markdown editor and preview API.
 ///
-/// App code should import this library instead of deep implementation paths:
-///
-/// ```dart
-/// import 'package:sovereign_editor/sovereign_editor.dart';
-/// ```
-///
-/// The top-level library exposes editor/preview widgets, controller and command
-/// APIs, theme models, syntax integration contracts, native parser diagnostics,
-/// and model types that are currently part of those public signatures.
+/// New apps should start here. Lower-level headless APIs live in
+/// `sovereign_editor_core.dart`; the complete advanced API lives in
+/// `sovereign_editor_v2.dart`.
 library;
 
-export 'theme/sovereign_markdown_theme.dart';
-
-// Primary editor API
-export 'widgets/sovereign/controllers/sovereign_controller.dart';
-export 'widgets/sovereign/commands/sovereign_markdown_commands.dart';
-export 'widgets/sovereign/commands/models/sovereign_block_style.dart';
-export 'widgets/sovereign/commands/models/sovereign_command_capabilities.dart';
-export 'widgets/sovereign/commands/models/sovereign_command_result.dart';
-export 'widgets/sovereign/commands/models/sovereign_inline_style.dart';
-export 'widgets/sovereign/commands/models/sovereign_link_edit_context.dart';
-export 'widgets/sovereign/presentation/sovereign_editor.dart';
-export 'widgets/sovereign/presentation/sovereign_markdown_view.dart';
-export 'widgets/sovereign/theme/sovereign_editor_theme.dart';
-
-// Engine and syntax pipeline (advanced, but supported)
-export 'widgets/sovereign/engine/native_comrak_bridge_factory.dart';
-export 'widgets/sovereign/engine/native_comrak_ffi.dart';
-export 'widgets/sovereign/engine/syntax_engine.dart';
-export 'widgets/sovereign/engine/syntax_snapshot.dart';
-export 'widgets/sovereign/engine/syntax_types.dart';
-export 'widgets/sovereign/engine/utf8_utf16_offset_mapper.dart';
-
-// Public model types exposed by controller and syntax contracts.
-export 'widgets/sovereign/models/block_node.dart';
-export 'widgets/sovereign/models/block_tree.dart';
-export 'widgets/sovereign/models/decoration_model.dart';
-export 'widgets/sovereign/models/edit_op.dart';
-export 'widgets/sovereign/models/geometry_model.dart';
-export 'widgets/sovereign/models/line_index.dart';
-export 'widgets/sovereign/models/sovereign_state.dart';
-export 'widgets/sovereign/models/sovereign_style.dart';
+export 'sovereign_editor_core.dart'
+    show
+        SovereignCommand,
+        SovereignCommandContext,
+        SovereignCommandResult,
+        SovereignCommandResultKind,
+        SovereignCoreEditingCommands,
+        SovereignEditorRuntime,
+        SovereignEditorRuntimeResult,
+        SovereignEditorState,
+        SovereignExtension,
+        SovereignExtensionSet,
+        SovereignInsertTextPayload,
+        SovereignSelection,
+        SovereignSourceOperation,
+        SovereignSourceRange,
+        SovereignTransaction,
+        SovereignTransactionIntent,
+        SovereignTransactionMetadata,
+        SovereignMarkdownBlockCommands,
+        SovereignMarkdownCommandCapabilities,
+        SovereignMarkdownCommandQueries,
+        SovereignMarkdownEditingExtensions,
+        SovereignHandleBackspacePayload,
+        SovereignHandleEnterPayload,
+        SovereignInsertFencePayload,
+        SovereignInsertLinkPayload,
+        SovereignInsertTablePayload,
+        SovereignInsertThematicBreakPayload,
+        SovereignMarkdownInlineCommands,
+        SovereignMarkdownInlineStyle,
+        SovereignMarkdownInputCommands,
+        SovereignMarkdownLinkCommands,
+        SovereignMarkdownParseBackend,
+        SovereignMarkdownParseRequest,
+        SovereignMarkdownParseResult,
+        SovereignMarkdownParserCapabilities,
+        SovereignMarkdownProfile,
+        SovereignMarkdownReplacementRange,
+        SovereignMarkdownReplacementRangeKind,
+        SovereignMarkdownTableCommands,
+        SovereignRemoveLinkPayload,
+        SovereignSetHeadingLevelPayload,
+        SovereignSetFenceLanguagePayload,
+        SovereignSetTaskListCheckedPayload,
+        SovereignTableMutationPayload,
+        SovereignToggleBulletListPayload,
+        SovereignToggleInlineStylePayload,
+        SovereignToggleOrderedListPayload,
+        SovereignToggleQuotePayload,
+        SovereignToggleTaskListPayload,
+        SovereignRenderBlock,
+        SovereignRenderCodeBlockDescriptor,
+        SovereignRenderInlineActionDescriptor,
+        SovereignRenderListItemDescriptor,
+        SovereignRenderListKind,
+        SovereignRenderOverlayKind,
+        SovereignRenderOverlayPlan,
+        SovereignRenderOverlayTarget,
+        SovereignRenderPlan,
+        SovereignRenderPlanContext,
+        SovereignRenderPlanExtension,
+        SovereignRenderTableDescriptor,
+        SovereignRenderTaskListItemDescriptor,
+        applySovereignRenderPlanExtensions;
+export 'src/v2/flutter/flutter.dart'
+    show
+        SovereignCommandAction,
+        SovereignCommandActions,
+        SovereignCommandIntent,
+        SovereignCommandInvocation,
+        SovereignControllerEvent,
+        SovereignControllerEventKind,
+        SovereignFlutterController,
+        SovereignCodeLanguageOption,
+        SovereignMarkdownControllerCommands,
+        MarkdownEditor,
+        SovereignMarkdownEditingMode,
+        SovereignMarkdownInteractionConfig,
+        Markdown,
+        SovereignLinkEditCallback,
+        SovereignLinkOpenCallback,
+        SovereignOverlayTargetWidgetBuilder,
+        SovereignPreviewBlockWidgetBuilder,
+        SovereignTypedCommandInvocation;
+export 'src/v2/markdown/markdown.dart' show SovereignNativeComrakParseBackend;
+export 'src/v2/native/native_comrak_ffi.dart'
+    show
+        NativeComrakBridge,
+        NativeComrakBridgeLoadException,
+        NativeComrakBridgeLoadFailureKind,
+        NativeComrakParseInput,
+        NativeComrakParseResult,
+        NativeComrakProfile,
+        NativeComrakReplacementRange,
+        NativeComrakBridgePreflightResult;

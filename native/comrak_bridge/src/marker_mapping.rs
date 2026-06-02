@@ -1,4 +1,4 @@
-use crate::payload::{JsonBlock, JsonRange};
+use crate::payload::{JsonBlock, JsonInlineToken, JsonRange};
 use crate::source_ranges::{
     end_of_line, for_each_line_in_range, leading_indent, line_content_end, line_start_for_offset,
     normalize_ranges, push_range,
@@ -162,20 +162,20 @@ pub(crate) fn collect_block_marker_ranges(
     normalize_ranges(ranges, text_len)
 }
 
-pub(crate) fn collect_inline_marker_ranges(text: &str, exclusions: &[JsonRange]) -> Vec<JsonRange> {
+pub(crate) fn collect_inline_marker_ranges(
+    text: &str,
+    exclusions: &[JsonRange],
+    inline_tokens: &[JsonInlineToken],
+) -> Vec<JsonRange> {
     let bytes = text.as_bytes();
     let len = bytes.len();
     if len == 0 {
         return Vec::new();
     }
 
-    let mut runs = Vec::new();
+    let mut ranges = Vec::new();
     let mut cursor = 0usize;
     let mut exclusion_index = 0usize;
-
-    let mut bold_start: Option<usize> = None;
-    let mut italic_start: Option<usize> = None;
-    let mut code_start: Option<usize> = None;
 
     while cursor < len {
         while exclusion_index < exclusions.len()
@@ -188,127 +188,97 @@ pub(crate) fn collect_inline_marker_ranges(text: &str, exclusions: &[JsonRange])
             let exclusion_start = exclusion.start_byte as usize;
             let exclusion_end = exclusion.end_byte as usize;
             if cursor >= exclusion_start && cursor < exclusion_end {
-                // Exclusions terminate in-progress inline wrappers.
-                bold_start = None;
-                italic_start = None;
-                code_start = None;
                 cursor = exclusion_end.min(len);
                 continue;
             }
         }
 
         let byte = bytes[cursor];
-        let escaped_inline_delimiter = code_start.is_none()
-            && matches!(byte, b'`' | b'*' | b'_')
-            && is_escaped_at(bytes, cursor);
-        if escaped_inline_delimiter {
-            cursor += 1;
-            continue;
-        }
-
-        if byte == b'`' {
-            if code_start.is_none() {
-                code_start = Some(cursor);
-            } else {
-                let start = code_start.expect("code_start just checked for Some");
-                add_style_run(&mut runs, start, cursor + 1, InlineMarkerStyle::Code);
-                code_start = None;
-            }
-        }
-        // Bold / italic with `*` (mirrors SovereignStyleScanner)
-        else if code_start.is_none() && byte == b'*' {
-            if cursor + 1 < len && bytes[cursor + 1] == b'*' {
-                if bold_start.is_none() {
-                    bold_start = Some(cursor);
-                    cursor += 1;
-                } else {
-                    let start = bold_start.expect("bold_start just checked for Some");
-                    add_style_run(&mut runs, start, cursor + 2, InlineMarkerStyle::Bold);
-                    bold_start = None;
-                    cursor += 1;
-                }
-            } else {
-                if italic_start.is_none() {
-                    italic_start = Some(cursor);
-                } else if let Some(start) = italic_start {
-                    if bytes.get(start) == Some(&b'*') {
-                        add_style_run(&mut runs, start, cursor + 1, InlineMarkerStyle::Italic);
-                        italic_start = None;
-                    }
-                }
-            }
-        }
-        // Italic with `_` (mirrors SovereignStyleScanner)
-        else if code_start.is_none() && byte == b'_' {
-            if italic_start.is_none() {
-                italic_start = Some(cursor);
-            } else if let Some(start) = italic_start {
-                if bytes.get(start) == Some(&b'_') {
-                    add_style_run(&mut runs, start, cursor + 1, InlineMarkerStyle::Italic);
-                    italic_start = None;
-                }
-            }
+        if byte.is_ascii_punctuation() && is_escaped_at(bytes, cursor) {
+            push_range(&mut ranges, cursor.saturating_sub(1), cursor, len);
         }
 
         cursor += 1;
     }
 
-    let mut ranges = Vec::new();
-    for run in runs {
-        match run.style {
-            InlineMarkerStyle::Bold => {
-                if run.end.saturating_sub(run.start) > 4 {
-                    push_range(&mut ranges, run.start, run.start + 2, len);
-                    push_range(&mut ranges, run.end.saturating_sub(2), run.end, len);
-                }
-            }
-            InlineMarkerStyle::Italic | InlineMarkerStyle::Code => {
-                if run.end.saturating_sub(run.start) > 2 {
-                    push_range(&mut ranges, run.start, run.start + 1, len);
-                    push_range(&mut ranges, run.end.saturating_sub(1), run.end, len);
-                }
-            }
-        }
+    for token in inline_tokens {
+        collect_token_marker_ranges(&mut ranges, bytes, token);
     }
 
     normalize_ranges(ranges, len)
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum InlineMarkerStyle {
-    Bold,
-    Italic,
-    Code,
-}
-
-#[derive(Clone, Copy)]
-struct InlineStyleRun {
-    start: usize,
-    end: usize,
-    style: InlineMarkerStyle,
-}
-
-fn add_style_run(
-    runs: &mut Vec<InlineStyleRun>,
-    start: usize,
-    end: usize,
-    style: InlineMarkerStyle,
-) {
+fn collect_token_marker_ranges(ranges: &mut Vec<JsonRange>, bytes: &[u8], token: &JsonInlineToken) {
+    let len = bytes.len();
+    let start = (token.start_byte as usize).min(len);
+    let end = (token.end_byte as usize).min(len);
     if end <= start {
         return;
     }
-    if let Some(last) = runs.last().copied() {
-        if last.end == start && last.style == style {
-            let last_index = runs.len() - 1;
-            runs[last_index] = InlineStyleRun {
-                start: last.start,
-                end,
-                style,
-            };
-            return;
+
+    if token.styles.iter().any(|style| *style == "bold") {
+        if has_wrapping_marker(bytes, start, end, b"**") {
+            push_wrapping_marker_ranges(ranges, start, end, 2, len);
+        } else if has_wrapping_marker(bytes, start, end, b"__") {
+            push_wrapping_marker_ranges(ranges, start, end, 2, len);
         }
     }
-    runs.push(InlineStyleRun { start, end, style });
+    if token.styles.iter().any(|style| *style == "italic") {
+        if has_wrapping_marker(bytes, start, end, b"*") {
+            push_wrapping_marker_ranges(ranges, start, end, 1, len);
+        } else if has_wrapping_marker(bytes, start, end, b"_") {
+            push_wrapping_marker_ranges(ranges, start, end, 1, len);
+        }
+    }
+    if token.styles.iter().any(|style| *style == "code") {
+        let leading = count_edge_byte(bytes, start, end, b'`', true);
+        let trailing = count_edge_byte(bytes, start, end, b'`', false);
+        let marker_len = leading.min(trailing);
+        if marker_len > 0 && end.saturating_sub(start) > marker_len * 2 {
+            push_wrapping_marker_ranges(ranges, start, end, marker_len, len);
+        }
+    }
+    if token.styles.iter().any(|style| *style == "strikethrough")
+        && has_wrapping_marker(bytes, start, end, b"~~")
+    {
+        push_wrapping_marker_ranges(ranges, start, end, 2, len);
+    }
+}
+
+fn has_wrapping_marker(bytes: &[u8], start: usize, end: usize, marker: &[u8]) -> bool {
+    let marker_len = marker.len();
+    end.saturating_sub(start) > marker_len * 2
+        && bytes[start..end].starts_with(marker)
+        && bytes[start..end].ends_with(marker)
+}
+
+fn push_wrapping_marker_ranges(
+    ranges: &mut Vec<JsonRange>,
+    start: usize,
+    end: usize,
+    marker_len: usize,
+    text_len: usize,
+) {
+    push_range(ranges, start, start + marker_len, text_len);
+    push_range(ranges, end.saturating_sub(marker_len), end, text_len);
+}
+
+fn count_edge_byte(bytes: &[u8], start: usize, end: usize, byte: u8, leading: bool) -> usize {
+    let mut count = 0usize;
+    if leading {
+        let mut cursor = start;
+        while cursor < end && bytes[cursor] == byte {
+            count += 1;
+            cursor += 1;
+        }
+    } else {
+        let mut cursor = end;
+        while cursor > start && bytes[cursor - 1] == byte {
+            count += 1;
+            cursor -= 1;
+        }
+    }
+    count
 }
 
 fn is_escaped_at(bytes: &[u8], offset: usize) -> bool {

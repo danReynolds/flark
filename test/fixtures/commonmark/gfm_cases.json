@@ -31,5 +31,19 @@
       "todo"
     ],
     "requiresGfmDifference": true
+  },
+  {
+    "id": "table_extension",
+    "category": "table",
+    "markdown": "| Name | Value |\n| --- | ---: |\n| alpha | 1 |\n",
+    "expectedContains": [
+      "<table>",
+      "<th>Name</th>",
+      "<th align=\"right\">Value</th>",
+      "<td>alpha</td>",
+      "<td align=\"right\">1</td>",
+      "</table>"
+    ],
+    "requiresGfmDifference": true
   }
 ]

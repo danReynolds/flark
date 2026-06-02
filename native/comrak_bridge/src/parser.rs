@@ -1,5 +1,7 @@
 use crate::marker_mapping::{collect_block_marker_ranges, collect_inline_marker_ranges};
-use crate::payload::{JsonBlock, JsonInlineToken, JsonParsePayload, JsonRange};
+use crate::payload::{
+    JsonBlock, JsonInlineToken, JsonParsePayload, JsonRange, JsonReplacementRange,
+};
 use crate::source_ranges::{
     end_of_line, leading_indent, line_content_end, line_start_for_offset, normalize_ranges,
 };
@@ -7,6 +9,7 @@ use comrak::nodes::{
     AstNode, ListType, NodeHeading, NodeList, NodeValue, Sourcepos, TableAlignment,
 };
 use comrak::{parse_document, Arena, Options};
+use entities::ENTITIES;
 
 struct LineIndex {
     line_starts: Vec<usize>,
@@ -123,17 +126,136 @@ pub(crate) fn parse_to_payload(text: &str, profile: u8) -> Result<Vec<u8>, Strin
     }
     let exclusion_ranges = normalize_ranges(exclusion_ranges, text.len());
     let mut marker_ranges = collect_block_marker_ranges(text, &blocks, profile == 1);
-    marker_ranges.extend(collect_inline_marker_ranges(text, &exclusion_ranges));
+    marker_ranges.extend(collect_inline_marker_ranges(
+        text,
+        &exclusion_ranges,
+        &inline_tokens,
+    ));
     let marker_ranges = normalize_ranges(marker_ranges, text.len());
+    let replacement_ranges = collect_entity_replacement_ranges(text, &exclusion_ranges);
 
     let payload = JsonParsePayload {
         blocks,
         inline_tokens,
         marker_ranges,
+        replacement_ranges,
         exclusion_ranges,
         diagnostics: Vec::new(),
     };
     serde_json::to_vec(&payload).map_err(|error| error.to_string())
+}
+
+fn collect_entity_replacement_ranges(
+    text: &str,
+    exclusions: &[JsonRange],
+) -> Vec<JsonReplacementRange> {
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    let mut ranges = Vec::new();
+    let mut cursor = 0usize;
+    let mut exclusion_index = 0usize;
+
+    while cursor < len {
+        while exclusion_index < exclusions.len()
+            && (exclusions[exclusion_index].end_byte as usize) <= cursor
+        {
+            exclusion_index += 1;
+        }
+        if exclusion_index < exclusions.len() {
+            let exclusion = exclusions[exclusion_index];
+            let exclusion_start = exclusion.start_byte as usize;
+            let exclusion_end = exclusion.end_byte as usize;
+            if cursor >= exclusion_start && cursor < exclusion_end {
+                cursor = exclusion_end.min(len);
+                continue;
+            }
+        }
+
+        if bytes[cursor] != b'&' || is_escaped_at(bytes, cursor) {
+            cursor += 1;
+            continue;
+        }
+
+        if let Some((end, replacement)) = match_entity_reference(text, cursor) {
+            if end > cursor && end <= len {
+                ranges.push(JsonReplacementRange {
+                    kind: "htmlEntity",
+                    start_byte: cursor as u32,
+                    end_byte: end as u32,
+                    text: replacement,
+                });
+                cursor = end;
+                continue;
+            }
+        }
+
+        cursor += 1;
+    }
+
+    ranges
+}
+
+fn match_entity_reference(text: &str, start: usize) -> Option<(usize, String)> {
+    let bytes = text.as_bytes();
+    if start + 3 >= bytes.len() || bytes[start] != b'&' {
+        return None;
+    }
+    if bytes[start + 1] == b'#' {
+        return match_numeric_entity(text, start);
+    }
+
+    let relative_end = text[start..].find(';')?;
+    let end = start + relative_end + 1;
+    let candidate = &text[start..end];
+    ENTITIES
+        .iter()
+        .find(|entity| entity.entity == candidate)
+        .map(|entity| (end, entity.characters.to_string()))
+}
+
+fn match_numeric_entity(text: &str, start: usize) -> Option<(usize, String)> {
+    let bytes = text.as_bytes();
+    let mut cursor = start + 2;
+    let is_hex = cursor < bytes.len() && matches!(bytes[cursor], b'x' | b'X');
+    if is_hex {
+        cursor += 1;
+    }
+    let digits_start = cursor;
+    while cursor < bytes.len()
+        && if is_hex {
+            bytes[cursor].is_ascii_hexdigit()
+        } else {
+            bytes[cursor].is_ascii_digit()
+        }
+    {
+        cursor += 1;
+    }
+    if cursor == digits_start || cursor >= bytes.len() || bytes[cursor] != b';' {
+        return None;
+    }
+
+    let digits = &text[digits_start..cursor];
+    let radix = if is_hex { 16 } else { 10 };
+    let value = u32::from_str_radix(digits, radix).ok()?;
+    let replacement = char::from_u32(value).unwrap_or('\u{fffd}');
+    Some((cursor + 1, replacement.to_string()))
+}
+
+fn is_escaped_at(bytes: &[u8], offset: usize) -> bool {
+    if offset == 0 || offset > bytes.len() {
+        return false;
+    }
+
+    let mut backslashes = 0usize;
+    let mut cursor = offset;
+    while cursor > 0 {
+        cursor -= 1;
+        if bytes[cursor] != b'\\' {
+            break;
+        }
+        backslashes += 1;
+    }
+    backslashes % 2 == 1
 }
 
 fn collect_node<'a>(
@@ -214,6 +336,21 @@ fn collect_node<'a>(
                 end_byte: code_line_range.end_byte,
             });
         }
+        NodeValue::HtmlBlock(_) => {
+            if inside_list_or_quote {
+                return;
+            }
+            blocks.push(JsonBlock {
+                kind: "html_block",
+                start_byte: line_range.start_byte,
+                end_byte: line_range.end_byte,
+                payload: serde_json::Value::Object(Default::default()),
+            });
+            exclusion_ranges.push(JsonRange {
+                start_byte: line_range.start_byte,
+                end_byte: line_range.end_byte,
+            });
+        }
         NodeValue::BlockQuote => {
             if inside_list_or_quote {
                 return;
@@ -235,6 +372,29 @@ fn collect_node<'a>(
                 start_byte: line_range.start_byte,
                 end_byte: line_range.end_byte,
                 payload: serde_json::Value::Object(Default::default()),
+            });
+        }
+        NodeValue::Item(NodeList { list_type, .. }) => {
+            let list_kind = match list_type {
+                ListType::Bullet => "unordered",
+                ListType::Ordered => "ordered",
+            };
+            blocks.push(JsonBlock {
+                kind: "list_item",
+                start_byte: line_range.start_byte,
+                end_byte: line_range.end_byte,
+                payload: serde_json::json!({ "listKind": list_kind }),
+            });
+        }
+        NodeValue::TaskItem(task) => {
+            blocks.push(JsonBlock {
+                kind: "list_item",
+                start_byte: line_range.start_byte,
+                end_byte: line_range.end_byte,
+                payload: serde_json::json!({
+                    "checked": task.symbol.is_some(),
+                    "taskMarkerSymbol": task.symbol.map(|symbol| symbol.to_string()),
+                }),
             });
         }
         NodeValue::Table(table) => {
@@ -262,27 +422,109 @@ fn collect_node<'a>(
                 }),
             });
         }
+        NodeValue::TableRow(is_header) => blocks.push(JsonBlock {
+            kind: "table_row",
+            start_byte: line_range.start_byte,
+            end_byte: line_range.end_byte,
+            payload: serde_json::json!({ "header": is_header }),
+        }),
+        NodeValue::TableCell => blocks.push(JsonBlock {
+            kind: "table_cell",
+            start_byte: inline_range.start_byte,
+            end_byte: inline_range.end_byte,
+            payload: serde_json::Value::Object(Default::default()),
+        }),
         NodeValue::Strong => inline_tokens.push(JsonInlineToken {
             styles: vec!["bold"],
             start_byte: inline_range.start_byte,
             end_byte: inline_range.end_byte,
+            payload: serde_json::Value::Object(Default::default()),
         }),
         NodeValue::Emph => inline_tokens.push(JsonInlineToken {
             styles: vec!["italic"],
             start_byte: inline_range.start_byte,
             end_byte: inline_range.end_byte,
+            payload: serde_json::Value::Object(Default::default()),
         }),
-        NodeValue::Code(_) => inline_tokens.push(JsonInlineToken {
-            styles: vec!["code"],
+        NodeValue::Code(_) => {
+            inline_tokens.push(JsonInlineToken {
+                styles: vec!["code"],
+                start_byte: inline_range.start_byte,
+                end_byte: inline_range.end_byte,
+                payload: serde_json::Value::Object(Default::default()),
+            });
+            exclusion_ranges.push(JsonRange {
+                start_byte: inline_range.start_byte,
+                end_byte: inline_range.end_byte,
+            });
+        }
+        NodeValue::Strikethrough => inline_tokens.push(JsonInlineToken {
+            styles: vec!["strikethrough"],
             start_byte: inline_range.start_byte,
             end_byte: inline_range.end_byte,
+            payload: serde_json::Value::Object(Default::default()),
         }),
-        NodeValue::Image(_) => inline_tokens.push(JsonInlineToken {
+        NodeValue::Link(link) => inline_tokens.push(JsonInlineToken {
+            styles: vec!["link"],
+            start_byte: inline_range.start_byte,
+            end_byte: inline_range.end_byte,
+            payload: serde_json::json!({
+                "destination": link.url.as_str(),
+                "href": link.url.as_str(),
+                "title": empty_string_as_null(&link.title),
+                "label": plain_text(node),
+            }),
+        }),
+        NodeValue::Image(link) => inline_tokens.push(JsonInlineToken {
             styles: vec!["image"],
             start_byte: inline_range.start_byte,
             end_byte: inline_range.end_byte,
+            payload: serde_json::json!({
+                "destination": link.url.as_str(),
+                "src": link.url.as_str(),
+                "title": empty_string_as_null(&link.title),
+                "alt": plain_text(node),
+            }),
         }),
+        NodeValue::HtmlInline(_) => {
+            inline_tokens.push(JsonInlineToken {
+                styles: vec!["htmlInline"],
+                start_byte: inline_range.start_byte,
+                end_byte: inline_range.end_byte,
+                payload: serde_json::Value::Object(Default::default()),
+            });
+            exclusion_ranges.push(JsonRange {
+                start_byte: inline_range.start_byte,
+                end_byte: inline_range.end_byte,
+            });
+        }
         _ => {}
+    }
+}
+
+fn empty_string_as_null(value: &str) -> Option<&str> {
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+fn plain_text<'a>(node: &'a AstNode<'a>) -> String {
+    let mut text = String::new();
+    collect_plain_text(node, &mut text);
+    text
+}
+
+fn collect_plain_text<'a>(node: &'a AstNode<'a>, output: &mut String) {
+    for child in node.children() {
+        let data = child.data.borrow();
+        match &data.value {
+            NodeValue::Text(text) => output.push_str(text),
+            NodeValue::Code(code) => output.push_str(&code.literal),
+            NodeValue::SoftBreak | NodeValue::LineBreak => output.push('\n'),
+            _ => collect_plain_text(child, output),
+        }
     }
 }
 

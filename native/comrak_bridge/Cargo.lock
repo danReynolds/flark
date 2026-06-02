@@ -702,6 +702,7 @@ name = "sovereign_comrak_bridge"
 version = "0.1.0"
 dependencies = [
  "comrak",
+ "entities",
  "serde",
  "serde_json",
 ]

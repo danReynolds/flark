@@ -1,119 +1,190 @@
 # sovereign_editor
 
-Flutter package for the Sovereign live markdown editor and read-only markdown
-previewer.
+Source-first Markdown editing and preview for Flutter.
 
-Native bridge crate path:
+Sovereign keeps Markdown source as the canonical document, runs editing through
+a pure Dart transaction/runtime core, and uses Flutter as the rendering and
+platform-input adapter. The default parser is required Comrak: FFI on native
+targets and the packaged WASM bridge on web. Custom deployments can still
+supply any `SovereignMarkdownParseBackend`.
 
-- `native/comrak_bridge`
+![Sovereign visual surfaces](test/v2/flutter/goldens/sovereign_v2_surfaces.png)
 
-## Native packaging model
-
-Sovereign is a Dart/Flutter FFI package. App-facing APIs stay in Dart, while
-the CommonMark/GFM parser bridge is compiled from Rust and exposed through a
-small C ABI.
-
-The package includes `hook/build.dart` for Dart/Flutter native assets. On
-macOS, Linux, and Android, normal app builds can invoke the hook to compile and
-bundle the Rust dynamic library as a `CodeAsset`. iOS remains statically linked
-through the XCFramework flow below because Dart code-assets static linking is
-not supported yet.
-
-The supported app import remains:
+## Quick Start
 
 ```dart
 import 'package:sovereign_editor/sovereign_editor.dart';
-```
 
-## Read-only markdown view
-
-`SovereignMarkdownView` is the package read-only sovereign surface. It reuses
-the sovereign controller parse/render pipeline and Tier1 block painting
-(quotes + fenced code) for edit/read visual parity.
-
-```dart
-SovereignMarkdownView(
-  markdown: '# Hello\\nSome text',
-  profile: MarkdownSyntaxProfile.commonMarkCore,
-  selectable: true,
-  theme: const SovereignEditorThemeData(),
-  showLinkActionsOverlay: true,
-  onOpenLink: (url) async {},
-  onEditInlineTarget: (context, label, url, isImage) async {},
+MarkdownEditor(
+  initialMarkdown: '# Hello\n\nEdit **Markdown** without losing the source.',
+  editingMode: SovereignMarkdownEditingMode.liveRendered,
+  onChanged: (markdown) {
+    // Persist the Markdown source.
+  },
 )
 ```
 
-## Native comrak backend
-
-The runtime parser is native comrak only on supported native platforms.
-If the bridge cannot load, editor initialization fails fast.
-Web is not supported by the native parser path.
-
-### Startup preflight (recommended)
-
-Before constructing editor/controller instances, apps can preflight the native
-bridge and log/show actionable diagnostics:
+Standalone preview:
 
 ```dart
-final preflight = preflightNativeComrakBridge();
+Markdown(markdown: '# Preview')
+```
+
+`initialMarkdown` is initial-only for an editor instance. Store changes from
+`onChanged`, but use a new widget key or a shared
+`SovereignFlutterController` when switching to a different document.
+
+## Why Sovereign
+
+- Source Markdown is the durable model. Projected editing is an adapter, not a
+  replacement document format.
+- The headless Dart core owns transactions, history, commands, projection, and
+  render plans without Flutter imports.
+- Native parser payloads are schema-versioned and tested against upstream
+  CommonMark/GFM fixtures.
+- Editable and read-only surfaces consume the same render plan, so previews,
+  overlays, and custom renderers do not reparse independently.
+- Live rendered editing styles projected Markdown in place and renders parsed
+  tasks, code fences, and tables as editable block widgets while preserving
+  the source-first transaction model.
+- The package is v2-only. The old `SovereignController`/`SovereignEditor`
+  compatibility layer has been removed.
+
+## Imports
+
+- `package:sovereign_editor/sovereign_editor.dart`: supported app API.
+- `package:sovereign_editor/sovereign_editor_core.dart`: headless runtime,
+  transactions, parser DTOs, projection, and render plans.
+- `package:sovereign_editor/sovereign_editor_v2.dart`: complete advanced v2
+  surface for parser and extension integrations.
+
+Deep imports are for package tests and implementation work only.
+
+## Widget Guide
+
+Start with one of these two widgets:
+
+| Widget | Use it when | State owner |
+| --- | --- | --- |
+| `MarkdownEditor` | You need editable Markdown. Pass `initialMarkdown` for the simple case or `controller` when toolbars, save state, undo/redo UI, or preview need shared state. | Widget-owned or app-owned |
+| `Markdown` | You need read-only Markdown. Pass `markdown` for the simple case or `controller` to preview the same render plan as an editor. | Widget-owned or app-owned |
+
+Choose source, projected, or live-rendered editing with
+`MarkdownEditor(editingMode: ...)`.
+
+## Shared Editor and Preview
+
+For split-pane editor/preview experiences, share one
+`SovereignFlutterController` and render `Markdown` beside the
+editor so both surfaces consume the same parse/projection/render-plan state.
+
+```dart
+final controller = SovereignFlutterController.fromMarkdown(
+  '# Hello\n\nEdit **Markdown** without losing the source.',
+);
+
+Column(
+  children: [
+    MarkdownEditor(
+      controller: controller,
+    ),
+    Markdown(controller: controller),
+  ],
+)
+```
+
+`MarkdownEditor` owns the parse scheduler for that shared-controller
+setup when `parseBackend` is omitted. The standalone
+`Markdown(markdown: ...)` widget is simpler when the preview
+does not need to share live editor state.
+
+## Toolbar Commands
+
+Common Markdown actions are exposed as controller helpers so app toolbars do
+not need to construct command payloads for routine editing:
+
+```dart
+IconButton(
+  icon: const Icon(Icons.format_bold),
+  onPressed: () => controller.toggleStrong(),
+)
+
+IconButton(
+  icon: const Icon(Icons.table_chart),
+  onPressed: () => controller.insertTable(columns: 3, bodyRows: 2),
+)
+```
+
+The helpers return `SovereignEditorRuntimeResult`, so advanced integrations can
+still inspect whether a command was handled or rejected.
+
+## Native and Web Parser Model
+
+The promoted widgets require the packaged Comrak backend by default. On web
+this loads the packaged Comrak WASM artifact; on native targets it uses the
+bundled FFI bridge. Backend load failures are surfaced directly so consumers do
+not silently run a different Markdown implementation. Apps that need custom
+parser policy can still supply their own `SovereignMarkdownParseBackend`. Use
+`onParseError` on `MarkdownEditor` or `Markdown` to
+log or display scheduled background parser failures.
+
+```dart
+final preflight = SovereignNativeComrakParseBackend.preflight();
 if (!preflight.isAvailable) {
   debugPrint(preflight.error.toString());
 }
 ```
 
-The error includes platform, candidate paths (desktop/debug), and remediation
-steps (build script + platform-specific packaging checks).
+Native Comrak is supported on macOS, iOS, Android, and Linux through the
+package native-assets / XCFramework flow. Web uses the packaged
+`lib/assets/wasm/sovereign_comrak_bridge.wasm` artifact through Dart JS interop.
+The web parser strategy is documented in
+`docs/architecture/v2/web_parser_strategy_2026-05-03.md`.
 
-## Theming (editor-first API)
+## Custom Preview Blocks
 
-Use `SovereignEditorThemeData` to style the editor as a cohesive unit (inline
-markdown text, quote rails, code blocks, and the fenced language picker).
+Use render-plan customization rather than reparsing Markdown in widgets:
 
 ```dart
-SovereignEditor(
+Markdown(
   controller: controller,
-  wrapText: true,
-  theme: const SovereignEditorThemeData(
-    textStyle: TextStyle(
-      color: Color(0xFFEAECEF),
-      fontSize: 15,
-      height: 1.45,
-    ),
-    cursorColor: Color(0xFF7AA2F7),
-    inlineText: SovereignInlineTextTheme(
-      bold: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFFFFD166)),
-      link: TextStyle(
-        color: Color(0xFF7AA2F7),
-        decoration: TextDecoration.underline,
-      ),
-      inlineCode: TextStyle(
-        fontFamily: 'JetBrainsMono',
-        color: Color(0xFFB8F2E6),
-      ),
-    ),
-    blockquote: SovereignBlockquoteTheme(
-      railColor: Color(0xFF7AA2F7),
-      railWidth: 3,
-      railInset: 10,
-      railRadius: 2,
-    ),
-    codeBlock: SovereignCodeBlockTheme(
-      backgroundColor: Color(0xFF141A22),
-      languagePicker: SovereignFenceLanguagePickerTheme(
-        backgroundColor: Color(0xFF1E2632),
-        borderColor: Color(0xFF3A4A60),
-        textStyle: TextStyle(color: Color(0xFFF5F7FA), fontSize: 12),
-        menuTextStyle: TextStyle(color: Color(0xFFF5F7FA)),
-      ),
-    ),
-  ),
+  blockBuilder: (context, block, displayText, style) {
+    if (block.codeBlock == null) return null;
+    return Text(displayText.substring(
+      block.displayRange.start,
+      block.displayRange.end,
+    ));
+  },
 )
 ```
 
-This replaces ad hoc code-fence/quote styling params. Prefer the theme object
-for all visual customization.
+For semantic changes that should travel with the runtime, register a
+`SovereignRenderPlanExtension`.
 
-## Native build workflow (package development)
+## Example App
+
+The `example/` app is the package integration harness. It imports only
+`package:sovereign_editor/sovereign_editor.dart`, exposes source, projected,
+and live rendered block-widget editing, preview rendering, toolbar commands,
+and scenario buttons for common Markdown cases.
+
+```bash
+cd example
+flutter run -d macos
+```
+
+The macOS target is the preferred local dogfood app for live editing. It opens
+as a desktop workbench with document scenarios, toolbar commands, native parser
+status, and a live preview pane. Choose `Scratch` in the document sidebar for a
+blank document that is ready for freeform typing. The mode switch covers
+`Live Edit` for rendered-in-place Markdown editing beside rendered output,
+`Source` for raw Markdown editing, `Projected` for marker-hidden text editing,
+and `Rendered` for the read-only render-plan surface. Live Edit renders task
+checkboxes, fenced code regions, and tables as editable widgets that still
+write Markdown source transactions. The editor pane uses `expands: true` so
+the whole document surface is a writing target, including empty documents.
+
+## Native Build Workflow
 
 For app builds on macOS, Linux, and Android, prefer the native-assets hook:
 
@@ -124,227 +195,70 @@ For app builds on macOS, Linux, and Android, prefer the native-assets hook:
 3. Build the app normally; the Dart/Flutter build hook compiles and bundles the
    native library.
 
-For package development and local white-box native tests, the explicit scripts
-remain useful.
-
-After **any** Rust/ABI change in `native/comrak_bridge`, run one command:
+For package development and local white-box native tests:
 
 ```bash
 ./scripts/build_comrak_all.sh
-```
-
-What this does:
-
-- host build (`cargo build --release`) for desktop/native FFI testing
-- iOS XCFramework build (on macOS hosts)
-- Android JNI `.so` staging (when `ANDROID_NDK_HOME` or `ANDROID_HOME` is set)
-
-Useful options:
-
-```bash
 ./scripts/build_comrak_all.sh --strict
-./scripts/build_comrak_all.sh --ios-only
-./scripts/build_comrak_all.sh --android-only
 ./scripts/build_comrak_all.sh --host-only
+./scripts/build_comrak_all.sh --wasm-only
 ```
 
-`--strict` turns skipped targets into a failing build (good for CI/local release checks).
+## Verification
 
-## Example app and mobile packaging checks
-
-The `example/` app is the package integration harness for mobile builds. It
-depends on the local package, imports only
-`package:sovereign_editor/sovereign_editor.dart`, and includes editable and
-read-only preview surfaces.
-
-Run the example:
-
-```bash
-cd example
-flutter run
-```
-
-Verify example packaging:
-
-```bash
-./scripts/verify_example_packaging.sh --android
-./scripts/verify_example_packaging.sh --ios
-```
-
-The Android check builds the debug APK and fails unless the bundled APK
-contains `lib/**/libsovereign_comrak_bridge.so`. The iOS check verifies the
-XCFramework reference, static-link anchor source, and Xcode workspace shape.
-
-## One-shot CI gate (local)
-
-Run the native editor verification gate (build + key tests + Android lib check):
-
-```bash
-./scripts/verify_native_editor_ci.sh
-```
-
-Useful options:
-
-```bash
-./scripts/verify_native_editor_ci.sh --skip-build
-./scripts/verify_native_editor_ci.sh --android-verify
-```
-
-## Package confidence gate (fast local maintenance check)
-
-For day-to-day editor work (Dart/UI/policy changes), use the package confidence
-gate before jumping to the heavier native CI script:
+Fast confidence gate:
 
 ```bash
 ./scripts/verify_package_confidence.sh
 ```
 
-Useful options:
+Full release gate:
 
 ```bash
-./scripts/verify_package_confidence.sh --skip-native
-./scripts/verify_package_confidence.sh --full-suite
+./scripts/verify_release.sh
 ```
 
-- `--skip-native`: useful when native artifacts are not built locally yet
-- `--full-suite`: runs `flutter test test` in the package after the fast gate
-
-## Tests
-
-Core editor tests live in `test/`. Run them from the package root so local
-fixture paths resolve correctly:
+Desktop dogfood flow:
 
 ```bash
-flutter test test/widgets/sovereign
+cd example
+flutter test integration_test/markdown_flow_test.dart -d macos
 ```
 
-Benchmarks are tagged and can be run separately:
+Visual regression suite:
 
 ```bash
-flutter test --exclude-tags benchmark
-flutter test --tags benchmark test/benchmarks
+flutter test test/v2/flutter/sovereign_v2_visual_golden_test.dart
 ```
 
-Enforced benchmark lane (budgets are failing assertions, not warnings):
+Regenerate visual baselines only after intentional review:
+
+```bash
+flutter test --update-goldens test/v2/flutter/sovereign_v2_visual_golden_test.dart
+```
+
+Benchmark lane:
 
 ```bash
 ./scripts/verify_benchmark_lane.sh
 ```
 
-You can also run it from the confidence gate:
+## Test Layout
 
-```bash
-./scripts/verify_package_confidence.sh --benchmarks
-```
+- `test/v2/core`: headless runtime, transactions, history, command registry.
+- `test/v2/markdown`: commands, parser protocol, native parser contracts.
+- `test/v2/projection`: hidden-range and source/display mapping contracts.
+- `test/v2/render_plan`: shared render-plan generation.
+- `test/v2/flutter`: Flutter adapters, projected editing, live rendered
+  editing, preview widgets, web smoke tests, and visual goldens.
+- `test/v2/native`: native bridge payload and loader contracts.
 
-App-level composer/route integration tests remain in the app root `test/` tree.
-
-### Test stability guidance (widget tests)
-
-- Prefer bounded polling helpers / explicit `pump(...)` loops for async editor
-  reconciliation tests.
-- Avoid broad `pumpAndSettle()` unless the test truly depends on all animations
-  and microtasks quiescing.
-- Prefer focus-node based activation over tapping arbitrary editor surfaces when
-  keyboard shortcut behavior is the target (reduces hit-test warnings and flake).
-
-## Public API surface (pragmatic contract)
-
-Use `package:sovereign_editor/sovereign_editor.dart` for the supported package
-surface:
-
-- editor and preview widgets;
-- `SovereignController`;
-- command APIs and command result/capability models;
-- theme types, including `SovereignMarkdownTheme`;
-- syntax contracts for custom engines;
-- native bridge preflight/load diagnostics.
-
-Deep imports are acceptable in package tests. App code should avoid deep
-imports unless a type has been explicitly documented as a supported secondary
-library.
-
-Rendering internals, scanners, parser adapters, undo/edit-diff internals, and
-marker helpers are not considered stable app API and may move as the
-projection/painter system evolves.
-
-Phase 1 migration notes are tracked in
-`docs/production_readiness/api_migration_2026-05-01.md`.
-
-## Support matrix
-
-Current markdown support coverage and prioritized gaps:
-
-- `docs/architecture/sovereign/sovereign_editor_how_it_works.md` (runtime walkthrough + module ownership)
-- `docs/architecture/sovereign/sovereign_editor_markdown_support_matrix.md`
-- `docs/architecture/rfc/sovereign_editor_command_interface.md` (command API ownership + action catalog)
-
-## Release status
+## Release Status
 
 The package is intentionally unpublished while `publish_to: none` remains in
 `pubspec.yaml`. Release metadata and owner decisions are tracked in:
 
 - `CHANGELOG.md`
 - `docs/production_readiness/release_checklist_2026-05-02.md`
-- `docs/production_readiness/execution_plan.md`
-- `docs/production_readiness/execution_log.md`
-
-### When rebuild is required
-
-- Rust bridge source/ABI/header changes: **yes**, run `build_comrak_all.sh`
-- iOS-only native packaging updates: run `build_comrak_ios.sh`
-- Android-only JNI packaging updates: run `build_comrak_android.sh`
-- Dart-only editor/presentation logic: no native rebuild required
-
-## Android native library build
-
-Build and stage Android JNI libraries:
-
-```bash
-./scripts/build_comrak_android.sh
-```
-
-Apple Silicon note:
-
-- if your selected NDK only has `prebuilt/darwin-x86_64`, install Rosetta or
-  use an NDK with `prebuilt/darwin-arm64`.
-- Rosetta install command:
-  `softwareupdate --install-rosetta --agree-to-license`
-
-Expected output paths:
-
-- `native/comrak_bridge/dist/android/jniLibs/arm64-v8a/libsovereign_comrak_bridge.so`
-- `native/comrak_bridge/dist/android/jniLibs/armeabi-v7a/libsovereign_comrak_bridge.so`
-- `native/comrak_bridge/dist/android/jniLibs/x86_64/libsovereign_comrak_bridge.so`
-
-Android prebuild should fail if those libs are missing.
-
-## iOS XCFramework build
-
-Build and stage the iOS XCFramework:
-
-```bash
-./scripts/build_comrak_ios.sh
-```
-
-Expected output path:
-
-- `native/comrak_bridge/dist/ios/sovereign_comrak_bridge.xcframework`
-
-### iOS link model (static, process symbols)
-
-iOS does not support loading an arbitrary app-bundled `.dylib` at runtime for
-this use case, so the bridge uses static linking:
-
-- Rust produces `libsovereign_comrak_bridge.a` (inside the XCFramework slices).
-- Xcode links that static archive into `Runner`.
-- Dart FFI resolves symbols from the app image via `DynamicLibrary.process()`.
-
-Project wiring details:
-
-- The consuming app's Xcode project includes
-  `native/comrak_bridge/dist/ios/sovereign_comrak_bridge.xcframework` in its
-  Frameworks build phase.
-- The consuming app includes an anchor C file that references
-  `sovereign_comrak_bridge_version`, `sovereign_comrak_parse`, and
-  `sovereign_comrak_response_free` to prevent dead-stripping of archive members.
+- `docs/architecture/v2/execution_plan.md`
+- `docs/architecture/v2/execution_log.md`

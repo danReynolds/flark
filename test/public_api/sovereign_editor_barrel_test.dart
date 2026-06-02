@@ -1,78 +1,119 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sovereign_editor/sovereign_editor.dart';
-
-class _TestSyntaxEngine implements SyntaxEngine {
-  const _TestSyntaxEngine();
-
-  @override
-  Future<SyntaxSnapshot> parse(SyntaxParseRequest request) async {
-    return SyntaxSnapshot(
-      revision: request.revision,
-      blocks: const <BlockSpan>[
-        BlockSpan(
-          type: BlockType.header,
-          start: 0,
-          end: 7,
-          payload: <String, Object?>{'level': 1},
-        ),
-      ],
-      inlineTokens: const <InlineSpanToken>[
-        InlineSpanToken(style: SovereignStyle.bold, start: 2, end: 7),
-      ],
-      markerRanges: const <TextRange>[TextRange(start: 0, end: 2)],
-      exclusionRanges: const <TextRange>[],
-      ambiguityZones: const <TextRange>[],
-      cursorMask: const PassthroughCursorValidationMask(textLength: 7),
-      diagnostics: const <SyntaxDiagnostic>[],
-    );
-  }
-
-  @override
-  SyntaxPrediction predict(SyntaxPredictRequest request) {
-    return SyntaxPrediction.empty(
-      revision: request.revision,
-      textLength: request.text.length,
-    );
-  }
-}
+import 'package:sovereign_editor/sovereign_editor_core.dart' as core;
 
 void main() {
-  testWidgets('top-level barrel exposes supported editor API', (tester) async {
-    final controller = SovereignController(
-      text: '# Title',
-      syntaxEngine: const _TestSyntaxEngine(),
-      markdownProfile: MarkdownSyntaxProfile.commonMarkGfm,
+  test('top-level barrel exposes the promoted v2 app API', () {
+    final controller = SovereignFlutterController.fromMarkdown(
+      'hello',
+      extensions: SovereignMarkdownEditingExtensions.standard(),
     );
     addTearDown(controller.dispose);
 
-    final commands = controller.commands;
-    expect(commands.capabilitiesAtSelection().canMutate, isTrue);
+    final result = controller.dispatch(
+      command: SovereignCoreEditingCommands.insertText,
+      payload: const SovereignInsertTextPayload('!'),
+    );
 
-    const theme = SovereignEditorThemeData(
-      cursorColor: Colors.blue,
-      inlineText: SovereignInlineTextTheme(
-        bold: TextStyle(fontWeight: FontWeight.w700),
+    expect(result.commandResult.isHandled, isTrue);
+    expect(controller.markdown, 'hello!');
+    controller.applySelection(
+      const SovereignSelection(baseOffset: 0, extentOffset: 5),
+    );
+    expect(controller.toggleStrong().commandResult.isHandled, isTrue);
+    expect(controller.markdown, '**hello**!');
+    expect(MarkdownEditor, isA<Type>());
+    expect(Markdown, isA<Type>());
+    expect(
+      const SovereignMarkdownInteractionConfig(),
+      isA<SovereignMarkdownInteractionConfig>(),
+    );
+    expect(
+      const SovereignCodeLanguageOption(value: 'dart', label: 'Dart'),
+      isA<SovereignCodeLanguageOption>(),
+    );
+    expect(
+      SovereignMarkdownBlockCommands.setFenceLanguage.id,
+      'markdown.setFenceLanguage',
+    );
+    expect(
+      SovereignMarkdownBlockCommands.setTaskListChecked.id,
+      'markdown.setTaskListChecked',
+    );
+    expect(SovereignMarkdownLinkCommands.removeLink.id, 'markdown.removeLink');
+    expect(SovereignNativeComrakParseBackend, isA<Type>());
+    expect(NativeComrakBridge, isA<Type>());
+    expect(NativeComrakBridgePreflightResult.available().isAvailable, isTrue);
+  });
+
+  test('core barrel exposes headless v2 types without Flutter widgets', () {
+    final state = core.SovereignEditorState.fromMarkdown('hello');
+    final next = state.applyTransaction(
+      core.SovereignTransaction.single(
+        core.SovereignSourceOperation.insert(5, '!'),
       ),
     );
+
+    expect(next.markdown, 'hello!');
+    expect(core.SovereignRenderPlan, isA<Type>());
+    expect(core.SovereignProjection, isA<Type>());
+  });
+
+  test(
+    'top-level barrel exposes only the two promoted widget entry points',
+    () {
+      final barrel = File('lib/sovereign_editor.dart').readAsStringSync();
+
+      expect(barrel, contains('MarkdownEditor'));
+      expect(barrel, contains('Markdown,'));
+      expect(barrel, isNot(contains('SovereignMarkdownField')));
+      expect(barrel, isNot(contains('SovereignMarkdownEditor')));
+      expect(barrel, isNot(contains('SovereignMarkdownPreview')));
+      expect(barrel, isNot(contains('SovereignReadOnlyPreview')));
+      expect(barrel, isNot(contains('SovereignEditableText')));
+      expect(barrel, isNot(contains('SovereignProjectedEditableText')));
+      expect(barrel, isNot(contains('SovereignLiveRenderedEditableText')));
+      expect(barrel, isNot(contains('SovereignParseScheduler')));
+      expect(barrel, isNot(contains('SovereignRenderPlanOverlayControls')));
+      expect(barrel, isNot(contains('SovereignTextDeltaAdapter')));
+    },
+  );
+
+  testWidgets('top-level widgets render without legacy imports', (
+    tester,
+  ) async {
+    final controller = SovereignFlutterController.fromMarkdown(
+      '# Title\n\n**bold**',
+      extensions: SovereignMarkdownEditingExtensions.standard(),
+    );
+    final parseErrors = <Object>[];
+    addTearDown(controller.dispose);
 
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: Column(
-            children: <Widget>[
+            children: [
               Expanded(
-                child: SovereignEditor(
+                child: MarkdownEditor(
                   controller: controller,
-                  theme: theme,
-                  wrapText: true,
+                  parseBackend: const _IdentityParseBackend(),
+                  onParseError: (error, stackTrace) {
+                    parseErrors.add(error);
+                  },
+                  editingMode: SovereignMarkdownEditingMode.source,
                 ),
               ),
-              const Expanded(
-                child: SovereignMarkdownView(
+              Expanded(
+                child: Markdown(
                   markdown: '# Preview',
-                  profile: MarkdownSyntaxProfile.commonMarkCore,
-                  theme: theme,
+                  parseBackend: const _IdentityParseBackend(),
+                  onParseError: (error, stackTrace) {
+                    parseErrors.add(error);
+                  },
                 ),
               ),
             ],
@@ -81,18 +122,33 @@ void main() {
       ),
     );
 
-    expect(find.byType(SovereignEditor), findsOneWidget);
-    expect(find.byType(SovereignMarkdownView), findsOneWidget);
+    expect(find.byType(MarkdownEditor), findsOneWidget);
+    expect(find.byType(Markdown), findsOneWidget);
+    expect(parseErrors, isEmpty);
   });
+}
 
-  test('top-level barrel exposes supported advanced API types', () {
-    final mapper = Utf8Utf16OffsetMapper.fromText('a🙂b');
-    expect(mapper.utf16ToUtf8(1), 1);
+final class _IdentityParseBackend implements SovereignMarkdownParseBackend {
+  const _IdentityParseBackend();
 
-    const preflight = NativeComrakBridgePreflightResult.available();
-    expect(preflight.isAvailable, isTrue);
+  @override
+  SovereignMarkdownParserCapabilities get capabilities =>
+      SovereignMarkdownParserCapabilities(
+        parserName: 'identity-test',
+        schemaVersion: 1,
+        supportedProfiles: const [SovereignMarkdownProfile.commonMarkGfm],
+      );
 
-    final theme = SovereignMarkdownTheme.standard();
-    expect(theme.headingScale(1), greaterThan(theme.headingScale(6)));
-  });
+  @override
+  Future<SovereignMarkdownParseResult> parse(
+    SovereignMarkdownParseRequest request,
+  ) async {
+    return SovereignMarkdownParseResult(
+      schemaVersion: 1,
+      revision: request.revision,
+      sourceTextLength: request.markdown.length,
+      blocks: const [],
+      inlineTokens: const [],
+    );
+  }
 }

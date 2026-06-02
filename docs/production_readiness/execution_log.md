@@ -979,3 +979,376 @@ append-only unless correcting a factual error.
     non-fatal pub.dev advisory decode warning (`advisoriesUpdated must be a
     String`) for `http`, but dependency resolution completed and the command
     exited successfully.
+
+## 2026-05-31
+
+### V2 Live Web Regression: Terminal Block Append Caret Stability
+
+- Reproduced the Scratch pad caret bug in the web example: after inserting a
+  code fence, typing inside it, clicking below it, and typing a following
+  paragraph, the live-rendered editor could keep the text input coupled to the
+  previous rendered block. The same risk applied to terminal list blocks.
+- Added a tap-below-rendered-content path in the live-rendered editor that
+  creates a terminal append host at the canonical source end instead of relying
+  on the previous block's editable host.
+- Added stable synthetic host identity for terminal append and continuation
+  lines so rapid character-by-character web input keeps focus on the append
+  host while the parser/render plan catches up.
+- Normalized predictive render-plan code-fence ranges back to the current
+  source closing fence when a following paragraph has just been inserted. This
+  prevents optimistic render state from temporarily swallowing the new
+  paragraph into the code block.
+- Narrowed autofocus synchronization to terminal append hosts and made focus
+  scheduling generation-based so stale post-frame callbacks cannot suppress a
+  newer caret target.
+- Added widget regressions for tapping below terminal code fences and lists,
+  including a character-by-character code-fence typing case that mirrors the
+  web text input behavior.
+- Added a follow-up regression for entering multiple blank lines after a
+  terminal code fence and then typing on the latest blank line. The fix keeps
+  parser-omitted blank-line hosts anchored to the same terminal append identity
+  even when the code block render range includes its trailing newline, and only
+  restores focus after an actual edit/revision or prior editor focus so static
+  visual fixtures do not gain a caret.
+- Added a second follow-up for the parser-adoption phase after those blank
+  lines. Once the parser turns the typed text into a normal paragraph, the
+  focused synthetic blank-line host is reconciled away; the focus coordinator
+  now records when it disposes a focused block node and restores focus to the
+  new source-selection owner during that rebuild. This covers both tap-below
+  and Enter-to-exit-fence paths.
+- Added a fast-typing follow-up for web text input updates that deliver the
+  inserted character before the collapsed selection offset has advanced. Direct
+  source and table-cell hosts now normalize pure insertion values to place the
+  caret after the inserted text, preventing the source selection from sticking
+  one character behind while rapid input continues.
+- Hardened that path for multiple input updates arriving before the next
+  Flutter frame. Live block text hosts now keep a local edit snapshot and the
+  current direct source replacement range, so a second rapid character replaces
+  the already-extended source span instead of using the stale render block
+  range from the previous frame. The hidden text controller is also updated
+  immediately when a stale platform selection is normalized, so the browser
+  input host converges before the next character arrives.
+- Verified the running Flutter web example at `http://127.0.0.1:7357` through
+  Chrome DevTools Protocol:
+  - Scratch -> code fence -> type `foo` -> click below -> type `after`
+    produced a rendered code block followed by a normal paragraph, with
+    `4 lines · 21 chars` and caret at source offset 21.
+  - Scratch -> bullet list -> type `item` -> click below -> type `after`
+    produced a list item followed by a normal paragraph, with
+    `3 lines · 13 chars` and caret at source offset 13.
+  - Scratch -> code fence -> type `foo` -> click below -> enter two blank
+    lines -> type `x` produced a rendered code block followed by `x` on the
+    latest blank line, with `5 lines · 18 chars` and caret at source offset 18.
+  - Follow-up after the fast-typing fix reloaded the same running app and
+    repeated Scratch -> code fence -> type `foo` -> click below -> enter four
+    blank lines -> type `x`; the DOM text input hosts remained split between
+    the code block body and the trailing paragraph host instead of reattaching
+    the caret to the previous block.
+  - A rapid-input web probe on the same route inserted `abcdefghijklmnop`
+    without per-character delays after the blank-line fence exit. The active
+    textarea reported `selectionStart == selectionEnd == 16`, matching the end
+    of the inserted text.
+  - After the no-frame snapshot hardening, a three-run rapid web probe inserted
+    `abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345` after the same
+    code-fence blank-line route. Each run left the active textarea at
+    `selectionStart == selectionEnd == 58`.
+- Verification:
+  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --plain-name "terminal live code fence"`: passed.
+  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart`: passed with 80 tests.
+  - `flutter test test/v2/flutter/sovereign_v2_visual_golden_test.dart --plain-name "live rendered edge cases stay visually stable"`: passed.
+  - `flutter test test/v2/flutter`: passed with 194 tests.
+  - Follow-up rerun after the blank-line/parser-adoption fix:
+    `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart`: passed with 82 tests;
+    `flutter test test/v2/flutter`: passed with 196 tests.
+  - Follow-up rerun after the fast-typing stale-selection fix:
+    `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --plain-name "blank lines below a terminal live code fence"`: passed;
+    `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart`: passed with 82 tests;
+    `flutter test test/v2/flutter/sovereign_v2_visual_golden_test.dart --plain-name "live rendered edge cases stay visually stable"`: passed;
+    `flutter test test/v2/flutter`: passed with 196 tests.
+  - Follow-up rerun after the no-frame rapid input snapshot fix:
+    `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --plain-name "blank lines below a terminal live code fence"`: passed;
+    `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart`: passed with 82 tests;
+    `flutter test test/v2/flutter`: passed with 196 tests;
+    `flutter analyze lib/src/v2/flutter/sovereign_projected_editable_text.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart`: passed.
+
+### V2 Live Web Regression: Partial Strong Delimiter Styling
+
+- Reproduced the editing-state issue behind typing `**wow*`: Comrak can parse
+  the second opener asterisk plus the trailing asterisk as a valid emphasis
+  pair, so the editor briefly projected hidden markers and italic styling even
+  though the user was in the middle of entering a bold span.
+- Normalized this specific parser bridge shape as an editor UX rule. When a
+  single emphasis token is formed by splitting a pending same-character
+  double-delimiter run, the native parse adapter now drops that transient
+  emphasis token and keeps its marker ranges visible. Completed `**wow**`
+  still maps to normal strong styling.
+- Added parser and live-rendered editor regressions for the partial-to-complete
+  transition. `**wow*` remains literal with no italic/bold span; after the
+  second closing asterisk, `**wow**` projects to `wow` with bold styling.
+- Verification:
+  - `flutter test test/v2/markdown/sovereign_native_comrak_parse_backend_test.dart --plain-name "keeps partial strong delimiter intent literal"`: passed.
+  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --plain-name "partial bold delimiters"`: passed.
+  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart`: passed with 83 tests.
+  - `flutter test test/v2/markdown`: passed with 221 tests.
+  - `flutter test test/v2/flutter`: passed with 197 tests.
+  - `flutter analyze lib/src/v2/markdown/parse/sovereign_native_comrak_parse_backend.dart test/v2/markdown/sovereign_native_comrak_parse_backend_test.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart`: passed.
+
+### V2 QA Edge Pass: Malformed Inline Markdown and Scratch Playground
+
+- Ran an ad hoc native-parser/projection probe over deliberately awkward
+  incremental Markdown states: missing strong delimiters (`**wow*`, `*wow**`,
+  underscore variants), triple/quad delimiter runs, escaped markers, inline
+  code with delimiter-looking text, partial links/images, partial task markers,
+  table fragments, and partial/complete code-fence exits with trailing blank
+  lines.
+- Promoted the source-visible malformed cases into the markdown transition
+  matrix. The new coverage asserts that partial strong/underscore/triple
+  delimiter states, partial double-backtick inline code, and typed partial
+  link/image destinations do not create hidden ranges, inline tokens, or
+  overlays before the syntax is actually complete.
+- Added live-rendered editor coverage for the same inline states so the
+  displayed `EditableText` remains literal and unstyled during partial entry,
+  while inline code still shields delimiter text with monospace styling.
+- Added a higher-level Scratch playground widget regression that enters a
+  mixed "QA paste" document containing malformed inline syntax, a code fence,
+  multiple blank lines after the fence, partial list/task markers, and a
+  partial double-backtick code span. Live edit keeps the malformed inline text
+  visible, hides completed fence markers, and switching to Source preserves the
+  canonical Markdown exactly.
+- The example playground QA pass also exposed a stale example integration test
+  and a preview Scrollbar assertion on desktop. Updated the example scenario
+  and mode keys to match the current UI, refreshed the integration assertions
+  to current Sample/Article/Tables content, and gave the preview pane an
+  explicit `ScrollController` shared by `Scrollbar` and
+  `SingleChildScrollView`.
+- Browser/plugin note: the in-app browser surface was unavailable in this
+  session (`agent.browsers.list()` returned no browsers). The already running
+  web server at `http://127.0.0.1:7357` was hot-reloaded after the example
+  changes and responded to `curl`. Flutter integration tests could not be
+  completed on Chrome because Flutter reports web devices are unsupported for
+  integration tests, and the macOS integration runner hung after launch in this
+  environment, so the deterministic example widget suite is the verified
+  playground-level coverage for this pass.
+- Verification:
+  - `flutter test test/v2/markdown/sovereign_markdown_transition_matrix_test.dart --reporter compact`: passed with 70 tests.
+  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --plain-name "malformed inline"`: passed.
+  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart`: passed with 84 tests.
+  - `(cd example && flutter test test/widget_test.dart --plain-name "scratch keeps awkward partial markdown states editable" --reporter compact)`: passed.
+  - `(cd example && flutter test test/widget_test.dart --reporter compact)`: passed with 34 tests.
+  - `flutter test test/v2/markdown --reporter compact`: passed with 231 tests.
+  - `flutter test test/v2/flutter --reporter compact`: passed with 198 tests.
+  - `flutter analyze test/v2/markdown/sovereign_markdown_transition_matrix_test.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart`: passed.
+  - `(cd example && flutter analyze lib/main.dart test/widget_test.dart integration_test/markdown_flow_test.dart)`: passed.
+
+### V2 Research Audit: Markdown Live Editor Gotchas
+
+- Cross-checked Sovereign's live-rendered editor against first-party notes from
+  mature Markdown/editor projects: TOAST UI's parser redesign notes, ProseMirror
+  position/selection mapping and embedded editor examples, CodeMirror widget
+  decoration guidance, Lexical state/selection/update guidance, Tiptap
+  input/paste/history docs, and CommonMark/GFM parsing rules.
+- The recurring external gotchas were parser/view disagreement, position mapping
+  through hidden or replaced syntax, whole-document rerenders during live
+  preview, focus/selection feedback loops, embedded block-editor boundary
+  navigation, Markdown shortcut undo grouping, paste normalization, ambiguous
+  partial delimiters, and table cell escaping.
+- The current V2 surface has explicit coverage for most of those areas:
+  source-visible malformed inline syntax, parser-omitted blank-line hosts,
+  terminal append hosts below code fences/lists, stale parse rejection, live
+  surface stability across predictive edits, code-fence/table paste
+  normalization, table escaped-pipe selection mapping, task/table undo/redo,
+  and source/live selection agreement.
+- Remaining follow-up candidates are narrower than the earlier cursor bugs:
+  add live-rendered IME composition cases inside block widgets, add explicit
+  undo grouping around plain Markdown shortcut conversions, and add automated
+  browser-level rapid-typing validation once a controllable browser surface is
+  available again.
+- Verification:
+  - `flutter test test/v2/markdown/sovereign_markdown_transition_matrix_test.dart test/v2/flutter/sovereign_parse_scheduler_test.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --reporter compact`: passed with 158 tests.
+  - `(cd example && flutter test test/widget_test.dart --reporter compact)`: passed with 34 tests.
+
+### V2 Gap Closure Pass: IME Grouping and Rapid Fence Editing
+
+- Closed two follow-up gaps from the Markdown live-editor research audit.
+  Projected/live block edits now carry the same IME composition undo group IDs
+  as source editing, so one undo after a composing sequence removes the whole
+  committed composition instead of revealing an intermediate composition state.
+  Coverage now includes projected inline editing, live code bodies, and live
+  table cells.
+- Added explicit source and live-rendered undo/redo coverage for Markdown
+  shortcut Enter handling. List continuation from Enter is now asserted as one
+  history action in both source and live block editing.
+- Browser-level rapid typing exposed a real scratch-pad fence bug: typing an
+  opening fence with a `dart` info string character-by-character could promote
+  the fence as soon as the third backtick arrived, routing `dart` into the code
+  body. The live opener now avoids auto-completing the standalone fence when a
+  single typed character merely completes the marker prefix.
+- The same rapid-typing pass exposed a second fence bug after `foo` + Enter in
+  an unclosed code block. Unclosed EOF code-body ranges were trimming the final
+  newline, so the next fast backtick could be appended to `foo` instead of the
+  new closing-fence line. Closed fences still trim the body newline before the
+  closer, but unclosed EOF fences now keep trailing newlines editable.
+- Browser/plugin note: the in-app browser was unavailable in this session, so
+  browser validation used a headless Chrome/CDP fallback against the local
+  example app. A Flutter Chrome-platform test attempt hung and was stopped; the
+  deterministic widget regressions now cover the same fast typing sequences.
+- Verification:
+  - `flutter test test/v2/flutter/sovereign_projected_editable_text_test.dart --plain-name "projected IME" --reporter compact`: passed.
+  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --plain-name "IME composition" --reporter compact`: passed.
+  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --plain-name "undoes and redoes live list continuation" --reporter compact`: passed.
+  - `flutter test test/v2/flutter/sovereign_editable_text_test.dart --plain-name "upgrades platform Enter" --reporter compact`: passed.
+  - `(cd example && flutter test test/widget_test.dart --plain-name "fast typed fence language" --reporter compact)`: passed.
+  - `(cd example && flutter test test/widget_test.dart --plain-name "fast typed fence closing" --reporter compact)`: passed.
+  - `flutter test test/v2/flutter --reporter compact`: passed with 203 tests.
+  - `flutter test test/v2/markdown --reporter compact`: passed with 232 tests.
+  - `flutter test test/v2/projection --reporter compact`: passed with 33 tests.
+  - `(cd example && flutter test test/widget_test.dart --reporter compact)`: passed with 36 tests.
+  - `flutter analyze lib/src/v2/markdown/source/sovereign_markdown_fenced_code_scanner.dart lib/src/v2/projection/sovereign_projected_text_edit_adapter.dart lib/src/v2/flutter/sovereign_flutter_controller.dart lib/src/v2/flutter/sovereign_projected_editable_text.dart test/v2/markdown/sovereign_markdown_fenced_code_scanner_test.dart test/v2/flutter/sovereign_projected_editable_text_test.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart test/v2/flutter/sovereign_editable_text_test.dart`: passed.
+  - `(cd example && flutter analyze test/widget_test.dart)`: passed.
+
+### V2 DX Ergonomics Pass: Controller-Owned Field Surface
+
+- Compared Sovereign's app-facing setup against peer editor leaders. Lexical
+  emphasizes a modular composer/editor instance split with plugin-like feature
+  registration; Tiptap's entrypoint accepts initial content plus extensions;
+  CodeMirror's core is configured from extension bundles; and ProseMirror
+  keeps the transaction/plugin model explicit for advanced integrations.
+- Sovereign already had the advanced half of that shape: a
+  `SovereignFlutterController`, command registry, extension set, parse
+  scheduler, projected editing, and shared render plans. The ergonomic gap was
+  the first-run app path: even the quick start required manually creating and
+  disposing a controller before rendering an editor.
+- Added `SovereignMarkdownField` as the low-ceremony app API. It owns a
+  `SovereignFlutterController`, starts from `initialMarkdown`, forwards the
+  existing editor configuration knobs, and reports source changes through
+  `onChanged`. `SovereignMarkdownEditor` remains the controller-owned surface
+  for split panes, command toolbars, and custom runtime sharing.
+- Tightened the field semantics after review: `initialMarkdown` is now
+  initial-only for an existing widget state, so a parent that stores `onChanged`
+  back into app state will not recreate the controller and cause selection
+  jumps on every rebuild. A widget key still creates a fresh field for a new
+  document, and extension changes preserve the current Markdown.
+- Exported the new field through the promoted top-level barrel and the advanced
+  v2 barrel. Updated the README quick start to use the field while keeping the
+  shared controller example for editor/preview layouts.
+- Verification:
+  - `flutter test test/v2/flutter/sovereign_markdown_surface_test.dart --reporter compact`: passed with 5 tests.
+  - `flutter test test/v2/public_api/sovereign_editor_v2_public_api_test.dart test/public_api/sovereign_editor_barrel_test.dart --reporter compact`: passed with 5 tests.
+  - `flutter analyze lib/src/v2/flutter/sovereign_markdown_field.dart lib/src/v2/flutter/flutter.dart lib/sovereign_editor.dart lib/sovereign_editor_v2.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart test/public_api/sovereign_editor_barrel_test.dart`: passed.
+  - `flutter test test/v2/flutter --reporter compact`: passed with 204 tests.
+  - `dart doc --dry-run`: passed with 0 warnings and 0 errors.
+  - Follow-up after tightening `initialMarkdown` semantics:
+    `flutter test test/v2/flutter/sovereign_markdown_surface_test.dart --reporter compact`: passed with 5 tests;
+    `flutter analyze lib/src/v2/flutter/sovereign_markdown_field.dart test/v2/flutter/sovereign_markdown_surface_test.dart`: passed;
+    `flutter test test/v2/flutter --reporter compact`: passed with 206 tests;
+    `dart doc --dry-run`: passed with 0 warnings and 0 errors.
+
+### V2 DX Ergonomics Pass: Toolbar Command Helpers
+
+- Continued the peer comparison from the controller-owned field pass. The
+  advanced editor frameworks all make simple integration possible while still
+  leaving a precise transaction/extension path for advanced users. Sovereign's
+  v2 architecture already had the precise command layer, but everyday toolbar
+  code still had to import command ids and construct payload objects for common
+  Markdown actions.
+- Added `SovereignMarkdownControllerCommands`, a public extension on
+  `SovereignFlutterController`, for common Markdown toolbar/menu actions:
+  heading changes, inline styles, quote/list/task toggles, thematic breaks,
+  code fences, tables, and link editing. The helpers are intentionally thin and
+  return `SovereignEditorRuntimeResult`, so apps can start with
+  `controller.toggleStrong()` without giving up command rejection details.
+- Exported the helper extension through the promoted app barrel and advanced v2
+  barrel, updated the README toolbar example, and refactored the example app
+  toolbar to call the readable helpers rather than hand-building command
+  payloads.
+- The first helper test found a real command-level ergonomics bug: inserting a
+  fenced code block at the end of a paragraph produced
+  `paragraph```dart` instead of a separated block. Fixed
+  `SovereignMarkdownBlockCommands.insertFence` to add block-safe surrounding
+  newlines when the caret is embedded in paragraph text, while preserving the
+  existing line-start behavior.
+- Verification:
+  - `flutter test test/v2/markdown/sovereign_markdown_block_commands_test.dart test/v2/flutter/sovereign_markdown_controller_commands_test.dart --reporter compact`: passed with 21 tests.
+  - `flutter test test/v2/public_api/sovereign_editor_v2_public_api_test.dart test/public_api/sovereign_editor_barrel_test.dart --reporter compact`: passed with 5 tests.
+  - `flutter analyze lib/src/v2/flutter/sovereign_markdown_controller_commands.dart lib/src/v2/flutter/sovereign_markdown_field.dart lib/src/v2/flutter/flutter.dart lib/src/v2/markdown/commands/sovereign_markdown_block_commands.dart lib/sovereign_editor.dart lib/sovereign_editor_v2.dart example/lib/main.dart test/v2/flutter/sovereign_markdown_controller_commands_test.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/markdown/sovereign_markdown_block_commands_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart test/public_api/sovereign_editor_barrel_test.dart`: passed.
+  - `flutter test test/v2/flutter --reporter compact`: passed with 206 tests.
+  - `flutter test test/v2/markdown --reporter compact`: passed with 233 tests.
+  - `(cd example && flutter test test/widget_test.dart --reporter compact)`: passed with 36 tests.
+  - `dart doc --dry-run`: passed with 0 warnings and 0 errors.
+  - `git diff --check -- README.md docs/production_readiness/execution_log.md lib/sovereign_editor.dart lib/sovereign_editor_v2.dart lib/src/v2/flutter/flutter.dart lib/src/v2/flutter/sovereign_markdown_field.dart lib/src/v2/flutter/sovereign_markdown_controller_commands.dart lib/src/v2/markdown/commands/sovereign_markdown_block_commands.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/flutter/sovereign_markdown_controller_commands_test.dart test/v2/markdown/sovereign_markdown_block_commands_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart test/public_api/sovereign_editor_barrel_test.dart example/lib/main.dart`: clean.
+
+### V2 DX Ergonomics Pass: Widget Surface Clarification
+
+- Tightened the app-facing widget story after review showed the surface still
+  felt overlapping. The top-level `sovereign_editor.dart` barrel now presents
+  the opinionated app path: `SovereignMarkdownField`,
+  `SovereignMarkdownEditor`, `SovereignMarkdownPreview`,
+  `SovereignReadOnlyPreview`, controller APIs, command helpers, and callback
+  types.
+- Kept the mode-specific implementation widgets
+  (`SovereignEditableText`, `SovereignProjectedEditableText`, and
+  `SovereignLiveRenderedEditableText`) in `sovereign_editor_v2.dart` for
+  advanced custom shells, but removed them from the top-level app barrel so
+  first-time users do not see four editable widgets as equivalent choices.
+- Added a README widget guide that names the four primary widgets, their state
+  owner, and when to choose each. The guide also tells app developers to use
+  `SovereignMarkdownEditor(editingMode: ...)` instead of directly choosing the
+  raw/source/projected/live implementation widgets.
+- Verification:
+  - `flutter test test/public_api/sovereign_editor_barrel_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart --reporter compact`: passed with 5 tests.
+  - `flutter analyze lib/sovereign_editor.dart test/public_api/sovereign_editor_barrel_test.dart`: passed.
+  - `(cd example && flutter analyze lib/main.dart test/widget_test.dart)`: passed.
+  - `dart doc --dry-run`: passed with 0 warnings and 0 errors.
+  - `git diff --check -- README.md docs/production_readiness/execution_log.md lib/sovereign_editor.dart test/public_api/sovereign_editor_barrel_test.dart`: clean.
+
+### V2 DX Ergonomics Pass: Two-Widget Public Surface
+
+- Removed the remaining public widget overlap instead of preserving aliases.
+  The app-facing path is now two widgets: `SovereignMarkdownEditor` for
+  editable Markdown and `SovereignMarkdownPreview` for read-only Markdown.
+  `SovereignMarkdownField` is gone, and `SovereignReadOnlyPreview` is no
+  longer exported through the app or v2 public barrels.
+- Merged the field convenience path into `SovereignMarkdownEditor`. Apps can
+  pass `initialMarkdown` and `onChanged` for the simple owned-controller case,
+  or pass `controller` for split panes, toolbars, undo/redo UI, and document
+  sharing. Constructor asserts reject ambiguous ownership such as
+  `controller` plus `initialMarkdown` or `extensions`.
+- Made `SovereignMarkdownPreview` match the same Flutter convention: pass
+  `markdown` for standalone preview, or `controller` to render the same plan as
+  an editor. Shared-controller previews no longer schedule parsing or accept a
+  `parseBackend`; parser scheduling has one owner.
+- Pruned `sovereign_editor_v2.dart` so implementation widgets and helpers stay
+  behind deep imports for package tests: raw/projected/live concrete editing
+  widgets, parser scheduler, render-plan overlay widget, and text-delta adapter
+  are no longer part of the public v2 barrel.
+- Updated the README, migration guide, public API inventory, Flutter adapter
+  note, example app, and public API tests to describe and enforce the two-widget
+  surface. White-box tests that still need implementation widgets now deep
+  import `src/v2/flutter/flutter.dart`.
+- Verification:
+  - `flutter test test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/flutter/sovereign_read_only_preview_test.dart test/v2/flutter/sovereign_render_plan_parity_test.dart test/public_api/sovereign_editor_barrel_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart --reporter compact`: passed.
+  - `flutter analyze lib/src/v2/flutter/sovereign_markdown_editor.dart lib/src/v2/flutter/sovereign_markdown_preview.dart lib/src/v2/flutter/flutter.dart lib/sovereign_editor.dart lib/sovereign_editor_v2.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/flutter/sovereign_read_only_preview_test.dart test/v2/flutter/sovereign_render_plan_parity_test.dart test/public_api/sovereign_editor_barrel_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart example/lib/main.dart example/test/widget_test.dart`: passed.
+  - `flutter test test/v2/flutter/sovereign_live_rendered_visual_layout_test.dart --reporter compact`: passed with 4 tests after moving the white-box test to deep imports.
+  - `flutter test test/v2/flutter --reporter compact`: passed with 207 tests.
+  - `(cd example && flutter test test/widget_test.dart --reporter compact)`: passed with 36 tests.
+  - `dart doc --dry-run`: passed with 0 warnings and 0 errors.
+
+### V2 DX Ergonomics Pass: Clean Widget Names
+
+- Renamed the two public widget entry points to the clean names requested for
+  the app API: `Markdown` renders read-only Markdown, and `MarkdownEditor`
+  edits Markdown. The old `SovereignMarkdownEditor` and
+  `SovereignMarkdownPreview` names are not exported as aliases.
+- Kept the existing Sovereign-prefixed controller, command, parser, and render
+  model types. Those names are still useful because they are framework-specific
+  contracts; the widgets are the low-friction app entry points.
+- Updated the README, migration guide, public API inventory, Flutter adapter
+  docs, example app, widget tests, integration test, visual golden harness, and
+  public API guards to use `Markdown` / `MarkdownEditor`.
+- Verification:
+  - `flutter test test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/flutter/sovereign_read_only_preview_test.dart test/v2/flutter/sovereign_render_plan_parity_test.dart test/public_api/sovereign_editor_barrel_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart --reporter compact`: passed.
+  - `flutter analyze lib/src/v2/flutter/sovereign_markdown_editor.dart lib/src/v2/flutter/sovereign_markdown_preview.dart lib/src/v2/flutter/flutter.dart lib/sovereign_editor.dart lib/sovereign_editor_v2.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/flutter/sovereign_read_only_preview_test.dart test/v2/flutter/sovereign_render_plan_parity_test.dart test/public_api/sovereign_editor_barrel_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart example/lib/main.dart example/test/widget_test.dart`: passed.
+  - `flutter test test/v2/flutter --reporter compact`: passed with 207 tests.
+  - `(cd example && flutter test test/widget_test.dart --reporter compact)`: passed with 36 tests.
+  - `dart doc --dry-run`: passed with 0 warnings and 0 errors.
+  - `git diff --check -- README.md docs/architecture/v2/migration_guide_2026-05-02.md docs/architecture/v2/public_api_inventory_2026-05-02.md docs/architecture/v2/flutter_adapter_2026-05-02.md docs/architecture/v2/quality_journal_2026-05-31.md docs/architecture/v2/quality_audit_2026-05-05.md docs/production_readiness/execution_log.md lib/sovereign_editor.dart lib/sovereign_editor_v2.dart lib/src/v2/flutter/sovereign_markdown_editor.dart lib/src/v2/flutter/sovereign_markdown_preview.dart example/lib/main.dart example/test/widget_test.dart example/integration_test/markdown_flow_test.dart test/public_api/sovereign_editor_barrel_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/flutter/sovereign_render_plan_parity_test.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart test/v2/flutter/sovereign_v2_visual_golden_test.dart test/v2/flutter/sovereign_markdown_web_smoke_test.dart test/v2/flutter/sovereign_read_only_preview_test.dart`: clean.

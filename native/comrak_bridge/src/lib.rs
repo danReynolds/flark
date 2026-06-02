@@ -16,6 +16,30 @@ pub extern "C" fn sovereign_comrak_bridge_version() -> u32 {
 }
 
 #[no_mangle]
+pub extern "C" fn sovereign_comrak_input_alloc(len: u32) -> *mut u8 {
+    if len == 0 {
+        return std::ptr::null_mut();
+    }
+
+    let mut bytes = Vec::<u8>::with_capacity(len as usize);
+    let ptr = bytes.as_mut_ptr();
+    std::mem::forget(bytes);
+    ptr
+}
+
+#[no_mangle]
+pub extern "C" fn sovereign_comrak_input_free(ptr: *mut u8, len: u32) {
+    if ptr.is_null() || len == 0 {
+        return;
+    }
+
+    // SAFETY: pointer/capacity originate from `sovereign_comrak_input_alloc`.
+    unsafe {
+        let _ = Vec::from_raw_parts(ptr, 0, len as usize);
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn sovereign_comrak_parse(
     revision: u32,
     profile: u8,

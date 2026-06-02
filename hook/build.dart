@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:code_assets/code_assets.dart';
 import 'package:hooks/hooks.dart';
 
-const _assetName = 'widgets/sovereign/engine/native_comrak_ffi.dart';
+const _assetName = 'src/v2/native/native_comrak_ffi.dart';
 const _crateRelativePath = 'native/comrak_bridge';
 const _libraryBaseName = 'sovereign_comrak_bridge';
 

@@ -27,7 +27,7 @@ Reasons:
 
 The hook emits the asset ID:
 
-- `package:sovereign_editor/widgets/sovereign/engine/native_comrak_ffi.dart`
+- `package:sovereign_editor/src/v2/native/native_comrak_ffi.dart`
 
 This matches the Dart library that owns the native bridge contract.
 
@@ -57,9 +57,11 @@ Unsupported targets:
 
 Do not introduce `ffigen` in this phase.
 
-The C ABI currently has one struct and three exported functions:
+The C ABI currently has one struct and five exported functions:
 
 - `sovereign_comrak_bridge_version`
+- `sovereign_comrak_input_alloc`
+- `sovereign_comrak_input_free`
 - `sovereign_comrak_parse`
 - `sovereign_comrak_response_free`
 
@@ -88,7 +90,7 @@ manual mobile packaging:
 
 `example/` is the package's mobile integration harness. It depends on
 `sovereign_editor` through `path: ..`, imports only the top-level public barrel,
-and exposes both `SovereignEditor` and `SovereignMarkdownView`.
+and exposes `SovereignMarkdownEditor` with `SovereignMarkdownPreview`.
 
 Android verification:
 
@@ -106,7 +108,7 @@ iOS verification:
 ./scripts/verify_example_packaging.sh --ios
 ```
 
-This checks that `Runner/SovereignComrakAnchor.c` references the three exported
+This checks that `Runner/SovereignComrakAnchor.c` references the exported
 bridge symbols, that the Runner target compiles that source file, that the
 project links `sovereign_comrak_bridge.xcframework`, and that Xcode can parse
 the workspace. Use `--strict-ios` when the built XCFramework must already exist.
@@ -121,18 +123,18 @@ For macOS, Linux, and Android app builds:
    `ANDROID_NDK_LATEST_HOME`, or `ANDROID_HOME` points to an installed NDK.
 4. Build the app normally. The Dart/Flutter build hook compiles and bundles the
    native library as a code asset.
-5. Optionally call `preflightNativeComrakBridge()` before constructing editor
-   instances to surface bridge-load diagnostics.
+5. Optionally call `SovereignNativeComrakParseBackend.preflight()` before
+   constructing editor instances to surface bridge-load diagnostics.
 
 For iOS app builds:
 
 1. Build `native/comrak_bridge/dist/ios/sovereign_comrak_bridge.xcframework`
    with `./scripts/build_comrak_ios.sh`.
 2. Link the XCFramework in the consuming app.
-3. Include an anchor C file that references the three exported bridge symbols so
+3. Include an anchor C file that references the exported bridge symbols so
    the static archive members are not stripped.
-4. Rebuild/reinstall the app and use `preflightNativeComrakBridge()` for
-   diagnostics.
+4. Rebuild/reinstall the app and use
+   `SovereignNativeComrakParseBackend.preflight()` for diagnostics.
 
 ## References
 
