@@ -243,6 +243,39 @@ final class FlarkProjection {
     );
   }
 
+  // Skips the redundant sort that the public constructor runs when callers can
+  // promise the inputs are already sorted by start. Still verifies bounds and
+  // non-overlap in one O(n) pass, so accidental mis-use surfaces loudly rather
+  // than corrupting projection state. Predictive projections derive their
+  // inputs from a validated source through a monotonic transaction mapping,
+  // which preserves both invariants.
+  factory FlarkProjection._sortedInputs({
+    required int textLength,
+    required List<FlarkHiddenRange> hiddenRanges,
+    required List<FlarkReplacementRange> replacementRanges,
+    required List<FlarkProjectionAmbiguityZone> ambiguityZones,
+  }) {
+    _verifySortedNonOverlappingInBounds(
+      textLength,
+      hiddenRanges,
+      replacementRanges,
+    );
+    for (final zone in ambiguityZones) {
+      zone.range.validate(textLength);
+    }
+    final projectionSpans = _buildProjectionSpans(
+      hiddenRanges: hiddenRanges,
+      replacementRanges: replacementRanges,
+    );
+    return FlarkProjection._(
+      textLength: textLength,
+      hiddenRanges: hiddenRanges,
+      replacementRanges: replacementRanges,
+      projectionSpans: projectionSpans,
+      ambiguityZones: ambiguityZones,
+    );
+  }
+
   FlarkProjection._({
     required this.textLength,
     required Iterable<FlarkHiddenRange> hiddenRanges,
@@ -422,33 +455,42 @@ final class FlarkProjection {
     FlarkTransaction transaction, {
     required int textLengthAfter,
   }) {
-    final sensitiveRanges = [
-      for (final hiddenRange in hiddenRanges) hiddenRange.range,
-      for (final replacementRange in replacementRanges) replacementRange.range,
-      for (final zone in ambiguityZones) zone.range,
-    ];
-    final touchedSensitiveRange = transaction.operations.any((operation) {
-      return sensitiveRanges.any(
-        (range) => _operationTouchesRange(operation.replacedRange, range),
-      );
-    });
-    final invalidatedRange = _transactionInvalidatedRange(transaction);
+    var touchedSensitiveRange = false;
+    final mappedHiddenRanges = <FlarkHiddenRange>[];
+    for (final hiddenRange in hiddenRanges) {
+      if (!touchedSensitiveRange && _touchesAny(transaction, hiddenRange.range)) {
+        touchedSensitiveRange = true;
+      }
+      final mapped = _mapHiddenRange(transaction, hiddenRange);
+      if (!mapped.range.isCollapsed) mappedHiddenRanges.add(mapped);
+    }
+    final mappedReplacementRanges = <FlarkReplacementRange>[];
+    for (final replacementRange in replacementRanges) {
+      if (!touchedSensitiveRange &&
+          _touchesAny(transaction, replacementRange.range)) {
+        touchedSensitiveRange = true;
+      }
+      final mapped = _mapReplacementRange(transaction, replacementRange);
+      if (!mapped.range.isCollapsed) mappedReplacementRanges.add(mapped);
+    }
+    final mappedAmbiguityZones = <FlarkProjectionAmbiguityZone>[];
+    for (final zone in ambiguityZones) {
+      if (!touchedSensitiveRange && _touchesAny(transaction, zone.range)) {
+        touchedSensitiveRange = true;
+      }
+      final mapped = _mapAmbiguityZone(transaction, zone);
+      if (!mapped.range.isCollapsed) mappedAmbiguityZones.add(mapped);
+    }
 
     return FlarkProjectionPrediction(
-      projection: FlarkProjection(
+      projection: FlarkProjection._sortedInputs(
         textLength: textLengthAfter,
-        hiddenRanges: hiddenRanges
-            .map((range) => _mapHiddenRange(transaction, range))
-            .where((range) => !range.range.isCollapsed),
-        replacementRanges: replacementRanges
-            .map((range) => _mapReplacementRange(transaction, range))
-            .where((range) => !range.range.isCollapsed),
-        ambiguityZones: ambiguityZones
-            .map((zone) => _mapAmbiguityZone(transaction, zone))
-            .where((zone) => !zone.range.isCollapsed),
+        hiddenRanges: mappedHiddenRanges,
+        replacementRanges: mappedReplacementRanges,
+        ambiguityZones: mappedAmbiguityZones,
       ),
       touchedProjectionSensitiveRange: touchedSensitiveRange,
-      invalidatedRange: invalidatedRange,
+      invalidatedRange: _transactionInvalidatedRange(transaction),
     );
   }
 
@@ -750,6 +792,68 @@ bool _operationTouchesRange(
         operationRange.start < sensitiveRange.end;
   }
   return operationRange.intersects(sensitiveRange);
+}
+
+bool _touchesAny(FlarkTransaction transaction, FlarkSourceRange sensitive) {
+  for (final operation in transaction.operations) {
+    if (_operationTouchesRange(operation.replacedRange, sensitive)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void _verifySortedNonOverlappingInBounds(
+  int textLength,
+  List<FlarkHiddenRange> hiddenRanges,
+  List<FlarkReplacementRange> replacementRanges,
+) {
+  var hiddenPrevEnd = 0;
+  for (final hidden in hiddenRanges) {
+    final range = hidden.range;
+    _validateRangeShape(range);
+    if (range.end > textLength) {
+      throw RangeError.range(range.end, 0, textLength, 'end');
+    }
+    if (range.start < hiddenPrevEnd) {
+      throw StateError('Projection hidden ranges must be sorted and disjoint.');
+    }
+    hiddenPrevEnd = range.end;
+  }
+  var replacementPrevEnd = 0;
+  for (final replacement in replacementRanges) {
+    final range = replacement.range;
+    _validateRangeShape(range);
+    if (range.end > textLength) {
+      throw RangeError.range(range.end, 0, textLength, 'end');
+    }
+    if (range.start < replacementPrevEnd) {
+      throw StateError(
+        'Projection replacement ranges must be sorted and disjoint.',
+      );
+    }
+    replacementPrevEnd = range.end;
+  }
+  // Merge-walk the two pre-sorted lists to catch hidden-vs-replacement overlap
+  // without re-sorting either input.
+  var hiddenIndex = 0;
+  var replacementIndex = 0;
+  while (hiddenIndex < hiddenRanges.length &&
+      replacementIndex < replacementRanges.length) {
+    final hidden = hiddenRanges[hiddenIndex].range;
+    final replacement = replacementRanges[replacementIndex].range;
+    if (hidden.start < replacement.start) {
+      if (hidden.end > replacement.start) {
+        throw StateError('Projection hidden and replacement ranges overlap.');
+      }
+      hiddenIndex++;
+    } else {
+      if (replacement.end > hidden.start) {
+        throw StateError('Projection hidden and replacement ranges overlap.');
+      }
+      replacementIndex++;
+    }
+  }
 }
 
 int _clampInt(int value, int min, int max) {

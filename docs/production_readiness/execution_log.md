@@ -1417,3 +1417,26 @@ append-only unless correcting a factual error.
   - Source-tree legacy-name scan excluding ignored build/cache/binary outputs:
     clean.
   - `git diff --check`: clean.
+
+### Review Follow-Up: Immediate Parse Correctness and Performance Evidence
+
+- Routed live-rendered immediate parse adoption through the same parser backend,
+  profile, and `onParseError` callback used by scheduled `MarkdownEditor`
+  parsing. This removes the hidden Comrak-only path for standalone fence edits,
+  block-local Enter/Backspace handling, delete-selection handling, and code
+  fence language changes.
+- Added widget regressions for immediate live-rendered parsing with a custom
+  backend/profile and immediate parse-error reporting.
+- Added large-document benchmark coverage for line-indexed text-buffer rebuilds,
+  dense projection prediction, render-plan construction, and native
+  Comrak parse/decode.
+- Optimized native parse-result mapping by indexing source ranges and reusing
+  mapped marker ranges. The 177,540-character native parse/decode tracking
+  sample improved from 4555.66ms before the range-index pass to 1151.48ms in
+  the final benchmark run.
+- Verification:
+  - `flutter analyze lib/src/v2/markdown/parse/flark_native_comrak_parse_backend.dart lib/src/v2/flutter/flark_markdown_editor.dart lib/src/v2/flutter/flark_projected_editable_text.dart lib/src/v2/core/history/flark_history_stack.dart lib/src/v2/core/transaction/flark_transaction.dart test/v2/flutter/flark_markdown_surface_test.dart test/v2/performance/flark_v2_large_document_benchmark_test.dart`: passed.
+  - `flutter test test/v2/markdown/flark_native_comrak_parse_backend_test.dart test/v2/flutter/flark_markdown_surface_test.dart --reporter compact`: passed with 37 tests.
+  - `flutter test --tags benchmark test/v2/performance --dart-define=FLARK_BENCHMARK_ENFORCE_BUDGETS=true --reporter compact`: passed with 8 tests.
+  - `flutter analyze lib test`: passed.
+  - `flutter test test --exclude-tags benchmark --reporter compact`: passed with 545 tests.

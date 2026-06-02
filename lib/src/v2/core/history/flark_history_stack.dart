@@ -81,7 +81,10 @@ final class FlarkHistoryStack {
       );
     }
 
-    return FlarkHistoryStack(undoEntries: nextUndoEntries);
+    return FlarkHistoryStack(
+      undoEntries: nextUndoEntries,
+      redoEntries: const <FlarkHistoryEntry>[],
+    );
   }
 
   FlarkHistoryResult undo(FlarkEditorState state) {

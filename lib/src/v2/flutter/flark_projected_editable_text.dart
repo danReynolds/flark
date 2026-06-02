@@ -75,6 +75,9 @@ final class FlarkLiveRenderedEditableText extends StatefulWidget {
     this.style,
     this.cursorColor = const Color(0xFF006ADC),
     this.backgroundCursorColor = const Color(0x00000000),
+    this.parseBackend,
+    this.profile = FlarkMarkdownProfile.commonMarkGfm,
+    this.onParseError,
     this.minLines,
     this.maxLines,
     this.expands = false,
@@ -87,6 +90,9 @@ final class FlarkLiveRenderedEditableText extends StatefulWidget {
   final TextStyle? style;
   final Color cursorColor;
   final Color backgroundCursorColor;
+  final FlarkMarkdownParseBackend? parseBackend;
+  final FlarkMarkdownProfile profile;
+  final void Function(Object error, StackTrace stackTrace)? onParseError;
   final int? minLines;
   final int? maxLines;
   final bool expands;
@@ -130,18 +136,47 @@ final class _FlarkLiveRenderedEditableTextState
 
   @override
   Widget build(BuildContext context) {
-    return _FlarkLiveRenderedBlockEditor(
-      controller: widget.controller,
-      focusNode: _focusNode,
-      style: widget.style,
-      cursorColor: widget.cursorColor,
-      backgroundCursorColor: widget.backgroundCursorColor,
-      minLines: widget.minLines,
-      maxLines: widget.maxLines,
-      expands: widget.expands,
-      autofocus: widget.autofocus,
-      shortcuts: widget.shortcuts,
+    return _FlarkImmediateParseScope(
+      parseBackend: widget.parseBackend,
+      profile: widget.profile,
+      onParseError: widget.onParseError,
+      child: _FlarkLiveRenderedBlockEditor(
+        controller: widget.controller,
+        focusNode: _focusNode,
+        style: widget.style,
+        cursorColor: widget.cursorColor,
+        backgroundCursorColor: widget.backgroundCursorColor,
+        minLines: widget.minLines,
+        maxLines: widget.maxLines,
+        expands: widget.expands,
+        autofocus: widget.autofocus,
+        shortcuts: widget.shortcuts,
+      ),
     );
+  }
+}
+
+final class _FlarkImmediateParseScope extends InheritedWidget {
+  const _FlarkImmediateParseScope({
+    required this.profile,
+    required super.child,
+    this.parseBackend,
+    this.onParseError,
+  });
+
+  final FlarkMarkdownParseBackend? parseBackend;
+  final FlarkMarkdownProfile profile;
+  final void Function(Object error, StackTrace stackTrace)? onParseError;
+
+  static _FlarkImmediateParseScope? maybeOf(BuildContext context) {
+    return context.getInheritedWidgetOfExactType<_FlarkImmediateParseScope>();
+  }
+
+  @override
+  bool updateShouldNotify(_FlarkImmediateParseScope oldWidget) {
+    return oldWidget.parseBackend != parseBackend ||
+        oldWidget.profile != profile ||
+        oldWidget.onParseError != onParseError;
   }
 }
 
@@ -389,7 +424,7 @@ final class _FlarkProjectedEditableHostState
       if (!applied) {
         _syncFromRuntime();
       } else if (needsImmediateParse) {
-        _adoptImmediateComrakParse();
+        _adoptImmediateMarkdownParse();
       }
       _compositionUndoGrouping.clearIfCommitted(value);
       return;
@@ -432,8 +467,9 @@ final class _FlarkProjectedEditableHostState
     return widget.controller.projection.projectText(widget.controller.markdown);
   }
 
-  void _adoptImmediateComrakParse() {
-    _adoptImmediateComrakParseForController(
+  void _adoptImmediateMarkdownParse() {
+    _adoptImmediateMarkdownParseForControllerFromContext(
+      context,
       widget.controller,
       isMounted: () => mounted,
     );
@@ -451,7 +487,7 @@ final class _FlarkProjectedEditableHostState
       controller: widget.controller,
       enterUserEvent: 'input.projected.enter',
       backspaceUserEvent: 'input.projected.backspace',
-      onHandled: widget.liveRendered ? _adoptImmediateComrakParse : null,
+      onHandled: widget.liveRendered ? _adoptImmediateMarkdownParse : null,
     );
   }
 
@@ -467,30 +503,52 @@ final class _FlarkProjectedEditableHostState
   }
 }
 
-void _adoptImmediateComrakParseForController(
+void _adoptImmediateMarkdownParseForControllerFromContext(
+  BuildContext context,
   FlarkFlutterController controller, {
+  required bool Function() isMounted,
+}) {
+  final scope = _FlarkImmediateParseScope.maybeOf(context);
+  _adoptImmediateMarkdownParseForController(
+    controller,
+    parseBackend: scope?.parseBackend,
+    profile: scope?.profile ?? FlarkMarkdownProfile.commonMarkGfm,
+    onError: scope?.onParseError,
+    isMounted: isMounted,
+  );
+}
+
+void _adoptImmediateMarkdownParseForController(
+  FlarkFlutterController controller, {
+  FlarkMarkdownParseBackend? parseBackend,
+  FlarkMarkdownProfile profile = FlarkMarkdownProfile.commonMarkGfm,
+  void Function(Object error, StackTrace stackTrace)? onError,
   required bool Function() isMounted,
 }) {
   final revision = controller.state.revision;
   final markdown = controller.markdown;
-  _requiredLiveParseBackend()
-      .parse(
-        FlarkMarkdownParseRequest(
-          revision: revision,
-          markdown: markdown,
-          profile: FlarkMarkdownProfile.commonMarkGfm,
-        ),
-      )
-      .then((result) {
-        if (!isMounted()) return;
-        controller.applyParseResult(result);
-      });
+  _ignoreImmediateMarkdownParse(() async {
+    final backend =
+        parseBackend ?? FlarkNativeComrakParseBackend.requiredDefault();
+    final result = await backend.parse(
+      FlarkMarkdownParseRequest(
+        revision: revision,
+        markdown: markdown,
+        profile: profile,
+      ),
+    );
+    if (!isMounted()) return;
+    controller.applyParseResult(result);
+  }(), onError);
 }
 
-FlarkMarkdownParseBackend? _liveParseBackend;
-
-FlarkMarkdownParseBackend _requiredLiveParseBackend() {
-  return _liveParseBackend ??= FlarkNativeComrakParseBackend.requiredDefault();
+void _ignoreImmediateMarkdownParse(
+  Future<void> future,
+  void Function(Object error, StackTrace stackTrace)? onError,
+) {
+  future.catchError((Object error, StackTrace stackTrace) {
+    onError?.call(error, stackTrace);
+  });
 }
 
 final class _FlarkLiveRenderedBlockEditor extends StatefulWidget {
@@ -2047,7 +2105,8 @@ final class _EditableProjectedBlockTextState
       enterUserEvent: 'input.liveBlock.enter',
       backspaceUserEvent: 'input.liveBlock.backspace',
       onHandled: () {
-        _adoptImmediateComrakParseForController(
+        _adoptImmediateMarkdownParseForControllerFromContext(
+          context,
           widget.controller,
           isMounted: () => mounted,
         );
@@ -2212,7 +2271,8 @@ final class _EditableProjectedBlockTextState
         result.commandResult.isHandled &&
         result.commandResult.transaction != null;
     if (handled) {
-      _adoptImmediateComrakParseForController(
+      _adoptImmediateMarkdownParseForControllerFromContext(
+        context,
         widget.controller,
         isMounted: () => mounted,
       );
@@ -3458,7 +3518,8 @@ final class _CodeLanguageSelectorState extends State<_CodeLanguageSelector> {
       language,
     );
     if (!handled) return;
-    _adoptImmediateComrakParseForController(
+    _adoptImmediateMarkdownParseForControllerFromContext(
+      context,
       widget.interactions.controller,
       isMounted: () => mounted,
     );
