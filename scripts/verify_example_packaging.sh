@@ -105,30 +105,30 @@ if [ "$run_ios" -eq 1 ]; then
   anchor="$EXAMPLE_DIR/ios/Runner/FlarkComrakAnchor.c"
   project="$EXAMPLE_DIR/ios/Runner.xcodeproj/project.pbxproj"
   workspace="$EXAMPLE_DIR/ios/Runner.xcworkspace"
-  xcframework="$REPO_ROOT/native/comrak_bridge/dist/ios/sovereign_comrak_bridge.xcframework"
+  xcframework="$REPO_ROOT/native/comrak_bridge/dist/ios/flark_comrak_bridge.xcframework"
 
   require_file "$anchor"
   require_file "$project"
   require_dir "$workspace"
 
-  if ! grep -q "sovereign_comrak_bridge_version" "$anchor"; then
-    echo "iOS anchor does not reference sovereign_comrak_bridge_version."
+  if ! grep -q "flark_comrak_bridge_version" "$anchor"; then
+    echo "iOS anchor does not reference flark_comrak_bridge_version."
     exit 1
   fi
-  if ! grep -q "sovereign_comrak_parse" "$anchor"; then
-    echo "iOS anchor does not reference sovereign_comrak_parse."
+  if ! grep -q "flark_comrak_parse" "$anchor"; then
+    echo "iOS anchor does not reference flark_comrak_parse."
     exit 1
   fi
-  if ! grep -q "sovereign_comrak_response_free" "$anchor"; then
-    echo "iOS anchor does not reference sovereign_comrak_response_free."
+  if ! grep -q "flark_comrak_response_free" "$anchor"; then
+    echo "iOS anchor does not reference flark_comrak_response_free."
     exit 1
   fi
   if ! grep -q "FlarkComrakAnchor.c in Sources" "$project"; then
     echo "iOS project does not build FlarkComrakAnchor.c."
     exit 1
   fi
-  if ! grep -q "sovereign_comrak_bridge.xcframework in Frameworks" "$project"; then
-    echo "iOS project does not link sovereign_comrak_bridge.xcframework."
+  if ! grep -q "flark_comrak_bridge.xcframework in Frameworks" "$project"; then
+    echo "iOS project does not link flark_comrak_bridge.xcframework."
     exit 1
   fi
 

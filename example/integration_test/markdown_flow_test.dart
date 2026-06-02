@@ -15,16 +15,16 @@ void main() {
     expect(_editorText(tester), contains('Flark Markdown'));
     expect(_editorText(tester), isNot(contains('# Flark Markdown')));
 
-    await tester.tap(_key('sovereign-example-scenario-article'));
+    await tester.tap(_key('flark-example-scenario-article'));
     await _settleParsing(tester);
     expect(_editorText(tester), contains('Release Notes'));
 
-    await tester.tap(_key('sovereign-example-mode-source'));
+    await tester.tap(_key('flark-example-mode-source'));
     await _settleParsing(tester);
     expect(_editorText(tester), contains('# Release Notes'));
     expect(_editorText(tester), contains('```dart'));
 
-    await tester.tap(_key('sovereign-example-scenario-scratch'));
+    await tester.tap(_key('flark-example-scenario-scratch'));
     await _settleParsing(tester);
     expect(_editorText(tester), isEmpty);
     expect(_editingMode(tester), FlarkMarkdownEditingMode.liveRendered);
@@ -41,7 +41,7 @@ void main() {
     expect(_editorText(tester), isNot(contains('**bold**')));
     expect(_editorText(tester), isNot(contains('```dart')));
 
-    await tester.tap(_key('sovereign-example-mode-rendered'));
+    await tester.tap(_key('flark-example-mode-rendered'));
     await _settleParsing(tester);
     expect(find.byType(MarkdownEditor), findsNothing);
     expect(
@@ -53,7 +53,7 @@ void main() {
       findsWidgets,
     );
 
-    await tester.tap(_key('sovereign-example-mode-live'));
+    await tester.tap(_key('flark-example-mode-live'));
     await _settleParsing(tester);
     final liveText = _editorText(tester);
     expect(liveText, contains('Manual check'));
@@ -65,9 +65,9 @@ void main() {
     expect(liveText, isNot(contains('**bold**')));
     expect(liveText, isNot(contains('```dart')));
 
-    await tester.tap(_key('sovereign-example-scenario-tables'));
+    await tester.tap(_key('flark-example-scenario-tables'));
     await _settleParsing(tester);
-    await tester.tap(_key('sovereign-example-mode-source'));
+    await tester.tap(_key('flark-example-mode-source'));
     await _settleParsing(tester);
     expect(_editorText(tester), contains('| Feature | Status |'));
     expect(_footerText(tester), contains('Caret'));

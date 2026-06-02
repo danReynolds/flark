@@ -20,7 +20,7 @@ lib/flark_core.dart
   Proposed headless core surface for non-Flutter tests, server-side tooling,
   command processing, markdown transforms, and advanced integrations.
 
-lib/sovereign_editor_testing.dart
+lib/flark_editor_testing.dart
   Optional future testing helpers for fixture parsing, oracle comparison,
   render-plan assertions, and conformance runners.
 ```

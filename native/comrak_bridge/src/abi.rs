@@ -46,7 +46,7 @@ pub(crate) fn free_response(response_ptr: *mut FlarkComrakResponse) {
         return;
     }
 
-    // SAFETY: Caller guarantees pointer originates from `sovereign_comrak_parse`.
+    // SAFETY: Caller guarantees pointer originates from `flark_comrak_parse`.
     let response = unsafe { Box::from_raw(response_ptr) };
 
     if !response.payload_ptr.is_null() && response.payload_len > 0 {

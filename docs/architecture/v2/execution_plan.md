@@ -263,7 +263,7 @@ typed controller updates, clear web parser strategy, and adopter-facing docs.
 
 Tasks:
 
-- [x] Split v1 compatibility into `sovereign_editor_legacy.dart` during the
+- [x] Split v1 compatibility into `flark_editor_legacy.dart` during the
   migration window.
 - [x] Keep `flark.dart` v2-first with explicit promoted exports.
 - [x] Add `flark_core.dart` for headless Dart integrations.
@@ -288,7 +288,7 @@ Tasks:
 
 - [x] Delete the old v1 implementation tree under `lib/widgets`,
   `lib/src/widgets`, and `lib/theme`.
-- [x] Delete the `sovereign_editor_legacy.dart` compatibility barrel.
+- [x] Delete the `flark_editor_legacy.dart` compatibility barrel.
 - [x] Delete v1 widget/engine tests and the temporary v1/v2 oracle suite.
 - [x] Move the shared native Comrak Dart bridge into `lib/src/v2/native`.
 - [x] Remove the default `highlight` dependency with the old renderer.
@@ -313,7 +313,7 @@ Tasks:
 - [x] Set a useful macOS app name, initial window size, and minimum window
   size.
 - [x] Fix macOS native Comrak bundle loading from
-  `Contents/Frameworks/sovereign_comrak_bridge.framework`.
+  `Contents/Frameworks/flark_comrak_bridge.framework`.
 - [x] Verify startup projection, source/projected switching, source edits,
   preview updates, and common Markdown cases through the macOS integration
   flow.
@@ -485,7 +485,7 @@ Current release boundary:
    second Markdown implementation.
 10. Phase 17 adds
     `docs/architecture/v2/markdown_test_matrix_2026-05-08.md` and
-    `test/v2/markdown/sovereign_markdown_feature_matrix_test.dart` as the
+    `test/v2/markdown/flark_markdown_feature_matrix_test.dart` as the
     coverage contract for Markdown features across parser, projection,
     render-plan, command/input, widget, web, and example lanes.
 11. Phase 18 closes the HTML entity boundary with replacement-capable

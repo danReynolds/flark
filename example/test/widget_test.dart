@@ -38,15 +38,15 @@ void main() {
     expect(find.byType(MarkdownEditor), findsOneWidget);
     expect(find.byType(Markdown), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('sovereign-example-command-quote')),
+      find.byKey(const ValueKey('flark-example-command-quote')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('sovereign-example-command-code-fence')),
+      find.byKey(const ValueKey('flark-example-command-code-fence')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('sovereign-example-command-table')),
+      find.byKey(const ValueKey('flark-example-command-table')),
       findsOneWidget,
     );
   });
@@ -63,15 +63,15 @@ void main() {
 
     expect(find.textContaining('Feature'), findsWidgets);
     expect(
-      find.byKey(const ValueKey('sovereign-example-command-table')),
+      find.byKey(const ValueKey('flark-example-command-table')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('sovereign-example-command-quote')),
+      find.byKey(const ValueKey('flark-example-command-quote')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('sovereign-example-command-code-fence')),
+      find.byKey(const ValueKey('flark-example-command-code-fence')),
       findsOneWidget,
     );
   });
@@ -84,47 +84,37 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
     await tester.enterText(find.byType(EditableText), 'quote me');
     await _settleParsing(tester);
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-command-quote')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-command-quote')));
     await _settleParsing(tester);
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), '> quote me');
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-command-code-fence')),
+      find.byKey(const ValueKey('flark-example-command-code-fence')),
     );
     await _settleParsing(tester);
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), '```dart\n\n```');
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-command-table')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-command-table')));
     await _settleParsing(tester);
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), contains('| Header 1 | Header 2 | Header 3 |'));
   });
@@ -188,7 +178,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await tester.pump();
 
@@ -245,7 +235,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -263,9 +253,7 @@ void main() {
     expect(liveText, contains('after fence'));
     expect(liveText, isNot(contains('```dart')));
 
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), _awkwardScratchMarkdown);
   });
@@ -280,7 +268,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await tester.pump();
 
@@ -325,7 +313,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await tester.pump();
 
@@ -354,7 +342,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -366,9 +354,7 @@ void main() {
     expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsNothing);
     expect(_editorText(tester), '[!NOTE]\nuseful');
 
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), '> [!NOTE]\n> useful');
   });
@@ -383,7 +369,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -396,9 +382,7 @@ void main() {
     expect(_editorText(tester), 'Text[^1]\n\n[^1]: Footnote');
     expect(find.byKey(const Key('FlarkInlineLinkMenuButton')), findsNothing);
 
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), 'Text[^1]\n\n[^1]: Footnote');
   });
@@ -413,7 +397,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -435,7 +419,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -445,9 +429,7 @@ void main() {
     expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsNWidgets(2));
     expect(_editorText(tester), 'one\n\n\ntwo');
 
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), '- one\n\n\n- two');
   });
@@ -462,7 +444,7 @@ void main() {
       await tester.pump();
 
       await tester.tap(
-        find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+        find.byKey(const ValueKey('flark-example-scenario-scratch')),
       );
       await _settleParsing(tester);
 
@@ -545,7 +527,7 @@ void main() {
       await tester.pump();
 
       await tester.tap(
-        find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+        find.byKey(const ValueKey('flark-example-scenario-scratch')),
       );
       await _settleParsing(tester);
 
@@ -582,14 +564,12 @@ void main() {
       expect(editors.last.controller.text, isEmpty);
       expect(editors.last.focusNode.hasFocus, isTrue);
 
-      await tester.tap(
-        find.byKey(const ValueKey('sovereign-example-mode-source')),
-      );
+      await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
       await _settleParsing(tester);
       expect(_editorText(tester), '1. ordered\n\n');
 
       await tester.tap(
-        find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+        find.byKey(const ValueKey('flark-example-scenario-scratch')),
       );
       await _settleParsing(tester);
 
@@ -632,9 +612,7 @@ void main() {
       expect(editors.last.controller.text, isEmpty);
       expect(editors.last.focusNode.hasFocus, isTrue);
 
-      await tester.tap(
-        find.byKey(const ValueKey('sovereign-example-mode-source')),
-      );
+      await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
       await _settleParsing(tester);
       expect(_editorText(tester), '- [ ] todo\n\n');
     },
@@ -650,7 +628,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -681,9 +659,7 @@ void main() {
     tester.testTextInput.enterText('todo!');
     await _settleParsing(tester);
 
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), '- [x] todo!');
   });
@@ -698,7 +674,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -716,9 +692,7 @@ void main() {
     expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
     expect(find.byType(EditableText), findsNWidgets(2));
 
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), '- item\n');
   });
@@ -733,7 +707,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -764,9 +738,7 @@ void main() {
       greaterThan(codeHeightBeforeEnter),
     );
 
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), '```dart\nfoo\n\n```');
   });
@@ -781,7 +753,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -806,9 +778,7 @@ void main() {
       greaterThan(codeHeightBeforeEnter),
     );
 
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), '```dart\n\n```');
   });
@@ -823,7 +793,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -843,9 +813,7 @@ void main() {
       findsNothing,
     );
 
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), '```fffffff');
   });
@@ -860,7 +828,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -872,9 +840,7 @@ void main() {
     await _typeFocusedTextIncrementally(tester, markdown);
     await _settleParsing(tester);
 
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
 
     expect(_editorText(tester), markdown);
@@ -890,7 +856,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -902,9 +868,7 @@ void main() {
     await _typeFocusedTextIncrementally(tester, markdown);
     await _settleParsing(tester);
 
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
 
     expect(_editorText(tester), markdown);
@@ -920,7 +884,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -938,9 +902,7 @@ void main() {
       isEmpty,
     );
 
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), '```\n');
   });
@@ -955,7 +917,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -970,9 +932,7 @@ void main() {
     expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsNothing);
     expect(find.text('```'), findsNothing);
 
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), isEmpty);
   });
@@ -987,7 +947,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -1018,9 +978,7 @@ void main() {
     );
     expect(find.text('```'), findsNothing);
 
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), '```dart\nfoo\n```\nafter');
   });
@@ -1035,7 +993,7 @@ void main() {
       await tester.pump();
 
       await tester.tap(
-        find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+        find.byKey(const ValueKey('flark-example-scenario-scratch')),
       );
       await _settleParsing(tester);
 
@@ -1089,11 +1047,11 @@ void main() {
       await tester.pump();
 
       await tester.tap(
-        find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+        find.byKey(const ValueKey('flark-example-scenario-scratch')),
       );
       await _settleParsing(tester);
       await tester.tap(
-        find.byKey(const ValueKey('sovereign-example-command-code-fence')),
+        find.byKey(const ValueKey('flark-example-command-code-fence')),
       );
       await _settleParsing(tester);
 
@@ -1124,9 +1082,7 @@ void main() {
       );
       await _settleParsing(tester);
 
-      await tester.tap(
-        find.byKey(const ValueKey('sovereign-example-mode-source')),
-      );
+      await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
       await _settleParsing(tester);
       expect(_editorText(tester), '```dart\nabc\n```');
     },
@@ -1142,11 +1098,11 @@ void main() {
       await tester.pump();
 
       await tester.tap(
-        find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+        find.byKey(const ValueKey('flark-example-scenario-scratch')),
       );
       await _settleParsing(tester);
       await tester.tap(
-        find.byKey(const ValueKey('sovereign-example-command-code-fence')),
+        find.byKey(const ValueKey('flark-example-command-code-fence')),
       );
       await _settleParsing(tester);
       await tester.enterText(_codeEditableFinder(), 'foo');
@@ -1184,9 +1140,7 @@ void main() {
       await _settleParsing(tester);
       expect(_previewCodeText(tester), 'foobar');
 
-      await tester.tap(
-        find.byKey(const ValueKey('sovereign-example-mode-source')),
-      );
+      await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
       await _settleParsing(tester);
       expect(_editorText(tester), '```rust\nfoobar\n```');
     },
@@ -1202,7 +1156,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -1242,9 +1196,7 @@ void main() {
       const TextSelection.collapsed(offset: 5),
     );
 
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(
       _editorText(tester),
@@ -1266,7 +1218,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -1303,9 +1255,7 @@ void main() {
 
     expect(_editableTextWithText(tester, 'after').focusNode.hasFocus, isTrue);
 
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), 'before\n```dart\nfoo\n```\nafter');
   });
@@ -1320,7 +1270,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -1357,9 +1307,7 @@ void main() {
     tester.testTextInput.enterText('after');
     await _settleParsing(tester);
 
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), '```dart\nfoo\n```\nafter');
   });
@@ -1374,7 +1322,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -1412,7 +1360,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -1456,7 +1404,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
 
@@ -1475,14 +1423,12 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await _settleParsing(tester);
 
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), '> quote\n\n');
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
     await tester.enterText(find.byType(EditableText), '> ');
@@ -1491,14 +1437,12 @@ void main() {
     await tester.showKeyboard(find.byType(EditableText));
     await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
     await _settleParsing(tester);
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), isEmpty);
 
     await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-scenario-scratch')),
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
     );
     await _settleParsing(tester);
     await tester.enterText(find.byType(EditableText), '> quote');
@@ -1513,9 +1457,7 @@ void main() {
     await tester.showKeyboard(find.byType(EditableText));
     await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
     await _settleParsing(tester);
-    await tester.tap(
-      find.byKey(const ValueKey('sovereign-example-mode-source')),
-    );
+    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
     await _settleParsing(tester);
     expect(_editorText(tester), 'quote');
   });

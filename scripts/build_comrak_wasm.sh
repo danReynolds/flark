@@ -8,7 +8,7 @@ ASSET_DIR="$PACKAGE_ROOT/lib/assets/wasm"
 TARGET="wasm32-unknown-unknown"
 
 if [ ! -f "$CRATE_DIR/Cargo.toml" ]; then
-  echo "Could not locate sovereign comrak bridge Cargo.toml at $CRATE_DIR."
+  echo "Could not locate flark comrak bridge Cargo.toml at $CRATE_DIR."
   exit 1
 fi
 
@@ -29,7 +29,7 @@ RUSTC="$RUSTC_CMD" "${CARGO_CMD[@]}" build \
   --release \
   --target "$TARGET"
 
-cp "$CRATE_DIR/target/$TARGET/release/sovereign_comrak_bridge.wasm" \
-  "$ASSET_DIR/sovereign_comrak_bridge.wasm"
+cp "$CRATE_DIR/target/$TARGET/release/flark_comrak_bridge.wasm" \
+  "$ASSET_DIR/flark_comrak_bridge.wasm"
 
-echo "Comrak WASM bridge staged at lib/assets/wasm/sovereign_comrak_bridge.wasm."
+echo "Comrak WASM bridge staged at lib/assets/wasm/flark_comrak_bridge.wasm."

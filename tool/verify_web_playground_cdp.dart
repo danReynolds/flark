@@ -7,30 +7,25 @@ Future<void> main(List<String> arguments) async {
   final uri = Uri.parse(
     arguments.isNotEmpty ? arguments.first : 'http://127.0.0.1:6200/',
   );
-  final chromePath = Platform.environment['CHROME_PATH'] ??
+  final chromePath =
+      Platform.environment['CHROME_PATH'] ??
       '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
   final port = 9330 + Random().nextInt(200);
-  final profile = await Directory.systemTemp.createTemp(
-    'sovereign-web-cdp-',
-  );
+  final profile = await Directory.systemTemp.createTemp('flark-web-cdp-');
   Process? chrome;
   CdpClient? cdp;
 
   try {
-    chrome = await Process.start(
-      chromePath,
-      [
-        '--headless=new',
-        '--disable-gpu',
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--window-size=1400,900',
-        '--remote-debugging-port=$port',
-        '--user-data-dir=${profile.path}',
-        uri.toString(),
-      ],
-      mode: ProcessStartMode.normal,
-    );
+    chrome = await Process.start(chromePath, [
+      '--headless=new',
+      '--disable-gpu',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--window-size=1400,900',
+      '--remote-debugging-port=$port',
+      '--user-data-dir=${profile.path}',
+      uri.toString(),
+    ], mode: ProcessStartMode.normal);
     chrome.stdout.listen((_) {});
     chrome.stderr.listen((data) => stderr.add(data));
 
@@ -47,7 +42,7 @@ Future<void> main(List<String> arguments) async {
     await _click(cdp, 60, 210); // Blank live editor body.
     await cdp.send('Input.insertText', {'text': '```'});
     await Future<void>.delayed(const Duration(seconds: 1));
-    await _screenshot(cdp, '/tmp/sovereign-cdp-triple.png');
+    await _screenshot(cdp, '/tmp/flark-cdp-triple.png');
     await _pressKey(
       cdp,
       key: 'Backspace',
@@ -55,21 +50,21 @@ Future<void> main(List<String> arguments) async {
       windowsVirtualKeyCode: 8,
     );
     await Future<void>.delayed(const Duration(seconds: 1));
-    await _screenshot(cdp, '/tmp/sovereign-cdp-empty-fence-backspace.png');
+    await _screenshot(cdp, '/tmp/flark-cdp-empty-fence-backspace.png');
 
     await _click(cdp, 930, 47); // Reset scratch.
     await Future<void>.delayed(const Duration(milliseconds: 700));
     await _click(cdp, 60, 210);
     await cdp.send('Input.insertText', {'text': '```fffffff'});
     await Future<void>.delayed(const Duration(seconds: 1));
-    await _screenshot(cdp, '/tmp/sovereign-cdp-opener.png');
+    await _screenshot(cdp, '/tmp/flark-cdp-opener.png');
 
     await _click(cdp, 930, 47); // Reset scratch.
     await Future<void>.delayed(const Duration(milliseconds: 700));
     await _click(cdp, 60, 210);
     await cdp.send('Input.insertText', {'text': '```dart\nfoo\n```'});
     await Future<void>.delayed(const Duration(seconds: 1));
-    await _screenshot(cdp, '/tmp/sovereign-cdp-fence.png');
+    await _screenshot(cdp, '/tmp/flark-cdp-fence.png');
 
     await _click(cdp, 930, 47); // Reset scratch.
     await Future<void>.delayed(const Duration(milliseconds: 700));
@@ -78,18 +73,18 @@ Future<void> main(List<String> arguments) async {
       'text': '```\n{"name":"Ada","count":2}\n```',
     });
     await Future<void>.delayed(const Duration(seconds: 1));
-    await _screenshot(cdp, '/tmp/sovereign-cdp-auto-json-fence.png');
+    await _screenshot(cdp, '/tmp/flark-cdp-auto-json-fence.png');
 
     await _click(cdp, 710, 224); // Code-fence language control.
     await Future<void>.delayed(const Duration(milliseconds: 500));
-    await _screenshot(cdp, '/tmp/sovereign-cdp-language-menu.png');
+    await _screenshot(cdp, '/tmp/flark-cdp-language-menu.png');
     await _click(cdp, 710, 548); // Rust option.
     await Future<void>.delayed(const Duration(milliseconds: 700));
-    await _screenshot(cdp, '/tmp/sovereign-cdp-language-rust.png');
+    await _screenshot(cdp, '/tmp/flark-cdp-language-rust.png');
     await _click(cdp, 60, 224); // Code body after selector mutation.
     await cdp.send('Input.insertText', {'text': 'bar'});
     await Future<void>.delayed(const Duration(seconds: 1));
-    await _screenshot(cdp, '/tmp/sovereign-cdp-language-type.png');
+    await _screenshot(cdp, '/tmp/flark-cdp-language-type.png');
 
     await _click(cdp, 930, 47); // Reset scratch.
     await Future<void>.delayed(const Duration(milliseconds: 700));
@@ -105,7 +100,7 @@ Future<void> main(List<String> arguments) async {
       windowsVirtualKeyCode: 8,
     );
     await Future<void>.delayed(const Duration(seconds: 1));
-    await _screenshot(cdp, '/tmp/sovereign-cdp-fence-backspace-from-after.png');
+    await _screenshot(cdp, '/tmp/flark-cdp-fence-backspace-from-after.png');
 
     await _click(cdp, 930, 47); // Reset scratch.
     await Future<void>.delayed(const Duration(milliseconds: 700));
@@ -121,7 +116,7 @@ Future<void> main(List<String> arguments) async {
     await Future<void>.delayed(const Duration(milliseconds: 500));
     await cdp.send('Input.insertText', {'text': 'after'});
     await Future<void>.delayed(const Duration(seconds: 1));
-    await _screenshot(cdp, '/tmp/sovereign-cdp-terminal-fence-down.png');
+    await _screenshot(cdp, '/tmp/flark-cdp-terminal-fence-down.png');
     await _pressKey(
       cdp,
       key: 'ArrowUp',
@@ -131,7 +126,7 @@ Future<void> main(List<String> arguments) async {
     await Future<void>.delayed(const Duration(milliseconds: 500));
     await cdp.send('Input.insertText', {'text': '!'});
     await Future<void>.delayed(const Duration(seconds: 1));
-    await _screenshot(cdp, '/tmp/sovereign-cdp-fence-up-from-below.png');
+    await _screenshot(cdp, '/tmp/flark-cdp-fence-up-from-below.png');
 
     await _click(cdp, 930, 47); // Reset scratch.
     await Future<void>.delayed(const Duration(milliseconds: 700));
@@ -148,7 +143,7 @@ Future<void> main(List<String> arguments) async {
       modifiers: 8,
     );
     await Future<void>.delayed(const Duration(seconds: 1));
-    await _screenshot(cdp, '/tmp/sovereign-cdp-code-selection.png');
+    await _screenshot(cdp, '/tmp/flark-cdp-code-selection.png');
 
     await _click(cdp, 930, 47); // Reset scratch.
     await Future<void>.delayed(const Duration(milliseconds: 700));
@@ -157,7 +152,7 @@ Future<void> main(List<String> arguments) async {
     await Future<void>.delayed(const Duration(seconds: 1));
     await _drag(cdp, fromX: 44, fromY: 224, toX: 103, toY: 224);
     await Future<void>.delayed(const Duration(seconds: 1));
-    await _screenshot(cdp, '/tmp/sovereign-cdp-code-drag-selection.png');
+    await _screenshot(cdp, '/tmp/flark-cdp-code-drag-selection.png');
 
     await _click(cdp, 930, 47); // Reset scratch.
     await Future<void>.delayed(const Duration(milliseconds: 700));
@@ -166,22 +161,22 @@ Future<void> main(List<String> arguments) async {
     await Future<void>.delayed(const Duration(seconds: 1));
     await _doubleClick(cdp, 56, 224);
     await Future<void>.delayed(const Duration(seconds: 1));
-    await _screenshot(cdp, '/tmp/sovereign-cdp-code-double-selection.png');
+    await _screenshot(cdp, '/tmp/flark-cdp-code-double-selection.png');
 
-    stdout.writeln('wrote /tmp/sovereign-cdp-triple.png');
-    stdout.writeln('wrote /tmp/sovereign-cdp-empty-fence-backspace.png');
-    stdout.writeln('wrote /tmp/sovereign-cdp-opener.png');
-    stdout.writeln('wrote /tmp/sovereign-cdp-fence.png');
-    stdout.writeln('wrote /tmp/sovereign-cdp-auto-json-fence.png');
-    stdout.writeln('wrote /tmp/sovereign-cdp-language-menu.png');
-    stdout.writeln('wrote /tmp/sovereign-cdp-language-rust.png');
-    stdout.writeln('wrote /tmp/sovereign-cdp-language-type.png');
-    stdout.writeln('wrote /tmp/sovereign-cdp-fence-backspace-from-after.png');
-    stdout.writeln('wrote /tmp/sovereign-cdp-terminal-fence-down.png');
-    stdout.writeln('wrote /tmp/sovereign-cdp-fence-up-from-below.png');
-    stdout.writeln('wrote /tmp/sovereign-cdp-code-selection.png');
-    stdout.writeln('wrote /tmp/sovereign-cdp-code-drag-selection.png');
-    stdout.writeln('wrote /tmp/sovereign-cdp-code-double-selection.png');
+    stdout.writeln('wrote /tmp/flark-cdp-triple.png');
+    stdout.writeln('wrote /tmp/flark-cdp-empty-fence-backspace.png');
+    stdout.writeln('wrote /tmp/flark-cdp-opener.png');
+    stdout.writeln('wrote /tmp/flark-cdp-fence.png');
+    stdout.writeln('wrote /tmp/flark-cdp-auto-json-fence.png');
+    stdout.writeln('wrote /tmp/flark-cdp-language-menu.png');
+    stdout.writeln('wrote /tmp/flark-cdp-language-rust.png');
+    stdout.writeln('wrote /tmp/flark-cdp-language-type.png');
+    stdout.writeln('wrote /tmp/flark-cdp-fence-backspace-from-after.png');
+    stdout.writeln('wrote /tmp/flark-cdp-terminal-fence-down.png');
+    stdout.writeln('wrote /tmp/flark-cdp-fence-up-from-below.png');
+    stdout.writeln('wrote /tmp/flark-cdp-code-selection.png');
+    stdout.writeln('wrote /tmp/flark-cdp-code-drag-selection.png');
+    stdout.writeln('wrote /tmp/flark-cdp-code-double-selection.png');
   } finally {
     await cdp?.close();
     if (chrome != null) {
@@ -284,14 +279,8 @@ Future<void> _pressKey(
     'nativeVirtualKeyCode': windowsVirtualKeyCode,
     'modifiers': modifiers,
   };
-  await cdp.send('Input.dispatchKeyEvent', {
-    ...params,
-    'type': 'rawKeyDown',
-  });
-  await cdp.send('Input.dispatchKeyEvent', {
-    ...params,
-    'type': 'keyUp',
-  });
+  await cdp.send('Input.dispatchKeyEvent', {...params, 'type': 'rawKeyDown'});
+  await cdp.send('Input.dispatchKeyEvent', {...params, 'type': 'keyUp'});
 }
 
 Future<void> _screenshot(CdpClient cdp, String path) async {
@@ -314,12 +303,11 @@ Future<_Target> _waitForPageTarget(int port, Uri uri) async {
         Uri.parse('http://127.0.0.1:$port/json/list'),
       );
       for (final target in targets) {
-        if (target
-            case {
-              'type': 'page',
-              'url': final String url,
-              'webSocketDebuggerUrl': final String wsUrl,
-            }) {
+        if (target case {
+          'type': 'page',
+          'url': final String url,
+          'webSocketDebuggerUrl': final String wsUrl,
+        }) {
           if (url == uri.toString() || url.startsWith(uri.toString())) {
             return _Target(wsUrl);
           }

@@ -363,25 +363,25 @@ class _ToolbarActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final children = [
       _ScenarioButton(
-        key: const ValueKey('sovereign-example-scenario-sample'),
+        key: const ValueKey('flark-example-scenario-sample'),
         icon: Icons.description_outlined,
         label: 'Sample',
         onPressed: onSample,
       ),
       _ScenarioButton(
-        key: const ValueKey('sovereign-example-scenario-article'),
+        key: const ValueKey('flark-example-scenario-article'),
         icon: Icons.article_outlined,
         label: 'Article',
         onPressed: onArticle,
       ),
       _ScenarioButton(
-        key: const ValueKey('sovereign-example-scenario-tables'),
+        key: const ValueKey('flark-example-scenario-tables'),
         icon: Icons.table_chart_outlined,
         label: 'Tables',
         onPressed: onTables,
       ),
       _ScenarioButton(
-        key: const ValueKey('sovereign-example-scenario-scratch'),
+        key: const ValueKey('flark-example-scenario-scratch'),
         icon: Icons.add,
         label: 'Scratch',
         onPressed: onScratch,
@@ -409,7 +409,7 @@ class _ToolbarActions extends StatelessWidget {
         onPressed: () => onCommand(_ToolbarCommand.italic),
       ),
       _CommandButton(
-        buttonKey: const ValueKey('sovereign-example-command-quote'),
+        buttonKey: const ValueKey('flark-example-command-quote'),
         tooltip: 'Quote',
         icon: Icons.format_quote,
         onPressed: () => onCommand(_ToolbarCommand.quote),
@@ -430,13 +430,13 @@ class _ToolbarActions extends StatelessWidget {
         onPressed: () => onCommand(_ToolbarCommand.taskList),
       ),
       _CommandButton(
-        buttonKey: const ValueKey('sovereign-example-command-code-fence'),
+        buttonKey: const ValueKey('flark-example-command-code-fence'),
         tooltip: 'Code fence',
         icon: Icons.code,
         onPressed: () => onCommand(_ToolbarCommand.codeFence),
       ),
       _CommandButton(
-        buttonKey: const ValueKey('sovereign-example-command-table'),
+        buttonKey: const ValueKey('flark-example-command-table'),
         tooltip: 'Table',
         icon: Icons.table_rows_outlined,
         onPressed: () => onCommand(_ToolbarCommand.table),
@@ -565,23 +565,17 @@ class _ModeBar extends StatelessWidget {
         ButtonSegment(
           value: _WorkspaceMode.source,
           icon: Icon(Icons.subject, size: 18),
-          label: Text('Source', key: ValueKey('sovereign-example-mode-source')),
+          label: Text('Source', key: ValueKey('flark-example-mode-source')),
         ),
         ButtonSegment(
           value: _WorkspaceMode.liveRendered,
           icon: Icon(Icons.edit_note, size: 18),
-          label: Text(
-            'Live Edit',
-            key: ValueKey('sovereign-example-mode-live'),
-          ),
+          label: Text('Live Edit', key: ValueKey('flark-example-mode-live')),
         ),
         ButtonSegment(
           value: _WorkspaceMode.rendered,
           icon: Icon(Icons.visibility_outlined, size: 18),
-          label: Text(
-            'Rendered',
-            key: ValueKey('sovereign-example-mode-rendered'),
-          ),
+          label: Text('Rendered', key: ValueKey('flark-example-mode-rendered')),
         ),
       ],
       selected: {mode},

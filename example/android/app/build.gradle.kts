@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "dev.sovereign.editor.example"
+    namespace = "dev.flark.editor.example"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -20,7 +20,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "dev.sovereign.editor.example"
+        applicationId = "dev.flark.editor.example"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -44,7 +44,7 @@ tasks.register("verifyFlarkComrakNativeLibs") {
     dependsOn("assembleDebug")
 
     doLast {
-        val bridgeLibraryName = "libsovereign_comrak_bridge.so"
+        val bridgeLibraryName = "libflark_comrak_bridge.so"
         val candidates = listOf(
             layout.buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile,
             rootProject.layout.projectDirectory.file(

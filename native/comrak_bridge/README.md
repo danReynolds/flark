@@ -12,16 +12,16 @@ Developer workflow:
 
 Current state:
 
-- ABI scaffold is wired (`sovereign_comrak_bridge_version`,
-  `sovereign_comrak_input_alloc`, `sovereign_comrak_input_free`,
-  `sovereign_comrak_parse`, `sovereign_comrak_response_free`).
+- ABI scaffold is wired (`flark_comrak_bridge_version`,
+  `flark_comrak_input_alloc`, `flark_comrak_input_free`,
+  `flark_comrak_parse`, `flark_comrak_response_free`).
 - Parse uses `comrak` and returns JSON payloads with block spans, inline spans,
   block + inline delimiter marker ranges, exclusion ranges, and diagnostics.
 - Dart wiring lives in `lib/src/v2/native/native_comrak_ffi.dart` for FFI
   targets and `lib/src/v2/native/native_comrak_bridge_factory_web.dart` for
   browser WASM.
 - The browser artifact is staged at
-  `lib/assets/wasm/sovereign_comrak_bridge.wasm`.
+  `lib/assets/wasm/flark_comrak_bridge.wasm`.
 
 Planned deliverables:
 

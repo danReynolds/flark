@@ -22,7 +22,7 @@ The document truth stays Markdown. The editor, preview, toolbar commands,
 projection layer, and rendered block widgets all work from that same source
 document instead of converting user content into a private rich-text model.
 
-![Flark visual surfaces](test/v2/flutter/goldens/sovereign_v2_surfaces.png)
+![Flark visual surfaces](test/v2/flutter/goldens/flark_v2_surfaces.png)
 
 ## Why Flark
 
@@ -128,7 +128,7 @@ Full release gate:
 Visual baselines:
 
 ```bash
-flutter test test/v2/flutter/sovereign_v2_visual_golden_test.dart
+flutter test test/v2/flutter/flark_v2_visual_golden_test.dart
 ```
 
 Flark is intentionally unpublished while `publish_to: none` remains in

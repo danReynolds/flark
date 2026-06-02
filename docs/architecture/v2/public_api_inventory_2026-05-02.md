@@ -169,13 +169,13 @@ Current API guardrails:
   barrel and headless core barrel, then smoke-tests each surface.
 - `test/v2/core/v2_core_import_boundary_test.dart` prevents Flutter imports in
   v2 headless layers.
-- `test/v2/packaging/sovereign_v2_native_packaging_contract_test.dart` checks
+- `test/v2/packaging/flark_v2_native_packaging_contract_test.dart` checks
   that the v2 native backend shares the hook-owned native bridge asset and ABI
   symbols.
-- `test/v2/flutter/sovereign_v2_visual_golden_test.dart` pins the promoted
+- `test/v2/flutter/flark_v2_visual_golden_test.dart` pins the promoted
   source, projected, preview, and overlay-control visual contract.
-- `test/v2/markdown/sovereign_v2_native_upstream_contract_test.dart` runs the
+- `test/v2/markdown/flark_v2_native_upstream_contract_test.dart` runs the
   native Comrak output through v2 projection and render-plan contracts across
   upstream CommonMark/GFM fixtures.
-- `test/v2/flutter/sovereign_markdown_web_smoke_test.dart` is the release web
+- `test/v2/flutter/flark_markdown_web_smoke_test.dart` is the release web
   smoke for promoted widgets and Comrak WASM parser loading.

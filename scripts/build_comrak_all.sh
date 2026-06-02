@@ -9,13 +9,13 @@ ANDROID_SCRIPT="$SCRIPT_DIR/build_comrak_android.sh"
 WASM_SCRIPT="$SCRIPT_DIR/build_comrak_wasm.sh"
 
 if [ ! -f "$CRATE_DIR/Cargo.toml" ]; then
-  echo "Could not locate sovereign comrak bridge Cargo.toml at $CRATE_DIR."
+  echo "Could not locate flark comrak bridge Cargo.toml at $CRATE_DIR."
   exit 1
 fi
 
 usage() {
   cat <<'EOF'
-Build sovereign comrak native artifacts with one command.
+Build flark comrak native artifacts with one command.
 
 Usage:
   ./scripts/build_comrak_all.sh [options]
@@ -108,20 +108,21 @@ fi
 skip_count=0
 
 build_host() {
-  local host_os
-  host_os="$(uname -s)"
   local target_name
-  case "$host_os" in
+  case "$(uname -s)" in
     Darwin) target_name="macOS" ;;
     Linux) target_name="Linux" ;;
-    *)
-      echo "Skipping host build: unsupported host OS ($host_os)."
-      return 1
-      ;;
   esac
 
   echo "Building host bridge artifact ($target_name)..."
   "${CARGO_CMD[@]}" build --manifest-path "$CRATE_DIR/Cargo.toml" --release
+}
+
+can_build_host() {
+  case "$(uname -s)" in
+    Darwin|Linux) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 can_build_android() {
@@ -139,7 +140,10 @@ can_build_android() {
 }
 
 if [ "$run_host" -eq 1 ]; then
-  if ! build_host; then
+  if can_build_host; then
+    build_host
+  else
+    echo "Skipping host build: unsupported host OS ($(uname -s))."
     skip_count=$((skip_count + 1))
   fi
 fi

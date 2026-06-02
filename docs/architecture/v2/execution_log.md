@@ -8,8 +8,8 @@
 - Reviewed current standalone package docs and code shape, including
   `docs/production_readiness/execution_plan.md`,
   `docs/production_readiness/audit_2026-05-01.md`,
-  `docs/architecture/sovereign/sovereign_editor_how_it_works.md`, and
-  `docs/architecture/rfc/rfc_017_sovereign_controller_module_boundaries.md`.
+  `docs/architecture/flark/flark_editor_how_it_works.md`, and
+  `docs/architecture/rfc/rfc_017_flark_controller_module_boundaries.md`.
 - Confirmed the current v1 architecture is production-hardened but still
   centered on `FlarkController extends TextEditingController`, which should
   not be the v2 center of gravity.
@@ -193,7 +193,7 @@
 - Added a curated GFM table fixture and upgraded the v2 GFM fixture loader test
   into a coverage contract for autolinks, strikethrough, tables, and task list
   items.
-- Ran `flutter test test/v2/markdown/sovereign_markdown_fixture_loader_test.dart
+- Ran `flutter test test/v2/markdown/flark_markdown_fixture_loader_test.dart
   --reporter compact`: passed.
 - Added `FlarkProjection.projectText` and projection fixtures for escaped
   delimiters, inline strong markers, reference-link inline markers, and hidden
@@ -471,7 +471,7 @@ Next action:
 - Re-ran `flutter test test/v2 --reporter compact`: passed with 188 tests.
 - Ran focused stable/v2 public API and promoted surface tests: passed.
 - Ran `flutter analyze lib/flark.dart lib/flark_advanced.dart
-  lib/src/v2 test/v2 test/public_api/sovereign_editor_barrel_test.dart`:
+  lib/src/v2 test/v2 test/public_api/flark_editor_barrel_test.dart`:
   passed.
 - Ran `flutter analyze` in `example/`: passed.
 - Added `docs/architecture/v2/migration_guide_2026-05-02.md` and updated the
@@ -498,8 +498,8 @@ Next action:
 Phase 9 quality hardening:
 
 - Added a readable v2 visual golden at
-  `test/v2/flutter/sovereign_v2_visual_golden_test.dart` with the generated
-  baseline in `test/v2/flutter/goldens/sovereign_v2_surfaces.png`. The golden
+  `test/v2/flutter/flark_v2_visual_golden_test.dart` with the generated
+  baseline in `test/v2/flutter/goldens/flark_v2_surfaces.png`. The golden
   covers the promoted source editor, projected editor, preview, and
   render-plan overlay controls side by side.
 - Added the visual golden to `scripts/verify_package_confidence.sh`.
@@ -511,9 +511,9 @@ Phase 9 quality hardening:
   deterministic/custom-backend contexts.
 - Added `scripts/verify_web_adapter_ci.sh`, wired it into
   `scripts/verify_release.sh`, and added
-  `test/v2/flutter/sovereign_markdown_web_smoke_test.dart` for Chrome
+  `test/v2/flutter/flark_markdown_web_smoke_test.dart` for Chrome
   source-only fallback coverage.
-- Added `test/v2/markdown/sovereign_v2_native_upstream_contract_test.dart`,
+- Added `test/v2/markdown/flark_v2_native_upstream_contract_test.dart`,
   which runs native Comrak output through v2 projection and render-plan
   generation across upstream CommonMark/GFM fixtures.
 - Fixed invalid reference-definition-looking paragraph handling in the v2
@@ -530,10 +530,10 @@ Phase 9 quality hardening:
 - Updated README, migration guide, public API inventory, execution plan, and
   release checklist for the new visual/backend/web/extensibility contracts.
 - Verification:
-  - `flutter test test/v2/flutter/sovereign_v2_visual_golden_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/markdown/sovereign_native_comrak_parse_backend_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_v2_visual_golden_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_markdown_surface_test.dart test/v2/markdown/flark_native_comrak_parse_backend_test.dart --reporter compact`: passed.
   - `./scripts/verify_web_adapter_ci.sh`: passed.
-  - `flutter test test/v2/markdown/sovereign_native_comrak_parse_backend_test.dart test/v2/markdown/sovereign_v2_native_upstream_contract_test.dart --reporter compact`: passed; v2 upstream contract reported 644/644 core and 662/662 GFM compared cases passing after registered skips.
+  - `flutter test test/v2/markdown/flark_native_comrak_parse_backend_test.dart test/v2/markdown/flark_v2_native_upstream_contract_test.dart --reporter compact`: passed; v2 upstream contract reported 644/644 core and 662/662 GFM compared cases passing after registered skips.
   - Focused render-plan, controller, preview, and public API tests: passed.
   - `flutter analyze` for focused changed v2 API files and tests: passed.
   - `flutter analyze` in `example/`: passed.
@@ -565,20 +565,20 @@ Phase 10 comprehensive visual regression hardening:
 - Raised the v2 visual baseline from one broad smoke PNG to a curated six-PNG
   suite covering overview surfaces, inline styling/wrapping, code fences,
   blockquotes, tasks/tables/overlays, and compact mixed markdown.
-- Refactored `test/v2/flutter/sovereign_v2_visual_golden_test.dart` around a
+- Refactored `test/v2/flutter/flark_v2_visual_golden_test.dart` around a
   deterministic fixture parser and per-scenario viewport sizing, so narrow
   wrapping cases are actually captured at narrow widths.
 - Added default v2 read-only preview rendering for code blocks, blockquotes,
   task checkboxes, and simple table grids so goldens exercise meaningful visual
   regions rather than plain text only.
 - Added widget assertions for default code-block, blockquote, task checkbox,
-  and table rendering in `test/v2/flutter/sovereign_read_only_preview_test.dart`.
+  and table rendering in `test/v2/flutter/flark_read_only_preview_test.dart`.
 - Added `test/v2/flutter/goldens/README.md` to document which visual scenarios
   are covered by PNGs and which semantics should stay in code assertions.
 - Verification:
-  - `flutter test --update-goldens test/v2/flutter/sovereign_v2_visual_golden_test.dart --reporter compact`: passed and regenerated six PNG baselines.
-  - `flutter test test/v2/flutter/sovereign_read_only_preview_test.dart test/v2/flutter/sovereign_v2_visual_golden_test.dart --reporter compact`: passed.
-  - `flutter analyze lib/src/v2/flutter/sovereign_read_only_preview.dart test/v2/flutter/sovereign_read_only_preview_test.dart test/v2/flutter/sovereign_v2_visual_golden_test.dart`: passed.
+  - `flutter test --update-goldens test/v2/flutter/flark_v2_visual_golden_test.dart --reporter compact`: passed and regenerated six PNG baselines.
+  - `flutter test test/v2/flutter/flark_read_only_preview_test.dart test/v2/flutter/flark_v2_visual_golden_test.dart --reporter compact`: passed.
+  - `flutter analyze lib/src/v2/flutter/flark_read_only_preview.dart test/v2/flutter/flark_read_only_preview_test.dart test/v2/flutter/flark_v2_visual_golden_test.dart`: passed.
   - `./scripts/verify_release.sh`: passed end to end with 793 package tests, native upstream contracts, web smoke coverage, docs dry run, example tests, and benchmark budgets.
 
 Phase 11 community-library surface and packaging hardening:
@@ -588,9 +588,9 @@ Phase 11 community-library surface and packaging hardening:
   - `lib/flark_core.dart` exposes the headless Dart runtime,
     parser DTOs, projection, and render-plan APIs without Flutter widgets.
   - `lib/flark_advanced.dart` remains the complete advanced v2 surface.
-  - `lib/sovereign_editor_legacy.dart` owns the v1 compatibility API.
+  - `lib/flark_editor_legacy.dart` owns the v1 compatibility API.
 - Updated v1 tests and the example app to import legacy symbols explicitly from
-  `sovereign_editor_legacy.dart`.
+  `flark_editor_legacy.dart`.
 - Added typed `FlarkFlutterController.events` so extensions can react to
   projection prediction, parser adoption, selection-only changes, undo, redo,
   and generic runtime changes without diffing `ChangeNotifier` state.
@@ -631,7 +631,7 @@ Phase 12 v2-only cleanup and interactive validation:
 - Removed the transition-only v1 implementation tree:
   - deleted `lib/widgets`, `lib/src/widgets`, `lib/theme`, and
     `lib/src/helpers`;
-  - deleted `lib/sovereign_editor_legacy.dart`;
+  - deleted `lib/flark_editor_legacy.dart`;
   - deleted legacy widget/engine tests, the temporary v1/v2 oracle suite, and
     the old v1 benchmark lane.
 - Moved the native Comrak Dart bridge from the old widget namespace to
@@ -681,8 +681,8 @@ Phase 12 interactive example validation:
   ranges out of the predicted projection and added a projection regression
   test.
 - Verification:
-  - `flutter test test/v2/flutter/sovereign_editable_text_test.dart test/v2/flutter/sovereign_projected_editable_text_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/projection/sovereign_projection_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_editable_text_test.dart test/v2/flutter/flark_projected_editable_text_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/projection/flark_projection_test.dart --reporter compact`: passed.
   - `flutter analyze` in `example/`: passed.
   - `flutter test test --exclude-tags benchmark --reporter compact` in
     `example/`: passed.
@@ -709,10 +709,10 @@ Phase 13 macOS desktop dogfood app:
 - Updated the macOS shell to launch as `Flark Markdown` with a 1280x840
   initial window and 1040x720 minimum size.
 - Manual macOS run initially exposed that the native-assets build bundled
-  `sovereign_comrak_bridge.framework`, but the FFI loader only checked the
+  `flark_comrak_bridge.framework`, but the FFI loader only checked the
   executable directory and local package target paths.
 - Fixed the macOS native loader to also probe
-  `Contents/Frameworks/sovereign_comrak_bridge.framework/Versions/A/sovereign_comrak_bridge`
+  `Contents/Frameworks/flark_comrak_bridge.framework/Versions/A/flark_comrak_bridge`
   and the framework symlink path.
 - After hot restart, the running macOS app reported `Comrak active`, adopted
   parser output, displayed projected editor text, and rendered the preview
@@ -722,7 +722,7 @@ Phase 13 macOS desktop dogfood app:
 - Verification:
   - `flutter analyze` in `example/`: passed.
   - `flutter test test --reporter compact` in `example/`: passed.
-  - `flutter test test/v2/native/sovereign_native_comrak_bridge_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/native/flark_native_comrak_bridge_test.dart --reporter compact`: passed.
   - `flutter run -d macos`: built and launched
     `build/macos/Build/Products/Debug/Flark Markdown.app`.
   - `flutter test integration_test/markdown_flow_test.dart -d macos --reporter compact`: passed.
@@ -748,7 +748,7 @@ Phase 13 scratch document follow-up:
   focus after tapping the document surface, and typed Markdown.
 - Verification:
   - `flutter analyze`: passed.
-  - `flutter test test/v2/flutter/sovereign_editable_text_test.dart test/v2/flutter/sovereign_projected_editable_text_test.dart test/v2/flutter/sovereign_markdown_surface_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_editable_text_test.dart test/v2/flutter/flark_projected_editable_text_test.dart test/v2/flutter/flark_markdown_surface_test.dart --reporter compact`: passed.
   - `flutter analyze` in `example/`: passed.
   - `flutter test test --reporter compact` in `example/`: passed.
   - `flutter test integration_test/markdown_flow_test.dart -d macos --reporter compact`: passed.
@@ -826,14 +826,14 @@ Phase 14 live rendered editing surface:
   - controller tests for selection-only render-plan retention and predictive
     render-plan mapping;
   - public API tests for the promoted live rendered widget;
-  - `sovereign_v2_live_rendered_editing.png`, a dedicated visual golden for
+  - `flark_v2_live_rendered_editing.png`, a dedicated visual golden for
     rendered-in-place editing.
 - Updated README and golden inventory docs to describe live rendered editing.
 - Verification:
   - `flutter analyze`: passed.
-  - `flutter test test/v2/flutter/sovereign_flutter_controller_test.dart test/v2/flutter/sovereign_projected_editable_text_test.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart test/v2/flutter/sovereign_markdown_surface_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/flutter/sovereign_v2_visual_golden_test.dart --update-goldens --reporter compact`: passed.
-  - `flutter test test/v2/flutter/sovereign_v2_visual_golden_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart test/public_api/sovereign_editor_barrel_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_flutter_controller_test.dart test/v2/flutter/flark_projected_editable_text_test.dart test/v2/flutter/flark_live_rendered_editable_text_test.dart test/v2/flutter/flark_markdown_surface_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_v2_visual_golden_test.dart --update-goldens --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_v2_visual_golden_test.dart test/v2/public_api/flark_editor_v2_public_api_test.dart test/public_api/flark_editor_barrel_test.dart --reporter compact`: passed.
   - `flutter analyze` in `example/`: passed.
   - `flutter test test --reporter compact` in `example/`: passed.
   - `flutter test integration_test/markdown_flow_test.dart -d macos --reporter compact` in `example/`: passed.
@@ -880,8 +880,8 @@ Post-audit prioritized hardening, slice 1: Dart fallback parser backend:
   Dart backend is a useful fallback rather than a full conformance claim, and
   Comrak WASM remains the full-conformance web target.
 - Verification:
-  - `flutter analyze lib/src/v2/markdown/parse/sovereign_dart_markdown_parse_backend.dart lib/src/v2/flutter/sovereign_markdown_editor.dart lib/src/v2/flutter/sovereign_markdown_preview.dart lib/flark.dart lib/flark_advanced.dart test/v2/markdown/sovereign_dart_markdown_parse_backend_test.dart test/v2/flutter/sovereign_markdown_web_smoke_test.dart`: passed.
-  - `flutter test test/v2/markdown/sovereign_dart_markdown_parse_backend_test.dart test/v2/flutter/sovereign_markdown_web_smoke_test.dart --reporter compact`: passed.
+  - `flutter analyze lib/src/v2/markdown/parse/flark_dart_markdown_parse_backend.dart lib/src/v2/flutter/flark_markdown_editor.dart lib/src/v2/flutter/flark_markdown_preview.dart lib/flark.dart lib/flark_advanced.dart test/v2/markdown/flark_dart_markdown_parse_backend_test.dart test/v2/flutter/flark_markdown_web_smoke_test.dart`: passed.
+  - `flutter test test/v2/markdown/flark_dart_markdown_parse_backend_test.dart test/v2/flutter/flark_markdown_web_smoke_test.dart --reporter compact`: passed.
   - `flutter test test --exclude-tags benchmark --reporter compact`: passed.
   - `flutter build macos --debug` in `example/`: passed.
   - `flutter test test --exclude-tags benchmark --reporter compact`: passed.
@@ -931,15 +931,15 @@ Phase 15 editable block widgets:
   - table-cell widgets edit the Markdown table cell source range.
   - irregular table rows are padded visually and missing cells can be edited
     into real Markdown cells.
-- Refreshed `sovereign_v2_live_rendered_editing.png`; the baseline now shows
+- Refreshed `flark_v2_live_rendered_editing.png`; the baseline now shows
   task checkboxes, a language-labelled code block widget, and a rendered table
   grid inside the editable live surface.
 - Verification:
   - `flutter analyze`: passed.
-  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/flutter/sovereign_projected_editable_text_test.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart test/v2/flutter/sovereign_markdown_surface_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart test/public_api/sovereign_editor_barrel_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/flutter/sovereign_v2_visual_golden_test.dart --update-goldens --reporter compact`: passed.
-  - `flutter test test/v2/flutter/sovereign_v2_visual_golden_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_live_rendered_editable_text_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_projected_editable_text_test.dart test/v2/flutter/flark_live_rendered_editable_text_test.dart test/v2/flutter/flark_markdown_surface_test.dart test/v2/public_api/flark_editor_v2_public_api_test.dart test/public_api/flark_editor_barrel_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_v2_visual_golden_test.dart --update-goldens --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_v2_visual_golden_test.dart --reporter compact`: passed.
   - `flutter analyze` in `example/`: passed.
   - `flutter test test --reporter compact` in `example/`: passed.
   - `flutter test integration_test/markdown_flow_test.dart -d macos --reporter compact` in `example/`: passed.
@@ -971,13 +971,13 @@ Post-audit prioritized hardening, slices 2-4:
 - Updated the support matrix, render-plan note, quality audit, and execution
   plan so completed post-audit hardening is no longer listed as an open gap.
 - Verification:
-  - `flutter analyze lib/src/v2/flutter/sovereign_projected_editable_text.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart`: passed.
-  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --reporter compact`: passed.
-  - `flutter analyze lib/src/v2/markdown/parse/sovereign_dart_markdown_parse_backend.dart test/v2/markdown/sovereign_dart_markdown_parse_backend_test.dart`: passed.
-  - `flutter test test/v2/markdown/sovereign_dart_markdown_parse_backend_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/markdown/sovereign_dart_markdown_parse_backend_test.dart --platform chrome --reporter compact`: passed.
-  - `flutter analyze lib/src/v2/flutter/sovereign_read_only_preview.dart test/v2/flutter/sovereign_read_only_preview_test.dart`: passed.
-  - `flutter test test/v2/flutter/sovereign_read_only_preview_test.dart --reporter compact`: passed.
+  - `flutter analyze lib/src/v2/flutter/flark_projected_editable_text.dart test/v2/flutter/flark_live_rendered_editable_text_test.dart`: passed.
+  - `flutter test test/v2/flutter/flark_live_rendered_editable_text_test.dart --reporter compact`: passed.
+  - `flutter analyze lib/src/v2/markdown/parse/flark_dart_markdown_parse_backend.dart test/v2/markdown/flark_dart_markdown_parse_backend_test.dart`: passed.
+  - `flutter test test/v2/markdown/flark_dart_markdown_parse_backend_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/markdown/flark_dart_markdown_parse_backend_test.dart --platform chrome --reporter compact`: passed.
+  - `flutter analyze lib/src/v2/flutter/flark_read_only_preview.dart test/v2/flutter/flark_read_only_preview_test.dart`: passed.
+  - `flutter test test/v2/flutter/flark_read_only_preview_test.dart --reporter compact`: passed.
   - `./scripts/verify_web_adapter_ci.sh`: passed.
   - `flutter analyze hook lib test`: passed.
   - `flutter test test --exclude-tags benchmark --reporter compact`: passed.
@@ -993,12 +993,12 @@ Comrak WASM web backend:
   `wasm32-unknown-unknown` and added browser-owned input allocation/free ABI
   exports so web code can copy Markdown bytes into WASM memory safely.
 - Fixed response payload ownership in the bridge ABI by moving payload bytes
-  through boxed slices before `sovereign_comrak_response_free` reconstructs
+  through boxed slices before `flark_comrak_response_free` reconstructs
   them. The previous Vec pointer/length-only ownership shape could trap under
   WASM when capacity differed from length.
 - Added `scripts/build_comrak_wasm.sh` and wired `scripts/build_comrak_all.sh`
   with `--wasm-only` / `--skip-wasm`. The build stages
-  `lib/assets/wasm/sovereign_comrak_bridge.wasm`.
+  `lib/assets/wasm/flark_comrak_bridge.wasm`.
 - Added a browser implementation of the v2 native bridge factory. It resolves
   the packaged WASM asset through Flutter web asset URLs, uses Dart JS interop
   to `fetch` and instantiate WebAssembly, calls the exported C ABI functions,
@@ -1010,15 +1010,15 @@ Comrak WASM web backend:
   strategy to describe Comrak WASM as shipped rather than planned.
 - Verification:
   - `./scripts/build_comrak_wasm.sh`: passed.
-  - `flutter analyze lib/src/v2/native/native_comrak_bridge_factory_web.dart test/v2/flutter/sovereign_markdown_web_smoke_test.dart test/v2/packaging/sovereign_v2_native_packaging_contract_test.dart`: passed.
-  - `flutter test --platform chrome test/v2/flutter/sovereign_markdown_web_smoke_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/packaging/sovereign_v2_native_packaging_contract_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/native/sovereign_native_comrak_bridge_test.dart --reporter compact`: passed.
+  - `flutter analyze lib/src/v2/native/native_comrak_bridge_factory_web.dart test/v2/flutter/flark_markdown_web_smoke_test.dart test/v2/packaging/flark_v2_native_packaging_contract_test.dart`: passed.
+  - `flutter test --platform chrome test/v2/flutter/flark_markdown_web_smoke_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/packaging/flark_v2_native_packaging_contract_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/native/flark_native_comrak_bridge_test.dart --reporter compact`: passed.
   - `flutter analyze hook lib test`: passed.
   - `./scripts/verify_web_adapter_ci.sh`: passed.
   - `./scripts/build_comrak_all.sh --wasm-only`: passed.
   - `rustup run stable cargo test --manifest-path native/comrak_bridge/Cargo.toml`: passed.
-  - `flutter test test/v2/markdown/sovereign_v2_native_upstream_contract_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/markdown/flark_v2_native_upstream_contract_test.dart --reporter compact`: passed.
 
 Comrak-only parser requirement and Markdown coverage matrix:
 
@@ -1030,7 +1030,7 @@ Comrak-only parser requirement and Markdown coverage matrix:
   coverage contract. It maps each Markdown feature to parser,
   projection/render-plan, command, keyboard, preview, live-edit, web, and
   example lanes.
-- Added `test/v2/markdown/sovereign_markdown_feature_matrix_test.dart`, an
+- Added `test/v2/markdown/flark_markdown_feature_matrix_test.dart`, an
   executable matrix that runs real Comrak output through projection and
   render-plan construction for ATX/setext headings, quotes, lists, tasks,
   code blocks, inline styles, escaped delimiters, links/autolinks,
@@ -1052,14 +1052,14 @@ Comrak-only parser requirement and Markdown coverage matrix:
   because the current projection model supports source deletions/hidden ranges,
   not replacement text.
 - Verification:
-  - `dart format test/v2/markdown/sovereign_markdown_feature_matrix_test.dart test/v2/native/sovereign_native_comrak_bridge_test.dart lib/src/v2/markdown/parse/sovereign_native_comrak_parse_backend.dart`: passed.
+  - `dart format test/v2/markdown/flark_markdown_feature_matrix_test.dart test/v2/native/flark_native_comrak_bridge_test.dart lib/src/v2/markdown/parse/flark_native_comrak_parse_backend.dart`: passed.
   - `cargo fmt --manifest-path native/comrak_bridge/Cargo.toml`: passed.
   - `./scripts/build_comrak_all.sh --strict`: passed.
   - `flutter analyze`: passed.
-  - `flutter test test/v2/markdown/sovereign_markdown_feature_matrix_test.dart test/v2/markdown/sovereign_native_comrak_parse_backend_test.dart test/v2/projection/sovereign_projection_test.dart test/v2/render_plan/sovereign_render_plan_test.dart test/v2/markdown/sovereign_markdown_input_commands_test.dart test/v2/flutter/sovereign_markdown_input_policy_contract_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/native/sovereign_native_comrak_bridge_test.dart test/v2/markdown/sovereign_v2_native_upstream_contract_test.dart test/v2/markdown/sovereign_markdown_feature_matrix_test.dart --reporter compact`: passed; upstream core and GFM lanes both reached 100% for projection/render-plan construction.
+  - `flutter test test/v2/markdown/flark_markdown_feature_matrix_test.dart test/v2/markdown/flark_native_comrak_parse_backend_test.dart test/v2/projection/flark_projection_test.dart test/v2/render_plan/flark_render_plan_test.dart test/v2/markdown/flark_markdown_input_commands_test.dart test/v2/flutter/flark_markdown_input_policy_contract_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/native/flark_native_comrak_bridge_test.dart test/v2/markdown/flark_v2_native_upstream_contract_test.dart test/v2/markdown/flark_markdown_feature_matrix_test.dart --reporter compact`: passed; upstream core and GFM lanes both reached 100% for projection/render-plan construction.
   - `flutter test test/v2 --reporter compact`: passed.
-  - `flutter test --platform chrome test/v2/flutter/sovereign_markdown_web_smoke_test.dart --reporter compact`: passed.
+  - `flutter test --platform chrome test/v2/flutter/flark_markdown_web_smoke_test.dart --reporter compact`: passed.
   - `cargo test --manifest-path native/comrak_bridge/Cargo.toml`: passed.
   - `flutter test --platform chrome test/widget_test.dart --reporter compact` in `example/`: passed.
 
@@ -1090,11 +1090,11 @@ Replacement-capable projection and HTML entities:
 - Verification:
   - `./scripts/build_comrak_all.sh --strict`: passed.
   - `flutter analyze`: passed.
-  - `flutter test test/v2/markdown/sovereign_markdown_parse_protocol_test.dart test/v2/markdown/sovereign_native_comrak_parse_backend_test.dart test/v2/native/sovereign_native_comrak_bridge_test.dart test/v2/projection/sovereign_projection_test.dart test/v2/projection/sovereign_projected_text_edit_adapter_test.dart test/v2/render_plan/sovereign_render_plan_test.dart test/v2/markdown/sovereign_markdown_feature_matrix_test.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/markdown/flark_markdown_parse_protocol_test.dart test/v2/markdown/flark_native_comrak_parse_backend_test.dart test/v2/native/flark_native_comrak_bridge_test.dart test/v2/projection/flark_projection_test.dart test/v2/projection/flark_projected_text_edit_adapter_test.dart test/v2/render_plan/flark_render_plan_test.dart test/v2/markdown/flark_markdown_feature_matrix_test.dart test/v2/flutter/flark_live_rendered_editable_text_test.dart --reporter compact`: passed.
   - `flutter test test/v2 --reporter compact`: passed.
-  - `flutter test --platform chrome test/v2/flutter/sovereign_markdown_web_smoke_test.dart --reporter compact`: passed.
+  - `flutter test --platform chrome test/v2/flutter/flark_markdown_web_smoke_test.dart --reporter compact`: passed.
   - `flutter test --platform chrome test/widget_test.dart --reporter compact` in `example/`: passed.
-  - `flutter test test/public_api/sovereign_editor_barrel_test.dart --reporter compact`: passed.
+  - `flutter test test/public_api/flark_editor_barrel_test.dart --reporter compact`: passed.
   - `cargo test --manifest-path native/comrak_bridge/Cargo.toml`: passed.
 
 Predictive live-edit invariants and structured source ranges:
@@ -1124,10 +1124,10 @@ Predictive live-edit invariants and structured source ranges:
   predictive states are an explicit coverage lane rather than an implied manual
   testing concern.
 - Verification:
-  - `flutter test test/v2/markdown/sovereign_native_comrak_parse_backend_test.dart test/v2/render_plan/sovereign_render_plan_test.dart test/v2/flutter/sovereign_flutter_controller_test.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/markdown/flark_native_comrak_parse_backend_test.dart test/v2/render_plan/flark_render_plan_test.dart test/v2/flutter/flark_flutter_controller_test.dart test/v2/flutter/flark_live_rendered_editable_text_test.dart --reporter compact`: passed.
   - `flutter analyze`: passed.
   - `flutter test test/v2 --reporter compact`: passed.
-  - `flutter test --platform chrome test/v2/flutter/sovereign_markdown_web_smoke_test.dart --reporter compact`: passed.
+  - `flutter test --platform chrome test/v2/flutter/flark_markdown_web_smoke_test.dart --reporter compact`: passed.
   - `flutter test --platform chrome test/widget_test.dart --reporter compact` in `example/`: passed.
   - `flutter build web` in `example/`: passed.
   - `curl -s -I http://127.0.0.1:6200/main.dart.js`: returned `200 OK` with a `Last-Modified` time from the rebuilt bundle.
@@ -1158,7 +1158,7 @@ Live block focus ownership after structural edits:
   checks for structural multi-block edits, not just rendered-surface stability.
 - Verification:
   - `flutter analyze`: passed.
-  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart test/v2/flutter/sovereign_markdown_input_policy_contract_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_live_rendered_editable_text_test.dart test/v2/flutter/flark_markdown_input_policy_contract_test.dart --reporter compact`: passed.
   - `flutter test test/v2 --reporter compact`: passed.
   - `flutter test --platform chrome test/widget_test.dart --reporter compact` in `example/`: passed.
   - `flutter build web` in `example/`: passed.
@@ -1186,10 +1186,10 @@ Parser-omitted selection hosts after structural exits:
 - Extended the example Scratch Chrome test to cover list creation, continuation,
   and empty-item exit on the web example path.
 - Verification:
-  - `dart format lib/src/v2/flutter/sovereign_projected_editable_text.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart example/test/widget_test.dart`: passed.
+  - `dart format lib/src/v2/flutter/flark_projected_editable_text.dart test/v2/flutter/flark_live_rendered_editable_text_test.dart example/test/widget_test.dart`: passed.
   - `flutter analyze`: passed.
-  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --plain-name 'moves focus out of an empty final unordered list item after Enter' --reporter compact`: passed.
-  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart test/v2/flutter/sovereign_markdown_input_policy_contract_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_live_rendered_editable_text_test.dart --plain-name 'moves focus out of an empty final unordered list item after Enter' --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_live_rendered_editable_text_test.dart test/v2/flutter/flark_markdown_input_policy_contract_test.dart --reporter compact`: passed.
   - `flutter test test/v2 --reporter compact`: passed.
   - `flutter test --platform chrome test/widget_test.dart --plain-name 'scratch renders unordered list marker immediately' --reporter compact`: passed.
   - `flutter test --platform chrome test/widget_test.dart --reporter compact`: passed.
@@ -1214,17 +1214,17 @@ Playground hardening after nested list and soft-break exploration:
   plus Shift+Enter soft line breaks in live list editing, with source-mode
   assertions proving the canonical Markdown output.
 - Verification:
-  - `dart format lib/src/v2/markdown/commands/sovereign_markdown_input_commands.dart lib/src/v2/flutter/sovereign_markdown_input_policy.dart test/v2/markdown/sovereign_markdown_input_commands_test.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart test/v2/flutter/sovereign_markdown_input_policy_contract_test.dart example/test/widget_test.dart`: passed.
-  - `flutter test test/v2/markdown/sovereign_markdown_input_commands_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/flutter/sovereign_markdown_input_policy_contract_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --plain-name 'moves focus out of an empty final ordered list item after Enter' --reporter compact`: passed.
-  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --plain-name 'moves focus out of an empty final task item after Enter' --reporter compact`: passed.
+  - `dart format lib/src/v2/markdown/commands/flark_markdown_input_commands.dart lib/src/v2/flutter/flark_markdown_input_policy.dart test/v2/markdown/flark_markdown_input_commands_test.dart test/v2/flutter/flark_live_rendered_editable_text_test.dart test/v2/flutter/flark_markdown_input_policy_contract_test.dart example/test/widget_test.dart`: passed.
+  - `flutter test test/v2/markdown/flark_markdown_input_commands_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_markdown_input_policy_contract_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_live_rendered_editable_text_test.dart --plain-name 'moves focus out of an empty final ordered list item after Enter' --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_live_rendered_editable_text_test.dart --plain-name 'moves focus out of an empty final task item after Enter' --reporter compact`: passed.
   - `flutter test --platform chrome test/widget_test.dart --plain-name 'scratch exits ordered and task lists into blank live paragraphs' --reporter compact` in `example/`: passed.
   - `flutter test --platform chrome test/widget_test.dart --plain-name 'scratch keeps Shift+Enter as a soft line break in lists' --reporter compact` in `example/`: passed.
   - `flutter analyze`: passed.
   - `flutter test test/v2 --reporter compact`: passed.
   - `flutter test --platform chrome test/widget_test.dart --reporter compact` in `example/`: passed.
-  - `flutter test --platform chrome test/v2/flutter/sovereign_markdown_web_smoke_test.dart --reporter compact`: passed.
+  - `flutter test --platform chrome test/v2/flutter/flark_markdown_web_smoke_test.dart --reporter compact`: passed.
   - `./scripts/verify_package_confidence.sh`: passed.
   - `flutter build web` in `example/`: passed.
   - `curl -s -I http://127.0.0.1:6200/main.dart.js`: returned `200 OK` with a `Last-Modified` time from the rebuilt bundle.
@@ -1250,10 +1250,10 @@ Multi-line blockquote rail hardening:
   block displays a badge. V2 does not currently include an interactive language
   selector or automatic language detection/highlighting.
 - Verification:
-  - `flutter test test/v2/markdown/sovereign_native_comrak_parse_backend_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/flutter/sovereign_read_only_preview_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/markdown/sovereign_markdown_feature_matrix_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/markdown/flark_native_comrak_parse_backend_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_read_only_preview_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_live_rendered_editable_text_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/markdown/flark_markdown_feature_matrix_test.dart --reporter compact`: passed.
   - `flutter analyze`: passed.
   - `flutter test --platform chrome test/widget_test.dart --reporter compact` in `example/`: passed.
   - `flutter test test/v2 --reporter compact`: passed.
@@ -1289,13 +1289,13 @@ Parser-omitted source-line hosts for live blank spacing:
 - Updated the live-rendered editing golden to intentionally capture visible
   blank source rows between parsed blocks.
 - Verification:
-  - `dart format lib/src/v2/flutter/sovereign_projected_editable_text.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart example/test/widget_test.dart`: passed.
-  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/flutter/sovereign_live_rendered_transition_matrix_test.dart --plain-name 'Flark live-rendered transition matrix fenced code preserves typing through activation' --reporter compact`: passed.
+  - `dart format lib/src/v2/flutter/flark_projected_editable_text.dart test/v2/flutter/flark_live_rendered_editable_text_test.dart example/test/widget_test.dart`: passed.
+  - `flutter test test/v2/flutter/flark_live_rendered_editable_text_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_live_rendered_transition_matrix_test.dart --plain-name 'Flark live-rendered transition matrix fenced code preserves typing through activation' --reporter compact`: passed.
   - `flutter analyze`: passed.
   - `flutter test test/v2 --reporter compact`: passed.
   - `flutter test --platform chrome test/widget_test.dart --reporter compact` in `example/`: passed.
-  - `flutter test --platform chrome test/v2/flutter/sovereign_markdown_web_smoke_test.dart --reporter compact`: passed.
+  - `flutter test --platform chrome test/v2/flutter/flark_markdown_web_smoke_test.dart --reporter compact`: passed.
   - `./scripts/verify_package_confidence.sh`: passed.
   - `flutter build web` in `example/`: passed.
   - `curl -s -I http://127.0.0.1:6200/main.dart.js`: returned `200 OK` with a `Last-Modified` time from the rebuilt bundle.
@@ -1330,12 +1330,12 @@ Rich rendered interaction architecture:
   and updated visual goldens to capture the intentional language-label and link
   rendering changes.
 - Verification:
-  - `flutter test test/v2/markdown/sovereign_markdown_block_commands_test.dart test/v2/markdown/sovereign_markdown_link_commands_test.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart test/v2/flutter/sovereign_read_only_preview_test.dart test/public_api/sovereign_editor_barrel_test.dart test/v2/public_api/sovereign_editor_v2_public_api_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/markdown/flark_markdown_block_commands_test.dart test/v2/markdown/flark_markdown_link_commands_test.dart test/v2/flutter/flark_live_rendered_editable_text_test.dart test/v2/flutter/flark_read_only_preview_test.dart test/public_api/flark_editor_barrel_test.dart test/v2/public_api/flark_editor_v2_public_api_test.dart --reporter compact`: passed.
   - `flutter analyze`: passed.
   - `flutter test test/v2 --reporter compact`: passed.
   - `./scripts/verify_package_confidence.sh`: passed.
   - `flutter test --platform chrome test/widget_test.dart --reporter compact` in `example/`: passed.
-  - `flutter test --platform chrome test/v2/flutter/sovereign_markdown_web_smoke_test.dart --reporter compact`: passed.
+  - `flutter test --platform chrome test/v2/flutter/flark_markdown_web_smoke_test.dart --reporter compact`: passed.
   - `flutter build web` in `example/`: passed.
   - `curl -s -I http://127.0.0.1:6200/main.dart.js`: returned `200 OK` with `Last-Modified: Sat, 09 May 2026 17:00:41 GMT`.
 
@@ -1364,13 +1364,13 @@ Code-fence language placement and syntax highlighting:
 - Updated visual goldens to capture the intentional right-aligned language
   control and highlighted code text.
 - Verification:
-  - `dart format lib/src/v2/flutter/sovereign_code_syntax_highlighting.dart lib/src/v2/flutter/sovereign_projected_editable_text.dart lib/src/v2/flutter/sovereign_read_only_preview.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart test/v2/flutter/sovereign_read_only_preview_test.dart`: passed.
+  - `dart format lib/src/v2/flutter/flark_code_syntax_highlighting.dart lib/src/v2/flutter/flark_projected_editable_text.dart lib/src/v2/flutter/flark_read_only_preview.dart test/v2/flutter/flark_live_rendered_editable_text_test.dart test/v2/flutter/flark_read_only_preview_test.dart`: passed.
   - `flutter analyze`: passed.
-  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart test/v2/flutter/sovereign_read_only_preview_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/flutter/sovereign_v2_visual_golden_test.dart --update-goldens --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_live_rendered_editable_text_test.dart test/v2/flutter/flark_read_only_preview_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_v2_visual_golden_test.dart --update-goldens --reporter compact`: passed.
   - `flutter test test/v2 --reporter compact`: passed.
   - `./scripts/verify_package_confidence.sh`: passed.
-  - `flutter test --platform chrome test/v2/flutter/sovereign_markdown_web_smoke_test.dart --reporter compact`: passed.
+  - `flutter test --platform chrome test/v2/flutter/flark_markdown_web_smoke_test.dart --reporter compact`: passed.
   - `flutter test --platform chrome test/widget_test.dart --reporter compact` in `example/`: passed.
   - `flutter build web` in `example/`: passed.
   - `curl -s -I http://127.0.0.1:6200/main.dart.js`: returned `200 OK` with `Last-Modified: Sat, 09 May 2026 17:28:28 GMT`.
@@ -1399,14 +1399,14 @@ Code-fence overlay layout and inline-code caret hardening:
 - Updated the live-rendered golden to capture the intentional shorter
   code-fence layout after the selector was removed from normal layout flow.
 - Verification:
-  - `dart format lib/src/v2/flutter/sovereign_projected_editable_text.dart lib/src/v2/flutter/sovereign_editable_text.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart`: passed.
-  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --reporter compact`: passed.
+  - `dart format lib/src/v2/flutter/flark_projected_editable_text.dart lib/src/v2/flutter/flark_editable_text.dart test/v2/flutter/flark_live_rendered_editable_text_test.dart`: passed.
+  - `flutter test test/v2/flutter/flark_live_rendered_editable_text_test.dart --reporter compact`: passed.
   - `flutter analyze`: passed.
   - `flutter test test/v2 --reporter compact`: passed.
   - `./scripts/verify_package_confidence.sh`: passed.
-  - `flutter test --platform chrome test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --plain-name 'keeps inline code text selectable in live editing' --reporter compact`: passed.
-  - `flutter test --platform chrome test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --plain-name 'code fence language selector edits the opening fence info' --reporter compact`: passed.
-  - `flutter test --platform chrome test/v2/flutter/sovereign_markdown_web_smoke_test.dart --reporter compact`: passed.
+  - `flutter test --platform chrome test/v2/flutter/flark_live_rendered_editable_text_test.dart --plain-name 'keeps inline code text selectable in live editing' --reporter compact`: passed.
+  - `flutter test --platform chrome test/v2/flutter/flark_live_rendered_editable_text_test.dart --plain-name 'code fence language selector edits the opening fence info' --reporter compact`: passed.
+  - `flutter test --platform chrome test/v2/flutter/flark_markdown_web_smoke_test.dart --reporter compact`: passed.
   - `flutter test --platform chrome test/widget_test.dart --reporter compact` in `example/`: passed; Chromium printed a shutdown warning after the passing test run.
   - `flutter build web` in `example/`: passed.
   - `curl -s -I http://127.0.0.1:6200/main.dart.js`: returned `200 OK` with `Last-Modified: Sat, 09 May 2026 18:00:42 GMT`.
@@ -1435,14 +1435,14 @@ Code-fence Enter and empty-body hardening:
   because macOS returned Apple event error `-1743`; browser coverage was run
   through Flutter's Chrome widget test harness instead.
 - Verification:
-  - `dart format lib/src/v2/markdown/parse/sovereign_native_comrak_parse_backend.dart lib/src/v2/flutter/sovereign_projected_editable_text.dart test/v2/markdown/sovereign_native_comrak_parse_backend_test.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart example/test/widget_test.dart`: passed.
-  - `flutter test test/v2/markdown/sovereign_native_comrak_parse_backend_test.dart --name '(does not overlap hidden ranges for an empty closed code fence|keeps fenced code delimiters out of editable code content)' --reporter compact`: passed.
-  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --name 'keeps (code indentation|an empty code line)' --reporter compact`: passed.
+  - `dart format lib/src/v2/markdown/parse/flark_native_comrak_parse_backend.dart lib/src/v2/flutter/flark_projected_editable_text.dart test/v2/markdown/flark_native_comrak_parse_backend_test.dart test/v2/flutter/flark_live_rendered_editable_text_test.dart example/test/widget_test.dart`: passed.
+  - `flutter test test/v2/markdown/flark_native_comrak_parse_backend_test.dart --name '(does not overlap hidden ranges for an empty closed code fence|keeps fenced code delimiters out of editable code content)' --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_live_rendered_editable_text_test.dart --name 'keeps (code indentation|an empty code line)' --reporter compact`: passed.
   - `flutter test --platform chrome test/widget_test.dart --name 'scratch (keeps blank code lines visible after Enter|expands an empty code fence after Enter)' --reporter compact` in `example/`: passed.
   - `flutter analyze`: passed.
   - `flutter test test/v2 --reporter compact`: passed.
   - `./scripts/verify_package_confidence.sh`: passed.
-  - `flutter test --platform chrome test/v2/flutter/sovereign_markdown_web_smoke_test.dart --reporter compact`: passed.
+  - `flutter test --platform chrome test/v2/flutter/flark_markdown_web_smoke_test.dart --reporter compact`: passed.
   - `flutter test --platform chrome test/widget_test.dart --reporter compact` in `example/`: passed.
   - `flutter build web` in `example/`: passed.
   - `curl -s -I http://127.0.0.1:6200/main.dart.js`: returned `200 OK` with `Last-Modified: Sat, 09 May 2026 18:23:49 GMT`.
@@ -1465,13 +1465,13 @@ Code-fence visual height follow-up:
   the active live code textarea measured `20px` high before Enter and `40px`
   high after Enter, with its value changing from `foo` to `foo\n`.
 - Verification:
-  - `dart format lib/src/v2/flutter/sovereign_projected_editable_text.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart example/test/widget_test.dart`: passed.
-  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --name 'keeps (code indentation|an empty code line)' --reporter compact`: passed.
+  - `dart format lib/src/v2/flutter/flark_projected_editable_text.dart test/v2/flutter/flark_live_rendered_editable_text_test.dart example/test/widget_test.dart`: passed.
+  - `flutter test test/v2/flutter/flark_live_rendered_editable_text_test.dart --name 'keeps (code indentation|an empty code line)' --reporter compact`: passed.
   - `flutter test --platform chrome test/widget_test.dart --name 'scratch (keeps blank code lines visible after Enter|expands an empty code fence after Enter)' --reporter compact` in `example/`: passed.
   - `flutter test --platform chrome test/widget_test.dart --reporter compact` in `example/`: passed.
   - `flutter analyze`: passed.
   - `flutter test test/v2 --reporter compact`: passed.
-  - `flutter test --platform chrome test/v2/flutter/sovereign_markdown_web_smoke_test.dart --reporter compact`: passed.
+  - `flutter test --platform chrome test/v2/flutter/flark_markdown_web_smoke_test.dart --reporter compact`: passed.
   - `flutter build web` in `example/`: passed.
   - `curl -s -I http://127.0.0.1:6200/main.dart.js`: returned `200 OK` with `Last-Modified: Sat, 09 May 2026 21:28:09 GMT`.
   - `./scripts/verify_package_confidence.sh`: passed.
@@ -1497,12 +1497,12 @@ V1 code-fence behavior port and input hardening:
   the markdown runtime must preserve document/selection invariants across
   combinations rather than isolated examples.
 - Verification:
-  - `dart format lib/src/v2/flutter/sovereign_editable_text.dart lib/src/v2/flutter/sovereign_markdown_input_policy.dart lib/src/v2/markdown/commands/sovereign_markdown_input_commands.dart lib/src/v2/markdown/source/sovereign_markdown_fenced_code_policy.dart test/v2/markdown/sovereign_markdown_input_commands_test.dart test/v2/flutter/sovereign_editable_text_test.dart test/v2/markdown/sovereign_markdown_fuzz_invariants_test.dart`: passed.
-  - `flutter test test/v2/markdown/sovereign_markdown_input_commands_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/flutter/sovereign_editable_text_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/markdown/sovereign_markdown_fuzz_invariants_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --name "code fence|code indentation|empty code line|moves out of live code fences|indents live code" --reporter compact`: passed.
-  - `dart analyze lib/src/v2/flutter/sovereign_editable_text.dart lib/src/v2/flutter/sovereign_markdown_input_policy.dart lib/src/v2/markdown/commands/sovereign_markdown_input_commands.dart lib/src/v2/markdown/source/sovereign_markdown_fenced_code_policy.dart test/v2/markdown/sovereign_markdown_input_commands_test.dart test/v2/flutter/sovereign_editable_text_test.dart test/v2/markdown/sovereign_markdown_fuzz_invariants_test.dart`: passed with no issues after removing the new and local deprecated `RegExp` usage.
+  - `dart format lib/src/v2/flutter/flark_editable_text.dart lib/src/v2/flutter/flark_markdown_input_policy.dart lib/src/v2/markdown/commands/flark_markdown_input_commands.dart lib/src/v2/markdown/source/flark_markdown_fenced_code_policy.dart test/v2/markdown/flark_markdown_input_commands_test.dart test/v2/flutter/flark_editable_text_test.dart test/v2/markdown/flark_markdown_fuzz_invariants_test.dart`: passed.
+  - `flutter test test/v2/markdown/flark_markdown_input_commands_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_editable_text_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/markdown/flark_markdown_fuzz_invariants_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_live_rendered_editable_text_test.dart --name "code fence|code indentation|empty code line|moves out of live code fences|indents live code" --reporter compact`: passed.
+  - `dart analyze lib/src/v2/flutter/flark_editable_text.dart lib/src/v2/flutter/flark_markdown_input_policy.dart lib/src/v2/markdown/commands/flark_markdown_input_commands.dart lib/src/v2/markdown/source/flark_markdown_fenced_code_policy.dart test/v2/markdown/flark_markdown_input_commands_test.dart test/v2/flutter/flark_editable_text_test.dart test/v2/markdown/flark_markdown_fuzz_invariants_test.dart`: passed with no issues after removing the new and local deprecated `RegExp` usage.
   - `flutter test test/v2/markdown test/v2/flutter --reporter compact`: passed with 307 tests.
   - `flutter analyze`: passed.
   - `./scripts/verify_package_confidence.sh`: passed.
@@ -1532,14 +1532,14 @@ Best-in-class fenced-code boundary and scanner extraction:
   coverage for the new architecture, including web-visible multiline code paste
   behavior.
 - Verification:
-  - `dart format lib/src/v2/markdown/source/sovereign_markdown_fenced_code_scanner.dart lib/src/v2/markdown/source/sovereign_markdown_fenced_code_policy.dart lib/src/v2/flutter/sovereign_markdown_input_policy.dart lib/src/v2/flutter/sovereign_projected_editable_text.dart test/v2/markdown/sovereign_markdown_fenced_code_scanner_test.dart test/v2/markdown/sovereign_markdown_input_commands_test.dart test/v2/flutter/sovereign_editable_text_test.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart`: passed.
-  - `flutter test test/v2/markdown/sovereign_markdown_fenced_code_scanner_test.dart test/v2/markdown/sovereign_markdown_input_commands_test.dart test/v2/flutter/sovereign_editable_text_test.dart --reporter compact`: passed.
-  - `flutter test test/v2/flutter/sovereign_live_rendered_editable_text_test.dart --name "code fence|code indentation|empty code line|moves out of live code fences|keeps vertical arrows native inside live code fences|indents live code|outdents live code|multiline paste" --reporter compact`: passed.
-  - `dart analyze lib/src/v2/markdown/source/sovereign_markdown_fenced_code_scanner.dart lib/src/v2/markdown/source/sovereign_markdown_fenced_code_policy.dart lib/src/v2/flutter/sovereign_markdown_input_policy.dart lib/src/v2/flutter/sovereign_projected_editable_text.dart test/v2/markdown/sovereign_markdown_fenced_code_scanner_test.dart test/v2/markdown/sovereign_markdown_input_commands_test.dart test/v2/flutter/sovereign_editable_text_test.dart test/v2/flutter/sovereign_live_rendered_editable_text_test.dart`: passed with no issues.
+  - `dart format lib/src/v2/markdown/source/flark_markdown_fenced_code_scanner.dart lib/src/v2/markdown/source/flark_markdown_fenced_code_policy.dart lib/src/v2/flutter/flark_markdown_input_policy.dart lib/src/v2/flutter/flark_projected_editable_text.dart test/v2/markdown/flark_markdown_fenced_code_scanner_test.dart test/v2/markdown/flark_markdown_input_commands_test.dart test/v2/flutter/flark_editable_text_test.dart test/v2/flutter/flark_live_rendered_editable_text_test.dart`: passed.
+  - `flutter test test/v2/markdown/flark_markdown_fenced_code_scanner_test.dart test/v2/markdown/flark_markdown_input_commands_test.dart test/v2/flutter/flark_editable_text_test.dart --reporter compact`: passed.
+  - `flutter test test/v2/flutter/flark_live_rendered_editable_text_test.dart --name "code fence|code indentation|empty code line|moves out of live code fences|keeps vertical arrows native inside live code fences|indents live code|outdents live code|multiline paste" --reporter compact`: passed.
+  - `dart analyze lib/src/v2/markdown/source/flark_markdown_fenced_code_scanner.dart lib/src/v2/markdown/source/flark_markdown_fenced_code_policy.dart lib/src/v2/flutter/flark_markdown_input_policy.dart lib/src/v2/flutter/flark_projected_editable_text.dart test/v2/markdown/flark_markdown_fenced_code_scanner_test.dart test/v2/markdown/flark_markdown_input_commands_test.dart test/v2/flutter/flark_editable_text_test.dart test/v2/flutter/flark_live_rendered_editable_text_test.dart`: passed with no issues.
   - `flutter test test/v2/markdown test/v2/flutter --reporter compact`: passed with 317 tests.
   - `flutter analyze`: passed.
   - `./scripts/verify_package_confidence.sh`: passed.
-  - `flutter test --platform chrome test/v2/flutter/sovereign_markdown_web_smoke_test.dart --reporter compact`: passed.
+  - `flutter test --platform chrome test/v2/flutter/flark_markdown_web_smoke_test.dart --reporter compact`: passed.
   - `flutter test --platform chrome test/widget_test.dart --reporter compact` in `example/`: passed.
   - `flutter build web` in `example/`: passed.
   - `curl -s -I http://127.0.0.1:6200/main.dart.js`: returned `200 OK` with `Last-Modified: Sun, 10 May 2026 23:35:56 GMT`.

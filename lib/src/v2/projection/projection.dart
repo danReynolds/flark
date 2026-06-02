@@ -1,2 +1,2 @@
-export 'sovereign_projection.dart';
-export 'sovereign_projected_text_edit_adapter.dart';
+export 'flark_projection.dart';
+export 'flark_projected_text_edit_adapter.dart';

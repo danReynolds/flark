@@ -8,7 +8,7 @@
 PRODUCT_NAME = Flark Markdown
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = dev.sovereign.editor.example
+PRODUCT_BUNDLE_IDENTIFIER = dev.flark.editor.example
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 dev.sovereign.editor. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 dev.flark.editor. All rights reserved.

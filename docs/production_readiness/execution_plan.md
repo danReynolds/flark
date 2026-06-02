@@ -11,7 +11,7 @@ tests, and durable execution records.
 
 ## Success Criteria
 
-- The package lives and builds from `/Users/dan/Coding/sovereign`.
+- The package lives and builds from `/Users/dan/Coding/flark`.
 - The repo has audit, plan, and execution log documents that stay current.
 - The package has a small documented public API and hides implementation
   details behind `lib/src`.
@@ -27,7 +27,7 @@ tests, and durable execution records.
 
 Completed in Phase 0:
 
-- Created `/Users/dan/Coding/sovereign` as a new git repo.
+- Created `/Users/dan/Coding/flark` as a new git repo.
 - Copied tracked package source, tests, scripts, native bridge, fixtures, and
   Flark architecture docs from Dune.
 - Excluded generated build state (`.dart_tool`, `build`, `coverage`, Rust
@@ -48,7 +48,7 @@ condition.
 
 Tasks:
 
-- [x] Create `/Users/dan/Coding/sovereign`.
+- [x] Create `/Users/dan/Coding/flark`.
 - [x] Copy tracked Flark package files from Dune.
 - [x] Copy relevant Flark architecture docs.
 - [x] Initialize git repo.
@@ -179,7 +179,7 @@ Native host gate:
 
 ```bash
 ./scripts/build_comrak_all.sh --host-only
-flutter test test/widgets/sovereign/engine/native_comrak_parse_backend_test.dart
+flutter test test/widgets/flark/engine/native_comrak_parse_backend_test.dart
 ```
 
 Benchmark gate:
@@ -212,7 +212,7 @@ Example mobile packaging gate:
 ```
 
 Current status: passing as of 2026-05-01. The Android check builds the example
-debug APK and verifies that `libsovereign_comrak_bridge.so` is packaged. The
+debug APK and verifies that `libflark_comrak_bridge.so` is packaged. The
 iOS check verifies the XCFramework/link-anchor project wiring and parses the
 workspace with `xcodebuild -list`.
 

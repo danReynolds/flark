@@ -5,7 +5,7 @@ import 'package:hooks/hooks.dart';
 
 const _assetName = 'src/v2/native/native_comrak_ffi.dart';
 const _crateRelativePath = 'native/comrak_bridge';
-const _libraryBaseName = 'sovereign_comrak_bridge';
+const _libraryBaseName = 'flark_comrak_bridge';
 
 void main(List<String> args) async {
   await build(args, (input, output) async {
@@ -124,7 +124,7 @@ Future<Uri> _buildRustArtifact({
   }
 
   final artifactOutputDirectory = Directory.fromUri(
-    outputDirectory.resolve('sovereign_comrak_bridge/'),
+    outputDirectory.resolve('flark_comrak_bridge/'),
   );
   artifactOutputDirectory.createSync(recursive: true);
   final outputArtifact = artifactOutputDirectory.uri.resolve(

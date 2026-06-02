@@ -40,6 +40,6 @@ hidden ranges must stay source-offset accurate.
 
 ## Native Artifact Names
 
-The Dart package is named `flark`, but the native Rust bridge artifact still
-uses the existing `sovereign_comrak_bridge` ABI and symbol names. Treat those
-as internal package artifacts unless you are working on native packaging.
+The native Rust bridge artifact uses the `flark_comrak_bridge` ABI and symbol
+names. Treat those as internal package artifacts unless you are working on
+native packaging.

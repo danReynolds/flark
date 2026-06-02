@@ -83,7 +83,7 @@ final class WasmNativeComrakBridge implements NativeComrakBridge {
     try {
       final loaded = await _module();
       final exports = loaded.instance.exports;
-      final inputPtr = _callExportInt(exports, 'sovereign_comrak_input_alloc', [
+      final inputPtr = _callExportInt(exports, 'flark_comrak_input_alloc', [
         input.utf8Text.length.toJS,
       ]);
 
@@ -96,7 +96,7 @@ final class WasmNativeComrakBridge implements NativeComrakBridge {
 
         _copyToMemory(exports, inputPtr, input.utf8Text);
 
-        final responsePtr = _callExportInt(exports, 'sovereign_comrak_parse', [
+        final responsePtr = _callExportInt(exports, 'flark_comrak_parse', [
           input.revision.toJS,
           _mapProfile(input.profile).toJS,
           inputPtr.toJS,
@@ -140,12 +140,12 @@ final class WasmNativeComrakBridge implements NativeComrakBridge {
           }
           return result;
         } finally {
-          _callExportVoid(exports, 'sovereign_comrak_response_free', [
+          _callExportVoid(exports, 'flark_comrak_response_free', [
             responsePtr.toJS,
           ]);
         }
       } finally {
-        _callExportVoid(exports, 'sovereign_comrak_input_free', [
+        _callExportVoid(exports, 'flark_comrak_input_free', [
           inputPtr.toJS,
           input.utf8Text.length.toJS,
         ]);
@@ -178,7 +178,7 @@ final class WasmNativeComrakBridge implements NativeComrakBridge {
         _validateExports(instance.exports);
         final abiVersion = _callExportInt(
           instance.exports,
-          'sovereign_comrak_bridge_version',
+          'flark_comrak_bridge_version',
         );
         if (abiVersion != _kAbiVersion) {
           throw StateError(
@@ -238,15 +238,13 @@ NativeComrakBridgePreflightResult preflightNativeComrakBridge({
 
 List<_WasmAssetKeys> _defaultAssetKeys() {
   return const [
-    _WasmAssetKeys(
-      wasmKey: '${_kPackageAssetBase}sovereign_comrak_bridge.wasm',
-    ),
-    _WasmAssetKeys(wasmKey: '${_kLocalAssetBase}sovereign_comrak_bridge.wasm'),
+    _WasmAssetKeys(wasmKey: '${_kPackageAssetBase}flark_comrak_bridge.wasm'),
+    _WasmAssetKeys(wasmKey: '${_kLocalAssetBase}flark_comrak_bridge.wasm'),
     // Flutter's Chrome package-test server serves package files from lib/ at
     // /packages/<package>/<lib-relative-path>; production web builds use the
     // asset manager entries above.
     _WasmAssetKeys(
-      wasmKey: '${_kPackageFileAssetBase}sovereign_comrak_bridge.wasm',
+      wasmKey: '${_kPackageFileAssetBase}flark_comrak_bridge.wasm',
       resolveWithAssetManager: false,
     ),
   ];
@@ -286,11 +284,11 @@ Future<_WasmInstance> _instantiateWasmAsset(String wasmUrl) async {
 void _validateExports(JSObject exports) {
   for (final name in const [
     'memory',
-    'sovereign_comrak_bridge_version',
-    'sovereign_comrak_input_alloc',
-    'sovereign_comrak_input_free',
-    'sovereign_comrak_parse',
-    'sovereign_comrak_response_free',
+    'flark_comrak_bridge_version',
+    'flark_comrak_input_alloc',
+    'flark_comrak_input_free',
+    'flark_comrak_parse',
+    'flark_comrak_response_free',
   ]) {
     if (exports.getProperty<JSAny?>(name.toJS) == null) {
       throw StateError('Comrak WASM bridge is missing export: $name.');

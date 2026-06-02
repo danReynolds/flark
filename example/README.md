@@ -19,7 +19,7 @@ Verify Android native packaging:
 ```
 
 That command builds the debug APK through Gradle and fails unless the packaged
-APK contains `lib/**/libsovereign_comrak_bridge.so`.
+APK contains `lib/**/libflark_comrak_bridge.so`.
 
 Verify iOS project wiring:
 
@@ -28,7 +28,7 @@ Verify iOS project wiring:
 ```
 
 The iOS harness links the package XCFramework from
-`../native/comrak_bridge/dist/ios/sovereign_comrak_bridge.xcframework` and
+`../native/comrak_bridge/dist/ios/flark_comrak_bridge.xcframework` and
 builds `Runner/FlarkComrakAnchor.c` into the app target so the static bridge
 symbols remain visible to `DynamicLibrary.process()`.
 

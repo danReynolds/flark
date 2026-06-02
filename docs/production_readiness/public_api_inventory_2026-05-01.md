@@ -7,7 +7,7 @@ Supported app-facing import:
 
 - `package:flark/flark.dart`
 
-Deep imports under `lib/widgets/sovereign/...` and `lib/src/...` are not
+Deep imports under `lib/widgets/flark/...` and `lib/src/...` are not
 documented package contracts for this release-planning pass. They may exist for
 file organization, conditional imports, and white-box package tests, but the
 top-level barrel is the stable consumer entry point.
@@ -87,14 +87,14 @@ First cleanup pass:
 
 ## Deep Import Risk
 
-Most implementation files live directly under `lib/widgets/sovereign/...`, so
+Most implementation files live directly under `lib/widgets/flark/...`, so
 consumers can import internals even if the barrel stops exporting them. A
 production package should move implementation code into `lib/src` in staged
 waves.
 
 Current status after the Phase 1 migration waves:
 
-- `lib/widgets/sovereign/...` now contains the intended public controller,
+- `lib/widgets/flark/...` now contains the intended public controller,
   editor/preview widgets, command facade/models, theme types, advanced syntax
   and native bridge contracts, and model carriers still exposed by public
   signatures.
@@ -168,7 +168,7 @@ Progress:
   public `AppColors` helper in favor of a private markdown-theme palette.
 - Narrowed `lib/flark.dart` to stop exporting parser
   implementations, scanners, marker helpers, `UndoStack`, and `EditDiffer`.
-- Added `test/public_api/sovereign_editor_barrel_test.dart` as a top-level
+- Added `test/public_api/flark_editor_barrel_test.dart` as a top-level
   import smoke test for the supported editor, command, theme, syntax, native
   diagnostic, and UTF offset APIs.
 - Moved `UndoStack` and `EditDiffer` behind `lib/src` as the first focused
@@ -210,7 +210,7 @@ Progress:
   the navigation helper, and editor overlay parts. Public app code still imports
   only `FlarkController`, `FlarkEditor`, and `FlarkMarkdownView`.
 - Completed the focused `lib/src` migration wave for implementation-only files;
-  the remaining `lib/widgets/sovereign/...` files are the supported public
+  the remaining `lib/widgets/flark/...` files are the supported public
   surface or model/advanced contracts intentionally retained for current public
   signatures.
 
@@ -225,7 +225,7 @@ Progress:
 Progress:
 
 - Renamed `lib/theme/dune_markdown_theme.dart` to
-  `lib/theme/sovereign_markdown_theme.dart`.
+  `lib/theme/flark_markdown_theme.dart`.
 - Replaced the public `DuneMarkdownTheme.dune()` constructor with
   `FlarkMarkdownTheme.standard()` without adding a compatibility alias.
 

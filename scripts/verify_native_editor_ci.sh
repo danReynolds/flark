@@ -68,10 +68,10 @@ run_in_pkg flutter analyze \
   lib \
   test/v2
 
-run_in_pkg flutter test test/v2/native/sovereign_native_comrak_bridge_test.dart
-run_in_pkg flutter test test/v2/packaging/sovereign_v2_native_packaging_contract_test.dart
-run_in_pkg flutter test test/v2/markdown/sovereign_native_comrak_parse_backend_test.dart
-run_in_pkg flutter test test/v2/markdown/sovereign_v2_native_upstream_contract_test.dart
+run_in_pkg flutter test test/v2/native/flark_native_comrak_bridge_test.dart
+run_in_pkg flutter test test/v2/packaging/flark_v2_native_packaging_contract_test.dart
+run_in_pkg flutter test test/v2/markdown/flark_native_comrak_parse_backend_test.dart
+run_in_pkg flutter test test/v2/markdown/flark_v2_native_upstream_contract_test.dart
 
 if [ "$run_android_verify" -eq 1 ]; then
   run ./scripts/verify_example_packaging.sh --android

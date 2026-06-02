@@ -41,7 +41,7 @@ Why:
 
 Verification:
 
-- `dart format lib/src/v2/core/transaction/sovereign_transaction.dart test/v2/core/sovereign_transaction_test.dart`
+- `dart format lib/src/v2/core/transaction/flark_transaction.dart test/v2/core/flark_transaction_test.dart`
 - `flutter test test/v2/core --reporter compact`: passed.
 
 ## Iteration 3 - Projection Construction Cost
@@ -65,9 +65,9 @@ Why:
 
 Verification:
 
-- `dart format lib/src/v2/projection/sovereign_projection.dart test/v2/projection/sovereign_projection_test.dart`
+- `dart format lib/src/v2/projection/flark_projection.dart test/v2/projection/flark_projection_test.dart`
 - `flutter test test/v2/projection --reporter compact`: passed.
-- `flutter test test/v2/performance/sovereign_v2_performance_budget_test.dart --tags benchmark --reporter compact`: passed.
+- `flutter test test/v2/performance/flark_v2_performance_budget_test.dart --tags benchmark --reporter compact`: passed.
 
 ## Iteration 4 - Markdown List Input Fidelity
 
@@ -93,8 +93,8 @@ Why:
 
 Verification:
 
-- `dart format lib/src/v2/markdown/source/sovereign_markdown_input_engine.dart test/v2/markdown/sovereign_markdown_input_commands_test.dart`
-- `flutter test test/v2/markdown/sovereign_markdown_input_commands_test.dart --reporter compact`: passed.
+- `dart format lib/src/v2/markdown/source/flark_markdown_input_engine.dart test/v2/markdown/flark_markdown_input_commands_test.dart`
+- `flutter test test/v2/markdown/flark_markdown_input_commands_test.dart --reporter compact`: passed.
 
 ## Iteration 5 - Native Payload Boundary Hardening
 
@@ -114,8 +114,8 @@ Why:
 
 Verification:
 
-- `dart format lib/src/v2/native/native_comrak_ffi.dart test/v2/native/sovereign_native_comrak_bridge_test.dart`
-- `flutter test test/v2/native/sovereign_native_comrak_bridge_test.dart --reporter compact`: passed.
+- `dart format lib/src/v2/native/native_comrak_ffi.dart test/v2/native/flark_native_comrak_bridge_test.dart`
+- `flutter test test/v2/native/flark_native_comrak_bridge_test.dart --reporter compact`: passed.
 
 ## Iteration 6 - Parse Scheduler Failure Containment
 
@@ -139,8 +139,8 @@ Why:
 
 Verification:
 
-- `dart format lib/src/v2/flutter/sovereign_parse_scheduler.dart test/v2/flutter/sovereign_parse_scheduler_test.dart`
-- `flutter test test/v2/flutter/sovereign_parse_scheduler_test.dart test/v2/flutter/sovereign_flutter_controller_test.dart --reporter compact`: passed.
+- `dart format lib/src/v2/flutter/flark_parse_scheduler.dart test/v2/flutter/flark_parse_scheduler_test.dart`
+- `flutter test test/v2/flutter/flark_parse_scheduler_test.dart test/v2/flutter/flark_flutter_controller_test.dart --reporter compact`: passed.
 
 ## Iteration 7 - Promoted Widget Parse Errors
 
@@ -162,8 +162,8 @@ Why:
 
 Verification:
 
-- `dart format lib/src/v2/flutter/sovereign_markdown_editor.dart lib/src/v2/flutter/sovereign_markdown_preview.dart test/v2/flutter/sovereign_markdown_surface_test.dart`
-- `flutter test test/v2/flutter/sovereign_markdown_surface_test.dart --reporter compact`: passed.
+- `dart format lib/src/v2/flutter/flark_markdown_editor.dart lib/src/v2/flutter/flark_markdown_preview.dart test/v2/flutter/flark_markdown_surface_test.dart`
+- `flutter test test/v2/flutter/flark_markdown_surface_test.dart --reporter compact`: passed.
 
 ## Iteration 8 - Public API and Docs Alignment
 
@@ -184,8 +184,8 @@ Why:
 
 Verification:
 
-- `dart format test/public_api/sovereign_editor_barrel_test.dart`
-- `flutter analyze lib/src/v2/flutter/sovereign_markdown_editor.dart lib/src/v2/flutter/sovereign_markdown_preview.dart lib/src/v2/flutter/sovereign_parse_scheduler.dart test/public_api test/v2/public_api`: passed.
+- `dart format test/public_api/flark_editor_barrel_test.dart`
+- `flutter analyze lib/src/v2/flutter/flark_markdown_editor.dart lib/src/v2/flutter/flark_markdown_preview.dart lib/src/v2/flutter/flark_parse_scheduler.dart test/public_api test/v2/public_api`: passed.
 - `flutter test test/public_api test/v2/public_api --reporter compact`: passed.
 
 ## Iteration 9 - Scheduler Contract Coverage
@@ -206,8 +206,8 @@ Why:
 
 Verification:
 
-- `dart format test/v2/flutter/sovereign_parse_scheduler_test.dart`
-- `flutter test test/v2/flutter/sovereign_parse_scheduler_test.dart --reporter compact`: passed.
+- `dart format test/v2/flutter/flark_parse_scheduler_test.dart`
+- `flutter test test/v2/flutter/flark_parse_scheduler_test.dart --reporter compact`: passed.
 
 ## Iteration 10 - Confidence Gate Closeout
 

@@ -1,5 +1,5 @@
 [package]
-name = "sovereign_comrak_bridge"
+name = "flark_comrak_bridge"
 version = "0.1.0"
 edition = "2021"
 publish = false

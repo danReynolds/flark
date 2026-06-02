@@ -16,7 +16,7 @@ surface compile but would not preserve the source-first editing contract.
 The promoted v2 Flutter widgets require `FlarkNativeComrakParseBackend`
 unless an app explicitly supplies its own `FlarkMarkdownParseBackend`.
 On browser targets the default backend loads
-`lib/assets/wasm/sovereign_comrak_bridge.wasm` and calls the same Rust Comrak
+`lib/assets/wasm/flark_comrak_bridge.wasm` and calls the same Rust Comrak
 bridge ABI through Dart JS interop. On native targets it uses the bundled FFI
 bridge.
 

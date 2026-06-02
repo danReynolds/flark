@@ -11,12 +11,12 @@ use parser::parse_to_payload;
 use payload::diagnostic_payload;
 
 #[no_mangle]
-pub extern "C" fn sovereign_comrak_bridge_version() -> u32 {
+pub extern "C" fn flark_comrak_bridge_version() -> u32 {
     ABI_VERSION
 }
 
 #[no_mangle]
-pub extern "C" fn sovereign_comrak_input_alloc(len: u32) -> *mut u8 {
+pub extern "C" fn flark_comrak_input_alloc(len: u32) -> *mut u8 {
     if len == 0 {
         return std::ptr::null_mut();
     }
@@ -28,19 +28,19 @@ pub extern "C" fn sovereign_comrak_input_alloc(len: u32) -> *mut u8 {
 }
 
 #[no_mangle]
-pub extern "C" fn sovereign_comrak_input_free(ptr: *mut u8, len: u32) {
+pub extern "C" fn flark_comrak_input_free(ptr: *mut u8, len: u32) {
     if ptr.is_null() || len == 0 {
         return;
     }
 
-    // SAFETY: pointer/capacity originate from `sovereign_comrak_input_alloc`.
+    // SAFETY: pointer/capacity originate from `flark_comrak_input_alloc`.
     unsafe {
         let _ = Vec::from_raw_parts(ptr, 0, len as usize);
     }
 }
 
 #[no_mangle]
-pub extern "C" fn sovereign_comrak_parse(
+pub extern "C" fn flark_comrak_parse(
     revision: u32,
     profile: u8,
     text_ptr: *const u8,
@@ -87,6 +87,6 @@ pub extern "C" fn sovereign_comrak_parse(
 }
 
 #[no_mangle]
-pub extern "C" fn sovereign_comrak_response_free(response_ptr: *mut FlarkComrakResponse) {
+pub extern "C" fn flark_comrak_response_free(response_ptr: *mut FlarkComrakResponse) {
     free_response(response_ptr);
 }
