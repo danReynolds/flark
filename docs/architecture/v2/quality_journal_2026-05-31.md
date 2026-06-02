@@ -234,3 +234,60 @@ Verification:
   contracts, native parse adapter tests, and upstream CommonMark/GFM native
   contracts.
 - `dart doc --dry-run`: passed with 0 warnings and 0 errors.
+
+## Iteration 11 - Review Follow-Up and Large-Document Benchmarks
+
+Focus: correctness issues from library review plus measurable performance
+evidence for large markdown documents.
+
+What changed:
+
+- Routed live-rendered immediate parses through the editor's configured parse
+  backend, markdown profile, and parse-error callback instead of a private
+  Comrak-only singleton.
+- Added regression coverage for standalone fence edits proving immediate
+  live-rendered parses use the caller's backend/profile and report immediate
+  parse failures through `onParseError`.
+- Made `MarkdownEditor.cursorColor` theme-aware by default through
+  `DefaultSelectionStyle`, while still preserving explicit caller colors.
+- Made redo clearing explicit when recording a new history transaction and
+  collapsed duplicated transaction offset-mapping branches into one documented
+  rule.
+- Added a large-document benchmark file covering text-buffer rebuilds,
+  projection prediction with dense markers, render-plan construction, and a
+  native Comrak parse/decode sample.
+- Reduced Dart-side native parse-result mapping work by reusing mapped marker
+  ranges, replacing repeated overlap scans with a sorted source-range index,
+  and avoiding repeated marker-only block checks during block mapping.
+
+Why:
+
+- Immediate live-rendered parse adoption is part of the editing correctness
+  path. It must honor the same parser configuration as scheduled parsing or
+  tests/custom backends see different behavior from real editing.
+- The review correctly identified large-document performance as the next risk.
+  The new benchmarks show the current shape: buffer/projection/render-plan hot
+  paths are in the sub-millisecond to low-millisecond range on this machine,
+  while native parse/decode remains the dominant cost for 177K-character
+  documents.
+
+Benchmark evidence:
+
+- Before the native mapper range-index pass, a one-shot
+  `native_comrak_parse_decode_177540_chars` sample measured 4555.66ms.
+- After the range-index pass, the same sample measured 1151.48ms in the final
+  benchmark lane.
+- Final large-document tracking results:
+  - `text_buffer_replace_126k_middle`: median 322us, p95 759us.
+  - `projection_predict_5000_markers`: median 3.64ms, p95 7.44ms.
+  - `render_plan_5000_blocks_5000_inlines`: median 10.88ms, p95 25.54ms.
+  - `native_comrak_parse_decode_177540_chars`: one-shot 1151.48ms.
+
+Verification:
+
+- `flutter analyze lib/src/v2/markdown/parse/flark_native_comrak_parse_backend.dart lib/src/v2/flutter/flark_markdown_editor.dart lib/src/v2/flutter/flark_projected_editable_text.dart lib/src/v2/core/history/flark_history_stack.dart lib/src/v2/core/transaction/flark_transaction.dart test/v2/flutter/flark_markdown_surface_test.dart test/v2/performance/flark_v2_large_document_benchmark_test.dart`: passed.
+- `flutter test test/v2/markdown/flark_native_comrak_parse_backend_test.dart test/v2/flutter/flark_markdown_surface_test.dart --reporter compact`: passed with 37 tests.
+- `flutter test --tags benchmark test/v2/performance --dart-define=FLARK_BENCHMARK_ENFORCE_BUDGETS=true --reporter compact`: passed with 8 tests.
+- `flutter analyze lib test`: passed.
+- `flutter test test --exclude-tags benchmark --reporter compact`: passed with
+  545 tests.

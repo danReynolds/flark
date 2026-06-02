@@ -230,6 +230,71 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(controller.hasAuthoritativeRenderPlan, isFalse);
   });
+
+  testWidgets('live-rendered immediate parses use editor backend and profile', (
+    tester,
+  ) async {
+    final backend = _RecordingParseBackend();
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: MarkdownEditor(
+          initialMarkdown: '',
+          editingMode: FlarkMarkdownEditingMode.liveRendered,
+          parseBackend: backend,
+          profile: FlarkMarkdownProfile.commonMarkCore,
+          parseDebounce: const Duration(days: 1),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump();
+    expect(backend.requests, hasLength(1));
+
+    await tester.enterText(find.byType(EditableText), '```');
+    await tester.pump();
+
+    expect(backend.requests, hasLength(2));
+    expect(backend.requests.last.markdown, contains('```'));
+    expect(backend.requests.last.profile, FlarkMarkdownProfile.commonMarkCore);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('live-rendered immediate parse failures use onParseError', (
+    tester,
+  ) async {
+    final backend = _RecordingParseBackend(failOnRequest: 2);
+    final errors = <Object>[];
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: MarkdownEditor(
+          initialMarkdown: '',
+          editingMode: FlarkMarkdownEditingMode.liveRendered,
+          parseBackend: backend,
+          parseDebounce: const Duration(days: 1),
+          onParseError: (error, stackTrace) {
+            errors.add(error);
+          },
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump();
+    expect(backend.requests, hasLength(1));
+    expect(errors, isEmpty);
+
+    await tester.enterText(find.byType(EditableText), '```');
+    await tester.pump();
+
+    expect(backend.requests, hasLength(2));
+    expect(errors.single, isA<StateError>());
+    expect(tester.takeException(), isNull);
+  });
 }
 
 final class _ImmediateParagraphParseBackend
@@ -299,6 +364,49 @@ final class _ImmediateParseBackend implements FlarkMarkdownParseBackend {
           sourceRange: FlarkSourceRange(0, 2),
         ),
       ],
+    );
+  }
+}
+
+final class _RecordingParseBackend implements FlarkMarkdownParseBackend {
+  _RecordingParseBackend({this.failOnRequest});
+
+  final int? failOnRequest;
+  final requests = <FlarkMarkdownParseRequest>[];
+
+  @override
+  FlarkMarkdownParserCapabilities get capabilities =>
+      FlarkMarkdownParserCapabilities(
+        parserName: 'recording',
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
+        supportedProfiles: const [
+          FlarkMarkdownProfile.commonMarkCore,
+          FlarkMarkdownProfile.commonMarkGfm,
+        ],
+      );
+
+  @override
+  Future<FlarkMarkdownParseResult> parse(
+    FlarkMarkdownParseRequest request,
+  ) async {
+    requests.add(request);
+    if (requests.length == failOnRequest) {
+      throw StateError('recorded parse failed');
+    }
+    return FlarkMarkdownParseResult(
+      schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
+      revision: request.revision,
+      sourceTextLength: request.markdown.length,
+      blocks: [
+        if (request.markdown.isNotEmpty)
+          FlarkMarkdownBlockNode(
+            kind: FlarkMarkdownBlockKind.paragraph,
+            type: 'paragraph',
+            sourceRange: FlarkSourceRange(0, request.markdown.length),
+          ),
+      ],
+      inlineTokens: const [],
+      hiddenRanges: const [],
     );
   }
 }

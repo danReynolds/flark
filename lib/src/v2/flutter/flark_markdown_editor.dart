@@ -29,7 +29,7 @@ final class MarkdownEditor extends StatefulWidget {
     this.editingMode = FlarkMarkdownEditingMode.projected,
     this.focusNode,
     this.style,
-    this.cursorColor = const Color(0xFF006ADC),
+    this.cursorColor,
     this.backgroundCursorColor = const Color(0x00000000),
     this.minLines,
     this.maxLines,
@@ -86,7 +86,7 @@ final class MarkdownEditor extends StatefulWidget {
   final FlarkMarkdownEditingMode editingMode;
   final FocusNode? focusNode;
   final TextStyle? style;
-  final Color cursorColor;
+  final Color? cursorColor;
   final Color backgroundCursorColor;
   final int? minLines;
   final int? maxLines;
@@ -165,12 +165,13 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
+    final cursorColor = _effectiveCursorColor(context, widget.cursorColor);
     final editor = switch (widget.editingMode) {
       FlarkMarkdownEditingMode.source => FlarkEditableText(
         controller: controller,
         focusNode: widget.focusNode,
         style: widget.style,
-        cursorColor: widget.cursorColor,
+        cursorColor: cursorColor,
         backgroundCursorColor: widget.backgroundCursorColor,
         minLines: widget.minLines,
         maxLines: widget.maxLines,
@@ -182,7 +183,7 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
         controller: controller,
         focusNode: widget.focusNode,
         style: widget.style,
-        cursorColor: widget.cursorColor,
+        cursorColor: cursorColor,
         backgroundCursorColor: widget.backgroundCursorColor,
         minLines: widget.minLines,
         maxLines: widget.maxLines,
@@ -194,8 +195,11 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
         controller: controller,
         focusNode: widget.focusNode,
         style: widget.style,
-        cursorColor: widget.cursorColor,
+        cursorColor: cursorColor,
         backgroundCursorColor: widget.backgroundCursorColor,
+        parseBackend: widget.parseBackend,
+        profile: widget.profile,
+        onParseError: widget.onParseError,
         minLines: widget.minLines,
         maxLines: widget.maxLines,
         expands: widget.expands,
@@ -265,4 +269,10 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
   FlarkMarkdownParseBackend _resolveDefaultParseBackend() {
     return FlarkNativeComrakParseBackend.requiredDefault();
   }
+}
+
+Color _effectiveCursorColor(BuildContext context, Color? explicitColor) {
+  return explicitColor ??
+      DefaultSelectionStyle.of(context).cursorColor ??
+      const Color(0xFF006ADC);
 }

@@ -102,6 +102,9 @@ FlarkMarkdownParseResult _mapNativeResult(
     mapper,
     _renderableNativeBlocks(native.blocks),
   );
+  final mappedMarkerRanges = [
+    for (final range in native.markerRanges) _mapRange(mapper, range),
+  ]..sort(_compareSourceRanges);
   final syntheticListItems = _syntheticListItems(
     request.markdown,
     mapper,
@@ -113,9 +116,10 @@ FlarkMarkdownParseResult _mapNativeResult(
   final mappedBlockRanges = [
     for (final block in renderBlocks) _mapRange(mapper, block.range),
   ];
+  final mappedBlockRangeIndex = _FlarkSourceRangeIndex(mappedBlockRanges);
   final referenceDefinitionRanges = _referenceDefinitionRanges(
     request.markdown,
-  ).where((range) => !_overlapsAny(range, mappedBlockRanges)).toList();
+  ).where((range) => !mappedBlockRangeIndex.overlaps(range)).toList();
   final rawHtmlRanges = [
     for (final block in native.blocks)
       if (_blockType(block.type) == 'htmlBlock') _mapRange(mapper, block.range),
@@ -146,7 +150,7 @@ FlarkMarkdownParseResult _mapNativeResult(
         request.markdown,
         mapper,
         block,
-        native.markerRanges,
+        mappedMarkerRanges,
       ))
         _mapRange(mapper, block.range),
   ];
@@ -156,7 +160,7 @@ FlarkMarkdownParseResult _mapNativeResult(
         request.markdown,
         mapper,
         block,
-        native.markerRanges,
+        mappedMarkerRanges,
       ))
         _mapRange(mapper, block.range),
   ];
@@ -166,15 +170,23 @@ FlarkMarkdownParseResult _mapNativeResult(
         request.markdown,
         mapper,
         block,
-        native.markerRanges,
+        mappedMarkerRanges,
       ))
         _mapRange(mapper, block.range),
   ];
+  final markerOnlyBlockRangeKeys = {
+    for (final range in [
+      ...markerOnlyBlockquoteRanges,
+      ...markerOnlyHeadingRanges,
+      ...markerOnlyListItemRanges,
+    ])
+      _rangeKey(range),
+  };
   final codeFenceOpeningLineBreakRanges = _codeFenceOpeningLineBreakRanges(
     request.markdown,
     mapper,
     renderBlocks,
-    native.markerRanges,
+    mappedMarkerRanges,
   );
   final codeFenceOpeningMarkerRanges = _codeFenceOpeningMarkerRanges(
     request.markdown,
@@ -190,10 +202,10 @@ FlarkMarkdownParseResult _mapNativeResult(
     request.markdown,
     mapper,
     renderBlocks,
-    native.markerRanges,
+    mappedMarkerRanges,
   );
   final nativeMarkdownMarkerRanges =
-      _nativeMarkdownMarkerHiddenRanges(mapper, native.markerRanges, [
+      _nativeMarkdownMarkerHiddenRanges(mappedMarkerRanges, [
         ...referenceDefinitionRanges,
         ...rawHtmlRanges,
         for (final range in nativeInlineHiddenRanges) range.sourceRange,
@@ -255,14 +267,13 @@ FlarkMarkdownParseResult _mapNativeResult(
   final hiddenSourceRanges = [
     for (final hiddenRange in hiddenRanges) hiddenRange.sourceRange,
   ];
+  final hiddenSourceRangeIndex = _FlarkSourceRangeIndex(hiddenSourceRanges);
   final replacementRanges =
       [
             for (final range in native.replacementRanges)
               if (range.text.isNotEmpty) _mapReplacementRange(mapper, range),
           ]
-          .where(
-            (range) => !_overlapsAny(range.sourceRange, hiddenSourceRanges),
-          )
+          .where((range) => !hiddenSourceRangeIndex.overlaps(range.sourceRange))
           .toList(growable: false);
   final blocks =
       [
@@ -277,24 +288,9 @@ FlarkMarkdownParseResult _mapNativeResult(
               block,
               children: _tableChildBlocks(mapper, block, native.blocks),
               overrideType:
-                  _isMarkerOnlyNativeBlockquote(
-                        request.markdown,
-                        mapper,
-                        block,
-                        native.markerRanges,
-                      ) ||
-                      _isMarkerOnlyNativeHeading(
-                        request.markdown,
-                        mapper,
-                        block,
-                        native.markerRanges,
-                      ) ||
-                      _isMarkerOnlyNativeListItem(
-                        request.markdown,
-                        mapper,
-                        block,
-                        native.markerRanges,
-                      )
+                  markerOnlyBlockRangeKeys.contains(
+                    _rangeKey(_mapRange(mapper, block.range)),
+                  )
                   ? 'paragraph'
                   : null,
             ),
@@ -427,6 +423,7 @@ List<_SyntheticListItem> _syntheticListItems(
     for (final block in renderBlocks)
       if (_blockType(block.type) == 'listItem') _mapRange(mapper, block.range),
   ];
+  final nativeListItemRangeIndex = _FlarkSourceRangeIndex(nativeListItemRanges);
   final items = <_SyntheticListItem>[];
   var lineStart = 0;
   while (lineStart <= markdown.length) {
@@ -437,9 +434,7 @@ List<_SyntheticListItem> _syntheticListItems(
     final match = _listItemMarkerPattern.firstMatch(line);
     if (match != null) {
       final sourceRange = FlarkSourceRange(lineStart, lineEnd);
-      final hasNativeListItem = nativeListItemRanges.any(
-        (range) => range.intersects(sourceRange),
-      );
+      final hasNativeListItem = nativeListItemRangeIndex.overlaps(sourceRange);
       if (!hasNativeListItem) {
         final orderedMarker = match.group(1);
         final checkedMarker = match.group(3);
@@ -477,16 +472,11 @@ bool _isMarkerOnlyNativeBlockquote(
   String markdown,
   FlarkUtf8Utf16Mapper mapper,
   NativeComrakBlockSpan block,
-  List<NativeComrakRange> markerRanges,
+  List<FlarkSourceRange> markerRanges,
 ) {
   if (_blockType(block.type) != 'blockquote') return false;
   final sourceRange = _mapRange(mapper, block.range);
-  if (_nativeMarkerExtendsBlockSource(
-    markdown,
-    mapper,
-    sourceRange,
-    markerRanges,
-  )) {
+  if (_nativeMarkerExtendsBlockSource(markdown, sourceRange, markerRanges)) {
     return false;
   }
   return _isMarkerOnlyBlockquoteSource(markdown, sourceRange);
@@ -494,12 +484,12 @@ bool _isMarkerOnlyNativeBlockquote(
 
 bool _nativeMarkerExtendsBlockSource(
   String markdown,
-  FlarkUtf8Utf16Mapper mapper,
   FlarkSourceRange blockRange,
-  List<NativeComrakRange> markerRanges,
+  List<FlarkSourceRange> markerRanges,
 ) {
   for (final markerRange in markerRanges) {
-    final marker = _mapRange(mapper, markerRange);
+    final marker = markerRange;
+    if (marker.start > blockRange.start) break;
     if (marker.start > blockRange.start || marker.end <= blockRange.end) {
       continue;
     }
@@ -537,16 +527,11 @@ bool _isMarkerOnlyNativeHeading(
   String markdown,
   FlarkUtf8Utf16Mapper mapper,
   NativeComrakBlockSpan block,
-  List<NativeComrakRange> markerRanges,
+  List<FlarkSourceRange> markerRanges,
 ) {
   if (_blockType(block.type) != 'heading') return false;
   final sourceRange = _mapRange(mapper, block.range);
-  if (_nativeMarkerExtendsBlockSource(
-    markdown,
-    mapper,
-    sourceRange,
-    markerRanges,
-  )) {
+  if (_nativeMarkerExtendsBlockSource(markdown, sourceRange, markerRanges)) {
     return false;
   }
   return _isMarkerOnlyHeadingSource(markdown, sourceRange);
@@ -575,16 +560,11 @@ bool _isMarkerOnlyNativeListItem(
   String markdown,
   FlarkUtf8Utf16Mapper mapper,
   NativeComrakBlockSpan block,
-  List<NativeComrakRange> markerRanges,
+  List<FlarkSourceRange> markerRanges,
 ) {
   if (_blockType(block.type) != 'listItem') return false;
   final sourceRange = _mapRange(mapper, block.range);
-  if (_nativeMarkerExtendsBlockSource(
-    markdown,
-    mapper,
-    sourceRange,
-    markerRanges,
-  )) {
+  if (_nativeMarkerExtendsBlockSource(markdown, sourceRange, markerRanges)) {
     return false;
   }
   return _isMarkerOnlyListItemSource(markdown, sourceRange);
@@ -610,14 +590,14 @@ bool _isMarkerOnlyListItemLine(String text) {
 }
 
 List<FlarkMarkdownHiddenRange> _nativeMarkdownMarkerHiddenRanges(
-  FlarkUtf8Utf16Mapper mapper,
-  List<NativeComrakRange> markerRanges,
+  List<FlarkSourceRange> markerRanges,
   List<FlarkSourceRange> excludedRanges,
 ) {
   final hiddenRanges = <FlarkMarkdownHiddenRange>[];
+  final excludedRangeIndex = _FlarkSourceRangeIndex(excludedRanges);
   for (final range in markerRanges) {
-    final sourceRange = _mapRange(mapper, range);
-    if (_overlapsAny(sourceRange, excludedRanges)) continue;
+    final sourceRange = range;
+    if (excludedRangeIndex.overlaps(sourceRange)) continue;
     hiddenRanges.add(
       FlarkMarkdownHiddenRange(
         kind: FlarkMarkdownHiddenRangeKind.markdownMarker,
@@ -633,12 +613,9 @@ List<FlarkSourceRange> _codeFenceOpeningLineBreakRanges(
   String markdown,
   FlarkUtf8Utf16Mapper mapper,
   List<NativeComrakBlockSpan> renderBlocks,
-  List<NativeComrakRange> nativeMarkerRanges,
+  List<FlarkSourceRange> markerRanges,
 ) {
   final hiddenRanges = <FlarkSourceRange>[];
-  final markerRanges = [
-    for (final range in nativeMarkerRanges) _mapRange(mapper, range),
-  ];
 
   for (final block in renderBlocks) {
     if (_blockType(block.type) != 'codeBlock') continue;
@@ -648,11 +625,15 @@ List<FlarkSourceRange> _codeFenceOpeningLineBreakRanges(
     final newline = markdown.indexOf('\n', range.start);
     if (newline < 0 || newline >= range.end) continue;
 
-    final hasOpeningFenceMarker = markerRanges.any((marker) {
-      return marker.start >= range.start &&
-          marker.start < newline &&
-          marker.end <= newline;
-    });
+    var hasOpeningFenceMarker = false;
+    for (final marker in markerRanges) {
+      if (marker.start < range.start) continue;
+      if (marker.start >= newline) break;
+      if (marker.end <= newline) {
+        hasOpeningFenceMarker = true;
+        break;
+      }
+    }
     if (!hasOpeningFenceMarker) continue;
 
     final lineBreakStart =
@@ -726,12 +707,9 @@ List<FlarkSourceRange> _codeFenceClosingLineRanges(
   String markdown,
   FlarkUtf8Utf16Mapper mapper,
   List<NativeComrakBlockSpan> renderBlocks,
-  List<NativeComrakRange> nativeMarkerRanges,
+  List<FlarkSourceRange> markerRanges,
 ) {
   final hiddenRanges = <FlarkSourceRange>[];
-  final markerRanges = [
-    for (final range in nativeMarkerRanges) _mapRange(mapper, range),
-  ];
 
   for (final block in renderBlocks) {
     if (_blockType(block.type) != 'codeBlock') continue;
@@ -744,6 +722,7 @@ List<FlarkSourceRange> _codeFenceClosingLineRanges(
     FlarkSourceRange? closingMarker;
     for (final marker in markerRanges) {
       if (marker.start <= openingNewline) continue;
+      if (marker.start >= range.end) break;
       if (marker.start < range.start || marker.end > range.end) continue;
       if (closingMarker == null || marker.start > closingMarker.start) {
         closingMarker = marker;
@@ -1276,8 +1255,47 @@ bool _isFootnoteShortcutReference(
   return RegExp(r'^\[\^[^\]\n]+\]$').hasMatch(source);
 }
 
-bool _overlapsAny(FlarkSourceRange range, Iterable<FlarkSourceRange> ranges) {
-  return ranges.any(
-    (other) => range.start < other.end && other.start < range.end,
-  );
+int _compareSourceRanges(FlarkSourceRange left, FlarkSourceRange right) {
+  final startCompare = left.start.compareTo(right.start);
+  if (startCompare != 0) return startCompare;
+  return left.end.compareTo(right.end);
+}
+
+String _rangeKey(FlarkSourceRange range) {
+  return '${range.start}:${range.end}';
+}
+
+final class _FlarkSourceRangeIndex {
+  _FlarkSourceRangeIndex(Iterable<FlarkSourceRange> ranges)
+    : _ranges = List<FlarkSourceRange>.unmodifiable(
+        <FlarkSourceRange>[...ranges]..sort(_compareSourceRanges),
+      );
+
+  final List<FlarkSourceRange> _ranges;
+
+  bool overlaps(FlarkSourceRange range) {
+    if (_ranges.isEmpty) return false;
+    var index = _lastRangeStartingBefore(range.end);
+    while (index >= 0) {
+      final other = _ranges[index];
+      if (other.end <= range.start) return false;
+      if (range.start < other.end && other.start < range.end) return true;
+      index -= 1;
+    }
+    return false;
+  }
+
+  int _lastRangeStartingBefore(int offset) {
+    var low = 0;
+    var high = _ranges.length;
+    while (low < high) {
+      final middle = (low + high) >> 1;
+      if (_ranges[middle].start < offset) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    return low - 1;
+  }
 }

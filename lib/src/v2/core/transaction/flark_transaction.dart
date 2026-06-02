@@ -179,14 +179,9 @@ final class FlarkTransaction {
         continue;
       }
 
-      if (range.isCollapsed) {
-        return switch (affinity) {
-          FlarkMapAffinity.upstream => start + delta,
-          FlarkMapAffinity.downstream =>
-            start + delta + operation.insertedLength,
-        };
-      }
-
+      // Offsets inside a replacement clamp to the replacement edge matching
+      // the requested affinity. Insertions are the collapsed-range form of the
+      // same rule.
       return switch (affinity) {
         FlarkMapAffinity.upstream => start + delta,
         FlarkMapAffinity.downstream => start + delta + operation.insertedLength,
