@@ -1,0 +1,37 @@
+#ifndef FLARK_COMRAK_BRIDGE_H_
+#define FLARK_COMRAK_BRIDGE_H_
+
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct FlarkComrakResponse {
+  uint32_t abi_version;
+  uint32_t revision;
+  uint16_t status_code;
+  uint16_t reserved;
+  uint8_t* payload_ptr;
+  uint32_t payload_len;
+} FlarkComrakResponse;
+
+uint32_t flark_comrak_bridge_version(void);
+
+uint8_t* flark_comrak_input_alloc(uint32_t len);
+
+void flark_comrak_input_free(uint8_t* ptr, uint32_t len);
+
+FlarkComrakResponse* flark_comrak_parse(
+    uint32_t revision,
+    uint8_t profile,
+    const uint8_t* text_ptr,
+    uint32_t text_len);
+
+void flark_comrak_response_free(FlarkComrakResponse* response);
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
+
+#endif  // FLARK_COMRAK_BRIDGE_H_

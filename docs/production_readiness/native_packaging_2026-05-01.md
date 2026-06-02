@@ -1,10 +1,10 @@
-# Sovereign Native Packaging Plan
+# Flark Native Packaging Plan
 
 Status date: 2026-05-01
 
 ## Decision
 
-Sovereign remains a Dart/Flutter FFI package, not a Flutter plugin, for this
+Flark remains a Dart/Flutter FFI package, not a Flutter plugin, for this
 release-planning pass.
 
 Reasons:
@@ -27,7 +27,7 @@ Reasons:
 
 The hook emits the asset ID:
 
-- `package:sovereign_editor/widgets/sovereign/engine/native_comrak_ffi.dart`
+- `package:flark/src/v2/native/native_comrak_ffi.dart`
 
 This matches the Dart library that owns the native bridge contract.
 
@@ -57,11 +57,13 @@ Unsupported targets:
 
 Do not introduce `ffigen` in this phase.
 
-The C ABI currently has one struct and three exported functions:
+The C ABI currently has one struct and five exported functions:
 
-- `sovereign_comrak_bridge_version`
-- `sovereign_comrak_parse`
-- `sovereign_comrak_response_free`
+- `flark_comrak_bridge_version`
+- `flark_comrak_input_alloc`
+- `flark_comrak_input_free`
+- `flark_comrak_parse`
+- `flark_comrak_response_free`
 
 The hand-written Dart FFI binding is smaller than a generated binding and is
 covered by the native bridge tests. Revisit `ffigen` only if the ABI grows,
@@ -73,22 +75,22 @@ the Rust header.
 Hook-managed dynamic artifacts are copied to the hook output directory, for
 example:
 
-- `.dart_tool/hooks_runner/shared/sovereign_editor/build/<checksum>/sovereign_comrak_bridge/libsovereign_comrak_bridge.dylib`
-- `.dart_tool/hooks_runner/shared/sovereign_editor/build/<checksum>/sovereign_comrak_bridge/libsovereign_comrak_bridge.so`
+- `.dart_tool/hooks_runner/shared/flark/build/<checksum>/flark_comrak_bridge/libflark_comrak_bridge.dylib`
+- `.dart_tool/hooks_runner/shared/flark/build/<checksum>/flark_comrak_bridge/libflark_comrak_bridge.so`
 
 Developer scripts still produce local artifacts used by white-box tests and
 manual mobile packaging:
 
-- host: `native/comrak_bridge/target/release/libsovereign_comrak_bridge.dylib`
-- host: `native/comrak_bridge/target/release/libsovereign_comrak_bridge.so`
-- Android: `native/comrak_bridge/dist/android/jniLibs/<abi>/libsovereign_comrak_bridge.so`
-- iOS: `native/comrak_bridge/dist/ios/sovereign_comrak_bridge.xcframework`
+- host: `native/comrak_bridge/target/release/libflark_comrak_bridge.dylib`
+- host: `native/comrak_bridge/target/release/libflark_comrak_bridge.so`
+- Android: `native/comrak_bridge/dist/android/jniLibs/<abi>/libflark_comrak_bridge.so`
+- iOS: `native/comrak_bridge/dist/ios/flark_comrak_bridge.xcframework`
 
 ## Example Harness
 
 `example/` is the package's mobile integration harness. It depends on
-`sovereign_editor` through `path: ..`, imports only the top-level public barrel,
-and exposes both `SovereignEditor` and `SovereignMarkdownView`.
+`flark` through `path: ..`, imports only the top-level public barrel,
+and exposes `FlarkMarkdownEditor` with `FlarkMarkdownPreview`.
 
 Android verification:
 
@@ -97,8 +99,8 @@ Android verification:
 ```
 
 This runs the example Gradle task
-`:app:verifySovereignComrakNativeLibs`, which builds the debug APK and fails
-unless the APK contains `lib/**/libsovereign_comrak_bridge.so`.
+`:app:verifyFlarkComrakNativeLibs`, which builds the debug APK and fails
+unless the APK contains `lib/**/libflark_comrak_bridge.so`.
 
 iOS verification:
 
@@ -106,33 +108,33 @@ iOS verification:
 ./scripts/verify_example_packaging.sh --ios
 ```
 
-This checks that `Runner/SovereignComrakAnchor.c` references the three exported
+This checks that `Runner/FlarkComrakAnchor.c` references the exported
 bridge symbols, that the Runner target compiles that source file, that the
-project links `sovereign_comrak_bridge.xcframework`, and that Xcode can parse
+project links `flark_comrak_bridge.xcframework`, and that Xcode can parse
 the workspace. Use `--strict-ios` when the built XCFramework must already exist.
 
 ## Consumer Integration
 
 For macOS, Linux, and Android app builds:
 
-1. Depend on `sovereign_editor`.
+1. Depend on `flark`.
 2. Ensure the build machine has Rust available on `PATH`.
 3. For Android, ensure `ANDROID_NDK_HOME`, `ANDROID_NDK`, `ANDROID_NDK_ROOT`,
    `ANDROID_NDK_LATEST_HOME`, or `ANDROID_HOME` points to an installed NDK.
 4. Build the app normally. The Dart/Flutter build hook compiles and bundles the
    native library as a code asset.
-5. Optionally call `preflightNativeComrakBridge()` before constructing editor
-   instances to surface bridge-load diagnostics.
+5. Optionally call `FlarkNativeComrakParseBackend.preflight()` before
+   constructing editor instances to surface bridge-load diagnostics.
 
 For iOS app builds:
 
-1. Build `native/comrak_bridge/dist/ios/sovereign_comrak_bridge.xcframework`
+1. Build `native/comrak_bridge/dist/ios/flark_comrak_bridge.xcframework`
    with `./scripts/build_comrak_ios.sh`.
 2. Link the XCFramework in the consuming app.
-3. Include an anchor C file that references the three exported bridge symbols so
+3. Include an anchor C file that references the exported bridge symbols so
    the static archive members are not stripped.
-4. Rebuild/reinstall the app and use `preflightNativeComrakBridge()` for
-   diagnostics.
+4. Rebuild/reinstall the app and use
+   `FlarkNativeComrakParseBackend.preflight()` for diagnostics.
 
 ## References
 

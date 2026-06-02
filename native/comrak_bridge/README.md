@@ -1,21 +1,27 @@
-# Sovereign Comrak Bridge
+# Flark Comrak Bridge
 
-This crate hosts the native parser bridge for Sovereign's CommonMark adapter.
+This crate hosts the native parser bridge for Flark's CommonMark adapter.
 
 Developer workflow:
 
 - after changing Rust code/ABI here, run:
   `./scripts/build_comrak_all.sh`
 - if you only need one platform artifact, use:
-  `build_comrak_ios.sh`, `build_comrak_android.sh`, or `build_comrak_all.sh --host-only`
+  `build_comrak_ios.sh`, `build_comrak_android.sh`,
+  `build_comrak_all.sh --host-only`, or `build_comrak_all.sh --wasm-only`
 
 Current state:
 
-- ABI scaffold is wired (`sovereign_comrak_bridge_version`,
-  `sovereign_comrak_parse`, `sovereign_comrak_response_free`).
+- ABI scaffold is wired (`flark_comrak_bridge_version`,
+  `flark_comrak_input_alloc`, `flark_comrak_input_free`,
+  `flark_comrak_parse`, `flark_comrak_response_free`).
 - Parse uses `comrak` and returns JSON payloads with block spans, inline spans,
   block + inline delimiter marker ranges, exclusion ranges, and diagnostics.
-- Dart wiring lives in `lib/widgets/sovereign/engine/native_comrak_ffi.dart`.
+- Dart wiring lives in `lib/src/v2/native/native_comrak_ffi.dart` for FFI
+  targets and `lib/src/v2/native/native_comrak_bridge_factory_web.dart` for
+  browser WASM.
+- The browser artifact is staged at
+  `lib/assets/wasm/flark_comrak_bridge.wasm`.
 
 Planned deliverables:
 

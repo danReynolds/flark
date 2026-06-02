@@ -9,7 +9,7 @@ run_native_build=1
 
 usage() {
   cat <<'EOF'
-Run the Sovereign release-readiness gate.
+Run the Flark release-readiness gate.
 
 Usage:
   ./scripts/verify_release.sh [options]
@@ -71,6 +71,7 @@ run dart doc --dry-run
 run_in_dir "$REPO_ROOT/example" flutter pub get
 run_in_dir "$REPO_ROOT/example" flutter analyze
 run_in_dir "$REPO_ROOT/example" flutter test test --reporter compact
+run ./scripts/verify_web_adapter_ci.sh
 
 if [ "$run_native_build" -eq 1 ]; then
   run ./scripts/build_comrak_all.sh --host-only
@@ -87,4 +88,4 @@ else
 fi
 
 echo
-echo "Sovereign release-readiness gate passed."
+echo "Flark release-readiness gate passed."

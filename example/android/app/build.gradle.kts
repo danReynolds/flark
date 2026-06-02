@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "dev.sovereign.editor.example"
+    namespace = "dev.flark.editor.example"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -20,7 +20,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "dev.sovereign.editor.example"
+        applicationId = "dev.flark.editor.example"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -38,13 +38,13 @@ flutter {
     source = "../.."
 }
 
-tasks.register("verifySovereignComrakNativeLibs") {
+tasks.register("verifyFlarkComrakNativeLibs") {
     group = "verification"
-    description = "Builds the debug APK and checks for the Sovereign native parser library."
+    description = "Builds the debug APK and checks for the Flark native parser library."
     dependsOn("assembleDebug")
 
     doLast {
-        val bridgeLibraryName = "libsovereign_comrak_bridge.so"
+        val bridgeLibraryName = "libflark_comrak_bridge.so"
         val candidates = listOf(
             layout.buildDirectory.file("outputs/apk/debug/app-debug.apk").get().asFile,
             rootProject.layout.projectDirectory.file(
@@ -58,7 +58,7 @@ tasks.register("verifySovereignComrakNativeLibs") {
         }.files
 
         check(packagedBridgeFiles.isNotEmpty()) {
-            "Sovereign native parser library was not packaged in ${apk.path}."
+            "Flark native parser library was not packaged in ${apk.path}."
         }
 
         logger.lifecycle(

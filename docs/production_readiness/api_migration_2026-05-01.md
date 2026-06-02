@@ -1,4 +1,4 @@
-# Sovereign Phase 1 API Migration Notes
+# Flark Phase 1 API Migration Notes
 
 Status date: 2026-05-01
 
@@ -10,7 +10,7 @@ standalone package.
 Use the top-level library for app code:
 
 ```dart
-import 'package:sovereign_editor/sovereign_editor.dart';
+import 'package:flark/flark.dart';
 ```
 
 As of this cleanup pass, there are no supported secondary public libraries.
@@ -19,12 +19,12 @@ unless a future release explicitly documents a secondary library.
 
 ## Theme Rename
 
-The public markdown theme now uses Sovereign vocabulary.
+The public markdown theme now uses Flark vocabulary.
 
 Before:
 
 ```dart
-import 'package:sovereign_editor/theme/dune_markdown_theme.dart';
+import 'package:flark/theme/dune_markdown_theme.dart';
 
 final theme = DuneMarkdownTheme.dune();
 ```
@@ -32,17 +32,17 @@ final theme = DuneMarkdownTheme.dune();
 After:
 
 ```dart
-import 'package:sovereign_editor/sovereign_editor.dart';
+import 'package:flark/flark.dart';
 
-final theme = SovereignMarkdownTheme.standard();
+final theme = FlarkMarkdownTheme.standard();
 ```
 
 For custom colors or typography, continue to use `copyWith` and pass the result
-through `SovereignEditorThemeData(markdownTheme: ...)`.
+through `FlarkEditorThemeData(markdownTheme: ...)`.
 
 ## Removed Top-Level Barrel Exports
 
-The top-level `sovereign_editor.dart` barrel no longer exports implementation
+The top-level `flark.dart` barrel no longer exports implementation
 internals:
 
 - parser implementation adapters;
@@ -70,7 +70,7 @@ remain implementation details.
 
 `UndoStack` and `EditDiffer` moved behind `lib/src`.
 
-App code should use `SovereignController`, `SovereignMarkdownCommands`, and
+App code should use `FlarkController`, `FlarkMarkdownCommands`, and
 controller undo/redo behavior rather than constructing edit-history internals.
 White-box package tests may import `src` while the implementation is still
 being refactored, but that is not an app compatibility contract.
@@ -85,7 +85,7 @@ Several presentation helpers also moved behind `lib/src`:
 - read-only task-checkbox overlay helpers.
 
 These were never part of the supported app-facing API. App code should continue
-to compose `SovereignEditor` and `SovereignMarkdownView` instead of importing
+to compose `FlarkEditor` and `FlarkMarkdownView` instead of importing
 their render helpers directly.
 
 ## Command Implementation Helpers
@@ -93,21 +93,21 @@ their render helpers directly.
 Command implementation helpers moved behind `lib/src`, including block, inline,
 fence, link, transaction, range, selection, and command-context helpers.
 
-App code should use `SovereignMarkdownCommands`,
-`SovereignController.commands`, and the public command model types instead of
+App code should use `FlarkMarkdownCommands`,
+`FlarkController.commands`, and the public command model types instead of
 deep-importing command implementation files.
 
 ## Syntax Parse Scheduler
 
 `SyntaxParseScheduler` moved behind `lib/src`. App code should use
-`SovereignController`, `SyntaxEngine`, and the syntax request/snapshot
+`FlarkController`, `SyntaxEngine`, and the syntax request/snapshot
 contracts rather than coordinating parse scheduling directly.
 
 ## Syntax Engine Factory
 
 `SyntaxEngineFactory` moved behind `lib/src`. App code should rely on the
-default `SovereignController` engine wiring or pass a custom public
-`SyntaxEngine` into `SovereignController`/`SovereignMarkdownView`.
+default `FlarkController` engine wiring or pass a custom public
+`SyntaxEngine` into `FlarkController`/`FlarkMarkdownView`.
 
 ## Parser Backend and Adapter Implementations
 
@@ -131,16 +131,16 @@ including:
 - `BlockParser`;
 - `FencedCodeScanner`;
 - `MarkdownMarkerGrammar`;
-- `SovereignMarkdownMarkers`;
-- `SovereignStyleScanner`;
-- `SovereignGeometryScanner`;
-- `SovereignCodeHighlighter`;
+- `FlarkMarkdownMarkers`;
+- `FlarkStyleScanner`;
+- `FlarkGeometryScanner`;
+- `FlarkCodeHighlighter`;
 - `Projector`.
 
-App code should use `SovereignController`, `SovereignEditor`,
-`SovereignMarkdownView`, public syntax snapshots, and public model types rather
+App code should use `FlarkController`, `FlarkEditor`,
+`FlarkMarkdownView`, public syntax snapshots, and public model types rather
 than deep-importing scanner/parser helpers. Package tests may still import
-these through `package:sovereign_editor/src/...` when they intentionally verify
+these through `package:flark/src/...` when they intentionally verify
 white-box behavior.
 
 ## Core Service, Rendering, and Pipeline Internals
@@ -155,11 +155,11 @@ Core implementation modules moved behind `lib/src`, including:
 - syntax projection, prediction, and selection-mask helpers;
 - markdown line, fence, indented-code, table, and navigation services.
 
-App code should continue to use `SovereignController`, `SovereignEditor`,
-`SovereignMarkdownView`, `SovereignMarkdownCommands`, public theme types, and
+App code should continue to use `FlarkController`, `FlarkEditor`,
+`FlarkMarkdownView`, `FlarkMarkdownCommands`, public theme types, and
 the public syntax/model contracts rather than deep-importing core services.
 White-box package tests may import these through
-`package:sovereign_editor/src/...`.
+`package:flark/src/...`.
 
 ## Controller and Editor Private Helpers
 
@@ -172,14 +172,14 @@ Controller/editor private helper files moved behind `lib/src`, including:
 - editor inline-actions and task-checkbox overlay part files.
 
 These files are not supported app-facing libraries. App code should use
-`SovereignController`, `SovereignEditor`, and `SovereignMarkdownView` through
-the top-level `sovereign_editor.dart` library.
+`FlarkController`, `FlarkEditor`, and `FlarkMarkdownView` through
+the top-level `flark.dart` library.
 
 ## Removed App Palette Helper
 
 The extracted package no longer exposes the old app-level `AppColors` helper.
-Use `SovereignMarkdownTheme.standard().copyWith(...)`,
-`SovereignEditorThemeData`, and the typed editor theme models instead.
+Use `FlarkMarkdownTheme.standard().copyWith(...)`,
+`FlarkEditorThemeData`, and the typed editor theme models instead.
 
 ## Temporarily Retained Model Types
 

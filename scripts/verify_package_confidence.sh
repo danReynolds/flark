@@ -11,7 +11,7 @@ run_benchmarks=0
 
 usage() {
   cat <<'EOF'
-Run the Sovereign editor package confidence gate (fast local maintenance checks).
+Run the Flark editor package confidence gate (fast local maintenance checks).
 
 Usage:
   ./scripts/verify_package_confidence.sh [options]
@@ -57,25 +57,43 @@ run_in_pkg() {
   )
 }
 
-echo "Sovereign package confidence gate"
+run_in_example() {
+  echo
+  echo "==> (cd example && $*)"
+  (
+    cd "$PKG_ROOT/example"
+    "$@"
+  )
+}
+
+echo "Flark package confidence gate"
 echo "Repo: $REPO_ROOT"
 echo "Package: $PKG_ROOT"
 
 run_in_pkg flutter analyze hook lib test
 
 # High-signal regression suites (fast enough for local confidence).
-run_in_pkg flutter test test/widgets/sovereign/predictive_inline_markers_test.dart
-run_in_pkg flutter test test/widgets/sovereign/engine/controller_engine_wiring_test.dart
-run_in_pkg flutter test test/widgets/sovereign/engine/syntax_sync_coordinator_regression_test.dart
-run_in_pkg flutter test test/widgets/sovereign/code_fence_exit_test.dart
-run_in_pkg flutter test test/widgets/sovereign/list_key_integration_test.dart
-run_in_pkg flutter test test/widgets/sovereign/task_checkbox_interaction_test.dart
-run_in_pkg flutter test test/widgets/sovereign/link_actions_overlay_test.dart
-run_in_pkg flutter test test/widgets/sovereign/image_actions_overlay_test.dart
+run_in_pkg flutter test test/v2/core
+run_in_pkg flutter test test/v2/markdown
+run_in_pkg flutter test test/v2/projection
+run_in_pkg flutter test test/v2/render_plan
+run_in_pkg flutter test test/v2/flutter/flark_flutter_controller_test.dart
+run_in_pkg flutter test test/v2/flutter/flark_markdown_surface_test.dart
+run_in_pkg flutter test test/v2/flutter/flark_markdown_input_policy_contract_test.dart
+run_in_pkg flutter test test/v2/flutter/flark_live_rendered_transition_matrix_test.dart
+run_in_pkg flutter test test/v2/flutter/flark_live_rendered_visual_layout_test.dart
+run_in_pkg flutter test test/v2/flutter/flark_live_rendered_editable_text_test.dart
+run_in_pkg flutter test test/v2/flutter/flark_read_only_preview_test.dart
+run_in_pkg flutter test test/v2/flutter/flark_render_plan_overlay_controls_test.dart
+run_in_pkg flutter test test/v2/flutter/flark_v2_visual_golden_test.dart
+run_in_pkg flutter test test/v2/flutter/flark_markdown_web_smoke_test.dart -d chrome --reporter compact
+run_in_example flutter test test/widget_test.dart --reporter compact
 
 if [ "$run_native" -eq 1 ]; then
-  run_in_pkg flutter test test/widgets/sovereign/engine/native_comrak_parse_backend_test.dart
-  run_in_pkg flutter test test/widgets/sovereign/engine/native_commonmark_upstream_parity_test.dart
+  run_in_pkg flutter test test/v2/native/flark_native_comrak_bridge_test.dart
+  run_in_pkg flutter test test/v2/packaging/flark_v2_native_packaging_contract_test.dart
+  run_in_pkg flutter test test/v2/markdown/flark_native_comrak_parse_backend_test.dart
+  run_in_pkg flutter test test/v2/markdown/flark_v2_native_upstream_contract_test.dart
 fi
 
 if [ "$run_full_suite" -eq 1 ]; then
@@ -87,4 +105,4 @@ if [ "$run_benchmarks" -eq 1 ]; then
 fi
 
 echo
-echo "Sovereign package confidence gate passed."
+echo "Flark package confidence gate passed."

@@ -1,8 +1,8 @@
-# Sovereign Example
+# Flark Example
 
 This Flutter app is the package's mobile integration harness. It depends on the
 local package through `path: ..`, imports only
-`package:sovereign_editor/sovereign_editor.dart`, and exercises both the
+`package:flark/flark.dart`, and exercises both the
 editable editor and read-only preview surfaces.
 
 Run it locally:
@@ -19,7 +19,7 @@ Verify Android native packaging:
 ```
 
 That command builds the debug APK through Gradle and fails unless the packaged
-APK contains `lib/**/libsovereign_comrak_bridge.so`.
+APK contains `lib/**/libflark_comrak_bridge.so`.
 
 Verify iOS project wiring:
 
@@ -28,8 +28,8 @@ Verify iOS project wiring:
 ```
 
 The iOS harness links the package XCFramework from
-`../native/comrak_bridge/dist/ios/sovereign_comrak_bridge.xcframework` and
-builds `Runner/SovereignComrakAnchor.c` into the app target so the static bridge
+`../native/comrak_bridge/dist/ios/flark_comrak_bridge.xcframework` and
+builds `Runner/FlarkComrakAnchor.c` into the app target so the static bridge
 symbols remain visible to `DynamicLibrary.process()`.
 
 Build the iOS XCFramework before a real device or simulator build:

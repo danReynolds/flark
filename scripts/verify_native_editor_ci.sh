@@ -9,7 +9,7 @@ run_android_verify=0
 
 usage() {
   cat <<'EOF'
-Verify the Sovereign native editor end-to-end CI gate locally.
+Verify the Flark native editor end-to-end CI gate locally.
 
 Usage:
   ./scripts/verify_native_editor_ci.sh [options]
@@ -66,17 +66,16 @@ fi
 run_in_pkg flutter analyze \
   hook \
   lib \
-  test/widgets/sovereign/engine \
-  test/widgets/sovereign/predictive_inline_markers_test.dart
+  test/v2
 
-run_in_pkg flutter test test/widgets/sovereign/predictive_inline_markers_test.dart
-run_in_pkg flutter test test/widgets/sovereign/engine/controller_engine_wiring_test.dart
-run_in_pkg flutter test test/widgets/sovereign/engine/native_live_editing_regression_test.dart
-run_in_pkg flutter test test/widgets/sovereign/engine/native_commonmark_upstream_parity_test.dart
+run_in_pkg flutter test test/v2/native/flark_native_comrak_bridge_test.dart
+run_in_pkg flutter test test/v2/packaging/flark_v2_native_packaging_contract_test.dart
+run_in_pkg flutter test test/v2/markdown/flark_native_comrak_parse_backend_test.dart
+run_in_pkg flutter test test/v2/markdown/flark_v2_native_upstream_contract_test.dart
 
 if [ "$run_android_verify" -eq 1 ]; then
   run ./scripts/verify_example_packaging.sh --android
 fi
 
 echo
-echo "Sovereign native editor CI gate passed."
+echo "Flark native editor CI gate passed."

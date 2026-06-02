@@ -6,7 +6,7 @@ PACKAGE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CRATE_DIR="$PACKAGE_ROOT/native/comrak_bridge"
 ANDROID_JNI_OUTPUT="${ANDROID_JNI_OUTPUT:-$PACKAGE_ROOT/native/comrak_bridge/dist/android/jniLibs}"
 if [ ! -f "$CRATE_DIR/Cargo.toml" ]; then
-  echo "Could not locate sovereign comrak bridge Cargo.toml at $CRATE_DIR."
+  echo "Could not locate flark comrak bridge Cargo.toml at $CRATE_DIR."
   exit 1
 fi
 
@@ -136,9 +136,9 @@ build_target() {
       --release \
       --target "$triple"
 
-  local lib_src="$CRATE_DIR/target/$triple/release/libsovereign_comrak_bridge.so"
+  local lib_src="$CRATE_DIR/target/$triple/release/libflark_comrak_bridge.so"
   local lib_dst_dir="$ANDROID_JNI_OUTPUT/$abi"
-  local lib_dst="$lib_dst_dir/libsovereign_comrak_bridge.so"
+  local lib_dst="$lib_dst_dir/libflark_comrak_bridge.so"
 
   if [ ! -f "$lib_src" ]; then
     echo "Expected output missing: $lib_src"
