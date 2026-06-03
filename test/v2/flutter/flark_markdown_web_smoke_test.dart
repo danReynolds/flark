@@ -33,7 +33,10 @@ void main() {
   testWidgets('promoted v2 surfaces require Comrak by default on web', (
     tester,
   ) async {
-    final controller = FlarkFlutterController.fromMarkdown('# Web');
+    final controller = FlarkFlutterController.fromMarkdown(
+      '# Web',
+      parseDebounce: Duration.zero,
+    );
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
@@ -41,10 +44,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: Column(
           children: [
-            MarkdownEditor(
-              controller: controller,
-              parseDebounce: Duration.zero,
-            ),
+            MarkdownEditor(controller: controller),
             const Markdown(markdown: '# Preview', parseDebounce: Duration.zero),
           ],
         ),
@@ -63,7 +63,10 @@ void main() {
 
   testWidgets('promoted v2 surfaces render Comrak WASM plans', (tester) async {
     final backend = FlarkNativeComrakParseBackend.withNativeBridge();
-    final controller = FlarkFlutterController.fromMarkdown('# Web');
+    final controller = FlarkFlutterController.fromMarkdown(
+      '# Web',
+      parseBackend: backend,
+    );
     addTearDown(controller.dispose);
 
     final parseResult = await tester.runAsync(() async {
@@ -81,7 +84,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: MarkdownEditor(controller: controller, parseBackend: backend),
+        child: MarkdownEditor(controller: controller),
       ),
     );
     await tester.pump();

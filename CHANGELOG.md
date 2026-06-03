@@ -4,6 +4,25 @@
 
 Initial standalone `flark` package hardening release.
 
+API-shape changes (pre-publish, breaking):
+
+- The `FlarkFlutterController` now owns parsing. Configure `parseBackend`,
+  `parseProfile`, `parseDebounce`, and `onParseError` on the controller (or on
+  the `initialMarkdown`/`markdown` convenience constructors of `MarkdownEditor`
+  and `Markdown`). Passing these alongside a supplied `controller` now asserts —
+  one document is parsed by one parser, shared across all attached surfaces.
+  Added `ensureParsing()`, `configureParsing(...)`, `parseNow()`, and the
+  surface-attachment lifecycle (`attachParsingSurface`/`detachParsingSurface`).
+- `MarkdownEditor` and `Markdown` `profile`/`parseDebounce` are now nullable and
+  apply only to widget-owned controllers.
+- Unified the command surface: added `FlarkMarkdownShortcuts` with intent
+  builders (`toggleStrong()`, etc.) and a default accelerator map
+  (`FlarkMarkdownShortcuts.defaults()`), installed automatically via the new
+  `MarkdownEditor.useDefaultShortcuts` (Cmd/Ctrl + B/I/E and Cmd/Ctrl+Shift+X).
+  Keyboard shortcuts and toolbar helpers now drive the same commands.
+- Made `events` the single semantic observation model and added the typed
+  projections `FlarkFlutterController.markdownChanges` and `selectionChanges`.
+
 - Promoted the v2 source-first editor architecture:
   - canonical Markdown source document;
   - pure Dart runtime, transactions, commands, projection, and render plans;

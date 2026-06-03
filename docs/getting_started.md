@@ -28,10 +28,15 @@ Use this when the preview has its own source string.
 ## Shared State
 
 Use `FlarkFlutterController` when an editor, preview, toolbar, or save button
-needs the same document state.
+needs the same document state. The controller owns parsing — configure the
+parser on it, not on the widgets — and a single parser is shared across every
+attached surface.
 
 ```dart
-final controller = FlarkFlutterController.fromMarkdown(markdown);
+final controller = FlarkFlutterController.fromMarkdown(
+  markdown,
+  parseDebounce: const Duration(milliseconds: 40),
+);
 
 Row(
   children: [
@@ -41,7 +46,36 @@ Row(
 )
 ```
 
-Dispose app-owned controllers when the owning widget is disposed.
+Dispose app-owned controllers when the owning widget is disposed. Passing
+`parseBackend`, `parseProfile`, `parseDebounce`, or `onParseError` to a widget
+that already has a `controller` asserts; set them on the controller instead.
+
+## Observing Changes
+
+Observe `controller.events` for typed change events, or the convenience
+projections for the common cases:
+
+```dart
+controller.markdownChanges.listen(save);
+controller.selectionChanges.listen(updateToolbarState);
+```
+
+## Toolbar Commands and Shortcuts
+
+Toolbar buttons call command helpers on the controller; the same commands are
+bound to keyboard accelerators. `MarkdownEditor` installs a default map
+(Cmd/Ctrl + B/I/E, Cmd/Ctrl+Shift+X) via `useDefaultShortcuts`. Add or override
+bindings with `FlarkMarkdownShortcuts`:
+
+```dart
+MarkdownEditor(
+  controller: controller,
+  shortcuts: {
+    const SingleActivator(LogicalKeyboardKey.keyK, meta: true):
+        FlarkMarkdownShortcuts.toggleInlineCode(),
+  },
+)
+```
 
 ## Editing Modes
 

@@ -252,8 +252,6 @@ Future<void> _pumpTriptych(
               label: 'Source editor',
               child: MarkdownEditor(
                 controller: sourceController,
-                parseBackend: const _GoldenParseBackend(),
-                parseDebounce: Duration.zero,
                 editingMode: FlarkMarkdownEditingMode.source,
                 style: _editorStyle,
                 maxLines: 24,
@@ -266,8 +264,6 @@ Future<void> _pumpTriptych(
               label: 'Projected editor',
               child: MarkdownEditor(
                 controller: projectedController,
-                parseBackend: const _GoldenParseBackend(),
-                parseDebounce: Duration.zero,
                 editingMode: FlarkMarkdownEditingMode.projected,
                 style: _editorStyle,
                 maxLines: 24,
@@ -341,8 +337,6 @@ Future<void> _pumpLiveRenderedOnly(
         label: 'Live rendered editor',
         child: MarkdownEditor(
           controller: controller,
-          parseBackend: const _GoldenParseBackend(),
-          parseDebounce: Duration.zero,
           editingMode: FlarkMarkdownEditingMode.liveRendered,
           style: _editorStyle,
           maxLines: 28,
@@ -429,6 +423,8 @@ FlarkFlutterController _controller(String markdown) {
   return FlarkFlutterController.fromMarkdown(
     markdown,
     extensions: FlarkMarkdownEditingExtensions.standard(),
+    parseBackend: const _GoldenParseBackend(),
+    parseDebounce: Duration.zero,
   );
 }
 
@@ -539,8 +535,6 @@ final class _LiveEdgeCasePanel extends StatelessWidget {
             Expanded(
               child: MarkdownEditor(
                 controller: edgeCase.controller,
-                parseBackend: const _GoldenParseBackend(),
-                parseDebounce: Duration.zero,
                 editingMode: FlarkMarkdownEditingMode.liveRendered,
                 style: _editorStyle,
                 expands: true,

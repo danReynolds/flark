@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show BoxHeightStyle;
 
 import 'package:flutter/gestures.dart';
@@ -75,9 +76,6 @@ final class FlarkLiveRenderedEditableText extends StatefulWidget {
     this.style,
     this.cursorColor = const Color(0xFF006ADC),
     this.backgroundCursorColor = const Color(0x00000000),
-    this.parseBackend,
-    this.profile = FlarkMarkdownProfile.commonMarkGfm,
-    this.onParseError,
     this.minLines,
     this.maxLines,
     this.expands = false,
@@ -90,9 +88,6 @@ final class FlarkLiveRenderedEditableText extends StatefulWidget {
   final TextStyle? style;
   final Color cursorColor;
   final Color backgroundCursorColor;
-  final FlarkMarkdownParseBackend? parseBackend;
-  final FlarkMarkdownProfile profile;
-  final void Function(Object error, StackTrace stackTrace)? onParseError;
   final int? minLines;
   final int? maxLines;
   final bool expands;
@@ -136,47 +131,18 @@ final class _FlarkLiveRenderedEditableTextState
 
   @override
   Widget build(BuildContext context) {
-    return _FlarkImmediateParseScope(
-      parseBackend: widget.parseBackend,
-      profile: widget.profile,
-      onParseError: widget.onParseError,
-      child: _FlarkLiveRenderedBlockEditor(
-        controller: widget.controller,
-        focusNode: _focusNode,
-        style: widget.style,
-        cursorColor: widget.cursorColor,
-        backgroundCursorColor: widget.backgroundCursorColor,
-        minLines: widget.minLines,
-        maxLines: widget.maxLines,
-        expands: widget.expands,
-        autofocus: widget.autofocus,
-        shortcuts: widget.shortcuts,
-      ),
+    return _FlarkLiveRenderedBlockEditor(
+      controller: widget.controller,
+      focusNode: _focusNode,
+      style: widget.style,
+      cursorColor: widget.cursorColor,
+      backgroundCursorColor: widget.backgroundCursorColor,
+      minLines: widget.minLines,
+      maxLines: widget.maxLines,
+      expands: widget.expands,
+      autofocus: widget.autofocus,
+      shortcuts: widget.shortcuts,
     );
-  }
-}
-
-final class _FlarkImmediateParseScope extends InheritedWidget {
-  const _FlarkImmediateParseScope({
-    required this.profile,
-    required super.child,
-    this.parseBackend,
-    this.onParseError,
-  });
-
-  final FlarkMarkdownParseBackend? parseBackend;
-  final FlarkMarkdownProfile profile;
-  final void Function(Object error, StackTrace stackTrace)? onParseError;
-
-  static _FlarkImmediateParseScope? maybeOf(BuildContext context) {
-    return context.getInheritedWidgetOfExactType<_FlarkImmediateParseScope>();
-  }
-
-  @override
-  bool updateShouldNotify(_FlarkImmediateParseScope oldWidget) {
-    return oldWidget.parseBackend != parseBackend ||
-        oldWidget.profile != profile ||
-        oldWidget.onParseError != onParseError;
   }
 }
 
@@ -468,11 +434,7 @@ final class _FlarkProjectedEditableHostState
   }
 
   void _adoptImmediateMarkdownParse() {
-    _adoptImmediateMarkdownParseForControllerFromContext(
-      context,
-      widget.controller,
-      isMounted: () => mounted,
-    );
+    _adoptImmediateMarkdownParseForController(widget.controller);
   }
 
   void _applyProjectedSelection(FlarkSelection displaySelection) {
@@ -503,52 +465,18 @@ final class _FlarkProjectedEditableHostState
   }
 }
 
-void _adoptImmediateMarkdownParseForControllerFromContext(
-  BuildContext context,
-  FlarkFlutterController controller, {
-  required bool Function() isMounted,
-}) {
-  final scope = _FlarkImmediateParseScope.maybeOf(context);
-  _adoptImmediateMarkdownParseForController(
-    controller,
-    parseBackend: scope?.parseBackend,
-    profile: scope?.profile ?? FlarkMarkdownProfile.commonMarkGfm,
-    onError: scope?.onParseError,
-    isMounted: isMounted,
-  );
-}
-
+/// Requests an immediate authoritative parse of the controller's current
+/// revision, bypassing the debounce window.
+///
+/// Live-rendered block editing needs an authoritative render plan as soon as a
+/// structural edit lands. The controller owns the single parser, so this routes
+/// through [FlarkFlutterController.parseNow] rather than spinning up a second
+/// backend call. Parse errors are routed to the controller's configured
+/// `onParseError`.
 void _adoptImmediateMarkdownParseForController(
-  FlarkFlutterController controller, {
-  FlarkMarkdownParseBackend? parseBackend,
-  FlarkMarkdownProfile profile = FlarkMarkdownProfile.commonMarkGfm,
-  void Function(Object error, StackTrace stackTrace)? onError,
-  required bool Function() isMounted,
-}) {
-  final revision = controller.state.revision;
-  final markdown = controller.markdown;
-  _ignoreImmediateMarkdownParse(() async {
-    final backend =
-        parseBackend ?? FlarkNativeComrakParseBackend.requiredDefault();
-    final result = await backend.parse(
-      FlarkMarkdownParseRequest(
-        revision: revision,
-        markdown: markdown,
-        profile: profile,
-      ),
-    );
-    if (!isMounted()) return;
-    controller.applyParseResult(result);
-  }(), onError);
-}
-
-void _ignoreImmediateMarkdownParse(
-  Future<void> future,
-  void Function(Object error, StackTrace stackTrace)? onError,
+  FlarkFlutterController controller,
 ) {
-  future.catchError((Object error, StackTrace stackTrace) {
-    onError?.call(error, stackTrace);
-  });
+  unawaited(controller.parseNow());
 }
 
 final class _FlarkLiveRenderedBlockEditor extends StatefulWidget {
@@ -2105,11 +2033,7 @@ final class _EditableProjectedBlockTextState
       enterUserEvent: 'input.liveBlock.enter',
       backspaceUserEvent: 'input.liveBlock.backspace',
       onHandled: () {
-        _adoptImmediateMarkdownParseForControllerFromContext(
-          context,
-          widget.controller,
-          isMounted: () => mounted,
-        );
+        _adoptImmediateMarkdownParseForController(widget.controller);
       },
     );
   }
@@ -2271,11 +2195,7 @@ final class _EditableProjectedBlockTextState
         result.commandResult.isHandled &&
         result.commandResult.transaction != null;
     if (handled) {
-      _adoptImmediateMarkdownParseForControllerFromContext(
-        context,
-        widget.controller,
-        isMounted: () => mounted,
-      );
+      _adoptImmediateMarkdownParseForController(widget.controller);
     }
     return handled;
   }
@@ -3518,11 +3438,7 @@ final class _CodeLanguageSelectorState extends State<_CodeLanguageSelector> {
       language,
     );
     if (!handled) return;
-    _adoptImmediateMarkdownParseForControllerFromContext(
-      context,
-      widget.interactions.controller,
-      isMounted: () => mounted,
-    );
+    _adoptImmediateMarkdownParseForController(widget.interactions.controller);
 
     final focusNode = widget.focusNode;
     if (focusNode == null) return;
