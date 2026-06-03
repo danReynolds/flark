@@ -190,26 +190,6 @@ final class FlarkRenderBlock {
        children = List<FlarkRenderBlock>.unmodifiable(children),
        attributes = Map<String, Object?>.unmodifiable(attributes);
 
-  factory FlarkRenderBlock.fromMarkdownBlock(
-    FlarkMarkdownBlockNode block, {
-    required FlarkProjection projection,
-    required Iterable<FlarkMarkdownInlineToken> inlineTokens,
-  }) {
-    final sortedInlineTokens = inlineTokens.toList(growable: false)
-      ..sort((left, right) {
-        final startComparison = left.sourceRange.start.compareTo(
-          right.sourceRange.start,
-        );
-        if (startComparison != 0) return startComparison;
-        return left.sourceRange.end.compareTo(right.sourceRange.end);
-      });
-    return _renderBlockFromMarkdown(
-      block,
-      projection: projection,
-      inlineTokens: sortedInlineTokens,
-    );
-  }
-
   final FlarkMarkdownBlockKind kind;
   final String type;
   final FlarkSourceRange sourceRange;
