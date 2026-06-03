@@ -2862,11 +2862,18 @@ final class _EditableTaskListItemBlockState
             padding: EdgeInsets.only(
               top: ((widget.style.fontSize ?? 14) * 0.18),
             ),
-            child: GestureDetector(
+            child: Semantics(
               key: const Key('FlarkLiveBlockTaskCheckbox'),
-              behavior: HitTestBehavior.opaque,
+              checked: checked,
+              label: checked ? 'Task, completed' : 'Task, not completed',
+              container: true,
               onTap: () => _toggle(context),
-              child: _TaskCheckboxGlyph(checked: checked),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                excludeFromSemantics: true,
+                onTap: () => _toggle(context),
+                child: _TaskCheckboxGlyph(checked: checked),
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -3192,25 +3199,33 @@ final class _CodeCopyButton extends StatelessWidget {
       fontSize: (style.fontSize ?? 14) - 1,
       fontWeight: FontWeight.w700,
     );
-    return GestureDetector(
+    void copy() {
+      Clipboard.setData(ClipboardData(text: source));
+      final focusNode = this.focusNode;
+      if (focusNode == null) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (focusNode.canRequestFocus) focusNode.requestFocus();
+      });
+    }
+
+    return Semantics(
       key: const Key('FlarkLiveBlockCodeCopyButton'),
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        Clipboard.setData(ClipboardData(text: source));
-        final focusNode = this.focusNode;
-        if (focusNode == null) return;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (focusNode.canRequestFocus) focusNode.requestFocus();
-        });
-      },
-      child: DecoratedBox(
-        decoration: const BoxDecoration(
-          color: Color(0xFFE2E8F0),
-          borderRadius: BorderRadius.all(Radius.circular(4)),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          child: Text('Copy', style: labelStyle),
+      button: true,
+      label: 'Copy code',
+      onTap: copy,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        excludeFromSemantics: true,
+        onTap: copy,
+        child: DecoratedBox(
+          decoration: const BoxDecoration(
+            color: Color(0xFFE2E8F0),
+            borderRadius: BorderRadius.all(Radius.circular(4)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            child: Text('Copy', style: labelStyle),
+          ),
         ),
       ),
     );
