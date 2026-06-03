@@ -1632,6 +1632,11 @@ _SourceEdit _syntheticSourceHostEdit({
   );
 }
 
+/// Test-only counter of live-rendered block widget builds, used to verify
+/// per-block rebuild isolation. Reset to zero and read it across an edit.
+@visibleForTesting
+int flarkDebugLiveBlockBuildCount = 0;
+
 final class _FlarkLiveRenderedBlock extends StatelessWidget {
   const _FlarkLiveRenderedBlock({
     required this.controller,
@@ -1659,6 +1664,10 @@ final class _FlarkLiveRenderedBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    assert(() {
+      flarkDebugLiveBlockBuildCount += 1;
+      return true;
+    }());
     if (block.table != null) {
       return _EditableTableBlock(
         controller: controller,
