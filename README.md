@@ -92,12 +92,28 @@ Advanced imports are split by intent:
 
 Deep imports under `src/` are for Flark internals and white-box package tests.
 
+## Performance
+
+Editing stays on the synchronous fast path — a keystroke applies in
+microseconds through 100 KB documents:
+
+| Document | Keystroke apply (median) | Native parse + decode (median) |
+| --- | --- | --- |
+| 1 KB | 4 µs | 1.5 ms |
+| 100 KB | 172 µs | 306 ms |
+| 1 MB | 5.5 ms | ~41 s ⚠️ |
+
+Parse + decode is currently super-linear at very large documents — see
+[Benchmarks](docs/benchmarks.md) for the enforced lane, methodology, and the
+tracked 1 MB parse bottleneck.
+
 ## Documentation
 
 - [Getting Started](docs/getting_started.md)
 - [API Surface](docs/api_surface.md)
 - [Parser and Platforms](docs/parser_and_platforms.md)
 - [Development and Verification](docs/development.md)
+- [Benchmarks](docs/benchmarks.md)
 - [Architecture Notes](docs/README.md)
 
 ## Example App

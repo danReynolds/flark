@@ -122,6 +122,32 @@ void main() {
       );
     });
 
+    // Document-size sweep: the two headline numbers (keystroke-apply latency
+    // and native parse+decode) at 1KB / 100KB / 1MB. Printed as `flark_benchmark`
+    // lines for the README perf table.
+    for (final size in _sweepSizes) {
+      test('keystroke apply latency at ${size.label}', () {
+        final markdown = _markdownOfSize(size.targetChars);
+        final state = FlarkEditorState.fromMarkdown(markdown);
+        final transaction = FlarkTransaction.single(
+          FlarkSourceOperation.insert(markdown.length ~/ 2, 'x'),
+        );
+
+        final result = _measure(
+          'keystroke_apply_${size.label}_${markdown.length}chars',
+          iterations: size.iterations,
+          warmups: size.warmups,
+          body: () {
+            final next = state.applyTransaction(transaction);
+            return next.document.length + next.selection.extentOffset;
+          },
+        );
+
+        _report(result);
+        _expectTrackingBudget(result, median: size.applyMedian, p95: size.applyP95);
+      });
+    }
+
     test(
       'parses and decodes large markdown through native Comrak when present',
       () async {
@@ -158,7 +184,154 @@ void main() {
         );
       },
     );
+
+    for (final size in _sweepSizes) {
+      test('native parse and decode at ${size.label} when present', () async {
+        // The 1MB parse is currently super-linear (~40s) — a known bottleneck
+        // tracked for Phase 3. Keep it out of the routine lane and report-only
+        // so it neither slows CI nor enforces a bug-legitimizing budget. Opt in
+        // with --dart-define=FLARK_BENCHMARK_HEAVY=true to reproduce the number.
+        if (size.heavyParse && !_includeHeavy) {
+          debugPrint(
+            'flark_benchmark native_parse_${size.label} skipped=heavy_disabled',
+          );
+          return;
+        }
+        final backend = FlarkNativeComrakParseBackend.tryLoad();
+        if (backend == null) {
+          debugPrint(
+            'flark_benchmark native_parse_${size.label} skipped=no_bridge',
+          );
+          return;
+        }
+        final markdown = _markdownOfSize(size.targetChars);
+
+        final result = await _measureAsync(
+          'native_parse_decode_${size.label}_${markdown.length}chars',
+          iterations: size.parseIterations,
+          warmups: size.parseWarmups,
+          body: () async {
+            final parseResult = await backend.parse(
+              FlarkMarkdownParseRequest(
+                revision: 1,
+                markdown: markdown,
+                profile: FlarkMarkdownProfile.commonMarkGfm,
+              ),
+            );
+            return parseResult.blocks.length +
+                parseResult.inlineTokens.length +
+                parseResult.hiddenRanges.length;
+          },
+        );
+
+        _report(result);
+        if (!size.heavyParse) {
+          _expectTrackingBudget(
+            result,
+            median: size.parseMedian,
+            p95: size.parseP95,
+          );
+        }
+      });
+    }
   });
+}
+
+const _includeHeavy = bool.fromEnvironment('FLARK_BENCHMARK_HEAVY');
+
+const _sweepSizes = <_SweepSize>[
+  // Budgets are deliberately generous regression trackers (≈10× headroom over
+  // observed medians), not tight SLAs — native parse timing varies widely with
+  // machine speed.
+  _SweepSize(
+    label: '1KB',
+    targetChars: 1000,
+    iterations: 60,
+    warmups: 10,
+    applyMedian: Duration(milliseconds: 10),
+    applyP95: Duration(milliseconds: 25),
+    parseIterations: 12,
+    parseWarmups: 3,
+    parseMedian: Duration(milliseconds: 50),
+    parseP95: Duration(milliseconds: 120),
+  ),
+  _SweepSize(
+    label: '100KB',
+    targetChars: 100000,
+    iterations: 40,
+    warmups: 8,
+    applyMedian: Duration(milliseconds: 30),
+    applyP95: Duration(milliseconds: 80),
+    parseIterations: 5,
+    parseWarmups: 1,
+    parseMedian: Duration(milliseconds: 1500),
+    parseP95: Duration(milliseconds: 2500),
+  ),
+  _SweepSize(
+    label: '1MB',
+    targetChars: 1000000,
+    iterations: 20,
+    warmups: 4,
+    applyMedian: Duration(milliseconds: 200),
+    applyP95: Duration(milliseconds: 400),
+    parseIterations: 1,
+    parseWarmups: 0,
+    parseMedian: Duration(seconds: 60),
+    parseP95: Duration(seconds: 60),
+    heavyParse: true,
+  ),
+];
+
+final class _SweepSize {
+  const _SweepSize({
+    required this.label,
+    required this.targetChars,
+    required this.iterations,
+    required this.warmups,
+    required this.applyMedian,
+    required this.applyP95,
+    required this.parseIterations,
+    required this.parseWarmups,
+    required this.parseMedian,
+    required this.parseP95,
+    this.heavyParse = false,
+  });
+
+  final String label;
+  final int targetChars;
+  final int iterations;
+  final int warmups;
+  final Duration applyMedian;
+  final Duration applyP95;
+  final int parseIterations;
+  final int parseWarmups;
+  final Duration parseMedian;
+  final Duration parseP95;
+  final bool heavyParse;
+}
+
+String _markdownOfSize(int targetChars) {
+  final buffer = StringBuffer();
+  var section = 0;
+  while (buffer.length < targetChars) {
+    buffer
+      ..writeln('## Section $section')
+      ..writeln()
+      ..writeln(
+        'A paragraph with **strong text**, _emphasis_, `inline code`, and '
+        '[a link](https://example.com/$section).',
+      )
+      ..writeln()
+      ..writeln('- [ ] Task item $section')
+      ..writeln('- [x] Completed item $section')
+      ..writeln()
+      ..writeln('```dart')
+      ..writeln('final value$section = $section;')
+      ..writeln('```')
+      ..writeln();
+    section += 1;
+  }
+  return buffer.toString();
 }
 
 _BenchmarkResult _measure(
