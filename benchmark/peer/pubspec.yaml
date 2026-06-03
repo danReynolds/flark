@@ -1,0 +1,17 @@
+name: flark_peer_benchmark
+description: Isolated peer-editor perf comparison harness (NOT part of the flark package).
+publish_to: none
+version: 0.0.0
+
+environment:
+  sdk: ^3.10.0
+
+# Only flutter_quill resolves AND compiles on the current bleeding-edge toolchain
+# (Flutter 3.41 / Dart 3.10). super_editor caps at 0.2.7 and appflowy_editor at
+# 0.1.12 — both pre-date breaking SDK changes and fail to compile here.
+dev_dependencies:
+  flutter:
+    sdk: flutter
+  flutter_test:
+    sdk: flutter
+  flutter_quill: ^11.5.0

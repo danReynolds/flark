@@ -4,3 +4,4 @@ analyzer:
   exclude:
     - native/comrak_bridge/target/**
     - native/comrak_bridge/dist/**
+    - benchmark/**
