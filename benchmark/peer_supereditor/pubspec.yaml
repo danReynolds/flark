@@ -1,0 +1,18 @@
+name: flark_peer_supereditor
+description: Isolated super_editor perf comparison. NOT part of the flark package.
+publish_to: none
+version: 0.0.0
+environment:
+  sdk: ^3.10.0
+dev_dependencies:
+  flutter:
+    sdk: flutter
+  flutter_test:
+    sdk: flutter
+  # Current super_editor is git-only (pub.dev caps at stale 0.2.7). Requires a
+  # one-line Flutter-3.41 compat patch — see ../peer/README.md.
+  super_editor:
+    git:
+      url: https://github.com/Flutter-Bounty-Hunters/super_editor.git
+      path: super_editor
+      ref: 22853bcc89def2b234017202a3f3cac36d3c088f
