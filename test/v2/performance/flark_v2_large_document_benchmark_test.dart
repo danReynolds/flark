@@ -187,16 +187,6 @@ void main() {
 
     for (final size in _sweepSizes) {
       test('native parse and decode at ${size.label} when present', () async {
-        // The 1MB parse is currently super-linear (~40s) — a known bottleneck
-        // tracked for Phase 3. Keep it out of the routine lane and report-only
-        // so it neither slows CI nor enforces a bug-legitimizing budget. Opt in
-        // with --dart-define=FLARK_BENCHMARK_HEAVY=true to reproduce the number.
-        if (size.heavyParse && !_includeHeavy) {
-          debugPrint(
-            'flark_benchmark native_parse_${size.label} skipped=heavy_disabled',
-          );
-          return;
-        }
         final backend = FlarkNativeComrakParseBackend.tryLoad();
         if (backend == null) {
           debugPrint(
@@ -225,19 +215,16 @@ void main() {
         );
 
         _report(result);
-        if (!size.heavyParse) {
-          _expectTrackingBudget(
-            result,
-            median: size.parseMedian,
-            p95: size.parseP95,
-          );
-        }
+        _expectTrackingBudget(
+          result,
+          median: size.parseMedian,
+          p95: size.parseP95,
+        );
       });
     }
   });
 }
 
-const _includeHeavy = bool.fromEnvironment('FLARK_BENCHMARK_HEAVY');
 
 const _sweepSizes = <_SweepSize>[
   // Budgets are deliberately generous regression trackers (≈10× headroom over
@@ -274,11 +261,12 @@ const _sweepSizes = <_SweepSize>[
     warmups: 4,
     applyMedian: Duration(milliseconds: 200),
     applyP95: Duration(milliseconds: 400),
-    parseIterations: 1,
-    parseWarmups: 0,
-    parseMedian: Duration(seconds: 60),
-    parseP95: Duration(seconds: 60),
-    heavyParse: true,
+    // Parse+decode is linear after the O(n^2) fix (~0.5s for 1MB locally); the
+    // budget guards against a quadratic regression with generous CI headroom.
+    parseIterations: 2,
+    parseWarmups: 1,
+    parseMedian: Duration(seconds: 3),
+    parseP95: Duration(seconds: 5),
   ),
 ];
 
@@ -294,7 +282,6 @@ final class _SweepSize {
     required this.parseWarmups,
     required this.parseMedian,
     required this.parseP95,
-    this.heavyParse = false,
   });
 
   final String label;
@@ -307,7 +294,6 @@ final class _SweepSize {
   final int parseWarmups;
   final Duration parseMedian;
   final Duration parseP95;
-  final bool heavyParse;
 }
 
 String _markdownOfSize(int targetChars) {
