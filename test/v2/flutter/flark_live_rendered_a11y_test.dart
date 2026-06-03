@@ -31,7 +31,7 @@ void main() {
       tester.getSemantics(
         find.byKey(const Key('FlarkLiveBlockTaskCheckbox')),
       ),
-      containsSemantics(
+      isSemantics(
         hasCheckedState: true,
         isChecked: false,
         hasTapAction: true,
@@ -68,7 +68,7 @@ void main() {
       tester.getSemantics(
         find.byKey(const Key('FlarkLiveBlockTaskCheckbox')),
       ),
-      containsSemantics(
+      isSemantics(
         hasCheckedState: true,
         isChecked: true,
         label: 'Task, completed',
