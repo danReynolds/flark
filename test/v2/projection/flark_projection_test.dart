@@ -73,6 +73,49 @@ void main() {
       expect(mask.normalize(1, affinity: FlarkMapAffinity.downstream), 2);
     });
 
+    test('normalizes across many hidden ranges via binary search', () {
+      final mask = FlarkCursorMask(
+        textLength: 40,
+        hiddenRanges: const [
+          FlarkHiddenRange(
+            range: FlarkSourceRange(2, 5),
+            kind: FlarkHiddenRangeKind.inlineMarker,
+          ),
+          FlarkHiddenRange(
+            range: FlarkSourceRange(10, 14),
+            kind: FlarkHiddenRangeKind.inlineMarker,
+          ),
+          FlarkHiddenRange(
+            range: FlarkSourceRange(20, 23),
+            kind: FlarkHiddenRangeKind.inlineMarker,
+          ),
+          FlarkHiddenRange(
+            range: FlarkSourceRange(30, 36),
+            kind: FlarkHiddenRangeKind.inlineMarker,
+          ),
+        ],
+      );
+
+      // Boundaries are allowed; interiors are not.
+      for (final span in const [[2, 5], [10, 14], [20, 23], [30, 36]]) {
+        expect(mask.allows(span[0]), isTrue, reason: 'start ${span[0]}');
+        expect(mask.allows(span[1]), isTrue, reason: 'end ${span[1]}');
+        expect(mask.allows(span[0] + 1), isFalse, reason: 'inside ${span[0]}');
+      }
+
+      // Offsets in the gaps between spans are allowed and unchanged.
+      for (final gap in const [0, 7, 18, 25, 40]) {
+        expect(mask.allows(gap), isTrue, reason: 'gap $gap');
+        expect(mask.normalize(gap), gap, reason: 'gap normalize $gap');
+      }
+
+      // Interior offsets snap to the enclosing span per affinity.
+      expect(mask.normalize(12, affinity: FlarkMapAffinity.upstream), 10);
+      expect(mask.normalize(12, affinity: FlarkMapAffinity.downstream), 14);
+      expect(mask.normalize(33, affinity: FlarkMapAffinity.upstream), 30);
+      expect(mask.normalize(33, affinity: FlarkMapAffinity.downstream), 36);
+    });
+
     test('builds cursor masks from single-pass range iterables', () {
       final mask = FlarkCursorMask(
         textLength: 4,

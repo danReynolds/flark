@@ -592,38 +592,44 @@ final class _FlarkLiveRenderedBlockEditorState
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Each block is a RepaintBoundary so one block's repaint (cursor,
+              // selection, text edit) does not repaint its siblings. The
+              // per-block ValueKey lives here to preserve each block's editable
+              // state across rebuilds and reorders.
               for (var index = 0; index < blockEntries.length; index++)
-                _FlarkLiveRenderedBlock(
+                RepaintBoundary(
                   key: ValueKey(blockEntries[index].id),
-                  controller: widget.controller,
-                  block: blockEntries[index].block,
-                  displayText: displayText,
-                  style: baseStyle,
-                  cursorColor: widget.cursorColor,
-                  backgroundCursorColor: widget.backgroundCursorColor,
-                  autofocus: widget.autofocus && index == 0,
-                  focusNode: _focusCoordinator.focusNodeForBlock(
-                    entry: blockEntries[index],
-                    index: index,
-                    externalFirstFocusNode: widget.focusNode,
+                  child: _FlarkLiveRenderedBlock(
+                    controller: widget.controller,
+                    block: blockEntries[index].block,
+                    displayText: displayText,
+                    style: baseStyle,
+                    cursorColor: widget.cursorColor,
+                    backgroundCursorColor: widget.backgroundCursorColor,
+                    autofocus: widget.autofocus && index == 0,
+                    focusNode: _focusCoordinator.focusNodeForBlock(
+                      entry: blockEntries[index],
+                      index: index,
+                      externalFirstFocusNode: widget.focusNode,
+                    ),
+                    onMoveToPreviousBlock: index == 0
+                        ? null
+                        : () => _moveSelectionToBlockBoundary(
+                            blockEntries[index - 1].block,
+                            after: true,
+                          ),
+                    onMoveToNextBlock: index + 1 >= blockEntries.length
+                        ? blockEntries[index].block.codeBlock == null
+                              ? null
+                              : () => _moveSelectionToDocumentBoundary(
+                                  blockEntries[index].block,
+                                  after: true,
+                                )
+                        : () => _moveSelectionToBlockBoundary(
+                            blockEntries[index + 1].block,
+                            after: false,
+                          ),
                   ),
-                  onMoveToPreviousBlock: index == 0
-                      ? null
-                      : () => _moveSelectionToBlockBoundary(
-                          blockEntries[index - 1].block,
-                          after: true,
-                        ),
-                  onMoveToNextBlock: index + 1 >= blockEntries.length
-                      ? blockEntries[index].block.codeBlock == null
-                            ? null
-                            : () => _moveSelectionToDocumentBoundary(
-                                blockEntries[index].block,
-                                after: true,
-                              )
-                      : () => _moveSelectionToBlockBoundary(
-                          blockEntries[index + 1].block,
-                          after: false,
-                        ),
                 ),
             ],
           ),
@@ -1628,7 +1634,6 @@ _SourceEdit _syntheticSourceHostEdit({
 
 final class _FlarkLiveRenderedBlock extends StatelessWidget {
   const _FlarkLiveRenderedBlock({
-    super.key,
     required this.controller,
     required this.block,
     required this.displayText,
@@ -2862,11 +2867,18 @@ final class _EditableTaskListItemBlockState
             padding: EdgeInsets.only(
               top: ((widget.style.fontSize ?? 14) * 0.18),
             ),
-            child: GestureDetector(
+            child: Semantics(
               key: const Key('FlarkLiveBlockTaskCheckbox'),
-              behavior: HitTestBehavior.opaque,
+              checked: checked,
+              label: checked ? 'Task, completed' : 'Task, not completed',
+              container: true,
               onTap: () => _toggle(context),
-              child: _TaskCheckboxGlyph(checked: checked),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                excludeFromSemantics: true,
+                onTap: () => _toggle(context),
+                child: _TaskCheckboxGlyph(checked: checked),
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -3192,25 +3204,33 @@ final class _CodeCopyButton extends StatelessWidget {
       fontSize: (style.fontSize ?? 14) - 1,
       fontWeight: FontWeight.w700,
     );
-    return GestureDetector(
+    void copy() {
+      Clipboard.setData(ClipboardData(text: source));
+      final focusNode = this.focusNode;
+      if (focusNode == null) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (focusNode.canRequestFocus) focusNode.requestFocus();
+      });
+    }
+
+    return Semantics(
       key: const Key('FlarkLiveBlockCodeCopyButton'),
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        Clipboard.setData(ClipboardData(text: source));
-        final focusNode = this.focusNode;
-        if (focusNode == null) return;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (focusNode.canRequestFocus) focusNode.requestFocus();
-        });
-      },
-      child: DecoratedBox(
-        decoration: const BoxDecoration(
-          color: Color(0xFFE2E8F0),
-          borderRadius: BorderRadius.all(Radius.circular(4)),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          child: Text('Copy', style: labelStyle),
+      button: true,
+      label: 'Copy code',
+      onTap: copy,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        excludeFromSemantics: true,
+        onTap: copy,
+        child: DecoratedBox(
+          decoration: const BoxDecoration(
+            color: Color(0xFFE2E8F0),
+            borderRadius: BorderRadius.all(Radius.circular(4)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            child: Text('Copy', style: labelStyle),
+          ),
         ),
       ),
     );

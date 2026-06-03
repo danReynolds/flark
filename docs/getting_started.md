@@ -85,6 +85,15 @@ MarkdownEditor(
 - `FlarkMarkdownEditingMode.liveRendered`: projected text plus rendered inline
   styling and editable task, table, code-fence, and quote blocks.
 
+## Accessibility
+
+The live-rendered surface composes editable block fields, so each block exposes
+a standard text-field semantics node. Interactive chrome is labeled for
+assistive technology: task checkboxes report a checkbox role with checked state
+(`"Task, completed"` / `"Task, not completed"`), and the code-fence copy control
+is a labeled button. IME composition into block fields groups into single undo
+steps. Coverage lives in `test/v2/flutter/flark_live_rendered_a11y_test.dart`.
+
 ## Parse Errors
 
 Use `onParseError` to log or surface scheduled parser failures.
