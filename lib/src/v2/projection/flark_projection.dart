@@ -185,27 +185,41 @@ final class FlarkCursorMask {
     FlarkMapAffinity affinity = FlarkMapAffinity.downstream,
   }) {
     _checkOffset(sourceOffset);
-    for (final span in _projectionSpans) {
-      final range = span.range;
-      if (sourceOffset <= range.start) return sourceOffset;
-      if (sourceOffset < range.end) {
-        return switch (affinity) {
-          FlarkMapAffinity.upstream => range.start,
-          FlarkMapAffinity.downstream => range.end,
-        };
-      }
-    }
-    return sourceOffset;
+    final index = _spanStrictlyContaining(sourceOffset);
+    if (index < 0) return sourceOffset;
+    final range = _projectionSpans[index].range;
+    return switch (affinity) {
+      FlarkMapAffinity.upstream => range.start,
+      FlarkMapAffinity.downstream => range.end,
+    };
   }
 
   bool _isInsideHiddenRange(int sourceOffset) {
-    for (final span in _projectionSpans) {
-      final range = span.range;
-      if (sourceOffset <= range.start) continue;
-      if (sourceOffset < range.end) return true;
-      if (sourceOffset >= range.end) continue;
+    return _spanStrictlyContaining(sourceOffset) >= 0;
+  }
+
+  /// Index of the (unique) span with `start < sourceOffset < end`, or `-1`.
+  ///
+  /// Spans are sorted by start and non-overlapping, so the only candidate is
+  /// the rightmost span starting before [sourceOffset]; a boundary offset
+  /// (`== start` or `== end`) is never considered inside.
+  int _spanStrictlyContaining(int sourceOffset) {
+    var low = 0;
+    var high = _projectionSpans.length - 1;
+    var predecessor = -1;
+    while (low <= high) {
+      final mid = low + ((high - low) >> 1);
+      if (_projectionSpans[mid].range.start < sourceOffset) {
+        predecessor = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
     }
-    return false;
+    if (predecessor < 0) return -1;
+    return sourceOffset < _projectionSpans[predecessor].range.end
+        ? predecessor
+        : -1;
   }
 
   void _checkOffset(int sourceOffset) {
