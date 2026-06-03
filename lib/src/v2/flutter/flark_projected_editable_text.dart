@@ -592,38 +592,44 @@ final class _FlarkLiveRenderedBlockEditorState
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Each block is a RepaintBoundary so one block's repaint (cursor,
+              // selection, text edit) does not repaint its siblings. The
+              // per-block ValueKey lives here to preserve each block's editable
+              // state across rebuilds and reorders.
               for (var index = 0; index < blockEntries.length; index++)
-                _FlarkLiveRenderedBlock(
+                RepaintBoundary(
                   key: ValueKey(blockEntries[index].id),
-                  controller: widget.controller,
-                  block: blockEntries[index].block,
-                  displayText: displayText,
-                  style: baseStyle,
-                  cursorColor: widget.cursorColor,
-                  backgroundCursorColor: widget.backgroundCursorColor,
-                  autofocus: widget.autofocus && index == 0,
-                  focusNode: _focusCoordinator.focusNodeForBlock(
-                    entry: blockEntries[index],
-                    index: index,
-                    externalFirstFocusNode: widget.focusNode,
+                  child: _FlarkLiveRenderedBlock(
+                    controller: widget.controller,
+                    block: blockEntries[index].block,
+                    displayText: displayText,
+                    style: baseStyle,
+                    cursorColor: widget.cursorColor,
+                    backgroundCursorColor: widget.backgroundCursorColor,
+                    autofocus: widget.autofocus && index == 0,
+                    focusNode: _focusCoordinator.focusNodeForBlock(
+                      entry: blockEntries[index],
+                      index: index,
+                      externalFirstFocusNode: widget.focusNode,
+                    ),
+                    onMoveToPreviousBlock: index == 0
+                        ? null
+                        : () => _moveSelectionToBlockBoundary(
+                            blockEntries[index - 1].block,
+                            after: true,
+                          ),
+                    onMoveToNextBlock: index + 1 >= blockEntries.length
+                        ? blockEntries[index].block.codeBlock == null
+                              ? null
+                              : () => _moveSelectionToDocumentBoundary(
+                                  blockEntries[index].block,
+                                  after: true,
+                                )
+                        : () => _moveSelectionToBlockBoundary(
+                            blockEntries[index + 1].block,
+                            after: false,
+                          ),
                   ),
-                  onMoveToPreviousBlock: index == 0
-                      ? null
-                      : () => _moveSelectionToBlockBoundary(
-                          blockEntries[index - 1].block,
-                          after: true,
-                        ),
-                  onMoveToNextBlock: index + 1 >= blockEntries.length
-                      ? blockEntries[index].block.codeBlock == null
-                            ? null
-                            : () => _moveSelectionToDocumentBoundary(
-                                blockEntries[index].block,
-                                after: true,
-                              )
-                      : () => _moveSelectionToBlockBoundary(
-                          blockEntries[index + 1].block,
-                          after: false,
-                        ),
                 ),
             ],
           ),
@@ -1628,7 +1634,6 @@ _SourceEdit _syntheticSourceHostEdit({
 
 final class _FlarkLiveRenderedBlock extends StatelessWidget {
   const _FlarkLiveRenderedBlock({
-    super.key,
     required this.controller,
     required this.block,
     required this.displayText,
