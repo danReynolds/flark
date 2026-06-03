@@ -281,6 +281,36 @@ void main() {
       expect(events.last.kind, FlarkControllerEventKind.undo);
     });
 
+    test('exposes typed markdown and selection change projections', () async {
+      final controller = FlarkFlutterController.fromMarkdown(
+        'hello',
+        extensions: FlarkExtensionSet([const FlarkCoreEditingExtension()]),
+      );
+      final markdownChanges = <String>[];
+      final selectionChanges = <FlarkSelection>[];
+      final markdownSub = controller.markdownChanges.listen(markdownChanges.add);
+      final selectionSub = controller.selectionChanges.listen(
+        selectionChanges.add,
+      );
+
+      addTearDown(markdownSub.cancel);
+      addTearDown(selectionSub.cancel);
+      addTearDown(controller.dispose);
+
+      controller.dispatch(
+        command: FlarkCoreEditingCommands.insertText,
+        payload: const FlarkInsertTextPayload('!'),
+      );
+      await pumpEventQueue();
+      expect(markdownChanges, ['hello!']);
+
+      controller.applySelection(const FlarkSelection.collapsed(0));
+      await pumpEventQueue();
+      // A selection-only change projects to selectionChanges, not markdown.
+      expect(markdownChanges, ['hello!']);
+      expect(selectionChanges.last, const FlarkSelection.collapsed(0));
+    });
+
     test('applies render-plan extensions from the runtime', () {
       final controller = FlarkFlutterController.fromMarkdown(
         'note',

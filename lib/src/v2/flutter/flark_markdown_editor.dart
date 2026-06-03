@@ -9,7 +9,7 @@ import 'flark_command_actions.dart';
 import 'flark_editable_text.dart';
 import 'flark_flutter_controller.dart';
 import 'flark_markdown_interactions.dart';
-import 'flark_parse_scheduler.dart';
+import 'flark_markdown_shortcuts.dart';
 import 'flark_projected_editable_text.dart';
 import 'flark_render_plan_overlay_controls.dart';
 
@@ -24,8 +24,8 @@ final class MarkdownEditor extends StatefulWidget {
     this.onChanged,
     this.parseBackend,
     this.onParseError,
-    this.profile = FlarkMarkdownProfile.commonMarkGfm,
-    this.parseDebounce = const Duration(milliseconds: 80),
+    this.profile,
+    this.parseDebounce,
     this.editingMode = FlarkMarkdownEditingMode.projected,
     this.focusNode,
     this.style,
@@ -36,6 +36,7 @@ final class MarkdownEditor extends StatefulWidget {
     this.expands = false,
     this.autofocus = false,
     this.shortcuts = const <ShortcutActivator, FlarkCommandIntent>{},
+    this.useDefaultShortcuts = true,
     this.showOverlayControls = false,
     this.overlayControlBuilder,
     this.onOverlayTargetPressed,
@@ -45,9 +46,15 @@ final class MarkdownEditor extends StatefulWidget {
          'Provide either controller or initialMarkdown, not both.',
        ),
        assert(
-         controller == null || extensions == null,
-         'Provide extensions through FlarkFlutterController when using a '
-         'controller.',
+         controller == null ||
+             (extensions == null &&
+                 parseBackend == null &&
+                 onParseError == null &&
+                 profile == null &&
+                 parseDebounce == null),
+         'When a controller is provided it owns parsing. Configure extensions, '
+         'parseBackend, profile, parseDebounce, and onParseError on the '
+         'FlarkFlutterController instead.',
        );
 
   /// Controller for shared editor state.
@@ -73,16 +80,24 @@ final class MarkdownEditor extends StatefulWidget {
 
   /// Parser backend used to adopt authoritative markdown structure.
   ///
-  /// When this is null, the widget requires the packaged Comrak backend.
-  /// Backend load failures are surfaced directly instead of falling back to a
+  /// Used only when this widget creates its own controller from
+  /// [initialMarkdown]. When a [controller] is supplied, configure the backend
+  /// on the controller instead. When null, the packaged Comrak backend is
+  /// required; load failures are surfaced directly instead of falling back to a
   /// second markdown implementation.
   final FlarkMarkdownParseBackend? parseBackend;
 
   /// Called when a scheduled background parse fails.
+  ///
+  /// Used only for the widget-owned controller. With a supplied [controller],
+  /// configure `onParseError` on the controller.
   final void Function(Object error, StackTrace stackTrace)? onParseError;
 
-  final FlarkMarkdownProfile profile;
-  final Duration parseDebounce;
+  /// Markdown profile for the widget-owned controller. Defaults to GFM.
+  final FlarkMarkdownProfile? profile;
+
+  /// Parse debounce for the widget-owned controller. Defaults to 80ms.
+  final Duration? parseDebounce;
   final FlarkMarkdownEditingMode editingMode;
   final FocusNode? focusNode;
   final TextStyle? style;
@@ -92,7 +107,18 @@ final class MarkdownEditor extends StatefulWidget {
   final int? maxLines;
   final bool expands;
   final bool autofocus;
+
+  /// Additional keyboard shortcuts mapped to Markdown command intents.
+  ///
+  /// Build intents with [FlarkMarkdownShortcuts] (e.g.
+  /// `FlarkMarkdownShortcuts.toggleStrong()`) rather than constructing
+  /// [FlarkCommandIntent] directly. These merge over [useDefaultShortcuts] and
+  /// override any default binding for the same activator.
   final Map<ShortcutActivator, FlarkCommandIntent> shortcuts;
+
+  /// Whether to install [FlarkMarkdownShortcuts.defaults] (bold/italic/code/
+  /// strikethrough). User-provided [shortcuts] override matching defaults.
+  final bool useDefaultShortcuts;
   final bool showOverlayControls;
   final FlarkOverlayTargetWidgetBuilder? overlayControlBuilder;
   final ValueChanged<FlarkRenderOverlayTarget>? onOverlayTargetPressed;
@@ -106,8 +132,7 @@ final class MarkdownEditor extends StatefulWidget {
 
 final class _MarkdownEditorState extends State<MarkdownEditor> {
   FlarkFlutterController? _ownedController;
-  FlarkParseScheduler? _parseScheduler;
-  StreamSubscription<FlarkControllerEvent>? _eventSubscription;
+  StreamSubscription<String>? _eventSubscription;
 
   FlarkFlutterController get _controller {
     return widget.controller ?? _ownedController!;
@@ -118,7 +143,7 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
     super.initState();
     _ensureOwnedController();
     _listenForDocumentChanges();
-    _configureParseScheduler();
+    _controller.attachParsingSurface();
   }
 
   @override
@@ -129,35 +154,42 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
         widget.controller == null && oldWidget.extensions != widget.extensions;
 
     if (controllerChanged || ownedExtensionsChanged) {
-      _parseScheduler?.dispose();
+      final previousController = oldWidget.controller ?? _ownedController!;
       _eventSubscription?.cancel();
+      previousController.detachParsingSurface();
       if (widget.controller == null) {
-        final markdown = oldWidget.controller?.markdown ?? _controller.markdown;
         _ownedController?.dispose();
-        _ownedController = _createOwnedController(markdown);
+        _ownedController = _createOwnedController(previousController.markdown);
       } else {
         _ownedController?.dispose();
         _ownedController = null;
       }
       _listenForDocumentChanges();
-      _configureParseScheduler();
+      _controller.attachParsingSurface();
       return;
     }
 
-    if (oldWidget.controller != widget.controller ||
-        oldWidget.parseBackend != widget.parseBackend ||
-        oldWidget.onParseError != widget.onParseError ||
-        oldWidget.profile != widget.profile ||
-        oldWidget.parseDebounce != widget.parseDebounce) {
-      _parseScheduler?.dispose();
-      _configureParseScheduler();
+    if (widget.controller == null &&
+        (oldWidget.parseBackend != widget.parseBackend ||
+            oldWidget.onParseError != widget.onParseError ||
+            oldWidget.profile != widget.profile ||
+            oldWidget.parseDebounce != widget.parseDebounce)) {
+      _controller.configureParsing(
+        parseBackend: widget.parseBackend,
+        parseProfile: widget.profile,
+        parseDebounce: widget.parseDebounce,
+        onParseError: widget.onParseError,
+        clearOnParseError: widget.onParseError == null,
+      );
     }
   }
 
   @override
   void dispose() {
-    _parseScheduler?.dispose();
     _eventSubscription?.cancel();
+    if (widget.controller != null) {
+      widget.controller!.detachParsingSurface();
+    }
     _ownedController?.dispose();
     super.dispose();
   }
@@ -166,6 +198,7 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
   Widget build(BuildContext context) {
     final controller = _controller;
     final cursorColor = _effectiveCursorColor(context, widget.cursorColor);
+    final shortcuts = _effectiveShortcuts();
     final editor = switch (widget.editingMode) {
       FlarkMarkdownEditingMode.source => FlarkEditableText(
         controller: controller,
@@ -177,7 +210,7 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
         maxLines: widget.maxLines,
         expands: widget.expands,
         autofocus: widget.autofocus,
-        shortcuts: widget.shortcuts,
+        shortcuts: shortcuts,
       ),
       FlarkMarkdownEditingMode.projected => FlarkProjectedEditableText(
         controller: controller,
@@ -189,7 +222,7 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
         maxLines: widget.maxLines,
         expands: widget.expands,
         autofocus: widget.autofocus,
-        shortcuts: widget.shortcuts,
+        shortcuts: shortcuts,
       ),
       FlarkMarkdownEditingMode.liveRendered => FlarkLiveRenderedEditableText(
         controller: controller,
@@ -197,14 +230,11 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
         style: widget.style,
         cursorColor: cursorColor,
         backgroundCursorColor: widget.backgroundCursorColor,
-        parseBackend: widget.parseBackend,
-        profile: widget.profile,
-        onParseError: widget.onParseError,
         minLines: widget.minLines,
         maxLines: widget.maxLines,
         expands: widget.expands,
         autofocus: widget.autofocus,
-        shortcuts: widget.shortcuts,
+        shortcuts: shortcuts,
       ),
     };
 
@@ -245,29 +275,25 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
     return FlarkFlutterController.fromMarkdown(
       markdown,
       extensions: widget.extensions,
+      parseBackend: widget.parseBackend,
+      parseProfile: widget.profile ?? FlarkMarkdownProfile.commonMarkGfm,
+      parseDebounce: widget.parseDebounce ?? const Duration(milliseconds: 80),
+      onParseError: widget.onParseError,
     );
   }
 
+  Map<ShortcutActivator, FlarkCommandIntent> _effectiveShortcuts() {
+    if (!widget.useDefaultShortcuts) return widget.shortcuts;
+    return <ShortcutActivator, FlarkCommandIntent>{
+      ...FlarkMarkdownShortcuts.defaults(),
+      ...widget.shortcuts,
+    };
+  }
+
   void _listenForDocumentChanges() {
-    _eventSubscription = _controller.events.listen((event) {
-      if (!event.markdownChanged) return;
-      widget.onChanged?.call(_controller.markdown);
+    _eventSubscription = _controller.markdownChanges.listen((markdown) {
+      widget.onChanged?.call(markdown);
     });
-  }
-
-  void _configureParseScheduler() {
-    final backend = widget.parseBackend ?? _resolveDefaultParseBackend();
-    _parseScheduler = FlarkParseScheduler(
-      controller: _controller,
-      backend: backend,
-      profile: widget.profile,
-      debounce: widget.parseDebounce,
-      onError: widget.onParseError,
-    )..start();
-  }
-
-  FlarkMarkdownParseBackend _resolveDefaultParseBackend() {
-    return FlarkNativeComrakParseBackend.requiredDefault();
   }
 }
 

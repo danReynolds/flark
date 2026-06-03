@@ -10,17 +10,15 @@ void main() {
     final controller = FlarkFlutterController.fromMarkdown(
       '# Title',
       extensions: FlarkMarkdownEditingExtensions.standard(),
+      parseBackend: backend,
+      parseDebounce: Duration.zero,
     );
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: MarkdownEditor(
-          controller: controller,
-          parseBackend: backend,
-          parseDebounce: Duration.zero,
-        ),
+        child: MarkdownEditor(controller: controller),
       ),
     );
 
@@ -129,6 +127,57 @@ void main() {
     );
   });
 
+  testWidgets('shared controller drives a single parser across surfaces', (
+    tester,
+  ) async {
+    final backend = _RecordingParseBackend();
+    final controller = FlarkFlutterController.fromMarkdown(
+      '# Title',
+      parseBackend: backend,
+      parseDebounce: Duration.zero,
+    );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Column(
+          children: [
+            Expanded(child: MarkdownEditor(controller: controller)),
+            Expanded(child: Markdown(controller: controller)),
+          ],
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump();
+
+    // One document, one parse of the initial revision — not one per surface.
+    expect(backend.requests, hasLength(1));
+    expect(controller.isParsing, isTrue);
+    expect(controller.hasAuthoritativeRenderPlan, isTrue);
+  });
+
+  testWidgets('controller.parseNow bypasses the debounce window', (
+    tester,
+  ) async {
+    final backend = _RecordingParseBackend();
+    final controller = FlarkFlutterController.fromMarkdown(
+      'hello',
+      parseBackend: backend,
+      parseDebounce: const Duration(days: 1),
+    );
+    addTearDown(controller.dispose);
+
+    controller.ensureParsing();
+    controller.ensureParsing();
+    await controller.parseNow();
+
+    expect(backend.requests, hasLength(1));
+    expect(controller.hasAuthoritativeRenderPlan, isTrue);
+  });
+
   test('high-level surface constructors reject ambiguous ownership', () {
     final controller = FlarkFlutterController.fromMarkdown('hello');
     addTearDown(controller.dispose);
@@ -160,7 +209,10 @@ void main() {
   testWidgets('high-level surfaces require default Comrak parsing', (
     tester,
   ) async {
-    final controller = FlarkFlutterController.fromMarkdown('# Title');
+    final controller = FlarkFlutterController.fromMarkdown(
+      '# Title',
+      parseDebounce: Duration.zero,
+    );
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
@@ -168,10 +220,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: Column(
           children: [
-            MarkdownEditor(
-              controller: controller,
-              parseDebounce: Duration.zero,
-            ),
+            MarkdownEditor(controller: controller),
             const Markdown(markdown: '# Preview', parseDebounce: Duration.zero),
           ],
         ),
@@ -191,9 +240,16 @@ void main() {
   testWidgets('high-level surfaces report background parse failures', (
     tester,
   ) async {
-    final controller = FlarkFlutterController.fromMarkdown('# Title');
     final editorErrors = <Object>[];
     final previewErrors = <Object>[];
+    final controller = FlarkFlutterController.fromMarkdown(
+      '# Title',
+      parseBackend: const _FailingParseBackend(),
+      parseDebounce: Duration.zero,
+      onParseError: (error, stackTrace) {
+        editorErrors.add(error);
+      },
+    );
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
@@ -201,14 +257,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: Column(
           children: [
-            MarkdownEditor(
-              controller: controller,
-              parseBackend: const _FailingParseBackend(),
-              parseDebounce: Duration.zero,
-              onParseError: (error, stackTrace) {
-                editorErrors.add(error);
-              },
-            ),
+            MarkdownEditor(controller: controller),
             Markdown(
               markdown: '# Preview',
               parseBackend: const _FailingParseBackend(),

@@ -113,7 +113,14 @@ class _FlarkExampleScreenState extends State<FlarkExampleScreen> {
   @override
   void initState() {
     super.initState();
-    _controller = FlarkFlutterController.fromMarkdown(_sampleMarkdown);
+    _controller = _createController(_sampleMarkdown);
+  }
+
+  FlarkFlutterController _createController(String markdown) {
+    return FlarkFlutterController.fromMarkdown(
+      markdown,
+      parseDebounce: const Duration(milliseconds: 40),
+    );
   }
 
   @override
@@ -160,7 +167,7 @@ class _FlarkExampleScreenState extends State<FlarkExampleScreen> {
     setState(() {
       _focusNode.unfocus();
       _controller.dispose();
-      _controller = FlarkFlutterController.fromMarkdown(markdown);
+      _controller = _createController(markdown);
       _mode = _WorkspaceMode.liveRendered;
     });
   }
@@ -717,7 +724,6 @@ class _EditorPane extends StatelessWidget {
           height: 1.42,
           color: Color(0xFF18212B),
         ),
-        parseDebounce: const Duration(milliseconds: 40),
       ),
     );
   }

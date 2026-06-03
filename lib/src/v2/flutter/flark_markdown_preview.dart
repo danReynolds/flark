@@ -4,7 +4,6 @@ import '../markdown/markdown.dart';
 import '../render_plan/render_plan.dart';
 import 'flark_flutter_controller.dart';
 import 'flark_markdown_interactions.dart';
-import 'flark_parse_scheduler.dart';
 import 'flark_read_only_preview.dart';
 import 'flark_render_plan_overlay_controls.dart';
 
@@ -15,8 +14,8 @@ final class Markdown extends StatefulWidget {
     this.controller,
     this.parseBackend,
     this.onParseError,
-    this.profile = FlarkMarkdownProfile.commonMarkGfm,
-    this.parseDebounce = const Duration(milliseconds: 80),
+    this.profile,
+    this.parseDebounce,
     this.textStyle,
     this.blockBuilder,
     this.showOverlayControls = false,
@@ -28,10 +27,14 @@ final class Markdown extends StatefulWidget {
          'Provide exactly one of markdown or controller.',
        ),
        assert(
-         controller == null || parseBackend == null,
-         'parseBackend is only valid for standalone markdown previews. When '
-         'using a controller, the controller owner is responsible for parser '
-         'scheduling.',
+         controller == null ||
+             (parseBackend == null &&
+                 onParseError == null &&
+                 profile == null &&
+                 parseDebounce == null),
+         'parseBackend, onParseError, profile, and parseDebounce are only valid '
+         'for standalone markdown previews. When using a controller, configure '
+         'parsing on the FlarkFlutterController instead.',
        );
 
   /// Markdown source for a standalone preview.
@@ -55,10 +58,16 @@ final class Markdown extends StatefulWidget {
   final FlarkMarkdownParseBackend? parseBackend;
 
   /// Called when a scheduled background parse fails.
+  ///
+  /// Used only for standalone [markdown] previews. Shared-controller previews
+  /// route parse errors through the controller's own configuration.
   final void Function(Object error, StackTrace stackTrace)? onParseError;
 
-  final FlarkMarkdownProfile profile;
-  final Duration parseDebounce;
+  /// Markdown profile for standalone [markdown] previews. Defaults to GFM.
+  final FlarkMarkdownProfile? profile;
+
+  /// Parse debounce for standalone [markdown] previews. Defaults to 80ms.
+  final Duration? parseDebounce;
   final TextStyle? textStyle;
   final FlarkPreviewBlockWidgetBuilder? blockBuilder;
   final bool showOverlayControls;
@@ -74,7 +83,6 @@ final class Markdown extends StatefulWidget {
 
 final class _MarkdownState extends State<Markdown> {
   FlarkFlutterController? _ownedController;
-  FlarkParseScheduler? _parseScheduler;
 
   FlarkFlutterController get _controller {
     return widget.controller ?? _ownedController!;
@@ -84,7 +92,9 @@ final class _MarkdownState extends State<Markdown> {
   void initState() {
     super.initState();
     _ensureOwnedController();
-    _configureParseSchedulerIfNeeded();
+    // A standalone preview owns parsing; a shared-controller preview is a
+    // view only — the controller owner (e.g. an editor) drives parsing.
+    if (widget.controller == null) _controller.attachParsingSurface();
   }
 
   @override
@@ -94,32 +104,36 @@ final class _MarkdownState extends State<Markdown> {
         oldWidget.controller != widget.controller ||
         oldWidget.markdown != widget.markdown;
     if (sourceChanged) {
-      _parseScheduler?.dispose();
       if (widget.controller == null) {
         _ownedController?.dispose();
-        _ownedController = FlarkFlutterController.fromMarkdown(
-          widget.markdown!,
-        );
+        _ownedController = _createOwnedController();
+        _controller.attachParsingSurface();
       } else {
+        // Switching to a shared controller; the old owned controller (if any)
+        // is disposed, which stops its parser.
         _ownedController?.dispose();
         _ownedController = null;
       }
-      _configureParseSchedulerIfNeeded();
       return;
     }
 
-    if (oldWidget.parseBackend != widget.parseBackend ||
-        oldWidget.onParseError != widget.onParseError ||
-        oldWidget.profile != widget.profile ||
-        oldWidget.parseDebounce != widget.parseDebounce) {
-      _parseScheduler?.dispose();
-      _configureParseSchedulerIfNeeded();
+    if (widget.controller == null &&
+        (oldWidget.parseBackend != widget.parseBackend ||
+            oldWidget.onParseError != widget.onParseError ||
+            oldWidget.profile != widget.profile ||
+            oldWidget.parseDebounce != widget.parseDebounce)) {
+      _controller.configureParsing(
+        parseBackend: widget.parseBackend,
+        parseProfile: widget.profile,
+        parseDebounce: widget.parseDebounce,
+        onParseError: widget.onParseError,
+        clearOnParseError: widget.onParseError == null,
+      );
     }
   }
 
   @override
   void dispose() {
-    _parseScheduler?.dispose();
     _ownedController?.dispose();
     super.dispose();
   }
@@ -171,25 +185,16 @@ final class _MarkdownState extends State<Markdown> {
 
   void _ensureOwnedController() {
     if (widget.controller != null) return;
-    _ownedController = FlarkFlutterController.fromMarkdown(widget.markdown!);
+    _ownedController = _createOwnedController();
   }
 
-  void _configureParseSchedulerIfNeeded() {
-    if (widget.controller != null) {
-      _parseScheduler = null;
-      return;
-    }
-    final backend = widget.parseBackend ?? _resolveDefaultParseBackend();
-    _parseScheduler = FlarkParseScheduler(
-      controller: _controller,
-      backend: backend,
-      profile: widget.profile,
-      debounce: widget.parseDebounce,
-      onError: widget.onParseError,
-    )..start();
-  }
-
-  FlarkMarkdownParseBackend _resolveDefaultParseBackend() {
-    return FlarkNativeComrakParseBackend.requiredDefault();
+  FlarkFlutterController _createOwnedController() {
+    return FlarkFlutterController.fromMarkdown(
+      widget.markdown!,
+      parseBackend: widget.parseBackend,
+      parseProfile: widget.profile ?? FlarkMarkdownProfile.commonMarkGfm,
+      parseDebounce: widget.parseDebounce ?? const Duration(milliseconds: 80),
+      onParseError: widget.onParseError,
+    );
   }
 }

@@ -83,11 +83,15 @@ void main() {
   testWidgets('top-level widgets render without legacy imports', (
     tester,
   ) async {
+    final parseErrors = <Object>[];
     final controller = FlarkFlutterController.fromMarkdown(
       '# Title\n\n**bold**',
       extensions: FlarkMarkdownEditingExtensions.standard(),
+      parseBackend: const _IdentityParseBackend(),
+      onParseError: (error, stackTrace) {
+        parseErrors.add(error);
+      },
     );
-    final parseErrors = <Object>[];
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
@@ -98,10 +102,6 @@ void main() {
               Expanded(
                 child: MarkdownEditor(
                   controller: controller,
-                  parseBackend: const _IdentityParseBackend(),
-                  onParseError: (error, stackTrace) {
-                    parseErrors.add(error);
-                  },
                   editingMode: FlarkMarkdownEditingMode.source,
                 ),
               ),
