@@ -403,5 +403,131 @@ void main() {
       await tester.pump();
       expect(controller.markdown, isEmpty);
     });
+
+    testWidgets('virtualizes large source documents and syncs external edits', (
+      tester,
+    ) async {
+      final controller = FlarkFlutterController.fromMarkdown(
+        _largeSourceText(260000),
+      );
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 600,
+            height: 600,
+            child: FlarkEditableText(controller: controller),
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const Key('FlarkVirtualizedSourceEditor')),
+        findsOneWidget,
+      );
+      expect(find.byType(EditableText).evaluate().length, lessThan(100));
+
+      controller.applyTransaction(
+        FlarkTransaction.single(
+          FlarkSourceOperation.insert(5, 'x'),
+          selectionAfter: const FlarkSelection.collapsed(6),
+          metadata: const FlarkTransactionMetadata(
+            intent: FlarkTransactionIntent.input,
+            userEvent: 'test.largeSourceInsert',
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final firstEditable = tester.widget<EditableText>(
+        find.byType(EditableText).first,
+      );
+      expect(firstEditable.controller.text, startsWith('paragxraph 0 '));
+      expect(controller.selection, const FlarkSelection.collapsed(6));
+    });
+
+    testWidgets('virtualized visible line edits update source ranges', (
+      tester,
+    ) async {
+      final controller = FlarkFlutterController.fromMarkdown(
+        _largeSourceText(260000),
+      );
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 600,
+            height: 600,
+            child: FlarkEditableText(controller: controller),
+          ),
+        ),
+      );
+
+      final firstEditable = tester.widget<EditableText>(
+        find.byType(EditableText).first,
+      );
+      firstEditable.controller.value = const TextEditingValue(
+        text: 'changed first line',
+        selection: TextSelection.collapsed(offset: 18),
+      );
+      await tester.pump();
+
+      expect(controller.markdown, startsWith('changed first line\n'));
+      expect(controller.selection, const FlarkSelection.collapsed(18));
+    });
+
+    testWidgets(
+      'virtualized source lines apply markdown input policy changes',
+      (tester) async {
+        final controller = FlarkFlutterController.fromMarkdown(
+          '- item\n${_largeSourceText(260000)}',
+          extensions: FlarkExtensionSet([
+            const FlarkMarkdownInputEditingExtension(),
+          ]),
+        );
+        addTearDown(controller.dispose);
+
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: SizedBox(
+              width: 600,
+              height: 600,
+              child: FlarkEditableText(controller: controller),
+            ),
+          ),
+        );
+        controller.applySelection(
+          const FlarkSelection.collapsed(6),
+          userEvent: 'test',
+        );
+        await tester.pump();
+
+        await tester.enterText(find.byType(EditableText).first, '- item\n');
+        await tester.pump();
+
+        expect(controller.markdown, startsWith('- item\n- \nparagraph 0 '));
+        expect(controller.selection, const FlarkSelection.collapsed(9));
+      },
+    );
   });
+}
+
+String _largeSourceText(int targetChars) {
+  final buffer = StringBuffer();
+  var index = 0;
+  while (buffer.length < targetChars) {
+    buffer
+      ..write('paragraph ')
+      ..write(index)
+      ..write(' ')
+      ..write('with enough text to make a realistic editor line. ' * 3)
+      ..writeln();
+    index += 1;
+  }
+  return buffer.toString();
 }
