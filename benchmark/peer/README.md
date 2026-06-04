@@ -4,6 +4,8 @@ Isolated harnesses (separate packages, NOT part of `flark`) that run the **same
 per-edit measurement** as Flark's own
 `test/v2/performance/flark_live_rendered_rebuild_benchmark_test.dart` against
 peer Flutter editors, to calibrate Flark's numbers against the ecosystem.
+The large-document harnesses also compare 100KB/1MB model build, edit apply, and
+post-edit viewport pump costs.
 
 - `benchmark/peer/` — flutter_quill
 - `benchmark/peer_supereditor/` — super_editor (git; fresh caches may need a
@@ -67,6 +69,21 @@ latency. See `docs/benchmarks.md` for p95 and profile-mode frame timings.
    remaining live block constant factor if peer-leading debug numbers become a
    concrete goal.
 
+## Large-Document Results
+
+Fresh run on 2026-06-04 with the same debug test-VM caveat:
+
+| 1MB metric | Flark source editor | super_editor | flutter_quill | Read |
+| --- | --- | --- | --- | --- |
+| Model/controller build median | `1.15ms` | `3.20ms` | `1.83s` | Flark leads this surface |
+| Edit apply median | `1.34ms` | `755us` | `962.66ms` | Flark is close to the direct block peer |
+| Viewport pump after edit median | `208.12ms` | `98.36ms` | `153.54ms` | Flark trails both peers |
+
+The conclusion is split. Flark's peer-comparable large-document build/apply
+interaction is strong, but 1MB viewport pump is still the editor-side peer gap.
+The remaining high-value Flark-specific work is native Markdown parse/decode,
+JSON payload decode, and result mapping.
+
 ## Reproduce
 
 flutter_quill (turnkey):
@@ -74,6 +91,7 @@ flutter_quill (turnkey):
 ```bash
 cd benchmark/peer && flutter pub get
 flutter test test/quill_benchmark_test.dart
+flutter test test/quill_large_document_benchmark_test.dart
 ```
 
 super_editor:
@@ -81,6 +99,15 @@ super_editor:
 ```bash
 cd benchmark/peer_supereditor && flutter pub get
 flutter test test/super_editor_benchmark_test.dart
+flutter test test/super_editor_large_document_benchmark_test.dart
+```
+
+Flark large-document editor sweep:
+
+```bash
+flutter test test/v2/performance/flark_large_document_editor_benchmark_test.dart \
+  --tags benchmark \
+  --reporter compact
 ```
 
 If a fresh git cache fails on `TextInputStyle` / `updateStyle`, apply the
