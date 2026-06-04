@@ -1,60 +1,201 @@
 # Benchmarks
 
-Flark ships an enforced benchmark lane. Budgets are failing assertions, not
-warnings.
+This is the benchmark scoreboard for Flark. Keep it current whenever perf work
+lands: every optimization should leave behind a number, a comparison point, and
+a conclusion about where to focus next.
+
+## Current Conclusions
+
+| Area | Current signal | Conclusion | Next focus |
+| --- | --- | --- | --- |
+| Live-rendered rebuild fanout | `builds_per_edit=1.0` through 10/20/40/80 blocks in the focused debug rebuild benchmark | Fixed: unchanged blocks no longer rebuild just because source/display offsets shift | Keep the benchmark as a regression gate |
+| Live-rendered profile frame time | 40/80 blocks x end/start edits: `build_median=1.16-1.53ms`, `build_p95<=2.12ms` | Safely under the 16.7ms frame budget with large headroom | Re-run the profile gate after major widget changes |
+| Peer comparison | Flark debug medians are flat at `8.87-10.17ms`; current super_editor is `5.14-6.19ms`; current flutter_quill is `4.67-5.00ms` | Peer-competitive on scaling and profile latency, not peer-leading on debug constant factor | Only chase live-block constant cost if peer-leading debug numbers become a product goal |
+| Large-document source transaction | 1MB apply: `4.18ms` median / `10.99ms` p95 | Below a 60fps frame budget in the current lane | Piece table / rope only if 1MB live source editing becomes a product target |
+| Native parse + decode | 1MB parse+decode: `1.12s` median | Largest remaining raw perf number, but async and not the live-keystroke bottleneck | Consider payload/decode or incremental parse only with huge-document evidence |
+
+**Current decision:** the broad live-rendered perf architecture work has hit
+diminishing returns for the measured 40-80 block editing path. The remaining
+live-rendered opportunity is a narrow constant-factor pass, not another rebuild
+architecture rewrite. If Flark needs more perf work next, the clearer target is
+huge-document parse/decode or explicit 1MB editing pressure.
+
+**Narrow constant-factor pass:** a task-list hot-path refactor now skips
+block-style signature construction for body blocks and skips text-span
+segmentation when a rebuilt block has no inline runs. This removes real
+per-frame work from the focused benchmark path, but the measured outcome is not
+a decisive win: debug medians stayed in the same ~9-10ms band and profile-mode
+frame timing stayed in the same ~1-2ms band. Keep the cleanup; do not use it as
+evidence for more live-block constant-factor work.
+
+## Live-Rendered Editing
+
+### Debug Rebuild Benchmark
+
+Harness:
+
+```bash
+flutter test test/v2/performance/flark_live_rendered_rebuild_benchmark_test.dart \
+  --tags benchmark \
+  --reporter compact
+```
+
+Latest local snapshot:
+
+| Case | Current Flark pump median / p95 | Current rebuild fanout | Current peer median / p95 | Previous Flark shape |
+| --- | --- | --- | --- | --- |
+| 10 blocks | `8.87ms` / `11.80ms` | `1.0` block/edit | super_editor `5.85ms` / `12.50ms`; flutter_quill `4.67ms` / `8.67ms` | ~21ms, all-block fanout |
+| 20 blocks | `8.95ms` / `11.43ms` | `1.0` block/edit | super_editor `5.49ms` / `14.21ms`; flutter_quill `4.90ms` / `10.58ms` | ~27ms, all-block fanout |
+| 40 blocks | `9.69ms` / `12.05ms` | `1.0` block/edit | super_editor `6.19ms` / `14.21ms`; flutter_quill `4.90ms` / `13.31ms` | ~44ms, all-block fanout |
+| 80 blocks | `10.17ms` / `11.83ms` | `1.0` block/edit | super_editor `5.14ms` / `8.98ms`; flutter_quill `5.00ms` / `6.02ms` | ~72ms, all-block fanout |
+| 80 blocks, 600px viewport | `9.52ms` | `1.0` block/edit | not measured | Use this to decide whether virtualization is worth it |
+| Source mode, 40 blocks | `1.80ms` / `2.45ms` | one editable | lower bound for source-string editing | already flat |
+
+Interpretation: this is a debug test-VM benchmark. Use it for scaling shape and
+regression detection, not real device latency. The important current signal is
+that live-rendered editing is now flat in block count for unchanged blocks.
+
+### Profile-Mode Frame Timing
+
+Harness:
+
+```bash
+./scripts/verify_live_rendered_profile.sh
+```
+
+The profile gate runs `FLARK_PROFILE_EDIT=end|start` over 40 and 80 blocks on
+`macos` by default and enforces generous build-median/build-p95 budgets. Use
+these variables to narrow or tune the sweep:
+
+- `FLARK_PROFILE_DEVICE`
+- `FLARK_PROFILE_BLOCKS_LIST`
+- `FLARK_PROFILE_EDITS_LIST`
+- `FLARK_PROFILE_END_MEDIAN_BUDGET_MS`
+- `FLARK_PROFILE_END_P95_BUDGET_MS`
+- `FLARK_PROFILE_START_MEDIAN_BUDGET_MS`
+- `FLARK_PROFILE_START_P95_BUDGET_MS`
+
+Latest refreshed profile sweep:
+
+| Case | Build median | Build p95 | Raster median | Raster p95 | Conclusion |
+| --- | --- | --- | --- | --- | --- |
+| 40 blocks, end edit | `1.16ms` | `2.12ms` | `558us` | `878us` | under 60fps budget with headroom |
+| 40 blocks, start edit | `1.25ms` | `1.71ms` | `649us` | `1.11ms` | offset-shift case stays flat |
+| 80 blocks, end edit | `1.53ms` | `1.80ms` | `666us` | `820us` | under 60fps budget with headroom |
+| 80 blocks, start edit | `1.53ms` | `1.76ms` | `604us` | `715us` | offset-shift case stays flat |
+
+After the narrow text-span fast path:
+
+| Case | Build median | Build p95 | Raster median | Raster p95 | Read |
+| --- | --- | --- | --- | --- | --- |
+| 40 blocks, end edit | `1.18ms` | `1.40ms` | `600us` | `699us` | same fast band |
+| 40 blocks, start edit | `1.18ms` | `2.04ms` | `635us` | `1.26ms` | same fast band |
+| 80 blocks, end edit | `1.49ms` | `1.69ms` | `610us` | `728us` | same fast band |
+| 80 blocks, start edit | `1.69ms` | `2.12ms` | `673us` | `782us` | same fast band |
+
+Interpretation: the refactor is code-health positive and removes unnecessary
+work, but profile timing was already so low that the practical perf result is
+noise-level. This supports moving on unless a product goal specifically demands
+peer-leading debug pump medians.
+
+Older profile-mode progress:
+
+| Blocks | Baseline | Stable ids | Instance reuse, end edit | Worst case, start edit |
+| --- | --- | --- | --- | --- |
+| 20 | `10.8ms` | `4.9ms` | `1.6ms` | not recorded |
+| 40 | `25.0ms` | `9.2ms` | `1.9ms` | `7.6ms` |
+| 80 | ~`50ms` | ~`18ms` | `2.2ms` | `13.1ms` |
+
+Interpretation: debug rebuild fanout tells us whether the architecture scales;
+profile-mode timing tells us whether users get missed frames.
+
+## Document-Size Sweep
+
+Harness:
 
 ```bash
 ./scripts/verify_benchmark_lane.sh
 ```
 
-The lane runs `flutter test --tags benchmark test/v2/performance` with
-`FLARK_BENCHMARK_ENFORCE_BUDGETS=true`. Each case prints a `flark_benchmark`
-line with min/median/p95/max so regressions are visible in CI logs.
+The enforced lane runs:
 
-These lane tests run in the **debug** test VM — good for relative scaling and
-regression tracking, but not real-device frame time. For true profile-mode
-frame timing (AOT, real raster) of live-rendered editing, run the harness in
-`example/lib/perf_harness.dart` — see
-`docs/architecture/live_rendered_rebuild_isolation.md` (profile numbers show the
-per-keystroke build phase breaching the 60 fps budget at ~20–25 blocks).
+```bash
+flutter test --tags benchmark test/v2/performance \
+  --dart-define=FLARK_BENCHMARK_ENFORCE_BUDGETS=true \
+  --reporter compact
+```
 
-## Document-size sweep
+Each benchmark prints a `flark_benchmark` line with min/median/p95/max. Budgets
+are failing assertions, not warnings.
 
-Two headline numbers at 1 KB / 100 KB / 1 MB of realistic Markdown (headings,
-emphasis, links, task lists, code fences). Captured on an Apple Silicon dev
-machine under the Dart test VM — indicative of relative scaling, not absolute
-release-AOT latency.
+Two headline numbers at 1KB / 100KB / 1MB of realistic Markdown:
 
-| Document | Keystroke apply (median / p95) | Native parse + decode (median) |
-| --- | --- | --- |
-| 1 KB | 4 µs / 19 µs | 1 ms |
-| 100 KB | 172 µs / 1.06 ms | 55 ms |
-| 1 MB | 5.5 ms / 18.9 ms | ~0.5 s |
+| Document | Keystroke apply median / p95 | Native parse + decode median / p95 | Current read |
+| --- | --- | --- | --- |
+| 1KB | `3us` / `3us` | `2.00ms` / `15.07ms` | trivial; parse p95 includes cold/noisy samples |
+| 100KB | `170us` / `412us` | `136.55ms` / `211.30ms` | synchronous apply is healthy |
+| 1MB | `4.18ms` / `10.99ms` | `1123.76ms` / `1123.76ms` | async parse/decode is the only large headline number |
 
 - **Keystroke apply** is the synchronous core hot path
-  (`FlarkEditorState.applyTransaction`: text-buffer rebuild + line reindex +
-  selection map + history inverse). It scales cleanly with document length —
-  sub-millisecond through 100 KB. The ~5.5 ms at 1 MB reflects the flat-string
-  buffer's O(n) rebuild per edit (lifting that ceiling is tracked as a piece
-  table / rope behind `FlarkTextBuffer`).
+  (`FlarkEditorState.applyTransaction`: text-buffer rebuild, line reindex,
+  selection map, history inverse). It scales cleanly through 1MB in the current
+  lane, with p95 still below a 60fps frame budget.
+- **Native parse + decode** is `FlarkNativeComrakParseBackend.parse` (Comrak
+  parse, JSON payload, Dart decode, result synthesis). It is no longer
+  pathological, but the 1MB async cost is the clearest remaining performance
+  area if huge documents become important.
 
-- **Native parse + decode** is the full `FlarkNativeComrakParseBackend.parse`
-  (Comrak parse → JSON payload → Dart decode → result synthesis). It is linear
-  in document size: the 1 MB case sits at ~0.5 s, ~10× the 100 KB case.
+## Peer Calibration
 
-### History: the O(n²) parse fix
+Peer harnesses live outside the package:
 
-The Dart result-synthesis layer (`_mapNativeResult`) was previously
-**super-linear** — ~O(n²), so 1 MB took ~41 s. Three per-block scans over all
-blocks/markers were the cause (renderable-block filtering, marker-only block
-detection, and code-fence marker matching). Each became O(log n) with a
-start-sorted index plus a prefix-max-end array, dropping 1 MB parse+decode from
-~41 s to ~0.5 s (~88×) with no behavior change. The bridge (Comrak parse + JSON
-+ decode) was already linear and untouched. The 1 MB parse budget now guards
-against a quadratic regression.
+- `benchmark/peer/` for flutter_quill
+- `benchmark/peer_supereditor/` for super_editor
 
-## Budgets
+Use [benchmark/peer/README.md](../benchmark/peer/README.md) for peer setup and
+toolchain caveats.
 
-Budgets are generous regression trackers (≈10× headroom over observed medians),
-not tight SLAs — native parse timing varies widely with machine speed. They
-exist to catch order-of-magnitude regressions, not to pin absolute numbers.
+The useful conclusion is architectural: super_editor proves a block-based live
+editor can be flat, and current Flark now matches that scaling shape. Current
+peer reruns show Flark is still higher on debug pump constant factor, but the
+profile-mode frame timing is already comfortably below budget. That makes broad
+live-rendered architecture work a poor next bet unless we specifically want
+peer-leading debug numbers.
+
+## What To Focus On Next
+
+1. Keep live-rendered rebuild/profile gates in CI-adjacent validation and move
+   regular product work forward.
+2. If peer-leading live-rendered numbers matter, run a narrow constant-factor
+   investigation around live block chrome/layout. Do not restart the rebuild
+   architecture unless `builds_per_edit` regresses.
+3. If large files are a priority, investigate native parse/decode payload cost
+   before text-buffer storage: current 1MB source apply is below frame budget.
+4. Treat viewport virtualization as deferred until first-paint or huge visible
+   documents become the measured bottleneck. It is no longer the per-keystroke
+   rebuild-fanout fix.
+
+## Large-Document Pitch
+
+The current large-document bottleneck is not synchronous typing. At 1MB,
+`keystroke_apply` is `4.18ms` median / `10.99ms` p95, while native parse+decode
+is `1123.76ms` median. The next useful work is to split that 1.12s number into
+phases before choosing an implementation strategy:
+
+1. Add phase timing around `FlarkNativeComrakParseBackend.parse`: Dart UTF-8
+   encode/allocation, native parse+payload construction, FFI payload copy,
+   `NativeComrakPayloadCodec.decode`, and `_mapNativeResult`.
+2. Record payload size plus block/inline/hidden-range counts for 100KB and 1MB
+   samples. If payload copy/decode dominates, optimize the wire format before
+   touching parser architecture.
+3. If native parse dominates, evaluate incremental parse or parse-windowing. If
+   Dart mapping dominates, optimize range mapping and marker/list synthesis.
+4. Leave `FlarkTextBuffer`/piece-table work behind this unless a new benchmark
+   shows 1MB synchronous apply crossing frame budget again.
+
+## Budget Policy
+
+Budgets are generous regression trackers, not tight SLAs. They exist to catch
+order-of-magnitude regressions and shape regressions. If a budget changes, the
+commit should say which machine/harness produced the new baseline and why the
+new threshold still catches the failure mode we care about.

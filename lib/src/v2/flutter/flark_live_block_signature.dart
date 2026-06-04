@@ -18,9 +18,13 @@ import '../render_plan/render_plan.dart';
 /// per-block signature — a style change rebuilds every block.
 ///
 /// See `docs/architecture/live_rendered_rebuild_isolation.md`.
-String liveBlockContentSignature(FlarkRenderBlock block, String displayText) {
+String liveBlockContentSignature(
+  FlarkRenderBlock block,
+  String displayText, {
+  String? markdown,
+}) {
   final buffer = StringBuffer();
-  _writeBlock(buffer, block, displayText, block.displayRange.start);
+  _writeBlock(buffer, block, displayText, block.displayRange.start, markdown);
   return buffer.toString();
 }
 
@@ -29,6 +33,7 @@ void _writeBlock(
   FlarkRenderBlock block,
   String displayText,
   int base,
+  String? markdown,
 ) {
   buffer
     ..write('B|')
@@ -64,13 +69,23 @@ void _writeBlock(
   }
 
   final listItem = block.listItem;
-  if (listItem != null) buffer.write('L:${listItem.kind.name};');
+  if (listItem != null) {
+    buffer
+      ..write('L:${listItem.kind.name}:')
+      ..write(_sourceListMarkerLabel(markdown, block) ?? '')
+      ..write(';');
+  }
 
   final task = block.taskListItem;
   if (task != null) buffer.write('K:${task.checked};');
 
   final code = block.codeBlock;
-  if (code != null) buffer.write('C:${code.language};');
+  if (code != null) {
+    buffer
+      ..write('C:')
+      ..write(_sourceCodeFenceLanguage(markdown, block) ?? code.language ?? '')
+      ..write(';');
+  }
 
   for (final run in block.inlineRuns) {
     buffer
@@ -102,7 +117,7 @@ void _writeBlock(
 
   buffer.write('{');
   for (final child in block.children) {
-    _writeBlock(buffer, child, displayText, base);
+    _writeBlock(buffer, child, displayText, base, markdown);
     buffer.write('|');
   }
   buffer.write('}');
@@ -119,9 +134,97 @@ String _slice(String displayText, FlarkSourceRange range) {
 
 String _attributes(Map<String, Object?> attributes) {
   if (attributes.isEmpty) return '';
-  final keys = attributes.keys
-      .where((key) => key != 'stableId' && key != 'synthetic')
-      .toList()
-    ..sort();
+  final keys =
+      attributes.keys
+          .where((key) => key != 'stableId' && key != 'synthetic')
+          .toList()
+        ..sort();
   return keys.map((key) => '$key=${attributes[key]}').join(',');
+}
+
+String? _sourceListMarkerLabel(String? markdown, FlarkRenderBlock block) {
+  if (markdown == null || block.listItem?.kind != FlarkRenderListKind.ordered) {
+    return null;
+  }
+  final line = _sourceLine(markdown, block);
+  if (line == null) return null;
+  return _orderedListMarkerLabel(line);
+}
+
+String? _sourceCodeFenceLanguage(String? markdown, FlarkRenderBlock block) {
+  if (markdown == null || block.codeBlock == null) return null;
+  final line = _sourceLine(markdown, block);
+  if (line == null) return null;
+  var index = _skipHorizontalWhitespace(line, 0);
+  if (index >= line.length) return null;
+  final marker = line.codeUnitAt(index);
+  if (marker != 0x60 && marker != 0x7E) return null;
+  var markerCount = 0;
+  while (index < line.length && line.codeUnitAt(index) == marker) {
+    markerCount++;
+    index++;
+  }
+  if (markerCount < 3) return null;
+  final languageStart = _skipHorizontalWhitespace(line, index);
+  if (languageStart >= line.length) return '';
+  final languageEnd = _firstHorizontalWhitespaceOrEnd(line, languageStart);
+  return line.substring(languageStart, languageEnd);
+}
+
+String? _sourceLine(String markdown, FlarkRenderBlock block) {
+  if (block.sourceRange.start < 0 ||
+      block.sourceRange.start >= markdown.length ||
+      block.sourceRange.start >= block.sourceRange.end) {
+    return null;
+  }
+  final lineEnd = markdown.indexOf('\n', block.sourceRange.start);
+  final effectiveLineEnd = lineEnd < 0 || lineEnd > block.sourceRange.end
+      ? block.sourceRange.end
+      : lineEnd;
+  return markdown.substring(block.sourceRange.start, effectiveLineEnd);
+}
+
+String? _orderedListMarkerLabel(String line) {
+  var index = _skipHorizontalWhitespace(line, 0);
+  final digitStart = index;
+  while (index < line.length &&
+      index - digitStart < 9 &&
+      _isAsciiDigit(line.codeUnitAt(index))) {
+    index++;
+  }
+  if (index == digitStart) return null;
+  if (index < line.length && _isAsciiDigit(line.codeUnitAt(index))) {
+    return null;
+  }
+  if (index >= line.length) return null;
+
+  final delimiter = line.codeUnitAt(index);
+  if (delimiter != 0x2E && delimiter != 0x29) return null;
+  return line.substring(digitStart, index + 1);
+}
+
+int _firstHorizontalWhitespaceOrEnd(String text, int start) {
+  var index = start;
+  while (index < text.length &&
+      !_isHorizontalWhitespace(text.codeUnitAt(index))) {
+    index++;
+  }
+  return index;
+}
+
+int _skipHorizontalWhitespace(String text, int start) {
+  var index = start;
+  while (index < text.length &&
+      _isHorizontalWhitespace(text.codeUnitAt(index))) {
+    index++;
+  }
+  return index;
+}
+
+bool _isHorizontalWhitespace(int codeUnit) {
+  return codeUnit == 0x20 || codeUnit == 0x09;
+}
+
+bool _isAsciiDigit(int codeUnit) {
+  return codeUnit >= 0x30 && codeUnit <= 0x39;
 }

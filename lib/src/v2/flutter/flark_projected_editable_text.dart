@@ -578,7 +578,10 @@ final class _FlarkLiveRenderedBlockEditorState
         // even after earlier edits shift its offsets, and the edited block keeps
         // its id (preserving its widget State/focus/IME). See
         // FlarkLiveBlockReconciler.
-        final blockIds = _blockReconciler.assignIds(editableBlocks, displayText);
+        final blockIds = _blockReconciler.assignIds(
+          editableBlocks,
+          displayText,
+        );
         final blockEntries = [
           for (var index = 0; index < editableBlocks.length; index += 1)
             _LiveRenderedBlockEntry(
@@ -690,18 +693,25 @@ final class _FlarkLiveRenderedBlockEditorState
     for (var index = 0; index < entries.length; index += 1) {
       final entry = entries[index];
       final block = entry.block;
-      final signature = liveBlockContentSignature(block, displayText);
+      final signature = liveBlockContentSignature(
+        block,
+        displayText,
+        markdown: widget.controller.markdown,
+      );
       final selectionKey = _blockSelectionKey(block, selection);
       final cached = _blockWidgetCache[entry.id];
+      final handle =
+          cached?.handle ??
+          _LiveRenderedBlockHandle(entry: entry, displayText: displayText);
+      handle.update(entry: entry, displayText: displayText);
       // Reuse the same widget instance only when the block is byte-identical in
-      // content, position, navigation context, AND selection state. Flutter
+      // content, navigation context, AND selection state. Flutter
       // returns immediately for a reference-identical widget, skipping the
-      // entire subtree — so an unchanged block costs nothing to rebuild.
+      // entire subtree — so an unchanged block costs nothing to rebuild. The
+      // mutable handle keeps edit/source mapping current for offset shifts.
       if (cached != null &&
           cached.signature == signature &&
           cached.selectionKey == selectionKey &&
-          cached.displayStart == block.displayRange.start &&
-          cached.displayEnd == block.displayRange.end &&
           cached.index == index &&
           cached.count == entries.length) {
         widgets.add(cached.widget);
@@ -715,8 +725,7 @@ final class _FlarkLiveRenderedBlockEditorState
         key: ValueKey(entry.id),
         child: _FlarkLiveRenderedBlock(
           controller: widget.controller,
-          block: block,
-          displayText: displayText,
+          handle: handle,
           style: baseStyle,
           cursorColor: widget.cursorColor,
           backgroundCursorColor: widget.backgroundCursorColor,
@@ -737,10 +746,9 @@ final class _FlarkLiveRenderedBlockEditorState
         ),
       );
       _blockWidgetCache[entry.id] = _CachedLiveBlock(
+        handle: handle,
         signature: signature,
         selectionKey: selectionKey,
-        displayStart: block.displayRange.start,
-        displayEnd: block.displayRange.end,
         index: index,
         count: entries.length,
         widget: builtWidget,
@@ -1325,23 +1333,44 @@ final class _LiveRenderedBlockEntry {
   final FlarkRenderBlock block;
 }
 
+final class _LiveRenderedBlockHandle {
+  _LiveRenderedBlockHandle({
+    required _LiveRenderedBlockEntry entry,
+    required String displayText,
+  }) : _entry = entry,
+       _displayText = displayText;
+
+  _LiveRenderedBlockEntry _entry;
+  String _displayText;
+
+  String get id => _entry.id;
+  FlarkRenderBlock get block => _entry.block;
+  String get displayText => _displayText;
+
+  void update({
+    required _LiveRenderedBlockEntry entry,
+    required String displayText,
+  }) {
+    _entry = entry;
+    _displayText = displayText;
+  }
+}
+
 /// A cached live block widget plus the inputs that, if all unchanged, make the
 /// cached instance safe to reuse (skipping its rebuild).
 final class _CachedLiveBlock {
   const _CachedLiveBlock({
+    required this.handle,
     required this.signature,
     required this.selectionKey,
-    required this.displayStart,
-    required this.displayEnd,
     required this.index,
     required this.count,
     required this.widget,
   });
 
+  final _LiveRenderedBlockHandle handle;
   final String signature;
   final String selectionKey;
-  final int displayStart;
-  final int displayEnd;
   final int index;
   final int count;
   final Widget widget;
@@ -1765,8 +1794,7 @@ int flarkDebugLiveBlockBuildCount = 0;
 final class _FlarkLiveRenderedBlock extends StatelessWidget {
   const _FlarkLiveRenderedBlock({
     required this.controller,
-    required this.block,
-    required this.displayText,
+    required this.handle,
     required this.style,
     required this.cursorColor,
     required this.backgroundCursorColor,
@@ -1777,8 +1805,7 @@ final class _FlarkLiveRenderedBlock extends StatelessWidget {
   });
 
   final FlarkFlutterController controller;
-  final FlarkRenderBlock block;
-  final String displayText;
+  final _LiveRenderedBlockHandle handle;
   final TextStyle style;
   final Color cursorColor;
   final Color backgroundCursorColor;
@@ -1793,10 +1820,13 @@ final class _FlarkLiveRenderedBlock extends StatelessWidget {
       flarkDebugLiveBlockBuildCount += 1;
       return true;
     }());
+    final block = handle.block;
+    final displayText = handle.displayText;
     if (block.table != null) {
       return _EditableTableBlock(
         controller: controller,
         block: block,
+        blockHandle: handle,
         style: style,
         cursorColor: cursorColor,
         backgroundCursorColor: backgroundCursorColor,
@@ -1806,6 +1836,7 @@ final class _FlarkLiveRenderedBlock extends StatelessWidget {
       return _EditableCodeBlock(
         controller: controller,
         block: block,
+        blockHandle: handle,
         displayText: displayText,
         style: style,
         cursorColor: cursorColor,
@@ -1820,6 +1851,7 @@ final class _FlarkLiveRenderedBlock extends StatelessWidget {
       return _EditableTaskListItemBlock(
         controller: controller,
         block: block,
+        blockHandle: handle,
         displayText: displayText,
         style: style,
         cursorColor: cursorColor,
@@ -1834,6 +1866,7 @@ final class _FlarkLiveRenderedBlock extends StatelessWidget {
       return _EditableListItemBlock(
         controller: controller,
         block: block,
+        blockHandle: handle,
         displayText: displayText,
         style: style,
         cursorColor: cursorColor,
@@ -1860,6 +1893,7 @@ final class _FlarkLiveRenderedBlock extends StatelessWidget {
             child: _EditableProjectedBlockText(
               controller: controller,
               block: block,
+              blockHandle: handle,
               displayText: displayText,
               style: style.copyWith(color: const Color(0xFF42526E)),
               cursorColor: cursorColor,
@@ -1880,6 +1914,7 @@ final class _FlarkLiveRenderedBlock extends StatelessWidget {
       child: _EditableProjectedBlockText(
         controller: controller,
         block: block,
+        blockHandle: handle,
         displayText: displayText,
         style: style,
         cursorColor: cursorColor,
@@ -1915,6 +1950,7 @@ final class _EditableProjectedBlockText extends StatefulWidget {
     required this.style,
     required this.cursorColor,
     required this.backgroundCursorColor,
+    this.blockHandle,
     this.focusNode,
     this.autofocus = false,
     this.editableKey,
@@ -1928,6 +1964,7 @@ final class _EditableProjectedBlockText extends StatefulWidget {
 
   final FlarkFlutterController controller;
   final FlarkRenderBlock block;
+  final _LiveRenderedBlockHandle? blockHandle;
   final String displayText;
   final TextStyle style;
   final Color cursorColor;
@@ -1948,6 +1985,9 @@ final class _EditableProjectedBlockText extends StatefulWidget {
   final String? codeSyntaxLanguage;
   final VoidCallback? onMoveToPreviousBlock;
   final VoidCallback? onMoveToNextBlock;
+
+  FlarkRenderBlock get currentBlock => blockHandle?.block ?? block;
+  String get currentDisplayText => blockHandle?.displayText ?? displayText;
 
   @override
   State<_EditableProjectedBlockText> createState() {
@@ -1997,14 +2037,16 @@ final class _EditableProjectedBlockTextState
 
   @override
   Widget build(BuildContext context) {
-    _textController.block = widget.block;
-    _textController.displayText = widget.displayText;
+    final block = widget.currentBlock;
+    final displayText = widget.currentDisplayText;
+    _textController.block = block;
+    _textController.displayText = displayText;
     _textController.codeSyntaxLanguage = widget.codeSyntaxLanguage;
     Widget editor = _KeyboardSyncedEditableText(
       key: widget.editableKey,
       controller: _textController,
       focusNode: _focusNode,
-      style: _blockTextStyle(widget.style, widget.block),
+      style: _blockTextStyle(widget.style, block),
       cursorColor: widget.cursorColor,
       backgroundCursorColor: widget.backgroundCursorColor,
       minLines: _minimumEditableLineCount(_textController.text),
@@ -2067,7 +2109,7 @@ final class _EditableProjectedBlockTextState
         final sourceEdit =
             widget.sourceEditForReplacement?.call(
               markdown: widget.controller.markdown,
-              block: widget.block,
+              block: widget.currentBlock,
               range: sourceRange,
               value: value,
             ) ??
@@ -2099,14 +2141,16 @@ final class _EditableProjectedBlockTextState
         _compositionUndoGrouping.clearIfCommitted(value);
         return;
       }
-      final range = _clampedDisplayRange(widget.block, widget.displayText);
-      final newDisplayText = widget.displayText.replaceRange(
+      final block = widget.currentBlock;
+      final displayText = widget.currentDisplayText;
+      final range = _clampedDisplayRange(block, displayText);
+      final newDisplayText = displayText.replaceRange(
         range.start,
         range.end,
         value.text,
       );
       final applied = widget.controller.applyProjectedTextEdit(
-        oldDisplayText: widget.displayText,
+        oldDisplayText: displayText,
         newDisplayText: newDisplayText,
         undoGroupId: compositionUndoGroupId,
       );
@@ -2134,7 +2178,10 @@ final class _EditableProjectedBlockTextState
       _compositionUndoGrouping.clearIfCommitted(value);
       return;
     }
-    final range = _clampedDisplayRange(widget.block, widget.displayText);
+    final range = _clampedDisplayRange(
+      widget.currentBlock,
+      widget.currentDisplayText,
+    );
     widget.controller.applyProjectedSelection(
       FlarkSelection(
         baseOffset: range.start + selection.baseOffset,
@@ -2157,7 +2204,10 @@ final class _EditableProjectedBlockTextState
       );
       return;
     }
-    final range = _clampedDisplayRange(widget.block, widget.displayText);
+    final range = _clampedDisplayRange(
+      widget.currentBlock,
+      widget.currentDisplayText,
+    );
     widget.controller.applyProjectedSelection(
       FlarkSelection(
         baseOffset: range.start + localSelection.baseOffset,
@@ -2187,8 +2237,8 @@ final class _EditableProjectedBlockTextState
       selection: selection,
       composing: current.text == text ? current.composing : TextRange.empty,
     );
-    _textController.block = widget.block;
-    _textController.displayText = widget.displayText;
+    _textController.block = widget.currentBlock;
+    _textController.displayText = widget.currentDisplayText;
     _textController.codeSyntaxLanguage = widget.codeSyntaxLanguage;
     _rememberLocalEditSnapshot(next, directSourceRange: directSourceRange);
     if (current == next) return;
@@ -2204,12 +2254,19 @@ final class _EditableProjectedBlockTextState
     final snapshotRange = _directSourceRangeSnapshot;
     if (directSourceRange != null &&
         snapshotValue != null &&
-        snapshotRange != null &&
-        _sourceRangeStillMatches(snapshotRange, snapshotValue.text)) {
-      return _LocalTextEditSnapshot(
-        value: snapshotValue,
-        directSourceRange: snapshotRange,
-      );
+        snapshotRange != null) {
+      if (_sourceRangeStillMatches(directSourceRange, snapshotValue.text)) {
+        return _LocalTextEditSnapshot(
+          value: snapshotValue,
+          directSourceRange: directSourceRange,
+        );
+      }
+      if (_sourceRangeStillMatches(snapshotRange, snapshotValue.text)) {
+        return _LocalTextEditSnapshot(
+          value: snapshotValue,
+          directSourceRange: snapshotRange,
+        );
+      }
     }
 
     final text = _localText();
@@ -2256,8 +2313,10 @@ final class _EditableProjectedBlockTextState
         directSourceRange.end,
       );
     }
-    final range = _clampedDisplayRange(widget.block, widget.displayText);
-    return widget.displayText.substring(range.start, range.end);
+    final block = widget.currentBlock;
+    final displayText = widget.currentDisplayText;
+    final range = _clampedDisplayRange(block, displayText);
+    return displayText.substring(range.start, range.end);
   }
 
   TextSelection _localSelection(int textLength) {
@@ -2288,7 +2347,10 @@ final class _EditableProjectedBlockTextState
     }
     final displaySelection = widget.controller.projection
         .sourceSelectionToDisplay(widget.controller.selection);
-    final range = _clampedDisplayRange(widget.block, widget.displayText);
+    final range = _clampedDisplayRange(
+      widget.currentBlock,
+      widget.currentDisplayText,
+    );
     if (displaySelection.start < range.start ||
         displaySelection.end > range.end) {
       final current = _textController.selection;
@@ -2408,7 +2470,10 @@ final class _EditableProjectedBlockTextState
   }
 
   bool _sourceSelectionCoversBlock(FlarkSelection selection) {
-    return _sourceSelectionCoversRange(selection, widget.block.sourceRange);
+    return _sourceSelectionCoversRange(
+      selection,
+      widget.currentBlock.sourceRange,
+    );
   }
 
   bool _sourceSelectionCoversRange(
@@ -2423,7 +2488,7 @@ final class _EditableProjectedBlockTextState
   FlarkSourceRange? _sourceEditRange() {
     final resolver = widget.sourceRangeForEdits;
     if (resolver == null) return null;
-    final range = resolver(widget.controller.markdown, widget.block);
+    final range = resolver(widget.controller.markdown, widget.currentBlock);
     if (range == null) return null;
     if (range.start < 0 ||
         range.start > range.end ||
@@ -2761,6 +2826,9 @@ final class _FlarkBlockTextController extends TextEditingController {
       );
       if (highlighted != null) return highlighted;
     }
+    if (renderBlock.inlineRuns.isEmpty) {
+      return _plainTextSpan(effectiveStyle, composingRange);
+    }
 
     final displayRange = _clampedDisplayRange(renderBlock, displayText);
     final segments = _blockTextSegments(
@@ -2868,12 +2936,14 @@ final class _EditableListItemBlock extends StatelessWidget {
     required this.backgroundCursorColor,
     this.focusNode,
     this.autofocus = false,
+    this.blockHandle,
     this.onMoveToPreviousBlock,
     this.onMoveToNextBlock,
   });
 
   final FlarkFlutterController controller;
   final FlarkRenderBlock block;
+  final _LiveRenderedBlockHandle? blockHandle;
   final String displayText;
   final TextStyle style;
   final Color cursorColor;
@@ -2883,8 +2953,13 @@ final class _EditableListItemBlock extends StatelessWidget {
   final VoidCallback? onMoveToPreviousBlock;
   final VoidCallback? onMoveToNextBlock;
 
+  FlarkRenderBlock get currentBlock => blockHandle?.block ?? block;
+  String get currentDisplayText => blockHandle?.displayText ?? displayText;
+
   @override
   Widget build(BuildContext context) {
+    final block = currentBlock;
+    final displayText = currentDisplayText;
     final marker = _listMarkerInfo(controller.markdown, block);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
@@ -2897,6 +2972,7 @@ final class _EditableListItemBlock extends StatelessWidget {
             child: _EditableProjectedBlockText(
               controller: controller,
               block: block,
+              blockHandle: blockHandle,
               displayText: displayText,
               style: style,
               cursorColor: cursorColor,
@@ -2966,12 +3042,14 @@ final class _EditableTaskListItemBlock extends StatefulWidget {
     required this.backgroundCursorColor,
     this.focusNode,
     this.autofocus = false,
+    this.blockHandle,
     this.onMoveToPreviousBlock,
     this.onMoveToNextBlock,
   });
 
   final FlarkFlutterController controller;
   final FlarkRenderBlock block;
+  final _LiveRenderedBlockHandle? blockHandle;
   final String displayText;
   final TextStyle style;
   final Color cursorColor;
@@ -2980,6 +3058,9 @@ final class _EditableTaskListItemBlock extends StatefulWidget {
   final bool autofocus;
   final VoidCallback? onMoveToPreviousBlock;
   final VoidCallback? onMoveToNextBlock;
+
+  FlarkRenderBlock get currentBlock => blockHandle?.block ?? block;
+  String get currentDisplayText => blockHandle?.displayText ?? displayText;
 
   @override
   State<_EditableTaskListItemBlock> createState() {
@@ -2991,7 +3072,9 @@ final class _EditableTaskListItemBlockState
     extends State<_EditableTaskListItemBlock> {
   @override
   Widget build(BuildContext context) {
-    final checked = widget.block.taskListItem?.checked ?? false;
+    final block = widget.currentBlock;
+    final displayText = widget.currentDisplayText;
+    final checked = block.taskListItem?.checked ?? false;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -3019,8 +3102,9 @@ final class _EditableTaskListItemBlockState
           Expanded(
             child: _EditableProjectedBlockText(
               controller: widget.controller,
-              block: widget.block,
-              displayText: widget.displayText,
+              block: block,
+              blockHandle: widget.blockHandle,
+              displayText: displayText,
               style: widget.style,
               cursorColor: widget.cursorColor,
               backgroundCursorColor: widget.backgroundCursorColor,
@@ -3038,17 +3122,18 @@ final class _EditableTaskListItemBlockState
 
   void _toggle(BuildContext context) {
     final interactions = FlarkMarkdownInteractions.maybeOf(context);
-    final checked = widget.block.taskListItem?.checked ?? false;
+    final block = widget.currentBlock;
+    final checked = block.taskListItem?.checked ?? false;
     if (interactions != null) {
       if (!interactions.config.enableTaskCheckboxToggles) return;
-      interactions.setTaskListChecked(widget.block, !checked);
+      interactions.setTaskListChecked(block, !checked);
       _restoreFocusAfterToggle();
       return;
     }
     widget.controller.dispatch(
       command: FlarkMarkdownBlockCommands.setTaskListChecked,
       payload: FlarkSetTaskListCheckedPayload(
-        taskItemRange: widget.block.sourceRange,
+        taskItemRange: block.sourceRange,
         checked: !checked,
         userEvent: 'input.liveBlock.taskToggle',
       ),
@@ -3130,12 +3215,14 @@ final class _EditableCodeBlock extends StatelessWidget {
     required this.backgroundCursorColor,
     this.focusNode,
     this.autofocus = false,
+    this.blockHandle,
     this.onMoveToPreviousBlock,
     this.onMoveToNextBlock,
   });
 
   final FlarkFlutterController controller;
   final FlarkRenderBlock block;
+  final _LiveRenderedBlockHandle? blockHandle;
   final String displayText;
   final TextStyle style;
   final Color cursorColor;
@@ -3145,11 +3232,16 @@ final class _EditableCodeBlock extends StatelessWidget {
   final VoidCallback? onMoveToPreviousBlock;
   final VoidCallback? onMoveToNextBlock;
 
+  FlarkRenderBlock get currentBlock => blockHandle?.block ?? block;
+  String get currentDisplayText => blockHandle?.displayText ?? displayText;
+
   static const double _copyChromeReserveWidth = 52;
   static const double _languageChromeReserveWidth = 104;
 
   @override
   Widget build(BuildContext context) {
+    final block = currentBlock;
+    final displayText = currentDisplayText;
     final language =
         _codeFenceLanguageFromSource(controller.markdown, block) ??
         block.codeBlock?.language;
@@ -3165,6 +3257,7 @@ final class _EditableCodeBlock extends StatelessWidget {
           editableKey: const Key('FlarkLiveBlockCodeOpeningEditable'),
           controller: controller,
           block: block,
+          blockHandle: blockHandle,
           displayText: displayText,
           style: style,
           cursorColor: cursorColor,
@@ -3193,6 +3286,7 @@ final class _EditableCodeBlock extends StatelessWidget {
       editableKey: const Key('FlarkLiveBlockCodeEditable'),
       controller: controller,
       block: block,
+      blockHandle: blockHandle,
       displayText: displayText,
       style: style.copyWith(
         color: const Color(0xFF17202A),
@@ -3264,6 +3358,7 @@ final class _EditableCodeBlock extends StatelessWidget {
                       _CodeLanguageSelector(
                         interactions: interactions,
                         block: block,
+                        blockHandle: blockHandle,
                         language: language,
                         style: style,
                         focusNode: focusNode,
@@ -3281,6 +3376,7 @@ final class _EditableCodeBlock extends StatelessWidget {
   }
 
   bool _applyCodeIndent({required bool indent}) {
+    final block = currentBlock;
     final bodyRange = _codeBodyRange(controller.markdown, block);
     if (bodyRange == null) return false;
     final selection = controller.selection;
@@ -3410,13 +3506,17 @@ final class _CodeLanguageSelector extends StatefulWidget {
     required this.language,
     required this.style,
     required this.focusNode,
+    this.blockHandle,
   });
 
   final FlarkMarkdownInteractions interactions;
   final FlarkRenderBlock block;
+  final _LiveRenderedBlockHandle? blockHandle;
   final String? language;
   final TextStyle style;
   final FocusNode? focusNode;
+
+  FlarkRenderBlock get currentBlock => blockHandle?.block ?? block;
 
   @override
   State<_CodeLanguageSelector> createState() => _CodeLanguageSelectorState();
@@ -3588,7 +3688,7 @@ final class _CodeLanguageSelectorState extends State<_CodeLanguageSelector> {
   void _selectLanguage(String language) {
     _closeMenu();
     final handled = widget.interactions.setCodeFenceLanguage(
-      widget.block,
+      widget.currentBlock,
       language,
     );
     if (!handled) return;
@@ -3657,16 +3757,21 @@ final class _EditableTableBlock extends StatelessWidget {
     required this.style,
     required this.cursorColor,
     required this.backgroundCursorColor,
+    this.blockHandle,
   });
 
   final FlarkFlutterController controller;
   final FlarkRenderBlock block;
+  final _LiveRenderedBlockHandle? blockHandle;
   final TextStyle style;
   final Color cursorColor;
   final Color backgroundCursorColor;
 
+  FlarkRenderBlock get currentBlock => blockHandle?.block ?? block;
+
   @override
   Widget build(BuildContext context) {
+    final block = currentBlock;
     final table = _ParsedEditableTable.fromRenderBlock(
       controller.markdown,
       block,
@@ -3725,6 +3830,9 @@ final class _EditableTableBlock extends StatelessWidget {
                             '${table.rows[rowIndex].cells[columnIndex].range.start}',
                           ),
                           controller: controller,
+                          blockHandle: blockHandle,
+                          rowIndex: rowIndex,
+                          columnIndex: columnIndex,
                           cell: table.rows[rowIndex].cells[columnIndex],
                           style: _tableCellStyle(style, rowIndex),
                           textAlign: _tableTextAlign(block, columnIndex),
@@ -3767,21 +3875,42 @@ final class _EditableTableCell extends StatefulWidget {
   const _EditableTableCell({
     super.key,
     required this.controller,
+    required this.rowIndex,
+    required this.columnIndex,
     required this.cell,
     required this.style,
     required this.textAlign,
     required this.cursorColor,
     required this.backgroundCursorColor,
     required this.editableKey,
+    this.blockHandle,
   });
 
   final FlarkFlutterController controller;
+  final _LiveRenderedBlockHandle? blockHandle;
+  final int rowIndex;
+  final int columnIndex;
   final _ParsedEditableTableCell cell;
   final TextStyle style;
   final TextAlign textAlign;
   final Color cursorColor;
   final Color backgroundCursorColor;
   final Key editableKey;
+
+  _ParsedEditableTableCell get currentCell {
+    final handle = blockHandle;
+    if (handle == null) return cell;
+    final table = _ParsedEditableTable.fromRenderBlock(
+      controller.markdown,
+      handle.block,
+    );
+    if (table == null ||
+        rowIndex >= table.rows.length ||
+        columnIndex >= table.rows[rowIndex].cells.length) {
+      return cell;
+    }
+    return table.rows[rowIndex].cells[columnIndex];
+  }
 
   @override
   State<_EditableTableCell> createState() => _EditableTableCellState();
@@ -3845,24 +3974,25 @@ final class _EditableTableCellState extends State<_EditableTableCell> {
 
   void _handleTextChanged() {
     if (_syncing) return;
-    final oldLocalSelection = _localSelection(widget.cell.text.length);
+    final cell = widget.currentCell;
+    final oldLocalSelection = _localSelection(cell.text.length);
     final value = _textValueWithPureInsertionSelection(
-      oldText: widget.cell.text,
+      oldText: cell.text,
       oldSelection: oldLocalSelection,
       newValue: _textController.value,
     );
     _adoptNormalizedTextControllerValue(value);
     final compositionUndoGroupId = _compositionUndoGrouping.groupIdFor(value);
-    if (value.text != widget.cell.text) {
-      final replacement = widget.cell.replacementText(value.text);
+    if (value.text != cell.text) {
+      final replacement = cell.replacementText(value.text);
       _replaceSourceRange(
         controller: widget.controller,
-        range: widget.cell.range,
+        range: cell.range,
         replacementText: replacement,
         userEvent: 'input.liveBlock.tableCell',
         undoGroupId: compositionUndoGroupId,
         selectionAfter: _tableCellSelectionAfterReplacement(
-          cell: widget.cell,
+          cell: cell,
           value: value,
         ),
       );
@@ -3877,8 +4007,8 @@ final class _EditableTableCellState extends State<_EditableTableCell> {
     }
     widget.controller.applySelection(
       FlarkSelection(
-        baseOffset: widget.cell.range.start + selection.baseOffset,
-        extentOffset: widget.cell.range.start + selection.extentOffset,
+        baseOffset: cell.range.start + selection.baseOffset,
+        extentOffset: cell.range.start + selection.extentOffset,
       ),
       userEvent: 'selection.liveBlock.tableCell',
     );
@@ -3887,11 +4017,12 @@ final class _EditableTableCellState extends State<_EditableTableCell> {
 
   void _syncFromController() {
     final current = _textController.value;
-    final selection = _localSelection(widget.cell.text.length);
+    final cell = widget.currentCell;
+    final selection = _localSelection(cell.text.length);
     final next = TextEditingValue(
-      text: widget.cell.text,
+      text: cell.text,
       selection: selection,
-      composing: current.text == widget.cell.text
+      composing: current.text == cell.text
           ? current.composing
           : TextRange.empty,
     );
@@ -3909,9 +4040,9 @@ final class _EditableTableCellState extends State<_EditableTableCell> {
   }
 
   TextSelection _localSelection(int textLength) {
+    final cell = widget.currentCell;
     final selection = widget.controller.selection;
-    if (selection.start < widget.cell.range.start ||
-        selection.end > widget.cell.range.end) {
+    if (selection.start < cell.range.start || selection.end > cell.range.end) {
       final current = _textController.selection;
       if (current.isValid &&
           current.baseOffset <= textLength &&
@@ -3922,12 +4053,12 @@ final class _EditableTableCellState extends State<_EditableTableCell> {
     }
     return TextSelection(
       baseOffset: _localOffsetInsideSanitizedTableCell(
-        widget.cell.text,
-        selection.baseOffset - widget.cell.range.start,
+        cell.text,
+        selection.baseOffset - cell.range.start,
       ),
       extentOffset: _localOffsetInsideSanitizedTableCell(
-        widget.cell.text,
-        selection.extentOffset - widget.cell.range.start,
+        cell.text,
+        selection.extentOffset - cell.range.start,
       ),
     );
   }
@@ -4113,6 +4244,11 @@ List<_LiveRenderedTextSegment> _blockTextSegments({
 }
 
 TextStyle _blockTextStyle(TextStyle baseStyle, FlarkRenderBlock block) {
+  if (block.styleToken == FlarkRenderTextStyleToken.body &&
+      block.codeBlock == null &&
+      block.kind != FlarkMarkdownBlockKind.blockquote) {
+    return baseStyle;
+  }
   final signature = _LiveRenderedTextStyleSignature.forRange(
     block.displayRange.start,
     block.displayRange.end,

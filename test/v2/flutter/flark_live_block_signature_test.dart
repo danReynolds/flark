@@ -4,6 +4,12 @@ import 'package:flark/src/v2/markdown/markdown.dart';
 import 'package:flark/src/v2/projection/projection.dart';
 import 'package:flark/src/v2/render_plan/render_plan.dart';
 
+typedef _SignaturePlan = ({
+  String markdown,
+  String text,
+  List<FlarkRenderBlock> blocks,
+});
+
 // Completeness contract for liveBlockContentSignature: it must be INVARIANT
 // under offset shifts and must CHANGE on every content-meaningful edit. Tests
 // parse real Markdown so the signature is exercised against true render-plan
@@ -63,6 +69,21 @@ void main() {
     expect(sb, isNot(sa));
   });
 
+  test('link target change (same text) changes the signature', () async {
+    final a = await _plan(backend, '[docs](https://a.example)');
+    final b = await _plan(backend, '[docs](https://b.example)');
+    expect(_sig(b, _para(b)), isNot(_sig(a, _para(a))));
+  });
+
+  test(
+    'ordered list marker change (same text) changes the signature',
+    () async {
+      final a = await _plan(backend, '1. item');
+      final b = await _plan(backend, '2. item');
+      expect(_sig(b, _listItem(b)), isNot(_sig(a, _listItem(a))));
+    },
+  );
+
   test('heading level change changes the signature', () async {
     final a = await _plan(backend, '# Title');
     final b = await _plan(backend, '## Title');
@@ -78,22 +99,20 @@ void main() {
   });
 }
 
-({String text, List<FlarkRenderBlock> blocks}) _result(
-  FlarkMarkdownParseResult result,
-  String markdown,
-) {
+_SignaturePlan _result(FlarkMarkdownParseResult result, String markdown) {
   final projection = FlarkProjection.fromParseResult(result);
   final plan = FlarkRenderPlan.fromParseResult(
     parseResult: result,
     projection: projection,
   );
   return (
+    markdown: markdown,
     text: projection.projectText(markdown),
     blocks: plan.blocks.toList(),
   );
 }
 
-Future<({String text, List<FlarkRenderBlock> blocks})> _plan(
+Future<_SignaturePlan> _plan(
   FlarkMarkdownParseBackend backend,
   String markdown,
 ) async {
@@ -107,20 +126,21 @@ Future<({String text, List<FlarkRenderBlock> blocks})> _plan(
   return _result(result, markdown);
 }
 
-String _sig(({String text, List<FlarkRenderBlock> blocks}) plan, FlarkRenderBlock block) {
-  return liveBlockContentSignature(block, plan.text);
+String _sig(_SignaturePlan plan, FlarkRenderBlock block) {
+  return liveBlockContentSignature(block, plan.text, markdown: plan.markdown);
 }
 
-FlarkRenderBlock _task(({String text, List<FlarkRenderBlock> blocks}) plan) =>
+FlarkRenderBlock _task(_SignaturePlan plan) =>
     plan.blocks.firstWhere((b) => b.taskListItem != null);
 
-FlarkRenderBlock _code(({String text, List<FlarkRenderBlock> blocks}) plan) =>
+FlarkRenderBlock _listItem(_SignaturePlan plan) =>
+    plan.blocks.firstWhere((b) => b.listItem != null);
+
+FlarkRenderBlock _code(_SignaturePlan plan) =>
     plan.blocks.firstWhere((b) => b.codeBlock != null);
 
-FlarkRenderBlock _table(({String text, List<FlarkRenderBlock> blocks}) plan) =>
+FlarkRenderBlock _table(_SignaturePlan plan) =>
     plan.blocks.firstWhere((b) => b.table != null);
 
-FlarkRenderBlock _para(({String text, List<FlarkRenderBlock> blocks}) plan) =>
-    plan.blocks.firstWhere(
-      (b) => b.kind == FlarkMarkdownBlockKind.paragraph,
-    );
+FlarkRenderBlock _para(_SignaturePlan plan) =>
+    plan.blocks.firstWhere((b) => b.kind == FlarkMarkdownBlockKind.paragraph);
