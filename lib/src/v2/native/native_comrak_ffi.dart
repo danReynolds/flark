@@ -248,6 +248,56 @@ class NativeComrakParseResult {
   );
 }
 
+/// Phase timings from a native bridge parse call.
+class NativeComrakBridgeParseProfile {
+  /// Creates native bridge parse phase timings.
+  const NativeComrakBridgeParseProfile({
+    required this.total,
+    required this.inputCopy,
+    required this.nativeParse,
+    required this.payloadCopy,
+    required this.payloadDecode,
+    required this.inputBytes,
+    required this.payloadBytes,
+  });
+
+  /// Total bridge time, excluding Dart-side UTF-8 encoding and result mapping.
+  final Duration total;
+
+  /// Copy from Dart's UTF-8 byte list into native input memory.
+  final Duration inputCopy;
+
+  /// Native Comrak parse plus native payload construction.
+  final Duration nativeParse;
+
+  /// Copy from native response payload memory into Dart.
+  final Duration payloadCopy;
+
+  /// Dart decode of the native response payload.
+  final Duration payloadDecode;
+
+  /// UTF-8 input byte count passed to the native bridge.
+  final int inputBytes;
+
+  /// Native response payload byte count copied into Dart.
+  final int payloadBytes;
+}
+
+/// Native parse result paired with bridge phase timings.
+class NativeComrakProfiledParseResult {
+  /// Creates a profiled native parse result.
+  const NativeComrakProfiledParseResult({
+    required this.result,
+    required this.profile,
+  });
+
+  /// Decoded native parse result.
+  final NativeComrakParseResult result;
+
+  /// Bridge phase timings for [result].
+  final NativeComrakBridgeParseProfile profile;
+}
+
 /// JSON codec for the native bridge payload contract.
 class NativeComrakPayloadCodec {
   /// This codec only exposes static helpers.
@@ -360,6 +410,15 @@ class NativeComrakPayloadCodec {
 abstract interface class NativeComrakBridge {
   /// Parses [input] with the native comrak bridge.
   Future<NativeComrakParseResult> parse(NativeComrakParseInput input);
+}
+
+/// Optional bridge capability for phase-attributed parse benchmarks.
+abstract interface class ProfiledNativeComrakBridge
+    implements NativeComrakBridge {
+  /// Parses [input] and returns bridge-local phase timings.
+  Future<NativeComrakProfiledParseResult> parseWithProfile(
+    NativeComrakParseInput input,
+  );
 }
 
 /// Failure categories for loading the native comrak bridge.

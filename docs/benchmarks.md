@@ -11,8 +11,8 @@ a conclusion about where to focus next.
 | Live-rendered rebuild fanout | `builds_per_edit=1.0` through 10/20/40/80 blocks in the focused debug rebuild benchmark | Fixed: unchanged blocks no longer rebuild just because source/display offsets shift | Keep the benchmark as a regression gate |
 | Live-rendered profile frame time | 40/80 blocks x end/start edits: `build_median=1.16-1.53ms`, `build_p95<=2.12ms` | Safely under the 16.7ms frame budget with large headroom | Re-run the profile gate after major widget changes |
 | Peer comparison | Flark debug medians are flat at `8.87-10.17ms`; current super_editor is `5.14-6.19ms`; current flutter_quill is `4.67-5.00ms` | Peer-competitive on scaling and profile latency, not peer-leading on debug constant factor | Only chase live-block constant cost if peer-leading debug numbers become a product goal |
-| Large-document source transaction | 1MB apply: `4.18ms` median / `10.99ms` p95 | Below a 60fps frame budget in the current lane | Piece table / rope only if 1MB live source editing becomes a product target |
-| Native parse + decode | 1MB parse+decode: `1.12s` median | Largest remaining raw perf number, but async and not the live-keystroke bottleneck | Consider payload/decode or incremental parse only with huge-document evidence |
+| Large-document source transaction | 1MB apply: `1.99ms` median / `6.88ms` p95 | Below a 60fps frame budget in the current lane | Piece table / rope only if 1MB live source editing becomes a product target |
+| Native parse + decode | 1MB parse+decode: `712ms` median in the latest full run after mapper optimization | Improved by ~1.6-2.4x from the previous `1.17s`, but still the largest raw perf number | Continue with payload decode and result mapping before parser architecture |
 
 **Current decision:** the broad live-rendered perf architecture work has hit
 diminishing returns for the measured 40-80 block editing path. The remaining
@@ -133,8 +133,8 @@ Two headline numbers at 1KB / 100KB / 1MB of realistic Markdown:
 | Document | Keystroke apply median / p95 | Native parse + decode median / p95 | Current read |
 | --- | --- | --- | --- |
 | 1KB | `3us` / `3us` | `2.00ms` / `15.07ms` | trivial; parse p95 includes cold/noisy samples |
-| 100KB | `170us` / `412us` | `136.55ms` / `211.30ms` | synchronous apply is healthy |
-| 1MB | `4.18ms` / `10.99ms` | `1123.76ms` / `1123.76ms` | async parse/decode is the only large headline number |
+| 100KB | `161us` / `624us` | `94.83ms` / `179.50ms` | synchronous apply is healthy |
+| 1MB | `1.99ms` / `6.88ms` | `712.46ms` / `712.46ms` | async parse/decode is the only large headline number |
 
 - **Keystroke apply** is the synchronous core hot path
   (`FlarkEditorState.applyTransaction`: text-buffer rebuild, line reindex,
@@ -178,18 +178,33 @@ peer-leading debug numbers.
 ## Large-Document Pitch
 
 The current large-document bottleneck is not synchronous typing. At 1MB,
-`keystroke_apply` is `4.18ms` median / `10.99ms` p95, while native parse+decode
-is `1123.76ms` median. The next useful work is to split that 1.12s number into
-phases before choosing an implementation strategy:
+`keystroke_apply` is `1.99ms` median / `6.88ms` p95, while native parse+decode
+is `712.46ms` median in the latest full run after optimizing
+`FlarkUtf8Utf16Mapper` to avoid per-scalar `utf8.encode` calls. A prior
+post-mapper run measured `498.42ms`; treat the durable signal as a clear
+large-doc parse/decode win, not a tight SLA.
 
-1. Add phase timing around `FlarkNativeComrakParseBackend.parse`: Dart UTF-8
-   encode/allocation, native parse+payload construction, FFI payload copy,
-   `NativeComrakPayloadCodec.decode`, and `_mapNativeResult`.
-2. Record payload size plus block/inline/hidden-range counts for 100KB and 1MB
-   samples. If payload copy/decode dominates, optimize the wire format before
-   touching parser architecture.
-3. If native parse dominates, evaluate incremental parse or parse-windowing. If
-   Dart mapping dominates, optimize range mapping and marker/list synthesis.
+The phase profile now prints:
+
+```text
+flark_benchmark native_parse_profile_1MB_1000080chars iterations=3
+  total_median=550.26ms utf8_encode_median=2.90ms
+  bridge_total_median=191.67ms native_parse_median=72.86ms
+  payload_decode_median=116.53ms result_mapping_median=355.52ms
+  input_bytes=1000080 payload_bytes=8138528
+```
+
+The profiled total is noisier than the non-profiled headline, but the ordering
+is clear: Flark-side result mapping and JSON payload decode dominate native
+Comrak parse time. The next useful work is:
+
+1. Split `_mapNativeResult` into subphases so the remaining `result_mapping`
+   cost is attributable.
+2. Reduce JSON payload decode cost or replace the wire format if decode remains
+   above native parse time.
+3. Optimize marker/list/code-fence mapping before considering incremental parse:
+   native parse itself is currently smaller than payload decode and result
+   mapping.
 4. Leave `FlarkTextBuffer`/piece-table work behind this unless a new benchmark
    shows 1MB synchronous apply crossing frame budget again.
 

@@ -69,28 +69,173 @@ final class FlarkNativeComrakParseBackend implements FlarkMarkdownParseBackend {
   Future<FlarkMarkdownParseResult> parse(
     FlarkMarkdownParseRequest request,
   ) async {
+    return (await parseWithProfile(request)).result;
+  }
+
+  /// Parses [request] and returns phase timings for large-document diagnosis.
+  Future<FlarkNativeComrakProfiledParseResult> parseWithProfile(
+    FlarkMarkdownParseRequest request,
+  ) async {
+    final totalStopwatch = Stopwatch()..start();
     if (request.markdown.isEmpty) {
-      return FlarkMarkdownParseResult(
+      final result = FlarkMarkdownParseResult(
         schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
         revision: request.revision,
         sourceTextLength: 0,
         blocks: const [],
         inlineTokens: const [],
       );
+      totalStopwatch.stop();
+      return FlarkNativeComrakProfiledParseResult(
+        result: result,
+        profile: FlarkNativeComrakParseProfile(
+          total: totalStopwatch.elapsed,
+          utf8Encode: Duration.zero,
+          bridgeTotal: Duration.zero,
+          bridgeInputCopy: Duration.zero,
+          nativeParse: Duration.zero,
+          payloadCopy: Duration.zero,
+          payloadDecode: Duration.zero,
+          resultMapping: Duration.zero,
+          inputBytes: 0,
+          payloadBytes: 0,
+          nativeBlockCount: 0,
+          nativeInlineTokenCount: 0,
+          nativeMarkerRangeCount: 0,
+          hasBridgeProfile: _bridge is ProfiledNativeComrakBridge,
+        ),
+      );
     }
 
-    final native = await _bridge.parse(
-      NativeComrakParseInput(
-        revision: request.revision,
-        profile: _nativeProfile(request.profile),
-        utf8Text: Uint8List.fromList(utf8.encode(request.markdown)),
+    final encodeStopwatch = Stopwatch()..start();
+    final utf8Text = Uint8List.fromList(utf8.encode(request.markdown));
+    encodeStopwatch.stop();
+
+    final input = NativeComrakParseInput(
+      revision: request.revision,
+      profile: _nativeProfile(request.profile),
+      utf8Text: utf8Text,
+    );
+    final bridge = _bridge;
+    final bridgeStopwatch = Stopwatch()..start();
+    final NativeComrakParseResult native;
+    final NativeComrakBridgeParseProfile? bridgeProfile;
+    if (bridge is ProfiledNativeComrakBridge) {
+      final profiled = await bridge.parseWithProfile(input);
+      native = profiled.result;
+      bridgeProfile = profiled.profile;
+    } else {
+      native = await bridge.parse(input);
+      bridgeProfile = null;
+    }
+    bridgeStopwatch.stop();
+
+    final mappingStopwatch = Stopwatch()..start();
+    final result = _mapNativeResult(request, native);
+    mappingStopwatch.stop();
+    totalStopwatch.stop();
+
+    return FlarkNativeComrakProfiledParseResult(
+      result: result,
+      profile: FlarkNativeComrakParseProfile(
+        total: totalStopwatch.elapsed,
+        utf8Encode: encodeStopwatch.elapsed,
+        bridgeTotal: bridgeProfile?.total ?? bridgeStopwatch.elapsed,
+        bridgeInputCopy: bridgeProfile?.inputCopy ?? Duration.zero,
+        nativeParse: bridgeProfile?.nativeParse ?? bridgeStopwatch.elapsed,
+        payloadCopy: bridgeProfile?.payloadCopy ?? Duration.zero,
+        payloadDecode: bridgeProfile?.payloadDecode ?? Duration.zero,
+        resultMapping: mappingStopwatch.elapsed,
+        inputBytes: utf8Text.length,
+        payloadBytes: bridgeProfile?.payloadBytes ?? 0,
+        nativeBlockCount: native.blocks.length,
+        nativeInlineTokenCount: native.inlineTokens.length,
+        nativeMarkerRangeCount: native.markerRanges.length,
+        hasBridgeProfile: bridgeProfile != null,
       ),
     );
-    return _mapNativeResult(request, native);
   }
 }
 
 FlarkNativeComrakParseBackend? _requiredDefaultBackend;
+
+/// Native Comrak parse result paired with end-to-end phase timings.
+final class FlarkNativeComrakProfiledParseResult {
+  /// Creates a profiled Flark native parse result.
+  const FlarkNativeComrakProfiledParseResult({
+    required this.result,
+    required this.profile,
+  });
+
+  /// Mapped Flark parse result.
+  final FlarkMarkdownParseResult result;
+
+  /// End-to-end phase timings for [result].
+  final FlarkNativeComrakParseProfile profile;
+}
+
+/// End-to-end phase timings for Flark's native Comrak parse pipeline.
+final class FlarkNativeComrakParseProfile {
+  /// Creates parse pipeline phase timings.
+  const FlarkNativeComrakParseProfile({
+    required this.total,
+    required this.utf8Encode,
+    required this.bridgeTotal,
+    required this.bridgeInputCopy,
+    required this.nativeParse,
+    required this.payloadCopy,
+    required this.payloadDecode,
+    required this.resultMapping,
+    required this.inputBytes,
+    required this.payloadBytes,
+    required this.nativeBlockCount,
+    required this.nativeInlineTokenCount,
+    required this.nativeMarkerRangeCount,
+    required this.hasBridgeProfile,
+  });
+
+  /// Total backend parse time.
+  final Duration total;
+
+  /// Dart UTF-8 encoding of source markdown.
+  final Duration utf8Encode;
+
+  /// Bridge call total. With a profiled FFI bridge, this excludes Dart mapping.
+  final Duration bridgeTotal;
+
+  /// Copy from Dart UTF-8 bytes into native input memory.
+  final Duration bridgeInputCopy;
+
+  /// Native Comrak parse plus native payload construction.
+  final Duration nativeParse;
+
+  /// Copy from native response memory into Dart.
+  final Duration payloadCopy;
+
+  /// Dart decode of the native bridge payload.
+  final Duration payloadDecode;
+
+  /// Dart mapping from decoded native result into Flark parse result.
+  final Duration resultMapping;
+
+  /// UTF-8 source byte count.
+  final int inputBytes;
+
+  /// Native response payload byte count.
+  final int payloadBytes;
+
+  /// Native block count before Flark mapping.
+  final int nativeBlockCount;
+
+  /// Native inline token count before Flark mapping.
+  final int nativeInlineTokenCount;
+
+  /// Native marker range count before Flark mapping.
+  final int nativeMarkerRangeCount;
+
+  /// Whether bridge-local phases are available.
+  final bool hasBridgeProfile;
+}
 
 FlarkMarkdownParseResult _mapNativeResult(
   FlarkMarkdownParseRequest request,
@@ -1287,11 +1432,12 @@ String _rangeKey(FlarkSourceRange range) {
 /// containment and overlap queries over native block ranges.
 final class _NativeRangeIndex {
   factory _NativeRangeIndex(Iterable<NativeComrakRange> ranges) {
-    final sorted = <NativeComrakRange>[...ranges]..sort((a, b) {
-      final startCompare = a.startByte.compareTo(b.startByte);
-      if (startCompare != 0) return startCompare;
-      return a.endByte.compareTo(b.endByte);
-    });
+    final sorted = <NativeComrakRange>[...ranges]
+      ..sort((a, b) {
+        final startCompare = a.startByte.compareTo(b.startByte);
+        if (startCompare != 0) return startCompare;
+        return a.endByte.compareTo(b.endByte);
+      });
     final starts = List<int>.filled(sorted.length, 0);
     final prefixMaxEnd = List<int>.filled(sorted.length, 0);
     var maxEnd = -1;

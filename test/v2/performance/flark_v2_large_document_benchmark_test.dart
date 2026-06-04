@@ -144,7 +144,11 @@ void main() {
         );
 
         _report(result);
-        _expectTrackingBudget(result, median: size.applyMedian, p95: size.applyP95);
+        _expectTrackingBudget(
+          result,
+          median: size.applyMedian,
+          p95: size.applyP95,
+        );
       });
     }
 
@@ -222,9 +226,55 @@ void main() {
         );
       });
     }
+
+    for (final size in _profiledParseSizes) {
+      test(
+        'native parse phase profile at ${size.label} when present',
+        () async {
+          final backend = FlarkNativeComrakParseBackend.tryLoad();
+          if (backend == null) {
+            debugPrint(
+              'flark_benchmark native_parse_profile_${size.label} '
+              'skipped=no_bridge',
+            );
+            return;
+          }
+          final markdown = _markdownOfSize(size.targetChars);
+
+          FlarkNativeComrakProfiledParseResult? latest;
+          for (var i = 0; i < size.parseWarmups; i += 1) {
+            latest = await backend.parseWithProfile(
+              FlarkMarkdownParseRequest(
+                revision: i + 1,
+                markdown: markdown,
+                profile: FlarkMarkdownProfile.commonMarkGfm,
+              ),
+            );
+            _consume(_parseProfileBlackHole(latest));
+          }
+
+          final profiles = <FlarkNativeComrakParseProfile>[];
+          for (var i = 0; i < size.parseIterations; i += 1) {
+            latest = await backend.parseWithProfile(
+              FlarkMarkdownParseRequest(
+                revision: i + 1 + size.parseWarmups,
+                markdown: markdown,
+                profile: FlarkMarkdownProfile.commonMarkGfm,
+              ),
+            );
+            profiles.add(latest.profile);
+            _consume(_parseProfileBlackHole(latest));
+          }
+
+          _reportParseProfile(
+            'native_parse_profile_${size.label}_${markdown.length}chars',
+            profiles,
+          );
+        },
+      );
+    }
   });
 }
-
 
 const _sweepSizes = <_SweepSize>[
   // Budgets are deliberately generous regression trackers (≈10× headroom over
@@ -267,6 +317,33 @@ const _sweepSizes = <_SweepSize>[
     parseWarmups: 1,
     parseMedian: Duration(seconds: 3),
     parseP95: Duration(seconds: 5),
+  ),
+];
+
+const _profiledParseSizes = <_SweepSize>[
+  _SweepSize(
+    label: '100KB',
+    targetChars: 100000,
+    iterations: 0,
+    warmups: 0,
+    applyMedian: Duration.zero,
+    applyP95: Duration.zero,
+    parseIterations: 3,
+    parseWarmups: 1,
+    parseMedian: Duration.zero,
+    parseP95: Duration.zero,
+  ),
+  _SweepSize(
+    label: '1MB',
+    targetChars: 1000000,
+    iterations: 0,
+    warmups: 0,
+    applyMedian: Duration.zero,
+    applyP95: Duration.zero,
+    parseIterations: 3,
+    parseWarmups: 1,
+    parseMedian: Duration.zero,
+    parseP95: Duration.zero,
   ),
 ];
 
@@ -366,6 +443,66 @@ void _consume(int value) {
 
 void _report(_BenchmarkResult result) {
   debugPrint('flark_benchmark ${result.summary}');
+}
+
+void _reportParseProfile(
+  String name,
+  List<FlarkNativeComrakParseProfile> profiles,
+) {
+  if (profiles.isEmpty) return;
+  final latest = profiles.last;
+  debugPrint(
+    'flark_benchmark $name iterations=${profiles.length} '
+    'total_median=${_formatDuration(_medianDuration(profiles, (p) => p.total))} '
+    'total_p95=${_formatDuration(_p95Duration(profiles, (p) => p.total))} '
+    'utf8_encode_median=${_formatDuration(_medianDuration(profiles, (p) => p.utf8Encode))} '
+    'bridge_total_median=${_formatDuration(_medianDuration(profiles, (p) => p.bridgeTotal))} '
+    'input_copy_median=${_formatDuration(_medianDuration(profiles, (p) => p.bridgeInputCopy))} '
+    'native_parse_median=${_formatDuration(_medianDuration(profiles, (p) => p.nativeParse))} '
+    'payload_copy_median=${_formatDuration(_medianDuration(profiles, (p) => p.payloadCopy))} '
+    'payload_decode_median=${_formatDuration(_medianDuration(profiles, (p) => p.payloadDecode))} '
+    'result_mapping_median=${_formatDuration(_medianDuration(profiles, (p) => p.resultMapping))} '
+    'input_bytes=${latest.inputBytes} payload_bytes=${latest.payloadBytes} '
+    'native_blocks=${latest.nativeBlockCount} '
+    'native_inlines=${latest.nativeInlineTokenCount} '
+    'native_markers=${latest.nativeMarkerRangeCount} '
+    'bridge_profile=${latest.hasBridgeProfile} blackHole=$_blackHole',
+  );
+}
+
+Duration _medianDuration(
+  List<FlarkNativeComrakParseProfile> profiles,
+  Duration Function(FlarkNativeComrakParseProfile profile) select,
+) {
+  return _sortedDurations(profiles, select)[profiles.length ~/ 2];
+}
+
+Duration _p95Duration(
+  List<FlarkNativeComrakParseProfile> profiles,
+  Duration Function(FlarkNativeComrakParseProfile profile) select,
+) {
+  final sorted = _sortedDurations(profiles, select);
+  return sorted[((sorted.length - 1) * 0.95).ceil()];
+}
+
+List<Duration> _sortedDurations(
+  List<FlarkNativeComrakParseProfile> profiles,
+  Duration Function(FlarkNativeComrakParseProfile profile) select,
+) {
+  return [for (final profile in profiles) select(profile)]
+    ..sort((left, right) => left.compareTo(right));
+}
+
+int _parseProfileBlackHole(FlarkNativeComrakProfiledParseResult result) {
+  final profile = result.profile;
+  return result.result.blocks.length +
+      result.result.inlineTokens.length +
+      result.result.hiddenRanges.length +
+      profile.inputBytes +
+      profile.payloadBytes +
+      profile.nativeBlockCount +
+      profile.nativeInlineTokenCount +
+      profile.nativeMarkerRangeCount;
 }
 
 void _expectTrackingBudget(

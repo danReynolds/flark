@@ -76,7 +76,7 @@ class _NativeComrakSymbols {
   }
 }
 
-class FfiNativeComrakBridge implements NativeComrakBridge {
+class FfiNativeComrakBridge implements ProfiledNativeComrakBridge {
   final _NativeComrakSymbols _symbols;
   final int _loadedAbiVersion;
 
@@ -309,8 +309,29 @@ class FfiNativeComrakBridge implements NativeComrakBridge {
 
   @override
   Future<NativeComrakParseResult> parse(NativeComrakParseInput input) async {
+    return (await _parse(input, collectProfile: false)).result;
+  }
+
+  @override
+  Future<NativeComrakProfiledParseResult> parseWithProfile(
+    NativeComrakParseInput input,
+  ) async {
+    return _parse(input, collectProfile: true);
+  }
+
+  Future<NativeComrakProfiledParseResult> _parse(
+    NativeComrakParseInput input, {
+    required bool collectProfile,
+  }) async {
+    final totalStopwatch = collectProfile ? (Stopwatch()..start()) : null;
+    Duration inputCopy = Duration.zero;
+    Duration nativeParse = Duration.zero;
+    Duration payloadCopy = Duration.zero;
+    Duration payloadDecode = Duration.zero;
+    var payloadBytes = 0;
+
     if (_loadedAbiVersion != _kAbiVersion) {
-      return NativeComrakParseResult(
+      final result = NativeComrakParseResult(
         revision: input.revision,
         diagnostics: [
           NativeComrakDiagnostic(
@@ -322,20 +343,39 @@ class FfiNativeComrakBridge implements NativeComrakBridge {
           ),
         ],
       );
+      totalStopwatch?.stop();
+      return NativeComrakProfiledParseResult(
+        result: result,
+        profile: NativeComrakBridgeParseProfile(
+          total: totalStopwatch?.elapsed ?? Duration.zero,
+          inputCopy: inputCopy,
+          nativeParse: nativeParse,
+          payloadCopy: payloadCopy,
+          payloadDecode: payloadDecode,
+          inputBytes: input.utf8Text.length,
+          payloadBytes: payloadBytes,
+        ),
+      );
     }
 
     final textBytes = input.utf8Text;
     final textPtr = calloc<Uint8>(textBytes.length);
     try {
+      final inputCopyStopwatch = collectProfile ? (Stopwatch()..start()) : null;
       textPtr.asTypedList(textBytes.length).setAll(0, textBytes);
+      inputCopyStopwatch?.stop();
+      inputCopy = inputCopyStopwatch?.elapsed ?? Duration.zero;
+      final nativeStopwatch = collectProfile ? (Stopwatch()..start()) : null;
       final responsePtr = _symbols.parse(
         input.revision,
         _mapProfile(input.profile),
         textPtr,
         textBytes.length,
       );
+      nativeStopwatch?.stop();
+      nativeParse = nativeStopwatch?.elapsed ?? Duration.zero;
       if (responsePtr == nullptr) {
-        return NativeComrakParseResult(
+        final result = NativeComrakParseResult(
           revision: input.revision,
           diagnostics: [
             NativeComrakDiagnostic(
@@ -346,17 +386,41 @@ class FfiNativeComrakBridge implements NativeComrakBridge {
             ),
           ],
         );
+        totalStopwatch?.stop();
+        return NativeComrakProfiledParseResult(
+          result: result,
+          profile: NativeComrakBridgeParseProfile(
+            total: totalStopwatch?.elapsed ?? Duration.zero,
+            inputCopy: inputCopy,
+            nativeParse: nativeParse,
+            payloadCopy: payloadCopy,
+            payloadDecode: payloadDecode,
+            inputBytes: textBytes.length,
+            payloadBytes: payloadBytes,
+          ),
+        );
       }
 
       try {
         final response = responsePtr.ref;
+        payloadBytes = response.payloadLen;
+        final payloadCopyStopwatch = collectProfile
+            ? (Stopwatch()..start())
+            : null;
         final payload = _copyPayload(response);
+        payloadCopyStopwatch?.stop();
+        payloadCopy = payloadCopyStopwatch?.elapsed ?? Duration.zero;
         NativeComrakParseResult result;
         try {
+          final payloadDecodeStopwatch = collectProfile
+              ? (Stopwatch()..start())
+              : null;
           result = NativeComrakPayloadCodec.decode(
             revision: response.revision,
             payload: payload,
           );
+          payloadDecodeStopwatch?.stop();
+          payloadDecode = payloadDecodeStopwatch?.elapsed ?? Duration.zero;
         } on FormatException catch (error) {
           result = NativeComrakParseResult(
             revision: response.revision,
@@ -383,7 +447,19 @@ class FfiNativeComrakBridge implements NativeComrakBridge {
             ),
           );
         }
-        return result;
+        totalStopwatch?.stop();
+        return NativeComrakProfiledParseResult(
+          result: result,
+          profile: NativeComrakBridgeParseProfile(
+            total: totalStopwatch?.elapsed ?? Duration.zero,
+            inputCopy: inputCopy,
+            nativeParse: nativeParse,
+            payloadCopy: payloadCopy,
+            payloadDecode: payloadDecode,
+            inputBytes: textBytes.length,
+            payloadBytes: payloadBytes,
+          ),
+        );
       } finally {
         _symbols.freeResponse(responsePtr);
       }
