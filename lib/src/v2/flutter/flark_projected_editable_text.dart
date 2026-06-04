@@ -13,6 +13,7 @@ import '../render_plan/render_plan.dart';
 import 'flark_command_actions.dart';
 import 'flark_code_syntax_highlighting.dart';
 import 'flark_flutter_controller.dart';
+import 'flark_live_block_reconciler.dart';
 import 'flark_markdown_input_policy.dart';
 import 'flark_markdown_interactions.dart';
 import 'flark_text_selection_gestures.dart';
@@ -513,6 +514,7 @@ final class _FlarkLiveRenderedBlockEditor extends StatefulWidget {
 final class _FlarkLiveRenderedBlockEditorState
     extends State<_FlarkLiveRenderedBlockEditor> {
   final _focusCoordinator = _LiveRenderedBlockFocusCoordinator();
+  final _blockReconciler = FlarkLiveBlockReconciler();
   final _contentBoundsKey = GlobalKey();
   int? _appendHostOffset;
 
@@ -565,11 +567,16 @@ final class _FlarkLiveRenderedBlockEditorState
           controller: widget.controller,
           appendHostOffset: appendHostOffset,
         );
+        // Stable identity across re-parses: an unchanged block keeps its id
+        // even after earlier edits shift its offsets, and the edited block keeps
+        // its id (preserving its widget State/focus/IME). See
+        // FlarkLiveBlockReconciler.
+        final blockIds = _blockReconciler.assignIds(editableBlocks, displayText);
         final blockEntries = [
-          for (final block in editableBlocks)
+          for (var index = 0; index < editableBlocks.length; index += 1)
             _LiveRenderedBlockEntry(
-              id: _liveRenderedBlockId(block),
-              block: block,
+              id: blockIds[index],
+              block: editableBlocks[index],
             ),
         ];
         _focusCoordinator.reconcile(blockEntries);
@@ -1394,12 +1401,6 @@ bool _isLineBreakCodeUnit(int codeUnit) {
 
 Color _selectionColorForCursor(Color cursorColor) {
   return cursorColor.withValues(alpha: 0.24);
-}
-
-String _liveRenderedBlockId(FlarkRenderBlock block) {
-  final stableId = block.attributes['stableId'];
-  if (stableId is String) return 'live-block:$stableId';
-  return 'live-block:${block.type}:${block.sourceRange.start}';
 }
 
 bool _isVisibleEditableBlock(FlarkRenderBlock block, String displayText) {
