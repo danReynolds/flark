@@ -9,6 +9,34 @@ block-based WYSIWYG editor measured flat at ~3 ms across 10–80 blocks vs Flark
 21→72 ms) and a cited research pass on the generalizable patterns. See
 `benchmark/peer/README.md` for the measurements.
 
+## Why this is warranted (profile-mode validation)
+
+The debug-VM benchmarks understated the problem by ~10×. Measured in **profile
+mode** on a real engine (macOS, AOT) via `example/lib/perf_harness.dart`, the
+per-keystroke **build phase** of live-rendered editing is:
+
+| Blocks | Build median | Build p95 | Raster |
+| --- | --- | --- | --- |
+| 10 | 6.0 ms | 8.2 ms | ~1 ms |
+| 20 | 10.8 ms | 19.3 ms | ~1.3 ms |
+| 40 | 25.0 ms | 42.0 ms | ~1.6 ms |
+| 80 | 38.7 ms | 45.1 ms | ~1.4 ms |
+
+Linear (~0.6 ms/block), and the cost is **entirely the Dart build phase** —
+raster is negligible. The 60 fps budget (16.7 ms) is breached at **~20–25
+blocks**, so a medium document drops frames on every keystroke in release. This
+is real, not a debug artifact, and the build-phase isolation below targets it
+directly: rebuilding ~1 block instead of N collapses the curve toward the
+single-block cost (well under 1 ms) plus an O(N) cheap diff.
+
+Run the harness:
+
+```bash
+cd example
+flutter run --profile -d macos -t lib/perf_harness.dart \
+  --dart-define=FLARK_PROFILE_BLOCKS=40
+```
+
 ## Why Flark is linear and super_editor is flat
 
 - **Flark** rebuilds *every* `_FlarkLiveRenderedBlock` per keystroke. Verified

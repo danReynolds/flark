@@ -11,6 +11,13 @@ The lane runs `flutter test --tags benchmark test/v2/performance` with
 `FLARK_BENCHMARK_ENFORCE_BUDGETS=true`. Each case prints a `flark_benchmark`
 line with min/median/p95/max so regressions are visible in CI logs.
 
+These lane tests run in the **debug** test VM — good for relative scaling and
+regression tracking, but not real-device frame time. For true profile-mode
+frame timing (AOT, real raster) of live-rendered editing, run the harness in
+`example/lib/perf_harness.dart` — see
+`docs/architecture/live_rendered_rebuild_isolation.md` (profile numbers show the
+per-keystroke build phase breaching the 60 fps budget at ~20–25 blocks).
+
 ## Document-size sweep
 
 Two headline numbers at 1 KB / 100 KB / 1 MB of realistic Markdown (headings,
