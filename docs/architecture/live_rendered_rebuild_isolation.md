@@ -29,6 +29,20 @@ is real, not a debug artifact, and the build-phase isolation below targets it
 directly: rebuilding ~1 block instead of N collapses the curve toward the
 single-block cost (well under 1 ms) plus an O(N) cheap diff.
 
+### Measured progress
+
+| Blocks | Baseline | After Stage 1 (stable ids) |
+| --- | --- | --- |
+| 20 | 10.8 ms (p95 19.3) | **4.9 ms** (p95 5.7) |
+| 40 | 25.0 ms (p95 42.0) | **9.2 ms** (p95 10.9) |
+
+**Stage 1 alone gave ~2.5× (p95 ~4×).** The old offset-based id shifted for
+trailing blocks every keystroke, so Flutter *recreated* their Elements/States
+(new editables, render objects, controllers) — much costlier than rebuilding.
+Stable ids switch them to update-in-place, bringing 40 blocks under the 60 fps
+budget before any build-skipping. Stage 3 (instance reuse) targets the residual
+linear slope.
+
 Run the harness:
 
 ```bash
