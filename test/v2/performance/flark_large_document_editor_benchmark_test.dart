@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flark/src/v2/core/core.dart';
 import 'package:flark/src/v2/flutter/flutter.dart';
+import 'package:flark/src/v2/markdown/markdown.dart';
 
 int _blackHole = 0;
 
@@ -90,6 +91,117 @@ void main() {
         ),
       );
     });
+
+    testWidgets('raw EditableText viewport pump after edit at ${size.label}', (
+      tester,
+    ) async {
+      final text = _largePlainText(size.targetChars);
+      final textController = TextEditingController(text: text);
+      final focusNode = FocusNode();
+      addTearDown(textController.dispose);
+      addTearDown(focusNode.dispose);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 600,
+            height: 600,
+            child: EditableText(
+              controller: textController,
+              focusNode: focusNode,
+              style: const TextStyle(fontSize: 14),
+              cursorColor: const Color(0xFF006ADC),
+              backgroundCursorColor: const Color(0x00000000),
+              maxLines: null,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      for (var i = 0; i < size.pumpWarmups; i += 1) {
+        _editRawText(textController);
+        await tester.pump();
+      }
+
+      final samples = <Duration>[];
+      for (var i = 0; i < size.pumpIterations; i += 1) {
+        _editRawText(textController);
+        final stopwatch = Stopwatch()..start();
+        await tester.pump();
+        stopwatch.stop();
+        samples.add(stopwatch.elapsed);
+      }
+      _report(
+        _BenchmarkResult(
+          name: 'raw_editable_text_pump_${size.label}_${text.length}chars',
+          samples: samples,
+        ),
+      );
+    });
+
+    testWidgets('flark live rendered viewport pump after edit at ${size.label}', (
+      tester,
+    ) async {
+      final backend = FlarkNativeComrakParseBackend.tryLoad();
+      if (backend == null) {
+        debugPrint(
+          'flark_benchmark flark_live_edit_pump_${size.label} skipped=no_bridge',
+        );
+        return;
+      }
+      final text = _largePlainText(size.targetChars);
+      final controller = FlarkFlutterController.fromMarkdown(text);
+      addTearDown(controller.dispose);
+      final parsed = await tester.runAsync(
+        () => backend.parse(
+          FlarkMarkdownParseRequest(
+            revision: controller.state.revision,
+            markdown: text,
+            profile: FlarkMarkdownProfile.commonMarkGfm,
+          ),
+        ),
+      );
+      expect(controller.applyParseResult(parsed!), isTrue);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 600,
+            height: 600,
+            child: FlarkLiveRenderedEditableText(
+              controller: controller,
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      for (var i = 0; i < size.pumpWarmups; i += 1) {
+        _edit(controller);
+        await tester.pump();
+      }
+
+      final samples = <Duration>[];
+      for (var i = 0; i < size.pumpIterations; i += 1) {
+        _edit(controller);
+        final stopwatch = Stopwatch()..start();
+        await tester.pump();
+        stopwatch.stop();
+        samples.add(stopwatch.elapsed);
+      }
+      _report(
+        _BenchmarkResult(
+          name: 'flark_live_edit_pump_${size.label}_${text.length}chars',
+          samples: samples,
+        ),
+      );
+    });
   }
 }
 
@@ -102,6 +214,14 @@ void _edit(FlarkFlutterController controller) {
         userEvent: 'benchmark.largeDocInsert',
       ),
     ),
+  );
+}
+
+void _editRawText(TextEditingController controller) {
+  final current = controller.value;
+  controller.value = TextEditingValue(
+    text: current.text.replaceRange(5, 5, 'x'),
+    selection: const TextSelection.collapsed(offset: 6),
   );
 }
 

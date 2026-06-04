@@ -75,14 +75,18 @@ Fresh run on 2026-06-04 with the same debug test-VM caveat:
 
 | 1MB metric | Flark source editor | super_editor | flutter_quill | Read |
 | --- | --- | --- | --- | --- |
-| Model/controller build median | `1.15ms` | `3.20ms` | `1.83s` | Flark leads this surface |
-| Edit apply median | `1.34ms` | `755us` | `962.66ms` | Flark is close to the direct block peer |
-| Viewport pump after edit median | `208.12ms` | `98.36ms` | `153.54ms` | Flark trails both peers |
+| Model/controller build median | `1.14ms` | `3.20ms` | `1.83s` | Flark leads this surface |
+| Edit apply median | `1.95ms` | `755us` | `962.66ms` | Flark is close to the direct block peer |
+| Viewport pump after edit median | `259.68ms` | `98.36ms` | `153.54ms` | Flark trails both peers |
 
 The conclusion is split. Flark's peer-comparable large-document build/apply
 interaction is strong, but 1MB viewport pump is still the editor-side peer gap.
-The remaining high-value Flark-specific work is native Markdown parse/decode,
-JSON payload decode, and result mapping.
+The diagnostic Flark harness now also measures raw multiline `EditableText` and
+Flark live-rendered plain-corpus pump: raw `EditableText` is `278.55ms` at 1MB,
+and the current live-rendered plain path is `914.16ms`. That points the next
+editor-side work toward virtualized source/block viewport architecture rather
+than another raw text-field flag tweak. The remaining high-value Flark-specific
+work is native Markdown parse/decode, JSON payload decode, and result mapping.
 
 ## Reproduce
 
