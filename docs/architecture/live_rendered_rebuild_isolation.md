@@ -29,19 +29,28 @@ is real, not a debug artifact, and the build-phase isolation below targets it
 directly: rebuilding ~1 block instead of N collapses the curve toward the
 single-block cost (well under 1 ms) plus an O(N) cheap diff.
 
-### Measured progress
+### Measured progress (profile mode, build median)
 
-| Blocks | Baseline | After Stage 1 (stable ids) |
-| --- | --- | --- |
-| 20 | 10.8 ms (p95 19.3) | **4.9 ms** (p95 5.7) |
-| 40 | 25.0 ms (p95 42.0) | **9.2 ms** (p95 10.9) |
+| Blocks | Baseline | Stage 1 (stable ids) | Stage 3 (typing / end) | Stage 3 (worst / start) |
+| --- | --- | --- | --- | --- |
+| 20 | 10.8 ms | 4.9 ms | **1.6 ms** | — |
+| 40 | 25.0 ms | 9.2 ms | **1.9 ms** | 7.6 ms |
+| 80 | ~50 ms | ~18 ms | **2.2 ms** | 13.1 ms |
 
-**Stage 1 alone gave ~2.5× (p95 ~4×).** The old offset-based id shifted for
-trailing blocks every keystroke, so Flutter *recreated* their Elements/States
-(new editables, render objects, controllers) — much costlier than rebuilding.
-Stable ids switch them to update-in-place, bringing 40 blocks under the 60 fps
-budget before any build-skipping. Stage 3 (instance reuse) targets the residual
-linear slope.
+- **Stage 1 (stable ids): ~2.5×.** The old offset-based id shifted for trailing
+  blocks every keystroke, so Flutter *recreated* their Elements/States — costlier
+  than rebuilding. Stable ids switch them to update-in-place.
+- **Stage 3 (instance reuse): flat for realistic typing.** Reusing unchanged
+  block instances collapses the slope to ~0.015 ms/block — flat ~2 ms across
+  20–80 blocks for editing near the cursor (where blocks before it are reused),
+  matching a node-tree editor like super_editor.
+- **Worst case still bounded.** A start-of-document insertion shifts every later
+  block's offsets, so those rebuild — but even 80 blocks (13 ms) stays within the
+  60 fps budget.
+
+Implemented as Stages 1–3 (Stage 4's caret/content decoupling is folded into
+Stage 3's per-block selection key). Viewport virtualization (Stage 5) remains
+optional and unneeded at these sizes.
 
 Run the harness:
 

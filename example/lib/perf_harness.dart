@@ -20,6 +20,13 @@ import 'package:flark/flark.dart';
 import 'package:flutter/material.dart';
 
 const _blockCount = int.fromEnvironment('FLARK_PROFILE_BLOCKS', defaultValue: 40);
+// 'end' (default) inserts near the document end — realistic top-down typing,
+// where blocks before the cursor are reused. 'start' inserts at the top — the
+// worst case, where every later block's offsets shift and it must rebuild.
+const _editPosition = String.fromEnvironment(
+  'FLARK_PROFILE_EDIT',
+  defaultValue: 'end',
+);
 const _warmupEdits = 20;
 const _measuredEdits = 120;
 
@@ -98,9 +105,13 @@ class _PerfHarnessState extends State<_PerfHarness> {
         _buildMicros.clear();
         _rasterMicros.clear();
       }
+      final length = _controller.state.document.length;
+      final offset = _editPosition == 'start'
+          ? 5
+          : (length - 3).clamp(0, length);
       _controller.applyTransaction(
         FlarkTransaction.single(
-          FlarkSourceOperation.insert(5, 'x'),
+          FlarkSourceOperation.insert(offset, 'x'),
           metadata: const FlarkTransactionMetadata(
             intent: FlarkTransactionIntent.input,
             userEvent: 'profile.insert',
@@ -117,7 +128,8 @@ class _PerfHarnessState extends State<_PerfHarness> {
     final raster = _summary(_rasterMicros);
     // ignore: avoid_print
     print(
-      'flark_profile blocks=${widget.blockCount} frames=${_buildMicros.length} '
+      'flark_profile blocks=${widget.blockCount} edit=$_editPosition '
+      'frames=${_buildMicros.length} '
       'build_median=${build.median} build_p95=${build.p95} '
       'raster_median=${raster.median} raster_p95=${raster.p95}',
     );
