@@ -14,6 +14,7 @@ import 'flark_command_actions.dart';
 import 'flark_code_syntax_highlighting.dart';
 import 'flark_flutter_controller.dart';
 import 'flark_live_block_reconciler.dart';
+import 'flark_live_block_signature.dart';
 import 'flark_markdown_input_policy.dart';
 import 'flark_markdown_interactions.dart';
 import 'flark_text_selection_gestures.dart';
@@ -515,6 +516,12 @@ final class _FlarkLiveRenderedBlockEditorState
     extends State<_FlarkLiveRenderedBlockEditor> {
   final _focusCoordinator = _LiveRenderedBlockFocusCoordinator();
   final _blockReconciler = FlarkLiveBlockReconciler();
+  final _blockWidgetCache = <String, _CachedLiveBlock>{};
+  List<_LiveRenderedBlockEntry> _currentBlockEntries =
+      const <_LiveRenderedBlockEntry>[];
+  TextStyle? _cacheStyle;
+  Color? _cacheCursorColor;
+  Color? _cacheBackgroundCursorColor;
   final _contentBoundsKey = GlobalKey();
   int? _appendHostOffset;
 
@@ -592,53 +599,19 @@ final class _FlarkLiveRenderedBlockEditorState
           isMounted: () => mounted,
         );
 
+        _currentBlockEntries = blockEntries;
+        final blockWidgets = _buildBlockWidgets(
+          entries: blockEntries,
+          displayText: displayText,
+          baseStyle: baseStyle,
+        );
         final content = KeyedSubtree(
           key: _contentBoundsKey,
           child: Column(
             key: const Key('FlarkLiveBlockEditor'),
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
-            children: [
-              // Each block is a RepaintBoundary so one block's repaint (cursor,
-              // selection, text edit) does not repaint its siblings. The
-              // per-block ValueKey lives here to preserve each block's editable
-              // state across rebuilds and reorders.
-              for (var index = 0; index < blockEntries.length; index++)
-                RepaintBoundary(
-                  key: ValueKey(blockEntries[index].id),
-                  child: _FlarkLiveRenderedBlock(
-                    controller: widget.controller,
-                    block: blockEntries[index].block,
-                    displayText: displayText,
-                    style: baseStyle,
-                    cursorColor: widget.cursorColor,
-                    backgroundCursorColor: widget.backgroundCursorColor,
-                    autofocus: widget.autofocus && index == 0,
-                    focusNode: _focusCoordinator.focusNodeForBlock(
-                      entry: blockEntries[index],
-                      index: index,
-                      externalFirstFocusNode: widget.focusNode,
-                    ),
-                    onMoveToPreviousBlock: index == 0
-                        ? null
-                        : () => _moveSelectionToBlockBoundary(
-                            blockEntries[index - 1].block,
-                            after: true,
-                          ),
-                    onMoveToNextBlock: index + 1 >= blockEntries.length
-                        ? blockEntries[index].block.codeBlock == null
-                              ? null
-                              : () => _moveSelectionToDocumentBoundary(
-                                  blockEntries[index].block,
-                                  after: true,
-                                )
-                        : () => _moveSelectionToBlockBoundary(
-                            blockEntries[index + 1].block,
-                            after: false,
-                          ),
-                  ),
-                ),
-            ],
+            children: blockWidgets,
           ),
         );
         Widget editor = LayoutBuilder(
@@ -689,6 +662,135 @@ final class _FlarkLiveRenderedBlockEditorState
     } on ArgumentError {
       return controller.markdown;
     }
+  }
+
+  List<Widget> _buildBlockWidgets({
+    required List<_LiveRenderedBlockEntry> entries,
+    required String displayText,
+    required TextStyle baseStyle,
+  }) {
+    // Style/colours are editor-global and intentionally not part of a block's
+    // content signature, so invalidate the whole instance cache when they
+    // change (e.g. a theme switch).
+    if (_cacheStyle != baseStyle ||
+        _cacheCursorColor != widget.cursorColor ||
+        _cacheBackgroundCursorColor != widget.backgroundCursorColor) {
+      _blockWidgetCache.clear();
+      _cacheStyle = baseStyle;
+      _cacheCursorColor = widget.cursorColor;
+      _cacheBackgroundCursorColor = widget.backgroundCursorColor;
+    }
+
+    // Block editables sync their caret/selection from the parent rebuild, so a
+    // block must rebuild when *its* selection state changes even if its content
+    // did not. The per-block selection key captures that.
+    final selection = widget.controller.selection;
+
+    final widgets = <Widget>[];
+    for (var index = 0; index < entries.length; index += 1) {
+      final entry = entries[index];
+      final block = entry.block;
+      final signature = liveBlockContentSignature(block, displayText);
+      final selectionKey = _blockSelectionKey(block, selection);
+      final cached = _blockWidgetCache[entry.id];
+      // Reuse the same widget instance only when the block is byte-identical in
+      // content, position, navigation context, AND selection state. Flutter
+      // returns immediately for a reference-identical widget, skipping the
+      // entire subtree — so an unchanged block costs nothing to rebuild.
+      if (cached != null &&
+          cached.signature == signature &&
+          cached.selectionKey == selectionKey &&
+          cached.displayStart == block.displayRange.start &&
+          cached.displayEnd == block.displayRange.end &&
+          cached.index == index &&
+          cached.count == entries.length) {
+        widgets.add(cached.widget);
+        continue;
+      }
+
+      final isLast = index + 1 >= entries.length;
+      final builtWidget = RepaintBoundary(
+        // The per-block ValueKey preserves each block's editable state across
+        // rebuilds and reorders.
+        key: ValueKey(entry.id),
+        child: _FlarkLiveRenderedBlock(
+          controller: widget.controller,
+          block: block,
+          displayText: displayText,
+          style: baseStyle,
+          cursorColor: widget.cursorColor,
+          backgroundCursorColor: widget.backgroundCursorColor,
+          autofocus: widget.autofocus && index == 0,
+          focusNode: _focusCoordinator.focusNodeForBlock(
+            entry: entry,
+            index: index,
+            externalFirstFocusNode: widget.focusNode,
+          ),
+          // Resolve the neighbour by id at call time so a reused instance's
+          // navigation callbacks stay valid as neighbours change.
+          onMoveToPreviousBlock: index == 0
+              ? null
+              : () => _moveToPreviousBlock(entry.id),
+          onMoveToNextBlock: (isLast && block.codeBlock == null)
+              ? null
+              : () => _moveToNextBlock(entry.id),
+        ),
+      );
+      _blockWidgetCache[entry.id] = _CachedLiveBlock(
+        signature: signature,
+        selectionKey: selectionKey,
+        displayStart: block.displayRange.start,
+        displayEnd: block.displayRange.end,
+        index: index,
+        count: entries.length,
+        widget: builtWidget,
+      );
+      widgets.add(builtWidget);
+    }
+
+    final liveIds = {for (final entry in entries) entry.id};
+    _blockWidgetCache.removeWhere((id, _) => !liveIds.contains(id));
+    return widgets;
+  }
+
+  void _moveToPreviousBlock(String id) {
+    final entries = _currentBlockEntries;
+    final index = _indexOfBlockId(entries, id);
+    if (index <= 0) return;
+    _moveSelectionToBlockBoundary(entries[index - 1].block, after: true);
+  }
+
+  void _moveToNextBlock(String id) {
+    final entries = _currentBlockEntries;
+    final index = _indexOfBlockId(entries, id);
+    if (index < 0) return;
+    if (index + 1 >= entries.length) {
+      if (entries[index].block.codeBlock != null) {
+        _moveSelectionToDocumentBoundary(entries[index].block, after: true);
+      }
+      return;
+    }
+    _moveSelectionToBlockBoundary(entries[index + 1].block, after: false);
+  }
+
+  int _indexOfBlockId(List<_LiveRenderedBlockEntry> entries, String id) {
+    for (var i = 0; i < entries.length; i += 1) {
+      if (entries[i].id == id) return i;
+    }
+    return -1;
+  }
+
+  // A block's selection state, relative to its source start so it is invariant
+  // under offset shifts. 'n' when the selection does not touch the block.
+  String _blockSelectionKey(FlarkRenderBlock block, FlarkSelection selection) {
+    final blockStart = block.sourceRange.start;
+    final blockEnd = block.sourceRange.end;
+    final selectionStart = selection.start;
+    final selectionEnd = selection.end;
+    if (selectionEnd < blockStart || selectionStart > blockEnd) return 'n';
+    return '${selectionStart - blockStart}:'
+        '${selectionEnd - blockStart}:'
+        '${selection.isCollapsed}';
   }
 
   void _moveSelectionToBlockBoundary(
@@ -1221,6 +1323,28 @@ final class _LiveRenderedBlockEntry {
 
   final String id;
   final FlarkRenderBlock block;
+}
+
+/// A cached live block widget plus the inputs that, if all unchanged, make the
+/// cached instance safe to reuse (skipping its rebuild).
+final class _CachedLiveBlock {
+  const _CachedLiveBlock({
+    required this.signature,
+    required this.selectionKey,
+    required this.displayStart,
+    required this.displayEnd,
+    required this.index,
+    required this.count,
+    required this.widget,
+  });
+
+  final String signature;
+  final String selectionKey;
+  final int displayStart;
+  final int displayEnd;
+  final int index;
+  final int count;
+  final Widget widget;
 }
 
 final class _LiveRenderedBlockFocusCoordinator {
