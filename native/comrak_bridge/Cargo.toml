@@ -8,7 +8,11 @@ publish = false
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
-comrak = "0.50"
+# default-features = false drops comrak's `syntect` highlighting plugin (and its
+# oniguruma C dependency, onig_sys). Flark does its own highlighting via the Dart
+# `highlight` package and only uses comrak's core parse API, so syntect is pure
+# overhead — and its C build broke macOS x86_64 cross-compilation.
+comrak = { version = "0.50", default-features = false }
 entities = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
