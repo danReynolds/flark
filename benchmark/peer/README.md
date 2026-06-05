@@ -31,23 +31,23 @@ mode, which makes its result the most important one here.
 
 ## Results (debug test-VM, 600px viewport, per-edit pump median)
 
-Fresh run on 2026-06-04 with Flutter 3.41.9. These are debug test-VM medians;
+Fresh run on 2026-06-05 with Flutter 3.41.9. These are debug test-VM medians;
 use them for scaling shape and relative constant-factor checks, not device
 latency. See `docs/benchmarks.md` for p95 and profile-mode frame timings.
 
 | Editor | 10 blk | 20 blk | 40 blk | 80 blk | Shape |
 | --- | --- | --- | --- | --- | --- |
-| **Flark — live-rendered, current** (block-based) | `8.87ms` | `8.95ms` | `9.69ms` | `10.17ms` | **flat; `builds_per_edit=1.0`** |
+| **Flark — live-rendered, current** (block-based) | `9.64ms` | `9.15ms` | `9.76ms` | `10.13ms` | **flat; `builds_per_edit=1.0`** |
 | **Flark — live-rendered, old baseline** (block-based) | ~21 ms | ~27 ms | ~44 ms | ~72 ms | **linear in block count** |
-| **super_editor** (block-based WYSIWYG) | `5.85ms` | `5.49ms` | `6.19ms` | `5.14ms` | **flat** |
-| **flutter_quill** (single layout) | `4.67ms` | `4.90ms` | `4.90ms` | `5.00ms` | **flat** |
-| **Flark — source mode, current** (one editable) | — | — | `1.80ms` | — | flat |
+| **super_editor** (block-based WYSIWYG) | `7.20ms` | `8.46ms` | `7.35ms` | `7.83ms` | **flat** |
+| **flutter_quill** (single layout) | `6.82ms` | `8.59ms` | `9.78ms` | `8.53ms` | **flat** |
+| **Flark — source mode, current** (one editable) | — | — | `1.50ms` | — | flat |
 
 ## Takeaways
 
 1. **A block-based live editor can be flat.** super_editor edits rendered blocks
    (paragraphs, headers, lists, images) just like Flark's live-rendered mode, and
-   the current peer run stays near 5-6 ms regardless of block count. That remains
+   the current peer run stays near 7-8 ms regardless of block count. That remains
    the existence proof for selective/memoized component rebuilds.
 
 2. **The old Flark outlier was rebuild fanout, and that gap is closed at the
@@ -61,7 +61,7 @@ latency. See `docs/benchmarks.md` for p95 and profile-mode frame timings.
    pass.
 
 4. **Source mode remains the lower bound for one-editable work.** Current source
-   mode at 40 blocks is `1.80ms` in the same debug rebuild benchmark, so the live
+   mode at 40 blocks is `1.50ms` in the same debug rebuild benchmark, so the live
    block layer still carries extra constant cost even after fanout is fixed.
 
 5. **The next peer-related work is maintenance, not invention.** Keep these
@@ -71,21 +71,22 @@ latency. See `docs/benchmarks.md` for p95 and profile-mode frame timings.
 
 ## Large-Document Results
 
-Fresh run on 2026-06-04 with the same debug test-VM caveat:
+Fresh run on 2026-06-05 with the same debug test-VM caveat:
 
 | 1MB metric | Flark source editor | super_editor | flutter_quill | Read |
 | --- | --- | --- | --- | --- |
-| Model/controller build median | `1.28ms` | `3.78ms` | `2.91s` | Flark leads this surface |
-| Edit apply median | `3.16ms` | `884us` | `1.38s` | Flark is close to the direct block peer |
-| Viewport pump after edit median | `30.93ms` | `142.29ms` | `253.16ms` | Flark now leads this surface |
+| Model/controller build median | `1.30ms` | `4.41ms` | `3.77s` | Flark leads this surface |
+| Edit apply median | `1.59ms` | `1.16ms` | `1.11s` | Flark is close to the direct block peer |
+| Viewport pump after edit median | `54.13ms` | `128.63ms` | `211.38ms` | Flark now leads this surface |
 
 The conclusion is now positive for peer-comparable large-document editor
 interaction. Flark's virtualized source viewport keeps 1MB build/apply strong
 and moves viewport pump below both peer medians. The diagnostic Flark harness
 also measures raw multiline `EditableText` and Flark live-rendered plain-corpus
-pump: raw `EditableText` is `327.97ms` at 1MB, and the current live-rendered
-plain path is `541.39ms`. The remaining high-value Flark-specific work is native
-Markdown parse/decode, JSON payload decode, and result mapping.
+pump: raw `EditableText` is `317.32ms` at 1MB, and the current live-rendered
+plain path is `428.22ms`. The remaining high-value Flark-specific work is native
+Markdown parse/decode, especially attributing and reducing result mapping after
+the retained payload/decode cleanup.
 
 ## Reproduce
 

@@ -282,7 +282,7 @@ fn collect_node<'a>(
             kind: "paragraph",
             start_byte: line_range.start_byte,
             end_byte: line_range.end_byte,
-            payload: serde_json::Value::Object(Default::default()),
+            payload: None,
         }),
         NodeValue::Heading(NodeHeading { level, .. }) => {
             if inside_list_or_quote {
@@ -297,7 +297,7 @@ fn collect_node<'a>(
                 kind: "header",
                 start_byte: heading_start,
                 end_byte: line_range.end_byte,
-                payload: serde_json::json!({ "level": level }),
+                payload: Some(serde_json::json!({ "level": level })),
             });
         }
         NodeValue::ThematicBreak => {
@@ -308,7 +308,7 @@ fn collect_node<'a>(
                 kind: "thematic_break",
                 start_byte: line_range.start_byte,
                 end_byte: line_range.end_byte,
-                payload: serde_json::Value::Object(Default::default()),
+                payload: None,
             });
         }
         NodeValue::CodeBlock(code_block) => {
@@ -344,7 +344,7 @@ fn collect_node<'a>(
                 kind: "html_block",
                 start_byte: line_range.start_byte,
                 end_byte: line_range.end_byte,
-                payload: serde_json::Value::Object(Default::default()),
+                payload: None,
             });
             exclusion_ranges.push(JsonRange {
                 start_byte: line_range.start_byte,
@@ -359,7 +359,7 @@ fn collect_node<'a>(
                 kind: "blockquote",
                 start_byte: line_range.start_byte,
                 end_byte: line_range.end_byte,
-                payload: serde_json::Value::Object(Default::default()),
+                payload: None,
             });
         }
         NodeValue::List(NodeList { list_type, .. }) => {
@@ -371,7 +371,7 @@ fn collect_node<'a>(
                 kind,
                 start_byte: line_range.start_byte,
                 end_byte: line_range.end_byte,
-                payload: serde_json::Value::Object(Default::default()),
+                payload: None,
             });
         }
         NodeValue::Item(NodeList { list_type, .. }) => {
@@ -383,7 +383,7 @@ fn collect_node<'a>(
                 kind: "list_item",
                 start_byte: line_range.start_byte,
                 end_byte: line_range.end_byte,
-                payload: serde_json::json!({ "listKind": list_kind }),
+                payload: Some(serde_json::json!({ "listKind": list_kind })),
             });
         }
         NodeValue::TaskItem(task) => {
@@ -391,10 +391,10 @@ fn collect_node<'a>(
                 kind: "list_item",
                 start_byte: line_range.start_byte,
                 end_byte: line_range.end_byte,
-                payload: serde_json::json!({
+                payload: Some(serde_json::json!({
                     "checked": task.symbol.is_some(),
                     "taskMarkerSymbol": task.symbol.map(|symbol| symbol.to_string()),
-                }),
+                })),
             });
         }
         NodeValue::Table(table) => {
@@ -415,43 +415,43 @@ fn collect_node<'a>(
                 kind: "table",
                 start_byte: line_range.start_byte,
                 end_byte: line_range.end_byte,
-                payload: serde_json::json!({
+                payload: Some(serde_json::json!({
                     "columns": table.num_columns,
                     "rows": table.num_rows,
                     "alignments": alignments,
-                }),
+                })),
             });
         }
         NodeValue::TableRow(is_header) => blocks.push(JsonBlock {
             kind: "table_row",
             start_byte: line_range.start_byte,
             end_byte: line_range.end_byte,
-            payload: serde_json::json!({ "header": is_header }),
+            payload: Some(serde_json::json!({ "header": is_header })),
         }),
         NodeValue::TableCell => blocks.push(JsonBlock {
             kind: "table_cell",
             start_byte: inline_range.start_byte,
             end_byte: inline_range.end_byte,
-            payload: serde_json::Value::Object(Default::default()),
+            payload: None,
         }),
         NodeValue::Strong => inline_tokens.push(JsonInlineToken {
             styles: vec!["bold"],
             start_byte: inline_range.start_byte,
             end_byte: inline_range.end_byte,
-            payload: serde_json::Value::Object(Default::default()),
+            payload: None,
         }),
         NodeValue::Emph => inline_tokens.push(JsonInlineToken {
             styles: vec!["italic"],
             start_byte: inline_range.start_byte,
             end_byte: inline_range.end_byte,
-            payload: serde_json::Value::Object(Default::default()),
+            payload: None,
         }),
         NodeValue::Code(_) => {
             inline_tokens.push(JsonInlineToken {
                 styles: vec!["code"],
                 start_byte: inline_range.start_byte,
                 end_byte: inline_range.end_byte,
-                payload: serde_json::Value::Object(Default::default()),
+                payload: None,
             });
             exclusion_ranges.push(JsonRange {
                 start_byte: inline_range.start_byte,
@@ -462,36 +462,36 @@ fn collect_node<'a>(
             styles: vec!["strikethrough"],
             start_byte: inline_range.start_byte,
             end_byte: inline_range.end_byte,
-            payload: serde_json::Value::Object(Default::default()),
+            payload: None,
         }),
         NodeValue::Link(link) => inline_tokens.push(JsonInlineToken {
             styles: vec!["link"],
             start_byte: inline_range.start_byte,
             end_byte: inline_range.end_byte,
-            payload: serde_json::json!({
+            payload: Some(serde_json::json!({
                 "destination": link.url.as_str(),
                 "href": link.url.as_str(),
                 "title": empty_string_as_null(&link.title),
                 "label": plain_text(node),
-            }),
+            })),
         }),
         NodeValue::Image(link) => inline_tokens.push(JsonInlineToken {
             styles: vec!["image"],
             start_byte: inline_range.start_byte,
             end_byte: inline_range.end_byte,
-            payload: serde_json::json!({
+            payload: Some(serde_json::json!({
                 "destination": link.url.as_str(),
                 "src": link.url.as_str(),
                 "title": empty_string_as_null(&link.title),
                 "alt": plain_text(node),
-            }),
+            })),
         }),
         NodeValue::HtmlInline(_) => {
             inline_tokens.push(JsonInlineToken {
                 styles: vec!["htmlInline"],
                 start_byte: inline_range.start_byte,
                 end_byte: inline_range.end_byte,
-                payload: serde_json::Value::Object(Default::default()),
+                payload: None,
             });
             exclusion_ranges.push(JsonRange {
                 start_byte: inline_range.start_byte,
@@ -709,11 +709,11 @@ fn expand_range_to_full_lines(text: &str, range: JsonRange) -> JsonRange {
     }
 }
 
-fn extract_code_payload(info: &str) -> serde_json::Value {
+fn extract_code_payload(info: &str) -> Option<serde_json::Value> {
     let language = info.split_whitespace().next().unwrap_or("");
     if language.is_empty() {
-        serde_json::Value::Object(Default::default())
+        None
     } else {
-        serde_json::json!({ "language": language })
+        Some(serde_json::json!({ "language": language }))
     }
 }

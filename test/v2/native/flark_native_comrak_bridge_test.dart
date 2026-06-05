@@ -97,6 +97,36 @@ void main() {
       expect(result.diagnostics, isEmpty);
     });
 
+    test('omitted optional payload fields decode as empty collections', () {
+      final payload = utf8.encode(
+        jsonEncode({
+          'blocks': [
+            {'type': 'paragraph', 'startByte': 0, 'endByte': 8},
+          ],
+          'inlineTokens': [
+            {
+              'styles': ['bold'],
+              'startByte': 0,
+              'endByte': 4,
+            },
+          ],
+        }),
+      );
+
+      final result = NativeComrakPayloadCodec.decode(
+        revision: 8,
+        payload: payload,
+      );
+
+      expect(result.blocks.single.payload, isEmpty);
+      expect(result.inlineTokens.single.payload, isEmpty);
+      expect(result.inlineTokens.single.styles, {'bold'});
+      expect(result.markerRanges, isEmpty);
+      expect(result.replacementRanges, isEmpty);
+      expect(result.exclusionRanges, isEmpty);
+      expect(result.diagnostics, isEmpty);
+    });
+
     test('throws FormatException when payload root is not a JSON object', () {
       expect(
         () => NativeComrakPayloadCodec.decode(

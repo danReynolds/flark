@@ -319,11 +319,6 @@ class NativeComrakPayloadCodec {
       );
     }
 
-    List<Map<String, dynamic>> mapList(dynamic raw) {
-      if (raw is! List) return const [];
-      return raw.whereType<Map<String, dynamic>>().toList(growable: false);
-    }
-
     int readByteOffset(dynamic value, {int fallback = 0}) {
       final parsed = switch (value) {
         int() => value,
@@ -341,56 +336,101 @@ class NativeComrakPayloadCodec {
       );
     }
 
-    final blocks = <NativeComrakBlockSpan>[
-      for (final block in mapList(decoded['blocks']))
-        NativeComrakBlockSpan(
-          type: (block['type'] as String?) ?? '',
-          range: readRange(block),
-          payload: (block['payload'] is Map<String, dynamic>)
-              ? (block['payload'] as Map<String, dynamic>)
-              : const <String, Object?>{},
-        ),
-    ];
+    Map<String, Object?> readPayload(dynamic raw) {
+      return raw is Map<String, dynamic> ? raw : const <String, Object?>{};
+    }
 
-    final inlineTokens = <NativeComrakInlineToken>[
-      for (final token in mapList(decoded['inlineTokens']))
-        NativeComrakInlineToken(
-          range: readRange(token),
-          styles: (token['styles'] is List)
-              ? (token['styles'] as List).whereType<String>().toSet()
-              : const <String>{},
-          payload: (token['payload'] is Map<String, dynamic>)
-              ? (token['payload'] as Map<String, dynamic>)
-              : const <String, Object?>{},
-        ),
-    ];
+    Set<String> readStyles(dynamic raw) {
+      if (raw is! List) return const <String>{};
+      final styles = <String>{};
+      for (final value in raw) {
+        if (value is String) {
+          styles.add(value);
+        }
+      }
+      return styles.isEmpty ? const <String>{} : styles;
+    }
 
-    final markerRanges = <NativeComrakRange>[
-      for (final range in mapList(decoded['markerRanges'])) readRange(range),
-    ];
+    final blocks = <NativeComrakBlockSpan>[];
+    final rawBlocks = decoded['blocks'];
+    if (rawBlocks is List) {
+      for (final rawBlock in rawBlocks) {
+        if (rawBlock is! Map<String, dynamic>) continue;
+        blocks.add(
+          NativeComrakBlockSpan(
+            type: (rawBlock['type'] as String?) ?? '',
+            range: readRange(rawBlock),
+            payload: readPayload(rawBlock['payload']),
+          ),
+        );
+      }
+    }
 
-    final replacementRanges = <NativeComrakReplacementRange>[
-      for (final range in mapList(decoded['replacementRanges']))
-        NativeComrakReplacementRange(
-          type: (range['type'] as String?) ?? '',
-          range: readRange(range),
-          text: (range['text'] as String?) ?? '',
-        ),
-    ];
+    final inlineTokens = <NativeComrakInlineToken>[];
+    final rawInlineTokens = decoded['inlineTokens'];
+    if (rawInlineTokens is List) {
+      for (final rawToken in rawInlineTokens) {
+        if (rawToken is! Map<String, dynamic>) continue;
+        inlineTokens.add(
+          NativeComrakInlineToken(
+            range: readRange(rawToken),
+            styles: readStyles(rawToken['styles']),
+            payload: readPayload(rawToken['payload']),
+          ),
+        );
+      }
+    }
 
-    final exclusionRanges = <NativeComrakRange>[
-      for (final range in mapList(decoded['exclusionRanges'])) readRange(range),
-    ];
+    final markerRanges = <NativeComrakRange>[];
+    final rawMarkerRanges = decoded['markerRanges'];
+    if (rawMarkerRanges is List) {
+      for (final rawRange in rawMarkerRanges) {
+        if (rawRange is Map<String, dynamic>) {
+          markerRanges.add(readRange(rawRange));
+        }
+      }
+    }
 
-    final diagnostics = <NativeComrakDiagnostic>[
-      for (final diagnostic in mapList(decoded['diagnostics']))
-        NativeComrakDiagnostic(
-          range: readRange(diagnostic),
-          message: (diagnostic['message'] as String?) ?? '',
-          code: diagnostic['code'] as String?,
-          isError: diagnostic['isError'] == true,
-        ),
-    ];
+    final replacementRanges = <NativeComrakReplacementRange>[];
+    final rawReplacementRanges = decoded['replacementRanges'];
+    if (rawReplacementRanges is List) {
+      for (final rawRange in rawReplacementRanges) {
+        if (rawRange is! Map<String, dynamic>) continue;
+        replacementRanges.add(
+          NativeComrakReplacementRange(
+            type: (rawRange['type'] as String?) ?? '',
+            range: readRange(rawRange),
+            text: (rawRange['text'] as String?) ?? '',
+          ),
+        );
+      }
+    }
+
+    final exclusionRanges = <NativeComrakRange>[];
+    final rawExclusionRanges = decoded['exclusionRanges'];
+    if (rawExclusionRanges is List) {
+      for (final rawRange in rawExclusionRanges) {
+        if (rawRange is Map<String, dynamic>) {
+          exclusionRanges.add(readRange(rawRange));
+        }
+      }
+    }
+
+    final diagnostics = <NativeComrakDiagnostic>[];
+    final rawDiagnostics = decoded['diagnostics'];
+    if (rawDiagnostics is List) {
+      for (final rawDiagnostic in rawDiagnostics) {
+        if (rawDiagnostic is! Map<String, dynamic>) continue;
+        diagnostics.add(
+          NativeComrakDiagnostic(
+            range: readRange(rawDiagnostic),
+            message: (rawDiagnostic['message'] as String?) ?? '',
+            code: rawDiagnostic['code'] as String?,
+            isError: rawDiagnostic['isError'] == true,
+          ),
+        );
+      }
+    }
 
     return NativeComrakParseResult(
       revision: revision,

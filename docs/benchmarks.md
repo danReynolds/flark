@@ -10,11 +10,11 @@ a conclusion about where to focus next.
 | --- | --- | --- | --- |
 | Live-rendered rebuild fanout | `builds_per_edit=1.0` through 10/20/40/80 blocks in the focused debug rebuild benchmark | Fixed: unchanged blocks no longer rebuild just because source/display offsets shift | Keep the benchmark as a regression gate |
 | Live-rendered profile frame time | 40/80 blocks x end/start edits: `build_median=1.16-1.53ms`, `build_p95<=2.12ms` | Safely under the 16.7ms frame budget with large headroom | Re-run the profile gate after major widget changes |
-| Peer comparison | Flark debug medians are flat at `8.87-10.17ms`; current super_editor is `5.14-6.19ms`; current flutter_quill is `4.67-5.00ms` | Peer-competitive on scaling and profile latency, not peer-leading on debug constant factor | Only chase live-block constant cost if peer-leading debug numbers become a product goal |
-| Large-document source transaction | 1MB apply: `5.18ms` median / `31.36ms` p95 | Median is healthy; p95 is noisy and still much smaller than viewport/parse costs | Piece table / rope only if 1MB source apply consistently crosses frame budget |
-| Large-document editor peer calibration | 1MB source editor: build `1.28ms`, apply `3.16ms`, pump `30.93ms` median; super_editor `3.78ms` / `884us` / `142.29ms`; flutter_quill `2.91s` / `1.38s` / `253.16ms` | Peer-leading build and viewport pump; apply remains peer-competitive | Keep the virtualized source viewport as the large-doc regression gate |
-| Large-document viewport probes | 1MB pump: virtualized Flark source `30.93ms`, raw multiline `EditableText` `327.97ms`, Flark live-rendered plain corpus `541.39ms` | Virtualized source closes the full-document text-layout gap | Do not tune raw `EditableText` flags unless this gate regresses |
-| Native parse + decode | 1MB parse+decode: `694ms` median in the latest serial full run after mapper optimization | Improved by ~1.7x from the previous `1.17s`, but still the largest raw Flark-specific perf number | Continue with payload decode and result mapping before parser architecture |
+| Peer comparison | Flark debug medians are flat at `9.15-10.13ms`; current super_editor is `7.20-8.46ms`; current flutter_quill is `6.82-9.78ms` | Peer-competitive on scaling and profile latency, not peer-leading on debug constant factor | Only chase live-block constant cost if peer-leading debug numbers become a product goal |
+| Large-document source transaction | 1MB apply: `4.01ms` median / `18.89ms` p95 | Median is healthy; p95 is noisy and still much smaller than viewport/parse costs | Piece table / rope only if 1MB source apply consistently crosses frame budget |
+| Large-document editor peer calibration | 1MB source editor: build `1.30ms`, apply `1.59ms`, pump `54.13ms` median; super_editor `4.41ms` / `1.16ms` / `128.63ms`; flutter_quill `3.77s` / `1.11s` / `211.38ms` | Peer-leading build and viewport pump; apply remains peer-competitive | Keep the virtualized source viewport as the large-doc regression gate |
+| Large-document viewport probes | 1MB pump: virtualized Flark source `54.13ms`, raw multiline `EditableText` `317.32ms`, Flark live-rendered plain corpus `428.22ms` | Virtualized source closes the full-document text-layout gap | Do not tune raw `EditableText` flags unless this gate regresses |
+| Native parse + decode | 1MB full-run parse+decode: `848ms` min / `952ms` median; retained payload spike: payload `8.14MB` -> `7.69MB`; latest profile decode `243ms`, mapping `406ms` | Payload omission is a real cleanup, but decode timing and total parse/decode remain noisy; result mapping is still the clearest Flark-side phase | Split result mapping before parser architecture or a larger wire-format rewrite |
 
 **Current decision:** the broad live-rendered perf architecture work has hit
 diminishing returns for the measured 40-80 block editing path. Large-document
@@ -22,6 +22,15 @@ source editing is now peer-competitive on the measured editor surfaces:
 virtualized source lines avoid the full-document `EditableText` layout cost and
 bring 1MB viewport pump below both peer medians. The largest raw Flark-specific
 number is still native Markdown parse/decode and result mapping.
+
+**Payload/decode spike:** native now omits empty per-node payload objects and
+the Dart codec maps decoded lists without intermediate list copies. This
+deterministically reduced the 1MB native payload from `8,138,528` bytes to
+`7,689,403` bytes. Decode timing remains noisy across full-suite and focused
+runs, so treat byte reduction as the durable win. A compact marker-range wire
+shape was tested and rejected: although it shrank the payload to `5,952,283`
+bytes, repeated profile runs were slower, so the retained protocol keeps
+object-form ranges.
 
 **Narrow constant-factor pass:** a task-list hot-path refactor now skips
 block-style signature construction for body blocks and skips text-span
@@ -47,12 +56,12 @@ Latest local snapshot:
 
 | Case | Current Flark pump median / p95 | Current rebuild fanout | Current peer median / p95 | Previous Flark shape |
 | --- | --- | --- | --- | --- |
-| 10 blocks | `8.87ms` / `11.80ms` | `1.0` block/edit | super_editor `5.85ms` / `12.50ms`; flutter_quill `4.67ms` / `8.67ms` | ~21ms, all-block fanout |
-| 20 blocks | `8.95ms` / `11.43ms` | `1.0` block/edit | super_editor `5.49ms` / `14.21ms`; flutter_quill `4.90ms` / `10.58ms` | ~27ms, all-block fanout |
-| 40 blocks | `9.69ms` / `12.05ms` | `1.0` block/edit | super_editor `6.19ms` / `14.21ms`; flutter_quill `4.90ms` / `13.31ms` | ~44ms, all-block fanout |
-| 80 blocks | `10.17ms` / `11.83ms` | `1.0` block/edit | super_editor `5.14ms` / `8.98ms`; flutter_quill `5.00ms` / `6.02ms` | ~72ms, all-block fanout |
-| 80 blocks, 600px viewport | `9.52ms` | `1.0` block/edit | not measured | Use this to decide whether virtualization is worth it |
-| Source mode, 40 blocks | `1.80ms` / `2.45ms` | one editable | lower bound for source-string editing | already flat |
+| 10 blocks | `9.64ms` / `21.29ms` | `1.0` block/edit | super_editor `7.20ms` / `12.31ms`; flutter_quill `6.82ms` / `9.27ms` | ~21ms, all-block fanout |
+| 20 blocks | `9.15ms` / `22.44ms` | `1.0` block/edit | super_editor `8.46ms` / `15.08ms`; flutter_quill `8.59ms` / `30.48ms` | ~27ms, all-block fanout |
+| 40 blocks | `9.76ms` / `26.38ms` | `1.0` block/edit | super_editor `7.35ms` / `16.73ms`; flutter_quill `9.78ms` / `28.78ms` | ~44ms, all-block fanout |
+| 80 blocks | `10.13ms` / `13.84ms` | `1.0` block/edit | super_editor `7.83ms` / `12.06ms`; flutter_quill `8.53ms` / `16.56ms` | ~72ms, all-block fanout |
+| 80 blocks, 600px viewport | `8.99ms` | `1.0` block/edit | not measured | Use this to decide whether virtualization is worth it |
+| Source mode, 40 blocks | `1.50ms` / `2.00ms` | one editable | lower bound for source-string editing | already flat |
 
 Interpretation: this is a debug test-VM benchmark. Use it for scaling shape and
 regression detection, not real device latency. The important current signal is
@@ -135,9 +144,9 @@ Two headline numbers at 1KB / 100KB / 1MB of realistic Markdown:
 
 | Document | Keystroke apply median / p95 | Native parse + decode median / p95 | Current read |
 | --- | --- | --- | --- |
-| 1KB | `3us` / `17us` | `1.33ms` / `10.37ms` | trivial; parse p95 includes cold/noisy samples |
-| 100KB | `162us` / `297us` | `76.53ms` / `113.38ms` | synchronous apply is healthy |
-| 1MB | `5.18ms` / `31.36ms` | `694.04ms` / `694.04ms` | async parse/decode is the largest raw number |
+| 1KB | `3us` / `4us` | `1.96ms` / `3.38ms` | trivial; parse p95 includes cold/noisy samples |
+| 100KB | `164us` / `2.75ms` | `118.15ms` / `183.66ms` | synchronous apply is healthy |
+| 1MB | `4.01ms` / `18.89ms` | `951.51ms` / `951.51ms` in the latest full validation run | async parse/decode is noisy and remains the largest raw number |
 
 - **Keystroke apply** is the synchronous core hot path
   (`FlarkEditorState.applyTransaction`: text-buffer rebuild, line reindex,
@@ -146,7 +155,9 @@ Two headline numbers at 1KB / 100KB / 1MB of realistic Markdown:
 - **Native parse + decode** is `FlarkNativeComrakParseBackend.parse` (Comrak
   parse, JSON payload, Dart decode, result synthesis). It is no longer
   pathological, but the 1MB async cost is the clearest remaining performance
-  area if huge documents become important.
+  area if huge documents become important. The latest payload spike reduced
+  the native JSON payload size, but did not change this into an editor-side
+  bottleneck.
 
 ## Peer Calibration
 
@@ -181,12 +192,12 @@ Latest local snapshot, debug test-VM in a 600px viewport:
 
 | Case | Flark source editor median / p95 | super_editor median / p95 | flutter_quill median / p95 | Read |
 | --- | --- | --- | --- | --- |
-| 100KB model/controller build | `821us` / `3.13ms` | `4.06ms` / `41.37ms` | `53.96ms` / `73.75ms` | Flark leads this surface |
-| 100KB edit apply | `180us` / `873us` | `184us` / `1.06ms` | `6.21ms` / `19.19ms` | Flark and super_editor are both sub-ms |
-| 100KB edit pump | `32.09ms` / `66.92ms` | `25.52ms` / `35.02ms` | `32.44ms` / `125.83ms` | 100KB stays in the peer band below the virtualization threshold |
-| 1MB model/controller build | `1.28ms` / `1.59ms` | `3.78ms` / `6.51ms` | `2.91s` / `3.14s` | Flark leads this surface |
-| 1MB edit apply | `3.16ms` / `13.02ms` | `884us` / `4.05ms` | `1.38s` / `2.53s` | Competitive with the direct block peer, far ahead of Quill |
-| 1MB edit pump | `30.93ms` / `42.66ms` | `142.29ms` / `235.51ms` | `253.16ms` / `331.81ms` | Flark now leads this peer-facing viewport surface |
+| 100KB model/controller build | `1.40ms` / `3.56ms` | `1.58ms` / `7.05ms` | `41.84ms` / `58.90ms` | Flark and super_editor are both fast; Flark leads Quill |
+| 100KB edit apply | `173us` / `1.95ms` | `143us` / `356us` | `5.72ms` / `15.23ms` | Flark and super_editor are both sub-ms medians |
+| 100KB edit pump | `31.39ms` / `48.56ms` | `26.69ms` / `44.82ms` | `30.23ms` / `81.44ms` | 100KB stays in the peer band below the virtualization threshold |
+| 1MB model/controller build | `1.30ms` / `1.74ms` | `4.41ms` / `11.51ms` | `3.77s` / `5.07s` | Flark leads this surface |
+| 1MB edit apply | `1.59ms` / `5.47ms` | `1.16ms` / `4.07ms` | `1.11s` / `2.28s` | Competitive with the direct block peer, far ahead of Quill |
+| 1MB edit pump | `54.13ms` / `98.76ms` | `128.63ms` / `134.13ms` | `211.38ms` / `450.18ms` | Flark now leads this peer-facing viewport surface |
 
 Interpretation: for peer-comparable editor interaction at 1MB, Flark is now
 solid. The virtualized source path moves viewport pump from worse-than-peer to
@@ -197,9 +208,9 @@ Additional local probes in the same harness:
 
 | Probe | 100KB median / p95 | 1MB median / p95 | Read |
 | --- | --- | --- | --- |
-| Flark source editor pump | `32.09ms` / `66.92ms` | `30.93ms` / `42.66ms` | large docs use the virtualized source viewport |
-| Raw multiline `EditableText` pump | `28.86ms` / `49.01ms` | `327.97ms` / `377.21ms` | full-document text layout is the avoided cost class |
-| Flark live-rendered plain-corpus pump | `54.29ms` / `86.09ms` | `541.39ms` / `746.44ms` | current rendered plain path is not the large-doc answer |
+| Flark source editor pump | `31.39ms` / `48.56ms` | `54.13ms` / `98.76ms` | large docs use the virtualized source viewport |
+| Raw multiline `EditableText` pump | `26.96ms` / `55.95ms` | `317.32ms` / `374.04ms` | full-document text layout is the avoided cost class |
+| Flark live-rendered plain-corpus pump | `51.79ms` / `78.48ms` | `428.22ms` / `504.03ms` | current rendered plain path is not the large-doc answer |
 
 Two discarded configuration probes are worth remembering: forcing `maxLines: 30`
 or `expands: true` on the source editor did not improve the 1MB source pump.
@@ -216,23 +227,23 @@ tuning raw `EditableText`.
 3. If large-doc editor work continues, harden virtualized source ergonomics
    around keyboard traversal, multi-line selections, and IME grouping rather
    than revisiting full-document text layout.
-4. If large-file open/parse latency is the priority, investigate native
-   parse/decode payload cost before parser architecture: result mapping and JSON
-   decode are larger than native Comrak parse.
+4. If large-file open/parse latency is the priority, split native result
+   mapping into subphase timings before parser architecture: mapping remains
+   larger than JSON decode and native Comrak parse.
 
 ## Large-Document Pitch
 
 The current large-document bottleneck is not synchronous typing. At 1MB,
-`keystroke_apply` is `5.18ms` median / `31.36ms` p95, while native parse+decode
-is `694.04ms` median in the latest serial full run after optimizing
-`FlarkUtf8Utf16Mapper` to avoid per-scalar `utf8.encode` calls. Recent
-post-mapper runs have ranged from roughly `498-712ms`; treat the durable signal
-as a clear large-doc parse/decode win, not a tight SLA.
+`keystroke_apply` is `4.01ms` median / `18.89ms` p95, while native parse+decode
+is `951.51ms` median in the latest full validation run after the payload/decode
+spike. Recent post-mapper runs remain noisy; treat the durable signal as
+large-doc parse/decode being in the subsecond-to-roughly-one-second lane, not as
+a tight SLA.
 
 The peer-calibrated editor surface agrees with that read. At 1MB, current Flark
-builds a source controller in `1.28ms`, applies a source edit in `3.16ms`, and
-pumps the edited 600px viewport in `30.93ms`. That is below super_editor's
-`142.29ms` viewport pump and flutter_quill's `253.16ms`, while also staying far
+builds a source controller in `1.30ms`, applies a source edit in `1.59ms`, and
+pumps the edited 600px viewport in `54.13ms`. That is below super_editor's
+`128.63ms` viewport pump and flutter_quill's `211.38ms`, while also staying far
 ahead of Quill on model build/apply. That makes editor-side large-doc
 performance peer-competitive in the measured lane.
 
@@ -240,23 +251,30 @@ The phase profile now prints:
 
 ```text
 flark_benchmark native_parse_profile_1MB_1000080chars iterations=3
-  total_median=794.33ms utf8_encode_median=3.55ms
-  bridge_total_median=307.14ms native_parse_median=113.31ms
-  payload_decode_median=191.91ms result_mapping_median=483.31ms
-  input_bytes=1000080 payload_bytes=8138528
+  total_median=811.40ms utf8_encode_median=4.64ms
+  bridge_total_median=400.89ms native_parse_median=133.66ms
+  payload_decode_median=242.68ms result_mapping_median=405.65ms
+  input_bytes=1000080 payload_bytes=7689403
 ```
 
-The profiled total is noisier than the non-profiled headline, but the ordering
-is clear: Flark-side result mapping and JSON payload decode dominate native
-Comrak parse time. The next useful work is:
+The retained payload/decode spike omits empty native node payloads and avoids
+intermediate list copies in the Dart payload codec. Against the same focused
+1MB profile lane, payload size moved from `8,138,528` bytes to `7,689,403`
+bytes. Payload decode timing is noisy: focused samples improved, while the
+latest full lane printed `242.68ms`. A compact range-array payload was also
+tested; it reduced bytes further to `5,952,283`, but repeated profile runs were
+slower, so that wire shape was rejected.
 
-1. Split `_mapNativeResult` into subphases so the remaining `result_mapping`
-   cost is attributable.
-2. Reduce JSON payload decode cost or replace the wire format if decode remains
-   above native parse time.
-3. Optimize marker/list/code-fence mapping before considering incremental parse:
-   native parse itself is currently smaller than payload decode and result
-   mapping.
+The profiled total is noisier than the payload byte count, but the ordering is
+clear enough: Flark-side result mapping is now larger than JSON payload decode,
+and native Comrak parse itself is smaller than both. The next useful work is:
+
+1. Split `_mapNativeResult` into marker/list/code-fence/inline/replacement
+   subphases so the remaining `result_mapping` cost is attributable.
+2. Optimize the largest mapped subphase before considering another wire-format
+   change.
+3. Only revisit compact or binary payloads if subphase instrumentation proves
+   JSON decode is again larger than result mapping.
 4. Leave `FlarkTextBuffer`/piece-table work behind this unless a new benchmark
    shows 1MB synchronous apply crossing frame budget again.
 
