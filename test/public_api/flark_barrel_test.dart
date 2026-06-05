@@ -26,6 +26,7 @@ void main() {
     expect(controller.toggleStrong().commandResult.isHandled, isTrue);
     expect(controller.markdown, '**hello**!');
     expect(MarkdownEditor, isA<Type>());
+    expect(MarkdownEditorFormField, isA<Type>());
     expect(Markdown, isA<Type>());
     expect(
       const FlarkMarkdownInteractionConfig(),

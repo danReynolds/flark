@@ -83,6 +83,7 @@ export 'src/v2/flutter/flutter.dart'
         FlarkMarkdownControllerCommands,
         FlarkMarkdownShortcuts,
         MarkdownEditor,
+        MarkdownEditorFormField,
         FlarkMarkdownEditingMode,
         FlarkMarkdownInteractionConfig,
         Markdown,

@@ -3,6 +3,7 @@ export 'flark_editable_text.dart';
 export 'flark_flutter_controller.dart';
 export 'flark_markdown_editor.dart';
 export 'flark_markdown_controller_commands.dart';
+export 'flark_markdown_form_field.dart';
 export 'flark_markdown_interactions.dart';
 export 'flark_markdown_shortcuts.dart';
 export 'flark_markdown_preview.dart';

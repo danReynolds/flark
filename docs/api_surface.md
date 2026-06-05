@@ -11,6 +11,7 @@ import 'package:flark/flark.dart';
 This exports the promoted application surface:
 
 - `MarkdownEditor`
+- `MarkdownEditorFormField`
 - `Markdown`
 - `FlarkFlutterController`
 - editing modes, interaction config, overlay callbacks, and preview builders
@@ -43,12 +44,13 @@ implementation-only Flutter widgets and schedulers.
 
 ## Widget Rule
 
-There are two public widgets:
+There are three public widgets:
 
 | Widget | Purpose |
 | --- | --- |
 | `MarkdownEditor` | Editable Markdown. Pass either `initialMarkdown` or `controller`. |
+| `MarkdownEditorFormField` | Editable Markdown wired into Flutter `FormField<String>`. Pass either `initialMarkdown` or `controller`. |
 | `Markdown` | Read-only Markdown. Pass either `markdown` or `controller`. |
 
 Low-level editing widgets, read-only adapter widgets, parser schedulers, and
-text delta adapters are implementation details behind those two widgets.
+text delta adapters are implementation details behind those widgets.

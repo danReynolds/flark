@@ -27,6 +27,8 @@ document instead of converting user content into a private rich-text model.
 ## Why Flark
 
 - `MarkdownEditor` edits Markdown in source, projected, or live-rendered mode.
+- `MarkdownEditorFormField` wires the editor into Flutter `Form` validation,
+  saving, and reset flows.
 - `Markdown` renders read-only Markdown from a string or a shared controller.
 - `FlarkFlutterController` keeps editor, preview, toolbar, undo, redo, parser
   state, and render plans in sync.

@@ -17,6 +17,36 @@ MarkdownEditor(
 `initialMarkdown` creates a widget-owned controller. Use it for forms, scratch
 pads, and simple single-document editors.
 
+## Forms
+
+Use `MarkdownEditorFormField` when the editor participates in a Flutter `Form`.
+It is a thin wrapper around `MarkdownEditor`: validation, saving,
+autovalidation, reset, and restoration use Flutter's standard `FormField`
+machinery, while Markdown editing still goes through the same controller and
+parser paths.
+
+```dart
+final formKey = GlobalKey<FormState>();
+
+Form(
+  key: formKey,
+  child: MarkdownEditorFormField(
+    initialMarkdown: draftBody,
+    editingMode: FlarkMarkdownEditingMode.liveRendered,
+    validator: (markdown) {
+      return markdown == null || markdown.trim().isEmpty
+          ? 'Body is required'
+          : null;
+    },
+    onSaved: saveDraftBody,
+  ),
+)
+```
+
+Pass `controller` instead of `initialMarkdown` when the form field shares state
+with preview, toolbar, or save-button UI. As with `MarkdownEditor`, a shared
+controller owns parser configuration.
+
 ## Preview
 
 ```dart
@@ -79,11 +109,16 @@ MarkdownEditor(
 
 ## Editing Modes
 
-- `FlarkMarkdownEditingMode.source`: raw Markdown text.
-- `FlarkMarkdownEditingMode.projected`: Markdown markers are hidden while edits
-  still map back to source.
-- `FlarkMarkdownEditingMode.liveRendered`: projected text plus rendered inline
-  styling and editable task, table, code-fence, and quote blocks.
+- `FlarkMarkdownEditingMode.source`: exact Markdown source, including markers
+  like `**strong**`, `_emphasis_`, links, fences, and table pipes.
+- `FlarkMarkdownEditingMode.liveRendered`: recommended for most app editors.
+  It keeps Markdown as the source of truth while hiding common markers, showing
+  rendered inline styling, and providing editable task, table, code-fence, and
+  quote blocks.
+- `FlarkMarkdownEditingMode.projected`: advanced markerless editing. It hides
+  Markdown markers while edits still map back to source, but it does not render
+  inline styles; use `liveRendered` when users need to see bold, italic, code,
+  and other formatting directly in the field.
 
 ## Accessibility
 
