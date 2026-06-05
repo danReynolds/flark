@@ -7,13 +7,14 @@ render-plan metadata should stay in code assertions.
 
 ## Scenario Inventory
 
-- `flark_v2_surfaces.png`: broad source/projected/preview smoke coverage.
+- `flark_v2_surfaces.png`: broad source/internal projected/preview smoke
+  coverage.
 - `flark_v2_live_rendered_editing.png`: rendered-in-place editing with
   hidden markers, styled inline spans, editable task checkboxes, an editable
   language-labelled code block, quote chrome, and an editable table grid.
 - `flark_v2_inline_wrapping.png`: narrow inline wrapping with bold, italic,
   strikethrough, inline code, links, and escaped markers.
-- `flark_v2_code_fences.png`: source/projected/preview code-fence regions
+- `flark_v2_code_fences.png`: source/internal projected/preview code-fence regions
   with and without language metadata.
 - `flark_v2_blockquotes.png`: quote rails, continued quote lines, nested
   quote marker projection, and inline styling inside quotes.

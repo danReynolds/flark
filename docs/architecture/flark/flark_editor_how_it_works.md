@@ -87,24 +87,24 @@ Current headline status:
 
 Primary action surface is `FlarkMarkdownCommands` via:
 
+- `controller.commands.strongActive`
+- `controller.commands.headingLevel`
+- `controller.commands.canMutate`
+- `controller.commands.canUndo`
+- `controller.commands.canRedo`
 - `controller.commands.toggleInlineStyle(...)`
-- `controller.commands.deactivateInlineStyle()`
+- `controller.commands.toggleStrong()`
+- `controller.commands.toggleEmphasis()`
 - `controller.commands.setHeadingLevel(...)`
 - `controller.commands.toggleQuote()`
 - `controller.commands.toggleBulletList()`
 - `controller.commands.toggleTaskList()`
-- `controller.commands.insertHorizontalRule()`
-- `controller.commands.insertFence(...)`
+- `controller.commands.insertThematicBreak()`
+- `controller.commands.insertCodeFence(...)`
 - `controller.commands.insertLink()`
 - `controller.commands.insertTable(...)`
-- `controller.commands.insertTableRowBelow()`
-- `controller.commands.deleteTableRow()`
-- `controller.commands.insertTableColumnRight()`
-- `controller.commands.deleteTableColumn()`
 - `controller.commands.resolveLinkEditContext()`
 - `controller.commands.applyLinkEdit(...)`
-- `controller.commands.capabilitiesAtSelection()`
-- `controller.commands.runInTransaction(...)`
 
 Detailed interface notes:
 

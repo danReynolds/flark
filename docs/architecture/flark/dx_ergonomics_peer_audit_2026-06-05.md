@@ -21,19 +21,19 @@ common recipes by hand.
 Recommended focus:
 
 1. Keep Flark UI-agnostic: do not lead with a stock toolbar. Promote
-   controller-level command state and can-run getters so apps can build their
-   own toolbar/menu UI without reaching into static query helpers.
-2. Keep mutation names as direct command verbs: `toggleStrong()`,
-   `toggleEmphasis()`, `setHeadingLevel(...)`, `insertTable(...)`, `undo()`,
-   and `redo()`.
+   `controller.commands` so apps can build their own toolbar/menu UI without
+   reaching into static query helpers.
+2. Keep mutation names as direct command verbs under that facade:
+   `toggleStrong()`, `toggleEmphasis()`, `setHeadingLevel(...)`,
+   `insertTable(...)`, `undo()`, and `redo()`.
 3. Add form/save ergonomics: `MarkdownEditorFormField` plus dirty-state and
    validation patterns.
 4. Write cookbook docs for the workflows real apps copy: simple editor, shared
    preview, toolbar, link edit, forms, document switching, parser failures,
    and custom block rendering.
 5. Clarify editing-mode expectations. Treat `source` and `liveRendered` as the
-   app-facing modes; keep `projected` documented as a markerless/plain advanced
-   mode unless it gains visual inline styling.
+   app-facing modes. Keep markerless projection as an internal implementation
+   detail unless it becomes visually self-explanatory.
 6. Defer bigger extension-author APIs until the app-level workflow gaps are
    closed.
 
@@ -79,25 +79,20 @@ The important ergonomic choices are good:
 
 - Markdown remains the stored document, not an import/export adapter around a
   private rich-text model.
-- There are two public widgets: `MarkdownEditor` for editing and `Markdown` for
-  read-only rendering.
+- There are three public widgets: `MarkdownEditor` for editing,
+  `MarkdownEditorFormField` for Flutter forms, and `Markdown` for read-only
+  rendering.
 - Apps that need shared state use `FlarkFlutterController.fromMarkdown(...)`.
 - The controller owns parser configuration and exposes typed event streams:
   `events`, `markdownChanges`, and `selectionChanges`.
-- Toolbar commands already have readable helpers such as `toggleStrong()`,
-  `toggleBulletList()`, `insertTable(...)`, and link edit helpers.
-- Active command state exists in the core command layer via
-  `FlarkMarkdownCommandQueries.capabilitiesAtSelection(...)`.
+- Toolbar/menu code has a concise `controller.commands` facade for both reads
+  and writes, such as `commands.strongActive`, `commands.canMutate`,
+  `commands.toggleStrong()`, and `commands.insertTable(...)`.
 
 The weak spots are also clear:
 
 - No promoted form field, validation, dirty-state, or save-button recipe existed
   before this pass.
-- Active/can-run command state is not a first-class controller convenience, so
-  toolbar/menu authors must know to call lower-level command queries.
-- The current read-state type is named `FlarkMarkdownCommandCapabilities`, but
-  most of its fields are active selection state. That name is misleading as a
-  public umbrella for all command read state.
 - The example app has toolbar code, but it is a dogfood workbench, not a small
   copy-pasteable integration sample.
 - Parser ownership rules are correct but easy to trip in first-use code:
@@ -110,7 +105,7 @@ The weak spots are also clear:
 
 | Package | Primary model | First app path | Batteries | Ergonomic read |
 | --- | --- | --- | --- | --- |
-| Flark | Markdown source truth with projection/render plans | `MarkdownEditor(initialMarkdown: ...)`, `Markdown(markdown: ...)`, optional shared controller | Commands and shortcuts exist; command-state/forms/docs need polish | Best for Markdown-native apps; needs app workflow polish |
+| Flark | Markdown source truth with projection/render plans | `MarkdownEditor(initialMarkdown: ...)`, `Markdown(markdown: ...)`, optional shared controller | `controller.commands`, shortcuts, and forms exist; cookbook docs need polish | Best for Markdown-native apps; needs app workflow polish |
 | flutter_quill | Quill Delta rich-text document | `QuillController.basic()`, `QuillSimpleToolbar`, `QuillEditor.basic(...)` | Strong toolbar/editor/localization ecosystem | Best turnkey WYSIWYG peer, but Markdown is not the document truth |
 | super_editor | Rich document nodes, composer, editor pipeline | Build `MutableDocument`, `MutableDocumentComposer`, `Editor`, then `SuperEditor` | Deep customization, default editor widget, popovers/toolbars | Powerful architecture, heavier first app setup |
 | appflowy_editor | Block document tree | `EditorState.blank(...)`, then `AppFlowyEditor(editorState: ...)` | Strong block customization, shortcuts, toolbar/menu docs | Strong Notion-like app ergonomics, heavier block model and package footprint |
@@ -180,31 +175,33 @@ The best peer pattern is closer to Tiptap: provide command verbs, active-state
 queries, and can-run checks, then show toolbar recipes that use any markup or
 Flutter widgets the app wants.
 
-Promote a small controller convenience for toolbar state so apps do not reach
-through `controller.state` and static query classes.
+Promote a small nested controller facade for toolbar/menu state so apps do not
+reach through `controller.state` and static query classes.
 
 Recommended read-side naming:
 
 ```dart
-final state = controller.markdownCommandState;
+final commands = controller.commands;
 
-state.strongActive;
-state.emphasisActive;
-state.activeHeadingLevel;
-state.canMutate;
-controller.canUndo;
-controller.canRedo;
+commands.strongActive;
+commands.emphasisActive;
+commands.headingLevel;
+commands.canMutate;
+commands.canUndo;
+commands.canRedo;
 ```
 
-The public type should be named `FlarkMarkdownCommandState`, not
-`FlarkMarkdownCommandCapabilities`. The current data mixes:
+This avoids a long top-level property like `markdownCommandState` and avoids a
+separate state object that app authors have to name. The current lower-level
+query type, `FlarkMarkdownCommandCapabilities`, mixes:
 
 - active formatting or block context, such as `activeInlineStyles`,
   `activeHeadingLevel`, `quoteActive`, `bulletListActive`, and `tableActive`;
 - can-run state, such as `canMutate`, `canUndo`, and `canRedo`.
 
-`Capabilities` works only for the second bucket. For the full read side,
-`CommandState` is more honest and maps well to peer language:
+`Capabilities` works only for the second bucket, so it should not be the app
+barrel's promoted naming. A nested `commands` facade maps better to peer
+language without forcing the app into a design-system toolbar:
 
 - Tiptap uses command verbs, `.can()` for dry-run availability, and
   `isActive(...)` for active node/mark state.
@@ -215,29 +212,29 @@ The public type should be named `FlarkMarkdownCommandState`, not
 - ProseMirror names the mutation primitive `Command` and exposes direct helpers
   like `toggleMark(...)`, `setBlockType(...)`, and `chainCommands(...)`.
 
-Recommended mutation-side naming: keep the direct controller helpers. They are
-already in the right shape:
+Recommended mutation-side naming: keep direct command verbs under
+`controller.commands`:
 
 ```dart
-controller.toggleStrong();
-controller.toggleEmphasis();
-controller.toggleInlineCode();
-controller.setHeadingLevel(2);
-controller.toggleBulletList();
-controller.insertTable(columns: 3, bodyRows: 2);
-controller.undo();
-controller.redo();
+controller.commands.toggleStrong();
+controller.commands.toggleEmphasis();
+controller.commands.toggleInlineCode();
+controller.commands.setHeadingLevel(2);
+controller.commands.toggleBulletList();
+controller.commands.insertTable(columns: 3, bodyRows: 2);
+controller.commands.undo();
+controller.commands.redo();
 ```
 
 Recommended app toolbar recipe shape:
 
 ```dart
-final state = controller.markdownCommandState;
+final commands = controller.commands;
 
 IconButton(
   icon: const Icon(Icons.format_bold),
-  isSelected: state.strongActive,
-  onPressed: state.canMutate ? controller.toggleStrong : null,
+  isSelected: commands.strongActive,
+  onPressed: commands.canMutate ? commands.toggleStrong : null,
 )
 ```
 
@@ -275,8 +272,7 @@ Add `docs/cookbook/` or a compact app-facing guide with recipes for:
 
 - Simple uncontrolled editor.
 - Controlled editor with shared preview.
-- Design-agnostic toolbar using `markdownCommandState` and controller command
-  helpers.
+- Design-agnostic toolbar using `controller.commands`.
 - Link editing dialog.
 - Read-only preview from current draft.
 - Document switching.
@@ -293,14 +289,14 @@ recipe, and form behavior in a browser.
 
 ### 4. Editing Modes
 
-Current facts:
+Current decision:
 
-- `MarkdownEditor` defaults to `FlarkMarkdownEditingMode.projected`.
-- README and Getting Started examples explicitly choose `liveRendered`.
-- `projected` hides Markdown markers but does not render inline styles; bold and
-  italic content is plain text unless app UI also shows active state.
-- `liveRendered` uses the same projected source mapping but adds rendered inline
-  styling and editable block widgets.
+- `MarkdownEditor` defaults to `FlarkMarkdownEditingMode.liveRendered`.
+- The public enum exposes `source` and `liveRendered`.
+- Markerless projection remains an internal implementation surface used by the
+  live-rendered editor; it is not a promoted app configuration.
+- `liveRendered` uses projected source mapping plus rendered inline styling and
+  editable block widgets.
 
 Other Markdown live editors usually lead with two editable concepts:
 
@@ -311,22 +307,22 @@ Other Markdown live editors usually lead with two editable concepts:
 Obsidian documents exactly that split: Live Preview hides most Markdown syntax
 while showing formatted text inline, while Source mode displays syntax exactly.
 Toast UI Editor uses `initialEditType: 'markdown' | 'wysiwyg'`, and its
-Markdown mode has a separate preview style. In that peer context, Flark's
-`projected` mode is unusual as an app-facing mode: it hides syntax without
-showing visual formatting.
+Markdown mode has a separate preview style. In that peer context, Flark's old
+`projected` app-facing option was unusual: it hid syntax without showing visual
+formatting.
 
 Recommendation:
 
 - Lead docs with `source` for exact Markdown and `liveRendered` for normal
   app-facing live editing.
-- Keep `projected` as advanced/minimal markerless editing, or rename it to a
-  clearer public term such as `markerless` if it remains part of the public API.
-- Do not present all three modes as equally intuitive product choices until
-  `projected` gains visible formatting or an explicit use case.
+- Keep projected editing internal unless it gains visible formatting or an
+  explicit product use case.
+- Do not present markerless/plain projection as an equally intuitive product
+  choice.
 
 ### 5. Extension DX After App DX
 
-Only after command-state/forms/docs are in place, improve extension ergonomics:
+Only after command facade/forms/docs are in place, improve extension ergonomics:
 
 - Small examples for custom render-plan extension.
 - Block-builder examples for `Markdown`.
@@ -339,8 +335,7 @@ This should follow, not precede, the everyday app workflow work.
 
 - Do not introduce a Delta-like document model. Flark's differentiator is
   source Markdown truth.
-- Do not make a second public command API if controller helpers and command
-  queries can be promoted cleanly.
+- Do not make a design-system toolbar the public command API.
 - Do not expand `flark.dart` with low-level internals to solve docs problems.
 - Do not ship a design-opinionated toolbar as the primary answer to toolbar DX.
   Ship command-state primitives and recipes first.
@@ -350,12 +345,10 @@ This should follow, not precede, the everyday app workflow work.
 
 The highest-value next implementation slice is:
 
-1. Add `FlarkFlutterController.markdownCommandState`, `canUndo`, and `canRedo`.
-2. Rename or alias `FlarkMarkdownCommandCapabilities` to
-   `FlarkMarkdownCommandState` while the public surface is still flexible.
-3. Add focused tests around active state and command dispatch.
-4. Add a short cookbook recipe showing a custom toolbar with shared editor and
+1. Add a short cookbook recipe showing a custom toolbar with shared editor and
    preview.
+2. Add a link-editing dialog recipe using `controller.commands`.
+3. Add a GitHub Pages playground that renders these recipes live.
 
 That slice closes the biggest peer DX gap without making Flark own app visual
 design.

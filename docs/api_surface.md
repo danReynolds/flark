@@ -15,7 +15,7 @@ This exports the promoted application surface:
 - `Markdown`
 - `FlarkFlutterController`
 - editing modes, interaction config, overlay callbacks, and preview builders
-- standard Markdown commands and controller helpers
+- standard Markdown commands through `controller.commands`
 - core runtime result and transaction types commonly needed by app toolbars
 - `FlarkNativeComrakParseBackend` and native preflight diagnostics
 

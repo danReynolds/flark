@@ -40,7 +40,7 @@ flutter run -d macos
 ```
 
 The example app is the primary manual QA surface for live-rendered editing,
-toolbars, source/projected modes, preview rendering, parser load status, and
+toolbars, source mode, preview rendering, parser load status, forms, and
 scratch-pad workflows.
 
 ## Native Builds

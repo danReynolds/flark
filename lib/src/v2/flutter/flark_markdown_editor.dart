@@ -13,7 +13,7 @@ import 'flark_markdown_shortcuts.dart';
 import 'flark_projected_editable_text.dart';
 import 'flark_render_plan_overlay_controls.dart';
 
-enum FlarkMarkdownEditingMode { source, projected, liveRendered }
+enum FlarkMarkdownEditingMode { source, liveRendered }
 
 final class MarkdownEditor extends StatefulWidget {
   const MarkdownEditor({
@@ -26,7 +26,7 @@ final class MarkdownEditor extends StatefulWidget {
     this.onParseError,
     this.profile,
     this.parseDebounce,
-    this.editingMode = FlarkMarkdownEditingMode.projected,
+    this.editingMode = FlarkMarkdownEditingMode.liveRendered,
     this.focusNode,
     this.style,
     this.cursorColor,
@@ -201,18 +201,6 @@ final class _MarkdownEditorState extends State<MarkdownEditor> {
     final shortcuts = _effectiveShortcuts();
     final editor = switch (widget.editingMode) {
       FlarkMarkdownEditingMode.source => FlarkEditableText(
-        controller: controller,
-        focusNode: widget.focusNode,
-        style: widget.style,
-        cursorColor: cursorColor,
-        backgroundCursorColor: widget.backgroundCursorColor,
-        minLines: widget.minLines,
-        maxLines: widget.maxLines,
-        expands: widget.expands,
-        autofocus: widget.autofocus,
-        shortcuts: shortcuts,
-      ),
-      FlarkMarkdownEditingMode.projected => FlarkProjectedEditableText(
         controller: controller,
         focusNode: widget.focusNode,
         style: widget.style,

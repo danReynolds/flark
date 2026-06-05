@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flark/flark_advanced.dart';
+import 'package:flark/src/v2/flutter/flark_projected_editable_text.dart';
 
 void main() {
   setUpAll(() async {
@@ -237,6 +238,7 @@ Future<void> _pumpTriptych(
   _setGoldenSurface(tester, width, height);
   final sourceController = _controller(markdown);
   final projectedController = _controller(markdown);
+  projectedController.attachParsingSurface();
   addTearDown(sourceController.dispose);
   addTearDown(projectedController.dispose);
 
@@ -262,9 +264,8 @@ Future<void> _pumpTriptych(
           Expanded(
             child: _SurfacePanel(
               label: 'Projected editor',
-              child: MarkdownEditor(
+              child: FlarkProjectedEditableText(
                 controller: projectedController,
-                editingMode: FlarkMarkdownEditingMode.projected,
                 style: _editorStyle,
                 maxLines: 24,
               ),

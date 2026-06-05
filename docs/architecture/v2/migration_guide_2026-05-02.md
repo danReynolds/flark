@@ -125,12 +125,15 @@ This is more explicit by design. Commands are typed, can be registered by
 extensions, and return a runtime result that includes the updated immutable
 runtime plus command status.
 
-Use capability queries for toolbar state:
+Use `controller.commands` for toolbar state and command dispatch:
 
 ```dart
-final capabilities = FlarkMarkdownCommandQueries.capabilitiesAtSelection(
-  controller.state,
-);
+final commands = controller.commands;
+
+IconButton(
+  isSelected: commands.strongActive,
+  onPressed: commands.canMutate ? commands.toggleStrong : null,
+)
 ```
 
 ## Typed Controller Events
@@ -153,14 +156,13 @@ changes, undo, redo, and generic runtime changes.
 ## Projection and Source Text
 
 `FlarkFlutterController.markdown` is always the canonical source document.
-Projected editing hides parser-provided marker ranges from the editing surface
-but maps selections and edits back to source offsets.
+Live-rendered editing uses projection internally to hide parser-provided marker
+ranges while mapping selections and edits back to source offsets.
 
 Use `FlarkMarkdownEditingMode.source` when users must see literal markdown
-syntax, `FlarkMarkdownEditingMode.projected` when they should edit clean
-marker-hidden text, and `FlarkMarkdownEditingMode.liveRendered` when they
-should get rendered-in-place inline styling and editable task, code-fence, and
-table block widgets while still editing canonical Markdown source.
+syntax, and `FlarkMarkdownEditingMode.liveRendered` when they should get
+rendered-in-place inline styling and editable task, code-fence, and table block
+widgets while still editing canonical Markdown source.
 
 ## Overlay and Render-Plan Migration
 

@@ -26,7 +26,7 @@ final class MarkdownEditorFormField extends FormField<String> {
     this.onParseError,
     this.profile,
     this.parseDebounce,
-    this.editingMode = FlarkMarkdownEditingMode.projected,
+    this.editingMode = FlarkMarkdownEditingMode.liveRendered,
     this.focusNode,
     this.style,
     this.cursorColor,

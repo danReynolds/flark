@@ -26,8 +26,10 @@ void main() {
     controller.applySelection(
       const FlarkSelection(baseOffset: 0, extentOffset: 5),
     );
-    expect(controller.toggleStrong().commandResult.isHandled, isTrue);
+    final commands = controller.commands;
+    expect(commands.toggleStrong().commandResult.isHandled, isTrue);
     expect(controller.markdown, '**hello**!');
+    expect(commands.strongActive, isTrue);
     expect(
       FlarkProjection(textLength: controller.markdown.length),
       isA<FlarkProjection>(),

@@ -174,30 +174,31 @@ class _FlarkExampleScreenState extends State<FlarkExampleScreen> {
 
   void _runCommand(_ToolbarCommand command) {
     final before = _controller.state.revision;
+    final commands = _controller.commands;
     switch (command) {
       case _ToolbarCommand.heading1:
-        _controller.setHeadingLevel(1, userEvent: 'example.toolbar.heading1');
+        commands.setHeadingLevel(1, userEvent: 'example.toolbar.heading1');
       case _ToolbarCommand.heading2:
-        _controller.setHeadingLevel(2, userEvent: 'example.toolbar.heading2');
+        commands.setHeadingLevel(2, userEvent: 'example.toolbar.heading2');
       case _ToolbarCommand.bold:
-        _controller.toggleStrong(userEvent: 'example.toolbar.bold');
+        commands.toggleStrong(userEvent: 'example.toolbar.bold');
       case _ToolbarCommand.italic:
-        _controller.toggleEmphasis(userEvent: 'example.toolbar.italic');
+        commands.toggleEmphasis(userEvent: 'example.toolbar.italic');
       case _ToolbarCommand.quote:
-        _controller.toggleQuote(userEvent: 'example.toolbar.quote');
+        commands.toggleQuote(userEvent: 'example.toolbar.quote');
       case _ToolbarCommand.bulletedList:
-        _controller.toggleBulletList(userEvent: 'example.toolbar.bulletList');
+        commands.toggleBulletList(userEvent: 'example.toolbar.bulletList');
       case _ToolbarCommand.orderedList:
-        _controller.toggleOrderedList(userEvent: 'example.toolbar.orderedList');
+        commands.toggleOrderedList(userEvent: 'example.toolbar.orderedList');
       case _ToolbarCommand.taskList:
-        _controller.toggleTaskList(userEvent: 'example.toolbar.taskList');
+        commands.toggleTaskList(userEvent: 'example.toolbar.taskList');
       case _ToolbarCommand.codeFence:
-        _controller.insertCodeFence(
+        commands.insertCodeFence(
           language: 'dart',
           userEvent: 'example.toolbar.codeFence',
         );
       case _ToolbarCommand.table:
-        _controller.insertTable(
+        commands.insertTable(
           columns: 3,
           bodyRows: 2,
           userEvent: 'example.toolbar.table',
@@ -867,7 +868,6 @@ class _PaneModeLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final label = switch (editingMode) {
       FlarkMarkdownEditingMode.source => 'Source',
-      FlarkMarkdownEditingMode.projected => 'Projected',
       FlarkMarkdownEditingMode.liveRendered => 'Live',
     };
     return Text(

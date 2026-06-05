@@ -64,8 +64,8 @@ flutter test integration_test/markdown_flow_test.dart -d <ios-simulator-id>
 
 The current simulator validation was run against
 `C880BCBA-DC57-4AB9-87DA-50A44357BC40`. It exercises the v2 example app through
-common Markdown cases, source/projected/live-rendered mode switching, and
-native parser adoption.
+common Markdown cases, source/live-rendered mode switching, forms, and native
+parser adoption.
 
 Run this on macOS when desktop behavior or native loading changes:
 

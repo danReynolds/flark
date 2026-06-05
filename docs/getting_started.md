@@ -92,10 +92,23 @@ controller.selectionChanges.listen(updateToolbarState);
 
 ## Toolbar Commands and Shortcuts
 
-Toolbar buttons call command helpers on the controller; the same commands are
-bound to keyboard accelerators. `MarkdownEditor` installs a default map
-(Cmd/Ctrl + B/I/E, Cmd/Ctrl+Shift+X) via `useDefaultShortcuts`. Add or override
-bindings with `FlarkMarkdownShortcuts`:
+Toolbar buttons call `controller.commands`; the same commands are bound to
+keyboard accelerators. Read getters expose active state for selected buttons,
+and mutation methods dispatch edits:
+
+```dart
+final commands = controller.commands;
+
+IconButton(
+  icon: const Icon(Icons.format_bold),
+  isSelected: commands.strongActive,
+  onPressed: commands.canMutate ? commands.toggleStrong : null,
+)
+```
+
+`MarkdownEditor` installs a default shortcut map (Cmd/Ctrl + B/I/E,
+Cmd/Ctrl+Shift+X) via `useDefaultShortcuts`. Add or override bindings with
+`FlarkMarkdownShortcuts`:
 
 ```dart
 MarkdownEditor(
@@ -115,10 +128,6 @@ MarkdownEditor(
   It keeps Markdown as the source of truth while hiding common markers, showing
   rendered inline styling, and providing editable task, table, code-fence, and
   quote blocks.
-- `FlarkMarkdownEditingMode.projected`: advanced markerless editing. It hides
-  Markdown markers while edits still map back to source, but it does not render
-  inline styles; use `liveRendered` when users need to see bold, italic, code,
-  and other formatting directly in the field.
 
 ## Accessibility
 

@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flark/flark_advanced.dart';
 
 void main() {
-  testWidgets('MarkdownEditor wires parsing into projected editing', (
+  testWidgets('MarkdownEditor wires parsing into live-rendered editing', (
     tester,
   ) async {
     final backend = _ImmediateParseBackend();

@@ -88,6 +88,8 @@ export 'src/v2/flutter/flutter.dart'
         FlarkControllerEventKind,
         FlarkFlutterController,
         FlarkCodeLanguageOption,
+        FlarkMarkdownCommands,
+        FlarkMarkdownControllerCommandFacade,
         FlarkMarkdownControllerCommands,
         MarkdownEditorFormField,
         MarkdownEditor,

@@ -23,8 +23,10 @@ void main() {
     controller.applySelection(
       const FlarkSelection(baseOffset: 0, extentOffset: 5),
     );
-    expect(controller.toggleStrong().commandResult.isHandled, isTrue);
+    final commands = controller.commands;
+    expect(commands.toggleStrong().commandResult.isHandled, isTrue);
     expect(controller.markdown, '**hello**!');
+    expect(commands.strongActive, isTrue);
     expect(MarkdownEditor, isA<Type>());
     expect(MarkdownEditorFormField, isA<Type>());
     expect(Markdown, isA<Type>());
@@ -61,25 +63,24 @@ void main() {
     expect(core.FlarkProjection, isA<Type>());
   });
 
-  test(
-    'top-level barrel exposes only the two promoted widget entry points',
-    () {
-      final barrel = File('lib/flark.dart').readAsStringSync();
+  test('top-level barrel exposes only the promoted widget entry points', () {
+    final barrel = File('lib/flark.dart').readAsStringSync();
 
-      expect(barrel, contains('MarkdownEditor'));
-      expect(barrel, contains('Markdown,'));
-      expect(barrel, isNot(contains('FlarkMarkdownField')));
-      expect(barrel, isNot(contains('FlarkMarkdownEditor')));
-      expect(barrel, isNot(contains('FlarkMarkdownPreview')));
-      expect(barrel, isNot(contains('FlarkReadOnlyPreview')));
-      expect(barrel, isNot(contains('FlarkEditableText')));
-      expect(barrel, isNot(contains('FlarkProjectedEditableText')));
-      expect(barrel, isNot(contains('FlarkLiveRenderedEditableText')));
-      expect(barrel, isNot(contains('FlarkParseScheduler')));
-      expect(barrel, isNot(contains('FlarkRenderPlanOverlayControls')));
-      expect(barrel, isNot(contains('FlarkTextDeltaAdapter')));
-    },
-  );
+    expect(barrel, contains('MarkdownEditor'));
+    expect(barrel, contains('MarkdownEditorFormField'));
+    expect(barrel, contains('Markdown,'));
+    expect(barrel, isNot(contains('FlarkMarkdownField')));
+    expect(barrel, isNot(contains('FlarkMarkdownEditor')));
+    expect(barrel, isNot(contains('FlarkMarkdownPreview')));
+    expect(barrel, isNot(contains('FlarkReadOnlyPreview')));
+    expect(barrel, isNot(contains('FlarkMarkdownControllerCommands')));
+    expect(barrel, isNot(contains('FlarkEditableText')));
+    expect(barrel, isNot(contains('FlarkProjectedEditableText')));
+    expect(barrel, isNot(contains('FlarkLiveRenderedEditableText')));
+    expect(barrel, isNot(contains('FlarkParseScheduler')));
+    expect(barrel, isNot(contains('FlarkRenderPlanOverlayControls')));
+    expect(barrel, isNot(contains('FlarkTextDeltaAdapter')));
+  });
 
   testWidgets('top-level widgets render without legacy imports', (
     tester,

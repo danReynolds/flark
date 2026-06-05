@@ -10,14 +10,20 @@ void main() {
       const FlarkSelection(baseOffset: 0, extentOffset: 5),
     );
 
-    expect(controller.toggleStrong().commandResult.isHandled, isTrue);
+    final commands = controller.commands;
+    expect(commands.strongActive, isFalse);
+    expect(commands.canUndo, isFalse);
+
+    expect(commands.toggleStrong().commandResult.isHandled, isTrue);
     expect(controller.markdown, '**hello** world');
+    expect(commands.strongActive, isTrue);
+    expect(commands.canUndo, isTrue);
 
     controller.applySelection(
       FlarkSelection.collapsed(controller.markdown.length),
     );
     expect(
-      controller.insertCodeFence(language: 'dart').commandResult.isHandled,
+      commands.insertCodeFence(language: 'dart').commandResult.isHandled,
       isTrue,
     );
     expect(controller.markdown, '**hello** world\n\n```dart\n\n```');
@@ -25,7 +31,7 @@ void main() {
     final tableController = FlarkFlutterController.fromMarkdown('');
     addTearDown(tableController.dispose);
     expect(
-      tableController
+      tableController.commands
           .insertTable(columns: 3, bodyRows: 2)
           .commandResult
           .isHandled,
@@ -42,16 +48,18 @@ void main() {
     addTearDown(controller.dispose);
 
     controller.applySelection(const FlarkSelection.collapsed(0));
-    expect(controller.setHeadingLevel(2).commandResult.isHandled, isTrue);
+    final commands = controller.commands;
+    expect(commands.setHeadingLevel(2).commandResult.isHandled, isTrue);
     expect(controller.markdown, '## title\nlink');
+    expect(commands.headingLevel, 2);
 
     controller.applySelection(
       const FlarkSelection(baseOffset: 9, extentOffset: 13),
     );
-    final linkContext = controller.resolveLinkEditContext();
+    final linkContext = commands.resolveLinkEditContext();
     expect(linkContext.label, 'link');
     expect(
-      controller
+      commands
           .applyLinkEdit(
             context: linkContext,
             label: 'Docs',
@@ -66,10 +74,10 @@ void main() {
     controller.applySelection(
       const FlarkSelection(baseOffset: 9, extentOffset: 36),
     );
-    final existingLink = controller.resolveLinkEditContext();
+    final existingLink = commands.resolveLinkEditContext();
     expect(existingLink.isExisting, isTrue);
     expect(
-      controller
+      commands
           .removeLink(linkRange: existingLink.replaceRange)
           .commandResult
           .isHandled,
@@ -80,7 +88,8 @@ void main() {
     controller.applySelection(
       const FlarkSelection(baseOffset: 0, extentOffset: 5),
     );
-    expect(controller.toggleQuote().commandResult.isHandled, isTrue);
+    expect(commands.toggleQuote().commandResult.isHandled, isTrue);
     expect(controller.markdown, '> ## title\nDocs');
+    expect(commands.quoteActive, isTrue);
   });
 }

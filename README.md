@@ -26,7 +26,7 @@ document instead of converting user content into a private rich-text model.
 
 ## Why Flark
 
-- `MarkdownEditor` edits Markdown in source, projected, or live-rendered mode.
+- `MarkdownEditor` edits Markdown in source or live-rendered mode.
 - `MarkdownEditorFormField` wires the editor into Flutter `Form` validation,
   saving, and reset flows.
 - `Markdown` renders read-only Markdown from a string or a shared controller.
@@ -65,12 +65,12 @@ Toolbar code talks to the controller, not the widget tree:
 ```dart
 IconButton(
   icon: const Icon(Icons.format_bold),
-  onPressed: () => controller.toggleStrong(),
+  onPressed: () => controller.commands.toggleStrong(),
 )
 
 IconButton(
   icon: const Icon(Icons.table_chart),
-  onPressed: () => controller.insertTable(columns: 3, bodyRows: 2),
+  onPressed: () => controller.commands.insertTable(columns: 3, bodyRows: 2),
 )
 ```
 
@@ -120,7 +120,7 @@ the enforced lane and methodology.
 ## Example App
 
 The `example/` app is the dogfood workbench. It imports only
-`package:flark/flark.dart` and exercises source, projected, live-rendered, and
+`package:flark/flark.dart` and exercises source, live-rendered, form, and
 read-only rendering flows.
 
 ```bash

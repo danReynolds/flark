@@ -8,7 +8,8 @@ import 'flark_command_actions.dart';
 /// Keyboard shortcut helpers for Markdown editing commands.
 ///
 /// These build [FlarkCommandIntent]s for the same commands exposed as
-/// `FlarkFlutterController` helper methods (e.g. `controller.toggleStrong()`),
+/// `FlarkFlutterController` helper methods (e.g.
+/// `controller.commands.toggleStrong()`),
 /// so toolbar buttons and keyboard shortcuts drive one command surface. Pass
 /// the result to `MarkdownEditor.shortcuts`, or rely on
 /// `MarkdownEditor.useDefaultShortcuts` to install [defaults] automatically.
