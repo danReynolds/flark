@@ -2100,6 +2100,48 @@ final class _EditableProjectedBlockTextState
     final compositionUndoGroupId = _compositionUndoGrouping.groupIdFor(value);
     if (value.text != oldLocalText) {
       if (widget.markdownInputPolicy) {
+        if (_isCodeFenceOpeningLinePlatformEnter(
+          markdown: widget.controller.markdown,
+          block: widget.currentBlock,
+          range: snapshot.directSourceRange ?? directSourceRange,
+          oldText: oldLocalText,
+          newValue: value,
+        )) {
+          final existingBodyStart = _existingCodeFenceBodyStartAfterOpeningLine(
+            markdown: widget.controller.markdown,
+            block: widget.currentBlock,
+            range: snapshot.directSourceRange ?? directSourceRange,
+          );
+          if (existingBodyStart != null) {
+            widget.controller.applySelection(
+              FlarkSelection.collapsed(existingBodyStart),
+              userEvent: 'selection.liveBlock.codeFenceOpeningEnter',
+            );
+            _syncFromController();
+          } else {
+            _markdownInputPolicy.dispatchEnter(
+              currentSelection: () =>
+                  FlarkMarkdownInputPolicy.selectionFromTextSelection(
+                    oldLocalSelection,
+                  ) ??
+                  FlarkSelection.collapsed(oldLocalText.length),
+              applySelection: _applyLocalDisplaySelectionToController,
+            );
+          }
+          _compositionUndoGrouping.clearIfCommitted(value);
+          return;
+        }
+        if (_isOpeningEmptyUnclosedCodeFenceNewlineEcho(
+          markdown: widget.controller.markdown,
+          block: widget.currentBlock,
+          range: snapshot.directSourceRange ?? directSourceRange,
+          oldText: oldLocalText,
+          newValue: value,
+        )) {
+          _syncFromController();
+          _compositionUndoGrouping.clearIfCommitted(value);
+          return;
+        }
         if (_markdownInputPolicy.handlePlatformTextChange(
           oldText: oldLocalText,
           newValue: value,
@@ -4435,6 +4477,18 @@ _SourceEdit _codeBodySourceEdit({
     markdown,
     block.sourceRange.start,
   );
+  if (_isOpeningEmptyUnclosedCodeFenceBodyEcho(
+    context: context,
+    range: range,
+    value: value,
+  )) {
+    return _SourceEdit(
+      range: range,
+      replacementText: '',
+      editableRangeAfter: range,
+      selectionAfter: FlarkSelection.collapsed(range.start),
+    );
+  }
   final closingLineStart = context?.closingLineStart;
   final typedClosingLineStart = context == null
       ? null
@@ -4531,6 +4585,98 @@ bool _endsWithLineBreak(String text) {
   if (text.isEmpty) return false;
   final codeUnit = text.codeUnitAt(text.length - 1);
   return codeUnit == 0x0A || codeUnit == 0x0D;
+}
+
+bool _isOpeningEmptyUnclosedCodeFenceNewlineEcho({
+  required String markdown,
+  required FlarkRenderBlock block,
+  required FlarkSourceRange? range,
+  required String oldText,
+  required TextEditingValue newValue,
+}) {
+  if (block.codeBlock == null || range == null || !range.isCollapsed) {
+    return false;
+  }
+  if (oldText.isNotEmpty) return false;
+  if (!_isSingleLineBreak(newValue.text) ||
+      !_isCollapsedSelection(newValue.selection)) {
+    return false;
+  }
+
+  final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
+    markdown,
+    block.sourceRange.start,
+  );
+  if (context == null || context.closingLineStart != null) return false;
+  return context.bodyStart == range.start &&
+      context.bodyEnd(markdown) == range.start;
+}
+
+bool _isOpeningEmptyUnclosedCodeFenceBodyEcho({
+  required FlarkMarkdownFencedCodeContext? context,
+  required FlarkSourceRange range,
+  required TextEditingValue value,
+}) {
+  if (context == null || context.closingLineStart != null) return false;
+  if (!range.isCollapsed || range.start != context.bodyStart) return false;
+  return _isSingleLineBreak(value.text) &&
+      _isCollapsedSelectionAt(value.selection, 0);
+}
+
+bool _isCodeFenceOpeningLinePlatformEnter({
+  required String markdown,
+  required FlarkRenderBlock block,
+  required FlarkSourceRange? range,
+  required String oldText,
+  required TextEditingValue newValue,
+}) {
+  if (block.codeBlock == null || range == null || oldText.isEmpty) {
+    return false;
+  }
+  final openingLineRange = _codeFenceOpeningLineRange(markdown, block);
+  if (openingLineRange == null ||
+      range.start != openingLineRange.start ||
+      range.end != openingLineRange.end) {
+    return false;
+  }
+  if (!newValue.text.startsWith(oldText)) return false;
+  final inserted = newValue.text.substring(oldText.length);
+  return _isOnlyLineBreaks(inserted);
+}
+
+int? _existingCodeFenceBodyStartAfterOpeningLine({
+  required String markdown,
+  required FlarkRenderBlock block,
+  required FlarkSourceRange? range,
+}) {
+  if (range == null || range.end >= markdown.length) return null;
+  if (!_isLineBreakCodeUnit(markdown.codeUnitAt(range.end))) return null;
+  final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
+    markdown,
+    block.sourceRange.start,
+  );
+  if (context == null || context.openingLineStart != range.start) return null;
+  return context.bodyStart > range.end ? context.bodyStart : null;
+}
+
+bool _isCollapsedSelectionAt(TextSelection selection, int offset) {
+  return _isCollapsedSelection(selection) && selection.extentOffset == offset;
+}
+
+bool _isCollapsedSelection(TextSelection selection) {
+  return selection.isValid && selection.isCollapsed;
+}
+
+bool _isSingleLineBreak(String text) {
+  return text == '\n' || text == '\r\n';
+}
+
+bool _isOnlyLineBreaks(String text) {
+  if (text.isEmpty) return false;
+  for (final codeUnit in text.codeUnits) {
+    if (codeUnit != 0x0A && codeUnit != 0x0D) return false;
+  }
+  return true;
 }
 
 FlarkSourceRange? _codeBodyRange(String markdown, FlarkRenderBlock block) {

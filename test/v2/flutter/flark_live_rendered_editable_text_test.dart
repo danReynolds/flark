@@ -1110,6 +1110,7 @@ void main() {
     await tester.pump();
 
     expect(controller.markdown, 'Intro\n\nf\n- [x] Task');
+    expect(controller.selection, const FlarkSelection.collapsed(8));
 
     await _applyComrakParseResult(controller);
     await tester.pump();
@@ -1127,6 +1128,10 @@ void main() {
     );
     expect(focusedEditorIndex, 2);
     expect(editors[focusedEditorIndex].controller.text, 'f');
+    expect(
+      editors[focusedEditorIndex].controller.selection,
+      const TextSelection.collapsed(offset: 1),
+    );
 
     await tester.enterText(editableFinder.at(focusedEditorIndex), 'abcdef');
     await tester.pump();
@@ -1891,6 +1896,123 @@ void main() {
       );
       await tester.pump();
 
+      await _typeBlankFenceOpener(tester, find.byType(EditableText));
+
+      expect(controller.markdown, '```');
+      expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsNothing);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(controller.markdown, '```\n');
+      expect(controller.selection, const FlarkSelection.collapsed(4));
+      expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsOneWidget);
+      expect(
+        find.byKey(const Key('FlarkLiveBlockCodeOpeningEditable')),
+        findsNothing,
+      );
+      final editable = tester.widget<EditableText>(_codeEditableFinder());
+      expect(editable.controller.text, isEmpty);
+      expect(editable.controller.text, isNot(contains('```')));
+      expect(
+        editable.controller.selection,
+        const TextSelection.collapsed(offset: 0),
+      );
+      expect(editable.focusNode.hasFocus, isTrue);
+    },
+  );
+
+  testWidgets(
+    'ignores duplicate platform newline after opening a blank live code fence',
+    (tester) async {
+      final controller = FlarkFlutterController.fromMarkdown(
+        '',
+        parseDebounce: Duration.zero,
+      );
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 320,
+            height: 180,
+            child: MarkdownEditor(
+              controller: controller,
+              editingMode: FlarkMarkdownEditingMode.liveRendered,
+              style: const TextStyle(fontSize: 14, height: 1.4),
+              autofocus: true,
+              expands: true,
+              maxLines: null,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await _typeBlankFenceOpener(tester, find.byType(EditableText));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+
+      expect(controller.markdown, '```\n');
+      expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsOneWidget);
+      expect(
+        find.byKey(const Key('FlarkLiveBlockCodeOpeningEditable')),
+        findsNothing,
+      );
+
+      await tester.showKeyboard(_codeEditableFinder());
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '\n',
+          selection: TextSelection.collapsed(offset: 0),
+        ),
+      );
+      await tester.pump();
+
+      expect(controller.markdown, '```\n');
+      expect(controller.selection, const FlarkSelection.collapsed(4));
+      final editable = tester.widget<EditableText>(_codeEditableFinder());
+      expect(editable.controller.text, isEmpty);
+      expect(
+        editable.controller.selection,
+        const TextSelection.collapsed(offset: 0),
+      );
+      expect(editable.focusNode.hasFocus, isTrue);
+    },
+  );
+
+  testWidgets(
+    'normalizes platform Enter from a blank live code fence opening line',
+    (tester) async {
+      final controller = FlarkFlutterController.fromMarkdown(
+        '',
+        parseDebounce: Duration.zero,
+      );
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 320,
+            height: 180,
+            child: MarkdownEditor(
+              controller: controller,
+              editingMode: FlarkMarkdownEditingMode.liveRendered,
+              style: const TextStyle(fontSize: 14, height: 1.4),
+              autofocus: true,
+              expands: true,
+              maxLines: null,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
       final editableFinder = find.byType(EditableText);
       await tester.showKeyboard(editableFinder);
       tester.testTextInput.updateEditingValue(
@@ -1915,13 +2037,20 @@ void main() {
       );
       await tester.pump();
 
-      expect(controller.markdown, '```');
-      expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsNothing);
+      final openingEditableFinder = find.descendant(
+        of: find.byKey(const Key('FlarkLiveBlockCodeOpeningEditable')),
+        matching: find.byType(EditableText),
+      );
+      expect(openingEditableFinder, findsOneWidget);
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.showKeyboard(openingEditableFinder);
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '```\n\n',
+          selection: TextSelection.collapsed(offset: 5),
+        ),
+      );
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 200));
-      await tester.pump(const Duration(milliseconds: 200));
 
       expect(controller.markdown, '```\n');
       expect(controller.selection, const FlarkSelection.collapsed(4));
@@ -1932,11 +2061,75 @@ void main() {
       );
       final editable = tester.widget<EditableText>(_codeEditableFinder());
       expect(editable.controller.text, isEmpty);
-      expect(editable.controller.text, isNot(contains('```')));
-      expect(
-        editable.controller.selection,
-        const TextSelection.collapsed(offset: 0),
+      expect(editable.focusNode.hasFocus, isTrue);
+    },
+  );
+
+  testWidgets(
+    'platform Enter on an already opened live fence moves to the body',
+    (tester) async {
+      const markdown = '```\n';
+      final controller = FlarkFlutterController(
+        runtime: FlarkEditorRuntime(
+          state: FlarkEditorState.fromMarkdown(
+            markdown,
+            selection: const FlarkSelection.collapsed(3),
+          ),
+          extensions: FlarkMarkdownEditingExtensions.standard(),
+        ),
+        parseDebounce: Duration.zero,
       );
+      addTearDown(controller.dispose);
+      expect(
+        controller.applyParseResult(
+          _unclosedCodeFenceBodyParseResult(controller),
+        ),
+        isTrue,
+      );
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 320,
+            height: 180,
+            child: MarkdownEditor(
+              controller: controller,
+              editingMode: FlarkMarkdownEditingMode.liveRendered,
+              style: const TextStyle(fontSize: 14, height: 1.4),
+              autofocus: true,
+              expands: true,
+              maxLines: null,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final openingEditableFinder = find.descendant(
+        of: find.byKey(const Key('FlarkLiveBlockCodeOpeningEditable')),
+        matching: find.byType(EditableText),
+      );
+      expect(openingEditableFinder, findsOneWidget);
+
+      await tester.showKeyboard(openingEditableFinder);
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '```\n',
+          selection: TextSelection.collapsed(offset: 4),
+        ),
+      );
+      await tester.pump();
+
+      expect(controller.markdown, '```\n');
+      expect(controller.selection, const FlarkSelection.collapsed(4));
+      expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsOneWidget);
+      expect(
+        find.byKey(const Key('FlarkLiveBlockCodeOpeningEditable')),
+        findsNothing,
+      );
+      final editable = tester.widget<EditableText>(_codeEditableFinder());
+      expect(editable.controller.text, isEmpty);
       expect(editable.focusNode.hasFocus, isTrue);
     },
   );
@@ -4417,6 +4610,34 @@ Future<void> _applyComrakParseResult(FlarkFlutterController controller) async {
     ),
   );
   expect(controller.applyParseResult(result), isTrue);
+}
+
+Future<void> _typeBlankFenceOpener(
+  WidgetTester tester,
+  Finder editableFinder,
+) async {
+  await tester.showKeyboard(editableFinder);
+  tester.testTextInput.updateEditingValue(
+    const TextEditingValue(
+      text: '`',
+      selection: TextSelection.collapsed(offset: 1),
+    ),
+  );
+  await tester.pump();
+  tester.testTextInput.updateEditingValue(
+    const TextEditingValue(
+      text: '``',
+      selection: TextSelection.collapsed(offset: 2),
+    ),
+  );
+  await tester.pump();
+  tester.testTextInput.updateEditingValue(
+    const TextEditingValue(
+      text: '```',
+      selection: TextSelection.collapsed(offset: 3),
+    ),
+  );
+  await tester.pump();
 }
 
 final class _BlockingParseBackend implements FlarkMarkdownParseBackend {
