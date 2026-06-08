@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   release-gate:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
