@@ -367,6 +367,7 @@ final class _FlarkProjectedEditableHostState
       final completedCodeFenceText = widget.liveRendered
           ? _displayTextAfterCompletingStandaloneCodeFenceOpener(
               oldDisplayText: oldDisplayText,
+              oldSelection: _textSelection(oldDisplaySelection),
               newValue: value,
             )
           : null;
@@ -1624,8 +1625,16 @@ bool _isImmediatelyRenderableCodeFenceLine(
 
 String? _displayTextAfterCompletingStandaloneCodeFenceOpener({
   required String oldDisplayText,
+  required TextSelection oldSelection,
   required TextEditingValue newValue,
 }) {
+  final autoClosedText = _displayTextAfterAutoClosedEmptyFenceEcho(
+    oldDisplayText: oldDisplayText,
+    oldSelection: oldSelection,
+    newValue: newValue,
+  );
+  if (autoClosedText != null) return autoClosedText;
+
   final selection = newValue.selection;
   if (!selection.isValid || !selection.isCollapsed) return null;
   final text = newValue.text;
@@ -1680,6 +1689,81 @@ String? _displayTextAfterCompletingStandaloneCodeFenceOpener({
   return text.replaceRange(lineEnd, lineEnd, '\n');
 }
 
+String? _displayTextAfterAutoClosedEmptyFenceEcho({
+  required String oldDisplayText,
+  required TextSelection oldSelection,
+  required TextEditingValue newValue,
+}) {
+  final wholeTextEcho = _displayTextAfterAutoClosedWholeTextFenceEcho(
+    oldDisplayText: oldDisplayText,
+    newValue: newValue,
+  );
+  if (wholeTextEcho != null) return wholeTextEcho;
+
+  if (!oldSelection.isValid || !oldSelection.isCollapsed) return null;
+  final selection = newValue.selection;
+  if (!selection.isValid || !selection.isCollapsed) return null;
+
+  final oldLineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
+    oldDisplayText,
+    FlarkMarkdownFencedCodeScanner.lineStartForOffset(
+      oldDisplayText,
+      oldSelection.extentOffset.clamp(0, oldDisplayText.length),
+    ),
+  );
+  final oldLineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
+    oldDisplayText,
+    oldSelection.extentOffset.clamp(0, oldDisplayText.length),
+  );
+  if (oldSelection.extentOffset != oldLineEnd) return null;
+  if (oldLineEnd < oldDisplayText.length &&
+      oldDisplayText.codeUnitAt(oldLineEnd) == 0x0A) {
+    return null;
+  }
+
+  final oldLine = oldDisplayText.substring(oldLineStart, oldLineEnd);
+  final fence = FlarkMarkdownFencedCodeScanner.fenceLine(oldLine);
+  if (fence == null || fence.infoString != null) return null;
+  if (_lineClosesExistingCodeFence(
+    text: oldDisplayText,
+    lineStart: oldLineStart,
+    closingFence: fence,
+  )) {
+    return null;
+  }
+
+  final closingLine = _fenceMarkerText(fence);
+  final autoClosedWithBreak = oldDisplayText.replaceRange(
+    oldLineEnd,
+    oldLineEnd,
+    '\n$closingLine\n',
+  );
+  final autoClosedWithoutBreak = oldDisplayText.replaceRange(
+    oldLineEnd,
+    oldLineEnd,
+    '\n$closingLine',
+  );
+  if (newValue.text != autoClosedWithBreak &&
+      newValue.text != autoClosedWithoutBreak) {
+    return null;
+  }
+  return oldDisplayText.replaceRange(oldLineEnd, oldLineEnd, '\n');
+}
+
+String? _displayTextAfterAutoClosedWholeTextFenceEcho({
+  required String oldDisplayText,
+  required TextEditingValue newValue,
+}) {
+  final fence = FlarkMarkdownFencedCodeScanner.fenceLine(oldDisplayText);
+  if (fence == null || fence.infoString != null) return null;
+  final closingLine = _fenceMarkerText(fence);
+  if (newValue.text != '$oldDisplayText\n$closingLine\n' &&
+      newValue.text != '$oldDisplayText\n$closingLine') {
+    return null;
+  }
+  return '$oldDisplayText\n';
+}
+
 bool _justCompletedFenceMarkerBySingleCharacter({
   required String oldLine,
   required String line,
@@ -1688,10 +1772,13 @@ bool _justCompletedFenceMarkerBySingleCharacter({
   if (fence.infoString != null) return false;
   if (line.length != oldLine.length + 1) return false;
   if (!line.startsWith(oldLine)) return false;
-  final markerText =
-      fence.indent + List.filled(fence.markerLength, fence.marker).join();
+  final markerText = _fenceMarkerText(fence);
   return line == markerText &&
       oldLine == markerText.substring(0, line.length - 1);
+}
+
+String _fenceMarkerText(FlarkMarkdownFenceLine fence) {
+  return fence.indent + List.filled(fence.markerLength, fence.marker).join();
 }
 
 bool _lineClosesExistingCodeFence({
@@ -4641,7 +4728,8 @@ bool _isCodeFenceOpeningLinePlatformEnter({
   }
   if (!newValue.text.startsWith(oldText)) return false;
   final inserted = newValue.text.substring(oldText.length);
-  return _isOnlyLineBreaks(inserted);
+  return _isOnlyLineBreaks(inserted) ||
+      _isAutoClosedEmptyFenceText(oldText, newValue.text);
 }
 
 int? _existingCodeFenceBodyStartAfterOpeningLine({
@@ -4669,6 +4757,14 @@ bool _isCollapsedSelection(TextSelection selection) {
 
 bool _isSingleLineBreak(String text) {
   return text == '\n' || text == '\r\n';
+}
+
+bool _isAutoClosedEmptyFenceText(String oldText, String newText) {
+  final fence = FlarkMarkdownFencedCodeScanner.fenceLine(oldText);
+  if (fence == null || fence.infoString != null) return false;
+  final closingLine = _fenceMarkerText(fence);
+  return newText == '$oldText\n$closingLine\n' ||
+      newText == '$oldText\n$closingLine';
 }
 
 bool _isOnlyLineBreaks(String text) {
