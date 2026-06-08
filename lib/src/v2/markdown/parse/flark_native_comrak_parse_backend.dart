@@ -5,6 +5,7 @@ import '../../core/document/flark_utf8_utf16_mapper.dart';
 import '../../core/transaction/flark_source_range.dart';
 import '../../native/native_comrak_bridge_factory.dart';
 import '../../native/native_comrak_ffi.dart';
+import '../source/flark_markdown_fenced_code_scanner.dart';
 import 'flark_markdown_parse_backend.dart';
 import 'flark_markdown_parse_protocol.dart';
 import 'flark_markdown_parse_result.dart';
@@ -242,13 +243,24 @@ FlarkMarkdownParseResult _mapNativeResult(
   NativeComrakParseResult native,
 ) {
   final mapper = FlarkUtf8Utf16Mapper(request.markdown);
+  final nativeRenderBlocks = _renderableNativeBlocks(native.blocks);
+  final syntheticCodeBlocks = _syntheticCodeBlocks(
+    request.markdown,
+    mapper,
+    nativeRenderBlocks,
+  );
   final renderBlocks = _normalizeNativeCodeBlockRanges(
     request.markdown,
     mapper,
-    _renderableNativeBlocks(native.blocks),
+    [...nativeRenderBlocks, ...syntheticCodeBlocks],
   );
   final mappedMarkerRanges = [
     for (final range in native.markerRanges) _mapRange(mapper, range),
+    ..._syntheticCodeFenceMarkerRanges(
+      request.markdown,
+      mapper,
+      syntheticCodeBlocks,
+    ),
   ]..sort(_compareSourceRanges);
   final markerExtensionIndex = _MarkerExtensionIndex(mappedMarkerRanges);
   final syntheticListItems = _syntheticListItems(
@@ -511,6 +523,110 @@ List<NativeComrakBlockSpan> _renderableNativeBlocks(
       if (_isRenderableNativeBlock(block, containerIndex, checkedListItemIndex))
         block,
   ];
+}
+
+List<NativeComrakBlockSpan> _syntheticCodeBlocks(
+  String markdown,
+  FlarkUtf8Utf16Mapper mapper,
+  List<NativeComrakBlockSpan> renderBlocks,
+) {
+  if (markdown.isEmpty) return const [];
+  final nativeCodeRanges = [
+    for (final block in renderBlocks)
+      if (_blockType(block.type) == 'codeBlock') _mapRange(mapper, block.range),
+  ];
+  final nativeCodeRangeIndex = _FlarkSourceRangeIndex(nativeCodeRanges);
+  final blocks = <NativeComrakBlockSpan>[];
+  var lineStart = 0;
+
+  while (lineStart < markdown.length) {
+    final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
+      markdown,
+      lineStart,
+    );
+    if (context != null) {
+      final sourceRange = FlarkSourceRange(
+        context.openingLineStart,
+        context.closingLineEnd ?? context.bodyEnd(markdown),
+      ).validate(markdown.length);
+      if (!nativeCodeRangeIndex.overlaps(sourceRange)) {
+        blocks.add(
+          NativeComrakBlockSpan(
+            type: 'fenced_code',
+            range: NativeComrakRange(
+              startByte: mapper.utf8OffsetForUtf16Offset(sourceRange.start),
+              endByte: mapper.utf8OffsetForUtf16Offset(sourceRange.end),
+            ),
+            payload: context.language == null
+                ? const <String, Object?>{}
+                : <String, Object?>{'language': context.language},
+          ),
+        );
+      }
+      final next = context.closingLineEndWithBreak ?? markdown.length;
+      if (next > lineStart && next <= markdown.length) {
+        lineStart = next;
+        continue;
+      }
+    }
+
+    final nextLineStart = FlarkMarkdownFencedCodeScanner.lineEndWithBreak(
+      markdown,
+      lineStart,
+    );
+    if (nextLineStart <= lineStart || nextLineStart >= markdown.length) {
+      break;
+    }
+    lineStart = nextLineStart;
+  }
+
+  return blocks;
+}
+
+List<FlarkSourceRange> _syntheticCodeFenceMarkerRanges(
+  String markdown,
+  FlarkUtf8Utf16Mapper mapper,
+  List<NativeComrakBlockSpan> syntheticCodeBlocks,
+) {
+  final ranges = <FlarkSourceRange>[];
+  for (final block in syntheticCodeBlocks) {
+    final range = _mapRange(mapper, block.range);
+    if (range.start < 0 || range.start >= markdown.length) continue;
+    final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
+      markdown,
+      range.start,
+    );
+    if (context == null) continue;
+
+    final openingMarkerStart =
+        context.openingLineStart + context.openingIndent.length;
+    ranges.add(
+      FlarkSourceRange(
+        openingMarkerStart,
+        openingMarkerStart + context.markerLength,
+      ).validate(markdown.length),
+    );
+
+    final closingLineStart = context.closingLineStart;
+    final closingLineEnd = context.closingLineEnd;
+    if (closingLineStart != null && closingLineEnd != null) {
+      var markerStart = closingLineStart;
+      while (markerStart < closingLineEnd) {
+        final codeUnit = markdown.codeUnitAt(markerStart);
+        if (codeUnit != 0x20 && codeUnit != 0x09) break;
+        markerStart++;
+      }
+      if (markerStart < closingLineEnd) {
+        ranges.add(
+          FlarkSourceRange(
+            markerStart,
+            closingLineEnd,
+          ).validate(markdown.length),
+        );
+      }
+    }
+  }
+  return ranges;
 }
 
 bool _isRenderableNativeBlock(

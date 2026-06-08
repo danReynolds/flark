@@ -78,6 +78,32 @@ void main() {
       expect(utf8.decode(bridge.lastInput!.utf8Text), '## hello');
     });
 
+    test('synthesizes fenced code when the bridge omits code blocks', () async {
+      const text = '```\n';
+      final backend = FlarkNativeComrakParseBackend(
+        bridge: _FakeNativeComrakBridge(
+          const NativeComrakParseResult(revision: 10),
+        ),
+      );
+
+      final result = await backend.parse(
+        const FlarkMarkdownParseRequest(
+          revision: 10,
+          markdown: text,
+          profile: FlarkMarkdownProfile.commonMarkGfm,
+        ),
+      );
+
+      final codeBlock = result.blocks.singleWhere(
+        (block) => block.kind == FlarkMarkdownBlockKind.codeBlock,
+      );
+      expect(codeBlock.sourceRange, const FlarkSourceRange(0, text.length));
+      expect(
+        FlarkProjection.fromParseResult(result).projectText(text),
+        isEmpty,
+      );
+    });
+
     test('maps utf8 native ranges into v2 parse results', () async {
       const text = '🎨\n# **T**\n';
       final mapper = FlarkUtf8Utf16Mapper(text);
@@ -1611,6 +1637,38 @@ void main() {
         expect(
           FlarkProjection.fromParseResult(result).projectText(text),
           'open fence\n  code',
+        );
+      },
+    );
+
+    test(
+      'real native treats empty unclosed fenced code as a code block',
+      () async {
+        final libPath = flarkNativeBridgeLibraryPathForPlatform();
+        if (libPath.isEmpty || !File(libPath).existsSync()) {
+          return;
+        }
+
+        const text = '```\n';
+        final backend = FlarkNativeComrakParseBackend.withNativeBridge(
+          overrideLibraryPath: libPath,
+        );
+
+        final result = await backend.parse(
+          const FlarkMarkdownParseRequest(
+            revision: 27,
+            markdown: text,
+            profile: FlarkMarkdownProfile.commonMarkGfm,
+          ),
+        );
+
+        final codeBlock = result.blocks.singleWhere(
+          (block) => block.kind == FlarkMarkdownBlockKind.codeBlock,
+        );
+        expect(codeBlock.sourceRange, const FlarkSourceRange(0, text.length));
+        expect(
+          FlarkProjection.fromParseResult(result).projectText(text),
+          isEmpty,
         );
       },
     );

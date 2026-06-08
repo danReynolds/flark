@@ -234,6 +234,38 @@ void main() {
       },
     );
 
+    test(
+      'promotes parsed fence opener to a code block when newline is typed',
+      () {
+        final controller = FlarkFlutterController.fromMarkdown('```');
+        addTearDown(controller.dispose);
+
+        expect(
+          controller.applyParseResult(
+            _unclosedCodeFenceOpenerParseResult(controller),
+          ),
+          isTrue,
+        );
+        expect(controller.hasAuthoritativeRenderPlan, isTrue);
+        expect(controller.renderPlan.blocks.single.codeBlock, isNotNull);
+
+        controller.applyTransaction(
+          FlarkTransaction.single(
+            FlarkSourceOperation.insert(3, '\n'),
+            selectionBefore: const FlarkSelection.collapsed(3),
+            selectionAfter: const FlarkSelection.collapsed(4),
+          ),
+        );
+
+        expect(controller.markdown, '```\n');
+        expect(controller.selection, const FlarkSelection.collapsed(4));
+        expect(controller.hasAuthoritativeRenderPlan, isFalse);
+        expect(controller.renderPlan.metadata['predictive'], isTrue);
+        expect(controller.renderPlan.blocks.single.codeBlock, isNotNull);
+        expect(controller.projection.projectText(controller.markdown), isEmpty);
+      },
+    );
+
     test('emits typed events for runtime and parse changes', () async {
       final controller = FlarkFlutterController.fromMarkdown(
         'hello',
@@ -288,7 +320,9 @@ void main() {
       );
       final markdownChanges = <String>[];
       final selectionChanges = <FlarkSelection>[];
-      final markdownSub = controller.markdownChanges.listen(markdownChanges.add);
+      final markdownSub = controller.markdownChanges.listen(
+        markdownChanges.add,
+      );
       final selectionSub = controller.selectionChanges.listen(
         selectionChanges.add,
       );
@@ -507,6 +541,31 @@ FlarkMarkdownParseResult _unorderedListParseResult(
         kind: FlarkMarkdownHiddenRangeKind.markdownMarker,
         type: 'markdownMarker',
         sourceRange: FlarkSourceRange(0, 2),
+      ),
+    ],
+  );
+}
+
+FlarkMarkdownParseResult _unclosedCodeFenceOpenerParseResult(
+  FlarkFlutterController controller,
+) {
+  return FlarkMarkdownParseResult(
+    schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
+    revision: controller.state.revision,
+    sourceTextLength: controller.markdown.length,
+    blocks: [
+      FlarkMarkdownBlockNode(
+        kind: FlarkMarkdownBlockKind.codeBlock,
+        type: 'codeBlock',
+        sourceRange: FlarkSourceRange(0, controller.markdown.length),
+      ),
+    ],
+    inlineTokens: const [],
+    hiddenRanges: [
+      FlarkMarkdownHiddenRange(
+        kind: FlarkMarkdownHiddenRangeKind.markdownMarker,
+        type: 'markdownMarker',
+        sourceRange: FlarkSourceRange(0, controller.markdown.length),
       ),
     ],
   );

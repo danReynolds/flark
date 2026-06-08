@@ -384,12 +384,10 @@ final class FlarkFlutterController extends ChangeNotifier {
         transaction,
         textLengthAfter: state.document.length,
       );
-      final structuralPrediction = previousRenderPlan.blocks.isEmpty
-          ? _predictStructuralRenderPlan(
-              markdown: state.markdown,
-              revision: state.revision,
-            )
-          : null;
+      final structuralPrediction = _predictStructuralRenderPlan(
+        markdown: state.markdown,
+        revision: state.revision,
+      );
       _projection = structuralPrediction?.projection ?? prediction.projection;
       _lastProjectionPrediction = structuralPrediction == null
           ? prediction
@@ -488,7 +486,10 @@ final class FlarkFlutterController extends ChangeNotifier {
         context.bodyStart > markdown.length) {
       return null;
     }
-
+    if (context.openingLineEndWithBreak >= markdown.length &&
+        !markdown.endsWith('\n')) {
+      return null;
+    }
     final parseResult = FlarkMarkdownParseResult(
       schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
       revision: revision,

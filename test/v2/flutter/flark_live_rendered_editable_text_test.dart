@@ -2334,6 +2334,86 @@ void main() {
     },
   );
 
+  testWidgets('platform newline on root fallback fence predicts a code block', (
+    tester,
+  ) async {
+    final parseBackend = _BlockingParseBackend();
+    final controller = FlarkFlutterController.fromMarkdown(
+      '',
+      parseBackend: parseBackend,
+      parseDebounce: Duration.zero,
+    );
+    addTearDown(() {
+      parseBackend.completeAll();
+      controller.dispose();
+    });
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: SizedBox(
+          width: 320,
+          height: 180,
+          child: MarkdownEditor(
+            controller: controller,
+            editingMode: FlarkMarkdownEditingMode.liveRendered,
+            style: const TextStyle(fontSize: 14, height: 1.4),
+            autofocus: true,
+            expands: true,
+            maxLines: null,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final editableFinder = find.byType(EditableText);
+    await tester.showKeyboard(editableFinder);
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: '`',
+        selection: TextSelection.collapsed(offset: 1),
+      ),
+    );
+    await tester.pump();
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: '``',
+        selection: TextSelection.collapsed(offset: 2),
+      ),
+    );
+    await tester.pump();
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: '```',
+        selection: TextSelection.collapsed(offset: 3),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsNothing);
+
+    tester.testTextInput.updateEditingValue(
+      const TextEditingValue(
+        text: '```\n',
+        selection: TextSelection.collapsed(offset: 4),
+      ),
+    );
+    await tester.pump();
+
+    expect(controller.markdown, '```\n');
+    expect(controller.selection, const FlarkSelection.collapsed(4));
+    expect(controller.hasAuthoritativeRenderPlan, isFalse);
+    expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsOneWidget);
+    expect(
+      find.byKey(const Key('FlarkLiveBlockCodeOpeningEditable')),
+      findsNothing,
+    );
+    final editable = tester.widget<EditableText>(_codeEditableFinder());
+    expect(editable.controller.text, isEmpty);
+    expect(editable.focusNode.hasFocus, isTrue);
+  });
+
   testWidgets('fast typed closing fence exits an auto-closed code block', (
     tester,
   ) async {
