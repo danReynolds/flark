@@ -49,15 +49,26 @@ void main() {
       expect(result.selectionAfter, const FlarkSelection.collapsed(4));
     });
 
-    test('opens an empty fenced code block with the opener language', () {
+    test('keeps an info-string fence opener user-authored on Enter', () {
       final result = FlarkMarkdownInputEngine.enter(
         markdown: '```dart',
         selection: const FlarkSelection.collapsed(7),
       );
 
       expect(result.range, const FlarkSourceRange(7, 7));
-      expect(result.replacementText, '\n```');
+      expect(result.replacementText, '\n');
       expect(result.selectionAfter, const FlarkSelection.collapsed(8));
+    });
+
+    test('does not auto-open from a manually typed closing fence line', () {
+      final result = FlarkMarkdownInputEngine.enter(
+        markdown: '```dart\nfoo\n```',
+        selection: const FlarkSelection.collapsed(15),
+      );
+
+      expect(result.range, const FlarkSourceRange(15, 15));
+      expect(result.replacementText, '\n');
+      expect(result.selectionAfter, const FlarkSelection.collapsed(16));
     });
 
     test('returns null when Backspace is not handled at document start', () {

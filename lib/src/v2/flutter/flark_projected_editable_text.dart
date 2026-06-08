@@ -4457,7 +4457,7 @@ _SourceEdit _codeBodySourceEdit({
         ? bodyText
         : _bodyTextWithTypedClosingLine(bodyText, typedClosingLine);
     final selectionAfter = replacingExistingClose
-        ? context.closingLineEnd!
+        ? context.closingLineEnd! - range.length + closeReplacementText.length
         : range.start + closeReplacementText.length;
     return _SourceEdit(
       range: range,

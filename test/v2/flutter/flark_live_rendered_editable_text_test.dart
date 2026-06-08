@@ -1940,6 +1940,62 @@ void main() {
     },
   );
 
+  testWidgets('fast typed closing fence exits an auto-closed code block', (
+    tester,
+  ) async {
+    final controller = FlarkFlutterController.fromMarkdown(
+      '```\n```',
+      parseDebounce: Duration.zero,
+    );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Overlay(
+          initialEntries: [
+            OverlayEntry(
+              builder: (context) => SizedBox(
+                width: 320,
+                height: 220,
+                child: MarkdownEditor(
+                  controller: controller,
+                  editingMode: FlarkMarkdownEditingMode.liveRendered,
+                  style: const TextStyle(fontSize: 14, height: 1.4),
+                  autofocus: true,
+                  expands: true,
+                  maxLines: null,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsOneWidget);
+    await tester.tap(_codeEditableFinder());
+    await tester.showKeyboard(_codeEditableFinder());
+    await tester.pump();
+
+    tester.testTextInput.enterText('foo');
+    await tester.pump();
+    tester.testTextInput.enterText('foo\n');
+    await tester.pump();
+    tester.testTextInput.enterText('foo\n`');
+    await tester.pump();
+    tester.testTextInput.enterText('foo\n``');
+    await tester.pump();
+    tester.testTextInput.enterText('foo\n```');
+    await tester.pump();
+
+    expect(controller.markdown, '```\nfoo\n```');
+    expect(controller.selection, const FlarkSelection.collapsed(11));
+  });
+
   testWidgets(
     'Backspace removes an empty live code fence instead of exposing markers',
     (tester) async {

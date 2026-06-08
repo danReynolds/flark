@@ -233,7 +233,8 @@ FlarkMarkdownSourceEdit? _standaloneFenceOpenerEnter({
   final lineText = markdown.substring(lineStart, lineEnd);
   final fence = FlarkMarkdownFencedCodeScanner.fenceLine(lineText);
   if (fence == null) return null;
-  if (_lineClosesExistingFence(markdown: markdown, lineStart: lineStart)) {
+  if (fence.infoString != null) return null;
+  if (_lineIsInsideEarlierFence(markdown: markdown, lineStart: lineStart)) {
     return null;
   }
 
@@ -246,7 +247,7 @@ FlarkMarkdownSourceEdit? _standaloneFenceOpenerEnter({
   );
 }
 
-bool _lineClosesExistingFence({
+bool _lineIsInsideEarlierFence({
   required String markdown,
   required int lineStart,
 }) {
@@ -256,8 +257,20 @@ bool _lineClosesExistingFence({
       markdown,
       scanLineStart,
     );
-    if (context != null && context.closingLineStart == lineStart) {
-      return true;
+    if (context != null) {
+      final closingLineStart = context.closingLineStart;
+      if (closingLineStart == null || closingLineStart >= lineStart) {
+        return true;
+      }
+
+      final afterClosingLine =
+          context.closingLineEndWithBreak ?? context.closingLineEnd;
+      if (afterClosingLine != null &&
+          afterClosingLine > scanLineStart &&
+          afterClosingLine <= markdown.length) {
+        scanLineStart = afterClosingLine;
+        continue;
+      }
     }
 
     final next = FlarkMarkdownFencedCodeScanner.lineEndWithBreak(
