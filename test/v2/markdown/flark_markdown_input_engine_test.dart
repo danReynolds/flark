@@ -45,7 +45,7 @@ void main() {
       );
 
       expect(result.range, const FlarkSourceRange(3, 3));
-      expect(result.replacementText, '\n```');
+      expect(result.replacementText, '\n');
       expect(result.selectionAfter, const FlarkSelection.collapsed(4));
     });
 

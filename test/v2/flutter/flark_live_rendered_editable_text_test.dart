@@ -1922,7 +1922,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
       await tester.pump(const Duration(milliseconds: 200));
 
-      expect(controller.markdown, '```\n```');
+      expect(controller.markdown, '```\n');
       expect(controller.selection, const FlarkSelection.collapsed(4));
       expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsOneWidget);
       expect(

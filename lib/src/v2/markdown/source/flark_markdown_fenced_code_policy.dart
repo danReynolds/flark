@@ -238,11 +238,9 @@ FlarkMarkdownSourceEdit? _standaloneFenceOpenerEnter({
     return null;
   }
 
-  final closingMarker =
-      '${fence.indent}${_repeat(fence.marker, fence.markerLength)}';
   return FlarkMarkdownSourceEdit(
     range: FlarkSourceRange(caret, caret),
-    replacementText: '\n$closingMarker',
+    replacementText: '\n',
     selectionAfter: FlarkSelection.collapsed(caret + 1),
   );
 }
