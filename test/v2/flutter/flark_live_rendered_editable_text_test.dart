@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/services.dart';
@@ -1936,6 +1937,84 @@ void main() {
         editable.controller.selection,
         const TextSelection.collapsed(offset: 0),
       );
+      expect(editable.focusNode.hasFocus, isTrue);
+    },
+  );
+
+  testWidgets(
+    'typing a fence opener predicts a code block while parsing is blocked',
+    (tester) async {
+      final parseBackend = _BlockingParseBackend();
+      final controller = FlarkFlutterController.fromMarkdown(
+        '',
+        parseBackend: parseBackend,
+        parseDebounce: Duration.zero,
+      );
+      addTearDown(() {
+        parseBackend.completeAll();
+        controller.dispose();
+      });
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 320,
+            height: 180,
+            child: MarkdownEditor(
+              controller: controller,
+              editingMode: FlarkMarkdownEditingMode.liveRendered,
+              style: const TextStyle(fontSize: 14, height: 1.4),
+              autofocus: true,
+              expands: true,
+              maxLines: null,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(parseBackend.requests, hasLength(1));
+      expect(controller.hasAuthoritativeRenderPlan, isFalse);
+
+      final editableFinder = find.byType(EditableText);
+      await tester.showKeyboard(editableFinder);
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '`',
+          selection: TextSelection.collapsed(offset: 1),
+        ),
+      );
+      await tester.pump();
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '``',
+          selection: TextSelection.collapsed(offset: 2),
+        ),
+      );
+      await tester.pump();
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '```',
+          selection: TextSelection.collapsed(offset: 3),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsNothing);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+
+      expect(controller.markdown, '```\n');
+      expect(controller.hasAuthoritativeRenderPlan, isFalse);
+      expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsOneWidget);
+      expect(
+        find.byKey(const Key('FlarkLiveBlockCodeOpeningEditable')),
+        findsNothing,
+      );
+      final editable = tester.widget<EditableText>(_codeEditableFinder());
+      expect(editable.controller.text, isEmpty);
+      expect(editable.controller.text, isNot(contains('```')));
       expect(editable.focusNode.hasFocus, isTrue);
     },
   );
@@ -4338,6 +4417,44 @@ Future<void> _applyComrakParseResult(FlarkFlutterController controller) async {
     ),
   );
   expect(controller.applyParseResult(result), isTrue);
+}
+
+final class _BlockingParseBackend implements FlarkMarkdownParseBackend {
+  final requests = <FlarkMarkdownParseRequest>[];
+  final _pending = <Completer<FlarkMarkdownParseResult>>[];
+
+  @override
+  FlarkMarkdownParserCapabilities get capabilities =>
+      FlarkMarkdownParserCapabilities(
+        parserName: 'blocking_test_backend',
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
+        supportedProfiles: const [FlarkMarkdownProfile.commonMarkGfm],
+      );
+
+  @override
+  Future<FlarkMarkdownParseResult> parse(FlarkMarkdownParseRequest request) {
+    requests.add(request);
+    final completer = Completer<FlarkMarkdownParseResult>();
+    _pending.add(completer);
+    return completer.future;
+  }
+
+  void completeAll() {
+    for (var index = 0; index < _pending.length; index += 1) {
+      final completer = _pending[index];
+      if (completer.isCompleted) continue;
+      final request = requests[index];
+      completer.complete(
+        FlarkMarkdownParseResult(
+          schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
+          revision: request.revision,
+          sourceTextLength: request.markdown.length,
+          blocks: const [],
+          inlineTokens: const [],
+        ),
+      );
+    }
+  }
 }
 
 FlarkMarkdownParseResult _bareQuoteParseResult(

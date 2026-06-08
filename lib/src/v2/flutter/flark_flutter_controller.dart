@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../core/core.dart';
 import '../markdown/markdown.dart';
+import '../markdown/source/flark_markdown_fenced_code_scanner.dart';
 import '../projection/projection.dart';
 import '../render_plan/render_plan.dart';
 import 'flark_parse_scheduler.dart';
@@ -383,15 +384,25 @@ final class FlarkFlutterController extends ChangeNotifier {
         transaction,
         textLengthAfter: state.document.length,
       );
-      _projection = prediction.projection;
-      _lastProjectionPrediction = prediction;
-      _renderPlan = _predictRenderPlan(
-        previousRenderPlan: previousRenderPlan,
-        transaction: transaction,
-        projection: _projection,
-        revision: state.revision,
-        textLengthAfter: state.document.length,
-      );
+      final structuralPrediction = previousRenderPlan.blocks.isEmpty
+          ? _predictStructuralRenderPlan(
+              markdown: state.markdown,
+              revision: state.revision,
+            )
+          : null;
+      _projection = structuralPrediction?.projection ?? prediction.projection;
+      _lastProjectionPrediction = structuralPrediction == null
+          ? prediction
+          : null;
+      _renderPlan =
+          structuralPrediction?.renderPlan ??
+          _predictRenderPlan(
+            previousRenderPlan: previousRenderPlan,
+            transaction: transaction,
+            projection: _projection,
+            revision: state.revision,
+            textLengthAfter: state.document.length,
+          );
       _renderPlanRevision = null;
     }
     _emitEvent(
@@ -461,4 +472,67 @@ final class FlarkFlutterController extends ChangeNotifier {
       textLengthAfter: textLengthAfter,
     );
   }
+
+  static _PredictedStructuralRenderPlan? _predictStructuralRenderPlan({
+    required String markdown,
+    required int revision,
+  }) {
+    if (markdown.isEmpty) return null;
+    final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
+      markdown,
+      0,
+    );
+    if (context == null ||
+        context.isClosed ||
+        context.openingLineEndWithBreak <= context.openingLineStart ||
+        context.bodyStart > markdown.length) {
+      return null;
+    }
+
+    final parseResult = FlarkMarkdownParseResult(
+      schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
+      revision: revision,
+      sourceTextLength: markdown.length,
+      blocks: [
+        FlarkMarkdownBlockNode(
+          kind: FlarkMarkdownBlockKind.codeBlock,
+          type: 'codeBlock',
+          sourceRange: FlarkSourceRange(0, markdown.length),
+          attributes: context.language == null
+              ? const <String, Object?>{}
+              : <String, Object?>{'language': context.language},
+        ),
+      ],
+      inlineTokens: const [],
+      hiddenRanges: [
+        FlarkMarkdownHiddenRange(
+          kind: FlarkMarkdownHiddenRangeKind.markdownMarker,
+          type: 'markdownMarker',
+          sourceRange: FlarkSourceRange(0, context.bodyStart),
+        ),
+      ],
+    );
+    final projection = FlarkProjection.fromParseResult(parseResult);
+    final renderPlan = FlarkRenderPlan.fromParseResult(
+      parseResult: parseResult,
+      projection: projection,
+    );
+    return _PredictedStructuralRenderPlan(
+      projection: projection,
+      renderPlan: FlarkRenderPlan(
+        blocks: renderPlan.blocks,
+        metadata: {...renderPlan.metadata, 'stale': true, 'predictive': true},
+      ),
+    );
+  }
+}
+
+final class _PredictedStructuralRenderPlan {
+  const _PredictedStructuralRenderPlan({
+    required this.projection,
+    required this.renderPlan,
+  });
+
+  final FlarkProjection projection;
+  final FlarkRenderPlan renderPlan;
 }
