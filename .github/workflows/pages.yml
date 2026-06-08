@@ -39,6 +39,14 @@ jobs:
         working-directory: example
         run: flutter build web --release --base-href /flark/
 
+      - name: Version web entrypoint assets
+        working-directory: example
+        env:
+          WEB_BUILD_VERSION: ${{ github.sha }}
+        run: |
+          perl -0pi -e 's/src="flutter_bootstrap\.js"/src="flutter_bootstrap.js?v=$ENV{WEB_BUILD_VERSION}"/g' build/web/index.html
+          perl -0pi -e 's/mainJsPath":"main\.dart\.js"/mainJsPath":"main.dart.js?v=$ENV{WEB_BUILD_VERSION}"/g' build/web/flutter_bootstrap.js
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
