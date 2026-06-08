@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import '../core/core.dart';
 import '../markdown/markdown.dart';
 import '../markdown/source/flark_markdown_fenced_code_policy.dart';
+import '../markdown/source/flark_markdown_fenced_code_scanner.dart';
 import 'flark_flutter_controller.dart';
 
 typedef FlarkTextSelectionReader = FlarkSelection? Function();
@@ -103,6 +104,17 @@ final class FlarkMarkdownInputPolicy {
     if (diff == null) return false;
 
     final oldSelection = oldTextSelection;
+    if (_isAutoClosedStandaloneFenceEcho(
+      oldText: oldText,
+      newValue: newValue,
+    )) {
+      final selectionBefore = FlarkSelection.collapsed(oldText.length);
+      return dispatchEnter(
+        currentSelection: () => selectionBefore,
+        applySelection: applyOldTextSelection,
+      );
+    }
+
     if (diff.isNewlineInsertion) {
       final fallbackSelection = diff.isInsertion
           ? FlarkSelection.collapsed(diff.oldStart)
@@ -259,6 +271,27 @@ final class FlarkMarkdownInputPolicy {
       extentOffset: selection.extentOffset,
     );
   }
+}
+
+bool _isAutoClosedStandaloneFenceEcho({
+  required String oldText,
+  required TextEditingValue newValue,
+}) {
+  if (!_isCollapsedTextSelectionAt(newValue.selection, newValue.text.length)) {
+    return false;
+  }
+  final fence = FlarkMarkdownFencedCodeScanner.fenceLine(oldText);
+  if (fence == null || !fence.canClose) return false;
+  final markerText =
+      fence.indent + List.filled(fence.markerLength, fence.marker).join();
+  return newValue.text == '$oldText\n$markerText\n' ||
+      newValue.text == '$oldText\n$markerText';
+}
+
+bool _isCollapsedTextSelectionAt(TextSelection selection, int offset) {
+  return selection.isValid &&
+      selection.isCollapsed &&
+      selection.extentOffset == offset;
 }
 
 final class _FlarkTextEditDiff {
