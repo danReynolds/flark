@@ -2095,6 +2095,12 @@ void main() {
       expect(controller.selection, const FlarkSelection.collapsed(4));
       expect(controller.hasAuthoritativeRenderPlan, isFalse);
       expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsOneWidget);
+      expect(
+        tester
+            .widgetList<EditableText>(find.byType(EditableText))
+            .map((editable) => editable.controller.text),
+        isNot(contains('```\n```\n')),
+      );
       final editable = tester.widget<EditableText>(_codeEditableFinder());
       expect(editable.controller.text, isEmpty);
       expect(editable.focusNode.hasFocus, isTrue);

@@ -381,6 +381,7 @@ final class _FlarkProjectedEditableHostState
         undoGroupId: compositionUndoGroupId,
       );
       _adoptImmediateMarkdownParse();
+      _syncFromRuntime();
       _compositionUndoGrouping.clearIfCommitted(value);
       return;
     }
