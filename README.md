@@ -107,18 +107,18 @@ microseconds through 100 KB documents:
 | 100 KB | 172 µs | 55 ms |
 | 1 MB | 5.5 ms | ~0.5 s |
 
-Both paths are linear in document size. See [Benchmarks](docs/benchmarks.md) for
+Both paths are linear in document size. See [Benchmarks](doc/benchmarks.md) for
 the enforced lane and methodology.
 
 ## Documentation
 
-- [Getting Started](docs/getting_started.md)
-- [Cookbook](docs/cookbook.md)
-- [API Surface](docs/api_surface.md)
-- [Parser and Platforms](docs/parser_and_platforms.md)
-- [Development and Verification](docs/development.md)
-- [Benchmarks](docs/benchmarks.md)
-- [Architecture Notes](docs/README.md)
+- [Getting Started](doc/getting_started.md)
+- [Cookbook](doc/cookbook.md)
+- [API Surface](doc/api_surface.md)
+- [Parser and Platforms](doc/parser_and_platforms.md)
+- [Development and Verification](doc/development.md)
+- [Benchmarks](doc/benchmarks.md)
+- [Architecture Notes](doc/README.md)
 
 ## Example App
 
@@ -151,5 +151,6 @@ Visual baselines:
 flutter test test/v2/flutter/flark_v2_visual_golden_test.dart
 ```
 
-Flark is intentionally unpublished while `publish_to: none` remains in
-`pubspec.yaml`.
+## License
+
+Flark is available under the MIT license. See [LICENSE](LICENSE).

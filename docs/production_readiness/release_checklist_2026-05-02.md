@@ -1,35 +1,35 @@
 # Flark Release Checklist
 
-Status date: 2026-05-31
+Status date: 2026-06-08
 
-This checklist records the release decision boundary while the package remains
-private with `publish_to: none`.
+This checklist records the release decision boundary for the first public
+`flark` package release.
 
 ## Required Before Publishing
 
-- Choose and add a `LICENSE` file. This is an owner/legal decision and must not
-  be guessed during engineering hardening.
-- Choose canonical public URLs before adding pub metadata:
-  - `repository`
-  - `issue_tracker`
-  - `documentation`
-  - optional `homepage`
-- Decide whether external pub.dev screenshots are needed. They are deferred
-  while the package is private and unpublished.
-- Remove or update `publish_to: none` only when public publishing is intended.
+- [x] Add `LICENSE`: MIT License, following local Dan-owned package precedent.
+- [x] Add canonical pub metadata:
+  - `repository`: <https://github.com/danReynolds/flark>
+  - `issue_tracker`: <https://github.com/danReynolds/flark/issues>
+  - `documentation`: <https://danreynolds.github.io/flark/>
+  - `homepage`: <https://danreynolds.github.io/flark/>
+- [x] Add a pub.dev screenshot: `screenshots/flark_surfaces.png`.
+- [x] Remove `publish_to: none` for public publishing intent.
+- [x] Add CI coverage for the full release gate: `.github/workflows/ci.yml`.
 
 ## Release Dry Run
 
-When release intent is explicit and metadata/license decisions are complete,
-run:
+Run:
 
 ```bash
 dart pub publish --dry-run
 ```
 
-Keep this separate from `scripts/verify_release.sh` while `publish_to: none`
-remains in `pubspec.yaml`; the release gate should verify package health without
-pretending the package is publishable.
+Latest result on 2026-06-08: validation passed with only the expected
+dirty-worktree warning while release-prep files were uncommitted. The archive
+shape was corrected to use `doc/`, exclude internal `docs/` and peer benchmark
+fixtures, include the release screenshot, and keep the compressed archive at
+about 1 MB. Rerun from a clean commit before publishing.
 
 ## Current Release Gate
 
@@ -44,14 +44,13 @@ generation dry run, example tests, promoted-widget web smoke coverage, host
 native build, native editor CI, full package tests, the curated v2 visual
 golden suite, and benchmark budgets.
 
-Latest result on 2026-05-31: passed after the v2 release-hardening pass,
-including source-first image card actions and code-fence copy actions. The gate
-covered package/example dependency resolution, package and example analysis,
-`dart doc --dry-run` with 0 warnings and 0 errors, example tests, web smoke
-coverage, host native Comrak build, native editor CI, full package tests
-including visual goldens, and enforced benchmark budgets. The web smoke includes
-the packaged Comrak WASM backend. External publishing remains blocked only on
-the owner decisions listed above.
+Latest result on 2026-06-08: passed end to end after accepting the
+single-heading-scale live-rendered golden baseline and resolving dartdoc
+canonicalization warnings. The gate covered package/example dependency
+resolution, package and example analysis, `dart doc --dry-run` with 0 warnings
+and 0 errors, example tests, web smoke coverage, host native Comrak build,
+native editor CI, full package tests including visual goldens, and enforced
+benchmark budgets. The web smoke includes the packaged Comrak WASM backend.
 
 ## Optional Device Dogfood Gate
 

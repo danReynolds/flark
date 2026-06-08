@@ -25,7 +25,7 @@ import '../render_plan/render_plan.dart';
 ///
 /// This is the Stage 1 foundation for per-block rebuild isolation; it does not
 /// by itself change rebuild cost. See
-/// `docs/architecture/live_rendered_rebuild_isolation.md`.
+/// `doc/architecture/live_rendered_rebuild_isolation.md`.
 final class FlarkLiveBlockReconciler {
   List<_PrevEntry> _previous = const <_PrevEntry>[];
   int _nextId = 0;

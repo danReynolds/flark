@@ -17,7 +17,7 @@ import '../render_plan/render_plan.dart';
 /// constant across blocks (per editor) and are intentionally NOT part of the
 /// per-block signature — a style change rebuilds every block.
 ///
-/// See `docs/architecture/live_rendered_rebuild_isolation.md`.
+/// See `doc/architecture/live_rendered_rebuild_isolation.md`.
 String liveBlockContentSignature(
   FlarkRenderBlock block,
   String displayText, {

@@ -11,7 +11,7 @@
 //
 // It prints a `flark_profile ...` line and exits. Vary FLARK_PROFILE_BLOCKS
 // (10/20/40/80) to see scaling. This is the on-device validation the
-// debug benchmarks cannot provide (see docs/architecture/live_rendered_rebuild_isolation.md).
+// debug benchmarks cannot provide (see doc/architecture/live_rendered_rebuild_isolation.md).
 
 import 'dart:io';
 import 'dart:ui' show FrameTiming;

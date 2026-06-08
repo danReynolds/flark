@@ -10,6 +10,8 @@
 /// {@canonicalFor flark_core_editing_commands.FlarkCoreEditingExtension}
 /// {@canonicalFor flark_document.FlarkDocument}
 /// {@canonicalFor flark_markdown_block_commands.FlarkMarkdownBlockEditingExtension}
+/// {@canonicalFor flark_markdown_command_capabilities.FlarkMarkdownCommandCapabilities}
+/// {@canonicalFor flark_markdown_command_capabilities.FlarkMarkdownCommandQueries}
 /// {@canonicalFor flark_markdown_inline_commands.FlarkMarkdownInlineEditingExtension}
 /// {@canonicalFor flark_markdown_inline_style.FlarkMarkdownInlineStyleMarker}
 /// {@canonicalFor flark_markdown_input_commands.FlarkMarkdownInputEditingExtension}
@@ -30,6 +32,8 @@
 /// {@canonicalFor flark_markdown_parse_result.FlarkMarkdownReplacementRangeKind}
 /// {@canonicalFor flark_markdown_profile.FlarkMarkdownProfileWire}
 /// {@canonicalFor flark_markdown_table_commands.FlarkMarkdownTableEditingExtension}
+/// {@canonicalFor flark_native_comrak_parse_backend.FlarkNativeComrakParseProfile}
+/// {@canonicalFor flark_native_comrak_parse_backend.FlarkNativeComrakProfiledParseResult}
 /// {@canonicalFor flark_projected_text_edit_adapter.FlarkProjectedTextEditAdapter}
 /// {@canonicalFor flark_projection.FlarkCursorMask}
 /// {@canonicalFor flark_projection.FlarkHiddenRange}

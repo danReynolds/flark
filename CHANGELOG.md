@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 - Unreleased
+## 0.1.0 - 2026-06-08
 
 Initial standalone `flark` package hardening release.
 
@@ -73,5 +73,6 @@ API-shape changes (pre-publish, breaking):
   verification scripts, including web source-only smoke coverage and upstream
   CommonMark/GFM v2 native parser contracts.
 
-This package remains unpublished while `publish_to: none` is set and release
-owner decisions are pending.
+Prepared the package for its first public release with release metadata,
+license, documentation links, screenshots, and CI coverage for the full release
+gate.

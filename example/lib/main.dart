@@ -701,20 +701,20 @@ class _DocsSection extends StatelessWidget {
                   _DocCard(
                     icon: Icons.rocket_launch_outlined,
                     title: 'Getting started',
-                    path: 'docs/getting_started.md',
+                    path: 'doc/getting_started.md',
                     body: 'Build an editor, preview Markdown, and share state.',
                   ),
                   _DocCard(
                     icon: Icons.receipt_long,
                     title: 'Cookbook',
-                    path: 'docs/cookbook.md',
+                    path: 'doc/cookbook.md',
                     body:
                         'Toolbar, form, dirty-save, link, switching, and preview recipes.',
                   ),
                   _DocCard(
                     icon: Icons.account_tree_outlined,
                     title: 'API surface',
-                    path: 'docs/api_surface.md',
+                    path: 'doc/api_surface.md',
                     body:
                         'Pick the app, core, or advanced import deliberately.',
                   ),

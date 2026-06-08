@@ -9,7 +9,7 @@ void main() {
   // byte-identical in content, position, and selection. A no-shift edit is the
   // case where every other block qualifies, so only the edited block rebuilds.
   // (Insertions that shift later blocks' offsets still rebuild those blocks —
-  // see docs/architecture/live_rendered_rebuild_isolation.md.)
+  // see doc/architecture/live_rendered_rebuild_isolation.md.)
   testWidgets('a no-shift edit rebuilds only the edited block', (tester) async {
     final backend = FlarkNativeComrakParseBackend.tryLoad();
     if (backend == null) return; // Native bridge required for a real plan.

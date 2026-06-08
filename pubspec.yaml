@@ -1,7 +1,19 @@
 name: flark
 description: A Flutter markdown editor and read-only previewer with native CommonMark/GFM parsing.
-publish_to: none
 version: 0.1.0
+homepage: https://danreynolds.github.io/flark/
+repository: https://github.com/danReynolds/flark
+issue_tracker: https://github.com/danReynolds/flark/issues
+documentation: https://danreynolds.github.io/flark/
+topics:
+  - markdown
+  - editor
+  - flutter
+  - commonmark
+  - gfm
+screenshots:
+  - description: Flark source editor, live-rendered editor, and preview surfaces.
+    path: screenshots/flark_surfaces.png
 
 environment:
   sdk: ^3.10.4
