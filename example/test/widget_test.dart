@@ -11,7 +11,7 @@ void main() {
     TestWidgetsFlutterBinding.ensureInitialized();
   });
 
-  testWidgets('example exposes v2 editor and preview surfaces', (tester) async {
+  testWidgets('landing page exposes the live Flark editor', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -19,11 +19,11 @@ void main() {
     await tester.pump();
 
     expect(find.byType(MarkdownEditor), findsOneWidget);
-    expect(find.byType(Markdown), findsOneWidget);
-    expect(find.widgetWithText(Flexible, 'Flark Markdown'), findsOneWidget);
-    expect(find.text('Comrak'), findsOneWidget);
-    expect(find.text('Editor'), findsOneWidget);
-    expect(find.text('Preview'), findsOneWidget);
+    expect(find.byType(Markdown), findsNothing);
+    expect(find.text('Flark Markdown Editor'), findsOneWidget);
+    expect(find.text('Live playground'), findsOneWidget);
+    expect(find.text('Live Markdown field'), findsOneWidget);
+    expect(find.text('Native Comrak'), findsOneWidget);
   });
 
   testWidgets('playground controls remain usable on narrow web viewports', (
@@ -36,7 +36,7 @@ void main() {
     await tester.pump();
 
     expect(find.byType(MarkdownEditor), findsOneWidget);
-    expect(find.byType(Markdown), findsOneWidget);
+    expect(find.byType(Markdown), findsNothing);
     expect(
       find.byKey(const ValueKey('flark-example-command-quote')),
       findsOneWidget,
@@ -92,9 +92,7 @@ void main() {
     await _settleParsing(tester);
     await tester.tap(find.byKey(const ValueKey('flark-example-command-quote')));
     await _settleParsing(tester);
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), '> quote me');
+    expect(_documentMarkdown(tester), '> quote me');
 
     await tester.tap(
       find.byKey(const ValueKey('flark-example-scenario-scratch')),
@@ -104,9 +102,7 @@ void main() {
       find.byKey(const ValueKey('flark-example-command-code-fence')),
     );
     await _settleParsing(tester);
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), '```dart\n\n```');
+    expect(_documentMarkdown(tester), '```dart\n\n```');
 
     await tester.tap(
       find.byKey(const ValueKey('flark-example-scenario-scratch')),
@@ -114,61 +110,29 @@ void main() {
     await _settleParsing(tester);
     await tester.tap(find.byKey(const ValueKey('flark-example-command-table')));
     await _settleParsing(tester);
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), contains('| Header 1 | Header 2 | Header 3 |'));
+    expect(
+      _documentMarkdown(tester),
+      contains('| Header 1 | Header 2 | Header 3 |'),
+    );
   });
 
-  testWidgets('mode switch can show source editing', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(1200, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-
-    await tester.pumpWidget(const FlarkExampleApp());
-    await tester.pump();
-
-    await tester.tap(find.text('Source'));
-    await tester.pump();
-
-    final editor = tester.widget<MarkdownEditor>(find.byType(MarkdownEditor));
-    expect(editor.editingMode, FlarkMarkdownEditingMode.source);
-  });
-
-  testWidgets('live edit mode keeps rendered editing beside preview', (
+  testWidgets('landing demo stays live-rendered without split preview modes', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     await tester.pumpWidget(const FlarkExampleApp());
-    await tester.pump();
-
-    await tester.tap(find.text('Live Edit'));
     await tester.pump();
 
     final editor = tester.widget<MarkdownEditor>(find.byType(MarkdownEditor));
     expect(editor.editingMode, FlarkMarkdownEditingMode.liveRendered);
-    expect(find.byType(Markdown), findsOneWidget);
-    expect(find.text('Preview'), findsOneWidget);
+    expect(find.byType(Markdown), findsNothing);
+    expect(find.text('Source'), findsNothing);
+    expect(find.text('Rendered'), findsNothing);
   });
 
-  testWidgets('rendered mode shows a live read-only render surface', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1200, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-
-    await tester.pumpWidget(const FlarkExampleApp());
-    await tester.pump();
-
-    await tester.tap(find.text('Rendered'));
-    await tester.pump();
-
-    expect(find.byType(MarkdownEditor), findsNothing);
-    expect(find.byType(Markdown), findsOneWidget);
-    expect(find.text('Rendered'), findsWidgets);
-  });
-
-  testWidgets('scratch document is a blank full-pane live editor', (
+  testWidgets('scratch document is a blank live editor playground', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
@@ -191,8 +155,11 @@ void main() {
     expect(editable.expands, isTrue);
     expect(editable.textInputAction, TextInputAction.newline);
 
+    await tester.ensureVisible(editableFinder);
+    await tester.pump();
+
     final editableRect = tester.getRect(editableFinder);
-    expect(editableRect.height, greaterThan(400));
+    expect(editableRect.height, greaterThan(280));
 
     await tester.tapAt(editableRect.center);
     await tester.pump();
@@ -252,10 +219,7 @@ void main() {
     expect(liveText, contains('final value = 1;'));
     expect(liveText, contains('after fence'));
     expect(liveText, isNot(contains('```dart')));
-
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), _awkwardScratchMarkdown);
+    expect(_documentMarkdown(tester), _awkwardScratchMarkdown);
   });
 
   testWidgets('scratch keeps marker-only quote input source-visible', (
@@ -279,19 +243,11 @@ void main() {
     final markerEditable = tester.widget<EditableText>(editableFinder);
     expect(markerEditable.controller.text, '>');
     expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsNothing);
-    expect(
-      find.byKey(const Key('FlarkReadOnlyPreviewBlockquote')),
-      findsNothing,
-    );
 
     await tester.enterText(editableFinder, '> ');
     await _settleParsing(tester);
 
     expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsOneWidget);
-    expect(
-      find.byKey(const Key('FlarkReadOnlyPreviewBlockquote')),
-      findsOneWidget,
-    );
 
     await tester.enterText(find.byType(EditableText), 'quote');
     await _settleParsing(tester);
@@ -321,10 +277,6 @@ void main() {
     await _settleParsing(tester);
 
     expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsOneWidget);
-    expect(
-      find.byKey(const Key('FlarkReadOnlyPreviewBlockquote')),
-      findsOneWidget,
-    );
     expect(find.byType(EditableText), findsOneWidget);
     expect(
       tester.widget<EditableText>(find.byType(EditableText)).controller.text,
@@ -353,10 +305,7 @@ void main() {
     expect(find.byKey(const Key('FlarkLiveBlockTaskCheckbox')), findsNothing);
     expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsNothing);
     expect(_editorText(tester), '[!NOTE]\nuseful');
-
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), '> [!NOTE]\n> useful');
+    expect(_documentMarkdown(tester), '> [!NOTE]\n> useful');
   });
 
   testWidgets('scratch keeps unsupported footnotes source-visible', (
@@ -381,10 +330,7 @@ void main() {
 
     expect(_editorText(tester), 'Text[^1]\n\n[^1]: Footnote');
     expect(find.byKey(const Key('FlarkInlineLinkMenuButton')), findsNothing);
-
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), 'Text[^1]\n\n[^1]: Footnote');
+    expect(_documentMarkdown(tester), 'Text[^1]\n\n[^1]: Footnote');
   });
 
   testWidgets('scratch renders unordered list marker immediately', (
@@ -428,10 +374,7 @@ void main() {
 
     expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsNWidgets(2));
     expect(_editorText(tester), 'one\n\n\ntwo');
-
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), '- one\n\n\n- two');
+    expect(_documentMarkdown(tester), '- one\n\n\n- two');
   });
 
   testWidgets(
@@ -449,6 +392,8 @@ void main() {
       await _settleParsing(tester);
 
       var editableFinder = find.byType(EditableText);
+      await tester.ensureVisible(editableFinder);
+      await tester.pump();
       await tester.tap(editableFinder);
       await tester.pump();
       expect(
@@ -563,10 +508,7 @@ void main() {
       expect(editors.first.focusNode.hasFocus, isFalse);
       expect(editors.last.controller.text, isEmpty);
       expect(editors.last.focusNode.hasFocus, isTrue);
-
-      await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-      await _settleParsing(tester);
-      expect(_editorText(tester), '1. ordered\n\n');
+      expect(_documentMarkdown(tester), '1. ordered\n\n');
 
       await tester.tap(
         find.byKey(const ValueKey('flark-example-scenario-scratch')),
@@ -611,10 +553,7 @@ void main() {
       expect(editors.first.focusNode.hasFocus, isFalse);
       expect(editors.last.controller.text, isEmpty);
       expect(editors.last.focusNode.hasFocus, isTrue);
-
-      await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-      await _settleParsing(tester);
-      expect(_editorText(tester), '- [ ] todo\n\n');
+      expect(_documentMarkdown(tester), '- [ ] todo\n\n');
     },
   );
 
@@ -636,6 +575,8 @@ void main() {
     await _settleParsing(tester);
 
     final editableFinder = find.byType(EditableText);
+    await tester.ensureVisible(editableFinder);
+    await tester.pump();
     await tester.tap(editableFinder);
     await tester.showKeyboard(editableFinder);
     expect(
@@ -643,7 +584,9 @@ void main() {
       isTrue,
     );
 
-    await tester.tap(find.byKey(const Key('FlarkLiveBlockTaskCheckbox')));
+    final checkboxFinder = find.byKey(const Key('FlarkLiveBlockTaskCheckbox'));
+    await _showInViewport(tester, checkboxFinder, alignment: 0.35);
+    await tester.tap(checkboxFinder);
     await _settleParsing(tester);
 
     expect(
@@ -658,10 +601,7 @@ void main() {
 
     tester.testTextInput.enterText('todo!');
     await _settleParsing(tester);
-
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), '- [x] todo!');
+    expect(_documentMarkdown(tester), '- [x] todo!');
   });
 
   testWidgets('scratch keeps Shift+Enter as a soft line break in lists', (
@@ -691,10 +631,7 @@ void main() {
 
     expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
     expect(find.byType(EditableText), findsNWidgets(2));
-
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), '- item\n');
+    expect(_documentMarkdown(tester), '- item\n');
   });
 
   testWidgets('scratch keeps blank code lines visible after Enter', (
@@ -737,10 +674,7 @@ void main() {
       tester.getRect(_codeEditableFinder()).height,
       greaterThan(codeHeightBeforeEnter),
     );
-
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), '```dart\nfoo\n\n```');
+    expect(_documentMarkdown(tester), '```dart\nfoo\n\n```');
   });
 
   testWidgets('scratch expands an empty code fence after Enter', (
@@ -777,10 +711,7 @@ void main() {
       tester.getRect(_codeEditableFinder()).height,
       greaterThan(codeHeightBeforeEnter),
     );
-
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), '```dart\n\n```');
+    expect(_documentMarkdown(tester), '```dart\n\n```');
   });
 
   testWidgets('scratch keeps a typed fence opener visible until Enter', (
@@ -812,10 +743,7 @@ void main() {
       find.byKey(const Key('FlarkLiveBlockCodeLanguageButton')),
       findsNothing,
     );
-
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), '```fffffff');
+    expect(_documentMarkdown(tester), '```fffffff');
   });
 
   testWidgets('scratch keeps fast typed fence language on the opening line', (
@@ -832,18 +760,17 @@ void main() {
     );
     await _settleParsing(tester);
 
-    await tester.tap(find.byType(EditableText));
-    await tester.showKeyboard(find.byType(EditableText));
+    final editableFinder = find.byType(EditableText);
+    await tester.ensureVisible(editableFinder);
+    await tester.pump();
+    await tester.tap(editableFinder);
+    await tester.showKeyboard(editableFinder);
     await tester.pump();
 
     const markdown = '```dart\nfoo';
     await _typeFocusedTextIncrementally(tester, markdown);
     await _settleParsing(tester);
-
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-
-    expect(_editorText(tester), markdown);
+    expect(_documentMarkdown(tester), markdown);
   });
 
   testWidgets('scratch keeps fast typed fence closing outside the code body', (
@@ -860,18 +787,17 @@ void main() {
     );
     await _settleParsing(tester);
 
-    await tester.tap(find.byType(EditableText));
-    await tester.showKeyboard(find.byType(EditableText));
+    final editableFinder = find.byType(EditableText);
+    await tester.ensureVisible(editableFinder);
+    await tester.pump();
+    await tester.tap(editableFinder);
+    await tester.showKeyboard(editableFinder);
     await tester.pump();
 
     const markdown = '```dart\nfoo\n```\n\n\nabcdef';
     await _typeFocusedTextIncrementally(tester, markdown);
     await _settleParsing(tester);
-
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-
-    expect(_editorText(tester), markdown);
+    expect(_documentMarkdown(tester), markdown);
   });
 
   testWidgets('scratch renders a fence region after triple backticks', (
@@ -901,10 +827,7 @@ void main() {
       tester.widget<EditableText>(_codeEditableFinder()).controller.text,
       isEmpty,
     );
-
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), '```\n');
+    expect(_documentMarkdown(tester), '```\n');
   });
 
   testWidgets('scratch backspace removes a newly opened empty code fence', (
@@ -931,10 +854,7 @@ void main() {
 
     expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsNothing);
     expect(find.text('```'), findsNothing);
-
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), isEmpty);
+    expect(_documentMarkdown(tester), isEmpty);
   });
 
   testWidgets('scratch backspace enters code fences without exposing markers', (
@@ -958,6 +878,8 @@ void main() {
     await _settleParsing(tester);
 
     final afterFinder = _editableFinderWithText('after');
+    await tester.ensureVisible(afterFinder);
+    await tester.pump();
     await tester.tap(afterFinder);
     final afterEditable = tester.widget<EditableText>(afterFinder);
     afterEditable.controller.selection = const TextSelection.collapsed(
@@ -977,10 +899,7 @@ void main() {
       'foo',
     );
     expect(find.text('```'), findsNothing);
-
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), '```dart\nfoo\n```\nafter');
+    expect(_documentMarkdown(tester), '```dart\nfoo\n```\nafter');
   });
 
   testWidgets(
@@ -1064,6 +983,8 @@ void main() {
         findsOneWidget,
       );
 
+      await tester.ensureVisible(_codeEditableFinder());
+      await tester.pump();
       await tester.tap(_codeEditableFinder());
       await tester.pump();
       expect(
@@ -1081,10 +1002,7 @@ void main() {
         ),
       );
       await _settleParsing(tester);
-
-      await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-      await _settleParsing(tester);
-      expect(_editorText(tester), '```dart\nabc\n```');
+      expect(_documentMarkdown(tester), '```dart\nabc\n```');
     },
   );
 
@@ -1111,6 +1029,7 @@ void main() {
       final buttonFinder = find.byKey(
         const Key('FlarkLiveBlockCodeLanguageButton'),
       );
+      await _showInViewport(tester, buttonFinder, alignment: 0.25);
       final buttonRect = tester.getRect(buttonFinder);
       await tester.tap(buttonFinder);
       await tester.pump();
@@ -1123,14 +1042,20 @@ void main() {
       expect(menuRect.width, lessThanOrEqualTo(160));
       expect(menuRect.right, moreOrLessEquals(buttonRect.right, epsilon: 1));
 
-      await tester.tap(
-        find.byKey(const ValueKey('FlarkLiveBlockCodeLanguageOption:rust')),
+      final rustOptionFinder = find.byKey(
+        const ValueKey('FlarkLiveBlockCodeLanguageOption:rust'),
       );
+      await tester.ensureVisible(rustOptionFinder);
+      await tester.pump();
+      await tester.tap(rustOptionFinder);
       await _settleParsing(tester);
 
       expect(menuFinder, findsNothing);
       expect(find.text('Rust'), findsOneWidget);
-      expect(_previewCodeText(tester), 'foo');
+      expect(
+        tester.widget<EditableText>(_codeEditableFinder()).controller.text,
+        'foo',
+      );
       expect(
         tester.widget<EditableText>(_codeEditableFinder()).focusNode.hasFocus,
         isTrue,
@@ -1138,11 +1063,11 @@ void main() {
 
       tester.testTextInput.enterText('foobar');
       await _settleParsing(tester);
-      expect(_previewCodeText(tester), 'foobar');
-
-      await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-      await _settleParsing(tester);
-      expect(_editorText(tester), '```rust\nfoobar\n```');
+      expect(
+        tester.widget<EditableText>(_codeEditableFinder()).controller.text,
+        'foobar',
+      );
+      expect(_documentMarkdown(tester), '```rust\nfoobar\n```');
     },
   );
 
@@ -1168,6 +1093,8 @@ void main() {
 
     expect(find.byKey(const Key('FlarkLiveBlockTable')), findsOneWidget);
     final cellFinder = _tableCellEditableFinder(1, 0);
+    await tester.ensureVisible(cellFinder);
+    await tester.pump();
     await tester.tap(cellFinder);
     await tester.showKeyboard(cellFinder);
     tester.testTextInput.updateEditingValue(
@@ -1196,10 +1123,8 @@ void main() {
       const TextSelection.collapsed(offset: 5),
     );
 
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
     expect(
-      _editorText(tester),
+      _documentMarkdown(tester),
       r'| Area | Status |'
       '\n'
       r'| --- | --- |'
@@ -1232,6 +1157,8 @@ void main() {
     var codeEditable = tester.widget<EditableText>(codeEditableFinder);
     expect(codeEditable.controller.text, 'foo');
 
+    await tester.ensureVisible(codeEditableFinder);
+    await tester.pump();
     await tester.tap(codeEditableFinder);
     codeEditable.controller.selection = const TextSelection.collapsed(
       offset: 0,
@@ -1243,6 +1170,8 @@ void main() {
 
     expect(_editableTextWithText(tester, 'before').focusNode.hasFocus, isTrue);
 
+    await tester.ensureVisible(_codeEditableFinder());
+    await tester.pump();
     await tester.tap(_codeEditableFinder());
     codeEditable = tester.widget<EditableText>(_codeEditableFinder());
     codeEditable.controller.selection = const TextSelection.collapsed(
@@ -1254,10 +1183,7 @@ void main() {
     await _settleParsing(tester);
 
     expect(_editableTextWithText(tester, 'after').focusNode.hasFocus, isTrue);
-
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), 'before\n```dart\nfoo\n```\nafter');
+    expect(_documentMarkdown(tester), 'before\n```dart\nfoo\n```\nafter');
   });
 
   testWidgets('scratch moves down out of a terminal code fence', (
@@ -1306,10 +1232,7 @@ void main() {
 
     tester.testTextInput.enterText('after');
     await _settleParsing(tester);
-
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), '```dart\nfoo\n```\nafter');
+    expect(_documentMarkdown(tester), '```dart\nfoo\n```\nafter');
   });
 
   testWidgets('scratch moves up into a code fence from following text', (
@@ -1333,6 +1256,8 @@ void main() {
     await _settleParsing(tester);
 
     final afterFinder = _editableFinderWithText('after');
+    await tester.ensureVisible(afterFinder);
+    await tester.pump();
     await tester.tap(afterFinder);
     await tester.pump();
     final afterEditable = tester.widget<EditableText>(afterFinder);
@@ -1422,10 +1347,7 @@ void main() {
     );
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await _settleParsing(tester);
-
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), '> quote\n\n');
+    expect(_documentMarkdown(tester), '> quote\n\n');
 
     await tester.tap(
       find.byKey(const ValueKey('flark-example-scenario-scratch')),
@@ -1437,9 +1359,7 @@ void main() {
     await tester.showKeyboard(find.byType(EditableText));
     await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
     await _settleParsing(tester);
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), isEmpty);
+    expect(_documentMarkdown(tester), isEmpty);
 
     await tester.tap(
       find.byKey(const ValueKey('flark-example-scenario-scratch')),
@@ -1457,9 +1377,7 @@ void main() {
     await tester.showKeyboard(find.byType(EditableText));
     await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
     await _settleParsing(tester);
-    await tester.tap(find.byKey(const ValueKey('flark-example-mode-source')));
-    await _settleParsing(tester);
-    expect(_editorText(tester), 'quote');
+    expect(_documentMarkdown(tester), 'quote');
   });
 }
 
@@ -1474,12 +1392,28 @@ Future<void> _settleParsing(WidgetTester tester) async {
   }
 }
 
+Future<void> _showInViewport(
+  WidgetTester tester,
+  Finder finder, {
+  double alignment = 0.5,
+}) async {
+  await Scrollable.ensureVisible(tester.element(finder), alignment: alignment);
+  await tester.pump();
+}
+
 String _editorText(WidgetTester tester) {
   return find
       .byType(EditableText)
       .evaluate()
       .map((element) => (element.widget as EditableText).controller.text)
       .join('\n');
+}
+
+String _documentMarkdown(WidgetTester tester) {
+  return tester
+      .widget<MarkdownEditor>(find.byType(MarkdownEditor))
+      .controller!
+      .markdown;
 }
 
 Future<void> _typeFocusedTextIncrementally(
@@ -1500,18 +1434,6 @@ Future<void> _typeFocusedTextIncrementally(
     );
     await tester.pump();
   }
-}
-
-String _previewCodeText(WidgetTester tester) {
-  final codeBlockFinder = find.byKey(
-    const Key('FlarkReadOnlyPreviewCodeBlock'),
-  );
-  final richText = tester
-      .widgetList<RichText>(
-        find.descendant(of: codeBlockFinder, matching: find.byType(RichText)),
-      )
-      .singleWhere((widget) => widget.text.toPlainText() != 'Copy');
-  return richText.text.toPlainText();
 }
 
 Finder _codeEditableFinder() {

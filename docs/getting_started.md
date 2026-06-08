@@ -97,14 +97,22 @@ keyboard accelerators. Read getters expose active state for selected buttons,
 and mutation methods dispatch edits:
 
 ```dart
-final commands = controller.commands;
+AnimatedBuilder(
+  animation: controller,
+  builder: (context, _) {
+    final commands = controller.commands;
 
-IconButton(
-  icon: const Icon(Icons.format_bold),
-  isSelected: commands.strongActive,
-  onPressed: commands.canMutate ? commands.toggleStrong : null,
+    return IconButton(
+      icon: const Icon(Icons.format_bold),
+      isSelected: commands.strongActive,
+      onPressed: commands.canMutate ? commands.toggleStrong : null,
+    );
+  },
 )
 ```
+
+`FlarkFlutterController` is a `ChangeNotifier`, so toolbar UI can rebuild from
+the controller, `controller.selectionChanges`, or `controller.events`.
 
 `MarkdownEditor` installs a default shortcut map (Cmd/Ctrl + B/I/E,
 Cmd/Ctrl+Shift+X) via `useDefaultShortcuts`. Add or override bindings with
@@ -150,3 +158,8 @@ MarkdownEditor(
   },
 )
 ```
+
+## More Recipes
+
+See the [Cookbook](cookbook.md) for copy-pasteable toolbar, form, dirty-save,
+link-dialog, document-switching, and custom-preview examples.

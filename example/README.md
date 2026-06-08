@@ -1,15 +1,22 @@
-# Flark Example
+# Flark Example And Web Site
 
-This Flutter app is the package's mobile integration harness. It depends on the
-local package through `path: ..`, imports only
-`package:flark/flark.dart`, and exercises both the
-editable editor and read-only preview surfaces.
+This Flutter app is both the package integration harness and the GitHub Pages
+site. It depends on the local package through `path: ..`, imports only
+`package:flark/flark.dart`, and exercises the editable editor, read-only
+preview, toolbar commands, docs examples, and package feature breakdown.
 
 Run it locally:
 
 ```bash
 cd example
 flutter run
+```
+
+Build the web site locally:
+
+```bash
+cd example
+flutter build web --release --base-href /flark/
 ```
 
 Verify Android native packaging:
