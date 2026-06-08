@@ -2054,7 +2054,7 @@ void main() {
         parseBackend: parseBackend,
         parseDebounce: Duration.zero,
       );
-      controller.applySelection(const FlarkSelection.collapsed(3));
+      controller.applySelection(const FlarkSelection.collapsed(0));
       addTearDown(() {
         parseBackend.completeAll();
         controller.dispose();

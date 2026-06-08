@@ -366,7 +366,6 @@ final class _FlarkProjectedEditableHostState
     final autoClosedStandaloneFenceMarkdown = widget.liveRendered
         ? _markdownAfterAutoClosedStandaloneFenceEcho(
             oldMarkdown: widget.controller.markdown,
-            oldSelection: widget.controller.selection,
             newValue: value,
           )
         : null;
@@ -1713,13 +1712,8 @@ String? _displayTextAfterCompletingStandaloneCodeFenceOpener({
 
 String? _markdownAfterAutoClosedStandaloneFenceEcho({
   required String oldMarkdown,
-  required FlarkSelection oldSelection,
   required TextEditingValue newValue,
 }) {
-  if (!oldSelection.isCollapsed ||
-      oldSelection.extentOffset != oldMarkdown.length) {
-    return null;
-  }
   if (!_isCollapsedSelectionAt(newValue.selection, newValue.text.length)) {
     return null;
   }
