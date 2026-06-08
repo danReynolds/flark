@@ -116,6 +116,49 @@ void main() {
     );
   });
 
+  testWidgets('inline toolbar buttons require selected text and keep focus', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(const FlarkExampleApp());
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey('flark-example-scenario-scratch')),
+    );
+    await _settleParsing(tester);
+
+    await tester.enterText(find.byType(EditableText), 'bold me');
+    await _settleParsing(tester);
+
+    IconButton boldButton() {
+      return tester.widget<IconButton>(
+        find.byKey(const ValueKey('flark-example-command-bold')),
+      );
+    }
+
+    expect(boldButton().onPressed, isNull);
+
+    final editor = tester.widget<MarkdownEditor>(find.byType(MarkdownEditor));
+    editor.controller!.applySelection(
+      const FlarkSelection(baseOffset: 0, extentOffset: 4),
+    );
+    await tester.pump();
+
+    expect(boldButton().onPressed, isNotNull);
+
+    await tester.tap(find.byKey(const ValueKey('flark-example-command-bold')));
+    await _settleParsing(tester);
+
+    expect(_documentMarkdown(tester), '**bold** me');
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus,
+      isTrue,
+    );
+  });
+
   testWidgets('landing demo stays live-rendered without split preview modes', (
     tester,
   ) async {

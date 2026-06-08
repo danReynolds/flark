@@ -202,39 +202,46 @@ class _FlarkExampleScreenState extends State<FlarkExampleScreen> {
   }
 
   void _runCommand(_ToolbarCommand command) {
-    final before = _controller.state.revision;
     final commands = _controller.commands;
-    switch (command) {
-      case _ToolbarCommand.heading1:
-        commands.setHeadingLevel(1, userEvent: 'example.toolbar.heading1');
-      case _ToolbarCommand.heading2:
-        commands.setHeadingLevel(2, userEvent: 'example.toolbar.heading2');
-      case _ToolbarCommand.bold:
-        commands.toggleStrong(userEvent: 'example.toolbar.bold');
-      case _ToolbarCommand.italic:
-        commands.toggleEmphasis(userEvent: 'example.toolbar.italic');
-      case _ToolbarCommand.quote:
-        commands.toggleQuote(userEvent: 'example.toolbar.quote');
-      case _ToolbarCommand.bulletedList:
-        commands.toggleBulletList(userEvent: 'example.toolbar.bulletList');
-      case _ToolbarCommand.orderedList:
-        commands.toggleOrderedList(userEvent: 'example.toolbar.orderedList');
-      case _ToolbarCommand.taskList:
-        commands.toggleTaskList(userEvent: 'example.toolbar.taskList');
-      case _ToolbarCommand.codeFence:
-        commands.insertCodeFence(
-          language: 'dart',
-          userEvent: 'example.toolbar.codeFence',
-        );
-      case _ToolbarCommand.table:
-        commands.insertTable(
-          columns: 3,
-          bodyRows: 2,
-          userEvent: 'example.toolbar.table',
-        );
-    }
+    final result = switch (command) {
+      _ToolbarCommand.heading1 => commands.setHeadingLevel(
+        1,
+        userEvent: 'example.toolbar.heading1',
+      ),
+      _ToolbarCommand.heading2 => commands.setHeadingLevel(
+        2,
+        userEvent: 'example.toolbar.heading2',
+      ),
+      _ToolbarCommand.bold => commands.toggleStrong(
+        userEvent: 'example.toolbar.bold',
+      ),
+      _ToolbarCommand.italic => commands.toggleEmphasis(
+        userEvent: 'example.toolbar.italic',
+      ),
+      _ToolbarCommand.quote => commands.toggleQuote(
+        userEvent: 'example.toolbar.quote',
+      ),
+      _ToolbarCommand.bulletedList => commands.toggleBulletList(
+        userEvent: 'example.toolbar.bulletList',
+      ),
+      _ToolbarCommand.orderedList => commands.toggleOrderedList(
+        userEvent: 'example.toolbar.orderedList',
+      ),
+      _ToolbarCommand.taskList => commands.toggleTaskList(
+        userEvent: 'example.toolbar.taskList',
+      ),
+      _ToolbarCommand.codeFence => commands.insertCodeFence(
+        language: 'dart',
+        userEvent: 'example.toolbar.codeFence',
+      ),
+      _ToolbarCommand.table => commands.insertTable(
+        columns: 3,
+        bodyRows: 2,
+        userEvent: 'example.toolbar.table',
+      ),
+    };
 
-    if (_controller.state.revision != before) {
+    if (result.commandResult.isHandled) {
       _focusNode.requestFocus();
     }
   }
@@ -1074,6 +1081,7 @@ class _DemoToolbar extends StatelessWidget {
             final compact = constraints.maxWidth < 820;
             final header = _DemoToolbarHeader(controller: controller);
             final actions = _ToolbarActions(
+              controller: controller,
               compact: compact,
               onSample: onSample,
               onArticle: onArticle,
@@ -1164,6 +1172,7 @@ class _ProductMark extends StatelessWidget {
 
 class _ToolbarActions extends StatelessWidget {
   const _ToolbarActions({
+    required this.controller,
     required this.compact,
     required this.onSample,
     required this.onArticle,
@@ -1172,6 +1181,7 @@ class _ToolbarActions extends StatelessWidget {
     required this.onCommand,
   });
 
+  final FlarkFlutterController controller;
   final bool compact;
   final VoidCallback onSample;
   final VoidCallback onArticle;
@@ -1181,94 +1191,124 @@ class _ToolbarActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final children = [
-      _ScenarioButton(
-        key: const ValueKey('flark-example-scenario-sample'),
-        icon: Icons.description_outlined,
-        label: 'Sample',
-        onPressed: onSample,
-      ),
-      _ScenarioButton(
-        key: const ValueKey('flark-example-scenario-article'),
-        icon: Icons.article_outlined,
-        label: 'Article',
-        onPressed: onArticle,
-      ),
-      _ScenarioButton(
-        key: const ValueKey('flark-example-scenario-tables'),
-        icon: Icons.table_chart_outlined,
-        label: 'Tables',
-        onPressed: onTables,
-      ),
-      _ScenarioButton(
-        key: const ValueKey('flark-example-scenario-scratch'),
-        icon: Icons.add,
-        label: 'Scratch',
-        onPressed: onScratch,
-        emphasized: true,
-      ),
-      const _ToolbarDivider(),
-      _CommandButton(
-        tooltip: 'Heading 1',
-        icon: Icons.looks_one_outlined,
-        onPressed: () => onCommand(_ToolbarCommand.heading1),
-      ),
-      _CommandButton(
-        tooltip: 'Heading 2',
-        icon: Icons.looks_two_outlined,
-        onPressed: () => onCommand(_ToolbarCommand.heading2),
-      ),
-      _CommandButton(
-        tooltip: 'Bold',
-        icon: Icons.format_bold,
-        onPressed: () => onCommand(_ToolbarCommand.bold),
-      ),
-      _CommandButton(
-        tooltip: 'Italic',
-        icon: Icons.format_italic,
-        onPressed: () => onCommand(_ToolbarCommand.italic),
-      ),
-      _CommandButton(
-        buttonKey: const ValueKey('flark-example-command-quote'),
-        tooltip: 'Quote',
-        icon: Icons.format_quote,
-        onPressed: () => onCommand(_ToolbarCommand.quote),
-      ),
-      _CommandButton(
-        tooltip: 'Bulleted list',
-        icon: Icons.format_list_bulleted,
-        onPressed: () => onCommand(_ToolbarCommand.bulletedList),
-      ),
-      _CommandButton(
-        tooltip: 'Numbered list',
-        icon: Icons.format_list_numbered,
-        onPressed: () => onCommand(_ToolbarCommand.orderedList),
-      ),
-      _CommandButton(
-        tooltip: 'Task list',
-        icon: Icons.checklist,
-        onPressed: () => onCommand(_ToolbarCommand.taskList),
-      ),
-      _CommandButton(
-        buttonKey: const ValueKey('flark-example-command-code-fence'),
-        tooltip: 'Code fence',
-        icon: Icons.code,
-        onPressed: () => onCommand(_ToolbarCommand.codeFence),
-      ),
-      _CommandButton(
-        buttonKey: const ValueKey('flark-example-command-table'),
-        tooltip: 'Table',
-        icon: Icons.table_rows_outlined,
-        onPressed: () => onCommand(_ToolbarCommand.table),
-      ),
-    ];
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, child) {
+        final commands = controller.commands;
+        final canMutate = commands.canMutate;
+        final hasRange = !controller.selection.isCollapsed;
+        final canStyleSelection = canMutate && hasRange;
+        final children = [
+          _ScenarioButton(
+            key: const ValueKey('flark-example-scenario-sample'),
+            icon: Icons.description_outlined,
+            label: 'Sample',
+            onPressed: onSample,
+          ),
+          _ScenarioButton(
+            key: const ValueKey('flark-example-scenario-article'),
+            icon: Icons.article_outlined,
+            label: 'Article',
+            onPressed: onArticle,
+          ),
+          _ScenarioButton(
+            key: const ValueKey('flark-example-scenario-tables'),
+            icon: Icons.table_chart_outlined,
+            label: 'Tables',
+            onPressed: onTables,
+          ),
+          _ScenarioButton(
+            key: const ValueKey('flark-example-scenario-scratch'),
+            icon: Icons.add,
+            label: 'Scratch',
+            onPressed: onScratch,
+            emphasized: true,
+          ),
+          const _ToolbarDivider(),
+          _CommandButton(
+            tooltip: 'Heading 1',
+            icon: Icons.looks_one_outlined,
+            selected: commands.headingLevel == 1,
+            enabled: canMutate,
+            onPressed: () => onCommand(_ToolbarCommand.heading1),
+          ),
+          _CommandButton(
+            tooltip: 'Heading 2',
+            icon: Icons.looks_two_outlined,
+            selected: commands.headingLevel == 2,
+            enabled: canMutate,
+            onPressed: () => onCommand(_ToolbarCommand.heading2),
+          ),
+          _CommandButton(
+            buttonKey: const ValueKey('flark-example-command-bold'),
+            tooltip: hasRange ? 'Bold' : 'Select text to bold',
+            icon: Icons.format_bold,
+            selected: commands.strongActive,
+            enabled: canStyleSelection,
+            onPressed: () => onCommand(_ToolbarCommand.bold),
+          ),
+          _CommandButton(
+            buttonKey: const ValueKey('flark-example-command-italic'),
+            tooltip: hasRange ? 'Italic' : 'Select text to italicize',
+            icon: Icons.format_italic,
+            selected: commands.emphasisActive,
+            enabled: canStyleSelection,
+            onPressed: () => onCommand(_ToolbarCommand.italic),
+          ),
+          _CommandButton(
+            buttonKey: const ValueKey('flark-example-command-quote'),
+            tooltip: 'Quote',
+            icon: Icons.format_quote,
+            selected: commands.quoteActive,
+            enabled: canMutate,
+            onPressed: () => onCommand(_ToolbarCommand.quote),
+          ),
+          _CommandButton(
+            tooltip: 'Bulleted list',
+            icon: Icons.format_list_bulleted,
+            selected: commands.bulletListActive,
+            enabled: canMutate,
+            onPressed: () => onCommand(_ToolbarCommand.bulletedList),
+          ),
+          _CommandButton(
+            tooltip: 'Numbered list',
+            icon: Icons.format_list_numbered,
+            selected: commands.orderedListActive,
+            enabled: canMutate,
+            onPressed: () => onCommand(_ToolbarCommand.orderedList),
+          ),
+          _CommandButton(
+            tooltip: 'Task list',
+            icon: Icons.checklist,
+            selected: commands.taskListActive,
+            enabled: canMutate,
+            onPressed: () => onCommand(_ToolbarCommand.taskList),
+          ),
+          _CommandButton(
+            buttonKey: const ValueKey('flark-example-command-code-fence'),
+            tooltip: 'Code fence',
+            icon: Icons.code,
+            enabled: canMutate,
+            onPressed: () => onCommand(_ToolbarCommand.codeFence),
+          ),
+          _CommandButton(
+            buttonKey: const ValueKey('flark-example-command-table'),
+            tooltip: 'Table',
+            icon: Icons.table_rows_outlined,
+            selected: commands.tableActive,
+            enabled: canMutate,
+            onPressed: () => onCommand(_ToolbarCommand.table),
+          ),
+        ];
 
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      alignment: compact ? WrapAlignment.start : WrapAlignment.end,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: children,
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          alignment: compact ? WrapAlignment.start : WrapAlignment.end,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: children,
+        );
+      },
     );
   }
 }
@@ -1372,30 +1412,57 @@ class _ControllerStats extends StatelessWidget {
   }
 }
 
-class _CommandButton extends StatelessWidget {
+class _CommandButton extends StatefulWidget {
   const _CommandButton({
     this.buttonKey,
     required this.tooltip,
     required this.icon,
     required this.onPressed,
+    this.enabled = true,
+    this.selected = false,
   });
 
   final Key? buttonKey;
   final String tooltip;
   final IconData icon;
   final VoidCallback onPressed;
+  final bool enabled;
+  final bool selected;
+
+  @override
+  State<_CommandButton> createState() => _CommandButtonState();
+}
+
+class _CommandButtonState extends State<_CommandButton> {
+  late final FocusNode _focusNode = FocusNode(
+    debugLabel: widget.tooltip,
+    canRequestFocus: false,
+    skipTraversal: true,
+  );
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: tooltip,
+      message: widget.tooltip,
       waitDuration: const Duration(milliseconds: 450),
       child: IconButton.outlined(
-        key: buttonKey,
-        onPressed: onPressed,
-        icon: Icon(icon, size: 20),
+        key: widget.buttonKey,
+        focusNode: _focusNode,
+        isSelected: widget.selected,
+        selectedIcon: Icon(widget.icon, size: 20),
+        onPressed: widget.enabled ? widget.onPressed : null,
+        icon: Icon(widget.icon, size: 20),
         style: IconButton.styleFrom(
           foregroundColor: const Color(0xFF25313C),
+          disabledForegroundColor: const Color(0xFF8D99A5),
+          backgroundColor: widget.selected ? const Color(0xFFE3F0F2) : null,
+          disabledBackgroundColor: const Color(0xFFF4F6F8),
           side: const BorderSide(color: Color(0xFFD5DEE7)),
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(8)),
