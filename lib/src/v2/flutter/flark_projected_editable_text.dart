@@ -363,6 +363,28 @@ final class _FlarkProjectedEditableHostState
       _syncingFromRuntime = false;
     }
     final compositionUndoGroupId = _compositionUndoGrouping.groupIdFor(value);
+    final autoClosedStandaloneFenceMarkdown = widget.liveRendered
+        ? _markdownAfterAutoClosedStandaloneFenceEcho(
+            oldMarkdown: widget.controller.markdown,
+            oldSelection: widget.controller.selection,
+            newValue: value,
+          )
+        : null;
+    if (autoClosedStandaloneFenceMarkdown != null) {
+      _replaceSourceRange(
+        controller: widget.controller,
+        range: FlarkSourceRange(0, widget.controller.markdown.length),
+        replacementText: autoClosedStandaloneFenceMarkdown,
+        selectionAfter: FlarkSelection.collapsed(
+          autoClosedStandaloneFenceMarkdown.length,
+        ),
+        userEvent: 'input.liveRendered.codeFenceAutoCloseEcho',
+        undoGroupId: compositionUndoGroupId,
+      );
+      _adoptImmediateMarkdownParse();
+      _compositionUndoGrouping.clearIfCommitted(value);
+      return;
+    }
     if (value.text != oldDisplayText) {
       final completedCodeFenceText = widget.liveRendered
           ? _displayTextAfterCompletingStandaloneCodeFenceOpener(
@@ -1687,6 +1709,24 @@ String? _displayTextAfterCompletingStandaloneCodeFenceOpener({
   }
 
   return text.replaceRange(lineEnd, lineEnd, '\n');
+}
+
+String? _markdownAfterAutoClosedStandaloneFenceEcho({
+  required String oldMarkdown,
+  required FlarkSelection oldSelection,
+  required TextEditingValue newValue,
+}) {
+  if (!oldSelection.isCollapsed ||
+      oldSelection.extentOffset != oldMarkdown.length) {
+    return null;
+  }
+  if (!_isCollapsedSelectionAt(newValue.selection, newValue.text.length)) {
+    return null;
+  }
+  return _displayTextAfterAutoClosedWholeTextFenceEcho(
+    oldDisplayText: oldMarkdown,
+    newValue: newValue,
+  );
 }
 
 String? _displayTextAfterAutoClosedEmptyFenceEcho({
