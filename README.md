@@ -2,7 +2,9 @@
 
 Markdown-first editing and rendering for Flutter.
 
-Flark gives Flutter apps two clean widgets:
+Flark gives Flutter apps two core widgets and a thin Flutter form wrapper:
+
+Live demo and package site: <https://danreynolds.github.io/flark/>
 
 ```dart
 import 'package:flark/flark.dart';
@@ -111,6 +113,7 @@ the enforced lane and methodology.
 ## Documentation
 
 - [Getting Started](docs/getting_started.md)
+- [Cookbook](docs/cookbook.md)
 - [API Surface](docs/api_surface.md)
 - [Parser and Platforms](docs/parser_and_platforms.md)
 - [Development and Verification](docs/development.md)
@@ -119,9 +122,9 @@ the enforced lane and methodology.
 
 ## Example App
 
-The `example/` app is the dogfood workbench. It imports only
-`package:flark/flark.dart` and exercises source, live-rendered, form, and
-read-only rendering flows.
+The `example/` app is the dogfood workbench and GitHub Pages site. It imports
+only `package:flark/flark.dart` and exercises source, live-rendered, form,
+toolbar, docs, and read-only rendering flows.
 
 ```bash
 cd example
