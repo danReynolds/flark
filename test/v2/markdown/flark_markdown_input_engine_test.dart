@@ -38,6 +38,28 @@ void main() {
       expect(result.selectionAfter, const FlarkSelection.collapsed(2));
     });
 
+    test('opens an empty fenced code block from a terminal fence opener', () {
+      final result = FlarkMarkdownInputEngine.enter(
+        markdown: '```',
+        selection: const FlarkSelection.collapsed(3),
+      );
+
+      expect(result.range, const FlarkSourceRange(3, 3));
+      expect(result.replacementText, '\n```');
+      expect(result.selectionAfter, const FlarkSelection.collapsed(4));
+    });
+
+    test('opens an empty fenced code block with the opener language', () {
+      final result = FlarkMarkdownInputEngine.enter(
+        markdown: '```dart',
+        selection: const FlarkSelection.collapsed(7),
+      );
+
+      expect(result.range, const FlarkSourceRange(7, 7));
+      expect(result.replacementText, '\n```');
+      expect(result.selectionAfter, const FlarkSelection.collapsed(8));
+    });
+
     test('returns null when Backspace is not handled at document start', () {
       final result = FlarkMarkdownInputEngine.backspace(
         markdown: 'alpha',

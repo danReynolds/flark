@@ -9,6 +9,12 @@ final class FlarkMarkdownFencedCodePolicy {
     required String markdown,
     required int caret,
   }) {
+    final standaloneFence = _standaloneFenceOpenerEnter(
+      markdown: markdown,
+      caret: caret,
+    );
+    if (standaloneFence != null) return standaloneFence;
+
     final context = FlarkMarkdownFencedCodeScanner.contextAt(markdown, caret);
     if (context == null) return null;
 
@@ -204,6 +210,64 @@ final class FlarkMarkdownFencedCodePolicy {
     }
     return operations;
   }
+}
+
+FlarkMarkdownSourceEdit? _standaloneFenceOpenerEnter({
+  required String markdown,
+  required int caret,
+}) {
+  if (markdown.isEmpty || caret < 0 || caret > markdown.length) return null;
+  final lineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
+    markdown,
+    caret,
+  );
+  final lineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
+    markdown,
+    lineStart,
+  );
+  if (caret != lineEnd) return null;
+  if (lineEnd < markdown.length && markdown.codeUnitAt(lineEnd) == 0x0A) {
+    return null;
+  }
+
+  final lineText = markdown.substring(lineStart, lineEnd);
+  final fence = FlarkMarkdownFencedCodeScanner.fenceLine(lineText);
+  if (fence == null) return null;
+  if (_lineClosesExistingFence(markdown: markdown, lineStart: lineStart)) {
+    return null;
+  }
+
+  final closingMarker =
+      '${fence.indent}${_repeat(fence.marker, fence.markerLength)}';
+  return FlarkMarkdownSourceEdit(
+    range: FlarkSourceRange(caret, caret),
+    replacementText: '\n$closingMarker',
+    selectionAfter: FlarkSelection.collapsed(caret + 1),
+  );
+}
+
+bool _lineClosesExistingFence({
+  required String markdown,
+  required int lineStart,
+}) {
+  var scanLineStart = 0;
+  while (scanLineStart < lineStart) {
+    final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
+      markdown,
+      scanLineStart,
+    );
+    if (context != null && context.closingLineStart == lineStart) {
+      return true;
+    }
+
+    final next = FlarkMarkdownFencedCodeScanner.lineEndWithBreak(
+      markdown,
+      scanLineStart,
+    );
+    if (next <= scanLineStart || next > markdown.length) break;
+    scanLineStart = next;
+  }
+  return false;
 }
 
 FlarkMarkdownFencedCodeContext? _closedFenceBeforeCaret(
