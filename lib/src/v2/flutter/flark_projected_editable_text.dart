@@ -349,6 +349,43 @@ final class _FlarkProjectedEditableHostState
   void _handleTextEditingValueChanged() {
     if (_syncingFromRuntime) return;
 
+    final rawValue = _textController.value;
+    final autoClosedWholeValueFenceText = widget.liveRendered
+        ? _displayTextAfterAutoClosedWholeValueFenceEcho(rawValue)
+        : null;
+    if (autoClosedWholeValueFenceText != null) {
+      final normalizedValue = rawValue.copyWith(
+        text: autoClosedWholeValueFenceText,
+        selection: TextSelection.collapsed(
+          offset: autoClosedWholeValueFenceText.length,
+          affinity: rawValue.selection.affinity,
+        ),
+        composing: TextRange.empty,
+      );
+      if (_textController.value != normalizedValue) {
+        _syncingFromRuntime = true;
+        _textController.value = normalizedValue;
+        _syncingFromRuntime = false;
+      }
+      final compositionUndoGroupId = _compositionUndoGrouping.groupIdFor(
+        normalizedValue,
+      );
+      _replaceSourceRange(
+        controller: widget.controller,
+        range: FlarkSourceRange(0, widget.controller.markdown.length),
+        replacementText: autoClosedWholeValueFenceText,
+        selectionAfter: FlarkSelection.collapsed(
+          autoClosedWholeValueFenceText.length,
+        ),
+        userEvent: 'input.liveRendered.codeFenceAutoCloseEcho',
+        undoGroupId: compositionUndoGroupId,
+      );
+      _adoptImmediateMarkdownParse();
+      _syncFromRuntime();
+      _compositionUndoGrouping.clearIfCommitted(normalizedValue);
+      return;
+    }
+
     final oldDisplayText = _projectedText();
     final oldDisplaySelection = widget.controller.projection
         .sourceSelectionToDisplay(widget.controller.selection);
@@ -1798,6 +1835,27 @@ String? _displayTextAfterAutoClosedWholeTextFenceEcho({
     return null;
   }
   return '$oldDisplayText\n';
+}
+
+String? _displayTextAfterAutoClosedWholeValueFenceEcho(TextEditingValue value) {
+  if (!_isCollapsedSelectionAt(value.selection, value.text.length)) {
+    return null;
+  }
+  final text = value.text;
+  final openingLineEnd = text.indexOf('\n');
+  if (openingLineEnd <= 0) return null;
+  final closingLineStart = openingLineEnd + 1;
+  final hasTrailingLineBreak = text.endsWith('\n');
+  final closingLineEnd = hasTrailingLineBreak ? text.length - 1 : text.length;
+  if (closingLineEnd <= closingLineStart) return null;
+  final openingLine = text.substring(0, openingLineEnd);
+  final closingLine = text.substring(closingLineStart, closingLineEnd);
+  if (closingLine.contains('\n')) return null;
+
+  final fence = FlarkMarkdownFencedCodeScanner.fenceLine(openingLine);
+  if (fence == null || fence.infoString != null) return null;
+  if (closingLine != _fenceMarkerText(fence)) return null;
+  return '$openingLine\n';
 }
 
 bool _justCompletedFenceMarkerBySingleCharacter({
