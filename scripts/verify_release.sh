@@ -68,14 +68,15 @@ run_in_dir() {
 run flutter pub get
 run flutter analyze hook lib test
 run dart doc --dry-run
-run_in_dir "$REPO_ROOT/example" flutter pub get
-run_in_dir "$REPO_ROOT/example" flutter analyze
-run_in_dir "$REPO_ROOT/example" flutter test test --reporter compact
-run ./scripts/verify_web_adapter_ci.sh
 
 if [ "$run_native_build" -eq 1 ]; then
   run ./scripts/build_comrak_all.sh --host-only
 fi
+
+run_in_dir "$REPO_ROOT/example" flutter pub get
+run_in_dir "$REPO_ROOT/example" flutter analyze
+run_in_dir "$REPO_ROOT/example" flutter test test --reporter compact
+run ./scripts/verify_web_adapter_ci.sh
 
 run ./scripts/verify_native_editor_ci.sh --skip-build
 run flutter test test --reporter compact
