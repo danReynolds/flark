@@ -1767,9 +1767,7 @@ _SourceEdit _syntheticSourceHostEdit({
       range.isCollapsed &&
       explicitPrefix == null &&
       value.text.isNotEmpty &&
-      range.start > 0 &&
-      range.start <= markdown.length &&
-      !_isLineBreakCodeUnit(markdown.codeUnitAt(range.start - 1));
+      _syntheticSourceHostNeedsLeadingLineBreak(markdown, range.start);
   final prefix = explicitPrefix ?? (needsLeadingLineBreak ? '\n' : '');
   final prefixLength = prefix.length;
   return _SourceEdit(
@@ -1784,6 +1782,16 @@ _SourceEdit _syntheticSourceHostEdit({
       extentOffset: range.start + prefixLength + value.selection.extentOffset,
     ),
   );
+}
+
+bool _syntheticSourceHostNeedsLeadingLineBreak(String markdown, int offset) {
+  if (offset <= 0 || offset > markdown.length) return false;
+  var lineBreaksBeforeOffset = 0;
+  for (var index = offset - 1; index >= 0; index--) {
+    if (!_isLineBreakCodeUnit(markdown.codeUnitAt(index))) break;
+    lineBreaksBeforeOffset += 1;
+  }
+  return lineBreaksBeforeOffset < 2;
 }
 
 /// Test-only counter of live-rendered block widget builds, used to verify

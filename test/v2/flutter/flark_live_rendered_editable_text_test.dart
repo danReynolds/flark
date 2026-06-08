@@ -1067,6 +1067,67 @@ void main() {
     },
   );
 
+  testWidgets('keeps caret on paragraph typed into blank line before a list', (
+    tester,
+  ) async {
+    const markdown = 'Intro\n\n- [x] Task';
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
+          markdown,
+          selection: const FlarkSelection.collapsed(6),
+        ),
+        extensions: FlarkMarkdownEditingExtensions.standard(),
+      ),
+    );
+    addTearDown(controller.dispose);
+    await _applyComrakParseResult(controller);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkLiveRenderedEditableText(
+          controller: controller,
+          style: const TextStyle(fontSize: 14),
+          autofocus: true,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    var editableFinder = find.byType(EditableText);
+    expect(
+      tester
+          .widgetList<EditableText>(editableFinder)
+          .map((editor) => editor.controller.text)
+          .toList(growable: false),
+      ['Intro', '', 'Task'],
+    );
+
+    await tester.showKeyboard(editableFinder.at(1));
+    await tester.enterText(editableFinder.at(1), 'f');
+    await tester.pump();
+
+    expect(controller.markdown, 'Intro\n\nf\n- [x] Task');
+
+    await _applyComrakParseResult(controller);
+    await tester.pump();
+
+    editableFinder = find.byType(EditableText);
+    final editors = tester
+        .widgetList<EditableText>(editableFinder)
+        .toList(growable: false);
+    expect(
+      editors.map((editor) => editor.controller.text).toList(growable: false),
+      ['Intro', '', 'f', 'Task'],
+    );
+    final focusedEditorIndex = editors.indexWhere(
+      (editor) => editor.focusNode.hasFocus,
+    );
+    expect(focusedEditorIndex, 2);
+    expect(editors[focusedEditorIndex].controller.text, 'f');
+  });
+
   testWidgets(
     'moves focus out of an empty final ordered list item after Enter',
     (tester) async {
