@@ -356,6 +356,7 @@ final class _FlarkProjectedEditableHostState
       oldText: oldDisplayText,
       oldSelection: _textSelection(oldDisplaySelection),
       newValue: _textController.value,
+      normalizeAutoClosedFenceEcho: widget.liveRendered,
     );
     if (_textController.value != value) {
       _syncingFromRuntime = true;
@@ -2217,6 +2218,7 @@ final class _EditableProjectedBlockTextState
       oldText: oldLocalText,
       oldSelection: oldLocalSelection,
       newValue: _textController.value,
+      normalizeAutoClosedFenceEcho: widget.markdownInputPolicy,
     );
     _adoptNormalizedTextControllerValue(value);
     final compositionUndoGroupId = _compositionUndoGrouping.groupIdFor(value);
@@ -2675,7 +2677,25 @@ TextEditingValue _textValueWithPureInsertionSelection({
   required String oldText,
   required TextSelection oldSelection,
   required TextEditingValue newValue,
+  bool normalizeAutoClosedFenceEcho = false,
 }) {
+  if (normalizeAutoClosedFenceEcho) {
+    final normalizedFenceText = _displayTextAfterAutoClosedWholeTextFenceEcho(
+      oldDisplayText: oldText,
+      newValue: newValue,
+    );
+    if (normalizedFenceText != null) {
+      return newValue.copyWith(
+        text: normalizedFenceText,
+        selection: TextSelection.collapsed(
+          offset: normalizedFenceText.length,
+          affinity: newValue.selection.affinity,
+        ),
+        composing: TextRange.empty,
+      );
+    }
+  }
+
   if (!oldSelection.isValid || !oldSelection.isCollapsed) return newValue;
   final newSelection = newValue.selection;
   if (!newSelection.isValid || !newSelection.isCollapsed) return newValue;
