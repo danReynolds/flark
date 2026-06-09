@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flark/flark.dart';
 
+const _heroArtworkAsset = 'assets/flark_atelier.jpg';
+
 const _sampleMarkdown = '''# Flark Markdown
 
 Native Comrak parsing with live source-first editing.
@@ -82,7 +84,7 @@ class FlarkExampleApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF25636A),
+      seedColor: const Color(0xFF0D7772),
       brightness: Brightness.light,
     );
     return MaterialApp(
@@ -91,8 +93,8 @@ class FlarkExampleApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: scheme,
-        scaffoldBackgroundColor: const Color(0xFFF5F7FA),
-        dividerColor: const Color(0xFFD9E1EA),
+        scaffoldBackgroundColor: const Color(0xFFF6F7F4),
+        dividerColor: const Color(0xFFD8DDD6),
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
             minimumSize: const Size(40, 38),
@@ -266,21 +268,18 @@ class _SiteHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: const BoxDecoration(
-        color: Color(0xFFFFFFFF),
-        border: Border(bottom: BorderSide(color: Color(0xFFDDE5ED))),
+        color: Color(0xFFFBFCF8),
+        border: Border(bottom: BorderSide(color: Color(0xFFE0E5DD))),
       ),
       child: Padding(
         padding: EdgeInsets.symmetric(
           horizontal: horizontalPadding,
-          vertical: 14,
+          vertical: 13,
         ),
-        child: Wrap(
-          spacing: 14,
-          runSpacing: 10,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          alignment: WrapAlignment.spaceBetween,
-          children: [
-            Row(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 560;
+            final brand = Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const _ProductMark(),
@@ -288,61 +287,33 @@ class _SiteHeader extends StatelessWidget {
                 Text(
                   'Flark',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: const Color(0xFF14212B),
+                    color: const Color(0xFF171B18),
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ],
+            );
+
+            if (compact) {
+              return brand;
+            }
+
+            return Row(
+              children: [
+                brand,
+                const Spacer(),
+                Text(
+                  'Live Markdown playground',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: const Color(0xFF58635C),
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0,
                   ),
                 ),
               ],
-            ),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: const [
-                _HeaderPill(icon: Icons.play_circle_outline, label: 'Demo'),
-                _HeaderPill(icon: Icons.integration_instructions, label: 'API'),
-                _HeaderPill(icon: Icons.menu_book_outlined, label: 'Docs'),
-                _HeaderPill(icon: Icons.code, label: 'Examples'),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _HeaderPill extends StatelessWidget {
-  const _HeaderPill({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF6F8FA),
-        border: Border.all(color: const Color(0xFFDCE4EC)),
-        borderRadius: const BorderRadius.all(Radius.circular(8)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 16, color: const Color(0xFF37545B)),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: const Color(0xFF23313D),
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0,
-              ),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );
@@ -372,37 +343,124 @@ class _HeroBand extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: const Color(0xFFF7FAFB),
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          horizontalPadding,
-          28,
-          horizontalPadding,
-          38,
-        ),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1180),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const _HeroCopy(),
-                const SizedBox(height: 20),
-                _LiveDemoPanel(
-                  controller: controller,
-                  focusNode: focusNode,
-                  onSample: onSample,
-                  onArticle: onArticle,
-                  onTables: onTables,
-                  onScratch: onScratch,
-                  onCommand: onCommand,
+    return DecoratedBox(
+      decoration: const BoxDecoration(color: Color(0xFFF6F7F4)),
+      child: Stack(
+        children: [
+          Positioned.fill(child: _PlaygroundBackdrop()),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              28,
+              horizontalPadding,
+              46,
+            ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1240),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxWidth < 900;
+                    final demo = _LiveDemoPanel(
+                      controller: controller,
+                      focusNode: focusNode,
+                      editorHeight: compact ? 520 : 600,
+                      onSample: onSample,
+                      onArticle: onArticle,
+                      onTables: onTables,
+                      onScratch: onScratch,
+                      onCommand: onCommand,
+                    );
+
+                    if (compact) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const _HeroCopy(),
+                          const SizedBox(height: 18),
+                          demo,
+                        ],
+                      );
+                    }
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const _HeroCopy(),
+                        const SizedBox(height: 22),
+                        demo,
+                      ],
+                    );
+                  },
                 ),
-              ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlaygroundBackdrop extends StatelessWidget {
+  const _PlaygroundBackdrop();
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFFFBFCF8), Color(0xFFF1F4F0)],
             ),
           ),
         ),
-      ),
+        Positioned(
+          right: -120,
+          top: -90,
+          width: 520,
+          height: 320,
+          child: Opacity(
+            opacity: 0.14,
+            child: Image.asset(
+              _heroArtworkAsset,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) {
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+        const Positioned(
+          left: -80,
+          bottom: -80,
+          child: _SoftAccentDisc(color: Color(0x1A0D7772), size: 260),
+        ),
+        const Positioned(
+          right: 160,
+          bottom: 80,
+          child: _SoftAccentDisc(color: Color(0x16E26F4A), size: 160),
+        ),
+      ],
+    );
+  }
+}
+
+class _SoftAccentDisc extends StatelessWidget {
+  const _SoftAccentDisc({required this.color, required this.size});
+
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+      child: SizedBox.square(dimension: size),
     );
   }
 }
@@ -412,61 +470,88 @@ class _HeroCopy extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final copy = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Flark Markdown Editor',
-          style: Theme.of(context).textTheme.displaySmall?.copyWith(
-            color: const Color(0xFF13212B),
-            fontWeight: FontWeight.w900,
-            letterSpacing: 0,
-            height: 1.03,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          'A source-first Markdown editing package for Flutter apps. Keep '
-          'Markdown as the durable document, edit it through a live-rendered '
-          'surface, and wire commands into your own UI.',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: const Color(0xFF435564),
-            letterSpacing: 0,
-            height: 1.36,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
-    );
-    const proof = Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        _ProofChip(icon: Icons.edit_note, label: 'Live-rendered editing'),
-        _ProofChip(icon: Icons.storage_outlined, label: 'Markdown source'),
-        _ProofChip(icon: Icons.construction_outlined, label: 'App-owned UI'),
-        _ProofChip(icon: Icons.speed, label: 'Native Comrak'),
-      ],
-    );
-
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth < 850) {
+        final compact = constraints.maxWidth < 820;
+        final copy = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const _HeroEyebrow(),
+            const SizedBox(height: 12),
+            Text(
+              'Flark Markdown Editor',
+              style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                color: const Color(0xFF151A17),
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0,
+                height: 1.02,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Try source-first Markdown editing live in Flutter.',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: const Color(0xFF59655E),
+                letterSpacing: 0,
+                height: 1.35,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        );
+
+        const proof = Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _ProofChip(icon: Icons.edit_note, label: 'Live-rendered editing'),
+            _ProofChip(icon: Icons.storage_outlined, label: 'Markdown source'),
+            _ProofChip(icon: Icons.speed, label: 'Native Comrak'),
+          ],
+        );
+
+        if (compact) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [copy, const SizedBox(height: 16), proof],
+            children: [copy, const SizedBox(height: 14), proof],
           );
         }
 
         return Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Expanded(flex: 7, child: copy),
-            const SizedBox(width: 34),
-            const Flexible(flex: 4, child: proof),
+            Expanded(child: copy),
+            const SizedBox(width: 28),
+            const Flexible(child: proof),
           ],
         );
       },
+    );
+  }
+}
+
+class _HeroEyebrow extends StatelessWidget {
+  const _HeroEyebrow();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFFFF),
+        border: Border.all(color: const Color(0xFFDDE5DF)),
+        borderRadius: const BorderRadius.all(Radius.circular(8)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Text(
+          'Flutter package / live document field',
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            color: const Color(0xFF0B6F69),
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -482,7 +567,7 @@ class _ProofChip extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: const Color(0xFFFFFFFF),
-        border: Border.all(color: const Color(0xFFD9E3EC)),
+        border: Border.all(color: const Color(0xFFDDE5DF)),
         borderRadius: const BorderRadius.all(Radius.circular(8)),
       ),
       child: Padding(
@@ -490,13 +575,13 @@ class _ProofChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 18, color: const Color(0xFF25636A)),
+            Icon(icon, size: 18, color: const Color(0xFF0B6F69)),
             const SizedBox(width: 8),
             Text(
               label,
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: const Color(0xFF1E2C36),
-                fontWeight: FontWeight.w700,
+                color: const Color(0xFF202823),
+                fontWeight: FontWeight.w800,
                 letterSpacing: 0,
               ),
             ),
@@ -511,6 +596,7 @@ class _LiveDemoPanel extends StatelessWidget {
   const _LiveDemoPanel({
     required this.controller,
     required this.focusNode,
+    required this.editorHeight,
     required this.onSample,
     required this.onArticle,
     required this.onTables,
@@ -520,6 +606,7 @@ class _LiveDemoPanel extends StatelessWidget {
 
   final FlarkFlutterController controller;
   final FocusNode focusNode;
+  final double editorHeight;
   final VoidCallback onSample;
   final VoidCallback onArticle;
   final VoidCallback onTables;
@@ -528,37 +615,54 @@ class _LiveDemoPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFFFFFFFF),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        side: const BorderSide(color: Color(0xFFD1DEE8)),
+    return DecoratedBox(
+      decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _DemoToolbar(
-            controller: controller,
-            onSample: onSample,
-            onArticle: onArticle,
-            onTables: onTables,
-            onScratch: onScratch,
-            onCommand: onCommand,
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1F1E2A24),
+            blurRadius: 42,
+            offset: Offset(0, 18),
           ),
-          SizedBox(
-            height: 470,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-              child: _EditorPane(
-                controller: controller,
-                focusNode: focusNode,
-                editingMode: FlarkMarkdownEditingMode.liveRendered,
-              ),
-            ),
+          BoxShadow(
+            color: Color(0x120B6F69),
+            blurRadius: 18,
+            offset: Offset(0, 4),
           ),
         ],
+      ),
+      child: Material(
+        color: const Color(0xFFFFFFFF),
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(color: Color(0xFFC8D5CF), width: 1.2),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _DemoToolbar(
+              controller: controller,
+              onSample: onSample,
+              onArticle: onArticle,
+              onTables: onTables,
+              onScratch: onScratch,
+              onCommand: onCommand,
+            ),
+            SizedBox(
+              height: editorHeight,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                child: _EditorPane(
+                  controller: controller,
+                  focusNode: focusNode,
+                  editingMode: FlarkMarkdownEditingMode.liveRendered,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -573,76 +677,136 @@ class _FeatureBreakdown extends StatelessWidget {
   Widget build(BuildContext context) {
     return _PageBand(
       horizontalPadding: horizontalPadding,
+      color: const Color(0xFFFFFFFF),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const _SectionHeading(
-            icon: Icons.layers_outlined,
-            title: 'Package shape',
+            eyebrow: 'The point',
+            title: 'A playground first. A package second.',
             body:
-                'The public API stays small: one app import, two core widgets, '
-                'a form wrapper, and a controller when surfaces need shared state.',
+                'Start by testing the live editor. Then use the same small API '
+                'surface to bring that behavior into your app.',
           ),
-          const SizedBox(height: 18),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final columns = constraints.maxWidth < 760 ? 1 : 3;
-              return _ResponsiveGrid(
-                columns: columns,
-                children: const [
-                  _FeatureCard(
-                    icon: Icons.edit_note,
-                    title: 'Live-rendered editing',
-                    body:
-                        'Write in a rendered Markdown surface while Flark keeps '
-                        'the original source string as the durable document.',
-                    accent: Color(0xFF25636A),
-                  ),
-                  _FeatureCard(
-                    icon: Icons.visibility_outlined,
-                    title: 'Preview from the same state',
-                    body:
-                        'Share one controller between editor, read-only preview, '
-                        'toolbar, save button, and parser lifecycle.',
-                    accent: Color(0xFF3E6E9E),
-                  ),
-                  _FeatureCard(
-                    icon: Icons.construction_outlined,
-                    title: 'UI-agnostic commands',
-                    body:
-                        'Build your own toolbar with concise active-state reads '
-                        'and mutation verbs under controller.commands.',
-                    accent: Color(0xFF7A5D2E),
-                  ),
-                  _FeatureCard(
-                    icon: Icons.fact_check_outlined,
-                    title: 'Flutter forms',
-                    body:
-                        'Use MarkdownEditorFormField for validation, save, reset, '
-                        'autovalidation, and restoration flows.',
-                    accent: Color(0xFF526D3B),
-                  ),
-                  _FeatureCard(
-                    icon: Icons.data_object,
-                    title: 'Native CommonMark/GFM',
-                    body:
-                        'Comrak-backed parsing powers block plans, inline style '
-                        'ranges, links, tables, tasks, quotes, and code fences.',
-                    accent: Color(0xFF84575B),
-                  ),
-                  _FeatureCard(
-                    icon: Icons.memory,
-                    title: 'Headless core',
-                    body:
-                        'Transactions, commands, projection, history, and render '
-                        'plans live outside Flutter widgets for deeper integrations.',
-                    accent: Color(0xFF5B6475),
-                  ),
-                ],
-              );
-            },
-          ),
+          const SizedBox(height: 28),
+          const _PrincipleStrip(),
         ],
+      ),
+    );
+  }
+}
+
+class _PrincipleStrip extends StatelessWidget {
+  const _PrincipleStrip();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 860;
+        final children = const [
+          _PrincipleTile(
+            number: '01',
+            title: 'Source first',
+            body:
+                'Markdown is the document. The rendered field is an editing surface, not a separate truth.',
+            accent: Color(0xFF0D7772),
+          ),
+          _PrincipleTile(
+            number: '02',
+            title: 'UI stays app-owned',
+            body:
+                'Commands expose state and mutations; your app decides what the toolbar, menu, or shortcut layer looks like.',
+            accent: Color(0xFFE26F4A),
+          ),
+          _PrincipleTile(
+            number: '03',
+            title: 'Parser-backed detail',
+            body:
+                'Comrak-backed plans keep lists, quotes, tables, tasks, and code fences grounded in real Markdown.',
+            accent: Color(0xFFDCA944),
+          ),
+        ];
+
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final child in children) ...[
+                child,
+                if (child != children.last) const SizedBox(height: 12),
+              ],
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final child in children) ...[
+              Expanded(child: child),
+              if (child != children.last) const SizedBox(width: 16),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _PrincipleTile extends StatelessWidget {
+  const _PrincipleTile({
+    required this.number,
+    required this.title,
+    required this.body,
+    required this.accent,
+  });
+
+  final String number;
+  final String title;
+  final String body;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: Color(0xFF2D3029), width: 2)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              number,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: accent,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                color: const Color(0xFF1E201A),
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0,
+                height: 1.05,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              body,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: const Color(0xFF5E5648),
+                height: 1.42,
+                letterSpacing: 0,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -657,33 +821,168 @@ class _ExamplesSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return _PageBand(
       horizontalPadding: horizontalPadding,
-      color: const Color(0xFFFFFFFF),
+      color: const Color(0xFFF7FAF8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const _SectionHeading(
-            icon: Icons.code,
-            title: 'Copy-paste API examples',
+            eyebrow: 'API shape',
+            title: 'Small surface, expressive integrations.',
             body:
-                'The same public barrel powers the live demo and the snippets '
-                'below. Most apps should only import package:flark/flark.dart.',
+                'The same public barrel powers the playground. Start with a field, share a controller when needed, and wire commands into your own UI.',
           ),
-          const SizedBox(height: 18),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final columns = constraints.maxWidth < 900 ? 1 : 2;
-              return _ResponsiveGrid(
-                columns: columns,
-                children: const [
-                  _CodeCard(title: 'Basic field', code: _editorSnippet),
-                  _CodeCard(title: 'Shared preview', code: _controllerSnippet),
-                  _CodeCard(title: 'Toolbar command', code: _toolbarSnippet),
-                  _CodeCard(title: 'Form field', code: _formSnippet),
-                ],
-              );
-            },
-          ),
+          const SizedBox(height: 26),
+          const _CodeGallery(),
         ],
+      ),
+    );
+  }
+}
+
+class _CodeGallery extends StatelessWidget {
+  const _CodeGallery();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 900;
+        final code = const _CodePanel(
+          title: 'Basic field',
+          code: _editorSnippet,
+        );
+        final recipes = const _RecipeRail();
+
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [code, const SizedBox(height: 14), recipes],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(flex: 7, child: code),
+            const SizedBox(width: 18),
+            Expanded(flex: 5, child: recipes),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _RecipeRail extends StatelessWidget {
+  const _RecipeRail();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _RecipeLine(title: 'Shared preview', code: _controllerSnippet),
+        _RecipeLine(title: 'Toolbar command', code: _toolbarSnippet),
+        _RecipeLine(title: 'Form field', code: _formSnippet),
+      ],
+    );
+  }
+}
+
+class _RecipeLine extends StatelessWidget {
+  const _RecipeLine({required this.title, required this.code});
+
+  final String title;
+  final String code;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFFFF),
+          border: Border.all(color: const Color(0xFFDDE5DF)),
+          borderRadius: const BorderRadius.all(Radius.circular(8)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: const Color(0xFF0B6F69),
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                code,
+                style: const TextStyle(
+                  color: Color(0xFF202823),
+                  fontFamily: 'monospace',
+                  fontSize: 12.5,
+                  height: 1.42,
+                  letterSpacing: 0,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CodePanel extends StatelessWidget {
+  const _CodePanel({required this.title, required this.code});
+
+  final String title;
+  final String code;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFFFF),
+        border: Border.all(color: const Color(0xFFC8D5CF), width: 1.2),
+        borderRadius: const BorderRadius.all(Radius.circular(8)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.code, color: Color(0xFF0D7772), size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: const Color(0xFF1D1F19),
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              code,
+              style: const TextStyle(
+                color: Color(0xFF1B1D19),
+                fontFamily: 'monospace',
+                fontSize: 14,
+                height: 1.48,
+                letterSpacing: 0,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -698,160 +997,73 @@ class _DocsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return _PageBand(
       horizontalPadding: horizontalPadding,
+      color: const Color(0xFFFFFFFF),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const _SectionHeading(
-            icon: Icons.menu_book_outlined,
-            title: 'Docs map',
+            eyebrow: 'Build path',
+            title: 'A package page that keeps moving toward the code.',
             body:
-                'Start with the cookbook when building an app. Use the API '
-                'surface guide to choose the right import tier.',
+                'The docs route developers from a first field to cookbook integrations and then into the API surface.',
           ),
-          const SizedBox(height: 18),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final columns = constraints.maxWidth < 760 ? 1 : 3;
-              return _ResponsiveGrid(
-                columns: columns,
-                children: const [
-                  _DocCard(
-                    icon: Icons.rocket_launch_outlined,
-                    title: 'Getting started',
-                    path: 'doc/getting_started.md',
-                    body: 'Build an editor, preview Markdown, and share state.',
-                  ),
-                  _DocCard(
-                    icon: Icons.receipt_long,
-                    title: 'Cookbook',
-                    path: 'doc/cookbook.md',
-                    body:
-                        'Toolbar, form, dirty-save, link, switching, and preview recipes.',
-                  ),
-                  _DocCard(
-                    icon: Icons.account_tree_outlined,
-                    title: 'API surface',
-                    path: 'doc/api_surface.md',
-                    body:
-                        'Pick the app, core, or advanced import deliberately.',
-                  ),
-                ],
-              );
-            },
-          ),
+          const SizedBox(height: 24),
+          const _DocPath(),
         ],
       ),
     );
   }
 }
 
-class _PageBand extends StatelessWidget {
-  const _PageBand({
-    required this.horizontalPadding,
-    required this.child,
-    this.color = const Color(0xFFF5F7FA),
-  });
-
-  final double horizontalPadding;
-  final Widget child;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return ColoredBox(
-      color: color,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          horizontalPadding,
-          38,
-          horizontalPadding,
-          42,
-        ),
-        child: child,
-      ),
-    );
-  }
-}
-
-class _SectionHeading extends StatelessWidget {
-  const _SectionHeading({
-    required this.icon,
-    required this.title,
-    required this.body,
-  });
-
-  final IconData icon;
-  final String title;
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 920),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: const Color(0xFFEAF2F3),
-              border: Border.all(color: const Color(0xFFCDE0E2)),
-              borderRadius: const BorderRadius.all(Radius.circular(8)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(10),
-              child: Icon(icon, size: 22, color: const Color(0xFF25636A)),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: const Color(0xFF14212B),
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  body,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: const Color(0xFF52616F),
-                    height: 1.42,
-                    letterSpacing: 0,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ResponsiveGrid extends StatelessWidget {
-  const _ResponsiveGrid({required this.columns, required this.children});
-
-  final int columns;
-  final List<Widget> children;
+class _DocPath extends StatelessWidget {
+  const _DocPath();
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        const gap = 14.0;
-        final itemWidth =
-            (constraints.maxWidth - gap * (columns - 1)) / columns;
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
+        final compact = constraints.maxWidth < 760;
+        final children = const [
+          _DocStep(
+            icon: Icons.rocket_launch_outlined,
+            title: 'Getting started',
+            path: 'doc/getting_started.md',
+            body: 'Build an editor, preview Markdown, and share state.',
+          ),
+          _DocStep(
+            icon: Icons.receipt_long,
+            title: 'Cookbook',
+            path: 'doc/cookbook.md',
+            body:
+                'Toolbar, form, dirty-save, link, switching, and preview recipes.',
+          ),
+          _DocStep(
+            icon: Icons.account_tree_outlined,
+            title: 'API surface',
+            path: 'doc/api_surface.md',
+            body: 'Pick the app, core, or advanced import deliberately.',
+          ),
+        ];
+
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final child in children) ...[
+                child,
+                if (child != children.last) const SizedBox(height: 12),
+              ],
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (final child in children)
-              SizedBox(width: itemWidth, child: child),
+            for (final child in children) ...[
+              Expanded(child: child),
+              if (child != children.last) const SizedBox(width: 16),
+            ],
           ],
         );
       },
@@ -859,111 +1071,8 @@ class _ResponsiveGrid extends StatelessWidget {
   }
 }
 
-class _FeatureCard extends StatelessWidget {
-  const _FeatureCard({
-    required this.icon,
-    required this.title,
-    required this.body,
-    required this.accent,
-  });
-
-  final IconData icon;
-  final String title;
-  final String body;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFFFFFFFF),
-      shape: RoundedRectangleBorder(
-        side: const BorderSide(color: Color(0xFFDDE5ED)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: accent, size: 26),
-            const SizedBox(height: 14),
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: const Color(0xFF182530),
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              body,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: const Color(0xFF566675),
-                height: 1.42,
-                letterSpacing: 0,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CodeCard extends StatelessWidget {
-  const _CodeCard({required this.title, required this.code});
-
-  final String title;
-  final String code;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFF17212B),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          DecoratedBox(
-            decoration: const BoxDecoration(
-              color: Color(0xFF202D38),
-              border: Border(bottom: BorderSide(color: Color(0xFF324353))),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              child: Text(
-                title,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: const Color(0xFFEAF1F5),
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0,
-                ),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(14),
-            child: Text(
-              code,
-              style: const TextStyle(
-                color: Color(0xFFF4F7F9),
-                fontFamily: 'monospace',
-                fontSize: 13,
-                height: 1.45,
-                letterSpacing: 0,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DocCard extends StatelessWidget {
-  const _DocCard({
+class _DocStep extends StatelessWidget {
+  const _DocStep({
     required this.icon,
     required this.title,
     required this.path,
@@ -977,24 +1086,22 @@ class _DocCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFFFFFFFF),
-      shape: RoundedRectangleBorder(
-        side: const BorderSide(color: Color(0xFFDDE5ED)),
-        borderRadius: BorderRadius.circular(8),
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        border: Border(left: BorderSide(color: Color(0xFF0D7772), width: 3)),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.fromLTRB(14, 0, 0, 0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: const Color(0xFF25636A), size: 24),
-            const SizedBox(height: 12),
+            Icon(icon, color: const Color(0xFF0D7772), size: 24),
+            const SizedBox(height: 10),
             Text(
               title,
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: const Color(0xFF182530),
-                fontWeight: FontWeight.w800,
+                color: const Color(0xFF1D1F19),
+                fontWeight: FontWeight.w900,
                 letterSpacing: 0,
               ),
             ),
@@ -1002,8 +1109,8 @@ class _DocCard extends StatelessWidget {
             Text(
               path,
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: const Color(0xFF25636A),
-                fontWeight: FontWeight.w700,
+                color: const Color(0xFF9D4C32),
+                fontWeight: FontWeight.w800,
                 letterSpacing: 0,
               ),
             ),
@@ -1011,7 +1118,7 @@ class _DocCard extends StatelessWidget {
             Text(
               body,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: const Color(0xFF566675),
+                color: const Color(0xFF5E5648),
                 height: 1.42,
                 letterSpacing: 0,
               ),
@@ -1023,15 +1130,99 @@ class _DocCard extends StatelessWidget {
   }
 }
 
+class _PageBand extends StatelessWidget {
+  const _PageBand({
+    required this.horizontalPadding,
+    required this.child,
+    required this.color,
+  });
+
+  final double horizontalPadding;
+  final Widget child;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: color,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          horizontalPadding,
+          56,
+          horizontalPadding,
+          62,
+        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1180),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionHeading extends StatelessWidget {
+  const _SectionHeading({
+    required this.eyebrow,
+    required this.title,
+    required this.body,
+  });
+
+  final String eyebrow;
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 820),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            eyebrow,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: const Color(0xFF0B6F69),
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            title,
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+              color: const Color(0xFF151A17),
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
+              height: 1.08,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            body,
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+              color: const Color(0xFF59655E),
+              height: 1.45,
+              letterSpacing: 0,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SiteFooter extends StatelessWidget {
   const _SiteFooter();
 
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: const Color(0xFF14212B),
+      color: const Color(0xFFF7FAF8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 26),
         child: Wrap(
           spacing: 14,
           runSpacing: 10,
@@ -1041,15 +1232,15 @@ class _SiteFooter extends StatelessWidget {
             Text(
               'Flark Markdown editor for Flutter',
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: const Color(0xFFF3F7F9),
-                fontWeight: FontWeight.w800,
+                color: const Color(0xFF151A17),
+                fontWeight: FontWeight.w900,
                 letterSpacing: 0,
               ),
             ),
             Text(
               'Import package:flark/flark.dart',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: const Color(0xFFB8C5CE),
+                color: const Color(0xFF59655E),
                 letterSpacing: 0,
               ),
             ),
@@ -1081,8 +1272,8 @@ class _DemoToolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: const BoxDecoration(
-        color: Color(0xFFFFFFFF),
-        border: Border(bottom: BorderSide(color: Color(0xFFD9E1EA))),
+        color: Color(0xFFFBFCF8),
+        border: Border(bottom: BorderSide(color: Color(0xFFDDE5DF))),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -1147,7 +1338,7 @@ class _DemoToolbarHeader extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0,
-                    color: const Color(0xFF16202A),
+                    color: const Color(0xFF151A17),
                   ),
                 ),
               ),
@@ -1168,7 +1359,7 @@ class _ProductMark extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primary,
+        color: const Color(0xFF0B6F69),
         borderRadius: const BorderRadius.all(Radius.circular(8)),
       ),
       child: const SizedBox(
@@ -1380,8 +1571,8 @@ class _StatusChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFFEAF2F3),
-        border: Border.all(color: const Color(0xFFC7DDE0)),
+        color: const Color(0xFFEAF6F4),
+        border: Border.all(color: const Color(0xFFCDE7E3)),
         borderRadius: const BorderRadius.all(Radius.circular(8)),
       ),
       child: Padding(
@@ -1389,7 +1580,7 @@ class _StatusChip extends StatelessWidget {
         child: Text(
           label,
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            color: const Color(0xFF244C51),
+            color: const Color(0xFF0B6F69),
             fontWeight: FontWeight.w700,
             letterSpacing: 0,
           ),
@@ -1418,7 +1609,7 @@ class _ControllerStats extends StatelessWidget {
         return Text(
           '$lineCount lines · ${controller.markdown.length} chars · $status',
           style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: const Color(0xFF52616F),
+            color: const Color(0xFF68736C),
             letterSpacing: 0,
           ),
         );
@@ -1474,11 +1665,11 @@ class _CommandButtonState extends State<_CommandButton> {
         onPressed: widget.enabled ? widget.onPressed : null,
         icon: Icon(widget.icon, size: 20),
         style: IconButton.styleFrom(
-          foregroundColor: const Color(0xFF25313C),
-          disabledForegroundColor: const Color(0xFF8D99A5),
-          backgroundColor: widget.selected ? const Color(0xFFE3F0F2) : null,
-          disabledBackgroundColor: const Color(0xFFF4F6F8),
-          side: const BorderSide(color: Color(0xFFD5DEE7)),
+          foregroundColor: const Color(0xFF202823),
+          disabledForegroundColor: const Color(0xFF9AA39E),
+          backgroundColor: widget.selected ? const Color(0xFFEAF6F4) : null,
+          disabledBackgroundColor: const Color(0xFFF2F5F1),
+          side: const BorderSide(color: Color(0xFFDDE5DF)),
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(8)),
           ),
@@ -1531,7 +1722,7 @@ class _EditorPane extends StatelessWidget {
         style: const TextStyle(
           fontSize: 16,
           height: 1.42,
-          color: Color(0xFF18212B),
+          color: Color(0xFF151A17),
         ),
       ),
     );
@@ -1554,13 +1745,13 @@ class _WorkbenchPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final headerChildren = <Widget>[
-      Icon(icon, size: 18, color: const Color(0xFF52616F)),
+      Icon(icon, size: 18, color: const Color(0xFF68736C)),
       const SizedBox(width: 8),
       Text(
         title,
         style: Theme.of(context).textTheme.titleSmall?.copyWith(
           fontWeight: FontWeight.w700,
-          color: const Color(0xFF1B2733),
+          color: const Color(0xFF151A17),
           letterSpacing: 0,
         ),
       ),
@@ -1569,7 +1760,7 @@ class _WorkbenchPane extends StatelessWidget {
     return Material(
       color: const Color(0xFFFFFFFF),
       shape: RoundedRectangleBorder(
-        side: const BorderSide(color: Color(0xFFD8E0E8)),
+        side: const BorderSide(color: Color(0xFFDDE5DF)),
         borderRadius: BorderRadius.circular(8),
       ),
       clipBehavior: Clip.antiAlias,
@@ -1578,8 +1769,8 @@ class _WorkbenchPane extends StatelessWidget {
         children: [
           DecoratedBox(
             decoration: const BoxDecoration(
-              color: Color(0xFFF9FAFC),
-              border: Border(bottom: BorderSide(color: Color(0xFFE0E6ED))),
+              color: Color(0xFFFBFCF8),
+              border: Border(bottom: BorderSide(color: Color(0xFFE4EAE5))),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1595,8 +1786,8 @@ class _WorkbenchPane extends StatelessWidget {
           if (footer != null)
             DecoratedBox(
               decoration: const BoxDecoration(
-                color: Color(0xFFFBFCFD),
-                border: Border(top: BorderSide(color: Color(0xFFE4E9EF))),
+                color: Color(0xFFFBFCF8),
+                border: Border(top: BorderSide(color: Color(0xFFE4EAE5))),
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
@@ -1633,7 +1824,7 @@ class _EditorFooter extends StatelessWidget {
             Text(
               'Caret $caret',
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: const Color(0xFF667380),
+                color: const Color(0xFF68736C),
                 letterSpacing: 0,
               ),
             ),
@@ -1642,7 +1833,7 @@ class _EditorFooter extends StatelessWidget {
               Text(
                 '$selected selected',
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: const Color(0xFF667380),
+                  color: const Color(0xFF68736C),
                   letterSpacing: 0,
                 ),
               ),
