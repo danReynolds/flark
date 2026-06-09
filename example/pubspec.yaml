@@ -11,6 +11,7 @@ dependencies:
     sdk: flutter
   flark:
     path: ..
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:
@@ -23,3 +24,25 @@ flutter:
   uses-material-design: true
   assets:
     - assets/flark_atelier.jpg
+  fonts:
+    - family: Fraunces
+      fonts:
+        - asset: assets/fonts/Fraunces-Italic.ttf
+          weight: 400
+          style: italic
+        - asset: assets/fonts/Fraunces-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Fraunces-Black.ttf
+          weight: 900
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Inter-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Inter-Bold.ttf
+          weight: 700
+    - family: JetBrains Mono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Medium.ttf
+          weight: 500

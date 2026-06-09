@@ -18,7 +18,15 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="Flark Markdown editor for Flutter with a live browser demo, package docs, and app integration examples.">
+  <meta name="description" content="Flark is a source-first Markdown editor and read-only previewer for Flutter. Edit Markdown live, in place, while the document stays canonical Markdown — backed by native Comrak parsing on mobile, desktop, and web.">
+  <meta name="theme-color" content="#FBF6EC">
+
+  <!-- Open Graph / social previews -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Flark — Markdown-first editing for Flutter">
+  <meta property="og:description" content="Edit Markdown live, in place, while the document stays canonical Markdown. Native Comrak parsing on native and web.">
+  <meta property="og:url" content="https://danreynolds.github.io/flark/">
+  <meta name="twitter:card" content="summary_large_image">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -31,6 +39,11 @@
 
   <title>Flark Markdown Editor</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- Match the app's warm paper background so first paint isn't a white flash. -->
+  <style>
+    html, body { margin: 0; padding: 0; background-color: #FBF6EC; }
+  </style>
 </head>
 <body>
   <!--
