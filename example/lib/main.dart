@@ -134,7 +134,8 @@ class FlarkExampleScreen extends StatefulWidget {
 
 class _FlarkExampleScreenState extends State<FlarkExampleScreen> {
   late FlarkFlutterController _controller;
-  final FocusNode _focusNode = FocusNode();
+  FocusNode _focusNode = FocusNode();
+  final List<FocusNode> _retiredFocusNodes = [];
 
   @override
   void initState() {
@@ -151,6 +152,9 @@ class _FlarkExampleScreenState extends State<FlarkExampleScreen> {
 
   @override
   void dispose() {
+    for (final focusNode in _retiredFocusNodes) {
+      focusNode.dispose();
+    }
     _focusNode.dispose();
     _controller.dispose();
     super.dispose();
@@ -194,10 +198,16 @@ class _FlarkExampleScreenState extends State<FlarkExampleScreen> {
   }
 
   void _loadDocument(String markdown) {
+    final oldController = _controller;
+    final oldFocusNode = _focusNode;
+    oldFocusNode.unfocus();
     setState(() {
-      _focusNode.unfocus();
-      _controller.dispose();
       _controller = _createController(markdown);
+      _focusNode = FocusNode();
+      _retiredFocusNodes.add(oldFocusNode);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      oldController.dispose();
     });
   }
 
@@ -1226,6 +1236,7 @@ class _ToolbarActions extends StatelessWidget {
           ),
           const _ToolbarDivider(),
           _CommandButton(
+            buttonKey: const ValueKey('flark-example-command-heading1'),
             tooltip: 'Heading 1',
             icon: Icons.looks_one_outlined,
             selected: commands.headingLevel == 1,
@@ -1233,6 +1244,7 @@ class _ToolbarActions extends StatelessWidget {
             onPressed: () => onCommand(_ToolbarCommand.heading1),
           ),
           _CommandButton(
+            buttonKey: const ValueKey('flark-example-command-heading2'),
             tooltip: 'Heading 2',
             icon: Icons.looks_two_outlined,
             selected: commands.headingLevel == 2,
@@ -1264,6 +1276,7 @@ class _ToolbarActions extends StatelessWidget {
             onPressed: () => onCommand(_ToolbarCommand.quote),
           ),
           _CommandButton(
+            buttonKey: const ValueKey('flark-example-command-bulleted-list'),
             tooltip: 'Bulleted list',
             icon: Icons.format_list_bulleted,
             selected: commands.bulletListActive,
@@ -1271,6 +1284,7 @@ class _ToolbarActions extends StatelessWidget {
             onPressed: () => onCommand(_ToolbarCommand.bulletedList),
           ),
           _CommandButton(
+            buttonKey: const ValueKey('flark-example-command-ordered-list'),
             tooltip: 'Numbered list',
             icon: Icons.format_list_numbered,
             selected: commands.orderedListActive,
@@ -1278,6 +1292,7 @@ class _ToolbarActions extends StatelessWidget {
             onPressed: () => onCommand(_ToolbarCommand.orderedList),
           ),
           _CommandButton(
+            buttonKey: const ValueKey('flark-example-command-task-list'),
             tooltip: 'Task list',
             icon: Icons.checklist,
             selected: commands.taskListActive,
@@ -1634,6 +1649,7 @@ class _EditorFooter extends StatelessWidget {
             ],
             const Spacer(),
             TextButton.icon(
+              key: const ValueKey('flark-example-undo'),
               onPressed: controller.runtime.canUndo ? controller.undo : null,
               icon: const Icon(Icons.undo, size: 18),
               label: const Text('Undo'),
@@ -1644,6 +1660,7 @@ class _EditorFooter extends StatelessWidget {
             ),
             const SizedBox(width: 4),
             TextButton.icon(
+              key: const ValueKey('flark-example-redo'),
               onPressed: controller.runtime.canRedo ? controller.redo : null,
               icon: const Icon(Icons.redo, size: 18),
               label: const Text('Redo'),

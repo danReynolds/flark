@@ -13,8 +13,10 @@ import '../render_plan/render_plan.dart';
 import 'flark_command_actions.dart';
 import 'flark_code_syntax_highlighting.dart';
 import 'flark_flutter_controller.dart';
+import 'flark_live_block_source_edit.dart';
 import 'flark_live_block_reconciler.dart';
 import 'flark_live_block_signature.dart';
+import 'flark_live_code_fence_input_policy.dart';
 import 'flark_markdown_input_policy.dart';
 import 'flark_markdown_interactions.dart';
 import 'flark_text_selection_gestures.dart';
@@ -351,7 +353,9 @@ final class _FlarkProjectedEditableHostState
 
     final rawValue = _textController.value;
     final autoClosedWholeValueFenceText = widget.liveRendered
-        ? _displayTextAfterAutoClosedWholeValueFenceEcho(rawValue)
+        ? FlarkLiveCodeFenceInputPolicy.displayTextAfterAutoClosedWholeValueEcho(
+            rawValue,
+          )
         : null;
     if (autoClosedWholeValueFenceText != null) {
       final normalizedValue = rawValue.copyWith(
@@ -402,7 +406,7 @@ final class _FlarkProjectedEditableHostState
     }
     final compositionUndoGroupId = _compositionUndoGrouping.groupIdFor(value);
     final autoClosedStandaloneFenceMarkdown = widget.liveRendered
-        ? _markdownAfterAutoClosedStandaloneFenceEcho(
+        ? FlarkLiveCodeFenceInputPolicy.markdownAfterAutoClosedStandaloneEcho(
             oldMarkdown: widget.controller.markdown,
             newValue: value,
           )
@@ -425,7 +429,7 @@ final class _FlarkProjectedEditableHostState
     }
     if (value.text != oldDisplayText) {
       final completedCodeFenceText = widget.liveRendered
-          ? _displayTextAfterCompletingStandaloneCodeFenceOpener(
+          ? FlarkLiveCodeFenceInputPolicy.displayTextAfterCompletingStandaloneOpener(
               oldDisplayText: oldDisplayText,
               oldSelection: _textSelection(oldDisplaySelection),
               newValue: value,
@@ -590,6 +594,17 @@ final class _FlarkLiveRenderedBlockEditorState
   void dispose() {
     _focusCoordinator.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(_FlarkLiveRenderedBlockEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (identical(oldWidget.controller, widget.controller)) return;
+    _blockWidgetCache.clear();
+    _currentBlockEntries = const <_LiveRenderedBlockEntry>[];
+    _appendHostOffset = null;
+    _blockReconciler.reset();
+    _focusCoordinator.reset();
   }
 
   @override
@@ -1450,6 +1465,16 @@ final class _LiveRenderedBlockFocusCoordinator {
     _ownedBlockFocusNodes.clear();
   }
 
+  void reset() {
+    for (final node in _ownedBlockFocusNodes.values) {
+      node.dispose();
+    }
+    _ownedBlockFocusNodes.clear();
+    _focusSyncGeneration += 1;
+    _hasObservedEditorFocus = false;
+    _needsFocusRestoreAfterReconcile = false;
+  }
+
   void reconcile(List<_LiveRenderedBlockEntry> entries) {
     final currentIds = entries.map((entry) => entry.id).toSet();
     final staleIds = [
@@ -1488,6 +1513,7 @@ final class _LiveRenderedBlockFocusCoordinator {
   }) {
     final hasFocus = _editorHasFocus(externalFirstFocusNode);
     if (hasFocus) _hasObservedEditorFocus = true;
+    final hadFocusAtSchedule = hasFocus;
     final canRestoreFocus =
         autofocus ||
         _needsFocusRestoreAfterReconcile ||
@@ -1507,6 +1533,7 @@ final class _LiveRenderedBlockFocusCoordinator {
       final currentHasFocus = _editorHasFocus(externalFirstFocusNode);
       if (currentHasFocus) _hasObservedEditorFocus = true;
       final canStillRestoreFocus =
+          hadFocusAtSchedule ||
           autofocus ||
           _needsFocusRestoreAfterReconcile ||
           (restoreSelectionFocus &&
@@ -1591,7 +1618,7 @@ int _sourceNavigationBoundaryOffset({
   required bool after,
 }) {
   if (block.codeBlock != null) {
-    final bodyRange = _codeBodyRange(markdown, block);
+    final bodyRange = FlarkLiveCodeFenceInputPolicy.bodyRange(markdown, block);
     if (bodyRange != null) return after ? bodyRange.end : bodyRange.start;
   }
   final focusRange = _sourceFocusRangeForBlock(markdown, block);
@@ -1683,240 +1710,6 @@ bool _isImmediatelyRenderableCodeFenceLine(
   return FlarkMarkdownFencedCodeScanner.fenceLine(line) != null;
 }
 
-String? _displayTextAfterCompletingStandaloneCodeFenceOpener({
-  required String oldDisplayText,
-  required TextSelection oldSelection,
-  required TextEditingValue newValue,
-}) {
-  final autoClosedText = _displayTextAfterAutoClosedEmptyFenceEcho(
-    oldDisplayText: oldDisplayText,
-    oldSelection: oldSelection,
-    newValue: newValue,
-  );
-  if (autoClosedText != null) return autoClosedText;
-
-  final selection = newValue.selection;
-  if (!selection.isValid || !selection.isCollapsed) return null;
-  final text = newValue.text;
-  final caret = selection.extentOffset;
-  if (caret < 0 || caret > text.length) return null;
-
-  final lineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
-    text,
-    caret,
-  );
-  final lineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
-    text,
-    lineStart,
-  );
-  if (caret != lineEnd) return null;
-  if (lineEnd < text.length && text.codeUnitAt(lineEnd) == 0x0A) return null;
-
-  final line = text.substring(lineStart, lineEnd);
-  final fence = FlarkMarkdownFencedCodeScanner.fenceLine(line);
-  if (fence == null || fence.infoString != null) return null;
-  if (_lineClosesExistingCodeFence(
-    text: text,
-    lineStart: lineStart,
-    closingFence: fence,
-  )) {
-    return null;
-  }
-
-  final oldLineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
-    oldDisplayText,
-    caret.clamp(0, oldDisplayText.length),
-  );
-  final oldLineEnd = oldLineStart <= oldDisplayText.length
-      ? FlarkMarkdownFencedCodeScanner.lineContentEnd(
-          oldDisplayText,
-          oldLineStart,
-        )
-      : oldDisplayText.length;
-  if (oldLineStart <= oldLineEnd && oldLineEnd <= oldDisplayText.length) {
-    final oldLine = oldDisplayText.substring(oldLineStart, oldLineEnd);
-    if (_justCompletedFenceMarkerBySingleCharacter(
-      oldLine: oldLine,
-      line: line,
-      fence: fence,
-    )) {
-      return null;
-    }
-    final oldFence = FlarkMarkdownFencedCodeScanner.fenceLine(oldLine);
-    if (oldFence != null && oldFence.infoString == null) return null;
-  }
-
-  return text.replaceRange(lineEnd, lineEnd, '\n');
-}
-
-String? _markdownAfterAutoClosedStandaloneFenceEcho({
-  required String oldMarkdown,
-  required TextEditingValue newValue,
-}) {
-  if (!_isCollapsedSelectionAt(newValue.selection, newValue.text.length)) {
-    return null;
-  }
-  return _displayTextAfterAutoClosedWholeTextFenceEcho(
-    oldDisplayText: oldMarkdown,
-    newValue: newValue,
-  );
-}
-
-String? _displayTextAfterAutoClosedEmptyFenceEcho({
-  required String oldDisplayText,
-  required TextSelection oldSelection,
-  required TextEditingValue newValue,
-}) {
-  final wholeTextEcho = _displayTextAfterAutoClosedWholeTextFenceEcho(
-    oldDisplayText: oldDisplayText,
-    newValue: newValue,
-  );
-  if (wholeTextEcho != null) return wholeTextEcho;
-
-  if (!oldSelection.isValid || !oldSelection.isCollapsed) return null;
-  final selection = newValue.selection;
-  if (!selection.isValid || !selection.isCollapsed) return null;
-
-  final oldLineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
-    oldDisplayText,
-    FlarkMarkdownFencedCodeScanner.lineStartForOffset(
-      oldDisplayText,
-      oldSelection.extentOffset.clamp(0, oldDisplayText.length),
-    ),
-  );
-  final oldLineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
-    oldDisplayText,
-    oldSelection.extentOffset.clamp(0, oldDisplayText.length),
-  );
-  if (oldSelection.extentOffset != oldLineEnd) return null;
-  if (oldLineEnd < oldDisplayText.length &&
-      oldDisplayText.codeUnitAt(oldLineEnd) == 0x0A) {
-    return null;
-  }
-
-  final oldLine = oldDisplayText.substring(oldLineStart, oldLineEnd);
-  final fence = FlarkMarkdownFencedCodeScanner.fenceLine(oldLine);
-  if (fence == null || fence.infoString != null) return null;
-  if (_lineClosesExistingCodeFence(
-    text: oldDisplayText,
-    lineStart: oldLineStart,
-    closingFence: fence,
-  )) {
-    return null;
-  }
-
-  final closingLine = _fenceMarkerText(fence);
-  final autoClosedWithBreak = oldDisplayText.replaceRange(
-    oldLineEnd,
-    oldLineEnd,
-    '\n$closingLine\n',
-  );
-  final autoClosedWithoutBreak = oldDisplayText.replaceRange(
-    oldLineEnd,
-    oldLineEnd,
-    '\n$closingLine',
-  );
-  if (newValue.text != autoClosedWithBreak &&
-      newValue.text != autoClosedWithoutBreak) {
-    return null;
-  }
-  return oldDisplayText.replaceRange(oldLineEnd, oldLineEnd, '\n');
-}
-
-String? _displayTextAfterAutoClosedWholeTextFenceEcho({
-  required String oldDisplayText,
-  required TextEditingValue newValue,
-}) {
-  final fence = FlarkMarkdownFencedCodeScanner.fenceLine(oldDisplayText);
-  if (fence == null || fence.infoString != null) return null;
-  final closingLine = _fenceMarkerText(fence);
-  if (newValue.text != '$oldDisplayText\n$closingLine\n' &&
-      newValue.text != '$oldDisplayText\n$closingLine') {
-    return null;
-  }
-  return '$oldDisplayText\n';
-}
-
-String? _displayTextAfterAutoClosedWholeValueFenceEcho(TextEditingValue value) {
-  if (!_isCollapsedSelectionAt(value.selection, value.text.length)) {
-    return null;
-  }
-  final text = value.text;
-  final openingLineEnd = text.indexOf('\n');
-  if (openingLineEnd <= 0) return null;
-  final closingLineStart = openingLineEnd + 1;
-  final hasTrailingLineBreak = text.endsWith('\n');
-  final closingLineEnd = hasTrailingLineBreak ? text.length - 1 : text.length;
-  if (closingLineEnd <= closingLineStart) return null;
-  final openingLine = text.substring(0, openingLineEnd);
-  final closingLine = text.substring(closingLineStart, closingLineEnd);
-  if (closingLine.contains('\n')) return null;
-
-  final fence = FlarkMarkdownFencedCodeScanner.fenceLine(openingLine);
-  if (fence == null || fence.infoString != null) return null;
-  if (closingLine != _fenceMarkerText(fence)) return null;
-  return '$openingLine\n';
-}
-
-bool _justCompletedFenceMarkerBySingleCharacter({
-  required String oldLine,
-  required String line,
-  required FlarkMarkdownFenceLine fence,
-}) {
-  if (fence.infoString != null) return false;
-  if (line.length != oldLine.length + 1) return false;
-  if (!line.startsWith(oldLine)) return false;
-  final markerText = _fenceMarkerText(fence);
-  return line == markerText &&
-      oldLine == markerText.substring(0, line.length - 1);
-}
-
-String _fenceMarkerText(FlarkMarkdownFenceLine fence) {
-  return fence.indent + List.filled(fence.markerLength, fence.marker).join();
-}
-
-bool _lineClosesExistingCodeFence({
-  required String text,
-  required int lineStart,
-  required FlarkMarkdownFenceLine closingFence,
-}) {
-  FlarkMarkdownFenceLine? openFence;
-  var scanLineStart = 0;
-  while (scanLineStart < lineStart && scanLineStart < text.length) {
-    final scanLineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
-      text,
-      scanLineStart,
-    );
-    final line = text.substring(scanLineStart, scanLineEnd);
-    final fence = FlarkMarkdownFencedCodeScanner.fenceLine(line);
-    if (fence != null) {
-      if (openFence == null) {
-        openFence = fence;
-      } else if (_fenceLineCloses(openFence, fence)) {
-        openFence = null;
-      }
-    }
-
-    final next = FlarkMarkdownFencedCodeScanner.lineEndWithBreak(
-      text,
-      scanLineStart,
-    );
-    if (next <= scanLineStart) break;
-    scanLineStart = next;
-  }
-
-  return openFence != null && _fenceLineCloses(openFence, closingFence);
-}
-
-bool _fenceLineCloses(
-  FlarkMarkdownFenceLine openFence,
-  FlarkMarkdownFenceLine candidate,
-) {
-  return candidate.canClose &&
-      candidate.marker == openFence.marker &&
-      candidate.markerLength >= openFence.markerLength;
-}
-
 bool _isSyntheticSourceHost(FlarkRenderBlock block) {
   return block.attributes['synthetic'] == true &&
       (block.type == 'syntheticSourceLineHost' ||
@@ -1936,33 +1729,105 @@ FlarkSourceRange? _syntheticSourceHostRange(
   return block.sourceRange;
 }
 
-_SourceEdit _syntheticSourceHostEdit({
+FlarkLiveBlockSourceEdit _syntheticSourceHostEdit({
   required String markdown,
   required FlarkRenderBlock block,
   required FlarkSourceRange range,
   required TextEditingValue value,
 }) {
+  final oldText = markdown.substring(range.start, range.end);
+  final replacementValue =
+      FlarkLiveCodeFenceInputPolicy.valueAfterCompletingStandaloneOpener(
+        oldDisplayText: oldText,
+        oldSelection: TextSelection.collapsed(offset: oldText.length),
+        newValue: value,
+      ) ??
+      value;
   final sourcePrefix = block.attributes['sourcePrefix'];
   final explicitPrefix = sourcePrefix is String ? sourcePrefix : null;
   final needsLeadingLineBreak =
       range.isCollapsed &&
       explicitPrefix == null &&
-      value.text.isNotEmpty &&
+      replacementValue.text.isNotEmpty &&
+      !_syntheticSourceHostFollowsClosedCodeFence(markdown, range.start) &&
       _syntheticSourceHostNeedsLeadingLineBreak(markdown, range.start);
   final prefix = explicitPrefix ?? (needsLeadingLineBreak ? '\n' : '');
   final prefixLength = prefix.length;
-  return _SourceEdit(
+  final closingSuffix = _syntheticSourceHostClosingFenceSuffix(
+    markdown: markdown,
     range: range,
-    replacementText: '$prefix${value.text}',
-    editableRangeAfter: FlarkSourceRange(
-      range.start + prefixLength,
-      range.start + prefixLength + value.text.length,
-    ),
+    replacementText: replacementValue.text,
+  );
+  final editableRangeAfter = _syntheticSourceHostEditableRangeAfter(
+    range: range,
+    prefixLength: prefixLength,
+    replacementText: replacementValue.text,
+  );
+  return FlarkLiveBlockSourceEdit(
+    range: range,
+    replacementText: '$prefix${replacementValue.text}$closingSuffix',
+    editableRangeAfter: editableRangeAfter,
     selectionAfter: FlarkSelection(
-      baseOffset: range.start + prefixLength + value.selection.baseOffset,
-      extentOffset: range.start + prefixLength + value.selection.extentOffset,
+      baseOffset:
+          range.start + prefixLength + replacementValue.selection.baseOffset,
+      extentOffset:
+          range.start + prefixLength + replacementValue.selection.extentOffset,
     ),
   );
+}
+
+String _syntheticSourceHostClosingFenceSuffix({
+  required String markdown,
+  required FlarkSourceRange range,
+  required String replacementText,
+}) {
+  if (!range.isCollapsed || range.end >= markdown.length) return '';
+  if (markdown.substring(range.end).trim().isEmpty) return '';
+  final openingLineEnd = replacementText.indexOf('\n');
+  if (openingLineEnd < 0) return '';
+  final openingLine = replacementText.substring(0, openingLineEnd);
+  final fence = FlarkMarkdownFencedCodeScanner.fenceLine(openingLine);
+  if (fence == null || fence.infoString != null) return '';
+  final marker =
+      '${fence.indent}${List.filled(fence.markerLength, fence.marker).join()}';
+  final bodyText = replacementText.substring(openingLineEnd + 1);
+  final breakBeforeCloser =
+      bodyText.isNotEmpty && !_textEndsWithLineBreak(bodyText) ? '\n' : '';
+  final breakAfterCloser =
+      _textStartsWithLineBreak(markdown.substring(range.end)) ? '' : '\n';
+  return '$breakBeforeCloser$marker$breakAfterCloser';
+}
+
+bool _textEndsWithLineBreak(String text) {
+  if (text.isEmpty) return false;
+  final last = text.codeUnitAt(text.length - 1);
+  return last == 0x0A || last == 0x0D;
+}
+
+bool _textStartsWithLineBreak(String text) {
+  if (text.isEmpty) return false;
+  final first = text.codeUnitAt(0);
+  return first == 0x0A || first == 0x0D;
+}
+
+FlarkSourceRange _syntheticSourceHostEditableRangeAfter({
+  required FlarkSourceRange range,
+  required int prefixLength,
+  required String replacementText,
+}) {
+  final sourceStart = range.start + prefixLength;
+  final openingLineEnd = replacementText.indexOf('\n');
+  if (openingLineEnd >= 0) {
+    final openingLine = replacementText.substring(0, openingLineEnd);
+    final fence = FlarkMarkdownFencedCodeScanner.fenceLine(openingLine);
+    if (fence != null && fence.infoString == null) {
+      return FlarkSourceRange(
+        sourceStart + openingLineEnd + 1,
+        sourceStart + replacementText.length,
+      );
+    }
+  }
+  return FlarkSourceRange(sourceStart, sourceStart + replacementText.length);
 }
 
 bool _syntheticSourceHostNeedsLeadingLineBreak(String markdown, int offset) {
@@ -1973,6 +1838,72 @@ bool _syntheticSourceHostNeedsLeadingLineBreak(String markdown, int offset) {
     lineBreaksBeforeOffset += 1;
   }
   return lineBreaksBeforeOffset < 2;
+}
+
+bool _syntheticSourceHostFollowsClosedCodeFence(String markdown, int offset) {
+  if (offset <= 0 || offset > markdown.length) return false;
+  var previousContentEnd = offset;
+  var lineBreaksBeforeOffset = 0;
+  while (previousContentEnd > 0 &&
+      _isLineBreakCodeUnit(markdown.codeUnitAt(previousContentEnd - 1))) {
+    previousContentEnd -= 1;
+    lineBreaksBeforeOffset += 1;
+  }
+  if (lineBreaksBeforeOffset == 0) return false;
+  if (previousContentEnd <= 0) return false;
+
+  final closingLineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
+    markdown,
+    previousContentEnd,
+  );
+  final closingLineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
+    markdown,
+    closingLineStart,
+  );
+  final closingFence = FlarkMarkdownFencedCodeScanner.fenceLine(
+    markdown.substring(closingLineStart, closingLineEnd),
+  );
+  if (closingFence == null || !closingFence.canClose) return false;
+
+  FlarkMarkdownFenceLine? openFence;
+  var lineStart = 0;
+  while (lineStart < closingLineStart) {
+    final lineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
+      markdown,
+      lineStart,
+    );
+    final lineFence = FlarkMarkdownFencedCodeScanner.fenceLine(
+      markdown.substring(lineStart, lineEnd),
+    );
+    if (lineFence != null) {
+      final activeFence = openFence;
+      if (activeFence == null) {
+        openFence = lineFence;
+      } else if (_fenceLineClosesLine(activeFence, lineFence)) {
+        openFence = null;
+      }
+    }
+    final nextLineStart = FlarkMarkdownFencedCodeScanner.lineEndWithBreak(
+      markdown,
+      lineStart,
+    );
+    if (nextLineStart <= lineStart || nextLineStart >= closingLineStart) {
+      break;
+    }
+    lineStart = nextLineStart;
+  }
+
+  final activeFence = openFence;
+  return activeFence != null && _fenceLineClosesLine(activeFence, closingFence);
+}
+
+bool _fenceLineClosesLine(
+  FlarkMarkdownFenceLine openingFence,
+  FlarkMarkdownFenceLine closingFence,
+) {
+  return closingFence.canClose &&
+      closingFence.marker == openingFence.marker &&
+      closingFence.markerLength >= openingFence.markerLength;
 }
 
 /// Test-only counter of live-rendered block widget builds, used to verify
@@ -2164,7 +2095,7 @@ final class _EditableProjectedBlockText extends StatefulWidget {
   final bool markdownInputPolicy;
   final FlarkSourceRange? Function(String markdown, FlarkRenderBlock block)?
   sourceRangeForEdits;
-  final _SourceEdit Function({
+  final FlarkLiveBlockSourceEdit Function({
     required String markdown,
     required FlarkRenderBlock block,
     required FlarkSourceRange range,
@@ -2192,6 +2123,7 @@ final class _EditableProjectedBlockTextState
   final _compositionUndoGrouping = _FlarkCompositionUndoGrouping();
   TextEditingValue? _localValueSnapshot;
   FlarkSourceRange? _directSourceRangeSnapshot;
+  String? _pendingCodeBodyPlatformEchoText;
 
   FocusNode get _focusNode => widget.focusNode ?? _ownedFocusNode!;
 
@@ -2268,32 +2200,47 @@ final class _EditableProjectedBlockTextState
   void _handleTextChanged() {
     if (_syncing) return;
 
+    final externalFocusNodeToRestore = widget.focusNode;
+    final shouldRestoreExternalFocus = externalFocusNodeToRestore != null;
     final directSourceRange = _sourceEditRange();
     final snapshot = _localEditSnapshot(directSourceRange);
     final oldLocalText = snapshot.value.text;
     final oldLocalSelection = snapshot.value.selection;
-    final value = _textValueWithPureInsertionSelection(
+    var value = _textValueWithPureInsertionSelection(
       oldText: oldLocalText,
       oldSelection: oldLocalSelection,
       newValue: _textController.value,
       normalizeAutoClosedFenceEcho: widget.markdownInputPolicy,
     );
+    value =
+        FlarkLiveCodeFenceInputPolicy.normalizeLineBreakInsertionValue(
+          block: widget.currentBlock,
+          oldText: oldLocalText,
+          value: value,
+        ) ??
+        value;
     _adoptNormalizedTextControllerValue(value);
     final compositionUndoGroupId = _compositionUndoGrouping.groupIdFor(value);
     if (value.text != oldLocalText) {
       if (widget.markdownInputPolicy) {
-        if (_isCodeFenceOpeningLinePlatformEnter(
+        if (_consumePendingCodeBodyPlatformEcho(value)) {
+          _syncFromController();
+          _compositionUndoGrouping.clearIfCommitted(value);
+          return;
+        }
+        if (FlarkLiveCodeFenceInputPolicy.isOpeningLinePlatformEnter(
           markdown: widget.controller.markdown,
           block: widget.currentBlock,
           range: snapshot.directSourceRange ?? directSourceRange,
           oldText: oldLocalText,
           newValue: value,
         )) {
-          final existingBodyStart = _existingCodeFenceBodyStartAfterOpeningLine(
-            markdown: widget.controller.markdown,
-            block: widget.currentBlock,
-            range: snapshot.directSourceRange ?? directSourceRange,
-          );
+          final existingBodyStart =
+              FlarkLiveCodeFenceInputPolicy.existingBodyStartAfterOpeningLine(
+                markdown: widget.controller.markdown,
+                block: widget.currentBlock,
+                range: snapshot.directSourceRange ?? directSourceRange,
+              );
           if (existingBodyStart != null) {
             widget.controller.applySelection(
               FlarkSelection.collapsed(existingBodyStart),
@@ -2310,10 +2257,14 @@ final class _EditableProjectedBlockTextState
               applySelection: _applyLocalDisplaySelectionToController,
             );
           }
+          _restoreExternalFocusAfterFrame(
+            externalFocusNodeToRestore,
+            shouldRestoreExternalFocus,
+          );
           _compositionUndoGrouping.clearIfCommitted(value);
           return;
         }
-        if (_isOpeningEmptyUnclosedCodeFenceNewlineEcho(
+        if (FlarkLiveCodeFenceInputPolicy.isOpeningEmptyUnclosedNewlineEcho(
           markdown: widget.controller.markdown,
           block: widget.currentBlock,
           range: snapshot.directSourceRange ?? directSourceRange,
@@ -2324,16 +2275,100 @@ final class _EditableProjectedBlockTextState
           _compositionUndoGrouping.clearIfCommitted(value);
           return;
         }
-        if (_markdownInputPolicy.handlePlatformTextChange(
+        if (FlarkLiveCodeFenceInputPolicy.isLanguageShortcutPlatformEcho(
+          markdown: widget.controller.markdown,
+          block: widget.currentBlock,
+          range: snapshot.directSourceRange ?? directSourceRange,
           oldText: oldLocalText,
-          newValue: value,
-          oldTextSelection: FlarkMarkdownInputPolicy.selectionFromTextSelection(
-            oldLocalSelection,
-          ),
-          applyOldTextSelection: _applyLocalDisplaySelectionToController,
+          value: value,
         )) {
+          _syncFromController();
           _compositionUndoGrouping.clearIfCommitted(value);
           return;
+        }
+        final languageShortcutEdit =
+            FlarkLiveCodeFenceInputPolicy.languageShortcutEdit(
+              markdown: widget.controller.markdown,
+              block: widget.currentBlock,
+              range: snapshot.directSourceRange ?? directSourceRange,
+              oldText: oldLocalText,
+              value: value,
+            );
+        if (languageShortcutEdit != null) {
+          _replaceSourceRange(
+            controller: widget.controller,
+            range: languageShortcutEdit.range,
+            replacementText: languageShortcutEdit.replacementText,
+            selectionAfter: languageShortcutEdit.selectionAfter,
+            userEvent: 'input.liveBlock.codeFenceLanguageShortcut',
+            undoGroupId: compositionUndoGroupId,
+          );
+          _rememberLocalEditSnapshot(
+            TextEditingValue(
+              text: '',
+              selection: const TextSelection.collapsed(offset: 0),
+            ),
+            directSourceRange: languageShortcutEdit.editableRangeAfter,
+          );
+          _restoreExternalFocusAfterFrame(
+            externalFocusNodeToRestore,
+            shouldRestoreExternalFocus,
+          );
+          _compositionUndoGrouping.clearIfCommitted(value);
+          return;
+        }
+        if (FlarkLiveCodeFenceInputPolicy.isTrailingLineBreakPlatformEcho(
+          markdown: widget.controller.markdown,
+          block: widget.currentBlock,
+          range: snapshot.directSourceRange ?? directSourceRange,
+          oldText: oldLocalText,
+          value: value,
+        )) {
+          _syncFromController();
+          _compositionUndoGrouping.clearIfCommitted(value);
+          return;
+        }
+        final platformTextValue =
+            FlarkLiveCodeFenceInputPolicy.normalizePlatformLineBreakValue(
+              markdown: widget.controller.markdown,
+              block: widget.currentBlock,
+              range: snapshot.directSourceRange ?? directSourceRange,
+              oldText: oldLocalText,
+              value: value,
+            );
+        if (platformTextValue != null &&
+            FlarkLiveCodeFenceInputPolicy.sourceTextEquals(
+              markdown: widget.controller.markdown,
+              block: widget.currentBlock,
+              text: platformTextValue.text,
+            )) {
+          _syncFromController();
+          _compositionUndoGrouping.clearIfCommitted(value);
+          return;
+        }
+        final platformPolicyValue = platformTextValue ?? value;
+        if (!FlarkLiveCodeFenceInputPolicy.shouldHandleTypedClosingFence(
+          markdown: widget.controller.markdown,
+          block: widget.currentBlock,
+          value: platformPolicyValue,
+        )) {
+          if (_markdownInputPolicy.handlePlatformTextChange(
+            oldText: oldLocalText,
+            newValue: platformPolicyValue,
+            oldTextSelection:
+                FlarkMarkdownInputPolicy.selectionFromTextSelection(
+                  oldLocalSelection,
+                ),
+            applyOldTextSelection: _applyLocalDisplaySelectionToController,
+          )) {
+            if (platformTextValue != null) _syncFromController();
+            _restoreExternalFocusAfterFrame(
+              externalFocusNodeToRestore,
+              shouldRestoreExternalFocus,
+            );
+            _compositionUndoGrouping.clearIfCommitted(value);
+            return;
+          }
         }
       }
       final sourceRange = snapshot.directSourceRange ?? directSourceRange;
@@ -2345,7 +2380,7 @@ final class _EditableProjectedBlockTextState
               range: sourceRange,
               value: value,
             ) ??
-            _SourceEdit(
+            FlarkLiveBlockSourceEdit(
               range: sourceRange,
               replacementText: value.text,
               editableRangeAfter: FlarkSourceRange(
@@ -2370,8 +2405,23 @@ final class _EditableProjectedBlockTextState
           value,
           directSourceRange: sourceEdit.editableRangeAfter,
         );
+        _restoreExternalFocusAfterFrame(
+          externalFocusNodeToRestore,
+          shouldRestoreExternalFocus,
+        );
         _compositionUndoGrouping.clearIfCommitted(value);
         return;
+      }
+      final completedStandaloneFenceValue = widget.markdownInputPolicy
+          ? FlarkLiveCodeFenceInputPolicy.valueAfterCompletingStandaloneOpener(
+              oldDisplayText: oldLocalText,
+              oldSelection: oldLocalSelection,
+              newValue: value,
+            )
+          : null;
+      final blockValue = completedStandaloneFenceValue ?? value;
+      if (completedStandaloneFenceValue != null) {
+        _adoptNormalizedTextControllerValue(blockValue);
       }
       final block = widget.currentBlock;
       final displayText = widget.currentDisplayText;
@@ -2379,15 +2429,23 @@ final class _EditableProjectedBlockTextState
       final newDisplayText = displayText.replaceRange(
         range.start,
         range.end,
-        value.text,
+        blockValue.text,
       );
       final applied = widget.controller.applyProjectedTextEdit(
         oldDisplayText: displayText,
         newDisplayText: newDisplayText,
         undoGroupId: compositionUndoGroupId,
       );
-      if (!applied) _syncFromController();
-      _rememberLocalEditSnapshot(value, directSourceRange: null);
+      if (!applied) {
+        _syncFromController();
+      } else if (completedStandaloneFenceValue != null) {
+        _adoptImmediateMarkdownParseForController(widget.controller);
+      }
+      _restoreExternalFocusAfterFrame(
+        externalFocusNodeToRestore,
+        shouldRestoreExternalFocus,
+      );
+      _rememberLocalEditSnapshot(blockValue, directSourceRange: null);
       _compositionUndoGrouping.clearIfCommitted(value);
       return;
     }
@@ -2424,6 +2482,18 @@ final class _EditableProjectedBlockTextState
     _compositionUndoGrouping.clearIfCommitted(value);
   }
 
+  void _restoreExternalFocusAfterFrame(
+    FocusNode? focusNode,
+    bool shouldRestore,
+  ) {
+    if (!shouldRestore || focusNode == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (focusNode.canRequestFocus && !focusNode.hasFocus) {
+        focusNode.requestFocus();
+      }
+    });
+  }
+
   void _applyLocalDisplaySelectionToController(FlarkSelection localSelection) {
     final directSourceRange = _sourceEditRange();
     if (directSourceRange != null) {
@@ -2455,6 +2525,7 @@ final class _EditableProjectedBlockTextState
       backspaceUserEvent: 'input.liveBlock.backspace',
       onHandled: () {
         _adoptImmediateMarkdownParseForController(widget.controller);
+        _rememberPendingCodeBodyPlatformEcho();
       },
     );
   }
@@ -2520,6 +2591,27 @@ final class _EditableProjectedBlockTextState
       return false;
     }
     return markdown.substring(range.start, range.end) == text;
+  }
+
+  void _rememberPendingCodeBodyPlatformEcho() {
+    _pendingCodeBodyPlatformEchoText =
+        FlarkLiveCodeFenceInputPolicy.pendingEchoText(
+          markdown: widget.controller.markdown,
+          block: widget.currentBlock,
+          range: _sourceEditRange(),
+          text: _localText(),
+        );
+  }
+
+  bool _consumePendingCodeBodyPlatformEcho(TextEditingValue value) {
+    final decision = FlarkLiveCodeFenceInputPolicy.consumePendingEcho(
+      pendingText: _pendingCodeBodyPlatformEchoText,
+      markdown: widget.controller.markdown,
+      block: widget.currentBlock,
+      value: value,
+    );
+    _pendingCodeBodyPlatformEchoText = decision.nextPendingText;
+    return decision.consumed;
   }
 
   void _adoptNormalizedTextControllerValue(TextEditingValue value) {
@@ -2678,6 +2770,18 @@ final class _EditableProjectedBlockTextState
         HardwareKeyboard.instance.isMetaPressed) {
       return KeyEventResult.ignored;
     }
+    if (event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+      if (_ignoreEmptyOpeningCodeBodyKeyboardEnter()) {
+        return KeyEventResult.handled;
+      }
+      if (_promoteCodeBodyLanguageShortcutFromKeyboardEnter()) {
+        return KeyEventResult.handled;
+      }
+      return _handleCodeBodyKeyboardEnter()
+          ? KeyEventResult.handled
+          : KeyEventResult.ignored;
+    }
     if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
       return _moveOutOfBlockOnVerticalBoundary(
             const ExtendSelectionVerticallyToAdjacentLineIntent(
@@ -2699,6 +2803,91 @@ final class _EditableProjectedBlockTextState
           : KeyEventResult.ignored;
     }
     return KeyEventResult.ignored;
+  }
+
+  bool _ignoreEmptyOpeningCodeBodyKeyboardEnter() {
+    if (_textController.text.isNotEmpty) return false;
+    if (!FlarkLiveCodeFenceInputPolicy.isCollapsedSelectionAt(
+      _textController.selection,
+      0,
+    )) {
+      return false;
+    }
+    final sourceRange = _sourceEditRange();
+    if (sourceRange == null || !sourceRange.isCollapsed) return false;
+    final block = widget.currentBlock;
+    if (block.codeBlock == null) return false;
+    final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
+      widget.controller.markdown,
+      block.sourceRange.start,
+    );
+    if (context == null) return false;
+    final bodyRange = context.bodyContentRange(widget.controller.markdown);
+    if (!bodyRange.isCollapsed || sourceRange.start != bodyRange.start) {
+      return false;
+    }
+    if (context.closingLineStart == null) return true;
+    final afterFence =
+        context.closingLineEndWithBreak ?? context.closingLineEnd;
+    if (afterFence == null || afterFence >= widget.controller.markdown.length) {
+      return false;
+    }
+    return !FlarkMarkdownFencedCodeScanner.isWhitespace(
+      widget.controller.markdown.substring(afterFence),
+    );
+  }
+
+  bool _promoteCodeBodyLanguageShortcutFromKeyboardEnter() {
+    final text = _textController.text;
+    if (text.isEmpty || text.contains('\n')) return false;
+    if (!FlarkLiveCodeFenceInputPolicy.isCollapsedSelectionAt(
+      _textController.selection,
+      text.length,
+    )) {
+      return false;
+    }
+    final sourceRange = _sourceEditRange();
+    final sourceEdit = FlarkLiveCodeFenceInputPolicy.languageShortcutEdit(
+      markdown: widget.controller.markdown,
+      block: widget.currentBlock,
+      range: sourceRange,
+      oldText: text,
+      value: TextEditingValue(
+        text: '$text\n',
+        selection: TextSelection.collapsed(offset: text.length + 1),
+      ),
+    );
+    if (sourceEdit == null) return false;
+
+    _replaceSourceRange(
+      controller: widget.controller,
+      range: sourceEdit.range,
+      replacementText: sourceEdit.replacementText,
+      selectionAfter: sourceEdit.selectionAfter,
+      userEvent: 'input.liveBlock.codeFenceLanguageShortcut',
+    );
+    _rememberLocalEditSnapshot(
+      TextEditingValue(
+        text: '',
+        selection: const TextSelection.collapsed(offset: 0),
+      ),
+      directSourceRange: sourceEdit.editableRangeAfter,
+    );
+    return true;
+  }
+
+  bool _handleCodeBodyKeyboardEnter() {
+    if (widget.currentBlock.codeBlock == null) return false;
+    if (!widget.markdownInputPolicy || !_markdownInputPolicy.isEnabled) {
+      return false;
+    }
+    return _markdownInputPolicy.dispatchEnter(
+      currentSelection: () =>
+          FlarkMarkdownInputPolicy.selectionFromTextSelection(
+            _textController.selection,
+          ),
+      applySelection: _applyLocalDisplaySelectionToController,
+    );
   }
 
   bool _sourceSelectionCoversBlock(FlarkSelection selection) {
@@ -2738,10 +2927,11 @@ TextEditingValue _textValueWithPureInsertionSelection({
   bool normalizeAutoClosedFenceEcho = false,
 }) {
   if (normalizeAutoClosedFenceEcho) {
-    final normalizedFenceText = _displayTextAfterAutoClosedWholeTextFenceEcho(
-      oldDisplayText: oldText,
-      newValue: newValue,
-    );
+    final normalizedFenceText =
+        FlarkLiveCodeFenceInputPolicy.displayTextAfterAutoClosedWholeTextEcho(
+          oldDisplayText: oldText,
+          newValue: newValue,
+        );
     if (normalizedFenceText != null) {
       return newValue.copyWith(
         text: normalizedFenceText,
@@ -3493,13 +3683,17 @@ final class _EditableCodeBlock extends StatelessWidget {
     final block = currentBlock;
     final displayText = currentDisplayText;
     final language =
-        _codeFenceLanguageFromSource(controller.markdown, block) ??
+        FlarkLiveCodeFenceInputPolicy.languageFromSource(
+          controller.markdown,
+          block,
+        ) ??
         block.codeBlock?.language;
-    final editingOpeningLine = _selectionInCodeFenceOpeningLine(
-      controller.markdown,
-      block,
-      controller.selection,
-    );
+    final editingOpeningLine =
+        FlarkLiveCodeFenceInputPolicy.selectionInOpeningLine(
+          markdown: controller.markdown,
+          block: block,
+          selection: controller.selection,
+        );
     if (editingOpeningLine) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),
@@ -3515,7 +3709,7 @@ final class _EditableCodeBlock extends StatelessWidget {
           focusNode: focusNode,
           autofocus: autofocus,
           markdownInputPolicy: true,
-          sourceRangeForEdits: _codeFenceOpeningLineRange,
+          sourceRangeForEdits: FlarkLiveCodeFenceInputPolicy.openingLineRange,
           onMoveToPreviousBlock: onMoveToPreviousBlock,
           onMoveToNextBlock: onMoveToNextBlock,
         ),
@@ -3548,8 +3742,8 @@ final class _EditableCodeBlock extends StatelessWidget {
       focusNode: focusNode,
       autofocus: autofocus,
       markdownInputPolicy: true,
-      sourceRangeForEdits: _codeBodyRange,
-      sourceEditForReplacement: _codeBodySourceEdit,
+      sourceRangeForEdits: FlarkLiveCodeFenceInputPolicy.bodyRange,
+      sourceEditForReplacement: FlarkLiveCodeFenceInputPolicy.sourceEdit,
       codeSyntaxLanguage: language,
       onMoveToPreviousBlock: onMoveToPreviousBlock,
       onMoveToNextBlock: onMoveToNextBlock,
@@ -3598,7 +3792,10 @@ final class _EditableCodeBlock extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     _CodeCopyButton(
-                      source: _codeCopyText(controller.markdown, block),
+                      source: FlarkLiveCodeFenceInputPolicy.copyText(
+                        controller.markdown,
+                        block,
+                      ),
                       focusNode: focusNode,
                       style: style,
                     ),
@@ -3627,7 +3824,10 @@ final class _EditableCodeBlock extends StatelessWidget {
 
   bool _applyCodeIndent({required bool indent}) {
     final block = currentBlock;
-    final bodyRange = _codeBodyRange(controller.markdown, block);
+    final bodyRange = FlarkLiveCodeFenceInputPolicy.bodyRange(
+      controller.markdown,
+      block,
+    );
     if (bodyRange == null) return false;
     final selection = controller.selection;
     if (selection.start < bodyRange.start || selection.end > bodyRange.end) {
@@ -4208,7 +4408,8 @@ final class _EditableTableCellState extends State<_EditableTableCell> {
       selectionColor: _selectionColorForCursor(widget.cursorColor),
       selectionControls: flarkTextSelectionControlsForPlatform(context),
       backgroundCursorColor: widget.backgroundCursorColor,
-      keyboardType: TextInputType.text,
+      keyboardType: TextInputType.multiline,
+      textInputAction: TextInputAction.newline,
       inputFormatters: const [_TableCellInputFormatter()],
       minLines: 1,
       maxLines: null,
@@ -4633,20 +4834,6 @@ void _replaceSourceRange({
   );
 }
 
-final class _SourceEdit {
-  const _SourceEdit({
-    required this.range,
-    required this.replacementText,
-    required this.editableRangeAfter,
-    required this.selectionAfter,
-  });
-
-  final FlarkSourceRange range;
-  final String replacementText;
-  final FlarkSourceRange editableRangeAfter;
-  final FlarkSelection selectionAfter;
-}
-
 FlarkSelection _sourceSelectionAfterReplacement({
   required FlarkSourceRange range,
   required TextSelection localSelection,
@@ -4662,300 +4849,6 @@ FlarkSelection _sourceSelectionAfterReplacement({
         range.start +
         localSelection.extentOffset.clamp(0, replacementTextLength),
   );
-}
-
-_SourceEdit _codeBodySourceEdit({
-  required String markdown,
-  required FlarkRenderBlock block,
-  required FlarkSourceRange range,
-  required TextEditingValue value,
-}) {
-  var replacementText = value.text;
-  final replacementTextLengthForSelection = replacementText.length;
-
-  final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
-    markdown,
-    block.sourceRange.start,
-  );
-  if (_isOpeningEmptyUnclosedCodeFenceBodyEcho(
-    context: context,
-    range: range,
-    value: value,
-  )) {
-    return _SourceEdit(
-      range: range,
-      replacementText: '',
-      editableRangeAfter: range,
-      selectionAfter: FlarkSelection.collapsed(range.start),
-    );
-  }
-  final closingLineStart = context?.closingLineStart;
-  final typedClosingLineStart = context == null
-      ? null
-      : _typedCodeBodyClosingLineStart(value: value, context: context);
-  if (typedClosingLineStart != null && context != null) {
-    final bodyText = _bodyTextBeforeTypedClosingLine(
-      value.text,
-      typedClosingLineStart,
-    );
-    final typedClosingLineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
-      value.text,
-      typedClosingLineStart,
-    );
-    final typedClosingLine = value.text.substring(
-      typedClosingLineStart,
-      typedClosingLineEnd,
-    );
-    final replacingExistingClose = context.closingLineEnd != null;
-    final closeReplacementText = replacingExistingClose
-        ? bodyText
-        : _bodyTextWithTypedClosingLine(bodyText, typedClosingLine);
-    final selectionAfter = replacingExistingClose
-        ? context.closingLineEnd! - range.length + closeReplacementText.length
-        : range.start + closeReplacementText.length;
-    return _SourceEdit(
-      range: range,
-      replacementText: closeReplacementText,
-      editableRangeAfter: FlarkSourceRange(
-        range.start,
-        range.start + bodyText.length,
-      ),
-      selectionAfter: FlarkSelection.collapsed(selectionAfter),
-    );
-  }
-  if (closingLineStart != null &&
-      range.end == closingLineStart &&
-      replacementText.isNotEmpty &&
-      !_endsWithLineBreak(replacementText)) {
-    replacementText = '$replacementText\n';
-  }
-
-  return _SourceEdit(
-    range: range,
-    replacementText: replacementText,
-    editableRangeAfter: FlarkSourceRange(
-      range.start,
-      range.start + replacementTextLengthForSelection,
-    ),
-    selectionAfter: _sourceSelectionAfterReplacement(
-      range: range,
-      localSelection: value.selection,
-      replacementTextLength: replacementTextLengthForSelection,
-    ),
-  );
-}
-
-int? _typedCodeBodyClosingLineStart({
-  required TextEditingValue value,
-  required FlarkMarkdownFencedCodeContext context,
-}) {
-  final selection = value.selection;
-  if (!selection.isValid || !selection.isCollapsed) return null;
-  final caret = selection.extentOffset;
-  if (caret < 0 || caret > value.text.length) return null;
-  final lineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
-    value.text,
-    caret,
-  );
-  final lineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
-    value.text,
-    lineStart,
-  );
-  if (caret != lineEnd) return null;
-  final line = value.text.substring(lineStart, lineEnd);
-  final fence = FlarkMarkdownFencedCodeScanner.fenceLine(line);
-  if (fence == null) return null;
-  if (fence.closes(context)) return lineStart;
-  return null;
-}
-
-String _bodyTextBeforeTypedClosingLine(String text, int closingLineStart) {
-  var end = closingLineStart.clamp(0, text.length);
-  if (end > 0 && text.codeUnitAt(end - 1) == 0x0A) end--;
-  if (end > 0 && text.codeUnitAt(end - 1) == 0x0D) end--;
-  return text.substring(0, end);
-}
-
-String _bodyTextWithTypedClosingLine(String bodyText, String closingLine) {
-  if (bodyText.isEmpty) return closingLine;
-  return '$bodyText\n$closingLine';
-}
-
-bool _endsWithLineBreak(String text) {
-  if (text.isEmpty) return false;
-  final codeUnit = text.codeUnitAt(text.length - 1);
-  return codeUnit == 0x0A || codeUnit == 0x0D;
-}
-
-bool _isOpeningEmptyUnclosedCodeFenceNewlineEcho({
-  required String markdown,
-  required FlarkRenderBlock block,
-  required FlarkSourceRange? range,
-  required String oldText,
-  required TextEditingValue newValue,
-}) {
-  if (block.codeBlock == null || range == null || !range.isCollapsed) {
-    return false;
-  }
-  if (oldText.isNotEmpty) return false;
-  if (!_isSingleLineBreak(newValue.text) ||
-      !_isCollapsedSelection(newValue.selection)) {
-    return false;
-  }
-
-  final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
-    markdown,
-    block.sourceRange.start,
-  );
-  if (context == null || context.closingLineStart != null) return false;
-  return context.bodyStart == range.start &&
-      context.bodyEnd(markdown) == range.start;
-}
-
-bool _isOpeningEmptyUnclosedCodeFenceBodyEcho({
-  required FlarkMarkdownFencedCodeContext? context,
-  required FlarkSourceRange range,
-  required TextEditingValue value,
-}) {
-  if (context == null || context.closingLineStart != null) return false;
-  if (!range.isCollapsed || range.start != context.bodyStart) return false;
-  return _isSingleLineBreak(value.text) &&
-      _isCollapsedSelectionAt(value.selection, 0);
-}
-
-bool _isCodeFenceOpeningLinePlatformEnter({
-  required String markdown,
-  required FlarkRenderBlock block,
-  required FlarkSourceRange? range,
-  required String oldText,
-  required TextEditingValue newValue,
-}) {
-  if (block.codeBlock == null || range == null || oldText.isEmpty) {
-    return false;
-  }
-  final openingLineRange = _codeFenceOpeningLineRange(markdown, block);
-  if (openingLineRange == null ||
-      range.start != openingLineRange.start ||
-      range.end != openingLineRange.end) {
-    return false;
-  }
-  if (!newValue.text.startsWith(oldText)) return false;
-  final inserted = newValue.text.substring(oldText.length);
-  return _isOnlyLineBreaks(inserted) ||
-      _isAutoClosedEmptyFenceText(oldText, newValue.text);
-}
-
-int? _existingCodeFenceBodyStartAfterOpeningLine({
-  required String markdown,
-  required FlarkRenderBlock block,
-  required FlarkSourceRange? range,
-}) {
-  if (range == null || range.end >= markdown.length) return null;
-  if (!_isLineBreakCodeUnit(markdown.codeUnitAt(range.end))) return null;
-  final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
-    markdown,
-    block.sourceRange.start,
-  );
-  if (context == null || context.openingLineStart != range.start) return null;
-  return context.bodyStart > range.end ? context.bodyStart : null;
-}
-
-bool _isCollapsedSelectionAt(TextSelection selection, int offset) {
-  return _isCollapsedSelection(selection) && selection.extentOffset == offset;
-}
-
-bool _isCollapsedSelection(TextSelection selection) {
-  return selection.isValid && selection.isCollapsed;
-}
-
-bool _isSingleLineBreak(String text) {
-  return text == '\n' || text == '\r\n';
-}
-
-bool _isAutoClosedEmptyFenceText(String oldText, String newText) {
-  final fence = FlarkMarkdownFencedCodeScanner.fenceLine(oldText);
-  if (fence == null || fence.infoString != null) return false;
-  final closingLine = _fenceMarkerText(fence);
-  return newText == '$oldText\n$closingLine\n' ||
-      newText == '$oldText\n$closingLine';
-}
-
-bool _isOnlyLineBreaks(String text) {
-  if (text.isEmpty) return false;
-  for (final codeUnit in text.codeUnits) {
-    if (codeUnit != 0x0A && codeUnit != 0x0D) return false;
-  }
-  return true;
-}
-
-FlarkSourceRange? _codeBodyRange(String markdown, FlarkRenderBlock block) {
-  if (block.sourceRange.start < 0 || block.sourceRange.end > markdown.length) {
-    return null;
-  }
-  final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
-    markdown,
-    block.sourceRange.start,
-  );
-  if (context != null) {
-    return context.bodyContentRange(markdown);
-  }
-
-  final openerEnd = markdown.indexOf('\n', block.sourceRange.start);
-  if (openerEnd < 0 || openerEnd >= block.sourceRange.end) return null;
-  final bodyStart = openerEnd + 1;
-  final closerStart = markdown.lastIndexOf('\n', block.sourceRange.end - 1);
-  final bodyEnd = closerStart > bodyStart ? closerStart : block.sourceRange.end;
-  return FlarkSourceRange(bodyStart, bodyEnd).validate(markdown.length);
-}
-
-String _codeCopyText(String markdown, FlarkRenderBlock block) {
-  final range = _codeBodyRange(markdown, block);
-  if (range == null) return '';
-  return markdown.substring(range.start, range.end);
-}
-
-FlarkSourceRange? _codeFenceOpeningLineRange(
-  String markdown,
-  FlarkRenderBlock block,
-) {
-  if (block.sourceRange.start < 0 ||
-      block.sourceRange.start > markdown.length) {
-    return null;
-  }
-  final lineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
-    markdown,
-    block.sourceRange.start,
-  );
-  if (lineStart != block.sourceRange.start) return null;
-  final lineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
-    markdown,
-    lineStart,
-  );
-  return FlarkSourceRange(lineStart, lineEnd).validate(markdown.length);
-}
-
-bool _selectionInCodeFenceOpeningLine(
-  String markdown,
-  FlarkRenderBlock block,
-  FlarkSelection selection,
-) {
-  if (block.codeBlock == null) return false;
-  final openingLineRange = _codeFenceOpeningLineRange(markdown, block);
-  if (openingLineRange == null) return false;
-  return selection.start >= openingLineRange.start &&
-      selection.end <= openingLineRange.end;
-}
-
-String? _codeFenceLanguageFromSource(String markdown, FlarkRenderBlock block) {
-  if (block.sourceRange.start < 0 ||
-      block.sourceRange.start >= markdown.length ||
-      block.sourceRange.end > markdown.length) {
-    return null;
-  }
-  return FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
-    markdown,
-    block.sourceRange.start,
-  )?.language;
 }
 
 String _sanitizeTableCell(String value) {

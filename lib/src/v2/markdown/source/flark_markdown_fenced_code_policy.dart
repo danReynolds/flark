@@ -15,6 +15,32 @@ final class FlarkMarkdownFencedCodePolicy {
     );
     if (standaloneFence != null) return standaloneFence;
 
+    final emptyClosedContext = _emptyClosedFenceContextAtBodyStart(
+      markdown,
+      caret,
+    );
+    if (emptyClosedContext != null &&
+        _hasFollowingContentAfterFence(markdown, emptyClosedContext)) {
+      return FlarkMarkdownSourceEdit(
+        range: FlarkSourceRange(caret, caret),
+        replacementText: '',
+        selectionAfter: FlarkSelection.collapsed(caret),
+      );
+    }
+    final previousClosedFence = _closedFenceBeforeCaret(markdown, caret);
+    if (previousClosedFence != null &&
+        previousClosedFence.bodyContentRange(markdown).isCollapsed &&
+        caret < markdown.length &&
+        !FlarkMarkdownFencedCodeScanner.isWhitespace(
+          markdown.substring(caret),
+        )) {
+      return FlarkMarkdownSourceEdit(
+        range: FlarkSourceRange(caret, caret),
+        replacementText: '',
+        selectionAfter: FlarkSelection.collapsed(previousClosedFence.bodyStart),
+      );
+    }
+
     final context = FlarkMarkdownFencedCodeScanner.contextAt(markdown, caret);
     if (context == null) return null;
 
@@ -226,16 +252,33 @@ FlarkMarkdownSourceEdit? _standaloneFenceOpenerEnter({
     lineStart,
   );
   if (caret != lineEnd) return null;
-  if (lineEnd < markdown.length && markdown.codeUnitAt(lineEnd) == 0x0A) {
-    return null;
-  }
 
   final lineText = markdown.substring(lineStart, lineEnd);
   final fence = FlarkMarkdownFencedCodeScanner.fenceLine(lineText);
   if (fence == null) return null;
-  if (fence.infoString != null) return null;
   if (_lineIsInsideEarlierFence(markdown: markdown, lineStart: lineStart)) {
     return null;
+  }
+
+  final hasExistingLineBreak =
+      lineEnd < markdown.length && markdown.codeUnitAt(lineEnd) == 0x0A;
+  final followingStart = hasExistingLineBreak ? lineEnd + 1 : lineEnd;
+  final hasFollowingContent =
+      followingStart < markdown.length &&
+      !FlarkMarkdownFencedCodeScanner.isWhitespace(
+        markdown.substring(followingStart),
+      );
+  if (hasFollowingContent) {
+    final closingLine =
+        '${fence.indent}${_repeat(fence.marker, fence.markerLength)}';
+    return FlarkMarkdownSourceEdit(
+      range: FlarkSourceRange(
+        caret,
+        hasExistingLineBreak ? lineEnd + 1 : caret,
+      ),
+      replacementText: '\n$closingLine\n',
+      selectionAfter: FlarkSelection.collapsed(caret + 1),
+    );
   }
 
   return FlarkMarkdownSourceEdit(
@@ -279,6 +322,17 @@ bool _lineIsInsideEarlierFence({
     scanLineStart = next;
   }
   return false;
+}
+
+bool _hasFollowingContentAfterFence(
+  String markdown,
+  FlarkMarkdownFencedCodeContext context,
+) {
+  final afterFence = context.closingLineEndWithBreak ?? context.closingLineEnd;
+  if (afterFence == null || afterFence >= markdown.length) return false;
+  return !FlarkMarkdownFencedCodeScanner.isWhitespace(
+    markdown.substring(afterFence),
+  );
 }
 
 FlarkMarkdownFencedCodeContext? _closedFenceBeforeCaret(

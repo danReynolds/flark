@@ -49,6 +49,31 @@ void main() {
       expect(result.selectionAfter, const FlarkSelection.collapsed(4));
     });
 
+    test('auto-closes a fence opener before following content', () {
+      final result = FlarkMarkdownInputEngine.enter(
+        markdown: 'intro\n```\n- item',
+        selection: const FlarkSelection.collapsed(9),
+      );
+
+      expect(result.range, const FlarkSourceRange(9, 10));
+      expect(result.replacementText, '\n```\n');
+      expect(result.selectionAfter, const FlarkSelection.collapsed(10));
+    });
+
+    test(
+      'auto-closes an info-string fence opener before following content',
+      () {
+        final result = FlarkMarkdownInputEngine.enter(
+          markdown: 'intro\n```dart\n- item',
+          selection: const FlarkSelection.collapsed(13),
+        );
+
+        expect(result.range, const FlarkSourceRange(13, 14));
+        expect(result.replacementText, '\n```\n');
+        expect(result.selectionAfter, const FlarkSelection.collapsed(14));
+      },
+    );
+
     test('keeps an info-string fence opener user-authored on Enter', () {
       final result = FlarkMarkdownInputEngine.enter(
         markdown: '```dart',

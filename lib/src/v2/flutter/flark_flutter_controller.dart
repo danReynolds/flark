@@ -387,6 +387,9 @@ final class FlarkFlutterController extends ChangeNotifier {
       final structuralPrediction = _predictStructuralRenderPlan(
         markdown: state.markdown,
         revision: state.revision,
+        projection: prediction.projection,
+        previousRenderPlan: previousRenderPlan,
+        transaction: transaction,
       );
       _projection = structuralPrediction?.projection ?? prediction.projection;
       _lastProjectionPrediction = structuralPrediction == null
@@ -474,57 +477,195 @@ final class FlarkFlutterController extends ChangeNotifier {
   static _PredictedStructuralRenderPlan? _predictStructuralRenderPlan({
     required String markdown,
     required int revision,
+    required FlarkProjection projection,
+    required FlarkRenderPlan previousRenderPlan,
+    required FlarkTransaction transaction,
   }) {
     if (markdown.isEmpty) return null;
-    final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
-      markdown,
-      0,
+    final context = _predictiveCodeFenceContext(
+      markdown: markdown,
+      transaction: transaction,
     );
-    if (context == null ||
-        context.isClosed ||
-        context.openingLineEndWithBreak <= context.openingLineStart ||
-        context.bodyStart > markdown.length) {
+    if (context == null || !_canPredictCodeFence(markdown, context)) {
       return null;
     }
-    if (context.openingLineEndWithBreak >= markdown.length &&
-        !markdown.endsWith('\n')) {
-      return null;
-    }
-    final parseResult = FlarkMarkdownParseResult(
-      schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
-      revision: revision,
-      sourceTextLength: markdown.length,
-      blocks: [
-        FlarkMarkdownBlockNode(
-          kind: FlarkMarkdownBlockKind.codeBlock,
-          type: 'codeBlock',
-          sourceRange: FlarkSourceRange(0, markdown.length),
-          attributes: context.language == null
-              ? const <String, Object?>{}
-              : <String, Object?>{'language': context.language},
-        ),
-      ],
-      inlineTokens: const [],
+    final markerRanges = _predictiveCodeFenceMarkerRanges(markdown, context);
+    final structuralProjection = FlarkProjection(
+      textLength: markdown.length,
       hiddenRanges: [
-        FlarkMarkdownHiddenRange(
-          kind: FlarkMarkdownHiddenRangeKind.markdownMarker,
-          type: 'markdownMarker',
-          sourceRange: FlarkSourceRange(0, context.bodyStart),
-        ),
+        for (final hiddenRange in projection.hiddenRanges)
+          if (!_overlapsAny(hiddenRange.range, markerRanges)) hiddenRange,
+        for (final markerRange in markerRanges)
+          FlarkHiddenRange(
+            range: markerRange,
+            kind: FlarkHiddenRangeKind.markdownMarker,
+          ),
       ],
+      replacementRanges: projection.replacementRanges,
+      ambiguityZones: projection.ambiguityZones,
     );
-    final projection = FlarkProjection.fromParseResult(parseResult);
-    final renderPlan = FlarkRenderPlan.fromParseResult(
-      parseResult: parseResult,
-      projection: projection,
+    final predictedPreviousRenderPlan = previousRenderPlan
+        .predictThroughTransaction(
+          transaction: transaction,
+          projection: structuralProjection,
+          revision: revision,
+          textLengthAfter: markdown.length,
+        );
+    final blockEnd = context.closingLineEnd ?? markdown.length;
+    final predictedCodeBlock = FlarkRenderBlock(
+      kind: FlarkMarkdownBlockKind.codeBlock,
+      type: 'codeBlock',
+      sourceRange: FlarkSourceRange(context.openingLineStart, blockEnd),
+      displayRange: FlarkSourceRange(
+        structuralProjection.sourceToDisplayOffset(context.openingLineStart),
+        structuralProjection.sourceToDisplayOffset(blockEnd),
+      ),
+      styleToken: FlarkRenderTextStyleToken.body,
+      inlineRuns: const [],
+      children: const [],
+      codeBlock: FlarkRenderCodeBlockDescriptor(language: context.language),
     );
+    final predictedBlocks = [
+      for (final block in predictedPreviousRenderPlan.blocks)
+        if (!_rangesOverlap(block.sourceRange, predictedCodeBlock.sourceRange))
+          block,
+      predictedCodeBlock,
+    ];
     return _PredictedStructuralRenderPlan(
-      projection: projection,
+      projection: structuralProjection,
       renderPlan: FlarkRenderPlan(
-        blocks: renderPlan.blocks,
-        metadata: {...renderPlan.metadata, 'stale': true, 'predictive': true},
+        blocks: predictedBlocks,
+        metadata: {
+          ...predictedPreviousRenderPlan.metadata,
+          'revision': revision,
+          'stale': true,
+          'predictive': true,
+          'structural': true,
+        },
       ),
     );
+  }
+
+  static FlarkMarkdownFencedCodeContext? _predictiveCodeFenceContext({
+    required String markdown,
+    required FlarkTransaction transaction,
+  }) {
+    final insertedContext = _insertedCodeFenceContext(
+      markdown: markdown,
+      transaction: transaction,
+    );
+    if (insertedContext != null) return insertedContext;
+    return FlarkMarkdownFencedCodeScanner.contextAt(markdown, markdown.length);
+  }
+
+  static FlarkMarkdownFencedCodeContext? _insertedCodeFenceContext({
+    required String markdown,
+    required FlarkTransaction transaction,
+  }) {
+    var delta = 0;
+    final operations = [...transaction.operations]
+      ..sort((left, right) {
+        final startCompare = left.replacedRange.start.compareTo(
+          right.replacedRange.start,
+        );
+        if (startCompare != 0) return startCompare;
+        return left.replacedRange.end.compareTo(right.replacedRange.end);
+      });
+
+    for (final operation in operations) {
+      final insertedStart = (operation.replacedRange.start + delta).clamp(
+        0,
+        markdown.length,
+      );
+      final insertedEnd = (insertedStart + operation.insertedLength).clamp(
+        insertedStart,
+        markdown.length,
+      );
+      delta += operation.delta;
+      final insertedRange = FlarkSourceRange(insertedStart, insertedEnd);
+      var lineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
+        markdown,
+        insertedStart,
+      );
+      while (lineStart <= insertedEnd && lineStart < markdown.length) {
+        final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
+          markdown,
+          lineStart,
+        );
+        if (context != null &&
+            _rangesOverlap(
+              insertedRange,
+              FlarkSourceRange(
+                context.openingLineStart,
+                context.openingLineEndWithBreak,
+              ),
+            )) {
+          return context;
+        }
+
+        final next = FlarkMarkdownFencedCodeScanner.lineEndWithBreak(
+          markdown,
+          lineStart,
+        );
+        if (next <= lineStart || next >= markdown.length) break;
+        lineStart = next;
+      }
+    }
+
+    return null;
+  }
+
+  static bool _canPredictCodeFence(
+    String markdown,
+    FlarkMarkdownFencedCodeContext context,
+  ) {
+    if (context.openingLineEndWithBreak <= context.openingLineStart ||
+        context.bodyStart > markdown.length) {
+      return false;
+    }
+    if (context.isClosed) return context.closingLineEnd != null;
+    return context.openingLineEndWithBreak < markdown.length ||
+        markdown.endsWith('\n');
+  }
+
+  static List<FlarkSourceRange> _predictiveCodeFenceMarkerRanges(
+    String markdown,
+    FlarkMarkdownFencedCodeContext context,
+  ) {
+    final ranges = <FlarkSourceRange>[
+      FlarkSourceRange(context.openingLineStart, context.bodyStart),
+    ];
+    final closingLineStart = context.closingLineStart;
+    final closingLineEnd = context.closingLineEnd;
+    if (closingLineStart != null && closingLineEnd != null) {
+      var closingHiddenStart = closingLineStart;
+      if (closingHiddenStart > context.bodyStart &&
+          _isLineBreakBefore(markdown, closingHiddenStart)) {
+        closingHiddenStart -= 1;
+      }
+      ranges.add(FlarkSourceRange(closingHiddenStart, closingLineEnd));
+    }
+    return ranges;
+  }
+
+  static bool _isLineBreakBefore(String markdown, int offset) {
+    if (offset <= 0 || offset > markdown.length) return false;
+    final codeUnit = markdown.codeUnitAt(offset - 1);
+    return codeUnit == 0x0A || codeUnit == 0x0D;
+  }
+
+  static bool _rangesOverlap(FlarkSourceRange left, FlarkSourceRange right) {
+    return left.start < right.end && right.start < left.end;
+  }
+
+  static bool _overlapsAny(
+    FlarkSourceRange range,
+    Iterable<FlarkSourceRange> others,
+  ) {
+    for (final other in others) {
+      if (_rangesOverlap(range, other)) return true;
+    }
+    return false;
   }
 }
 

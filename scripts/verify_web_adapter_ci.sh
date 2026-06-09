@@ -10,3 +10,11 @@ flutter test \
   --platform chrome \
   test/v2/flutter/flark_markdown_web_smoke_test.dart \
   --reporter compact
+
+(
+  cd "$PKG_ROOT/example"
+  flutter test \
+    --platform chrome \
+    test/markdown_flow_test.dart \
+    --reporter compact
+)

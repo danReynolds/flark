@@ -757,7 +757,7 @@ void main() {
     expect(_documentMarkdown(tester), '```dart\n\n```');
   });
 
-  testWidgets('scratch keeps a typed fence opener visible until Enter', (
+  testWidgets('scratch opens a fence as soon as the third backtick is typed', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
@@ -771,22 +771,25 @@ void main() {
     );
     await _settleParsing(tester);
 
-    await tester.enterText(find.byType(EditableText), '```fffffff');
+    final editableFinder = find.byType(EditableText);
+    await tester.tap(editableFinder);
+    await tester.showKeyboard(editableFinder);
+    await tester.pump();
+    await _typeFocusedTextIncrementally(tester, '```fffffff');
     await _settleParsing(tester);
 
-    expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsNothing);
-    final editable = tester.widget<EditableText>(
-      find.descendant(
-        of: find.byKey(const Key('FlarkLiveBlockCodeOpeningEditable')),
-        matching: find.byType(EditableText),
-      ),
-    );
-    expect(editable.controller.text, '```fffffff');
+    expect(find.byKey(const Key('FlarkLiveBlockCodeFence')), findsOneWidget);
     expect(
-      find.byKey(const Key('FlarkLiveBlockCodeLanguageButton')),
+      find.byKey(const Key('FlarkLiveBlockCodeOpeningEditable')),
       findsNothing,
     );
-    expect(_documentMarkdown(tester), '```fffffff');
+    final editable = tester.widget<EditableText>(_codeEditableFinder());
+    expect(editable.controller.text, 'fffffff');
+    expect(
+      find.byKey(const Key('FlarkLiveBlockCodeLanguageButton')),
+      findsOneWidget,
+    );
+    expect(_documentMarkdown(tester), '```\nfffffff');
   });
 
   testWidgets('scratch keeps fast typed fence language on the opening line', (
@@ -1469,14 +1472,37 @@ Future<void> _typeFocusedTextIncrementally(
       await tester.pump();
       continue;
     }
-    final focused = tester
-        .widgetList<EditableText>(find.byType(EditableText))
-        .singleWhere((editable) => editable.focusNode.hasFocus);
+    final focused = await _focusedEditableText(tester);
     tester.testTextInput.enterText(
       focused.controller.text + String.fromCharCode(codeUnit),
     );
     await tester.pump();
   }
+}
+
+Future<EditableText> _focusedEditableText(WidgetTester tester) async {
+  for (var attempt = 0; attempt < 3; attempt += 1) {
+    final focused = tester
+        .widgetList<EditableText>(find.byType(EditableText))
+        .where((editable) => editable.focusNode.hasFocus)
+        .toList(growable: false);
+    if (focused.length == 1) return focused.single;
+    if (focused.length > 1) {
+      throw StateError('Multiple focused EditableText widgets');
+    }
+    await tester.pump();
+  }
+
+  final editableFinder = find.byType(EditableText);
+  if (editableFinder.evaluate().length == 1) {
+    await tester.showKeyboard(editableFinder);
+    await tester.pump();
+    return tester.widget<EditableText>(editableFinder);
+  }
+
+  return tester
+      .widgetList<EditableText>(editableFinder)
+      .singleWhere((editable) => editable.focusNode.hasFocus);
 }
 
 Finder _codeEditableFinder() {

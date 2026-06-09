@@ -80,6 +80,7 @@ run_in_pkg flutter test test/v2/render_plan
 run_in_pkg flutter test test/v2/flutter/flark_flutter_controller_test.dart
 run_in_pkg flutter test test/v2/flutter/flark_markdown_surface_test.dart
 run_in_pkg flutter test test/v2/flutter/flark_markdown_input_policy_contract_test.dart
+run_in_pkg flutter test test/v2/flutter/flark_live_code_fence_input_policy_test.dart
 run_in_pkg flutter test test/v2/flutter/flark_live_rendered_transition_matrix_test.dart
 run_in_pkg flutter test test/v2/flutter/flark_live_rendered_visual_layout_test.dart
 run_in_pkg flutter test test/v2/flutter/flark_live_rendered_editable_text_test.dart
@@ -88,6 +89,7 @@ run_in_pkg flutter test test/v2/flutter/flark_render_plan_overlay_controls_test.
 run_in_pkg flutter test test/v2/flutter/flark_v2_visual_golden_test.dart
 run_in_pkg flutter test test/v2/flutter/flark_markdown_web_smoke_test.dart -d chrome --reporter compact
 run_in_example flutter test test/widget_test.dart --reporter compact
+run_in_example flutter test test/markdown_flow_test.dart -d chrome --reporter compact
 
 if [ "$run_native" -eq 1 ]; then
   run_in_pkg flutter test test/v2/native/flark_native_comrak_bridge_test.dart

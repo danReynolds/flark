@@ -115,7 +115,7 @@ final class FlarkMarkdownInputPolicy {
       );
     }
 
-    if (diff.isNewlineInsertion) {
+    if (diff.isLineBreakInsertion) {
       final fallbackSelection = diff.isInsertion
           ? FlarkSelection.collapsed(diff.oldStart)
           : FlarkSelection(
@@ -124,10 +124,18 @@ final class FlarkMarkdownInputPolicy {
             );
       final selectionBefore = oldSelection ?? fallbackSelection;
       if (!_selectionMatchesDiff(selectionBefore, diff)) return false;
-      return dispatchEnter(
-        currentSelection: () => selectionBefore,
-        applySelection: applyOldTextSelection,
-      );
+      applyOldTextSelection(selectionBefore);
+      var handled = false;
+      for (var index = 0; index < diff.lineBreakInsertionCount; index++) {
+        final result = controller.dispatch(
+          command: FlarkMarkdownInputCommands.handleEnter,
+          payload: FlarkHandleEnterPayload(userEvent: enterUserEvent),
+        );
+        final didHandle = _finish(result);
+        if (!didHandle) return handled;
+        handled = true;
+      }
+      return handled;
     }
 
     if (diff.isInsertion) {
@@ -309,7 +317,10 @@ final class _FlarkTextEditDiff {
 
   bool get isDeletion => replacementText.isEmpty && oldEnd > oldStart;
 
-  bool get isNewlineInsertion => replacementText == '\n';
+  bool get isLineBreakInsertion =>
+      isInsertion && _isOnlyLineBreaks(replacementText);
+
+  int get lineBreakInsertionCount => _lineBreakCount(replacementText);
 
   static _FlarkTextEditDiff? between(String oldText, String newText) {
     if (oldText == newText) return null;
@@ -339,6 +350,46 @@ final class _FlarkTextEditDiff {
       replacementText: newText.substring(prefixLength, newSuffix),
     );
   }
+}
+
+bool _isOnlyLineBreaks(String text) {
+  if (text.isEmpty) return false;
+  var index = 0;
+  while (index < text.length) {
+    final codeUnit = text.codeUnitAt(index);
+    if (codeUnit == 0x0D) {
+      index++;
+      if (index < text.length && text.codeUnitAt(index) == 0x0A) index++;
+      continue;
+    }
+    if (codeUnit == 0x0A) {
+      index++;
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+int _lineBreakCount(String text) {
+  var count = 0;
+  var index = 0;
+  while (index < text.length) {
+    final codeUnit = text.codeUnitAt(index);
+    if (codeUnit == 0x0D) {
+      count++;
+      index++;
+      if (index < text.length && text.codeUnitAt(index) == 0x0A) index++;
+      continue;
+    }
+    if (codeUnit == 0x0A) {
+      count++;
+      index++;
+      continue;
+    }
+    index++;
+  }
+  return count;
 }
 
 final class _FlarkMarkdownEnterIntent extends Intent {

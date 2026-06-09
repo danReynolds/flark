@@ -30,6 +30,11 @@ final class FlarkLiveBlockReconciler {
   List<_PrevEntry> _previous = const <_PrevEntry>[];
   int _nextId = 0;
 
+  void reset() {
+    _previous = const <_PrevEntry>[];
+    _nextId = 0;
+  }
+
   /// Returns a stable id per block in [blocks], in order. [displayText] is the
   /// current projected document text used to slice each block's content.
   List<String> assignIds(List<FlarkRenderBlock> blocks, String displayText) {
