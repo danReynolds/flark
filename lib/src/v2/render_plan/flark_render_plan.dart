@@ -25,10 +25,22 @@ final class FlarkRenderPlanContext {
   final FlarkRenderPlan renderPlan;
 }
 
+/// How a [FlarkRenderPlan] was produced, and therefore how far it can be
+/// trusted.
+///
+/// Surfaces use this to decide whether a plan is renderable: an
+/// [authoritative] plan came from a parse of the exact source text it
+/// describes; a [predicted] plan was mapped through one or more transactions
+/// and is correct for unchanged regions but provisional near the edit; a
+/// [stale] plan carries no usable blocks and exists only as a placeholder
+/// until the next parse.
+enum FlarkRenderPlanFidelity { authoritative, predicted, stale }
+
 final class FlarkRenderPlan {
   FlarkRenderPlan({
     required Iterable<FlarkRenderBlock> blocks,
     Map<String, Object?> metadata = const {},
+    this.fidelity = FlarkRenderPlanFidelity.authoritative,
   }) : blocks = List<FlarkRenderBlock>.unmodifiable(blocks),
        metadata = Map<String, Object?>.unmodifiable(metadata);
 
@@ -61,6 +73,7 @@ final class FlarkRenderPlan {
 
   final List<FlarkRenderBlock> blocks;
   final Map<String, Object?> metadata;
+  final FlarkRenderPlanFidelity fidelity;
 
   Iterable<FlarkRenderBlock> get allBlocks sync* {
     for (final block in blocks) {
@@ -102,16 +115,31 @@ final class FlarkRenderPlan {
     return allBlocks.where((block) => block.codeBlock != null);
   }
 
+  /// The innermost block whose display range contains [displayOffset].
+  ///
+  /// A caret at the boundary between two sibling blocks belongs to the block
+  /// it is *inside* (`start <= offset < end`), not the one it merely ends —
+  /// so the start of a block resolves to that block, never its predecessor.
+  /// Blocks that only touch the offset at their end (including collapsed
+  /// blocks) are used as a fallback so an empty block under the caret is
+  /// still found.
   FlarkRenderBlock? blockAtDisplayOffset(int displayOffset) {
-    FlarkRenderBlock? best;
+    FlarkRenderBlock? bestInterior;
+    FlarkRenderBlock? bestBoundary;
     for (final block in allBlocks) {
-      if (!block.displayRange.containsOffset(displayOffset)) continue;
-      if (best == null ||
-          block.displayRange.length < best.displayRange.length) {
-        best = block;
+      final range = block.displayRange;
+      if (!range.containsOffset(displayOffset)) continue;
+      if (displayOffset < range.end) {
+        if (bestInterior == null ||
+            range.length < bestInterior.displayRange.length) {
+          bestInterior = block;
+        }
+      } else if (bestBoundary == null ||
+          range.length < bestBoundary.displayRange.length) {
+        bestBoundary = block;
       }
     }
-    return best;
+    return bestInterior ?? bestBoundary;
   }
 
   FlarkRenderInlineRun? inlineRunAtDisplayOffset(int displayOffset) {
@@ -143,12 +171,8 @@ final class FlarkRenderPlan {
 
     return FlarkRenderPlan(
       blocks: predictedBlocks,
-      metadata: {
-        ...metadata,
-        'revision': revision,
-        'stale': true,
-        'predictive': true,
-      },
+      metadata: {...metadata, 'revision': revision},
+      fidelity: FlarkRenderPlanFidelity.predicted,
     );
   }
 }
@@ -212,6 +236,8 @@ final class FlarkRenderBlock {
       sourceRange,
       transaction: transaction,
       textLengthAfter: textLengthAfter,
+      dropWhenContentDeleted: true,
+      dropWhenCollapsed: true,
     );
     if (predictedSourceRange == null) return null;
 
@@ -313,6 +339,8 @@ final class FlarkRenderInlineRun {
       sourceRange,
       transaction: transaction,
       textLengthAfter: textLengthAfter,
+      dropWhenContentDeleted: true,
+      dropWhenCollapsed: true,
     );
     if (predictedSourceRange == null) return null;
 
@@ -398,10 +426,12 @@ final class FlarkRenderTableRowDescriptor {
     required FlarkProjection projection,
     required int textLengthAfter,
   }) {
-    final predictedSourceRange = _predictDescriptorRangeThroughTransaction(
+    final predictedSourceRange = _predictRangeThroughTransaction(
       sourceRange,
       transaction: transaction,
       textLengthAfter: textLengthAfter,
+      dropWhenContentDeleted: false,
+      dropWhenCollapsed: false,
     );
     if (predictedSourceRange == null) return null;
 
@@ -436,10 +466,12 @@ final class FlarkRenderTableCellDescriptor {
     required FlarkProjection projection,
     required int textLengthAfter,
   }) {
-    final predictedSourceRange = _predictDescriptorRangeThroughTransaction(
+    final predictedSourceRange = _predictRangeThroughTransaction(
       sourceRange,
       transaction: transaction,
       textLengthAfter: textLengthAfter,
+      dropWhenContentDeleted: false,
+      dropWhenCollapsed: false,
     );
     if (predictedSourceRange == null) return null;
 
@@ -571,16 +603,38 @@ FlarkSourceRange _displayRange(
   );
 }
 
+/// Maps [range] through [transaction] for the predictive render plan.
+///
+/// One mapping core with two explicitly different survival policies:
+///
+/// - **Blocks** ([dropWhenContentDeleted] and [dropWhenCollapsed] true): a
+///   pure deletion that swallows the whole block removes it from the
+///   predicted plan, and a block whose mapped range collapses to nothing is
+///   likewise dropped — an empty paragraph slot is not a renderable block.
+///   A *replacement* that covers the block keeps it: typing over a fully
+///   selected paragraph still leaves a paragraph, now spanning the inserted
+///   text.
+/// - **Table rows/cells** (both flags false): rows and cells are structural
+///   slots. Deleting a cell's content leaves an empty — but still present —
+///   cell, so collapsed mapped ranges survive and there is no deletion kill
+///   rule. Structure changes reconcile on the next authoritative parse.
+///
+/// Range edges map with grow affinity (start upstream, end downstream) so a
+/// block absorbs text inserted at either edge.
 FlarkSourceRange? _predictRangeThroughTransaction(
   FlarkSourceRange range, {
   required FlarkTransaction transaction,
   required int textLengthAfter,
+  required bool dropWhenContentDeleted,
+  required bool dropWhenCollapsed,
 }) {
-  if (transaction.operations.any(
-    (operation) =>
-        !operation.replacedRange.isCollapsed &&
-        operation.replacedRange.containsRange(range),
-  )) {
+  if (dropWhenContentDeleted &&
+      transaction.operations.any(
+        (operation) =>
+            operation.replacementText.isEmpty &&
+            !operation.replacedRange.isCollapsed &&
+            operation.replacedRange.containsRange(range),
+      )) {
     return null;
   }
 
@@ -592,24 +646,8 @@ FlarkSourceRange? _predictRangeThroughTransaction(
     range.end,
     affinity: FlarkMapAffinity.downstream,
   );
-  if (start < 0 || end > textLengthAfter || start >= end) return null;
-  return FlarkSourceRange(start, end);
-}
-
-FlarkSourceRange? _predictDescriptorRangeThroughTransaction(
-  FlarkSourceRange range, {
-  required FlarkTransaction transaction,
-  required int textLengthAfter,
-}) {
-  final start = transaction.mapOffset(
-    range.start,
-    affinity: FlarkMapAffinity.upstream,
-  );
-  final end = transaction.mapOffset(
-    range.end,
-    affinity: FlarkMapAffinity.downstream,
-  );
-  if (start < 0 || end > textLengthAfter || start > end) return null;
+  if (start < 0 || end > textLengthAfter) return null;
+  if (dropWhenCollapsed ? start >= end : start > end) return null;
   return FlarkSourceRange(start, end);
 }
 

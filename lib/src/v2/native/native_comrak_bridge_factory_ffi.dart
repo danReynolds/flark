@@ -1,5 +1,6 @@
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -80,7 +81,15 @@ class FfiNativeComrakBridge implements ProfiledNativeComrakBridge {
   final _NativeComrakSymbols _symbols;
   final int _loadedAbiVersion;
 
-  const FfiNativeComrakBridge._(this._symbols, this._loadedAbiVersion);
+  /// The load-time override path, kept so worker isolates re-resolve the
+  /// same library (FFI function pointers cannot cross isolates).
+  final String? _overrideLibraryPath;
+
+  const FfiNativeComrakBridge._(
+    this._symbols,
+    this._loadedAbiVersion,
+    this._overrideLibraryPath,
+  );
 
   factory FfiNativeComrakBridge.load({String? overrideLibraryPath}) {
     final loadContext = _openLibrary(overrideLibraryPath);
@@ -92,7 +101,11 @@ class FfiNativeComrakBridge implements ProfiledNativeComrakBridge {
       overrideLibraryPath: overrideLibraryPath,
       candidates: loadContext.candidates,
     );
-    return FfiNativeComrakBridge._(symbols, loadedAbiVersion);
+    return FfiNativeComrakBridge._(
+      symbols,
+      loadedAbiVersion,
+      overrideLibraryPath,
+    );
   }
 
   static _LoadedLibraryContext _openLibrary(String? overrideLibraryPath) {
@@ -319,44 +332,71 @@ class FfiNativeComrakBridge implements ProfiledNativeComrakBridge {
     return _parse(input, collectProfile: true);
   }
 
+  /// Documents at or above this UTF-8 size parse on a worker isolate.
+  ///
+  /// The native parse plus payload decode is linear in document size
+  /// (~0.5 ms/KB on a desktop core) and the FFI call is synchronous, so a
+  /// large document would otherwise block the UI isolate for the whole
+  /// parse — 100 KB costs tens of milliseconds. Below the threshold the
+  /// parse is cheaper than the isolate round trip and runs inline.
+  static const int _kIsolateOffloadThresholdBytes = 4096;
+
   Future<NativeComrakProfiledParseResult> _parse(
     NativeComrakParseInput input, {
     required bool collectProfile,
   }) async {
+    if (_loadedAbiVersion != _kAbiVersion) {
+      return NativeComrakProfiledParseResult(
+        result: NativeComrakParseResult(
+          revision: input.revision,
+          diagnostics: [
+            NativeComrakDiagnostic(
+              range: const NativeComrakRange(startByte: 0, endByte: 0),
+              message:
+                  'ABI mismatch: bridge=$_kAbiVersion library=$_loadedAbiVersion.',
+              code: 'COMRAK_ABI_MISMATCH',
+              isError: true,
+            ),
+          ],
+        ),
+        profile: NativeComrakBridgeParseProfile(
+          total: Duration.zero,
+          inputCopy: Duration.zero,
+          nativeParse: Duration.zero,
+          payloadCopy: Duration.zero,
+          payloadDecode: Duration.zero,
+          inputBytes: input.utf8Text.length,
+          payloadBytes: 0,
+        ),
+      );
+    }
+
+    if (input.utf8Text.length < _kIsolateOffloadThresholdBytes) {
+      return _parseWithSymbols(_symbols, input, collectProfile: collectProfile);
+    }
+
+    // FFI function pointers cannot cross isolates, so the worker re-resolves
+    // the library itself. dlopen of an already-loaded library is a refcount
+    // bump and the lookups are trivial, so per-call setup is microseconds;
+    // the main-isolate load() already validated loadability and ABI.
+    final overrideLibraryPath = _overrideLibraryPath;
+    return Isolate.run(() {
+      final symbols = _lookupSymbols(_openLibrary(overrideLibraryPath));
+      return _parseWithSymbols(symbols, input, collectProfile: collectProfile);
+    });
+  }
+
+  static NativeComrakProfiledParseResult _parseWithSymbols(
+    _NativeComrakSymbols symbols,
+    NativeComrakParseInput input, {
+    required bool collectProfile,
+  }) {
     final totalStopwatch = collectProfile ? (Stopwatch()..start()) : null;
     Duration inputCopy = Duration.zero;
     Duration nativeParse = Duration.zero;
     Duration payloadCopy = Duration.zero;
     Duration payloadDecode = Duration.zero;
     var payloadBytes = 0;
-
-    if (_loadedAbiVersion != _kAbiVersion) {
-      final result = NativeComrakParseResult(
-        revision: input.revision,
-        diagnostics: [
-          NativeComrakDiagnostic(
-            range: const NativeComrakRange(startByte: 0, endByte: 0),
-            message:
-                'ABI mismatch: bridge=$_kAbiVersion library=$_loadedAbiVersion.',
-            code: 'COMRAK_ABI_MISMATCH',
-            isError: true,
-          ),
-        ],
-      );
-      totalStopwatch?.stop();
-      return NativeComrakProfiledParseResult(
-        result: result,
-        profile: NativeComrakBridgeParseProfile(
-          total: totalStopwatch?.elapsed ?? Duration.zero,
-          inputCopy: inputCopy,
-          nativeParse: nativeParse,
-          payloadCopy: payloadCopy,
-          payloadDecode: payloadDecode,
-          inputBytes: input.utf8Text.length,
-          payloadBytes: payloadBytes,
-        ),
-      );
-    }
 
     final textBytes = input.utf8Text;
     final textPtr = calloc<Uint8>(textBytes.length);
@@ -366,7 +406,7 @@ class FfiNativeComrakBridge implements ProfiledNativeComrakBridge {
       inputCopyStopwatch?.stop();
       inputCopy = inputCopyStopwatch?.elapsed ?? Duration.zero;
       final nativeStopwatch = collectProfile ? (Stopwatch()..start()) : null;
-      final responsePtr = _symbols.parse(
+      final responsePtr = symbols.parse(
         input.revision,
         _mapProfile(input.profile),
         textPtr,
@@ -436,8 +476,7 @@ class FfiNativeComrakBridge implements ProfiledNativeComrakBridge {
         }
 
         if (response.statusCode != _kStatusOk) {
-          result = _appendDiagnostic(
-            result,
+          result = result.withDiagnostic(
             NativeComrakDiagnostic(
               range: const NativeComrakRange(startByte: 0, endByte: 0),
               message:
@@ -461,7 +500,7 @@ class FfiNativeComrakBridge implements ProfiledNativeComrakBridge {
           ),
         );
       } finally {
-        _symbols.freeResponse(responsePtr);
+        symbols.freeResponse(responsePtr);
       }
     } finally {
       calloc.free(textPtr);
@@ -481,20 +520,6 @@ class FfiNativeComrakBridge implements ProfiledNativeComrakBridge {
       return Uint8List(0);
     }
     return Uint8List.fromList(response.payloadPtr.asTypedList(len));
-  }
-
-  static NativeComrakParseResult _appendDiagnostic(
-    NativeComrakParseResult result,
-    NativeComrakDiagnostic diagnostic,
-  ) {
-    return NativeComrakParseResult(
-      revision: result.revision,
-      blocks: result.blocks,
-      inlineTokens: result.inlineTokens,
-      markerRanges: result.markerRanges,
-      exclusionRanges: result.exclusionRanges,
-      diagnostics: [...result.diagnostics, diagnostic],
-    );
   }
 }
 

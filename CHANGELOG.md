@@ -1,5 +1,54 @@
 # Changelog
 
+## Unreleased
+
+Architecture hardening and correctness fixes from a full-package audit.
+
+Behavior fixes:
+
+- Undo/redo now map the projection and render plan through the applied
+  inverse transactions instead of resetting them, so live-rendered surfaces
+  no longer flash raw Markdown source on every undo. `FlarkHistoryResult`
+  and `FlarkEditorRuntimeResult` expose `appliedTransactions`.
+- Enter at the start of a non-empty blockquote line continues the quote
+  instead of deleting the line's text.
+- Toggling emphasis inside `**bold**` nests (`***bold***`) instead of
+  stripping the strong markers; delimiter runs now decide marker validity.
+- Heading commands compose after quote and list prefixes (`> # q`,
+  `- ## item`) instead of producing `## > q` / `## - item`.
+- Tab-indented fence markers are no longer treated as code fences, matching
+  CommonMark/Comrak (a leading tab means indented code).
+- A native paragraph is replaced by synthetic list items only when every
+  non-blank line is an in-progress list marker; soft-wrapped paragraphs no
+  longer lose their other lines.
+- Parser bridges keep `replacementRanges` when attaching diagnostics
+  (decoded HTML entities no longer revert to raw source on error paths).
+- A failed WASM module load is retried on the next parse instead of being
+  cached for the session.
+- CRLF/CR line endings normalize to LF at document ingest.
+- `blockAtDisplayOffset` attributes a boundary caret to the block it
+  starts, not the previous block.
+- A block whose content is replaced wholesale survives render-plan
+  prediction (typing over a fully selected paragraph no longer flickers).
+
+Architecture:
+
+- `FlarkRenderPlan.fidelity` (`authoritative`/`predicted`/`stale`) replaces
+  the unread `'stale'`/`'predictive'` metadata flags;
+  `FlarkFlutterController.hasUsableRenderPlan` centralizes the surface
+  fallback decision.
+- `FlarkMarkdownFenceLayout` is the single fence model of record, computed
+  in one pass and shared by the source policies, the controller's
+  structural prediction, and the parse backend's synthetic code blocks —
+  removing the per-keystroke quadratic fence rescans.
+- Large documents parse on a worker isolate (FFI platforms), keeping the
+  UI isolate responsive; small documents still parse inline.
+- The live block reconciler's identity key includes task/checkbox state,
+  code language, and list kind, so same-text blocks cannot swap identities.
+- The editor runtime applies each transaction once (history reuses the
+  computed document) and the projected-editable implementation is split
+  into focused part files.
+
 ## 0.1.0 - 2026-06-08
 
 Initial standalone `flark` package hardening release.

@@ -66,12 +66,14 @@ final class FlarkEditorRuntime {
     final nextHistory = history.record(
       transaction: transaction,
       documentBefore: state.document,
+      documentAfter: nextState.document,
     );
 
     return FlarkEditorRuntimeResult(
       runtime: copyWith(state: nextState, history: nextHistory),
       commandResult:
           commandResult ?? FlarkCommandResult.handled(transaction: transaction),
+      appliedTransactions: [transaction],
     );
   }
 
@@ -80,6 +82,7 @@ final class FlarkEditorRuntime {
     return FlarkEditorRuntimeResult(
       runtime: copyWith(state: result.state, history: result.history),
       commandResult: FlarkCommandResult.handled(),
+      appliedTransactions: result.appliedTransactions,
     );
   }
 
@@ -88,6 +91,7 @@ final class FlarkEditorRuntime {
     return FlarkEditorRuntimeResult(
       runtime: copyWith(state: result.state, history: result.history),
       commandResult: FlarkCommandResult.handled(),
+      appliedTransactions: result.appliedTransactions,
     );
   }
 
@@ -112,11 +116,24 @@ final class FlarkEditorRuntime {
 }
 
 final class FlarkEditorRuntimeResult {
-  const FlarkEditorRuntimeResult({
+  FlarkEditorRuntimeResult({
     required this.runtime,
     required this.commandResult,
-  });
+    List<FlarkTransaction> appliedTransactions = const <FlarkTransaction>[],
+  }) : appliedTransactions = List<FlarkTransaction>.unmodifiable(
+         appliedTransactions,
+       );
 
   final FlarkEditorRuntime runtime;
   final FlarkCommandResult commandResult;
+
+  /// The transactions applied to produce [runtime]'s state, in application
+  /// order.
+  ///
+  /// A regular edit carries its single transaction; undo/redo carry the
+  /// inverse/redo transactions of the history entry they applied (one entry
+  /// can group several). Empty when nothing was applied. Observers use these
+  /// to map projections, render plans, and other offset-anchored state
+  /// through the change instead of rebuilding from scratch.
+  final List<FlarkTransaction> appliedTransactions;
 }

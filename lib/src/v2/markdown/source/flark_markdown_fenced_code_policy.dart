@@ -9,13 +9,18 @@ final class FlarkMarkdownFencedCodePolicy {
     required String markdown,
     required int caret,
   }) {
+    // One fence scan per keystroke; every probe below queries the layout
+    // instead of re-walking the document line by line.
+    final layout = FlarkMarkdownFenceLayout.scan(markdown);
     final standaloneFence = _standaloneFenceOpenerEnter(
       markdown: markdown,
       caret: caret,
+      layout: layout,
     );
     if (standaloneFence != null) return standaloneFence;
 
     final emptyClosedContext = _emptyClosedFenceContextAtBodyStart(
+      layout,
       markdown,
       caret,
     );
@@ -27,7 +32,7 @@ final class FlarkMarkdownFencedCodePolicy {
         selectionAfter: FlarkSelection.collapsed(caret),
       );
     }
-    final previousClosedFence = _closedFenceBeforeCaret(markdown, caret);
+    final previousClosedFence = _closedFenceBeforeCaret(layout, caret);
     if (previousClosedFence != null &&
         previousClosedFence.bodyContentRange(markdown).isCollapsed &&
         caret < markdown.length &&
@@ -41,7 +46,7 @@ final class FlarkMarkdownFencedCodePolicy {
       );
     }
 
-    final context = FlarkMarkdownFencedCodeScanner.contextAt(markdown, caret);
+    final context = layout.contextAt(caret);
     if (context == null) return null;
 
     final lineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
@@ -88,10 +93,9 @@ final class FlarkMarkdownFencedCodePolicy {
     required String insertedText,
   }) {
     if (!_isAutoOutdentCloser(insertedText)) return null;
-    final context = FlarkMarkdownFencedCodeScanner.contextAt(
+    final context = FlarkMarkdownFenceLayout.scan(
       markdown,
-      insertionOffset,
-    );
+    ).contextAt(insertionOffset);
     if (context == null) return null;
 
     final lineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
@@ -133,10 +137,9 @@ final class FlarkMarkdownFencedCodePolicy {
     required String insertedText,
   }) {
     if (!insertedText.contains('\n')) return null;
-    final context = FlarkMarkdownFencedCodeScanner.contextAt(
+    final context = FlarkMarkdownFenceLayout.scan(
       markdown,
-      insertionOffset,
-    );
+    ).contextAt(insertionOffset);
     if (context == null) return null;
 
     final lineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
@@ -163,7 +166,8 @@ final class FlarkMarkdownFencedCodePolicy {
     required String markdown,
     required int caret,
   }) {
-    final previousFence = _closedFenceBeforeCaret(markdown, caret);
+    final layout = FlarkMarkdownFenceLayout.scan(markdown);
+    final previousFence = _closedFenceBeforeCaret(layout, caret);
     if (previousFence != null) {
       final bodyRange = previousFence.bodyContentRange(markdown);
       return FlarkMarkdownSelectionMove(
@@ -172,8 +176,8 @@ final class FlarkMarkdownFencedCodePolicy {
     }
 
     final context =
-        FlarkMarkdownFencedCodeScanner.contextAt(markdown, caret) ??
-        _emptyClosedFenceContextAtBodyStart(markdown, caret);
+        layout.contextAt(caret) ??
+        _emptyClosedFenceContextAtBodyStart(layout, markdown, caret);
     if (context == null) return null;
     if (caret != context.bodyStart) return null;
 
@@ -241,6 +245,7 @@ final class FlarkMarkdownFencedCodePolicy {
 FlarkMarkdownSourceEdit? _standaloneFenceOpenerEnter({
   required String markdown,
   required int caret,
+  required FlarkMarkdownFenceLayout layout,
 }) {
   if (markdown.isEmpty || caret < 0 || caret > markdown.length) return null;
   final lineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
@@ -256,7 +261,7 @@ FlarkMarkdownSourceEdit? _standaloneFenceOpenerEnter({
   final lineText = markdown.substring(lineStart, lineEnd);
   final fence = FlarkMarkdownFencedCodeScanner.fenceLine(lineText);
   if (fence == null) return null;
-  if (_lineIsInsideEarlierFence(markdown: markdown, lineStart: lineStart)) {
+  if (layout.lineIsInsideEarlierFence(lineStart)) {
     return null;
   }
 
@@ -288,42 +293,6 @@ FlarkMarkdownSourceEdit? _standaloneFenceOpenerEnter({
   );
 }
 
-bool _lineIsInsideEarlierFence({
-  required String markdown,
-  required int lineStart,
-}) {
-  var scanLineStart = 0;
-  while (scanLineStart < lineStart) {
-    final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
-      markdown,
-      scanLineStart,
-    );
-    if (context != null) {
-      final closingLineStart = context.closingLineStart;
-      if (closingLineStart == null || closingLineStart >= lineStart) {
-        return true;
-      }
-
-      final afterClosingLine =
-          context.closingLineEndWithBreak ?? context.closingLineEnd;
-      if (afterClosingLine != null &&
-          afterClosingLine > scanLineStart &&
-          afterClosingLine <= markdown.length) {
-        scanLineStart = afterClosingLine;
-        continue;
-      }
-    }
-
-    final next = FlarkMarkdownFencedCodeScanner.lineEndWithBreak(
-      markdown,
-      scanLineStart,
-    );
-    if (next <= scanLineStart || next > markdown.length) break;
-    scanLineStart = next;
-  }
-  return false;
-}
-
 bool _hasFollowingContentAfterFence(
   String markdown,
   FlarkMarkdownFencedCodeContext context,
@@ -336,35 +305,15 @@ bool _hasFollowingContentAfterFence(
 }
 
 FlarkMarkdownFencedCodeContext? _closedFenceBeforeCaret(
-  String markdown,
+  FlarkMarkdownFenceLayout layout,
   int caret,
 ) {
-  if (caret <= 0 || caret > markdown.length) return null;
-
-  var scanLineStart = 0;
-  while (scanLineStart < caret) {
-    final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
-      markdown,
-      scanLineStart,
-    );
-    final closingLineEnd = context?.closingLineEnd;
-    final closingLineEndWithBreak = context?.closingLineEndWithBreak;
-    if (closingLineEnd != null &&
-        (closingLineEnd == caret || closingLineEndWithBreak == caret)) {
-      return context;
-    }
-
-    final next = FlarkMarkdownFencedCodeScanner.lineEndWithBreak(
-      markdown,
-      scanLineStart,
-    );
-    if (next <= scanLineStart || next > markdown.length) break;
-    scanLineStart = next;
-  }
-  return null;
+  if (caret <= 0 || caret > layout.markdown.length) return null;
+  return layout.closedFenceEndingAt(caret);
 }
 
 FlarkMarkdownFencedCodeContext? _emptyClosedFenceContextAtBodyStart(
+  FlarkMarkdownFenceLayout layout,
   String markdown,
   int caret,
 ) {
@@ -374,27 +323,7 @@ FlarkMarkdownFencedCodeContext? _emptyClosedFenceContextAtBodyStart(
     caret,
   );
   if (lineStart != caret) return null;
-
-  var scanLineStart = 0;
-  while (scanLineStart < lineStart) {
-    final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
-      markdown,
-      scanLineStart,
-    );
-    if (context != null &&
-        context.bodyStart == lineStart &&
-        context.closingLineStart == lineStart) {
-      return context;
-    }
-
-    final next = FlarkMarkdownFencedCodeScanner.lineEndWithBreak(
-      markdown,
-      scanLineStart,
-    );
-    if (next <= scanLineStart || next > markdown.length) break;
-    scanLineStart = next;
-  }
-  return null;
+  return layout.emptyClosedFenceAtBodyStart(caret);
 }
 
 FlarkMarkdownSourceEdit? _exitFenceOnBlankLine({

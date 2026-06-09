@@ -472,7 +472,8 @@ final class FlarkProjection {
     var touchedSensitiveRange = false;
     final mappedHiddenRanges = <FlarkHiddenRange>[];
     for (final hiddenRange in hiddenRanges) {
-      if (!touchedSensitiveRange && _touchesAny(transaction, hiddenRange.range)) {
+      if (!touchedSensitiveRange &&
+          _touchesAny(transaction, hiddenRange.range)) {
         touchedSensitiveRange = true;
       }
       final mapped = _mapHiddenRange(transaction, hiddenRange);
@@ -526,11 +527,8 @@ final class FlarkProjection {
   }
 
   int get displayLength {
-    var sourceDelta = 0;
-    for (final span in _projectionSpans) {
-      sourceDelta += span.sourceDelta;
-    }
-    return textLength - sourceDelta;
+    if (_spanSourceDeltaPrefix.isEmpty) return textLength;
+    return textLength - _spanSourceDeltaPrefix.last;
   }
 
   void _checkOffset(int sourceOffset) {

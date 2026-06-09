@@ -97,7 +97,12 @@ void main() {
       );
 
       // Boundaries are allowed; interiors are not.
-      for (final span in const [[2, 5], [10, 14], [20, 23], [30, 36]]) {
+      for (final span in const [
+        [2, 5],
+        [10, 14],
+        [20, 23],
+        [30, 36],
+      ]) {
         expect(mask.allows(span[0]), isTrue, reason: 'start ${span[0]}');
         expect(mask.allows(span[1]), isTrue, reason: 'end ${span[1]}');
         expect(mask.allows(span[0] + 1), isFalse, reason: 'inside ${span[0]}');

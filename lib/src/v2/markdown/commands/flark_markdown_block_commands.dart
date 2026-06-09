@@ -194,12 +194,17 @@ final class FlarkMarkdownBlockEditingExtension extends FlarkExtension {
     final lines = selectedMarkdownLines(context.state);
 
     for (final line in lines) {
-      final headingMarker = _headingMarker(line);
+      // Headings compose after block prefixes: `> q` becomes `> # q` and
+      // `- item` becomes `- # item` (both valid CommonMark). Inserting at
+      // the absolute line start would produce `# > q` / `# - item`, which
+      // changes the block type instead of styling its content.
+      final prefixLength = _headingInsertionPrefixLength(line);
+      final headingMarker = _headingMarkerAt(line, prefixLength);
       operations.add(
         FlarkSourceOperation.replace(
           replacedRange: FlarkSourceRange(
-            line.start,
-            line.start + headingMarker.length,
+            line.start + prefixLength,
+            line.start + prefixLength + headingMarker.length,
           ),
           replacementText: marker,
         ),
@@ -526,8 +531,20 @@ final class FlarkMarkdownBlockEditingExtension extends FlarkExtension {
     return FlarkSourceRange(start, end);
   }
 
-  String _headingMarker(FlarkSelectedLine line) {
-    final match = RegExp(r'^(#{1,6})(?:\s+|$)').firstMatch(line.text);
+  /// Where a heading marker belongs on [line]: after any quote prefix and
+  /// any bullet/ordered/task marker following it.
+  int _headingInsertionPrefixLength(FlarkSelectedLine line) {
+    final quotePrefix = _quotePrefixLength(line.text);
+    final listMarker = RegExp(
+      r'^(?:[-+*]|\d{1,9}[.)])\s+(?:\[[ xX]\]\s+)?',
+    ).firstMatch(line.text.substring(quotePrefix));
+    return quotePrefix + (listMarker?.group(0)?.length ?? 0);
+  }
+
+  String _headingMarkerAt(FlarkSelectedLine line, int prefixLength) {
+    final match = RegExp(
+      r'^(#{1,6})(?:\s+|$)',
+    ).firstMatch(line.text.substring(prefixLength));
     return match?.group(0) ?? '';
   }
 

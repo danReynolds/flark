@@ -31,6 +31,58 @@ void main() {
       );
     });
 
+    test('composes a heading after quote and list prefixes', () {
+      // Inserting at the absolute line start would produce '## - item' /
+      // '## > q', which changes the block type instead of styling it.
+      final cases = <(String, int, String)>[
+        ('- item', 2, '- ## item'),
+        ('1. item', 1, '1. # item'),
+        ('- [ ] todo', 1, '- [ ] # todo'),
+        ('> quoted', 1, '> # quoted'),
+      ];
+      for (final (markdown, level, expected) in cases) {
+        final state = FlarkEditorState.fromMarkdown(
+          markdown,
+          selection: const FlarkSelection.collapsed(0),
+        );
+        final result = registry().dispatch(
+          state: state,
+          command: FlarkMarkdownBlockCommands.setHeadingLevel,
+          payload: FlarkSetHeadingLevelPayload(level),
+        );
+        final next = state.applyTransaction(result.transaction!);
+        expect(next.markdown, expected, reason: markdown);
+      }
+    });
+
+    test('replaces and removes headings after a prefix', () {
+      final state = FlarkEditorState.fromMarkdown(
+        '> # quoted',
+        selection: const FlarkSelection.collapsed(0),
+      );
+      final raised = state.applyTransaction(
+        registry()
+            .dispatch(
+              state: state,
+              command: FlarkMarkdownBlockCommands.setHeadingLevel,
+              payload: const FlarkSetHeadingLevelPayload(2),
+            )
+            .transaction!,
+      );
+      expect(raised.markdown, '> ## quoted');
+
+      final removed = raised.applyTransaction(
+        registry()
+            .dispatch(
+              state: raised,
+              command: FlarkMarkdownBlockCommands.setHeadingLevel,
+              payload: const FlarkSetHeadingLevelPayload(0),
+            )
+            .transaction!,
+      );
+      expect(removed.markdown, '> quoted');
+    });
+
     test('changes an existing heading marker', () {
       final state = FlarkEditorState.fromMarkdown(
         '# Title',

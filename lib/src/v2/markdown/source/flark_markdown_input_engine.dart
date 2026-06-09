@@ -56,8 +56,13 @@ final class FlarkMarkdownInputEngine {
     if (indentedCode != null) return indentedCode;
 
     if (quotePrefix.isNotEmpty) {
-      final replacement = content.trim().isEmpty ? '\n' : '\n$quotePrefix';
-      final range = content.trim().isEmpty
+      // The quote line only counts as empty when the whole line is — text
+      // after the caret must survive an Enter, so judging emptiness from the
+      // before-caret content alone would delete it with the line.
+      final afterCaret = markdown.substring(selection.start, line.end);
+      final lineIsEmpty = content.trim().isEmpty && afterCaret.trim().isEmpty;
+      final replacement = lineIsEmpty ? '\n' : '\n$quotePrefix';
+      final range = lineIsEmpty
           ? FlarkSourceRange(line.start, line.end)
           : FlarkSourceRange(selection.start, selection.start);
       return _sourceEdit(range: range, replacementText: replacement);

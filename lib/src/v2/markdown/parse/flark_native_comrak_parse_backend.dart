@@ -243,11 +243,13 @@ FlarkMarkdownParseResult _mapNativeResult(
   NativeComrakParseResult native,
 ) {
   final mapper = FlarkUtf8Utf16Mapper(request.markdown);
+  final fenceLayout = FlarkMarkdownFenceLayout.scan(request.markdown);
   final nativeRenderBlocks = _renderableNativeBlocks(native.blocks);
   final syntheticCodeBlocks = _syntheticCodeBlocks(
     request.markdown,
     mapper,
     nativeRenderBlocks,
+    fenceLayout,
   );
   final renderBlocks = _normalizeNativeCodeBlockRanges(
     request.markdown,
@@ -260,14 +262,16 @@ FlarkMarkdownParseResult _mapNativeResult(
       request.markdown,
       mapper,
       syntheticCodeBlocks,
+      fenceLayout,
     ),
   ]..sort(_compareSourceRanges);
   final markerExtensionIndex = _MarkerExtensionIndex(mappedMarkerRanges);
-  final syntheticListItems = _syntheticListItems(
+  final syntheticListPlan = _syntheticListItemPlan(
     request.markdown,
     mapper,
     renderBlocks,
   );
+  final syntheticListItems = syntheticListPlan.items;
   final syntheticListMarkerRanges = [
     for (final item in syntheticListItems) item.markerRange,
   ];
@@ -436,11 +440,7 @@ FlarkMarkdownParseResult _mapNativeResult(
   final blocks =
       [
         for (final block in renderBlocks)
-          if (!_isReplacedBySyntheticListItem(
-            block,
-            mapper,
-            syntheticListItems,
-          ))
+          if (!syntheticListPlan.replacedBlocks.contains(block))
             _mapBlock(
               mapper,
               block,
@@ -529,6 +529,7 @@ List<NativeComrakBlockSpan> _syntheticCodeBlocks(
   String markdown,
   FlarkUtf8Utf16Mapper mapper,
   List<NativeComrakBlockSpan> renderBlocks,
+  FlarkMarkdownFenceLayout fenceLayout,
 ) {
   if (markdown.isEmpty) return const [];
   final nativeCodeRanges = [
@@ -537,47 +538,28 @@ List<NativeComrakBlockSpan> _syntheticCodeBlocks(
   ];
   final nativeCodeRangeIndex = _FlarkSourceRangeIndex(nativeCodeRanges);
   final blocks = <NativeComrakBlockSpan>[];
-  var lineStart = 0;
 
-  while (lineStart < markdown.length) {
-    final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
-      markdown,
-      lineStart,
+  // The shared fence layout is the fence model of record; manufacturing
+  // synthetic code blocks from anything else risks disagreeing with the
+  // policy layer about where a fence opens or closes.
+  for (final context in fenceLayout.contexts) {
+    final sourceRange = FlarkSourceRange(
+      context.openingLineStart,
+      context.closingLineEnd ?? context.bodyEnd(markdown),
+    ).validate(markdown.length);
+    if (nativeCodeRangeIndex.overlaps(sourceRange)) continue;
+    blocks.add(
+      NativeComrakBlockSpan(
+        type: 'fenced_code',
+        range: NativeComrakRange(
+          startByte: mapper.utf8OffsetForUtf16Offset(sourceRange.start),
+          endByte: mapper.utf8OffsetForUtf16Offset(sourceRange.end),
+        ),
+        payload: context.language == null
+            ? const <String, Object?>{}
+            : <String, Object?>{'language': context.language},
+      ),
     );
-    if (context != null) {
-      final sourceRange = FlarkSourceRange(
-        context.openingLineStart,
-        context.closingLineEnd ?? context.bodyEnd(markdown),
-      ).validate(markdown.length);
-      if (!nativeCodeRangeIndex.overlaps(sourceRange)) {
-        blocks.add(
-          NativeComrakBlockSpan(
-            type: 'fenced_code',
-            range: NativeComrakRange(
-              startByte: mapper.utf8OffsetForUtf16Offset(sourceRange.start),
-              endByte: mapper.utf8OffsetForUtf16Offset(sourceRange.end),
-            ),
-            payload: context.language == null
-                ? const <String, Object?>{}
-                : <String, Object?>{'language': context.language},
-          ),
-        );
-      }
-      final next = context.closingLineEndWithBreak ?? markdown.length;
-      if (next > lineStart && next <= markdown.length) {
-        lineStart = next;
-        continue;
-      }
-    }
-
-    final nextLineStart = FlarkMarkdownFencedCodeScanner.lineEndWithBreak(
-      markdown,
-      lineStart,
-    );
-    if (nextLineStart <= lineStart || nextLineStart >= markdown.length) {
-      break;
-    }
-    lineStart = nextLineStart;
   }
 
   return blocks;
@@ -587,15 +569,13 @@ List<FlarkSourceRange> _syntheticCodeFenceMarkerRanges(
   String markdown,
   FlarkUtf8Utf16Mapper mapper,
   List<NativeComrakBlockSpan> syntheticCodeBlocks,
+  FlarkMarkdownFenceLayout fenceLayout,
 ) {
   final ranges = <FlarkSourceRange>[];
   for (final block in syntheticCodeBlocks) {
     final range = _mapRange(mapper, block.range);
     if (range.start < 0 || range.start >= markdown.length) continue;
-    final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
-      markdown,
-      range.start,
-    );
+    final context = fenceLayout.openerAt(range.start);
     if (context == null) continue;
 
     final openingMarkerStart =
@@ -727,15 +707,97 @@ List<_SyntheticListItem> _syntheticListItems(
   return items;
 }
 
-bool _isReplacedBySyntheticListItem(
-  NativeComrakBlockSpan block,
+final class _SyntheticListItemPlan {
+  const _SyntheticListItemPlan({
+    required this.items,
+    required this.replacedBlocks,
+  });
+
+  static const empty = _SyntheticListItemPlan(
+    items: <_SyntheticListItem>[],
+    replacedBlocks: <NativeComrakBlockSpan>{},
+  );
+
+  /// Synthetic items to render (and whose markers become hidden ranges).
+  final List<_SyntheticListItem> items;
+
+  /// Native blocks fully represented by [items], excluded from the result.
+  final Set<NativeComrakBlockSpan> replacedBlocks;
+}
+
+/// Decides which synthetic list items render and which native blocks they
+/// replace.
+///
+/// A native paragraph or thematic break is replaced only when *every*
+/// non-blank line in its range is a synthetic-item line — Comrak parses
+/// in-progress markers like `- ` or `- [` as paragraph text, and those whole
+/// paragraphs should render as list items. A partially matching block (a
+/// soft-wrapped paragraph whose last line merely starts with `- `) is kept
+/// intact, and the candidate items inside it are dropped so the same line is
+/// not rendered twice.
+_SyntheticListItemPlan _syntheticListItemPlan(
+  String markdown,
   FlarkUtf8Utf16Mapper mapper,
-  List<_SyntheticListItem> syntheticItems,
+  List<NativeComrakBlockSpan> renderBlocks,
 ) {
-  final type = _blockType(block.type);
-  if (type != 'paragraph' && type != 'thematicBreak') return false;
-  final range = _mapRange(mapper, block.range);
-  return syntheticItems.any((item) => item.sourceRange.intersects(range));
+  final candidates = _syntheticListItems(markdown, mapper, renderBlocks);
+  if (candidates.isEmpty) return _SyntheticListItemPlan.empty;
+
+  final itemLineStarts = {
+    for (final item in candidates) item.sourceRange.start,
+  };
+  final replacedBlocks = Set<NativeComrakBlockSpan>.identity();
+  final droppedItems = Set<_SyntheticListItem>.identity();
+
+  for (final block in renderBlocks) {
+    final type = _blockType(block.type);
+    if (type != 'paragraph' && type != 'thematicBreak') continue;
+    final range = _mapRange(mapper, block.range);
+    final intersecting = [
+      for (final item in candidates)
+        if (item.sourceRange.intersects(range)) item,
+    ];
+    if (intersecting.isEmpty) continue;
+    if (_everyLineIsSyntheticItem(markdown, range, itemLineStarts)) {
+      replacedBlocks.add(block);
+    } else {
+      droppedItems.addAll(intersecting);
+    }
+  }
+
+  return _SyntheticListItemPlan(
+    items: [
+      for (final item in candidates)
+        if (!droppedItems.contains(item)) item,
+    ],
+    replacedBlocks: replacedBlocks,
+  );
+}
+
+bool _everyLineIsSyntheticItem(
+  String markdown,
+  FlarkSourceRange range,
+  Set<int> itemLineStarts,
+) {
+  if (range.start >= range.end) return false;
+  var lineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
+    markdown,
+    range.start,
+  );
+  while (lineStart < range.end) {
+    final newline = markdown.indexOf('\n', lineStart);
+    final lineEnd = (newline < 0 ? markdown.length : newline).clamp(
+      lineStart,
+      range.end,
+    );
+    final lineText = markdown.substring(lineStart, lineEnd);
+    if (lineText.trim().isNotEmpty && !itemLineStarts.contains(lineStart)) {
+      return false;
+    }
+    if (newline < 0 || newline + 1 >= range.end) break;
+    lineStart = newline + 1;
+  }
+  return true;
 }
 
 bool _isMarkerOnlyNativeBlockquote(

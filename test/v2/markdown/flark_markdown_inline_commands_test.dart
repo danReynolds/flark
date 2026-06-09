@@ -154,6 +154,74 @@ void main() {
       expect(result.reason, contains('partially overlap'));
     });
 
+    test('toggling emphasis inside strong nests instead of stripping', () {
+      // The inner '*' of '**bold**' must not pass as an emphasis pair: a
+      // 2-run carries strong only. Toggling italic adds a layer.
+      final state = FlarkEditorState.fromMarkdown(
+        '**bold**',
+        selection: const FlarkSelection(baseOffset: 2, extentOffset: 6),
+      );
+      final registry = FlarkExtensionSet([
+        const FlarkMarkdownInlineEditingExtension(),
+      ]).commandRegistry();
+
+      final result = registry.dispatch(
+        state: state,
+        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+        payload: const FlarkToggleInlineStylePayload(
+          FlarkMarkdownInlineStyle.emphasis,
+        ),
+      );
+      final next = state.applyTransaction(result.transaction!);
+
+      expect(result.isHandled, isTrue);
+      expect(next.markdown, '***bold***');
+    });
+
+    test('toggling emphasis off em+strong keeps the strong pair', () {
+      final state = FlarkEditorState.fromMarkdown(
+        '***bold***',
+        selection: const FlarkSelection(baseOffset: 3, extentOffset: 7),
+      );
+      final registry = FlarkExtensionSet([
+        const FlarkMarkdownInlineEditingExtension(),
+      ]).commandRegistry();
+
+      final result = registry.dispatch(
+        state: state,
+        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+        payload: const FlarkToggleInlineStylePayload(
+          FlarkMarkdownInlineStyle.emphasis,
+        ),
+      );
+      final next = state.applyTransaction(result.transaction!);
+
+      expect(result.isHandled, isTrue);
+      expect(next.markdown, '**bold**');
+    });
+
+    test('toggling strong off em+strong keeps the emphasis pair', () {
+      final state = FlarkEditorState.fromMarkdown(
+        '***bold***',
+        selection: const FlarkSelection(baseOffset: 3, extentOffset: 7),
+      );
+      final registry = FlarkExtensionSet([
+        const FlarkMarkdownInlineEditingExtension(),
+      ]).commandRegistry();
+
+      final result = registry.dispatch(
+        state: state,
+        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+        payload: const FlarkToggleInlineStylePayload(
+          FlarkMarkdownInlineStyle.strong,
+        ),
+      );
+      final next = state.applyTransaction(result.transaction!);
+
+      expect(result.isHandled, isTrue);
+      expect(next.markdown, '*bold*');
+    });
+
     test('does not unwrap escaped surrounding markers', () {
       final state = FlarkEditorState.fromMarkdown(
         r'\*world\*',

@@ -576,8 +576,8 @@ void main() {
               );
 
           expect(
-            predicted.metadata['predictive'],
-            isTrue,
+            predicted.fidelity,
+            FlarkRenderPlanFidelity.predicted,
             reason: predictionCase.id,
           );
           expect(predicted.metadata['revision'], 2, reason: predictionCase.id);
@@ -597,6 +597,81 @@ void main() {
         }
       },
     );
+
+    test('keeps a block whose content is replaced wholesale', () {
+      final block = _block(
+        kind: FlarkMarkdownBlockKind.paragraph,
+        type: 'paragraph',
+        sourceEnd: 5,
+        displayEnd: 5,
+      );
+      final projection = FlarkProjection(textLength: 1);
+      // Typing over a fully selected paragraph: replace [0,5) with 'x'.
+      final transaction = FlarkTransaction.single(
+        FlarkSourceOperation.replace(
+          replacedRange: const FlarkSourceRange(0, 5),
+          replacementText: 'x',
+        ),
+      );
+
+      final predicted = block.predictThroughTransaction(
+        transaction: transaction,
+        projection: projection,
+        textLengthAfter: 1,
+      );
+
+      expect(predicted, isNotNull, reason: 'a replaced paragraph still exists');
+      expect(predicted!.sourceRange, const FlarkSourceRange(0, 1));
+    });
+
+    test('drops a block whose content is deleted wholesale', () {
+      final block = _block(
+        kind: FlarkMarkdownBlockKind.paragraph,
+        type: 'paragraph',
+        sourceEnd: 5,
+        displayEnd: 5,
+      );
+      final projection = FlarkProjection(textLength: 0);
+      final transaction = FlarkTransaction.single(
+        FlarkSourceOperation.delete(0, 5),
+      );
+
+      final predicted = block.predictThroughTransaction(
+        transaction: transaction,
+        projection: projection,
+        textLengthAfter: 0,
+      );
+
+      expect(predicted, isNull);
+    });
+
+    test('attributes a boundary caret to the block it starts', () {
+      FlarkRenderBlock blockAt(int start, int end) {
+        return FlarkRenderBlock(
+          kind: FlarkMarkdownBlockKind.paragraph,
+          type: 'paragraph',
+          sourceRange: FlarkSourceRange(start, end),
+          displayRange: FlarkSourceRange(start, end),
+          styleToken: FlarkRenderTextStyleToken.body,
+          inlineRuns: const [],
+          children: const [],
+        );
+      }
+
+      final plan = FlarkRenderPlan(blocks: [blockAt(0, 5), blockAt(5, 10)]);
+
+      // Offset 5 is the end of the first block and the start of the second;
+      // the caret visually sits at the start of the second block.
+      expect(plan.blockAtDisplayOffset(5)!.displayRange.start, 5);
+      expect(plan.blockAtDisplayOffset(4)!.displayRange.start, 0);
+      // The final offset of the document still resolves to the last block.
+      expect(plan.blockAtDisplayOffset(10)!.displayRange.start, 5);
+
+      // An empty block at the boundary is still reachable when nothing
+      // contains the offset strictly.
+      final withEmpty = FlarkRenderPlan(blocks: [blockAt(0, 5), blockAt(5, 5)]);
+      expect(withEmpty.blockAtDisplayOffset(5)!.displayRange.isCollapsed, true);
+    });
 
     test('predicts inline semantic actions through content edits', () {
       final plan = FlarkRenderPlan(

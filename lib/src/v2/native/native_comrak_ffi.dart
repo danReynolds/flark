@@ -224,6 +224,24 @@ class NativeComrakParseResult {
     this.diagnostics = const [],
   }) : assert(revision >= 0);
 
+  /// This result with [diagnostic] appended and every payload field kept.
+  ///
+  /// Bridges use this to attach error/status diagnostics. Rebuilding the
+  /// result by listing fields at the call sites silently dropped
+  /// [replacementRanges] whenever a diagnostic was appended, so decoded
+  /// HTML entities rendered as raw source on every diagnostic path.
+  NativeComrakParseResult withDiagnostic(NativeComrakDiagnostic diagnostic) {
+    return NativeComrakParseResult(
+      revision: revision,
+      blocks: blocks,
+      inlineTokens: inlineTokens,
+      markerRanges: markerRanges,
+      replacementRanges: replacementRanges,
+      exclusionRanges: exclusionRanges,
+      diagnostics: [...diagnostics, diagnostic],
+    );
+  }
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||

@@ -131,10 +131,15 @@ abstract final class FlarkMarkdownFencedCodeScanner {
   }
 
   static FlarkMarkdownFenceLine? fenceLine(String lineText) {
+    // CommonMark allows at most three columns of indentation before a fence
+    // marker, and a tab advances to the next 4-column stop — so any leading
+    // tab puts the marker at column >= 4, which is indented code, not a
+    // fence. Comrak implements exactly this; accepting tabs here would
+    // manufacture fences the authoritative parse does not produce.
     var index = 0;
-    while (index < lineText.length && index < 3) {
-      final codeUnit = lineText.codeUnitAt(index);
-      if (codeUnit != 32 && codeUnit != 9) break;
+    while (index < lineText.length &&
+        index < 3 &&
+        lineText.codeUnitAt(index) == 32) {
       index++;
     }
     final markerStart = index;
@@ -282,6 +287,159 @@ abstract final class FlarkMarkdownFencedCodeScanner {
       closingLineEnd: closingLineEnd,
       closingLineEndWithBreak: closingLineEndWithBreak,
     );
+  }
+}
+
+/// All fenced-code regions of a document, computed in one pass.
+///
+/// This is the fence model of record for code that needs to reason about
+/// more than one fence (or probe many lines): the source policies, the
+/// controller's structural prediction, and the parse backend's synthetic
+/// code blocks all consume it, so they cannot disagree about where fences
+/// open and close. One-shot questions about a single caret can keep using
+/// [FlarkMarkdownFencedCodeScanner.contextAt].
+///
+/// The scan walks lines exactly like [FlarkMarkdownFencedCodeScanner]:
+/// outside a fence, a fence line opens a region; inside one, only a line
+/// that [FlarkMarkdownFenceLine.closes] the open region ends it, so
+/// fence-looking lines inside a body (different marker, longer opener, info
+/// strings) stay body text. A region left open at end-of-input is included
+/// with null closing fields.
+final class FlarkMarkdownFenceLayout {
+  FlarkMarkdownFenceLayout._(this.markdown, this.contexts);
+
+  factory FlarkMarkdownFenceLayout.scan(String markdown) {
+    final contexts = <FlarkMarkdownFencedCodeContext>[];
+    if (markdown.isEmpty) {
+      return FlarkMarkdownFenceLayout._(markdown, contexts);
+    }
+
+    FlarkMarkdownFencedCodeContext? open;
+    var lineStart = 0;
+    while (lineStart <= markdown.length) {
+      final lineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
+        markdown,
+        lineStart,
+      );
+      final fence = FlarkMarkdownFencedCodeScanner.fenceLine(
+        markdown.substring(lineStart, lineEnd),
+      );
+      if (fence != null) {
+        if (open == null) {
+          open = FlarkMarkdownFencedCodeScanner._openContext(
+            markdown: markdown,
+            lineStart: lineStart,
+            fence: fence,
+          );
+        } else if (fence.closes(open)) {
+          contexts.add(
+            FlarkMarkdownFencedCodeContext(
+              openingLineStart: open.openingLineStart,
+              openingLineEndWithBreak: open.openingLineEndWithBreak,
+              bodyStart: open.bodyStart,
+              openingIndent: open.openingIndent,
+              marker: open.marker,
+              markerLength: open.markerLength,
+              infoString: open.infoString,
+              language: open.language,
+              closingLineStart: lineStart,
+              closingLineEnd: lineEnd,
+              closingLineEndWithBreak:
+                  FlarkMarkdownFencedCodeScanner.lineEndWithBreak(
+                    markdown,
+                    lineStart,
+                  ),
+            ),
+          );
+          open = null;
+        }
+      }
+
+      final next = FlarkMarkdownFencedCodeScanner.lineEndWithBreak(
+        markdown,
+        lineStart,
+      );
+      if (next <= lineStart || next >= markdown.length) break;
+      lineStart = next;
+    }
+    if (open != null) contexts.add(open);
+    return FlarkMarkdownFenceLayout._(markdown, contexts);
+  }
+
+  final String markdown;
+
+  /// Every fence region in document order (disjoint, sorted by opener).
+  final List<FlarkMarkdownFencedCodeContext> contexts;
+
+  /// The fence whose *body* contains [rawCaret]'s line.
+  ///
+  /// Same contract as [FlarkMarkdownFencedCodeScanner.contextAt]: a caret on
+  /// the opening or closing line itself is not inside the fence.
+  FlarkMarkdownFencedCodeContext? contextAt(int rawCaret) {
+    if (markdown.isEmpty) return null;
+    final caret = rawCaret.clamp(0, markdown.length);
+    final caretLineStart = FlarkMarkdownFencedCodeScanner.lineStartForOffset(
+      markdown,
+      caret,
+    );
+
+    FlarkMarkdownFencedCodeContext? candidate;
+    for (final context in contexts) {
+      if (context.openingLineStart > caretLineStart) break;
+      candidate = context;
+    }
+    if (candidate == null) return null;
+    if (candidate.openingLineStart == caretLineStart) return null;
+    final closingLineStart = candidate.closingLineStart;
+    if (closingLineStart == null) return candidate;
+    return caretLineStart < closingLineStart ? candidate : null;
+  }
+
+  /// The fence opened exactly at [lineStart], or null.
+  FlarkMarkdownFencedCodeContext? openerAt(int lineStart) {
+    for (final context in contexts) {
+      if (context.openingLineStart == lineStart) return context;
+      if (context.openingLineStart > lineStart) break;
+    }
+    return null;
+  }
+
+  /// Whether [lineStart]'s line falls inside a fence opened on an earlier
+  /// line (the closing line itself counts as inside — it terminates that
+  /// fence and cannot open a new one).
+  bool lineIsInsideEarlierFence(int lineStart) {
+    for (final context in contexts) {
+      if (context.openingLineStart >= lineStart) break;
+      final closingLineStart = context.closingLineStart;
+      if (closingLineStart == null || closingLineStart >= lineStart) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// The closed fence whose closing line ends exactly at [caret] (with or
+  /// without its trailing line break).
+  FlarkMarkdownFencedCodeContext? closedFenceEndingAt(int caret) {
+    for (final context in contexts) {
+      if (context.closingLineEnd == caret ||
+          context.closingLineEndWithBreak == caret) {
+        return context;
+      }
+    }
+    return null;
+  }
+
+  /// The closed fence with an empty body whose closing line starts exactly
+  /// at [caret] (which must be a line start).
+  FlarkMarkdownFencedCodeContext? emptyClosedFenceAtBodyStart(int caret) {
+    for (final context in contexts) {
+      if (context.bodyStart == caret && context.closingLineStart == caret) {
+        return context;
+      }
+      if (context.openingLineStart > caret) break;
+    }
+    return null;
   }
 }
 

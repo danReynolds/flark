@@ -64,10 +64,7 @@ void main() {
 
     test('inserted block gets a fresh id; existing blocks keep theirs', () {
       final reconciler = FlarkLiveBlockReconciler();
-      final before = _doc([
-        ('paragraph', 'a'),
-        ('paragraph', 'b'),
-      ]);
+      final before = _doc([('paragraph', 'a'), ('paragraph', 'b')]);
       final idsBefore = reconciler.assignIds(before.blocks, before.text);
 
       final after = _doc([
@@ -91,10 +88,7 @@ void main() {
       ]);
       final idsBefore = reconciler.assignIds(before.blocks, before.text);
 
-      final after = _doc([
-        ('paragraph', 'a'),
-        ('paragraph', 'c'),
-      ]);
+      final after = _doc([('paragraph', 'a'), ('paragraph', 'c')]);
       final idsAfter = reconciler.assignIds(after.blocks, after.text);
 
       expect(idsAfter[0], idsBefore[0]);
@@ -110,7 +104,69 @@ void main() {
       final ids = reconciler.assignIds(blocks, 'alpha\n');
       expect(ids[1], 'live-block:terminalAppendHost:6');
     });
+
+    test('same-text blocks with different descriptor state keep distinct '
+        'identities across deletes', () {
+      // Two task items with identical visible text differ only in checked
+      // state. After deleting the unchecked one, the survivor must keep
+      // *its own* id — a text-only key would hand it the deleted block's id.
+      final reconciler = FlarkLiveBlockReconciler();
+      const text = 'todo\ntodo\n';
+      final unchecked = _taskBlock(0, 4, checked: false);
+      final checked = _taskBlock(5, 9, checked: true);
+
+      final idsBefore = reconciler.assignIds([unchecked, checked], text);
+      expect(idsBefore[0], isNot(idsBefore[1]));
+
+      final survivor = _taskBlock(0, 4, checked: true);
+      final idsAfter = reconciler.assignIds([survivor], 'todo\n');
+      expect(idsAfter.single, idsBefore[1]);
+    });
+
+    test('same-body code fences with different languages keep distinct '
+        'identities', () {
+      final reconciler = FlarkLiveBlockReconciler();
+      const text = 'foo\nfoo\n';
+      final dart = _codeBlock(0, 3, language: 'dart');
+      final rust = _codeBlock(4, 7, language: 'rust');
+
+      final idsBefore = reconciler.assignIds([dart, rust], text);
+      expect(idsBefore[0], isNot(idsBefore[1]));
+
+      final survivor = _codeBlock(0, 3, language: 'rust');
+      final idsAfter = reconciler.assignIds([survivor], 'foo\n');
+      expect(idsAfter.single, idsBefore[1]);
+    });
   });
+}
+
+FlarkRenderBlock _taskBlock(int start, int end, {required bool checked}) {
+  return FlarkRenderBlock(
+    kind: FlarkMarkdownBlockKind.listItem,
+    type: 'listItem',
+    sourceRange: FlarkSourceRange(start, end),
+    displayRange: FlarkSourceRange(start, end),
+    styleToken: FlarkRenderTextStyleToken.body,
+    inlineRuns: const [],
+    children: const [],
+    listItem: const FlarkRenderListItemDescriptor(
+      kind: FlarkRenderListKind.unordered,
+    ),
+    taskListItem: FlarkRenderTaskListItemDescriptor(checked: checked),
+  );
+}
+
+FlarkRenderBlock _codeBlock(int start, int end, {required String language}) {
+  return FlarkRenderBlock(
+    kind: FlarkMarkdownBlockKind.codeBlock,
+    type: 'codeBlock',
+    sourceRange: FlarkSourceRange(start, end),
+    displayRange: FlarkSourceRange(start, end),
+    styleToken: FlarkRenderTextStyleToken.body,
+    inlineRuns: const [],
+    children: const [],
+    codeBlock: FlarkRenderCodeBlockDescriptor(language: language),
+  );
 }
 
 ({String text, List<FlarkRenderBlock> blocks}) _doc(

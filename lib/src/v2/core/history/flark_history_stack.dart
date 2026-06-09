@@ -27,10 +27,21 @@ final class FlarkHistoryEntry {
 }
 
 final class FlarkHistoryResult {
-  const FlarkHistoryResult({required this.state, required this.history});
+  const FlarkHistoryResult({
+    required this.state,
+    required this.history,
+    this.appliedTransactions = const <FlarkTransaction>[],
+  });
 
   final FlarkEditorState state;
   final FlarkHistoryStack history;
+
+  /// The transactions applied to produce [state], in application order.
+  ///
+  /// Empty when nothing was applied (e.g. undo on an empty stack). Consumers
+  /// such as the Flutter controller map projections and render plans through
+  /// these instead of discarding their predicted state.
+  final List<FlarkTransaction> appliedTransactions;
 }
 
 final class FlarkHistoryStack {
@@ -46,17 +57,24 @@ final class FlarkHistoryStack {
 
   bool get canRedo => redoEntries.isNotEmpty;
 
+  /// Records [transaction] against [documentBefore].
+  ///
+  /// Callers that already applied the transaction (the runtime hot path) pass
+  /// the resulting document as [documentAfter] so it is not recomputed here.
+  /// [FlarkTransaction.applyToDocument] returns the identical document
+  /// instance for no-op transactions, so identity alone detects them.
   FlarkHistoryStack record({
     required FlarkTransaction transaction,
     required FlarkDocument documentBefore,
+    FlarkDocument? documentAfter,
   }) {
     if (!transaction.metadata.addToHistory || !transaction.changesDocument) {
       return this;
     }
 
-    final documentAfter = transaction.applyToDocument(documentBefore);
-    if (identical(documentAfter, documentBefore) ||
-        documentAfter.markdown == documentBefore.markdown) {
+    final effectiveDocumentAfter =
+        documentAfter ?? transaction.applyToDocument(documentBefore);
+    if (identical(effectiveDocumentAfter, documentBefore)) {
       return this;
     }
 
@@ -104,6 +122,7 @@ final class FlarkHistoryStack {
         undoEntries: undoEntries.sublist(0, undoEntries.length - 1),
         redoEntries: [...redoEntries, entry],
       ),
+      appliedTransactions: entry.undoTransactions,
     );
   }
 
@@ -124,6 +143,7 @@ final class FlarkHistoryStack {
         undoEntries: [...undoEntries, entry],
         redoEntries: redoEntries.sublist(0, redoEntries.length - 1),
       ),
+      appliedTransactions: entry.redoTransactions,
     );
   }
 }

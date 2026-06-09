@@ -27,6 +27,29 @@ void main() {
       expect(result.selectionAfter, const FlarkSelection.collapsed(1));
     });
 
+    test('Enter at the start of a non-empty quote line keeps its text', () {
+      // Caret right after '> ' with text following: Enter must continue the
+      // quote at the caret. Judging emptiness from the before-caret content
+      // alone deleted the whole line, silently dropping 'hello'.
+      final result = FlarkMarkdownInputEngine.enter(
+        markdown: '> hello',
+        selection: const FlarkSelection.collapsed(2),
+      );
+
+      expect(result.range, const FlarkSourceRange(2, 2));
+      expect(result.replacementText, '\n> ');
+    });
+
+    test('Enter on a marker-only quote line still exits the quote', () {
+      final result = FlarkMarkdownInputEngine.enter(
+        markdown: '> ',
+        selection: const FlarkSelection.collapsed(2),
+      );
+
+      expect(result.range, const FlarkSourceRange(0, 2));
+      expect(result.replacementText, '\n');
+    });
+
     test('returns a source edit for selected replacement on Enter', () {
       final result = FlarkMarkdownInputEngine.enter(
         markdown: 'alpha',

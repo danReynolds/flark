@@ -115,8 +115,7 @@ final class WasmNativeComrakBridge implements NativeComrakBridge {
             payload: response.payload,
           );
           if (response.abiVersion != _kAbiVersion) {
-            result = _appendDiagnostic(
-              result,
+            result = result.withDiagnostic(
               NativeComrakDiagnostic(
                 range: const NativeComrakRange(startByte: 0, endByte: 0),
                 message:
@@ -127,8 +126,7 @@ final class WasmNativeComrakBridge implements NativeComrakBridge {
             );
           }
           if (response.statusCode != _kStatusOk) {
-            result = _appendDiagnostic(
-              result,
+            result = result.withDiagnostic(
               NativeComrakDiagnostic(
                 range: const NativeComrakRange(startByte: 0, endByte: 0),
                 message:
@@ -166,7 +164,20 @@ final class WasmNativeComrakBridge implements NativeComrakBridge {
   }
 
   Future<_LoadedWasmComrakModule> _module() {
-    return _moduleFuture ??= _loadModule();
+    final existing = _moduleFuture;
+    if (existing != null) return existing;
+    final future = _loadModule();
+    _moduleFuture = future;
+    // A transient load failure (asset not served yet, flaky fetch) must not
+    // be cached forever — clear the slot so the next parse retries instead
+    // of re-awaiting the same rejected future for the rest of the session.
+    future.then(
+      (_) {},
+      onError: (Object _) {
+        if (identical(_moduleFuture, future)) _moduleFuture = null;
+      },
+    );
+    return future;
   }
 
   Future<_LoadedWasmComrakModule> _loadModule() async {
@@ -411,18 +422,4 @@ int _mapProfile(NativeComrakProfile profile) {
     NativeComrakProfile.commonMarkCore => 0,
     NativeComrakProfile.commonMarkGfm => 1,
   };
-}
-
-NativeComrakParseResult _appendDiagnostic(
-  NativeComrakParseResult result,
-  NativeComrakDiagnostic diagnostic,
-) {
-  return NativeComrakParseResult(
-    revision: result.revision,
-    blocks: result.blocks,
-    inlineTokens: result.inlineTokens,
-    markerRanges: result.markerRanges,
-    exclusionRanges: result.exclusionRanges,
-    diagnostics: [...result.diagnostics, diagnostic],
-  );
 }

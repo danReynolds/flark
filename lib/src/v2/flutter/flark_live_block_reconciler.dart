@@ -108,6 +108,13 @@ final class FlarkLiveBlockReconciler {
     return ids.cast<String>();
   }
 
+  /// Identity key for pass-1 exact matching.
+  ///
+  /// Must distinguish blocks the *signature* distinguishes, or two same-text
+  /// blocks with different rendered state (a checked vs unchecked task, two
+  /// code fences with different languages) could swap identities on reorder
+  /// or delete and mis-route focus/IME state. Descriptor state is therefore
+  /// part of the key, not just type + display text.
   String _contentKey(FlarkRenderBlock block, String displayText) {
     final range = block.displayRange;
     final text =
@@ -116,7 +123,14 @@ final class FlarkLiveBlockReconciler {
             range.start <= range.end)
         ? displayText.substring(range.start, range.end)
         : '';
-    return 'c:${block.type}:$text';
+    final task = block.taskListItem;
+    final code = block.codeBlock;
+    final listItem = block.listItem;
+    return 'c:${block.type}'
+        ':${task == null ? '' : task.checked}'
+        ':${code?.language ?? ''}'
+        ':${listItem?.kind.name ?? ''}'
+        ':$text';
   }
 }
 

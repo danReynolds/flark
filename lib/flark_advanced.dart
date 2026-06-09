@@ -189,6 +189,7 @@ export 'src/v2/render_plan/render_plan.dart'
         FlarkRenderPlan,
         FlarkRenderPlanContext,
         FlarkRenderPlanExtension,
+        FlarkRenderPlanFidelity,
         FlarkRenderTableColumnAlignment,
         FlarkRenderTableDescriptor,
         FlarkRenderTaskListItemDescriptor,

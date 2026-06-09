@@ -58,15 +58,15 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
     final markerStart = start - markerLength;
     final markerEnd = end + markerLength;
     final selectionStartsWithMarker =
-        _hasUnescapedMarkerAt(text, start, marker) &&
+        _isToggleableMarkerRun(text, start, marker) &&
         end - start >= markerLength;
     final selectionEndsWithMarker =
         end >= markerLength &&
-        _hasUnescapedMarkerAt(text, end - markerLength, marker);
+        _isToggleableMarkerRun(text, end - markerLength, marker);
     final hasLeadingMarker =
-        markerStart >= 0 && _hasUnescapedMarkerAt(text, markerStart, marker);
+        markerStart >= 0 && _isToggleableMarkerRun(text, markerStart, marker);
     final hasTrailingMarker =
-        markerEnd <= text.length && _hasUnescapedMarkerAt(text, end, marker);
+        markerEnd <= text.length && _isToggleableMarkerRun(text, end, marker);
 
     if (selectionStartsWithMarker != selectionEndsWithMarker) {
       return FlarkCommandResult.rejected(
@@ -150,6 +150,30 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
         ),
       ),
     );
+  }
+
+  /// Whether the marker candidate at [candidateStart] can act as one side of
+  /// a toggle-off pair under CommonMark delimiter-run semantics.
+  ///
+  /// The candidate must exist unescaped, and the full contiguous run of the
+  /// marker character containing it must actually carry the requested style:
+  /// an odd-length run carries emphasis (`*`, `***`), a run of two or more
+  /// carries strong. Without the run check, the inner `*` of `**bold**`
+  /// passes as an emphasis pair and toggling italic strips one layer of the
+  /// strong markers instead of nesting.
+  bool _isToggleableMarkerRun(String text, int candidateStart, String marker) {
+    if (!_hasUnescapedMarkerAt(text, candidateStart, marker)) return false;
+    final markerChar = marker.codeUnitAt(0);
+    var runStart = candidateStart;
+    while (runStart > 0 && text.codeUnitAt(runStart - 1) == markerChar) {
+      runStart -= 1;
+    }
+    var runEnd = candidateStart + marker.length;
+    while (runEnd < text.length && text.codeUnitAt(runEnd) == markerChar) {
+      runEnd += 1;
+    }
+    final runLength = runEnd - runStart;
+    return marker.length == 1 ? runLength.isOdd : runLength >= 2;
   }
 
   bool _hasUnescapedMarkerAt(String text, int offset, String marker) {

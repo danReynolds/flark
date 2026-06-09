@@ -16,7 +16,7 @@ void main() {
       expect(controller.selection, const FlarkSelection.collapsed(5));
       expect(controller.projection.textLength, 5);
       expect(controller.hasAuthoritativeRenderPlan, isFalse);
-      expect(controller.renderPlan.metadata['stale'], isTrue);
+      expect(controller.renderPlan.fidelity, FlarkRenderPlanFidelity.stale);
     });
 
     test(
@@ -176,7 +176,10 @@ void main() {
 
         expect(controller.markdown, '**bold!**');
         expect(controller.hasAuthoritativeRenderPlan, isFalse);
-        expect(controller.renderPlan.metadata['predictive'], isTrue);
+        expect(
+          controller.renderPlan.fidelity,
+          FlarkRenderPlanFidelity.predicted,
+        );
         expect(controller.projection.projectText(controller.markdown), 'bold!');
         expect(
           controller.renderPlan.blocks.single.sourceRange,
@@ -221,7 +224,10 @@ void main() {
 
         expect(controller.markdown, '* items');
         expect(controller.hasAuthoritativeRenderPlan, isFalse);
-        expect(controller.renderPlan.metadata['predictive'], isTrue);
+        expect(
+          controller.renderPlan.fidelity,
+          FlarkRenderPlanFidelity.predicted,
+        );
         expect(controller.renderPlan.blocks.single.listItem, isNotNull);
         expect(
           controller.renderPlan.blocks.single.listItem!.kind,
@@ -260,7 +266,10 @@ void main() {
         expect(controller.markdown, '```\n');
         expect(controller.selection, const FlarkSelection.collapsed(4));
         expect(controller.hasAuthoritativeRenderPlan, isFalse);
-        expect(controller.renderPlan.metadata['predictive'], isTrue);
+        expect(
+          controller.renderPlan.fidelity,
+          FlarkRenderPlanFidelity.predicted,
+        );
         expect(controller.renderPlan.blocks.single.codeBlock, isNotNull);
         expect(controller.projection.projectText(controller.markdown), isEmpty);
       },
@@ -370,27 +379,102 @@ void main() {
       expect(controller.renderPlan.metadata['controllerExtension'], isTrue);
     });
 
+    test('undo predicts the projection through the inverse transaction', () {
+      final controller = FlarkFlutterController.fromMarkdown(
+        '',
+        extensions: FlarkExtensionSet([const FlarkCoreEditingExtension()]),
+      );
+
+      addTearDown(controller.dispose);
+      controller.dispatch(
+        command: FlarkCoreEditingCommands.insertText,
+        payload: const FlarkInsertTextPayload('a'),
+      );
+      expect(controller.markdown, 'a');
+
+      controller.undo();
+
+      expect(controller.markdown, '');
+      expect(controller.projection.textLength, 0);
+      expect(controller.lastProjectionPrediction, isNotNull);
+      expect(controller.hasAuthoritativeRenderPlan, isFalse);
+    });
+
+    test('undo keeps a predicted render plan instead of an empty reset', () {
+      final controller = FlarkFlutterController.fromMarkdown(
+        '**bold** text',
+        extensions: FlarkExtensionSet([const FlarkCoreEditingExtension()]),
+      );
+      addTearDown(controller.dispose);
+
+      // Adopt an authoritative parse so the controller holds a real plan and
+      // a projection with hidden inline markers.
+      expect(
+        controller.applyParseResult(_strongParseResult(controller)),
+        isTrue,
+      );
+      expect(controller.renderPlan.blocks, isNotEmpty);
+      expect(controller.projection.hiddenRanges, isNotEmpty);
+
+      // Edit, then undo. Both steps must keep a non-empty predicted plan and
+      // mapped hidden ranges; undo previously reset to an empty stale plan,
+      // flashing raw source in live-rendered surfaces.
+      controller.dispatch(
+        command: FlarkCoreEditingCommands.insertText,
+        payload: const FlarkInsertTextPayload('!'),
+      );
+      expect(controller.renderPlan.blocks, isNotEmpty);
+
+      controller.undo();
+      expect(controller.markdown, '**bold** text');
+      expect(controller.renderPlan.blocks, isNotEmpty);
+      expect(controller.projection.hiddenRanges, isNotEmpty);
+      expect(controller.hasAuthoritativeRenderPlan, isFalse);
+
+      controller.redo();
+      expect(controller.markdown, '**bold** text!');
+      expect(controller.renderPlan.blocks, isNotEmpty);
+      expect(controller.projection.hiddenRanges, isNotEmpty);
+    });
+
     test(
-      'undo clears stale projections when no inverse transaction is exposed',
+      'grouped undo maps the projection through every inverse transaction',
       () {
         final controller = FlarkFlutterController.fromMarkdown(
-          '',
+          '**bold** text',
           extensions: FlarkExtensionSet([const FlarkCoreEditingExtension()]),
         );
-
         addTearDown(controller.dispose);
-        controller.dispatch(
-          command: FlarkCoreEditingCommands.insertText,
-          payload: const FlarkInsertTextPayload('a'),
+        expect(
+          controller.applyParseResult(_strongParseResult(controller)),
+          isTrue,
         );
-        expect(controller.markdown, 'a');
 
-        controller.undo();
+        // Two grouped edits become one history entry with two inverse
+        // transactions; undo must map through both in order.
+        controller.applySelection(
+          FlarkSelection.collapsed(controller.markdown.length),
+        );
+        controller.applyTransaction(
+          FlarkTransaction.single(
+            FlarkSourceOperation.insert(controller.markdown.length, '!'),
+            undoGroupId: 7,
+          ),
+        );
+        controller.applyTransaction(
+          FlarkTransaction.single(
+            FlarkSourceOperation.insert(controller.markdown.length, '?'),
+            undoGroupId: 7,
+          ),
+        );
+        expect(controller.markdown, '**bold** text!?');
 
-        expect(controller.markdown, '');
-        expect(controller.projection.textLength, 0);
-        expect(controller.lastProjectionPrediction, isNull);
-        expect(controller.hasAuthoritativeRenderPlan, isFalse);
+        final result = controller.undo();
+        expect(result.appliedTransactions, hasLength(2));
+        expect(controller.markdown, '**bold** text');
+        expect(controller.renderPlan.blocks, isNotEmpty);
+        expect(controller.projection.hiddenRanges, isNotEmpty);
+        expect(controller.projection.textLength, controller.markdown.length);
       },
     );
 

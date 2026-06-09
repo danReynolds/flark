@@ -65,6 +65,7 @@ export 'flark_core.dart'
         FlarkRenderPlan,
         FlarkRenderPlanContext,
         FlarkRenderPlanExtension,
+        FlarkRenderPlanFidelity,
         FlarkRenderTableDescriptor,
         FlarkRenderTaskListItemDescriptor,
         applyFlarkRenderPlanExtensions;

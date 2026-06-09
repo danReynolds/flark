@@ -244,6 +244,21 @@ final class FlarkFlutterController extends ChangeNotifier {
     return _renderPlanRevision == state.revision;
   }
 
+  /// Whether [renderPlan] is renderable by block-based surfaces.
+  ///
+  /// True for an authoritative plan of the current revision, and for a
+  /// non-empty predicted plan mapped through recent edits. False only when the
+  /// plan is a stale placeholder (or a prediction emptied of blocks), in which
+  /// case surfaces fall back to plain projected text until the next parse.
+  bool get hasUsableRenderPlan {
+    assert(
+      _renderPlan.blocks.isEmpty ||
+          _renderPlan.fidelity != FlarkRenderPlanFidelity.stale,
+      'Stale render plans must not carry blocks.',
+    );
+    return hasAuthoritativeRenderPlan || _renderPlan.blocks.isNotEmpty;
+  }
+
   FlarkEditorRuntimeResult dispatch<TPayload>({
     required FlarkCommand<TPayload> command,
     required TPayload payload,
@@ -333,6 +348,7 @@ final class FlarkFlutterController extends ChangeNotifier {
   }
 
   bool applyParseResult(FlarkMarkdownParseResult parseResult) {
+    if (_disposed) return false;
     if (parseResult.revision != state.revision ||
         parseResult.sourceTextLength != state.document.length) {
       return false;
@@ -366,20 +382,27 @@ final class FlarkFlutterController extends ChangeNotifier {
   }) {
     if (identical(result.runtime, _runtime)) return;
 
-    final transaction = result.commandResult.transaction;
+    final documentTransactions = [
+      for (final transaction in result.appliedTransactions)
+        if (transaction.changesDocument) transaction,
+    ];
     final previousProjection = _projection;
     final previousRenderPlan = _renderPlan;
     final previousState = state;
     _runtime = result.runtime;
-    if (transaction == null) {
+    if (result.appliedTransactions.isEmpty) {
+      // The runtime changed without telling us how (no applied transactions).
+      // There is nothing to map the projection or render plan through, so
+      // reset both and let the next parse rebuild them.
       _projection = FlarkProjection(textLength: state.document.length);
       _lastProjectionPrediction = null;
       _renderPlan = _staleRenderPlan(state.revision);
       _renderPlanRevision = null;
-    } else if (!transaction.changesDocument) {
+    } else if (documentTransactions.isEmpty) {
       _projection = previousProjection;
       _lastProjectionPrediction = null;
-    } else {
+    } else if (documentTransactions.length == 1) {
+      final transaction = documentTransactions.single;
       final prediction = previousProjection.predictAfter(
         transaction,
         textLengthAfter: state.document.length,
@@ -405,12 +428,51 @@ final class FlarkFlutterController extends ChangeNotifier {
             textLengthAfter: state.document.length,
           );
       _renderPlanRevision = null;
+    } else {
+      // Several transactions applied atomically (a grouped undo/redo entry).
+      // Map the projection and render plan through each in order; the
+      // intermediate text length steps by each transaction's net delta.
+      var projection = previousProjection;
+      var renderPlan = previousRenderPlan;
+      var textLength = previousState.document.length;
+      FlarkProjectionPrediction? prediction;
+      for (final transaction in documentTransactions) {
+        textLength += _transactionNetDelta(transaction);
+        prediction = projection.predictAfter(
+          transaction,
+          textLengthAfter: textLength,
+        );
+        projection = prediction.projection;
+        renderPlan = _predictRenderPlan(
+          previousRenderPlan: renderPlan,
+          transaction: transaction,
+          projection: projection,
+          revision: state.revision,
+          textLengthAfter: textLength,
+        );
+      }
+      assert(
+        textLength == state.document.length,
+        'Applied transactions must net to the new document length.',
+      );
+      _projection = projection;
+      _lastProjectionPrediction = prediction;
+      _renderPlan = renderPlan;
+      _renderPlanRevision = null;
     }
     _emitEvent(
       kind: eventKind ?? _eventKindForRuntimeChange(previousState),
       previousState: previousState,
     );
     notifyListeners();
+  }
+
+  static int _transactionNetDelta(FlarkTransaction transaction) {
+    var delta = 0;
+    for (final operation in transaction.operations) {
+      delta += operation.delta;
+    }
+    return delta;
   }
 
   FlarkControllerEventKind _eventKindForRuntimeChange(
@@ -454,7 +516,8 @@ final class FlarkFlutterController extends ChangeNotifier {
   static FlarkRenderPlan _staleRenderPlan(int revision) {
     return FlarkRenderPlan(
       blocks: const [],
-      metadata: {'revision': revision, 'stale': true},
+      metadata: {'revision': revision},
+      fidelity: FlarkRenderPlanFidelity.stale,
     );
   }
 
@@ -538,10 +601,8 @@ final class FlarkFlutterController extends ChangeNotifier {
         metadata: {
           ...predictedPreviousRenderPlan.metadata,
           'revision': revision,
-          'stale': true,
-          'predictive': true,
-          'structural': true,
         },
+        fidelity: FlarkRenderPlanFidelity.predicted,
       ),
     );
   }
@@ -550,17 +611,22 @@ final class FlarkFlutterController extends ChangeNotifier {
     required String markdown,
     required FlarkTransaction transaction,
   }) {
+    // One fence scan per predicted edit; both probes query the shared layout
+    // so the prediction cannot disagree with the policy layer's fence model.
+    final layout = FlarkMarkdownFenceLayout.scan(markdown);
     final insertedContext = _insertedCodeFenceContext(
       markdown: markdown,
       transaction: transaction,
+      layout: layout,
     );
     if (insertedContext != null) return insertedContext;
-    return FlarkMarkdownFencedCodeScanner.contextAt(markdown, markdown.length);
+    return layout.contextAt(markdown.length);
   }
 
   static FlarkMarkdownFencedCodeContext? _insertedCodeFenceContext({
     required String markdown,
     required FlarkTransaction transaction,
+    required FlarkMarkdownFenceLayout layout,
   }) {
     var delta = 0;
     final operations = [...transaction.operations]
@@ -588,10 +654,7 @@ final class FlarkFlutterController extends ChangeNotifier {
         insertedStart,
       );
       while (lineStart <= insertedEnd && lineStart < markdown.length) {
-        final context = FlarkMarkdownFencedCodeScanner.contextForOpeningLine(
-          markdown,
-          lineStart,
-        );
+        final context = layout.openerAt(lineStart);
         if (context != null &&
             _rangesOverlap(
               insertedRange,

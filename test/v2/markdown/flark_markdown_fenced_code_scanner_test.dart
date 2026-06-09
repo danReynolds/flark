@@ -84,5 +84,76 @@ void main() {
         isNull,
       );
     });
+
+    test('rejects tab-indented fence markers like CommonMark', () {
+      // A tab advances to the next 4-column stop, so any leading tab puts
+      // the marker at column >= 4: indented code, not a fence. Comrak agrees;
+      // accepting these would manufacture fences the parser never produced.
+      expect(FlarkMarkdownFencedCodeScanner.fenceLine('\t```'), isNull);
+      expect(FlarkMarkdownFencedCodeScanner.fenceLine(' \t```'), isNull);
+      expect(FlarkMarkdownFencedCodeScanner.fenceLine('   ```'), isNotNull);
+      expect(FlarkMarkdownFencedCodeScanner.fenceLine('    ```'), isNull);
+    });
+  });
+
+  group('FlarkMarkdownFenceLayout', () {
+    test('scans every fence region in one pass', () {
+      const markdown = 'before\n```dart\nbody\n```\nmiddle\n~~~\nopen forever';
+      final layout = FlarkMarkdownFenceLayout.scan(markdown);
+
+      expect(layout.contexts, hasLength(2));
+      final closed = layout.contexts.first;
+      expect(closed.language, 'dart');
+      expect(closed.isClosed, isTrue);
+      final open = layout.contexts.last;
+      expect(open.marker, '~');
+      expect(open.isClosed, isFalse);
+    });
+
+    test('contextAt matches the one-shot scanner contract', () {
+      const markdown = 'a\n```\nbody\n```\nafter\n```rust\ntail';
+      final layout = FlarkMarkdownFenceLayout.scan(markdown);
+
+      for (var caret = 0; caret <= markdown.length; caret++) {
+        expect(
+          layout.contextAt(caret)?.openingLineStart,
+          FlarkMarkdownFencedCodeScanner.contextAt(
+            markdown,
+            caret,
+          )?.openingLineStart,
+          reason: 'caret $caret',
+        );
+      }
+    });
+
+    test('treats fence-looking lines inside a body as body text', () {
+      const markdown = '````\n```dart\nfoo\n```\n````\n';
+      final layout = FlarkMarkdownFenceLayout.scan(markdown);
+
+      // The 3-backtick lines live inside the 4-backtick fence.
+      expect(layout.contexts, hasLength(1));
+      expect(layout.contexts.single.markerLength, 4);
+      expect(layout.openerAt(markdown.indexOf('```dart')), isNull);
+      expect(
+        layout.lineIsInsideEarlierFence(markdown.indexOf('```dart')),
+        isTrue,
+      );
+    });
+
+    test('finds closed and empty fences by boundary offsets', () {
+      const markdown = '```dart\n```\nafter';
+      final layout = FlarkMarkdownFenceLayout.scan(markdown);
+      final closingLineEnd = markdown.indexOf('\nafter');
+
+      expect(layout.closedFenceEndingAt(closingLineEnd)?.language, 'dart');
+      expect(layout.closedFenceEndingAt(closingLineEnd + 1)?.language, 'dart');
+      expect(
+        layout
+            .emptyClosedFenceAtBodyStart('```dart\n'.length)
+            ?.openingLineStart,
+        0,
+      );
+      expect(layout.emptyClosedFenceAtBodyStart(0), isNull);
+    });
   });
 }

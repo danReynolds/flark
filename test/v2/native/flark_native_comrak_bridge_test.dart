@@ -295,6 +295,52 @@ void main() {
       expect(tokenA, tokenB);
       expect(tokenA.hashCode, tokenB.hashCode);
     });
+
+    test('withDiagnostic preserves every payload field', () {
+      // Both bridges attach status/ABI diagnostics through this copier. The
+      // previous hand-rolled copies dropped replacementRanges, so decoded
+      // HTML entities rendered as raw source whenever a diagnostic fired.
+      const result = NativeComrakParseResult(
+        revision: 7,
+        blocks: [
+          NativeComrakBlockSpan(
+            type: 'paragraph',
+            range: NativeComrakRange(startByte: 0, endByte: 5),
+          ),
+        ],
+        inlineTokens: [
+          NativeComrakInlineToken(
+            range: NativeComrakRange(startByte: 0, endByte: 5),
+            styles: {'bold'},
+          ),
+        ],
+        markerRanges: [NativeComrakRange(startByte: 0, endByte: 2)],
+        replacementRanges: [
+          NativeComrakReplacementRange(
+            type: 'htmlEntity',
+            range: NativeComrakRange(startByte: 2, endByte: 7),
+            text: '&',
+          ),
+        ],
+        exclusionRanges: [NativeComrakRange(startByte: 3, endByte: 4)],
+      );
+      const diagnostic = NativeComrakDiagnostic(
+        range: NativeComrakRange(startByte: 0, endByte: 0),
+        message: 'status 2',
+        code: 'COMRAK_NATIVE_STATUS_2',
+        isError: true,
+      );
+
+      final appended = result.withDiagnostic(diagnostic);
+
+      expect(appended.revision, result.revision);
+      expect(appended.blocks, result.blocks);
+      expect(appended.inlineTokens, result.inlineTokens);
+      expect(appended.markerRanges, result.markerRanges);
+      expect(appended.replacementRanges, result.replacementRanges);
+      expect(appended.exclusionRanges, result.exclusionRanges);
+      expect(appended.diagnostics, [diagnostic]);
+    });
   });
 
   group('createNativeComrakBridge', () {
