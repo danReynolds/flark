@@ -27,6 +27,21 @@ void main() {
       expect(result.selectionAfter, const FlarkSelection.collapsed(1));
     });
 
+    test('backspace after fence-looking lines inside an open fence stays a '
+        'plain edit', () {
+      // The '~~~' pair lives inside an unclosed ``` fence, so it is body
+      // text, not a nested closed fence (CommonMark/Comrak nesting). The
+      // old per-line fence probe treated it as a closed fence and moved
+      // the caret instead of deleting.
+      const markdown = '```\n~~~\n~~~\n';
+      final result = FlarkMarkdownInputEngine.backspace(
+        markdown: markdown,
+        selection: const FlarkSelection.collapsed(12),
+      );
+
+      expect(result, isA<FlarkMarkdownSourceEdit>());
+    });
+
     test('Enter at the start of a non-empty quote line keeps its text', () {
       // Caret right after '> ' with text following: Enter must continue the
       // quote at the caret. Judging emptiness from the before-caret content

@@ -332,15 +332,6 @@ class FfiNativeComrakBridge implements ProfiledNativeComrakBridge {
     return _parse(input, collectProfile: true);
   }
 
-  /// Documents at or above this UTF-8 size parse on a worker isolate.
-  ///
-  /// The native parse plus payload decode is linear in document size
-  /// (~0.5 ms/KB on a desktop core) and the FFI call is synchronous, so a
-  /// large document would otherwise block the UI isolate for the whole
-  /// parse — 100 KB costs tens of milliseconds. Below the threshold the
-  /// parse is cheaper than the isolate round trip and runs inline.
-  static const int _kIsolateOffloadThresholdBytes = 4096;
-
   Future<NativeComrakProfiledParseResult> _parse(
     NativeComrakParseInput input, {
     required bool collectProfile,
@@ -371,7 +362,9 @@ class FfiNativeComrakBridge implements ProfiledNativeComrakBridge {
       );
     }
 
-    if (input.utf8Text.length < _kIsolateOffloadThresholdBytes) {
+    // See flarkNativeParseIsolateThresholdBytes for the threshold rationale
+    // and the test escape hatch.
+    if (input.utf8Text.length < flarkNativeParseIsolateThresholdBytes) {
       return _parseWithSymbols(_symbols, input, collectProfile: collectProfile);
     }
 

@@ -108,6 +108,70 @@ void main() {
       },
     );
 
+    test('parseNow waits through an in-flight stale parse', () async {
+      final controller = FlarkFlutterController.fromMarkdown('a');
+      addTearDown(controller.dispose);
+      final backend = _FakeParseBackend();
+      final scheduler = FlarkParseScheduler(
+        controller: controller,
+        backend: backend,
+        debounce: Duration.zero,
+      )..start();
+      addTearDown(scheduler.dispose);
+
+      await _pumpMicrotasks();
+      expect(backend.requests, hasLength(1));
+
+      controller.applyTransaction(
+        FlarkTransaction.single(FlarkSourceOperation.insert(1, '!')),
+      );
+
+      var resolved = false;
+      final parse = scheduler.parseNow().then((_) => resolved = true);
+      await _pumpMicrotasks();
+      // Blocked behind the in-flight revision-0 parse instead of silently
+      // resolving while the plan is still stale.
+      expect(resolved, isFalse);
+
+      backend.complete(0);
+      await _pumpMicrotasks();
+      expect(resolved, isFalse);
+      expect(backend.requests, hasLength(2));
+      expect(backend.requests.last.markdown, 'a!');
+
+      backend.complete(1);
+      await _pumpMicrotasks();
+      expect(resolved, isTrue);
+      expect(controller.hasAuthoritativeRenderPlan, isTrue);
+      await parse;
+    });
+
+    test(
+      'parseNow is a no-op when the plan is already authoritative',
+      () async {
+        final controller = FlarkFlutterController.fromMarkdown('a');
+        addTearDown(controller.dispose);
+        final backend = _FakeParseBackend();
+        final scheduler = FlarkParseScheduler(
+          controller: controller,
+          backend: backend,
+          debounce: Duration.zero,
+        );
+        addTearDown(scheduler.dispose);
+
+        final first = scheduler.parseNow();
+        await _pumpMicrotasks();
+        expect(backend.requests, hasLength(1));
+        backend.complete(0);
+        await first;
+
+        // hasAuthoritativeRenderPlan is now true; a second parseNow must not
+        // issue another request.
+        await scheduler.parseNow();
+        expect(backend.requests, hasLength(1));
+      },
+    );
+
     test('parseNow surfaces parser failures to awaiters', () async {
       final controller = FlarkFlutterController.fromMarkdown('a');
       addTearDown(controller.dispose);

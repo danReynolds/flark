@@ -48,10 +48,23 @@ final class FlarkHistoryStack {
   const FlarkHistoryStack({
     this.undoEntries = const <FlarkHistoryEntry>[],
     this.redoEntries = const <FlarkHistoryEntry>[],
+    this.maxEntries = defaultMaxEntries,
   });
+
+  /// Default bound on retained undo entries.
+  ///
+  /// Each entry holds its transactions and their inverses (including
+  /// replaced text), so an unbounded stack grows with every edit for the
+  /// lifetime of a document. One thousand logical edit groups is far more
+  /// undo depth than editors conventionally offer while keeping long
+  /// sessions bounded.
+  static const int defaultMaxEntries = 1000;
 
   final List<FlarkHistoryEntry> undoEntries;
   final List<FlarkHistoryEntry> redoEntries;
+
+  /// Maximum retained undo entries; the oldest entries are dropped first.
+  final int maxEntries;
 
   bool get canUndo => undoEntries.isNotEmpty;
 
@@ -74,6 +87,14 @@ final class FlarkHistoryStack {
 
     final effectiveDocumentAfter =
         documentAfter ?? transaction.applyToDocument(documentBefore);
+    assert(
+      documentAfter == null ||
+          documentAfter.markdown ==
+              transaction.applyToDocument(documentBefore).markdown,
+      'documentAfter must be the result of applying transaction to '
+      'documentBefore; the no-op check below relies on applyToDocument '
+      'returning the identical instance for no-op transactions.',
+    );
     if (identical(effectiveDocumentAfter, documentBefore)) {
       return this;
     }
@@ -98,10 +119,14 @@ final class FlarkHistoryStack {
         ),
       );
     }
+    if (maxEntries > 0 && nextUndoEntries.length > maxEntries) {
+      nextUndoEntries.removeRange(0, nextUndoEntries.length - maxEntries);
+    }
 
     return FlarkHistoryStack(
       undoEntries: nextUndoEntries,
       redoEntries: const <FlarkHistoryEntry>[],
+      maxEntries: maxEntries,
     );
   }
 
@@ -121,6 +146,7 @@ final class FlarkHistoryStack {
       history: FlarkHistoryStack(
         undoEntries: undoEntries.sublist(0, undoEntries.length - 1),
         redoEntries: [...redoEntries, entry],
+        maxEntries: maxEntries,
       ),
       appliedTransactions: entry.undoTransactions,
     );
@@ -142,6 +168,7 @@ final class FlarkHistoryStack {
       history: FlarkHistoryStack(
         undoEntries: [...undoEntries, entry],
         redoEntries: redoEntries.sublist(0, redoEntries.length - 1),
+        maxEntries: maxEntries,
       ),
       appliedTransactions: entry.redoTransactions,
     );

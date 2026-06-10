@@ -184,12 +184,16 @@ final class FlarkFlutterController extends ChangeNotifier {
     if (wasStarted) ensureParsing();
   }
 
-  /// Immediately parses the current revision, bypassing the debounce window.
+  /// Parses until the current revision has an authoritative render plan,
+  /// bypassing the debounce window.
   ///
-  /// If [ensureParsing] has not been called, this performs a one-shot parse
-  /// without installing a background debounce loop, so advanced widgets that
-  /// drive parsing per structural edit do not leak pending timers. Errors are
-  /// routed to the configured parse-error callback rather than thrown.
+  /// Resolves immediately when the plan is already authoritative, and chains
+  /// onto an in-flight parse instead of silently returning, so the returned
+  /// future means "the plan is current". If [ensureParsing] has not been
+  /// called, this performs a one-shot parse without installing a background
+  /// debounce loop, so advanced widgets that drive parsing per structural
+  /// edit do not leak pending timers. Errors are routed to the configured
+  /// parse-error callback rather than thrown.
   Future<void> parseNow() async {
     if (_disposed) return;
     final scheduler = _ensureScheduler();
@@ -435,6 +439,8 @@ final class FlarkFlutterController extends ChangeNotifier {
       var projection = previousProjection;
       var renderPlan = previousRenderPlan;
       var textLength = previousState.document.length;
+      var touchedSensitiveRange = false;
+      FlarkSourceRange? invalidatedRange;
       FlarkProjectionPrediction? prediction;
       for (final transaction in documentTransactions) {
         textLength += _transactionNetDelta(transaction);
@@ -442,6 +448,13 @@ final class FlarkFlutterController extends ChangeNotifier {
           transaction,
           textLengthAfter: textLength,
         );
+        touchedSensitiveRange =
+            touchedSensitiveRange || prediction.touchedProjectionSensitiveRange;
+        final stepInvalidated = prediction.invalidatedRange;
+        if (stepInvalidated != null) {
+          invalidatedRange =
+              invalidatedRange?.union(stepInvalidated) ?? stepInvalidated;
+        }
         projection = prediction.projection;
         renderPlan = _predictRenderPlan(
           previousRenderPlan: renderPlan,
@@ -456,7 +469,16 @@ final class FlarkFlutterController extends ChangeNotifier {
         'Applied transactions must net to the new document length.',
       );
       _projection = projection;
-      _lastProjectionPrediction = prediction;
+      // Merge the per-step prediction metadata: a consumer of
+      // lastProjectionPrediction must see the union of what the grouped
+      // transactions touched, not just the final step's view.
+      _lastProjectionPrediction = prediction == null
+          ? null
+          : FlarkProjectionPrediction(
+              projection: projection,
+              touchedProjectionSensitiveRange: touchedSensitiveRange,
+              invalidatedRange: invalidatedRange,
+            );
       _renderPlan = renderPlan;
       _renderPlanRevision = null;
     }

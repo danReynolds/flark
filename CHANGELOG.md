@@ -31,6 +31,27 @@ Behavior fixes:
 - A block whose content is replaced wholesale survives render-plan
   prediction (typing over a fully selected paragraph no longer flickers).
 
+Production hardening (post-audit verification pass):
+
+- `parseNow()` now resolves only once the current revision has an
+  authoritative render plan, chaining onto in-flight parses instead of
+  silently returning while the plan is stale.
+- Undo history is bounded (`FlarkHistoryStack.maxEntries`, default 1000
+  logical edit groups; oldest entries drop first).
+- Undo/redo on an exhausted stack are true no-ops: the runtime returns the
+  identical instance, so live surfaces keep their render plan.
+- `MarkdownEditorFormField.reset()` normalizes CRLF input and no longer
+  rewrites the document when the value is unchanged after normalization.
+- `flarkNativeParseIsolateThresholdBytes` configures (or disables, for
+  fake-async widget tests) the FFI worker-isolate parse offload; documented
+  in the parser/platforms guide.
+- Command-registry payload-type mismatches report notHandled instead of
+  terminally rejecting, so typed handlers under a shared id are reachable.
+- A grouped undo merges per-step projection-prediction metadata (touched
+  flag, invalidated range) instead of reporting only the final step.
+- Fence-nesting semantics (fence-looking lines inside an open fence are
+  body text, per CommonMark) are pinned by test.
+
 Architecture:
 
 - Platform-echo handling is classified, not open-coded: each editing surface

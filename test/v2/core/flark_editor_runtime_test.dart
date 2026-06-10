@@ -108,6 +108,21 @@ void main() {
       },
     );
 
+    test(
+      'undo and redo on an exhausted stack return the identical runtime',
+      () {
+        final runtime = FlarkEditorRuntime.fromMarkdown('abc');
+
+        final undoResult = runtime.undo();
+        expect(identical(undoResult.runtime, runtime), isTrue);
+        expect(undoResult.appliedTransactions, isEmpty);
+
+        final redoResult = runtime.redo();
+        expect(identical(redoResult.runtime, runtime), isTrue);
+        expect(redoResult.appliedTransactions, isEmpty);
+      },
+    );
+
     test('grouped entries expose all inverse transactions on undo', () {
       var runtime = FlarkEditorRuntime.fromMarkdown('x');
 

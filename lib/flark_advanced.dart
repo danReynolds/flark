@@ -211,4 +211,5 @@ export 'src/v2/native/native.dart'
         NativeComrakRange,
         NativeComrakReplacementRange,
         createNativeComrakBridge,
+        flarkNativeParseIsolateThresholdBytes,
         preflightNativeComrakBridge;

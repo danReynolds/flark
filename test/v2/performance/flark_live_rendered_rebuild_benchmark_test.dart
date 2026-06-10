@@ -21,7 +21,9 @@ void main() {
     testWidgets('per-edit rebuild cost at $blockCount blocks', (tester) async {
       final backend = FlarkNativeComrakParseBackend.tryLoad();
       if (backend == null) {
-        debugPrint('flark_benchmark rebuild_${blockCount}blocks skipped=no_bridge');
+        debugPrint(
+          'flark_benchmark rebuild_${blockCount}blocks skipped=no_bridge',
+        );
         return;
       }
 

@@ -79,6 +79,15 @@ final class FlarkEditorRuntime {
 
   FlarkEditorRuntimeResult undo() {
     final result = history.undo(state);
+    // An exhausted stack applies nothing; returning the identical runtime
+    // lets observers (the Flutter controller) recognize the no-op and keep
+    // their projection and render plan instead of resetting them.
+    if (identical(result.history, history)) {
+      return FlarkEditorRuntimeResult(
+        runtime: this,
+        commandResult: FlarkCommandResult.handled(),
+      );
+    }
     return FlarkEditorRuntimeResult(
       runtime: copyWith(state: result.state, history: result.history),
       commandResult: FlarkCommandResult.handled(),
@@ -88,6 +97,12 @@ final class FlarkEditorRuntime {
 
   FlarkEditorRuntimeResult redo() {
     final result = history.redo(state);
+    if (identical(result.history, history)) {
+      return FlarkEditorRuntimeResult(
+        runtime: this,
+        commandResult: FlarkCommandResult.handled(),
+      );
+    }
     return FlarkEditorRuntimeResult(
       runtime: copyWith(state: result.state, history: result.history),
       commandResult: FlarkCommandResult.handled(),

@@ -438,6 +438,26 @@ void main() {
     });
 
     test(
+      'undo with nothing to undo keeps the render plan and stays silent',
+      () {
+        final controller = FlarkFlutterController.fromMarkdown('**bold** text');
+        addTearDown(controller.dispose);
+        expect(
+          controller.applyParseResult(_strongParseResult(controller)),
+          isTrue,
+        );
+        var notifications = 0;
+        controller.addListener(() => notifications++);
+
+        controller.undo();
+
+        expect(controller.renderPlan.blocks, isNotEmpty);
+        expect(controller.hasAuthoritativeRenderPlan, isTrue);
+        expect(notifications, 0);
+      },
+    );
+
+    test(
       'grouped undo maps the projection through every inverse transaction',
       () {
         final controller = FlarkFlutterController.fromMarkdown(

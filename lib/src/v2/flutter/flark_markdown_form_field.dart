@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../core/core.dart'
     show
+        FlarkDocument,
         FlarkExtensionSet,
         FlarkSelection,
         FlarkSourceOperation,
@@ -222,16 +223,21 @@ final class _MarkdownEditorFormFieldState extends FormFieldState<String> {
 
   void _replaceControllerMarkdown(String markdown) {
     final controller = _controller;
+    // A reset value comes from app input and may carry CRLF line endings;
+    // documents are LF-normalized at ingest, so normalize here too or the
+    // equality guard never matches and the replace reinjects `\r` into a
+    // document whose line math assumes it cannot be there.
+    final normalized = FlarkDocument.normalizeLineEndings(markdown);
     final current = controller.markdown;
-    if (current == markdown) return;
+    if (current == normalized) return;
     controller.applyTransaction(
       FlarkTransaction.single(
         FlarkSourceOperation.replace(
           replacedRange: FlarkSourceRange(0, current.length),
-          replacementText: markdown,
+          replacementText: normalized,
         ),
         selectionBefore: controller.selection,
-        selectionAfter: FlarkSelection.collapsed(markdown.length),
+        selectionAfter: FlarkSelection.collapsed(normalized.length),
         userEvent: 'form.reset',
       ),
     );

@@ -23,6 +23,26 @@ if (!preflight.isAvailable) {
 }
 ```
 
+## Threading and Widget Tests
+
+On FFI platforms (macOS, iOS, Android, Linux), documents of 4 KiB of UTF-8
+or more parse on a worker isolate so the synchronous native parse cannot
+block the UI isolate; smaller documents parse inline because the isolate
+round trip would cost more than the parse. The browser/WASM bridge is
+unaffected.
+
+One consequence for **widget tests**: `flutter_test`'s fake-async zone never
+drains a worker isolate's reply port, so a `testWidgets` body that drives a
+real native parse of a large document will hang. Either wrap the parse in
+`tester.runAsync(...)`, or raise the threshold to force synchronous parsing
+for the test (import `package:flark/flark_advanced.dart`):
+
+```dart
+final previous = flarkNativeParseIsolateThresholdBytes;
+flarkNativeParseIsolateThresholdBytes = 1 << 30; // force inline parsing
+addTearDown(() => flarkNativeParseIsolateThresholdBytes = previous);
+```
+
 ## Custom Parser
 
 Apps with a custom parser policy can implement `FlarkMarkdownParseBackend` and

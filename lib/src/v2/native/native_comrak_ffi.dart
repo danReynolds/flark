@@ -1,6 +1,21 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+/// UTF-8 input sizes at or above this parse on a worker isolate (FFI
+/// platforms only; the browser bridge is unaffected).
+///
+/// The native parse and payload decode are synchronous and linear in
+/// document size, so large documents would otherwise block the UI isolate
+/// for the whole parse; below the threshold the parse is cheaper than the
+/// isolate round trip and runs inline.
+///
+/// Mutable as an escape hatch for tests: `flutter_test`'s fake-async zone
+/// never drains a worker isolate's reply port, so a widget test that pumps
+/// an editor with a large document and the real native backend must either
+/// wrap parses in `tester.runAsync` or raise this threshold to force
+/// synchronous parsing (restore it in `tearDown`).
+int flarkNativeParseIsolateThresholdBytes = 4096;
+
 /// Native parse profile for comrak bridge calls.
 enum NativeComrakProfile {
   /// CommonMark core compliance mode.

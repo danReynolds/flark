@@ -123,5 +123,52 @@ void main() {
       expect(history.canUndo, isFalse);
       expect(history.canRedo, isFalse);
     });
+
+    test('caps retained undo entries, dropping the oldest first', () {
+      var state = FlarkEditorState.fromMarkdown('');
+      var history = const FlarkHistoryStack(maxEntries: 3);
+
+      for (var i = 0; i < 5; i++) {
+        final transaction = FlarkTransaction.single(
+          FlarkSourceOperation.insert(state.markdown.length, '$i'),
+          selectionAfter: FlarkSelection.collapsed(state.markdown.length + 1),
+        );
+        history = history.record(
+          transaction: transaction,
+          documentBefore: state.document,
+        );
+        state = state.applyTransaction(transaction);
+      }
+
+      expect(state.markdown, '01234');
+      expect(history.undoEntries, hasLength(3));
+      expect(history.maxEntries, 3);
+
+      // Only the newest three edits remain undoable.
+      var result = history.undo(state);
+      result = result.history.undo(result.state);
+      result = result.history.undo(result.state);
+      expect(result.state.markdown, '01');
+      expect(result.history.canUndo, isFalse);
+    });
+
+    test('the cap survives undo/redo round trips', () {
+      var state = FlarkEditorState.fromMarkdown('');
+      var history = const FlarkHistoryStack(maxEntries: 2);
+      final transaction = FlarkTransaction.single(
+        FlarkSourceOperation.insert(0, 'a'),
+        selectionAfter: const FlarkSelection.collapsed(1),
+      );
+      history = history.record(
+        transaction: transaction,
+        documentBefore: state.document,
+      );
+      state = state.applyTransaction(transaction);
+
+      final undone = history.undo(state);
+      expect(undone.history.maxEntries, 2);
+      final redone = undone.history.redo(undone.state);
+      expect(redone.history.maxEntries, 2);
+    });
   });
 }

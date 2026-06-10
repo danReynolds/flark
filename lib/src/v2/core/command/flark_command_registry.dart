@@ -73,10 +73,12 @@ final class _FlarkCommandHandlerEntry<TPayload>
   FlarkCommandResult invoke<TContextPayload>(
     FlarkCommandContext<TContextPayload> context,
   ) {
+    // A payload-type mismatch means this handler does not apply to the
+    // dispatched command shape — report notHandled so dispatch continues to
+    // lower-priority handlers instead of terminally rejecting and shadowing
+    // a correctly-typed handler registered under the same id.
     if (context.payload is! TPayload) {
-      return FlarkCommandResult.rejected(
-        'Command payload for ${context.command.id} is not $TPayload.',
-      );
+      return const FlarkCommandResult.notHandled();
     }
 
     return handler(

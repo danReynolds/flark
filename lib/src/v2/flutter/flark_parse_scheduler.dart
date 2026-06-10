@@ -28,6 +28,7 @@ final class FlarkParseScheduler {
   bool _inFlight = false;
   int? _scheduledRevision;
   int? _inFlightRevision;
+  Future<void>? _activeParse;
 
   void start({bool immediate = true}) {
     if (_started) return;
@@ -36,11 +37,34 @@ final class FlarkParseScheduler {
     _schedule(immediate: immediate);
   }
 
+  /// Parses until the controller's current revision has an authoritative
+  /// render plan, bypassing the debounce window.
+  ///
+  /// Resolves immediately when the plan is already authoritative. When a
+  /// parse is in flight (now potentially milliseconds long on a worker
+  /// isolate), this chains onto it instead of silently returning — callers
+  /// like the live editor's structural-edit path rely on the returned future
+  /// meaning "the plan is current", not "a parse may happen eventually".
   Future<void> parseNow() async {
     if (_disposed) return;
     _timer?.cancel();
     _timer = null;
-    await _parseCurrentRevision();
+    while (!_disposed && !_controller.hasAuthoritativeRenderPlan) {
+      final active = _activeParse;
+      if (active != null) {
+        await active;
+        continue;
+      }
+      final revisionBefore = _controller.state.revision;
+      await _parseCurrentRevision();
+      if (!_disposed &&
+          !_controller.hasAuthoritativeRenderPlan &&
+          _controller.state.revision == revisionBefore) {
+        // The parse for this revision completed without producing an
+        // authoritative plan (result rejected); bail rather than spin.
+        break;
+      }
+    }
   }
 
   void dispose() {
@@ -77,7 +101,21 @@ final class FlarkParseScheduler {
     });
   }
 
-  Future<void> _parseCurrentRevision() async {
+  Future<void> _parseCurrentRevision() {
+    if (_inFlight || _disposed) return Future<void>.value();
+    final future = _runParse();
+    _activeParse = future;
+    unawaited(
+      future
+          .whenComplete(() {
+            if (identical(_activeParse, future)) _activeParse = null;
+          })
+          .catchError((Object _) {}),
+    );
+    return future;
+  }
+
+  Future<void> _runParse() async {
     if (_inFlight || _disposed) return;
 
     final state = _controller.state;

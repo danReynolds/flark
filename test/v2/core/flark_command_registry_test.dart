@@ -50,6 +50,42 @@ void main() {
       expect(next.markdown, 'high');
     });
 
+    test('payload-type mismatches fall through to typed handlers', () {
+      final state = FlarkEditorState.fromMarkdown('');
+      const intCommand = FlarkCommand<int>('shared.command');
+      const stringCommand = FlarkCommand<String>('shared.command');
+      final registry = const FlarkCommandRegistry()
+          .register<int>(
+            intCommand,
+            (context) => FlarkCommandResult.handled(
+              transaction: FlarkTransaction.single(
+                FlarkSourceOperation.insert(0, 'int'),
+              ),
+            ),
+            priority: FlarkCommandPriority.high,
+          )
+          .register<String>(
+            stringCommand,
+            (context) => FlarkCommandResult.handled(
+              transaction: FlarkTransaction.single(
+                FlarkSourceOperation.insert(0, context.payload),
+              ),
+            ),
+            priority: FlarkCommandPriority.normal,
+          );
+
+      // The higher-priority int handler does not apply to a String payload;
+      // it must not terminally reject and shadow the typed handler below.
+      final result = registry.dispatch(
+        state: state,
+        command: stringCommand,
+        payload: 'typed',
+      );
+
+      expect(result.isHandled, isTrue);
+      expect(state.applyTransaction(result.transaction!).markdown, 'typed');
+    });
+
     test('falls through not-handled handlers by priority order', () {
       final state = FlarkEditorState.fromMarkdown('');
       final registry = const FlarkCommandRegistry()

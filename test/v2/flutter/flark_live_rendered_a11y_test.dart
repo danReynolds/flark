@@ -28,9 +28,7 @@ void main() {
 
     // Screen readers must see a checkbox with a label and an unchecked state.
     expect(
-      tester.getSemantics(
-        find.byKey(const Key('FlarkLiveBlockTaskCheckbox')),
-      ),
+      tester.getSemantics(find.byKey(const Key('FlarkLiveBlockTaskCheckbox'))),
       isSemantics(
         hasCheckedState: true,
         isChecked: false,
@@ -65,9 +63,7 @@ void main() {
     await tester.pump();
 
     expect(
-      tester.getSemantics(
-        find.byKey(const Key('FlarkLiveBlockTaskCheckbox')),
-      ),
+      tester.getSemantics(find.byKey(const Key('FlarkLiveBlockTaskCheckbox'))),
       isSemantics(
         hasCheckedState: true,
         isChecked: true,
