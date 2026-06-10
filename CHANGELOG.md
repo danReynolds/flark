@@ -39,7 +39,10 @@ Architecture:
   intent, and the widgets only execute intents. The classifiers live in a
   standalone library that cannot import the editor widgets, so their purity
   is compiler-enforced, and the recognizer ordering lives in exactly one
-  inspectable place per surface.
+  inspectable place per surface. Every host/block recognizer asymmetry is
+  named — intentional or convergence candidate — in
+  `doc/architecture/live_edit_intent_pipeline.md` and pinned by tests; the
+  remaining behavioral convergence is a documented device-test checklist.
 
 - `FlarkRenderPlan.fidelity` (`authoritative`/`predicted`/`stale`) replaces
   the unread `'stale'`/`'predictive'` metadata flags;

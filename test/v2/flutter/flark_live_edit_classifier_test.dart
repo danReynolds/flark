@@ -336,6 +336,122 @@ void main() {
       expect(classification.intent, isA<FlarkHostIgnoreIntent>());
     });
   });
+
+  // Pins for the host/block recognizer asymmetries documented in
+  // doc/architecture/live_edit_intent_pipeline.md. Converging one of these
+  // later must be a deliberate test change, not an accident.
+  group('asymmetry pins', () {
+    test('host: whole-value fence echo with the caret at the end replaces '
+        'the document (matrix #1)', () {
+      final classification = classifyFlarkHostEdit(
+        _hostContext(
+          markdown: '```',
+          oldDisplayText: '```',
+          newValue: const TextEditingValue(
+            text: '```\n```',
+            selection: TextSelection.collapsed(offset: 7),
+          ),
+        ),
+      );
+
+      expect(
+        classification.intent,
+        isA<FlarkHostWholeDocumentReplaceIntent>().having(
+          (i) => i.replacementMarkdown,
+          'replacementMarkdown',
+          '```\n',
+        ),
+      );
+      expect(classification.normalizedValue.text, '```\n');
+    });
+
+    test('host: a source-level fence echo is caught when the display text '
+        'diverges from the markdown (matrix #5)', () {
+      // The normalization-level echo probe compares against the *display*
+      // text and the raw-value probe needs the caret already at the end.
+      // When the display lags the source and the platform delivered a
+      // stale caret, only the source-markdown probe — running after caret
+      // normalization — recognizes the echo.
+      final classification = classifyFlarkHostEdit(
+        FlarkHostEditContext(
+          markdown: '```',
+          oldDisplayText: '``',
+          oldDisplaySelection: const FlarkSelection.collapsed(2),
+          newValue: const TextEditingValue(
+            text: '```\n```',
+            selection: TextSelection.collapsed(offset: 2),
+          ),
+          liveRendered: true,
+        ),
+      );
+
+      expect(
+        classification.intent,
+        isA<FlarkHostWholeDocumentReplaceIntent>().having(
+          (i) => i.replacementMarkdown,
+          'replacementMarkdown',
+          '```\n',
+        ),
+      );
+      expect(
+        classification.normalizedValue.selection,
+        const TextSelection.collapsed(offset: 7),
+      );
+    });
+
+    test('host: a typed closing fence still goes through the policy offer '
+        '(matrix #12 convergence candidate)', () {
+      // The block surface bypasses the input policy for typed closers; the
+      // host intentionally does not (believed moot — the policy only
+      // consumes Enter/Backspace-shaped diffs). Pinned until the device
+      // pass decides whether to port the gate.
+      final classification = classifyFlarkHostEdit(
+        _hostContext(
+          markdown: '```dart\nfoo',
+          oldDisplayText: '```dart\nfoo',
+          newValue: const TextEditingValue(
+            text: '```dart\nfoo\n```',
+            selection: TextSelection.collapsed(offset: 15),
+          ),
+        ),
+      );
+
+      final intent = classification.intent;
+      expect(intent, isA<FlarkHostPlatformTextChangeIntent>());
+      final wrapped = intent as FlarkHostPlatformTextChangeIntent;
+      expect(wrapped.fallback.newDisplayText, '```dart\nfoo\n```');
+    });
+
+    test('block: a newly renderable line does not request an immediate '
+        'parse (matrix #15 convergence candidate)', () {
+      // The host requests an immediate parse for new '- '/'> '/fence lines;
+      // the block's projected-edit fallback only does so after a completed
+      // fence opener. Pinned current behavior.
+      final classification = classifyFlarkLiveBlockEdit(
+        _blockContext(
+          markdown: 'hello',
+          block: _paragraph('hello'),
+          sourceRange: null,
+          oldText: 'hello',
+          oldSelection: const TextSelection.collapsed(offset: 5),
+          newValue: const TextEditingValue(
+            text: 'hello\n- ',
+            selection: TextSelection.collapsed(offset: 8),
+          ),
+        ),
+      );
+
+      FlarkLiveBlockEditIntent intent = classification.intent;
+      if (intent is FlarkLiveBlockPlatformTextChangeIntent) {
+        intent = intent.fallback;
+      }
+      expect(intent, isA<FlarkLiveBlockProjectedEditIntent>());
+      expect(
+        (intent as FlarkLiveBlockProjectedEditIntent).immediateParseAfterApply,
+        isFalse,
+      );
+    });
+  });
 }
 
 FlarkLiveBlockEditContext _blockContext({

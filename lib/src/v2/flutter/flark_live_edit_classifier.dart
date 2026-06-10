@@ -14,8 +14,12 @@
 // inputs" is a structural guarantee, not a review convention. The widgets
 // resolve the context, classify, and execute the intent's side effects.
 //
-// The remaining unification step — merging the host and block recognizer
-// sets — is gated on manual IME testing with real keyboards.
+// The two recognizer sets intentionally remain separate functions: almost
+// every recognizer is specific to one surface granularity, and each chain's
+// ordering is its safety-critical property. The full recognizer matrix —
+// every host/block asymmetry named intentional or convergence candidate —
+// and the device protocol gating behavioral convergence live in
+// doc/architecture/live_edit_intent_pipeline.md.
 
 import 'package:flutter/services.dart';
 
