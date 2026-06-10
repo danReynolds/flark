@@ -7,6 +7,7 @@ import '../render_plan/render_plan.dart';
 import 'flark_code_syntax_highlighting.dart';
 import 'flark_flutter_controller.dart';
 import 'flark_markdown_interactions.dart';
+import 'flark_markdown_theme.dart';
 
 typedef FlarkPreviewBlockWidgetBuilder =
     Widget? Function(
@@ -78,9 +79,10 @@ final class _PreviewBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final blockStyle = _blockStyle(baseStyle, block);
+    final theme = FlarkMarkdownTheme.of(context);
+    final blockStyle = _blockStyle(baseStyle, block, theme);
     final textSpan = block.codeBlock == null
-        ? TextSpan(style: blockStyle, children: _inlineSpans(context))
+        ? TextSpan(style: blockStyle, children: _inlineSpans(context, theme))
         : buildFlarkHighlightedCodeSpan(
                 source: displayText.substring(
                   block.displayRange.start,
@@ -88,8 +90,12 @@ final class _PreviewBlock extends StatelessWidget {
                 ),
                 language: block.codeBlock?.language,
                 baseStyle: blockStyle,
+                syntaxTheme: theme.syntaxTheme,
               ) ??
-              TextSpan(style: blockStyle, children: _inlineSpans(context));
+              TextSpan(
+                style: blockStyle,
+                children: _inlineSpans(context, theme),
+              );
     final content = Text.rich(textSpan);
 
     if (block.codeBlock != null) {
@@ -104,8 +110,8 @@ final class _PreviewBlock extends StatelessWidget {
           width: double.infinity,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: const Color(0xFFF1F4F8),
-              border: Border.all(color: const Color(0xFFD7DEE8)),
+              color: theme.codeBlockBackgroundColor,
+              border: Border.all(color: theme.borderColor),
               borderRadius: const BorderRadius.all(Radius.circular(6)),
             ),
             child: Padding(
@@ -136,10 +142,10 @@ final class _PreviewBlock extends StatelessWidget {
           key: const Key('FlarkReadOnlyPreviewBlockquote'),
           width: double.infinity,
           child: DecoratedBox(
-            decoration: const BoxDecoration(
-              color: Color(0xFFF8FAFC),
+            decoration: BoxDecoration(
+              color: theme.quoteBackgroundColor,
               border: Border(
-                left: BorderSide(color: Color(0xFF7A8CA3), width: 3),
+                left: BorderSide(color: theme.quoteRailColor, width: 3),
               ),
             ),
             child: Padding(
@@ -176,7 +182,10 @@ final class _PreviewBlock extends StatelessWidget {
     return content;
   }
 
-  List<InlineSpan> _inlineSpans(BuildContext context) {
+  List<InlineSpan> _inlineSpans(
+    BuildContext context,
+    FlarkMarkdownThemeData theme,
+  ) {
     final spans = <InlineSpan>[];
     final runs = [...block.inlineRuns]
       ..sort((a, b) => a.displayRange.start.compareTo(b.displayRange.start));
@@ -188,7 +197,7 @@ final class _PreviewBlock extends StatelessWidget {
           TextSpan(text: displayText.substring(cursor, run.displayRange.start)),
         );
       }
-      spans.add(_inlineSpanForRun(context, run));
+      spans.add(_inlineSpanForRun(context, theme, run));
       cursor = run.displayRange.end;
     }
 
@@ -210,7 +219,11 @@ final class _PreviewBlock extends StatelessWidget {
     return spans;
   }
 
-  InlineSpan _inlineSpanForRun(BuildContext context, FlarkRenderInlineRun run) {
+  InlineSpan _inlineSpanForRun(
+    BuildContext context,
+    FlarkMarkdownThemeData theme,
+    FlarkRenderInlineRun run,
+  ) {
     final text = displayText.substring(
       run.displayRange.start,
       run.displayRange.end,
@@ -236,26 +249,67 @@ final class _PreviewBlock extends StatelessWidget {
     }
     if (action?.kind == FlarkRenderInlineActionKind.link) {
       final interactions = FlarkMarkdownInteractions.maybeOf(context);
-      if (interactions != null && interactions.config.enableLinkMenus) {
-        return WidgetSpan(
-          alignment: PlaceholderAlignment.baseline,
-          baseline: TextBaseline.alphabetic,
-          child: _InlineLinkMenu(
-            interactions: interactions,
-            target: FlarkRenderOverlayTarget(
-              kind: FlarkRenderOverlayKind.link,
-              sourceRange: run.sourceRange,
-              displayRange: run.displayRange,
-              action: action,
-            ),
-            text: text,
-            style: _inlineStyle(run),
-          ),
+      if (interactions != null) {
+        final target = FlarkRenderOverlayTarget(
+          kind: FlarkRenderOverlayKind.link,
+          sourceRange: run.sourceRange,
+          displayRange: run.displayRange,
+          action: action,
         );
+        if (interactions.config.enableLinkMenus) {
+          return WidgetSpan(
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: _InlineLinkMenu(
+              interactions: interactions,
+              target: target,
+              text: text,
+              style: _inlineStyle(run, theme),
+            ),
+          );
+        }
+        if (interactions.config.onOpenLink != null) {
+          return WidgetSpan(
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: _InlineLinkText(
+              interactions: interactions,
+              target: target,
+              text: text,
+              style: _inlineStyle(run, theme),
+            ),
+          );
+        }
       }
     }
 
-    return TextSpan(text: text, style: _inlineStyle(run));
+    return TextSpan(text: text, style: _inlineStyle(run, theme));
+  }
+}
+
+/// A tappable link span used when link menus are disabled but an
+/// [FlarkMarkdownInteractionConfig.onOpenLink] handler exists.
+final class _InlineLinkText extends StatelessWidget {
+  const _InlineLinkText({
+    required this.interactions,
+    required this.target,
+    required this.text,
+    required this.style,
+  });
+
+  final FlarkMarkdownInteractions interactions;
+  final FlarkRenderOverlayTarget target;
+  final String text;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      key: const Key('FlarkInlineLinkText'),
+      behavior: HitTestBehavior.opaque,
+      onTap: () => interactions.openTarget(target),
+      child: Text(text, style: style),
+    );
   }
 }
 
@@ -281,6 +335,7 @@ final class _InlineLinkMenuState extends State<_InlineLinkMenu> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = FlarkMarkdownTheme.of(context);
     final style = widget.style;
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 0),
@@ -291,7 +346,14 @@ final class _InlineLinkMenuState extends State<_InlineLinkMenu> {
           GestureDetector(
             key: const Key('FlarkInlineLinkMenuButton'),
             behavior: HitTestBehavior.opaque,
-            onTap: () => setState(() => _open = !_open),
+            // Tapping a link should do what every markdown renderer does:
+            // open it. The menu (copy/edit/remove) moves to long-press when
+            // an open handler exists; without one, tap still toggles the
+            // menu so copy/edit stay reachable.
+            onTap: widget.interactions.config.onOpenLink != null
+                ? () => widget.interactions.openTarget(widget.target)
+                : () => setState(() => _open = !_open),
+            onLongPress: () => setState(() => _open = !_open),
             child: Text(widget.text, style: style),
           ),
           if (_open)
@@ -300,8 +362,8 @@ final class _InlineLinkMenuState extends State<_InlineLinkMenu> {
               child: DecoratedBox(
                 key: const Key('FlarkInlineLinkMenu'),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFFFFF),
-                  border: Border.all(color: const Color(0xFFD7DEE8)),
+                  color: theme.menuBackgroundColor,
+                  border: Border.all(color: theme.borderColor),
                   borderRadius: const BorderRadius.all(Radius.circular(6)),
                 ),
                 child: Padding(
@@ -366,14 +428,15 @@ final class _InlineLinkMenuAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = FlarkMarkdownTheme.of(context);
     final style = DefaultTextStyle.of(context).style;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
-          border: Border.all(color: const Color(0xFFD7DEE8)),
+          color: theme.cardBackgroundColor,
+          border: Border.all(color: theme.borderColor),
           borderRadius: const BorderRadius.all(Radius.circular(4)),
         ),
         child: Padding(
@@ -412,24 +475,27 @@ final class _PreviewTaskCheckbox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = FlarkMarkdownTheme.of(context);
     return SizedBox(
       key: const Key('FlarkReadOnlyPreviewTaskCheckbox'),
       width: 14,
       height: 14,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: checked ? const Color(0xFF2E7D32) : const Color(0xFFFFFFFF),
+          color: checked ? theme.checkboxCheckedColor : theme.checkboxFillColor,
           border: Border.all(
-            color: checked ? const Color(0xFF2E7D32) : const Color(0xFF7A8CA3),
+            color: checked
+                ? theme.checkboxCheckedColor
+                : theme.checkboxBorderColor,
           ),
           borderRadius: const BorderRadius.all(Radius.circular(3)),
         ),
         child: checked
-            ? const Center(
+            ? Center(
                 child: Text(
                   '✓',
                   style: TextStyle(
-                    color: Color(0xFFFFFFFF),
+                    color: theme.checkboxCheckmarkColor,
                     fontSize: 9,
                     fontWeight: FontWeight.w700,
                     height: 1,
@@ -463,12 +529,13 @@ final class _PreviewTable extends StatelessWidget {
       );
     }
 
+    final theme = FlarkMarkdownTheme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: DecoratedBox(
         key: const Key('FlarkReadOnlyPreviewTable'),
         decoration: BoxDecoration(
-          border: Border.all(color: const Color(0xFFD7DEE8)),
+          border: Border.all(color: theme.borderColor),
           borderRadius: const BorderRadius.all(Radius.circular(6)),
         ),
         child: ClipRRect(
@@ -476,15 +543,15 @@ final class _PreviewTable extends StatelessWidget {
           child: Table(
             defaultVerticalAlignment: TableCellVerticalAlignment.middle,
             border: TableBorder.symmetric(
-              inside: const BorderSide(color: Color(0xFFE2E8F0)),
+              inside: BorderSide(color: theme.tableDividerColor),
             ),
             children: [
               for (var rowIndex = 0; rowIndex < rows.length; rowIndex++)
                 TableRow(
                   decoration: BoxDecoration(
                     color: rowIndex == 0
-                        ? const Color(0xFFF1F4F8)
-                        : const Color(0xFFFFFFFF),
+                        ? theme.tableHeaderBackgroundColor
+                        : theme.tableRowBackgroundColor,
                   ),
                   children: [
                     for (final cell in rows[rowIndex])
@@ -527,6 +594,7 @@ final class _PreviewImageCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = FlarkMarkdownTheme.of(context);
     final style = DefaultTextStyle.of(context).style;
     final effectiveLabel = label.isEmpty ? destination : label;
     final card = Semantics(
@@ -536,8 +604,8 @@ final class _PreviewImageCard extends StatelessWidget {
       child: DecoratedBox(
         key: const Key('FlarkReadOnlyPreviewImageCard'),
         decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
-          border: Border.all(color: const Color(0xFFD7DEE8)),
+          color: theme.cardBackgroundColor,
+          border: Border.all(color: theme.borderColor),
           borderRadius: const BorderRadius.all(Radius.circular(6)),
         ),
         child: Padding(
@@ -547,7 +615,7 @@ final class _PreviewImageCard extends StatelessWidget {
             children: [
               DecoratedBox(
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE2E8F0),
+                  color: theme.chipBackgroundColor,
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Padding(
@@ -558,7 +626,7 @@ final class _PreviewImageCard extends StatelessWidget {
                   child: Text(
                     'IMG',
                     style: style.copyWith(
-                      color: const Color(0xFF42526E),
+                      color: theme.chromeLabelColor,
                       fontSize: (style.fontSize ?? 14) - 3,
                       fontWeight: FontWeight.w700,
                       height: 1,
@@ -582,7 +650,7 @@ final class _PreviewImageCard extends StatelessWidget {
                       title == null ? destination : '$destination - $title',
                       overflow: TextOverflow.ellipsis,
                       style: style.copyWith(
-                        color: const Color(0xFF5B6B7F),
+                        color: theme.captionTextColor,
                         fontSize: (style.fontSize ?? 14) - 2,
                       ),
                     ),
@@ -634,6 +702,7 @@ final class _PreviewImageActionMenuState
 
   @override
   Widget build(BuildContext context) {
+    final theme = FlarkMarkdownTheme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
       child: Column(
@@ -652,8 +721,8 @@ final class _PreviewImageActionMenuState
               child: DecoratedBox(
                 key: const Key('FlarkReadOnlyPreviewImageMenu'),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFFFFF),
-                  border: Border.all(color: const Color(0xFFD7DEE8)),
+                  color: theme.menuBackgroundColor,
+                  border: Border.all(color: theme.borderColor),
                   borderRadius: const BorderRadius.all(Radius.circular(6)),
                 ),
                 child: Padding(
@@ -735,17 +804,21 @@ String _displayCellText(String displayText, FlarkSourceRange range) {
   return displayText.substring(start, end).trim();
 }
 
-TextStyle _blockStyle(TextStyle baseStyle, FlarkRenderBlock block) {
+TextStyle _blockStyle(
+  TextStyle baseStyle,
+  FlarkRenderBlock block,
+  FlarkMarkdownThemeData theme,
+) {
   if (block.codeBlock != null) {
     return baseStyle.copyWith(
-      color: const Color(0xFF17202A),
+      color: theme.codeTextColor,
       fontFamily: 'monospace',
       height: 1.35,
     );
   }
 
   if (block.kind == FlarkMarkdownBlockKind.blockquote) {
-    return baseStyle.copyWith(color: const Color(0xFF42526E));
+    return baseStyle.copyWith(color: theme.quoteTextColor);
   }
 
   final headingLevel = switch (block.styleToken) {
@@ -765,7 +838,10 @@ TextStyle _blockStyle(TextStyle baseStyle, FlarkRenderBlock block) {
   );
 }
 
-TextStyle? _inlineStyle(FlarkRenderInlineRun run) {
+TextStyle? _inlineStyle(
+  FlarkRenderInlineRun run,
+  FlarkMarkdownThemeData theme,
+) {
   return switch (run.styleToken) {
     FlarkRenderTextStyleToken.emphasis => const TextStyle(
       fontStyle: FontStyle.italic,
@@ -779,8 +855,8 @@ TextStyle? _inlineStyle(FlarkRenderInlineRun run) {
     FlarkRenderTextStyleToken.strikethrough => const TextStyle(
       decoration: TextDecoration.lineThrough,
     ),
-    FlarkRenderTextStyleToken.link => const TextStyle(
-      color: Color(0xFF0057B8),
+    FlarkRenderTextStyleToken.link => TextStyle(
+      color: theme.linkColor,
       decoration: TextDecoration.underline,
     ),
     _ => null,

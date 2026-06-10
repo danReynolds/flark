@@ -76,6 +76,7 @@ final class _ListMarkerGlyph extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = FlarkMarkdownTheme.of(context);
     final markerText = marker.orderedLabel;
     if (markerText != null) {
       return SizedBox(
@@ -84,7 +85,7 @@ final class _ListMarkerGlyph extends StatelessWidget {
         child: Text(
           markerText,
           textAlign: TextAlign.right,
-          style: style.copyWith(color: const Color(0xFF5B677A)),
+          style: style.copyWith(color: theme.listMarkerColor),
         ),
       );
     }
@@ -92,22 +93,28 @@ final class _ListMarkerGlyph extends StatelessWidget {
       key: const Key('FlarkLiveBlockListMarker'),
       width: 16,
       height: (style.fontSize ?? 14) * (style.height ?? 1.2),
-      child: CustomPaint(painter: const _BulletMarkerPainter()),
+      child: CustomPaint(
+        painter: _BulletMarkerPainter(color: theme.chromeLabelColor),
+      ),
     );
   }
 }
 
 final class _BulletMarkerPainter extends CustomPainter {
-  const _BulletMarkerPainter();
+  const _BulletMarkerPainter({required this.color});
+
+  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = const Color(0xFF42526E);
+    final paint = Paint()..color = color;
     canvas.drawCircle(Offset(size.width / 2, size.height * 0.52), 2.3, paint);
   }
 
   @override
-  bool shouldRepaint(_BulletMarkerPainter oldDelegate) => false;
+  bool shouldRepaint(_BulletMarkerPainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
 }
 
 final class _EditableTaskListItemBlock extends StatefulWidget {
@@ -234,29 +241,44 @@ final class _TaskCheckboxGlyph extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = FlarkMarkdownTheme.of(context);
     return SizedBox(
       width: 15,
       height: 15,
-      child: CustomPaint(painter: _TaskCheckboxPainter(checked: checked)),
+      child: CustomPaint(
+        painter: _TaskCheckboxPainter(
+          checked: checked,
+          checkedColor: theme.checkboxCheckedColor,
+          borderColor: theme.checkboxBorderColor,
+          fillColor: theme.checkboxFillColor,
+          checkmarkColor: theme.checkboxCheckmarkColor,
+        ),
+      ),
     );
   }
 }
 
 final class _TaskCheckboxPainter extends CustomPainter {
-  const _TaskCheckboxPainter({required this.checked});
+  const _TaskCheckboxPainter({
+    required this.checked,
+    required this.checkedColor,
+    required this.borderColor,
+    required this.fillColor,
+    required this.checkmarkColor,
+  });
 
   final bool checked;
+  final Color checkedColor;
+  final Color borderColor;
+  final Color fillColor;
+  final Color checkmarkColor;
 
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
-    final borderColor = checked
-        ? const Color(0xFF2E7D32)
-        : const Color(0xFF7A8CA3);
-    final fill = Paint()
-      ..color = checked ? const Color(0xFF2E7D32) : const Color(0xFFFFFFFF);
+    final fill = Paint()..color = checked ? checkedColor : fillColor;
     final border = Paint()
-      ..color = borderColor
+      ..color = checked ? checkedColor : borderColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.4;
     final shape = RRect.fromRectAndRadius(rect, const Radius.circular(3));
@@ -265,7 +287,7 @@ final class _TaskCheckboxPainter extends CustomPainter {
     if (!checked) return;
 
     final check = Paint()
-      ..color = const Color(0xFFFFFFFF)
+      ..color = checkmarkColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.8
       ..strokeCap = StrokeCap.round
@@ -279,7 +301,11 @@ final class _TaskCheckboxPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_TaskCheckboxPainter oldDelegate) {
-    return oldDelegate.checked != checked;
+    return oldDelegate.checked != checked ||
+        oldDelegate.checkedColor != checkedColor ||
+        oldDelegate.borderColor != borderColor ||
+        oldDelegate.fillColor != fillColor ||
+        oldDelegate.checkmarkColor != checkmarkColor;
   }
 }
 
@@ -353,6 +379,7 @@ final class _EditableCodeBlock extends StatelessWidget {
         ),
       );
     }
+    final theme = FlarkMarkdownTheme.of(context);
     final interactions = FlarkMarkdownInteractions.maybeOf(context);
     final showLanguageSelector =
         interactions != null &&
@@ -371,7 +398,7 @@ final class _EditableCodeBlock extends StatelessWidget {
       blockHandle: blockHandle,
       displayText: displayText,
       style: style.copyWith(
-        color: const Color(0xFF17202A),
+        color: theme.codeTextColor,
         fontFamily: 'monospace',
         height: 1.35,
       ),
@@ -391,8 +418,8 @@ final class _EditableCodeBlock extends StatelessWidget {
       child: DecoratedBox(
         key: const Key('FlarkLiveBlockCodeFence'),
         decoration: BoxDecoration(
-          color: const Color(0xFFF1F4F8),
-          border: Border.all(color: const Color(0xFFD7DEE8)),
+          color: theme.codeBlockBackgroundColor,
+          border: Border.all(color: theme.borderColor),
           borderRadius: const BorderRadius.all(Radius.circular(6)),
         ),
         child: Padding(
@@ -516,8 +543,9 @@ final class _CodeCopyButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = FlarkMarkdownTheme.of(context);
     final labelStyle = style.copyWith(
-      color: const Color(0xFF42526E),
+      color: theme.chromeLabelColor,
       fontFamily: 'monospace',
       fontSize: (style.fontSize ?? 14) - 1,
       fontWeight: FontWeight.w700,
@@ -541,9 +569,9 @@ final class _CodeCopyButton extends StatelessWidget {
         excludeFromSemantics: true,
         onTap: copy,
         child: DecoratedBox(
-          decoration: const BoxDecoration(
-            color: Color(0xFFE2E8F0),
-            borderRadius: BorderRadius.all(Radius.circular(4)),
+          decoration: BoxDecoration(
+            color: theme.chipBackgroundColor,
+            borderRadius: const BorderRadius.all(Radius.circular(4)),
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -563,19 +591,20 @@ final class _CodeLanguageBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = FlarkMarkdownTheme.of(context);
     return Align(
       alignment: Alignment.centerRight,
       child: DecoratedBox(
-        decoration: const BoxDecoration(
-          color: Color(0xFFE2E8F0),
-          borderRadius: BorderRadius.all(Radius.circular(4)),
+        decoration: BoxDecoration(
+          color: theme.chipBackgroundColor,
+          borderRadius: const BorderRadius.all(Radius.circular(4)),
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           child: Text(
             language,
             style: style.copyWith(
-              color: const Color(0xFF42526E),
+              color: theme.chromeLabelColor,
               fontFamily: 'monospace',
               fontSize: (style.fontSize ?? 14) - 1,
               fontWeight: FontWeight.w700,
@@ -629,10 +658,11 @@ final class _CodeLanguageSelectorState extends State<_CodeLanguageSelector> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = FlarkMarkdownTheme.of(context);
     final currentValue = widget.language ?? '';
     final currentLabel = _languageLabel(currentValue);
     final labelStyle = widget.style.copyWith(
-      color: const Color(0xFF42526E),
+      color: theme.chromeLabelColor,
       fontFamily: 'monospace',
       fontSize: (widget.style.fontSize ?? 14) - 1,
       fontWeight: FontWeight.w700,
@@ -648,7 +678,9 @@ final class _CodeLanguageSelectorState extends State<_CodeLanguageSelector> {
           onTap: _toggleMenu,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: _open ? const Color(0xFFD7DEE8) : const Color(0xFFE2E8F0),
+              color: _open
+                  ? theme.chipActiveBackgroundColor
+                  : theme.chipBackgroundColor,
               borderRadius: const BorderRadius.all(Radius.circular(4)),
             ),
             child: Padding(
@@ -679,6 +711,7 @@ final class _CodeLanguageSelectorState extends State<_CodeLanguageSelector> {
   }
 
   Widget _buildMenuOverlay(BuildContext context) {
+    final theme = FlarkMarkdownTheme.of(context);
     final currentValue = widget.language ?? '';
     return CompositedTransformFollower(
       link: _menuAnchor,
@@ -695,14 +728,14 @@ final class _CodeLanguageSelectorState extends State<_CodeLanguageSelector> {
             child: DecoratedBox(
               key: _menuBoundsKey,
               decoration: BoxDecoration(
-                color: const Color(0xFFFFFFFF),
-                border: Border.all(color: const Color(0xFFD7DEE8)),
+                color: theme.menuBackgroundColor,
+                border: Border.all(color: theme.borderColor),
                 borderRadius: const BorderRadius.all(Radius.circular(6)),
-                boxShadow: const [
+                boxShadow: [
                   BoxShadow(
-                    color: Color(0x1A000000),
+                    color: theme.menuShadowColor,
                     blurRadius: 10,
-                    offset: Offset(0, 4),
+                    offset: const Offset(0, 4),
                   ),
                 ],
               ),
@@ -813,6 +846,7 @@ final class _CodeLanguageOptionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = FlarkMarkdownTheme.of(context);
     return GestureDetector(
       key: ValueKey('FlarkLiveBlockCodeLanguageOption:${option.value}'),
       behavior: HitTestBehavior.opaque,
@@ -822,7 +856,9 @@ final class _CodeLanguageOptionButton extends StatelessWidget {
         child: Text(
           option.label,
           style: style.copyWith(
-            color: selected ? const Color(0xFF17202A) : const Color(0xFF42526E),
+            color: selected
+                ? theme.chromeSelectedLabelColor
+                : theme.chromeLabelColor,
             fontSize: (style.fontSize ?? 14) - 1,
             fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
           ),
@@ -878,12 +914,13 @@ final class _EditableTableBlock extends StatelessWidget {
       );
     }
 
+    final theme = FlarkMarkdownTheme.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: DecoratedBox(
         key: const Key('FlarkLiveBlockTable'),
         decoration: BoxDecoration(
-          border: Border.all(color: const Color(0xFFD7DEE8)),
+          border: Border.all(color: theme.borderColor),
           borderRadius: const BorderRadius.all(Radius.circular(6)),
         ),
         child: ClipRRect(
@@ -891,15 +928,15 @@ final class _EditableTableBlock extends StatelessWidget {
           child: Table(
             defaultVerticalAlignment: TableCellVerticalAlignment.middle,
             border: TableBorder.symmetric(
-              inside: const BorderSide(color: Color(0xFFE2E8F0)),
+              inside: BorderSide(color: theme.tableDividerColor),
             ),
             children: [
               for (var rowIndex = 0; rowIndex < table.rows.length; rowIndex++)
                 TableRow(
                   decoration: BoxDecoration(
                     color: rowIndex == 0
-                        ? const Color(0xFFF1F4F8)
-                        : const Color(0xFFFFFFFF),
+                        ? theme.tableHeaderBackgroundColor
+                        : theme.tableRowBackgroundColor,
                   ),
                   children: [
                     for (
@@ -1037,6 +1074,7 @@ final class _EditableTableCellState extends State<_EditableTableCell> {
   @override
   Widget build(BuildContext context) {
     final editor = EditableText(
+      readOnly: FlarkEditorReadOnlyScope.of(context),
       key: _editableStateKey,
       controller: _textController,
       focusNode: _focusNode,

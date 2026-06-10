@@ -2000,7 +2000,7 @@ void main() {
           child: SizedBox(
             width: 320,
             height: 180,
-            child: MarkdownEditor(
+            child: FlarkMarkdownEditor(
               controller: controller,
               editingMode: FlarkMarkdownEditingMode.liveRendered,
               style: const TextStyle(fontSize: 14, height: 1.4),
@@ -2048,7 +2048,7 @@ void main() {
         child: SizedBox(
           width: 320,
           height: 180,
-          child: MarkdownEditor(
+          child: FlarkMarkdownEditor(
             controller: controller,
             editingMode: FlarkMarkdownEditingMode.liveRendered,
             style: const TextStyle(fontSize: 14, height: 1.4),
@@ -2102,7 +2102,7 @@ void main() {
         child: SizedBox(
           width: 320,
           height: 180,
-          child: MarkdownEditor(
+          child: FlarkMarkdownEditor(
             controller: controller,
             editingMode: FlarkMarkdownEditingMode.liveRendered,
             style: const TextStyle(fontSize: 14, height: 1.4),
@@ -2150,7 +2150,7 @@ void main() {
           child: SizedBox(
             width: 320,
             height: 180,
-            child: MarkdownEditor(
+            child: FlarkMarkdownEditor(
               controller: controller,
               editingMode: FlarkMarkdownEditingMode.liveRendered,
               style: const TextStyle(fontSize: 14, height: 1.4),
@@ -2201,7 +2201,7 @@ void main() {
         child: SizedBox(
           width: 320,
           height: 180,
-          child: MarkdownEditor(
+          child: FlarkMarkdownEditor(
             controller: controller,
             editingMode: FlarkMarkdownEditingMode.liveRendered,
             style: const TextStyle(fontSize: 14, height: 1.4),
@@ -2257,7 +2257,7 @@ void main() {
           child: SizedBox(
             width: 320,
             height: 180,
-            child: MarkdownEditor(
+            child: FlarkMarkdownEditor(
               controller: controller,
               editingMode: FlarkMarkdownEditingMode.liveRendered,
               style: const TextStyle(fontSize: 14, height: 1.4),
@@ -2307,7 +2307,7 @@ void main() {
           child: SizedBox(
             width: 320,
             height: 180,
-            child: MarkdownEditor(
+            child: FlarkMarkdownEditor(
               controller: controller,
               editingMode: FlarkMarkdownEditingMode.liveRendered,
               style: const TextStyle(fontSize: 14, height: 1.4),
@@ -2362,7 +2362,7 @@ void main() {
         child: SizedBox(
           width: 320,
           height: 180,
-          child: MarkdownEditor(
+          child: FlarkMarkdownEditor(
             controller: controller,
             editingMode: FlarkMarkdownEditingMode.liveRendered,
             style: const TextStyle(fontSize: 14, height: 1.4),
@@ -2405,7 +2405,7 @@ void main() {
           child: SizedBox(
             width: 320,
             height: 180,
-            child: MarkdownEditor(
+            child: FlarkMarkdownEditor(
               controller: controller,
               editingMode: FlarkMarkdownEditingMode.liveRendered,
               style: const TextStyle(fontSize: 14, height: 1.4),
@@ -2453,7 +2453,7 @@ void main() {
                 builder: (context) => SizedBox(
                   width: 320,
                   height: 220,
-                  child: MarkdownEditor(
+                  child: FlarkMarkdownEditor(
                     controller: controller,
                     editingMode: FlarkMarkdownEditingMode.liveRendered,
                     style: const TextStyle(fontSize: 14, height: 1.4),
@@ -2515,7 +2515,7 @@ void main() {
               builder: (context) => SizedBox(
                 width: 320,
                 height: 220,
-                child: MarkdownEditor(
+                child: FlarkMarkdownEditor(
                   controller: controller,
                   editingMode: FlarkMarkdownEditingMode.liveRendered,
                   style: const TextStyle(fontSize: 14, height: 1.4),
@@ -2582,7 +2582,7 @@ void main() {
               builder: (context) => SizedBox(
                 width: 320,
                 height: 220,
-                child: MarkdownEditor(
+                child: FlarkMarkdownEditor(
                   controller: controller,
                   editingMode: FlarkMarkdownEditingMode.liveRendered,
                   style: const TextStyle(fontSize: 14, height: 1.4),
@@ -2632,7 +2632,7 @@ void main() {
           child: SizedBox(
             width: 320,
             height: 180,
-            child: MarkdownEditor(
+            child: FlarkMarkdownEditor(
               controller: controller,
               editingMode: FlarkMarkdownEditingMode.liveRendered,
               style: const TextStyle(fontSize: 14, height: 1.4),
@@ -2695,7 +2695,7 @@ void main() {
           child: SizedBox(
             width: 320,
             height: 180,
-            child: MarkdownEditor(
+            child: FlarkMarkdownEditor(
               controller: controller,
               editingMode: FlarkMarkdownEditingMode.liveRendered,
               style: const TextStyle(fontSize: 14, height: 1.4),
@@ -2745,7 +2745,7 @@ void main() {
           child: SizedBox(
             width: 320,
             height: 180,
-            child: MarkdownEditor(
+            child: FlarkMarkdownEditor(
               controller: controller,
               editingMode: FlarkMarkdownEditingMode.liveRendered,
               style: const TextStyle(fontSize: 14, height: 1.4),
@@ -2801,7 +2801,7 @@ void main() {
           child: SizedBox(
             width: 320,
             height: 180,
-            child: MarkdownEditor(
+            child: FlarkMarkdownEditor(
               controller: controller,
               editingMode: FlarkMarkdownEditingMode.liveRendered,
               style: const TextStyle(fontSize: 14, height: 1.4),
@@ -2866,7 +2866,7 @@ void main() {
           child: SizedBox(
             width: 320,
             height: 180,
-            child: MarkdownEditor(
+            child: FlarkMarkdownEditor(
               controller: controller,
               editingMode: FlarkMarkdownEditingMode.liveRendered,
               style: const TextStyle(fontSize: 14, height: 1.4),
@@ -2927,7 +2927,7 @@ void main() {
           child: SizedBox(
             width: 320,
             height: 180,
-            child: MarkdownEditor(
+            child: FlarkMarkdownEditor(
               controller: controller,
               editingMode: FlarkMarkdownEditingMode.liveRendered,
               style: const TextStyle(fontSize: 14, height: 1.4),
@@ -3001,7 +3001,7 @@ void main() {
         child: SizedBox(
           width: 320,
           height: 180,
-          child: MarkdownEditor(
+          child: FlarkMarkdownEditor(
             controller: controller,
             editingMode: FlarkMarkdownEditingMode.liveRendered,
             style: const TextStyle(fontSize: 14, height: 1.4),
@@ -3069,7 +3069,7 @@ void main() {
               builder: (context) => SizedBox(
                 width: 320,
                 height: 220,
-                child: MarkdownEditor(
+                child: FlarkMarkdownEditor(
                   controller: controller,
                   editingMode: FlarkMarkdownEditingMode.liveRendered,
                   style: const TextStyle(fontSize: 14, height: 1.4),
@@ -5606,7 +5606,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: MarkdownEditor(
+        child: FlarkMarkdownEditor(
           controller: controller,
           editingMode: FlarkMarkdownEditingMode.liveRendered,
         ),

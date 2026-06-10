@@ -19,7 +19,10 @@ import 'dart:ui' show FrameTiming;
 import 'package:flark/flark.dart';
 import 'package:flutter/material.dart';
 
-const _blockCount = int.fromEnvironment('FLARK_PROFILE_BLOCKS', defaultValue: 40);
+const _blockCount = int.fromEnvironment(
+  'FLARK_PROFILE_BLOCKS',
+  defaultValue: 40,
+);
 // 'end' (default) inserts near the document end — realistic top-down typing,
 // where blocks before the cursor are reused. 'start' inserts at the top — the
 // worst case, where every later block's offsets shift and it must rebuild.
@@ -157,7 +160,7 @@ class _PerfHarnessState extends State<_PerfHarness> {
 
   @override
   Widget build(BuildContext context) {
-    return MarkdownEditor(
+    return FlarkMarkdownEditor(
       controller: _controller,
       editingMode: FlarkMarkdownEditingMode.liveRendered,
       style: const TextStyle(fontSize: 14),

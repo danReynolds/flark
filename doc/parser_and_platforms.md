@@ -9,10 +9,31 @@ Flark uses Comrak as the default Markdown parser.
 | Android | Native FFI bridge packaged in the app APK |
 | Linux | Native FFI bridge |
 | Web | Packaged Comrak WASM bridge |
+| Windows | Not supported yet |
 
 The public widgets use `FlarkNativeComrakParseBackend` when `parseBackend` is
 omitted. Load failures are surfaced directly; Flark does not silently switch to
 a different Markdown implementation.
+
+## Build Prerequisites
+
+On native targets the package build hook (`hook/build.dart`) compiles the
+bundled Rust bridge crate during `flutter build`/`flutter run`:
+
+- **Rust toolchain.** `cargo` (or `rustup`, which is preferred — the hook
+  resolves toolchains and adds missing cross-compile targets through it) must
+  be on `PATH`. Install via <https://rustup.rs>.
+- **Android additionally needs an NDK.** The hook locates it through
+  `ANDROID_NDK_HOME`, `ANDROID_NDK`, `ANDROID_NDK_ROOT`,
+  `ANDROID_NDK_LATEST_HOME`, or `ANDROID_HOME` (with an installed NDK).
+- **Web needs no extra tooling** — the WASM bridge ships prebundled in the
+  package.
+- **Windows is not a supported target yet.** The hook fails with an explicit
+  unsupported-target error; supported native targets are macOS arm64/x64,
+  Linux arm64/x64, Android arm/arm64/x64, and iOS.
+
+CI or container builds of native targets must install Rust in the build
+image; there is no pure-Dart parser fallback.
 
 ## Native Preflight
 
@@ -46,10 +67,10 @@ addTearDown(() => flarkNativeParseIsolateThresholdBytes = previous);
 ## Custom Parser
 
 Apps with a custom parser policy can implement `FlarkMarkdownParseBackend` and
-pass it to `MarkdownEditor` or `Markdown`.
+pass it to `FlarkMarkdownEditor` or `Markdown`.
 
 ```dart
-MarkdownEditor(
+FlarkMarkdownEditor(
   initialMarkdown: markdown,
   parseBackend: myBackend,
 )

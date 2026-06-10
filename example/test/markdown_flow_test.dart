@@ -319,11 +319,11 @@ Future<EditableText> _focusedEditableText(WidgetTester tester) async {
 }
 
 FlarkFlutterController _controller(WidgetTester tester) {
-  return tester.widget<MarkdownEditor>(find.byType(MarkdownEditor)).controller!;
+  return tester.widget<FlarkMarkdownEditor>(find.byType(FlarkMarkdownEditor)).controller!;
 }
 
 FlarkMarkdownEditingMode _editingMode(WidgetTester tester) {
-  return tester.widget<MarkdownEditor>(find.byType(MarkdownEditor)).editingMode;
+  return tester.widget<FlarkMarkdownEditor>(find.byType(FlarkMarkdownEditor)).editingMode;
 }
 
 String _editorText(WidgetTester tester) => _editableTexts(tester).join('\n');

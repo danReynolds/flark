@@ -170,13 +170,19 @@ final class FlarkFlutterController extends ChangeNotifier {
     void Function(Object error, StackTrace stackTrace)? onParseError,
     bool clearOnParseError = false,
   }) {
+    // Only backend/profile/debounce changes need a scheduler restart. The
+    // error callback is read through a stable forwarder, so swapping it in
+    // place keeps the debounce timer running — widget rebuilds that pass a
+    // fresh inline closure must not restart parsing every frame.
+    final restartNeeded =
+        parseBackend != null || parseProfile != null || parseDebounce != null;
     if (parseBackend != null) _parseBackend = parseBackend;
     if (parseProfile != null) _parseProfile = parseProfile;
     if (parseDebounce != null) _parseDebounce = parseDebounce;
     if (onParseError != null || clearOnParseError) {
       _onParseError = onParseError;
     }
-    if (_parseScheduler == null) return;
+    if (_parseScheduler == null || !restartNeeded) return;
     final wasStarted = _parseStarted;
     _parseScheduler!.dispose();
     _parseScheduler = null;
@@ -210,7 +216,9 @@ final class FlarkFlutterController extends ChangeNotifier {
       backend: _parseBackend ?? FlarkNativeComrakParseBackend.requiredDefault(),
       profile: _parseProfile,
       debounce: _parseDebounce,
-      onError: _onParseError,
+      // A stable forwarder, so configureParsing can swap the callback
+      // without restarting the scheduler.
+      onError: (error, stackTrace) => _onParseError?.call(error, stackTrace),
     );
   }
 

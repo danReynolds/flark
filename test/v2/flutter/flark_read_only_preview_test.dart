@@ -16,7 +16,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: Markdown(controller: controller),
+          child: FlarkMarkdown(controller: controller),
         ),
       );
 
@@ -67,7 +67,7 @@ void main() {
         await tester.pumpWidget(
           Directionality(
             textDirection: TextDirection.ltr,
-            child: Markdown(controller: controller),
+            child: FlarkMarkdown(controller: controller),
           ),
         );
 
@@ -101,7 +101,10 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SizedBox(width: 420, child: Markdown(controller: controller)),
+          child: SizedBox(
+            width: 420,
+            child: FlarkMarkdown(controller: controller),
+          ),
         ),
       );
 
@@ -157,7 +160,7 @@ void main() {
               editable: true,
               child: SizedBox(
                 width: 420,
-                child: Markdown(controller: controller),
+                child: FlarkMarkdown(controller: controller),
               ),
             ),
           ),
@@ -231,22 +234,30 @@ void main() {
             controller: controller,
             config: FlarkMarkdownInteractionConfig(onOpenLink: opened.add),
             editable: true,
-            child: Markdown(controller: controller),
+            child: FlarkMarkdown(controller: controller),
           ),
         ),
       );
 
       final button = find.byKey(const Key('FlarkInlineLinkMenuButton'));
       expect(button, findsOneWidget);
+      // With an onOpenLink handler, tapping the link opens it directly —
+      // matching every markdown renderer's convention.
       await tester.tap(button);
+      await tester.pump();
+      expect(opened, ['https://example.com']);
+      expect(find.byKey(const Key('FlarkInlineLinkMenu')), findsNothing);
+
+      // The menu (copy/edit/remove) moves to long-press.
+      await tester.longPress(button);
       await tester.pump();
       expect(find.byKey(const Key('FlarkInlineLinkMenu')), findsOneWidget);
 
       await tester.tap(find.text('Open'));
       await tester.pump();
-      expect(opened, ['https://example.com']);
+      expect(opened, ['https://example.com', 'https://example.com']);
 
-      await tester.tap(button);
+      await tester.longPress(button);
       await tester.pump();
       await tester.tap(find.text('Remove'));
       await tester.pump();
@@ -260,6 +271,43 @@ void main() {
       controller.redo();
       await tester.pump();
       expect(controller.markdown, 'Docs');
+    });
+
+    testWidgets('links open on tap when menus are disabled', (tester) async {
+      const markdown = '[Docs](https://example.com)';
+      final opened = <String>[];
+      final controller = FlarkFlutterController.fromMarkdown(markdown);
+      addTearDown(controller.dispose);
+      final result = await FlarkNativeComrakParseBackend.withNativeBridge()
+          .parse(
+            const FlarkMarkdownParseRequest(
+              revision: 0,
+              markdown: markdown,
+              profile: FlarkMarkdownProfile.commonMarkGfm,
+            ),
+          );
+      expect(controller.applyParseResult(result), isTrue);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: FlarkMarkdownInteractions(
+            controller: controller,
+            config: FlarkMarkdownInteractionConfig(
+              enableLinkMenus: false,
+              onOpenLink: opened.add,
+            ),
+            editable: false,
+            child: FlarkMarkdown(controller: controller),
+          ),
+        ),
+      );
+
+      final link = find.byKey(const Key('FlarkInlineLinkText'));
+      expect(link, findsOneWidget);
+      await tester.tap(link);
+      await tester.pump();
+      expect(opened, ['https://example.com']);
     });
 
     testWidgets('edit link action selects the source link range', (
@@ -292,7 +340,7 @@ void main() {
               },
             ),
             editable: true,
-            child: Markdown(controller: controller),
+            child: FlarkMarkdown(controller: controller),
           ),
         ),
       );
@@ -347,7 +395,7 @@ void main() {
             controller: controller,
             config: const FlarkMarkdownInteractionConfig(),
             editable: false,
-            child: Markdown(controller: controller),
+            child: FlarkMarkdown(controller: controller),
           ),
         ),
       );
@@ -389,7 +437,7 @@ void main() {
             controller: controller,
             config: const FlarkMarkdownInteractionConfig(),
             editable: false,
-            child: Markdown(controller: controller),
+            child: FlarkMarkdown(controller: controller),
           ),
         ),
       );
@@ -413,7 +461,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: Markdown(controller: controller),
+          child: FlarkMarkdown(controller: controller),
         ),
       );
       expect(find.text('one'), findsOneWidget);
@@ -468,7 +516,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: Markdown(
+          child: FlarkMarkdown(
             controller: controller,
             blockBuilder: (context, block, displayText, baseStyle) {
               if (block.codeBlock == null) return null;
@@ -519,7 +567,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: Markdown(controller: controller),
+          child: FlarkMarkdown(controller: controller),
         ),
       );
 
@@ -584,7 +632,7 @@ void main() {
         await tester.pumpWidget(
           Directionality(
             textDirection: TextDirection.ltr,
-            child: Markdown(controller: controller),
+            child: FlarkMarkdown(controller: controller),
           ),
         );
 
@@ -640,7 +688,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: Markdown(controller: controller),
+          child: FlarkMarkdown(controller: controller),
         ),
       );
 
@@ -665,7 +713,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: Markdown(controller: controller),
+          child: FlarkMarkdown(controller: controller),
         ),
       );
 
@@ -692,7 +740,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: Markdown(controller: controller),
+          child: FlarkMarkdown(controller: controller),
         ),
       );
 
@@ -734,7 +782,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: Markdown(controller: controller),
+          child: FlarkMarkdown(controller: controller),
         ),
       );
 
@@ -785,7 +833,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: Markdown(controller: controller),
+          child: FlarkMarkdown(controller: controller),
         ),
       );
 
@@ -831,7 +879,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: Markdown(controller: controller),
+          child: FlarkMarkdown(controller: controller),
         ),
       );
 
@@ -852,7 +900,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: Markdown(controller: controller),
+          child: FlarkMarkdown(controller: controller),
         ),
       );
 
@@ -879,7 +927,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: Markdown(controller: controller),
+          child: FlarkMarkdown(controller: controller),
         ),
       );
 
@@ -915,7 +963,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: Markdown(controller: controller),
+          child: FlarkMarkdown(controller: controller),
         ),
       );
 
@@ -939,7 +987,7 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: Markdown(controller: controller),
+          child: FlarkMarkdown(controller: controller),
         ),
       );
 

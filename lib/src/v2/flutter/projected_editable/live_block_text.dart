@@ -109,7 +109,11 @@ final class _EditableProjectedBlockTextState
       key: widget.editableKey,
       controller: _textController,
       focusNode: _focusNode,
-      style: _blockTextStyle(widget.style, block),
+      style: _blockTextStyle(
+        widget.style,
+        block,
+        FlarkMarkdownTheme.of(context),
+      ),
       cursorColor: widget.cursorColor,
       backgroundCursorColor: widget.backgroundCursorColor,
       minLines: _minimumEditableLineCount(_textController.text),
@@ -592,6 +596,7 @@ final class _EditableProjectedBlockTextState
     }
     if (event.logicalKey == LogicalKeyboardKey.enter ||
         event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+      if (FlarkEditorReadOnlyScope.of(context)) return KeyEventResult.handled;
       if (_ignoreEmptyOpeningCodeBodyKeyboardEnter()) {
         return KeyEventResult.handled;
       }
@@ -912,7 +917,9 @@ final class _KeyboardSyncedEditableTextState
 
   @override
   Widget build(BuildContext context) {
+    final readOnly = FlarkEditorReadOnlyScope.of(context);
     final editor = EditableText(
+      readOnly: readOnly,
       key: _editableStateKey,
       controller: widget.controller,
       focusNode: widget.focusNode,
@@ -991,6 +998,7 @@ final class _FlarkBlockTextController extends TextEditingController {
     TextStyle? style,
     required bool withComposing,
   }) {
+    final theme = FlarkMarkdownTheme.of(context);
     final effectiveStyle = style ?? DefaultTextStyle.of(context).style;
     final renderBlock = block;
     final composingRange = withComposing && value.isComposingRangeValid
@@ -1005,6 +1013,7 @@ final class _FlarkBlockTextController extends TextEditingController {
         language: codeSyntaxLanguage ?? renderBlock.codeBlock?.language,
         baseStyle: effectiveStyle,
         composingRange: composingRange,
+        syntaxTheme: theme.syntaxTheme,
       );
       if (highlighted != null) return highlighted;
     }
@@ -1036,7 +1045,7 @@ final class _FlarkBlockTextController extends TextEditingController {
         children,
         start: segment.start,
         end: segment.end,
-        style: segment.signature.resolve(effectiveStyle),
+        style: segment.signature.resolve(effectiveStyle, theme),
         composingRange: composingRange,
       );
       cursor = segment.end;

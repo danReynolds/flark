@@ -5,7 +5,7 @@
 ```dart
 import 'package:flark/flark.dart';
 
-MarkdownEditor(
+FlarkMarkdownEditor(
   initialMarkdown: '# Notes\n\n- Write Markdown\n- Keep source truth',
   editingMode: FlarkMarkdownEditingMode.liveRendered,
   onChanged: (markdown) {
@@ -19,18 +19,19 @@ pads, and simple single-document editors.
 
 ## Forms
 
-Use `MarkdownEditorFormField` when the editor participates in a Flutter `Form`.
-It is a thin wrapper around `MarkdownEditor`: validation, saving,
-autovalidation, reset, and restoration use Flutter's standard `FormField`
-machinery, while Markdown editing still goes through the same controller and
-parser paths.
+Use `FlarkMarkdownEditorFormField` when the editor participates in a Flutter `Form`.
+It is a thin wrapper around `FlarkMarkdownEditor`: validation, saving,
+autovalidation, and reset use Flutter's standard `FormField` machinery
+(`restorationId` is forwarded to `FormField` and follows its standard
+behavior), while Markdown editing still goes through the same controller and
+parser paths. `enabled: false` renders the field read-only.
 
 ```dart
 final formKey = GlobalKey<FormState>();
 
 Form(
   key: formKey,
-  child: MarkdownEditorFormField(
+  child: FlarkMarkdownEditorFormField(
     initialMarkdown: draftBody,
     editingMode: FlarkMarkdownEditingMode.liveRendered,
     validator: (markdown) {
@@ -44,13 +45,13 @@ Form(
 ```
 
 Pass `controller` instead of `initialMarkdown` when the form field shares state
-with preview, toolbar, or save-button UI. As with `MarkdownEditor`, a shared
+with preview, toolbar, or save-button UI. As with `FlarkMarkdownEditor`, a shared
 controller owns parser configuration.
 
 ## Preview
 
 ```dart
-Markdown(markdown: '# Preview\n\nRendered from Markdown.')
+FlarkMarkdown(markdown: '# Preview\n\nRendered from FlarkMarkdown.')
 ```
 
 Use this when the preview has its own source string.
@@ -70,8 +71,8 @@ final controller = FlarkFlutterController.fromMarkdown(
 
 Row(
   children: [
-    Expanded(child: MarkdownEditor(controller: controller)),
-    Expanded(child: Markdown(controller: controller)),
+    Expanded(child: FlarkMarkdownEditor(controller: controller)),
+    Expanded(child: FlarkMarkdown(controller: controller)),
   ],
 )
 ```
@@ -79,6 +80,8 @@ Row(
 Dispose app-owned controllers when the owning widget is disposed. Passing
 `parseBackend`, `parseProfile`, `parseDebounce`, or `onParseError` to a widget
 that already has a `controller` asserts; set them on the controller instead.
+(`profile` is a deprecated alias of `parseProfile` and will be removed before
+1.0.)
 
 ## Observing Changes
 
@@ -114,12 +117,12 @@ AnimatedBuilder(
 `FlarkFlutterController` is a `ChangeNotifier`, so toolbar UI can rebuild from
 the controller, `controller.selectionChanges`, or `controller.events`.
 
-`MarkdownEditor` installs a default shortcut map (Cmd/Ctrl + B/I/E,
+`FlarkMarkdownEditor` installs a default shortcut map (Cmd/Ctrl + B/I/E,
 Cmd/Ctrl+Shift+X) via `useDefaultShortcuts`. Add or override bindings with
 `FlarkMarkdownShortcuts`:
 
 ```dart
-MarkdownEditor(
+FlarkMarkdownEditor(
   controller: controller,
   shortcuts: {
     const SingleActivator(LogicalKeyboardKey.keyK, meta: true):
@@ -137,6 +140,31 @@ MarkdownEditor(
   rendered inline styling, and providing editable task, table, code-fence, and
   quote blocks.
 
+## Theming
+
+Chrome colors (code fences, quotes, links, tables, checkboxes, menus, syntax
+highlighting) come from `FlarkMarkdownThemeData`. With no configuration the
+palette follows platform brightness. Pass `theme:` to a widget, or wrap a
+subtree in `FlarkMarkdownTheme` to theme every Flark surface below it:
+
+```dart
+FlarkMarkdownTheme(
+  data: FlarkMarkdownThemeData.dark,
+  child: ...,
+)
+```
+
+Start from `FlarkMarkdownThemeData.light`/`.dark` and adjust with `copyWith`.
+Fonts and text sizes stay on the widget `style`/`textStyle` parameters.
+
+## Read-Only Surfaces
+
+- `FlarkMarkdownEditor(readOnly: true)` renders the live document without
+  accepting edits, shortcuts, or block mutations.
+- `FlarkMarkdown(selectable: true)` lets users select and copy preview text
+  (requires an `Overlay` ancestor, which `MaterialApp`/`CupertinoApp`
+  provide).
+
 ## Accessibility
 
 The live-rendered surface composes editable block fields, so each block exposes
@@ -151,7 +179,7 @@ steps. Coverage lives in `test/v2/flutter/flark_live_rendered_a11y_test.dart`.
 Use `onParseError` to log or surface scheduled parser failures.
 
 ```dart
-MarkdownEditor(
+FlarkMarkdownEditor(
   initialMarkdown: markdown,
   onParseError: (error, stackTrace) {
     debugPrint('Markdown parser failed: $error');

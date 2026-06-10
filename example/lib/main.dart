@@ -122,14 +122,17 @@ widgets for common editing flows.
 - Comrak on native and web
 
 ```dart
-final editor = MarkdownEditor(
+final editor = FlarkMarkdownEditor(
   controller: controller,
+  interactionConfig: FlarkMarkdownInteractionConfig(
+    onOpenLink: _open,
+  ),
   editingMode: FlarkMarkdownEditingMode.liveRendered,
 );
 ```
 ''';
 
-const _editorSnippet = '''MarkdownEditor(
+const _editorSnippet = '''FlarkMarkdownEditor(
   initialMarkdown: '# Notes\\n\\nEdit **Markdown**.',
   onChanged: saveMarkdown,
 )''';
@@ -139,8 +142,8 @@ const _controllerSnippet =
 
 Row(
   children: [
-    Expanded(child: MarkdownEditor(controller: controller)),
-    Expanded(child: Markdown(controller: controller)),
+    Expanded(child: FlarkMarkdownEditor(controller: controller)),
+    Expanded(child: FlarkMarkdown(controller: controller)),
   ],
 )''';
 
@@ -152,7 +155,7 @@ IconButton(
   onPressed: commands.canMutate ? commands.toggleStrong : null,
 )''';
 
-const _formSnippet = '''MarkdownEditorFormField(
+const _formSnippet = '''FlarkMarkdownEditorFormField(
   initialMarkdown: draftBody,
   validator: validateMarkdown,
   onSaved: saveDraftBody,
@@ -181,6 +184,10 @@ class FlarkExampleApp extends StatelessWidget {
     return MaterialApp(
       title: 'Flark',
       debugShowCheckedModeBanner: false,
+      // The site design is light-only; pin the markdown palette to match
+      // instead of following the visitor's platform brightness.
+      builder: (context, child) =>
+          FlarkMarkdownTheme(data: FlarkMarkdownThemeData.light, child: child!),
       theme: base.copyWith(
         scaffoldBackgroundColor: _C.paper,
         dividerColor: _C.line,
@@ -480,7 +487,11 @@ class _Glyph extends StatelessWidget {
           ),
         ],
       ),
-      child: Icon(Icons.edit_note_rounded, size: size * 0.62, color: Colors.white),
+      child: Icon(
+        Icons.edit_note_rounded,
+        size: size * 0.62,
+        color: Colors.white,
+      ),
     );
   }
 }
@@ -563,20 +574,19 @@ class _HeroBand extends StatelessWidget {
                     if (stacked) {
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          copy,
-                          const SizedBox(height: 34),
-                          workbench,
-                        ],
+                        children: [copy, const SizedBox(height: 34), workbench],
                       );
                     }
                     return Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(flex: 5, child: Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: copy,
-                        )),
+                        Expanded(
+                          flex: 5,
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: copy,
+                          ),
+                        ),
                         const SizedBox(width: 44),
                         Expanded(flex: 6, child: workbench),
                       ],
@@ -643,9 +653,7 @@ class _Blob extends StatelessWidget {
         height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [color, color.withValues(alpha: 0)],
-          ),
+          gradient: RadialGradient(colors: [color, color.withValues(alpha: 0)]),
         ),
       ),
     );
@@ -711,7 +719,10 @@ class _HeroCopy extends StatelessWidget {
             spacing: 12,
             runSpacing: 12,
             children: [
-              _ProofChip(icon: Icons.edit_note_rounded, label: 'Live-rendered editing'),
+              _ProofChip(
+                icon: Icons.edit_note_rounded,
+                label: 'Live-rendered editing',
+              ),
               _ProofChip(icon: Icons.bolt_rounded, label: 'Native Comrak'),
               _ProofChip(icon: Icons.devices_rounded, label: 'Native + web'),
             ],
@@ -891,7 +902,8 @@ class _AtelierBanner extends StatelessWidget {
                   _heroArtworkAsset,
                   fit: BoxFit.cover,
                   alignment: Alignment.centerLeft,
-                  semanticLabel: 'A painterly writing studio with floating '
+                  semanticLabel:
+                      'A painterly writing studio with floating '
                       'Markdown and code cards',
                   errorBuilder: (context, error, stackTrace) =>
                       const ColoredBox(color: _C.tealTint),
@@ -1113,7 +1125,10 @@ class _LivePill extends StatelessWidget {
           ),
           const SizedBox(width: 7),
           // Required string: 'Live playground'
-          Text('Live playground', style: _sans(12, FontWeight.w700, _C.inkSoft)),
+          Text(
+            'Live playground',
+            style: _sans(12, FontWeight.w700, _C.inkSoft),
+          ),
         ],
       ),
     );
@@ -1550,7 +1565,7 @@ class _EditorPane extends StatelessWidget {
             ),
             clipBehavior: Clip.antiAlias,
             padding: const EdgeInsets.fromLTRB(18, 16, 14, 12),
-            child: MarkdownEditor(
+            child: FlarkMarkdownEditor(
               controller: controller,
               editingMode: FlarkMarkdownEditingMode.liveRendered,
               focusNode: focusNode,
@@ -1682,7 +1697,7 @@ class _WhySection extends StatelessWidget {
         children: [
           const _Eyebrow('Why Flark', color: _C.terracotta),
           const SizedBox(height: 18),
-          _SectionTitle('The document is always Markdown.', maxWidth: 720),
+          _SectionTitle('The document is always FlarkMarkdown.', maxWidth: 720),
           const SizedBox(height: 14),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
@@ -1823,7 +1838,10 @@ class _WhyTileState extends State<_WhyTile> {
               ],
             ),
             const SizedBox(height: 20),
-            Text(widget.title, style: _serif(23, FontWeight.w700, _C.ink, spacing: 0)),
+            Text(
+              widget.title,
+              style: _serif(23, FontWeight.w700, _C.ink, spacing: 0),
+            ),
             const SizedBox(height: 10),
             Text(widget.body, style: _sans(15, FontWeight.w400, _C.inkSoft)),
           ],
@@ -1880,7 +1898,10 @@ class _ApiSection extends StatelessWidget {
               );
               const rail = Column(
                 children: [
-                  _RecipeCard(title: 'Shared preview', code: _controllerSnippet),
+                  _RecipeCard(
+                    title: 'Shared preview',
+                    code: _controllerSnippet,
+                  ),
                   SizedBox(height: 16),
                   _RecipeCard(title: 'Toolbar command', code: _toolbarSnippet),
                   SizedBox(height: 16),
@@ -1948,9 +1969,15 @@ class _CodeCard extends StatelessWidget {
               children: [
                 const Icon(Icons.terminal_rounded, size: 18, color: _C.sage),
                 const SizedBox(width: 10),
-                Text(title, style: _sans(14.5, FontWeight.w700, const Color(0xFFF3EEDF))),
+                Text(
+                  title,
+                  style: _sans(14.5, FontWeight.w700, const Color(0xFFF3EEDF)),
+                ),
                 const Spacer(),
-                Text(subtitle, style: _mono(12.5, FontWeight.w500, const Color(0xFF8F876F))),
+                Text(
+                  subtitle,
+                  style: _mono(12.5, FontWeight.w500, const Color(0xFF8F876F)),
+                ),
               ],
             ),
           ),
@@ -1989,7 +2016,14 @@ class _RecipeCard extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Container(width: 8, height: 8, decoration: const BoxDecoration(color: _C.teal, shape: BoxShape.circle)),
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: _C.teal,
+                    shape: BoxShape.circle,
+                  ),
+                ),
                 const SizedBox(width: 10),
                 Text(title, style: _sans(13.5, FontWeight.w700, _C.ink)),
               ],
@@ -2014,16 +2048,36 @@ class _CodeText extends StatelessWidget {
   final bool onDark;
 
   static const _keywords = {
-    'final', 'const', 'var', 'void', 'return', 'import', 'class', 'extends',
-    'new', 'true', 'false', 'null', 'if', 'else', 'for', 'this', 'super',
-    'late', 'required', 'async', 'await', 'with', 'as', 'show', 'enum',
+    'final',
+    'const',
+    'var',
+    'void',
+    'return',
+    'import',
+    'class',
+    'extends',
+    'new',
+    'true',
+    'false',
+    'null',
+    'if',
+    'else',
+    'for',
+    'this',
+    'super',
+    'late',
+    'required',
+    'async',
+    'await',
+    'with',
+    'as',
+    'show',
+    'enum',
   };
 
   @override
   Widget build(BuildContext context) {
-    final base = onDark
-        ? const Color(0xFFE9E3D2)
-        : _C.ink;
+    final base = onDark ? const Color(0xFFE9E3D2) : _C.ink;
     final keyword = onDark ? const Color(0xFF6FC3B3) : _C.teal;
     final string = onDark ? const Color(0xFFE6A06E) : _C.terracotta;
     final type = onDark ? const Color(0xFF8FB8DA) : _C.navy;
@@ -2048,10 +2102,12 @@ class _CodeText extends StatelessWidget {
         while (j < n && code[j] != '\n') {
           j++;
         }
-        spans.add(TextSpan(
-          text: code.substring(i, j),
-          style: TextStyle(color: comment, fontStyle: FontStyle.italic),
-        ));
+        spans.add(
+          TextSpan(
+            text: code.substring(i, j),
+            style: TextStyle(color: comment, fontStyle: FontStyle.italic),
+          ),
+        );
         i = j;
         continue;
       }
@@ -2070,10 +2126,12 @@ class _CodeText extends StatelessWidget {
           }
           j++;
         }
-        spans.add(TextSpan(
-          text: code.substring(i, j),
-          style: TextStyle(color: string),
-        ));
+        spans.add(
+          TextSpan(
+            text: code.substring(i, j),
+            style: TextStyle(color: string),
+          ),
+        );
         i = j;
         continue;
       }
@@ -2095,7 +2153,12 @@ class _CodeText extends StatelessWidget {
         } else {
           c = base;
         }
-        spans.add(TextSpan(text: word, style: TextStyle(color: c)));
+        spans.add(
+          TextSpan(
+            text: word,
+            style: TextStyle(color: c),
+          ),
+        );
         i = j;
         continue;
       }
@@ -2107,15 +2170,22 @@ class _CodeText extends StatelessWidget {
                 code[j] == '.')) {
           j++;
         }
-        spans.add(TextSpan(
-          text: code.substring(i, j),
-          style: TextStyle(color: number),
-        ));
+        spans.add(
+          TextSpan(
+            text: code.substring(i, j),
+            style: TextStyle(color: number),
+          ),
+        );
         i = j;
         continue;
       }
       // default single char
-      spans.add(TextSpan(text: ch, style: TextStyle(color: base)));
+      spans.add(
+        TextSpan(
+          text: ch,
+          style: TextStyle(color: base),
+        ),
+      );
       i++;
     }
 
@@ -2147,7 +2217,10 @@ class _DocsSection extends StatelessWidget {
         children: [
           const _Eyebrow('Keep reading', color: _C.sage),
           const SizedBox(height: 18),
-          _SectionTitle('From a first field to the full surface.', maxWidth: 720),
+          _SectionTitle(
+            'From a first field to the full surface.',
+            maxWidth: 720,
+          ),
           const SizedBox(height: 32),
           LayoutBuilder(
             builder: (context, constraints) {
@@ -2222,7 +2295,10 @@ class _DocGrid extends StatelessWidget {
         rows.add(const SizedBox(height: gap));
       }
     }
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: rows,
+    );
   }
 }
 
@@ -2296,9 +2372,7 @@ class _Footer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      decoration: const BoxDecoration(
-        color: _C.ink,
-      ),
+      decoration: const BoxDecoration(color: _C.ink),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 48),
         child: Center(
@@ -2321,8 +2395,12 @@ class _Footer extends StatelessWidget {
                             'Flark',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: _serif(22, FontWeight.w900, Colors.white,
-                                spacing: 0),
+                            style: _serif(
+                              22,
+                              FontWeight.w900,
+                              Colors.white,
+                              spacing: 0,
+                            ),
                           ),
                         ),
                       ],
@@ -2330,7 +2408,11 @@ class _Footer extends StatelessWidget {
                     const SizedBox(height: 16),
                     Text(
                       'Markdown-first editing and rendering for Flutter.',
-                      style: _sans(14.5, FontWeight.w400, const Color(0xFFBDB6A6)),
+                      style: _sans(
+                        14.5,
+                        FontWeight.w400,
+                        const Color(0xFFBDB6A6),
+                      ),
                     ),
                     const SizedBox(height: 10),
                     Container(
@@ -2338,10 +2420,17 @@ class _Footer extends StatelessWidget {
                         color: const Color(0xFF2C2719),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                       child: Text(
                         "import 'package:flark/flark.dart';",
-                        style: _mono(13, FontWeight.w500, const Color(0xFF8FB8DA)),
+                        style: _mono(
+                          13,
+                          FontWeight.w500,
+                          const Color(0xFF8FB8DA),
+                        ),
                       ),
                     ),
                   ],
@@ -2450,7 +2539,10 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: maxWidth),
-      child: Text(text, style: _serif(38, FontWeight.w700, _C.ink, height: 1.06)),
+      child: Text(
+        text,
+        style: _serif(38, FontWeight.w700, _C.ink, height: 1.06),
+      ),
     );
   }
 }

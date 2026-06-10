@@ -1397,14 +1397,15 @@ final class _FlarkLiveRenderedBlock extends StatelessWidget {
       );
     }
     if (block.kind == FlarkMarkdownBlockKind.blockquote) {
+      final theme = FlarkMarkdownTheme.of(context);
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: DecoratedBox(
           key: const Key('FlarkLiveBlockBlockquote'),
-          decoration: const BoxDecoration(
-            color: Color(0xFFF8FAFC),
+          decoration: BoxDecoration(
+            color: theme.quoteBackgroundColor,
             border: Border(
-              left: BorderSide(color: Color(0xFF7A8CA3), width: 3),
+              left: BorderSide(color: theme.quoteRailColor, width: 3),
             ),
           ),
           child: Padding(
@@ -1414,7 +1415,7 @@ final class _FlarkLiveRenderedBlock extends StatelessWidget {
               block: block,
               blockHandle: handle,
               displayText: displayText,
-              style: style.copyWith(color: const Color(0xFF42526E)),
+              style: style.copyWith(color: theme.quoteTextColor),
               cursorColor: cursorColor,
               backgroundCursorColor: backgroundCursorColor,
               focusNode: focusNode,

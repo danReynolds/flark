@@ -2,7 +2,36 @@
 
 ## Unreleased
 
-Architecture hardening and correctness fixes from a full-package audit.
+Architecture hardening and correctness fixes from a full-package audit,
+followed by a developer-experience pass.
+
+Developer experience:
+
+- Theming: `FlarkMarkdownThemeData` (with `light`/`dark` palettes and
+  `copyWith`) now drives every chrome color — code fences, quotes, links,
+  tables, checkboxes, menus, and the syntax-highlighting palette
+  (`FlarkCodeSyntaxThemeData`). Provide it per widget via `theme:` or
+  ambiently via `FlarkMarkdownTheme`; with no configuration the palette
+  follows platform brightness. The light palette is identical to the
+  previous hard-coded colors.
+- Public widgets renamed for consistency and to avoid colliding with
+  `flutter_markdown`: `Markdown` → `FlarkMarkdown`, `MarkdownEditor` →
+  `FlarkMarkdownEditor`, `MarkdownEditorFormField` →
+  `FlarkMarkdownEditorFormField`. The old names remain as deprecated
+  typedefs until 1.0. `profile` is a deprecated alias of the new
+  `parseProfile` parameter.
+- `FlarkMarkdownEditor.readOnly` renders the live document without
+  accepting edits, shortcuts, or block mutations;
+  `FlarkMarkdownEditorFormField(enabled: false)` does the same; and
+  `FlarkMarkdown(selectable: true)` enables text selection in previews.
+- Links open on tap when `onOpenLink` is configured (the copy/edit menu
+  moves to long-press), matching standard markdown-renderer behavior.
+- Rebuilding a widget-owned editor/preview with a changed `onParseError`
+  closure (e.g. an inline lambda recreated every build) no longer restarts
+  the parse scheduler; only backend/profile/debounce changes do.
+- Documented the native build prerequisites (Rust toolchain, Android NDK
+  discovery, Windows unsupported, prebundled web WASM) in the README and
+  parser/platforms guide; the build hook's errors now point there.
 
 Behavior fixes:
 

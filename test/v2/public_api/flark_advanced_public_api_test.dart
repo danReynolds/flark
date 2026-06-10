@@ -56,7 +56,7 @@ void main() {
     );
     expect(FlarkNativeComrakParseBackend, isA<Type>());
     expect(NativeComrakBridgePreflightResult.available().isAvailable, isTrue);
-    expect(MarkdownEditor, isA<Type>());
+    expect(FlarkMarkdownEditor, isA<Type>());
     expect(
       const FlarkMarkdownInteractionConfig(),
       isA<FlarkMarkdownInteractionConfig>(),
@@ -91,7 +91,6 @@ void main() {
     );
     expect(barrel, isNot(contains("export 'src/v2/core/core.dart';")));
     expect(barrel, isNot(contains('FlarkMarkdownField')));
-    expect(barrel, isNot(contains('FlarkMarkdownEditor')));
     expect(barrel, isNot(contains('FlarkMarkdownPreview')));
     expect(barrel, isNot(contains('FlarkReadOnlyPreview')));
     expect(barrel, isNot(contains('FlarkEditableText')));

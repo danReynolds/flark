@@ -44,8 +44,11 @@ void main() {
         textDirection: TextDirection.ltr,
         child: Column(
           children: [
-            MarkdownEditor(controller: controller),
-            const Markdown(markdown: '# Preview', parseDebounce: Duration.zero),
+            FlarkMarkdownEditor(controller: controller),
+            const FlarkMarkdown(
+              markdown: '# Preview',
+              parseDebounce: Duration.zero,
+            ),
           ],
         ),
       ),
@@ -84,7 +87,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: MarkdownEditor(controller: controller),
+        child: FlarkMarkdownEditor(controller: controller),
       ),
     );
     await tester.pump();

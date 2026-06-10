@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flark/flark_advanced.dart';
 
 void main() {
-  testWidgets('MarkdownEditor wires parsing into live-rendered editing', (
+  testWidgets('FlarkMarkdownEditor wires parsing into live-rendered editing', (
     tester,
   ) async {
     final backend = _ImmediateParseBackend();
@@ -18,7 +18,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: MarkdownEditor(controller: controller),
+        child: FlarkMarkdownEditor(controller: controller),
       ),
     );
 
@@ -39,7 +39,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: Markdown(
+        child: FlarkMarkdown(
           markdown: '# Title',
           parseBackend: backend,
           parseDebounce: Duration.zero,
@@ -54,7 +54,7 @@ void main() {
     expect(find.text('Title'), findsOneWidget);
   });
 
-  testWidgets('MarkdownEditor owns controller and reports changes', (
+  testWidgets('FlarkMarkdownEditor owns controller and reports changes', (
     tester,
   ) async {
     final changes = <String>[];
@@ -62,7 +62,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: MarkdownEditor(
+        child: FlarkMarkdownEditor(
           initialMarkdown: 'hello',
           parseBackend: _ImmediateParagraphParseBackend(),
           parseDebounce: Duration.zero,
@@ -88,7 +88,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: MarkdownEditor(
+        child: FlarkMarkdownEditor(
           initialMarkdown: 'reset',
           parseBackend: _ImmediateParagraphParseBackend(),
           parseDebounce: Duration.zero,
@@ -108,7 +108,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: MarkdownEditor(
+        child: FlarkMarkdownEditor(
           key: const ValueKey('reset-document'),
           initialMarkdown: 'reset',
           parseBackend: _ImmediateParagraphParseBackend(),
@@ -127,6 +127,170 @@ void main() {
     );
   });
 
+  testWidgets('readOnly editors render but reject edits and commands', (
+    tester,
+  ) async {
+    final controller = FlarkFlutterController.fromMarkdown(
+      'hello',
+      extensions: FlarkMarkdownEditingExtensions.standard(),
+      parseBackend: _ImmediateParagraphParseBackend(),
+      parseDebounce: Duration.zero,
+    );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkMarkdownEditor(
+          controller: controller,
+          readOnly: true,
+          editingMode: FlarkMarkdownEditingMode.source,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final editable = tester.widget<EditableText>(find.byType(EditableText));
+    expect(editable.readOnly, isTrue);
+    expect(editable.controller.text, 'hello');
+
+    // Flipping back to editable re-enables input on the same widget tree.
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkMarkdownEditor(
+          controller: controller,
+          readOnly: false,
+          editingMode: FlarkMarkdownEditingMode.source,
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).readOnly,
+      isFalse,
+    );
+
+    await tester.enterText(find.byType(EditableText), 'hello!');
+    await tester.pump();
+    expect(controller.markdown, 'hello!');
+  });
+
+  testWidgets('disabled form fields render a read-only editor', (tester) async {
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Form(
+          child: FlarkMarkdownEditorFormField(
+            initialMarkdown: 'locked',
+            parseBackend: _ImmediateParagraphParseBackend(),
+            parseDebounce: Duration.zero,
+            editingMode: FlarkMarkdownEditingMode.source,
+            enabled: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).readOnly,
+      isTrue,
+    );
+  });
+
+  testWidgets('selectable previews wrap content in a selection region', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        // SelectableRegion requires an Overlay ancestor (normally provided
+        // by MaterialApp/WidgetsApp).
+        child: Overlay(
+          initialEntries: [
+            OverlayEntry(
+              builder: (context) => FlarkMarkdown(
+                markdown: 'hello world',
+                parseBackend: _ImmediateParagraphParseBackend(),
+                parseDebounce: Duration.zero,
+                selectable: true,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byType(SelectableRegion), findsOneWidget);
+    expect(find.textContaining('hello world'), findsWidgets);
+  });
+
+  testWidgets('readOnly applies to every live-rendered block editable', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkMarkdownEditor(
+          initialMarkdown: 'alpha\n\nbeta',
+          readOnly: true,
+          editingMode: FlarkMarkdownEditingMode.liveRendered,
+          parseBackend: _ImmediateParagraphParseBackend(),
+          parseDebounce: Duration.zero,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final editables = tester.widgetList<EditableText>(
+      find.byType(EditableText),
+    );
+    expect(editables, isNotEmpty);
+    for (final editable in editables) {
+      expect(editable.readOnly, isTrue);
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('swapping only onParseError does not restart the parser', (
+    tester,
+  ) async {
+    final backend = _ImmediateParagraphParseBackend();
+
+    Widget editorWith(void Function(Object, StackTrace) onParseError) {
+      return Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkMarkdownEditor(
+          initialMarkdown: 'hello',
+          parseBackend: backend,
+          parseDebounce: Duration.zero,
+          editingMode: FlarkMarkdownEditingMode.source,
+          onParseError: onParseError,
+        ),
+      );
+    }
+
+    await tester.pumpWidget(editorWith((error, stack) {}));
+    await tester.pump();
+    await tester.pump();
+    final requestsAfterFirstBuild = backend.requests.length;
+
+    // Rebuilding with a fresh inline closure used to dispose and recreate
+    // the parse scheduler each frame; it must now swap the callback in
+    // place without issuing a new parse.
+    for (var i = 0; i < 3; i++) {
+      await tester.pumpWidget(editorWith((error, stack) {}));
+      await tester.pump();
+    }
+    expect(backend.requests.length, requestsAfterFirstBuild);
+  });
+
   testWidgets('shared controller drives a single parser across surfaces', (
     tester,
   ) async {
@@ -143,8 +307,8 @@ void main() {
         textDirection: TextDirection.ltr,
         child: Column(
           children: [
-            Expanded(child: MarkdownEditor(controller: controller)),
-            Expanded(child: Markdown(controller: controller)),
+            Expanded(child: FlarkMarkdownEditor(controller: controller)),
+            Expanded(child: FlarkMarkdown(controller: controller)),
           ],
         ),
       ),
@@ -183,22 +347,23 @@ void main() {
     addTearDown(controller.dispose);
 
     expect(
-      () => MarkdownEditor(controller: controller, initialMarkdown: 'hello'),
+      () =>
+          FlarkMarkdownEditor(controller: controller, initialMarkdown: 'hello'),
       throwsAssertionError,
     );
     expect(
-      () => MarkdownEditor(
+      () => FlarkMarkdownEditor(
         controller: controller,
         extensions: FlarkMarkdownEditingExtensions.standard(),
       ),
       throwsAssertionError,
     );
     expect(
-      () => Markdown(markdown: 'hello', controller: controller),
+      () => FlarkMarkdown(markdown: 'hello', controller: controller),
       throwsAssertionError,
     );
     expect(
-      () => Markdown(
+      () => FlarkMarkdown(
         controller: controller,
         parseBackend: _ImmediateParagraphParseBackend(),
       ),
@@ -220,8 +385,11 @@ void main() {
         textDirection: TextDirection.ltr,
         child: Column(
           children: [
-            MarkdownEditor(controller: controller),
-            const Markdown(markdown: '# Preview', parseDebounce: Duration.zero),
+            FlarkMarkdownEditor(controller: controller),
+            const FlarkMarkdown(
+              markdown: '# Preview',
+              parseDebounce: Duration.zero,
+            ),
           ],
         ),
       ),
@@ -257,8 +425,8 @@ void main() {
         textDirection: TextDirection.ltr,
         child: Column(
           children: [
-            MarkdownEditor(controller: controller),
-            Markdown(
+            FlarkMarkdownEditor(controller: controller),
+            FlarkMarkdown(
               markdown: '# Preview',
               parseBackend: const _FailingParseBackend(),
               parseDebounce: Duration.zero,
@@ -288,7 +456,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: MarkdownEditor(
+        child: FlarkMarkdownEditor(
           initialMarkdown: '',
           editingMode: FlarkMarkdownEditingMode.liveRendered,
           parseBackend: backend,
@@ -320,7 +488,7 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: MarkdownEditor(
+        child: FlarkMarkdownEditor(
           initialMarkdown: '',
           editingMode: FlarkMarkdownEditingMode.liveRendered,
           parseBackend: backend,
@@ -348,6 +516,8 @@ void main() {
 
 final class _ImmediateParagraphParseBackend
     implements FlarkMarkdownParseBackend {
+  final requests = <FlarkMarkdownParseRequest>[];
+
   @override
   FlarkMarkdownParserCapabilities get capabilities =>
       FlarkMarkdownParserCapabilities(
@@ -360,6 +530,7 @@ final class _ImmediateParagraphParseBackend
   Future<FlarkMarkdownParseResult> parse(
     FlarkMarkdownParseRequest request,
   ) async {
+    requests.add(request);
     return FlarkMarkdownParseResult(
       schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
       revision: request.revision,

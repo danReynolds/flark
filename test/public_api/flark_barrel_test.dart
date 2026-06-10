@@ -27,8 +27,8 @@ void main() {
     expect(commands.toggleStrong().commandResult.isHandled, isTrue);
     expect(controller.markdown, '**hello**!');
     expect(commands.strongActive, isTrue);
-    expect(MarkdownEditor, isA<Type>());
-    expect(MarkdownEditorFormField, isA<Type>());
+    expect(FlarkMarkdownEditor, isA<Type>());
+    expect(FlarkMarkdownEditorFormField, isA<Type>());
     expect(Markdown, isA<Type>());
     expect(
       const FlarkMarkdownInteractionConfig(),
@@ -66,11 +66,10 @@ void main() {
   test('top-level barrel exposes only the promoted widget entry points', () {
     final barrel = File('lib/flark.dart').readAsStringSync();
 
-    expect(barrel, contains('MarkdownEditor'));
-    expect(barrel, contains('MarkdownEditorFormField'));
+    expect(barrel, contains('FlarkMarkdownEditor'));
+    expect(barrel, contains('FlarkMarkdownEditorFormField'));
     expect(barrel, contains('Markdown,'));
     expect(barrel, isNot(contains('FlarkMarkdownField')));
-    expect(barrel, isNot(contains('FlarkMarkdownEditor')));
     expect(barrel, isNot(contains('FlarkMarkdownPreview')));
     expect(barrel, isNot(contains('FlarkReadOnlyPreview')));
     expect(barrel, isNot(contains('FlarkMarkdownControllerCommands')));
@@ -102,13 +101,13 @@ void main() {
           body: Column(
             children: [
               Expanded(
-                child: MarkdownEditor(
+                child: FlarkMarkdownEditor(
                   controller: controller,
                   editingMode: FlarkMarkdownEditingMode.source,
                 ),
               ),
               Expanded(
-                child: Markdown(
+                child: FlarkMarkdown(
                   markdown: '# Preview',
                   parseBackend: const _IdentityParseBackend(),
                   onParseError: (error, stackTrace) {
@@ -122,8 +121,8 @@ void main() {
       ),
     );
 
-    expect(find.byType(MarkdownEditor), findsOneWidget);
-    expect(find.byType(Markdown), findsOneWidget);
+    expect(find.byType(FlarkMarkdownEditor), findsOneWidget);
+    expect(find.byType(FlarkMarkdown), findsOneWidget);
     expect(parseErrors, isEmpty);
   });
 }

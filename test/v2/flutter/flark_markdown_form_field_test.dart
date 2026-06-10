@@ -15,7 +15,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: Form(
           key: formKey,
-          child: MarkdownEditorFormField(
+          child: FlarkMarkdownEditorFormField(
             initialMarkdown: 'hello',
             parseBackend: _ImmediateParagraphParseBackend(),
             parseDebounce: Duration.zero,
@@ -57,7 +57,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: Form(
           key: formKey,
-          child: MarkdownEditorFormField(
+          child: FlarkMarkdownEditorFormField(
             initialMarkdown: 'start',
             parseBackend: _ImmediateParagraphParseBackend(),
             parseDebounce: Duration.zero,
@@ -99,7 +99,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: Form(
           key: formKey,
-          child: MarkdownEditorFormField(
+          child: FlarkMarkdownEditorFormField(
             key: field,
             initialMarkdown: 'a\r\nb\rc',
             parseBackend: _ImmediateParagraphParseBackend(),
@@ -114,7 +114,7 @@ void main() {
 
     FlarkFlutterController controller() {
       return tester
-          .widget<MarkdownEditor>(find.byType(MarkdownEditor))
+          .widget<FlarkMarkdownEditor>(find.byType(FlarkMarkdownEditor))
           .controller!;
     }
 
@@ -148,7 +148,7 @@ void main() {
         textDirection: TextDirection.ltr,
         child: Form(
           key: formKey,
-          child: MarkdownEditorFormField(
+          child: FlarkMarkdownEditorFormField(
             controller: controller,
             editingMode: FlarkMarkdownEditingMode.source,
           ),
@@ -177,14 +177,14 @@ void main() {
     addTearDown(controller.dispose);
 
     expect(
-      () => MarkdownEditorFormField(
+      () => FlarkMarkdownEditorFormField(
         controller: controller,
         initialMarkdown: 'hello',
       ),
       throwsAssertionError,
     );
     expect(
-      () => MarkdownEditorFormField(
+      () => FlarkMarkdownEditorFormField(
         controller: controller,
         parseBackend: _ImmediateParagraphParseBackend(),
       ),

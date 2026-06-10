@@ -252,7 +252,7 @@ Future<void> _pumpTriptych(
           Expanded(
             child: _SurfacePanel(
               label: 'Source editor',
-              child: MarkdownEditor(
+              child: FlarkMarkdownEditor(
                 controller: sourceController,
                 editingMode: FlarkMarkdownEditingMode.source,
                 style: _editorStyle,
@@ -275,7 +275,7 @@ Future<void> _pumpTriptych(
           Expanded(
             child: _SurfacePanel(
               label: 'Preview and overlays',
-              child: Markdown(
+              child: FlarkMarkdown(
                 markdown: markdown,
                 parseBackend: const _GoldenParseBackend(),
                 parseDebounce: Duration.zero,
@@ -306,7 +306,7 @@ Future<void> _pumpPreviewOnly(
       height: height,
       child: _SurfacePanel(
         label: 'Preview',
-        child: Markdown(
+        child: FlarkMarkdown(
           markdown: markdown,
           parseBackend: const _GoldenParseBackend(),
           parseDebounce: Duration.zero,
@@ -336,7 +336,7 @@ Future<void> _pumpLiveRenderedOnly(
       height: height,
       child: _SurfacePanel(
         label: 'Live rendered editor',
-        child: MarkdownEditor(
+        child: FlarkMarkdownEditor(
           controller: controller,
           editingMode: FlarkMarkdownEditingMode.liveRendered,
           style: _editorStyle,
@@ -534,7 +534,7 @@ final class _LiveEdgeCasePanel extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Expanded(
-              child: MarkdownEditor(
+              child: FlarkMarkdownEditor(
                 controller: edgeCase.controller,
                 editingMode: FlarkMarkdownEditingMode.liveRendered,
                 style: _editorStyle,

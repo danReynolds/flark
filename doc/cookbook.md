@@ -15,13 +15,13 @@ import 'package:flark/flark.dart';
 Use `initialMarkdown` when the widget can own its controller.
 
 ```dart
-MarkdownEditor(
-  initialMarkdown: '# Notes\n\nWrite Markdown.',
+FlarkMarkdownEditor(
+  initialMarkdown: '# Notes\n\nWrite FlarkMarkdown.',
   onChanged: saveMarkdown,
 )
 ```
 
-`MarkdownEditor` defaults to `FlarkMarkdownEditingMode.liveRendered`, which is
+`FlarkMarkdownEditor` defaults to `FlarkMarkdownEditingMode.liveRendered`, which is
 the recommended mode for most app editors.
 
 ## Source Editor
@@ -29,7 +29,7 @@ the recommended mode for most app editors.
 Use source mode when users need to see exact Markdown markers.
 
 ```dart
-MarkdownEditor(
+FlarkMarkdownEditor(
   initialMarkdown: markdown,
   editingMode: FlarkMarkdownEditingMode.source,
   onChanged: saveMarkdown,
@@ -49,8 +49,8 @@ final controller = FlarkFlutterController.fromMarkdown(
 
 Row(
   children: [
-    Expanded(child: MarkdownEditor(controller: controller)),
-    Expanded(child: Markdown(controller: controller)),
+    Expanded(child: FlarkMarkdownEditor(controller: controller)),
+    Expanded(child: FlarkMarkdown(controller: controller)),
   ],
 )
 ```
@@ -129,7 +129,7 @@ refresh active toolbar state when selection or document state changes.
 
 ## Form Field
 
-Use `MarkdownEditorFormField` when the editor participates in Flutter form
+Use `FlarkMarkdownEditorFormField` when the editor participates in Flutter form
 validation, save, reset, autovalidation, or restoration.
 
 ```dart
@@ -137,7 +137,7 @@ final formKey = GlobalKey<FormState>();
 
 Form(
   key: formKey,
-  child: MarkdownEditorFormField(
+  child: FlarkMarkdownEditorFormField(
     initialMarkdown: draftBody,
     validator: (markdown) {
       return markdown == null || markdown.trim().isEmpty
@@ -208,7 +208,7 @@ class _DraftEditorState extends State<DraftEditor> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Expanded(child: MarkdownEditor(controller: _controller)),
+        Expanded(child: FlarkMarkdownEditor(controller: _controller)),
         FilledButton(
           onPressed: _dirty ? _save : null,
           child: const Text('Save'),
@@ -265,7 +265,7 @@ link under the cursor or selection.
 For a widget-owned controller, give each document a stable key:
 
 ```dart
-MarkdownEditor(
+FlarkMarkdownEditor(
   key: ValueKey(document.id),
   initialMarkdown: document.markdown,
   onChanged: saveDraft,
@@ -290,7 +290,7 @@ Use `blockBuilder` to replace only the blocks your app wants to customize.
 Return `null` to keep Flark's default rendering for a block.
 
 ```dart
-Markdown(
+FlarkMarkdown(
   controller: controller,
   blockBuilder: (context, block, displayText, baseStyle) {
     final codeBlock = block.codeBlock;
@@ -318,12 +318,68 @@ Markdown(
 )
 ```
 
+## Opening Links
+
+Tapping a link calls `onOpenLink` with its destination. Wire it to
+`url_launcher` (or your own router):
+
+```dart
+FlarkMarkdown(
+  markdown: body,
+  interactionConfig: FlarkMarkdownInteractionConfig(
+    onOpenLink: (destination) {
+      launchUrl(Uri.parse(destination));
+    },
+  ),
+)
+```
+
+The same configuration works on `FlarkMarkdownEditor`. With an `onOpenLink`
+handler, tap opens the link and long-press shows the copy/edit menu; without
+one, tap shows the menu.
+
+## Dark Mode and Custom Colors
+
+Pass a `FlarkMarkdownThemeData`, or wrap a subtree in `FlarkMarkdownTheme` to
+theme every Flark surface below it. To follow your app's Material theme:
+
+```dart
+Builder(
+  builder: (context) {
+    final brightness = Theme.of(context).brightness;
+    return FlarkMarkdownEditor(
+      controller: controller,
+      theme: FlarkMarkdownThemeData.fromBrightness(brightness)
+          .copyWith(linkColor: Theme.of(context).colorScheme.primary),
+    );
+  },
+)
+```
+
+Without a theme, Flark follows platform brightness.
+
+## Pre-Warming a Preview
+
+A standalone preview parses asynchronously, so the first frame may show plain
+text. To render fully on the first frame, own the controller and await an
+immediate parse before showing the widget:
+
+```dart
+final controller = FlarkFlutterController.fromMarkdown(markdown);
+await controller.parseNow();
+// controller.hasAuthoritativeRenderPlan is now true.
+runApp(... FlarkMarkdown(controller: controller) ...);
+```
+
+`parseNow()` resolves once the current document revision has an authoritative
+render plan, including when a scheduled parse is already in flight.
+
 ## Parse Errors
 
 Use `onParseError` for logging or app-level fallback UI.
 
 ```dart
-MarkdownEditor(
+FlarkMarkdownEditor(
   initialMarkdown: markdown,
   onParseError: (error, stackTrace) {
     debugPrint('Markdown parser failed: $error');
@@ -332,4 +388,4 @@ MarkdownEditor(
 ```
 
 When passing a shared `controller`, configure parser options on the controller
-instead of on `MarkdownEditor` or `Markdown`.
+instead of on `FlarkMarkdownEditor` or `FlarkMarkdown`.

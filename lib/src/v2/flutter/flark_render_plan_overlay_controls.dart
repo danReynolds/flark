@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../render_plan/render_plan.dart';
 import 'flark_flutter_controller.dart';
+import 'flark_markdown_theme.dart';
 
 typedef FlarkOverlayTargetWidgetBuilder =
     Widget Function(BuildContext context, FlarkRenderOverlayTarget target);
@@ -66,7 +67,9 @@ final class _DefaultOverlayTargetControl extends StatelessWidget {
     final value = _targetValue(target);
     final child = DecoratedBox(
       decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFB8C1CC)),
+        border: Border.all(
+          color: FlarkMarkdownTheme.of(context).overlayControlBorderColor,
+        ),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Padding(

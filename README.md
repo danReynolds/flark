@@ -9,7 +9,7 @@ Live demo and package site: <https://danreynolds.github.io/flark/>
 ```dart
 import 'package:flark/flark.dart';
 
-MarkdownEditor(
+FlarkMarkdownEditor(
   initialMarkdown: '# Hello\n\nEdit **Markdown** without losing the source.',
   editingMode: FlarkMarkdownEditingMode.liveRendered,
   onChanged: saveMarkdown,
@@ -17,10 +17,10 @@ MarkdownEditor(
 ```
 
 ```dart
-Markdown(markdown: '# Preview')
+FlarkMarkdown(markdown: '# Preview')
 ```
 
-The document truth stays Markdown. The editor, preview, toolbar commands,
+The document truth stays FlarkMarkdown. The editor, preview, toolbar commands,
 projection layer, and rendered block widgets all work from that same source
 document instead of converting user content into a private rich-text model.
 
@@ -28,10 +28,11 @@ document instead of converting user content into a private rich-text model.
 
 ## Why Flark
 
-- `MarkdownEditor` edits Markdown in source or live-rendered mode.
-- `MarkdownEditorFormField` wires the editor into Flutter `Form` validation,
+- `FlarkMarkdownEditor` edits Markdown in source or live-rendered mode.
+- `FlarkMarkdownEditorFormField` wires the editor into Flutter `Form` validation,
   saving, and reset flows.
-- `Markdown` renders read-only Markdown from a string or a shared controller.
+- `FlarkMarkdown` renders read-only Markdown from a string or a shared
+  controller, with optional text selection (`selectable: true`).
 - `FlarkFlutterController` keeps editor, preview, toolbar, undo, redo, parser
   state, and render plans in sync.
 - The default parser is Comrak: native FFI on macOS, iOS, Android, and Linux;
@@ -50,8 +51,8 @@ final controller = FlarkFlutterController.fromMarkdown(
 
 Column(
   children: [
-    Expanded(child: MarkdownEditor(controller: controller)),
-    Expanded(child: Markdown(controller: controller)),
+    Expanded(child: FlarkMarkdownEditor(controller: controller)),
+    Expanded(child: FlarkMarkdown(controller: controller)),
   ],
 )
 ```
@@ -78,6 +79,23 @@ IconButton(
 
 Command helpers return `FlarkEditorRuntimeResult`, so advanced integrations can
 inspect whether a command was handled, ignored, or rejected.
+
+## Theming
+
+Every chrome color — code fences, quotes, links, tables, checkboxes, menus,
+syntax highlighting — comes from a `FlarkMarkdownThemeData`. The default
+follows platform brightness (light/dark); pass `theme:` to a widget or wrap a
+subtree in `FlarkMarkdownTheme` to control it:
+
+```dart
+FlarkMarkdownEditor(
+  controller: controller,
+  theme: FlarkMarkdownThemeData.dark.copyWith(linkColor: myBrandBlue),
+)
+```
+
+Text sizing and fonts come from the widget `style`/`textStyle`; the theme owns
+colors.
 
 ## Imports
 
@@ -109,6 +127,20 @@ microseconds through 100 KB documents:
 
 Both paths are linear in document size. See [Benchmarks](doc/benchmarks.md) for
 the enforced lane and methodology.
+
+## Platform Support and Build Requirements
+
+| Target | Parser backend | Toolchain |
+| --- | --- | --- |
+| macOS, iOS, Linux | Native Comrak (Rust FFI) | Rust (`rustup` recommended) |
+| Android | Native Comrak (Rust FFI) | Rust + Android NDK |
+| Web | Packaged Comrak WASM | none (prebundled) |
+| Windows | — | not supported yet |
+
+Native targets compile the bundled Rust bridge during `flutter build` via the
+package build hook, so a Rust toolchain must be on `PATH` for those builds.
+Web needs no extra tooling. See
+[Parser and Platforms](doc/parser_and_platforms.md) for details.
 
 ## Documentation
 

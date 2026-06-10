@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:highlight/highlight_core.dart' as syntax;
+
+import 'flark_markdown_theme.dart';
 import 'package:highlight/languages/dart.dart' as highlight_dart;
 import 'package:highlight/languages/javascript.dart' as highlight_javascript;
 import 'package:highlight/languages/json.dart' as highlight_json;
@@ -23,6 +25,7 @@ TextSpan? buildFlarkHighlightedCodeSpan({
   required String? language,
   required TextStyle baseStyle,
   TextRange? composingRange,
+  FlarkCodeSyntaxThemeData syntaxTheme = FlarkCodeSyntaxThemeData.light,
 }) {
   if (source.isEmpty) return null;
   final requestedLanguage = language?.trim();
@@ -50,6 +53,7 @@ TextSpan? buildFlarkHighlightedCodeSpan({
       offset: offset,
       style: baseStyle,
       composingRange: composingRange,
+      syntaxTheme: syntaxTheme,
     );
   }
   if (offset < source.length) {
@@ -143,8 +147,9 @@ int _appendSyntaxNode({
   required int offset,
   required TextStyle style,
   required TextRange? composingRange,
+  required FlarkCodeSyntaxThemeData syntaxTheme,
 }) {
-  final nodeStyle = _syntaxStyle(style, node.className);
+  final nodeStyle = _syntaxStyle(style, node.className, syntaxTheme);
   final value = node.value;
   if (value != null) {
     final end = (offset + value.length).clamp(offset, source.length);
@@ -170,55 +175,60 @@ int _appendSyntaxNode({
         offset: childOffset,
         style: nodeStyle,
         composingRange: composingRange,
+        syntaxTheme: syntaxTheme,
       );
     }
   }
   return childOffset;
 }
 
-TextStyle _syntaxStyle(TextStyle baseStyle, String? className) {
+TextStyle _syntaxStyle(
+  TextStyle baseStyle,
+  String? className,
+  FlarkCodeSyntaxThemeData syntaxTheme,
+) {
   if (className == null || className.isEmpty) return baseStyle;
   final classes = className.split(RegExp(r'[\s.]+')).toSet();
   bool has(String value) => classes.contains(value);
 
   if (has('comment')) {
     return baseStyle.copyWith(
-      color: const Color(0xFF64748B),
+      color: syntaxTheme.commentColor,
       fontStyle: FontStyle.italic,
     );
   }
   if (has('string') || has('quote')) {
-    return baseStyle.copyWith(color: const Color(0xFF0F766E));
+    return baseStyle.copyWith(color: syntaxTheme.stringColor);
   }
   if (has('number') || has('literal')) {
-    return baseStyle.copyWith(color: const Color(0xFFB45309));
+    return baseStyle.copyWith(color: syntaxTheme.numberColor);
   }
   if (has('keyword') || has('selector-tag')) {
     return baseStyle.copyWith(
-      color: const Color(0xFF7C3AED),
+      color: syntaxTheme.keywordColor,
       fontWeight: FontWeight.w700,
     );
   }
   if (has('title') || has('function') || has('section')) {
-    return baseStyle.copyWith(color: const Color(0xFF0369A1));
+    return baseStyle.copyWith(color: syntaxTheme.functionColor);
   }
   if (has('type') || has('class') || has('built_in') || has('built-in')) {
-    return baseStyle.copyWith(color: const Color(0xFF047857));
+    return baseStyle.copyWith(color: syntaxTheme.typeColor);
   }
   if (has('attr') || has('attribute') || has('property')) {
-    return baseStyle.copyWith(color: const Color(0xFF1D4ED8));
+    return baseStyle.copyWith(color: syntaxTheme.attributeColor);
   }
   if (has('variable') || has('template-variable') || has('symbol')) {
-    return baseStyle.copyWith(color: const Color(0xFFC2410C));
+    return baseStyle.copyWith(color: syntaxTheme.variableColor);
   }
   if (has('meta') || has('doctag')) {
-    return baseStyle.copyWith(color: const Color(0xFF475569));
+    return baseStyle.copyWith(color: syntaxTheme.metaColor);
   }
   if (has('deletion')) {
-    return baseStyle.copyWith(color: const Color(0xFFB91C1C));
+    return baseStyle.copyWith(color: syntaxTheme.deletionColor);
   }
   if (has('addition')) {
-    return baseStyle.copyWith(color: const Color(0xFF047857));
+    return baseStyle.copyWith(color: syntaxTheme.additionColor);
   }
   return baseStyle;
 }

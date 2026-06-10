@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 
 import '../core/core.dart';
 import 'flark_command_actions.dart';
+import 'flark_editor_read_only_scope.dart';
 import 'flark_flutter_controller.dart';
 import 'flark_markdown_input_policy.dart';
 import 'flark_text_selection_gestures.dart';
@@ -97,6 +98,7 @@ final class _FlarkEditableTextState extends State<FlarkEditableText> {
   Widget _buildFullSourceEditor(TextStyle style) {
     Widget editor = EditableText(
       key: _editableStateKey,
+      readOnly: FlarkEditorReadOnlyScope.of(context),
       controller: _textController,
       focusNode: _focusNode,
       style: style,
@@ -468,6 +470,7 @@ final class _FlarkVirtualizedSourceLineState
   Widget build(BuildContext context) {
     Widget editor = EditableText(
       key: _editableStateKey,
+      readOnly: FlarkEditorReadOnlyScope.of(context),
       controller: _textController,
       focusNode: _focusNode,
       style: widget.style,

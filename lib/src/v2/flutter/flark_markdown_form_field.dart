@@ -13,11 +13,14 @@ import '../render_plan/render_plan.dart';
 import 'flark_command_actions.dart';
 import 'flark_flutter_controller.dart';
 import 'flark_markdown_editor.dart';
+import 'flark_markdown_theme.dart';
 import 'flark_markdown_interactions.dart';
 import 'flark_render_plan_overlay_controls.dart';
 
-final class MarkdownEditorFormField extends FormField<String> {
-  MarkdownEditorFormField({
+/// A [FormField] wrapping [FlarkMarkdownEditor], wired into Flutter `Form`
+/// validation, saving, and reset flows.
+final class FlarkMarkdownEditorFormField extends FormField<String> {
+  FlarkMarkdownEditorFormField({
     super.key,
     this.controller,
     this.initialMarkdown,
@@ -25,11 +28,14 @@ final class MarkdownEditorFormField extends FormField<String> {
     this.onChanged,
     this.parseBackend,
     this.onParseError,
+    this.parseProfile,
+    @Deprecated('Renamed to parseProfile; will be removed before 1.0.')
     this.profile,
     this.parseDebounce,
     this.editingMode = FlarkMarkdownEditingMode.liveRendered,
     this.focusNode,
     this.style,
+    this.theme,
     this.cursorColor,
     this.backgroundCursorColor = const Color(0x00000000),
     this.minLines,
@@ -42,31 +48,37 @@ final class MarkdownEditorFormField extends FormField<String> {
     this.overlayControlBuilder,
     this.onOverlayTargetPressed,
     this.interactionConfig = const FlarkMarkdownInteractionConfig(),
-    this.errorStyle = const TextStyle(color: Color(0xFFB3261E), fontSize: 12),
+    this.errorStyle,
     super.errorBuilder,
     super.onSaved,
     super.validator,
     super.autovalidateMode,
     super.restorationId,
+    super.enabled,
   }) : assert(
          controller == null || initialMarkdown == null,
          'Provide either controller or initialMarkdown, not both.',
+       ),
+       assert(
+         parseProfile == null || profile == null,
+         'Provide parseProfile only; profile is its deprecated alias.',
        ),
        assert(
          controller == null ||
              (extensions == null &&
                  parseBackend == null &&
                  onParseError == null &&
+                 parseProfile == null &&
                  profile == null &&
                  parseDebounce == null),
          'When a controller is provided it owns parsing. Configure extensions, '
-         'parseBackend, profile, parseDebounce, and onParseError on the '
+         'parseBackend, parseProfile, parseDebounce, and onParseError on the '
          'FlarkFlutterController instead.',
        ),
        super(
          initialValue: controller?.markdown ?? initialMarkdown ?? '',
          builder: (field) {
-           return (field as _MarkdownEditorFormFieldState)._build(
+           return (field as _FlarkMarkdownEditorFormFieldState)._build(
              field.context,
            );
          },
@@ -78,11 +90,21 @@ final class MarkdownEditorFormField extends FormField<String> {
   final ValueChanged<String>? onChanged;
   final FlarkMarkdownParseBackend? parseBackend;
   final void Function(Object error, StackTrace stackTrace)? onParseError;
+  final FlarkMarkdownProfile? parseProfile;
+
+  /// Deprecated alias of [parseProfile].
+  @Deprecated('Renamed to parseProfile; will be removed before 1.0.')
   final FlarkMarkdownProfile? profile;
+
+  // ignore: deprecated_member_use_from_same_package
+  FlarkMarkdownProfile? get _effectiveParseProfile => parseProfile ?? profile;
   final Duration? parseDebounce;
   final FlarkMarkdownEditingMode editingMode;
   final FocusNode? focusNode;
   final TextStyle? style;
+
+  /// Colors for markdown chrome, forwarded to the inner editor.
+  final FlarkMarkdownThemeData? theme;
   final Color? cursorColor;
   final Color backgroundCursorColor;
   final int? minLines;
@@ -98,15 +120,21 @@ final class MarkdownEditorFormField extends FormField<String> {
   final TextStyle? errorStyle;
 
   @override
-  FormFieldState<String> createState() => _MarkdownEditorFormFieldState();
+  FormFieldState<String> createState() => _FlarkMarkdownEditorFormFieldState();
 }
 
-final class _MarkdownEditorFormFieldState extends FormFieldState<String> {
+/// Deprecated name of [FlarkMarkdownEditorFormField].
+@Deprecated(
+  'Renamed to FlarkMarkdownEditorFormField; will be removed before 1.0.',
+)
+typedef MarkdownEditorFormField = FlarkMarkdownEditorFormField;
+
+final class _FlarkMarkdownEditorFormFieldState extends FormFieldState<String> {
   FlarkFlutterController? _ownedController;
 
   @override
-  MarkdownEditorFormField get widget {
-    return super.widget as MarkdownEditorFormField;
+  FlarkMarkdownEditorFormField get widget {
+    return super.widget as FlarkMarkdownEditorFormField;
   }
 
   FlarkFlutterController get _controller {
@@ -120,7 +148,7 @@ final class _MarkdownEditorFormFieldState extends FormFieldState<String> {
   }
 
   @override
-  void didUpdateWidget(MarkdownEditorFormField oldWidget) {
+  void didUpdateWidget(FlarkMarkdownEditorFormField oldWidget) {
     super.didUpdateWidget(oldWidget);
     final controllerChanged = oldWidget.controller != widget.controller;
     final ownedExtensionsChanged =
@@ -138,15 +166,27 @@ final class _MarkdownEditorFormFieldState extends FormFieldState<String> {
       return;
     }
 
+    final parseBackendChanged = oldWidget.parseBackend != widget.parseBackend;
+    final parseProfileChanged =
+        oldWidget._effectiveParseProfile != widget._effectiveParseProfile;
+    final parseDebounceChanged =
+        oldWidget.parseDebounce != widget.parseDebounce;
+    final onParseErrorChanged = oldWidget.onParseError != widget.onParseError;
     if (widget.controller == null &&
-        (oldWidget.parseBackend != widget.parseBackend ||
-            oldWidget.onParseError != widget.onParseError ||
-            oldWidget.profile != widget.profile ||
-            oldWidget.parseDebounce != widget.parseDebounce)) {
+        (parseBackendChanged ||
+            parseProfileChanged ||
+            parseDebounceChanged ||
+            onParseErrorChanged)) {
+      // Forward only what changed: any non-null backend/profile/debounce
+      // makes configureParsing restart the parse scheduler, which a
+      // callback-only swap (e.g. an inline onParseError closure recreated
+      // every build) must not trigger.
       _controller.configureParsing(
-        parseBackend: widget.parseBackend,
-        parseProfile: widget.profile,
-        parseDebounce: widget.parseDebounce,
+        parseBackend: parseBackendChanged ? widget.parseBackend : null,
+        parseProfile: parseProfileChanged
+            ? widget._effectiveParseProfile
+            : null,
+        parseDebounce: parseDebounceChanged ? widget.parseDebounce : null,
         onParseError: widget.onParseError,
         clearOnParseError: widget.onParseError == null,
       );
@@ -166,12 +206,14 @@ final class _MarkdownEditorFormFieldState extends FormFieldState<String> {
   }
 
   Widget _build(BuildContext context) {
-    final editor = MarkdownEditor(
+    final editor = FlarkMarkdownEditor(
       controller: _controller,
+      readOnly: !widget.enabled,
       onChanged: _handleMarkdownChanged,
       editingMode: widget.editingMode,
       focusNode: widget.focusNode,
       style: widget.style,
+      theme: widget.theme,
       cursorColor: widget.cursorColor,
       backgroundCursorColor: widget.backgroundCursorColor,
       minLines: widget.minLines,
@@ -194,7 +236,16 @@ final class _MarkdownEditorFormFieldState extends FormFieldState<String> {
         widget.errorBuilder?.call(context, errorText) ??
         Padding(
           padding: const EdgeInsets.only(top: 6),
-          child: Text(errorText, style: widget.errorStyle),
+          child: Text(
+            errorText,
+            style:
+                widget.errorStyle ??
+                TextStyle(
+                  color: (widget.theme ?? FlarkMarkdownTheme.of(context))
+                      .errorTextColor,
+                  fontSize: 12,
+                ),
+          ),
         );
 
     return Column(
@@ -210,7 +261,8 @@ final class _MarkdownEditorFormFieldState extends FormFieldState<String> {
       markdown ?? value ?? '',
       extensions: widget.extensions,
       parseBackend: widget.parseBackend,
-      parseProfile: widget.profile ?? FlarkMarkdownProfile.commonMarkGfm,
+      parseProfile:
+          widget._effectiveParseProfile ?? FlarkMarkdownProfile.commonMarkGfm,
       parseDebounce: widget.parseDebounce ?? const Duration(milliseconds: 80),
       onParseError: widget.onParseError,
     );

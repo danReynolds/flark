@@ -18,8 +18,8 @@ void main() {
     await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
-    expect(find.byType(MarkdownEditor), findsOneWidget);
-    expect(find.byType(Markdown), findsNothing);
+    expect(find.byType(FlarkMarkdownEditor), findsOneWidget);
+    expect(find.byType(FlarkMarkdown), findsNothing);
     expect(find.text('Flark Markdown Editor'), findsOneWidget);
     expect(find.text('Live playground'), findsOneWidget);
     expect(find.text('Live Markdown field'), findsOneWidget);
@@ -35,8 +35,8 @@ void main() {
     await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
-    expect(find.byType(MarkdownEditor), findsOneWidget);
-    expect(find.byType(Markdown), findsNothing);
+    expect(find.byType(FlarkMarkdownEditor), findsOneWidget);
+    expect(find.byType(FlarkMarkdown), findsNothing);
     expect(
       find.byKey(const ValueKey('flark-example-command-quote')),
       findsOneWidget,
@@ -141,7 +141,7 @@ void main() {
 
     expect(boldButton().onPressed, isNull);
 
-    final editor = tester.widget<MarkdownEditor>(find.byType(MarkdownEditor));
+    final editor = tester.widget<FlarkMarkdownEditor>(find.byType(FlarkMarkdownEditor));
     editor.controller!.applySelection(
       const FlarkSelection(baseOffset: 0, extentOffset: 4),
     );
@@ -168,9 +168,9 @@ void main() {
     await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
-    final editor = tester.widget<MarkdownEditor>(find.byType(MarkdownEditor));
+    final editor = tester.widget<FlarkMarkdownEditor>(find.byType(FlarkMarkdownEditor));
     expect(editor.editingMode, FlarkMarkdownEditingMode.liveRendered);
-    expect(find.byType(Markdown), findsNothing);
+    expect(find.byType(FlarkMarkdown), findsNothing);
     expect(find.text('Source'), findsNothing);
     expect(find.text('Rendered'), findsNothing);
   });
@@ -189,7 +189,7 @@ void main() {
     );
     await tester.pump();
 
-    final editor = tester.widget<MarkdownEditor>(find.byType(MarkdownEditor));
+    final editor = tester.widget<FlarkMarkdownEditor>(find.byType(FlarkMarkdownEditor));
     expect(editor.editingMode, FlarkMarkdownEditingMode.liveRendered);
 
     final editableFinder = find.byType(EditableText);
@@ -1457,7 +1457,7 @@ String _editorText(WidgetTester tester) {
 
 String _documentMarkdown(WidgetTester tester) {
   return tester
-      .widget<MarkdownEditor>(find.byType(MarkdownEditor))
+      .widget<FlarkMarkdownEditor>(find.byType(FlarkMarkdownEditor))
       .controller!
       .markdown;
 }

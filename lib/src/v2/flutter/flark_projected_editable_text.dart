@@ -12,6 +12,8 @@ import '../markdown/source/flark_markdown_fenced_code_scanner.dart';
 import '../render_plan/render_plan.dart';
 import 'flark_command_actions.dart';
 import 'flark_code_syntax_highlighting.dart';
+import 'flark_editor_read_only_scope.dart';
+import 'flark_markdown_theme.dart';
 import 'flark_flutter_controller.dart';
 import 'flark_live_block_source_edit.dart';
 import 'flark_live_edit_classifier.dart';
@@ -261,6 +263,7 @@ final class _FlarkProjectedEditableHostState
       key: _editableStateKey,
       controller: _textController,
       focusNode: _focusNode,
+      readOnly: FlarkEditorReadOnlyScope.of(context),
       style: style,
       cursorColor: widget.cursorColor,
       selectionColor: _selectionColorForCursor(widget.cursorColor),

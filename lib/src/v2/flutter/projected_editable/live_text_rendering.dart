@@ -57,7 +57,11 @@ List<_LiveRenderedTextSegment> _blockTextSegments({
   return List.unmodifiable(segments);
 }
 
-TextStyle _blockTextStyle(TextStyle baseStyle, FlarkRenderBlock block) {
+TextStyle _blockTextStyle(
+  TextStyle baseStyle,
+  FlarkRenderBlock block,
+  FlarkMarkdownThemeData theme,
+) {
   if (block.styleToken == FlarkRenderTextStyleToken.body &&
       block.codeBlock == null &&
       block.kind != FlarkMarkdownBlockKind.blockquote) {
@@ -69,7 +73,7 @@ TextStyle _blockTextStyle(TextStyle baseStyle, FlarkRenderBlock block) {
     blocks: [block],
     runs: const [],
   );
-  return signature.resolve(baseStyle);
+  return signature.resolve(baseStyle, theme);
 }
 
 bool _rangeOverlapsText(FlarkSourceRange range, String text) {
@@ -320,6 +324,7 @@ final class _FlarkLiveRenderedTextController extends TextEditingController {
     TextStyle? style,
     required bool withComposing,
   }) {
+    final theme = FlarkMarkdownTheme.of(context);
     final baseStyle = style ?? DefaultTextStyle.of(context).style;
     final composingRange = withComposing && value.isComposingRangeValid
         ? value.composing
@@ -349,7 +354,7 @@ final class _FlarkLiveRenderedTextController extends TextEditingController {
         children,
         start: segment.start,
         end: segment.end,
-        style: segment.signature.resolve(baseStyle),
+        style: segment.signature.resolve(baseStyle, theme),
         composingRange: composingRange,
       );
       cursor = segment.end;
@@ -630,16 +635,16 @@ final class _LiveRenderedTextStyleSignature {
     );
   }
 
-  TextStyle resolve(TextStyle baseStyle) {
+  TextStyle resolve(TextStyle baseStyle, FlarkMarkdownThemeData theme) {
     var style = baseStyle;
     if (codeBlock) {
       style = style.copyWith(
-        color: const Color(0xFF17202A),
+        color: theme.codeTextColor,
         fontFamily: 'monospace',
         height: 1.35,
       );
     } else if (blockquote) {
-      style = style.copyWith(color: const Color(0xFF42526E));
+      style = style.copyWith(color: theme.quoteTextColor);
     }
 
     if (headingLevel != null) {
@@ -654,7 +659,7 @@ final class _LiveRenderedTextStyleSignature {
     if (inlineCode) {
       style = style.copyWith(
         fontFamily: 'monospace',
-        backgroundColor: const Color(0xFFEFF3F7),
+        backgroundColor: theme.inlineCodeBackgroundColor,
       );
     }
     if (strikethrough) {
@@ -662,7 +667,7 @@ final class _LiveRenderedTextStyleSignature {
     }
     if (link) {
       style = style.copyWith(
-        color: const Color(0xFF0057B8),
+        color: theme.linkColor,
         decoration: TextDecoration.underline,
       );
     }
@@ -755,6 +760,7 @@ final class _FlarkLiveRenderedEditableChrome extends StatelessWidget {
                   textScaler: MediaQuery.textScalerOf(context),
                   scrollController: scrollController,
                   hasRenderPlan: hasRenderPlan,
+                  theme: FlarkMarkdownTheme.of(context),
                 ),
               ),
             ),
@@ -775,6 +781,7 @@ final class _FlarkLiveRenderedBlockPainter extends CustomPainter {
     required this.textScaler,
     required this.scrollController,
     required this.hasRenderPlan,
+    required this.theme,
   }) : super(repaint: scrollController);
 
   final FlarkRenderPlan renderPlan;
@@ -784,6 +791,7 @@ final class _FlarkLiveRenderedBlockPainter extends CustomPainter {
   final TextScaler textScaler;
   final ScrollController scrollController;
   final bool hasRenderPlan;
+  final FlarkMarkdownThemeData theme;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -828,9 +836,9 @@ final class _FlarkLiveRenderedBlockPainter extends CustomPainter {
       size.width,
       rect.bottom + 5,
     );
-    final background = Paint()..color = const Color(0xFFF8FAFC);
+    final background = Paint()..color = theme.quoteBackgroundColor;
     canvas.drawRect(expanded, background);
-    final rail = Paint()..color = const Color(0xFF7A8CA3);
+    final rail = Paint()..color = theme.quoteRailColor;
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTRB(0, expanded.top, 3, expanded.bottom),
@@ -854,9 +862,9 @@ final class _FlarkLiveRenderedBlockPainter extends CustomPainter {
       size.width,
       rect.bottom + 6,
     );
-    final background = Paint()..color = const Color(0xFFF1F4F8);
+    final background = Paint()..color = theme.codeBlockBackgroundColor;
     final border = Paint()
-      ..color = const Color(0xFFD7DEE8)
+      ..color = theme.borderColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
     final shape = RRect.fromRectAndRadius(expanded, const Radius.circular(6));
