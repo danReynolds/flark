@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flark/src/v2/core/core.dart';
-import 'package:flark/src/v2/flutter/flark_projected_editable_text.dart';
+import 'package:flark/src/v2/flutter/flark_live_edit_classifier.dart';
 import 'package:flark/src/v2/markdown/markdown.dart';
 import 'package:flark/src/v2/render_plan/render_plan.dart';
 

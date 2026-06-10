@@ -76,23 +76,6 @@ bool _rangeOverlapsText(FlarkSourceRange range, String text) {
   return range.end > 0 && range.start < text.length && range.start < range.end;
 }
 
-FlarkSourceRange _clampedDisplayRange(
-  FlarkRenderBlock block,
-  String displayText,
-) {
-  final start = block.displayRange.start.clamp(0, displayText.length);
-  var end = block.displayRange.end.clamp(start, displayText.length);
-  if (block.kind == FlarkMarkdownBlockKind.blockquote) {
-    return FlarkSourceRange(start, end);
-  }
-  while (end > start) {
-    final unit = displayText.codeUnitAt(end - 1);
-    if (unit != 0x0A && unit != 0x0D) break;
-    end--;
-  }
-  return FlarkSourceRange(start, end);
-}
-
 final class _ListMarkerInfo {
   const _ListMarkerInfo.unordered() : orderedLabel = null;
   const _ListMarkerInfo.ordered(this.orderedLabel);

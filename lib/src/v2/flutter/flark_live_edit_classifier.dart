@@ -9,16 +9,23 @@
 // recognizer ordering lives in exactly one place per surface and is
 // table-testable without pumping widgets.
 //
-// The classifiers are PURE: they read only their context arguments and the
-// static policy helpers — no widget or controller state. The widgets resolve
-// the context, classify, and then execute the intent's side effects.
+// This is a standalone library on purpose: it cannot import the editor
+// widgets (that would be a circular import), so "pure function of its
+// inputs" is a structural guarantee, not a review convention. The widgets
+// resolve the context, classify, and execute the intent's side effects.
 //
-// This file is a part (not its own library) only because it shares the
-// library-private text helpers; promoting it to a standalone library is the
-// remaining step of the pipeline unification, after the host and block
-// recognizer sets are merged.
+// The remaining unification step — merging the host and block recognizer
+// sets — is gated on manual IME testing with real keyboards.
 
-part of '../flark_projected_editable_text.dart';
+import 'package:flutter/services.dart';
+
+import '../core/core.dart';
+import '../markdown/markdown.dart';
+import '../markdown/source/flark_markdown_fenced_code_scanner.dart';
+import '../render_plan/render_plan.dart';
+import 'flark_live_block_source_edit.dart';
+import 'flark_live_code_fence_input_policy.dart';
+import 'flark_markdown_input_policy.dart';
 
 // ---------------------------------------------------------------------------
 // Block surface
@@ -215,7 +222,7 @@ FlarkLiveBlockEditClassification classifyFlarkLiveBlockEdit(
 ) {
   final oldLocalText = context.oldValue.text;
   final oldLocalSelection = context.oldValue.selection;
-  var value = _textValueWithPureInsertionSelection(
+  var value = flarkTextValueWithPureInsertionSelection(
     oldText: oldLocalText,
     oldSelection: oldLocalSelection,
     newValue: context.newValue,
@@ -387,7 +394,10 @@ FlarkLiveBlockEditClassification classifyFlarkLiveBlockEdit(
             )
           : null;
       final blockValue = completedStandaloneFenceValue ?? value;
-      final range = _clampedDisplayRange(context.block, context.displayText);
+      final range = flarkClampedDisplayRange(
+        context.block,
+        context.displayText,
+      );
       fallback = FlarkLiveBlockProjectedEditIntent(
         blockValue: blockValue,
         adoptBlockValue: completedStandaloneFenceValue != null,
@@ -429,7 +439,7 @@ FlarkLiveBlockEditClassification classifyFlarkLiveBlockEdit(
       ),
     );
   }
-  final range = _clampedDisplayRange(context.block, context.displayText);
+  final range = flarkClampedDisplayRange(context.block, context.displayText);
   return finish(
     FlarkLiveBlockProjectedSelectionIntent(
       selection: FlarkSelection(
@@ -562,7 +572,7 @@ FlarkHostEditClassification classifyFlarkHostEdit(
     baseOffset: context.oldDisplaySelection.baseOffset,
     extentOffset: context.oldDisplaySelection.extentOffset,
   );
-  final value = _textValueWithPureInsertionSelection(
+  final value = flarkTextValueWithPureInsertionSelection(
     oldText: context.oldDisplayText,
     oldSelection: oldDisplaySelection,
     newValue: context.newValue,
@@ -619,4 +629,217 @@ FlarkHostEditClassification classifyFlarkHostEdit(
   );
   if (selection == null) return finish(const FlarkHostIgnoreIntent());
   return finish(FlarkHostProjectedSelectionIntent(selection: selection));
+}
+
+// ---------------------------------------------------------------------------
+// Shared text-normalization helpers
+// ---------------------------------------------------------------------------
+
+/// Normalizes a platform-delivered value whose selection lags a pure
+/// insertion (some platforms deliver the inserted text with the caret still
+/// at the insertion point), and unwraps whole-text auto-closed-fence echoes
+/// when [normalizeAutoClosedFenceEcho] is set.
+TextEditingValue flarkTextValueWithPureInsertionSelection({
+  required String oldText,
+  required TextSelection oldSelection,
+  required TextEditingValue newValue,
+  bool normalizeAutoClosedFenceEcho = false,
+}) {
+  if (normalizeAutoClosedFenceEcho) {
+    final normalizedFenceText =
+        FlarkLiveCodeFenceInputPolicy.displayTextAfterAutoClosedWholeTextEcho(
+          oldDisplayText: oldText,
+          newValue: newValue,
+        );
+    if (normalizedFenceText != null) {
+      return newValue.copyWith(
+        text: normalizedFenceText,
+        selection: TextSelection.collapsed(
+          offset: normalizedFenceText.length,
+          affinity: newValue.selection.affinity,
+        ),
+        composing: TextRange.empty,
+      );
+    }
+  }
+
+  if (!oldSelection.isValid || !oldSelection.isCollapsed) return newValue;
+  final newSelection = newValue.selection;
+  if (!newSelection.isValid || !newSelection.isCollapsed) return newValue;
+  final insertion = _pureTextInsertion(
+    oldText: oldText,
+    newText: newValue.text,
+  );
+  if (insertion == null) return newValue;
+  if (oldSelection.extentOffset != insertion.offset ||
+      newSelection.extentOffset != insertion.offset) {
+    return newValue;
+  }
+  return newValue.copyWith(
+    selection: TextSelection.collapsed(
+      offset: insertion.offset + insertion.length,
+      affinity: newSelection.affinity,
+    ),
+  );
+}
+
+_PureTextInsertion? _pureTextInsertion({
+  required String oldText,
+  required String newText,
+}) {
+  if (newText.length <= oldText.length) return null;
+  var prefixLength = 0;
+  while (prefixLength < oldText.length &&
+      prefixLength < newText.length &&
+      oldText.codeUnitAt(prefixLength) == newText.codeUnitAt(prefixLength)) {
+    prefixLength++;
+  }
+
+  var oldSuffix = oldText.length;
+  var newSuffix = newText.length;
+  while (oldSuffix > prefixLength &&
+      newSuffix > prefixLength &&
+      oldText.codeUnitAt(oldSuffix - 1) == newText.codeUnitAt(newSuffix - 1)) {
+    oldSuffix--;
+    newSuffix--;
+  }
+
+  if (oldSuffix != prefixLength) return null;
+  final insertedLength = newSuffix - prefixLength;
+  if (insertedLength <= 0) return null;
+  return _PureTextInsertion(prefixLength, insertedLength);
+}
+
+final class _PureTextInsertion {
+  const _PureTextInsertion(this.offset, this.length);
+
+  final int offset;
+  final int length;
+}
+
+/// The editable slice of [block] inside [displayText]: its display range
+/// clamped to the text, with trailing line breaks excluded for every block
+/// type except blockquotes.
+FlarkSourceRange flarkClampedDisplayRange(
+  FlarkRenderBlock block,
+  String displayText,
+) {
+  final start = block.displayRange.start.clamp(0, displayText.length);
+  var end = block.displayRange.end.clamp(start, displayText.length);
+  if (block.kind == FlarkMarkdownBlockKind.blockquote) {
+    return FlarkSourceRange(start, end);
+  }
+  while (end > start) {
+    final unit = displayText.codeUnitAt(end - 1);
+    if (unit != 0x0A && unit != 0x0D) break;
+    end--;
+  }
+  return FlarkSourceRange(start, end);
+}
+
+// ---------------------------------------------------------------------------
+// Immediately renderable lines (host immediate-parse heuristic)
+// ---------------------------------------------------------------------------
+
+bool _hasImmediatelyRenderableBlockLine(String text) {
+  var lineStart = 0;
+  while (lineStart <= text.length) {
+    final lineEndWithBreak = FlarkMarkdownFencedCodeScanner.lineEndWithBreak(
+      text,
+      lineStart,
+    );
+    final lineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
+      text,
+      lineStart,
+    );
+    final line = text.substring(lineStart, lineEnd);
+    if (_isImmediatelyRenderableQuoteLine(line) ||
+        _isImmediatelyRenderableListLine(line) ||
+        _isImmediatelyRenderableCodeFenceLine(
+          line,
+          hasLineBreak: lineEndWithBreak > lineEnd,
+        )) {
+      return true;
+    }
+    if (lineEndWithBreak <= lineStart || lineEndWithBreak >= text.length) {
+      break;
+    }
+    lineStart = lineEndWithBreak;
+  }
+  return false;
+}
+
+bool _isImmediatelyRenderableQuoteLine(String line) {
+  var index = _skipHorizontalWhitespace(line, 0);
+  if (index >= line.length || line.codeUnitAt(index) != 0x3E) return false;
+  index++;
+  return index < line.length && _isHorizontalWhitespace(line.codeUnitAt(index));
+}
+
+bool _isImmediatelyRenderableListLine(String line) {
+  final index = _skipHorizontalWhitespace(line, 0);
+  if (index >= line.length) return false;
+
+  final marker = line.codeUnitAt(index);
+  if (marker == 0x2D || marker == 0x2A || marker == 0x2B) {
+    final afterMarker = index + 1;
+    return afterMarker < line.length &&
+        _isHorizontalWhitespace(line.codeUnitAt(afterMarker));
+  }
+
+  return _orderedListMarkerLabel(line, requireFollowingWhitespace: true) !=
+      null;
+}
+
+bool _isImmediatelyRenderableCodeFenceLine(
+  String line, {
+  required bool hasLineBreak,
+}) {
+  if (!hasLineBreak) return false;
+  return FlarkMarkdownFencedCodeScanner.fenceLine(line) != null;
+}
+
+String? _orderedListMarkerLabel(
+  String line, {
+  bool requireFollowingWhitespace = false,
+}) {
+  var index = _skipHorizontalWhitespace(line, 0);
+  final digitStart = index;
+  while (index < line.length &&
+      index - digitStart < 9 &&
+      _isAsciiDigit(line.codeUnitAt(index))) {
+    index++;
+  }
+  if (index == digitStart) return null;
+  if (index < line.length && _isAsciiDigit(line.codeUnitAt(index))) {
+    return null;
+  }
+  if (index >= line.length) return null;
+
+  final delimiter = line.codeUnitAt(index);
+  if (delimiter != 0x2E && delimiter != 0x29) return null;
+  index++;
+  if (requireFollowingWhitespace &&
+      (index >= line.length ||
+          !_isHorizontalWhitespace(line.codeUnitAt(index)))) {
+    return null;
+  }
+  return line.substring(digitStart, index);
+}
+
+int _skipHorizontalWhitespace(String text, int start) {
+  var index = start;
+  while (index < text.length &&
+      _isHorizontalWhitespace(text.codeUnitAt(index))) {
+    index++;
+  }
+  return index;
+}
+
+bool _isHorizontalWhitespace(int codeUnit) {
+  return codeUnit == 0x20 || codeUnit == 0x09;
+}
+
+bool _isAsciiDigit(int codeUnit) {
+  return codeUnit >= 0x30 && codeUnit <= 0x39;
 }

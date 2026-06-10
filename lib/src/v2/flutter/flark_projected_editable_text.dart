@@ -14,6 +14,7 @@ import 'flark_command_actions.dart';
 import 'flark_code_syntax_highlighting.dart';
 import 'flark_flutter_controller.dart';
 import 'flark_live_block_source_edit.dart';
+import 'flark_live_edit_classifier.dart';
 import 'flark_live_block_reconciler.dart';
 import 'flark_live_block_signature.dart';
 import 'flark_live_code_fence_input_policy.dart';
@@ -24,7 +25,6 @@ import 'flark_text_selection_gestures.dart';
 part 'projected_editable/live_block_editor.dart';
 part 'projected_editable/live_block_text.dart';
 part 'projected_editable/live_block_widgets.dart';
-part 'projected_editable/live_edit_classifier.dart';
 part 'projected_editable/live_text_rendering.dart';
 
 final class FlarkProjectedEditableText extends StatefulWidget {

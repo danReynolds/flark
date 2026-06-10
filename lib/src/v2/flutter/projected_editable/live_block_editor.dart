@@ -1109,64 +1109,6 @@ bool _isVisibleEditableBlock(FlarkRenderBlock block, String displayText) {
       block.displayRange.isCollapsed;
 }
 
-bool _hasImmediatelyRenderableBlockLine(String text) {
-  var lineStart = 0;
-  while (lineStart <= text.length) {
-    final lineEndWithBreak = FlarkMarkdownFencedCodeScanner.lineEndWithBreak(
-      text,
-      lineStart,
-    );
-    final lineEnd = FlarkMarkdownFencedCodeScanner.lineContentEnd(
-      text,
-      lineStart,
-    );
-    final line = text.substring(lineStart, lineEnd);
-    if (_isImmediatelyRenderableQuoteLine(line) ||
-        _isImmediatelyRenderableListLine(line) ||
-        _isImmediatelyRenderableCodeFenceLine(
-          line,
-          hasLineBreak: lineEndWithBreak > lineEnd,
-        )) {
-      return true;
-    }
-    if (lineEndWithBreak <= lineStart || lineEndWithBreak >= text.length) {
-      break;
-    }
-    lineStart = lineEndWithBreak;
-  }
-  return false;
-}
-
-bool _isImmediatelyRenderableQuoteLine(String line) {
-  var index = _skipHorizontalWhitespace(line, 0);
-  if (index >= line.length || line.codeUnitAt(index) != 0x3E) return false;
-  index++;
-  return index < line.length && _isHorizontalWhitespace(line.codeUnitAt(index));
-}
-
-bool _isImmediatelyRenderableListLine(String line) {
-  final index = _skipHorizontalWhitespace(line, 0);
-  if (index >= line.length) return false;
-
-  final marker = line.codeUnitAt(index);
-  if (marker == 0x2D || marker == 0x2A || marker == 0x2B) {
-    final afterMarker = index + 1;
-    return afterMarker < line.length &&
-        _isHorizontalWhitespace(line.codeUnitAt(afterMarker));
-  }
-
-  return _orderedListMarkerLabel(line, requireFollowingWhitespace: true) !=
-      null;
-}
-
-bool _isImmediatelyRenderableCodeFenceLine(
-  String line, {
-  required bool hasLineBreak,
-}) {
-  if (!hasLineBreak) return false;
-  return FlarkMarkdownFencedCodeScanner.fenceLine(line) != null;
-}
-
 bool _isSyntheticSourceHost(FlarkRenderBlock block) {
   return block.attributes['synthetic'] == true &&
       (block.type == 'syntheticSourceLineHost' ||

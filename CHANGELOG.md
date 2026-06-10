@@ -36,8 +36,10 @@ Architecture:
 - Platform-echo handling is classified, not open-coded: each editing surface
   resolves an incoming text change through a pure, table-tested classifier
   (`classifyFlarkLiveBlockEdit` / `classifyFlarkHostEdit`) into one typed
-  intent, and the widgets only execute intents. The recognizer ordering now
-  lives in exactly one inspectable place per surface.
+  intent, and the widgets only execute intents. The classifiers live in a
+  standalone library that cannot import the editor widgets, so their purity
+  is compiler-enforced, and the recognizer ordering lives in exactly one
+  inspectable place per surface.
 
 - `FlarkRenderPlan.fidelity` (`authoritative`/`predicted`/`stale`) replaces
   the unread `'stale'`/`'predictive'` metadata flags;

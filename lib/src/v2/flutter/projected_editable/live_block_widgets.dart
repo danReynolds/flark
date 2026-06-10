@@ -1065,7 +1065,7 @@ final class _EditableTableCellState extends State<_EditableTableCell> {
     if (_syncing) return;
     final cell = widget.currentCell;
     final oldLocalSelection = _localSelection(cell.text.length);
-    final value = _textValueWithPureInsertionSelection(
+    final value = flarkTextValueWithPureInsertionSelection(
       oldText: cell.text,
       oldSelection: oldLocalSelection,
       newValue: _textController.value,

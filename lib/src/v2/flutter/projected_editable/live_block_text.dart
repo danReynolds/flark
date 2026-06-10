@@ -337,7 +337,7 @@ final class _EditableProjectedBlockTextState
       );
       return;
     }
-    final range = _clampedDisplayRange(
+    final range = flarkClampedDisplayRange(
       widget.currentBlock,
       widget.currentDisplayText,
     );
@@ -459,7 +459,7 @@ final class _EditableProjectedBlockTextState
     }
     final block = widget.currentBlock;
     final displayText = widget.currentDisplayText;
-    final range = _clampedDisplayRange(block, displayText);
+    final range = flarkClampedDisplayRange(block, displayText);
     return displayText.substring(range.start, range.end);
   }
 
@@ -491,7 +491,7 @@ final class _EditableProjectedBlockTextState
     }
     final displaySelection = widget.controller.projection
         .sourceSelectionToDisplay(widget.controller.selection);
-    final range = _clampedDisplayRange(
+    final range = flarkClampedDisplayRange(
       widget.currentBlock,
       widget.currentDisplayText,
     );
@@ -738,84 +738,6 @@ final class _EditableProjectedBlockTextState
     }
     return range;
   }
-}
-
-TextEditingValue _textValueWithPureInsertionSelection({
-  required String oldText,
-  required TextSelection oldSelection,
-  required TextEditingValue newValue,
-  bool normalizeAutoClosedFenceEcho = false,
-}) {
-  if (normalizeAutoClosedFenceEcho) {
-    final normalizedFenceText =
-        FlarkLiveCodeFenceInputPolicy.displayTextAfterAutoClosedWholeTextEcho(
-          oldDisplayText: oldText,
-          newValue: newValue,
-        );
-    if (normalizedFenceText != null) {
-      return newValue.copyWith(
-        text: normalizedFenceText,
-        selection: TextSelection.collapsed(
-          offset: normalizedFenceText.length,
-          affinity: newValue.selection.affinity,
-        ),
-        composing: TextRange.empty,
-      );
-    }
-  }
-
-  if (!oldSelection.isValid || !oldSelection.isCollapsed) return newValue;
-  final newSelection = newValue.selection;
-  if (!newSelection.isValid || !newSelection.isCollapsed) return newValue;
-  final insertion = _pureTextInsertion(
-    oldText: oldText,
-    newText: newValue.text,
-  );
-  if (insertion == null) return newValue;
-  if (oldSelection.extentOffset != insertion.offset ||
-      newSelection.extentOffset != insertion.offset) {
-    return newValue;
-  }
-  return newValue.copyWith(
-    selection: TextSelection.collapsed(
-      offset: insertion.offset + insertion.length,
-      affinity: newSelection.affinity,
-    ),
-  );
-}
-
-_PureTextInsertion? _pureTextInsertion({
-  required String oldText,
-  required String newText,
-}) {
-  if (newText.length <= oldText.length) return null;
-  var prefixLength = 0;
-  while (prefixLength < oldText.length &&
-      prefixLength < newText.length &&
-      oldText.codeUnitAt(prefixLength) == newText.codeUnitAt(prefixLength)) {
-    prefixLength++;
-  }
-
-  var oldSuffix = oldText.length;
-  var newSuffix = newText.length;
-  while (oldSuffix > prefixLength &&
-      newSuffix > prefixLength &&
-      oldText.codeUnitAt(oldSuffix - 1) == newText.codeUnitAt(newSuffix - 1)) {
-    oldSuffix--;
-    newSuffix--;
-  }
-
-  if (oldSuffix != prefixLength) return null;
-  final insertedLength = newSuffix - prefixLength;
-  if (insertedLength <= 0) return null;
-  return _PureTextInsertion(prefixLength, insertedLength);
-}
-
-final class _PureTextInsertion {
-  const _PureTextInsertion(this.offset, this.length);
-
-  final int offset;
-  final int length;
 }
 
 final class _LocalTextEditSnapshot {
@@ -1090,7 +1012,7 @@ final class _FlarkBlockTextController extends TextEditingController {
       return _plainTextSpan(effectiveStyle, composingRange);
     }
 
-    final displayRange = _clampedDisplayRange(renderBlock, displayText);
+    final displayRange = flarkClampedDisplayRange(renderBlock, displayText);
     final segments = _blockTextSegments(
       textLength: text.length,
       globalDisplayStart: displayRange.start,
