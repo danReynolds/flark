@@ -146,175 +146,101 @@ final class _EditableProjectedBlockTextState
     final shouldRestoreExternalFocus = externalFocusNodeToRestore != null;
     final directSourceRange = _sourceEditRange();
     final snapshot = _localEditSnapshot(directSourceRange);
-    final oldLocalText = snapshot.value.text;
-    final oldLocalSelection = snapshot.value.selection;
-    var value = _textValueWithPureInsertionSelection(
-      oldText: oldLocalText,
-      oldSelection: oldLocalSelection,
-      newValue: _textController.value,
-      normalizeAutoClosedFenceEcho: widget.markdownInputPolicy,
+    final classification = classifyFlarkLiveBlockEdit(
+      FlarkLiveBlockEditContext(
+        markdown: widget.controller.markdown,
+        block: widget.currentBlock,
+        displayText: widget.currentDisplayText,
+        sourceRange: snapshot.directSourceRange ?? directSourceRange,
+        oldValue: snapshot.value,
+        newValue: _textController.value,
+        markdownInputPolicyEnabled: widget.markdownInputPolicy,
+        pendingCodeBodyEchoText: _pendingCodeBodyPlatformEchoText,
+      ),
     );
-    value =
-        FlarkLiveCodeFenceInputPolicy.normalizeLineBreakInsertionValue(
-          block: widget.currentBlock,
-          oldText: oldLocalText,
-          value: value,
-        ) ??
-        value;
+    _pendingCodeBodyPlatformEchoText =
+        classification.nextPendingCodeBodyEchoText;
+    final value = classification.normalizedValue;
     _adoptNormalizedTextControllerValue(value);
     final compositionUndoGroupId = _compositionUndoGrouping.groupIdFor(value);
-    if (value.text != oldLocalText) {
-      if (widget.markdownInputPolicy) {
-        if (_consumePendingCodeBodyPlatformEcho(value)) {
-          _syncFromController();
-          _compositionUndoGrouping.clearIfCommitted(value);
-          return;
-        }
-        if (FlarkLiveCodeFenceInputPolicy.isOpeningLinePlatformEnter(
-          markdown: widget.controller.markdown,
-          block: widget.currentBlock,
-          range: snapshot.directSourceRange ?? directSourceRange,
-          oldText: oldLocalText,
-          newValue: value,
+    _executeBlockIntent(
+      classification.intent,
+      value: value,
+      compositionUndoGroupId: compositionUndoGroupId,
+      externalFocusNodeToRestore: externalFocusNodeToRestore,
+      shouldRestoreExternalFocus: shouldRestoreExternalFocus,
+    );
+    _compositionUndoGrouping.clearIfCommitted(value);
+  }
+
+  void _executeBlockIntent(
+    FlarkLiveBlockEditIntent intent, {
+    required TextEditingValue value,
+    required int? compositionUndoGroupId,
+    required FocusNode? externalFocusNodeToRestore,
+    required bool shouldRestoreExternalFocus,
+  }) {
+    switch (intent) {
+      case FlarkLiveBlockResyncIntent():
+        _syncFromController();
+      case FlarkLiveBlockCaretMoveIntent(:final selection, :final userEvent):
+        widget.controller.applySelection(selection, userEvent: userEvent);
+        _syncFromController();
+        _restoreExternalFocusAfterFrame(
+          externalFocusNodeToRestore,
+          shouldRestoreExternalFocus,
+        );
+      case FlarkLiveBlockEnterDispatchIntent(:final currentSelection):
+        _markdownInputPolicy.dispatchEnter(
+          currentSelection: () => currentSelection,
+          applySelection: _applyLocalDisplaySelectionToController,
+        );
+        _restoreExternalFocusAfterFrame(
+          externalFocusNodeToRestore,
+          shouldRestoreExternalFocus,
+        );
+      case FlarkLiveBlockLanguageShortcutIntent(:final edit):
+        _replaceSourceRange(
+          controller: widget.controller,
+          range: edit.range,
+          replacementText: edit.replacementText,
+          selectionAfter: edit.selectionAfter,
+          userEvent: 'input.liveBlock.codeFenceLanguageShortcut',
+          undoGroupId: compositionUndoGroupId,
+        );
+        _rememberLocalEditSnapshot(
+          TextEditingValue(
+            text: '',
+            selection: const TextSelection.collapsed(offset: 0),
+          ),
+          directSourceRange: edit.editableRangeAfter,
+        );
+        _restoreExternalFocusAfterFrame(
+          externalFocusNodeToRestore,
+          shouldRestoreExternalFocus,
+        );
+      case FlarkLiveBlockPlatformTextChangeIntent():
+        if (_markdownInputPolicy.handlePlatformTextChange(
+          oldText: intent.oldText,
+          newValue: intent.policyValue,
+          oldTextSelection: intent.oldTextSelection,
+          applyOldTextSelection: _applyLocalDisplaySelectionToController,
         )) {
-          final existingBodyStart =
-              FlarkLiveCodeFenceInputPolicy.existingBodyStartAfterOpeningLine(
-                markdown: widget.controller.markdown,
-                block: widget.currentBlock,
-                range: snapshot.directSourceRange ?? directSourceRange,
-              );
-          if (existingBodyStart != null) {
-            widget.controller.applySelection(
-              FlarkSelection.collapsed(existingBodyStart),
-              userEvent: 'selection.liveBlock.codeFenceOpeningEnter',
-            );
-            _syncFromController();
-          } else {
-            _markdownInputPolicy.dispatchEnter(
-              currentSelection: () =>
-                  FlarkMarkdownInputPolicy.selectionFromTextSelection(
-                    oldLocalSelection,
-                  ) ??
-                  FlarkSelection.collapsed(oldLocalText.length),
-              applySelection: _applyLocalDisplaySelectionToController,
-            );
-          }
+          if (intent.resyncWhenHandled) _syncFromController();
           _restoreExternalFocusAfterFrame(
             externalFocusNodeToRestore,
             shouldRestoreExternalFocus,
           );
-          _compositionUndoGrouping.clearIfCommitted(value);
           return;
         }
-        if (FlarkLiveCodeFenceInputPolicy.isOpeningEmptyUnclosedNewlineEcho(
-          markdown: widget.controller.markdown,
-          block: widget.currentBlock,
-          range: snapshot.directSourceRange ?? directSourceRange,
-          oldText: oldLocalText,
-          newValue: value,
-        )) {
-          _syncFromController();
-          _compositionUndoGrouping.clearIfCommitted(value);
-          return;
-        }
-        if (FlarkLiveCodeFenceInputPolicy.isLanguageShortcutPlatformEcho(
-          markdown: widget.controller.markdown,
-          block: widget.currentBlock,
-          range: snapshot.directSourceRange ?? directSourceRange,
-          oldText: oldLocalText,
+        _executeBlockIntent(
+          intent.fallback,
           value: value,
-        )) {
-          _syncFromController();
-          _compositionUndoGrouping.clearIfCommitted(value);
-          return;
-        }
-        final languageShortcutEdit =
-            FlarkLiveCodeFenceInputPolicy.languageShortcutEdit(
-              markdown: widget.controller.markdown,
-              block: widget.currentBlock,
-              range: snapshot.directSourceRange ?? directSourceRange,
-              oldText: oldLocalText,
-              value: value,
-            );
-        if (languageShortcutEdit != null) {
-          _replaceSourceRange(
-            controller: widget.controller,
-            range: languageShortcutEdit.range,
-            replacementText: languageShortcutEdit.replacementText,
-            selectionAfter: languageShortcutEdit.selectionAfter,
-            userEvent: 'input.liveBlock.codeFenceLanguageShortcut',
-            undoGroupId: compositionUndoGroupId,
-          );
-          _rememberLocalEditSnapshot(
-            TextEditingValue(
-              text: '',
-              selection: const TextSelection.collapsed(offset: 0),
-            ),
-            directSourceRange: languageShortcutEdit.editableRangeAfter,
-          );
-          _restoreExternalFocusAfterFrame(
-            externalFocusNodeToRestore,
-            shouldRestoreExternalFocus,
-          );
-          _compositionUndoGrouping.clearIfCommitted(value);
-          return;
-        }
-        if (FlarkLiveCodeFenceInputPolicy.isTrailingLineBreakPlatformEcho(
-          markdown: widget.controller.markdown,
-          block: widget.currentBlock,
-          range: snapshot.directSourceRange ?? directSourceRange,
-          oldText: oldLocalText,
-          value: value,
-        )) {
-          _syncFromController();
-          _compositionUndoGrouping.clearIfCommitted(value);
-          return;
-        }
-        final platformTextValue =
-            FlarkLiveCodeFenceInputPolicy.normalizePlatformLineBreakValue(
-              markdown: widget.controller.markdown,
-              block: widget.currentBlock,
-              range: snapshot.directSourceRange ?? directSourceRange,
-              oldText: oldLocalText,
-              value: value,
-            );
-        if (platformTextValue != null &&
-            FlarkLiveCodeFenceInputPolicy.sourceTextEquals(
-              markdown: widget.controller.markdown,
-              block: widget.currentBlock,
-              text: platformTextValue.text,
-            )) {
-          _syncFromController();
-          _compositionUndoGrouping.clearIfCommitted(value);
-          return;
-        }
-        final platformPolicyValue = platformTextValue ?? value;
-        if (!FlarkLiveCodeFenceInputPolicy.shouldHandleTypedClosingFence(
-          markdown: widget.controller.markdown,
-          block: widget.currentBlock,
-          value: platformPolicyValue,
-        )) {
-          if (_markdownInputPolicy.handlePlatformTextChange(
-            oldText: oldLocalText,
-            newValue: platformPolicyValue,
-            oldTextSelection:
-                FlarkMarkdownInputPolicy.selectionFromTextSelection(
-                  oldLocalSelection,
-                ),
-            applyOldTextSelection: _applyLocalDisplaySelectionToController,
-          )) {
-            if (platformTextValue != null) _syncFromController();
-            _restoreExternalFocusAfterFrame(
-              externalFocusNodeToRestore,
-              shouldRestoreExternalFocus,
-            );
-            _compositionUndoGrouping.clearIfCommitted(value);
-            return;
-          }
-        }
-      }
-      final sourceRange = snapshot.directSourceRange ?? directSourceRange;
-      if (sourceRange != null) {
+          compositionUndoGroupId: compositionUndoGroupId,
+          externalFocusNodeToRestore: externalFocusNodeToRestore,
+          shouldRestoreExternalFocus: shouldRestoreExternalFocus,
+        );
+      case FlarkLiveBlockDirectReplacementIntent(:final sourceRange):
         final sourceEdit =
             widget.sourceEditForReplacement?.call(
               markdown: widget.controller.markdown,
@@ -351,77 +277,40 @@ final class _EditableProjectedBlockTextState
           externalFocusNodeToRestore,
           shouldRestoreExternalFocus,
         );
-        _compositionUndoGrouping.clearIfCommitted(value);
-        return;
-      }
-      final completedStandaloneFenceValue = widget.markdownInputPolicy
-          ? FlarkLiveCodeFenceInputPolicy.valueAfterCompletingStandaloneOpener(
-              oldDisplayText: oldLocalText,
-              oldSelection: oldLocalSelection,
-              newValue: value,
-            )
-          : null;
-      final blockValue = completedStandaloneFenceValue ?? value;
-      if (completedStandaloneFenceValue != null) {
-        _adoptNormalizedTextControllerValue(blockValue);
-      }
-      final block = widget.currentBlock;
-      final displayText = widget.currentDisplayText;
-      final range = _clampedDisplayRange(block, displayText);
-      final newDisplayText = displayText.replaceRange(
-        range.start,
-        range.end,
-        blockValue.text,
-      );
-      final applied = widget.controller.applyProjectedTextEdit(
-        oldDisplayText: displayText,
-        newDisplayText: newDisplayText,
-        undoGroupId: compositionUndoGroupId,
-      );
-      if (!applied) {
-        _syncFromController();
-      } else if (completedStandaloneFenceValue != null) {
-        _adoptImmediateMarkdownParseForController(widget.controller);
-      }
-      _restoreExternalFocusAfterFrame(
-        externalFocusNodeToRestore,
-        shouldRestoreExternalFocus,
-      );
-      _rememberLocalEditSnapshot(blockValue, directSourceRange: null);
-      _compositionUndoGrouping.clearIfCommitted(value);
-      return;
+      case FlarkLiveBlockProjectedEditIntent():
+        if (intent.adoptBlockValue) {
+          _adoptNormalizedTextControllerValue(intent.blockValue);
+        }
+        final applied = widget.controller.applyProjectedTextEdit(
+          oldDisplayText: intent.oldDisplayText,
+          newDisplayText: intent.newDisplayText,
+          undoGroupId: compositionUndoGroupId,
+        );
+        if (!applied) {
+          _syncFromController();
+        } else if (intent.immediateParseAfterApply) {
+          _adoptImmediateMarkdownParseForController(widget.controller);
+        }
+        _restoreExternalFocusAfterFrame(
+          externalFocusNodeToRestore,
+          shouldRestoreExternalFocus,
+        );
+        _rememberLocalEditSnapshot(intent.blockValue, directSourceRange: null);
+      case FlarkLiveBlockSourceSelectionIntent(
+        :final selection,
+        :final snapshotRange,
+      ):
+        widget.controller.applySelection(
+          selection,
+          userEvent: 'selection.liveBlock',
+        );
+        _rememberLocalEditSnapshot(value, directSourceRange: snapshotRange);
+      case FlarkLiveBlockProjectedSelectionIntent(:final selection):
+        widget.controller.applyProjectedSelection(selection);
+        _rememberLocalEditSnapshot(value, directSourceRange: null);
+      case FlarkLiveBlockIgnoreIntent():
+        break;
     }
-
-    final selection = value.selection;
-    if (!selection.isValid) {
-      _compositionUndoGrouping.clearIfCommitted(value);
-      return;
-    }
-    final sourceRange = snapshot.directSourceRange ?? directSourceRange;
-    if (sourceRange != null) {
-      widget.controller.applySelection(
-        FlarkSelection(
-          baseOffset: sourceRange.start + selection.baseOffset,
-          extentOffset: sourceRange.start + selection.extentOffset,
-        ),
-        userEvent: 'selection.liveBlock',
-      );
-      _rememberLocalEditSnapshot(value, directSourceRange: sourceRange);
-      _compositionUndoGrouping.clearIfCommitted(value);
-      return;
-    }
-    final range = _clampedDisplayRange(
-      widget.currentBlock,
-      widget.currentDisplayText,
-    );
-    widget.controller.applyProjectedSelection(
-      FlarkSelection(
-        baseOffset: range.start + selection.baseOffset,
-        extentOffset: range.start + selection.extentOffset,
-      ),
-    );
-    _rememberLocalEditSnapshot(value, directSourceRange: null);
-    _compositionUndoGrouping.clearIfCommitted(value);
   }
 
   void _restoreExternalFocusAfterFrame(
@@ -543,17 +432,6 @@ final class _EditableProjectedBlockTextState
           range: _sourceEditRange(),
           text: _localText(),
         );
-  }
-
-  bool _consumePendingCodeBodyPlatformEcho(TextEditingValue value) {
-    final decision = FlarkLiveCodeFenceInputPolicy.consumePendingEcho(
-      pendingText: _pendingCodeBodyPlatformEchoText,
-      markdown: widget.controller.markdown,
-      block: widget.currentBlock,
-      value: value,
-    );
-    _pendingCodeBodyPlatformEchoText = decision.nextPendingText;
-    return decision.consumed;
   }
 
   void _adoptNormalizedTextControllerValue(TextEditingValue value) {

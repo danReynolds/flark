@@ -33,6 +33,12 @@ Behavior fixes:
 
 Architecture:
 
+- Platform-echo handling is classified, not open-coded: each editing surface
+  resolves an incoming text change through a pure, table-tested classifier
+  (`classifyFlarkLiveBlockEdit` / `classifyFlarkHostEdit`) into one typed
+  intent, and the widgets only execute intents. The recognizer ordering now
+  lives in exactly one inspectable place per surface.
+
 - `FlarkRenderPlan.fidelity` (`authoritative`/`predicted`/`stale`) replaces
   the unread `'stale'`/`'predictive'` metadata flags;
   `FlarkFlutterController.hasUsableRenderPlan` centralizes the surface

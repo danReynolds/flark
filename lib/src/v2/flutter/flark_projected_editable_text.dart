@@ -24,6 +24,7 @@ import 'flark_text_selection_gestures.dart';
 part 'projected_editable/live_block_editor.dart';
 part 'projected_editable/live_block_text.dart';
 part 'projected_editable/live_block_widgets.dart';
+part 'projected_editable/live_edit_classifier.dart';
 part 'projected_editable/live_text_rendering.dart';
 
 final class FlarkProjectedEditableText extends StatefulWidget {
@@ -354,125 +355,69 @@ final class _FlarkProjectedEditableHostState
   void _handleTextEditingValueChanged() {
     if (_syncingFromRuntime) return;
 
-    final rawValue = _textController.value;
-    final autoClosedWholeValueFenceText = widget.liveRendered
-        ? FlarkLiveCodeFenceInputPolicy.displayTextAfterAutoClosedWholeValueEcho(
-            rawValue,
-          )
-        : null;
-    if (autoClosedWholeValueFenceText != null) {
-      final normalizedValue = rawValue.copyWith(
-        text: autoClosedWholeValueFenceText,
-        selection: TextSelection.collapsed(
-          offset: autoClosedWholeValueFenceText.length,
-          affinity: rawValue.selection.affinity,
-        ),
-        composing: TextRange.empty,
-      );
-      if (_textController.value != normalizedValue) {
-        _syncingFromRuntime = true;
-        _textController.value = normalizedValue;
-        _syncingFromRuntime = false;
-      }
-      final compositionUndoGroupId = _compositionUndoGrouping.groupIdFor(
-        normalizedValue,
-      );
-      _replaceSourceRange(
-        controller: widget.controller,
-        range: FlarkSourceRange(0, widget.controller.markdown.length),
-        replacementText: autoClosedWholeValueFenceText,
-        selectionAfter: FlarkSelection.collapsed(
-          autoClosedWholeValueFenceText.length,
-        ),
-        userEvent: 'input.liveRendered.codeFenceAutoCloseEcho',
-        undoGroupId: compositionUndoGroupId,
-      );
-      _adoptImmediateMarkdownParse();
-      _syncFromRuntime();
-      _compositionUndoGrouping.clearIfCommitted(normalizedValue);
-      return;
-    }
-
-    final oldDisplayText = _projectedText();
-    final oldDisplaySelection = widget.controller.projection
-        .sourceSelectionToDisplay(widget.controller.selection);
-    final value = _textValueWithPureInsertionSelection(
-      oldText: oldDisplayText,
-      oldSelection: _textSelection(oldDisplaySelection),
-      newValue: _textController.value,
-      normalizeAutoClosedFenceEcho: widget.liveRendered,
+    final classification = classifyFlarkHostEdit(
+      FlarkHostEditContext(
+        markdown: widget.controller.markdown,
+        oldDisplayText: _projectedText(),
+        oldDisplaySelection: widget.controller.projection
+            .sourceSelectionToDisplay(widget.controller.selection),
+        newValue: _textController.value,
+        liveRendered: widget.liveRendered,
+      ),
     );
+    final value = classification.normalizedValue;
     if (_textController.value != value) {
       _syncingFromRuntime = true;
       _textController.value = value;
       _syncingFromRuntime = false;
     }
     final compositionUndoGroupId = _compositionUndoGrouping.groupIdFor(value);
-    final autoClosedStandaloneFenceMarkdown = widget.liveRendered
-        ? FlarkLiveCodeFenceInputPolicy.markdownAfterAutoClosedStandaloneEcho(
-            oldMarkdown: widget.controller.markdown,
-            newValue: value,
-          )
-        : null;
-    if (autoClosedStandaloneFenceMarkdown != null) {
-      _replaceSourceRange(
-        controller: widget.controller,
-        range: FlarkSourceRange(0, widget.controller.markdown.length),
-        replacementText: autoClosedStandaloneFenceMarkdown,
-        selectionAfter: FlarkSelection.collapsed(
-          autoClosedStandaloneFenceMarkdown.length,
-        ),
-        userEvent: 'input.liveRendered.codeFenceAutoCloseEcho',
-        undoGroupId: compositionUndoGroupId,
-      );
-      _adoptImmediateMarkdownParse();
-      _syncFromRuntime();
-      _compositionUndoGrouping.clearIfCommitted(value);
-      return;
-    }
-    if (value.text != oldDisplayText) {
-      final completedCodeFenceText = widget.liveRendered
-          ? FlarkLiveCodeFenceInputPolicy.displayTextAfterCompletingStandaloneOpener(
-              oldDisplayText: oldDisplayText,
-              oldSelection: _textSelection(oldDisplaySelection),
-              newValue: value,
-            )
-          : null;
-      final newDisplayText = completedCodeFenceText ?? value.text;
-      if (_markdownInputPolicy.handlePlatformTextChange(
-        oldText: oldDisplayText,
-        newValue: value.copyWith(text: newDisplayText),
-        oldTextSelection: oldDisplaySelection,
-        applyOldTextSelection: _applyProjectedSelection,
-      )) {
-        _compositionUndoGrouping.clearIfCommitted(value);
-        return;
-      }
-      final needsImmediateParse =
-          widget.liveRendered &&
-          (completedCodeFenceText != null ||
-              _hasImmediatelyRenderableBlockLine(newDisplayText));
-      final applied = widget.controller.applyProjectedTextEdit(
-        oldDisplayText: oldDisplayText,
-        newDisplayText: newDisplayText,
-        undoGroupId: compositionUndoGroupId,
-      );
-      if (!applied) {
-        _syncFromRuntime();
-      } else if (needsImmediateParse) {
-        _adoptImmediateMarkdownParse();
-      }
-      _compositionUndoGrouping.clearIfCommitted(value);
-      return;
-    }
-
-    final selection = _selectionFromTextSelection(value.selection);
-    if (selection == null) {
-      _compositionUndoGrouping.clearIfCommitted(value);
-      return;
-    }
-    widget.controller.applyProjectedSelection(selection);
+    _executeHostIntent(classification.intent, compositionUndoGroupId);
     _compositionUndoGrouping.clearIfCommitted(value);
+  }
+
+  void _executeHostIntent(
+    FlarkHostEditIntent intent,
+    int? compositionUndoGroupId,
+  ) {
+    switch (intent) {
+      case FlarkHostWholeDocumentReplaceIntent(:final replacementMarkdown):
+        _replaceSourceRange(
+          controller: widget.controller,
+          range: FlarkSourceRange(0, widget.controller.markdown.length),
+          replacementText: replacementMarkdown,
+          selectionAfter: FlarkSelection.collapsed(replacementMarkdown.length),
+          userEvent: 'input.liveRendered.codeFenceAutoCloseEcho',
+          undoGroupId: compositionUndoGroupId,
+        );
+        _adoptImmediateMarkdownParse();
+        _syncFromRuntime();
+      case FlarkHostPlatformTextChangeIntent():
+        if (_markdownInputPolicy.handlePlatformTextChange(
+          oldText: intent.oldText,
+          newValue: intent.policyValue,
+          oldTextSelection: intent.oldTextSelection,
+          applyOldTextSelection: _applyProjectedSelection,
+        )) {
+          return;
+        }
+        _executeHostIntent(intent.fallback, compositionUndoGroupId);
+      case FlarkHostProjectedEditIntent():
+        final applied = widget.controller.applyProjectedTextEdit(
+          oldDisplayText: intent.oldDisplayText,
+          newDisplayText: intent.newDisplayText,
+          undoGroupId: compositionUndoGroupId,
+        );
+        if (!applied) {
+          _syncFromRuntime();
+        } else if (intent.immediateParseAfterApply) {
+          _adoptImmediateMarkdownParse();
+        }
+      case FlarkHostProjectedSelectionIntent(:final selection):
+        widget.controller.applyProjectedSelection(selection);
+      case FlarkHostIgnoreIntent():
+        break;
+    }
   }
 
   void _syncFromRuntime({bool rebuildLiveRender = true}) {
@@ -528,10 +473,6 @@ final class _FlarkProjectedEditableHostState
       baseOffset: selection.baseOffset,
       extentOffset: selection.extentOffset,
     );
-  }
-
-  FlarkSelection? _selectionFromTextSelection(TextSelection selection) {
-    return FlarkMarkdownInputPolicy.selectionFromTextSelection(selection);
   }
 }
 
