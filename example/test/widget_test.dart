@@ -26,6 +26,133 @@ void main() {
     expect(find.text('Native Comrak'), findsOneWidget);
   });
 
+  testWidgets('playground theme toggle switches the editor palette', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(const FlarkExampleApp());
+    await tester.pump();
+
+    FlarkMarkdownEditor editor() =>
+        tester.widget<FlarkMarkdownEditor>(find.byType(FlarkMarkdownEditor));
+    expect(editor().theme, FlarkMarkdownThemeData.light);
+    expect(find.text('Light'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('PlaygroundThemeToggle')));
+    await tester.pump();
+    expect(editor().theme, FlarkMarkdownThemeData.dark);
+    expect(find.text('Dark'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('PlaygroundThemeToggle')));
+    await tester.pump();
+    expect(editor().theme, FlarkMarkdownThemeData.light);
+  });
+
+  testWidgets('theme studio edits playground colors live', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(const FlarkExampleApp());
+    await tester.pump();
+
+    FlarkMarkdownEditor editor() =>
+        tester.widget<FlarkMarkdownEditor>(find.byType(FlarkMarkdownEditor));
+
+    // Open the studio: every themeable color is listed.
+    await tester.tap(find.byKey(const Key('PlaygroundThemeStudioToggle')));
+    await tester.pump();
+    expect(find.byKey(const Key('PlaygroundThemeStudio')), findsOneWidget);
+    expect(find.text('Theme studio'), findsOneWidget);
+
+    // Preset chips apply wholesale.
+    await tester.tap(find.byKey(const ValueKey('ThemeStudioPreset:Dark')));
+    await tester.pump();
+    expect(editor().theme, FlarkMarkdownThemeData.dark);
+
+    // Editing one slot layers a copyWith on top of the active theme.
+    final linkEntry = find.byKey(const ValueKey('ThemeStudioEntry:Link'));
+    await tester.scrollUntilVisible(
+      linkEntry,
+      80,
+      scrollable: find.descendant(
+        of: find.byKey(const Key('PlaygroundThemeStudio')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.tap(linkEntry);
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const Key('PlaygroundThemeStudioHexField')),
+      'FF123456',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    expect(editor().theme!.linkColor, const Color(0xFF123456));
+    expect(
+      editor().theme!.codeBlockBackgroundColor,
+      FlarkMarkdownThemeData.dark.codeBlockBackgroundColor,
+    );
+
+    // Reset returns to the brightness preset. (Focusing the hex field may
+    // have scrolled the page; bring the panel header back first.)
+    await tester.ensureVisible(
+      find.byKey(const Key('PlaygroundThemeStudioReset')),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('PlaygroundThemeStudioReset')));
+    await tester.pump();
+    expect(editor().theme, FlarkMarkdownThemeData.light);
+  });
+
+  testWidgets('playground expands to fullscreen and closes via Esc or button', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(const FlarkExampleApp());
+    await tester.pump();
+
+    // Type something so we can confirm the document survives the move.
+    final editable = find.byType(EditableText).first;
+    await tester.tap(editable);
+    await tester.pump();
+
+    expect(find.text('Expand'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('PlaygroundExpandToggle')));
+    await tester.pump();
+    await tester.pump();
+
+    // Fullscreen: same single editor (reparented, not duplicated), the hero
+    // slot shows the placeholder, and the pill flips to Close. The surface
+    // is immersive: none of the workbench chrome comes along.
+    expect(find.byType(FlarkMarkdownEditor), findsOneWidget);
+    expect(find.text('Editing in fullscreen'), findsOneWidget);
+    expect(find.text('Close'), findsOneWidget);
+    expect(find.text('Live playground'), findsNothing);
+    expect(find.text('Live Markdown field'), findsNothing);
+
+    // Esc collapses.
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Editing in fullscreen'), findsNothing);
+    expect(find.text('Expand'), findsOneWidget);
+
+    // The Close pill collapses too.
+    await tester.tap(find.byKey(const Key('PlaygroundExpandToggle')));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Close'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('PlaygroundExpandToggle')));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Editing in fullscreen'), findsNothing);
+    expect(find.byType(FlarkMarkdownEditor), findsOneWidget);
+  });
+
   testWidgets('playground controls remain usable on narrow web viewports', (
     tester,
   ) async {
@@ -141,7 +268,9 @@ void main() {
 
     expect(boldButton().onPressed, isNull);
 
-    final editor = tester.widget<FlarkMarkdownEditor>(find.byType(FlarkMarkdownEditor));
+    final editor = tester.widget<FlarkMarkdownEditor>(
+      find.byType(FlarkMarkdownEditor),
+    );
     editor.controller!.applySelection(
       const FlarkSelection(baseOffset: 0, extentOffset: 4),
     );
@@ -168,7 +297,9 @@ void main() {
     await tester.pumpWidget(const FlarkExampleApp());
     await tester.pump();
 
-    final editor = tester.widget<FlarkMarkdownEditor>(find.byType(FlarkMarkdownEditor));
+    final editor = tester.widget<FlarkMarkdownEditor>(
+      find.byType(FlarkMarkdownEditor),
+    );
     expect(editor.editingMode, FlarkMarkdownEditingMode.liveRendered);
     expect(find.byType(FlarkMarkdown), findsNothing);
     expect(find.text('Source'), findsNothing);
@@ -189,7 +320,9 @@ void main() {
     );
     await tester.pump();
 
-    final editor = tester.widget<FlarkMarkdownEditor>(find.byType(FlarkMarkdownEditor));
+    final editor = tester.widget<FlarkMarkdownEditor>(
+      find.byType(FlarkMarkdownEditor),
+    );
     expect(editor.editingMode, FlarkMarkdownEditingMode.liveRendered);
 
     final editableFinder = find.byType(EditableText);

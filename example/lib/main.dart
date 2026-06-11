@@ -227,6 +227,16 @@ class _FlarkLandingScreenState extends State<FlarkLandingScreen> {
   final _apiKey = GlobalKey();
   final _docsKey = GlobalKey();
 
+  bool _darkPlayground = false;
+  bool _expandedPlayground = false;
+  bool _themeStudioOpen = false;
+  FlarkMarkdownThemeData? _themeOverride;
+
+  /// One editor instance reparents between the workbench pane and the
+  /// immersive fullscreen surface, so document, focus, and scroll state
+  /// survive expanding.
+  final _editorKey = GlobalKey(debugLabel: 'playground-editor');
+
   @override
   void initState() {
     super.initState();
@@ -272,45 +282,133 @@ class _FlarkLandingScreenState extends State<FlarkLandingScreen> {
         : 64.0;
 
     return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: Scrollbar(
-          controller: _scrollController,
-          child: SingleChildScrollView(
-            controller: _scrollController,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _TopBar(
-                  pad: pad,
-                  onPlayground: () => _scrollTo(_playgroundKey),
-                  onWhy: () => _scrollTo(_whyKey),
-                  onApi: () => _scrollTo(_apiKey),
-                  onDocs: () => _scrollTo(_docsKey),
+      body: Stack(
+        children: [
+          SafeArea(
+            bottom: false,
+            child: Scrollbar(
+              controller: _scrollController,
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _TopBar(
+                      pad: pad,
+                      onPlayground: () => _scrollTo(_playgroundKey),
+                      onWhy: () => _scrollTo(_whyKey),
+                      onApi: () => _scrollTo(_apiKey),
+                      onDocs: () => _scrollTo(_docsKey),
+                    ),
+                    _HeroBand(
+                      key: _playgroundKey,
+                      pad: pad,
+                      // While the fullscreen overlay owns the workbench, the
+                      // hero shows a placeholder; one GlobalKey'd workbench
+                      // must never be built in two places at once.
+                      expandedPlaceholder: _expandedPlayground,
+                      workbenchBuilder: (stacked) =>
+                          _buildWorkbench(stacked: stacked),
+                      onDocs: () => _scrollTo(_docsKey),
+                    ),
+                    _AtelierBand(pad: pad),
+                    _WhySection(key: _whyKey, pad: pad),
+                    _ApiSection(key: _apiKey, pad: pad),
+                    _DocsSection(key: _docsKey, pad: pad),
+                    const _Footer(),
+                  ],
                 ),
-                _HeroBand(
-                  key: _playgroundKey,
-                  pad: pad,
-                  controller: _controller,
-                  focusNode: _focusNode,
-                  onSample: () => _loadDocument(_sampleMarkdown),
-                  onArticle: () => _loadDocument(_articleMarkdown),
-                  onTables: () => _loadDocument(_tableMarkdown),
-                  onScratch: () => _loadDocument(''),
-                  onCommand: _runCommand,
-                  onDocs: () => _scrollTo(_docsKey),
-                ),
-                _AtelierBand(pad: pad),
-                _WhySection(key: _whyKey, pad: pad),
-                _ApiSection(key: _apiKey, pad: pad),
-                _DocsSection(key: _docsKey, pad: pad),
-                const _Footer(),
-              ],
+              ),
             ),
           ),
-        ),
+          if (_expandedPlayground)
+            Positioned.fill(
+              child: _ImmersivePlayground(
+                dark: _darkPlayground,
+                onToggleTheme: _togglePlaygroundBrightness,
+                onClose: _toggleExpandedPlayground,
+                themeStudioOpen: _themeStudioOpen,
+                onToggleThemeStudio: () =>
+                    setState(() => _themeStudioOpen = !_themeStudioOpen),
+                themeStudio: _buildThemeStudio(),
+                editor: _buildPlaygroundEditor(immersive: true),
+              ),
+            ),
+        ],
       ),
     );
+  }
+
+  Widget _buildWorkbench({required bool stacked}) {
+    return _Workbench(
+      controller: _controller,
+      darkTheme: _darkPlayground,
+      onToggleTheme: _togglePlaygroundBrightness,
+      onToggleExpand: _toggleExpandedPlayground,
+      themeStudioOpen: _themeStudioOpen,
+      onToggleThemeStudio: () =>
+          setState(() => _themeStudioOpen = !_themeStudioOpen),
+      themeStudio: _buildThemeStudio(),
+      editorHeight: stacked ? 480 : 560,
+      editor: _buildPlaygroundEditor(immersive: false),
+      onSample: () => _loadDocument(_sampleMarkdown),
+      onArticle: () => _loadDocument(_articleMarkdown),
+      onTables: () => _loadDocument(_tableMarkdown),
+      onScratch: () => _loadDocument(''),
+      onCommand: _runCommand,
+    );
+  }
+
+  FlarkMarkdownThemeData get _playgroundTheme {
+    return _themeOverride ??
+        (_darkPlayground
+            ? FlarkMarkdownThemeData.dark
+            : FlarkMarkdownThemeData.light);
+  }
+
+  void _togglePlaygroundBrightness() {
+    setState(() {
+      _darkPlayground = !_darkPlayground;
+      _themeOverride = null;
+    });
+  }
+
+  Widget _buildThemeStudio() {
+    return _ThemeStudioPanel(
+      theme: _playgroundTheme,
+      dark: _darkPlayground,
+      overrideActive: _themeOverride != null,
+      onThemeChanged: (next) => setState(() => _themeOverride = next),
+      onReset: () => setState(() => _themeOverride = null),
+      onClose: () => setState(() => _themeStudioOpen = false),
+    );
+  }
+
+  Widget _buildPlaygroundEditor({required bool immersive}) {
+    final dark = _darkPlayground;
+    return FlarkMarkdownEditor(
+      key: _editorKey,
+      controller: _controller,
+      editingMode: FlarkMarkdownEditingMode.liveRendered,
+      focusNode: _focusNode,
+      expands: true,
+      maxLines: null,
+      cursorColor: dark ? null : _C.teal,
+      theme: _playgroundTheme,
+      style: _sans(
+        immersive ? 17 : 16,
+        FontWeight.w400,
+        dark ? const Color(0xFFE6EDF3) : _C.ink,
+        height: immersive ? 1.55 : 1.5,
+      ),
+    );
+  }
+
+  void _toggleExpandedPlayground() {
+    setState(() => _expandedPlayground = !_expandedPlayground);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
   }
 
   void _loadDocument(String markdown) {
@@ -526,24 +624,14 @@ class _HeroBand extends StatelessWidget {
   const _HeroBand({
     super.key,
     required this.pad,
-    required this.controller,
-    required this.focusNode,
-    required this.onSample,
-    required this.onArticle,
-    required this.onTables,
-    required this.onScratch,
-    required this.onCommand,
+    required this.expandedPlaceholder,
+    required this.workbenchBuilder,
     required this.onDocs,
   });
 
   final double pad;
-  final FlarkFlutterController controller;
-  final FocusNode focusNode;
-  final VoidCallback onSample;
-  final VoidCallback onArticle;
-  final VoidCallback onTables;
-  final VoidCallback onScratch;
-  final ValueChanged<_ToolbarCommand> onCommand;
+  final bool expandedPlaceholder;
+  final Widget Function(bool stacked) workbenchBuilder;
   final VoidCallback onDocs;
 
   @override
@@ -561,16 +649,11 @@ class _HeroBand extends StatelessWidget {
                   builder: (context, constraints) {
                     final stacked = constraints.maxWidth < 980;
                     final copy = _HeroCopy(onDocs: onDocs);
-                    final workbench = _Workbench(
-                      controller: controller,
-                      focusNode: focusNode,
-                      editorHeight: stacked ? 480 : 560,
-                      onSample: onSample,
-                      onArticle: onArticle,
-                      onTables: onTables,
-                      onScratch: onScratch,
-                      onCommand: onCommand,
-                    );
+                    final workbench = expandedPlaceholder
+                        ? _WorkbenchPlaceholder(
+                            height: (stacked ? 480 : 560) + 140,
+                          )
+                        : workbenchBuilder(stacked);
                     if (stacked) {
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1000,8 +1083,14 @@ class _GlassTag extends StatelessWidget {
 class _Workbench extends StatelessWidget {
   const _Workbench({
     required this.controller,
-    required this.focusNode,
+    required this.darkTheme,
+    required this.onToggleTheme,
+    required this.onToggleExpand,
+    required this.themeStudioOpen,
+    required this.onToggleThemeStudio,
+    required this.themeStudio,
     required this.editorHeight,
+    required this.editor,
     required this.onSample,
     required this.onArticle,
     required this.onTables,
@@ -1010,8 +1099,14 @@ class _Workbench extends StatelessWidget {
   });
 
   final FlarkFlutterController controller;
-  final FocusNode focusNode;
+  final bool darkTheme;
+  final VoidCallback onToggleTheme;
+  final VoidCallback onToggleExpand;
+  final bool themeStudioOpen;
+  final VoidCallback onToggleThemeStudio;
+  final Widget themeStudio;
   final double editorHeight;
+  final Widget editor;
   final VoidCallback onSample;
   final VoidCallback onArticle;
   final VoidCallback onTables;
@@ -1020,6 +1115,19 @@ class _Workbench extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final editorSection = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      child: _EditorPane(
+        controller: controller,
+        dark: darkTheme,
+        onToggleTheme: onToggleTheme,
+        onToggleExpand: onToggleExpand,
+        themeStudioOpen: themeStudioOpen,
+        onToggleThemeStudio: onToggleThemeStudio,
+        themeStudio: themeStudio,
+        editor: editor,
+      ),
+    );
     return Container(
       decoration: BoxDecoration(
         color: _C.card,
@@ -1046,13 +1154,7 @@ class _Workbench extends StatelessWidget {
             onScratch: onScratch,
             onCommand: onCommand,
           ),
-          SizedBox(
-            height: editorHeight,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-              child: _EditorPane(controller: controller, focusNode: focusNode),
-            ),
-          ),
+          SizedBox(height: editorHeight, child: editorSection),
         ],
       ),
     );
@@ -1130,6 +1232,874 @@ class _LivePill extends StatelessWidget {
             style: _sans(12, FontWeight.w700, _C.inkSoft),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ThemeToggle extends StatelessWidget {
+  const _ThemeToggle({required this.dark, required this.onToggle});
+
+  final bool dark;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: dark
+          ? 'Markdown theme: dark — tap for light'
+          : 'Markdown theme: light — tap for dark',
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          key: const Key('PlaygroundThemeToggle'),
+          behavior: HitTestBehavior.opaque,
+          onTap: onToggle,
+          child: Container(
+            decoration: BoxDecoration(
+              color: dark ? const Color(0xFF2D333B) : _C.card,
+              border: Border.all(
+                color: dark ? const Color(0xFF444C56) : _C.line,
+              ),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  dark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+                  size: 13,
+                  color: dark ? const Color(0xFFE0AC53) : _C.ochre,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  dark ? 'Dark' : 'Light',
+                  style: _sans(
+                    12,
+                    FontWeight.w700,
+                    dark ? const Color(0xFFADBAC7) : _C.inkSoft,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ExpandToggle extends StatelessWidget {
+  const _ExpandToggle({
+    required this.expanded,
+    required this.onToggle,
+    this.dark = false,
+  });
+
+  final bool expanded;
+  final VoidCallback onToggle;
+  final bool dark;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: expanded
+          ? 'Exit fullscreen (Esc)'
+          : 'Expand the playground to fullscreen',
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          key: const Key('PlaygroundExpandToggle'),
+          behavior: HitTestBehavior.opaque,
+          onTap: onToggle,
+          child: Container(
+            decoration: BoxDecoration(
+              color: dark ? const Color(0xFF2D333B) : _C.card,
+              border: Border.all(
+                color: dark ? const Color(0xFF444C56) : _C.line,
+              ),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  expanded
+                      ? Icons.close_fullscreen_rounded
+                      : Icons.open_in_full_rounded,
+                  size: 13,
+                  color: dark ? const Color(0xFF5FB8AE) : _C.teal,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  expanded ? 'Close' : 'Expand',
+                  style: _sans(
+                    12,
+                    FontWeight.w700,
+                    dark ? const Color(0xFFADBAC7) : _C.inkSoft,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Holds the hero slot while the GlobalKey'd workbench lives in the
+/// fullscreen overlay.
+class _WorkbenchPlaceholder extends StatelessWidget {
+  const _WorkbenchPlaceholder({required this.height});
+
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: _C.card.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _C.line),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        'Editing in fullscreen',
+        style: _sans(14, FontWeight.w600, _C.inkFaint),
+      ),
+    );
+  }
+}
+
+class _CollapsePlaygroundIntent extends Intent {
+  const _CollapsePlaygroundIntent();
+}
+
+class _ImmersivePlayground extends StatelessWidget {
+  const _ImmersivePlayground({
+    required this.dark,
+    required this.onToggleTheme,
+    required this.onClose,
+    required this.themeStudioOpen,
+    required this.onToggleThemeStudio,
+    required this.themeStudio,
+    required this.editor,
+  });
+
+  final bool dark;
+  final VoidCallback onToggleTheme;
+  final VoidCallback onClose;
+  final bool themeStudioOpen;
+  final VoidCallback onToggleThemeStudio;
+  final Widget themeStudio;
+  final Widget editor;
+
+  @override
+  Widget build(BuildContext context) {
+    // The Shortcuts mapping sits between the focused editor and the app
+    // root, so Escape collapses the playground before WidgetsApp's default
+    // Escape -> DismissIntent binding can be claimed elsewhere.
+    return Shortcuts(
+      shortcuts: const {
+        SingleActivator(LogicalKeyboardKey.escape): _CollapsePlaygroundIntent(),
+      },
+      child: Actions(
+        actions: {
+          _CollapsePlaygroundIntent: CallbackAction<_CollapsePlaygroundIntent>(
+            onInvoke: (_) {
+              onClose();
+              return null;
+            },
+          ),
+        },
+        child: ColoredBox(
+          color: dark ? const Color(0xFF1C2128) : const Color(0xFFFFFEFB),
+          child: SafeArea(
+            child: Stack(
+              children: [
+                // A centered writing column; the editor scrolls itself.
+                Positioned.fill(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 820),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(36, 56, 36, 24),
+                        child: editor,
+                      ),
+                    ),
+                  ),
+                ),
+                if (themeStudioOpen)
+                  Positioned(
+                    top: 56,
+                    right: 18,
+                    bottom: 24,
+                    width: 280,
+                    child: themeStudio,
+                  ),
+                Positioned(
+                  top: 14,
+                  right: 18,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _ThemeToggle(dark: dark, onToggle: onToggleTheme),
+                      const SizedBox(width: 8),
+                      _ThemeStudioToggle(
+                        open: themeStudioOpen,
+                        dark: dark,
+                        onToggle: onToggleThemeStudio,
+                      ),
+                      const SizedBox(width: 8),
+                      _ExpandToggle(
+                        expanded: true,
+                        onToggle: onClose,
+                        dark: dark,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemeStudioToggle extends StatelessWidget {
+  const _ThemeStudioToggle({
+    required this.open,
+    required this.dark,
+    required this.onToggle,
+  });
+
+  final bool open;
+  final bool dark;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: open ? 'Close the theme studio' : 'Customize the theme',
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          key: const Key('PlaygroundThemeStudioToggle'),
+          behavior: HitTestBehavior.opaque,
+          onTap: onToggle,
+          child: Container(
+            decoration: BoxDecoration(
+              color: dark
+                  ? Color(open ? 0xFF444C56 : 0xFF2D333B)
+                  : (open ? const Color(0xFFEAE3D3) : _C.card),
+              border: Border.all(
+                color: dark ? const Color(0xFF444C56) : _C.line,
+              ),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.palette_outlined,
+                  size: 13,
+                  color: dark ? const Color(0xFFB69DF8) : _C.terracotta,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Theme',
+                  style: _sans(
+                    12,
+                    FontWeight.w700,
+                    dark ? const Color(0xFFADBAC7) : _C.inkSoft,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One editable color slot in the theme studio.
+class _ThemeColorEntry {
+  const _ThemeColorEntry(this.group, this.label, this.read, this.write);
+
+  final String group;
+  final String label;
+  final Color Function(FlarkMarkdownThemeData theme) read;
+  final FlarkMarkdownThemeData Function(FlarkMarkdownThemeData theme, Color c)
+  write;
+}
+
+/// Every color FlarkMarkdownThemeData exposes, grouped for the studio.
+final List<_ThemeColorEntry> _themeColorEntries = [
+  _ThemeColorEntry(
+    'Text & links',
+    'Link',
+    (t) => t.linkColor,
+    (t, c) => t.copyWith(linkColor: c),
+  ),
+  _ThemeColorEntry(
+    'Text & links',
+    'Code text',
+    (t) => t.codeTextColor,
+    (t, c) => t.copyWith(codeTextColor: c),
+  ),
+  _ThemeColorEntry(
+    'Text & links',
+    'Quote text',
+    (t) => t.quoteTextColor,
+    (t, c) => t.copyWith(quoteTextColor: c),
+  ),
+  _ThemeColorEntry(
+    'Text & links',
+    'List marker',
+    (t) => t.listMarkerColor,
+    (t, c) => t.copyWith(listMarkerColor: c),
+  ),
+  _ThemeColorEntry(
+    'Text & links',
+    'Caption text',
+    (t) => t.captionTextColor,
+    (t, c) => t.copyWith(captionTextColor: c),
+  ),
+  _ThemeColorEntry(
+    'Text & links',
+    'Error text',
+    (t) => t.errorTextColor,
+    (t, c) => t.copyWith(errorTextColor: c),
+  ),
+  _ThemeColorEntry(
+    'Code & quotes',
+    'Inline code background',
+    (t) => t.inlineCodeBackgroundColor,
+    (t, c) => t.copyWith(inlineCodeBackgroundColor: c),
+  ),
+  _ThemeColorEntry(
+    'Code & quotes',
+    'Code block background',
+    (t) => t.codeBlockBackgroundColor,
+    (t, c) => t.copyWith(codeBlockBackgroundColor: c),
+  ),
+  _ThemeColorEntry(
+    'Code & quotes',
+    'Quote background',
+    (t) => t.quoteBackgroundColor,
+    (t, c) => t.copyWith(quoteBackgroundColor: c),
+  ),
+  _ThemeColorEntry(
+    'Code & quotes',
+    'Quote rail',
+    (t) => t.quoteRailColor,
+    (t, c) => t.copyWith(quoteRailColor: c),
+  ),
+  _ThemeColorEntry(
+    'Tables & borders',
+    'Border',
+    (t) => t.borderColor,
+    (t, c) => t.copyWith(borderColor: c),
+  ),
+  _ThemeColorEntry(
+    'Tables & borders',
+    'Table header background',
+    (t) => t.tableHeaderBackgroundColor,
+    (t, c) => t.copyWith(tableHeaderBackgroundColor: c),
+  ),
+  _ThemeColorEntry(
+    'Tables & borders',
+    'Table row background',
+    (t) => t.tableRowBackgroundColor,
+    (t, c) => t.copyWith(tableRowBackgroundColor: c),
+  ),
+  _ThemeColorEntry(
+    'Tables & borders',
+    'Table divider',
+    (t) => t.tableDividerColor,
+    (t, c) => t.copyWith(tableDividerColor: c),
+  ),
+  _ThemeColorEntry(
+    'Checkboxes',
+    'Checked',
+    (t) => t.checkboxCheckedColor,
+    (t, c) => t.copyWith(checkboxCheckedColor: c),
+  ),
+  _ThemeColorEntry(
+    'Checkboxes',
+    'Unchecked border',
+    (t) => t.checkboxBorderColor,
+    (t, c) => t.copyWith(checkboxBorderColor: c),
+  ),
+  _ThemeColorEntry(
+    'Checkboxes',
+    'Unchecked fill',
+    (t) => t.checkboxFillColor,
+    (t, c) => t.copyWith(checkboxFillColor: c),
+  ),
+  _ThemeColorEntry(
+    'Checkboxes',
+    'Checkmark',
+    (t) => t.checkboxCheckmarkColor,
+    (t, c) => t.copyWith(checkboxCheckmarkColor: c),
+  ),
+  _ThemeColorEntry(
+    'Chrome & menus',
+    'Chrome label',
+    (t) => t.chromeLabelColor,
+    (t, c) => t.copyWith(chromeLabelColor: c),
+  ),
+  _ThemeColorEntry(
+    'Chrome & menus',
+    'Selected chrome label',
+    (t) => t.chromeSelectedLabelColor,
+    (t, c) => t.copyWith(chromeSelectedLabelColor: c),
+  ),
+  _ThemeColorEntry(
+    'Chrome & menus',
+    'Card background',
+    (t) => t.cardBackgroundColor,
+    (t, c) => t.copyWith(cardBackgroundColor: c),
+  ),
+  _ThemeColorEntry(
+    'Chrome & menus',
+    'Chip background',
+    (t) => t.chipBackgroundColor,
+    (t, c) => t.copyWith(chipBackgroundColor: c),
+  ),
+  _ThemeColorEntry(
+    'Chrome & menus',
+    'Active chip background',
+    (t) => t.chipActiveBackgroundColor,
+    (t, c) => t.copyWith(chipActiveBackgroundColor: c),
+  ),
+  _ThemeColorEntry(
+    'Chrome & menus',
+    'Menu background',
+    (t) => t.menuBackgroundColor,
+    (t, c) => t.copyWith(menuBackgroundColor: c),
+  ),
+  _ThemeColorEntry(
+    'Chrome & menus',
+    'Menu shadow',
+    (t) => t.menuShadowColor,
+    (t, c) => t.copyWith(menuShadowColor: c),
+  ),
+  _ThemeColorEntry(
+    'Chrome & menus',
+    'Overlay control border',
+    (t) => t.overlayControlBorderColor,
+    (t, c) => t.copyWith(overlayControlBorderColor: c),
+  ),
+  _ThemeColorEntry(
+    'Chrome & menus',
+    'Cursor',
+    (t) => t.cursorColor,
+    (t, c) => t.copyWith(cursorColor: c),
+  ),
+  _ThemeColorEntry(
+    'Syntax highlighting',
+    'Comment',
+    (t) => t.syntaxTheme.commentColor,
+    (t, c) => t.copyWith(syntaxTheme: t.syntaxTheme.copyWith(commentColor: c)),
+  ),
+  _ThemeColorEntry(
+    'Syntax highlighting',
+    'String',
+    (t) => t.syntaxTheme.stringColor,
+    (t, c) => t.copyWith(syntaxTheme: t.syntaxTheme.copyWith(stringColor: c)),
+  ),
+  _ThemeColorEntry(
+    'Syntax highlighting',
+    'Number',
+    (t) => t.syntaxTheme.numberColor,
+    (t, c) => t.copyWith(syntaxTheme: t.syntaxTheme.copyWith(numberColor: c)),
+  ),
+  _ThemeColorEntry(
+    'Syntax highlighting',
+    'Keyword',
+    (t) => t.syntaxTheme.keywordColor,
+    (t, c) => t.copyWith(syntaxTheme: t.syntaxTheme.copyWith(keywordColor: c)),
+  ),
+  _ThemeColorEntry(
+    'Syntax highlighting',
+    'Function',
+    (t) => t.syntaxTheme.functionColor,
+    (t, c) => t.copyWith(syntaxTheme: t.syntaxTheme.copyWith(functionColor: c)),
+  ),
+  _ThemeColorEntry(
+    'Syntax highlighting',
+    'Type',
+    (t) => t.syntaxTheme.typeColor,
+    (t, c) => t.copyWith(syntaxTheme: t.syntaxTheme.copyWith(typeColor: c)),
+  ),
+  _ThemeColorEntry(
+    'Syntax highlighting',
+    'Attribute',
+    (t) => t.syntaxTheme.attributeColor,
+    (t, c) =>
+        t.copyWith(syntaxTheme: t.syntaxTheme.copyWith(attributeColor: c)),
+  ),
+  _ThemeColorEntry(
+    'Syntax highlighting',
+    'Variable',
+    (t) => t.syntaxTheme.variableColor,
+    (t, c) => t.copyWith(syntaxTheme: t.syntaxTheme.copyWith(variableColor: c)),
+  ),
+  _ThemeColorEntry(
+    'Syntax highlighting',
+    'Meta',
+    (t) => t.syntaxTheme.metaColor,
+    (t, c) => t.copyWith(syntaxTheme: t.syntaxTheme.copyWith(metaColor: c)),
+  ),
+  _ThemeColorEntry(
+    'Syntax highlighting',
+    'Deletion',
+    (t) => t.syntaxTheme.deletionColor,
+    (t, c) => t.copyWith(syntaxTheme: t.syntaxTheme.copyWith(deletionColor: c)),
+  ),
+  _ThemeColorEntry(
+    'Syntax highlighting',
+    'Addition',
+    (t) => t.syntaxTheme.additionColor,
+    (t, c) => t.copyWith(syntaxTheme: t.syntaxTheme.copyWith(additionColor: c)),
+  ),
+];
+
+const List<Color> _themeStudioSwatches = [
+  Color(0xFF17202A),
+  Color(0xFF42526E),
+  Color(0xFF7A8CA3),
+  Color(0xFFD7DEE8),
+  Color(0xFFF1F4F8),
+  Color(0xFFFFFFFF),
+  Color(0xFF1C2128),
+  Color(0xFF2D333B),
+  Color(0xFF444C56),
+  Color(0xFFADBAC7),
+  Color(0xFFB3261E),
+  Color(0xFFE5534B),
+  Color(0xFFF69D50),
+  Color(0xFFE0AC53),
+  Color(0xFF57AB5A),
+  Color(0xFF0F766E),
+  Color(0xFF5FB8AE),
+  Color(0xFF0057B8),
+  Color(0xFF539BF5),
+  Color(0xFF7C3AED),
+];
+
+/// Live editor for every color in [FlarkMarkdownThemeData] — doubles as an
+/// inventory of what the package theming supports.
+class _ThemeStudioPanel extends StatefulWidget {
+  const _ThemeStudioPanel({
+    required this.theme,
+    required this.dark,
+    required this.overrideActive,
+    required this.onThemeChanged,
+    required this.onReset,
+    required this.onClose,
+  });
+
+  final FlarkMarkdownThemeData theme;
+  final bool dark;
+  final bool overrideActive;
+  final ValueChanged<FlarkMarkdownThemeData> onThemeChanged;
+  final VoidCallback onReset;
+  final VoidCallback onClose;
+
+  @override
+  State<_ThemeStudioPanel> createState() => _ThemeStudioPanelState();
+}
+
+class _ThemeStudioPanelState extends State<_ThemeStudioPanel> {
+  String? _expandedLabel;
+  final _hexController = TextEditingController();
+
+  Color get _ink => widget.dark ? const Color(0xFFE6EDF3) : _C.ink;
+  Color get _inkSoft => widget.dark ? const Color(0xFFADBAC7) : _C.inkSoft;
+  Color get _line => widget.dark ? const Color(0xFF444C56) : _C.line;
+
+  @override
+  void dispose() {
+    _hexController.dispose();
+    super.dispose();
+  }
+
+  String _hexFor(Color color) {
+    return color.toARGB32().toRadixString(16).toUpperCase().padLeft(8, '0');
+  }
+
+  Color? _parseHex(String raw) {
+    var text = raw.trim().replaceFirst('#', '').toUpperCase();
+    if (text.length == 6) text = 'FF$text';
+    if (text.length != 8) return null;
+    final value = int.tryParse(text, radix: 16);
+    if (value == null) return null;
+    return Color(value);
+  }
+
+  void _toggleEntry(_ThemeColorEntry entry) {
+    setState(() {
+      if (_expandedLabel == entry.label) {
+        _expandedLabel = null;
+      } else {
+        _expandedLabel = entry.label;
+        _hexController.text = _hexFor(entry.read(widget.theme));
+      }
+    });
+  }
+
+  void _applyHex(_ThemeColorEntry entry) {
+    final color = _parseHex(_hexController.text);
+    if (color == null) return;
+    widget.onThemeChanged(entry.write(widget.theme, color));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = <String, List<_ThemeColorEntry>>{};
+    for (final entry in _themeColorEntries) {
+      groups.putIfAbsent(entry.group, () => []).add(entry);
+    }
+    return Container(
+      key: const Key('PlaygroundThemeStudio'),
+      decoration: BoxDecoration(
+        color: widget.dark ? const Color(0xFF22272E) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _line),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 6, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Theme studio',
+                    style: _sans(13, FontWeight.w700, _ink, spacing: 0.2),
+                  ),
+                ),
+                if (widget.overrideActive)
+                  IconButton(
+                    key: const Key('PlaygroundThemeStudioReset'),
+                    tooltip: 'Reset to preset',
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 15,
+                    icon: Icon(Icons.refresh_rounded, color: _inkSoft),
+                    onPressed: widget.onReset,
+                  ),
+                IconButton(
+                  tooltip: 'Close',
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 15,
+                  icon: Icon(Icons.close_rounded, color: _inkSoft),
+                  onPressed: widget.onClose,
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Row(
+              children: [
+                _StudioPresetChip(
+                  label: 'Light',
+                  dark: widget.dark,
+                  onTap: () =>
+                      widget.onThemeChanged(FlarkMarkdownThemeData.light),
+                ),
+                const SizedBox(width: 6),
+                _StudioPresetChip(
+                  label: 'Dark',
+                  dark: widget.dark,
+                  onTap: () =>
+                      widget.onThemeChanged(FlarkMarkdownThemeData.dark),
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: _line),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
+              children: [
+                for (final group in groups.entries) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(6, 10, 6, 4),
+                    child: Text(
+                      group.key.toUpperCase(),
+                      style: _sans(
+                        10.5,
+                        FontWeight.w800,
+                        _inkSoft,
+                        spacing: 0.8,
+                      ),
+                    ),
+                  ),
+                  for (final entry in group.value) _buildEntry(entry),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEntry(_ThemeColorEntry entry) {
+    final color = entry.read(widget.theme);
+    final expanded = _expandedLabel == entry.label;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          key: ValueKey('ThemeStudioEntry:${entry.label}'),
+          borderRadius: BorderRadius.circular(6),
+          onTap: () => _toggleEntry(entry),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+            child: Row(
+              children: [
+                Container(
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: _line),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    entry.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: _sans(12, FontWeight.w600, _ink),
+                  ),
+                ),
+                Text(
+                  '#${_hexFor(color)}',
+                  style: _mono(10, FontWeight.w500, _inkSoft),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (expanded)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(6, 2, 6, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Wrap(
+                  spacing: 5,
+                  runSpacing: 5,
+                  children: [
+                    for (final swatch in _themeStudioSwatches)
+                      MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        child: GestureDetector(
+                          onTap: () => widget.onThemeChanged(
+                            entry.write(widget.theme, swatch),
+                          ),
+                          child: Container(
+                            width: 18,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              color: swatch,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: swatch == color ? _ink : _line,
+                                width: swatch == color ? 2 : 1,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                SizedBox(
+                  height: 30,
+                  child: TextField(
+                    key: const Key('PlaygroundThemeStudioHexField'),
+                    controller: _hexController,
+                    style: _mono(11, FontWeight.w500, _ink),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      prefixText: '#',
+                      prefixStyle: _mono(11, FontWeight.w500, _inkSoft),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(6),
+                        borderSide: BorderSide(color: _line),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(6),
+                        borderSide: BorderSide(color: _C.teal),
+                      ),
+                    ),
+                    onSubmitted: (_) => _applyHex(entry),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _StudioPresetChip extends StatelessWidget {
+  const _StudioPresetChip({
+    required this.label,
+    required this.dark,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool dark;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        key: ValueKey('ThemeStudioPreset:$label'),
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            color: dark ? const Color(0xFF2D333B) : _C.card,
+            border: Border.all(color: dark ? const Color(0xFF444C56) : _C.line),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          child: Text(
+            label,
+            style: _sans(
+              11,
+              FontWeight.w700,
+              dark ? const Color(0xFFADBAC7) : _C.inkSoft,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1532,10 +2502,25 @@ class _CommandButtonState extends State<_CommandButton> {
 }
 
 class _EditorPane extends StatelessWidget {
-  const _EditorPane({required this.controller, required this.focusNode});
+  const _EditorPane({
+    required this.controller,
+    required this.dark,
+    required this.onToggleTheme,
+    required this.onToggleExpand,
+    required this.themeStudioOpen,
+    required this.onToggleThemeStudio,
+    required this.themeStudio,
+    required this.editor,
+  });
 
   final FlarkFlutterController controller;
-  final FocusNode focusNode;
+  final bool dark;
+  final VoidCallback onToggleTheme;
+  final VoidCallback onToggleExpand;
+  final bool themeStudioOpen;
+  final VoidCallback onToggleThemeStudio;
+  final Widget themeStudio;
+  final Widget editor;
 
   @override
   Widget build(BuildContext context) {
@@ -1549,31 +2534,52 @@ class _EditorPane extends StatelessWidget {
               const Icon(Icons.edit_note_rounded, size: 17, color: _C.inkFaint),
               const SizedBox(width: 7),
               // Required string: 'Live Markdown field'
-              Text(
-                'Live Markdown field',
-                style: _sans(13, FontWeight.w700, _C.inkSoft, spacing: 0.2),
+              Expanded(
+                child: Text(
+                  'Live Markdown field',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _sans(13, FontWeight.w700, _C.inkSoft, spacing: 0.2),
+                ),
               ),
+              const SizedBox(width: 8),
+              _ThemeToggle(dark: dark, onToggle: onToggleTheme),
+              const SizedBox(width: 8),
+              _ThemeStudioToggle(
+                open: themeStudioOpen,
+                dark: dark,
+                onToggle: onToggleThemeStudio,
+              ),
+              const SizedBox(width: 8),
+              _ExpandToggle(expanded: false, onToggle: onToggleExpand),
             ],
           ),
         ),
         Expanded(
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFFEFB),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _C.line),
-            ),
-            clipBehavior: Clip.antiAlias,
-            padding: const EdgeInsets.fromLTRB(18, 16, 14, 12),
-            child: FlarkMarkdownEditor(
-              controller: controller,
-              editingMode: FlarkMarkdownEditingMode.liveRendered,
-              focusNode: focusNode,
-              expands: true,
-              maxLines: null,
-              cursorColor: _C.teal,
-              style: _sans(16, FontWeight.w400, _C.ink, height: 1.5),
-            ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: dark
+                        ? const Color(0xFF1C2128)
+                        : const Color(0xFFFFFEFB),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: dark ? const Color(0xFF444C56) : _C.line,
+                    ),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  padding: const EdgeInsets.fromLTRB(18, 16, 14, 12),
+                  child: editor,
+                ),
+              ),
+              if (themeStudioOpen) ...[
+                const SizedBox(width: 10),
+                SizedBox(width: 264, child: themeStudio),
+              ],
+            ],
           ),
         ),
         const SizedBox(height: 10),
