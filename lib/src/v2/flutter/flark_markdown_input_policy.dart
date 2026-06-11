@@ -125,6 +125,7 @@ final class FlarkMarkdownInputPolicy {
       final selectionBefore = oldSelection ?? fallbackSelection;
       if (!_selectionMatchesDiff(selectionBefore, diff)) return false;
       applyOldTextSelection(selectionBefore);
+      _stepOutOfInlineRunBeforeLineBreak();
       var handled = false;
       for (var index = 0; index < diff.lineBreakInsertionCount; index++) {
         final result = controller.dispatch(
@@ -201,11 +202,30 @@ final class FlarkMarkdownInputPolicy {
     if (!isEnabled) return false;
     final selection = currentSelection();
     if (selection != null) applySelection(selection);
+    _stepOutOfInlineRunBeforeLineBreak();
     final result = controller.dispatch(
       command: FlarkMarkdownInputCommands.handleEnter,
       payload: FlarkHandleEnterPayload(userEvent: enterUserEvent),
     );
     return _finish(result);
+  }
+
+  /// A line break with the caret inside a styled run's trailing edge would
+  /// split the run's source and orphan its markers as literal text (a code
+  /// span cannot contain a blank line). Inline runs are line-scoped, so
+  /// Enter first steps the caret past the closing marker and then splits.
+  void _stepOutOfInlineRunBeforeLineBreak() {
+    final selection = controller.selection;
+    if (!selection.isCollapsed) return;
+    final offset = selection.extentOffset;
+    final projection = controller.projection;
+    if (offset < 0 || offset > projection.textLength) return;
+    final marker = projection.inlineRunClosingMarkerAt(offset);
+    if (marker == null) return;
+    controller.applySelection(
+      FlarkSelection.collapsed(marker.end),
+      userEvent: 'selection.inlineRunLineBreakExit',
+    );
   }
 
   bool dispatchSoftLineBreak({
@@ -238,6 +258,35 @@ final class FlarkMarkdownInputPolicy {
     return true;
   }
 
+  /// Deleting a selection that covers a styled run's entire content must
+  /// also remove the run's markers — otherwise select-all + backspace over
+  /// `` `test` `` leaves orphaned literal backticks.
+  void _expandSelectionForInlineRunDeletion() {
+    final selection = controller.selection;
+    if (selection.isCollapsed) return;
+    final projection = controller.projection;
+    if (selection.start < 0 || selection.end > projection.textLength) return;
+    final expanded = projection.expandDeletionOverInlineRunMarkers(
+      FlarkSourceRange(selection.start, selection.end),
+    );
+    if (expanded.start == selection.start && expanded.end == selection.end) {
+      return;
+    }
+    final inverted = selection.baseOffset > selection.extentOffset;
+    controller.applySelection(
+      inverted
+          ? FlarkSelection(
+              baseOffset: expanded.end,
+              extentOffset: expanded.start,
+            )
+          : FlarkSelection(
+              baseOffset: expanded.start,
+              extentOffset: expanded.end,
+            ),
+      userEvent: 'selection.inlineRunOrphanDeletion',
+    );
+  }
+
   bool dispatchBackspace({
     required FlarkTextSelectionReader currentSelection,
     required FlarkTextSelectionApplier applySelection,
@@ -245,6 +294,7 @@ final class FlarkMarkdownInputPolicy {
     if (!isEnabled) return false;
     final selection = currentSelection();
     if (selection != null) applySelection(selection);
+    _expandSelectionForInlineRunDeletion();
     final result = controller.dispatch(
       command: FlarkMarkdownInputCommands.handleBackspace,
       payload: FlarkHandleBackspacePayload(userEvent: backspaceUserEvent),

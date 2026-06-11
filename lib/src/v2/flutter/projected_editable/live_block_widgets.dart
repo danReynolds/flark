@@ -94,7 +94,7 @@ final class _ListMarkerGlyph extends StatelessWidget {
       width: 16,
       height: (style.fontSize ?? 14) * (style.height ?? 1.2),
       child: CustomPaint(
-        painter: _BulletMarkerPainter(color: theme.chromeLabelColor),
+        painter: _BulletMarkerPainter(color: theme.listMarkerColor),
       ),
     );
   }
@@ -397,11 +397,13 @@ final class _EditableCodeBlock extends StatelessWidget {
       block: block,
       blockHandle: blockHandle,
       displayText: displayText,
-      style: style.copyWith(
-        color: theme.codeTextColor,
-        fontFamily: 'monospace',
-        height: 1.35,
-      ),
+      style: style
+          .copyWith(
+            color: theme.codeTextColor,
+            fontFamily: 'monospace',
+            height: 1.35,
+          )
+          .merge(theme.codeTextStyle),
       cursorColor: cursorColor,
       backgroundCursorColor: backgroundCursorColor,
       focusNode: focusNode,
@@ -1081,7 +1083,9 @@ final class _EditableTableCellState extends State<_EditableTableCell> {
       style: widget.style,
       textAlign: widget.textAlign,
       cursorColor: widget.cursorColor,
-      selectionColor: _selectionColorForCursor(widget.cursorColor),
+      selectionColor:
+          FlarkMarkdownTheme.of(context).selectionColor ??
+          _selectionColorForCursor(widget.cursorColor),
       selectionControls: flarkTextSelectionControlsForPlatform(context),
       backgroundCursorColor: widget.backgroundCursorColor,
       keyboardType: TextInputType.multiline,

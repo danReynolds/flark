@@ -67,6 +67,91 @@ classification is pinned by a test in
 `flark_live_edit_classifier_test.dart` (see the "asymmetry pins" group), so
 converging one later forces a deliberate test change.
 
+## Inline-run caret affinity (trailing-edge model)
+
+A styled inline run (`code`, **strong**, *emphasis*, ~~strikethrough~~) hides
+its markers, so two source caret positions render at the same display
+position at the run's trailing edge: *inside* the run (before the hidden
+closing marker) and *outside* it (after the marker). The pipeline treats
+that pair as distinct caret states and keeps the user in control of which
+side typing lands on:
+
+1. **Placement maps inside.** A collapsed display selection at the trailing
+   edge maps to the inside position
+   (`FlarkProjection.displayCaretToSource`, used by
+   `FlarkFlutterController.applyProjectedSelection` when no explicit
+   affinity is given). Tapping at the end of a run and typing continues the
+   run's style. Closing markers are identified at parse adoption
+   (`FlarkHiddenRange.closesInlineRun`, derived from styled inline tokens)
+   and survive predictive mapping.
+2. **Closing a run keeps you inside it.** When the typed character itself
+   completes a run's closing marker (the second backtick of `` `this` ``),
+   the controller snaps the caret inside the run at parse adoption
+   (`selection.inlineRunMarkerCompletion`), so typing continues in the
+   style that just appeared — the Slack/Notion conversion behavior. To make
+   the snap land before the next keystroke, both surface classifiers
+   request an immediate parse for pure insertions of inline marker
+   characters (`` ` `` `*` `_` `~`), extending the matrix-row-15 heuristic
+   to inline runs.
+3. **Plain horizontal arrows step through both states.** Right-arrow at the
+   inside-end exits past the closing marker without visible caret movement;
+   left-arrow from the outside re-enters
+   (`FlarkProjection.inlineRunBoundaryStep`, intercepted by both editing
+   surfaces before `EditableText` moves the caret).
+4. **Typing the marker character exits.** A platform insertion of the run's
+   own marker character (or a prefix of a multi-character marker, e.g. one
+   `*` against a closing `**`) at the inside-end is classified as the exit
+   gesture: the edit adapter emits a selection-only transaction past the
+   marker instead of inserting a literal marker character.
+5. **Ambiguous diffs anchor at the caret.** A platform edit arrives as an
+   old → new display-text pair; typing a character identical to the one
+   after the caret (a space before an existing space) lets the
+   prefix-greedy diff slide the edit window forward, past the hidden
+   closing marker. When the same change is expressible exactly at the old
+   caret, the edit adapter prefers that interpretation
+   (`_DisplayTextDiff.between(anchor: …)`), so writing multi-word styled
+   text (`code with spaces`) never escapes the run on a space or
+   backspace.
+6. **Trailing whitespace keeps its highlight.** Flutter does not paint
+   `TextStyle.backgroundColor` over line-trailing whitespace, so a code run
+   that currently ends in a space (mid-typing `` `multi word ` ``) would
+   lose its highlight on the last character. Both surfaces paint
+   inline-code run backgrounds in a chrome underlay from layout selection
+   boxes (`flarkPaintInlineCodeRunBackground`), which do include trailing
+   whitespace.
+7. **Enter steps out before splitting.** A line break with the caret at a
+   run's inside-end would split the run's source and orphan its markers as
+   literal text (a code span cannot contain a blank line). Inline runs are
+   line-scoped, so the input policy steps the caret past the closing marker
+   before dispatching the paragraph split
+   (`selection.inlineRunLineBreakExit`).
+8. **Range selections are content-symmetric, and deletions never orphan
+   markers.** A display range selection maps to exactly the visible
+   content (start downstream past hidden markers, end upstream before
+   them). When a deletion covers a run's entire content, the source range
+   expands over the now-orphaned marker pair
+   (`FlarkProjection.expandDeletionOverInlineRunMarkers`, applied by both
+   the edit adapter and the backspace dispatch) — select-all + delete over
+   `` `test` `` deletes the backticks too instead of leaving literals.
+   Typing over a fully selected run replaces only the content, so the
+   replacement stays styled (`` `x` ``), matching rich-text type-over.
+9. **Edit anchors never round-trip the caret through display space.** The
+   input-policy/shortcut selection appliers on both surfaces skip the
+   re-application when the controller's source selection already renders at
+   the requested display position, because a display round trip cannot
+   represent the inside/outside distinction.
+
+Block markers (headings, quotes, lists) are never trailing edges; their
+hidden markers are prefixes, so caret placement after them is unaffected.
+The leading edge keeps the long-standing downstream default: typing at the
+display start of a run inserts inside it (pinned by the adapter tests).
+
+Related: a heading whose markers are fully hidden but whose content is empty
+(`### `) renders as an *empty styled heading* block rather than falling back
+to a raw synthetic source line, so committing the marker with a space styles
+the line immediately instead of jumping when the first content character
+arrives.
+
 ## Stage-3 device protocol (the remaining gate)
 
 The convergence candidates (#12, #15) and any merge of the recognizer sets

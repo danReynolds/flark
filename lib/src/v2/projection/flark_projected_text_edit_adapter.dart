@@ -16,7 +16,15 @@ final class FlarkProjectedTextEditAdapter {
     if (currentMarkdown.length != projection.textLength) return null;
     if (projection.projectText(currentMarkdown) != oldDisplayText) return null;
 
-    final diff = _DisplayTextDiff.between(oldDisplayText, newDisplayText);
+    final diff = _DisplayTextDiff.between(
+      oldDisplayText,
+      newDisplayText,
+      anchor: _displayCaretAnchor(
+        projection,
+        sourceSelectionBefore,
+        oldDisplayLength: oldDisplayText.length,
+      ),
+    );
     if (diff == null) return null;
 
     final sourceRange = _sourceRangeForDiff(
@@ -31,23 +39,82 @@ final class FlarkProjectedTextEditAdapter {
       return null;
     }
 
+    final markerExit = _inlineRunMarkerExit(
+      diff: diff,
+      sourceRange: sourceRange,
+      currentMarkdown: currentMarkdown,
+      projection: projection,
+      sourceSelectionBefore: sourceSelectionBefore,
+    );
+    if (markerExit != null) return markerExit;
+
+    final effectiveRange = diff.replacementText.isEmpty
+        ? projection.expandDeletionOverInlineRunMarkers(sourceRange)
+        : sourceRange;
+
     return FlarkTransaction.single(
       FlarkSourceOperation.replace(
-        replacedRange: sourceRange,
+        replacedRange: effectiveRange,
         replacementText: diff.replacementText,
       ),
       selectionBefore: sourceSelectionBefore,
       selectionAfter: FlarkSelection.collapsed(
-        sourceRange.start + diff.replacementText.length,
+        effectiveRange.start + diff.replacementText.length,
       ),
       metadata: FlarkTransactionMetadata(
         intent: FlarkTransactionIntent.input,
         userEvent: 'input.projected',
         undoGroupId: undoGroupId,
-        parseInvalidationRange: sourceRange,
-        projectionInvalidationRange: sourceRange,
+        parseInvalidationRange: effectiveRange,
+        projectionInvalidationRange: effectiveRange,
       ),
     );
+  }
+
+  /// Typing a run's own marker character at its inside-end exits the run:
+  /// the caret steps past the hidden closing marker instead of a literal
+  /// marker character landing inside the styled text.
+  FlarkTransaction? _inlineRunMarkerExit({
+    required _DisplayTextDiff diff,
+    required FlarkSourceRange sourceRange,
+    required String currentMarkdown,
+    required FlarkProjection projection,
+    required FlarkSelection? sourceSelectionBefore,
+  }) {
+    if (!diff.isInsertion || !sourceRange.isCollapsed) return null;
+    final marker = projection.inlineRunClosingMarkerAt(sourceRange.start);
+    if (marker == null) return null;
+    final markerText = currentMarkdown.substring(marker.start, marker.end);
+    if (markerText.isEmpty || !markerText.startsWith(diff.replacementText)) {
+      return null;
+    }
+    return FlarkTransaction(
+      operations: const [],
+      selectionBefore: sourceSelectionBefore,
+      selectionAfter: FlarkSelection.collapsed(marker.end),
+      metadata: const FlarkTransactionMetadata(
+        intent: FlarkTransactionIntent.selection,
+        userEvent: 'input.projected.inlineRunMarkerExit',
+        addToHistory: false,
+      ),
+    );
+  }
+
+  /// The old display caret position used to anchor ambiguous diffs, or
+  /// null when the prior selection is unknown or not a caret.
+  int? _displayCaretAnchor(
+    FlarkProjection projection,
+    FlarkSelection? sourceSelectionBefore, {
+    required int oldDisplayLength,
+  }) {
+    if (sourceSelectionBefore == null || !sourceSelectionBefore.isCollapsed) {
+      return null;
+    }
+    final offset = sourceSelectionBefore.extentOffset;
+    if (offset < 0 || offset > projection.textLength) return null;
+    final display = projection.sourceToDisplayOffset(offset);
+    if (display < 0 || display > oldDisplayLength) return null;
+    return display;
   }
 
   FlarkSourceRange? _sourceRangeForDiff(
@@ -122,7 +189,11 @@ final class _DisplayTextDiff {
 
   bool get isInsertion => oldStart == oldEnd && replacementText.isNotEmpty;
 
-  static _DisplayTextDiff? between(String oldText, String newText) {
+  static _DisplayTextDiff? between(
+    String oldText,
+    String newText, {
+    int? anchor,
+  }) {
     if (oldText == newText) return null;
 
     var prefixLength = 0;
@@ -144,10 +215,56 @@ final class _DisplayTextDiff {
       newSuffix--;
     }
 
-    return _DisplayTextDiff(
+    final diff = _DisplayTextDiff(
       oldStart: prefixLength,
       oldEnd: oldSuffix,
       replacementText: newText.substring(prefixLength, newSuffix),
     );
+    return _anchoredAtCaret(diff, oldText, newText, anchor) ?? diff;
+  }
+
+  /// Re-derives an ambiguous pure insertion or deletion at the old caret.
+  ///
+  /// Typing a character identical to the character after the caret (for
+  /// example a space before an existing space) makes the prefix-greedy
+  /// diff slide the edit window past the caret. Across a styled run's
+  /// hidden trailing marker that changes meaning: the edit escapes the
+  /// run. When the same old → new change is expressible exactly at the
+  /// caret, prefer that interpretation.
+  static _DisplayTextDiff? _anchoredAtCaret(
+    _DisplayTextDiff diff,
+    String oldText,
+    String newText,
+    int? anchor,
+  ) {
+    if (anchor == null) return null;
+    final delta = newText.length - oldText.length;
+    if (delta > 0 && diff.isInsertion && diff.oldStart != anchor) {
+      // Insertion of `delta` chars at the caret.
+      if (anchor < 0 || anchor > oldText.length) return null;
+      if (oldText.substring(0, anchor) == newText.substring(0, anchor) &&
+          oldText.substring(anchor) == newText.substring(anchor + delta)) {
+        return _DisplayTextDiff(
+          oldStart: anchor,
+          oldEnd: anchor,
+          replacementText: newText.substring(anchor, anchor + delta),
+        );
+      }
+      return null;
+    }
+    if (delta < 0 && diff.replacementText.isEmpty && diff.oldEnd != anchor) {
+      // Deletion of `-delta` chars ending at the caret (backspace).
+      final start = anchor + delta;
+      if (start < 0 || anchor > oldText.length) return null;
+      if (oldText.substring(0, start) == newText.substring(0, start) &&
+          oldText.substring(anchor) == newText.substring(start)) {
+        return _DisplayTextDiff(
+          oldStart: start,
+          oldEnd: anchor,
+          replacementText: '',
+        );
+      }
+    }
+    return null;
   }
 }

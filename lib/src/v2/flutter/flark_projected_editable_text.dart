@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' show BoxHeightStyle;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -266,7 +267,9 @@ final class _FlarkProjectedEditableHostState
       readOnly: FlarkEditorReadOnlyScope.of(context),
       style: style,
       cursorColor: widget.cursorColor,
-      selectionColor: _selectionColorForCursor(widget.cursorColor),
+      selectionColor:
+          FlarkMarkdownTheme.of(context).selectionColor ??
+          _selectionColorForCursor(widget.cursorColor),
       selectionControls: flarkTextSelectionControlsForPlatform(context),
       backgroundCursorColor: widget.backgroundCursorColor,
       minLines: widget.minLines,
@@ -281,6 +284,12 @@ final class _FlarkProjectedEditableHostState
     );
     editor = flarkEditableTextGestureDetector(
       editableTextKey: _editableStateKey,
+      child: editor,
+    );
+    editor = Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: _handleInlineRunBoundaryKeyEvent,
       child: editor,
     );
     _scheduleKeyboardConnectionForInheritedFocus();
@@ -311,6 +320,36 @@ final class _FlarkProjectedEditableHostState
       );
     }
     return editor;
+  }
+
+  /// Steps the caret between the two source positions that share a styled
+  /// run's trailing display edge (inside the run vs after its closing
+  /// marker). The first arrow press at the edge changes which side typing
+  /// lands on without moving the caret visually; the next press moves on.
+  KeyEventResult _handleInlineRunBoundaryKeyEvent(
+    FocusNode node,
+    KeyEvent event,
+  ) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (HardwareKeyboard.instance.isShiftPressed ||
+        HardwareKeyboard.instance.isAltPressed ||
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed) {
+      return KeyEventResult.ignored;
+    }
+    final bool forward;
+    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+      forward = true;
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+      forward = false;
+    } else {
+      return KeyEventResult.ignored;
+    }
+    return flarkStepInlineRunBoundary(widget.controller, forward: forward)
+        ? KeyEventResult.handled
+        : KeyEventResult.ignored;
   }
 
   void _scheduleKeyboardConnectionForInheritedFocus() {
@@ -456,10 +495,20 @@ final class _FlarkProjectedEditableHostState
   }
 
   void _applyProjectedSelection(FlarkSelection displaySelection) {
-    widget.controller.applyProjectedSelection(
-      displaySelection,
-      affinity: FlarkMapAffinity.downstream,
-    );
+    // This applier anchors edits and command dispatches, so when the
+    // controller's source selection already renders at the requested
+    // display position, keep it: the source caret distinguishes inside
+    // vs outside a styled run's hidden closing marker, and a display
+    // round trip would erase that.
+    final controller = widget.controller;
+    if (controller.projection.sourceSelectionToDisplay(controller.selection) ==
+        displaySelection) {
+      return;
+    }
+    // No explicit affinity: collapsed carets use the controller's
+    // caret-placement mapping, which keeps a caret at the trailing edge of
+    // an inline styled run inside the run.
+    controller.applyProjectedSelection(displaySelection);
   }
 
   FlarkMarkdownInputPolicy get _markdownInputPolicy {
@@ -477,6 +526,27 @@ final class _FlarkProjectedEditableHostState
       extentOffset: selection.extentOffset,
     );
   }
+}
+
+/// Applies the inline-run boundary caret step for a plain horizontal arrow
+/// key, if the collapsed caret sits on one of the two source positions at a
+/// styled run's trailing display edge. Returns whether the key was handled.
+bool flarkStepInlineRunBoundary(
+  FlarkFlutterController controller, {
+  required bool forward,
+}) {
+  final selection = controller.selection;
+  if (!selection.isCollapsed) return false;
+  final projection = controller.projection;
+  final offset = selection.extentOffset;
+  if (offset < 0 || offset > projection.textLength) return false;
+  final stepped = projection.inlineRunBoundaryStep(offset, forward: forward);
+  if (stepped == null) return false;
+  controller.applySelection(
+    FlarkSelection.collapsed(stepped),
+    userEvent: 'selection.inlineRunBoundaryStep',
+  );
+  return true;
 }
 
 /// Requests an immediate authoritative parse of the controller's current

@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import '../core/core.dart';
 import 'flark_command_actions.dart';
 import 'flark_editor_read_only_scope.dart';
+import 'flark_markdown_theme.dart';
 import 'flark_flutter_controller.dart';
 import 'flark_markdown_input_policy.dart';
 import 'flark_text_selection_gestures.dart';
@@ -103,7 +104,9 @@ final class _FlarkEditableTextState extends State<FlarkEditableText> {
       focusNode: _focusNode,
       style: style,
       cursorColor: widget.cursorColor,
-      selectionColor: _selectionColorForCursor(widget.cursorColor),
+      selectionColor:
+          FlarkMarkdownTheme.of(context).selectionColor ??
+          _selectionColorForCursor(widget.cursorColor),
       selectionControls: flarkTextSelectionControlsForPlatform(context),
       backgroundCursorColor: widget.backgroundCursorColor,
       minLines: widget.minLines,
@@ -475,7 +478,9 @@ final class _FlarkVirtualizedSourceLineState
       focusNode: _focusNode,
       style: widget.style,
       cursorColor: widget.cursorColor,
-      selectionColor: _selectionColorForCursor(widget.cursorColor),
+      selectionColor:
+          FlarkMarkdownTheme.of(context).selectionColor ??
+          _selectionColorForCursor(widget.cursorColor),
       selectionControls: flarkTextSelectionControlsForPlatform(context),
       backgroundCursorColor: widget.backgroundCursorColor,
       maxLines: null,

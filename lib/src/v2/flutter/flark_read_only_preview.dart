@@ -810,15 +810,19 @@ TextStyle _blockStyle(
   FlarkMarkdownThemeData theme,
 ) {
   if (block.codeBlock != null) {
-    return baseStyle.copyWith(
-      color: theme.codeTextColor,
-      fontFamily: 'monospace',
-      height: 1.35,
-    );
+    return baseStyle
+        .copyWith(
+          color: theme.codeTextColor,
+          fontFamily: 'monospace',
+          height: 1.35,
+        )
+        .merge(theme.codeTextStyle);
   }
 
   if (block.kind == FlarkMarkdownBlockKind.blockquote) {
-    return baseStyle.copyWith(color: theme.quoteTextColor);
+    return baseStyle
+        .copyWith(color: theme.quoteTextColor)
+        .merge(theme.quoteTextStyle);
   }
 
   final headingLevel = switch (block.styleToken) {
@@ -832,10 +836,13 @@ TextStyle _blockStyle(
   };
   if (headingLevel == null) return baseStyle;
   final baseSize = baseStyle.fontSize ?? 14;
-  return baseStyle.copyWith(
-    fontSize: baseSize + (7 - headingLevel) * 2,
-    fontWeight: FontWeight.w700,
-  );
+  return baseStyle
+      .copyWith(
+        fontSize: baseSize + (7 - headingLevel) * 2,
+        fontWeight: FontWeight.w700,
+      )
+      .merge(theme.headingTextStyle)
+      .merge(theme.headingLevelTextStyle(headingLevel));
 }
 
 TextStyle? _inlineStyle(
@@ -845,20 +852,20 @@ TextStyle? _inlineStyle(
   return switch (run.styleToken) {
     FlarkRenderTextStyleToken.emphasis => const TextStyle(
       fontStyle: FontStyle.italic,
-    ),
+    ).merge(theme.emphasisTextStyle),
     FlarkRenderTextStyleToken.strong => const TextStyle(
       fontWeight: FontWeight.w700,
-    ),
+    ).merge(theme.strongTextStyle),
     FlarkRenderTextStyleToken.inlineCode => const TextStyle(
       fontFamily: 'monospace',
-    ),
+    ).merge(theme.inlineCodeTextStyle),
     FlarkRenderTextStyleToken.strikethrough => const TextStyle(
       decoration: TextDecoration.lineThrough,
-    ),
+    ).merge(theme.strikethroughTextStyle),
     FlarkRenderTextStyleToken.link => TextStyle(
       color: theme.linkColor,
       decoration: TextDecoration.underline,
-    ),
+    ).merge(theme.linkTextStyle),
     _ => null,
   };
 }

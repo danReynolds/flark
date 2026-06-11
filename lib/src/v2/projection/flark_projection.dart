@@ -18,20 +18,41 @@ enum FlarkHiddenRangeKind {
 enum FlarkReplacementRangeKind { htmlEntity, unknown }
 
 final class FlarkHiddenRange {
-  const FlarkHiddenRange({required this.range, required this.kind});
+  const FlarkHiddenRange({
+    required this.range,
+    required this.kind,
+    this.opensInlineRun = false,
+    this.closesInlineRun = false,
+  });
 
   final FlarkSourceRange range;
   final FlarkHiddenRangeKind kind;
+
+  /// Whether this range is the opening marker of an inline styled run
+  /// (code span, strong, emphasis, strikethrough).
+  ///
+  /// Deleting a run's full content expands over the orphaned marker pair
+  /// so no literal markers are left behind.
+  final bool opensInlineRun;
+
+  /// Whether this range is the closing marker of an inline styled run
+  /// (code span, strong, emphasis, strikethrough).
+  ///
+  /// Caret placement uses this to keep a caret at the run's trailing
+  /// display edge inside the run, so typing continues its style.
+  final bool closesInlineRun;
 
   @override
   bool operator ==(Object other) {
     return other is FlarkHiddenRange &&
         other.range == range &&
-        other.kind == kind;
+        other.kind == kind &&
+        other.opensInlineRun == opensInlineRun &&
+        other.closesInlineRun == closesInlineRun;
   }
 
   @override
-  int get hashCode => Object.hash(range, kind);
+  int get hashCode => Object.hash(range, kind, opensInlineRun, closesInlineRun);
 }
 
 final class FlarkReplacementRange {
@@ -320,12 +341,41 @@ final class FlarkProjection {
   factory FlarkProjection.fromParseResult(
     FlarkMarkdownParseResult parseResult,
   ) {
+    // A hidden range is a styled run's closing marker when it ends exactly
+    // where the run ends and starts after the run starts; it is the opening
+    // marker when it starts exactly where the run starts and ends before
+    // the run ends.
+    final styledRunStartByEnd = <int, int>{};
+    final styledRunEndByStart = <int, int>{};
+    for (final token in parseResult.inlineTokens) {
+      if (!_isStyledInlineRunKind(token.kind)) continue;
+      final knownStart = styledRunStartByEnd[token.sourceRange.end];
+      if (knownStart == null || token.sourceRange.start < knownStart) {
+        styledRunStartByEnd[token.sourceRange.end] = token.sourceRange.start;
+      }
+      final knownEnd = styledRunEndByStart[token.sourceRange.start];
+      if (knownEnd == null || token.sourceRange.end > knownEnd) {
+        styledRunEndByStart[token.sourceRange.start] = token.sourceRange.end;
+      }
+    }
+    bool closesInlineRun(FlarkSourceRange range) {
+      final runStart = styledRunStartByEnd[range.end];
+      return runStart != null && runStart < range.start;
+    }
+
+    bool opensInlineRun(FlarkSourceRange range) {
+      final runEnd = styledRunEndByStart[range.start];
+      return runEnd != null && runEnd > range.end;
+    }
+
     return FlarkProjection(
       textLength: parseResult.sourceTextLength,
       hiddenRanges: parseResult.hiddenRanges.map(
         (hiddenRange) => FlarkHiddenRange(
           range: hiddenRange.sourceRange,
           kind: _projectionHiddenRangeKind(hiddenRange.kind),
+          opensInlineRun: opensInlineRun(hiddenRange.sourceRange),
+          closesInlineRun: closesInlineRun(hiddenRange.sourceRange),
         ),
       ),
       replacementRanges: parseResult.replacementRanges.map(
@@ -404,6 +454,118 @@ final class FlarkProjection {
 
     final sourceDelta = _spanSourceDeltaPrefix[spanIndex];
     return _clampInt(displayOffset + sourceDelta, 0, textLength);
+  }
+
+  /// Maps a display caret offset to a source offset for caret placement
+  /// (taps and other display-space selections).
+  ///
+  /// Identical to [displayToSourceOffset] with downstream affinity, except
+  /// when the caret sits at the trailing display edge of an inline styled
+  /// run — immediately after its last visible character. There the caret
+  /// maps inside the run (before its hidden closing marker), so typing
+  /// continues the run's style the way rich-text editors do.
+  int displayCaretToSource(int displayOffset) {
+    if (displayOffset < 0 || displayOffset > displayLength) {
+      throw RangeError.range(displayOffset, 0, displayLength, 'displayOffset');
+    }
+    var index = _lastSpanAtOrBeforeDisplayOffset(displayOffset);
+    // Adjacent hidden markers all collapse onto the same display offset;
+    // prefer the interior of the run that ends here, if any.
+    while (index >= 0 &&
+        _projectionSpans[index].isHidden &&
+        _spanDisplayStarts[index] == displayOffset) {
+      if (_projectionSpans[index].closesInlineRun) {
+        return _clampInt(_projectionSpans[index].range.start, 0, textLength);
+      }
+      index -= 1;
+    }
+    return displayToSourceOffset(displayOffset);
+  }
+
+  /// The adjacent caret state across a styled run's trailing edge, or null.
+  ///
+  /// At a run's trailing display edge two source carets render at the same
+  /// display position: inside the run (before its hidden closing marker)
+  /// and outside it (after the marker). A [forward] step moves
+  /// inside → outside, exiting the run; a backward step moves
+  /// outside → inside, re-entering it. Both keep the display caret
+  /// visually stationary.
+  int? inlineRunBoundaryStep(int sourceOffset, {required bool forward}) {
+    _checkOffset(sourceOffset);
+    // Lower bound: first span with range.start >= sourceOffset.
+    var low = 0;
+    var high = _projectionSpans.length;
+    while (low < high) {
+      final mid = low + ((high - low) >> 1);
+      if (_projectionSpans[mid].range.start < sourceOffset) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+    if (forward) {
+      if (low >= _projectionSpans.length) return null;
+      final span = _projectionSpans[low];
+      if (span.range.start != sourceOffset ||
+          !span.isHidden ||
+          !span.closesInlineRun) {
+        return null;
+      }
+      return _clampInt(span.range.end, 0, textLength);
+    }
+    if (low == 0) return null;
+    final span = _projectionSpans[low - 1];
+    if (span.range.end != sourceOffset ||
+        !span.isHidden ||
+        !span.closesInlineRun) {
+      return null;
+    }
+    return span.range.start;
+  }
+
+  /// Expands a deletion range so it does not orphan inline run markers.
+  ///
+  /// While a run-opening hidden marker ends exactly at the range start AND
+  /// a run-closing hidden marker starts exactly at the range end, both
+  /// markers fold into the range: deleting a run's entire content
+  /// (select-all + delete over `` `test` ``) removes the now-meaningless
+  /// markers too instead of leaving literal backticks behind. Partial
+  /// deletions, where run content survives on either side, are returned
+  /// unchanged. The loop handles nested adjacent markers (`***x***`).
+  FlarkSourceRange expandDeletionOverInlineRunMarkers(FlarkSourceRange range) {
+    var start = range.start;
+    var end = range.end;
+    if (start < 0 || end > textLength || start >= end) return range;
+    while (true) {
+      _ProjectionSpan? opener;
+      for (final span in _projectionSpans) {
+        if (span.range.start >= start) break;
+        if (span.range.end == start && span.isHidden && span.opensInlineRun) {
+          opener = span;
+        }
+      }
+      if (opener == null) break;
+      _ProjectionSpan? closer;
+      for (final span in _projectionSpans) {
+        if (span.range.start > end) break;
+        if (span.range.start == end && span.isHidden && span.closesInlineRun) {
+          closer = span;
+          break;
+        }
+      }
+      if (closer == null) break;
+      start = opener.range.start;
+      end = closer.range.end;
+    }
+    return FlarkSourceRange(start, end);
+  }
+
+  /// The hidden closing marker of a styled run starting exactly at
+  /// [sourceOffset] (the run's inside-end caret position), or null.
+  FlarkSourceRange? inlineRunClosingMarkerAt(int sourceOffset) {
+    final end = inlineRunBoundaryStep(sourceOffset, forward: true);
+    if (end == null) return null;
+    return FlarkSourceRange(sourceOffset, end);
   }
 
   String projectText(String sourceText) {
@@ -701,7 +863,12 @@ List<_ProjectionSpan> _buildProjectionSpans({
 }) {
   return [
     for (final hiddenRange in hiddenRanges)
-      _ProjectionSpan(range: hiddenRange.range, replacementText: ''),
+      _ProjectionSpan(
+        range: hiddenRange.range,
+        replacementText: '',
+        opensInlineRun: hiddenRange.opensInlineRun,
+        closesInlineRun: hiddenRange.closesInlineRun,
+      ),
     for (final replacementRange in replacementRanges)
       _ProjectionSpan(
         range: replacementRange.range,
@@ -725,6 +892,16 @@ List<FlarkProjectionAmbiguityZone> _validatedAmbiguityZones(
   return zones;
 }
 
+bool _isStyledInlineRunKind(FlarkMarkdownInlineKind kind) {
+  return switch (kind) {
+    FlarkMarkdownInlineKind.inlineCode ||
+    FlarkMarkdownInlineKind.strong ||
+    FlarkMarkdownInlineKind.emphasis ||
+    FlarkMarkdownInlineKind.strikethrough => true,
+    _ => false,
+  };
+}
+
 FlarkHiddenRange _mapHiddenRange(
   FlarkTransaction transaction,
   FlarkHiddenRange hiddenRange,
@@ -732,6 +909,8 @@ FlarkHiddenRange _mapHiddenRange(
   return FlarkHiddenRange(
     range: _mapRange(transaction, hiddenRange.range),
     kind: hiddenRange.kind,
+    opensInlineRun: hiddenRange.opensInlineRun,
+    closesInlineRun: hiddenRange.closesInlineRun,
   );
 }
 
@@ -895,10 +1074,17 @@ Iterable<int> _buildSpanDisplayStarts(
 }
 
 final class _ProjectionSpan {
-  const _ProjectionSpan({required this.range, required this.replacementText});
+  const _ProjectionSpan({
+    required this.range,
+    required this.replacementText,
+    this.opensInlineRun = false,
+    this.closesInlineRun = false,
+  });
 
   final FlarkSourceRange range;
   final String replacementText;
+  final bool opensInlineRun;
+  final bool closesInlineRun;
 
   bool get isHidden => replacementText.isEmpty;
   int get displayLength => replacementText.length;

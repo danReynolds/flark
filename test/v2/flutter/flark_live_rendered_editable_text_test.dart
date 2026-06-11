@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:ui' as ui show ImageByteFormat;
 import 'dart:ui' show PointerDeviceKind;
+
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -2032,6 +2035,49 @@ void main() {
       expect(editable.focusNode.hasFocus, isTrue);
     },
   );
+
+  testWidgets('the cursor blinks in a fence body right after the opener '
+      'auto-closes', (tester) async {
+    final controller = FlarkFlutterController.fromMarkdown(
+      '',
+      parseDebounce: Duration.zero,
+    );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: SizedBox(
+          width: 320,
+          height: 180,
+          child: FlarkMarkdownEditor(
+            controller: controller,
+            editingMode: FlarkMarkdownEditingMode.liveRendered,
+            style: const TextStyle(fontSize: 14, height: 1.4),
+            autofocus: true,
+            expands: true,
+            maxLines: null,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await _typeBlankFenceOpener(tester, find.byType(EditableText));
+    await tester.pump();
+
+    // The body editable adopts an already-focused node, which fires no
+    // focus-change event — the cursor must still be made visible without
+    // waiting for the first keystroke.
+    final state = tester.state<EditableTextState>(
+      find.descendant(
+        of: find.byKey(const Key('FlarkLiveBlockCodeEditable')),
+        matching: find.byType(EditableText),
+      ),
+    );
+    expect(state.widget.focusNode.hasPrimaryFocus, isTrue);
+    expect(state.cursorCurrentlyVisible, isTrue);
+  });
 
   testWidgets('typing after an immediate fence opener edits code body text', (
     tester,
@@ -5812,6 +5858,572 @@ void main() {
         expect(_editableFinderWithText('two'), findsOneWidget);
       },
     );
+  });
+  testWidgets('a caret at the trailing edge of an inline run re-enters it', (
+    tester,
+  ) async {
+    final controller = FlarkFlutterController.fromMarkdown('a `test` b');
+    addTearDown(controller.dispose);
+    await _applyComrakParseResult(controller);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkLiveRenderedEditableText(
+          controller: controller,
+          style: const TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Place the caret in display space right after the last run character
+    // ("a test| b") — the tap path. It must land inside the span, before
+    // the hidden closing backtick.
+    controller.applyProjectedSelection(const FlarkSelection.collapsed(6));
+    expect(controller.selection, const FlarkSelection.collapsed(7));
+
+    // Typing now continues the code span instead of escaping it.
+    await tester.enterText(find.byType(EditableText), 'a tests b');
+    await tester.pump();
+    expect(controller.markdown, 'a `tests` b');
+  });
+
+  testWidgets('a trailing-edge caret re-enters strong runs too', (
+    tester,
+  ) async {
+    final controller = FlarkFlutterController.fromMarkdown('**bold** x');
+    addTearDown(controller.dispose);
+    await _applyComrakParseResult(controller);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkLiveRenderedEditableText(
+          controller: controller,
+          style: const TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    controller.applyProjectedSelection(const FlarkSelection.collapsed(4));
+    expect(controller.selection, const FlarkSelection.collapsed(6));
+
+    await tester.enterText(find.byType(EditableText), 'bold! x');
+    await tester.pump();
+    expect(controller.markdown, '**bold!** x');
+  });
+
+  testWidgets('horizontal arrows step across a styled run trailing edge', (
+    tester,
+  ) async {
+    final controller = FlarkFlutterController.fromMarkdown('a `test` b');
+    addTearDown(controller.dispose);
+    await _applyComrakParseResult(controller);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkLiveRenderedEditableText(
+          controller: controller,
+          style: const TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byType(EditableText));
+    await tester.pump();
+
+    // Caret at the trailing edge, inside the span.
+    controller.applyProjectedSelection(const FlarkSelection.collapsed(6));
+    expect(controller.selection, const FlarkSelection.collapsed(7));
+
+    // Right arrow exits the run without moving the display caret.
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    expect(controller.selection, const FlarkSelection.collapsed(8));
+
+    // Typing now lands after the closing marker (plain text).
+    await tester.enterText(find.byType(EditableText), 'a test! b');
+    await tester.pump();
+    expect(controller.markdown, 'a `test`! b');
+
+    // Undo the insertion to keep stepping on the same document.
+    controller.undo();
+    await tester.pump();
+    expect(controller.markdown, 'a `test` b');
+
+    // Left arrow from the outside position re-enters the run.
+    controller.applySelection(const FlarkSelection.collapsed(8));
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pump();
+    expect(controller.selection, const FlarkSelection.collapsed(7));
+  });
+
+  testWidgets('spaces typed inside an inline run stay inside it', (
+    tester,
+  ) async {
+    final controller = FlarkFlutterController.fromMarkdown('a `test` b');
+    addTearDown(controller.dispose);
+    await _applyComrakParseResult(controller);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkLiveRenderedEditableText(
+          controller: controller,
+          style: const TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Caret inside at the run's end, then write another word. The space is
+    // the regression: a space typed before the literal space that follows
+    // the span used to diff-slide outside the hidden closing marker.
+    controller.applyProjectedSelection(const FlarkSelection.collapsed(6));
+    expect(controller.selection, const FlarkSelection.collapsed(7));
+
+    await tester.enterText(find.byType(EditableText), 'a test  b');
+    await tester.pump();
+    expect(controller.markdown, 'a `test ` b');
+    expect(controller.selection, const FlarkSelection.collapsed(8));
+
+    await _applyComrakParseResult(controller);
+    await tester.pump();
+
+    await tester.enterText(find.byType(EditableText), 'a test m b');
+    await tester.pump();
+    expect(controller.markdown, 'a `test m` b');
+
+    // Backspace over the word and the space also stays inside the run.
+    await tester.enterText(find.byType(EditableText), 'a test  b');
+    await tester.pump();
+    expect(controller.markdown, 'a `test ` b');
+    await tester.enterText(find.byType(EditableText), 'a test b');
+    await tester.pump();
+    expect(controller.markdown, 'a `test` b');
+  });
+
+  testWidgets('spaces typed inside an inline run stay inside in '
+      'block-widget mode', (tester) async {
+    // The list item forces per-block widgets, like the playground document.
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
+          '- x\n\na `test` b',
+          selection: const FlarkSelection.collapsed(12),
+        ),
+      ),
+    );
+    addTearDown(controller.dispose);
+    await _applyComrakParseResult(controller);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkLiveRenderedEditableText(
+          controller: controller,
+          style: const TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Caret at the run's trailing display edge ("a test|"), inside.
+    // Display: "x\n\na test b" — offset 9 is right after the last run char.
+    controller.applyProjectedSelection(const FlarkSelection.collapsed(9));
+    expect(controller.selection, const FlarkSelection.collapsed(12));
+
+    final paragraph = find.byWidgetPredicate(
+      (widget) =>
+          widget is EditableText && widget.controller.text == 'a test b',
+    );
+    expect(paragraph, findsOneWidget);
+
+    await tester.enterText(paragraph, 'a test  b');
+    await tester.pump();
+    expect(controller.markdown, '- x\n\na `test ` b');
+    expect(controller.selection, const FlarkSelection.collapsed(13));
+
+    await _applyComrakParseResult(controller);
+    await tester.pump();
+
+    final grown = find.byWidgetPredicate(
+      (widget) =>
+          widget is EditableText && widget.controller.text == 'a test  b',
+    );
+    await tester.enterText(grown, 'a test m b');
+    await tester.pump();
+    expect(controller.markdown, '- x\n\na `test m` b');
+  });
+
+  testWidgets('select-all delete removes a run and its hidden markers', (
+    tester,
+  ) async {
+    final controller = FlarkFlutterController.fromMarkdown('`test`');
+    addTearDown(controller.dispose);
+    await _applyComrakParseResult(controller);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkLiveRenderedEditableText(
+          controller: controller,
+          style: const TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Select all visible content ("test") and delete it: the orphaned
+    // backticks must go too.
+    controller.applyProjectedSelection(
+      const FlarkSelection(baseOffset: 0, extentOffset: 4),
+    );
+    expect(
+      controller.selection,
+      const FlarkSelection(baseOffset: 1, extentOffset: 5),
+    );
+
+    await tester.enterText(find.byType(EditableText), '');
+    await tester.pump();
+    expect(controller.markdown, isEmpty);
+  });
+
+  testWidgets('document select-all + backspace clears everything in '
+      'block-widget mode', (tester) async {
+    final controller = FlarkFlutterController.fromMarkdown(
+      '- x\n\n`test `',
+      parseDebounce: Duration.zero,
+    );
+    addTearDown(controller.dispose);
+    await _applyComrakParseResult(controller);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: SizedBox(
+          width: 320,
+          height: 200,
+          child: FlarkMarkdownEditor(
+            controller: controller,
+            editingMode: FlarkMarkdownEditingMode.liveRendered,
+            style: const TextStyle(fontSize: 14, height: 1.4),
+            autofocus: true,
+            expands: true,
+            maxLines: null,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final paragraph = find.byWidgetPredicate(
+      (widget) =>
+          widget is EditableText && widget.controller.text.contains('test'),
+    );
+    await tester.tap(paragraph);
+    await tester.pump();
+
+    // Document select-all (the intent the platform shortcut dispatches),
+    // then a hardware backspace. The whole document goes, including all
+    // hidden block and inline markers.
+    Actions.invoke(
+      FocusManager.instance.primaryFocus!.context!,
+      const SelectAllTextIntent(SelectionChangedCause.keyboard),
+    );
+    await tester.pump();
+    expect(
+      controller.selection,
+      FlarkSelection(baseOffset: 0, extentOffset: controller.markdown.length),
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    await tester.pump();
+    expect(controller.markdown, isEmpty);
+  });
+
+  testWidgets('typing over a fully selected run keeps its style', (
+    tester,
+  ) async {
+    final controller = FlarkFlutterController.fromMarkdown('`test`');
+    addTearDown(controller.dispose);
+    await _applyComrakParseResult(controller);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkLiveRenderedEditableText(
+          controller: controller,
+          style: const TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    controller.applyProjectedSelection(
+      const FlarkSelection(baseOffset: 0, extentOffset: 4),
+    );
+    await tester.enterText(find.byType(EditableText), 'x');
+    await tester.pump();
+    // The replacement lands inside the markers, so the run survives and
+    // typing continues styled — rich-text type-over behavior.
+    expect(controller.markdown, '`x`');
+  });
+
+  testWidgets('an inline-code highlight covers a trailing space', (
+    tester,
+  ) async {
+    final controller = FlarkFlutterController.fromMarkdown('`test `');
+    addTearDown(controller.dispose);
+    await _applyComrakParseResult(controller);
+
+    final boundaryKey = GlobalKey();
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Center(
+          child: RepaintBoundary(
+            key: boundaryKey,
+            child: SizedBox(
+              width: 200,
+              child: FlarkLiveRenderedEditableText(
+                controller: controller,
+                style: const TextStyle(fontSize: 14),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final highlight = FlarkMarkdownThemeData.light.inlineCodeBackgroundColor
+        .toARGB32();
+    await tester.runAsync(() async {
+      final boundary =
+          boundaryKey.currentContext!.findRenderObject()
+              as RenderRepaintBoundary;
+      final image = await boundary.toImage();
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      int pixel(int x, int y) {
+        final offset = (y * image.width + x) * 4;
+        return (bytes!.getUint8(offset + 3) << 24) |
+            (bytes.getUint8(offset) << 16) |
+            (bytes.getUint8(offset + 1) << 8) |
+            bytes.getUint8(offset + 2);
+      }
+
+      // The test font is Ahem: every glyph advances exactly fontSize px,
+      // so 'test ' spans x 0..70 and the trailing space is x 56..70.
+      final y = image.height ~/ 2;
+      expect(pixel(60, y), highlight, reason: 'trailing space highlighted');
+      expect(pixel(40, y), isNot(0), reason: 'run interior painted');
+      expect(pixel(80, y), isNot(highlight), reason: 'past the run is plain');
+    });
+  });
+
+  testWidgets('enter at the inside-end exits the run before splitting', (
+    tester,
+  ) async {
+    final controller = FlarkFlutterController.fromMarkdown('`test `');
+    addTearDown(controller.dispose);
+    await _applyComrakParseResult(controller);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkLiveRenderedEditableText(
+          controller: controller,
+          style: const TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Caret inside at the run's end (before the closing backtick).
+    controller.applySelection(const FlarkSelection.collapsed(6));
+
+    // A platform line-break insertion (Enter) must not split the span
+    // source — it steps past the closing marker first.
+    await tester.enterText(find.byType(EditableText), 'test \n');
+    await tester.pump();
+    expect(controller.markdown, startsWith('`test `'));
+    expect(controller.markdown, isNot(contains('` ')));
+    await _applyComrakParseResult(controller);
+    await tester.pump();
+
+    // A second Enter still leaves the span intact.
+    final display = tester
+        .widget<EditableText>(find.byType(EditableText).first)
+        .controller
+        .text;
+    await tester.enterText(find.byType(EditableText).first, '$display\n');
+    await tester.pump();
+    expect(controller.markdown, startsWith('`test `'));
+    final reparsed = await FlarkNativeComrakParseBackend.withNativeBridge()
+        .parse(
+          FlarkMarkdownParseRequest(
+            revision: controller.state.revision,
+            markdown: controller.markdown,
+            profile: FlarkMarkdownProfile.commonMarkGfm,
+          ),
+        );
+    expect(
+      reparsed.inlineTokens.any(
+        (token) => token.kind == FlarkMarkdownInlineKind.inlineCode,
+      ),
+      isTrue,
+      reason: 'the code span survives both line breaks',
+    );
+  });
+
+  testWidgets('typing the closing marker continues inside the run it '
+      'just closed', (tester) async {
+    final controller = FlarkFlutterController.fromMarkdown('`this');
+    addTearDown(controller.dispose);
+    await _applyComrakParseResult(controller);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkLiveRenderedEditableText(
+          controller: controller,
+          style: const TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Unclosed: the backtick is literal in the display.
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).controller.text,
+      '`this',
+    );
+    controller.applySelection(const FlarkSelection.collapsed(5));
+
+    // Type the closing backtick. The span forms on parse, and the caret
+    // stays in code style — Slack's conversion behavior.
+    await tester.enterText(find.byType(EditableText), '`this`');
+    await tester.pump();
+    expect(controller.markdown, '`this`');
+    await _applyComrakParseResult(controller);
+    await tester.pump();
+    expect(controller.selection, const FlarkSelection.collapsed(5));
+
+    // Keep writing: spaces and words extend the code span.
+    await tester.enterText(find.byType(EditableText), 'this is working');
+    await tester.pump();
+    expect(controller.markdown, '`this is working`');
+    await _applyComrakParseResult(controller);
+    await tester.pump();
+    expect(controller.selection, const FlarkSelection.collapsed(16));
+
+    // One more backtick is the exit gesture; typing after it is plain.
+    await tester.enterText(find.byType(EditableText), 'this is working`');
+    await tester.pump();
+    expect(controller.markdown, '`this is working`');
+    expect(controller.selection, const FlarkSelection.collapsed(17));
+    await tester.enterText(find.byType(EditableText), 'this is working!');
+    await tester.pump();
+    expect(controller.markdown, '`this is working`!');
+  });
+
+  testWidgets('typing the marker character at the inside-end exits the run', (
+    tester,
+  ) async {
+    final controller = FlarkFlutterController.fromMarkdown('a `test` b');
+    addTearDown(controller.dispose);
+    await _applyComrakParseResult(controller);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkLiveRenderedEditableText(
+          controller: controller,
+          style: const TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    controller.applyProjectedSelection(const FlarkSelection.collapsed(6));
+    expect(controller.selection, const FlarkSelection.collapsed(7));
+
+    // A literal backtick at the inside-end is the exit gesture: no text
+    // is inserted and the caret steps past the closing marker.
+    await tester.enterText(find.byType(EditableText), 'a test` b');
+    await tester.pump();
+    expect(controller.markdown, 'a `test` b');
+    expect(controller.selection, const FlarkSelection.collapsed(8));
+
+    // Typing after the exit is plain text.
+    await tester.enterText(find.byType(EditableText), 'a test! b');
+    await tester.pump();
+    expect(controller.markdown, 'a `test`! b');
+  });
+
+  testWidgets('an empty heading styles immediately instead of showing raw '
+      'source until text arrives', (tester) async {
+    // The list item forces block-widget editing, matching the playground.
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
+          '- a\n\n### ',
+          selection: const FlarkSelection.collapsed(9),
+        ),
+      ),
+    );
+    addTearDown(controller.dispose);
+    await _applyComrakParseResult(controller);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkLiveRenderedEditableText(
+          controller: controller,
+          style: const TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // No editable shows the raw marker.
+    final editables = tester.widgetList<EditableText>(
+      find.byType(EditableText),
+    );
+    expect(
+      editables.where((editable) => editable.controller.text.contains('#')),
+      isEmpty,
+    );
+
+    // The empty heading renders as a block editable with heading styling
+    // (h3 from a 14px base = 14 + (7 - 3) * 2 = 22).
+    final headingFinder = find.byWidgetPredicate(
+      (widget) =>
+          widget is EditableText &&
+          widget.controller.text.isEmpty &&
+          widget.style.fontSize == 22 &&
+          widget.style.fontWeight == FontWeight.w700,
+    );
+    expect(headingFinder, findsOneWidget);
+
+    // Typing into it extends the heading source; no mode flip, no jump.
+    await tester.enterText(headingFinder, 'h');
+    await tester.pump();
+    expect(controller.markdown, '- a\n\n### h');
+    final typedHeading = tester.widget<EditableText>(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is EditableText &&
+            widget.style.fontSize == 22 &&
+            widget.controller.text == 'h',
+      ),
+    );
+    expect(typedHeading.style.fontWeight, FontWeight.w700);
   });
 }
 

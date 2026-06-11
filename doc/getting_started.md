@@ -140,6 +140,13 @@ FlarkMarkdownEditor(
   rendered inline styling, and providing editable task, table, code-fence, and
   quote blocks.
 
+In live-rendered mode, inline styles behave like familiar rich-text editors:
+closing a run (typing the second backtick of `` `code` ``) keeps the caret
+inside it, so spaces and further words stay styled; placing the caret back at
+the end of a styled run re-enters it. To exit, press the right arrow at the
+run's end (the caret stays put visually) or type the style's own marker
+character once more.
+
 ## Theming
 
 Chrome colors (code fences, quotes, links, tables, checkboxes, menus, syntax
@@ -155,7 +162,26 @@ FlarkMarkdownTheme(
 ```
 
 Start from `FlarkMarkdownThemeData.light`/`.dark` and adjust with `copyWith`.
-Fonts and text sizes stay on the widget `style`/`textStyle` parameters.
+The base font and size come from the widget `style`/`textStyle` parameters;
+per-token typography overrides merge on top — for example a custom code font
+and purple serif headings:
+
+```dart
+FlarkMarkdownThemeData.light.copyWith(
+  codeTextStyle: const TextStyle(fontFamily: 'JetBrains Mono'),
+  headingTextStyle: const TextStyle(
+    fontFamily: 'Fraunces',
+    color: Color(0xFF5B21B6),
+  ),
+  linkTextStyle: const TextStyle(decoration: TextDecoration.none),
+)
+```
+
+Available overrides: `codeTextStyle`, `inlineCodeTextStyle`,
+`headingTextStyle` plus `heading1TextStyle`…`heading6TextStyle`,
+`quoteTextStyle`, `linkTextStyle`, `strongTextStyle`, `emphasisTextStyle`,
+`strikethroughTextStyle`, and `selectionColor`. Shape metrics (corner radii,
+paddings, the quote rail width) are fixed in this release.
 
 ## Read-Only Surfaces
 

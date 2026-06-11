@@ -1103,9 +1103,13 @@ Color _selectionColorForCursor(Color cursorColor) {
 
 bool _isVisibleEditableBlock(FlarkRenderBlock block, String displayText) {
   if (_rangeOverlapsText(block.displayRange, displayText)) return true;
+  // Blocks whose markers are fully hidden still render as (empty) editable
+  // widgets, so e.g. `### ` styles as an empty heading immediately instead
+  // of flashing raw source until the first content character arrives.
   return (block.kind == FlarkMarkdownBlockKind.blockquote ||
           block.kind == FlarkMarkdownBlockKind.listItem ||
-          block.kind == FlarkMarkdownBlockKind.codeBlock) &&
+          block.kind == FlarkMarkdownBlockKind.codeBlock ||
+          block.kind == FlarkMarkdownBlockKind.heading) &&
       block.displayRange.isCollapsed;
 }
 

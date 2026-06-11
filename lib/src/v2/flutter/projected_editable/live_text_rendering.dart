@@ -638,38 +638,60 @@ final class _LiveRenderedTextStyleSignature {
   TextStyle resolve(TextStyle baseStyle, FlarkMarkdownThemeData theme) {
     var style = baseStyle;
     if (codeBlock) {
-      style = style.copyWith(
-        color: theme.codeTextColor,
-        fontFamily: 'monospace',
-        height: 1.35,
-      );
+      style = style
+          .copyWith(
+            color: theme.codeTextColor,
+            fontFamily: 'monospace',
+            height: 1.35,
+          )
+          .merge(theme.codeTextStyle);
     } else if (blockquote) {
-      style = style.copyWith(color: theme.quoteTextColor);
+      style = style
+          .copyWith(color: theme.quoteTextColor)
+          .merge(theme.quoteTextStyle);
     }
 
     if (headingLevel != null) {
       final baseSize = baseStyle.fontSize ?? 14;
-      style = style.copyWith(
-        fontSize: baseSize + (7 - headingLevel!) * 2,
-        fontWeight: FontWeight.w700,
-      );
+      style = style
+          .copyWith(
+            fontSize: baseSize + (7 - headingLevel!) * 2,
+            fontWeight: FontWeight.w700,
+          )
+          .merge(theme.headingTextStyle)
+          .merge(theme.headingLevelTextStyle(headingLevel!));
     }
-    if (strong) style = style.copyWith(fontWeight: FontWeight.w700);
-    if (emphasis) style = style.copyWith(fontStyle: FontStyle.italic);
+    if (strong) {
+      style = style
+          .copyWith(fontWeight: FontWeight.w700)
+          .merge(theme.strongTextStyle);
+    }
+    if (emphasis) {
+      style = style
+          .copyWith(fontStyle: FontStyle.italic)
+          .merge(theme.emphasisTextStyle);
+    }
     if (inlineCode) {
-      style = style.copyWith(
-        fontFamily: 'monospace',
-        backgroundColor: theme.inlineCodeBackgroundColor,
-      );
+      // No backgroundColor here: the chrome underlay paints the run's
+      // highlight from layout boxes so trailing whitespace is covered and
+      // the height is uniform (Flutter's span backgrounds skip line-trailing
+      // whitespace and use different box geometry).
+      style = style
+          .copyWith(fontFamily: 'monospace')
+          .merge(theme.inlineCodeTextStyle);
     }
     if (strikethrough) {
-      style = style.copyWith(decoration: TextDecoration.lineThrough);
+      style = style
+          .copyWith(decoration: TextDecoration.lineThrough)
+          .merge(theme.strikethroughTextStyle);
     }
     if (link) {
-      style = style.copyWith(
-        color: theme.linkColor,
-        decoration: TextDecoration.underline,
-      );
+      style = style
+          .copyWith(
+            color: theme.linkColor,
+            decoration: TextDecoration.underline,
+          )
+          .merge(theme.linkTextStyle);
     }
     return style;
   }
@@ -818,6 +840,18 @@ final class _FlarkLiveRenderedBlockPainter extends CustomPainter {
     for (final block in renderPlan.codeBlocks) {
       _paintCodeBlock(canvas, size, textPainter, block);
     }
+    for (final block in renderPlan.allBlocks) {
+      for (final run in block.inlineRuns) {
+        if (run.styleToken != FlarkRenderTextStyleToken.inlineCode) continue;
+        flarkPaintInlineCodeRunBackground(
+          canvas: canvas,
+          textPainter: textPainter,
+          start: run.displayRange.start.clamp(0, displayText.length),
+          end: run.displayRange.end.clamp(0, displayText.length),
+          color: theme.inlineCodeBackgroundColor,
+        );
+      }
+    }
 
     canvas.restore();
   }
@@ -904,6 +938,148 @@ final class _FlarkLiveRenderedBlockPainter extends CustomPainter {
         oldDelegate.textDirection != textDirection ||
         oldDelegate.textScaler != textScaler ||
         oldDelegate.hasRenderPlan != hasRenderPlan ||
-        oldDelegate.scrollController != scrollController;
+        oldDelegate.scrollController != scrollController ||
+        oldDelegate.theme != theme;
+  }
+}
+
+/// Paints an inline-code run's background from layout selection boxes.
+///
+/// This underlay is the only painter of inline-code highlights. Flutter's
+/// `TextStyle.backgroundColor` skips line-trailing whitespace (so a run
+/// that currently ends in a space — mid-typing `` `multi word ` `` — would
+/// lose its highlight on the last character) and uses different box
+/// geometry than selection boxes, so mixing the two paints mismatched
+/// heights. Selection boxes include trailing whitespace and give every part
+/// of the run identical geometry.
+void flarkPaintInlineCodeRunBackground({
+  required Canvas canvas,
+  required TextPainter textPainter,
+  required int start,
+  required int end,
+  required Color color,
+}) {
+  if (start >= end) return;
+  final boxes = textPainter.getBoxesForSelection(
+    TextSelection(baseOffset: start, extentOffset: end),
+  );
+  if (boxes.isEmpty) return;
+  final paint = Paint()..color = color;
+  for (final box in boxes) {
+    canvas.drawRect(box.toRect(), paint);
+  }
+}
+
+/// Underlay for per-block editables that keeps inline-code highlights
+/// contiguous over trailing whitespace (see
+/// [flarkPaintInlineCodeRunBackground]).
+final class _FlarkLiveBlockInlineCodeChrome extends StatelessWidget {
+  const _FlarkLiveBlockInlineCodeChrome({
+    required this.textController,
+    required this.style,
+    required this.child,
+  });
+
+  final _FlarkBlockTextController textController;
+  final TextStyle style;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final block = textController.block;
+    final text = textController.text;
+    if (block == null || text.isEmpty) return child;
+    final blockDisplayStart = flarkClampedDisplayRange(
+      block,
+      textController.displayText,
+    ).start;
+    final ranges = <TextRange>[
+      for (final run in block.inlineRuns)
+        if (run.styleToken == FlarkRenderTextStyleToken.inlineCode)
+          TextRange(
+            start: (run.displayRange.start - blockDisplayStart).clamp(
+              0,
+              text.length,
+            ),
+            end: (run.displayRange.end - blockDisplayStart).clamp(
+              0,
+              text.length,
+            ),
+          ),
+    ];
+    if (!ranges.any((range) => range.start < range.end)) return child;
+    final textSpan = textController.buildTextSpan(
+      context: context,
+      style: style,
+      withComposing: false,
+    );
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        Positioned.fill(
+          child: IgnorePointer(
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: _FlarkInlineCodeRunPainter(
+                  textSpan: textSpan,
+                  ranges: ranges,
+                  textDirection: Directionality.of(context),
+                  textScaler: MediaQuery.textScalerOf(context),
+                  color: FlarkMarkdownTheme.of(
+                    context,
+                  ).inlineCodeBackgroundColor,
+                ),
+              ),
+            ),
+          ),
+        ),
+        child,
+      ],
+    );
+  }
+}
+
+final class _FlarkInlineCodeRunPainter extends CustomPainter {
+  const _FlarkInlineCodeRunPainter({
+    required this.textSpan,
+    required this.ranges,
+    required this.textDirection,
+    required this.textScaler,
+    required this.color,
+  });
+
+  final TextSpan textSpan;
+  final List<TextRange> ranges;
+  final TextDirection textDirection;
+  final TextScaler textScaler;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final textPainter = TextPainter(
+      text: textSpan,
+      textDirection: textDirection,
+      textScaler: textScaler,
+    )..layout(maxWidth: size.width);
+    for (final range in ranges) {
+      flarkPaintInlineCodeRunBackground(
+        canvas: canvas,
+        textPainter: textPainter,
+        start: range.start,
+        end: range.end,
+        color: color,
+      );
+    }
+    textPainter.dispose();
+  }
+
+  @override
+  bool shouldRepaint(_FlarkInlineCodeRunPainter oldDelegate) {
+    return oldDelegate.textSpan != textSpan ||
+        !listEquals(oldDelegate.ranges, ranges) ||
+        oldDelegate.textDirection != textDirection ||
+        oldDelegate.textScaler != textScaler ||
+        oldDelegate.color != color;
   }
 }

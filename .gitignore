@@ -10,3 +10,6 @@ native/comrak_bridge/target/
 native/comrak_bridge/dist/
 
 .DS_Store
+
+# flutter_test golden failure artifacts
+test/**/failures/

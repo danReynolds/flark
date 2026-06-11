@@ -105,15 +105,16 @@ final class _EditableProjectedBlockTextState
     _textController.block = block;
     _textController.displayText = displayText;
     _textController.codeSyntaxLanguage = widget.codeSyntaxLanguage;
+    final blockStyle = _blockTextStyle(
+      widget.style,
+      block,
+      FlarkMarkdownTheme.of(context),
+    );
     Widget editor = _KeyboardSyncedEditableText(
       key: widget.editableKey,
       controller: _textController,
       focusNode: _focusNode,
-      style: _blockTextStyle(
-        widget.style,
-        block,
-        FlarkMarkdownTheme.of(context),
-      ),
+      style: blockStyle,
       cursorColor: widget.cursorColor,
       backgroundCursorColor: widget.backgroundCursorColor,
       minLines: _minimumEditableLineCount(_textController.text),
@@ -122,6 +123,11 @@ final class _EditableProjectedBlockTextState
       keyboardType: TextInputType.multiline,
       textInputAction: TextInputAction.newline,
       onKeyEvent: _handleVerticalBoundaryKeyEvent,
+    );
+    editor = _FlarkLiveBlockInlineCodeChrome(
+      textController: _textController,
+      style: blockStyle,
+      child: editor,
     );
     editor = _LiveRenderedDocumentIntentActions(
       onSelectAll: _selectAllDocument,
@@ -145,6 +151,8 @@ final class _EditableProjectedBlockTextState
 
   void _handleTextChanged() {
     if (_syncing) return;
+    if (_textController.isKickingCursorBlink) return;
+    if (_applyLocalEchoToDocumentSpanningSelection()) return;
 
     final externalFocusNodeToRestore = widget.focusNode;
     final shouldRestoreExternalFocus = externalFocusNodeToRestore != null;
@@ -345,12 +353,45 @@ final class _EditableProjectedBlockTextState
       widget.currentBlock,
       widget.currentDisplayText,
     );
-    widget.controller.applyProjectedSelection(
-      FlarkSelection(
-        baseOffset: range.start + localSelection.baseOffset,
-        extentOffset: range.start + localSelection.extentOffset,
-      ),
+    final displaySelection = FlarkSelection(
+      baseOffset: range.start + localSelection.baseOffset,
+      extentOffset: range.start + localSelection.extentOffset,
     );
+    // This applier anchors edits and command dispatches, so when the
+    // controller's source selection already renders at the requested
+    // display position, keep it: the source caret distinguishes inside
+    // vs outside a styled run's hidden closing marker, and a display
+    // round trip would erase that.
+    final controller = widget.controller;
+    if (controller.projection.sourceSelectionToDisplay(controller.selection) ==
+        displaySelection) {
+      return;
+    }
+    // A document-spanning selection (select-all, multi-block drag) projects
+    // into this block as its clipped sub-range; the platform can only
+    // report that clip. Re-applying it must not shrink the document
+    // selection — backspace over a select-all would otherwise delete only
+    // the focused block.
+    final current = controller.selection;
+    if (!current.isCollapsed) {
+      final requestedStart = controller.projection.displayToSourceOffset(
+        displaySelection.start.clamp(0, controller.projection.displayLength),
+        affinity: FlarkMapAffinity.downstream,
+      );
+      final requestedEnd = controller.projection.displayToSourceOffset(
+        displaySelection.end.clamp(0, controller.projection.displayLength),
+        affinity: FlarkMapAffinity.upstream,
+      );
+      final blockRange = widget.currentBlock.sourceRange;
+      final spansBeyondBlock =
+          current.start < blockRange.start || current.end > blockRange.end;
+      if (spansBeyondBlock &&
+          current.start <= requestedStart &&
+          current.end >= requestedEnd) {
+        return;
+      }
+    }
+    controller.applyProjectedSelection(displaySelection);
   }
 
   FlarkMarkdownInputPolicy get _markdownInputPolicy {
@@ -532,6 +573,85 @@ final class _EditableProjectedBlockTextState
     );
   }
 
+  /// Applies a block-local platform edit to a document-spanning selection.
+  ///
+  /// On platforms where deletion and typing arrive as IME edits rather than
+  /// key intents (macOS `deleteBackward:` among them), a select-all or
+  /// multi-block selection followed by backspace/typing only echoes through
+  /// the focused block's editable — the platform can only see that block's
+  /// text. Scoping the edit to the block would delete or replace just the
+  /// focused block. When the controller's selection extends beyond this
+  /// block, apply the edit to the whole selection instead: delete it (with
+  /// orphaned inline-marker expansion) and insert whatever text the local
+  /// echo carried.
+  bool _applyLocalEchoToDocumentSpanningSelection() {
+    final controller = widget.controller;
+    final documentSelection = controller.selection;
+    if (documentSelection.isCollapsed) return false;
+    final selectionRange = FlarkSourceRange(
+      documentSelection.start,
+      documentSelection.end,
+    );
+    final blockRange = _sourceEditRange() ?? widget.currentBlock.sourceRange;
+    if (selectionRange.start >= blockRange.start &&
+        selectionRange.end <= blockRange.end) {
+      return false;
+    }
+
+    final oldText = _localValueSnapshot?.text ?? _localText();
+    final newText = _textController.value.text;
+    if (newText == oldText) return false;
+    // Minimal prefix/suffix diff of the local change; the replacement text
+    // is what should replace the document selection.
+    var prefix = 0;
+    final limit = oldText.length < newText.length
+        ? oldText.length
+        : newText.length;
+    while (prefix < limit &&
+        oldText.codeUnitAt(prefix) == newText.codeUnitAt(prefix)) {
+      prefix++;
+    }
+    var oldSuffix = oldText.length;
+    var newSuffix = newText.length;
+    while (oldSuffix > prefix &&
+        newSuffix > prefix &&
+        oldText.codeUnitAt(oldSuffix - 1) ==
+            newText.codeUnitAt(newSuffix - 1)) {
+      oldSuffix--;
+      newSuffix--;
+    }
+    final replacementText = newText.substring(prefix, newSuffix);
+
+    final projection = controller.projection;
+    final replacedRange =
+        replacementText.isEmpty &&
+            selectionRange.start >= 0 &&
+            selectionRange.end <= projection.textLength
+        ? projection.expandDeletionOverInlineRunMarkers(selectionRange)
+        : selectionRange;
+    controller.applyTransaction(
+      FlarkTransaction.single(
+        FlarkSourceOperation.replace(
+          replacedRange: replacedRange,
+          replacementText: replacementText,
+        ),
+        selectionBefore: documentSelection,
+        selectionAfter: FlarkSelection.collapsed(
+          replacedRange.start + replacementText.length,
+        ),
+        metadata: FlarkTransactionMetadata(
+          intent: FlarkTransactionIntent.input,
+          userEvent: 'input.liveBlock.documentSelectionEdit',
+          parseInvalidationRange: replacedRange,
+          projectionInvalidationRange: replacedRange,
+        ),
+      ),
+    );
+    _adoptImmediateMarkdownParseForController(controller);
+    _syncFromController();
+    return true;
+  }
+
   bool _deleteControllerSelection() {
     if (widget.controller.selection.isCollapsed) return false;
     final result = widget.controller.dispatch(
@@ -623,6 +743,15 @@ final class _EditableProjectedBlockTextState
               forward: true,
               collapseSelection: true,
             ),
+          )
+          ? KeyEventResult.handled
+          : KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowRight ||
+        event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+      return flarkStepInlineRunBoundary(
+            widget.controller,
+            forward: event.logicalKey == LogicalKeyboardKey.arrowRight,
           )
           ? KeyEventResult.handled
           : KeyEventResult.ignored;
@@ -901,18 +1030,35 @@ final class _KeyboardSyncedEditableTextState
   void initState() {
     super.initState();
     _syncFocusNodeKeyHandler();
+    widget.focusNode.addListener(_handleFocusNodeChanged);
   }
 
   @override
   void didUpdateWidget(_KeyboardSyncedEditableText oldWidget) {
     super.didUpdateWidget(oldWidget);
     _syncFocusNodeKeyHandler();
+    if (!identical(oldWidget.focusNode, widget.focusNode)) {
+      oldWidget.focusNode.removeListener(_handleFocusNodeChanged);
+      widget.focusNode.addListener(_handleFocusNodeChanged);
+    }
   }
 
   @override
   void dispose() {
+    widget.focusNode.removeListener(_handleFocusNodeChanged);
     _detachFocusNodeKeyHandler();
     super.dispose();
+  }
+
+  /// Programmatic focus (the focus coordinator moving focus into a newly
+  /// mounted block, e.g. the body of a just-auto-closed code fence) carries
+  /// no keyboard token, so EditableText neither opens a connection nor
+  /// starts its cursor blink — the caret stays invisible until the first
+  /// keystroke. Mirror a user tap by requesting the keyboard on focus gain.
+  void _handleFocusNodeChanged() {
+    if (widget.focusNode.hasFocus) {
+      _scheduleKeyboardConnectionForInheritedFocus();
+    }
   }
 
   @override
@@ -925,7 +1071,9 @@ final class _KeyboardSyncedEditableTextState
       focusNode: widget.focusNode,
       style: widget.style,
       cursorColor: widget.cursorColor,
-      selectionColor: _selectionColorForCursor(widget.cursorColor),
+      selectionColor:
+          FlarkMarkdownTheme.of(context).selectionColor ??
+          _selectionColorForCursor(widget.cursorColor),
       selectionControls: flarkTextSelectionControlsForPlatform(context),
       backgroundCursorColor: widget.backgroundCursorColor,
       minLines: widget.minLines,
@@ -950,6 +1098,13 @@ final class _KeyboardSyncedEditableTextState
       _keyboardSyncScheduled = false;
       if (!mounted || !widget.focusNode.hasFocus) return;
       _editableStateKey.currentState?.requestKeyboard();
+      // Inherited focus never fires a focus-change event on this editable,
+      // so the cursor blink must be restarted explicitly too —
+      // requestKeyboard only opens the input connection.
+      final controller = widget.controller;
+      if (controller is _FlarkBlockTextController) {
+        controller.kickCursorBlink();
+      }
     });
   }
 
@@ -991,6 +1146,24 @@ final class _FlarkBlockTextController extends TextEditingController {
   FlarkRenderBlock? block;
   String displayText = '';
   String? codeSyntaxLanguage;
+
+  /// True while [kickCursorBlink] re-notifies; the block's own text-change
+  /// listener must ignore that notification (the value is unchanged and
+  /// re-classifying it would re-apply a stale local selection mid-flow).
+  bool isKickingCursorBlink = false;
+
+  /// Re-notifies with an unchanged value so an attached [EditableText]
+  /// restarts its cursor blink. Needed when a block adopts a focus node
+  /// that already has primary focus (no focus-change event ever fires, so
+  /// the editable never starts blinking on its own).
+  void kickCursorBlink() {
+    isKickingCursorBlink = true;
+    try {
+      notifyListeners();
+    } finally {
+      isKickingCursorBlink = false;
+    }
+  }
 
   @override
   TextSpan buildTextSpan({

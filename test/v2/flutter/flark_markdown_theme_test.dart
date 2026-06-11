@@ -87,6 +87,25 @@ void main() {
       expect(FlarkMarkdownThemeData.dark, isNot(FlarkMarkdownThemeData.light));
     });
 
+    test('typography overrides default to null and round-trip copyWith', () {
+      const light = FlarkMarkdownThemeData.light;
+      expect(light.codeTextStyle, isNull);
+      expect(light.headingTextStyle, isNull);
+      expect(light.linkTextStyle, isNull);
+      expect(light.selectionColor, isNull);
+
+      const mono = TextStyle(fontFamily: 'JetBrains Mono', fontSize: 13);
+      final themed = light.copyWith(
+        codeTextStyle: mono,
+        heading2TextStyle: const TextStyle(color: Color(0xFF112233)),
+        selectionColor: const Color(0x3300FF00),
+      );
+      expect(themed.codeTextStyle, mono);
+      expect(themed.headingLevelTextStyle(2)!.color, const Color(0xFF112233));
+      expect(themed.headingLevelTextStyle(3), isNull);
+      expect(themed, isNot(light));
+    });
+
     test('copyWith overrides a single field and preserves equality', () {
       const accent = Color(0xFF123456);
       final themed = FlarkMarkdownThemeData.light.copyWith(linkColor: accent);
@@ -205,6 +224,199 @@ void main() {
         _decorationColor(tester, quoteBox),
         FlarkMarkdownThemeData.dark.quoteBackgroundColor,
       );
+    });
+  });
+
+  group('typography theming', () {
+    testWidgets('headings take merged color, family, and per-level size', (
+      tester,
+    ) async {
+      final controller = await _parsedController('- x\n\n## Title');
+      addTearDown(controller.dispose);
+
+      final theme = FlarkMarkdownThemeData.light.copyWith(
+        headingTextStyle: const TextStyle(
+          color: Color(0xFF7C3AED),
+          fontFamily: 'Fraunces',
+        ),
+        heading2TextStyle: const TextStyle(fontSize: 40),
+      );
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: FlarkMarkdownEditor(
+            controller: controller,
+            theme: theme,
+            style: const TextStyle(fontSize: 14),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final heading = tester.widget<EditableText>(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is EditableText && widget.controller.text == 'Title',
+        ),
+      );
+      expect(heading.style.color, const Color(0xFF7C3AED));
+      expect(heading.style.fontFamily, 'Fraunces');
+      expect(heading.style.fontSize, 40);
+      expect(heading.style.fontWeight, FontWeight.w700);
+    });
+
+    testWidgets('code fences take a custom code font', (tester) async {
+      final controller = await _parsedController(
+        'Intro\n\n```dart\nfinal x = 1;\n```\n',
+      );
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: FlarkMarkdownEditor(
+            controller: controller,
+            theme: FlarkMarkdownThemeData.light.copyWith(
+              codeTextStyle: const TextStyle(
+                fontFamily: 'JetBrains Mono',
+                fontSize: 12,
+              ),
+            ),
+            style: const TextStyle(fontSize: 14),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final body = tester.widget<EditableText>(
+        find.descendant(
+          of: find.byKey(const Key('FlarkLiveBlockCodeEditable')),
+          matching: find.byType(EditableText),
+        ),
+      );
+      expect(body.style.fontFamily, 'JetBrains Mono');
+      expect(body.style.fontSize, 12);
+      expect(body.style.color, FlarkMarkdownThemeData.light.codeTextColor);
+    });
+
+    testWidgets('links can drop the underline via linkTextStyle', (
+      tester,
+    ) async {
+      final controller = await _parsedController('a [b](https://c.d) e');
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: FlarkMarkdownEditor(
+            controller: controller,
+            style: const TextStyle(fontSize: 14),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      TextStyle linkStyle() {
+        final editable = tester.widget<EditableText>(
+          find.byType(EditableText).first,
+        );
+        final span = editable.controller.buildTextSpan(
+          context: tester.element(find.byType(EditableText).first),
+          style: editable.style,
+          withComposing: false,
+        );
+        TextStyle? found;
+        span.visitChildren((child) {
+          final style = child.style;
+          if (child is TextSpan &&
+              child.text == 'b' &&
+              style != null &&
+              style.color == FlarkMarkdownThemeData.light.linkColor) {
+            found = style;
+            return false;
+          }
+          return true;
+        });
+        expect(found, isNotNull, reason: 'link span present');
+        return found!;
+      }
+
+      expect(linkStyle().decoration, TextDecoration.underline);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: FlarkMarkdownTheme(
+            data: FlarkMarkdownThemeData.light.copyWith(
+              linkTextStyle: const TextStyle(decoration: TextDecoration.none),
+            ),
+            child: FlarkMarkdownEditor(
+              controller: controller,
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(linkStyle().decoration, TextDecoration.none);
+    });
+
+    testWidgets('bullet markers paint with listMarkerColor', (tester) async {
+      final controller = await _parsedController('- bullet');
+      addTearDown(controller.dispose);
+
+      const marker = Color(0xFFAB47BC);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: FlarkMarkdownEditor(
+            controller: controller,
+            theme: FlarkMarkdownThemeData.light.copyWith(
+              listMarkerColor: marker,
+            ),
+            style: const TextStyle(fontSize: 14),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final paint = tester.widget<CustomPaint>(
+        find.descendant(
+          of: find.byKey(const Key('FlarkLiveBlockListMarker')),
+          matching: find.byType(CustomPaint),
+        ),
+      );
+      expect((paint.painter as dynamic).color, marker);
+    });
+
+    testWidgets('selectionColor overrides the cursor-derived default', (
+      tester,
+    ) async {
+      final controller = await _parsedController('- x\n\nplain');
+      addTearDown(controller.dispose);
+
+      const selection = Color(0x55FF8800);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: FlarkMarkdownEditor(
+            controller: controller,
+            theme: FlarkMarkdownThemeData.light.copyWith(
+              selectionColor: selection,
+            ),
+            style: const TextStyle(fontSize: 14),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final editables = tester.widgetList<EditableText>(
+        find.byType(EditableText),
+      );
+      expect(editables, isNotEmpty);
+      for (final editable in editables) {
+        expect(editable.selectionColor, selection);
+      }
     });
   });
 

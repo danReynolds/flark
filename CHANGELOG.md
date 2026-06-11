@@ -5,7 +5,59 @@
 Architecture hardening and correctness fixes from a full-package audit,
 followed by a developer-experience pass.
 
+Live-editing ergonomics:
+
+- Typing `### ` (or any heading marker plus space) now renders an empty
+  styled heading immediately; previously the raw marker stayed visible
+  until the first content character arrived and then jumped into heading
+  styling.
+- Closing an inline styled run keeps the caret inside it: after typing the
+  second backtick of `` `code` `` (or the closing `**`/`*`/`~~`), typing —
+  including spaces — continues the run's style until an explicit exit
+  (right-arrow at the end, or typing the marker character once more).
+  Marker keystrokes trigger an immediate parse so the conversion lands
+  before the next character.
+- The caret is visible immediately in a code fence body after typing the
+  ``` opener (the auto-close flow hands the body an already-focused node,
+  which never fires the focus-change event that starts cursor blinking).
+- Select-all followed by backspace (or typing) now edits the whole
+  document in block-widget editing mode. The platform echoes such edits
+  through the focused block only; re-anchoring no longer shrinks a
+  document-spanning selection to that block, and IME-delivered edits over
+  a spanning selection apply to the full selection.
+- Deleting a styled run's full content (select-all + backspace over
+  `` `test` ``) removes its hidden markers too instead of leaving orphaned
+  literal backticks; typing over the selection replaces just the content,
+  keeping the style. Display range selections now map symmetrically to the
+  visible content.
+- Inline-code highlights stay contiguous while typing: trailing spaces
+  inside a run are now painted (Flutter skips span backgrounds on
+  line-trailing whitespace, so the surfaces paint run backgrounds from
+  layout boxes), and Enter at a run's end steps past the closing marker
+  instead of splitting the span source into orphaned literal markers.
+- Inline styled runs (code/strong/emphasis/strikethrough) can be re-entered
+  at their trailing edge, Slack-style: placing the caret right after the
+  run's last character keeps typing inside the run; plain left/right
+  arrows step between the inside and outside caret states at the boundary
+  (one visually stationary keypress); and typing the run's own marker
+  character at the inside-end exits the run instead of inserting a literal
+  marker. Ambiguous platform edits (a space typed before an existing
+  space) anchor at the caret instead of diff-sliding out of the run, so
+  multi-word styled text types naturally. The affinity model is documented
+  in `doc/architecture/live_edit_intent_pipeline.md`.
+
 Developer experience:
+
+- Typography theming: `FlarkMarkdownThemeData` gains optional per-token
+  `TextStyle` overrides merged over the computed defaults —
+  `codeTextStyle` (custom code fonts), `inlineCodeTextStyle`,
+  `headingTextStyle` plus per-level `heading1TextStyle`…`heading6TextStyle`
+  (heading colors/fonts/sizes), `quoteTextStyle`, `linkTextStyle`
+  (e.g. remove the underline), `strongTextStyle`, `emphasisTextStyle`, and
+  `strikethroughTextStyle` — plus a `selectionColor` override (previously
+  always derived from the cursor color). Bullet list markers now paint with
+  `listMarkerColor` like ordered markers (previously `chromeLabelColor`),
+  a subtle light-palette change pinned by regenerated goldens.
 
 - Theming: `FlarkMarkdownThemeData` (with `light`/`dark` palettes and
   `copyWith`) now drives every chrome color — code fences, quotes, links,

@@ -121,8 +121,10 @@ final class FlarkCodeSyntaxThemeData {
 /// )
 /// ```
 ///
-/// Text sizing and font families come from the editor/preview `textStyle`;
-/// this theme controls the colors layered on top of it.
+/// The base text size and family come from the editor/preview `textStyle`;
+/// the theme layers colors on top plus optional per-token typography
+/// overrides ([codeTextStyle], [headingTextStyle], [linkTextStyle], …) that
+/// merge over the computed defaults.
 @immutable
 final class FlarkMarkdownThemeData {
   const FlarkMarkdownThemeData({
@@ -153,7 +155,22 @@ final class FlarkMarkdownThemeData {
     this.checkboxFillColor = const Color(0xFFFFFFFF),
     this.checkboxCheckmarkColor = const Color(0xFFFFFFFF),
     this.cursorColor = const Color(0xFF006ADC),
+    this.selectionColor,
     this.syntaxTheme = FlarkCodeSyntaxThemeData.light,
+    this.codeTextStyle,
+    this.inlineCodeTextStyle,
+    this.headingTextStyle,
+    this.heading1TextStyle,
+    this.heading2TextStyle,
+    this.heading3TextStyle,
+    this.heading4TextStyle,
+    this.heading5TextStyle,
+    this.heading6TextStyle,
+    this.quoteTextStyle,
+    this.linkTextStyle,
+    this.strongTextStyle,
+    this.emphasisTextStyle,
+    this.strikethroughTextStyle,
   });
 
   /// The default palette; identical to [FlarkMarkdownThemeData.new] defaults.
@@ -245,7 +262,7 @@ final class FlarkMarkdownThemeData {
   /// Background of floating menus (link menus, language picker).
   final Color menuBackgroundColor;
 
-  /// Drop shadow of floating menus.
+  /// Drop shadow of floating menus (the blur radius and offset are fixed).
   final Color menuShadowColor;
 
   /// Border for code fences, tables, cards, and menus.
@@ -279,8 +296,78 @@ final class FlarkMarkdownThemeData {
   /// or an ambient [DefaultSelectionStyle] takes precedence.
   final Color cursorColor;
 
+  /// Text selection highlight.
+  ///
+  /// When null, a translucent tint of the effective cursor color is used.
+  final Color? selectionColor;
+
   /// Colors for syntax-highlighted code.
   final FlarkCodeSyntaxThemeData syntaxTheme;
+
+  /// Merged over the computed code-block text style (code fences in both
+  /// the live editor and the preview). The default is the base editor
+  /// style with [codeTextColor], the `monospace` family, and 1.35 line
+  /// height; use this to supply a custom code font, size, or height.
+  final TextStyle? codeTextStyle;
+
+  /// Merged over inline `code` span styling (monospace family by default).
+  final TextStyle? inlineCodeTextStyle;
+
+  /// Merged over the computed heading style for every level.
+  ///
+  /// The default heading style scales the base font size by
+  /// `(7 - level) * 2` logical pixels and applies bold; merge a color,
+  /// family, or size here to override it. Applied before the per-level
+  /// [heading1TextStyle]…[heading6TextStyle] overrides.
+  final TextStyle? headingTextStyle;
+
+  /// Per-level heading override, merged after [headingTextStyle].
+  final TextStyle? heading1TextStyle;
+
+  /// Per-level heading override, merged after [headingTextStyle].
+  final TextStyle? heading2TextStyle;
+
+  /// Per-level heading override, merged after [headingTextStyle].
+  final TextStyle? heading3TextStyle;
+
+  /// Per-level heading override, merged after [headingTextStyle].
+  final TextStyle? heading4TextStyle;
+
+  /// Per-level heading override, merged after [headingTextStyle].
+  final TextStyle? heading5TextStyle;
+
+  /// Per-level heading override, merged after [headingTextStyle].
+  final TextStyle? heading6TextStyle;
+
+  /// Merged over blockquote text (colored [quoteTextColor] by default).
+  final TextStyle? quoteTextStyle;
+
+  /// Merged over link text ([linkColor] plus underline by default — set
+  /// `decoration: TextDecoration.none` here to remove the underline).
+  final TextStyle? linkTextStyle;
+
+  /// Merged over strong (`**bold**`) text, bold by default.
+  final TextStyle? strongTextStyle;
+
+  /// Merged over emphasized (`*italic*`) text, italic by default.
+  final TextStyle? emphasisTextStyle;
+
+  /// Merged over strikethrough text, line-through by default.
+  final TextStyle? strikethroughTextStyle;
+
+  /// The heading override for [level] (1–6), merged after
+  /// [headingTextStyle].
+  TextStyle? headingLevelTextStyle(int level) {
+    return switch (level) {
+      1 => heading1TextStyle,
+      2 => heading2TextStyle,
+      3 => heading3TextStyle,
+      4 => heading4TextStyle,
+      5 => heading5TextStyle,
+      6 => heading6TextStyle,
+      _ => null,
+    };
+  }
 
   FlarkMarkdownThemeData copyWith({
     Color? codeTextColor,
@@ -310,7 +397,22 @@ final class FlarkMarkdownThemeData {
     Color? checkboxFillColor,
     Color? checkboxCheckmarkColor,
     Color? cursorColor,
+    Color? selectionColor,
     FlarkCodeSyntaxThemeData? syntaxTheme,
+    TextStyle? codeTextStyle,
+    TextStyle? inlineCodeTextStyle,
+    TextStyle? headingTextStyle,
+    TextStyle? heading1TextStyle,
+    TextStyle? heading2TextStyle,
+    TextStyle? heading3TextStyle,
+    TextStyle? heading4TextStyle,
+    TextStyle? heading5TextStyle,
+    TextStyle? heading6TextStyle,
+    TextStyle? quoteTextStyle,
+    TextStyle? linkTextStyle,
+    TextStyle? strongTextStyle,
+    TextStyle? emphasisTextStyle,
+    TextStyle? strikethroughTextStyle,
   }) {
     return FlarkMarkdownThemeData(
       codeTextColor: codeTextColor ?? this.codeTextColor,
@@ -348,7 +450,23 @@ final class FlarkMarkdownThemeData {
       checkboxCheckmarkColor:
           checkboxCheckmarkColor ?? this.checkboxCheckmarkColor,
       cursorColor: cursorColor ?? this.cursorColor,
+      selectionColor: selectionColor ?? this.selectionColor,
       syntaxTheme: syntaxTheme ?? this.syntaxTheme,
+      codeTextStyle: codeTextStyle ?? this.codeTextStyle,
+      inlineCodeTextStyle: inlineCodeTextStyle ?? this.inlineCodeTextStyle,
+      headingTextStyle: headingTextStyle ?? this.headingTextStyle,
+      heading1TextStyle: heading1TextStyle ?? this.heading1TextStyle,
+      heading2TextStyle: heading2TextStyle ?? this.heading2TextStyle,
+      heading3TextStyle: heading3TextStyle ?? this.heading3TextStyle,
+      heading4TextStyle: heading4TextStyle ?? this.heading4TextStyle,
+      heading5TextStyle: heading5TextStyle ?? this.heading5TextStyle,
+      heading6TextStyle: heading6TextStyle ?? this.heading6TextStyle,
+      quoteTextStyle: quoteTextStyle ?? this.quoteTextStyle,
+      linkTextStyle: linkTextStyle ?? this.linkTextStyle,
+      strongTextStyle: strongTextStyle ?? this.strongTextStyle,
+      emphasisTextStyle: emphasisTextStyle ?? this.emphasisTextStyle,
+      strikethroughTextStyle:
+          strikethroughTextStyle ?? this.strikethroughTextStyle,
     );
   }
 
@@ -382,7 +500,22 @@ final class FlarkMarkdownThemeData {
         other.checkboxFillColor == checkboxFillColor &&
         other.checkboxCheckmarkColor == checkboxCheckmarkColor &&
         other.cursorColor == cursorColor &&
-        other.syntaxTheme == syntaxTheme;
+        other.selectionColor == selectionColor &&
+        other.syntaxTheme == syntaxTheme &&
+        other.codeTextStyle == codeTextStyle &&
+        other.inlineCodeTextStyle == inlineCodeTextStyle &&
+        other.headingTextStyle == headingTextStyle &&
+        other.heading1TextStyle == heading1TextStyle &&
+        other.heading2TextStyle == heading2TextStyle &&
+        other.heading3TextStyle == heading3TextStyle &&
+        other.heading4TextStyle == heading4TextStyle &&
+        other.heading5TextStyle == heading5TextStyle &&
+        other.heading6TextStyle == heading6TextStyle &&
+        other.quoteTextStyle == quoteTextStyle &&
+        other.linkTextStyle == linkTextStyle &&
+        other.strongTextStyle == strongTextStyle &&
+        other.emphasisTextStyle == emphasisTextStyle &&
+        other.strikethroughTextStyle == strikethroughTextStyle;
   }
 
   @override
@@ -415,7 +548,22 @@ final class FlarkMarkdownThemeData {
       checkboxFillColor,
       checkboxCheckmarkColor,
       cursorColor,
+      selectionColor,
       syntaxTheme,
+      codeTextStyle,
+      inlineCodeTextStyle,
+      headingTextStyle,
+      heading1TextStyle,
+      heading2TextStyle,
+      heading3TextStyle,
+      heading4TextStyle,
+      heading5TextStyle,
+      heading6TextStyle,
+      quoteTextStyle,
+      linkTextStyle,
+      strongTextStyle,
+      emphasisTextStyle,
+      strikethroughTextStyle,
     ]);
   }
 }

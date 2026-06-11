@@ -5,6 +5,251 @@ import 'package:flark/src/v2/projection/projection.dart';
 
 void main() {
   group('FlarkProjection', () {
+    group('displayCaretToSource', () {
+      // Source: a `test` b — hidden opening marker [2,3), closing [7,8).
+      final projection = FlarkProjection(
+        textLength: 10,
+        hiddenRanges: const [
+          FlarkHiddenRange(
+            range: FlarkSourceRange(2, 3),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+          ),
+          FlarkHiddenRange(
+            range: FlarkSourceRange(7, 8),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            closesInlineRun: true,
+          ),
+        ],
+      );
+
+      test('keeps a trailing-edge caret inside the styled run', () {
+        // Display: "a test b"; offset 6 is right after the last run char.
+        expect(projection.displayCaretToSource(6), 7);
+        // Plain mapping at the same offset goes past the closing marker.
+        expect(projection.displayToSourceOffset(6), 8);
+      });
+
+      test('leaves other carets on plain downstream mapping', () {
+        expect(projection.displayCaretToSource(0), 0);
+        // Leading edge still maps inside via downstream (after the opener).
+        expect(projection.displayCaretToSource(2), 3);
+        expect(projection.displayCaretToSource(8), 10);
+      });
+
+      test('block markers are not treated as run interiors', () {
+        // Source: ### x — hidden heading marker [0,4).
+        final heading = FlarkProjection(
+          textLength: 5,
+          hiddenRanges: const [
+            FlarkHiddenRange(
+              range: FlarkSourceRange(0, 4),
+              kind: FlarkHiddenRangeKind.blockMarker,
+            ),
+          ],
+        );
+        expect(heading.displayCaretToSource(0), 4);
+      });
+    });
+
+    group('inlineRunBoundaryStep', () {
+      // Source: a `test` b — opening [2,3), closing [7,8).
+      final projection = FlarkProjection(
+        textLength: 10,
+        hiddenRanges: const [
+          FlarkHiddenRange(
+            range: FlarkSourceRange(2, 3),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+          ),
+          FlarkHiddenRange(
+            range: FlarkSourceRange(7, 8),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            closesInlineRun: true,
+          ),
+        ],
+      );
+
+      test('steps across the trailing edge in both directions', () {
+        // inside-end -> outside (exit), stationary in display space.
+        expect(projection.inlineRunBoundaryStep(7, forward: true), 8);
+        // outside -> inside-end (re-enter).
+        expect(projection.inlineRunBoundaryStep(8, forward: false), 7);
+      });
+
+      test('does not step anywhere else', () {
+        expect(projection.inlineRunBoundaryStep(7, forward: false), isNull);
+        expect(projection.inlineRunBoundaryStep(8, forward: true), isNull);
+        expect(projection.inlineRunBoundaryStep(6, forward: true), isNull);
+        // Opening markers are not trailing edges.
+        expect(projection.inlineRunBoundaryStep(2, forward: true), isNull);
+        expect(projection.inlineRunBoundaryStep(3, forward: false), isNull);
+      });
+
+      test('exposes the closing marker at the inside-end position', () {
+        expect(
+          projection.inlineRunClosingMarkerAt(7),
+          const FlarkSourceRange(7, 8),
+        );
+        expect(projection.inlineRunClosingMarkerAt(8), isNull);
+      });
+    });
+
+    group('expandDeletionOverInlineRunMarkers', () {
+      // Source: a `test` b — opening [2,3) closing [7,8).
+      final projection = FlarkProjection(
+        textLength: 10,
+        hiddenRanges: const [
+          FlarkHiddenRange(
+            range: FlarkSourceRange(2, 3),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            opensInlineRun: true,
+          ),
+          FlarkHiddenRange(
+            range: FlarkSourceRange(7, 8),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            closesInlineRun: true,
+          ),
+        ],
+      );
+
+      test('folds both markers when the whole content is deleted', () {
+        expect(
+          projection.expandDeletionOverInlineRunMarkers(
+            const FlarkSourceRange(3, 7),
+          ),
+          const FlarkSourceRange(2, 8),
+        );
+      });
+
+      test('leaves partial deletions unchanged', () {
+        // 'te' from the front: content remains, markers stay.
+        expect(
+          projection.expandDeletionOverInlineRunMarkers(
+            const FlarkSourceRange(3, 5),
+          ),
+          const FlarkSourceRange(3, 5),
+        );
+        // 'st' to the run end: opener side has content, no expansion.
+        expect(
+          projection.expandDeletionOverInlineRunMarkers(
+            const FlarkSourceRange(5, 7),
+          ),
+          const FlarkSourceRange(5, 7),
+        );
+      });
+
+      test('handles nested adjacent markers', () {
+        // ***x*** — em+strong nesting: openers [0,1)+[1,3), closers
+        // [4,6)+[6,7), content 'x' at [3,4).
+        final nested = FlarkProjection(
+          textLength: 7,
+          hiddenRanges: const [
+            FlarkHiddenRange(
+              range: FlarkSourceRange(0, 1),
+              kind: FlarkHiddenRangeKind.markdownMarker,
+              opensInlineRun: true,
+            ),
+            FlarkHiddenRange(
+              range: FlarkSourceRange(1, 3),
+              kind: FlarkHiddenRangeKind.markdownMarker,
+              opensInlineRun: true,
+            ),
+            FlarkHiddenRange(
+              range: FlarkSourceRange(4, 6),
+              kind: FlarkHiddenRangeKind.markdownMarker,
+              closesInlineRun: true,
+            ),
+            FlarkHiddenRange(
+              range: FlarkSourceRange(6, 7),
+              kind: FlarkHiddenRangeKind.markdownMarker,
+              closesInlineRun: true,
+            ),
+          ],
+        );
+        expect(
+          nested.expandDeletionOverInlineRunMarkers(
+            const FlarkSourceRange(3, 4),
+          ),
+          const FlarkSourceRange(0, 7),
+        );
+      });
+    });
+
+    test('fromParseResult flags closing markers of styled inline runs', () {
+      // Source: a `test` b
+      final result = FlarkMarkdownParseResult(
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
+        revision: 0,
+        sourceTextLength: 10,
+        blocks: [
+          FlarkMarkdownBlockNode(
+            kind: FlarkMarkdownBlockKind.paragraph,
+            type: 'paragraph',
+            sourceRange: const FlarkSourceRange(0, 10),
+          ),
+        ],
+        inlineTokens: [
+          FlarkMarkdownInlineToken(
+            kind: FlarkMarkdownInlineKind.inlineCode,
+            type: 'inlineCode',
+            sourceRange: const FlarkSourceRange(2, 8),
+          ),
+        ],
+        hiddenRanges: [
+          FlarkMarkdownHiddenRange(
+            kind: FlarkMarkdownHiddenRangeKind.markdownMarker,
+            type: 'markdownMarker',
+            sourceRange: const FlarkSourceRange(2, 3),
+          ),
+          FlarkMarkdownHiddenRange(
+            kind: FlarkMarkdownHiddenRangeKind.markdownMarker,
+            type: 'markdownMarker',
+            sourceRange: const FlarkSourceRange(7, 8),
+          ),
+        ],
+      );
+
+      final projection = FlarkProjection.fromParseResult(result);
+      expect(projection.hiddenRanges[0].closesInlineRun, isFalse);
+      expect(projection.hiddenRanges[0].opensInlineRun, isTrue);
+      expect(projection.hiddenRanges[1].closesInlineRun, isTrue);
+      expect(projection.hiddenRanges[1].opensInlineRun, isFalse);
+      expect(projection.displayCaretToSource(6), 7);
+    });
+
+    test('closing-marker flags survive predictive mapping', () {
+      final projection = FlarkProjection(
+        textLength: 10,
+        hiddenRanges: const [
+          FlarkHiddenRange(
+            range: FlarkSourceRange(2, 3),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+          ),
+          FlarkHiddenRange(
+            range: FlarkSourceRange(7, 8),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            closesInlineRun: true,
+          ),
+        ],
+      );
+
+      // Insert two chars at the front: a `test` b -> xya `test` b
+      final prediction = projection.predictAfter(
+        FlarkTransaction.single(
+          FlarkSourceOperation.replace(
+            replacedRange: const FlarkSourceRange(0, 0),
+            replacementText: 'xy',
+          ),
+          selectionAfter: const FlarkSelection.collapsed(2),
+        ),
+        textLengthAfter: 12,
+      );
+
+      final predicted = prediction.projection;
+      expect(predicted.hiddenRanges[1].range, const FlarkSourceRange(9, 10));
+      expect(predicted.hiddenRanges[1].closesInlineRun, isTrue);
+      expect(predicted.displayCaretToSource(8), 9);
+    });
+
     test('maps source offsets to display offsets through hidden ranges', () {
       final projection = FlarkProjection(
         textLength: 9,

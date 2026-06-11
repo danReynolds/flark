@@ -411,7 +411,9 @@ FlarkLiveBlockEditClassification classifyFlarkLiveBlockEdit(
           range.end,
           blockValue.text,
         ),
-        immediateParseAfterApply: completedStandaloneFenceValue != null,
+        immediateParseAfterApply:
+            completedStandaloneFenceValue != null ||
+            _editInsertsInlineRunMarker(oldLocalText, blockValue.text),
       );
     }
 
@@ -613,7 +615,11 @@ FlarkHostEditClassification classifyFlarkHostEdit(
     final needsImmediateParse =
         context.liveRendered &&
         (completedCodeFenceText != null ||
-            _hasImmediatelyRenderableBlockLine(newDisplayText));
+            _hasImmediatelyRenderableBlockLine(newDisplayText) ||
+            _editInsertsInlineRunMarker(
+              context.oldDisplayText,
+              newDisplayText,
+            ));
     return finish(
       FlarkHostPlatformTextChangeIntent(
         policyValue: value.copyWith(text: newDisplayText),
@@ -744,6 +750,43 @@ FlarkSourceRange flarkClampedDisplayRange(
 // ---------------------------------------------------------------------------
 // Immediately renderable lines (host immediate-parse heuristic)
 // ---------------------------------------------------------------------------
+
+/// Whether the old → new change is a pure insertion containing an inline
+/// marker character (`` ` ``, `*`, `_`, `~`).
+///
+/// Such a keystroke may complete an inline styled run, and the caret should
+/// continue inside the run it just closed — which requires the
+/// authoritative parse (the source of marker pairing) before the next
+/// keystroke. One immediate parse per typed marker character is cheap
+/// relative to that interaction win.
+bool _editInsertsInlineRunMarker(String oldText, String newText) {
+  if (newText.length <= oldText.length) return false;
+  var prefix = 0;
+  while (prefix < oldText.length &&
+      oldText.codeUnitAt(prefix) == newText.codeUnitAt(prefix)) {
+    prefix++;
+  }
+  var oldSuffix = oldText.length;
+  var newSuffix = newText.length;
+  while (oldSuffix > prefix &&
+      newSuffix > prefix &&
+      oldText.codeUnitAt(oldSuffix - 1) == newText.codeUnitAt(newSuffix - 1)) {
+    oldSuffix--;
+    newSuffix--;
+  }
+  if (oldSuffix != prefix) return false;
+  for (var index = prefix; index < newSuffix; index++) {
+    final codeUnit = newText.codeUnitAt(index);
+    if (codeUnit == 0x60 || // `
+        codeUnit == 0x2A || // *
+        codeUnit == 0x5F || // _
+        codeUnit == 0x7E) {
+      // ~
+      return true;
+    }
+  }
+  return false;
+}
 
 bool _hasImmediatelyRenderableBlockLine(String text) {
   var lineStart = 0;
