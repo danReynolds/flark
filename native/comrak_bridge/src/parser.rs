@@ -62,6 +62,11 @@ impl LineIndex {
             .min(text.len())
     }
 
+    // Comrak sourcepos columns are 1-based BYTE positions within the line
+    // (inherited from cmark-gfm), not character positions. Treating them as
+    // characters shifts every range after a multi-byte character by that
+    // character's UTF-8 surplus, which silently breaks inline styling for
+    // any line containing non-ASCII text (smart quotes, accents, emoji).
     fn column_start_offset(&self, line: usize, column: usize, text: &str) -> usize {
         let text_len = text.len();
         let start = self.line_start(line, text_len);
@@ -70,29 +75,31 @@ impl LineIndex {
             return start.min(content_end);
         }
 
-        let mut byte = start;
-        let mut remaining = column.saturating_sub(1);
-        for ch in text[start..content_end].chars() {
-            if remaining == 0 {
-                break;
-            }
-            byte += ch.len_utf8();
-            remaining -= 1;
+        let mut byte = (start + column - 1).min(content_end);
+        // Defensive: comrak should always report char-boundary columns; if
+        // one lands mid-character, snap back to the boundary.
+        while byte > start && !text.is_char_boundary(byte) {
+            byte -= 1;
         }
-        byte.min(content_end)
+        byte
     }
 
     fn column_end_offset(&self, line: usize, column: usize, text: &str) -> usize {
+        let text_len = text.len();
         let content_end = self.line_end_content(line, text);
-        let start = self.column_start_offset(line, column, text);
-        if start >= content_end {
-            return content_end;
+        let start = self.line_start(line, text_len);
+        if column == 0 || start >= content_end {
+            return start.min(content_end);
         }
-        let mut iter = text[start..content_end].chars();
-        match iter.next() {
-            Some(ch) => (start + ch.len_utf8()).min(content_end),
-            None => content_end,
+
+        // The end column names the last byte of the final character; the
+        // exclusive end is one past it. If the column names that character's
+        // FIRST byte instead, advancing to the next boundary covers it.
+        let mut byte = (start + column).min(content_end);
+        while byte < content_end && !text.is_char_boundary(byte) {
+            byte += 1;
         }
+        byte
     }
 }
 

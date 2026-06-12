@@ -239,10 +239,14 @@ final class _CargoCommand {
     final binPath = toolchainBinPath;
     if (binPath != null) {
       final path = Platform.environment['PATH'];
+      // The env-list separator (':'/';'), NOT Platform.pathSeparator —
+      // that one is the FILE separator ('/' on POSIX) and quietly mangles
+      // PATH so child tools (xcrun, cc) stop resolving.
+      final envSeparator = Platform.isWindows ? ';' : ':';
       environment['PATH'] = [
         binPath,
         if (path != null && path.isNotEmpty) path,
-      ].join(Platform.pathSeparator);
+      ].join(envSeparator);
     }
     return environment;
   }
