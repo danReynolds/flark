@@ -113,11 +113,6 @@ final class FlarkFlutterController extends ChangeNotifier {
   final StreamController<FlarkControllerEvent> _events =
       StreamController<FlarkControllerEvent>.broadcast();
 
-  /// The last input insertion made purely of inline marker characters
-  /// (`` ` `` `*` `_` `~`), so parse adoption can keep the caret inside a
-  /// styled run the keystroke just closed.
-  ({int start, int end, int revision})? _pendingInlineMarkerInsertion;
-
   FlarkEditorRuntime get runtime => _runtime;
 
   /// Whether the controller-owned background parser is running (debounced
@@ -288,38 +283,7 @@ final class FlarkFlutterController extends ChangeNotifier {
   FlarkEditorRuntimeResult applyTransaction(FlarkTransaction transaction) {
     final result = _runtime.applyTransaction(transaction);
     _adoptRuntimeResult(result);
-    _recordInlineMarkerInsertion(transaction);
     return result;
-  }
-
-  void _recordInlineMarkerInsertion(FlarkTransaction transaction) {
-    if (transaction.metadata.intent == FlarkTransactionIntent.selection) {
-      // Selection-only moves (including the snap itself) neither create nor
-      // invalidate a pending marker insertion.
-      return;
-    }
-    _pendingInlineMarkerInsertion = null;
-    if (transaction.metadata.intent != FlarkTransactionIntent.input) return;
-    if (transaction.operations.length != 1) return;
-    final operation = transaction.operations.single;
-    if (!operation.replacedRange.isCollapsed) return;
-    final text = operation.replacementText;
-    if (text.isEmpty) return;
-    for (var index = 0; index < text.length; index++) {
-      final codeUnit = text.codeUnitAt(index);
-      if (codeUnit != 0x60 && // `
-          codeUnit != 0x2A && // *
-          codeUnit != 0x5F && // _
-          codeUnit != 0x7E) {
-        // ~
-        return;
-      }
-    }
-    _pendingInlineMarkerInsertion = (
-      start: operation.replacedRange.start,
-      end: operation.replacedRange.start + text.length,
-      revision: state.revision,
-    );
   }
 
   bool applyTextEditingDelta(TextEditingDelta delta) {
@@ -458,40 +422,15 @@ final class FlarkFlutterController extends ChangeNotifier {
     );
     _renderPlanRevision = parseResult.revision;
     _lastProjectionPrediction = null;
-    _snapInsideCompletedInlineRun();
+    // A typed closing marker is the user speaking markdown source: the run
+    // closes, the caret stays after the marker, and continued typing is
+    // outside the run. (Re-entry is left-arrow across the trailing edge.)
     _emitEvent(
       kind: FlarkControllerEventKind.parseAdopted,
       previousState: state,
     );
     notifyListeners();
     return true;
-  }
-
-  /// Keeps the caret inside a styled run whose closing marker the user just
-  /// typed: `` `this` `` continues in code style after the closing backtick,
-  /// the way rich-text editors behave. The exit gestures (right-arrow or
-  /// typing the marker character again) step back out.
-  void _snapInsideCompletedInlineRun() {
-    final pending = _pendingInlineMarkerInsertion;
-    if (pending == null || pending.revision != state.revision) return;
-    _pendingInlineMarkerInsertion = null;
-    final currentSelection = selection;
-    if (!currentSelection.isCollapsed ||
-        currentSelection.extentOffset != pending.end) {
-      return;
-    }
-    for (final hiddenRange in _projection.hiddenRanges) {
-      if (!hiddenRange.closesInlineRun) continue;
-      if (hiddenRange.range.end != pending.end) continue;
-      if (hiddenRange.range.start >= pending.end) continue;
-      // The typed text must lie within the closing marker it completed.
-      if (pending.start < hiddenRange.range.start) continue;
-      applySelection(
-        FlarkSelection.collapsed(hiddenRange.range.start),
-        userEvent: 'selection.inlineRunMarkerCompletion',
-      );
-      return;
-    }
   }
 
   void _adoptRuntimeResult(

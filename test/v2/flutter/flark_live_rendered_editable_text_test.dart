@@ -6281,8 +6281,8 @@ void main() {
     );
   });
 
-  testWidgets('typing the closing marker continues inside the run it '
-      'just closed', (tester) async {
+  testWidgets('typing the closing marker closes the run and continues '
+      'outside it', (tester) async {
     final controller = FlarkFlutterController.fromMarkdown('`this');
     addTearDown(controller.dispose);
     await _applyComrakParseResult(controller);
@@ -6305,31 +6305,82 @@ void main() {
     );
     controller.applySelection(const FlarkSelection.collapsed(5));
 
-    // Type the closing backtick. The span forms on parse, and the caret
-    // stays in code style — Slack's conversion behavior.
+    // Type the closing backtick. The span forms on parse and the caret
+    // stays after the marker, outside the run: the typed closer is the
+    // user speaking markdown source, and the source stays what was typed.
     await tester.enterText(find.byType(EditableText), '`this`');
     await tester.pump();
     expect(controller.markdown, '`this`');
     await _applyComrakParseResult(controller);
     await tester.pump();
-    expect(controller.selection, const FlarkSelection.collapsed(5));
+    expect(controller.selection, const FlarkSelection.collapsed(6));
 
-    // Keep writing: spaces and words extend the code span.
-    await tester.enterText(find.byType(EditableText), 'this is working');
+    // Keep writing: text lands after the closing marker as plain text.
+    await tester.enterText(find.byType(EditableText), 'this works');
     await tester.pump();
-    expect(controller.markdown, '`this is working`');
+    expect(controller.markdown, '`this` works');
     await _applyComrakParseResult(controller);
     await tester.pump();
-    expect(controller.selection, const FlarkSelection.collapsed(16));
+    expect(controller.selection, const FlarkSelection.collapsed(12));
 
-    // One more backtick is the exit gesture; typing after it is plain.
-    await tester.enterText(find.byType(EditableText), 'this is working`');
+    // Left arrow re-enters the run across its trailing edge; typing there
+    // still extends the span.
+    controller.applySelection(const FlarkSelection.collapsed(6));
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
     await tester.pump();
-    expect(controller.markdown, '`this is working`');
-    expect(controller.selection, const FlarkSelection.collapsed(17));
-    await tester.enterText(find.byType(EditableText), 'this is working!');
+    expect(controller.selection, const FlarkSelection.collapsed(5));
+    await tester.enterText(find.byType(EditableText), 'this! works');
     await tester.pump();
-    expect(controller.markdown, '`this is working`!');
+    expect(controller.markdown, '`this!` works');
+  });
+
+  testWidgets('per-character typing keeps the source byte-for-byte literal', (
+    tester,
+  ) async {
+    final controller = FlarkFlutterController.fromMarkdown('');
+    addTearDown(controller.dispose);
+    await _applyComrakParseResult(controller);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkLiveRenderedEditableText(
+          controller: controller,
+          style: const TextStyle(fontSize: 14),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.showKeyboard(find.byType(EditableText));
+
+    // Typing a sentence with an emphasis run, one character at a time with
+    // a parse between keystrokes, must leave the source exactly what was
+    // typed: the closing `*` must not drift toward the end of the line as
+    // the sentence continues.
+    const sentence = 'I *really* think so';
+    for (var index = 0; index < sentence.length; index++) {
+      final value = tester
+          .widget<EditableText>(find.byType(EditableText))
+          .controller
+          .value;
+      final caret = value.selection.isValid
+          ? value.selection.extentOffset
+          : value.text.length;
+      tester.testTextInput.updateEditingValue(
+        TextEditingValue(
+          text:
+              value.text.substring(0, caret) +
+              sentence[index] +
+              value.text.substring(caret),
+          selection: TextSelection.collapsed(offset: caret + 1),
+        ),
+      );
+      await tester.pump();
+      await _applyComrakParseResult(controller);
+      await tester.pump();
+    }
+
+    expect(controller.markdown, sentence);
   });
 
   testWidgets('typing the marker character at the inside-end exits the run', (
