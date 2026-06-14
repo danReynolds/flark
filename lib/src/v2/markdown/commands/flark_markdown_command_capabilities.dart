@@ -110,12 +110,26 @@ bool _isInsideDelimitedSpan(
     return true;
   }
 
-  final before = _findOpeningDelimiter(text, delimiter, probeOffset);
-  if (before == null) return false;
-  final contentStart = before + delimiter.length;
-  final after = _findClosingDelimiter(text, delimiter, contentStart);
-  if (after == null) return false;
-  return probeOffset >= contentStart && probeOffset <= after;
+  // A collapsed caret sitting exactly at the start of a run's closing
+  // delimiter is *inside* that run (its trailing edge), but a single opener
+  // lookup would mistake that closing delimiter for an opener, find no further
+  // close, and report "outside" — so the toolbar un-lights while you type
+  // styled text. Keep searching backward for the real opener whenever the
+  // nearest candidate sits at or after the caret's content start.
+  var searchCeiling = probeOffset;
+  while (searchCeiling >= 0) {
+    final before = _findOpeningDelimiter(text, delimiter, searchCeiling);
+    if (before == null) return false;
+    final contentStart = before + delimiter.length;
+    if (probeOffset < contentStart) {
+      searchCeiling = before - 1;
+      continue;
+    }
+    final after = _findClosingDelimiter(text, delimiter, contentStart);
+    if (after == null) return false;
+    return probeOffset <= after;
+  }
+  return false;
 }
 
 int? _findOpeningDelimiter(String text, String delimiter, int probeOffset) {

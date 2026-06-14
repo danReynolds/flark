@@ -48,6 +48,56 @@ void main() {
       );
     });
 
+    test('reports a caret at a run trailing edge as inside the run', () {
+      // The caret sits between the content and the hidden closing marker — the
+      // position the caret lands at after typing armed/styled text. The style
+      // must still read active so the toolbar stays lit while typing.
+      for (final probe in <(String, int, FlarkMarkdownInlineStyle)>[
+        ('**x**', 3, FlarkMarkdownInlineStyle.strong),
+        ('*x*', 2, FlarkMarkdownInlineStyle.emphasis),
+        ('_x_', 2, FlarkMarkdownInlineStyle.emphasis),
+        ('`x`', 2, FlarkMarkdownInlineStyle.inlineCode),
+        ('~~x~~', 3, FlarkMarkdownInlineStyle.strikethrough),
+        ('**word**', 6, FlarkMarkdownInlineStyle.strong),
+      ]) {
+        final state = FlarkEditorState.fromMarkdown(
+          probe.$1,
+          selection: FlarkSelection.collapsed(probe.$2),
+        );
+        final capabilities =
+            FlarkMarkdownCommandQueries.capabilitiesAtSelection(state);
+        expect(
+          capabilities.isInlineStyleActive(probe.$3),
+          isTrue,
+          reason: '${probe.$3} should be active at offset ${probe.$2} '
+              'in "${probe.$1}"',
+        );
+      }
+    });
+
+    test('does not report a caret outside a run as inside it', () {
+      // Carets before the opener, after the closer, or in the middle of a
+      // marker are outside the run and must not read active.
+      for (final probe in <(String, int)>[
+        ('**x**', 0), // before opener
+        ('**x**', 5), // after closer
+        ('**x**', 4), // middle of closing marker
+      ]) {
+        final state = FlarkEditorState.fromMarkdown(
+          probe.$1,
+          selection: FlarkSelection.collapsed(probe.$2),
+        );
+        final capabilities =
+            FlarkMarkdownCommandQueries.capabilitiesAtSelection(state);
+        expect(
+          capabilities.isInlineStyleActive(FlarkMarkdownInlineStyle.strong),
+          isFalse,
+          reason: 'strong should be inactive at offset ${probe.$2} '
+              'in "${probe.$1}"',
+        );
+      }
+    });
+
     test('ignores pending inline styles when a range is selected', () {
       final state = FlarkEditorState.fromMarkdown(
         'plain',

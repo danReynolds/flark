@@ -39,6 +39,9 @@ void main() {
       // Pending is consumed by the wrap; "still armed" is satisfied because the
       // caret now sits inside the real source run.
       expect(controller.pendingInlineStyles, isEmpty);
+      // The toolbar stays lit: the caret at the run's trailing edge reads as
+      // inside the run, so the next character keeps typing bold.
+      expect(controller.commands.strongActive, isTrue);
     });
 
     test('toggling the same style twice before typing disarms it', () {
