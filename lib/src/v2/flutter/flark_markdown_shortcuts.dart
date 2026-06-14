@@ -61,9 +61,7 @@ abstract final class FlarkMarkdownShortcuts {
   /// - Strikethrough: Cmd/Ctrl + Shift + X
   ///
   /// [platform] defaults to [defaultTargetPlatform].
-  static Map<ShortcutActivator, FlarkCommandIntent> defaults({
-    TargetPlatform? platform,
-  }) {
+  static Map<ShortcutActivator, Intent> defaults({TargetPlatform? platform}) {
     final isApple =
         (platform ?? defaultTargetPlatform) == TargetPlatform.macOS ||
         (platform ?? defaultTargetPlatform) == TargetPlatform.iOS;
@@ -76,11 +74,16 @@ abstract final class FlarkMarkdownShortcuts {
       );
     }
 
-    return <ShortcutActivator, FlarkCommandIntent>{
+    return <ShortcutActivator, Intent>{
       primary(LogicalKeyboardKey.keyB): toggleStrong(),
       primary(LogicalKeyboardKey.keyI): toggleEmphasis(),
       primary(LogicalKeyboardKey.keyE): toggleInlineCode(),
       primary(LogicalKeyboardKey.keyX, shift: true): toggleStrikethrough(),
+      // Tab / Shift+Tab nest list items. The action is gated so it only fires
+      // inside a list — Tab elsewhere keeps its normal behavior.
+      const SingleActivator(LogicalKeyboardKey.tab): const FlarkIndentListIntent(),
+      const SingleActivator(LogicalKeyboardKey.tab, shift: true):
+          const FlarkIndentListIntent(outdent: true),
     };
   }
 }

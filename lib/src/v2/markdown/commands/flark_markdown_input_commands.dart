@@ -19,6 +19,10 @@ abstract final class FlarkMarkdownInputCommands {
   static const handleBackspace = FlarkCommand<FlarkHandleBackspacePayload>(
     'markdown.handleBackspace',
   );
+
+  static const handleTab = FlarkCommand<FlarkHandleTabPayload>(
+    'markdown.handleTab',
+  );
 }
 
 final class FlarkHandleEnterPayload {
@@ -30,6 +34,17 @@ final class FlarkHandleEnterPayload {
 final class FlarkHandleBackspacePayload {
   const FlarkHandleBackspacePayload({this.userEvent = 'input.backspace'});
 
+  final String userEvent;
+}
+
+final class FlarkHandleTabPayload {
+  const FlarkHandleTabPayload({
+    this.outdent = false,
+    this.userEvent = 'input.tab',
+  });
+
+  /// Whether to outdent (Shift+Tab) rather than indent (Tab).
+  final bool outdent;
   final String userEvent;
 }
 
@@ -49,6 +64,10 @@ final class FlarkMarkdownInputEditingExtension extends FlarkExtension {
         .register<FlarkHandleBackspacePayload>(
           FlarkMarkdownInputCommands.handleBackspace,
           _handleBackspace,
+        )
+        .register<FlarkHandleTabPayload>(
+          FlarkMarkdownInputCommands.handleTab,
+          _handleTab,
         );
   }
 
@@ -71,6 +90,23 @@ final class FlarkMarkdownInputEditingExtension extends FlarkExtension {
       markdown: state.markdown,
       selection: state.selection,
     );
+    if (result == null) return const FlarkCommandResult.notHandled();
+    return _resultForInputResult(state, result, context.payload.userEvent);
+  }
+
+  FlarkCommandResult _handleTab(
+    FlarkCommandContext<FlarkHandleTabPayload> context,
+  ) {
+    final state = context.state;
+    final result = context.payload.outdent
+        ? FlarkMarkdownInputEngine.outdent(
+            markdown: state.markdown,
+            selection: state.selection,
+          )
+        : FlarkMarkdownInputEngine.indent(
+            markdown: state.markdown,
+            selection: state.selection,
+          );
     if (result == null) return const FlarkCommandResult.notHandled();
     return _resultForInputResult(state, result, context.payload.userEvent);
   }

@@ -133,6 +133,79 @@ final class FlarkMarkdownInputEngine {
       replacementText: '',
     );
   }
+
+  /// Indents the list item under a collapsed caret by one level, or null when
+  /// the caret is not inside a list item.
+  static FlarkMarkdownSourceEdit? indent({
+    required String markdown,
+    required FlarkSelection selection,
+  }) {
+    return _reindent(markdown: markdown, selection: selection, outdent: false);
+  }
+
+  /// Outdents the list item under a collapsed caret by one level, or null when
+  /// the caret is not inside an indented list item.
+  static FlarkMarkdownSourceEdit? outdent({
+    required String markdown,
+    required FlarkSelection selection,
+  }) {
+    return _reindent(markdown: markdown, selection: selection, outdent: true);
+  }
+
+  static FlarkMarkdownSourceEdit? _reindent({
+    required String markdown,
+    required FlarkSelection selection,
+    required bool outdent,
+  }) {
+    if (!selection.isCollapsed) return null;
+    final line = _lineAtSelection(markdown, selection);
+    final lineText = markdown.substring(line.start, line.end);
+    final quotePrefix = _quotePrefix(lineText);
+    final content = lineText.substring(quotePrefix.length);
+    final list = _ListContinuation.tryParse(content);
+    if (list == null) return null;
+
+    // Indentation is added/removed right after any quote prefix, before the
+    // item's own leading indent and marker. One level is the marker's column
+    // width, so a child aligns under its parent's content.
+    final indentAnchor = line.start + quotePrefix.length;
+    final unit = list.marker.length;
+
+    if (!outdent) {
+      final added = ' ' * unit;
+      return _sourceEdit(
+        range: FlarkSourceRange(indentAnchor, indentAnchor),
+        replacementText: added,
+        selectionAfter: FlarkSelection.collapsed(selection.start + unit),
+      );
+    }
+
+    final removable = _leadingOutdentWidth(content, unit);
+    if (removable == 0) return null;
+    final newCaret = (selection.start - removable).clamp(
+      indentAnchor,
+      markdown.length,
+    );
+    return _sourceEdit(
+      range: FlarkSourceRange(indentAnchor, indentAnchor + removable),
+      replacementText: '',
+      selectionAfter: FlarkSelection.collapsed(newCaret),
+    );
+  }
+}
+
+/// How much leading indentation to strip for one outdent level: a single tab,
+/// or up to [unit] leading spaces.
+int _leadingOutdentWidth(String content, int unit) {
+  if (content.isEmpty) return 0;
+  if (content.codeUnitAt(0) == 9) return 1;
+  var spaces = 0;
+  while (spaces < content.length &&
+      spaces < unit &&
+      content.codeUnitAt(spaces) == 32) {
+    spaces++;
+  }
+  return spaces;
 }
 
 FlarkMarkdownSourceEdit _sourceEdit({

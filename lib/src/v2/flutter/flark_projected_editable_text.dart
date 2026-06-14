@@ -42,7 +42,7 @@ final class FlarkProjectedEditableText extends StatefulWidget {
     this.maxLines,
     this.expands = false,
     this.autofocus = false,
-    this.shortcuts = const <ShortcutActivator, FlarkCommandIntent>{},
+    this.shortcuts = const <ShortcutActivator, Intent>{},
   });
 
   final FlarkFlutterController controller;
@@ -54,7 +54,7 @@ final class FlarkProjectedEditableText extends StatefulWidget {
   final int? maxLines;
   final bool expands;
   final bool autofocus;
-  final Map<ShortcutActivator, FlarkCommandIntent> shortcuts;
+  final Map<ShortcutActivator, Intent> shortcuts;
 
   @override
   State<FlarkProjectedEditableText> createState() {
@@ -93,7 +93,7 @@ final class FlarkLiveRenderedEditableText extends StatefulWidget {
     this.maxLines,
     this.expands = false,
     this.autofocus = false,
-    this.shortcuts = const <ShortcutActivator, FlarkCommandIntent>{},
+    this.shortcuts = const <ShortcutActivator, Intent>{},
   });
 
   final FlarkFlutterController controller;
@@ -105,7 +105,7 @@ final class FlarkLiveRenderedEditableText extends StatefulWidget {
   final int? maxLines;
   final bool expands;
   final bool autofocus;
-  final Map<ShortcutActivator, FlarkCommandIntent> shortcuts;
+  final Map<ShortcutActivator, Intent> shortcuts;
 
   @override
   State<FlarkLiveRenderedEditableText> createState() {
@@ -170,7 +170,7 @@ final class _FlarkProjectedEditableHost extends StatefulWidget {
     this.maxLines,
     this.expands = false,
     this.autofocus = false,
-    this.shortcuts = const <ShortcutActivator, FlarkCommandIntent>{},
+    this.shortcuts = const <ShortcutActivator, Intent>{},
     this.liveRendered = false,
   });
 
@@ -183,7 +183,7 @@ final class _FlarkProjectedEditableHost extends StatefulWidget {
   final int? maxLines;
   final bool expands;
   final bool autofocus;
-  final Map<ShortcutActivator, FlarkCommandIntent> shortcuts;
+  final Map<ShortcutActivator, Intent> shortcuts;
   final bool liveRendered;
 
   @override

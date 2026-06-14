@@ -132,7 +132,7 @@ void main() {
         platform: TargetPlatform.linux,
       );
 
-      SingleActivator boldOf(Map<ShortcutActivator, FlarkCommandIntent> map) {
+      SingleActivator boldOf(Map<ShortcutActivator, Intent> map) {
         return map.keys.whereType<SingleActivator>().firstWhere(
           (activator) => activator.trigger == LogicalKeyboardKey.keyB,
         );
@@ -146,7 +146,73 @@ void main() {
       expect(linuxBold.control, isTrue);
       expect(linuxBold.meta, isFalse);
 
-      expect(macDefaults, hasLength(4));
+      // 4 inline accelerators + Tab / Shift+Tab list indent.
+      expect(macDefaults, hasLength(6));
+      expect(
+        macDefaults[const SingleActivator(LogicalKeyboardKey.tab)],
+        isA<FlarkIndentListIntent>(),
+      );
+    });
+
+    testWidgets('Tab indents the list item under the caret', (tester) async {
+      final controller = FlarkFlutterController.fromMarkdown('- item');
+      addTearDown(controller.dispose);
+      controller.applySelection(
+        const FlarkSelection.collapsed(4),
+        userEvent: 'test',
+      );
+      late BuildContext actionContext;
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: FlarkCommandActions(
+            controller: controller,
+            child: Builder(
+              builder: (context) {
+                actionContext = context;
+                return const SizedBox();
+              },
+            ),
+          ),
+        ),
+      );
+
+      final action = Actions.find<FlarkIndentListIntent>(actionContext);
+      expect(action.isEnabled(const FlarkIndentListIntent()), isTrue);
+
+      Actions.invoke(actionContext, const FlarkIndentListIntent());
+      expect(controller.markdown, '  - item');
+    });
+
+    testWidgets('Tab is disabled outside a list, so it can fall through', (
+      tester,
+    ) async {
+      final controller = FlarkFlutterController.fromMarkdown('plain');
+      addTearDown(controller.dispose);
+      controller.applySelection(
+        const FlarkSelection.collapsed(2),
+        userEvent: 'test',
+      );
+      late BuildContext actionContext;
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: FlarkCommandActions(
+            controller: controller,
+            child: Builder(
+              builder: (context) {
+                actionContext = context;
+                return const SizedBox();
+              },
+            ),
+          ),
+        ),
+      );
+
+      final action = Actions.find<FlarkIndentListIntent>(actionContext);
+      expect(action.isEnabled(const FlarkIndentListIntent()), isFalse);
     });
   });
 }
