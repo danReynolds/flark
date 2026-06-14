@@ -32,11 +32,12 @@ final class FlarkMarkdownCommandCapabilities {
 
 abstract final class FlarkMarkdownCommandQueries {
   static FlarkMarkdownCommandCapabilities capabilitiesAtSelection(
-    FlarkEditorState state,
-  ) {
+    FlarkEditorState state, {
+    Iterable<FlarkMarkdownInlineStyle> pendingInlineStyles = const [],
+  }) {
     final line = selectedMarkdownLines(state).first;
     return FlarkMarkdownCommandCapabilities(
-      activeInlineStyles: _activeInlineStyles(state),
+      activeInlineStyles: _activeInlineStyles(state, pendingInlineStyles),
       activeHeadingLevel: _headingLevel(line.text),
       quoteActive: _quotePrefixLength(line.text) > 0,
       bulletListActive: _bulletMarker(line.text) != null,
@@ -47,10 +48,16 @@ abstract final class FlarkMarkdownCommandQueries {
   }
 }
 
-Set<FlarkMarkdownInlineStyle> _activeInlineStyles(FlarkEditorState state) {
+Set<FlarkMarkdownInlineStyle> _activeInlineStyles(
+  FlarkEditorState state,
+  Iterable<FlarkMarkdownInlineStyle> pendingInlineStyles,
+) {
   final selection = state.selection;
   final text = state.markdown;
   final styles = <FlarkMarkdownInlineStyle>{};
+  // Pending ("armed") styles only exist for a collapsed caret; union them so
+  // toolbars light up the moment a style is armed, before any text is typed.
+  if (selection.isCollapsed) styles.addAll(pendingInlineStyles);
   if (text.isEmpty) return styles;
 
   final rangeStart = selection.start.clamp(0, text.length);
@@ -94,16 +101,35 @@ bool _isInsideDelimitedSpan(
       rangeStart >= delimiter.length &&
       rangeEnd + delimiter.length <= text.length &&
       text.substring(rangeStart - delimiter.length, rangeStart) == delimiter &&
-      text.substring(rangeEnd, rangeEnd + delimiter.length) == delimiter) {
+      text.substring(rangeEnd, rangeEnd + delimiter.length) == delimiter &&
+      // The bracketing delimiter must be a genuine run, not part of a longer
+      // one — otherwise a `*` italic probe matches the inner `*` of a `**`
+      // bold pair, so bolding a selection falsely reports italic active too.
+      _isDelimiterRun(text, rangeStart - delimiter.length, delimiter) &&
+      _isDelimiterRun(text, rangeEnd, delimiter)) {
     return true;
   }
 
-  final before = _findOpeningDelimiter(text, delimiter, probeOffset);
-  if (before == null) return false;
-  final contentStart = before + delimiter.length;
-  final after = _findClosingDelimiter(text, delimiter, contentStart);
-  if (after == null) return false;
-  return probeOffset >= contentStart && probeOffset <= after;
+  // A collapsed caret sitting exactly at the start of a run's closing
+  // delimiter is *inside* that run (its trailing edge), but a single opener
+  // lookup would mistake that closing delimiter for an opener, find no further
+  // close, and report "outside" — so the toolbar un-lights while you type
+  // styled text. Keep searching backward for the real opener whenever the
+  // nearest candidate sits at or after the caret's content start.
+  var searchCeiling = probeOffset;
+  while (searchCeiling >= 0) {
+    final before = _findOpeningDelimiter(text, delimiter, searchCeiling);
+    if (before == null) return false;
+    final contentStart = before + delimiter.length;
+    if (probeOffset < contentStart) {
+      searchCeiling = before - 1;
+      continue;
+    }
+    final after = _findClosingDelimiter(text, delimiter, contentStart);
+    if (after == null) return false;
+    return probeOffset <= after;
+  }
+  return false;
 }
 
 int? _findOpeningDelimiter(String text, String delimiter, int probeOffset) {

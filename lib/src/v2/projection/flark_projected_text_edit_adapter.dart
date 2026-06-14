@@ -12,6 +12,7 @@ final class FlarkProjectedTextEditAdapter {
     FlarkSelection? sourceSelectionBefore,
     int? undoGroupId,
     FlarkMapAffinity fallbackInsertionAffinity = FlarkMapAffinity.downstream,
+    ({String open, String close})? insertionWrap,
   }) {
     if (currentMarkdown.length != projection.textLength) return null;
     if (projection.projectText(currentMarkdown) != oldDisplayText) return null;
@@ -47,6 +48,36 @@ final class FlarkProjectedTextEditAdapter {
       sourceSelectionBefore: sourceSelectionBefore,
     );
     if (markerExit != null) return markerExit;
+
+    // A pending ("armed") inline style wraps the typed run: a collapsed
+    // insertion becomes `open + text + close` with the caret left inside the
+    // run, so continued typing extends it through the normal caret-affinity
+    // model. Marker-exit above takes precedence (it returns early).
+    if (insertionWrap != null &&
+        sourceRange.isCollapsed &&
+        diff.replacementText.isNotEmpty) {
+      final wrappedText =
+          '${insertionWrap.open}${diff.replacementText}${insertionWrap.close}';
+      return FlarkTransaction.single(
+        FlarkSourceOperation.replace(
+          replacedRange: sourceRange,
+          replacementText: wrappedText,
+        ),
+        selectionBefore: sourceSelectionBefore,
+        selectionAfter: FlarkSelection.collapsed(
+          sourceRange.start +
+              insertionWrap.open.length +
+              diff.replacementText.length,
+        ),
+        metadata: FlarkTransactionMetadata(
+          intent: FlarkTransactionIntent.input,
+          userEvent: 'input.projected.pendingInlineStyle',
+          undoGroupId: undoGroupId,
+          parseInvalidationRange: sourceRange,
+          projectionInvalidationRange: sourceRange,
+        ),
+      );
+    }
 
     final effectiveRange = diff.replacementText.isEmpty
         ? projection.expandDeletionOverInlineRunMarkers(sourceRange)

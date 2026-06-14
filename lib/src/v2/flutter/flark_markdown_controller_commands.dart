@@ -1,4 +1,5 @@
-import '../core/core.dart' show FlarkEditorRuntimeResult, FlarkSourceRange;
+import '../core/core.dart'
+    show FlarkCommandResult, FlarkEditorRuntimeResult, FlarkSourceRange;
 import '../markdown/markdown.dart';
 import 'flark_flutter_controller.dart';
 
@@ -15,6 +16,7 @@ final class FlarkMarkdownCommands {
   FlarkMarkdownCommandCapabilities get _state {
     return FlarkMarkdownCommandQueries.capabilitiesAtSelection(
       _controller.state,
+      pendingInlineStyles: _controller.pendingInlineStyles,
     );
   }
 
@@ -222,6 +224,16 @@ extension FlarkMarkdownControllerCommands on FlarkFlutterController {
     FlarkMarkdownInlineStyle style, {
     String userEvent = 'command.toggleInlineStyle',
   }) {
+    // A collapsed caret has no range to wrap: arm the style as pending so the
+    // next typed run is wrapped, instead of rejecting the toggle. Non-collapsed
+    // selections take the unchanged wrap/unwrap command path.
+    if (state.selection.isCollapsed) {
+      togglePendingInlineStyle(style);
+      return FlarkEditorRuntimeResult(
+        runtime: runtime,
+        commandResult: FlarkCommandResult.handled(),
+      );
+    }
     return dispatch(
       command: FlarkMarkdownInlineCommands.toggleInlineStyle,
       payload: FlarkToggleInlineStylePayload(style, userEvent: userEvent),

@@ -18,6 +18,7 @@ enum FlarkControllerEventKind {
   parseAdopted,
   undo,
   redo,
+  pendingInlineStylesChanged,
 }
 
 final class FlarkControllerEvent {
@@ -110,8 +111,24 @@ final class FlarkFlutterController extends ChangeNotifier {
   bool _disposed = false;
   final FlarkTextDeltaAdapter _textDeltaAdapter;
   final FlarkProjectedTextEditAdapter _projectedTextEditAdapter;
+  Set<FlarkMarkdownInlineStyle> _pendingInlineStyles =
+      <FlarkMarkdownInlineStyle>{};
   final StreamController<FlarkControllerEvent> _events =
       StreamController<FlarkControllerEvent>.broadcast();
+
+  /// Inline styles "armed" for the collapsed caret but not yet applied to any
+  /// source text.
+  ///
+  /// Toggling an inline style with a collapsed caret arms it here instead of
+  /// editing the document (see [togglePendingInlineStyle]). The next typed run
+  /// is wrapped in the armed markers, and any selection change or other edit
+  /// clears the set. Selection-based toggling never touches this.
+  static const List<FlarkMarkdownInlineStyle> _pendingInlineStyleOrder = [
+    FlarkMarkdownInlineStyle.emphasis,
+    FlarkMarkdownInlineStyle.strong,
+    FlarkMarkdownInlineStyle.strikethrough,
+    FlarkMarkdownInlineStyle.inlineCode,
+  ];
 
   FlarkEditorRuntime get runtime => _runtime;
 
@@ -244,6 +261,50 @@ final class FlarkFlutterController extends ChangeNotifier {
 
   FlarkSelection get selection => state.selection;
 
+  /// The inline styles currently armed for the collapsed caret.
+  ///
+  /// Empty unless a style was toggled on an empty/collapsed selection and no
+  /// edit or selection change has cleared it since. Toolbars can read this (or
+  /// the unified `commands.strongActive`/`isInlineActive`) to reflect armed
+  /// formatting before any text is typed.
+  Set<FlarkMarkdownInlineStyle> get pendingInlineStyles =>
+      Set<FlarkMarkdownInlineStyle>.unmodifiable(_pendingInlineStyles);
+
+  /// Arms or disarms an inline [style] for the collapsed caret.
+  ///
+  /// With a collapsed caret there is no range to wrap, so instead of editing
+  /// the document this flips the style's membership in [pendingInlineStyles]:
+  /// the next typed run is wrapped in the armed markers. Toggling the same
+  /// style again before typing disarms it. This does not change the document
+  /// or selection, so it is not recorded in history.
+  void togglePendingInlineStyle(FlarkMarkdownInlineStyle style) {
+    if (_disposed) return;
+    if (!_pendingInlineStyles.add(style)) {
+      _pendingInlineStyles.remove(style);
+    }
+    _emitEvent(
+      kind: FlarkControllerEventKind.pendingInlineStylesChanged,
+      previousState: state,
+    );
+    notifyListeners();
+  }
+
+  /// The open/close marker pair for the currently armed styles, or null when
+  /// none are armed. Opening markers nest outer-to-inner in a fixed canonical
+  /// order; closing markers mirror them. Bold + italic therefore yields
+  /// `***…***`, and inline code stays innermost so its delimiters hug content.
+  ({String open, String close})? _pendingInsertionWrap() {
+    if (_pendingInlineStyles.isEmpty) return null;
+    final ordered = [
+      for (final style in _pendingInlineStyleOrder)
+        if (_pendingInlineStyles.contains(style)) style,
+    ];
+    return (
+      open: ordered.map((style) => style.marker).join(),
+      close: ordered.reversed.map((style) => style.marker).join(),
+    );
+  }
+
   FlarkProjection get projection => _projection;
 
   FlarkRenderPlan get renderPlan => _renderPlan;
@@ -310,6 +371,7 @@ final class FlarkFlutterController extends ChangeNotifier {
       sourceSelectionBefore: selection,
       undoGroupId: undoGroupId,
       fallbackInsertionAffinity: fallbackInsertionAffinity,
+      insertionWrap: _pendingInsertionWrap(),
     );
     if (transaction == null) return false;
     applyTransaction(transaction);
@@ -438,6 +500,14 @@ final class FlarkFlutterController extends ChangeNotifier {
     FlarkControllerEventKind? eventKind,
   }) {
     if (identical(result.runtime, _runtime)) return;
+
+    // Any adopted runtime change — a typed run, a selection move, an undo —
+    // disarms pending inline styles. Only arming (togglePendingInlineStyle)
+    // bypasses this chokepoint, so only arming preserves them. The armed run
+    // wrap reads the set before applying, so clearing here is correct.
+    if (_pendingInlineStyles.isNotEmpty) {
+      _pendingInlineStyles = <FlarkMarkdownInlineStyle>{};
+    }
 
     final documentTransactions = [
       for (final transaction in result.appliedTransactions)
