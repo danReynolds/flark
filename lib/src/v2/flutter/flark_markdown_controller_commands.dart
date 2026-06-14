@@ -224,15 +224,22 @@ extension FlarkMarkdownControllerCommands on FlarkFlutterController {
     FlarkMarkdownInlineStyle style, {
     String userEvent = 'command.toggleInlineStyle',
   }) {
-    // A collapsed caret has no range to wrap: arm the style as pending so the
-    // next typed run is wrapped, instead of rejecting the toggle. Non-collapsed
-    // selections take the unchanged wrap/unwrap command path.
     if (state.selection.isCollapsed) {
-      togglePendingInlineStyle(style);
-      return FlarkEditorRuntimeResult(
-        runtime: runtime,
-        commandResult: FlarkCommandResult.handled(),
-      );
+      // If the caret is already inside an existing source run of this style,
+      // toggle it off (unwrap) via the command. Otherwise there is no range to
+      // wrap, so arm the style as pending for the next typed run. Crucially we
+      // never arm-wrap a style that is already active here — that would nest
+      // markers and corrupt the source on the next keystroke.
+      final sourceActive = FlarkMarkdownCommandQueries.capabilitiesAtSelection(
+        state,
+      ).isInlineStyleActive(style);
+      if (!sourceActive) {
+        togglePendingInlineStyle(style);
+        return FlarkEditorRuntimeResult(
+          runtime: runtime,
+          commandResult: FlarkCommandResult.handled(),
+        );
+      }
     }
     return dispatch(
       command: FlarkMarkdownInlineCommands.toggleInlineStyle,

@@ -131,6 +131,46 @@ void main() {
       expect(controller.markdown, '~~x~~');
     });
 
+    test('collapsed toggle inside an existing run turns the style off', () {
+      for (final probe in <(String, int, FlarkMarkdownInlineStyle, String)>[
+        ('**bold**', 4, FlarkMarkdownInlineStyle.strong, 'bold'),
+        ('*em*', 2, FlarkMarkdownInlineStyle.emphasis, 'em'),
+        ('`code`', 3, FlarkMarkdownInlineStyle.inlineCode, 'code'),
+        ('~~done~~', 4, FlarkMarkdownInlineStyle.strikethrough, 'done'),
+      ]) {
+        final controller = FlarkFlutterController.fromMarkdown(probe.$1);
+        addTearDown(controller.dispose);
+        controller.applySelection(
+          FlarkSelection.collapsed(probe.$2),
+          userEvent: 'test',
+        );
+
+        controller.commands.toggleInlineStyle(probe.$3);
+
+        // The run is unwrapped, not re-armed.
+        expect(controller.markdown, probe.$4, reason: 'unwrap of "${probe.$1}"');
+        expect(controller.pendingInlineStyles, isEmpty);
+      }
+    });
+
+    test('collapsed toggle of an active style never arms or corrupts', () {
+      // Regression: arming a style already active at the caret used to nest
+      // markers and corrupt the source on the next keystroke.
+      final controller = FlarkFlutterController.fromMarkdown('**bold**');
+      addTearDown(controller.dispose);
+      controller.applySelection(
+        const FlarkSelection.collapsed(4),
+        userEvent: 'test',
+      );
+
+      controller.commands.toggleStrong();
+
+      expect(controller.pendingInlineStyles, isEmpty);
+      expect(controller.markdown, 'bold');
+      // No stray markers, and bold is no longer active at the caret.
+      expect(controller.commands.strongActive, isFalse);
+    });
+
     test('emits a pendingInlineStylesChanged event when armed', () async {
       final controller = FlarkFlutterController.fromMarkdown('');
       addTearDown(controller.dispose);
