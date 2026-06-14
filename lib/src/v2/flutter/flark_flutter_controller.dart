@@ -130,6 +130,10 @@ final class FlarkFlutterController extends ChangeNotifier {
     FlarkMarkdownInlineStyle.inlineCode,
   ];
 
+  /// A single bare URL (no whitespace): `http(s)://…` or `www.…`. Used to
+  /// detect a URL pasted over a selection so it can be wrapped as a link.
+  static final RegExp _urlPattern = RegExp(r'^(?:https?://|www\.)\S+$');
+
   FlarkEditorRuntime get runtime => _runtime;
 
   /// Whether the controller-owned background parser is running (debounced
@@ -363,6 +367,16 @@ final class FlarkFlutterController extends ChangeNotifier {
     int? undoGroupId,
     FlarkMapAffinity fallbackInsertionAffinity = FlarkMapAffinity.downstream,
   }) {
+    final smartLink = _smartLinkPasteTransaction(
+      oldDisplayText: oldDisplayText,
+      newDisplayText: newDisplayText,
+      undoGroupId: undoGroupId,
+    );
+    if (smartLink != null) {
+      applyTransaction(smartLink);
+      return true;
+    }
+
     final transaction = _projectedTextEditAdapter.transactionFromDisplayEdit(
       currentMarkdown: markdown,
       projection: projection,
@@ -376,6 +390,69 @@ final class FlarkFlutterController extends ChangeNotifier {
     if (transaction == null) return false;
     applyTransaction(transaction);
     return true;
+  }
+
+  /// Pasting a URL over a non-empty plain-text selection wraps it as a link —
+  /// `[selected text](url)` — instead of replacing the text with the bare URL.
+  ///
+  /// Returns null (so the normal replace path runs) unless the projected change
+  /// is exactly the selected display range replaced by a single URL, and the
+  /// selection is plain (no hidden markers) and not itself a URL.
+  FlarkTransaction? _smartLinkPasteTransaction({
+    required String oldDisplayText,
+    required String newDisplayText,
+    int? undoGroupId,
+  }) {
+    final selection = this.selection;
+    if (selection.isCollapsed) return null;
+    if (projection.projectText(markdown) != oldDisplayText) return null;
+
+    final displayStart = projection.sourceToDisplayOffset(selection.start);
+    final displayEnd = projection.sourceToDisplayOffset(selection.end);
+    if (displayStart >= displayEnd || displayEnd > oldDisplayText.length) {
+      return null;
+    }
+
+    // The change must be exactly the selected display range replaced.
+    final prefix = oldDisplayText.substring(0, displayStart);
+    final suffix = oldDisplayText.substring(displayEnd);
+    if (!newDisplayText.startsWith(prefix) ||
+        !newDisplayText.endsWith(suffix) ||
+        newDisplayText.length < prefix.length + suffix.length) {
+      return null;
+    }
+    final pasted = newDisplayText.substring(
+      prefix.length,
+      newDisplayText.length - suffix.length,
+    );
+    if (!_urlPattern.hasMatch(pasted)) return null;
+
+    // The selected text becomes the label: require it plain (source matches
+    // display, so no hidden markers) and not itself a URL.
+    final label = markdown.substring(selection.start, selection.end);
+    if (label.isEmpty ||
+        label != oldDisplayText.substring(displayStart, displayEnd) ||
+        _urlPattern.hasMatch(label)) {
+      return null;
+    }
+
+    final replacement = '[$label]($pasted)';
+    final range = FlarkSourceRange(selection.start, selection.end);
+    return FlarkTransaction.single(
+      FlarkSourceOperation.replace(
+        replacedRange: range,
+        replacementText: replacement,
+      ),
+      selectionBefore: selection,
+      selectionAfter: FlarkSelection.collapsed(range.start + replacement.length),
+      metadata: FlarkTransactionMetadata(
+        intent: FlarkTransactionIntent.paste,
+        userEvent: 'input.smartLinkPaste',
+        undoGroupId: undoGroupId,
+        parseInvalidationRange: range,
+        projectionInvalidationRange: range,
+      ),
+    );
   }
 
   /// Applies a display-space selection.
