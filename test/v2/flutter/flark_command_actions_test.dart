@@ -146,12 +146,62 @@ void main() {
       expect(linuxBold.control, isTrue);
       expect(linuxBold.meta, isFalse);
 
-      // 4 inline accelerators + Tab / Shift+Tab list indent.
-      expect(macDefaults, hasLength(6));
+      // 4 inline + link + 7 heading levels + 3 list/quote + 2 Tab indents.
+      expect(macDefaults, hasLength(17));
       expect(
         macDefaults[const SingleActivator(LogicalKeyboardKey.tab)],
         isA<FlarkIndentListIntent>(),
       );
+    });
+
+    testWidgets('default heading/list/link shortcuts drive the commands', (
+      tester,
+    ) async {
+      Future<BuildContext> pump(FlarkFlutterController controller) async {
+        late BuildContext actionContext;
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: FlarkCommandActions(
+              controller: controller,
+              child: Builder(
+                builder: (context) {
+                  actionContext = context;
+                  return const SizedBox();
+                },
+              ),
+            ),
+          ),
+        );
+        return actionContext;
+      }
+
+      final heading = FlarkFlutterController.fromMarkdown('title');
+      addTearDown(heading.dispose);
+      heading.applySelection(const FlarkSelection.collapsed(0), userEvent: 't');
+      Actions.invoke(
+        await pump(heading),
+        FlarkMarkdownShortcuts.setHeadingLevel(2),
+      );
+      expect(heading.markdown, '## title');
+
+      final bullet = FlarkFlutterController.fromMarkdown('item');
+      addTearDown(bullet.dispose);
+      bullet.applySelection(const FlarkSelection.collapsed(0), userEvent: 't');
+      Actions.invoke(
+        await pump(bullet),
+        FlarkMarkdownShortcuts.toggleBulletList(),
+      );
+      expect(bullet.markdown, '- item');
+
+      final link = FlarkFlutterController.fromMarkdown('go');
+      addTearDown(link.dispose);
+      link.applySelection(
+        const FlarkSelection(baseOffset: 0, extentOffset: 2),
+        userEvent: 't',
+      );
+      Actions.invoke(await pump(link), FlarkMarkdownShortcuts.insertLink());
+      expect(link.markdown, '[go]()');
     });
 
     testWidgets('Tab indents the list item under the caret', (tester) async {
