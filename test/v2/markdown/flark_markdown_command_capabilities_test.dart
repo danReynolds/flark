@@ -25,6 +25,48 @@ void main() {
       expect(capabilities.quoteActive, isFalse);
     });
 
+    test('unions pending inline styles at a collapsed caret', () {
+      final state = FlarkEditorState.fromMarkdown(
+        'plain',
+        selection: const FlarkSelection.collapsed(2),
+      );
+
+      final capabilities = FlarkMarkdownCommandQueries.capabilitiesAtSelection(
+        state,
+        pendingInlineStyles: const [FlarkMarkdownInlineStyle.strong],
+      );
+
+      // The caret is over plain text, so strong is active only because it is
+      // armed (pending), not because of any surrounding source markers.
+      expect(
+        capabilities.isInlineStyleActive(FlarkMarkdownInlineStyle.strong),
+        isTrue,
+      );
+      expect(
+        capabilities.isInlineStyleActive(FlarkMarkdownInlineStyle.emphasis),
+        isFalse,
+      );
+    });
+
+    test('ignores pending inline styles when a range is selected', () {
+      final state = FlarkEditorState.fromMarkdown(
+        'plain',
+        selection: const FlarkSelection(baseOffset: 0, extentOffset: 5),
+      );
+
+      final capabilities = FlarkMarkdownCommandQueries.capabilitiesAtSelection(
+        state,
+        pendingInlineStyles: const [FlarkMarkdownInlineStyle.strong],
+      );
+
+      // Pending styles only apply to a collapsed caret; a real selection takes
+      // the wrap/unwrap path, so an (impossible) stray pending set is ignored.
+      expect(
+        capabilities.isInlineStyleActive(FlarkMarkdownInlineStyle.strong),
+        isFalse,
+      );
+    });
+
     test('reports selected text surrounded by inline markers as active', () {
       final state = FlarkEditorState.fromMarkdown(
         '**alpha**',
@@ -38,6 +80,12 @@ void main() {
       expect(
         capabilities.isInlineStyleActive(FlarkMarkdownInlineStyle.strong),
         isTrue,
+      );
+      // Regression: the bracketing `*` of the `**` pair must not be read as a
+      // single-`*` emphasis run, or bolding a selection lights italic too.
+      expect(
+        capabilities.isInlineStyleActive(FlarkMarkdownInlineStyle.emphasis),
+        isFalse,
       );
     });
 

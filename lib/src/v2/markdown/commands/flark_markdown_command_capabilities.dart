@@ -32,11 +32,12 @@ final class FlarkMarkdownCommandCapabilities {
 
 abstract final class FlarkMarkdownCommandQueries {
   static FlarkMarkdownCommandCapabilities capabilitiesAtSelection(
-    FlarkEditorState state,
-  ) {
+    FlarkEditorState state, {
+    Iterable<FlarkMarkdownInlineStyle> pendingInlineStyles = const [],
+  }) {
     final line = selectedMarkdownLines(state).first;
     return FlarkMarkdownCommandCapabilities(
-      activeInlineStyles: _activeInlineStyles(state),
+      activeInlineStyles: _activeInlineStyles(state, pendingInlineStyles),
       activeHeadingLevel: _headingLevel(line.text),
       quoteActive: _quotePrefixLength(line.text) > 0,
       bulletListActive: _bulletMarker(line.text) != null,
@@ -47,10 +48,16 @@ abstract final class FlarkMarkdownCommandQueries {
   }
 }
 
-Set<FlarkMarkdownInlineStyle> _activeInlineStyles(FlarkEditorState state) {
+Set<FlarkMarkdownInlineStyle> _activeInlineStyles(
+  FlarkEditorState state,
+  Iterable<FlarkMarkdownInlineStyle> pendingInlineStyles,
+) {
   final selection = state.selection;
   final text = state.markdown;
   final styles = <FlarkMarkdownInlineStyle>{};
+  // Pending ("armed") styles only exist for a collapsed caret; union them so
+  // toolbars light up the moment a style is armed, before any text is typed.
+  if (selection.isCollapsed) styles.addAll(pendingInlineStyles);
   if (text.isEmpty) return styles;
 
   final rangeStart = selection.start.clamp(0, text.length);
@@ -94,7 +101,12 @@ bool _isInsideDelimitedSpan(
       rangeStart >= delimiter.length &&
       rangeEnd + delimiter.length <= text.length &&
       text.substring(rangeStart - delimiter.length, rangeStart) == delimiter &&
-      text.substring(rangeEnd, rangeEnd + delimiter.length) == delimiter) {
+      text.substring(rangeEnd, rangeEnd + delimiter.length) == delimiter &&
+      // The bracketing delimiter must be a genuine run, not part of a longer
+      // one — otherwise a `*` italic probe matches the inner `*` of a `**`
+      // bold pair, so bolding a selection falsely reports italic active too.
+      _isDelimiterRun(text, rangeStart - delimiter.length, delimiter) &&
+      _isDelimiterRun(text, rangeEnd, delimiter)) {
     return true;
   }
 
