@@ -63,8 +63,10 @@ void main() {
       expect(runtime.state.markdown, 'ab');
       expect(runtime.canUndo, isTrue);
 
+      // Contiguous single-character input inserts coalesce into one undo step
+      // (see FlarkHistoryStack typing-coalescing tests for word-boundary cases).
       final undone = runtime.undo().runtime;
-      expect(undone.state.markdown, 'a');
+      expect(undone.state.markdown, '');
       expect(undone.canRedo, isTrue);
 
       final redone = undone.redo().runtime;

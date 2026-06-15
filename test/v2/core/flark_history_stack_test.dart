@@ -171,4 +171,78 @@ void main() {
       expect(redone.history.maxEntries, 2);
     });
   });
+
+  group('FlarkHistoryStack typing coalescing', () {
+    FlarkTransaction typeAt(int offset, String char) {
+      return FlarkTransaction.single(
+        FlarkSourceOperation.insert(offset, char),
+        metadata: const FlarkTransactionMetadata(
+          intent: FlarkTransactionIntent.input,
+          userEvent: 'input.type',
+        ),
+      );
+    }
+
+    ({FlarkEditorState state, FlarkHistoryStack history}) record(
+      List<FlarkTransaction> transactions,
+    ) {
+      var state = FlarkEditorState.fromMarkdown('');
+      var history = const FlarkHistoryStack();
+      for (final transaction in transactions) {
+        final before = state.document;
+        state = state.applyTransaction(transaction);
+        history = history.record(
+          transaction: transaction,
+          documentBefore: before,
+        );
+      }
+      return (state: state, history: history);
+    }
+
+    List<FlarkTransaction> typing(String text, {int from = 0}) {
+      return [
+        for (var i = 0; i < text.length; i++) typeAt(from + i, text[i]),
+      ];
+    }
+
+    test('coalesces a typed word into a single undo entry', () {
+      final result = record(typing('hello'));
+
+      expect(result.state.markdown, 'hello');
+      expect(result.history.undoEntries, hasLength(1));
+      expect(result.history.undo(result.state).state.markdown, '');
+    });
+
+    test('breaks the undo group at word boundaries', () {
+      final result = record(typing('ab cd'));
+
+      expect(result.history.undoEntries, hasLength(2));
+      final afterFirstUndo = result.history.undo(result.state);
+      expect(afterFirstUndo.state.markdown, 'ab ');
+      expect(
+        afterFirstUndo.history.undo(afterFirstUndo.state).state.markdown,
+        '',
+      );
+    });
+
+    test('a non-contiguous insertion starts a new entry', () {
+      final result = record([...typing('ab'), typeAt(0, 'X')]);
+
+      expect(result.state.markdown, 'Xab');
+      expect(result.history.undoEntries, hasLength(2));
+    });
+
+    test('a non-typing edit between letters breaks coalescing', () {
+      final command = FlarkTransaction.single(
+        FlarkSourceOperation.insert(1, '!'),
+        metadata: const FlarkTransactionMetadata(
+          intent: FlarkTransactionIntent.command,
+        ),
+      );
+      final result = record([typeAt(0, 'a'), command, typeAt(2, 'b')]);
+
+      expect(result.state.markdown, 'a!b');
+      expect(result.history.undoEntries, hasLength(3));
+    });
+  });
 }
