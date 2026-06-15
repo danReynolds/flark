@@ -140,6 +140,22 @@ side typing lands on:
    re-application when the controller's source selection already renders at
    the requested display position, because a display round trip cannot
    represent the inside/outside distinction.
+10. **A trailing space inside an emphasis/strong/strikethrough run stays
+   rendered.** CommonMark forbids a closing delimiter preceded by whitespace,
+   so the parse of `**foo **` carries no styled run and the markers would flash
+   into view for the moment a space sits at the run's end (mid-typing
+   `**foo bar**`). At parse adoption a pure, stateless reconciler
+   (`FlarkStickyInlineRun.reconcile`, invoked from
+   `FlarkFlutterController.applyParseResult`) re-hides the marker pair and
+   re-styles the content when the collapsed caret sits inside such a run —
+   mirroring a real run's `opensInlineRun`/`closesInlineRun` hidden ranges and
+   inline-run style token. It holds no state and is recomputed each adoption,
+   so it releases the instant the caret leaves the run or the run becomes valid
+   markdown again; code spans never trigger it (their trailing space is already
+   valid) and ambiguous `***`/nested runs are skipped (kept at today's
+   behavior). Phase 2 (not yet shipped) would normalize a dangling trailing
+   space outside the markers (`**foo **` → `**foo** `) on caret exit so the
+   resting source stays valid-and-bold.
 
 Block markers (headings, quotes, lists) are never trailing edges; their
 hidden markers are prefixes, so caret placement after them is unaffected.
