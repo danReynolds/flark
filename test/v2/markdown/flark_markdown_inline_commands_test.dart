@@ -267,7 +267,9 @@ void main() {
       expect(result.transaction, isNull);
     });
 
-    test('exits the run around a collapsed caret without unwrapping it', () {
+    test('rejects a collapsed caret (arming is handled on the controller)', () {
+      // The command operates on ranges only; collapsed-caret arm-on/arm-off
+      // lives on FlarkFlutterController (pending / muted).
       final state = FlarkEditorState.fromMarkdown(
         'a **bold** b',
         selection: const FlarkSelection.collapsed(6),
@@ -283,32 +285,9 @@ void main() {
           FlarkMarkdownInlineStyle.strong,
         ),
       );
-      final next = state.applyTransaction(result.transaction!);
-
-      expect(result.isHandled, isTrue);
-      // The text is untouched; only the caret steps past the closing `**`.
-      expect(next.markdown, 'a **bold** b');
-      expect(next.selection, const FlarkSelection.collapsed(10));
-    });
-
-    test('does not act when the collapsed caret is outside the run', () {
-      final state = FlarkEditorState.fromMarkdown(
-        '**bold** plain',
-        selection: const FlarkSelection.collapsed(12),
-      );
-      final registry = FlarkExtensionSet([
-        const FlarkMarkdownInlineEditingExtension(),
-      ]).commandRegistry();
-
-      final result = registry.dispatch(
-        state: state,
-        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
-        payload: const FlarkToggleInlineStylePayload(
-          FlarkMarkdownInlineStyle.strong,
-        ),
-      );
 
       expect(result.isRejected, isTrue);
+      expect(result.transaction, isNull);
     });
   });
 }

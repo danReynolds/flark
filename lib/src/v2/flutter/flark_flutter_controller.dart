@@ -113,6 +113,8 @@ final class FlarkFlutterController extends ChangeNotifier {
   final FlarkProjectedTextEditAdapter _projectedTextEditAdapter;
   Set<FlarkMarkdownInlineStyle> _pendingInlineStyles =
       <FlarkMarkdownInlineStyle>{};
+  Set<FlarkMarkdownInlineStyle> _mutedInlineStyles =
+      <FlarkMarkdownInlineStyle>{};
   final StreamController<FlarkControllerEvent> _events =
       StreamController<FlarkControllerEvent>.broadcast();
 
@@ -293,6 +295,31 @@ final class FlarkFlutterController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The inline styles "armed off" for the collapsed caret: toggled off while
+  /// the caret sits inside a run of that style, so the next typed character
+  /// leaves the run (at an edge) or splits it (mid-run) instead of unwrapping
+  /// the text already written.
+  Set<FlarkMarkdownInlineStyle> get mutedInlineStyles =>
+      Set<FlarkMarkdownInlineStyle>.unmodifiable(_mutedInlineStyles);
+
+  /// Arms or disarms removing an inline [style] for the collapsed caret.
+  ///
+  /// Used when toggling a style off with the caret inside its run: the run is
+  /// left intact and the next typed character is placed outside it. Toggling
+  /// again before typing re-enables the style. Changes neither the document nor
+  /// the selection, so it is not recorded in history.
+  void toggleMutedInlineStyle(FlarkMarkdownInlineStyle style) {
+    if (_disposed) return;
+    if (!_mutedInlineStyles.add(style)) {
+      _mutedInlineStyles.remove(style);
+    }
+    _emitEvent(
+      kind: FlarkControllerEventKind.pendingInlineStylesChanged,
+      previousState: state,
+    );
+    notifyListeners();
+  }
+
   /// The open/close marker pair for the currently armed styles, or null when
   /// none are armed. Opening markers nest outer-to-inner in a fixed canonical
   /// order; closing markers mirror them. Bold + italic therefore yields
@@ -384,6 +411,18 @@ final class FlarkFlutterController extends ChangeNotifier {
         applyTransaction(recognized);
         return true;
       }
+    }
+
+    // A style toggled off inside its run (muted) places the next typed
+    // character outside the run instead of extending it.
+    final mutedExit = _mutedExitTransaction(
+      oldDisplayText: oldDisplayText,
+      newDisplayText: newDisplayText,
+      undoGroupId: undoGroupId,
+    );
+    if (mutedExit != null) {
+      applyTransaction(mutedExit);
+      return true;
     }
 
     final transaction = _projectedTextEditAdapter.transactionFromDisplayEdit(
@@ -491,6 +530,87 @@ final class FlarkFlutterController extends ChangeNotifier {
       metadata: FlarkTransactionMetadata(
         intent: FlarkTransactionIntent.paste,
         userEvent: 'input.smartLinkPaste',
+        undoGroupId: undoGroupId,
+        parseInvalidationRange: range,
+        projectionInvalidationRange: range,
+      ),
+    );
+  }
+
+  /// When a style is muted (toggled off inside its run), the next typed
+  /// character leaves the run rather than extending it: inserted after the
+  /// closing marker at the trailing edge, before the opening marker at the
+  /// leading edge, or splitting the run (`**foo**x**bar**`) in the middle.
+  /// Returns null unless the change is a plain insertion at the caret inside a
+  /// muted run.
+  FlarkTransaction? _mutedExitTransaction({
+    required String oldDisplayText,
+    required String newDisplayText,
+    int? undoGroupId,
+  }) {
+    if (_mutedInlineStyles.isEmpty) return null;
+    final selection = this.selection;
+    if (!selection.isCollapsed) return null;
+    if (projection.projectText(markdown) != oldDisplayText) return null;
+
+    final caret = selection.extentOffset;
+    final displayCaret = projection.sourceToDisplayOffset(caret);
+    if (displayCaret > oldDisplayText.length) return null;
+    final prefix = oldDisplayText.substring(0, displayCaret);
+    final suffix = oldDisplayText.substring(displayCaret);
+    if (!newDisplayText.startsWith(prefix) ||
+        !newDisplayText.endsWith(suffix) ||
+        newDisplayText.length <= prefix.length + suffix.length) {
+      return null;
+    }
+    final text = newDisplayText.substring(
+      prefix.length,
+      newDisplayText.length - suffix.length,
+    );
+
+    for (final style in _mutedInlineStyles) {
+      final run = FlarkMarkdownCommandQueries.enclosingInlineRun(state, style);
+      if (run != null) return _runExitTransaction(run, caret, text, undoGroupId);
+    }
+    return null;
+  }
+
+  FlarkTransaction _runExitTransaction(
+    FlarkInlineRunRange run,
+    int caret,
+    String text,
+    int? undoGroupId,
+  ) {
+    final FlarkSourceRange range;
+    final String replacement;
+    final int caretAfter;
+    if (caret >= run.closeStart) {
+      // Trailing edge: step out past the closing marker.
+      range = FlarkSourceRange(run.closeEnd, run.closeEnd);
+      replacement = text;
+      caretAfter = run.closeEnd + text.length;
+    } else if (caret <= run.contentStart) {
+      // Leading edge: step out before the opening marker.
+      range = FlarkSourceRange(run.openStart, run.openStart);
+      replacement = text;
+      caretAfter = run.openStart + text.length;
+    } else {
+      // Middle: close the run, drop the plain text, reopen the run.
+      final marker = markdown.substring(run.closeStart, run.closeEnd);
+      range = FlarkSourceRange(caret, caret);
+      replacement = '$marker$text$marker';
+      caretAfter = caret + marker.length + text.length;
+    }
+    return FlarkTransaction.single(
+      FlarkSourceOperation.replace(
+        replacedRange: range,
+        replacementText: replacement,
+      ),
+      selectionBefore: FlarkSelection.collapsed(caret),
+      selectionAfter: FlarkSelection.collapsed(caretAfter),
+      metadata: FlarkTransactionMetadata(
+        intent: FlarkTransactionIntent.input,
+        userEvent: 'input.mutedInlineStyle',
         undoGroupId: undoGroupId,
         parseInvalidationRange: range,
         projectionInvalidationRange: range,
@@ -648,11 +768,14 @@ final class FlarkFlutterController extends ChangeNotifier {
     if (identical(result.runtime, _runtime)) return;
 
     // Any adopted runtime change — a typed run, a selection move, an undo —
-    // disarms pending inline styles. Only arming (togglePendingInlineStyle)
+    // disarms pending and muted inline styles. Only arming (toggle…InlineStyle)
     // bypasses this chokepoint, so only arming preserves them. The armed run
-    // wrap reads the set before applying, so clearing here is correct.
+    // wrap and muted exit read the sets before applying, so clearing is correct.
     if (_pendingInlineStyles.isNotEmpty) {
       _pendingInlineStyles = <FlarkMarkdownInlineStyle>{};
+    }
+    if (_mutedInlineStyles.isNotEmpty) {
+      _mutedInlineStyles = <FlarkMarkdownInlineStyle>{};
     }
 
     final documentTransactions = [
