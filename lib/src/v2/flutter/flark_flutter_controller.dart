@@ -758,29 +758,17 @@ final class FlarkFlutterController extends ChangeNotifier {
       return false;
     }
 
-    final parsedProjection = FlarkProjection.fromParseResult(parseResult);
-    final baseRenderPlan = FlarkRenderPlan.fromParseResult(
+    // The adopted projection + render plan run through one ordered pipeline of
+    // reconciliation passes (extensions, then sticky inline-run rendering); see
+    // FlarkRenderReconciler.
+    final adoption = FlarkRenderReconciler.fromParseResult(
       parseResult: parseResult,
-      projection: parsedProjection,
-    );
-    final extendedRenderPlan = applyFlarkRenderPlanExtensions(
-      renderPlan: baseRenderPlan,
-      parseResult: parseResult,
-      projection: parsedProjection,
-      extensions: _runtime.extensions,
-    );
-    // Keep an emphasis/strong/strikethrough run rendered while the caret edits
-    // inside it, even when a transient trailing space (`**foo **`) makes the
-    // parse drop the styled run. Pure (source, caret) function — auto-releases
-    // when the caret leaves or the run becomes valid markdown again.
-    final sticky = FlarkStickyInlineRun.reconcile(
-      projection: parsedProjection,
-      renderPlan: extendedRenderPlan,
       source: state.markdown,
       selection: state.selection,
+      extensions: _runtime.extensions,
     );
-    _projection = sticky.projection;
-    _renderPlan = sticky.renderPlan;
+    _projection = adoption.projection;
+    _renderPlan = adoption.renderPlan;
     _renderPlanRevision = parseResult.revision;
     _lastProjectionPrediction = null;
     // A typed closing marker is the user speaking markdown source: the run
