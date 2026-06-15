@@ -287,6 +287,28 @@ final class FlarkMarkdownInputPolicy {
     );
   }
 
+  /// A collapsed backspace that would delete a styled run's last content
+  /// character must also remove the run's markers, or backspacing the final
+  /// letter of `**x**` leaves orphaned `****`. Expanding the implied
+  /// one-character deletion over the run's markers turns the caret into a
+  /// selection of the whole run, so the backspace removes it.
+  void _expandCollapsedBackspaceForInlineRunDeletion() {
+    final selection = controller.selection;
+    if (!selection.isCollapsed || selection.extentOffset <= 0) return;
+    final projection = controller.projection;
+    final caret = selection.extentOffset;
+    if (caret > projection.textLength) return;
+    final deletion = FlarkSourceRange(caret - 1, caret);
+    final expanded = projection.expandDeletionOverInlineRunMarkers(deletion);
+    if (expanded.start == deletion.start && expanded.end == deletion.end) {
+      return;
+    }
+    controller.applySelection(
+      FlarkSelection(baseOffset: expanded.start, extentOffset: expanded.end),
+      userEvent: 'selection.inlineRunOrphanDeletion',
+    );
+  }
+
   bool dispatchBackspace({
     required FlarkTextSelectionReader currentSelection,
     required FlarkTextSelectionApplier applySelection,
@@ -295,6 +317,7 @@ final class FlarkMarkdownInputPolicy {
     final selection = currentSelection();
     if (selection != null) applySelection(selection);
     _expandSelectionForInlineRunDeletion();
+    _expandCollapsedBackspaceForInlineRunDeletion();
     final result = controller.dispatch(
       command: FlarkMarkdownInputCommands.handleBackspace,
       payload: FlarkHandleBackspacePayload(userEvent: backspaceUserEvent),
