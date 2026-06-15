@@ -25,6 +25,7 @@ dependencies:
   hooks: ^1.0.3
   code_assets: ^1.0.0
   highlight: ^0.7.0
+  html: ^0.15.4
 
 dev_dependencies:
   flutter_test:

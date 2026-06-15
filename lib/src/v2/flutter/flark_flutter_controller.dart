@@ -388,6 +388,39 @@ final class FlarkFlutterController extends ChangeNotifier {
     return true;
   }
 
+  /// Converts [html] (e.g. the clipboard's `text/html` flavor) to Markdown and
+  /// inserts it at the caret, replacing any selection. Returns false when the
+  /// HTML converts to nothing.
+  ///
+  /// Flark stays platform-agnostic and does not read the clipboard itself: an
+  /// app wires its own paste handler to read the clipboard's `text/html` flavor
+  /// (e.g. via the `super_clipboard` package, or `clipboardData` on the web)
+  /// and call this. The raw conversion is also available as
+  /// [FlarkHtmlMarkdown.convert].
+  bool insertHtmlAsMarkdown(String html, {int? undoGroupId}) {
+    final converted = FlarkHtmlMarkdown.convert(html);
+    if (converted.isEmpty) return false;
+    final range = FlarkSourceRange(selection.start, selection.end);
+    applyTransaction(
+      FlarkTransaction.single(
+        FlarkSourceOperation.replace(
+          replacedRange: range,
+          replacementText: converted,
+        ),
+        selectionBefore: selection,
+        selectionAfter: FlarkSelection.collapsed(range.start + converted.length),
+        metadata: FlarkTransactionMetadata(
+          intent: FlarkTransactionIntent.paste,
+          userEvent: 'input.htmlPaste',
+          undoGroupId: undoGroupId,
+          parseInvalidationRange: range,
+          projectionInvalidationRange: range,
+        ),
+      ),
+    );
+    return true;
+  }
+
   bool applyProjectedTextEdit({
     required String oldDisplayText,
     required String newDisplayText,
