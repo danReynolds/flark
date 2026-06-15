@@ -98,6 +98,49 @@ void main() {
       }
     });
 
+    test('subtracts muted inline styles at a collapsed caret', () {
+      final state = FlarkEditorState.fromMarkdown(
+        '**bold**',
+        selection: const FlarkSelection.collapsed(4),
+      );
+
+      // Without muting, the caret inside the run reads strong active.
+      expect(
+        FlarkMarkdownCommandQueries.capabilitiesAtSelection(
+          state,
+        ).isInlineStyleActive(FlarkMarkdownInlineStyle.strong),
+        isTrue,
+      );
+
+      // Muting (toggled off in place) reads inactive even though the source
+      // still carries the markers.
+      expect(
+        FlarkMarkdownCommandQueries.capabilitiesAtSelection(
+          state,
+          mutedInlineStyles: const [FlarkMarkdownInlineStyle.strong],
+        ).isInlineStyleActive(FlarkMarkdownInlineStyle.strong),
+        isFalse,
+      );
+    });
+
+    test('finds the enclosing inline run for a collapsed caret', () {
+      final state = FlarkEditorState.fromMarkdown(
+        'a **bold** b',
+        selection: const FlarkSelection.collapsed(6),
+      );
+
+      final run = FlarkMarkdownCommandQueries.enclosingInlineRun(
+        state,
+        FlarkMarkdownInlineStyle.strong,
+      );
+
+      expect(run, isNotNull);
+      expect(run!.openStart, 2);
+      expect(run.contentStart, 4);
+      expect(run.closeStart, 8);
+      expect(run.closeEnd, 10);
+    });
+
     test('ignores pending inline styles when a range is selected', () {
       final state = FlarkEditorState.fromMarkdown(
         'plain',

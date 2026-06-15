@@ -17,6 +17,7 @@ final class FlarkMarkdownCommands {
     return FlarkMarkdownCommandQueries.capabilitiesAtSelection(
       _controller.state,
       pendingInlineStyles: _controller.pendingInlineStyles,
+      mutedInlineStyles: _controller.mutedInlineStyles,
     );
   }
 
@@ -225,21 +226,22 @@ extension FlarkMarkdownControllerCommands on FlarkFlutterController {
     String userEvent = 'command.toggleInlineStyle',
   }) {
     if (state.selection.isCollapsed) {
-      // If the caret is already inside an existing source run of this style,
-      // toggle it off (unwrap) via the command. Otherwise there is no range to
-      // wrap, so arm the style as pending for the next typed run. Crucially we
-      // never arm-wrap a style that is already active here — that would nest
-      // markers and corrupt the source on the next keystroke.
+      // Caret inside an existing run of this style → arm it off (muted): the
+      // text already written stays styled and the next typed character leaves
+      // or splits the run. Otherwise → arm it on (pending) so the next typed
+      // run is wrapped. Neither edits the document here.
       final sourceActive = FlarkMarkdownCommandQueries.capabilitiesAtSelection(
         state,
       ).isInlineStyleActive(style);
-      if (!sourceActive) {
+      if (sourceActive) {
+        toggleMutedInlineStyle(style);
+      } else {
         togglePendingInlineStyle(style);
-        return FlarkEditorRuntimeResult(
-          runtime: runtime,
-          commandResult: FlarkCommandResult.handled(),
-        );
       }
+      return FlarkEditorRuntimeResult(
+        runtime: runtime,
+        commandResult: FlarkCommandResult.handled(),
+      );
     }
     return dispatch(
       command: FlarkMarkdownInlineCommands.toggleInlineStyle,

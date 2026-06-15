@@ -137,6 +137,7 @@ export 'src/v2/markdown/markdown.dart'
         FlarkMarkdownBlockNode,
         FlarkMarkdownCommandCapabilities,
         FlarkMarkdownCommandQueries,
+        FlarkInlineRunRange,
         FlarkMarkdownDiagnostic,
         FlarkMarkdownEditingExtensions,
         FlarkMarkdownHiddenRange,

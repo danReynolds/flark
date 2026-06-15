@@ -131,13 +131,13 @@ void main() {
       expect(controller.markdown, '~~x~~');
     });
 
-    test('collapsed toggle off exits the run without unwrapping it', () {
-      // (source, caretInsideAtTrailingEdge, style, caretAfterExit)
-      for (final probe in <(String, int, FlarkMarkdownInlineStyle, int)>[
-        ('**bold**', 6, FlarkMarkdownInlineStyle.strong, 8),
-        ('*em*', 3, FlarkMarkdownInlineStyle.emphasis, 4),
-        ('`code`', 5, FlarkMarkdownInlineStyle.inlineCode, 6),
-        ('~~done~~', 6, FlarkMarkdownInlineStyle.strikethrough, 8),
+    test('collapsed toggle off arms muted without editing or moving', () {
+      // (source, caretInside, style)
+      for (final probe in <(String, int, FlarkMarkdownInlineStyle)>[
+        ('**bold**', 6, FlarkMarkdownInlineStyle.strong),
+        ('*em*', 3, FlarkMarkdownInlineStyle.emphasis),
+        ('`code`', 5, FlarkMarkdownInlineStyle.inlineCode),
+        ('~~done~~', 6, FlarkMarkdownInlineStyle.strikethrough),
       ]) {
         final controller = FlarkFlutterController.fromMarkdown(probe.$1);
         addTearDown(controller.dispose);
@@ -148,13 +148,57 @@ void main() {
 
         controller.commands.toggleInlineStyle(probe.$3);
 
-        // The text already written is untouched; only the caret exits the run,
-        // so future typing is unstyled.
-        expect(controller.markdown, probe.$1, reason: 'exit of "${probe.$1}"');
-        expect(controller.selection, FlarkSelection.collapsed(probe.$4));
+        // Nothing is edited or moved; the style is just armed off so the next
+        // typed character will leave the run.
+        expect(controller.markdown, probe.$1, reason: 'mute of "${probe.$1}"');
+        expect(controller.selection, FlarkSelection.collapsed(probe.$2));
         expect(controller.pendingInlineStyles, isEmpty);
+        expect(controller.mutedInlineStyles, contains(probe.$3));
         expect(controller.commands.isInlineActive(probe.$3), isFalse);
       }
+    });
+
+    test('toggling off mid-run splits the run on the next character', () {
+      final controller = FlarkFlutterController.fromMarkdown('**bold**');
+      addTearDown(controller.dispose);
+      controller.applySelection(
+        const FlarkSelection.collapsed(4), // mid "bold"
+        userEvent: 'test',
+      );
+
+      controller.commands.toggleStrong();
+      expect(
+        controller.mutedInlineStyles,
+        contains(FlarkMarkdownInlineStyle.strong),
+      );
+
+      final applied = controller.applyProjectedTextEdit(
+        oldDisplayText: '**bold**',
+        newDisplayText: '**boxld**',
+      );
+
+      expect(applied, isTrue);
+      // The run is split: "bo" bold, "x" plain, "ld" bold. Existing text intact.
+      expect(controller.markdown, '**bo**x**ld**');
+      expect(controller.mutedInlineStyles, isEmpty);
+    });
+
+    test('toggling off at the trailing edge exits on the next character', () {
+      final controller = FlarkFlutterController.fromMarkdown('**bold**');
+      addTearDown(controller.dispose);
+      controller.applySelection(
+        const FlarkSelection.collapsed(6), // trailing edge, inside
+        userEvent: 'test',
+      );
+
+      controller.commands.toggleStrong();
+      final applied = controller.applyProjectedTextEdit(
+        oldDisplayText: '**bold**',
+        newDisplayText: '**boldx**',
+      );
+
+      expect(applied, isTrue);
+      expect(controller.markdown, '**bold**x');
     });
 
     test('collapsed toggle off never arms, unwraps, or corrupts', () {

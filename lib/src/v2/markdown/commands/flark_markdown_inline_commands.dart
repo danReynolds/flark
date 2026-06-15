@@ -47,20 +47,9 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
     final marker = context.payload.style.marker;
 
     if (selection.isCollapsed) {
-      // Toggling a style off with a collapsed caret inside its run exits the
-      // run — the caret steps past the hidden closing marker so future typing
-      // is unstyled — rather than unwrapping the text already written. At the
-      // run's trailing edge the closing marker is zero-width, so this is an
-      // invisible step (matches Google Docs / Word "turn off, keep typing").
-      // (Arming a new style on a collapsed caret is handled one layer up, on
-      // the controller, before reaching here.)
-      final exit = _collapsedExitRun(
-        text,
-        selection.extentOffset,
-        marker,
-        context.payload.userEvent,
-      );
-      if (exit != null) return exit;
+      // A collapsed caret carries no range to wrap or unwrap. Arming a style on
+      // or off for a collapsed caret is handled one layer up, on the controller
+      // (pending / muted), so the command itself rejects.
       return FlarkCommandResult.rejected(
         'Inline style toggling requires a selected source range.',
       );
@@ -166,77 +155,6 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
     );
   }
 
-  /// Exits the run of [marker] enclosing the collapsed [caret] by stepping the
-  /// caret just past the closing marker, or null when the caret is not inside
-  /// such a run.
-  ///
-  /// The text already written stays styled; only the caret moves, so the next
-  /// character typed lands outside the run as unstyled text. This is a
-  /// selection-only move (no document edit, not recorded in history).
-  FlarkCommandResult? _collapsedExitRun(
-    String text,
-    int caret,
-    String marker,
-    String userEvent,
-  ) {
-    final run = _enclosingMarkerRun(text, caret, marker);
-    if (run == null) return null;
-    return FlarkCommandResult.handled(
-      transaction: FlarkTransaction(
-        operations: const [],
-        selectionBefore: FlarkSelection.collapsed(caret),
-        selectionAfter: FlarkSelection.collapsed(run.closeEnd),
-        metadata: FlarkTransactionMetadata(
-          intent: FlarkTransactionIntent.selection,
-          userEvent: userEvent,
-          addToHistory: false,
-        ),
-      ),
-    );
-  }
-
-  /// Finds the innermost run of [marker] whose content encloses [caret].
-  ///
-  /// The opener is the nearest toggleable marker run starting at or before the
-  /// caret's content; the closer is the nearest toggleable run starting at or
-  /// after the caret. Returns null when either side is missing.
-  _MarkerRun? _enclosingMarkerRun(String text, int caret, String marker) {
-    final length = marker.length;
-
-    var openStart = -1;
-    var probe = caret - length;
-    while (probe >= 0) {
-      final index = text.lastIndexOf(marker, probe);
-      if (index < 0) break;
-      if (_isToggleableMarkerRun(text, index, marker)) {
-        openStart = index;
-        break;
-      }
-      probe = index - 1;
-    }
-    if (openStart < 0 || openStart + length > caret) return null;
-    final contentStart = openStart + length;
-
-    var closeStart = -1;
-    var search = caret;
-    while (search <= text.length - length) {
-      final index = text.indexOf(marker, search);
-      if (index < 0) break;
-      if (index >= caret && _isToggleableMarkerRun(text, index, marker)) {
-        closeStart = index;
-        break;
-      }
-      search = index + length;
-    }
-    if (closeStart < contentStart) return null;
-
-    return _MarkerRun(
-      openStart: openStart,
-      contentStart: contentStart,
-      contentEnd: closeStart,
-      closeEnd: closeStart + length,
-    );
-  }
 
   /// Whether the marker candidate at [candidateStart] can act as one side of
   /// a toggle-off pair under CommonMark delimiter-run semantics.
@@ -274,19 +192,4 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
     }
     return backslashCount.isEven;
   }
-}
-
-/// The source span of an inline run: its marker boundaries and content range.
-final class _MarkerRun {
-  const _MarkerRun({
-    required this.openStart,
-    required this.contentStart,
-    required this.contentEnd,
-    required this.closeEnd,
-  });
-
-  final int openStart;
-  final int contentStart;
-  final int contentEnd;
-  final int closeEnd;
 }

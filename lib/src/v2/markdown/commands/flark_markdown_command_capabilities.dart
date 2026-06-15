@@ -34,10 +34,15 @@ abstract final class FlarkMarkdownCommandQueries {
   static FlarkMarkdownCommandCapabilities capabilitiesAtSelection(
     FlarkEditorState state, {
     Iterable<FlarkMarkdownInlineStyle> pendingInlineStyles = const [],
+    Iterable<FlarkMarkdownInlineStyle> mutedInlineStyles = const [],
   }) {
     final line = selectedMarkdownLines(state).first;
     return FlarkMarkdownCommandCapabilities(
-      activeInlineStyles: _activeInlineStyles(state, pendingInlineStyles),
+      activeInlineStyles: _activeInlineStyles(
+        state,
+        pendingInlineStyles,
+        mutedInlineStyles,
+      ),
       activeHeadingLevel: _headingLevel(line.text),
       quoteActive: _quotePrefixLength(line.text) > 0,
       bulletListActive: _bulletMarker(line.text) != null,
@@ -46,11 +51,55 @@ abstract final class FlarkMarkdownCommandQueries {
       tableActive: _isInsideTable(state),
     );
   }
+
+  /// The source span of the inline [style] run enclosing a collapsed caret, or
+  /// null when the caret is not inside such a run. Emphasis matches either `*`
+  /// or `_` delimiters.
+  static FlarkInlineRunRange? enclosingInlineRun(
+    FlarkEditorState state,
+    FlarkMarkdownInlineStyle style,
+  ) {
+    final selection = state.selection;
+    if (!selection.isCollapsed) return null;
+    final text = state.markdown;
+    final caret = selection.extentOffset.clamp(0, text.length);
+    final markers = style == FlarkMarkdownInlineStyle.emphasis
+        ? const ['*', '_']
+        : [style.marker];
+    for (final marker in markers) {
+      final run = _enclosingDelimitedRun(text, caret, marker);
+      if (run != null) return run;
+    }
+    return null;
+  }
+}
+
+/// The source span of an inline run: its marker boundaries and content range.
+final class FlarkInlineRunRange {
+  const FlarkInlineRunRange({
+    required this.openStart,
+    required this.contentStart,
+    required this.closeStart,
+    required this.closeEnd,
+  });
+
+  /// Start of the opening marker.
+  final int openStart;
+
+  /// First content character (`openStart + markerLength`).
+  final int contentStart;
+
+  /// Start of the closing marker.
+  final int closeStart;
+
+  /// End of the closing marker.
+  final int closeEnd;
 }
 
 Set<FlarkMarkdownInlineStyle> _activeInlineStyles(
   FlarkEditorState state,
   Iterable<FlarkMarkdownInlineStyle> pendingInlineStyles,
+  Iterable<FlarkMarkdownInlineStyle> mutedInlineStyles,
 ) {
   final selection = state.selection;
   final text = state.markdown;
@@ -58,25 +107,30 @@ Set<FlarkMarkdownInlineStyle> _activeInlineStyles(
   // Pending ("armed") styles only exist for a collapsed caret; union them so
   // toolbars light up the moment a style is armed, before any text is typed.
   if (selection.isCollapsed) styles.addAll(pendingInlineStyles);
-  if (text.isEmpty) return styles;
 
-  final rangeStart = selection.start.clamp(0, text.length);
-  final rangeEnd = selection.end.clamp(rangeStart, text.length);
-  final probeOffset = selection.isCollapsed ? rangeStart : rangeStart;
+  if (text.isNotEmpty) {
+    final rangeStart = selection.start.clamp(0, text.length);
+    final rangeEnd = selection.end.clamp(rangeStart, text.length);
 
-  if (_isInsideInlineCode(text, probeOffset, rangeStart, rangeEnd)) {
-    styles.add(FlarkMarkdownInlineStyle.inlineCode);
+    if (_isInsideInlineCode(text, rangeStart, rangeStart, rangeEnd)) {
+      styles.add(FlarkMarkdownInlineStyle.inlineCode);
+    }
+    if (_isInsideDelimitedSpan(text, rangeStart, rangeStart, rangeEnd, '**')) {
+      styles.add(FlarkMarkdownInlineStyle.strong);
+    }
+    if (_isInsideDelimitedSpan(text, rangeStart, rangeStart, rangeEnd, '*') ||
+        _isInsideDelimitedSpan(text, rangeStart, rangeStart, rangeEnd, '_')) {
+      styles.add(FlarkMarkdownInlineStyle.emphasis);
+    }
+    if (_isInsideDelimitedSpan(text, rangeStart, rangeStart, rangeEnd, '~~')) {
+      styles.add(FlarkMarkdownInlineStyle.strikethrough);
+    }
   }
-  if (_isInsideDelimitedSpan(text, probeOffset, rangeStart, rangeEnd, '**')) {
-    styles.add(FlarkMarkdownInlineStyle.strong);
-  }
-  if (_isInsideDelimitedSpan(text, probeOffset, rangeStart, rangeEnd, '*') ||
-      _isInsideDelimitedSpan(text, probeOffset, rangeStart, rangeEnd, '_')) {
-    styles.add(FlarkMarkdownInlineStyle.emphasis);
-  }
-  if (_isInsideDelimitedSpan(text, probeOffset, rangeStart, rangeEnd, '~~')) {
-    styles.add(FlarkMarkdownInlineStyle.strikethrough);
-  }
+
+  // Muted ("armed off") styles are removed for the collapsed caret so a style
+  // toggled off inside its run reads inactive even though the source still
+  // carries the markers.
+  if (selection.isCollapsed) styles.removeAll(mutedInlineStyles);
   return styles;
 }
 
@@ -110,26 +164,40 @@ bool _isInsideDelimitedSpan(
     return true;
   }
 
-  // A collapsed caret sitting exactly at the start of a run's closing
-  // delimiter is *inside* that run (its trailing edge), but a single opener
-  // lookup would mistake that closing delimiter for an opener, find no further
-  // close, and report "outside" — so the toolbar un-lights while you type
-  // styled text. Keep searching backward for the real opener whenever the
-  // nearest candidate sits at or after the caret's content start.
+  return _enclosingDelimitedRun(text, probeOffset, delimiter) != null;
+}
+
+/// The run of [delimiter] enclosing a collapsed caret at [probeOffset], or
+/// null. A caret exactly at the closing delimiter's start counts as inside the
+/// run (its trailing edge).
+FlarkInlineRunRange? _enclosingDelimitedRun(
+  String text,
+  int probeOffset,
+  String delimiter,
+) {
+  // A single opener lookup would mistake a closing delimiter sitting at the
+  // caret for an opener, so keep searching backward for the real opener
+  // whenever the nearest candidate sits at or after the caret's content start.
   var searchCeiling = probeOffset;
   while (searchCeiling >= 0) {
     final before = _findOpeningDelimiter(text, delimiter, searchCeiling);
-    if (before == null) return false;
+    if (before == null) return null;
     final contentStart = before + delimiter.length;
     if (probeOffset < contentStart) {
       searchCeiling = before - 1;
       continue;
     }
     final after = _findClosingDelimiter(text, delimiter, contentStart);
-    if (after == null) return false;
-    return probeOffset <= after;
+    if (after == null) return null;
+    if (probeOffset > after) return null;
+    return FlarkInlineRunRange(
+      openStart: before,
+      contentStart: contentStart,
+      closeStart: after,
+      closeEnd: after + delimiter.length,
+    );
   }
-  return false;
+  return null;
 }
 
 int? _findOpeningDelimiter(String text, String delimiter, int probeOffset) {
