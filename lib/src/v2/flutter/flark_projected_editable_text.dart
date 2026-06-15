@@ -452,7 +452,8 @@ final class _FlarkProjectedEditableHostState
         );
         if (!applied) {
           _syncFromRuntime();
-        } else if (intent.immediateParseAfterApply) {
+        } else if (intent.immediateParseAfterApply ||
+            widget.controller.lastEditRequestsImmediateParse) {
           _adoptImmediateMarkdownParse();
         }
       case FlarkHostProjectedSelectionIntent(:final selection):

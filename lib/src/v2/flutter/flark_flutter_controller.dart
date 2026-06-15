@@ -115,6 +115,7 @@ final class FlarkFlutterController extends ChangeNotifier {
       <FlarkMarkdownInlineStyle>{};
   Set<FlarkMarkdownInlineStyle> _mutedInlineStyles =
       <FlarkMarkdownInlineStyle>{};
+  bool _lastEditRequestsImmediateParse = false;
   final StreamController<FlarkControllerEvent> _events =
       StreamController<FlarkControllerEvent>.broadcast();
 
@@ -302,6 +303,13 @@ final class FlarkFlutterController extends ChangeNotifier {
   Set<FlarkMarkdownInlineStyle> get mutedInlineStyles =>
       Set<FlarkMarkdownInlineStyle>.unmodifiable(_mutedInlineStyles);
 
+  /// Whether the most recent [applyProjectedTextEdit] turned a keystroke into
+  /// new Markdown structure — an armed wrap (`**x**`), a selection wrap, a
+  /// smart-link paste, or a muted-run split. Editing surfaces parse immediately
+  /// when true so the structure renders without waiting for the debounced
+  /// parse, matching what happens when the same markers are typed by hand.
+  bool get lastEditRequestsImmediateParse => _lastEditRequestsImmediateParse;
+
   /// Arms or disarms removing an inline [style] for the collapsed caret.
   ///
   /// Used when toggling a style off with the caret inside its run: the run is
@@ -432,6 +440,8 @@ final class FlarkFlutterController extends ChangeNotifier {
     // selection" rather than "replace it". Each recognizer returns null to fall
     // through to the next, then to the adapter. Order matters only when two
     // could match the same token (they currently cannot).
+    _lastEditRequestsImmediateParse = false;
+
     final replacement = _selectionReplacement(
       oldDisplayText: oldDisplayText,
       newDisplayText: newDisplayText,
@@ -442,6 +452,7 @@ final class FlarkFlutterController extends ChangeNotifier {
           _smartLinkPasteRecognizer(replacement, undoGroupId);
       if (recognized != null) {
         applyTransaction(recognized);
+        _lastEditRequestsImmediateParse = true;
         return true;
       }
     }
@@ -455,9 +466,15 @@ final class FlarkFlutterController extends ChangeNotifier {
     );
     if (mutedExit != null) {
       applyTransaction(mutedExit);
+      _lastEditRequestsImmediateParse = true;
       return true;
     }
 
+    // An armed insertion wrap turns one keystroke into a `**x**`-style run; flag
+    // it so the surface parses immediately and the markers hide right away
+    // (otherwise they show raw until the debounced parse, and a backspace in
+    // that window cannot expand over the not-yet-recognized markers).
+    final insertionWrap = _pendingInsertionWrap();
     final transaction = _projectedTextEditAdapter.transactionFromDisplayEdit(
       currentMarkdown: markdown,
       projection: projection,
@@ -466,10 +483,11 @@ final class FlarkFlutterController extends ChangeNotifier {
       sourceSelectionBefore: selection,
       undoGroupId: undoGroupId,
       fallbackInsertionAffinity: fallbackInsertionAffinity,
-      insertionWrap: _pendingInsertionWrap(),
+      insertionWrap: insertionWrap,
     );
     if (transaction == null) return false;
     applyTransaction(transaction);
+    _lastEditRequestsImmediateParse = insertionWrap != null;
     return true;
   }
 

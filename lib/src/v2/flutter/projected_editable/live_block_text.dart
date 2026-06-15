@@ -300,7 +300,8 @@ final class _EditableProjectedBlockTextState
         );
         if (!applied) {
           _syncFromController();
-        } else if (intent.immediateParseAfterApply) {
+        } else if (intent.immediateParseAfterApply ||
+            widget.controller.lastEditRequestsImmediateParse) {
           _adoptImmediateMarkdownParseForController(widget.controller);
         }
         _restoreExternalFocusAfterFrame(
