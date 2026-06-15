@@ -83,6 +83,39 @@ final class FlarkIndentListAction extends Action<FlarkIndentListIntent> {
   }
 }
 
+/// Intent that moves the line(s) under the selection up or (with [down]) down.
+final class FlarkMoveLinesIntent extends Intent {
+  const FlarkMoveLinesIntent({this.down = false});
+
+  final bool down;
+}
+
+/// Action for [FlarkMoveLinesIntent], gated so the shortcut falls through to
+/// normal caret movement at the document boundary (nothing to move).
+final class FlarkMoveLinesAction extends Action<FlarkMoveLinesIntent> {
+  FlarkMoveLinesAction({required this.controller});
+
+  final FlarkFlutterController controller;
+
+  @override
+  bool isEnabled(FlarkMoveLinesIntent intent) {
+    return FlarkMarkdownInputEngine.moveLines(
+          markdown: controller.markdown,
+          selection: controller.selection,
+          down: intent.down,
+        ) !=
+        null;
+  }
+
+  @override
+  Object? invoke(FlarkMoveLinesIntent intent) {
+    return controller.dispatch(
+      command: FlarkMarkdownInputCommands.moveLines,
+      payload: FlarkMoveLinesPayload(down: intent.down),
+    );
+  }
+}
+
 final class FlarkCommandActions extends StatelessWidget {
   const FlarkCommandActions({
     super.key,
@@ -99,6 +132,7 @@ final class FlarkCommandActions extends StatelessWidget {
       actions: {
         FlarkCommandIntent: FlarkCommandAction(controller: controller),
         FlarkIndentListIntent: FlarkIndentListAction(controller: controller),
+        FlarkMoveLinesIntent: FlarkMoveLinesAction(controller: controller),
       },
       child: child,
     );

@@ -146,12 +146,61 @@ void main() {
       expect(linuxBold.control, isTrue);
       expect(linuxBold.meta, isFalse);
 
-      // 4 inline + link + 7 heading levels + 3 list/quote + 2 Tab indents.
-      expect(macDefaults, hasLength(17));
+      // 4 inline + link + 7 heading + 3 list/quote + 2 Tab + 2 move + dup +
+      // delete.
+      expect(macDefaults, hasLength(21));
       expect(
         macDefaults[const SingleActivator(LogicalKeyboardKey.tab)],
         isA<FlarkIndentListIntent>(),
       );
+      expect(
+        macDefaults[const SingleActivator(
+          LogicalKeyboardKey.arrowUp,
+          alt: true,
+        )],
+        isA<FlarkMoveLinesIntent>(),
+      );
+    });
+
+    testWidgets('Alt+Up/Down move lines, gated at the boundary', (
+      tester,
+    ) async {
+      final controller = FlarkFlutterController.fromMarkdown('a\nb\nc');
+      addTearDown(controller.dispose);
+      controller.applySelection(
+        const FlarkSelection.collapsed(2), // line "b"
+        userEvent: 'test',
+      );
+      late BuildContext actionContext;
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: FlarkCommandActions(
+            controller: controller,
+            child: Builder(
+              builder: (context) {
+                actionContext = context;
+                return const SizedBox();
+              },
+            ),
+          ),
+        ),
+      );
+
+      final action = Actions.find<FlarkMoveLinesIntent>(actionContext);
+      expect(action.isEnabled(const FlarkMoveLinesIntent(down: true)), isTrue);
+
+      Actions.invoke(actionContext, const FlarkMoveLinesIntent(down: true));
+      expect(controller.markdown, 'a\nc\nb');
+
+      // Bottom line cannot move further down: the action disables and the key
+      // falls through to caret movement.
+      controller.applySelection(
+        FlarkSelection.collapsed(controller.markdown.length),
+        userEvent: 'test',
+      );
+      expect(action.isEnabled(const FlarkMoveLinesIntent(down: true)), isFalse);
     });
 
     testWidgets('default heading/list/link shortcuts drive the commands', (

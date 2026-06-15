@@ -108,6 +108,31 @@ abstract final class FlarkMarkdownShortcuts {
     );
   }
 
+  /// Intent that moves the line(s) under the selection up or, with [down], down.
+  static FlarkMoveLinesIntent moveLines({bool down = false}) {
+    return FlarkMoveLinesIntent(down: down);
+  }
+
+  /// Intent that duplicates the line(s) under the selection.
+  static FlarkCommandIntent duplicateLines() {
+    return FlarkCommandIntent(
+      const FlarkTypedCommandInvocation(
+        command: FlarkMarkdownInputCommands.duplicateLines,
+        payload: FlarkDuplicateLinesPayload(userEvent: 'shortcut.duplicateLines'),
+      ),
+    );
+  }
+
+  /// Intent that deletes the line(s) under the selection.
+  static FlarkCommandIntent deleteLines() {
+    return FlarkCommandIntent(
+      const FlarkTypedCommandInvocation(
+        command: FlarkMarkdownInputCommands.deleteLines,
+        payload: FlarkDeleteLinesPayload(userEvent: 'shortcut.deleteLines'),
+      ),
+    );
+  }
+
   /// Default inline-formatting shortcut map.
   ///
   /// Uses the Command modifier on Apple platforms and Control elsewhere:
@@ -159,6 +184,14 @@ abstract final class FlarkMarkdownShortcuts {
       const SingleActivator(LogicalKeyboardKey.tab): const FlarkIndentListIntent(),
       const SingleActivator(LogicalKeyboardKey.tab, shift: true):
           const FlarkIndentListIntent(outdent: true),
+      // Alt+Up/Down move the current line(s); gated to fall through to caret
+      // movement at the document boundary.
+      const SingleActivator(LogicalKeyboardKey.arrowUp, alt: true): moveLines(),
+      const SingleActivator(LogicalKeyboardKey.arrowDown, alt: true): moveLines(
+        down: true,
+      ),
+      primary(LogicalKeyboardKey.keyD, shift: true): duplicateLines(),
+      primary(LogicalKeyboardKey.keyK, shift: true): deleteLines(),
     };
   }
 }

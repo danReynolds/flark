@@ -324,4 +324,97 @@ void main() {
       },
     );
   });
+
+  group('FlarkMarkdownInputEngine line manipulation', () {
+    String apply(String markdown, FlarkMarkdownSourceEdit edit) {
+      return markdown.replaceRange(
+        edit.range.start,
+        edit.range.end,
+        edit.replacementText,
+      );
+    }
+
+    test('moves a line down, selection following', () {
+      final edit = FlarkMarkdownInputEngine.moveLines(
+        markdown: 'a\nb\nc',
+        selection: const FlarkSelection.collapsed(2),
+        down: true,
+      )!;
+      expect(apply('a\nb\nc', edit), 'a\nc\nb');
+      expect(edit.selectionAfter, const FlarkSelection.collapsed(4));
+    });
+
+    test('moves a line up, selection following', () {
+      final edit = FlarkMarkdownInputEngine.moveLines(
+        markdown: 'a\nb\nc',
+        selection: const FlarkSelection.collapsed(2),
+        down: false,
+      )!;
+      expect(apply('a\nb\nc', edit), 'b\na\nc');
+      expect(edit.selectionAfter, const FlarkSelection.collapsed(0));
+    });
+
+    test('does not move past the document boundary', () {
+      expect(
+        FlarkMarkdownInputEngine.moveLines(
+          markdown: 'a\nb',
+          selection: const FlarkSelection.collapsed(0),
+          down: false,
+        ),
+        isNull,
+      );
+      expect(
+        FlarkMarkdownInputEngine.moveLines(
+          markdown: 'a\nb',
+          selection: const FlarkSelection.collapsed(2),
+          down: true,
+        ),
+        isNull,
+      );
+    });
+
+    test('moves a multi-line selection as one block', () {
+      final edit = FlarkMarkdownInputEngine.moveLines(
+        markdown: 'a\nb\nc',
+        selection: const FlarkSelection(baseOffset: 0, extentOffset: 3),
+        down: true,
+      )!;
+      expect(apply('a\nb\nc', edit), 'c\na\nb');
+    });
+
+    test('duplicates a line below with the caret on the copy', () {
+      final edit = FlarkMarkdownInputEngine.duplicateLines(
+        markdown: 'a\nb',
+        selection: const FlarkSelection.collapsed(0),
+      );
+      expect(apply('a\nb', edit), 'a\na\nb');
+      expect(edit.selectionAfter, const FlarkSelection.collapsed(2));
+    });
+
+    test('deletes the current line and closes the gap', () {
+      final edit = FlarkMarkdownInputEngine.deleteLines(
+        markdown: 'a\nb\nc',
+        selection: const FlarkSelection.collapsed(2),
+      );
+      expect(apply('a\nb\nc', edit), 'a\nc');
+      expect(edit.selectionAfter, const FlarkSelection.collapsed(2));
+    });
+
+    test('deletes the last line by removing the break before it', () {
+      final edit = FlarkMarkdownInputEngine.deleteLines(
+        markdown: 'a\nb',
+        selection: const FlarkSelection.collapsed(2),
+      );
+      expect(apply('a\nb', edit), 'a');
+      expect(edit.selectionAfter, const FlarkSelection.collapsed(1));
+    });
+
+    test('deletes the only line down to empty', () {
+      final edit = FlarkMarkdownInputEngine.deleteLines(
+        markdown: 'solo',
+        selection: const FlarkSelection.collapsed(2),
+      );
+      expect(apply('solo', edit), '');
+    });
+  });
 }
