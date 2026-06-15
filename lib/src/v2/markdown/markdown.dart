@@ -5,6 +5,7 @@ export 'commands/flark_markdown_inline_commands.dart';
 export 'commands/flark_markdown_input_commands.dart';
 export 'commands/flark_markdown_link_commands.dart';
 export 'commands/flark_markdown_table_commands.dart';
+export 'html/flark_html_markdown_converter.dart';
 export 'inline/flark_markdown_inline_style.dart';
 export 'parse/flark_markdown_parse_backend.dart';
 export 'parse/flark_markdown_parse_protocol.dart';

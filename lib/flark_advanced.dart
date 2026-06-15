@@ -145,6 +145,7 @@ export 'src/v2/markdown/markdown.dart'
         FlarkMarkdownInlineCommands,
         FlarkMarkdownInlineEditingExtension,
         FlarkMarkdownInlineKind,
+        FlarkHtmlMarkdown,
         FlarkMarkdownInlineStyle,
         FlarkMarkdownInlineStyleMarker,
         FlarkMarkdownInlineToken,

@@ -37,6 +37,7 @@ export 'flark_core.dart'
         FlarkInsertTablePayload,
         FlarkInsertThematicBreakPayload,
         FlarkMarkdownInlineCommands,
+        FlarkHtmlMarkdown,
         FlarkMarkdownInlineStyle,
         FlarkMarkdownInputCommands,
         FlarkMarkdownLinkCommands,
