@@ -27,6 +27,124 @@ void main() {
       expect(result.selectionAfter, const FlarkSelection.collapsed(1));
     });
 
+    test('indents a bullet list item by the marker width', () {
+      final result = FlarkMarkdownInputEngine.indent(
+        markdown: '- item',
+        selection: const FlarkSelection.collapsed(4),
+      );
+
+      expect(result, isNotNull);
+      expect(result!.range, const FlarkSourceRange(0, 6));
+      expect(result.replacementText, '  - item');
+      expect(result.selectionAfter, const FlarkSelection.collapsed(6));
+    });
+
+    test('indents an ordered list item by the wider marker', () {
+      final result = FlarkMarkdownInputEngine.indent(
+        markdown: '1. item',
+        selection: const FlarkSelection.collapsed(5),
+      );
+
+      expect(result, isNotNull);
+      expect(result!.range, const FlarkSourceRange(0, 7));
+      expect(result.replacementText, '   1. item');
+      expect(result.selectionAfter, const FlarkSelection.collapsed(8));
+    });
+
+    test('indents a task list item by the bullet width', () {
+      final result = FlarkMarkdownInputEngine.indent(
+        markdown: '- [ ] task',
+        selection: const FlarkSelection.collapsed(8),
+      );
+
+      expect(result, isNotNull);
+      expect(result!.replacementText, '  - [ ] task');
+    });
+
+    test('outdents an indented list item by one level', () {
+      final result = FlarkMarkdownInputEngine.outdent(
+        markdown: '  - item',
+        selection: const FlarkSelection.collapsed(6),
+      );
+
+      expect(result, isNotNull);
+      expect(result!.range, const FlarkSourceRange(0, 8));
+      expect(result.replacementText, '- item');
+      expect(result.selectionAfter, const FlarkSelection.collapsed(4));
+    });
+
+    test('does not indent outside a list item', () {
+      expect(
+        FlarkMarkdownInputEngine.indent(
+          markdown: 'plain text',
+          selection: const FlarkSelection.collapsed(3),
+        ),
+        isNull,
+      );
+    });
+
+    test('does not outdent a top-level list item', () {
+      expect(
+        FlarkMarkdownInputEngine.outdent(
+          markdown: '- item',
+          selection: const FlarkSelection.collapsed(4),
+        ),
+        isNull,
+      );
+    });
+
+    test('indents every list line a multi-line selection spans', () {
+      final result = FlarkMarkdownInputEngine.indent(
+        markdown: '- a\n- b',
+        selection: const FlarkSelection(baseOffset: 2, extentOffset: 6),
+      );
+
+      expect(result, isNotNull);
+      expect(result!.range, const FlarkSourceRange(0, 7));
+      expect(result.replacementText, '  - a\n  - b');
+      // Selection still spans 'a' (now at 4) through 'b' (now at 10).
+      expect(
+        result.selectionAfter,
+        const FlarkSelection(baseOffset: 4, extentOffset: 10),
+      );
+    });
+
+    test('outdents every list line a multi-line selection spans', () {
+      final result = FlarkMarkdownInputEngine.outdent(
+        markdown: '  - a\n  - b',
+        selection: const FlarkSelection(baseOffset: 4, extentOffset: 10),
+      );
+
+      expect(result, isNotNull);
+      expect(result!.replacementText, '- a\n- b');
+      expect(
+        result.selectionAfter,
+        const FlarkSelection(baseOffset: 2, extentOffset: 6),
+      );
+    });
+
+    test('indents only the list lines in a mixed multi-line selection', () {
+      final result = FlarkMarkdownInputEngine.indent(
+        markdown: '- a\nplain\n- b',
+        selection: const FlarkSelection(baseOffset: 2, extentOffset: 12),
+      );
+
+      expect(result, isNotNull);
+      expect(result!.replacementText, '  - a\nplain\n  - b');
+    });
+
+    test('ignores a selection ending at the next line start', () {
+      // Selecting "- a\n" should not indent the second line.
+      final result = FlarkMarkdownInputEngine.indent(
+        markdown: '- a\n- b',
+        selection: const FlarkSelection(baseOffset: 0, extentOffset: 4),
+      );
+
+      expect(result, isNotNull);
+      expect(result!.range, const FlarkSourceRange(0, 3));
+      expect(result.replacementText, '  - a');
+    });
+
     test('backspace after fence-looking lines inside an open fence stays a '
         'plain edit', () {
       // The '~~~' pair lives inside an unclosed ``` fence, so it is body

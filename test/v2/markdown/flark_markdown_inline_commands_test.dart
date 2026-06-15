@@ -266,5 +266,49 @@ void main() {
       expect(result.reason, contains('selected source range'));
       expect(result.transaction, isNull);
     });
+
+    test('unwraps the run around a collapsed caret inside it', () {
+      final state = FlarkEditorState.fromMarkdown(
+        'a **bold** b',
+        selection: const FlarkSelection.collapsed(6),
+      );
+      final registry = FlarkExtensionSet([
+        const FlarkMarkdownInlineEditingExtension(),
+      ]).commandRegistry();
+
+      final result = registry.dispatch(
+        state: state,
+        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+        payload: const FlarkToggleInlineStylePayload(
+          FlarkMarkdownInlineStyle.strong,
+        ),
+      );
+      final next = state.applyTransaction(result.transaction!);
+
+      expect(result.isHandled, isTrue);
+      expect(next.markdown, 'a bold b');
+      // Caret stays over the same character (offset 6 was inside "bold").
+      expect(next.selection, const FlarkSelection.collapsed(4));
+    });
+
+    test('does not unwrap when the collapsed caret is outside the run', () {
+      final state = FlarkEditorState.fromMarkdown(
+        '**bold** plain',
+        selection: const FlarkSelection.collapsed(12),
+      );
+      final registry = FlarkExtensionSet([
+        const FlarkMarkdownInlineEditingExtension(),
+      ]).commandRegistry();
+
+      final result = registry.dispatch(
+        state: state,
+        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+        payload: const FlarkToggleInlineStylePayload(
+          FlarkMarkdownInlineStyle.strong,
+        ),
+      );
+
+      expect(result.isRejected, isTrue);
+    });
   });
 }

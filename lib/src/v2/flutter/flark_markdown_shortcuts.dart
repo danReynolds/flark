@@ -51,6 +51,63 @@ abstract final class FlarkMarkdownShortcuts {
     userEvent: 'shortcut.toggleStrikethrough',
   );
 
+  /// Intent that inserts a `[label]()` link skeleton with the caret in the URL.
+  static FlarkCommandIntent insertLink() {
+    return FlarkCommandIntent(
+      const FlarkTypedCommandInvocation(
+        command: FlarkMarkdownLinkCommands.insertLink,
+        payload: FlarkInsertLinkPayload(userEvent: 'shortcut.insertLink'),
+      ),
+    );
+  }
+
+  /// Intent that sets the current block's heading [level] (0 clears it).
+  static FlarkCommandIntent setHeadingLevel(int level) {
+    return FlarkCommandIntent(
+      FlarkTypedCommandInvocation(
+        command: FlarkMarkdownBlockCommands.setHeadingLevel,
+        payload: FlarkSetHeadingLevelPayload(
+          level,
+          userEvent: 'shortcut.setHeadingLevel',
+        ),
+      ),
+    );
+  }
+
+  /// Intent that toggles a `-` bullet list.
+  static FlarkCommandIntent toggleBulletList() {
+    return FlarkCommandIntent(
+      const FlarkTypedCommandInvocation(
+        command: FlarkMarkdownBlockCommands.toggleBulletList,
+        payload: FlarkToggleBulletListPayload(
+          userEvent: 'shortcut.toggleBulletList',
+        ),
+      ),
+    );
+  }
+
+  /// Intent that toggles a `1.` ordered list.
+  static FlarkCommandIntent toggleOrderedList() {
+    return FlarkCommandIntent(
+      const FlarkTypedCommandInvocation(
+        command: FlarkMarkdownBlockCommands.toggleOrderedList,
+        payload: FlarkToggleOrderedListPayload(
+          userEvent: 'shortcut.toggleOrderedList',
+        ),
+      ),
+    );
+  }
+
+  /// Intent that toggles a `>` block quote.
+  static FlarkCommandIntent toggleQuote() {
+    return FlarkCommandIntent(
+      const FlarkTypedCommandInvocation(
+        command: FlarkMarkdownBlockCommands.toggleQuote,
+        payload: FlarkToggleQuotePayload(userEvent: 'shortcut.toggleQuote'),
+      ),
+    );
+  }
+
   /// Default inline-formatting shortcut map.
   ///
   /// Uses the Command modifier on Apple platforms and Control elsewhere:
@@ -61,26 +118,47 @@ abstract final class FlarkMarkdownShortcuts {
   /// - Strikethrough: Cmd/Ctrl + Shift + X
   ///
   /// [platform] defaults to [defaultTargetPlatform].
-  static Map<ShortcutActivator, FlarkCommandIntent> defaults({
-    TargetPlatform? platform,
-  }) {
+  static Map<ShortcutActivator, Intent> defaults({TargetPlatform? platform}) {
     final isApple =
         (platform ?? defaultTargetPlatform) == TargetPlatform.macOS ||
         (platform ?? defaultTargetPlatform) == TargetPlatform.iOS;
-    SingleActivator primary(LogicalKeyboardKey key, {bool shift = false}) {
+    SingleActivator primary(
+      LogicalKeyboardKey key, {
+      bool shift = false,
+      bool alt = false,
+    }) {
       return SingleActivator(
         key,
         control: !isApple,
         meta: isApple,
         shift: shift,
+        alt: alt,
       );
     }
 
-    return <ShortcutActivator, FlarkCommandIntent>{
+    return <ShortcutActivator, Intent>{
       primary(LogicalKeyboardKey.keyB): toggleStrong(),
       primary(LogicalKeyboardKey.keyI): toggleEmphasis(),
       primary(LogicalKeyboardKey.keyE): toggleInlineCode(),
       primary(LogicalKeyboardKey.keyX, shift: true): toggleStrikethrough(),
+      primary(LogicalKeyboardKey.keyK): insertLink(),
+      // Headings: Cmd/Ctrl + Alt + 1..6, with 0 clearing back to body text.
+      primary(LogicalKeyboardKey.digit1, alt: true): setHeadingLevel(1),
+      primary(LogicalKeyboardKey.digit2, alt: true): setHeadingLevel(2),
+      primary(LogicalKeyboardKey.digit3, alt: true): setHeadingLevel(3),
+      primary(LogicalKeyboardKey.digit4, alt: true): setHeadingLevel(4),
+      primary(LogicalKeyboardKey.digit5, alt: true): setHeadingLevel(5),
+      primary(LogicalKeyboardKey.digit6, alt: true): setHeadingLevel(6),
+      primary(LogicalKeyboardKey.digit0, alt: true): setHeadingLevel(0),
+      // Lists and quote follow the Google Docs convention.
+      primary(LogicalKeyboardKey.digit7, shift: true): toggleOrderedList(),
+      primary(LogicalKeyboardKey.digit8, shift: true): toggleBulletList(),
+      primary(LogicalKeyboardKey.digit9, shift: true): toggleQuote(),
+      // Tab / Shift+Tab nest list items. The action is gated so it only fires
+      // inside a list — Tab elsewhere keeps its normal behavior.
+      const SingleActivator(LogicalKeyboardKey.tab): const FlarkIndentListIntent(),
+      const SingleActivator(LogicalKeyboardKey.tab, shift: true):
+          const FlarkIndentListIntent(outdent: true),
     };
   }
 }

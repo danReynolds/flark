@@ -23,7 +23,7 @@ final class FlarkEditableText extends StatefulWidget {
     this.maxLines,
     this.expands = false,
     this.autofocus = false,
-    this.shortcuts = const <ShortcutActivator, FlarkCommandIntent>{},
+    this.shortcuts = const <ShortcutActivator, Intent>{},
   });
 
   final FlarkFlutterController controller;
@@ -35,7 +35,7 @@ final class FlarkEditableText extends StatefulWidget {
   final int? maxLines;
   final bool expands;
   final bool autofocus;
-  final Map<ShortcutActivator, FlarkCommandIntent> shortcuts;
+  final Map<ShortcutActivator, Intent> shortcuts;
 
   @override
   State<FlarkEditableText> createState() => _FlarkEditableTextState();

@@ -42,7 +42,7 @@ final class FlarkMarkdownEditor extends StatefulWidget {
     this.maxLines,
     this.expands = false,
     this.autofocus = false,
-    this.shortcuts = const <ShortcutActivator, FlarkCommandIntent>{},
+    this.shortcuts = const <ShortcutActivator, Intent>{},
     this.useDefaultShortcuts = true,
     this.showOverlayControls = false,
     this.overlayControlBuilder,
@@ -150,7 +150,7 @@ final class FlarkMarkdownEditor extends StatefulWidget {
   /// `FlarkMarkdownShortcuts.toggleStrong()`) rather than constructing
   /// [FlarkCommandIntent] directly. These merge over [useDefaultShortcuts] and
   /// override any default binding for the same activator.
-  final Map<ShortcutActivator, FlarkCommandIntent> shortcuts;
+  final Map<ShortcutActivator, Intent> shortcuts;
 
   /// Whether to install [FlarkMarkdownShortcuts.defaults] (bold/italic/code/
   /// strikethrough). User-provided [shortcuts] override matching defaults.
@@ -333,10 +333,10 @@ final class _FlarkMarkdownEditorState extends State<FlarkMarkdownEditor> {
     );
   }
 
-  Map<ShortcutActivator, FlarkCommandIntent> _effectiveShortcuts() {
+  Map<ShortcutActivator, Intent> _effectiveShortcuts() {
     if (widget.readOnly) return const {};
     if (!widget.useDefaultShortcuts) return widget.shortcuts;
-    return <ShortcutActivator, FlarkCommandIntent>{
+    return <ShortcutActivator, Intent>{
       ...FlarkMarkdownShortcuts.defaults(),
       ...widget.shortcuts,
     };

@@ -53,9 +53,20 @@ final class FlarkProjectedTextEditAdapter {
     // insertion becomes `open + text + close` with the caret left inside the
     // run, so continued typing extends it through the normal caret-affinity
     // model. Marker-exit above takes precedence (it returns early).
+    //
+    // The wrap is skipped when its outer markers would sit flush against an
+    // identical marker character already in the source — e.g. arming italic
+    // inside `***x***`, where inserting `*y*` next to the existing `***` would
+    // merge into `****` and corrupt the run. Falling through to a plain
+    // insertion lets caret affinity extend the existing run instead.
     if (insertionWrap != null &&
         sourceRange.isCollapsed &&
-        diff.replacementText.isNotEmpty) {
+        diff.replacementText.isNotEmpty &&
+        !_wrapMarkersWouldMerge(
+          currentMarkdown,
+          sourceRange.start,
+          insertionWrap,
+        )) {
       final wrappedText =
           '${insertionWrap.open}${diff.replacementText}${insertionWrap.close}';
       return FlarkTransaction.single(
@@ -100,6 +111,23 @@ final class FlarkProjectedTextEditAdapter {
         projectionInvalidationRange: effectiveRange,
       ),
     );
+  }
+
+  /// Whether wrapping a collapsed insertion at [caret] in [currentMarkdown]
+  /// would place one of the wrap's outer markers flush against an identical
+  /// marker character, merging them into a longer (corrupting) run.
+  bool _wrapMarkersWouldMerge(
+    String currentMarkdown,
+    int caret,
+    ({String open, String close}) wrap,
+  ) {
+    final openChar = wrap.open.codeUnitAt(0);
+    final closeChar = wrap.close.codeUnitAt(wrap.close.length - 1);
+    final before = caret > 0 ? currentMarkdown.codeUnitAt(caret - 1) : null;
+    final after = caret < currentMarkdown.length
+        ? currentMarkdown.codeUnitAt(caret)
+        : null;
+    return before == openChar || after == closeChar;
   }
 
   /// Typing a run's own marker character at its inside-end exits the run:

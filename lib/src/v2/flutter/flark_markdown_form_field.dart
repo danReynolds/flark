@@ -10,7 +10,6 @@ import '../core/core.dart'
         FlarkTransaction;
 import '../markdown/markdown.dart';
 import '../render_plan/render_plan.dart';
-import 'flark_command_actions.dart';
 import 'flark_flutter_controller.dart';
 import 'flark_markdown_editor.dart';
 import 'flark_markdown_theme.dart';
@@ -42,7 +41,7 @@ final class FlarkMarkdownEditorFormField extends FormField<String> {
     this.maxLines,
     this.expands = false,
     this.autofocus = false,
-    this.shortcuts = const <ShortcutActivator, FlarkCommandIntent>{},
+    this.shortcuts = const <ShortcutActivator, Intent>{},
     this.useDefaultShortcuts = true,
     this.showOverlayControls = false,
     this.overlayControlBuilder,
@@ -111,7 +110,7 @@ final class FlarkMarkdownEditorFormField extends FormField<String> {
   final int? maxLines;
   final bool expands;
   final bool autofocus;
-  final Map<ShortcutActivator, FlarkCommandIntent> shortcuts;
+  final Map<ShortcutActivator, Intent> shortcuts;
   final bool useDefaultShortcuts;
   final bool showOverlayControls;
   final FlarkOverlayTargetWidgetBuilder? overlayControlBuilder;
