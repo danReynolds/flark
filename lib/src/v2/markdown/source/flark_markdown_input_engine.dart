@@ -152,6 +152,127 @@ final class FlarkMarkdownInputEngine {
     return _reindent(markdown: markdown, selection: selection, outdent: true);
   }
 
+  /// Moves the line(s) the selection spans up or down one line, swapping with
+  /// the adjacent line, or null at the document boundary. The selection follows
+  /// the moved block.
+  static FlarkMarkdownSourceEdit? moveLines({
+    required String markdown,
+    required FlarkSelection selection,
+    required bool down,
+  }) {
+    final span = _selectedLineSpan(markdown, selection);
+    final blockStart = span.start;
+    final blockEnd = span.end;
+    final blockText = markdown.substring(blockStart, blockEnd);
+
+    if (!down) {
+      if (blockStart == 0) return null;
+      final previous = _lineAtSelection(
+        markdown,
+        FlarkSelection.collapsed(blockStart - 1),
+      );
+      final previousText = markdown.substring(previous.start, previous.end);
+      final shift = -(previousText.length + 1);
+      return _sourceEdit(
+        range: FlarkSourceRange(previous.start, blockEnd),
+        replacementText: '$blockText\n$previousText',
+        selectionAfter: _shiftSelection(selection, shift),
+      );
+    }
+
+    if (blockEnd >= markdown.length) return null;
+    final next = _lineAtSelection(
+      markdown,
+      FlarkSelection.collapsed(blockEnd + 1),
+    );
+    final nextText = markdown.substring(next.start, next.end);
+    final shift = nextText.length + 1;
+    return _sourceEdit(
+      range: FlarkSourceRange(blockStart, next.end),
+      replacementText: '$nextText\n$blockText',
+      selectionAfter: _shiftSelection(selection, shift),
+    );
+  }
+
+  static FlarkSelection _shiftSelection(FlarkSelection selection, int shift) {
+    return FlarkSelection(
+      baseOffset: selection.baseOffset + shift,
+      extentOffset: selection.extentOffset + shift,
+    );
+  }
+
+  /// Duplicates the line(s) the selection spans, inserting a copy directly
+  /// below, with the selection moved onto the copy.
+  static FlarkMarkdownSourceEdit duplicateLines({
+    required String markdown,
+    required FlarkSelection selection,
+  }) {
+    final span = _selectedLineSpan(markdown, selection);
+    final blockText = markdown.substring(span.start, span.end);
+    final shift = blockText.length + 1;
+    return _sourceEdit(
+      range: FlarkSourceRange(span.end, span.end),
+      replacementText: '\n$blockText',
+      selectionAfter: _shiftSelection(selection, shift),
+    );
+  }
+
+  /// Deletes the line(s) the selection spans, along with one line break so the
+  /// surrounding lines close up. The caret lands where the block started.
+  static FlarkMarkdownSourceEdit deleteLines({
+    required String markdown,
+    required FlarkSelection selection,
+  }) {
+    final span = _selectedLineSpan(markdown, selection);
+    if (span.end < markdown.length) {
+      // Remove the block and its trailing line break.
+      return _sourceEdit(
+        range: FlarkSourceRange(span.start, span.end + 1),
+        replacementText: '',
+        selectionAfter: FlarkSelection.collapsed(span.start),
+      );
+    }
+    if (span.start > 0) {
+      // Last line: remove the block and the line break before it.
+      return _sourceEdit(
+        range: FlarkSourceRange(span.start - 1, span.end),
+        replacementText: '',
+        selectionAfter: FlarkSelection.collapsed(span.start - 1),
+      );
+    }
+    // The whole document is one block of lines.
+    return _sourceEdit(
+      range: FlarkSourceRange(0, span.end),
+      replacementText: '',
+      selectionAfter: const FlarkSelection.collapsed(0),
+    );
+  }
+
+  /// The source span of the full lines a selection covers. A range ending
+  /// exactly at a line start does not pull in that trailing line.
+  static FlarkSourceRange _selectedLineSpan(
+    String markdown,
+    FlarkSelection selection,
+  ) {
+    final start = _lineAtSelection(
+      markdown,
+      FlarkSelection.collapsed(selection.start),
+    ).start;
+    var endProbe = selection.end;
+    if (endProbe > selection.start) {
+      final endLine = _lineAtSelection(
+        markdown,
+        FlarkSelection.collapsed(endProbe),
+      );
+      if (endLine.start == endProbe) endProbe -= 1;
+    }
+    final end = _lineAtSelection(
+      markdown,
+      FlarkSelection.collapsed(endProbe.clamp(0, markdown.length)),
+    ).end;
+    return FlarkSourceRange(start, end);
+  }
+
   static FlarkMarkdownSourceEdit? _reindent({
     required String markdown,
     required FlarkSelection selection,

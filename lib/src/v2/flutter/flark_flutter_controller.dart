@@ -367,14 +367,23 @@ final class FlarkFlutterController extends ChangeNotifier {
     int? undoGroupId,
     FlarkMapAffinity fallbackInsertionAffinity = FlarkMapAffinity.downstream,
   }) {
-    final smartLink = _smartLinkPasteTransaction(
+    // Input recognizers run before the plain edit adapter: a change that
+    // replaces the whole selection with a single token can mean "wrap the
+    // selection" rather than "replace it". Each recognizer returns null to fall
+    // through to the next, then to the adapter. Order matters only when two
+    // could match the same token (they currently cannot).
+    final replacement = _selectionReplacement(
       oldDisplayText: oldDisplayText,
       newDisplayText: newDisplayText,
-      undoGroupId: undoGroupId,
     );
-    if (smartLink != null) {
-      applyTransaction(smartLink);
-      return true;
+    if (replacement != null) {
+      final recognized =
+          _wrapSelectionRecognizer(replacement, undoGroupId) ??
+          _smartLinkPasteRecognizer(replacement, undoGroupId);
+      if (recognized != null) {
+        applyTransaction(recognized);
+        return true;
+      }
     }
 
     final transaction = _projectedTextEditAdapter.transactionFromDisplayEdit(
@@ -392,16 +401,16 @@ final class FlarkFlutterController extends ChangeNotifier {
     return true;
   }
 
-  /// Pasting a URL over a non-empty plain-text selection wraps it as a link —
-  /// `[selected text](url)` — instead of replacing the text with the bare URL.
+  /// A projected change that replaces exactly the current plain-text selection
+  /// with a single inserted token, or null. Shared by the selection-wrap and
+  /// smart-link-paste recognizers.
   ///
-  /// Returns null (so the normal replace path runs) unless the projected change
-  /// is exactly the selected display range replaced by a single URL, and the
-  /// selection is plain (no hidden markers) and not itself a URL.
-  FlarkTransaction? _smartLinkPasteTransaction({
+  /// "Plain" means the selected source equals the selected display (no hidden
+  /// markers inside the selection), so a recognizer can wrap/replace the source
+  /// range directly.
+  _SelectionReplacement? _selectionReplacement({
     required String oldDisplayText,
     required String newDisplayText,
-    int? undoGroupId,
   }) {
     final selection = this.selection;
     if (selection.isCollapsed) return null;
@@ -413,7 +422,6 @@ final class FlarkFlutterController extends ChangeNotifier {
       return null;
     }
 
-    // The change must be exactly the selected display range replaced.
     final prefix = oldDisplayText.substring(0, displayStart);
     final suffix = oldDisplayText.substring(displayEnd);
     if (!newDisplayText.startsWith(prefix) ||
@@ -421,30 +429,65 @@ final class FlarkFlutterController extends ChangeNotifier {
         newDisplayText.length < prefix.length + suffix.length) {
       return null;
     }
-    final pasted = newDisplayText.substring(
-      prefix.length,
-      newDisplayText.length - suffix.length,
-    );
-    if (!_urlPattern.hasMatch(pasted)) return null;
-
-    // The selected text becomes the label: require it plain (source matches
-    // display, so no hidden markers) and not itself a URL.
-    final label = markdown.substring(selection.start, selection.end);
-    if (label.isEmpty ||
-        label != oldDisplayText.substring(displayStart, displayEnd) ||
-        _urlPattern.hasMatch(label)) {
+    final content = markdown.substring(selection.start, selection.end);
+    if (content.isEmpty ||
+        content != oldDisplayText.substring(displayStart, displayEnd)) {
       return null;
     }
-
-    final replacement = '[$label]($pasted)';
-    final range = FlarkSourceRange(selection.start, selection.end);
-    return FlarkTransaction.single(
-      FlarkSourceOperation.replace(
-        replacedRange: range,
-        replacementText: replacement,
+    return _SelectionReplacement(
+      range: FlarkSourceRange(selection.start, selection.end),
+      content: content,
+      inserted: newDisplayText.substring(
+        prefix.length,
+        newDisplayText.length - suffix.length,
       ),
+    );
+  }
+
+  /// Typing a delimiter or bracket/quote over a selection wraps it (`*foo*`,
+  /// `(foo)`) instead of replacing it, leaving the inner text selected so a
+  /// second keystroke nests (`*foo*` → `**foo**`).
+  FlarkTransaction? _wrapSelectionRecognizer(
+    _SelectionReplacement replacement,
+    int? undoGroupId,
+  ) {
+    final pair = _wrapPairFor(replacement.inserted);
+    if (pair == null) return null;
+    final range = replacement.range;
+    final wrapped = '${pair.open}${replacement.content}${pair.close}';
+    final innerStart = range.start + pair.open.length;
+    return FlarkTransaction.single(
+      FlarkSourceOperation.replace(replacedRange: range, replacementText: wrapped),
       selectionBefore: selection,
-      selectionAfter: FlarkSelection.collapsed(range.start + replacement.length),
+      selectionAfter: FlarkSelection(
+        baseOffset: innerStart,
+        extentOffset: innerStart + replacement.content.length,
+      ),
+      metadata: FlarkTransactionMetadata(
+        intent: FlarkTransactionIntent.input,
+        userEvent: 'input.wrapSelection',
+        undoGroupId: undoGroupId,
+        parseInvalidationRange: range,
+        projectionInvalidationRange: range,
+      ),
+    );
+  }
+
+  /// Pasting a URL over a selection wraps it as `[selected](url)` instead of
+  /// replacing the text with the bare URL. Skips a selection that is itself a
+  /// URL (a deliberate URL-for-URL replacement).
+  FlarkTransaction? _smartLinkPasteRecognizer(
+    _SelectionReplacement replacement,
+    int? undoGroupId,
+  ) {
+    if (!_urlPattern.hasMatch(replacement.inserted)) return null;
+    if (_urlPattern.hasMatch(replacement.content)) return null;
+    final range = replacement.range;
+    final linked = '[${replacement.content}](${replacement.inserted})';
+    return FlarkTransaction.single(
+      FlarkSourceOperation.replace(replacedRange: range, replacementText: linked),
+      selectionBefore: selection,
+      selectionAfter: FlarkSelection.collapsed(range.start + linked.length),
       metadata: FlarkTransactionMetadata(
         intent: FlarkTransactionIntent.paste,
         userEvent: 'input.smartLinkPaste',
@@ -453,6 +496,21 @@ final class FlarkFlutterController extends ChangeNotifier {
         projectionInvalidationRange: range,
       ),
     );
+  }
+
+  /// The open/close pair for a one-character wrap delimiter, or null.
+  static ({String open, String close})? _wrapPairFor(String inserted) {
+    return switch (inserted) {
+      '*' => (open: '*', close: '*'),
+      '_' => (open: '_', close: '_'),
+      '`' => (open: '`', close: '`'),
+      '(' => (open: '(', close: ')'),
+      '[' => (open: '[', close: ']'),
+      '{' => (open: '{', close: '}'),
+      '"' => (open: '"', close: '"'),
+      "'" => (open: "'", close: "'"),
+      _ => null,
+    };
   }
 
   /// Applies a display-space selection.
@@ -547,18 +605,29 @@ final class FlarkFlutterController extends ChangeNotifier {
       return false;
     }
 
-    final nextProjection = FlarkProjection.fromParseResult(parseResult);
-    _projection = nextProjection;
+    final parsedProjection = FlarkProjection.fromParseResult(parseResult);
     final baseRenderPlan = FlarkRenderPlan.fromParseResult(
       parseResult: parseResult,
-      projection: nextProjection,
+      projection: parsedProjection,
     );
-    _renderPlan = applyFlarkRenderPlanExtensions(
+    final extendedRenderPlan = applyFlarkRenderPlanExtensions(
       renderPlan: baseRenderPlan,
       parseResult: parseResult,
-      projection: nextProjection,
+      projection: parsedProjection,
       extensions: _runtime.extensions,
     );
+    // Keep an emphasis/strong/strikethrough run rendered while the caret edits
+    // inside it, even when a transient trailing space (`**foo **`) makes the
+    // parse drop the styled run. Pure (source, caret) function — auto-releases
+    // when the caret leaves or the run becomes valid markdown again.
+    final sticky = FlarkStickyInlineRun.reconcile(
+      projection: parsedProjection,
+      renderPlan: extendedRenderPlan,
+      source: state.markdown,
+      selection: state.selection,
+    );
+    _projection = sticky.projection;
+    _renderPlan = sticky.renderPlan;
     _renderPlanRevision = parseResult.revision;
     _lastProjectionPrediction = null;
     // A typed closing marker is the user speaking markdown source: the run
@@ -952,6 +1021,23 @@ final class FlarkFlutterController extends ChangeNotifier {
     }
     return false;
   }
+}
+
+final class _SelectionReplacement {
+  const _SelectionReplacement({
+    required this.range,
+    required this.content,
+    required this.inserted,
+  });
+
+  /// The source range covered by the selection that was replaced.
+  final FlarkSourceRange range;
+
+  /// The selected text (equal to its display, i.e. plain — no hidden markers).
+  final String content;
+
+  /// The token the platform inserted in place of the selection.
+  final String inserted;
 }
 
 final class _PredictedStructuralRenderPlan {

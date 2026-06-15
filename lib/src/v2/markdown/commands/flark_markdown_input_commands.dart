@@ -23,6 +23,18 @@ abstract final class FlarkMarkdownInputCommands {
   static const handleTab = FlarkCommand<FlarkHandleTabPayload>(
     'markdown.handleTab',
   );
+
+  static const moveLines = FlarkCommand<FlarkMoveLinesPayload>(
+    'markdown.moveLines',
+  );
+
+  static const duplicateLines = FlarkCommand<FlarkDuplicateLinesPayload>(
+    'markdown.duplicateLines',
+  );
+
+  static const deleteLines = FlarkCommand<FlarkDeleteLinesPayload>(
+    'markdown.deleteLines',
+  );
 }
 
 final class FlarkHandleEnterPayload {
@@ -48,6 +60,29 @@ final class FlarkHandleTabPayload {
   final String userEvent;
 }
 
+final class FlarkMoveLinesPayload {
+  const FlarkMoveLinesPayload({
+    this.down = false,
+    this.userEvent = 'input.moveLines',
+  });
+
+  /// Whether to move the line(s) down rather than up.
+  final bool down;
+  final String userEvent;
+}
+
+final class FlarkDuplicateLinesPayload {
+  const FlarkDuplicateLinesPayload({this.userEvent = 'input.duplicateLines'});
+
+  final String userEvent;
+}
+
+final class FlarkDeleteLinesPayload {
+  const FlarkDeleteLinesPayload({this.userEvent = 'input.deleteLines'});
+
+  final String userEvent;
+}
+
 final class FlarkMarkdownInputEditingExtension extends FlarkExtension {
   const FlarkMarkdownInputEditingExtension();
 
@@ -68,7 +103,60 @@ final class FlarkMarkdownInputEditingExtension extends FlarkExtension {
         .register<FlarkHandleTabPayload>(
           FlarkMarkdownInputCommands.handleTab,
           _handleTab,
+        )
+        .register<FlarkMoveLinesPayload>(
+          FlarkMarkdownInputCommands.moveLines,
+          _moveLines,
+        )
+        .register<FlarkDuplicateLinesPayload>(
+          FlarkMarkdownInputCommands.duplicateLines,
+          _duplicateLines,
+        )
+        .register<FlarkDeleteLinesPayload>(
+          FlarkMarkdownInputCommands.deleteLines,
+          _deleteLines,
         );
+  }
+
+  FlarkCommandResult _moveLines(
+    FlarkCommandContext<FlarkMoveLinesPayload> context,
+  ) {
+    final state = context.state;
+    final result = FlarkMarkdownInputEngine.moveLines(
+      markdown: state.markdown,
+      selection: state.selection,
+      down: context.payload.down,
+    );
+    if (result == null) return const FlarkCommandResult.notHandled();
+    return _resultForInputResult(state, result, context.payload.userEvent);
+  }
+
+  FlarkCommandResult _duplicateLines(
+    FlarkCommandContext<FlarkDuplicateLinesPayload> context,
+  ) {
+    final state = context.state;
+    return _resultForInputResult(
+      state,
+      FlarkMarkdownInputEngine.duplicateLines(
+        markdown: state.markdown,
+        selection: state.selection,
+      ),
+      context.payload.userEvent,
+    );
+  }
+
+  FlarkCommandResult _deleteLines(
+    FlarkCommandContext<FlarkDeleteLinesPayload> context,
+  ) {
+    final state = context.state;
+    return _resultForInputResult(
+      state,
+      FlarkMarkdownInputEngine.deleteLines(
+        markdown: state.markdown,
+        selection: state.selection,
+      ),
+      context.payload.userEvent,
+    );
   }
 
   FlarkCommandResult _handleEnter(

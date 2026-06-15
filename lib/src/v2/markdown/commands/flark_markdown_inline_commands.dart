@@ -47,16 +47,20 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
     final marker = context.payload.style.marker;
 
     if (selection.isCollapsed) {
-      // A collapsed caret inside an existing run of this style toggles it off
-      // by unwrapping the run. (Arming a new style on a collapsed caret is
-      // handled one layer up, on the controller, before reaching here.)
-      final toggleOff = _collapsedToggleOff(
+      // Toggling a style off with a collapsed caret inside its run exits the
+      // run — the caret steps past the hidden closing marker so future typing
+      // is unstyled — rather than unwrapping the text already written. At the
+      // run's trailing edge the closing marker is zero-width, so this is an
+      // invisible step (matches Google Docs / Word "turn off, keep typing").
+      // (Arming a new style on a collapsed caret is handled one layer up, on
+      // the controller, before reaching here.)
+      final exit = _collapsedExitRun(
         text,
         selection.extentOffset,
         marker,
         context.payload.userEvent,
       );
-      if (toggleOff != null) return toggleOff;
+      if (exit != null) return exit;
       return FlarkCommandResult.rejected(
         'Inline style toggling requires a selected source range.',
       );
@@ -162,13 +166,14 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
     );
   }
 
-  /// Unwraps the run of [marker] enclosing the collapsed [caret], or null when
-  /// the caret is not inside such a run.
+  /// Exits the run of [marker] enclosing the collapsed [caret] by stepping the
+  /// caret just past the closing marker, or null when the caret is not inside
+  /// such a run.
   ///
-  /// Removes both markers and keeps the caret over the same character, so
-  /// pressing the toggle a second time (with the caret inside a styled run)
-  /// turns the style off — the missing counterpart to arming on plain text.
-  FlarkCommandResult? _collapsedToggleOff(
+  /// The text already written stays styled; only the caret moves, so the next
+  /// character typed lands outside the run as unstyled text. This is a
+  /// selection-only move (no document edit, not recorded in history).
+  FlarkCommandResult? _collapsedExitRun(
     String text,
     int caret,
     String marker,
@@ -176,25 +181,15 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
   ) {
     final run = _enclosingMarkerRun(text, caret, marker);
     if (run == null) return null;
-    final content = text.substring(run.contentStart, run.contentEnd);
-    final caretInContent =
-        caret.clamp(run.contentStart, run.contentEnd) - run.contentStart;
-    final markerRange = FlarkSourceRange(run.openStart, run.closeEnd);
     return FlarkCommandResult.handled(
-      transaction: FlarkTransaction.single(
-        FlarkSourceOperation.replace(
-          replacedRange: markerRange,
-          replacementText: content,
-        ),
+      transaction: FlarkTransaction(
+        operations: const [],
         selectionBefore: FlarkSelection.collapsed(caret),
-        selectionAfter: FlarkSelection.collapsed(
-          run.openStart + caretInContent,
-        ),
+        selectionAfter: FlarkSelection.collapsed(run.closeEnd),
         metadata: FlarkTransactionMetadata(
-          intent: FlarkTransactionIntent.command,
+          intent: FlarkTransactionIntent.selection,
           userEvent: userEvent,
-          parseInvalidationRange: markerRange,
-          projectionInvalidationRange: markerRange,
+          addToHistory: false,
         ),
       ),
     );

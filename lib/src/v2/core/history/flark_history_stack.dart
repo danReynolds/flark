@@ -1,6 +1,7 @@
 import '../document/flark_document.dart';
 import '../state/flark_editor_state.dart';
 import '../transaction/flark_transaction.dart';
+import '../transaction/flark_transaction_metadata.dart';
 
 final class FlarkHistoryEntry {
   FlarkHistoryEntry({
@@ -102,11 +103,19 @@ final class FlarkHistoryStack {
     final inverse = transaction.invert(documentBefore);
     final groupId = transaction.metadata.undoGroupId;
     final nextUndoEntries = [...undoEntries];
+    final lastEntry = nextUndoEntries.isEmpty ? null : nextUndoEntries.last;
 
-    if (groupId != null &&
-        nextUndoEntries.isNotEmpty &&
-        nextUndoEntries.last.undoGroupId == groupId) {
-      nextUndoEntries[nextUndoEntries.length - 1] = nextUndoEntries.last.append(
+    // An explicit group id (IME composition) merges by id; plain typing with no
+    // group id coalesces consecutive single characters so one undo removes a
+    // word rather than a letter.
+    final coalesce =
+        lastEntry != null &&
+        (groupId != null
+            ? lastEntry.undoGroupId == groupId
+            : _coalescesTyping(lastEntry, transaction));
+
+    if (coalesce) {
+      nextUndoEntries[nextUndoEntries.length - 1] = lastEntry.append(
         transaction,
         inverse,
       );
@@ -128,6 +137,46 @@ final class FlarkHistoryStack {
       redoEntries: const <FlarkHistoryEntry>[],
       maxEntries: maxEntries,
     );
+  }
+
+  /// Whether [transaction] continues the typing run in [lastEntry], so it
+  /// should merge into that undo entry instead of starting a new one.
+  ///
+  /// Merges contiguous single-character insertions; breaks at the start of a
+  /// new word (whitespace → non-whitespace) so undo removes one word at a time,
+  /// and at a caret jump or any non-typing edit.
+  static bool _coalescesTyping(
+    FlarkHistoryEntry lastEntry,
+    FlarkTransaction transaction,
+  ) {
+    if (lastEntry.undoGroupId != null) return false;
+    final typed = _typedChar(transaction);
+    if (typed == null) return false;
+    final previous = _typedChar(lastEntry.redoTransactions.last);
+    if (previous == null) return false;
+    if (typed.offset != previous.offset + 1) return false;
+    if (_isWhitespace(previous.char) && !_isWhitespace(typed.char)) return false;
+    return true;
+  }
+
+  /// The insertion offset and character of a single-character typed insertion
+  /// eligible for coalescing, or null for anything else (multi-char inserts,
+  /// replacements, deletions, commands, pastes, or IME-grouped input).
+  static ({int offset, String char})? _typedChar(FlarkTransaction transaction) {
+    final metadata = transaction.metadata;
+    if (metadata.intent != FlarkTransactionIntent.input) return null;
+    if (metadata.undoGroupId != null) return null;
+    if (transaction.operations.length != 1) return null;
+    final operation = transaction.operations.single;
+    if (!operation.replacedRange.isCollapsed ||
+        operation.replacementText.length != 1) {
+      return null;
+    }
+    return (offset: operation.replacedRange.start, char: operation.replacementText);
+  }
+
+  static bool _isWhitespace(String char) {
+    return char == ' ' || char == '\t' || char == '\n' || char == '\r';
   }
 
   FlarkHistoryResult undo(FlarkEditorState state) {
