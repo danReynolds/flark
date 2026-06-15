@@ -244,6 +244,20 @@ void main() {
       expect(controller.markdown, '*y');
     });
 
+    test('an armed wrap flags an immediate parse; plain typing does not', () {
+      final armed = FlarkFlutterController.fromMarkdown('');
+      addTearDown(armed.dispose);
+      armed.commands.toggleStrong();
+      armed.applyProjectedTextEdit(oldDisplayText: '', newDisplayText: 'x');
+      expect(armed.lastEditRequestsImmediateParse, isTrue);
+
+      final plain = FlarkFlutterController.fromMarkdown('ab');
+      addTearDown(plain.dispose);
+      plain.applySelection(const FlarkSelection.collapsed(1), userEvent: 'test');
+      plain.applyProjectedTextEdit(oldDisplayText: 'ab', newDisplayText: 'axb');
+      expect(plain.lastEditRequestsImmediateParse, isFalse);
+    });
+
     test('emits a pendingInlineStylesChanged event when armed', () async {
       final controller = FlarkFlutterController.fromMarkdown('');
       addTearDown(controller.dispose);
