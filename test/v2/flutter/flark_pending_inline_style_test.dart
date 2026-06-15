@@ -131,12 +131,13 @@ void main() {
       expect(controller.markdown, '~~x~~');
     });
 
-    test('collapsed toggle inside an existing run turns the style off', () {
-      for (final probe in <(String, int, FlarkMarkdownInlineStyle, String)>[
-        ('**bold**', 4, FlarkMarkdownInlineStyle.strong, 'bold'),
-        ('*em*', 2, FlarkMarkdownInlineStyle.emphasis, 'em'),
-        ('`code`', 3, FlarkMarkdownInlineStyle.inlineCode, 'code'),
-        ('~~done~~', 4, FlarkMarkdownInlineStyle.strikethrough, 'done'),
+    test('collapsed toggle off exits the run without unwrapping it', () {
+      // (source, caretInsideAtTrailingEdge, style, caretAfterExit)
+      for (final probe in <(String, int, FlarkMarkdownInlineStyle, int)>[
+        ('**bold**', 6, FlarkMarkdownInlineStyle.strong, 8),
+        ('*em*', 3, FlarkMarkdownInlineStyle.emphasis, 4),
+        ('`code`', 5, FlarkMarkdownInlineStyle.inlineCode, 6),
+        ('~~done~~', 6, FlarkMarkdownInlineStyle.strikethrough, 8),
       ]) {
         final controller = FlarkFlutterController.fromMarkdown(probe.$1);
         addTearDown(controller.dispose);
@@ -147,27 +148,29 @@ void main() {
 
         controller.commands.toggleInlineStyle(probe.$3);
 
-        // The run is unwrapped, not re-armed.
-        expect(controller.markdown, probe.$4, reason: 'unwrap of "${probe.$1}"');
+        // The text already written is untouched; only the caret exits the run,
+        // so future typing is unstyled.
+        expect(controller.markdown, probe.$1, reason: 'exit of "${probe.$1}"');
+        expect(controller.selection, FlarkSelection.collapsed(probe.$4));
         expect(controller.pendingInlineStyles, isEmpty);
+        expect(controller.commands.isInlineActive(probe.$3), isFalse);
       }
     });
 
-    test('collapsed toggle of an active style never arms or corrupts', () {
-      // Regression: arming a style already active at the caret used to nest
-      // markers and corrupt the source on the next keystroke.
+    test('collapsed toggle off never arms, unwraps, or corrupts', () {
+      // Regression: toggling off used to unwrap the run (deleting the markers
+      // around text already written); it now only exits.
       final controller = FlarkFlutterController.fromMarkdown('**bold**');
       addTearDown(controller.dispose);
       controller.applySelection(
-        const FlarkSelection.collapsed(4),
+        const FlarkSelection.collapsed(6),
         userEvent: 'test',
       );
 
       controller.commands.toggleStrong();
 
       expect(controller.pendingInlineStyles, isEmpty);
-      expect(controller.markdown, 'bold');
-      // No stray markers, and bold is no longer active at the caret.
+      expect(controller.markdown, '**bold**');
       expect(controller.commands.strongActive, isFalse);
     });
 

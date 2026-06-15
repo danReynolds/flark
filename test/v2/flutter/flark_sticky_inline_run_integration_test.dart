@@ -45,4 +45,30 @@ void main() {
       expect(controller.projection.projectText(controller.markdown), 'foo bar ');
     });
   });
+
+  group('Inline toggle off (exit, do not unwrap)', () {
+    test('toggling a style off then typing continues unstyled', () async {
+      final controller = FlarkFlutterController.fromMarkdown('**bold**');
+      addTearDown(controller.dispose);
+      await controller.parseNow();
+      // Caret at the run's trailing edge: inside, before the hidden close.
+      controller.applySelection(
+        const FlarkSelection.collapsed(6),
+        userEvent: 'test',
+      );
+
+      // Turning bold off keeps the already-written text bold and exits the run.
+      controller.commands.toggleStrong();
+      expect(controller.markdown, '**bold**');
+      expect(controller.commands.strongActive, isFalse);
+
+      // The next typed character lands outside the run as plain text.
+      final applied = controller.applyProjectedTextEdit(
+        oldDisplayText: 'bold',
+        newDisplayText: 'boldx',
+      );
+      expect(applied, isTrue);
+      expect(controller.markdown, '**bold**x');
+    });
+  });
 }
