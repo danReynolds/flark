@@ -171,6 +171,32 @@ void main() {
       expect(controller.commands.strongActive, isFalse);
     });
 
+    test('skips the wrap when markers would merge with an adjacent marker', () {
+      // A literal '*' immediately before the caret: wrapping armed italic would
+      // produce the corrupt '**y*'. The wrap is skipped and the text inserts
+      // plainly instead.
+      final controller = FlarkFlutterController.fromMarkdown('*');
+      addTearDown(controller.dispose);
+      controller.applySelection(
+        const FlarkSelection.collapsed(1),
+        userEvent: 'test',
+      );
+
+      controller.commands.toggleEmphasis();
+      expect(
+        controller.pendingInlineStyles,
+        contains(FlarkMarkdownInlineStyle.emphasis),
+      );
+
+      final applied = controller.applyProjectedTextEdit(
+        oldDisplayText: '*',
+        newDisplayText: '*y',
+      );
+
+      expect(applied, isTrue);
+      expect(controller.markdown, '*y');
+    });
+
     test('emits a pendingInlineStylesChanged event when armed', () async {
       final controller = FlarkFlutterController.fromMarkdown('');
       addTearDown(controller.dispose);
