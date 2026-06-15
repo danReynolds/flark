@@ -368,6 +368,84 @@ void main() {
       expect(controller.selection, const FlarkSelection.collapsed(0));
     },
   );
+
+  testWidgets(
+    'hardware Backspace just past a run close re-enters the run, not the marker',
+    (tester) async {
+      // The reported repro: caret outside the run (after the hidden closing
+      // `**`). A naive delete cut a marker char, leaving the unbalanced
+      // `**bold*`; it must drop the last content char instead (`**bol**`).
+      final controller = FlarkFlutterController.fromMarkdown(
+        '**bold**',
+        extensions: FlarkMarkdownEditingExtensions.standard(),
+      );
+      addTearDown(controller.dispose);
+      await _applyComrakParseResult(controller);
+      controller.applySelection(
+        const FlarkSelection.collapsed(8), // outside, past the close
+        userEvent: 'test',
+      );
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: FlarkProjectedEditableText(
+            controller: controller,
+            style: const TextStyle(fontSize: 14),
+            autofocus: true,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final editable = tester.widget<EditableText>(find.byType(EditableText));
+      expect(editable.controller.text, 'bold');
+
+      await tester.showKeyboard(find.byType(EditableText));
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+      await tester.pump();
+
+      expect(controller.markdown, '**bol**');
+    },
+  );
+
+  testWidgets(
+    'hardware Backspace across plain text into a run stays balanced',
+    (tester) async {
+      // Type past a bold run, then backspace across the plain text into it.
+      final controller = FlarkFlutterController.fromMarkdown(
+        '**bold**x',
+        extensions: FlarkMarkdownEditingExtensions.standard(),
+      );
+      addTearDown(controller.dispose);
+      await _applyComrakParseResult(controller);
+      controller.applySelection(
+        const FlarkSelection.collapsed(9), // after the trailing 'x'
+        userEvent: 'test',
+      );
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: FlarkProjectedEditableText(
+            controller: controller,
+            style: const TextStyle(fontSize: 14),
+            autofocus: true,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.showKeyboard(find.byType(EditableText));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace); // deletes 'x'
+      await tester.pump();
+      expect(controller.markdown, '**bold**');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace); // re-enters run
+      await tester.pump();
+      expect(controller.markdown, '**bol**');
+    },
+  );
 }
 
 FlarkProjection _boldProjection() {

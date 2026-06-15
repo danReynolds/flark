@@ -174,6 +174,121 @@ void main() {
       });
     });
 
+    group('resolveBackspaceSelection', () {
+      // Source: **bold** — opening [0,2) closing [6,8), content 'bold' [2,6).
+      final bold = FlarkProjection(
+        textLength: 8,
+        hiddenRanges: const [
+          FlarkHiddenRange(
+            range: FlarkSourceRange(0, 2),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            opensInlineRun: true,
+          ),
+          FlarkHiddenRange(
+            range: FlarkSourceRange(6, 8),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            closesInlineRun: true,
+          ),
+        ],
+      );
+
+      // Source: **x** — opening [0,2) closing [3,5), single content char [2,3).
+      final single = FlarkProjection(
+        textLength: 5,
+        hiddenRanges: const [
+          FlarkHiddenRange(
+            range: FlarkSourceRange(0, 2),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            opensInlineRun: true,
+          ),
+          FlarkHiddenRange(
+            range: FlarkSourceRange(3, 5),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            closesInlineRun: true,
+          ),
+        ],
+      );
+
+      test('re-enters the run when the caret sits just past the close', () {
+        // Outside the run (after the hidden close): a naive delete would cut a
+        // marker char (`**bold**` → `**bold*`). Instead drop the last content
+        // char, keeping the run balanced (`**bol**`).
+        expect(
+          bold.resolveBackspaceSelection(const FlarkSelection.collapsed(8)),
+          const FlarkSelection(baseOffset: 5, extentOffset: 6),
+        );
+      });
+
+      test('expands to the whole run when its last char re-enters', () {
+        // `**x**`, caret outside the close: re-enter, then the single content
+        // char's deletion orphans both markers, so the whole run goes.
+        expect(
+          single.resolveBackspaceSelection(const FlarkSelection.collapsed(5)),
+          const FlarkSelection(baseOffset: 0, extentOffset: 5),
+        );
+      });
+
+      test('expands over orphaned markers at the inside trailing edge', () {
+        // `**x**`, caret inside before the close: deleting 'x' orphans the
+        // markers, so expand to the whole run.
+        expect(
+          single.resolveBackspaceSelection(const FlarkSelection.collapsed(3)),
+          const FlarkSelection(baseOffset: 0, extentOffset: 5),
+        );
+      });
+
+      test('steps before an opening marker instead of splitting it', () {
+        // Caret at the run's interior start (just past the opening `**`): step
+        // before the whole marker so a marker char is never split. At the doc
+        // start that re-anchors to 0 (the engine then no-ops / merges lines).
+        expect(
+          bold.resolveBackspaceSelection(const FlarkSelection.collapsed(2)),
+          const FlarkSelection.collapsed(0),
+        );
+      });
+
+      test('leaves a mid-content caret to the default backspace', () {
+        // Caret inside before the close: dropping the last content char keeps
+        // the run intact, so no inline adjustment is needed.
+        const caret = FlarkSelection.collapsed(6);
+        expect(bold.resolveBackspaceSelection(caret), caret);
+      });
+
+      test('leaves a caret with no adjacent run unchanged', () {
+        final plain = FlarkProjection(textLength: 3);
+        const caret = FlarkSelection.collapsed(2);
+        expect(plain.resolveBackspaceSelection(caret), caret);
+        // The document start has nothing to re-anchor.
+        expect(
+          bold.resolveBackspaceSelection(const FlarkSelection.collapsed(0)),
+          const FlarkSelection.collapsed(0),
+        );
+      });
+
+      test('expands a selection that covers a run\'s whole content', () {
+        expect(
+          bold.resolveBackspaceSelection(
+            const FlarkSelection(baseOffset: 2, extentOffset: 6),
+          ),
+          const FlarkSelection(baseOffset: 0, extentOffset: 8),
+        );
+      });
+
+      test('preserves direction when expanding a reversed selection', () {
+        expect(
+          bold.resolveBackspaceSelection(
+            const FlarkSelection(baseOffset: 6, extentOffset: 2),
+          ),
+          const FlarkSelection(baseOffset: 8, extentOffset: 0),
+        );
+      });
+
+      test('leaves a partial selection to the default backspace', () {
+        const partial = FlarkSelection(baseOffset: 2, extentOffset: 4);
+        expect(bold.resolveBackspaceSelection(partial), partial);
+      });
+    });
+
     test('fromParseResult flags closing markers of styled inline runs', () {
       // Source: a `test` b
       final result = FlarkMarkdownParseResult(

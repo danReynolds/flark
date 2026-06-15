@@ -125,16 +125,39 @@ side typing lands on:
    line-scoped, so the input policy steps the caret past the closing marker
    before dispatching the paragraph split
    (`selection.inlineRunLineBreakExit`).
-8. **Range selections are content-symmetric, and deletions never orphan
-   markers.** A display range selection maps to exactly the visible
-   content (start downstream past hidden markers, end upstream before
-   them). When a deletion covers a run's entire content, the source range
-   expands over the now-orphaned marker pair
-   (`FlarkProjection.expandDeletionOverInlineRunMarkers`, applied by both
-   the edit adapter and the backspace dispatch) — select-all + delete over
-   `` `test` `` deletes the backticks too instead of leaving literals.
-   Typing over a fully selected run replaces only the content, so the
+8. **Range selections are content-symmetric, and deletions are marker-aware
+   through one resolver.** A display range selection maps to exactly the
+   visible content (start downstream past hidden markers, end upstream before
+   them). Typing over a fully selected run replaces only the content, so the
    replacement stays styled (`` `x` ``), matching rich-text type-over.
+
+   Backspace is the one source-space path that holds a *caret* next to hidden
+   markers (the physical key dispatches against the controller's source
+   selection, which deliberately preserves the inside/outside-the-close
+   distinction — see #9 — so a display-space diff never gets a chance to make
+   the deletion marker-aware for it). It routes through a single
+   boundary-aware resolver, `FlarkProjection.resolveBackspaceSelection`
+   (`dispatchBackspace` → `selection.inlineRunDeletion`), which adjusts the
+   effective selection so the deletion never splits or orphans a marker:
+   - **Whole-content deletion** (select-all + delete over `` `test` ``, or
+     backspacing a run's last content character) expands over the now-orphaned
+     marker pair so the backticks go too — built on the shared
+     `expandDeletionOverInlineRunMarkers` primitive.
+   - **A caret just past the close** (outside the run) re-enters it so the last
+     *content* character is removed, not a marker char (`**bold**|` → `**bol**`
+     via `inlineRunBoundaryStep(forward: false)`); without this a naive delete
+     cut a single `*`, leaving the unbalanced `**bold*`.
+   - **A caret just past the open** (the run's interior start) steps before the
+     whole marker so a marker char is never split; the delete then targets the
+     character before the run, or merges lines at its start.
+   The same `expandDeletionOverInlineRunMarkers` primitive is applied directly
+   by the projected-edit adapter, whose deletions arrive in display space and
+   already target the visible character — so they need only the orphan rule,
+   not the re-entry steps. **Gap:** forward `Delete` is not yet routed through
+   the resolver (it falls back to Flutter's display-space default, which is
+   marker-safe for the common case but can split a marker when the caret sits
+   just before a hidden opening marker); a symmetric `forward: true` pass is a
+   clean follow-up on the same primitive.
 9. **Edit anchors never round-trip the caret through display space.** The
    input-policy/shortcut selection appliers on both surfaces skip the
    re-application when the controller's source selection already renders at
