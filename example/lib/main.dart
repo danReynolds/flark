@@ -2271,8 +2271,6 @@ class _CommandCluster extends StatelessWidget {
       builder: (context, _) {
         final commands = controller.commands;
         final canMutate = commands.canMutate;
-        final hasRange = !controller.selection.isCollapsed;
-        final canStyle = canMutate && hasRange;
         return Wrap(
           spacing: 6,
           runSpacing: 6,
@@ -2298,18 +2296,18 @@ class _CommandCluster extends StatelessWidget {
             const _ClusterDivider(),
             _CommandButton(
               buttonKey: const ValueKey('flark-example-command-bold'),
-              tooltip: hasRange ? 'Bold' : 'Select text to bold',
+              tooltip: 'Bold',
               icon: Icons.format_bold,
               selected: commands.strongActive,
-              enabled: canStyle,
+              enabled: canMutate,
               onPressed: () => onCommand(_ToolbarCommand.bold),
             ),
             _CommandButton(
               buttonKey: const ValueKey('flark-example-command-italic'),
-              tooltip: hasRange ? 'Italic' : 'Select text to italicize',
+              tooltip: 'Italic',
               icon: Icons.format_italic,
               selected: commands.emphasisActive,
-              enabled: canStyle,
+              enabled: canMutate,
               onPressed: () => onCommand(_ToolbarCommand.italic),
             ),
             const _ClusterDivider(),
