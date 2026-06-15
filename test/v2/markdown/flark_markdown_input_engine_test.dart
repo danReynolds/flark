@@ -34,8 +34,8 @@ void main() {
       );
 
       expect(result, isNotNull);
-      expect(result!.range, const FlarkSourceRange(0, 0));
-      expect(result.replacementText, '  ');
+      expect(result!.range, const FlarkSourceRange(0, 6));
+      expect(result.replacementText, '  - item');
       expect(result.selectionAfter, const FlarkSelection.collapsed(6));
     });
 
@@ -46,8 +46,8 @@ void main() {
       );
 
       expect(result, isNotNull);
-      expect(result!.range, const FlarkSourceRange(0, 0));
-      expect(result.replacementText, '   ');
+      expect(result!.range, const FlarkSourceRange(0, 7));
+      expect(result.replacementText, '   1. item');
       expect(result.selectionAfter, const FlarkSelection.collapsed(8));
     });
 
@@ -58,7 +58,7 @@ void main() {
       );
 
       expect(result, isNotNull);
-      expect(result!.replacementText, '  ');
+      expect(result!.replacementText, '  - [ ] task');
     });
 
     test('outdents an indented list item by one level', () {
@@ -68,8 +68,8 @@ void main() {
       );
 
       expect(result, isNotNull);
-      expect(result!.range, const FlarkSourceRange(0, 2));
-      expect(result.replacementText, '');
+      expect(result!.range, const FlarkSourceRange(0, 8));
+      expect(result.replacementText, '- item');
       expect(result.selectionAfter, const FlarkSelection.collapsed(4));
     });
 
@@ -93,14 +93,56 @@ void main() {
       );
     });
 
-    test('does not indent a multi-line selection', () {
-      expect(
-        FlarkMarkdownInputEngine.indent(
-          markdown: '- a\n- b',
-          selection: const FlarkSelection(baseOffset: 2, extentOffset: 6),
-        ),
-        isNull,
+    test('indents every list line a multi-line selection spans', () {
+      final result = FlarkMarkdownInputEngine.indent(
+        markdown: '- a\n- b',
+        selection: const FlarkSelection(baseOffset: 2, extentOffset: 6),
       );
+
+      expect(result, isNotNull);
+      expect(result!.range, const FlarkSourceRange(0, 7));
+      expect(result.replacementText, '  - a\n  - b');
+      // Selection still spans 'a' (now at 4) through 'b' (now at 10).
+      expect(
+        result.selectionAfter,
+        const FlarkSelection(baseOffset: 4, extentOffset: 10),
+      );
+    });
+
+    test('outdents every list line a multi-line selection spans', () {
+      final result = FlarkMarkdownInputEngine.outdent(
+        markdown: '  - a\n  - b',
+        selection: const FlarkSelection(baseOffset: 4, extentOffset: 10),
+      );
+
+      expect(result, isNotNull);
+      expect(result!.replacementText, '- a\n- b');
+      expect(
+        result.selectionAfter,
+        const FlarkSelection(baseOffset: 2, extentOffset: 6),
+      );
+    });
+
+    test('indents only the list lines in a mixed multi-line selection', () {
+      final result = FlarkMarkdownInputEngine.indent(
+        markdown: '- a\nplain\n- b',
+        selection: const FlarkSelection(baseOffset: 2, extentOffset: 12),
+      );
+
+      expect(result, isNotNull);
+      expect(result!.replacementText, '  - a\nplain\n  - b');
+    });
+
+    test('ignores a selection ending at the next line start', () {
+      // Selecting "- a\n" should not indent the second line.
+      final result = FlarkMarkdownInputEngine.indent(
+        markdown: '- a\n- b',
+        selection: const FlarkSelection(baseOffset: 0, extentOffset: 4),
+      );
+
+      expect(result, isNotNull);
+      expect(result!.range, const FlarkSourceRange(0, 3));
+      expect(result.replacementText, '  - a');
     });
 
     test('backspace after fence-looking lines inside an open fence stays a '

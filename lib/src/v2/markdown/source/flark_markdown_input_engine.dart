@@ -157,41 +157,112 @@ final class FlarkMarkdownInputEngine {
     required FlarkSelection selection,
     required bool outdent,
   }) {
-    if (!selection.isCollapsed) return null;
-    final line = _lineAtSelection(markdown, selection);
-    final lineText = markdown.substring(line.start, line.end);
-    final quotePrefix = _quotePrefix(lineText);
-    final content = lineText.substring(quotePrefix.length);
-    final list = _ListContinuation.tryParse(content);
-    if (list == null) return null;
+    final spanStart = _lineAtSelection(
+      markdown,
+      FlarkSelection.collapsed(selection.start),
+    ).start;
+    // The line containing the selection end. When a range ends exactly at a
+    // line start, that trailing line is not really selected, so step back so it
+    // is left untouched.
+    var endProbe = selection.end;
+    if (endProbe > selection.start) {
+      final endLine = _lineAtSelection(
+        markdown,
+        FlarkSelection.collapsed(endProbe),
+      );
+      if (endLine.start == endProbe) endProbe -= 1;
+    }
+    final spanEnd = _lineAtSelection(
+      markdown,
+      FlarkSelection.collapsed(endProbe.clamp(0, markdown.length)),
+    ).end;
 
-    // Indentation is added/removed right after any quote prefix, before the
+    // Re-indentation is added/removed right after any quote prefix, before the
     // item's own leading indent and marker. One level is the marker's column
     // width, so a child aligns under its parent's content.
-    final indentAnchor = line.start + quotePrefix.length;
-    final unit = list.marker.length;
-
-    if (!outdent) {
-      final added = ' ' * unit;
-      return _sourceEdit(
-        range: FlarkSourceRange(indentAnchor, indentAnchor),
-        replacementText: added,
-        selectionAfter: FlarkSelection.collapsed(selection.start + unit),
+    final buffer = StringBuffer();
+    final shifts = <_IndentShift>[];
+    var changed = false;
+    var lineStart = spanStart;
+    while (lineStart <= spanEnd) {
+      final line = _lineAtSelection(
+        markdown,
+        FlarkSelection.collapsed(lineStart),
       );
-    }
+      final lineText = markdown.substring(line.start, line.end);
+      final quotePrefix = _quotePrefix(lineText);
+      final content = lineText.substring(quotePrefix.length);
+      final list = _ListContinuation.tryParse(content);
 
-    final removable = _leadingOutdentWidth(content, unit);
-    if (removable == 0) return null;
-    final newCaret = (selection.start - removable).clamp(
-      indentAnchor,
-      markdown.length,
-    );
-    return _sourceEdit(
-      range: FlarkSourceRange(indentAnchor, indentAnchor + removable),
-      replacementText: '',
-      selectionAfter: FlarkSelection.collapsed(newCaret),
+      if (list == null) {
+        buffer.write(lineText);
+      } else {
+        final anchor = line.start + quotePrefix.length;
+        final unit = list.marker.length;
+        if (!outdent) {
+          buffer
+            ..write(quotePrefix)
+            ..write(' ' * unit)
+            ..write(content);
+          shifts.add(_IndentShift(anchor: anchor, delta: unit));
+          changed = true;
+        } else {
+          final removable = _leadingOutdentWidth(content, unit);
+          if (removable > 0) {
+            buffer
+              ..write(quotePrefix)
+              ..write(content.substring(removable));
+            shifts.add(_IndentShift(anchor: anchor, delta: -removable));
+            changed = true;
+          } else {
+            buffer.write(lineText);
+          }
+        }
+      }
+
+      if (line.end >= spanEnd) break;
+      buffer.write('\n');
+      lineStart = line.end + 1;
+    }
+    if (!changed) return null;
+
+    return FlarkMarkdownSourceEdit(
+      range: FlarkSourceRange(spanStart, spanEnd),
+      replacementText: buffer.toString(),
+      selectionAfter: FlarkSelection(
+        baseOffset: _shiftIndentOffset(selection.baseOffset, shifts),
+        extentOffset: _shiftIndentOffset(selection.extentOffset, shifts),
+      ),
     );
   }
+}
+
+/// One per-line indentation change, used to remap selection endpoints: a
+/// positive [delta] inserts that many spaces at [anchor], a negative one
+/// removes `-delta` characters starting at [anchor].
+final class _IndentShift {
+  const _IndentShift({required this.anchor, required this.delta});
+
+  final int anchor;
+  final int delta;
+}
+
+/// Maps a source [offset] through a list of indentation [shifts].
+int _shiftIndentOffset(int offset, List<_IndentShift> shifts) {
+  var delta = 0;
+  for (final shift in shifts) {
+    if (shift.delta >= 0) {
+      if (offset > shift.anchor) delta += shift.delta;
+    } else {
+      final removed = -shift.delta;
+      if (offset >= shift.anchor + removed) {
+        delta += shift.delta;
+      } else if (offset > shift.anchor) {
+        delta -= offset - shift.anchor;
+      }
+    }
+  }
+  return offset + delta;
 }
 
 /// How much leading indentation to strip for one outdent level: a single tab,
