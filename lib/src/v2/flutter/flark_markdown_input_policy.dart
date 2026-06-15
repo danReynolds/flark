@@ -258,54 +258,20 @@ final class FlarkMarkdownInputPolicy {
     return true;
   }
 
-  /// Deleting a selection that covers a styled run's entire content must
-  /// also remove the run's markers — otherwise select-all + backspace over
-  /// `` `test` `` leaves orphaned literal backticks.
-  void _expandSelectionForInlineRunDeletion() {
+  /// Routes a Backspace through the projection's boundary-aware deletion
+  /// resolver before it reaches the engine, so the deletion never splits or
+  /// orphans a styled run's hidden markers — covering both a collapsed caret
+  /// at a run's edge (`**bold**|` → `**bol**`) and a selection that swallows a
+  /// run's whole content (select-all + delete over `` `test` ``). The resolver
+  /// returns the selection unchanged when no inline-run marker is adjacent, so
+  /// the engine's block-aware Backspace (lists, headings, quotes) still runs.
+  void _resolveInlineRunBackspaceSelection() {
     final selection = controller.selection;
-    if (selection.isCollapsed) return;
-    final projection = controller.projection;
-    if (selection.start < 0 || selection.end > projection.textLength) return;
-    final expanded = projection.expandDeletionOverInlineRunMarkers(
-      FlarkSourceRange(selection.start, selection.end),
-    );
-    if (expanded.start == selection.start && expanded.end == selection.end) {
-      return;
-    }
-    final inverted = selection.baseOffset > selection.extentOffset;
+    final resolved = controller.projection.resolveBackspaceSelection(selection);
+    if (resolved == selection) return;
     controller.applySelection(
-      inverted
-          ? FlarkSelection(
-              baseOffset: expanded.end,
-              extentOffset: expanded.start,
-            )
-          : FlarkSelection(
-              baseOffset: expanded.start,
-              extentOffset: expanded.end,
-            ),
-      userEvent: 'selection.inlineRunOrphanDeletion',
-    );
-  }
-
-  /// A collapsed backspace that would delete a styled run's last content
-  /// character must also remove the run's markers, or backspacing the final
-  /// letter of `**x**` leaves orphaned `****`. Expanding the implied
-  /// one-character deletion over the run's markers turns the caret into a
-  /// selection of the whole run, so the backspace removes it.
-  void _expandCollapsedBackspaceForInlineRunDeletion() {
-    final selection = controller.selection;
-    if (!selection.isCollapsed || selection.extentOffset <= 0) return;
-    final projection = controller.projection;
-    final caret = selection.extentOffset;
-    if (caret > projection.textLength) return;
-    final deletion = FlarkSourceRange(caret - 1, caret);
-    final expanded = projection.expandDeletionOverInlineRunMarkers(deletion);
-    if (expanded.start == deletion.start && expanded.end == deletion.end) {
-      return;
-    }
-    controller.applySelection(
-      FlarkSelection(baseOffset: expanded.start, extentOffset: expanded.end),
-      userEvent: 'selection.inlineRunOrphanDeletion',
+      resolved,
+      userEvent: 'selection.inlineRunDeletion',
     );
   }
 
@@ -316,8 +282,7 @@ final class FlarkMarkdownInputPolicy {
     if (!isEnabled) return false;
     final selection = currentSelection();
     if (selection != null) applySelection(selection);
-    _expandSelectionForInlineRunDeletion();
-    _expandCollapsedBackspaceForInlineRunDeletion();
+    _resolveInlineRunBackspaceSelection();
     final result = controller.dispatch(
       command: FlarkMarkdownInputCommands.handleBackspace,
       payload: FlarkHandleBackspacePayload(userEvent: backspaceUserEvent),

@@ -568,6 +568,99 @@ final class FlarkProjection {
     return FlarkSourceRange(sourceOffset, end);
   }
 
+  /// Adjusts a Backspace's effective selection so the deletion never splits or
+  /// orphans a hidden inline-run marker.
+  ///
+  /// A styled run hides its `**`/`*`/`~~`/`` ` `` markers (zero-width in
+  /// display), so a caret resting at a run's edge sits next to marker
+  /// characters the user cannot see. A naive "delete the character before the
+  /// caret" there would cut one marker out of a balanced pair
+  /// (`**bold**` → `**bold*`) or leave the markers orphaned (`**x**` → `****`).
+  /// Every Backspace path routes through here to stay marker-aware:
+  ///
+  ///  * **Non-collapsed:** expand a range covering a run's whole content so its
+  ///    now-meaningless markers go too (select-all + delete over `` `x` ``).
+  ///  * **Just past a closing marker** (the caret outside the run): re-enter the
+  ///    run so the last *content* character is removed, not a marker character
+  ///    (`**bold**|` → `**bol**`).
+  ///  * **Just past an opening marker** (the caret at a run's interior start):
+  ///    step before the whole marker so a marker character is never split; the
+  ///    delete then targets the character before the run, or merges lines at
+  ///    its start.
+  ///  * **Deleting a run's last content character:** expand over the markers it
+  ///    would orphan (`**x**` → ``).
+  ///
+  /// Returns the selection the Backspace should operate on, or [selection]
+  /// unchanged when no inline-run marker is adjacent — the caller then applies
+  /// its block-aware default Backspace (lists, headings, quotes, line merges).
+  FlarkSelection resolveBackspaceSelection(FlarkSelection selection) {
+    if (selection.start < 0 || selection.end > textLength) return selection;
+
+    if (!selection.isCollapsed) {
+      final expanded = expandDeletionOverInlineRunMarkers(
+        FlarkSourceRange(selection.start, selection.end),
+      );
+      if (expanded.start == selection.start && expanded.end == selection.end) {
+        return selection;
+      }
+      final inverted = selection.baseOffset > selection.extentOffset;
+      return inverted
+          ? FlarkSelection(
+              baseOffset: expanded.end,
+              extentOffset: expanded.start,
+            )
+          : FlarkSelection(
+              baseOffset: expanded.start,
+              extentOffset: expanded.end,
+            );
+    }
+
+    final caret = selection.extentOffset;
+    if (caret <= 0) return selection;
+
+    // Re-enter a run whose hidden closing marker the caret sits just past, so
+    // the delete removes the run's last content character, not a marker char.
+    final reentered = inlineRunBoundaryStep(caret, forward: false);
+    final anchor = reentered ?? caret;
+
+    // If the character to delete belongs to a hidden opening marker, step
+    // before the whole marker so a marker character is never split. The delete
+    // then targets the character before the run (or merges lines at its start).
+    final openingStart = _inlineRunOpeningMarkerStartCovering(anchor - 1);
+    if (openingStart != null) return FlarkSelection.collapsed(openingStart);
+
+    final expanded = expandDeletionOverInlineRunMarkers(
+      FlarkSourceRange(anchor - 1, anchor),
+    );
+    if (anchor == caret &&
+        expanded.start == anchor - 1 &&
+        expanded.end == anchor) {
+      // No re-anchor and nothing to expand: defer to the caller's default
+      // Backspace so block-level handling still runs at the original caret.
+      return selection;
+    }
+    return FlarkSelection(
+      baseOffset: expanded.start,
+      extentOffset: expanded.end,
+    );
+  }
+
+  /// The start of a hidden inline-run opening marker covering [offset]
+  /// (`start <= offset < end`), or null.
+  int? _inlineRunOpeningMarkerStartCovering(int offset) {
+    if (offset < 0) return null;
+    for (final span in _projectionSpans) {
+      if (span.range.start > offset) break;
+      if (span.isHidden &&
+          span.opensInlineRun &&
+          span.range.start <= offset &&
+          offset < span.range.end) {
+        return span.range.start;
+      }
+    }
+    return null;
+  }
+
   String projectText(String sourceText) {
     if (sourceText.length != textLength) {
       throw ArgumentError.value(

@@ -72,5 +72,54 @@ void main() {
 
       expect(controller.markdown, '');
     });
+
+    test('a caret just past the close re-enters the run, not the marker',
+        () async {
+      // Regression: the source caret sits outside the run (after the hidden
+      // closing `**`). A naive delete cut a marker char, leaving the
+      // unbalanced `**bold*`; it must drop the last content char instead.
+      for (final probe in <(String, int, String)>[
+        ('**bold**', 8, '**bol**'),
+        ('*em*', 4, '*e*'),
+        ('`code`', 6, '`cod`'),
+        ('~~done~~', 8, '~~don~~'),
+      ]) {
+        final controller = FlarkFlutterController.fromMarkdown(probe.$1);
+        addTearDown(controller.dispose);
+        await controller.parseNow();
+        controller.applySelection(
+          FlarkSelection.collapsed(probe.$2),
+          userEvent: 'test',
+        );
+
+        backspace(controller);
+
+        expect(
+          controller.markdown,
+          probe.$3,
+          reason: 'backspacing just past the close of "${probe.$1}"',
+        );
+      }
+    });
+
+    test('backspacing plain text back into a run stays balanced', () async {
+      // The reported sequence: type past a bold run, then backspace across the
+      // plain text into it. Each step keeps the markers balanced.
+      final controller = FlarkFlutterController.fromMarkdown('**bold**x');
+      addTearDown(controller.dispose);
+      await controller.parseNow();
+      controller.applySelection(
+        const FlarkSelection.collapsed(9), // after the trailing 'x'
+        userEvent: 'test',
+      );
+
+      // Rapid backspaces with no parse between (prediction only), matching the
+      // reported "backspace all the way" repro.
+      backspace(controller); // deletes the plain 'x'
+      expect(controller.markdown, '**bold**');
+
+      backspace(controller); // re-enters the run; drops 'd', stays balanced
+      expect(controller.markdown, '**bol**');
+    });
   });
 }
