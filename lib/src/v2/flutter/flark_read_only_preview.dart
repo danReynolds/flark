@@ -163,7 +163,16 @@ final class _PreviewBlock extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _PreviewTaskCheckbox(checked: block.taskListItem!.checked),
+            // Center the checkbox within the first text line's box so it stays
+            // aligned regardless of line-height.
+            SizedBox(
+              height: (blockStyle.fontSize ?? 14) * (blockStyle.height ?? 1.4),
+              child: Center(
+                child: _PreviewTaskCheckbox(
+                  checked: block.taskListItem!.checked,
+                ),
+              ),
+            ),
             const SizedBox(width: 8),
             Expanded(child: content),
           ],
