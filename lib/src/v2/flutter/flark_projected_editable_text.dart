@@ -173,6 +173,15 @@ mixin _InlineLinkPopoverHost<T extends StatefulWidget> on State<T> {
       OverlayPortalController();
   FlarkLinkActionContext? _linkAtCaret;
 
+  // The popover opens on a deliberate tap on a link, not whenever the caret is
+  // adjacent (which fires the moment link markdown is finished). A pointer-up
+  // on the editable sets `_linkTapPending`; the next build (driven by the
+  // tap's caret move) arms it if the caret landed in a link, pinned to the
+  // document revision so any edit closes it again.
+  bool _linkTapPending = false;
+  bool _linkTapArmed = false;
+  int? _linkArmedRevision;
+
   /// The document controller for this surface.
   FlarkFlutterController get linkPopoverController;
 
@@ -186,15 +195,34 @@ mixin _InlineLinkPopoverHost<T extends StatefulWidget> on State<T> {
 
   Widget wrapWithLinkPopover(BuildContext context, Widget child) {
     final interactions = FlarkMarkdownInteractions.maybeOf(context);
-    _linkAtCaret = _resolveLinkAtCaret(context, interactions);
-    _syncLinkPopoverVisibility(_linkAtCaret != null);
+    final raw = interactions == null
+        ? null
+        : _resolveLinkAtCaret(context, interactions);
+    final revision = linkPopoverController.state.revision;
+    if (raw == null) {
+      // No link under the caret — disarm so re-entering by keyboard stays shut.
+      _linkTapArmed = false;
+      _linkTapPending = false;
+    } else if (_linkTapPending) {
+      // A tap just landed on this link.
+      _linkTapPending = false;
+      _linkTapArmed = true;
+      _linkArmedRevision = revision;
+    }
+    final show =
+        raw != null && _linkTapArmed && _linkArmedRevision == revision;
+    _linkAtCaret = show ? raw : null;
+    _syncLinkPopoverVisibility(show);
     if (interactions == null) return child;
-    return CompositedTransformTarget(
-      link: _linkPopoverLink,
-      child: OverlayPortal(
-        controller: _linkOverlayController,
-        overlayChildBuilder: _buildLinkPopoverOverlay,
-        child: child,
+    return Listener(
+      onPointerUp: (_) => _linkTapPending = true,
+      child: CompositedTransformTarget(
+        link: _linkPopoverLink,
+        child: OverlayPortal(
+          controller: _linkOverlayController,
+          overlayChildBuilder: _buildLinkPopoverOverlay,
+          child: child,
+        ),
       ),
     );
   }
