@@ -588,7 +588,16 @@ final class FlarkFlutterController extends ChangeNotifier {
     );
     if (transaction == null) return false;
     applyTransaction(transaction);
-    _lastEditRequestsImmediateParse = insertionWrap != null;
+    // Forming a task marker (`- [`, `- [ `, …) parses immediately so the
+    // optimistic-checkbox reconciler renders the checkbox right away, instead
+    // of the just-typed bracket flashing literal until the debounced parse.
+    _lastEditRequestsImmediateParse =
+        insertionWrap != null ||
+        (selection.isCollapsed &&
+            FlarkOptimisticCheckbox.isFormingCheckboxLine(
+              markdown,
+              selection.extentOffset,
+            ));
     return true;
   }
 

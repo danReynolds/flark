@@ -2,6 +2,7 @@ import '../core/extension/flark_extension.dart';
 import '../core/selection/flark_selection.dart';
 import '../markdown/parse/flark_markdown_parse_result.dart';
 import '../projection/flark_projection.dart';
+import 'flark_optimistic_checkbox.dart';
 import 'flark_render_plan.dart';
 import 'flark_sticky_inline_run.dart';
 
@@ -33,6 +34,9 @@ final class FlarkRenderAdoption {
 /// 2. **sticky inline run** — keep an emphasis/strong/strikethrough run
 ///    rendered while the caret edits inside it, even when a transient trailing
 ///    space makes the parse drop the styled run.
+/// 3. **optimistic checkbox** — render a checkbox while the caret is still
+///    typing a task marker (`- [`, `- [ `, `- [ ]`), instead of the bullet plus
+///    literal `[ ]` the parser produces until `- [ ] ` completes.
 abstract final class FlarkRenderReconciler {
   static FlarkRenderAdoption fromParseResult({
     required FlarkMarkdownParseResult parseResult,
@@ -64,6 +68,7 @@ abstract final class FlarkRenderReconciler {
   static const List<_ReconciliationPass> _passes = [
     _extensionsPass,
     _stickyInlineRunPass,
+    _optimisticCheckboxPass,
   ];
 
   static FlarkRenderAdoption _extensionsPass(
@@ -94,6 +99,22 @@ abstract final class FlarkRenderReconciler {
     return FlarkRenderAdoption(
       projection: sticky.projection,
       renderPlan: sticky.renderPlan,
+    );
+  }
+
+  static FlarkRenderAdoption _optimisticCheckboxPass(
+    FlarkRenderAdoption adoption,
+    _ReconciliationContext context,
+  ) {
+    final checkbox = FlarkOptimisticCheckbox.reconcile(
+      projection: adoption.projection,
+      renderPlan: adoption.renderPlan,
+      source: context.source,
+      selection: context.selection,
+    );
+    return FlarkRenderAdoption(
+      projection: checkbox.projection,
+      renderPlan: checkbox.renderPlan,
     );
   }
 }
