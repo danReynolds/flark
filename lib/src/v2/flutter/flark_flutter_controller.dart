@@ -589,7 +589,62 @@ final class FlarkFlutterController extends ChangeNotifier {
     if (transaction == null) return false;
     applyTransaction(transaction);
     _lastEditRequestsImmediateParse = insertionWrap != null;
+    // Typing the `]` that completes a bare task marker (`- [ ]`) auto-inserts
+    // the trailing space GFM requires before content, so the next character
+    // stays in the checkbox (`- [ ] f`) instead of breaking the task back into
+    // a plain bullet (`- [ ]f`). Only on a net insertion, so backspacing the
+    // space is not fought.
+    if (insertionWrap == null &&
+        newDisplayText.length > oldDisplayText.length) {
+      _autoSpaceCompletedTaskMarker(undoGroupId);
+    }
     return true;
+  }
+
+  /// Inserts the trailing space after a task marker the caret just completed
+  /// (`- [ ]` → `- [ ] `), leaving the caret after it.
+  void _autoSpaceCompletedTaskMarker(int? undoGroupId) {
+    final selection = this.selection;
+    if (!selection.isCollapsed) return;
+    final at = _completedTaskMarkerCaret(markdown, selection.extentOffset);
+    if (at == null) return;
+    applyTransaction(
+      FlarkTransaction.single(
+        FlarkSourceOperation.insert(at, ' '),
+        selectionBefore: selection,
+        selectionAfter: FlarkSelection.collapsed(at + 1),
+        metadata: FlarkTransactionMetadata(
+          intent: FlarkTransactionIntent.input,
+          userEvent: 'input.taskMarkerAutoSpace',
+          undoGroupId: undoGroupId,
+          parseInvalidationRange: FlarkSourceRange(at, at),
+          projectionInvalidationRange: FlarkSourceRange(at, at),
+        ),
+      ),
+    );
+    _lastEditRequestsImmediateParse = true;
+  }
+
+  static final RegExp _bareTaskMarkerLine = RegExp(r'^[ \t]*[-*+] \[[ xX]\]$');
+
+  /// The caret offset at which to auto-insert a task marker's trailing space —
+  /// when [caret] sits at the end of a line that is exactly a bare task marker
+  /// (`- [ ]`/`- [x]`), the state the completing `]` just produced — else null.
+  static int? _completedTaskMarkerCaret(String source, int caret) {
+    if (caret <= 0 || caret > source.length) return null;
+    var start = caret;
+    while (start > 0 && source.codeUnitAt(start - 1) != 0x0A) {
+      start -= 1;
+    }
+    var end = caret;
+    while (end < source.length && source.codeUnitAt(end) != 0x0A) {
+      end += 1;
+    }
+    if (caret != end) return null;
+    if (!_bareTaskMarkerLine.hasMatch(source.substring(start, end))) {
+      return null;
+    }
+    return caret;
   }
 
   /// A projected change that replaces exactly the current plain-text selection
