@@ -32,13 +32,14 @@ Future<void> _pumpEditor(
     ),
   );
   await tester.pump();
-  // The editor owns its parser once a surface attaches; force a real parse so
-  // the live-rendered block tree (and our popover hook) is built.
   await tester.runAsync(() => controller.parseNow());
   await tester.pump();
-  // Focus the editor so it renders the editable multi-block tree (unfocused it
-  // shows a plain fallback editable).
-  await tester.tap(find.byType(EditableText).first);
+}
+
+/// Taps near the start of the editable, over the link label.
+Future<void> _tapLink(WidgetTester tester) async {
+  final topLeft = tester.getTopLeft(find.byType(EditableText).first);
+  await tester.tapAt(topLeft + const Offset(18, 8));
   await tester.pump();
   await tester.pump();
 }
@@ -46,42 +47,35 @@ Future<void> _pumpEditor(
 void main() {
   final destinationFinder = find.byKey(const Key('FlarkLinkPopoverDestination'));
 
-  testWidgets('shows the popover with actions when the caret enters a link', (
+  testWidgets('a tap on a link opens the popover with the default actions', (
     tester,
   ) async {
     final controller = FlarkFlutterController.fromMarkdown(
-      '[Test](https://example.com) tail',
+      '[clickable link](https://example.com)',
       extensions: FlarkMarkdownEditingExtensions.standard(),
     );
     addTearDown(controller.dispose);
     await _parse(controller);
     await _pumpEditor(tester, controller);
 
-    // No link under the caret yet (caret at 0, before the link).
     expect(destinationFinder, findsNothing);
-
-    // Place the caret inside the link label and let the portal show.
-    controller.applySelection(const FlarkSelection.collapsed(3), userEvent: 't');
-    await tester.pump();
-    await tester.pump();
+    await _tapLink(tester);
 
     expect(destinationFinder, findsOneWidget);
-    expect(
-      tester.widget<Text>(destinationFinder).data,
-      'https://example.com',
-    );
-    // Default actions render (Open, Edit, Copy, Remove).
+    expect(tester.widget<Text>(destinationFinder).data, 'https://example.com');
     expect(find.byKey(const ValueKey('FlarkLinkAction.open')), findsOneWidget);
     expect(find.byKey(const ValueKey('FlarkLinkAction.edit')), findsOneWidget);
     expect(find.byKey(const ValueKey('FlarkLinkAction.copy')), findsOneWidget);
     expect(find.byKey(const ValueKey('FlarkLinkAction.remove')), findsOneWidget);
   });
 
-  testWidgets('hides the popover when the caret leaves the link', (
+  testWidgets('the caret merely landing in a link does not open it', (
     tester,
   ) async {
+    // Finishing link markdown leaves the caret inside the link — that alone
+    // must not pop the menu; only a deliberate tap does.
     final controller = FlarkFlutterController.fromMarkdown(
-      '[Test](https://example.com) tail',
+      '[clickable link](https://example.com) tail',
       extensions: FlarkMarkdownEditingExtensions.standard(),
     );
     addTearDown(controller.dispose);
@@ -91,9 +85,23 @@ void main() {
     controller.applySelection(const FlarkSelection.collapsed(3), userEvent: 't');
     await tester.pump();
     await tester.pump();
+    expect(destinationFinder, findsNothing);
+  });
+
+  testWidgets('the popover closes when the caret leaves the link', (
+    tester,
+  ) async {
+    final controller = FlarkFlutterController.fromMarkdown(
+      '[clickable link](https://example.com) tail',
+      extensions: FlarkMarkdownEditingExtensions.standard(),
+    );
+    addTearDown(controller.dispose);
+    await _parse(controller);
+    await _pumpEditor(tester, controller);
+
+    await _tapLink(tester);
     expect(destinationFinder, findsOneWidget);
 
-    // Move the caret out into the trailing text.
     controller.applySelection(
       FlarkSelection.collapsed(controller.markdown.length),
       userEvent: 't',
@@ -103,10 +111,10 @@ void main() {
     expect(destinationFinder, findsNothing);
   });
 
-  testWidgets('opens the link through the configured callback', (tester) async {
+  testWidgets('Open invokes the configured callback', (tester) async {
     final opened = <String>[];
     final controller = FlarkFlutterController.fromMarkdown(
-      '[Test](https://example.com)',
+      '[clickable link](https://example.com)',
       extensions: FlarkMarkdownEditingExtensions.standard(),
     );
     addTearDown(controller.dispose);
@@ -117,10 +125,7 @@ void main() {
       config: FlarkMarkdownInteractionConfig(onOpenLink: opened.add),
     );
 
-    controller.applySelection(const FlarkSelection.collapsed(3), userEvent: 't');
-    await tester.pump();
-    await tester.pump();
-
+    await _tapLink(tester);
     await tester.tap(find.byKey(const ValueKey('FlarkLinkAction.open')));
     await tester.pump();
     expect(opened, ['https://example.com']);
@@ -128,7 +133,7 @@ void main() {
 
   testWidgets('custom link actions replace the defaults', (tester) async {
     final controller = FlarkFlutterController.fromMarkdown(
-      '[Test](https://example.com)',
+      '[clickable link](https://example.com)',
       extensions: FlarkMarkdownEditingExtensions.standard(),
     );
     addTearDown(controller.dispose);
@@ -138,19 +143,12 @@ void main() {
       controller,
       config: FlarkMarkdownInteractionConfig(
         linkActions: [
-          const FlarkLinkAction(
-            id: 'unfurl',
-            label: 'Unfurl',
-            onInvoke: _noop,
-          ),
+          const FlarkLinkAction(id: 'unfurl', label: 'Unfurl', onInvoke: _noop),
         ],
       ),
     );
 
-    controller.applySelection(const FlarkSelection.collapsed(3), userEvent: 't');
-    await tester.pump();
-    await tester.pump();
-
+    await _tapLink(tester);
     expect(find.byKey(const ValueKey('FlarkLinkAction.unfurl')), findsOneWidget);
     expect(find.byKey(const ValueKey('FlarkLinkAction.open')), findsNothing);
   });
