@@ -375,6 +375,76 @@ final class FlarkFlutterController extends ChangeNotifier {
     );
   }
 
+  /// Switches the next typed run to [style], dropping the inline run(s) the
+  /// caret currently sits inside ("last action wins").
+  ///
+  /// Used when [style] cannot combine with those runs at the caret — italic at
+  /// a bold run's trailing edge has no canonical nesting (`**a*b***` parses as
+  /// literal), so instead of doing nothing, the bold run is muted (the next
+  /// character exits it) and italic is armed, starting a clean sibling run.
+  /// Returns false when the caret is not inside any run to switch out of, so
+  /// the caller can leave the toggle a no-op.
+  bool switchToInlineStyle(FlarkMarkdownInlineStyle style) {
+    if (_disposed) return false;
+    final enclosing = [
+      for (final candidate in FlarkMarkdownInlineStyle.values)
+        if (candidate != style &&
+            FlarkMarkdownCommandQueries.enclosingInlineRun(state, candidate) !=
+                null)
+          candidate,
+    ];
+    if (enclosing.isEmpty) return false;
+    _mutedInlineStyles = {..._mutedInlineStyles, ...enclosing}..remove(style);
+    _pendingInlineStyles = {..._pendingInlineStyles, style};
+    _emitEvent(
+      kind: FlarkControllerEventKind.pendingInlineStylesChanged,
+      previousState: state,
+    );
+    notifyListeners();
+    return true;
+  }
+
+  /// The marker pair wrapping text that exits a muted run while a style is
+  /// armed, or null when nothing is armed.
+  ///
+  /// Each armed emphasis/strong style uses its alternate delimiter (`_`/`__`
+  /// instead of `*`/`**`) when its default would sit flush against
+  /// [adjacentMarker] and merge into a corrupt run. An armed italic exiting a
+  /// `**…**` bold run therefore wraps as `_x_`, yielding the canonical sibling
+  /// `**bold**_x_` (strong then emphasis) rather than the literal `**bold***x*`.
+  ({String open, String close})? _armedExitWrap(String adjacentMarker) {
+    if (_pendingInlineStyles.isEmpty) return null;
+    final adjacentChar = adjacentMarker.isEmpty
+        ? null
+        : adjacentMarker.codeUnitAt(0);
+    final markers = [
+      for (final style in _pendingInlineStyleOrder)
+        if (_pendingInlineStyles.contains(style))
+          _exitMarkerFor(style, adjacentChar),
+    ];
+    if (markers.isEmpty) return null;
+    return (open: markers.join(), close: markers.reversed.join());
+  }
+
+  static String _exitMarkerFor(FlarkMarkdownInlineStyle style, int? adjacentChar) {
+    final alternate = _alternateInlineMarker(style);
+    if (alternate != null && style.marker.codeUnitAt(0) == adjacentChar) {
+      return alternate;
+    }
+    return style.marker;
+  }
+
+  /// The same-meaning delimiter built from the other character, for the two
+  /// styles whose markers can collide with an adjacent run (`*`↔`_`, `**`↔`__`).
+  /// Inline code and strikethrough have no colliding alternate.
+  static String? _alternateInlineMarker(FlarkMarkdownInlineStyle style) {
+    return switch (style) {
+      FlarkMarkdownInlineStyle.emphasis => '_',
+      FlarkMarkdownInlineStyle.strong => '__',
+      _ => null,
+    };
+  }
+
   FlarkProjection get projection => _projection;
 
   FlarkRenderPlan get renderPlan => _renderPlan;
@@ -667,15 +737,25 @@ final class FlarkFlutterController extends ChangeNotifier {
     final String replacement;
     final int caretAfter;
     if (caret >= run.closeStart) {
-      // Trailing edge: step out past the closing marker.
+      // Trailing edge: step out past the closing marker. A switched-in style
+      // (last action wins) wraps the exited text into a sibling run, picking a
+      // delimiter that won't merge with this run's closing marker.
+      final wrap = _armedExitWrap(
+        markdown.substring(run.closeStart, run.closeEnd),
+      );
       range = FlarkSourceRange(run.closeEnd, run.closeEnd);
-      replacement = text;
-      caretAfter = run.closeEnd + text.length;
+      replacement = wrap == null ? text : '${wrap.open}$text${wrap.close}';
+      caretAfter =
+          run.closeEnd + (wrap == null ? 0 : wrap.open.length) + text.length;
     } else if (caret <= run.contentStart) {
       // Leading edge: step out before the opening marker.
+      final wrap = _armedExitWrap(
+        markdown.substring(run.openStart, run.contentStart),
+      );
       range = FlarkSourceRange(run.openStart, run.openStart);
-      replacement = text;
-      caretAfter = run.openStart + text.length;
+      replacement = wrap == null ? text : '${wrap.open}$text${wrap.close}';
+      caretAfter =
+          run.openStart + (wrap == null ? 0 : wrap.open.length) + text.length;
     } else {
       // Middle: close the run, drop the plain text, reopen the run.
       final marker = markdown.substring(run.closeStart, run.closeEnd);

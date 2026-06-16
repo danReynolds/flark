@@ -237,12 +237,16 @@ extension FlarkMarkdownControllerCommands on FlarkFlutterController {
         toggleMutedInlineStyle(style);
       } else if (wouldArmInlineStyleApply(style)) {
         togglePendingInlineStyle(style);
+      } else {
+        // The style cannot combine with the run(s) the caret sits inside — its
+        // marker would merge with an adjacent marker (e.g. italic at a bold
+        // run's trailing edge, where `**a*b***` is not representable). Last
+        // action wins: switch the next typed run to this style, dropping the
+        // conflicting run(s), so typing starts a clean sibling (`**bold**_x_`).
+        // When there is no run to switch out of, this no-ops and the toolbar
+        // stays honest rather than arming a style the next keystroke would drop.
+        switchToInlineStyle(style);
       }
-      // Otherwise the style cannot be applied at this caret — its marker would
-      // merge with an adjacent marker (e.g. arming italic at a bold run's
-      // trailing edge, where `**a*b***` is not representable). Arming it would
-      // light the toolbar for a style the next keystroke silently drops, so we
-      // leave it unarmed and report the command handled (a no-op).
       return FlarkEditorRuntimeResult(
         runtime: runtime,
         commandResult: FlarkCommandResult.handled(),

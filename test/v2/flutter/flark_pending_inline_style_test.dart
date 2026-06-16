@@ -243,9 +243,11 @@ void main() {
       expect(controller.markdown, '*y');
     });
 
-    test('does not arm a second style at a run trailing edge', () async {
+    test('switches the next run at a trailing edge (last action wins)', () async {
       // Bold+italic at a run's trailing edge is not representable (`**a*b***`
-      // parses as literal). Arming italic there must not light the toolbar.
+      // parses as literal). Instead of doing nothing, clicking italic switches:
+      // bold is muted (the next character exits it) and italic is armed, so the
+      // toolbar flips bold → italic.
       final controller = FlarkFlutterController.fromMarkdown('**a**');
       addTearDown(controller.dispose);
       await controller.parseNow();
@@ -256,10 +258,84 @@ void main() {
 
       controller.commands.toggleEmphasis();
 
+      expect(controller.commands.strongActive, isFalse);
+      expect(controller.commands.emphasisActive, isTrue);
+      expect(
+        controller.pendingInlineStyles,
+        contains(FlarkMarkdownInlineStyle.emphasis),
+      );
+      expect(
+        controller.mutedInlineStyles,
+        contains(FlarkMarkdownInlineStyle.strong),
+      );
+    });
+
+    test('switched run exits as a clean sibling with an alternate marker', () async {
+      // Typing after the switch lands the new text in a sibling italic run
+      // built from `_` so it does not collide with the bold `**` — the
+      // canonical, fully-rendered `**bold**_x_` (strong then emphasis).
+      final controller = FlarkFlutterController.fromMarkdown('**bold**');
+      addTearDown(controller.dispose);
+      await controller.parseNow();
+      controller.applySelection(
+        const FlarkSelection.collapsed(6),
+        userEvent: 'test',
+      );
+
+      controller.commands.toggleEmphasis();
+      expect(
+        controller.applyProjectedTextEdit(
+          oldDisplayText: 'bold',
+          newDisplayText: 'boldx',
+        ),
+        isTrue,
+      );
+
+      expect(controller.markdown, '**bold**_x_');
+      // The caret sits inside the new italic run, so typing continues italic.
+      expect(controller.selection, const FlarkSelection.collapsed(10));
+      await controller.parseNow();
+      expect(controller.projection.projectText(controller.markdown), 'boldx');
+    });
+
+    test('switch is symmetric: italic → bold uses `__`', () async {
+      final controller = FlarkFlutterController.fromMarkdown('*it*');
+      addTearDown(controller.dispose);
+      await controller.parseNow();
+      controller.applySelection(
+        const FlarkSelection.collapsed(3),
+        userEvent: 'test',
+      );
+
+      controller.commands.toggleStrong();
+      expect(
+        controller.applyProjectedTextEdit(
+          oldDisplayText: 'it',
+          newDisplayText: 'itz',
+        ),
+        isTrue,
+      );
+
+      expect(controller.markdown, '*it*__z__');
+      await controller.parseNow();
+      expect(controller.projection.projectText(controller.markdown), 'itz');
+    });
+
+    test('a lone literal marker has no run to switch out of (stays a no-op)', () {
+      // No enclosing run, so there is nothing to switch — the toggle no-ops and
+      // the toolbar stays honest rather than arming a style that would drop.
+      final controller = FlarkFlutterController.fromMarkdown('*');
+      addTearDown(controller.dispose);
+      controller.applySelection(
+        const FlarkSelection.collapsed(1),
+        userEvent: 'test',
+      );
+
+      controller.commands.toggleEmphasis();
+
       expect(controller.pendingInlineStyles, isEmpty);
+      expect(controller.mutedInlineStyles, isEmpty);
       expect(controller.commands.emphasisActive, isFalse);
-      // Bold is unaffected — the caret is still inside the bold run.
-      expect(controller.commands.strongActive, isTrue);
     });
 
     test('arms a second style mid-run where nesting is representable', () async {
