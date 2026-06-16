@@ -218,10 +218,11 @@ void main() {
       expect(controller.commands.strongActive, isFalse);
     });
 
-    test('skips the wrap when markers would merge with an adjacent marker', () {
-      // A literal '*' immediately before the caret: wrapping armed italic would
-      // produce the corrupt '**y*'. The wrap is skipped and the text inserts
-      // plainly instead.
+    test('does not arm a style whose markers would merge (toolbar honesty)', () {
+      // A literal '*' immediately before the caret: arming italic would wrap to
+      // the corrupt '**y*', so the wrap is dropped at type time. Arming it
+      // anyway would light the toolbar for a style the next keystroke discards,
+      // so the toggle is a no-op instead — the armed state stays honest.
       final controller = FlarkFlutterController.fromMarkdown('*');
       addTearDown(controller.dispose);
       controller.applySelection(
@@ -230,10 +231,8 @@ void main() {
       );
 
       controller.commands.toggleEmphasis();
-      expect(
-        controller.pendingInlineStyles,
-        contains(FlarkMarkdownInlineStyle.emphasis),
-      );
+      expect(controller.pendingInlineStyles, isEmpty);
+      expect(controller.commands.emphasisActive, isFalse);
 
       final applied = controller.applyProjectedTextEdit(
         oldDisplayText: '*',
@@ -242,6 +241,45 @@ void main() {
 
       expect(applied, isTrue);
       expect(controller.markdown, '*y');
+    });
+
+    test('does not arm a second style at a run trailing edge', () async {
+      // Bold+italic at a run's trailing edge is not representable (`**a*b***`
+      // parses as literal). Arming italic there must not light the toolbar.
+      final controller = FlarkFlutterController.fromMarkdown('**a**');
+      addTearDown(controller.dispose);
+      await controller.parseNow();
+      controller.applySelection(
+        const FlarkSelection.collapsed(3), // inside, before the close
+        userEvent: 'test',
+      );
+
+      controller.commands.toggleEmphasis();
+
+      expect(controller.pendingInlineStyles, isEmpty);
+      expect(controller.commands.emphasisActive, isFalse);
+      // Bold is unaffected — the caret is still inside the bold run.
+      expect(controller.commands.strongActive, isTrue);
+    });
+
+    test('arms a second style mid-run where nesting is representable', () async {
+      // Emphasis inside a bold run with trailing bold text (`**ab*x*c**`) is
+      // representable, so arming italic in the middle does light the toolbar.
+      final controller = FlarkFlutterController.fromMarkdown('**abc**');
+      addTearDown(controller.dispose);
+      await controller.parseNow();
+      controller.applySelection(
+        const FlarkSelection.collapsed(4), // between 'b' and 'c'
+        userEvent: 'test',
+      );
+
+      controller.commands.toggleEmphasis();
+
+      expect(
+        controller.pendingInlineStyles,
+        contains(FlarkMarkdownInlineStyle.emphasis),
+      );
+      expect(controller.commands.emphasisActive, isTrue);
     });
 
     test('an armed wrap flags an immediate parse; plain typing does not', () {
