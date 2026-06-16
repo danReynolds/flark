@@ -193,6 +193,31 @@ final class FlarkMarkdownCommands {
   }) {
     return _controller.removeLink(linkRange: linkRange, userEvent: userEvent);
   }
+
+  FlarkMarkdownImageEditContext resolveImageEditContext() {
+    return _controller.resolveImageEditContext();
+  }
+
+  FlarkEditorRuntimeResult applyImageEdit({
+    required FlarkMarkdownImageEditContext context,
+    required String alt,
+    required String url,
+    String userEvent = 'command.applyImageEdit',
+  }) {
+    return _controller.applyImageEdit(
+      context: context,
+      alt: alt,
+      url: url,
+      userEvent: userEvent,
+    );
+  }
+
+  FlarkEditorRuntimeResult removeImage({
+    required FlarkSourceRange imageRange,
+    String userEvent = 'command.removeImage',
+  }) {
+    return _controller.removeImage(imageRange: imageRange, userEvent: userEvent);
+  }
 }
 
 extension FlarkMarkdownControllerCommandFacade on FlarkFlutterController {
@@ -396,6 +421,40 @@ extension FlarkMarkdownControllerCommands on FlarkFlutterController {
         context: context,
         label: label,
         url: url,
+        userEvent: userEvent,
+      ),
+    );
+  }
+
+  FlarkMarkdownImageEditContext resolveImageEditContext() {
+    return FlarkMarkdownImageCommands.resolveImageEditContext(state);
+  }
+
+  FlarkEditorRuntimeResult applyImageEdit({
+    required FlarkMarkdownImageEditContext context,
+    required String alt,
+    required String url,
+    String userEvent = 'command.applyImageEdit',
+  }) {
+    return dispatch(
+      command: FlarkMarkdownImageCommands.applyImageEdit,
+      payload: FlarkApplyImageEditPayload(
+        context: context,
+        alt: alt,
+        url: url,
+        userEvent: userEvent,
+      ),
+    );
+  }
+
+  FlarkEditorRuntimeResult removeImage({
+    required FlarkSourceRange imageRange,
+    String userEvent = 'command.removeImage',
+  }) {
+    return dispatch(
+      command: FlarkMarkdownImageCommands.removeImage,
+      payload: FlarkRemoveImagePayload(
+        imageRange: imageRange,
         userEvent: userEvent,
       ),
     );

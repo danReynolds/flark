@@ -5,6 +5,7 @@ import '../core/core.dart';
 import '../markdown/markdown.dart';
 import '../render_plan/render_plan.dart';
 import 'flark_flutter_controller.dart';
+import 'flark_image_popover.dart';
 import 'flark_link_popover.dart';
 
 typedef FlarkLinkOpenCallback = void Function(String destination);
@@ -24,9 +25,13 @@ final class FlarkMarkdownInteractionConfig {
     this.enableCodeFenceLanguagePicker = true,
     this.enableLinkMenus = true,
     this.enableTaskCheckboxToggles = true,
+    this.enableImageMenus = true,
     this.onOpenLink,
     this.onEditLink,
+    this.onOpenImage,
+    this.onEditImage,
     this.linkActions,
+    this.imageActions,
   });
 
   static const standardCodeLanguages = <FlarkCodeLanguageOption>[
@@ -50,13 +55,26 @@ final class FlarkMarkdownInteractionConfig {
   final bool enableCodeFenceLanguagePicker;
   final bool enableLinkMenus;
   final bool enableTaskCheckboxToggles;
+  final bool enableImageMenus;
   final FlarkLinkOpenCallback? onOpenLink;
   final FlarkLinkEditCallback? onEditLink;
+
+  /// Invoked to open an image's source URL (e.g. in a browser).
+  final FlarkLinkOpenCallback? onOpenImage;
+
+  /// Invoked to edit an image — the app shows UI and calls `applyImageEdit`.
+  /// The target carries the current alt (`action.label`) and URL
+  /// (`action.destination`).
+  final FlarkLinkEditCallback? onEditImage;
 
   /// The actions shown in the inline link popover. Defaults to
   /// [FlarkLinkAction.defaults] (Open · Edit · Copy · Remove). Override to add,
   /// remove, or reorder — e.g. `[...FlarkLinkAction.defaults, myAction]`.
   final List<FlarkLinkAction>? linkActions;
+
+  /// The actions shown in the inline image popover. Defaults to
+  /// [FlarkImageAction.defaults] (Open · Edit · Copy · Remove).
+  final List<FlarkImageAction>? imageActions;
 }
 
 final class FlarkMarkdownInteractions extends InheritedWidget {
@@ -128,6 +146,20 @@ final class FlarkMarkdownInteractions extends InheritedWidget {
     );
     if (target.action?.kind == FlarkRenderInlineActionKind.link) {
       config.onEditLink?.call(context, target);
+    }
+  }
+
+  void editImage(BuildContext context, FlarkRenderOverlayTarget target) {
+    if (!editable) return;
+    controller.applySelection(
+      FlarkSelection(
+        baseOffset: target.sourceRange.start,
+        extentOffset: target.sourceRange.end,
+      ),
+      userEvent: 'selection.inlineAction',
+    );
+    if (target.action?.kind == FlarkRenderInlineActionKind.image) {
+      config.onEditImage?.call(context, target);
     }
   }
 

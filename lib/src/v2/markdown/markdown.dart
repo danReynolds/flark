@@ -2,6 +2,7 @@ export 'commands/flark_markdown_block_commands.dart';
 export 'commands/flark_markdown_command_capabilities.dart';
 export 'commands/flark_markdown_editing_extensions.dart';
 export 'commands/flark_markdown_inline_commands.dart';
+export 'commands/flark_markdown_image_commands.dart';
 export 'commands/flark_markdown_input_commands.dart';
 export 'commands/flark_markdown_link_commands.dart';
 export 'commands/flark_markdown_table_commands.dart';
