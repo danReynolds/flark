@@ -395,11 +395,64 @@ class _FlarkLandingScreenState extends State<FlarkLandingScreen> {
       maxLines: null,
       cursorColor: dark ? null : _C.teal,
       theme: _playgroundTheme,
+      interactionConfig: FlarkMarkdownInteractionConfig(
+        onOpenLink: _open,
+        onEditLink: _editLink,
+      ),
       style: _sans(
         immersive ? 17 : 16,
         FontWeight.w400,
         dark ? const Color(0xFFE6EDF3) : _C.ink,
         height: immersive ? 1.55 : 1.5,
+      ),
+    );
+  }
+
+  void _editLink(BuildContext context, FlarkRenderOverlayTarget target) {
+    final labelController = TextEditingController(
+      text: target.action?.label ?? '',
+    );
+    final urlController = TextEditingController(
+      text: target.action?.destination ?? '',
+    );
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit link'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: labelController,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Text'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: urlController,
+              decoration: const InputDecoration(labelText: 'URL'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final linkContext = _controller.commands.resolveLinkEditContext();
+              _controller.commands.applyLinkEdit(
+                context: linkContext,
+                label: labelController.text,
+                url: urlController.text,
+              );
+              Navigator.of(ctx).pop();
+              _focusNode.requestFocus();
+            },
+            child: const Text('Save'),
+          ),
+        ],
       ),
     );
   }
