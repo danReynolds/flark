@@ -16,6 +16,7 @@ import 'flark_code_syntax_highlighting.dart';
 import 'flark_editor_read_only_scope.dart';
 import 'flark_markdown_theme.dart';
 import 'flark_flutter_controller.dart';
+import 'flark_link_popover.dart';
 import 'flark_live_block_source_edit.dart';
 import 'flark_live_edit_classifier.dart';
 import 'flark_live_block_reconciler.dart';
@@ -159,6 +160,121 @@ final class _FlarkLiveRenderedEditableTextState
   }
 }
 
+/// Shared inline-link popover behavior for the two editable surfaces (the
+/// whole-document projected host and the per-block text). While the collapsed
+/// caret rests inside a link, a [FlarkLinkPopover] floats just beneath the
+/// surface through an [OverlayPortal] anchored with a [LayerLink]. Pure
+/// rebuild-driven: it re-evaluates on every build and the portal follows the
+/// caret in/out of links.
+mixin _InlineLinkPopoverHost<T extends StatefulWidget> on State<T> {
+  final LayerLink _linkPopoverLink = LayerLink();
+  final OverlayPortalController _linkOverlayController =
+      OverlayPortalController();
+  FlarkLinkActionContext? _linkAtCaret;
+
+  /// The document controller for this surface.
+  FlarkFlutterController get linkPopoverController;
+
+  /// The source range this surface edits, scoping detection to its own block;
+  /// null for the whole-document host.
+  FlarkSourceRange? get linkPopoverBlockRange;
+
+  Widget wrapWithLinkPopover(BuildContext context, Widget child) {
+    final interactions = FlarkMarkdownInteractions.maybeOf(context);
+    _linkAtCaret = _resolveLinkAtCaret(context, interactions);
+    _syncLinkPopoverVisibility(_linkAtCaret != null);
+    if (interactions == null) return child;
+    return CompositedTransformTarget(
+      link: _linkPopoverLink,
+      child: OverlayPortal(
+        controller: _linkOverlayController,
+        overlayChildBuilder: _buildLinkPopoverOverlay,
+        child: child,
+      ),
+    );
+  }
+
+  FlarkLinkActionContext? _resolveLinkAtCaret(
+    BuildContext context,
+    FlarkMarkdownInteractions? interactions,
+  ) {
+    if (interactions == null || !interactions.config.enableLinkMenus) {
+      return null;
+    }
+    final controller = linkPopoverController;
+    final selection = controller.selection;
+    if (!selection.isCollapsed) return null;
+    final caret = selection.extentOffset;
+    final blockRange = linkPopoverBlockRange;
+    if (blockRange != null &&
+        (caret < blockRange.start || caret > blockRange.end)) {
+      return null;
+    }
+    final link = FlarkMarkdownLinkCommands.resolveLinkEditContext(
+      controller.state,
+    );
+    if (!link.isExisting || link.url.isEmpty) return null;
+    if (blockRange != null &&
+        (link.replaceRange.start < blockRange.start ||
+            link.replaceRange.end > blockRange.end)) {
+      return null;
+    }
+    return FlarkLinkActionContext(
+      context: context,
+      url: link.url,
+      label: link.label,
+      range: link.replaceRange,
+      controller: controller,
+      interactions: interactions,
+      dismiss: _hideLinkPopover,
+    );
+  }
+
+  void _syncLinkPopoverVisibility(bool shouldShow) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final showing = _linkOverlayController.isShowing;
+      if (shouldShow && !showing) {
+        _linkOverlayController.show();
+      } else if (!shouldShow && showing) {
+        _linkOverlayController.hide();
+      }
+    });
+  }
+
+  void _hideLinkPopover() {
+    if (_linkOverlayController.isShowing) _linkOverlayController.hide();
+  }
+
+  Widget _buildLinkPopoverOverlay(BuildContext overlayContext) {
+    final link = _linkAtCaret;
+    if (link == null) return const SizedBox.shrink();
+    // Read theme/text style from this surface's context — the Overlay sits
+    // above the editor's theme scope and would otherwise lose the theme.
+    final theme = FlarkMarkdownTheme.of(context);
+    final textStyle = DefaultTextStyle.of(context).style;
+    final actions =
+        link.interactions.config.linkActions ?? FlarkLinkAction.defaults;
+    return CompositedTransformFollower(
+      link: _linkPopoverLink,
+      showWhenUnlinked: false,
+      targetAnchor: Alignment.bottomLeft,
+      followerAnchor: Alignment.topLeft,
+      offset: const Offset(0, 6),
+      child: UnconstrainedBox(
+        alignment: Alignment.topLeft,
+        child: FlarkMarkdownTheme(
+          data: theme,
+          child: DefaultTextStyle(
+            style: textStyle,
+            child: FlarkLinkPopover(link: link, actions: actions),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 final class _FlarkProjectedEditableHost extends StatefulWidget {
   const _FlarkProjectedEditableHost({
     required this.controller,
@@ -193,11 +309,19 @@ final class _FlarkProjectedEditableHost extends StatefulWidget {
 }
 
 final class _FlarkProjectedEditableHostState
-    extends State<_FlarkProjectedEditableHost> {
+    extends State<_FlarkProjectedEditableHost>
+    with _InlineLinkPopoverHost<_FlarkProjectedEditableHost> {
   late final TextEditingController _textController;
   late final ScrollController _scrollController;
   final _editableStateKey = GlobalKey<EditableTextState>();
   FocusNode? _ownedFocusNode;
+
+  @override
+  FlarkFlutterController get linkPopoverController => widget.controller;
+
+  // The host edits the whole document, so detection is not block-scoped.
+  @override
+  FlarkSourceRange? get linkPopoverBlockRange => null;
   bool _syncingFromRuntime = false;
   bool _keyboardSyncScheduled = false;
   final _compositionUndoGrouping = _FlarkCompositionUndoGrouping();
@@ -313,6 +437,7 @@ final class _FlarkProjectedEditableHostState
       applySelection: _applyProjectedSelection,
     );
     editor = FlarkCommandActions(controller: widget.controller, child: editor);
+    editor = wrapWithLinkPopover(context, editor);
     if (widget.shortcuts.isNotEmpty) {
       editor = Shortcuts(
         shortcuts: <ShortcutActivator, Intent>{...widget.shortcuts},

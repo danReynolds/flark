@@ -58,7 +58,8 @@ final class _EditableProjectedBlockText extends StatefulWidget {
 }
 
 final class _EditableProjectedBlockTextState
-    extends State<_EditableProjectedBlockText> {
+    extends State<_EditableProjectedBlockText>
+    with _InlineLinkPopoverHost<_EditableProjectedBlockText> {
   late final _FlarkBlockTextController _textController;
   FocusNode? _ownedFocusNode;
   bool _syncing = false;
@@ -68,6 +69,13 @@ final class _EditableProjectedBlockTextState
   String? _pendingCodeBodyPlatformEchoText;
 
   FocusNode get _focusNode => widget.focusNode ?? _ownedFocusNode!;
+
+  @override
+  FlarkFlutterController get linkPopoverController => widget.controller;
+
+  @override
+  FlarkSourceRange? get linkPopoverBlockRange =>
+      widget.currentBlock.sourceRange;
 
   @override
   void initState() {
@@ -135,6 +143,7 @@ final class _EditableProjectedBlockTextState
       onMoveVerticallyToAdjacentLine: _moveOutOfBlockOnVerticalBoundary,
       child: editor,
     );
+    editor = wrapWithLinkPopover(context, editor);
     final markdownInputPolicy =
         widget.markdownInputPolicy && _markdownInputPolicy.isEnabled;
     if (!markdownInputPolicy) return editor;

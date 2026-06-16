@@ -5,6 +5,7 @@ import '../core/core.dart';
 import '../markdown/markdown.dart';
 import '../render_plan/render_plan.dart';
 import 'flark_flutter_controller.dart';
+import 'flark_link_popover.dart';
 
 typedef FlarkLinkOpenCallback = void Function(String destination);
 typedef FlarkLinkEditCallback =
@@ -25,6 +26,7 @@ final class FlarkMarkdownInteractionConfig {
     this.enableTaskCheckboxToggles = true,
     this.onOpenLink,
     this.onEditLink,
+    this.linkActions,
   });
 
   static const standardCodeLanguages = <FlarkCodeLanguageOption>[
@@ -50,6 +52,11 @@ final class FlarkMarkdownInteractionConfig {
   final bool enableTaskCheckboxToggles;
   final FlarkLinkOpenCallback? onOpenLink;
   final FlarkLinkEditCallback? onEditLink;
+
+  /// The actions shown in the inline link popover. Defaults to
+  /// [FlarkLinkAction.defaults] (Open · Edit · Copy · Remove). Override to add,
+  /// remove, or reorder — e.g. `[...FlarkLinkAction.defaults, myAction]`.
+  final List<FlarkLinkAction>? linkActions;
 }
 
 final class FlarkMarkdownInteractions extends InheritedWidget {

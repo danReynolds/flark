@@ -1,6 +1,7 @@
 export 'flark_command_actions.dart';
 export 'flark_editable_text.dart';
 export 'flark_flutter_controller.dart';
+export 'flark_link_popover.dart';
 export 'flark_markdown_editor.dart';
 export 'flark_markdown_controller_commands.dart';
 export 'flark_markdown_form_field.dart';
