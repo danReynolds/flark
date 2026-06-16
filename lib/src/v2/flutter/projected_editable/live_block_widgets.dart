@@ -165,21 +165,25 @@ final class _EditableTaskListItemBlockState
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: EdgeInsets.only(
-              top: ((widget.style.fontSize ?? 14) * 0.18),
-            ),
-            child: Semantics(
-              key: const Key('FlarkLiveBlockTaskCheckbox'),
-              checked: checked,
-              label: checked ? 'Task, completed' : 'Task, not completed',
-              container: true,
-              onTap: () => _toggle(context),
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                excludeFromSemantics: true,
+          // Center the checkbox within the first text line's box so it stays
+          // aligned regardless of line-height (a fixed nudge drifts as the
+          // line-height grows).
+          SizedBox(
+            height:
+                (widget.style.fontSize ?? 14) * (widget.style.height ?? 1.4),
+            child: Center(
+              child: Semantics(
+                key: const Key('FlarkLiveBlockTaskCheckbox'),
+                checked: checked,
+                label: checked ? 'Task, completed' : 'Task, not completed',
+                container: true,
                 onTap: () => _toggle(context),
-                child: _TaskCheckboxGlyph(checked: checked),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  excludeFromSemantics: true,
+                  onTap: () => _toggle(context),
+                  child: _TaskCheckboxGlyph(checked: checked),
+                ),
               ),
             ),
           ),
