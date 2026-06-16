@@ -3,6 +3,7 @@ import 'dart:ui' show BoxHeightStyle;
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart' show RenderEditable;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -179,6 +180,10 @@ mixin _InlineLinkPopoverHost<T extends StatefulWidget> on State<T> {
   /// null for the whole-document host.
   FlarkSourceRange? get linkPopoverBlockRange;
 
+  /// This surface's render editable, used to anchor the popover to the link's
+  /// on-screen position. Null falls back to anchoring beneath the surface.
+  RenderEditable? get linkPopoverRenderEditable;
+
   Widget wrapWithLinkPopover(BuildContext context, Widget child) {
     final interactions = FlarkMarkdownInteractions.maybeOf(context);
     _linkAtCaret = _resolveLinkAtCaret(context, interactions);
@@ -255,12 +260,18 @@ mixin _InlineLinkPopoverHost<T extends StatefulWidget> on State<T> {
     final textStyle = DefaultTextStyle.of(context).style;
     final actions =
         link.interactions.config.linkActions ?? FlarkLinkAction.defaults;
+    // Anchor just beneath the link's rendered position when we can measure it;
+    // otherwise fall back to beneath the surface.
+    final linkOffset = _linkAnchorOffset(link);
     return CompositedTransformFollower(
       link: _linkPopoverLink,
       showWhenUnlinked: false,
-      targetAnchor: Alignment.bottomLeft,
+      targetAnchor: Alignment.topLeft,
       followerAnchor: Alignment.topLeft,
-      offset: const Offset(0, 6),
+      offset:
+          linkOffset == null
+              ? const Offset(0, 6)
+              : linkOffset + const Offset(0, 4),
       child: UnconstrainedBox(
         alignment: Alignment.topLeft,
         child: FlarkMarkdownTheme(
@@ -272,6 +283,27 @@ mixin _InlineLinkPopoverHost<T extends StatefulWidget> on State<T> {
         ),
       ),
     );
+  }
+
+  /// The link's bottom-left, in this surface's local coordinates (the popover
+  /// anchor is the surface's top-left). Null when the surface can't be measured
+  /// yet, in which case the caller falls back to a surface-relative anchor.
+  Offset? _linkAnchorOffset(FlarkLinkActionContext link) {
+    final renderEditable = linkPopoverRenderEditable;
+    if (renderEditable == null || !renderEditable.attached) return null;
+    final surfaceBox = context.findRenderObject();
+    if (surfaceBox is! RenderBox || !surfaceBox.attached) return null;
+    final projection = link.controller.projection;
+    final start = link.range.start;
+    if (start < 0 || start > projection.textLength) return null;
+    final display = projection
+        .sourceToDisplayOffset(start)
+        .clamp(0, projection.displayLength);
+    final caretRect = renderEditable.getLocalRectForCaret(
+      TextPosition(offset: display),
+    );
+    final global = renderEditable.localToGlobal(caretRect.bottomLeft);
+    return surfaceBox.globalToLocal(global);
   }
 }
 
@@ -322,6 +354,10 @@ final class _FlarkProjectedEditableHostState
   // The host edits the whole document, so detection is not block-scoped.
   @override
   FlarkSourceRange? get linkPopoverBlockRange => null;
+
+  @override
+  RenderEditable? get linkPopoverRenderEditable =>
+      _editableStateKey.currentState?.renderEditable;
   bool _syncingFromRuntime = false;
   bool _keyboardSyncScheduled = false;
   final _compositionUndoGrouping = _FlarkCompositionUndoGrouping();

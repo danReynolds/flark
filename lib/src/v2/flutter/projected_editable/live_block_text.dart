@@ -77,6 +77,11 @@ final class _EditableProjectedBlockTextState
   FlarkSourceRange? get linkPopoverBlockRange =>
       widget.currentBlock.sourceRange;
 
+  // The block's editable is nested; until it's exposed, the popover anchors
+  // beneath the block rather than to the exact link rect.
+  @override
+  RenderEditable? get linkPopoverRenderEditable => null;
+
   @override
   void initState() {
     super.initState();
