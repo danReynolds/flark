@@ -344,6 +344,37 @@ final class FlarkFlutterController extends ChangeNotifier {
     );
   }
 
+  /// Whether arming [style] now would actually wrap the next typed run.
+  ///
+  /// Returns false when the wrap's marker would merge with an adjacent marker
+  /// character and be dropped at type time — for example arming italic at a
+  /// bold run's trailing edge, where the would-be `**a*b***` is not
+  /// representable in CommonMark (the inner emphasis parses as literal). A
+  /// collapsed-caret toggle consults this so the toolbar never lights up a
+  /// style that the next keystroke would silently drop. Disarming an
+  /// already-armed style, and any non-collapsed (selection) toggle, always
+  /// apply.
+  bool wouldArmInlineStyleApply(FlarkMarkdownInlineStyle style) {
+    final selection = state.selection;
+    if (!selection.isCollapsed) return true;
+    if (_pendingInlineStyles.contains(style)) return true;
+    final source = markdown;
+    final caret = selection.start;
+    if (caret < 0 || caret > source.length) return true;
+    final ordered = [
+      for (final candidate in _pendingInlineStyleOrder)
+        if (candidate == style || _pendingInlineStyles.contains(candidate))
+          candidate,
+    ];
+    if (ordered.isEmpty) return true;
+    return !FlarkProjectedTextEditAdapter.wrapMarkersWouldMerge(
+      source,
+      caret,
+      open: ordered.map((s) => s.marker).join(),
+      close: ordered.reversed.map((s) => s.marker).join(),
+    );
+  }
+
   FlarkProjection get projection => _projection;
 
   FlarkRenderPlan get renderPlan => _renderPlan;

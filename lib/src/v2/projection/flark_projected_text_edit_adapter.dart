@@ -121,12 +121,35 @@ final class FlarkProjectedTextEditAdapter {
     int caret,
     ({String open, String close}) wrap,
   ) {
-    final openChar = wrap.open.codeUnitAt(0);
-    final closeChar = wrap.close.codeUnitAt(wrap.close.length - 1);
-    final before = caret > 0 ? currentMarkdown.codeUnitAt(caret - 1) : null;
-    final after = caret < currentMarkdown.length
-        ? currentMarkdown.codeUnitAt(caret)
-        : null;
+    return wrapMarkersWouldMerge(
+      currentMarkdown,
+      caret,
+      open: wrap.open,
+      close: wrap.close,
+    );
+  }
+
+  /// Whether wrapping a collapsed insertion at [caret] in [source] with the
+  /// outer markers [open]/[close] would sit flush against an identical marker
+  /// character, merging into a longer (corrupting) run.
+  ///
+  /// Shared with the controller so the toolbar can refuse to arm a style whose
+  /// wrap would be dropped at the caret — e.g. arming italic at a bold run's
+  /// trailing edge, where `**a*b***` is not representable. Keeping one
+  /// predicate keeps the armed-state display honest about what typing will do.
+  static bool wrapMarkersWouldMerge(
+    String source,
+    int caret, {
+    required String open,
+    required String close,
+  }) {
+    if (open.isEmpty || close.isEmpty || caret < 0 || caret > source.length) {
+      return false;
+    }
+    final openChar = open.codeUnitAt(0);
+    final closeChar = close.codeUnitAt(close.length - 1);
+    final before = caret > 0 ? source.codeUnitAt(caret - 1) : null;
+    final after = caret < source.length ? source.codeUnitAt(caret) : null;
     return before == openChar || after == closeChar;
   }
 
