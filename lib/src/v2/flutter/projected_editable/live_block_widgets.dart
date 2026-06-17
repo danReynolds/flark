@@ -238,6 +238,104 @@ final class _EditableTaskListItemBlockState
   }
 }
 
+/// A standalone image (`![alt](url)` alone on its line) rendered as the real
+/// picture above its caption editable.
+///
+/// The caption is a normal [_EditableProjectedBlockText] over the block, so the
+/// caret, focus, vertical-boundary navigation, and backspace-to-delete all work
+/// exactly as for any paragraph — only the picture is layered on top. The alt
+/// text doubles as a muted caption and remains the place to edit/delete the
+/// image from the keyboard; the URL is editable through the image popover.
+final class _EditableImageBlock extends StatelessWidget {
+  const _EditableImageBlock({
+    required this.controller,
+    required this.block,
+    required this.displayText,
+    required this.style,
+    required this.cursorColor,
+    required this.backgroundCursorColor,
+    this.blockHandle,
+    this.focusNode,
+    this.autofocus = false,
+    this.onMoveToPreviousBlock,
+    this.onMoveToNextBlock,
+  });
+
+  final FlarkFlutterController controller;
+  final FlarkRenderBlock block;
+  final _LiveRenderedBlockHandle? blockHandle;
+  final String displayText;
+  final TextStyle style;
+  final Color cursorColor;
+  final Color backgroundCursorColor;
+  final FocusNode? focusNode;
+  final bool autofocus;
+  final VoidCallback? onMoveToPreviousBlock;
+  final VoidCallback? onMoveToNextBlock;
+
+  FlarkRenderBlock get currentBlock => blockHandle?.block ?? block;
+  String get currentDisplayText => blockHandle?.displayText ?? displayText;
+
+  @override
+  Widget build(BuildContext context) {
+    final block = currentBlock;
+    final theme = FlarkMarkdownTheme.of(context);
+    final interactions = FlarkMarkdownInteractions.maybeOf(context);
+    final run = _standaloneImageRunForBlock(block, currentDisplayText);
+    final action = run?.action;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (run != null && action != null)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              // Tapping the picture drops the caret into the caption so the
+              // keyboard, popover, and deletion all act on this image.
+              onTap: () => focusNode?.requestFocus(),
+              child: Padding(
+                key: const Key('FlarkLiveBlockImage'),
+                padding: const EdgeInsets.only(bottom: 2),
+                child: FlarkInlineImage(
+                  spec: FlarkInlineImageSpec(
+                    url: action.destination,
+                    alt: action.label,
+                    title: action.title,
+                    sourceRange: run.sourceRange,
+                    isStandalone: true,
+                    constraints: FlarkInlineImage.constraintsFor(
+                      isStandalone: true,
+                    ),
+                  ),
+                  builder: interactions?.config.imageBuilder,
+                ),
+              ),
+            ),
+          _EditableProjectedBlockText(
+            controller: controller,
+            block: block,
+            blockHandle: blockHandle,
+            displayText: currentDisplayText,
+            style: style.copyWith(
+              color: theme.captionTextColor,
+              fontSize: (style.fontSize ?? 14) - 1,
+            ),
+            cursorColor: cursorColor,
+            backgroundCursorColor: backgroundCursorColor,
+            focusNode: focusNode,
+            autofocus: autofocus,
+            markdownInputPolicy: true,
+            onMoveToPreviousBlock: onMoveToPreviousBlock,
+            onMoveToNextBlock: onMoveToNextBlock,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 final class _TaskCheckboxGlyph extends StatelessWidget {
   const _TaskCheckboxGlyph({required this.checked});
 

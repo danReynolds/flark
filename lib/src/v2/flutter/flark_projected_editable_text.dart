@@ -18,6 +18,7 @@ import 'flark_editor_read_only_scope.dart';
 import 'flark_markdown_theme.dart';
 import 'flark_flutter_controller.dart';
 import 'flark_image_popover.dart';
+import 'flark_inline_image.dart';
 import 'flark_link_popover.dart';
 import 'flark_live_block_source_edit.dart';
 import 'flark_live_edit_classifier.dart';
