@@ -17,6 +17,7 @@ import 'flark_code_syntax_highlighting.dart';
 import 'flark_editor_read_only_scope.dart';
 import 'flark_markdown_theme.dart';
 import 'flark_flutter_controller.dart';
+import 'flark_image_popover.dart';
 import 'flark_link_popover.dart';
 import 'flark_live_block_source_edit.dart';
 import 'flark_live_edit_classifier.dart';
@@ -171,7 +172,9 @@ mixin _InlineLinkPopoverHost<T extends StatefulWidget> on State<T> {
   final LayerLink _linkPopoverLink = LayerLink();
   final OverlayPortalController _linkOverlayController =
       OverlayPortalController();
-  FlarkLinkActionContext? _linkAtCaret;
+  // The popover content (a link or image popover) and its source range, used
+  // to anchor it on-screen.
+  ({Widget content, FlarkSourceRange range})? _popover;
 
   // The popover opens on a deliberate tap on a link, not whenever the caret is
   // adjacent (which fires the moment link markdown is finished). A pointer-up
@@ -195,23 +198,24 @@ mixin _InlineLinkPopoverHost<T extends StatefulWidget> on State<T> {
 
   Widget wrapWithLinkPopover(BuildContext context, Widget child) {
     final interactions = FlarkMarkdownInteractions.maybeOf(context);
-    final raw = interactions == null
+    final target = interactions == null
         ? null
-        : _resolveLinkAtCaret(context, interactions);
+        : _resolveInlineTarget(context, interactions);
     final revision = linkPopoverController.state.revision;
-    if (raw == null) {
-      // No link under the caret — disarm so re-entering by keyboard stays shut.
+    if (target == null) {
+      // Nothing actionable under the caret — disarm so re-entering by keyboard
+      // stays shut.
       _linkTapArmed = false;
       _linkTapPending = false;
     } else if (_linkTapPending) {
-      // A tap just landed on this link.
+      // A tap just landed on this link/image.
       _linkTapPending = false;
       _linkTapArmed = true;
       _linkArmedRevision = revision;
     }
     final show =
-        raw != null && _linkTapArmed && _linkArmedRevision == revision;
-    _linkAtCaret = show ? raw : null;
+        target != null && _linkTapArmed && _linkArmedRevision == revision;
+    _popover = show ? target : null;
     _syncLinkPopoverVisibility(show);
     if (interactions == null) return child;
     return Listener(
@@ -227,13 +231,13 @@ mixin _InlineLinkPopoverHost<T extends StatefulWidget> on State<T> {
     );
   }
 
-  FlarkLinkActionContext? _resolveLinkAtCaret(
+  /// The popover (link or image) for the actionable inline element under the
+  /// collapsed caret, with its source range, or null. Images are checked first
+  /// because the link pattern also matches the `[alt](url)` inside `![alt](url)`.
+  ({Widget content, FlarkSourceRange range})? _resolveInlineTarget(
     BuildContext context,
-    FlarkMarkdownInteractions? interactions,
+    FlarkMarkdownInteractions interactions,
   ) {
-    if (interactions == null || !interactions.config.enableLinkMenus) {
-      return null;
-    }
     final controller = linkPopoverController;
     final selection = controller.selection;
     if (!selection.isCollapsed) return null;
@@ -243,24 +247,64 @@ mixin _InlineLinkPopoverHost<T extends StatefulWidget> on State<T> {
         (caret < blockRange.start || caret > blockRange.end)) {
       return null;
     }
-    final link = FlarkMarkdownLinkCommands.resolveLinkEditContext(
-      controller.state,
-    );
-    if (!link.isExisting || link.url.isEmpty) return null;
-    if (blockRange != null &&
-        (link.replaceRange.start < blockRange.start ||
-            link.replaceRange.end > blockRange.end)) {
-      return null;
+
+    if (interactions.config.enableImageMenus) {
+      final image = FlarkMarkdownImageCommands.resolveImageEditContext(
+        controller.state,
+      );
+      if (image.isExisting &&
+          image.url.isNotEmpty &&
+          _withinBlock(image.replaceRange, blockRange)) {
+        return (
+          content: FlarkImagePopover(
+            image: FlarkImageActionContext(
+              context: context,
+              url: image.url,
+              alt: image.alt,
+              range: image.replaceRange,
+              controller: controller,
+              interactions: interactions,
+              dismiss: _hideLinkPopover,
+            ),
+            actions:
+                interactions.config.imageActions ?? FlarkImageAction.defaults,
+          ),
+          range: image.replaceRange,
+        );
+      }
     }
-    return FlarkLinkActionContext(
-      context: context,
-      url: link.url,
-      label: link.label,
-      range: link.replaceRange,
-      controller: controller,
-      interactions: interactions,
-      dismiss: _hideLinkPopover,
-    );
+
+    if (interactions.config.enableLinkMenus) {
+      final link = FlarkMarkdownLinkCommands.resolveLinkEditContext(
+        controller.state,
+      );
+      if (link.isExisting &&
+          link.url.isNotEmpty &&
+          _withinBlock(link.replaceRange, blockRange)) {
+        return (
+          content: FlarkLinkPopover(
+            link: FlarkLinkActionContext(
+              context: context,
+              url: link.url,
+              label: link.label,
+              range: link.replaceRange,
+              controller: controller,
+              interactions: interactions,
+              dismiss: _hideLinkPopover,
+            ),
+            actions:
+                interactions.config.linkActions ?? FlarkLinkAction.defaults,
+          ),
+          range: link.replaceRange,
+        );
+      }
+    }
+    return null;
+  }
+
+  bool _withinBlock(FlarkSourceRange range, FlarkSourceRange? blockRange) {
+    if (blockRange == null) return true;
+    return range.start >= blockRange.start && range.end <= blockRange.end;
   }
 
   void _syncLinkPopoverVisibility(bool shouldShow) {
@@ -280,49 +324,42 @@ mixin _InlineLinkPopoverHost<T extends StatefulWidget> on State<T> {
   }
 
   Widget _buildLinkPopoverOverlay(BuildContext overlayContext) {
-    final link = _linkAtCaret;
-    if (link == null) return const SizedBox.shrink();
+    final popover = _popover;
+    if (popover == null) return const SizedBox.shrink();
     // Read theme/text style from this surface's context — the Overlay sits
     // above the editor's theme scope and would otherwise lose the theme.
     final theme = FlarkMarkdownTheme.of(context);
     final textStyle = DefaultTextStyle.of(context).style;
-    final actions =
-        link.interactions.config.linkActions ?? FlarkLinkAction.defaults;
-    // Anchor just beneath the link's rendered position when we can measure it;
-    // otherwise fall back to beneath the surface.
-    final linkOffset = _linkAnchorOffset(link);
+    // Anchor just beneath the element's rendered position when we can measure
+    // it; otherwise fall back to beneath the surface.
+    final anchor = _anchorOffset(popover.range);
     return CompositedTransformFollower(
       link: _linkPopoverLink,
       showWhenUnlinked: false,
       targetAnchor: Alignment.topLeft,
       followerAnchor: Alignment.topLeft,
       offset:
-          linkOffset == null
-              ? const Offset(0, 6)
-              : linkOffset + const Offset(0, 4),
+          anchor == null ? const Offset(0, 6) : anchor + const Offset(0, 4),
       child: UnconstrainedBox(
         alignment: Alignment.topLeft,
         child: FlarkMarkdownTheme(
           data: theme,
-          child: DefaultTextStyle(
-            style: textStyle,
-            child: FlarkLinkPopover(link: link, actions: actions),
-          ),
+          child: DefaultTextStyle(style: textStyle, child: popover.content),
         ),
       ),
     );
   }
 
-  /// The link's bottom-left, in this surface's local coordinates (the popover
+  /// The element's bottom-left, in this surface's local coordinates (the popover
   /// anchor is the surface's top-left). Null when the surface can't be measured
   /// yet, in which case the caller falls back to a surface-relative anchor.
-  Offset? _linkAnchorOffset(FlarkLinkActionContext link) {
+  Offset? _anchorOffset(FlarkSourceRange range) {
     final renderEditable = linkPopoverRenderEditable;
     if (renderEditable == null || !renderEditable.attached) return null;
     final surfaceBox = context.findRenderObject();
     if (surfaceBox is! RenderBox || !surfaceBox.attached) return null;
-    final projection = link.controller.projection;
-    final start = link.range.start;
+    final projection = linkPopoverController.projection;
+    final start = range.start;
     if (start < 0 || start > projection.textLength) return null;
     final display = projection
         .sourceToDisplayOffset(start)

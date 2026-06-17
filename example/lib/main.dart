@@ -398,6 +398,8 @@ class _FlarkLandingScreenState extends State<FlarkLandingScreen> {
       interactionConfig: FlarkMarkdownInteractionConfig(
         onOpenLink: _open,
         onEditLink: _editLink,
+        onOpenImage: _open,
+        onEditImage: _editImage,
       ),
       style: _sans(
         immersive ? 17 : 16,
@@ -445,6 +447,56 @@ class _FlarkLandingScreenState extends State<FlarkLandingScreen> {
               _controller.commands.applyLinkEdit(
                 context: linkContext,
                 label: labelController.text,
+                url: urlController.text,
+              );
+              Navigator.of(ctx).pop();
+              _focusNode.requestFocus();
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _editImage(BuildContext context, FlarkRenderOverlayTarget target) {
+    final altController = TextEditingController(
+      text: target.action?.label ?? '',
+    );
+    final urlController = TextEditingController(
+      text: target.action?.destination ?? '',
+    );
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit image'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: altController,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Alt text'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: urlController,
+              decoration: const InputDecoration(labelText: 'Image URL'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final imageContext = _controller.commands
+                  .resolveImageEditContext();
+              _controller.commands.applyImageEdit(
+                context: imageContext,
+                alt: altController.text,
                 url: urlController.text,
               );
               Navigator.of(ctx).pop();
