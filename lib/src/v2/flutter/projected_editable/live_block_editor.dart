@@ -85,7 +85,8 @@ final class _FlarkLiveRenderedBlockEditorState
                   .toList(growable: false)
             : const <FlarkRenderBlock>[];
 
-        if (blocks.isEmpty || !_requiresBlockWidgetEditing(blocks)) {
+        if (blocks.isEmpty ||
+            !_requiresBlockWidgetEditing(blocks, displayText)) {
           return _FlarkProjectedEditableHost(
             controller: widget.controller,
             focusNode: widget.focusNode,
@@ -182,13 +183,17 @@ final class _FlarkLiveRenderedBlockEditorState
     );
   }
 
-  static bool _requiresBlockWidgetEditing(Iterable<FlarkRenderBlock> blocks) {
+  static bool _requiresBlockWidgetEditing(
+    Iterable<FlarkRenderBlock> blocks,
+    String displayText,
+  ) {
     return blocks.any((block) {
       return block.table != null ||
           block.codeBlock != null ||
           block.listItem != null ||
           block.taskListItem != null ||
-          block.kind == FlarkMarkdownBlockKind.blockquote;
+          block.kind == FlarkMarkdownBlockKind.blockquote ||
+          _standaloneImageRunForBlock(block, displayText) != null;
     });
   }
 
@@ -1103,6 +1108,9 @@ Color _selectionColorForCursor(Color cursorColor) {
 
 bool _isVisibleEditableBlock(FlarkRenderBlock block, String displayText) {
   if (_rangeOverlapsText(block.displayRange, displayText)) return true;
+  // A standalone image whose alt text is empty (`![](url)`) projects to no
+  // display text, but the block still renders the picture, so keep it visible.
+  if (_standaloneImageRunForBlock(block, displayText) != null) return true;
   // Blocks whose markers are fully hidden still render as (empty) editable
   // widgets, so e.g. `### ` styles as an empty heading immediately instead
   // of flashing raw source until the first content character arrives.
@@ -1111,6 +1119,37 @@ bool _isVisibleEditableBlock(FlarkRenderBlock block, String displayText) {
           block.kind == FlarkMarkdownBlockKind.codeBlock ||
           block.kind == FlarkMarkdownBlockKind.heading) &&
       block.displayRange.isCollapsed;
+}
+
+/// The single image run when [block] is a paragraph whose entire visible
+/// content is one inline image (`![alt](url)` alone on its line), else null.
+///
+/// Such a block renders the real picture as a non-editable preview above its
+/// normal (alt-text) caption editable — the editable keeps all caret, focus,
+/// navigation, and deletion behavior identical to any other paragraph, so the
+/// image block needs no special caret handling. Surrounding whitespace (the
+/// block's trailing newline, leading indent) is ignored so an image still
+/// counts as standalone in the middle of a document.
+FlarkRenderInlineRun? _standaloneImageRunForBlock(
+  FlarkRenderBlock block,
+  String displayText,
+) {
+  if (block.kind != FlarkMarkdownBlockKind.paragraph) return null;
+  if (block.children.isNotEmpty) return null;
+  if (block.inlineRuns.length != 1) return null;
+  final run = block.inlineRuns.single;
+  if (run.action?.kind != FlarkRenderInlineActionKind.image) return null;
+  final blockStart = block.displayRange.start.clamp(0, displayText.length);
+  final blockEnd = block.displayRange.end.clamp(0, displayText.length);
+  final runStart = run.displayRange.start.clamp(blockStart, blockEnd);
+  final runEnd = run.displayRange.end.clamp(blockStart, blockEnd);
+  if (run.displayRange.start < blockStart || run.displayRange.end > blockEnd) {
+    return null;
+  }
+  // Only whitespace may surround the image within the block.
+  if (displayText.substring(blockStart, runStart).trim().isNotEmpty) return null;
+  if (displayText.substring(runEnd, blockEnd).trim().isNotEmpty) return null;
+  return run;
 }
 
 bool _isSyntheticSourceHost(FlarkRenderBlock block) {
@@ -1430,6 +1469,22 @@ final class _FlarkLiveRenderedBlock extends StatelessWidget {
             ),
           ),
         ),
+      );
+    }
+    final standaloneImage = _standaloneImageRunForBlock(block, displayText);
+    if (standaloneImage != null) {
+      return _EditableImageBlock(
+        controller: controller,
+        block: block,
+        blockHandle: handle,
+        displayText: displayText,
+        style: style,
+        cursorColor: cursorColor,
+        backgroundCursorColor: backgroundCursorColor,
+        focusNode: focusNode,
+        autofocus: autofocus,
+        onMoveToPreviousBlock: onMoveToPreviousBlock,
+        onMoveToNextBlock: onMoveToNextBlock,
       );
     }
     final syntheticSourceHost = _isSyntheticSourceHost(block);

@@ -6,6 +6,7 @@ import '../markdown/markdown.dart';
 import '../render_plan/render_plan.dart';
 import 'flark_flutter_controller.dart';
 import 'flark_image_popover.dart';
+import 'flark_inline_image.dart';
 import 'flark_link_popover.dart';
 
 typedef FlarkLinkOpenCallback = void Function(String destination);
@@ -32,6 +33,7 @@ final class FlarkMarkdownInteractionConfig {
     this.onEditImage,
     this.linkActions,
     this.imageActions,
+    this.imageBuilder,
   });
 
   static const standardCodeLanguages = <FlarkCodeLanguageOption>[
@@ -75,6 +77,11 @@ final class FlarkMarkdownInteractionConfig {
   /// The actions shown in the inline image popover. Defaults to
   /// [FlarkImageAction.defaults] (Open · Edit · Copy · Remove).
   final List<FlarkImageAction>? imageActions;
+
+  /// Resolves an inline image's URL into a widget (e.g. `Image.file`, an asset,
+  /// or a cached/authenticated provider). When null, Flark renders http(s)
+  /// images with [Image.network] and falls back to a labelled card otherwise.
+  final FlarkInlineImageBuilder? imageBuilder;
 }
 
 final class FlarkMarkdownInteractions extends InheritedWidget {
