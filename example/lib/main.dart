@@ -91,6 +91,8 @@ const _sampleMarkdown = '''# Flark Markdown
 
 Native Comrak parsing with live source-first editing.
 
+![A great grey owl](https://flutter.github.io/assets-for-api-docs/assets/widgets/owl.jpg)
+
 - [x] Live-rendered Markdown editing
 - [ ] Canonical source output
 - [ ] App-owned command controls
