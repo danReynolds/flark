@@ -1,6 +1,6 @@
 import 'package:example/main.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flark/flark.dart';
 
@@ -74,6 +74,19 @@ void main() {
     await _settleParsing(tester);
     expect(_controller(tester).markdown, '**bold** *italic*');
     expect(_editorText(tester), 'bold italic');
+
+    await _loadScratch(tester);
+    await _replaceOnlyEditableText(tester, 'docs');
+    await _selectSourceRange(tester, 0, 'docs'.length);
+    await _tapKey(tester, 'flark-example-command-link');
+    await tester.pumpAndSettle();
+    expect(find.text('Insert link'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).at(1), 'https://example.com');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    await _settleParsing(tester);
+    expect(_controller(tester).markdown, '[docs](https://example.com)');
+    expect(_editorText(tester), 'docs');
 
     await _loadScratch(tester);
     await _replaceOnlyEditableText(tester, 'item');

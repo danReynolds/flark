@@ -128,6 +128,14 @@ final class FlarkMarkdownInputEngine {
     );
     if (quoteBoundaryBackspace != null) return quoteBoundaryBackspace;
 
+    final terminalQuoteExitBackspace = _terminalQuoteExitBackspace(
+      markdown: markdown,
+      selection: selection,
+    );
+    if (terminalQuoteExitBackspace != null) {
+      return terminalQuoteExitBackspace;
+    }
+
     return _sourceEdit(
       range: FlarkSourceRange(selection.start - 1, selection.start),
       replacementText: '',
@@ -589,6 +597,32 @@ FlarkSourceRange? _lastQuoteMarkerRange(int lineStart, String quotePrefix) {
   return FlarkSourceRange(lineStart + markerStart, lineStart + markerEnd);
 }
 
+FlarkMarkdownSourceEdit? _terminalQuoteExitBackspace({
+  required String markdown,
+  required FlarkSelection selection,
+}) {
+  if (!selection.isCollapsed) return null;
+  final caret = selection.extentOffset;
+  if (caret != markdown.length || caret < 2) return null;
+  if (!_isLineBreakCodeUnit(markdown.codeUnitAt(caret - 1)) ||
+      !_isLineBreakCodeUnit(markdown.codeUnitAt(caret - 2))) {
+    return null;
+  }
+
+  final quoteLineEnd = caret - 2;
+  final quoteLineStart = quoteLineEnd == 0
+      ? 0
+      : markdown.lastIndexOf('\n', quoteLineEnd - 1) + 1;
+  if (_quotePrefix(markdown.substring(quoteLineStart, quoteLineEnd)).isEmpty) {
+    return null;
+  }
+
+  return _sourceEdit(
+    range: FlarkSourceRange(quoteLineEnd, caret),
+    replacementText: '',
+  );
+}
+
 int _quoteDepth(String quotePrefix) {
   var depth = 0;
   for (var index = 0; index < quotePrefix.length; index++) {
@@ -785,6 +819,10 @@ int _horizontalWhitespaceEnd(String text, int start) {
 
 bool _isHorizontalWhitespaceCodeUnit(int codeUnit) {
   return codeUnit == 32 || codeUnit == 9;
+}
+
+bool _isLineBreakCodeUnit(int codeUnit) {
+  return codeUnit == 10 || codeUnit == 13;
 }
 
 bool _isDigitCodeUnit(int codeUnit) {

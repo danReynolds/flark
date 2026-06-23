@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 - 2026-06-23
 
 Architecture hardening and correctness fixes from a full-package audit,
 followed by a developer-experience pass.
@@ -48,6 +48,10 @@ Live-editing ergonomics:
 
 Developer experience:
 
+- The example playground toolbar now exposes link insertion as a first-class
+  action. Selecting text and pressing the Link button opens the same edit dialog
+  used by existing inline-link controls, then writes `[label](url)` back to the
+  source document.
 - Typography theming: `FlarkMarkdownThemeData` gains optional per-token
   `TextStyle` overrides merged over the computed defaults —
   `codeTextStyle` (custom code fonts), `inlineCodeTextStyle`,
@@ -87,6 +91,12 @@ Developer experience:
 
 Behavior fixes:
 
+- Live-rendered blockquotes now exit cleanly: pressing Enter on the marker-only
+  quote line keeps the Markdown separator in source, but no longer displays that
+  separator as a blank quoted row.
+- Pressing Backspace from the outside blank row after exiting a blockquote moves
+  directly back to the end of the quote text instead of first expanding the
+  quote to show a blank line.
 - Undo/redo now map the projection and render plan through the applied
   inverse transactions instead of resetting them, so live-rendered surfaces
   no longer flash raw Markdown source on every undo. `FlarkHistoryResult`

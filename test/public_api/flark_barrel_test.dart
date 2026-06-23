@@ -46,6 +46,10 @@ void main() {
       FlarkMarkdownBlockCommands.setTaskListChecked.id,
       'markdown.setTaskListChecked',
     );
+    expect(
+      commands.resolveLinkEditContext(),
+      isA<FlarkMarkdownLinkEditContext>(),
+    );
     expect(FlarkMarkdownLinkCommands.removeLink.id, 'markdown.removeLink');
     expect(FlarkNativeComrakParseBackend, isA<Type>());
     expect(NativeComrakBridge, isA<Type>());

@@ -505,6 +505,30 @@ void main() {
 
     expect(controller.markdown, '> quote\n\n');
     expect(controller.selection, const FlarkSelection.collapsed(9));
+    expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsOneWidget);
+    final quoteEditable = find.descendant(
+      of: find.byKey(const Key('FlarkLiveBlockBlockquote')),
+      matching: find.byType(EditableText),
+    );
+    expect(quoteEditable, findsOneWidget);
+    expect(tester.widget<EditableText>(quoteEditable).controller.text, 'quote');
+    final editableTexts = tester
+        .widgetList<EditableText>(find.byType(EditableText))
+        .map((editable) => editable.controller.text)
+        .toList(growable: false);
+    expect(editableTexts, ['quote', '']);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    await tester.pumpAndSettle();
+
+    expect(controller.markdown, '> quote');
+    expect(controller.selection, const FlarkSelection.collapsed(7));
+    expect(find.byKey(const Key('FlarkLiveBlockBlockquote')), findsOneWidget);
+    expect(find.byType(EditableText), findsOneWidget);
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).controller.text,
+      'quote',
+    );
   });
 
   testWidgets('routes Backspace from empty live blockquotes to remove them', (

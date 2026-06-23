@@ -519,7 +519,11 @@ final class _EditableProjectedBlockTextState
     }
     final block = widget.currentBlock;
     final displayText = widget.currentDisplayText;
-    final range = flarkClampedDisplayRange(block, displayText);
+    final range = _editableDisplayRangeForBlock(
+      block: block,
+      displayText: displayText,
+      markdown: widget.controller.markdown,
+    );
     return displayText.substring(range.start, range.end);
   }
 
@@ -551,9 +555,10 @@ final class _EditableProjectedBlockTextState
     }
     final displaySelection = widget.controller.projection
         .sourceSelectionToDisplay(widget.controller.selection);
-    final range = flarkClampedDisplayRange(
-      widget.currentBlock,
-      widget.currentDisplayText,
+    final range = _editableDisplayRangeForBlock(
+      block: widget.currentBlock,
+      displayText: widget.currentDisplayText,
+      markdown: widget.controller.markdown,
     );
     if (displaySelection.start < range.start ||
         displaySelection.end > range.end) {
@@ -887,6 +892,35 @@ final class _EditableProjectedBlockTextState
     }
     return range;
   }
+}
+
+FlarkSourceRange _editableDisplayRangeForBlock({
+  required FlarkRenderBlock block,
+  required String displayText,
+  required String markdown,
+}) {
+  final range = flarkClampedDisplayRange(block, displayText);
+  if (!_blockquoteEndsAtUnquotedSeparator(markdown: markdown, block: block)) {
+    return range;
+  }
+  var end = range.end;
+  while (end > range.start) {
+    final unit = displayText.codeUnitAt(end - 1);
+    if (unit != 0x0A && unit != 0x0D) break;
+    end--;
+  }
+  return FlarkSourceRange(range.start, end);
+}
+
+bool _blockquoteEndsAtUnquotedSeparator({
+  required String markdown,
+  required FlarkRenderBlock block,
+}) {
+  if (block.kind != FlarkMarkdownBlockKind.blockquote) return false;
+  final end = block.sourceRange.end;
+  if (end <= block.sourceRange.start || end >= markdown.length) return false;
+  return _isLineBreakCodeUnit(markdown.codeUnitAt(end - 1)) &&
+      _isLineBreakCodeUnit(markdown.codeUnitAt(end));
 }
 
 final class _LocalTextEditSnapshot {

@@ -41,6 +41,7 @@ export 'flark_core.dart'
         FlarkMarkdownInlineStyle,
         FlarkMarkdownInputCommands,
         FlarkMarkdownLinkCommands,
+        FlarkMarkdownLinkEditContext,
         FlarkMarkdownParseBackend,
         FlarkMarkdownParseRequest,
         FlarkMarkdownParseResult,

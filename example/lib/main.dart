@@ -412,17 +412,38 @@ class _FlarkLandingScreenState extends State<FlarkLandingScreen> {
     );
   }
 
+  void _insertLink() {
+    final linkContext = _controller.commands.resolveLinkEditContext();
+    _showLinkDialog(
+      title: linkContext.isExisting ? 'Edit link' : 'Insert link',
+      linkContext: linkContext,
+      label: linkContext.label,
+      url: linkContext.url,
+    );
+  }
+
   void _editLink(BuildContext context, FlarkRenderOverlayTarget target) {
-    final labelController = TextEditingController(
-      text: target.action?.label ?? '',
+    final linkContext = _controller.commands.resolveLinkEditContext();
+    _showLinkDialog(
+      title: 'Edit link',
+      linkContext: linkContext,
+      label: target.action?.label ?? linkContext.label,
+      url: target.action?.destination ?? linkContext.url,
     );
-    final urlController = TextEditingController(
-      text: target.action?.destination ?? '',
-    );
+  }
+
+  void _showLinkDialog({
+    required String title,
+    required FlarkMarkdownLinkEditContext linkContext,
+    required String label,
+    required String url,
+  }) {
+    final labelController = TextEditingController(text: label);
+    final urlController = TextEditingController(text: url);
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Edit link'),
+        title: Text(title),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -445,7 +466,6 @@ class _FlarkLandingScreenState extends State<FlarkLandingScreen> {
           ),
           FilledButton(
             onPressed: () {
-              final linkContext = _controller.commands.resolveLinkEditContext();
               _controller.commands.applyLinkEdit(
                 context: linkContext,
                 label: labelController.text,
@@ -534,43 +554,49 @@ class _FlarkLandingScreenState extends State<FlarkLandingScreen> {
 
   void _runCommand(_ToolbarCommand command) {
     final commands = _controller.commands;
-    final result = switch (command) {
-      _ToolbarCommand.heading1 => commands.setHeadingLevel(
-        1,
-        userEvent: 'example.toolbar.heading1',
-      ),
-      _ToolbarCommand.heading2 => commands.setHeadingLevel(
-        2,
-        userEvent: 'example.toolbar.heading2',
-      ),
-      _ToolbarCommand.bold => commands.toggleStrong(
-        userEvent: 'example.toolbar.bold',
-      ),
-      _ToolbarCommand.italic => commands.toggleEmphasis(
-        userEvent: 'example.toolbar.italic',
-      ),
-      _ToolbarCommand.quote => commands.toggleQuote(
-        userEvent: 'example.toolbar.quote',
-      ),
-      _ToolbarCommand.bulletedList => commands.toggleBulletList(
-        userEvent: 'example.toolbar.bulletList',
-      ),
-      _ToolbarCommand.orderedList => commands.toggleOrderedList(
-        userEvent: 'example.toolbar.orderedList',
-      ),
-      _ToolbarCommand.taskList => commands.toggleTaskList(
-        userEvent: 'example.toolbar.taskList',
-      ),
-      _ToolbarCommand.codeFence => commands.insertCodeFence(
-        language: 'dart',
-        userEvent: 'example.toolbar.codeFence',
-      ),
-      _ToolbarCommand.table => commands.insertTable(
-        columns: 3,
-        bodyRows: 2,
-        userEvent: 'example.toolbar.table',
-      ),
-    };
+    late final FlarkEditorRuntimeResult result;
+    switch (command) {
+      case _ToolbarCommand.heading1:
+        result = commands.setHeadingLevel(
+          1,
+          userEvent: 'example.toolbar.heading1',
+        );
+      case _ToolbarCommand.heading2:
+        result = commands.setHeadingLevel(
+          2,
+          userEvent: 'example.toolbar.heading2',
+        );
+      case _ToolbarCommand.bold:
+        result = commands.toggleStrong(userEvent: 'example.toolbar.bold');
+      case _ToolbarCommand.italic:
+        result = commands.toggleEmphasis(userEvent: 'example.toolbar.italic');
+      case _ToolbarCommand.link:
+        _insertLink();
+        return;
+      case _ToolbarCommand.quote:
+        result = commands.toggleQuote(userEvent: 'example.toolbar.quote');
+      case _ToolbarCommand.bulletedList:
+        result = commands.toggleBulletList(
+          userEvent: 'example.toolbar.bulletList',
+        );
+      case _ToolbarCommand.orderedList:
+        result = commands.toggleOrderedList(
+          userEvent: 'example.toolbar.orderedList',
+        );
+      case _ToolbarCommand.taskList:
+        result = commands.toggleTaskList(userEvent: 'example.toolbar.taskList');
+      case _ToolbarCommand.codeFence:
+        result = commands.insertCodeFence(
+          language: 'dart',
+          userEvent: 'example.toolbar.codeFence',
+        );
+      case _ToolbarCommand.table:
+        result = commands.insertTable(
+          columns: 3,
+          bodyRows: 2,
+          userEvent: 'example.toolbar.table',
+        );
+    }
 
     if (result.commandResult.isHandled) {
       _focusNode.requestFocus();
@@ -2417,6 +2443,13 @@ class _CommandCluster extends StatelessWidget {
               enabled: canMutate,
               onPressed: () => onCommand(_ToolbarCommand.italic),
             ),
+            _CommandButton(
+              buttonKey: const ValueKey('flark-example-command-link'),
+              tooltip: 'Link',
+              icon: Icons.link,
+              enabled: canMutate,
+              onPressed: () => onCommand(_ToolbarCommand.link),
+            ),
             const _ClusterDivider(),
             _CommandButton(
               buttonKey: const ValueKey('flark-example-command-quote'),
@@ -2781,6 +2814,7 @@ enum _ToolbarCommand {
   heading2,
   bold,
   italic,
+  link,
   quote,
   bulletedList,
   orderedList,

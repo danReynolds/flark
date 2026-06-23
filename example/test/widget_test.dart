@@ -169,6 +169,10 @@ void main() {
       findsOneWidget,
     );
     expect(
+      find.byKey(const ValueKey('flark-example-command-link')),
+      findsOneWidget,
+    );
+    expect(
       find.byKey(const ValueKey('flark-example-command-code-fence')),
       findsOneWidget,
     );
@@ -243,57 +247,65 @@ void main() {
     );
   });
 
-  testWidgets('inline toolbar buttons arm on a collapsed caret and keep focus', (
-    tester,
-  ) async {
-    await tester.binding.setSurfaceSize(const Size(1200, 800));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+  testWidgets(
+    'inline toolbar buttons arm on a collapsed caret and keep focus',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(const FlarkExampleApp());
-    await tester.pump();
+      await tester.pumpWidget(const FlarkExampleApp());
+      await tester.pump();
 
-    await tester.tap(
-      find.byKey(const ValueKey('flark-example-scenario-scratch')),
-    );
-    await _settleParsing(tester);
+      await tester.tap(
+        find.byKey(const ValueKey('flark-example-scenario-scratch')),
+      );
+      await _settleParsing(tester);
 
-    await tester.enterText(find.byType(EditableText), 'bold me');
-    await _settleParsing(tester);
+      await tester.enterText(find.byType(EditableText), 'bold me');
+      await _settleParsing(tester);
 
-    IconButton boldButton() {
-      return tester.widget<IconButton>(
+      IconButton boldButton() {
+        return tester.widget<IconButton>(
+          find.byKey(const ValueKey('flark-example-command-bold')),
+        );
+      }
+
+      // Enabled even without a selection: it arms bold for the next typed text.
+      expect(boldButton().onPressed, isNotNull);
+
+      // Tapping with a collapsed caret arms the style without editing the text.
+      await tester.tap(
         find.byKey(const ValueKey('flark-example-command-bold')),
       );
-    }
+      await _settleParsing(tester);
+      expect(_documentMarkdown(tester), 'bold me');
 
-    // Enabled even without a selection: it arms bold for the next typed text.
-    expect(boldButton().onPressed, isNotNull);
+      // Selection-based bold still wraps the selected range.
+      final editor = tester.widget<FlarkMarkdownEditor>(
+        find.byType(FlarkMarkdownEditor),
+      );
+      editor.controller!.applySelection(
+        const FlarkSelection(baseOffset: 0, extentOffset: 4),
+      );
+      await tester.pump();
 
-    // Tapping with a collapsed caret arms the style without editing the text.
-    await tester.tap(find.byKey(const ValueKey('flark-example-command-bold')));
-    await _settleParsing(tester);
-    expect(_documentMarkdown(tester), 'bold me');
+      expect(boldButton().onPressed, isNotNull);
 
-    // Selection-based bold still wraps the selected range.
-    final editor = tester.widget<FlarkMarkdownEditor>(
-      find.byType(FlarkMarkdownEditor),
-    );
-    editor.controller!.applySelection(
-      const FlarkSelection(baseOffset: 0, extentOffset: 4),
-    );
-    await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('flark-example-command-bold')),
+      );
+      await _settleParsing(tester);
 
-    expect(boldButton().onPressed, isNotNull);
-
-    await tester.tap(find.byKey(const ValueKey('flark-example-command-bold')));
-    await _settleParsing(tester);
-
-    expect(_documentMarkdown(tester), '**bold** me');
-    expect(
-      tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus,
-      isTrue,
-    );
-  });
+      expect(_documentMarkdown(tester), '**bold** me');
+      expect(
+        tester
+            .widget<EditableText>(find.byType(EditableText))
+            .focusNode
+            .hasFocus,
+        isTrue,
+      );
+    },
+  );
 
   testWidgets('landing demo stays live-rendered without split preview modes', (
     tester,

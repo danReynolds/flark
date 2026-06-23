@@ -701,6 +701,12 @@ final class _FlarkLiveRenderedBlockEditorState
           selection.extentOffset <= lineRange.end;
       final shouldHost = lineText.trim().isEmpty || selectedLine;
       if (shouldHost &&
+          !_isFocusedTerminalBlockquoteExitSeparator(
+            markdown: markdown,
+            blocks: blocks,
+            lineRange: lineRange,
+            selection: selection,
+          ) &&
           !_sourceRangeCoveredByBlocks(lineRange, blocks) &&
           !_sourceOffsetHasCollapsedBlock(lineStart, blocks)) {
         yield _syntheticSourceLineHost(
@@ -718,6 +724,31 @@ final class _FlarkLiveRenderedBlockEditorState
       if (newline < 0) break;
       lineStart = newline + 1;
     }
+  }
+
+  static bool _isFocusedTerminalBlockquoteExitSeparator({
+    required String markdown,
+    required List<FlarkRenderBlock> blocks,
+    required FlarkSourceRange lineRange,
+    required FlarkSelection selection,
+  }) {
+    if (!selection.isCollapsed || !lineRange.isCollapsed) return false;
+    final separatorOffset = lineRange.start;
+    if (selection.extentOffset != separatorOffset + 1 ||
+        selection.extentOffset != markdown.length ||
+        separatorOffset <= 0 ||
+        separatorOffset >= markdown.length) {
+      return false;
+    }
+    if (!_isLineBreakCodeUnit(markdown.codeUnitAt(separatorOffset)) ||
+        !_isLineBreakCodeUnit(markdown.codeUnitAt(separatorOffset - 1))) {
+      return false;
+    }
+    return blocks.any(
+      (block) =>
+          block.kind == FlarkMarkdownBlockKind.blockquote &&
+          block.sourceRange.end == separatorOffset,
+    );
   }
 
   static bool _sourceRangeCoveredByBlocks(
@@ -1147,7 +1178,9 @@ FlarkRenderInlineRun? _standaloneImageRunForBlock(
     return null;
   }
   // Only whitespace may surround the image within the block.
-  if (displayText.substring(blockStart, runStart).trim().isNotEmpty) return null;
+  if (displayText.substring(blockStart, runStart).trim().isNotEmpty) {
+    return null;
+  }
   if (displayText.substring(runEnd, blockEnd).trim().isNotEmpty) return null;
   return run;
 }

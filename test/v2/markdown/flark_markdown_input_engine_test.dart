@@ -183,6 +183,19 @@ void main() {
       expect(result.replacementText, '\n');
     });
 
+    test('Backspace from a terminal quote exit returns to the quote text', () {
+      final result = FlarkMarkdownInputEngine.backspace(
+        markdown: '> quote\n\n',
+        selection: const FlarkSelection.collapsed(9),
+      );
+
+      expect(result, isA<FlarkMarkdownSourceEdit>());
+      final edit = result! as FlarkMarkdownSourceEdit;
+      expect(edit.range, const FlarkSourceRange(7, 9));
+      expect(edit.replacementText, isEmpty);
+      expect(edit.selectionAfter, const FlarkSelection.collapsed(7));
+    });
+
     test('returns a source edit for selected replacement on Enter', () {
       final result = FlarkMarkdownInputEngine.enter(
         markdown: 'alpha',
