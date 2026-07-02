@@ -135,7 +135,14 @@ final class _FlarkMarkdownState extends State<FlarkMarkdown> {
     _ensureOwnedController();
     // A standalone preview owns parsing; a shared-controller preview is a
     // view only — the controller owner (e.g. an editor) drives parsing.
-    if (widget.controller == null) _controller.attachParsingSurface();
+    if (widget.controller == null) {
+      // Parse small documents synchronously before the first build: the owned
+      // controller has no listeners yet, so adopting the plan here cannot
+      // notify anything mid-build, and the first frame renders parsed content
+      // instead of flashing raw source while the async parse round-trips.
+      _controller.tryParseSync();
+      _controller.attachParsingSurface();
+    }
   }
 
   @override
@@ -148,6 +155,9 @@ final class _FlarkMarkdownState extends State<FlarkMarkdown> {
       if (widget.controller == null) {
         _ownedController?.dispose();
         _ownedController = _createOwnedController();
+        // Fresh owned controller: same no-listeners window as initState, so
+        // the swapped-in source also renders parsed on its first frame.
+        _controller.tryParseSync();
         _controller.attachParsingSurface();
       } else {
         // Switching to a shared controller; the old owned controller (if any)

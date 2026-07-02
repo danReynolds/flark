@@ -16,7 +16,8 @@ final _listItemMarkerPattern = RegExp(
   r'^[ ]{0,3}(?:(\d{1,9}[.)])|([-*+]))[ \t]+(?:\[([ xX])\][ \t]+)?',
 );
 
-final class FlarkNativeComrakParseBackend implements FlarkMarkdownParseBackend {
+final class FlarkNativeComrakParseBackend
+    implements FlarkSyncCapableParseBackend {
   const FlarkNativeComrakParseBackend({required NativeComrakBridge bridge})
     : _bridge = bridge;
 
@@ -73,19 +74,49 @@ final class FlarkNativeComrakParseBackend implements FlarkMarkdownParseBackend {
     return (await parseWithProfile(request)).result;
   }
 
+  @override
+  FlarkMarkdownParseResult? parseSync(FlarkMarkdownParseRequest request) {
+    if (request.markdown.isEmpty) return _emptyResult(request);
+    final bridge = _bridge;
+    if (bridge is! SyncCapableNativeComrakBridge) return null;
+    // Decline before paying the encode: UTF-16 code units never outnumber
+    // their UTF-8 bytes, so a source at/over the byte threshold is guaranteed
+    // to be declined by the bridge — without this, every failed sync attempt
+    // on a large document would utf8-encode it in full (and the async
+    // fallback would then encode it again).
+    if (request.markdown.length >= flarkNativeParseIsolateThresholdBytes) {
+      return null;
+    }
+    final native = bridge.parseSyncBelowThreshold(
+      NativeComrakParseInput(
+        revision: request.revision,
+        profile: _nativeProfile(request.profile),
+        utf8Text: utf8.encode(request.markdown),
+      ),
+    );
+    if (native == null) return null;
+    return _mapNativeResult(request, native);
+  }
+
+  /// The parse result for an empty document — shared by the sync and async
+  /// paths so they can never drift apart for the same input.
+  FlarkMarkdownParseResult _emptyResult(FlarkMarkdownParseRequest request) {
+    return FlarkMarkdownParseResult(
+      schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
+      revision: request.revision,
+      sourceTextLength: 0,
+      blocks: const [],
+      inlineTokens: const [],
+    );
+  }
+
   /// Parses [request] and returns phase timings for large-document diagnosis.
   Future<FlarkNativeComrakProfiledParseResult> parseWithProfile(
     FlarkMarkdownParseRequest request,
   ) async {
     final totalStopwatch = Stopwatch()..start();
     if (request.markdown.isEmpty) {
-      final result = FlarkMarkdownParseResult(
-        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
-        revision: request.revision,
-        sourceTextLength: 0,
-        blocks: const [],
-        inlineTokens: const [],
-      );
+      final result = _emptyResult(request);
       totalStopwatch.stop();
       return FlarkNativeComrakProfiledParseResult(
         result: result,

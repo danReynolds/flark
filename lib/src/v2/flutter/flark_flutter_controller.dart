@@ -234,6 +234,38 @@ final class FlarkFlutterController extends ChangeNotifier {
     }
   }
 
+  /// Attempts to parse the current revision synchronously, so a caller about
+  /// to build a preview can hold an authoritative [renderPlan] before the
+  /// first frame paints — no raw-source flash.
+  ///
+  /// Returns whether the plan is authoritative afterwards. Requires a backend
+  /// implementing [FlarkSyncCapableParseBackend] (the default Comrak backend
+  /// qualifies for documents small enough to parse on the calling isolate);
+  /// otherwise returns false and an async parse ([parseNow] or the scheduled
+  /// parser) is the fallback. Like [parseNow], this does not install the
+  /// background debounce loop.
+  ///
+  /// Adopting the plan notifies listeners **synchronously**. Call this before
+  /// widgets or other listeners attach (e.g. on a freshly created controller,
+  /// as the standalone [FlarkMarkdown] preview does) — invoking it mid-build
+  /// on a controller that already has attached listeners can mark built
+  /// elements dirty during the build phase. Errors (including backend load
+  /// failures) are routed to the configured parse-error callback and report
+  /// as false, never thrown.
+  bool tryParseSync() {
+    if (_disposed) return false;
+    final FlarkParseScheduler scheduler;
+    try {
+      // The lazily resolved default backend can throw when the native bridge
+      // fails to load; the documented contract here is false-and-fall-back.
+      scheduler = _ensureScheduler();
+    } catch (error, stackTrace) {
+      _onParseError?.call(error, stackTrace);
+      return false;
+    }
+    return scheduler.tryParseSync();
+  }
+
   FlarkParseScheduler _ensureScheduler() {
     return _parseScheduler ??= FlarkParseScheduler(
       controller: this,

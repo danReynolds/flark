@@ -77,7 +77,8 @@ class _NativeComrakSymbols {
   }
 }
 
-class FfiNativeComrakBridge implements ProfiledNativeComrakBridge {
+class FfiNativeComrakBridge
+    implements ProfiledNativeComrakBridge, SyncCapableNativeComrakBridge {
   final _NativeComrakSymbols _symbols;
   final int _loadedAbiVersion;
 
@@ -323,6 +324,19 @@ class FfiNativeComrakBridge implements ProfiledNativeComrakBridge {
   @override
   Future<NativeComrakParseResult> parse(NativeComrakParseInput input) async {
     return (await _parse(input, collectProfile: false)).result;
+  }
+
+  @override
+  NativeComrakParseResult? parseSyncBelowThreshold(
+    NativeComrakParseInput input,
+  ) {
+    // ABI mismatches fall back to the async path, which reports the mismatch
+    // diagnostic; at/above the threshold the parse belongs on the worker.
+    if (_loadedAbiVersion != _kAbiVersion) return null;
+    if (input.utf8Text.length >= flarkNativeParseIsolateThresholdBytes) {
+      return null;
+    }
+    return _parseWithSymbols(_symbols, input, collectProfile: false).result;
   }
 
   @override
