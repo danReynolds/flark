@@ -155,6 +155,7 @@ export 'src/v2/markdown/markdown.dart'
         FlarkMarkdownLinkEditContext,
         FlarkMarkdownLinkEditingExtension,
         FlarkMarkdownParseBackend,
+        FlarkSyncCapableParseBackend,
         FlarkMarkdownParseProtocol,
         FlarkMarkdownParseRequest,
         FlarkMarkdownParseResult,
@@ -216,6 +217,7 @@ export 'src/v2/native/native.dart'
     show
         NativeComrakBlockSpan,
         NativeComrakBridge,
+        SyncCapableNativeComrakBridge,
         NativeComrakBridgeLoadException,
         NativeComrakBridgeLoadFailureKind,
         NativeComrakBridgePreflightResult,

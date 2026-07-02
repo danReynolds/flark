@@ -234,6 +234,21 @@ final class FlarkFlutterController extends ChangeNotifier {
     }
   }
 
+  /// Attempts to parse the current revision synchronously, so a caller about
+  /// to build a preview can hold an authoritative [renderPlan] before the
+  /// first frame paints — no raw-source flash.
+  ///
+  /// Returns whether the plan is authoritative afterwards. Requires a backend
+  /// implementing [FlarkSyncCapableParseBackend] (the default Comrak backend
+  /// qualifies for documents small enough to parse on the calling isolate);
+  /// otherwise returns false and an async parse ([parseNow] or the scheduled
+  /// parser) is the fallback. Like [parseNow], this does not install the
+  /// background debounce loop.
+  bool tryParseSync() {
+    if (_disposed) return false;
+    return _ensureScheduler().tryParseSync();
+  }
+
   FlarkParseScheduler _ensureScheduler() {
     return _parseScheduler ??= FlarkParseScheduler(
       controller: this,
@@ -426,7 +441,10 @@ final class FlarkFlutterController extends ChangeNotifier {
     return (open: markers.join(), close: markers.reversed.join());
   }
 
-  static String _exitMarkerFor(FlarkMarkdownInlineStyle style, int? adjacentChar) {
+  static String _exitMarkerFor(
+    FlarkMarkdownInlineStyle style,
+    int? adjacentChar,
+  ) {
     final alternate = _alternateInlineMarker(style);
     if (alternate != null && style.marker.codeUnitAt(0) == adjacentChar) {
       return alternate;
@@ -517,7 +535,9 @@ final class FlarkFlutterController extends ChangeNotifier {
           replacementText: converted,
         ),
         selectionBefore: selection,
-        selectionAfter: FlarkSelection.collapsed(range.start + converted.length),
+        selectionAfter: FlarkSelection.collapsed(
+          range.start + converted.length,
+        ),
         metadata: FlarkTransactionMetadata(
           intent: FlarkTransactionIntent.paste,
           userEvent: 'input.htmlPaste',
@@ -703,7 +723,10 @@ final class FlarkFlutterController extends ChangeNotifier {
     final wrapped = '${pair.open}${replacement.content}${pair.close}';
     final innerStart = range.start + pair.open.length;
     return FlarkTransaction.single(
-      FlarkSourceOperation.replace(replacedRange: range, replacementText: wrapped),
+      FlarkSourceOperation.replace(
+        replacedRange: range,
+        replacementText: wrapped,
+      ),
       selectionBefore: selection,
       selectionAfter: FlarkSelection(
         baseOffset: innerStart,
@@ -731,7 +754,10 @@ final class FlarkFlutterController extends ChangeNotifier {
     final range = replacement.range;
     final linked = '[${replacement.content}](${replacement.inserted})';
     return FlarkTransaction.single(
-      FlarkSourceOperation.replace(replacedRange: range, replacementText: linked),
+      FlarkSourceOperation.replace(
+        replacedRange: range,
+        replacementText: linked,
+      ),
       selectionBefore: selection,
       selectionAfter: FlarkSelection.collapsed(range.start + linked.length),
       metadata: FlarkTransactionMetadata(
@@ -777,7 +803,8 @@ final class FlarkFlutterController extends ChangeNotifier {
 
     for (final style in _mutedInlineStyles) {
       final run = FlarkMarkdownCommandQueries.enclosingInlineRun(state, style);
-      if (run != null) return _runExitTransaction(run, caret, text, undoGroupId);
+      if (run != null)
+        return _runExitTransaction(run, caret, text, undoGroupId);
     }
     return null;
   }

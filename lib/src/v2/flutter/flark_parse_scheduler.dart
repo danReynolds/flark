@@ -34,7 +34,44 @@ final class FlarkParseScheduler {
     if (_started) return;
     _started = true;
     _controller.addListener(_handleControllerChanged);
+    // Small documents parse synchronously when the backend supports it, so a
+    // surface attaching in initState has an authoritative plan before its
+    // first frame paints — no raw-source flash while an async parse
+    // round-trips. Larger documents (and async-only backends) keep the
+    // scheduled path.
+    if (tryParseSync()) return;
     _schedule(immediate: immediate);
+  }
+
+  /// Attempts a synchronous parse of the controller's current revision.
+  ///
+  /// Returns whether the render plan is authoritative afterwards. False when
+  /// the backend cannot parse synchronously (async-only, or the document is
+  /// large enough to belong on the worker isolate), when a parse is already
+  /// in flight, or when the sync parse's result was rejected.
+  bool tryParseSync() {
+    if (_disposed) return false;
+    if (_controller.hasAuthoritativeRenderPlan) return true;
+    if (_inFlight) return false;
+    final backend = _backend;
+    if (backend is! FlarkSyncCapableParseBackend) return false;
+    final state = _controller.state;
+    final FlarkMarkdownParseResult? result;
+    try {
+      result = backend.parseSync(
+        FlarkMarkdownParseRequest(
+          revision: state.revision,
+          markdown: state.markdown,
+          profile: _profile,
+        ),
+      );
+    } catch (error, stackTrace) {
+      _onError?.call(error, stackTrace);
+      return false;
+    }
+    if (result == null) return false;
+    _controller.applyParseResult(result);
+    return _controller.hasAuthoritativeRenderPlan;
   }
 
   /// Parses until the controller's current revision has an authoritative

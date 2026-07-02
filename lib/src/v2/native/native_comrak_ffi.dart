@@ -494,6 +494,23 @@ abstract interface class ProfiledNativeComrakBridge
   );
 }
 
+/// Optional bridge capability for synchronous below-threshold parses.
+///
+/// Inputs under [flarkNativeParseIsolateThresholdBytes] already run on the
+/// calling isolate (the worker hop costs more than the parse); exposing that
+/// path synchronously lets a surface adopt an authoritative render plan
+/// *before its first frame paints*, instead of flashing raw source for the
+/// frame an `await` round-trip takes.
+abstract interface class SyncCapableNativeComrakBridge
+    implements NativeComrakBridge {
+  /// Parses [input] synchronously on the calling isolate, or returns null
+  /// when the input must go to the worker isolate (or the platform cannot
+  /// parse synchronously) — callers fall back to [NativeComrakBridge.parse].
+  NativeComrakParseResult? parseSyncBelowThreshold(
+    NativeComrakParseInput input,
+  );
+}
+
 /// Failure categories for loading the native comrak bridge.
 enum NativeComrakBridgeLoadFailureKind {
   /// The current Dart runtime does not support `dart:ffi`.

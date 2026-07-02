@@ -16,7 +16,8 @@ final _listItemMarkerPattern = RegExp(
   r'^[ ]{0,3}(?:(\d{1,9}[.)])|([-*+]))[ \t]+(?:\[([ xX])\][ \t]+)?',
 );
 
-final class FlarkNativeComrakParseBackend implements FlarkMarkdownParseBackend {
+final class FlarkNativeComrakParseBackend
+    implements FlarkMarkdownParseBackend, FlarkSyncCapableParseBackend {
   const FlarkNativeComrakParseBackend({required NativeComrakBridge bridge})
     : _bridge = bridge;
 
@@ -71,6 +72,30 @@ final class FlarkNativeComrakParseBackend implements FlarkMarkdownParseBackend {
     FlarkMarkdownParseRequest request,
   ) async {
     return (await parseWithProfile(request)).result;
+  }
+
+  @override
+  FlarkMarkdownParseResult? parseSync(FlarkMarkdownParseRequest request) {
+    if (request.markdown.isEmpty) {
+      return FlarkMarkdownParseResult(
+        schemaVersion: FlarkMarkdownParseProtocol.currentSchemaVersion,
+        revision: request.revision,
+        sourceTextLength: 0,
+        blocks: const [],
+        inlineTokens: const [],
+      );
+    }
+    final bridge = _bridge;
+    if (bridge is! SyncCapableNativeComrakBridge) return null;
+    final native = bridge.parseSyncBelowThreshold(
+      NativeComrakParseInput(
+        revision: request.revision,
+        profile: _nativeProfile(request.profile),
+        utf8Text: Uint8List.fromList(utf8.encode(request.markdown)),
+      ),
+    );
+    if (native == null) return null;
+    return _mapNativeResult(request, native);
   }
 
   /// Parses [request] and returns phase timings for large-document diagnosis.
