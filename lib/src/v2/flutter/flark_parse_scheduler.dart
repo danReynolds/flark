@@ -34,12 +34,6 @@ final class FlarkParseScheduler {
     if (_started) return;
     _started = true;
     _controller.addListener(_handleControllerChanged);
-    // Small documents parse synchronously when the backend supports it, so a
-    // surface attaching in initState has an authoritative plan before its
-    // first frame paints — no raw-source flash while an async parse
-    // round-trips. Larger documents (and async-only backends) keep the
-    // scheduled path.
-    if (tryParseSync()) return;
     _schedule(immediate: immediate);
   }
 
@@ -48,30 +42,45 @@ final class FlarkParseScheduler {
   /// Returns whether the render plan is authoritative afterwards. False when
   /// the backend cannot parse synchronously (async-only, or the document is
   /// large enough to belong on the worker isolate), when a parse is already
-  /// in flight, or when the sync parse's result was rejected.
+  /// in flight, or when the sync parse's result was rejected. Adopting the
+  /// plan notifies the controller's listeners synchronously, so this is for
+  /// callers that run before listeners attach (see
+  /// `FlarkFlutterController.tryParseSync`) — deliberately NOT part of
+  /// [start], where a shared controller may already have built widgets
+  /// listening and a synchronous notify would mark them dirty mid-build.
   bool tryParseSync() {
     if (_disposed) return false;
     if (_controller.hasAuthoritativeRenderPlan) return true;
     if (_inFlight) return false;
     final backend = _backend;
     if (backend is! FlarkSyncCapableParseBackend) return false;
-    final state = _controller.state;
-    final FlarkMarkdownParseResult? result;
     try {
-      result = backend.parseSync(
-        FlarkMarkdownParseRequest(
-          revision: state.revision,
-          markdown: state.markdown,
-          profile: _profile,
-        ),
-      );
+      final result = backend.parseSync(_requestForCurrentState());
+      if (result == null) return false;
+      // Inside the try: reconciliation errors route to onError like every
+      // async parse's do, instead of throwing out of a caller's initState.
+      if (!_controller.applyParseResult(result)) return false;
     } catch (error, stackTrace) {
       _onError?.call(error, stackTrace);
       return false;
     }
-    if (result == null) return false;
-    _controller.applyParseResult(result);
+    // The plan is current — a parse already queued for this revision (a
+    // pending debounce timer or scheduled microtask) would only repeat the
+    // same work and re-notify every listener, so drop it. parseNow does the
+    // same at entry.
+    _timer?.cancel();
+    _timer = null;
+    _scheduledRevision = null;
     return _controller.hasAuthoritativeRenderPlan;
+  }
+
+  FlarkMarkdownParseRequest _requestForCurrentState() {
+    final state = _controller.state;
+    return FlarkMarkdownParseRequest(
+      revision: state.revision,
+      markdown: state.markdown,
+      profile: _profile,
+    );
   }
 
   /// Parses until the controller's current revision has an authoritative
@@ -125,16 +134,22 @@ final class FlarkParseScheduler {
 
     _timer?.cancel();
     _scheduledRevision = revision;
+    // Both callbacks re-check _scheduledRevision: a queued parse may be
+    // superseded before it runs — by tryParseSync adopting the revision
+    // synchronously (which clears it), or by a newer revision re-scheduling —
+    // and a microtask, unlike the timer, cannot be cancelled.
     if (immediate || _debounce == Duration.zero) {
       scheduleMicrotask(() {
-        if (!_disposed) _ignore(_parseCurrentRevision(), _onError);
+        if (_disposed || _scheduledRevision != revision) return;
+        _ignore(_parseCurrentRevision(), _onError);
       });
       return;
     }
 
     _timer = Timer(_debounce, () {
       _timer = null;
-      if (!_disposed) _ignore(_parseCurrentRevision(), _onError);
+      if (_disposed || _scheduledRevision != revision) return;
+      _ignore(_parseCurrentRevision(), _onError);
     });
   }
 
@@ -160,12 +175,7 @@ final class FlarkParseScheduler {
     _inFlight = true;
     _inFlightRevision = state.revision;
     try {
-      final request = FlarkMarkdownParseRequest(
-        revision: state.revision,
-        markdown: state.markdown,
-        profile: _profile,
-      );
-      final result = await _backend.parse(request);
+      final result = await _backend.parse(_requestForCurrentState());
       if (_disposed) return;
       _controller.applyParseResult(result);
     } finally {

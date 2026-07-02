@@ -1,10 +1,13 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flark/flark_advanced.dart';
 
-/// The synchronous first-parse path: a sync-capable backend lets a surface
-/// hold an authoritative render plan before its first frame paints, so a
+/// The synchronous first-parse path: `tryParseSync` lets a caller hold an
+/// authoritative render plan before the first frame paints, so a standalone
 /// read-only preview never flashes raw markdown source while an async parse
-/// round-trips.
+/// round-trips. The sync parse is deliberately NOT part of the scheduler's
+/// `start()`/attach path — a shared controller may already have built widgets
+/// listening, and a synchronous notify there would mark them dirty mid-build.
 void main() {
   test('tryParseSync adopts an authoritative plan synchronously', () {
     final backend = _SyncParseBackend();
@@ -32,7 +35,10 @@ void main() {
     expect(controller.hasAuthoritativeRenderPlan, isFalse);
   });
 
-  test('attachParsingSurface parses synchronously before the first frame', () {
+  test('attachParsingSurface never notifies synchronously', () {
+    // A shared controller may already have built widgets listening when a
+    // surface attaches mid-build; the first parse must stay deferred even
+    // when the backend could parse synchronously.
     final backend = _SyncParseBackend();
     final controller = FlarkFlutterController.fromMarkdown(
       '# Title',
@@ -40,10 +46,31 @@ void main() {
     );
     addTearDown(controller.dispose);
 
-    // The widget path: initState attaches, build runs later in the same
-    // frame. The plan must already be authoritative here — no async gap.
+    var notified = false;
+    controller.addListener(() => notified = true);
     controller.attachParsingSurface();
-    expect(controller.hasAuthoritativeRenderPlan, isTrue);
+    expect(notified, isFalse);
+    expect(controller.hasAuthoritativeRenderPlan, isFalse);
+    expect(backend.syncRequests, isEmpty);
+  });
+
+  test('a successful tryParseSync drops the queued parse for the revision', () {
+    final backend = _SyncParseBackend();
+    final controller = FlarkFlutterController.fromMarkdown(
+      '# Title',
+      parseBackend: backend,
+    );
+    addTearDown(controller.dispose);
+
+    // Arm the scheduled path first (attach queues an immediate async parse),
+    // then parse synchronously; the queued parse must not re-run.
+    controller.attachParsingSurface();
+    expect(controller.tryParseSync(), isTrue);
+    return Future<void>.delayed(Duration.zero, () async {
+      await controller.parseNow();
+      expect(backend.asyncRequests, isEmpty);
+      expect(backend.syncRequests, hasLength(1));
+    });
   });
 
   test(
@@ -61,6 +88,40 @@ void main() {
       await controller.parseNow();
       expect(controller.hasAuthoritativeRenderPlan, isTrue);
       expect(backend.asyncRequests, isNotEmpty);
+    },
+  );
+
+  test('parseSync declines large documents before encoding', () {
+    final bridge = _RecordingSyncBridge();
+    final backend = FlarkNativeComrakParseBackend(bridge: bridge);
+    final result = backend.parseSync(
+      FlarkMarkdownParseRequest(
+        revision: 1,
+        markdown: 'a' * flarkNativeParseIsolateThresholdBytes,
+        profile: FlarkMarkdownProfile.commonMarkGfm,
+      ),
+    );
+    expect(result, isNull);
+    expect(
+      bridge.syncCalls,
+      0,
+      reason: 'the size gate must decline before reaching the bridge',
+    );
+  });
+
+  testWidgets(
+    'a standalone preview renders from a sync parse on its first frame',
+    (tester) async {
+      final backend = _SyncParseBackend();
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: FlarkMarkdown(markdown: '# Title', parseBackend: backend),
+        ),
+      );
+      // The parse happened during initState — before this first frame — so
+      // the preview never painted raw source.
+      expect(backend.syncRequests, hasLength(1));
     },
   );
 }
@@ -128,5 +189,24 @@ final class _AsyncOnlyParseBackend implements FlarkMarkdownParseBackend {
     FlarkMarkdownParseRequest request,
   ) async {
     return _headingResult(request);
+  }
+}
+
+/// A bridge that records sync attempts, to prove the backend's size gate
+/// declines before ever reaching the bridge.
+final class _RecordingSyncBridge implements SyncCapableNativeComrakBridge {
+  var syncCalls = 0;
+
+  @override
+  NativeComrakParseResult? parseSyncBelowThreshold(
+    NativeComrakParseInput input,
+  ) {
+    syncCalls += 1;
+    return null;
+  }
+
+  @override
+  Future<NativeComrakParseResult> parse(NativeComrakParseInput input) async {
+    return NativeComrakParseResult(revision: input.revision);
   }
 }
