@@ -28,15 +28,18 @@ void main() {
       expect(nativeFfi, isNot(contains("import 'dart:ui'")));
     });
 
-    test('native ABI symbols are present in all packaging anchors', () {
+    test('native ABI symbols are exported by the crate and declared in the '
+        'header', () {
+      // Every FFI platform (macOS/Android/Linux/iOS) links the hook-built
+      // dynamic library and resolves these symbols from it — there is no
+      // per-app anchor to keep in sync anymore, so the crate export and the C
+      // header are the two sources of truth the contract guards.
       final rustExports = _read('native/comrak_bridge/src/lib.rs');
       final header = _read('native/comrak_bridge/flark_comrak_bridge.h');
-      final iosAnchor = _read('example/ios/Runner/FlarkComrakAnchor.c');
 
       for (final symbol in _abiSymbols) {
         expect(rustExports, contains('fn $symbol'));
         expect(header, contains(symbol));
-        expect(iosAnchor, contains(symbol));
       }
     });
 
@@ -49,8 +52,10 @@ void main() {
       expect(pubspec, contains('code_assets:'));
       expect(hook, contains('package:hooks/hooks.dart'));
       expect(hook, contains('package:code_assets/code_assets.dart'));
+      // Every FFI platform builds a bundled dynamic library through the hook —
+      // iOS included, via its own cross-compile triple (no static XCFramework).
       expect(hook, contains('DynamicLoadingBundled()'));
-      expect(hook, contains('LookupInProcess()'));
+      expect(hook, contains('aarch64-apple-ios'));
     });
 
     test('package declares browser WASM bridge assets', () {

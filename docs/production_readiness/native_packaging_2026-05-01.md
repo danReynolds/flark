@@ -2,6 +2,14 @@
 
 Status date: 2026-05-01
 
+> **Superseded (2026-07).** iOS no longer uses the static XCFramework +
+> `LookupInProcess` + app-level `FlarkComrakAnchor.c` approach described below.
+> It now ships through the same native-assets build hook as macOS/Android/Linux:
+> the hook cross-compiles a `.dylib` and Flutter bundles it as
+> `flark_comrak_bridge.framework` (`DynamicLoadingBundled`), so consumers need no
+> manual linking. Requires Flutter ≥ 3.44 for `flutter run -d ios`
+> (flutter/flutter#180603). This document is kept as a historical record.
+
 ## Decision
 
 Flark remains a Dart/Flutter FFI package, not a Flutter plugin, for this

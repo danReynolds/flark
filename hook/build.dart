@@ -16,20 +16,6 @@ void main(List<String> args) async {
     final crateRoot = packageRoot.resolve('$_crateRelativePath/');
     output.dependencies.addAll(_nativeDependencyUris(crateRoot));
 
-    if (code.targetOS == OS.iOS) {
-      // The current iOS integration statically links the XCFramework into the
-      // app and resolves symbols through DynamicLibrary.process(). Dart's
-      // CodeAsset StaticLinking mode is not supported by the SDK yet.
-      output.assets.code.add(
-        CodeAsset(
-          package: input.packageName,
-          name: _assetName,
-          linkMode: LookupInProcess(),
-        ),
-      );
-      return;
-    }
-
     final plan = _RustBuildPlan.resolve(code);
     if (plan == null) {
       throw BuildError(
@@ -300,6 +286,30 @@ final class _RustBuildPlan {
         triple: target.triple,
         libraryFileName: 'lib$_libraryBaseName.so',
         environment: _androidEnvironment(target, code.android.targetNdkApi),
+      );
+    }
+
+    if (os == OS.iOS) {
+      // The simulator and device share the arm64 arch but need different
+      // triples; x64 only exists for the (Intel) simulator. rustc resolves the
+      // Apple SDK sysroot itself via xcrun, so a plain cross-build links.
+      final isSimulator = code.iOS.targetSdk == IOSSdk.iPhoneSimulator;
+      final triple = switch (architecture) {
+        Architecture.arm64 =>
+          isSimulator ? 'aarch64-apple-ios-sim' : 'aarch64-apple-ios',
+        Architecture.x64 when isSimulator => 'x86_64-apple-ios',
+        _ => null,
+      };
+      if (triple == null) return null;
+      return _RustBuildPlan(
+        triple: triple,
+        // A .dylib (not the static archive) — Flutter's native-assets pipeline
+        // wraps it into flark_comrak_bridge.framework, sets the @rpath install
+        // name, and codesigns it into the app bundle.
+        libraryFileName: 'lib$_libraryBaseName.dylib',
+        environment: {
+          'IPHONEOS_DEPLOYMENT_TARGET': '${code.iOS.targetVersion}.0',
+        },
       );
     }
 
