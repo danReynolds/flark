@@ -135,12 +135,44 @@ class FfiNativeComrakBridge
     }
 
     if (Platform.isIOS) {
-      // iOS bundles dynamic symbols into the process image.
-      return _LoadedLibraryContext(
-        library: DynamicLibrary.process(),
+      // Native assets embeds the bridge as flark_comrak_bridge.framework in the
+      // app bundle. It is embedded, not linked, so its symbols are absent from
+      // the process image (DynamicLibrary.process() would find nothing) — dlopen
+      // the framework binary explicitly. The install name is @rpath-based and
+      // the app's runpath includes @executable_path/Frameworks, so the @rpath
+      // form resolves; the absolute path beside the executable is the fallback.
+      const frameworkBinary =
+          'flark_comrak_bridge.framework/flark_comrak_bridge';
+      final bundledPath = File(Platform.resolvedExecutable).parent.uri
+          .resolve('Frameworks/$frameworkBinary')
+          .toFilePath();
+      final candidates = <String>['@rpath/$frameworkBinary', bundledPath];
+      Object? lastError;
+      for (final candidate in candidates) {
+        try {
+          return _LoadedLibraryContext(
+            library: DynamicLibrary.open(candidate),
+            platform: platform,
+            libraryName: frameworkBinary,
+            candidates: candidates,
+          );
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw _buildLoadException(
+        // The framework binary on disk but unopenable is a load failure
+        // (codesign/arch/rpath); absent is not-found — same split as the other
+        // load paths, so the remediation points the right way.
+        kind: File(bundledPath).existsSync()
+            ? NativeComrakBridgeLoadFailureKind.loadFailed
+            : NativeComrakBridgeLoadFailureKind.libraryNotFound,
         platform: platform,
-        libraryName: 'process()',
-        candidates: const [],
+        libraryName: frameworkBinary,
+        overrideLibraryPath: null,
+        candidates: candidates,
+        message: 'Failed to load the bundled native comrak framework on iOS.',
+        cause: lastError,
       );
     }
 
@@ -296,8 +328,8 @@ class FfiNativeComrakBridge
           'Verify libflark_comrak_bridge.so is bundled with the Linux app or exists in native/comrak_bridge/target/release for local package tests.',
         ],
         'ios' => const <String>[
-          'Verify native/comrak_bridge/dist/ios/flark_comrak_bridge.xcframework exists and is linked in the consuming app.',
-          'Rebuild/reinstall the app so Dart FFI can resolve symbols via DynamicLibrary.process().',
+          'Rebuild the app so flark\'s build hook compiles the native comrak bridge and Flutter bundles it as flark_comrak_bridge.framework.',
+          'A Rust toolchain with the iOS targets (aarch64-apple-ios, aarch64-apple-ios-sim, x86_64-apple-ios) must be installed.',
         ],
         'android' => const <String>[
           'Verify native/comrak_bridge/dist/android/jniLibs/*/libflark_comrak_bridge.so exists and is packaged by the consuming app.',

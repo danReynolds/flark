@@ -5,7 +5,7 @@ Flark uses Comrak as the default Markdown parser.
 | Platform | Default backend |
 | --- | --- |
 | macOS | Native FFI bridge |
-| iOS | Process-linked XCFramework bridge |
+| iOS | Native FFI bridge bundled as a framework |
 | Android | Native FFI bridge packaged in the app APK |
 | Linux | Native FFI bridge |
 | Web | Packaged Comrak WASM bridge |

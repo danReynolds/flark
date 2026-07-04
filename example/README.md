@@ -28,19 +28,18 @@ Verify Android native packaging:
 That command builds the debug APK through Gradle and fails unless the packaged
 APK contains `lib/**/libflark_comrak_bridge.so`.
 
-Verify iOS project wiring:
+Verify iOS packaging:
 
 ```bash
 ../scripts/verify_example_packaging.sh --ios
 ```
 
-The iOS harness links the package XCFramework from
-`../native/comrak_bridge/dist/ios/flark_comrak_bridge.xcframework` and
-builds `Runner/FlarkComrakAnchor.c` into the app target so the static bridge
-symbols remain visible to `DynamicLibrary.process()`.
+iOS ships through native assets like every other platform: flark's build hook
+(`hook/build.dart`) compiles the bridge to a `.dylib` during `flutter build` /
+`flutter run`, and Flutter bundles it as `flark_comrak_bridge.framework`. There
+is no XCFramework to prebuild and no `FlarkComrakAnchor.c` to link — the check
+asserts that manual wiring is absent and that the hook declares the iOS build.
 
-Build the iOS XCFramework before a real device or simulator build:
-
-```bash
-../scripts/build_comrak_ios.sh
-```
+> Requires Flutter ≥ 3.44 for `flutter run -d ios`
+> ([flutter/flutter#180603](https://github.com/flutter/flutter/issues/180603));
+> `flutter build ios` works on older Flutter too.
