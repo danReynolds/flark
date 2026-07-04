@@ -53,9 +53,12 @@ void main() {
       expect(hook, contains('package:hooks/hooks.dart'));
       expect(hook, contains('package:code_assets/code_assets.dart'));
       // Every FFI platform builds a bundled dynamic library through the hook —
-      // iOS included, via its own cross-compile triple (no static XCFramework).
+      // iOS included, via its own cross-compile triples (no static XCFramework,
+      // no process-linked fallback).
       expect(hook, contains('DynamicLoadingBundled()'));
-      expect(hook, contains('aarch64-apple-ios'));
+      expect(hook, contains('aarch64-apple-ios')); // iOS device
+      expect(hook, contains('aarch64-apple-ios-sim')); // iOS simulator (arm64)
+      expect(hook, isNot(contains('LookupInProcess()')));
     });
 
     test('package declares browser WASM bridge assets', () {

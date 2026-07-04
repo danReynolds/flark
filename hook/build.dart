@@ -23,8 +23,8 @@ void main(List<String> args) async {
             'Flark native comrak bridge does not support '
             '${code.targetOS}/${code.targetArchitecture}. Supported hook '
             'targets are macOS arm64/x64, Linux arm64/x64, Android '
-            'arm/arm64/x64, and iOS process-linked XCFramework builds. See '
-            'doc/parser_and_platforms.md ("Build Prerequisites") in the '
+            'arm/arm64/x64, and iOS arm64 (device) / arm64+x64 (simulator). '
+            'See doc/parser_and_platforms.md ("Build Prerequisites") in the '
             'flark package.',
       );
     }

@@ -143,12 +143,10 @@ class FfiNativeComrakBridge
       // form resolves; the absolute path beside the executable is the fallback.
       const frameworkBinary =
           'flark_comrak_bridge.framework/flark_comrak_bridge';
-      final candidates = <String>[
-        '@rpath/$frameworkBinary',
-        File(Platform.resolvedExecutable).parent.uri
-            .resolve('Frameworks/$frameworkBinary')
-            .toFilePath(),
-      ];
+      final bundledPath = File(Platform.resolvedExecutable).parent.uri
+          .resolve('Frameworks/$frameworkBinary')
+          .toFilePath();
+      final candidates = <String>['@rpath/$frameworkBinary', bundledPath];
       Object? lastError;
       for (final candidate in candidates) {
         try {
@@ -163,7 +161,12 @@ class FfiNativeComrakBridge
         }
       }
       throw _buildLoadException(
-        kind: NativeComrakBridgeLoadFailureKind.libraryNotFound,
+        // The framework binary on disk but unopenable is a load failure
+        // (codesign/arch/rpath); absent is not-found — same split as the other
+        // load paths, so the remediation points the right way.
+        kind: File(bundledPath).existsSync()
+            ? NativeComrakBridgeLoadFailureKind.loadFailed
+            : NativeComrakBridgeLoadFailureKind.libraryNotFound,
         platform: platform,
         libraryName: frameworkBinary,
         overrideLibraryPath: null,
