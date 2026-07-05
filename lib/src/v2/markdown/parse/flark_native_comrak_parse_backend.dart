@@ -50,6 +50,8 @@ final class FlarkNativeComrakParseBackend
   }
 
   static FlarkNativeComrakParseBackend requiredDefault() {
+    final resolver = debugRequiredDefaultBackendResolver;
+    if (resolver != null) return resolver();
     return _requiredDefaultBackend ??=
         FlarkNativeComrakParseBackend.withNativeBridge();
   }
@@ -190,6 +192,14 @@ final class FlarkNativeComrakParseBackend
 }
 
 FlarkNativeComrakParseBackend? _requiredDefaultBackend;
+
+/// Test seam. When non-null, [FlarkNativeComrakParseBackend.requiredDefault]
+/// invokes this instead of loading the real native bridge, so a caller's
+/// handling of a failed default-backend load can be exercised without a broken
+/// native library (the failure is otherwise not reproducible on a host where
+/// the library loads fine). Production code never sets this; tests must reset it
+/// to null in tearDown.
+FlarkNativeComrakParseBackend Function()? debugRequiredDefaultBackendResolver;
 
 /// Native Comrak parse result paired with end-to-end phase timings.
 final class FlarkNativeComrakProfiledParseResult {
