@@ -154,7 +154,17 @@ final class FlarkFlutterController extends ChangeNotifier {
   /// not require the native bridge until a surface actually starts parsing.
   void ensureParsing() {
     if (_disposed) return;
-    _ensureScheduler().start();
+    final FlarkParseScheduler scheduler;
+    try {
+      // The lazily resolved default backend can throw when the native bridge
+      // fails to load; route it to the callback instead of crashing the surface
+      // that called this from initState (matches [tryParseSync]).
+      scheduler = _ensureScheduler();
+    } catch (error, stackTrace) {
+      _onParseError?.call(error, stackTrace);
+      return;
+    }
+    scheduler.start();
     _parseStarted = true;
   }
 
@@ -226,8 +236,11 @@ final class FlarkFlutterController extends ChangeNotifier {
   /// parse-error callback rather than thrown.
   Future<void> parseNow() async {
     if (_disposed) return;
-    final scheduler = _ensureScheduler();
     try {
+      // _ensureScheduler resolves the default backend lazily and can throw when
+      // the native bridge fails to load — keep it inside the try so the failure
+      // routes to the callback rather than escaping this never-throw method.
+      final scheduler = _ensureScheduler();
       await scheduler.parseNow();
     } catch (error, stackTrace) {
       _onParseError?.call(error, stackTrace);
