@@ -279,6 +279,51 @@ void main() {
         const FlarkSelection.collapsed(2),
       );
     });
+
+    test('a corrected caret at a styled run trailing edge lands inside it', () {
+      // Autocorrect of a fully-styled word: `**dont**` (displays "dont"),
+      // caret inside the bold run at its trailing edge (source 6). iOS reports
+      // caret 5 in "don't". The correction must map that back INSIDE the run
+      // (before the hidden closing `**`, source 7), not after it (source 9),
+      // so the next character continues the bold instead of escaping it. The
+      // markers carry the inline-run flags the real parse emits, which is what
+      // the caret-aware display->source mapping keys on.
+      final projection = FlarkProjection(
+        textLength: 8,
+        hiddenRanges: const [
+          FlarkHiddenRange(
+            range: FlarkSourceRange(0, 2),
+            kind: FlarkHiddenRangeKind.inlineMarker,
+            opensInlineRun: true,
+          ),
+          FlarkHiddenRange(
+            range: FlarkSourceRange(6, 8),
+            kind: FlarkHiddenRangeKind.inlineMarker,
+            closesInlineRun: true,
+          ),
+        ],
+      );
+      final resolution = adapter.resolveDisplayEdit(
+        currentMarkdown: '**dont**',
+        projection: projection,
+        oldDisplayText: 'dont',
+        newDisplayText: "don't",
+        sourceSelectionBefore: const FlarkSelection.collapsed(6),
+        newDisplayCaret: 5,
+      );
+
+      expect(resolution, isNotNull);
+      expect(
+        resolution!.transaction
+            .applyToDocument(FlarkDocument.fromMarkdown('**dont**'))
+            .markdown,
+        "**don't**",
+      );
+      expect(
+        resolution.transaction.selectionAfter,
+        const FlarkSelection.collapsed(7),
+      );
+    });
   });
 }
 

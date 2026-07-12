@@ -308,9 +308,13 @@ final class FlarkProjectedTextEditAdapter {
     }
     final sourceLengthDelta =
         diff.replacementText.length - (effectiveRange.end - effectiveRange.start);
+    // Map with the caret-dedicated projection: a caret at a styled run's
+    // trailing display edge belongs inside the run (before its hidden closing
+    // marker), so a correction landing there continues the style rather than
+    // escaping it — matching taps and every other caret placement. Structural
+    // displayToSourceOffset would place it after the marker, outside the run.
     return FlarkSelection.collapsed(
-      projection.displayToSourceOffset(oldSuffixDisplayOffset) +
-          sourceLengthDelta,
+      projection.displayCaretToSource(oldSuffixDisplayOffset) + sourceLengthDelta,
     );
   }
 

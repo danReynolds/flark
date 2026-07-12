@@ -308,6 +308,48 @@ void main() {
     );
 
     testWidgets(
+      'autocorrect inside a styled run keeps the caret inside the run',
+      (tester) async {
+        // `**dont**` renders bold "dont". Autocorrect "dont" -> "don't" shares
+        // the trailing "t"; the corrected caret sits at the run's trailing
+        // display edge, which must map inside the run (before the hidden
+        // closing `**`) so the next character continues the bold rather than
+        // escaping to a plain sibling.
+        final controller = await _pumpLiveEditor(tester, '**dont**');
+        final editable = find.byType(EditableText);
+        await tester.showKeyboard(editable);
+        await tester.pump();
+        // Display "dont"; offset 4 is the run's trailing edge, inside.
+        controller.applyProjectedSelection(const FlarkSelection.collapsed(4));
+        await tester.pump();
+
+        await _sendIme(
+          tester,
+          const TextEditingValue(
+            text: "don't",
+            selection: TextSelection.collapsed(offset: 5),
+          ),
+        );
+        await _expectCommitted(
+          tester,
+          controller,
+          display: "don't",
+          source: "**don't**",
+        );
+
+        // The next character stays bold: the caret is inside the run, not
+        // after its closing marker.
+        await _typeAtRemoteCaret(tester, editable, 'X');
+        await _expectCommitted(
+          tester,
+          controller,
+          display: "don'tX",
+          source: "**don'tX**",
+        );
+      },
+    );
+
+    testWidgets(
       'Japanese conversion rewrites the composing region wholesale in '
       'plain text',
       (tester) async {

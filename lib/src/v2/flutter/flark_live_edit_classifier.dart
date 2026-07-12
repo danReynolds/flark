@@ -416,7 +416,7 @@ FlarkLiveBlockEditClassification classifyFlarkLiveBlockEdit(
       // whole-document display coordinates so the adapter can compare it to
       // the spliced [newDisplayText].
       final localCaret = completedStandaloneFenceValue == null
-          ? _collapsedCaretOffset(blockValue.selection)
+          ? _collapsedCaretOffset(blockValue.selection, blockValue.text.length)
           : null;
       fallback = FlarkLiveBlockProjectedEditIntent(
         blockValue: blockValue,
@@ -650,7 +650,7 @@ FlarkHostEditClassification classifyFlarkHostEdit(
     // own text (no fence-completion rewrite); otherwise a caret into the
     // platform value would not index [newDisplayText].
     final newDisplayCaret = completedCodeFenceText == null
-        ? _collapsedCaretOffset(value.selection)
+        ? _collapsedCaretOffset(value.selection, value.text.length)
         : null;
     return finish(
       FlarkHostPlatformTextChangeIntent(
@@ -726,11 +726,16 @@ TextEditingValue flarkTextValueWithPureInsertionSelection({
   );
 }
 
-/// The offset of [selection] when it is a valid collapsed caret, else null.
-int? _collapsedCaretOffset(TextSelection selection) {
+/// The offset of [selection] when it is a valid collapsed caret within
+/// `[0, textLength]`, else null.
+///
+/// The upper bound matters on the block surface, where the returned offset is
+/// lifted into whole-document display coordinates: a platform caret past the
+/// block's own text would otherwise index a *following* block.
+int? _collapsedCaretOffset(TextSelection selection, int textLength) {
   if (!selection.isValid || !selection.isCollapsed) return null;
   final offset = selection.baseOffset;
-  return offset < 0 ? null : offset;
+  return offset < 0 || offset > textLength ? null : offset;
 }
 
 _PureTextInsertion? _pureTextInsertion({
