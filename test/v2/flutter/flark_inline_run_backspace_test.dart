@@ -166,4 +166,53 @@ void main() {
       expect(controller.markdown, '**bol**');
     });
   });
+
+  group('Plain collapsed backspace over a multi-scalar grapheme', () {
+    FlarkMarkdownInputPolicy policyFor(FlarkFlutterController controller) {
+      return FlarkMarkdownInputPolicy(
+        controller: controller,
+        enterUserEvent: 'enter',
+        backspaceUserEvent: 'backspace',
+      );
+    }
+
+    Future<void> expectBackspaceClears(String markdown) async {
+      // No inline markers: dispatchBackspace resolves to the source selection
+      // unchanged and runs the engine's block-aware Backspace, so the grapheme
+      // start must cover the whole cluster (Flutter's grapheme-aware default
+      // never runs on this path).
+      final controller = FlarkFlutterController.fromMarkdown(markdown);
+      addTearDown(controller.dispose);
+      await controller.parseNow();
+      controller.applySelection(
+        FlarkSelection.collapsed(markdown.length),
+        userEvent: 'test',
+      );
+      policyFor(controller).dispatchBackspace(
+        currentSelection: () => controller.selection,
+        applySelection: (selection) =>
+            controller.applySelection(selection, userEvent: 'sel'),
+      );
+      expect(
+        controller.markdown,
+        isEmpty,
+        reason: 'one Backspace should delete the whole grapheme of $markdown',
+      );
+    }
+
+    test('deletes a flag emoji (two regional indicators) whole', () async {
+      await expectBackspaceClears('\u{1F1FA}\u{1F1F8}'); // 🇺🇸
+    });
+
+    test('deletes a ZWJ family sequence whole', () async {
+      // 👨‍👩‍👧 — man ZWJ woman ZWJ girl.
+      await expectBackspaceClears(
+        '\u{1F468}‍\u{1F469}‍\u{1F467}',
+      );
+    });
+
+    test('deletes an NFD base+combining pair whole', () async {
+      await expectBackspaceClears('é'); // e + combining acute = é
+    });
+  });
 }

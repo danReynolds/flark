@@ -177,6 +177,16 @@ final class FlarkRenderPlan {
   }
 }
 
+/// Threads [renderPlan] through each [FlarkRenderPlanExtension] in registration
+/// order, returning the final plan.
+///
+/// Contract for extension authors: an extension must be a pure transform that
+/// returns a plan consistent with [projection] — every block/inline display
+/// range must stay within the projected display text. The output is trusted and
+/// not re-validated, so a plan with out-of-range display ranges can make render
+/// surfaces throw, and injected link/image actions carry arbitrary destinations
+/// that the host must scheme-check before opening. Each extension receives the
+/// original [projection], not the previous extension's output.
 FlarkRenderPlan applyFlarkRenderPlanExtensions({
   required FlarkRenderPlan renderPlan,
   required FlarkMarkdownParseResult parseResult,

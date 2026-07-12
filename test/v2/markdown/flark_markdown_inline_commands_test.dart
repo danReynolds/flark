@@ -34,6 +34,75 @@ void main() {
       );
     });
 
+    String toggleAll(String markdown, FlarkMarkdownInlineStyle style) {
+      final state = FlarkEditorState.fromMarkdown(
+        markdown,
+        selection: FlarkSelection(baseOffset: 0, extentOffset: markdown.length),
+      );
+      final registry = FlarkExtensionSet([
+        const FlarkMarkdownInlineEditingExtension(),
+      ]).commandRegistry();
+      final result = registry.dispatch(
+        state: state,
+        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+        payload: FlarkToggleInlineStylePayload(style),
+      );
+      if (!result.isHandled || result.transaction == null) return markdown;
+      return state.applyTransaction(result.transaction!).markdown;
+    }
+
+    test('wraps each paragraph when the selection spans a blank line', () {
+      // A single delimiter pair cannot span a blank line, so a whole-selection
+      // wrap would emit invalid `**alpha\n\nbeta**`. Each paragraph is wrapped
+      // instead, keeping the source valid CommonMark.
+      expect(
+        toggleAll('alpha\n\nbeta', FlarkMarkdownInlineStyle.strong),
+        '**alpha**\n\n**beta**',
+      );
+      expect(
+        toggleAll('one\n\ntwo\n\nthree', FlarkMarkdownInlineStyle.emphasis),
+        '*one*\n\n*two*\n\n*three*',
+      );
+      // A single soft line break stays one paragraph (emphasis may soft-wrap).
+      expect(
+        toggleAll('soft\nwrap', FlarkMarkdownInlineStyle.strong),
+        '**soft\nwrap**',
+      );
+    });
+
+    test('leaves a paragraph unstyled when the wrap would misparse', () {
+      // 'a**b' wrapped in ** would close early ('**a**b**'); the valid subset
+      // is to leave it unstyled rather than emit invalid markdown.
+      expect(toggleAll('a**b', FlarkMarkdownInlineStyle.strong), 'a**b');
+      // Mixed: the clean paragraph is styled, the colliding one is left alone.
+      expect(
+        toggleAll('alpha\n\na**b', FlarkMarkdownInlineStyle.strong),
+        '**alpha**\n\na**b',
+      );
+    });
+
+    test('leaves a paragraph unstyled when the wrap would fuse at an edge', () {
+      // A marker char at the core edge fuses with the injected delimiter
+      // (`foo*` -> `**foo***`) and a trailing backslash escapes the injected
+      // closing marker (`a\` -> `*a\*`); both misparse, so leave them unstyled.
+      expect(toggleAll('foo*', FlarkMarkdownInlineStyle.strong), 'foo*');
+      expect(toggleAll('*bar', FlarkMarkdownInlineStyle.strong), '*bar');
+      expect(toggleAll('a\\', FlarkMarkdownInlineStyle.emphasis), 'a\\');
+    });
+
+    test('does not regress valid interior markers when wrapping', () {
+      // A space-flanked '*' is literal, and a nested emphasis run is legal
+      // inside strong — neither should block the wrap.
+      expect(
+        toggleAll('2 * 3', FlarkMarkdownInlineStyle.strong),
+        '**2 * 3**',
+      );
+      expect(
+        toggleAll('a *b* c', FlarkMarkdownInlineStyle.strong),
+        '**a *b* c**',
+      );
+    });
+
     test('applies fresh over a word abutting an intraword underscore', () {
       // 'my_variable', select 'variable' (3..11): its left edge touches the
       // intraword `_`, which is NOT a real emphasis delimiter (flanking), so

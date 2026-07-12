@@ -195,104 +195,187 @@ final class _PreviewBlock extends StatelessWidget {
     BuildContext context,
     FlarkMarkdownThemeData theme,
   ) {
-    final spans = <InlineSpan>[];
-    final runs = [...block.inlineRuns]
-      ..sort((a, b) => a.displayRange.start.compareTo(b.displayRange.start));
-    var cursor = block.displayRange.start;
+    final blockStart = block.displayRange.start.clamp(0, displayText.length);
+    final blockEnd = block.displayRange.end.clamp(blockStart, displayText.length);
+    if (blockStart >= blockEnd) {
+      return const <InlineSpan>[TextSpan(text: '')];
+    }
 
+    // Comrak emits one inline token per AST node, so nested styles
+    // (`***x***`, `**[x](u)**`, `~~**x**~~`) produce runs that OVERLAP over the
+    // same display columns. A flat cursor walk emitted each overlapping run's
+    // slice, rendering the text twice (`boldbold`). Instead, cut the block at
+    // every run boundary and, per segment, merge the styles of the runs that
+    // cover it — the same covering-style model the live editor uses in
+    // `live_text_rendering.dart`, so each column is emitted exactly once.
+    final runs = [
+      for (final run in block.inlineRuns)
+        if (run.displayRange.end > blockStart &&
+            run.displayRange.start < blockEnd)
+          run,
+    ];
+
+    final boundaries = <int>{blockStart, blockEnd};
     for (final run in runs) {
-      if (run.displayRange.start > cursor) {
-        spans.add(
-          TextSpan(text: displayText.substring(cursor, run.displayRange.start)),
-        );
+      boundaries
+        ..add(run.displayRange.start.clamp(blockStart, blockEnd))
+        ..add(run.displayRange.end.clamp(blockStart, blockEnd));
+    }
+    final sorted = boundaries.toList()..sort();
+
+    // Images are atomic cards emitted at their start position. This is the only
+    // place a zero-width empty-alt image (`![](url)`, whose alt text projects
+    // to nothing) can be rendered, since it covers no segment; a non-zero-width
+    // image is emitted here too and its alt-text segment is suppressed below.
+    final imageRuns = [
+      for (final run in runs)
+        if (run.action?.kind == FlarkRenderInlineActionKind.image) run,
+    ]..sort((a, b) => a.displayRange.start.compareTo(b.displayRange.start));
+    var nextImage = 0;
+
+    final spans = <InlineSpan>[];
+    for (var index = 0; index < sorted.length; index += 1) {
+      final pos = sorted[index];
+      while (nextImage < imageRuns.length &&
+          imageRuns[nextImage].displayRange.start.clamp(blockStart, blockEnd) ==
+              pos) {
+        spans.add(_imageSpan(context, imageRuns[nextImage]));
+        nextImage += 1;
       }
-      spans.add(_inlineSpanForRun(context, theme, run));
-      cursor = run.displayRange.end;
+      if (index == sorted.length - 1) break;
+
+      final segStart = pos;
+      final segEnd = sorted[index + 1];
+      if (segStart >= segEnd) continue;
+
+      // Boundary segmentation guarantees a run either fully covers a segment
+      // or does not touch it, so containment is an exact cover test.
+      final covering = [
+        for (final run in runs)
+          if (run.displayRange.start <= segStart &&
+              run.displayRange.end >= segEnd)
+            run,
+      ];
+
+      // A (non-zero-width) image's card was already emitted at its start, so
+      // suppress the alt-text segment it covers.
+      if (_coveringActionRun(covering, FlarkRenderInlineActionKind.image) !=
+          null) {
+        continue;
+      }
+
+      final style = _mergedInlineStyle(covering, theme);
+      final text = displayText.substring(segStart, segEnd);
+      final link = _coveringActionRun(
+        covering,
+        FlarkRenderInlineActionKind.link,
+      );
+      if (link != null) {
+        spans.add(_linkSpan(context, link, text, style));
+      } else {
+        spans.add(TextSpan(text: text, style: style));
+      }
     }
 
-    if (cursor < block.displayRange.end) {
-      spans.add(
-        TextSpan(text: displayText.substring(cursor, block.displayRange.end)),
-      );
-    }
     if (spans.isEmpty) {
-      spans.add(
-        TextSpan(
-          text: displayText.substring(
-            block.displayRange.start,
-            block.displayRange.end,
-          ),
-        ),
-      );
+      spans.add(TextSpan(text: displayText.substring(blockStart, blockEnd)));
     }
     return spans;
   }
 
-  InlineSpan _inlineSpanForRun(
-    BuildContext context,
-    FlarkMarkdownThemeData theme,
-    FlarkRenderInlineRun run,
+  /// The first run in [covering] whose action is [kind], or null.
+  FlarkRenderInlineRun? _coveringActionRun(
+    List<FlarkRenderInlineRun> covering,
+    FlarkRenderInlineActionKind kind,
   ) {
+    for (final run in covering) {
+      if (run.action?.kind == kind) return run;
+    }
+    return null;
+  }
+
+  /// Merges the text styles of every run covering a segment. Strong, emphasis,
+  /// inline code, strikethrough, and link contribute orthogonal attributes
+  /// (weight, slant, family, decoration, colour), so `TextStyle.merge` composes
+  /// them without conflict.
+  TextStyle? _mergedInlineStyle(
+    List<FlarkRenderInlineRun> covering,
+    FlarkMarkdownThemeData theme,
+  ) {
+    TextStyle? merged;
+    for (final run in covering) {
+      final style = _inlineStyle(run, theme);
+      if (style == null) continue;
+      merged = merged == null ? style : merged.merge(style);
+    }
+    return merged;
+  }
+
+  InlineSpan _imageSpan(BuildContext context, FlarkRenderInlineRun run) {
+    final action = run.action!;
     final text = displayText.substring(
-      run.displayRange.start,
-      run.displayRange.end,
+      run.displayRange.start.clamp(0, displayText.length),
+      run.displayRange.end.clamp(0, displayText.length),
     );
-    final action = run.action;
-    if (action?.kind == FlarkRenderInlineActionKind.image) {
+    final target = FlarkRenderOverlayTarget(
+      kind: FlarkRenderOverlayKind.image,
+      sourceRange: run.sourceRange,
+      displayRange: run.displayRange,
+      action: action,
+    );
+    return WidgetSpan(
+      alignment: PlaceholderAlignment.middle,
+      child: _PreviewImageCard(
+        label: action.label ?? text,
+        destination: action.destination,
+        title: action.title,
+        interactions: FlarkMarkdownInteractions.maybeOf(context),
+        target: target,
+      ),
+    );
+  }
+
+  InlineSpan _linkSpan(
+    BuildContext context,
+    FlarkRenderInlineRun run,
+    String text,
+    TextStyle? style,
+  ) {
+    final action = run.action!;
+    final interactions = FlarkMarkdownInteractions.maybeOf(context);
+    if (interactions != null) {
       final target = FlarkRenderOverlayTarget(
-        kind: FlarkRenderOverlayKind.image,
+        kind: FlarkRenderOverlayKind.link,
         sourceRange: run.sourceRange,
         displayRange: run.displayRange,
         action: action,
       );
-      return WidgetSpan(
-        alignment: PlaceholderAlignment.middle,
-        child: _PreviewImageCard(
-          label: action!.label ?? text,
-          destination: action.destination,
-          title: action.title,
-          interactions: FlarkMarkdownInteractions.maybeOf(context),
-          target: target,
-        ),
-      );
-    }
-    if (action?.kind == FlarkRenderInlineActionKind.link) {
-      final interactions = FlarkMarkdownInteractions.maybeOf(context);
-      if (interactions != null) {
-        final target = FlarkRenderOverlayTarget(
-          kind: FlarkRenderOverlayKind.link,
-          sourceRange: run.sourceRange,
-          displayRange: run.displayRange,
-          action: action,
+      if (interactions.config.enableLinkMenus) {
+        return WidgetSpan(
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          child: _InlineLinkMenu(
+            interactions: interactions,
+            target: target,
+            text: text,
+            style: style,
+          ),
         );
-        if (interactions.config.enableLinkMenus) {
-          return WidgetSpan(
-            alignment: PlaceholderAlignment.baseline,
-            baseline: TextBaseline.alphabetic,
-            child: _InlineLinkMenu(
-              interactions: interactions,
-              target: target,
-              text: text,
-              style: _inlineStyle(run, theme),
-            ),
-          );
-        }
-        if (interactions.config.onOpenLink != null) {
-          return WidgetSpan(
-            alignment: PlaceholderAlignment.baseline,
-            baseline: TextBaseline.alphabetic,
-            child: _InlineLinkText(
-              interactions: interactions,
-              target: target,
-              text: text,
-              style: _inlineStyle(run, theme),
-            ),
-          );
-        }
+      }
+      if (interactions.config.onOpenLink != null) {
+        return WidgetSpan(
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          child: _InlineLinkText(
+            interactions: interactions,
+            target: target,
+            text: text,
+            style: style,
+          ),
+        );
       }
     }
-
-    return TextSpan(text: text, style: _inlineStyle(run, theme));
+    return TextSpan(text: text, style: style);
   }
 }
 

@@ -83,6 +83,106 @@ void main() {
       }
     });
 
+    testWidgets(
+      'nested inline styles render their text once, not duplicated',
+      (tester) async {
+        // Regression: comrak emits one inline token per AST node, so nested
+        // styles (***x***, **[x](u)**, ~~**x**~~) produce OVERLAPPING inline
+        // runs over the same display columns. The preview's flat span walk
+        // emitted each overlapping run's slice, so '***bold***' rendered as
+        // 'boldbold'. Boundary segmentation must merge covering runs so each
+        // column is emitted exactly once.
+        for (final entry in <String, String>{
+          '***bold***': 'bold',
+          '**_mix_**': 'mix',
+          '~~**hit**~~': 'hit',
+          '**[OpenAI](https://openai.com)**': 'OpenAI',
+        }.entries) {
+          final controller = FlarkFlutterController.fromMarkdown(entry.key);
+          addTearDown(controller.dispose);
+          final result = await FlarkNativeComrakParseBackend.withNativeBridge()
+              .parse(
+                FlarkMarkdownParseRequest(
+                  revision: 0,
+                  markdown: entry.key,
+                  profile: FlarkMarkdownProfile.commonMarkGfm,
+                ),
+              );
+          expect(
+            controller.applyParseResult(result),
+            isTrue,
+            reason: 'applied parse for ${entry.key}',
+          );
+
+          await tester.pumpWidget(
+            Directionality(
+              textDirection: TextDirection.ltr,
+              child: SizedBox(
+                width: 420,
+                child: FlarkMarkdown(controller: controller),
+              ),
+            ),
+          );
+
+          final plains = tester
+              .widgetList<RichText>(find.byType(RichText))
+              .map((widget) => widget.text.toPlainText())
+              .toList();
+          expect(
+            plains.any((text) => text.contains(entry.value)),
+            isTrue,
+            reason: 'expected ${entry.value} present for ${entry.key}',
+          );
+          expect(
+            plains.any((text) => text.contains('${entry.value}${entry.value}')),
+            isFalse,
+            reason: 'duplicated text for ${entry.key}: $plains',
+          );
+        }
+      },
+    );
+
+    testWidgets('renders an inline empty-alt image (zero-width run)', (
+      tester,
+    ) async {
+      // Regression: an empty-alt image projects to a zero-width display range,
+      // which covers no segment — the boundary-segmentation walk must still
+      // emit its card (an atomic card keyed to its start), or the image
+      // silently vanishes.
+      const markdown = 'Logo ![](asset://logo.png) here';
+      final controller = FlarkFlutterController.fromMarkdown(markdown);
+      addTearDown(controller.dispose);
+      final result = await FlarkNativeComrakParseBackend.withNativeBridge()
+          .parse(
+            const FlarkMarkdownParseRequest(
+              revision: 0,
+              markdown: markdown,
+              profile: FlarkMarkdownProfile.commonMarkGfm,
+            ),
+          );
+      expect(controller.applyParseResult(result), isTrue);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 420,
+            child: FlarkMarkdown(controller: controller),
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const Key('FlarkReadOnlyPreviewImageCard')),
+        findsOneWidget,
+      );
+      final plains = tester
+          .widgetList<RichText>(find.byType(RichText))
+          .map((widget) => widget.text.toPlainText());
+      expect(plains.any((text) => text.contains('Logo')), isTrue);
+      expect(plains.any((text) => text.contains('here')), isTrue);
+    });
+
     testWidgets('renders image runs as default action cards', (tester) async {
       const markdown =
           'Architecture: ![Diagram](asset://diagram.png "System view")';

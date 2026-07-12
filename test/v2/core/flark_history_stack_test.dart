@@ -106,6 +106,32 @@ void main() {
       expect(history.canRedo, isFalse);
     });
 
+    test('a non-history document edit clears a pending redo', () {
+      final initial = FlarkEditorState.fromMarkdown('abc');
+      final edit = FlarkTransaction.single(
+        FlarkSourceOperation.insert(3, 'd'),
+        metadata: const FlarkTransactionMetadata(),
+      );
+      final edited = initial.applyTransaction(edit);
+      final afterUndo = const FlarkHistoryStack()
+          .record(transaction: edit, documentBefore: initial.document)
+          .undo(edited);
+      expect(afterUndo.history.canRedo, isTrue);
+
+      // A document-changing edit that opts out of history leaves the redo entry
+      // pointing at a stale document, so it must be invalidated.
+      final nonHistory = FlarkTransaction.single(
+        FlarkSourceOperation.insert(0, 'Z'),
+        metadata: const FlarkTransactionMetadata(addToHistory: false),
+      );
+      final next = afterUndo.history.record(
+        transaction: nonHistory,
+        documentBefore: afterUndo.state.document,
+      );
+      expect(next.canRedo, isFalse);
+      expect(next.canUndo, afterUndo.history.canUndo);
+    });
+
     test('does not record source-neutral transactions', () {
       final initial = FlarkEditorState.fromMarkdown('abc');
       final transaction = FlarkTransaction.single(

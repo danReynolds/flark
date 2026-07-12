@@ -848,6 +848,12 @@ final class FlarkFlutterController extends ChangeNotifier {
     var contentStart = range.start + pair.open.length;
     final String wrapped;
     if (replacement.inserted == '*' || replacement.inserted == '_') {
+      // A blank line inside the selection would make the wrap span two
+      // paragraphs (`*alpha\n\nbeta*`), which CommonMark treats as literal
+      // markers, not one run. Decline so the keystroke replaces the selection
+      // with a literal delimiter instead of writing invalid source. (Brackets
+      // and quotes below are not markdown emphasis and may span paragraphs.)
+      if (_paragraphBreakPattern.hasMatch(content)) return null;
       final split = FlarkInlineDelimiterPlacement.splitEdgeWhitespace(content);
       if (split.core.isEmpty) return null;
       wrapped =
@@ -856,6 +862,13 @@ final class FlarkFlutterController extends ChangeNotifier {
       content = split.core;
       contentStart = range.start + split.leading.length + pair.open.length;
     } else {
+      // A code span cannot cross a blank line either (its backticks would land
+      // in separate blocks and render literally); brackets and quotes are not
+      // markdown delimiters and may span paragraphs.
+      if (replacement.inserted == '`' &&
+          _paragraphBreakPattern.hasMatch(content)) {
+        return null;
+      }
       wrapped = '${pair.open}$content${pair.close}';
     }
     return FlarkTransaction.single(
@@ -1294,9 +1307,6 @@ final class FlarkFlutterController extends ChangeNotifier {
     _renderPlan = adoption.renderPlan;
     _renderPlanRevision = parseResult.revision;
     _lastProjectionPrediction = null;
-    // A typed closing marker is the user speaking markdown source: the run
-    // closes, the caret stays after the marker, and continued typing is
-    // outside the run. (Re-entry is left-arrow across the trailing edge.)
     _emitEvent(
       kind: FlarkControllerEventKind.parseAdopted,
       previousState: state,
@@ -1309,6 +1319,10 @@ final class FlarkFlutterController extends ChangeNotifier {
     FlarkEditorRuntimeResult result, {
     FlarkControllerEventKind? eventKind,
   }) {
+    // Every mutator that reaches notifyListeners() routes through here; guard
+    // disposal for symmetry with applyParseResult so a synchronous edit on a
+    // controller that outlived its widgets never notifies after dispose.
+    if (_disposed) return;
     if (identical(result.runtime, _runtime)) return;
 
     // Any adopted runtime change — a typed run, a selection move, an undo —
@@ -1766,3 +1780,7 @@ final class _PredictedStructuralRenderPlan {
   final FlarkProjection projection;
   final FlarkRenderPlan renderPlan;
 }
+
+/// A paragraph break: a newline followed by one or more blank lines. A single
+/// soft line break stays within one paragraph, so it does not match.
+final _paragraphBreakPattern = RegExp(r'\n(?:[ \t]*\n)+');

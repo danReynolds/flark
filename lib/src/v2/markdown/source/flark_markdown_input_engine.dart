@@ -1,3 +1,5 @@
+import 'package:characters/characters.dart';
+
 import '../../core/core.dart';
 import '../inline/flark_inline_run_scanner.dart';
 import 'flark_markdown_editing_result.dart';
@@ -192,22 +194,24 @@ final class FlarkMarkdownInputEngine {
     );
   }
 
-  /// The start of the grapheme cluster ending at [caret], so the fallback
-  /// Backspace never splits a surrogate pair. Marker-stepping paths route a
-  /// collapsed Backspace through here (e.g. deleting an emoji sitting just
-  /// before a styled run's opening marker), where the platform's own
-  /// grapheme-aware default does not run. Surrogate pairs are the unambiguous
-  /// corruption case; combining/ZWJ clusters are left to the platform default
-  /// on the non-stepped path.
+  /// The start of the extended grapheme cluster ending at [caret], so a
+  /// fallback Backspace deletes one whole user-perceived character rather than
+  /// splitting a multi-scalar cluster.
+  ///
+  /// The plain collapsed Backspace resolves through here (not just the
+  /// marker-stepping paths): [FlarkMarkdownInputPolicy.dispatchBackspace] runs
+  /// the engine's block-aware Backspace even when no inline marker is adjacent,
+  /// so — unlike forward Delete, which defers to Flutter's grapheme-aware
+  /// default — Backspace never reaches that default. A previous version only
+  /// coalesced a single surrogate pair, so it split flag emoji (two regional
+  /// indicators), ZWJ sequences (👨‍👩‍👧), and NFD base+combining pairs (e +
+  /// ´), leaving a dangling half-cluster. Walking back one grapheme via
+  /// [CharacterRange] applies the full Unicode break rules and covers them all.
   static int _backspaceGraphemeStart(String markdown, int caret) {
-    if (caret >= 2) {
-      final low = markdown.codeUnitAt(caret - 1);
-      final high = markdown.codeUnitAt(caret - 2);
-      if (low >= 0xDC00 && low <= 0xDFFF && high >= 0xD800 && high <= 0xDBFF) {
-        return caret - 2;
-      }
-    }
-    return caret - 1;
+    if (caret <= 0) return caret;
+    final range = CharacterRange.at(markdown, caret);
+    if (!range.moveBack()) return caret - 1;
+    return caret - range.current.length;
   }
 
   /// Indents the list item under a collapsed caret by one level, or null when
