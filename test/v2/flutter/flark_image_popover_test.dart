@@ -18,7 +18,8 @@ Future<void> _parse(FlarkFlutterController controller) async {
 Future<void> _pumpEditor(
   WidgetTester tester,
   FlarkFlutterController controller, {
-  FlarkMarkdownInteractionConfig config = const FlarkMarkdownInteractionConfig(),
+  FlarkMarkdownInteractionConfig config =
+      const FlarkMarkdownInteractionConfig(),
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -63,10 +64,7 @@ void main() {
     // The image popover, not the link one (the link pattern also matches the
     // `[alt](url)` inside an image).
     expect(linkDest, findsNothing);
-    expect(
-      tester.widget<Text>(imageDest).data,
-      'https://example.com/cat.png',
-    );
+    expect(tester.widget<Text>(imageDest).data, 'https://example.com/cat.png');
     expect(find.byKey(const ValueKey('FlarkImageAction.open')), findsOneWidget);
     expect(find.byKey(const ValueKey('FlarkImageAction.edit')), findsOneWidget);
     expect(find.byKey(const ValueKey('FlarkImageAction.copy')), findsOneWidget);
@@ -87,7 +85,10 @@ void main() {
     await _parse(controller);
     await _pumpEditor(tester, controller);
 
-    controller.applySelection(const FlarkSelection.collapsed(4), userEvent: 't');
+    controller.applySelection(
+      const FlarkSelection.collapsed(4),
+      userEvent: 't',
+    );
     await tester.pump();
     await tester.pump();
     expect(imageDest, findsNothing);
@@ -131,7 +132,11 @@ void main() {
       controller,
       config: FlarkMarkdownInteractionConfig(
         imageActions: [
-          const FlarkImageAction(id: 'caption', label: 'Caption', onInvoke: _noop),
+          const FlarkImageAction(
+            id: 'caption',
+            label: 'Caption',
+            onInvoke: _noop,
+          ),
         ],
       ),
     );

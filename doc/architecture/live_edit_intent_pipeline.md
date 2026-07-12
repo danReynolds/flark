@@ -153,32 +153,58 @@ side typing lands on:
    The same `expandDeletionOverInlineRunMarkers` primitive is applied directly
    by the projected-edit adapter, whose deletions arrive in display space and
    already target the visible character — so they need only the orphan rule,
-   not the re-entry steps. **Gap:** forward `Delete` is not yet routed through
-   the resolver (it falls back to Flutter's display-space default, which is
-   marker-safe for the common case but can split a marker when the caret sits
-   just before a hidden opening marker); a symmetric `forward: true` pass is a
-   clean follow-up on the same primitive.
+   not the re-entry steps.
+
+   Forward `Delete` routes through the symmetric resolver,
+   `FlarkProjection.resolveForwardDeleteSelection` (`dispatchForwardDelete`,
+   wired as the `DeleteCharacterIntent(forward: true)` override on both
+   surfaces — the same override that routes Backspace-shaped intents to
+   `dispatchBackspace`): a caret just before a hidden opening marker
+   re-enters the run forward so the first *content* character is removed
+   (`|**bold**` → `**old**`, never a split marker), a caret at a run's
+   inside-end steps past the whole closing marker so the delete targets the
+   character after the run (`**bold|** x` → `**bold**x`) or merges lines at
+   its end, and whole-content deletions expand over the orphaned pair
+   (`**x**` → ``). Adjacent stacked markers (`*~~f~~*` edges) are walked as
+   a chain to the innermost content character. When no marker is adjacent
+   the resolver returns the selection unchanged and the intent falls through
+   to Flutter's display-space default (grapheme-aware, handles plain line
+   merges), so plain forward deletion is untouched. Gated by
+   `test/v2/flutter/flark_forward_delete_test.dart`.
 9. **Edit anchors never round-trip the caret through display space.** The
    input-policy/shortcut selection appliers on both surfaces skip the
    re-application when the controller's source selection already renders at
    the requested display position, because a display round trip cannot
    represent the inside/outside distinction.
-10. **A trailing space inside an emphasis/strong/strikethrough run stays
-   rendered.** CommonMark forbids a closing delimiter preceded by whitespace,
-   so the parse of `**foo **` carries no styled run and the markers would flash
-   into view for the moment a space sits at the run's end (mid-typing
-   `**foo bar**`). At parse adoption a pure, stateless reconciler
-   (`FlarkStickyInlineRun.reconcile`, invoked from
-   `FlarkFlutterController.applyParseResult`) re-hides the marker pair and
-   re-styles the content when the collapsed caret sits inside such a run —
-   mirroring a real run's `opensInlineRun`/`closesInlineRun` hidden ranges and
-   inline-run style token. It holds no state and is recomputed each adoption,
-   so it releases the instant the caret leaves the run or the run becomes valid
-   markdown again; code spans never trigger it (their trailing space is already
-   valid) and ambiguous `***`/nested runs are skipped (kept at today's
-   behavior). Phase 2 (not yet shipped) would normalize a dangling trailing
-   space outside the markers (`**foo **` → `**foo** `) on caret exit so the
-   resting source stays valid-and-bold.
+10. **Whitespace at an emphasis/strong/strikethrough run's edge lives outside
+   the delimiters; the source is valid CommonMark at every revision.**
+   CommonMark forbids a closing delimiter preceded by whitespace, so
+   `**foo **` is literal text, not a bold run. Flark used to write that form
+   while typing and re-hide the markers with a caret-local reconciler
+   (`FlarkStickyInlineRun`), which meant the same document rendered
+   differently for `controller.markdown` consumers, the standalone preview,
+   and the editor itself once the caret moved. That reconciler is gone.
+   Instead, every editor-generated write goes through one canonical
+   placement module (`FlarkInlineDelimiterPlacement`): typing a space at a
+   run's trailing edge commits it *outside* the closing marker
+   (`**foo** `) and keeps the run's styles armed so the next styled
+   character re-enters the run (`**foo x**`); deletions that would expose
+   edge whitespace relocate the delimiter (`**foo x**` minus `x` →
+   `**foo** `) or dissolve an emptied run entirely; muted-exit splits move
+   straddled whitespace between the split delimiters; Enter at a run edge
+   lands outside the markers. Whitespace bubbles out through *flush* nested
+   delimiters (`*~~f~~*` + space at the inner trailing edge → `*~~f~~* `)
+   and dissolves cascade outward through emptied enclosing runs. Placement
+   decisions that relocate delimiters resolve runs from the parser's own
+   pairing (`FlarkProjection.inlineRunScans`), never a textual guess, so
+   hand-typed literal text (`**foo **` typed as characters) is never
+   rewritten and renders literally regardless of caret position. Code spans
+   are exempt throughout — backticks may legally hug whitespace, and moving
+   it would change the code text. The invariant is gated by
+   `test/v2/flutter/flark_inline_style_sequence_test.dart`: after every
+   step of every sequence, the display must equal what the user typed and a
+   fresh caret-free parse of `controller.markdown` must render the same
+   display.
 
 Block markers (headings, quotes, lists) are never trailing edges; their
 hidden markers are prefixes, so caret placement after them is unaffected.

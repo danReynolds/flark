@@ -219,6 +219,42 @@ void main() {
         );
       });
 
+      test('walks the whole closing chain at a nested trailing edge', () {
+        // Source: *~~f~~* — em [0,1)+[6,7), strike [1,3)+[4,6), content 'f'.
+        // A single boundary step would anchor between `~~` and `*` and split
+        // the inner pair (`*~~f~*`); the chain walk re-enters to the content,
+        // whose deletion orphans both pairs — the whole run goes.
+        final nested = FlarkProjection(
+          textLength: 7,
+          hiddenRanges: const [
+            FlarkHiddenRange(
+              range: FlarkSourceRange(0, 1),
+              kind: FlarkHiddenRangeKind.markdownMarker,
+              opensInlineRun: true,
+            ),
+            FlarkHiddenRange(
+              range: FlarkSourceRange(1, 3),
+              kind: FlarkHiddenRangeKind.markdownMarker,
+              opensInlineRun: true,
+            ),
+            FlarkHiddenRange(
+              range: FlarkSourceRange(4, 6),
+              kind: FlarkHiddenRangeKind.markdownMarker,
+              closesInlineRun: true,
+            ),
+            FlarkHiddenRange(
+              range: FlarkSourceRange(6, 7),
+              kind: FlarkHiddenRangeKind.markdownMarker,
+              closesInlineRun: true,
+            ),
+          ],
+        );
+        expect(
+          nested.resolveBackspaceSelection(const FlarkSelection.collapsed(7)),
+          const FlarkSelection(baseOffset: 0, extentOffset: 7),
+        );
+      });
+
       test('expands to the whole run when its last char re-enters', () {
         // `**x**`, caret outside the close: re-enter, then the single content
         // char's deletion orphans both markers, so the whole run goes.
@@ -286,6 +322,248 @@ void main() {
       test('leaves a partial selection to the default backspace', () {
         const partial = FlarkSelection(baseOffset: 2, extentOffset: 4);
         expect(bold.resolveBackspaceSelection(partial), partial);
+      });
+    });
+
+    group('resolveForwardDeleteSelection', () {
+      // Source: **bold** — opening [0,2) closing [6,8), content 'bold' [2,6).
+      final bold = FlarkProjection(
+        textLength: 8,
+        hiddenRanges: const [
+          FlarkHiddenRange(
+            range: FlarkSourceRange(0, 2),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            opensInlineRun: true,
+          ),
+          FlarkHiddenRange(
+            range: FlarkSourceRange(6, 8),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            closesInlineRun: true,
+          ),
+        ],
+      );
+
+      // Source: **bold** x — same run with a trailing ' x' [8,10).
+      final boldTrailing = FlarkProjection(
+        textLength: 10,
+        hiddenRanges: const [
+          FlarkHiddenRange(
+            range: FlarkSourceRange(0, 2),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            opensInlineRun: true,
+          ),
+          FlarkHiddenRange(
+            range: FlarkSourceRange(6, 8),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            closesInlineRun: true,
+          ),
+        ],
+      );
+
+      // Source: **x** — opening [0,2) closing [3,5), single content char [2,3).
+      final single = FlarkProjection(
+        textLength: 5,
+        hiddenRanges: const [
+          FlarkHiddenRange(
+            range: FlarkSourceRange(0, 2),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            opensInlineRun: true,
+          ),
+          FlarkHiddenRange(
+            range: FlarkSourceRange(3, 5),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            closesInlineRun: true,
+          ),
+        ],
+      );
+
+      // Source: *~~f~~* — stacked openers [0,1)+[1,3), content 'f' [3,4),
+      // stacked closers [4,6)+[6,7) (the parser emits one hidden range per
+      // delimiter token, so nested edges are chains of adjacent markers).
+      final nested = FlarkProjection(
+        textLength: 7,
+        hiddenRanges: const [
+          FlarkHiddenRange(
+            range: FlarkSourceRange(0, 1),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            opensInlineRun: true,
+          ),
+          FlarkHiddenRange(
+            range: FlarkSourceRange(1, 3),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            opensInlineRun: true,
+          ),
+          FlarkHiddenRange(
+            range: FlarkSourceRange(4, 6),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            closesInlineRun: true,
+          ),
+          FlarkHiddenRange(
+            range: FlarkSourceRange(6, 7),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            closesInlineRun: true,
+          ),
+        ],
+      );
+
+      // Source: *~~f~~*x — the same nested run with a trailing 'x' [7,8).
+      final nestedTrailing = FlarkProjection(
+        textLength: 8,
+        hiddenRanges: const [
+          FlarkHiddenRange(
+            range: FlarkSourceRange(0, 1),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            opensInlineRun: true,
+          ),
+          FlarkHiddenRange(
+            range: FlarkSourceRange(1, 3),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            opensInlineRun: true,
+          ),
+          FlarkHiddenRange(
+            range: FlarkSourceRange(4, 6),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            closesInlineRun: true,
+          ),
+          FlarkHiddenRange(
+            range: FlarkSourceRange(6, 7),
+            kind: FlarkHiddenRangeKind.markdownMarker,
+            closesInlineRun: true,
+          ),
+        ],
+      );
+
+      test('re-enters the run when the caret sits just before the open', () {
+        // Before the run (ahead of the hidden open): a naive delete would cut
+        // a marker char (`**bold**` → `*bold**`). Instead drop the first
+        // content char, keeping the run balanced (`**old**`).
+        expect(
+          bold.resolveForwardDeleteSelection(const FlarkSelection.collapsed(0)),
+          const FlarkSelection(baseOffset: 2, extentOffset: 3),
+        );
+        // The interior start (just past the open) is a plain content caret —
+        // no marker is next — so it defers to the default forward delete,
+        // mirroring backspace's mid-content behavior at the inside-end.
+        expect(
+          bold.resolveForwardDeleteSelection(const FlarkSelection.collapsed(2)),
+          const FlarkSelection.collapsed(2),
+        );
+      });
+
+      test('expands to the whole run when its first char re-enters', () {
+        // `**x**`, caret before the open: re-enter, then the single content
+        // char's deletion orphans both markers, so the whole run goes.
+        expect(
+          single.resolveForwardDeleteSelection(
+            const FlarkSelection.collapsed(0),
+          ),
+          const FlarkSelection(baseOffset: 0, extentOffset: 5),
+        );
+      });
+
+      test('expands over orphaned markers at the interior start', () {
+        // `**x**`, caret inside after the open: deleting 'x' orphans the
+        // markers, so expand to the whole run.
+        expect(
+          single.resolveForwardDeleteSelection(
+            const FlarkSelection.collapsed(2),
+          ),
+          const FlarkSelection(baseOffset: 0, extentOffset: 5),
+        );
+      });
+
+      test('steps past a closing marker instead of splitting it', () {
+        // Caret at the run's inside-end (just before the closing `**`): step
+        // past the whole marker so the delete targets the character after
+        // the run.
+        expect(
+          boldTrailing.resolveForwardDeleteSelection(
+            const FlarkSelection.collapsed(6),
+          ),
+          const FlarkSelection(baseOffset: 8, extentOffset: 9),
+        );
+      });
+
+      test('steps out without deleting when only markers remain', () {
+        // At the inside-end of a run that ends the document, nothing follows
+        // the markers; the caret exits so the caller's default no-ops at the
+        // true position.
+        expect(
+          bold.resolveForwardDeleteSelection(const FlarkSelection.collapsed(6)),
+          const FlarkSelection.collapsed(8),
+        );
+      });
+
+      test('walks nested stacked marker chains to the innermost content', () {
+        // `*~~f~~*`: the opening chain `*` + `~~` resolves to 'f', whose
+        // deletion orphans both pairs.
+        expect(
+          nested.resolveForwardDeleteSelection(
+            const FlarkSelection.collapsed(0),
+          ),
+          const FlarkSelection(baseOffset: 0, extentOffset: 7),
+        );
+        expect(
+          nested.resolveForwardDeleteSelection(
+            const FlarkSelection.collapsed(3),
+          ),
+          const FlarkSelection(baseOffset: 0, extentOffset: 7),
+        );
+        // The inner inside-end steps past the whole closing chain `~~` + `*`
+        // — never landing between the two closers.
+        expect(
+          nested.resolveForwardDeleteSelection(
+            const FlarkSelection.collapsed(4),
+          ),
+          const FlarkSelection.collapsed(7),
+        );
+        expect(
+          nestedTrailing.resolveForwardDeleteSelection(
+            const FlarkSelection.collapsed(4),
+          ),
+          const FlarkSelection(baseOffset: 7, extentOffset: 8),
+        );
+      });
+
+      test('leaves a mid-content caret to the default forward delete', () {
+        // Deleting a non-final content char keeps the run intact, so no
+        // inline adjustment is needed.
+        const caret = FlarkSelection.collapsed(3);
+        expect(bold.resolveForwardDeleteSelection(caret), caret);
+      });
+
+      test('leaves a caret with no adjacent run unchanged', () {
+        final plain = FlarkProjection(textLength: 3);
+        const caret = FlarkSelection.collapsed(1);
+        expect(plain.resolveForwardDeleteSelection(caret), caret);
+        // The document end has nothing to delete.
+        expect(
+          bold.resolveForwardDeleteSelection(const FlarkSelection.collapsed(8)),
+          const FlarkSelection.collapsed(8),
+        );
+      });
+
+      test('expands a selection that covers a run\'s whole content', () {
+        expect(
+          bold.resolveForwardDeleteSelection(
+            const FlarkSelection(baseOffset: 2, extentOffset: 6),
+          ),
+          const FlarkSelection(baseOffset: 0, extentOffset: 8),
+        );
+      });
+
+      test('preserves direction when expanding a reversed selection', () {
+        expect(
+          bold.resolveForwardDeleteSelection(
+            const FlarkSelection(baseOffset: 6, extentOffset: 2),
+          ),
+          const FlarkSelection(baseOffset: 8, extentOffset: 0),
+        );
+      });
+
+      test('leaves a partial selection to the default forward delete', () {
+        const partial = FlarkSelection(baseOffset: 2, extentOffset: 4);
+        expect(bold.resolveForwardDeleteSelection(partial), partial);
       });
     });
 

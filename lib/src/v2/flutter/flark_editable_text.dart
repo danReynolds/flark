@@ -313,6 +313,7 @@ final class _FlarkEditableTextState extends State<FlarkEditableText> {
       controller: widget.controller,
       enterUserEvent: 'input.editableText.enter',
       backspaceUserEvent: 'input.editableText.backspace',
+      forwardDeleteUserEvent: 'input.editableText.forwardDelete',
     );
   }
 
@@ -632,6 +633,7 @@ final class _FlarkVirtualizedSourceLineState
       controller: widget.controller,
       enterUserEvent: 'input.virtualizedSourceLine.enter',
       backspaceUserEvent: 'input.virtualizedSourceLine.backspace',
+      forwardDeleteUserEvent: 'input.virtualizedSourceLine.forwardDelete',
     );
   }
 }

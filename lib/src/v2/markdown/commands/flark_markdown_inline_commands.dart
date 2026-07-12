@@ -7,6 +7,8 @@ import '../../core/transaction/flark_source_operation.dart';
 import '../../core/transaction/flark_source_range.dart';
 import '../../core/transaction/flark_transaction.dart';
 import '../../core/transaction/flark_transaction_metadata.dart';
+import '../inline/flark_inline_delimiter_placement.dart';
+import '../inline/flark_inline_flanking.dart';
 import '../inline/flark_markdown_inline_style.dart';
 
 abstract final class FlarkMarkdownInlineCommands {
@@ -44,7 +46,6 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
   ) {
     final selection = context.state.selection;
     final text = context.state.markdown;
-    final marker = context.payload.style.marker;
 
     if (selection.isCollapsed) {
       // A collapsed caret carries no range to wrap or unwrap. Arming a style on
@@ -57,93 +58,134 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
     final start = selection.start;
     final end = selection.end;
     final selectedText = text.substring(start, end);
-    final markerLength = marker.length;
-    final markerStart = start - markerLength;
-    final markerEnd = end + markerLength;
-    final selectionStartsWithMarker =
-        _isToggleableMarkerRun(text, start, marker) &&
-        end - start >= markerLength;
-    final selectionEndsWithMarker =
-        end >= markerLength &&
-        _isToggleableMarkerRun(text, end - markerLength, marker);
-    final hasLeadingMarker =
-        markerStart >= 0 && _isToggleableMarkerRun(text, markerStart, marker);
-    final hasTrailingMarker =
-        markerEnd <= text.length && _isToggleableMarkerRun(text, end, marker);
 
-    if (selectionStartsWithMarker != selectionEndsWithMarker) {
-      return FlarkCommandResult.rejected(
-        'Inline style toggling cannot partially overlap source markers.',
-      );
-    }
+    // Toggling a style off must recognize whichever equivalent delimiter the
+    // source actually uses, not just the canonical one: `_text_` unwraps under
+    // emphasis exactly like `*text*`, `__x__` under strong like `**x**`, and
+    // `~x~` under strikethrough like `~~x~~`. Probe every equivalent form
+    // (canonical first) and unwrap the first that brackets the selection — with
+    // that form's own marker length. A form whose markers only partially
+    // overlap the selection is a malformed target and is rejected; when no form
+    // brackets the selection the style is applied fresh with the canonical
+    // marker below.
+    var partialOverlap = false;
+    for (final marker in context.payload.style.equivalentMarkers) {
+      final markerLength = marker.length;
+      final markerStart = start - markerLength;
+      final markerEnd = end + markerLength;
+      final selectionStartsWithMarker =
+          end - start >= markerLength &&
+          _isToggleableMarkerRun(text, start, marker);
+      final selectionEndsWithMarker =
+          end - start >= markerLength &&
+          _isToggleableMarkerRun(text, end - markerLength, marker);
+      final hasLeadingMarker =
+          markerStart >= 0 && _isToggleableMarkerRun(text, markerStart, marker);
+      final hasTrailingMarker =
+          markerEnd <= text.length && _isToggleableMarkerRun(text, end, marker);
 
-    if (hasLeadingMarker != hasTrailingMarker) {
-      return FlarkCommandResult.rejected(
-        'Inline style toggling cannot partially overlap source markers.',
-      );
-    }
+      if (selectionStartsWithMarker != selectionEndsWithMarker ||
+          hasLeadingMarker != hasTrailingMarker) {
+        partialOverlap = true;
+        continue;
+      }
 
-    if (selectionStartsWithMarker && selectionEndsWithMarker) {
-      final innerText = selectedText.substring(
-        markerLength,
-        selectedText.length - markerLength,
-      );
-      return FlarkCommandResult.handled(
-        transaction: FlarkTransaction.single(
-          FlarkSourceOperation.replace(
-            replacedRange: FlarkSourceRange(start, end),
-            replacementText: innerText,
-          ),
-          selectionBefore: selection,
-          selectionAfter: FlarkSelection(
-            baseOffset: start,
-            extentOffset: start + innerText.length,
-          ),
-          metadata: FlarkTransactionMetadata(
-            intent: FlarkTransactionIntent.command,
-            userEvent: context.payload.userEvent,
-            parseInvalidationRange: FlarkSourceRange(start, end),
-            projectionInvalidationRange: FlarkSourceRange(start, end),
-          ),
-        ),
-      );
-    }
-
-    if (hasLeadingMarker && hasTrailingMarker) {
-      return FlarkCommandResult.handled(
-        transaction: FlarkTransaction.single(
-          FlarkSourceOperation.replace(
-            replacedRange: FlarkSourceRange(markerStart, markerEnd),
-            replacementText: selectedText,
-          ),
-          selectionBefore: selection,
-          selectionAfter: FlarkSelection(
-            baseOffset: markerStart,
-            extentOffset: markerStart + selectedText.length,
-          ),
-          metadata: FlarkTransactionMetadata(
-            intent: FlarkTransactionIntent.command,
-            userEvent: context.payload.userEvent,
-            parseInvalidationRange: FlarkSourceRange(markerStart, markerEnd),
-            projectionInvalidationRange: FlarkSourceRange(
-              markerStart,
-              markerEnd,
+      if (selectionStartsWithMarker &&
+          selectionEndsWithMarker &&
+          end - start >= 2 * markerLength) {
+        final innerText = selectedText.substring(
+          markerLength,
+          selectedText.length - markerLength,
+        );
+        return FlarkCommandResult.handled(
+          transaction: FlarkTransaction.single(
+            FlarkSourceOperation.replace(
+              replacedRange: FlarkSourceRange(start, end),
+              replacementText: innerText,
+            ),
+            selectionBefore: selection,
+            selectionAfter: FlarkSelection(
+              baseOffset: start,
+              extentOffset: start + innerText.length,
+            ),
+            metadata: FlarkTransactionMetadata(
+              intent: FlarkTransactionIntent.command,
+              userEvent: context.payload.userEvent,
+              parseInvalidationRange: FlarkSourceRange(start, end),
+              projectionInvalidationRange: FlarkSourceRange(start, end),
             ),
           ),
-        ),
+        );
+      }
+
+      if (hasLeadingMarker && hasTrailingMarker) {
+        return FlarkCommandResult.handled(
+          transaction: FlarkTransaction.single(
+            FlarkSourceOperation.replace(
+              replacedRange: FlarkSourceRange(markerStart, markerEnd),
+              replacementText: selectedText,
+            ),
+            selectionBefore: selection,
+            selectionAfter: FlarkSelection(
+              baseOffset: markerStart,
+              extentOffset: markerStart + selectedText.length,
+            ),
+            metadata: FlarkTransactionMetadata(
+              intent: FlarkTransactionIntent.command,
+              userEvent: context.payload.userEvent,
+              parseInvalidationRange: FlarkSourceRange(markerStart, markerEnd),
+              projectionInvalidationRange: FlarkSourceRange(
+                markerStart,
+                markerEnd,
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    if (partialOverlap) {
+      return FlarkCommandResult.rejected(
+        'Inline style toggling cannot partially overlap source markers.',
       );
     }
 
+    // No equivalent form brackets the selection: apply the style fresh with the
+    // canonical marker (`equivalentMarkers.first`).
+    final marker = context.payload.style.marker;
+    final markerLength = marker.length;
+
+    // The wrap hugs the selection's non-whitespace core: CommonMark refuses a
+    // delimiter stranded against whitespace (`**hello **` is literal text), so
+    // edge whitespace stays outside the markers and a whitespace-only
+    // selection has nothing to style. Inline code is exempt — backticks may
+    // legally hug whitespace, and relocating it would change the span's text.
+    var wrapped = '$marker$selectedText$marker';
+    var innerStart = start + markerLength;
+    var innerLength = selectedText.length;
+    if (context.payload.style != FlarkMarkdownInlineStyle.inlineCode) {
+      final split = FlarkInlineDelimiterPlacement.splitEdgeWhitespace(
+        selectedText,
+      );
+      if (split.core.isEmpty) {
+        return FlarkCommandResult.rejected(
+          'Inline style toggling requires non-whitespace content.',
+        );
+      }
+      wrapped = '${split.leading}$marker${split.core}$marker${split.trailing}';
+      innerStart = start + split.leading.length + markerLength;
+      innerLength = split.core.length;
+    }
     return FlarkCommandResult.handled(
       transaction: FlarkTransaction.single(
         FlarkSourceOperation.replace(
           replacedRange: FlarkSourceRange(start, end),
-          replacementText: '$marker$selectedText$marker',
+          replacementText: wrapped,
         ),
         selectionBefore: selection,
         selectionAfter: FlarkSelection(
-          baseOffset: start + markerLength,
-          extentOffset: start + markerLength + selectedText.length,
+          baseOffset: innerStart,
+          extentOffset: innerStart + innerLength,
         ),
         metadata: FlarkTransactionMetadata(
           intent: FlarkTransactionIntent.command,
@@ -154,7 +196,6 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
       ),
     );
   }
-
 
   /// Whether the marker candidate at [candidateStart] can act as one side of
   /// a toggle-off pair under CommonMark delimiter-run semantics.
@@ -177,7 +218,17 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
       runEnd += 1;
     }
     final runLength = runEnd - runStart;
-    return marker.length == 1 ? runLength.isOdd : runLength >= 2;
+    final validRun = marker.length == 1 ? runLength.isOdd : runLength >= 2;
+    if (!validRun) return false;
+    // An emphasis-family delimiter must also be flanking-valid to act as a
+    // marker here: an intraword `_`/`__`/`~` (the `_` in `my_variable`) is not
+    // a real emphasis delimiter, so a selection merely abutting one applies the
+    // style fresh instead of misreading it as a partial wrap and rejecting.
+    // Backticks carry no flanking rule (code spans pair by run) and are exempt.
+    if (markerChar == 0x60) return true;
+    final markerEnd = candidateStart + marker.length;
+    return FlarkInlineFlanking.canOpen(text, candidateStart, markerEnd) ||
+        FlarkInlineFlanking.canClose(text, candidateStart, markerEnd);
   }
 
   bool _hasUnescapedMarkerAt(String text, int offset, String marker) {

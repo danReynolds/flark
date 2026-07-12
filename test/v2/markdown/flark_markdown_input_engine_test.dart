@@ -338,6 +338,87 @@ void main() {
     );
   });
 
+  group('empty nested list item Enter outdents one level', () {
+    ({String source, FlarkSelection caret}) enterAt(
+      String markdown,
+      int caret,
+    ) {
+      final result = FlarkMarkdownInputEngine.enter(
+        markdown: markdown,
+        selection: FlarkSelection.collapsed(caret),
+      );
+      return (
+        source: markdown.replaceRange(
+          result.range.start,
+          result.range.end,
+          result.replacementText,
+        ),
+        caret: result.selectionAfter,
+      );
+    }
+
+    test('outdents a nested bullet item to the parent level', () {
+      final result = FlarkMarkdownInputEngine.enter(
+        markdown: '- outer\n  - ',
+        selection: const FlarkSelection.collapsed(12),
+      );
+
+      // The marker line is rewritten in place, outdented one level — no stray
+      // blank-indent line and the marker is preserved.
+      expect(result.range, const FlarkSourceRange(8, 12));
+      expect(result.replacementText, '- ');
+      expect(result.selectionAfter, const FlarkSelection.collapsed(10));
+
+      final out = enterAt('- outer\n  - ', 12);
+      expect(out.source, '- outer\n- ');
+    });
+
+    test('outdents a doubly-nested bullet item exactly one level', () {
+      final out = enterAt('- a\n  - b\n    - ', 16);
+      expect(out.source, '- a\n  - b\n  - ');
+      expect(out.caret, const FlarkSelection.collapsed(14));
+    });
+
+    test('exits the list from a top-level empty item', () {
+      final result = FlarkMarkdownInputEngine.enter(
+        markdown: '- outer\n- ',
+        selection: const FlarkSelection.collapsed(10),
+      );
+
+      // No indent left to remove: the outermost empty item still exits.
+      expect(result.range, const FlarkSourceRange(8, 10));
+      expect(result.replacementText, '\n');
+
+      final out = enterAt('- outer\n- ', 10);
+      expect(out.source, '- outer\n\n');
+      expect(out.caret, const FlarkSelection.collapsed(9));
+    });
+
+    test('outdents a nested item inside a blockquote, staying quoted', () {
+      final out = enterAt('> - a\n>   - ', 12);
+      expect(out.source, '> - a\n> - ');
+      expect(out.caret, const FlarkSelection.collapsed(10));
+    });
+
+    test('outdents a nested ordered item, keeping its number', () {
+      final out = enterAt('1. a\n   1. ', 11);
+      expect(out.source, '1. a\n1. ');
+      expect(out.caret, const FlarkSelection.collapsed(8));
+    });
+
+    test('outdents a nested task item, keeping the checkbox', () {
+      final out = enterAt('- outer\n  - [ ] ', 16);
+      expect(out.source, '- outer\n- [ ] ');
+      expect(out.caret, const FlarkSelection.collapsed(14));
+    });
+
+    test('outdents a tab-indented nested item by one tab', () {
+      final out = enterAt('- a\n\t- ', 7);
+      expect(out.source, '- a\n- ');
+      expect(out.caret, const FlarkSelection.collapsed(6));
+    });
+  });
+
   group('FlarkMarkdownInputEngine line manipulation', () {
     String apply(String markdown, FlarkMarkdownSourceEdit edit) {
       return markdown.replaceRange(

@@ -58,27 +58,35 @@ void main() {
       expect(ordered.markdown, '9)   item\n10)   ');
     });
 
-    test('exits empty unquoted list items', () {
-      final next = _enter('  - ', 4);
+    test('outdents empty nested list items, exits at the top level', () {
+      final nested = _enter('  - ', 4);
+      final topLevel = _enter('- ', 2);
 
-      expect(next.markdown, '  \n');
-      expect(next.selection, const FlarkSelection.collapsed(3));
+      // A nested empty item outdents one indentation level in place, keeping
+      // its marker, rather than leaving a stray blank-indent line.
+      expect(nested.markdown, '- ');
+      expect(nested.selection, const FlarkSelection.collapsed(2));
+      // The outermost empty item (no indent left to remove) exits the list.
+      expect(topLevel.markdown, '\n');
+      expect(topLevel.selection, const FlarkSelection.collapsed(1));
     });
 
-    test('exits empty quoted list items but keeps quote mode', () {
+    test('exits top-level quoted list items, outdents nested ones', () {
       final unordered = _enter('> - ', 4);
       final ordered = _enter('> 1. ', 5);
       final task = _enter('> - [ ] ', 8);
       final nested = _enter('>   - ', 6);
 
+      // Top-level empty items inside a quote exit the list but stay quoted.
       expect(unordered.markdown, '> \n> ');
       expect(unordered.selection, const FlarkSelection.collapsed(5));
       expect(ordered.markdown, '> \n> ');
       expect(ordered.selection, const FlarkSelection.collapsed(5));
       expect(task.markdown, '> \n> ');
       expect(task.selection, const FlarkSelection.collapsed(5));
-      expect(nested.markdown, '>   \n>   ');
-      expect(nested.selection, const FlarkSelection.collapsed(9));
+      // A nested empty item outdents one level in place, still quoted.
+      expect(nested.markdown, '> - ');
+      expect(nested.selection, const FlarkSelection.collapsed(4));
     });
 
     test('replaces selected source with a newline', () {

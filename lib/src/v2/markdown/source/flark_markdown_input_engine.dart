@@ -1,4 +1,5 @@
 import '../../core/core.dart';
+import '../inline/flark_inline_run_scanner.dart';
 import 'flark_markdown_editing_result.dart';
 import 'flark_markdown_fenced_code_policy.dart';
 
@@ -6,6 +7,52 @@ final class FlarkMarkdownInputEngine {
   const FlarkMarkdownInputEngine._();
 
   static FlarkMarkdownSourceEdit enter({
+    required String markdown,
+    required FlarkSelection selection,
+  }) {
+    return _shiftedOutOfInlineRunEdge(
+      markdown,
+      selection,
+      _enterEdit(markdown: markdown, selection: selection),
+    );
+  }
+
+  /// Moves an Enter insertion sitting on a flanking-valid inline run's edge
+  /// outside the run's delimiters.
+  ///
+  /// CommonMark refuses a delimiter stranded against a line break —
+  /// `**hello\n**` renders its markers as literal text — so Enter at a run's
+  /// trailing edge continues after the closing marker and Enter at the
+  /// leading edge breaks before the opening marker. Mid-run Enter is left
+  /// alone: a softbreak inside a run is legal. Only plain caret insertions
+  /// with the default caret placement are shifted; structural edits (heading
+  /// exits, emptied list items) keep their exact ranges.
+  static FlarkMarkdownSourceEdit _shiftedOutOfInlineRunEdge(
+    String markdown,
+    FlarkSelection selection,
+    FlarkMarkdownSourceEdit edit,
+  ) {
+    if (!selection.isCollapsed) return edit;
+    final range = edit.range;
+    if (!range.isCollapsed || range.start != selection.start) return edit;
+    if (!edit.replacementText.startsWith('\n')) return edit;
+    final defaultCaret = FlarkSelection.collapsed(
+      range.start + edit.replacementText.length,
+    );
+    if (edit.selectionAfter != defaultCaret) return edit;
+    final caret = range.start;
+    final closing = FlarkInlineRunScanner.runClosingAt(markdown, caret);
+    final shifted =
+        closing?.closeEnd ??
+        FlarkInlineRunScanner.runOpeningAt(markdown, caret)?.openStart;
+    if (shifted == null) return edit;
+    return _sourceEdit(
+      range: FlarkSourceRange(shifted, shifted),
+      replacementText: edit.replacementText,
+    );
+  }
+
+  static FlarkMarkdownSourceEdit _enterEdit({
     required String markdown,
     required FlarkSelection selection,
   }) {
@@ -137,9 +184,30 @@ final class FlarkMarkdownInputEngine {
     }
 
     return _sourceEdit(
-      range: FlarkSourceRange(selection.start - 1, selection.start),
+      range: FlarkSourceRange(
+        _backspaceGraphemeStart(markdown, selection.start),
+        selection.start,
+      ),
       replacementText: '',
     );
+  }
+
+  /// The start of the grapheme cluster ending at [caret], so the fallback
+  /// Backspace never splits a surrogate pair. Marker-stepping paths route a
+  /// collapsed Backspace through here (e.g. deleting an emoji sitting just
+  /// before a styled run's opening marker), where the platform's own
+  /// grapheme-aware default does not run. Surrogate pairs are the unambiguous
+  /// corruption case; combining/ZWJ clusters are left to the platform default
+  /// on the non-stepped path.
+  static int _backspaceGraphemeStart(String markdown, int caret) {
+    if (caret >= 2) {
+      final low = markdown.codeUnitAt(caret - 1);
+      final high = markdown.codeUnitAt(caret - 2);
+      if (low >= 0xDC00 && low <= 0xDFFF && high >= 0xD800 && high <= 0xDBFF) {
+        return caret - 2;
+      }
+    }
+    return caret - 1;
   }
 
   /// Indents the list item under a collapsed caret by one level, or null when
@@ -429,6 +497,19 @@ FlarkMarkdownSourceEdit _handleListEnter({
   required _ListContinuation list,
 }) {
   if (list.isEmptyItem) {
+    // A nested empty item outdents one level in place — the same indent step
+    // as Tab-outdent — keeping the item and re-emitting its marker at the
+    // parent level. Only at the outermost list level (no indent left to
+    // remove) does Enter exit the list.
+    final removable = _leadingOutdentWidth(list.indent, list.marker.length);
+    if (removable > 0) {
+      final outdentedIndent = list.indent.substring(removable);
+      final markerText = '${list.marker}${list.taskMarker ?? ''}';
+      return _sourceEdit(
+        range: FlarkSourceRange(line.start + quotePrefix.length, line.end),
+        replacementText: '$outdentedIndent$markerText',
+      );
+    }
     if (quotePrefix.isEmpty) {
       return _sourceEdit(
         range: FlarkSourceRange(line.start, line.end),

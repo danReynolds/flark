@@ -1,10 +1,63 @@
 import '../core/core.dart';
+import '../markdown/inline/flark_inline_delimiter_placement.dart';
 import 'flark_projection.dart';
+
+/// The resolved source edit for one display-text change.
+///
+/// [continuationMarker] is non-null when the edit committed whitespace
+/// outside that delimiter cluster to keep the source valid CommonMark; the
+/// controller re-arms the cluster's styles so the next styled keystroke
+/// re-enters the run instead of starting a sibling.
+final class FlarkProjectedEditResolution {
+  const FlarkProjectedEditResolution(
+    this.transaction, {
+    this.continuationMarker,
+    this.requestsImmediateParse = false,
+    this.authoredMarkers = const [],
+  });
+
+  final FlarkTransaction transaction;
+  final String? continuationMarker;
+
+  /// Whether the edit created or moved Markdown structure that should render
+  /// without waiting for the debounced parse.
+  final bool requestsImmediateParse;
+
+  /// Delimiter clusters the edit itself wrote (post-edit source coordinates),
+  /// for the controller to hide in the predicted projection immediately —
+  /// otherwise the editable resyncs transient raw markers to the platform,
+  /// flashing them and cancelling any active IME composition.
+  final List<FlarkAuthoredMarker> authoredMarkers;
+}
 
 final class FlarkProjectedTextEditAdapter {
   const FlarkProjectedTextEditAdapter();
 
+  /// Backwards-compatible projection of [resolveDisplayEdit] to its
+  /// transaction.
   FlarkTransaction? transactionFromDisplayEdit({
+    required String currentMarkdown,
+    required FlarkProjection projection,
+    required String oldDisplayText,
+    required String newDisplayText,
+    FlarkSelection? sourceSelectionBefore,
+    int? undoGroupId,
+    FlarkMapAffinity fallbackInsertionAffinity = FlarkMapAffinity.downstream,
+    ({String open, String close})? insertionWrap,
+  }) {
+    return resolveDisplayEdit(
+      currentMarkdown: currentMarkdown,
+      projection: projection,
+      oldDisplayText: oldDisplayText,
+      newDisplayText: newDisplayText,
+      sourceSelectionBefore: sourceSelectionBefore,
+      undoGroupId: undoGroupId,
+      fallbackInsertionAffinity: fallbackInsertionAffinity,
+      insertionWrap: insertionWrap,
+    )?.transaction;
+  }
+
+  FlarkProjectedEditResolution? resolveDisplayEdit({
     required String currentMarkdown,
     required FlarkProjection projection,
     required String oldDisplayText,
@@ -47,12 +100,19 @@ final class FlarkProjectedTextEditAdapter {
       projection: projection,
       sourceSelectionBefore: sourceSelectionBefore,
     );
-    if (markerExit != null) return markerExit;
+    if (markerExit != null) {
+      return FlarkProjectedEditResolution(markerExit);
+    }
 
-    // A pending ("armed") inline style wraps the typed run: a collapsed
-    // insertion becomes `open + text + close` with the caret left inside the
-    // run, so continued typing extends it through the normal caret-affinity
-    // model. Marker-exit above takes precedence (it returns early).
+    // The parser's own runs, not the textual scanner's approximation of them:
+    // placement decisions relocate delimiters, and only runs the parser
+    // actually recognizes may ever be touched.
+    final runs = projection.inlineRunScans(currentMarkdown);
+
+    // A pending ("armed") inline style wraps the typed run through the
+    // canonical placement rules: the wrap hugs the text's core, edge
+    // whitespace stays outside the delimiters, and typing in a re-entry gap
+    // extends the run. Marker-exit above takes precedence (it returns early).
     //
     // The wrap is skipped when its outer markers would sit flush against an
     // identical marker character already in the source — e.g. arming italic
@@ -67,26 +127,101 @@ final class FlarkProjectedTextEditAdapter {
           sourceRange.start,
           insertionWrap,
         )) {
-      final wrappedText =
-          '${insertionWrap.open}${diff.replacementText}${insertionWrap.close}';
-      return FlarkTransaction.single(
-        FlarkSourceOperation.replace(
-          replacedRange: sourceRange,
-          replacementText: wrappedText,
-        ),
-        selectionBefore: sourceSelectionBefore,
-        selectionAfter: FlarkSelection.collapsed(
-          sourceRange.start +
-              insertionWrap.open.length +
-              diff.replacementText.length,
-        ),
-        metadata: FlarkTransactionMetadata(
-          intent: FlarkTransactionIntent.input,
-          userEvent: 'input.projected.pendingInlineStyle',
+      final placement = FlarkInlineDelimiterPlacement.armedWrap(
+        source: currentMarkdown,
+        caret: sourceRange.start,
+        text: diff.replacementText,
+        open: insertionWrap.open,
+        close: insertionWrap.close,
+        // Inline code spans may legally hug whitespace; every other armed
+        // style must keep whitespace outside its delimiters.
+        edgeSensitive: !insertionWrap.open.contains('`'),
+        runs: runs,
+      );
+      return FlarkProjectedEditResolution(
+        _placementTransaction(
+          placement,
+          sourceSelectionBefore: sourceSelectionBefore,
           undoGroupId: undoGroupId,
-          parseInvalidationRange: sourceRange,
-          projectionInvalidationRange: sourceRange,
+          userEvent: 'input.projected.pendingInlineStyle',
         ),
+        continuationMarker: placement.continuationMarker,
+        requestsImmediateParse: true,
+        authoredMarkers: placement.authoredMarkers,
+      );
+    }
+
+    // An edit inside a flanking-valid run's content whose plain application
+    // would strand the run's delimiters against whitespace (typing a space at
+    // the trailing edge, deleting the last word before the close, replacing a
+    // selection with whitespace) relocates the delimiters instead, so the
+    // source never carries markers CommonMark would refuse.
+    final repair = FlarkInlineDelimiterPlacement.contentEditRepair(
+      source: currentMarkdown,
+      start: sourceRange.start,
+      end: sourceRange.end,
+      text: diff.replacementText,
+      runs: runs,
+    );
+    if (repair != null) {
+      return FlarkProjectedEditResolution(
+        _placementTransaction(
+          repair,
+          sourceSelectionBefore: sourceSelectionBefore,
+          undoGroupId: undoGroupId,
+          userEvent: 'input.projected.inlineEdgeRepair',
+        ),
+        continuationMarker: repair.continuationMarker,
+        requestsImmediateParse: true,
+        authoredMarkers: repair.authoredMarkers,
+      );
+    }
+
+    // An edit whose range covers one half of a hidden marker pair (a
+    // selection reaching across a run's edge) would orphan the surviving
+    // half as literal text; a deletion consuming the gap between two runs
+    // would fuse their delimiters. Both rebalance here. Code spans are
+    // included for the crossing repair only — an orphaned backtick turns
+    // the rest of the document into a code span — while the joining merge
+    // stays emphasis-family. Edits fully inside one run's content never
+    // reach this (contentEditRepair's territory), and edits covering a
+    // whole pair fall through to the expansion/plain handling below.
+    // Marker-crossing needs a range spanning a run edge and joining needs a
+    // gap-consuming deletion, so a plain collapsed insertion (the hot typing
+    // path) can match neither. Skip both — and the extra code-span scan
+    // `markerCrossingRepair` requires — on that path.
+    final balanceApplies =
+        !sourceRange.isCollapsed || diff.replacementText.isEmpty;
+    final balance = !balanceApplies
+        ? null
+        : FlarkInlineDelimiterPlacement.markerCrossingRepair(
+                source: currentMarkdown,
+                start: sourceRange.start,
+                end: sourceRange.end,
+                text: diff.replacementText,
+                runs: projection.inlineRunScans(
+                  currentMarkdown,
+                  includeCodeSpans: true,
+                ),
+              ) ??
+              FlarkInlineDelimiterPlacement.joiningDeletionRepair(
+                source: currentMarkdown,
+                start: sourceRange.start,
+                end: sourceRange.end,
+                text: diff.replacementText,
+                runs: runs,
+              );
+    if (balance != null) {
+      return FlarkProjectedEditResolution(
+        _placementTransaction(
+          balance,
+          sourceSelectionBefore: sourceSelectionBefore,
+          undoGroupId: undoGroupId,
+          userEvent: 'input.projected.inlineMarkerBalanceRepair',
+        ),
+        continuationMarker: balance.continuationMarker,
+        requestsImmediateParse: true,
+        authoredMarkers: balance.authoredMarkers,
       );
     }
 
@@ -94,21 +229,46 @@ final class FlarkProjectedTextEditAdapter {
         ? projection.expandDeletionOverInlineRunMarkers(sourceRange)
         : sourceRange;
 
+    return FlarkProjectedEditResolution(
+      FlarkTransaction.single(
+        FlarkSourceOperation.replace(
+          replacedRange: effectiveRange,
+          replacementText: diff.replacementText,
+        ),
+        selectionBefore: sourceSelectionBefore,
+        selectionAfter: FlarkSelection.collapsed(
+          effectiveRange.start + diff.replacementText.length,
+        ),
+        metadata: FlarkTransactionMetadata(
+          intent: FlarkTransactionIntent.input,
+          userEvent: 'input.projected',
+          undoGroupId: undoGroupId,
+          parseInvalidationRange: effectiveRange,
+          projectionInvalidationRange: effectiveRange,
+        ),
+      ),
+    );
+  }
+
+  static FlarkTransaction _placementTransaction(
+    FlarkInlinePlacementEdit placement, {
+    required FlarkSelection? sourceSelectionBefore,
+    required int? undoGroupId,
+    required String userEvent,
+  }) {
     return FlarkTransaction.single(
       FlarkSourceOperation.replace(
-        replacedRange: effectiveRange,
-        replacementText: diff.replacementText,
+        replacedRange: placement.range,
+        replacementText: placement.replacement,
       ),
       selectionBefore: sourceSelectionBefore,
-      selectionAfter: FlarkSelection.collapsed(
-        effectiveRange.start + diff.replacementText.length,
-      ),
+      selectionAfter: FlarkSelection.collapsed(placement.caretAfter),
       metadata: FlarkTransactionMetadata(
         intent: FlarkTransactionIntent.input,
-        userEvent: 'input.projected',
+        userEvent: userEvent,
         undoGroupId: undoGroupId,
-        parseInvalidationRange: effectiveRange,
-        projectionInvalidationRange: effectiveRange,
+        parseInvalidationRange: placement.range,
+        projectionInvalidationRange: placement.range,
       ),
     );
   }

@@ -651,8 +651,9 @@ final class _CodeCopyButton extends StatelessWidget {
     final labelStyle = style.copyWith(
       color: theme.chromeLabelColor,
       fontFamily: 'monospace',
-      fontSize: (style.fontSize ?? 14) - 1,
-      fontWeight: FontWeight.w700,
+      fontSize: 12,
+      height: 1.2,
+      fontWeight: FontWeight.w600,
     );
     void copy() {
       Clipboard.setData(ClipboardData(text: source));
@@ -710,8 +711,9 @@ final class _CodeLanguageBadge extends StatelessWidget {
             style: style.copyWith(
               color: theme.chromeLabelColor,
               fontFamily: 'monospace',
-              fontSize: (style.fontSize ?? 14) - 1,
-              fontWeight: FontWeight.w700,
+              fontSize: 12,
+              height: 1.2,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),
@@ -768,8 +770,9 @@ final class _CodeLanguageSelectorState extends State<_CodeLanguageSelector> {
     final labelStyle = widget.style.copyWith(
       color: theme.chromeLabelColor,
       fontFamily: 'monospace',
-      fontSize: (widget.style.fontSize ?? 14) - 1,
-      fontWeight: FontWeight.w700,
+      fontSize: 12,
+      height: 1.2,
+      fontWeight: FontWeight.w600,
     );
 
     return CompositedTransformTarget(

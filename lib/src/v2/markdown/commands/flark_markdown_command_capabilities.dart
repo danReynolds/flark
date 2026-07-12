@@ -1,4 +1,6 @@
 import '../../core/state/flark_editor_state.dart';
+import '../inline/flark_inline_flanking.dart';
+import '../inline/flark_inline_run_scanner.dart';
 import '../inline/flark_markdown_inline_style.dart';
 import '../source/flark_markdown_line_selection.dart';
 
@@ -53,8 +55,9 @@ abstract final class FlarkMarkdownCommandQueries {
   }
 
   /// The source span of the inline [style] run enclosing a collapsed caret, or
-  /// null when the caret is not inside such a run. Emphasis matches either `*`
-  /// or `_` delimiters.
+  /// null when the caret is not inside such a run. Every equivalent delimiter
+  /// form is matched, so emphasis resolves `*` or `_`, strong `**` or `__`, and
+  /// strikethrough `~~` or `~`.
   static FlarkInlineRunRange? enclosingInlineRun(
     FlarkEditorState state,
     FlarkMarkdownInlineStyle style,
@@ -63,10 +66,7 @@ abstract final class FlarkMarkdownCommandQueries {
     if (!selection.isCollapsed) return null;
     final text = state.markdown;
     final caret = selection.extentOffset.clamp(0, text.length);
-    final markers = style == FlarkMarkdownInlineStyle.emphasis
-        ? const ['*', '_']
-        : [style.marker];
-    for (final marker in markers) {
+    for (final marker in style.equivalentMarkers) {
       final run = _enclosingDelimitedRun(text, caret, marker);
       if (run != null) return run;
     }
@@ -112,18 +112,23 @@ Set<FlarkMarkdownInlineStyle> _activeInlineStyles(
     final rangeStart = selection.start.clamp(0, text.length);
     final rangeEnd = selection.end.clamp(rangeStart, text.length);
 
-    if (_isInsideInlineCode(text, rangeStart, rangeStart, rangeEnd)) {
-      styles.add(FlarkMarkdownInlineStyle.inlineCode);
-    }
-    if (_isInsideDelimitedSpan(text, rangeStart, rangeStart, rangeEnd, '**')) {
-      styles.add(FlarkMarkdownInlineStyle.strong);
-    }
-    if (_isInsideDelimitedSpan(text, rangeStart, rangeStart, rangeEnd, '*') ||
-        _isInsideDelimitedSpan(text, rangeStart, rangeStart, rangeEnd, '_')) {
-      styles.add(FlarkMarkdownInlineStyle.emphasis);
-    }
-    if (_isInsideDelimitedSpan(text, rangeStart, rangeStart, rangeEnd, '~~')) {
-      styles.add(FlarkMarkdownInlineStyle.strikethrough);
+    // Each style is active when any of its equivalent delimiter forms brackets
+    // the probe — strong matches `**` or `__`, strikethrough `~~` or `~`, so a
+    // caret in `__x__` or `~x~` lights the toolbar just like its canonical
+    // spelling. The `~` probe cannot false-match inside `~~`: `_isDelimiterRun`
+    // (textual path) and the run scanner's exact-cluster check (enclosing path)
+    // both reject a single tilde that is part of a longer run.
+    for (final style in FlarkMarkdownInlineStyle.values) {
+      final active = style.equivalentMarkers.any(
+        (marker) => _isInsideDelimitedSpan(
+          text,
+          rangeStart,
+          rangeStart,
+          rangeEnd,
+          marker,
+        ),
+      );
+      if (active) styles.add(style);
     }
   }
 
@@ -132,15 +137,6 @@ Set<FlarkMarkdownInlineStyle> _activeInlineStyles(
   // carries the markers.
   if (selection.isCollapsed) styles.removeAll(mutedInlineStyles);
   return styles;
-}
-
-bool _isInsideInlineCode(
-  String text,
-  int probeOffset,
-  int rangeStart,
-  int rangeEnd,
-) {
-  return _isInsideDelimitedSpan(text, probeOffset, rangeStart, rangeEnd, '`');
 }
 
 bool _isInsideDelimitedSpan(
@@ -160,7 +156,21 @@ bool _isInsideDelimitedSpan(
       // one — otherwise a `*` italic probe matches the inner `*` of a `**`
       // bold pair, so bolding a selection falsely reports italic active too.
       _isDelimiterRun(text, rangeStart - delimiter.length, delimiter) &&
-      _isDelimiterRun(text, rangeEnd, delimiter)) {
+      _isDelimiterRun(text, rangeEnd, delimiter) &&
+      // The bracketing pair must also be flanking-valid, or CommonMark would
+      // render it as literal text (`**hello **` carries no style to report).
+      // Code spans have no flanking rules.
+      (delimiter == '`' ||
+          (FlarkInlineFlanking.canOpen(
+                text,
+                rangeStart - delimiter.length,
+                rangeStart,
+              ) &&
+              FlarkInlineFlanking.canClose(
+                text,
+                rangeEnd,
+                rangeEnd + delimiter.length,
+              )))) {
     return true;
   }
 
@@ -170,7 +180,46 @@ bool _isInsideDelimitedSpan(
 /// The run of [delimiter] enclosing a collapsed caret at [probeOffset], or
 /// null. A caret exactly at the closing delimiter's start counts as inside the
 /// run (its trailing edge).
+///
+/// Emphasis-family delimiters resolve through the flanking-aware
+/// [FlarkInlineRunScanner], probing the stacked clusters too, so a caret in
+/// `***x***` reads as both strong and emphasis while `**foo **`-shaped
+/// literal text reads as no run at all — the toolbar, muted exits, and style
+/// switches all share the parser's notion of a run. Code spans have no
+/// flanking rules and keep the plain textual scan.
 FlarkInlineRunRange? _enclosingDelimitedRun(
+  String text,
+  int probeOffset,
+  String delimiter,
+) {
+  if (delimiter == '`') {
+    return _legacyEnclosingDelimitedRun(text, probeOffset, delimiter);
+  }
+  final clusters = switch (delimiter) {
+    '**' => const ['**', '__', '***', '___'],
+    '*' => const ['*', '***'],
+    '_' => const ['_', '___'],
+    _ => [delimiter],
+  };
+  for (final cluster in clusters) {
+    final run = FlarkInlineRunScanner.validEnclosingRun(
+      text,
+      probeOffset,
+      cluster,
+    );
+    if (run != null) {
+      return FlarkInlineRunRange(
+        openStart: run.openStart,
+        contentStart: run.contentStart,
+        closeStart: run.closeStart,
+        closeEnd: run.closeEnd,
+      );
+    }
+  }
+  return null;
+}
+
+FlarkInlineRunRange? _legacyEnclosingDelimitedRun(
   String text,
   int probeOffset,
   String delimiter,
@@ -227,7 +276,11 @@ int? _findClosingDelimiter(String text, String delimiter, int startOffset) {
 }
 
 bool _isDelimiterRun(String text, int offset, String delimiter) {
-  if (delimiter != '*' && delimiter != '_') return true;
+  // Only the single-character emphasis-family delimiters need the run-length
+  // check: a lone `*`, `_`, or `~` is a run only when it is not adjacent to
+  // another of the same character (so a `~` probe never matches the inner
+  // tilde of `~~`). The two-character forms (`**`, `__`, `~~`) always qualify.
+  if (delimiter != '*' && delimiter != '_' && delimiter != '~') return true;
   final codeUnit = delimiter.codeUnitAt(0);
   final before = offset > 0 ? text.codeUnitAt(offset - 1) : null;
   final afterOffset = offset + delimiter.length;

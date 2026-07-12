@@ -184,6 +184,7 @@ export 'src/v2/projection/projection.dart'
         FlarkCursorMask,
         FlarkHiddenRange,
         FlarkHiddenRangeKind,
+        FlarkProjectedEditResolution,
         FlarkProjectedTextEditAdapter,
         FlarkProjection,
         FlarkProjectionAmbiguityKind,

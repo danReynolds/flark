@@ -69,10 +69,73 @@ void main() {
         expect(
           capabilities.isInlineStyleActive(probe.$3),
           isTrue,
-          reason: '${probe.$3} should be active at offset ${probe.$2} '
+          reason:
+              '${probe.$3} should be active at offset ${probe.$2} '
               'in "${probe.$1}"',
         );
       }
+    });
+
+    test('reports a caret inside either equivalent delimiter form as active', () {
+      // A caret inside a styled run must light the style regardless of which
+      // equivalent spelling wraps it. Against the pre-fix capability layer the
+      // single-tilde `~text~` case reads strikethrough INACTIVE (only `~~` was
+      // probed), so the toolbar and the collapsed-caret muted exit both miss
+      // it.
+      for (final probe in <(String, int, FlarkMarkdownInlineStyle)>[
+        ('*text*', 3, FlarkMarkdownInlineStyle.emphasis),
+        ('_text_', 3, FlarkMarkdownInlineStyle.emphasis),
+        ('**text**', 4, FlarkMarkdownInlineStyle.strong),
+        ('__text__', 4, FlarkMarkdownInlineStyle.strong),
+        ('~~text~~', 4, FlarkMarkdownInlineStyle.strikethrough),
+        ('~text~', 3, FlarkMarkdownInlineStyle.strikethrough),
+        ('`text`', 3, FlarkMarkdownInlineStyle.inlineCode),
+      ]) {
+        final state = FlarkEditorState.fromMarkdown(
+          probe.$1,
+          selection: FlarkSelection.collapsed(probe.$2),
+        );
+        final capabilities =
+            FlarkMarkdownCommandQueries.capabilitiesAtSelection(state);
+        expect(
+          capabilities.isInlineStyleActive(probe.$3),
+          isTrue,
+          reason:
+              '${probe.$3} should be active at offset ${probe.$2} '
+              'in "${probe.$1}"',
+        );
+      }
+    });
+
+    test('does not read a single-tilde probe inside a double-tilde run', () {
+      // The `~` probe must not false-match the inner tilde of `~~`. A selection
+      // spanning `~s~` inside `~~s~~` is bracketed by halves of the `~~`
+      // delimiters, not by standalone single-tilde markers, so strikethrough is
+      // reported only through the genuine `~~` pair — never twice, never from a
+      // spurious `~` run.
+      final caretInside = FlarkEditorState.fromMarkdown(
+        '~~s~~',
+        selection: const FlarkSelection.collapsed(2),
+      );
+      expect(
+        FlarkMarkdownCommandQueries.capabilitiesAtSelection(
+          caretInside,
+        ).isInlineStyleActive(FlarkMarkdownInlineStyle.strikethrough),
+        isTrue,
+      );
+
+      // A selection over the inner `~s~` (offsets 1..4) is NOT a single-tilde
+      // run; strikethrough must not read active off the `~` halves of `~~`.
+      final innerSpan = FlarkEditorState.fromMarkdown(
+        '~~s~~',
+        selection: const FlarkSelection(baseOffset: 1, extentOffset: 4),
+      );
+      expect(
+        FlarkMarkdownCommandQueries.capabilitiesAtSelection(
+          innerSpan,
+        ).isInlineStyleActive(FlarkMarkdownInlineStyle.strikethrough),
+        isFalse,
+      );
     });
 
     test('does not report a caret outside a run as inside it', () {
@@ -92,7 +155,8 @@ void main() {
         expect(
           capabilities.isInlineStyleActive(FlarkMarkdownInlineStyle.strong),
           isFalse,
-          reason: 'strong should be inactive at offset ${probe.$2} '
+          reason:
+              'strong should be inactive at offset ${probe.$2} '
               'in "${probe.$1}"',
         );
       }

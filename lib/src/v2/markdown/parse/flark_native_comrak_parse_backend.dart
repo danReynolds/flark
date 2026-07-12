@@ -335,6 +335,12 @@ FlarkMarkdownParseResult _mapNativeResult(
     mapper,
     native.inlineTokens,
   );
+  final singleTildeMarkerRanges = _singleTildeStrikethroughMarkerRanges(
+    request.markdown,
+    mapper,
+    native.inlineTokens,
+    mappedMarkerRanges,
+  );
   final partialStrongIntentInlineTokens = [
     for (final token in native.inlineTokens)
       if (_isPartialStrongIntentEmphasis(request.markdown, mapper, token))
@@ -407,8 +413,10 @@ FlarkMarkdownParseResult _mapNativeResult(
     renderBlocks,
     mappedMarkerRanges,
   );
-  final nativeMarkdownMarkerRanges =
-      _nativeMarkdownMarkerHiddenRanges(mappedMarkerRanges, [
+  final nativeMarkdownMarkerRanges = _nativeMarkdownMarkerHiddenRanges([
+    ...mappedMarkerRanges,
+    ...singleTildeMarkerRanges,
+  ], [
         ...referenceDefinitionRanges,
         ...rawHtmlRanges,
         for (final range in nativeInlineHiddenRanges) range.sourceRange,
@@ -1124,6 +1132,48 @@ List<FlarkSourceRange> _codeFenceClosingLineRanges(
   }
 
   return hiddenRanges;
+}
+
+/// Marker ranges for single-tilde strikethrough runs (`~x~`), which the
+/// native bridge styles (GFM allows one tilde) but emits no marker ranges
+/// for — unlike `~~`. Without synthesis the run renders styled with its
+/// delimiters still visible, an inconsistency the render specs pin.
+List<FlarkSourceRange> _singleTildeStrikethroughMarkerRanges(
+  String markdown,
+  FlarkUtf8Utf16Mapper mapper,
+  List<NativeComrakInlineToken> tokens,
+  List<FlarkSourceRange> emittedMarkerRanges,
+) {
+  final emittedIndex = _FlarkSourceRangeIndex(emittedMarkerRanges);
+  final ranges = <FlarkSourceRange>[];
+  for (final token in tokens) {
+    if (!token.styles.any((style) => _inlineType(style) == 'strikethrough')) {
+      continue;
+    }
+    final range = _mapRange(mapper, token.range);
+    if (range.start < 0 ||
+        range.end > markdown.length ||
+        range.end - range.start < 3) {
+      continue;
+    }
+    if (markdown.codeUnitAt(range.start) != 0x7E ||
+        markdown.codeUnitAt(range.end - 1) != 0x7E) {
+      continue;
+    }
+    // Only the single-tilde form needs synthesis; `~~` markers arrive from
+    // the bridge and must not be double-hidden.
+    if (markdown.codeUnitAt(range.start + 1) == 0x7E ||
+        markdown.codeUnitAt(range.end - 2) == 0x7E) {
+      continue;
+    }
+    final open = FlarkSourceRange(range.start, range.start + 1);
+    final close = FlarkSourceRange(range.end - 1, range.end);
+    if (emittedIndex.overlaps(open) || emittedIndex.overlaps(close)) continue;
+    ranges
+      ..add(open)
+      ..add(close);
+  }
+  return ranges;
 }
 
 List<FlarkMarkdownHiddenRange> _nativeInlineHiddenRanges(

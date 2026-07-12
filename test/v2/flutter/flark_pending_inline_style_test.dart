@@ -3,6 +3,14 @@ import 'package:flark/src/v2/core/core.dart';
 import 'package:flark/src/v2/flutter/flutter.dart';
 import 'package:flark/src/v2/markdown/markdown.dart';
 
+/// State semantics of the armed-formatting model: what arming/muting/switching
+/// does to [FlarkFlutterController.pendingInlineStyles]/[mutedInlineStyles],
+/// the toolbar-active flags, events, and the immediate-parse flag.
+///
+/// *Behavioral* outcomes of typing with these states — the sources produced,
+/// whitespace placement, exits, splits — live in the gated scenario catalog
+/// (flark_inline_style_sequence_test.dart) and the one-string render specs
+/// (flark_markdown_render_spec_test.dart); don't duplicate them here.
 void main() {
   group('Pending inline styles (armed formatting)', () {
     test('collapsed toggle arms the style without editing the document', () {
@@ -83,52 +91,16 @@ void main() {
       expect(controller.commands.strongActive, isFalse);
     });
 
-    test('stacked bold + italic wraps the typed run as ***x***', () {
+    test('stacked arming tracks both styles', () {
       final controller = FlarkFlutterController.fromMarkdown('');
       addTearDown(controller.dispose);
 
       controller.commands.toggleStrong();
       controller.commands.toggleEmphasis();
+
       expect(controller.pendingInlineStyles, hasLength(2));
-
-      final applied = controller.applyProjectedTextEdit(
-        oldDisplayText: '',
-        newDisplayText: 'x',
-      );
-
-      expect(applied, isTrue);
-      expect(controller.markdown, '***x***');
-      expect(controller.selection, const FlarkSelection.collapsed(4));
-    });
-
-    test('inline code arming wraps the typed run in backticks', () {
-      final controller = FlarkFlutterController.fromMarkdown('');
-      addTearDown(controller.dispose);
-
-      controller.commands.toggleInlineCode();
-      expect(
-        controller.applyProjectedTextEdit(
-          oldDisplayText: '',
-          newDisplayText: 'x',
-        ),
-        isTrue,
-      );
-      expect(controller.markdown, '`x`');
-    });
-
-    test('strikethrough arming wraps the typed run in tildes', () {
-      final controller = FlarkFlutterController.fromMarkdown('');
-      addTearDown(controller.dispose);
-
-      controller.commands.toggleStrikethrough();
-      expect(
-        controller.applyProjectedTextEdit(
-          oldDisplayText: '',
-          newDisplayText: 'x',
-        ),
-        isTrue,
-      );
-      expect(controller.markdown, '~~x~~');
+      expect(controller.commands.strongActive, isTrue);
+      expect(controller.commands.emphasisActive, isTrue);
     });
 
     test('collapsed toggle off arms muted without editing or moving', () {
@@ -158,9 +130,13 @@ void main() {
       }
     });
 
-    test('toggling off mid-run splits the run on the next character', () {
+    test('a muted exit consumes the muted set', () async {
       final controller = FlarkFlutterController.fromMarkdown('**bold**');
       addTearDown(controller.dispose);
+      // A muted exit relocates the run's delimiters, so it engages only for
+      // runs the parser has recognized (via the projection) — never for a
+      // textual guess. Surfaces parse on attach; do the same here.
+      await controller.parseNow();
       controller.applySelection(
         const FlarkSelection.collapsed(4), // mid "bold"
         userEvent: 'test',
@@ -172,33 +148,14 @@ void main() {
         contains(FlarkMarkdownInlineStyle.strong),
       );
 
-      final applied = controller.applyProjectedTextEdit(
-        oldDisplayText: '**bold**',
-        newDisplayText: '**boxld**',
+      expect(
+        controller.applyProjectedTextEdit(
+          oldDisplayText: 'bold',
+          newDisplayText: 'boxld',
+        ),
+        isTrue,
       );
-
-      expect(applied, isTrue);
-      // The run is split: "bo" bold, "x" plain, "ld" bold. Existing text intact.
-      expect(controller.markdown, '**bo**x**ld**');
       expect(controller.mutedInlineStyles, isEmpty);
-    });
-
-    test('toggling off at the trailing edge exits on the next character', () {
-      final controller = FlarkFlutterController.fromMarkdown('**bold**');
-      addTearDown(controller.dispose);
-      controller.applySelection(
-        const FlarkSelection.collapsed(6), // trailing edge, inside
-        userEvent: 'test',
-      );
-
-      controller.commands.toggleStrong();
-      final applied = controller.applyProjectedTextEdit(
-        oldDisplayText: '**bold**',
-        newDisplayText: '**boldx**',
-      );
-
-      expect(applied, isTrue);
-      expect(controller.markdown, '**bold**x');
     });
 
     test('collapsed toggle off never arms, unwraps, or corrupts', () {
@@ -270,57 +227,6 @@ void main() {
       );
     });
 
-    test('switched run exits as a clean sibling with an alternate marker', () async {
-      // Typing after the switch lands the new text in a sibling italic run
-      // built from `_` so it does not collide with the bold `**` — the
-      // canonical, fully-rendered `**bold**_x_` (strong then emphasis).
-      final controller = FlarkFlutterController.fromMarkdown('**bold**');
-      addTearDown(controller.dispose);
-      await controller.parseNow();
-      controller.applySelection(
-        const FlarkSelection.collapsed(6),
-        userEvent: 'test',
-      );
-
-      controller.commands.toggleEmphasis();
-      expect(
-        controller.applyProjectedTextEdit(
-          oldDisplayText: 'bold',
-          newDisplayText: 'boldx',
-        ),
-        isTrue,
-      );
-
-      expect(controller.markdown, '**bold**_x_');
-      // The caret sits inside the new italic run, so typing continues italic.
-      expect(controller.selection, const FlarkSelection.collapsed(10));
-      await controller.parseNow();
-      expect(controller.projection.projectText(controller.markdown), 'boldx');
-    });
-
-    test('switch is symmetric: italic → bold uses `__`', () async {
-      final controller = FlarkFlutterController.fromMarkdown('*it*');
-      addTearDown(controller.dispose);
-      await controller.parseNow();
-      controller.applySelection(
-        const FlarkSelection.collapsed(3),
-        userEvent: 'test',
-      );
-
-      controller.commands.toggleStrong();
-      expect(
-        controller.applyProjectedTextEdit(
-          oldDisplayText: 'it',
-          newDisplayText: 'itz',
-        ),
-        isTrue,
-      );
-
-      expect(controller.markdown, '*it*__z__');
-      await controller.parseNow();
-      expect(controller.projection.projectText(controller.markdown), 'itz');
-    });
-
     test('a lone literal marker has no run to switch out of (stays a no-op)', () {
       // No enclosing run, so there is nothing to switch — the toggle no-ops and
       // the toolbar stays honest rather than arming a style that would drop.
@@ -338,25 +244,28 @@ void main() {
       expect(controller.commands.emphasisActive, isFalse);
     });
 
-    test('arms a second style mid-run where nesting is representable', () async {
-      // Emphasis inside a bold run with trailing bold text (`**ab*x*c**`) is
-      // representable, so arming italic in the middle does light the toolbar.
-      final controller = FlarkFlutterController.fromMarkdown('**abc**');
-      addTearDown(controller.dispose);
-      await controller.parseNow();
-      controller.applySelection(
-        const FlarkSelection.collapsed(4), // between 'b' and 'c'
-        userEvent: 'test',
-      );
+    test(
+      'arms a second style mid-run where nesting is representable',
+      () async {
+        // Emphasis inside a bold run with trailing bold text (`**ab*x*c**`) is
+        // representable, so arming italic in the middle does light the toolbar.
+        final controller = FlarkFlutterController.fromMarkdown('**abc**');
+        addTearDown(controller.dispose);
+        await controller.parseNow();
+        controller.applySelection(
+          const FlarkSelection.collapsed(4), // between 'b' and 'c'
+          userEvent: 'test',
+        );
 
-      controller.commands.toggleEmphasis();
+        controller.commands.toggleEmphasis();
 
-      expect(
-        controller.pendingInlineStyles,
-        contains(FlarkMarkdownInlineStyle.emphasis),
-      );
-      expect(controller.commands.emphasisActive, isTrue);
-    });
+        expect(
+          controller.pendingInlineStyles,
+          contains(FlarkMarkdownInlineStyle.emphasis),
+        );
+        expect(controller.commands.emphasisActive, isTrue);
+      },
+    );
 
     test('an armed wrap flags an immediate parse; plain typing does not', () {
       final armed = FlarkFlutterController.fromMarkdown('');
@@ -367,7 +276,10 @@ void main() {
 
       final plain = FlarkFlutterController.fromMarkdown('ab');
       addTearDown(plain.dispose);
-      plain.applySelection(const FlarkSelection.collapsed(1), userEvent: 'test');
+      plain.applySelection(
+        const FlarkSelection.collapsed(1),
+        userEvent: 'test',
+      );
       plain.applyProjectedTextEdit(oldDisplayText: 'ab', newDisplayText: 'axb');
       expect(plain.lastEditRequestsImmediateParse, isFalse);
     });
@@ -384,7 +296,10 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(events, hasLength(1));
-      expect(events.single.kind, FlarkControllerEventKind.pendingInlineStylesChanged);
+      expect(
+        events.single.kind,
+        FlarkControllerEventKind.pendingInlineStylesChanged,
+      );
       // A pure arming change touches neither document nor selection, so it does
       // not leak into the markdown/selection projections.
       expect(events.single.markdownChanged, isFalse);

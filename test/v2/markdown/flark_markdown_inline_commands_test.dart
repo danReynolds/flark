@@ -34,6 +34,32 @@ void main() {
       );
     });
 
+    test('applies fresh over a word abutting an intraword underscore', () {
+      // 'my_variable', select 'variable' (3..11): its left edge touches the
+      // intraword `_`, which is NOT a real emphasis delimiter (flanking), so
+      // Italic must wrap fresh rather than misread a partial `_` wrap and
+      // reject (which would leave the word unformatted).
+      final state = FlarkEditorState.fromMarkdown(
+        'my_variable',
+        selection: const FlarkSelection(baseOffset: 3, extentOffset: 11),
+      );
+      final registry = FlarkExtensionSet([
+        const FlarkMarkdownInlineEditingExtension(),
+      ]).commandRegistry();
+
+      final result = registry.dispatch(
+        state: state,
+        command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+        payload: const FlarkToggleInlineStylePayload(
+          FlarkMarkdownInlineStyle.emphasis,
+        ),
+      );
+
+      expect(result.isHandled, isTrue);
+      final next = state.applyTransaction(result.transaction!);
+      expect(next.markdown, 'my_*variable*');
+    });
+
     test('unwraps markers around a selected source range', () {
       final state = FlarkEditorState.fromMarkdown(
         '**world**',
@@ -246,6 +272,92 @@ void main() {
         next.selection,
         const FlarkSelection(baseOffset: 3, extentOffset: 8),
       );
+    });
+
+    test('unwraps a selection wrapped in either equivalent delimiter form', () {
+      // Toggling a style off must unwrap whichever spelling the source uses,
+      // canonical or alternate. Against the pre-fix command every alternate row
+      // corrupts instead of unwrapping (e.g. `_text_` -> `_*text*_`, `__text__`
+      // -> `__**text**__`, `~text~` -> `~~~text~~~`) because only the canonical
+      // marker was recognized.
+      final registry = FlarkExtensionSet([
+        const FlarkMarkdownInlineEditingExtension(),
+      ]).commandRegistry();
+
+      for (final probe in <(String, int, int, FlarkMarkdownInlineStyle)>[
+        // (wrapped source, inner start, inner end, style)
+        ('*text*', 1, 5, FlarkMarkdownInlineStyle.emphasis),
+        ('_text_', 1, 5, FlarkMarkdownInlineStyle.emphasis),
+        ('**text**', 2, 6, FlarkMarkdownInlineStyle.strong),
+        ('__text__', 2, 6, FlarkMarkdownInlineStyle.strong),
+        ('~~text~~', 2, 6, FlarkMarkdownInlineStyle.strikethrough),
+        ('~text~', 1, 5, FlarkMarkdownInlineStyle.strikethrough),
+        ('`text`', 1, 5, FlarkMarkdownInlineStyle.inlineCode),
+      ]) {
+        final state = FlarkEditorState.fromMarkdown(
+          probe.$1,
+          selection: FlarkSelection(
+            baseOffset: probe.$2,
+            extentOffset: probe.$3,
+          ),
+        );
+        final result = registry.dispatch(
+          state: state,
+          command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+          payload: FlarkToggleInlineStylePayload(probe.$4),
+        );
+
+        expect(
+          result.isHandled,
+          isTrue,
+          reason: 'toggling ${probe.$4} over "${probe.$1}" should unwrap',
+        );
+        final next = state.applyTransaction(result.transaction!);
+        expect(
+          next.markdown,
+          'text',
+          reason: 'toggling ${probe.$4} over "${probe.$1}" should yield "text"',
+        );
+        expect(
+          next.selection,
+          const FlarkSelection(baseOffset: 0, extentOffset: 4),
+          reason: 'unwrapping "${probe.$1}" should reselect the inner text',
+        );
+      }
+    });
+
+    test('applies a style to plain text with the canonical marker', () {
+      // The control for the unwrap matrix: applying a style always writes the
+      // canonical delimiter, never an alternate.
+      final registry = FlarkExtensionSet([
+        const FlarkMarkdownInlineEditingExtension(),
+      ]).commandRegistry();
+
+      for (final probe in <(FlarkMarkdownInlineStyle, String)>[
+        (FlarkMarkdownInlineStyle.emphasis, '*text*'),
+        (FlarkMarkdownInlineStyle.strong, '**text**'),
+        (FlarkMarkdownInlineStyle.strikethrough, '~~text~~'),
+        (FlarkMarkdownInlineStyle.inlineCode, '`text`'),
+      ]) {
+        final state = FlarkEditorState.fromMarkdown(
+          'text',
+          selection: const FlarkSelection(baseOffset: 0, extentOffset: 4),
+        );
+        final result = registry.dispatch(
+          state: state,
+          command: FlarkMarkdownInlineCommands.toggleInlineStyle,
+          payload: FlarkToggleInlineStylePayload(probe.$1),
+        );
+        final next = state.applyTransaction(result.transaction!);
+
+        expect(
+          next.markdown,
+          probe.$2,
+          reason:
+              'applying ${probe.$1} to plain text should write the '
+              'canonical marker',
+        );
+      }
     });
 
     test('rejects collapsed selections until active mark state exists', () {
