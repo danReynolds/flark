@@ -268,6 +268,18 @@ void main() {
                   endByte: mapper.utf8OffsetForUtf16Offset(text.length),
                 ),
                 styles: const {'link'},
+                markerRanges: [
+                  NativeComrakRange(
+                    startByte: mapper.utf8OffsetForUtf16Offset(linkStart),
+                    endByte: mapper.utf8OffsetForUtf16Offset(linkStart + 1),
+                  ),
+                  NativeComrakRange(
+                    startByte: mapper.utf8OffsetForUtf16Offset(
+                      text.indexOf('](', linkStart),
+                    ),
+                    endByte: mapper.utf8OffsetForUtf16Offset(text.length),
+                  ),
+                ],
                 payload: const {'destination': '/a&amp;b', 'label': 'x'},
               ),
             ],
@@ -998,6 +1010,19 @@ void main() {
                   ),
                 ),
                 styles: const {'link'},
+                // Bridge protocol v2: markup arrives as AST-derived
+                // per-token ranges — `[` opener, `](dest)` tail.
+                markerRanges: [
+                  const NativeComrakRange(startByte: 0, endByte: 1),
+                  NativeComrakRange(
+                    startByte: mapper.utf8OffsetForUtf16Offset(
+                      '[OpenAI'.length,
+                    ),
+                    endByte: mapper.utf8OffsetForUtf16Offset(
+                      '[OpenAI](https://openai.com)'.length,
+                    ),
+                  ),
+                ],
                 payload: const {
                   'destination': 'https://openai.com',
                   'label': 'OpenAI',
@@ -1009,6 +1034,20 @@ void main() {
                   endByte: mapper.utf8OffsetForUtf16Offset(text.length),
                 ),
                 styles: const {'image'},
+                markerRanges: [
+                  NativeComrakRange(
+                    startByte: mapper.utf8OffsetForUtf16Offset(imageStart),
+                    endByte: mapper.utf8OffsetForUtf16Offset(
+                      text.indexOf('Logo]'),
+                    ),
+                  ),
+                  NativeComrakRange(
+                    startByte: mapper.utf8OffsetForUtf16Offset(
+                      text.indexOf(']', imageStart),
+                    ),
+                    endByte: mapper.utf8OffsetForUtf16Offset(text.length),
+                  ),
+                ],
                 payload: const {'src': 'asset://logo.png', 'alt': 'Logo'},
               ),
             ],

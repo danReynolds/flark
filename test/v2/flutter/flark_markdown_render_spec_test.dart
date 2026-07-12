@@ -113,8 +113,9 @@ void main() {
     render(const [
       ('see [docs](https://example.com)', 'see <a>docs</a>'),
       ('[*styled* label](u)', '<a><em>styled</em> label</a>'),
-      // The autolink's angle brackets stay visible in the editing view.
-      ('<https://example.com>', '<a><https://example.com></a>'),
+      // Bridge protocol v2: the autolink's angle brackets are markup and
+      // hide like every other link form (previously they rendered raw).
+      ('<https://example.com>', '<a>https://example.com</a>'),
       ('[a](u "title")', '<a>a</a>'),
     ]);
   });

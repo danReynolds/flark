@@ -105,13 +105,13 @@ void main() {
     expect(editor.hasAuthoritativeRenderPlan, isTrue);
   });
 
-  test('nesting emphasis on a strong SUFFIX stays vetoed by a bridge gap', () {
-    // `**foo *bar***`: valid CommonMark (em nested in strong), but the
-    // mapping layer currently drops the inner emphasis marker ranges when
-    // its closer abuts the strong closer, so the editor would render the
-    // asterisks literally. The judge honestly refuses to commit what the
-    // surface cannot render hidden. Bridge protocol v2 (RFC 022 Phase 2)
-    // fixes the mapping gap, and this pin flips to isHandled then.
+  test('nesting emphasis on a strong SUFFIX commits (abutting closers)', () {
+    // `**foo *bar***`: em nested in strong whose closers abut. The
+    // partial-strong-intent heuristic used to misread the parsed adjacency
+    // as mid-typing and keep the inner markers visible, so the judge vetoed
+    // the wrap; the heuristic now defers to the parser (adjacency only
+    // counts when the neighbor is unclaimed by a parsed marker range) and
+    // the wrap commits and renders hidden.
     final editor = controller('**foo bar**');
     expect(
       editor.applySelection(
@@ -120,8 +120,9 @@ void main() {
       isTrue,
     );
     final result = editor.commands.toggleEmphasis();
-    expect(result.commandResult.isRejected, isTrue);
-    expect(editor.markdown, '**foo bar**');
+    expect(result.commandResult.isHandled, isTrue);
+    expect(editor.markdown, '**foo *bar***');
+    expect(editor.hasAuthoritativeRenderPlan, isTrue);
   });
 
   test('a judged command does not schedule a redundant follow-up parse',
