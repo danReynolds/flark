@@ -145,6 +145,7 @@ final class _EditableProjectedBlockTextState
     editor = _LiveRenderedDocumentIntentActions(
       onSelectAll: _selectAllDocument,
       onDeleteSelection: _deleteControllerSelection,
+      onForwardDelete: _dispatchMarkdownForwardDelete,
       onMoveVerticallyToAdjacentLine: _moveOutOfBlockOnVerticalBoundary,
       child: editor,
     );
@@ -414,6 +415,7 @@ final class _EditableProjectedBlockTextState
       controller: widget.controller,
       enterUserEvent: 'input.liveBlock.enter',
       backspaceUserEvent: 'input.liveBlock.backspace',
+      forwardDeleteUserEvent: 'input.liveBlock.forwardDelete',
       onHandled: () {
         _adoptImmediateMarkdownParseForController(widget.controller);
         _rememberPendingCodeBodyPlatformEcho();
@@ -536,13 +538,14 @@ final class _EditableProjectedBlockTextState
       }
       if (sourceSelection.start < directSourceRange.start ||
           sourceSelection.end > directSourceRange.end) {
-        final current = _textController.selection;
-        if (current.isValid &&
-            current.baseOffset <= textLength &&
-            current.extentOffset <= textLength) {
-          return current;
-        }
-        return TextSelection.collapsed(offset: textLength);
+        return _clippedLocalSelection(
+          selectionStart: sourceSelection.start,
+          selectionEnd: sourceSelection.end,
+          inverted: sourceSelection.baseOffset > sourceSelection.extentOffset,
+          rangeStart: directSourceRange.start,
+          rangeEnd: directSourceRange.end,
+          textLength: textLength,
+        );
       }
       return TextSelection(
         baseOffset: sourceSelection.baseOffset - directSourceRange.start,
@@ -562,18 +565,58 @@ final class _EditableProjectedBlockTextState
     );
     if (displaySelection.start < range.start ||
         displaySelection.end > range.end) {
+      return _clippedLocalSelection(
+        selectionStart: displaySelection.start,
+        selectionEnd: displaySelection.end,
+        inverted: displaySelection.baseOffset > displaySelection.extentOffset,
+        rangeStart: range.start,
+        rangeEnd: range.end,
+        textLength: textLength,
+      );
+    }
+    return TextSelection(
+      baseOffset: displaySelection.baseOffset - range.start,
+      extentOffset: displaySelection.extentOffset - range.start,
+    );
+  }
+
+  /// Projects a document-spanning selection's intersection with this block's
+  /// editable `[rangeStart, rangeEnd)` into local coordinates.
+  ///
+  /// A partial overlap becomes the clipped sub-selection — **non-collapsed**
+  /// wherever it covers this block's content, exactly as a fully-covered block
+  /// shows `0..textLength`. Representing the clip faithfully (rather than
+  /// collapsing to the block edge) is what lets a Backspace/replace over a
+  /// document-spanning selection reach the whole selection: a collapsed clip
+  /// at the block boundary reads as a caret one position past the selection's
+  /// extent, which the document-selection preservation guard then declines to
+  /// protect, silently shrinking the selection to that caret. When the
+  /// selection does not intersect this block's content, an in-progress local
+  /// caret is kept, else a caret is parked at the nearest edge.
+  TextSelection _clippedLocalSelection({
+    required int selectionStart,
+    required int selectionEnd,
+    required bool inverted,
+    required int rangeStart,
+    required int rangeEnd,
+    required int textLength,
+  }) {
+    final clipStart = selectionStart.clamp(rangeStart, rangeEnd) - rangeStart;
+    final clipEnd = selectionEnd.clamp(rangeStart, rangeEnd) - rangeStart;
+    if (clipStart >= clipEnd) {
       final current = _textController.selection;
       if (current.isValid &&
           current.baseOffset <= textLength &&
           current.extentOffset <= textLength) {
         return current;
       }
-      return TextSelection.collapsed(offset: textLength);
+      return TextSelection.collapsed(
+        offset: selectionEnd <= rangeStart ? 0 : textLength,
+      );
     }
-    return TextSelection(
-      baseOffset: displaySelection.baseOffset - range.start,
-      extentOffset: displaySelection.extentOffset - range.start,
-    );
+    return inverted
+        ? TextSelection(baseOffset: clipEnd, extentOffset: clipStart)
+        : TextSelection(baseOffset: clipStart, extentOffset: clipEnd);
   }
 
   void _selectAllDocument(SelectionChangedCause cause) {
@@ -864,6 +907,24 @@ final class _EditableProjectedBlockTextState
     );
   }
 
+  /// Routes a forward Delete on this block through the markdown input
+  /// policy's boundary-aware resolver — the Delete-key counterpart of the
+  /// Backspace shortcut the policy installs around this editable. Returns
+  /// false when no styled run's hidden marker is adjacent, so the editable's
+  /// default forward delete runs.
+  bool _dispatchMarkdownForwardDelete() {
+    if (!widget.markdownInputPolicy || !_markdownInputPolicy.isEnabled) {
+      return false;
+    }
+    return _markdownInputPolicy.dispatchForwardDelete(
+      currentSelection: () =>
+          FlarkMarkdownInputPolicy.selectionFromTextSelection(
+            _textController.selection,
+          ),
+      applySelection: _applyLocalDisplaySelectionToController,
+    );
+  }
+
   bool _sourceSelectionCoversBlock(FlarkSelection selection) {
     return _sourceSelectionCoversRange(
       selection,
@@ -974,12 +1035,14 @@ final class _LiveRenderedDocumentIntentActions extends StatelessWidget {
     required this.child,
     required this.onSelectAll,
     required this.onDeleteSelection,
+    required this.onForwardDelete,
     required this.onMoveVerticallyToAdjacentLine,
   });
 
   final Widget child;
   final void Function(SelectionChangedCause cause) onSelectAll;
   final bool Function() onDeleteSelection;
+  final bool Function() onForwardDelete;
   final bool Function(ExtendSelectionVerticallyToAdjacentLineIntent intent)
   onMoveVerticallyToAdjacentLine;
 
@@ -995,6 +1058,7 @@ final class _LiveRenderedDocumentIntentActions extends StatelessWidget {
         ),
         DeleteCharacterIntent: _LiveRenderedDeleteCharacterAction(
           onDeleteSelection: onDeleteSelection,
+          onForwardDelete: onForwardDelete,
         ),
         ExtendSelectionVerticallyToAdjacentLineIntent:
             _LiveRenderedVerticalNavigationAction(
@@ -1008,13 +1072,18 @@ final class _LiveRenderedDocumentIntentActions extends StatelessWidget {
 
 final class _LiveRenderedDeleteCharacterAction
     extends Action<DeleteCharacterIntent> {
-  _LiveRenderedDeleteCharacterAction({required this.onDeleteSelection});
+  _LiveRenderedDeleteCharacterAction({
+    required this.onDeleteSelection,
+    required this.onForwardDelete,
+  });
 
   final bool Function() onDeleteSelection;
+  final bool Function() onForwardDelete;
 
   @override
   Object? invoke(DeleteCharacterIntent intent) {
     if (onDeleteSelection()) return null;
+    if (intent.forward && onForwardDelete()) return null;
     return callingAction?.invoke(intent);
   }
 }

@@ -531,6 +531,61 @@ void main() {
     );
   });
 
+  testWidgets('a second Enter after a blockquote exit adds one line, not two', (
+    tester,
+  ) async {
+    // Regression: exiting a blockquote leaves the structural separator blank
+    // (`> quote\n\n`), which is absorbed as the quote's boundary so the exit
+    // shows one cursor line below the quote. A further Enter used to make that
+    // hidden separator pop back into view as its own row — so a single Enter
+    // added two visible rows and read as a skipped line.
+    final controller = FlarkFlutterController(
+      runtime: FlarkEditorRuntime(
+        state: FlarkEditorState.fromMarkdown(
+          '> quote',
+          selection: const FlarkSelection.collapsed(7),
+        ),
+        extensions: FlarkMarkdownEditingExtensions.standard(),
+      ),
+    );
+    addTearDown(controller.dispose);
+    expect(controller.applyParseResult(_quoteParseResult(controller)), isTrue);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkLiveRenderedEditableText(
+          controller: controller,
+          style: const TextStyle(fontSize: 14),
+          autofocus: true,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.showKeyboard(find.byType(EditableText));
+    await tester.pump();
+
+    List<String> editableTexts() => tester
+        .widgetList<EditableText>(find.byType(EditableText))
+        .map((editable) => editable.controller.text)
+        .toList(growable: false);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter); // continue
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter); // exit
+    await tester.pumpAndSettle();
+    expect(controller.markdown, '> quote\n\n');
+    // Exit state: quote + exactly one cursor line (the separator is absorbed).
+    expect(editableTexts(), ['quote', '']);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter); // one more line
+    await tester.pumpAndSettle();
+    expect(controller.markdown, '> quote\n\n\n');
+    // One Enter → one new visible line: quote + a blank + the cursor line. The
+    // absorbed separator must stay hidden (not reappear as a fourth row).
+    expect(editableTexts(), ['quote', '', '']);
+  });
+
   testWidgets('routes Backspace from empty live blockquotes to remove them', (
     tester,
   ) async {
@@ -948,7 +1003,10 @@ void main() {
       expect(controller.markdown, '* item\n\n');
       expect(controller.selection, const FlarkSelection.collapsed(8));
       expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
-      expect(find.byType(EditableText), findsNWidgets(3));
+      // The list's structural exit separator is absorbed (as a blockquote's
+      // is), so the exit shows the item plus one cursor row — not a phantom
+      // extra blank row.
+      expect(find.byType(EditableText), findsNWidgets(2));
       final editors = tester
           .widgetList<EditableText>(find.byType(EditableText))
           .toList(growable: false);
@@ -1138,14 +1196,17 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byType(EditableText), findsNWidgets(3));
+    // `* item\n\n`: item plus one cursor row (the exit separator is absorbed).
+    expect(find.byType(EditableText), findsNWidgets(2));
     await tester.showKeyboard(find.byType(EditableText).last);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
 
     expect(controller.markdown, '* item\n\n\n');
     expect(controller.selection, const FlarkSelection.collapsed(9));
-    expect(find.byType(EditableText), findsNWidgets(4));
+    // One Enter adds exactly one row: item, a blank, and the cursor row — the
+    // absorbed separator stays hidden.
+    expect(find.byType(EditableText), findsNWidgets(3));
     final editors = tester
         .widgetList<EditableText>(find.byType(EditableText))
         .toList(growable: false);
@@ -1338,7 +1399,8 @@ void main() {
       expect(controller.markdown, '1. item\n\n');
       expect(controller.selection, const FlarkSelection.collapsed(9));
       expect(find.byKey(const Key('FlarkLiveBlockListMarker')), findsOneWidget);
-      expect(find.byType(EditableText), findsNWidgets(3));
+      // Exit separator absorbed: item plus one cursor row (no phantom blank).
+      expect(find.byType(EditableText), findsNWidgets(2));
       final editors = tester
           .widgetList<EditableText>(find.byType(EditableText))
           .toList(growable: false);
@@ -1390,7 +1452,8 @@ void main() {
     expect(controller.markdown, '- [ ] item\n\n');
     expect(controller.selection, const FlarkSelection.collapsed(12));
     expect(find.byKey(const Key('FlarkLiveBlockTaskCheckbox')), findsOneWidget);
-    expect(find.byType(EditableText), findsNWidgets(3));
+    // Exit separator absorbed: item plus one cursor row (no phantom blank).
+    expect(find.byType(EditableText), findsNWidgets(2));
     final editors = tester
         .widgetList<EditableText>(find.byType(EditableText))
         .toList(growable: false);

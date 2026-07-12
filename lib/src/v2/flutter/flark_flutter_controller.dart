@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../core/core.dart';
+import '../markdown/inline/flark_inline_delimiter_placement.dart';
+import '../markdown/inline/flark_inline_run_scanner.dart';
 import '../markdown/markdown.dart';
 import '../markdown/source/flark_markdown_fenced_code_scanner.dart';
 import '../projection/projection.dart';
@@ -115,6 +117,8 @@ final class FlarkFlutterController extends ChangeNotifier {
       <FlarkMarkdownInlineStyle>{};
   Set<FlarkMarkdownInlineStyle> _mutedInlineStyles =
       <FlarkMarkdownInlineStyle>{};
+  Set<FlarkMarkdownInlineStyle>? _armedContinuationOverride;
+  List<FlarkAuthoredMarker>? _pendingAuthoredMarkers;
   bool _lastEditRequestsImmediateParse = false;
   final StreamController<FlarkControllerEvent> _events =
       StreamController<FlarkControllerEvent>.broadcast();
@@ -471,7 +475,10 @@ final class FlarkFlutterController extends ChangeNotifier {
     return (open: markers.join(), close: markers.reversed.join());
   }
 
-  static String _exitMarkerFor(FlarkMarkdownInlineStyle style, int? adjacentChar) {
+  static String _exitMarkerFor(
+    FlarkMarkdownInlineStyle style,
+    int? adjacentChar,
+  ) {
     final alternate = _alternateInlineMarker(style);
     if (alternate != null && style.marker.codeUnitAt(0) == adjacentChar) {
       return alternate;
@@ -562,7 +569,9 @@ final class FlarkFlutterController extends ChangeNotifier {
           replacementText: converted,
         ),
         selectionBefore: selection,
-        selectionAfter: FlarkSelection.collapsed(range.start + converted.length),
+        selectionAfter: FlarkSelection.collapsed(
+          range.start + converted.length,
+        ),
         metadata: FlarkTransactionMetadata(
           intent: FlarkTransactionIntent.paste,
           userEvent: 'input.htmlPaste',
@@ -611,7 +620,13 @@ final class FlarkFlutterController extends ChangeNotifier {
       undoGroupId: undoGroupId,
     );
     if (mutedExit != null) {
-      applyTransaction(mutedExit);
+      _armedContinuationOverride = _continuationStylesFor(
+        mutedExit.continuationMarker,
+      );
+      _pendingAuthoredMarkers = mutedExit.authoredMarkers;
+      applyTransaction(mutedExit.transaction);
+      _armedContinuationOverride = null;
+      _pendingAuthoredMarkers = null;
       _lastEditRequestsImmediateParse = true;
       return true;
     }
@@ -621,7 +636,7 @@ final class FlarkFlutterController extends ChangeNotifier {
     // (otherwise they show raw until the debounced parse, and a backspace in
     // that window cannot expand over the not-yet-recognized markers).
     final insertionWrap = _pendingInsertionWrap();
-    final transaction = _projectedTextEditAdapter.transactionFromDisplayEdit(
+    final resolution = _projectedTextEditAdapter.resolveDisplayEdit(
       currentMarkdown: markdown,
       projection: projection,
       oldDisplayText: oldDisplayText,
@@ -631,9 +646,18 @@ final class FlarkFlutterController extends ChangeNotifier {
       fallbackInsertionAffinity: fallbackInsertionAffinity,
       insertionWrap: insertionWrap,
     );
-    if (transaction == null) return false;
-    applyTransaction(transaction);
-    _lastEditRequestsImmediateParse = insertionWrap != null;
+    if (resolution == null) return false;
+    // Whitespace committed outside a run's delimiters keeps the run's styles
+    // armed across the edit (the adoption chokepoint would otherwise clear
+    // them), so the next styled keystroke re-enters the run.
+    _armedContinuationOverride = _continuationStylesFor(
+      resolution.continuationMarker,
+    );
+    _pendingAuthoredMarkers = resolution.authoredMarkers;
+    applyTransaction(resolution.transaction);
+    _armedContinuationOverride = null;
+    _pendingAuthoredMarkers = null;
+    _lastEditRequestsImmediateParse = resolution.requestsImmediateParse;
     // Typing the `]` that completes a bare task marker (`- [ ]`) auto-inserts
     // the trailing space GFM requires before content, so the next character
     // stays in the checkbox (`- [ ] f`) instead of breaking the task back into
@@ -643,6 +667,76 @@ final class FlarkFlutterController extends ChangeNotifier {
         newDisplayText.length > oldDisplayText.length) {
       _autoSpaceCompletedTaskMarker(undoGroupId);
     }
+    return true;
+  }
+
+  /// Canonicalizes a boundary-resolved inline deletion of [range] — the range
+  /// a Backspace/forward-Delete resolver produced after stepping past hidden
+  /// markers — through the inline placement repairs, so a keyboard deletion
+  /// never leaves invalid markdown: stranded edge whitespace (`**foo x**`
+  /// backspacing `x` → `**foo** `, never `**foo **`), fused adjacent runs
+  /// (`**a** **b**` minus the gap → `**ab**`), or an orphaned crossing marker.
+  /// The repair is applied with predictive marker hiding and armed-continuation
+  /// threading, exactly like the projected-edit path.
+  ///
+  /// Returns true when a repair was applied. Returns false when the plain
+  /// deletion of [range] is already valid (no repair applies) — the caller
+  /// then performs its own deletion, keeping block-aware handling intact.
+  bool applyResolvedInlineDeletion(
+    FlarkSourceRange range, {
+    int? undoGroupId,
+    String userEvent = 'input.inlineDeletionRepair',
+  }) {
+    if (_disposed || range.isCollapsed) return false;
+    final source = markdown;
+    final runs = projection.inlineRunScans(source);
+    final repair =
+        FlarkInlineDelimiterPlacement.contentEditRepair(
+          source: source,
+          start: range.start,
+          end: range.end,
+          text: '',
+          runs: runs,
+        ) ??
+        FlarkInlineDelimiterPlacement.markerCrossingRepair(
+          source: source,
+          start: range.start,
+          end: range.end,
+          text: '',
+          runs: projection.inlineRunScans(source, includeCodeSpans: true),
+        ) ??
+        FlarkInlineDelimiterPlacement.joiningDeletionRepair(
+          source: source,
+          start: range.start,
+          end: range.end,
+          text: '',
+          runs: runs,
+        );
+    if (repair == null) return false;
+    _armedContinuationOverride = _continuationStylesFor(
+      repair.continuationMarker,
+    );
+    _pendingAuthoredMarkers = repair.authoredMarkers;
+    applyTransaction(
+      FlarkTransaction.single(
+        FlarkSourceOperation.replace(
+          replacedRange: repair.range,
+          replacementText: repair.replacement,
+        ),
+        selectionBefore: selection,
+        selectionAfter: FlarkSelection.collapsed(repair.caretAfter),
+        metadata: FlarkTransactionMetadata(
+          intent: FlarkTransactionIntent.input,
+          userEvent: userEvent,
+          undoGroupId: undoGroupId,
+          parseInvalidationRange: repair.range,
+          projectionInvalidationRange: repair.range,
+        ),
+      ),
+    );
+    _armedContinuationOverride = null;
+    _pendingAuthoredMarkers = null;
+    _lastEditRequestsImmediateParse = true;
     return true;
   }
 
@@ -738,6 +832,11 @@ final class FlarkFlutterController extends ChangeNotifier {
   /// Typing a delimiter or bracket/quote over a selection wraps it (`*foo*`,
   /// `(foo)`) instead of replacing it, leaving the inner text selected so a
   /// second keystroke nests (`*foo*` → `**foo**`).
+  ///
+  /// Emphasis-family delimiters hug the selection's core: edge whitespace
+  /// stays outside the markers (`foo ` + `*` → `*foo* `), and a
+  /// whitespace-only selection falls through to a plain replacement — there
+  /// is nothing CommonMark could style.
   FlarkTransaction? _wrapSelectionRecognizer(
     _SelectionReplacement replacement,
     int? undoGroupId,
@@ -745,14 +844,29 @@ final class FlarkFlutterController extends ChangeNotifier {
     final pair = _wrapPairFor(replacement.inserted);
     if (pair == null) return null;
     final range = replacement.range;
-    final wrapped = '${pair.open}${replacement.content}${pair.close}';
-    final innerStart = range.start + pair.open.length;
+    var content = replacement.content;
+    var contentStart = range.start + pair.open.length;
+    final String wrapped;
+    if (replacement.inserted == '*' || replacement.inserted == '_') {
+      final split = FlarkInlineDelimiterPlacement.splitEdgeWhitespace(content);
+      if (split.core.isEmpty) return null;
+      wrapped =
+          '${split.leading}${pair.open}${split.core}${pair.close}'
+          '${split.trailing}';
+      content = split.core;
+      contentStart = range.start + split.leading.length + pair.open.length;
+    } else {
+      wrapped = '${pair.open}$content${pair.close}';
+    }
     return FlarkTransaction.single(
-      FlarkSourceOperation.replace(replacedRange: range, replacementText: wrapped),
+      FlarkSourceOperation.replace(
+        replacedRange: range,
+        replacementText: wrapped,
+      ),
       selectionBefore: selection,
       selectionAfter: FlarkSelection(
-        baseOffset: innerStart,
-        extentOffset: innerStart + replacement.content.length,
+        baseOffset: contentStart,
+        extentOffset: contentStart + content.length,
       ),
       metadata: FlarkTransactionMetadata(
         intent: FlarkTransactionIntent.input,
@@ -776,7 +890,10 @@ final class FlarkFlutterController extends ChangeNotifier {
     final range = replacement.range;
     final linked = '[${replacement.content}](${replacement.inserted})';
     return FlarkTransaction.single(
-      FlarkSourceOperation.replace(replacedRange: range, replacementText: linked),
+      FlarkSourceOperation.replace(
+        replacedRange: range,
+        replacementText: linked,
+      ),
       selectionBefore: selection,
       selectionAfter: FlarkSelection.collapsed(range.start + linked.length),
       metadata: FlarkTransactionMetadata(
@@ -795,7 +912,7 @@ final class FlarkFlutterController extends ChangeNotifier {
   /// leading edge, or splitting the run (`**foo**x**bar**`) in the middle.
   /// Returns null unless the change is a plain insertion at the caret inside a
   /// muted run.
-  FlarkTransaction? _mutedExitTransaction({
+  _MutedExitResolution? _mutedExitTransaction({
     required String oldDisplayText,
     required String newDisplayText,
     int? undoGroupId,
@@ -820,64 +937,241 @@ final class FlarkFlutterController extends ChangeNotifier {
       newDisplayText.length - suffix.length,
     );
 
+    // Exits relocate delimiters, so the run must come from the parser's own
+    // pairing (via the projection), never the textual approximation — a muted
+    // exit against a run the parser reads differently would rewrite literal
+    // text.
+    final runs = projection.inlineRunScans(markdown);
+    FlarkInlineRunScan? innermostAtCaret;
+    for (final run in runs) {
+      if (run.contentStart <= caret &&
+          caret <= run.closeStart &&
+          (innermostAtCaret == null ||
+              run.contentStart > innermostAtCaret.contentStart)) {
+        innermostAtCaret = run;
+      }
+    }
     for (final style in _mutedInlineStyles) {
-      final run = FlarkMarkdownCommandQueries.enclosingInlineRun(state, style);
-      if (run != null) return _runExitTransaction(run, caret, text, undoGroupId);
+      // Code spans are absent from the emphasis-family scans (their backticks
+      // must never be whitespace-relocated), so a muted code exit finds its
+      // run through the textual backtick scan instead — safe, because a code
+      // exit only writes *around* the markers, never moves them.
+      if (style == FlarkMarkdownInlineStyle.inlineCode) {
+        final run = FlarkMarkdownCommandQueries.enclosingInlineRun(
+          state,
+          style,
+        );
+        if (run != null) {
+          return _runExitTransaction(run, caret, text, undoGroupId, runs);
+        }
+        continue;
+      }
+      FlarkInlineRunScan? enclosing;
+      for (final run in runs) {
+        if (run.contentStart <= caret &&
+            caret <= run.closeStart &&
+            (_stylesForCluster(run.marker)?.contains(style) ?? false) &&
+            (enclosing == null || run.contentStart > enclosing.contentStart)) {
+          enclosing = run;
+        }
+      }
+      if (enclosing == null) continue;
+      // A middle split closes and reopens the muted run at the caret; when a
+      // deeper run spans the split point, those markers would land inside it
+      // and overlap its delimiters — CommonMark then discards one pair and
+      // the other leaks as literal text. Fall through to a plain insertion
+      // instead: the text keeps its styles, which is valid and
+      // display-faithful.
+      final middle =
+          caret > enclosing.contentStart && caret < enclosing.closeStart;
+      if (middle &&
+          innermostAtCaret != null &&
+          innermostAtCaret.contentStart > enclosing.contentStart) {
+        continue;
+      }
+      return _runExitTransaction(
+        FlarkInlineRunRange(
+          openStart: enclosing.openStart,
+          contentStart: enclosing.contentStart,
+          closeStart: enclosing.closeStart,
+          closeEnd: enclosing.closeEnd,
+        ),
+        caret,
+        text,
+        undoGroupId,
+        runs,
+      );
     }
     return null;
   }
 
-  FlarkTransaction _runExitTransaction(
+  _MutedExitResolution _runExitTransaction(
     FlarkInlineRunRange run,
     int caret,
     String text,
     int? undoGroupId,
+    List<FlarkInlineRunScan> runs,
   ) {
     final FlarkSourceRange range;
     final String replacement;
     final int caretAfter;
+    String? continuationMarker;
+    var authoredMarkers = const <FlarkAuthoredMarker>[];
     if (caret >= run.closeStart) {
       // Trailing edge: step out past the closing marker. A switched-in style
       // (last action wins) wraps the exited text into a sibling run, picking a
-      // delimiter that won't merge with this run's closing marker.
+      // delimiter that won't merge with this run's closing marker. The run
+      // itself needs no whitespace handling: a flanking-valid run never ends
+      // in whitespace, and the write paths never produce one that does.
       final wrap = _armedExitWrap(
         markdown.substring(run.closeStart, run.closeEnd),
       );
-      range = FlarkSourceRange(run.closeEnd, run.closeEnd);
-      replacement = wrap == null ? text : '${wrap.open}$text${wrap.close}';
-      caretAfter =
-          run.closeEnd + (wrap == null ? 0 : wrap.open.length) + text.length;
+      if (wrap == null) {
+        range = FlarkSourceRange(run.closeEnd, run.closeEnd);
+        replacement = text;
+        caretAfter = run.closeEnd + text.length;
+      } else {
+        // The sibling wrap goes through the canonical placement rules so
+        // whitespace-edged exit text (a muted space) never strands the new
+        // run's delimiters (`__ __`).
+        final placement = FlarkInlineDelimiterPlacement.armedWrap(
+          source: markdown,
+          caret: run.closeEnd,
+          text: text,
+          open: wrap.open,
+          close: wrap.close,
+          edgeSensitive: !wrap.open.contains('`'),
+          runs: runs,
+        );
+        range = placement.range;
+        replacement = placement.replacement;
+        caretAfter = placement.caretAfter;
+        continuationMarker = placement.continuationMarker;
+        authoredMarkers = placement.authoredMarkers;
+      }
     } else if (caret <= run.contentStart) {
       // Leading edge: step out before the opening marker.
       final wrap = _armedExitWrap(
         markdown.substring(run.openStart, run.contentStart),
       );
-      range = FlarkSourceRange(run.openStart, run.openStart);
-      replacement = wrap == null ? text : '${wrap.open}$text${wrap.close}';
-      caretAfter =
-          run.openStart + (wrap == null ? 0 : wrap.open.length) + text.length;
+      if (wrap == null) {
+        range = FlarkSourceRange(run.openStart, run.openStart);
+        replacement = text;
+        caretAfter = run.openStart + text.length;
+      } else {
+        final placement = FlarkInlineDelimiterPlacement.armedWrap(
+          source: markdown,
+          caret: run.openStart,
+          text: text,
+          open: wrap.open,
+          close: wrap.close,
+          edgeSensitive: !wrap.open.contains('`'),
+          runs: runs,
+        );
+        range = placement.range;
+        replacement = placement.replacement;
+        caretAfter = placement.caretAfter;
+        continuationMarker = placement.continuationMarker;
+        authoredMarkers = placement.authoredMarkers;
+      }
     } else {
-      // Middle: close the run, drop the plain text, reopen the run.
+      // Middle: close the run, drop the plain text, reopen the run — moving
+      // whitespace that straddles the split point between the delimiters so
+      // both halves stay flanking-valid (`**foo bar**` split after `foo `
+      // becomes `**foo** x**bar**`, never `**foo **x**bar**`). Code spans
+      // have no flanking rules and their whitespace is content, so they keep
+      // the plain split.
       final marker = markdown.substring(run.closeStart, run.closeEnd);
-      range = FlarkSourceRange(caret, caret);
-      replacement = '$marker$text$marker';
-      caretAfter = caret + marker.length + text.length;
+      if (marker.codeUnitAt(0) == 0x60) {
+        range = FlarkSourceRange(caret, caret);
+        replacement = '$marker$text$marker';
+        caretAfter = caret + marker.length + text.length;
+        authoredMarkers = [
+          FlarkAuthoredMarker(
+            range: FlarkSourceRange(caret, caret + marker.length),
+            opens: false,
+          ),
+          FlarkAuthoredMarker(
+            range: FlarkSourceRange(caretAfter, caretAfter + marker.length),
+            opens: true,
+          ),
+        ];
+      } else {
+        final placement = FlarkInlineDelimiterPlacement.runSplit(
+          source: markdown,
+          contentRange: FlarkSourceRange(run.contentStart, run.closeStart),
+          caret: caret,
+          marker: marker,
+          text: text,
+        );
+        range = placement.range;
+        replacement = placement.replacement;
+        caretAfter = placement.caretAfter;
+        authoredMarkers = placement.authoredMarkers;
+      }
     }
-    return FlarkTransaction.single(
-      FlarkSourceOperation.replace(
-        replacedRange: range,
-        replacementText: replacement,
+    return _MutedExitResolution(
+      FlarkTransaction.single(
+        FlarkSourceOperation.replace(
+          replacedRange: range,
+          replacementText: replacement,
+        ),
+        selectionBefore: FlarkSelection.collapsed(caret),
+        selectionAfter: FlarkSelection.collapsed(caretAfter),
+        metadata: FlarkTransactionMetadata(
+          intent: FlarkTransactionIntent.input,
+          userEvent: 'input.mutedInlineStyle',
+          undoGroupId: undoGroupId,
+          parseInvalidationRange: range,
+          projectionInvalidationRange: range,
+        ),
       ),
-      selectionBefore: FlarkSelection.collapsed(caret),
-      selectionAfter: FlarkSelection.collapsed(caretAfter),
-      metadata: FlarkTransactionMetadata(
-        intent: FlarkTransactionIntent.input,
-        userEvent: 'input.mutedInlineStyle',
-        undoGroupId: undoGroupId,
-        parseInvalidationRange: range,
-        projectionInvalidationRange: range,
-      ),
+      continuationMarker: continuationMarker,
+      authoredMarkers: authoredMarkers,
     );
+  }
+
+  /// The inline styles named by a delimiter [cluster] (`**`, `***`, `~~`, …),
+  /// unioned with the currently armed styles — the set to keep armed when an
+  /// edit committed whitespace outside that cluster. Null when [cluster] is
+  /// null or names no emphasis-family styles (e.g. contains a backtick).
+  Set<FlarkMarkdownInlineStyle>? _continuationStylesFor(String? cluster) {
+    final styles = _stylesForCluster(cluster);
+    if (styles == null) return null;
+    return {..._pendingInlineStyles, ...styles};
+  }
+
+  /// The inline styles a delimiter [cluster] carries, or null when it names
+  /// none (e.g. contains a backtick).
+  static Set<FlarkMarkdownInlineStyle>? _stylesForCluster(String? cluster) {
+    if (cluster == null) return null;
+    final styles = <FlarkMarkdownInlineStyle>{};
+    var offset = 0;
+    while (offset < cluster.length) {
+      final markerChar = cluster.codeUnitAt(offset);
+      var runLength = 1;
+      while (offset + runLength < cluster.length &&
+          cluster.codeUnitAt(offset + runLength) == markerChar) {
+        runLength += 1;
+      }
+      switch ((markerChar, runLength)) {
+        case (0x2A || 0x5F, 1):
+          styles.add(FlarkMarkdownInlineStyle.emphasis);
+        case (0x2A || 0x5F, 2):
+          styles.add(FlarkMarkdownInlineStyle.strong);
+        case (0x2A || 0x5F, 3):
+          styles
+            ..add(FlarkMarkdownInlineStyle.emphasis)
+            ..add(FlarkMarkdownInlineStyle.strong);
+        case (0x7E, 1 || 2):
+          // GFM styles both `~x~` and `~~x~~`.
+          styles.add(FlarkMarkdownInlineStyle.strikethrough);
+        default:
+          return null;
+      }
+      offset += runLength;
+    }
+    return styles;
   }
 
   /// The open/close pair for a one-character wrap delimiter, or null.
@@ -1020,13 +1314,22 @@ final class FlarkFlutterController extends ChangeNotifier {
     // Any adopted runtime change — a typed run, a selection move, an undo —
     // disarms pending and muted inline styles. Only arming (toggle…InlineStyle)
     // bypasses this chokepoint, so only arming preserves them. The armed run
-    // wrap and muted exit read the sets before applying, so clearing is correct.
-    if (_pendingInlineStyles.isNotEmpty) {
+    // wrap and muted exit read the sets before applying, so clearing is
+    // correct. One exception: an edit that committed whitespace outside a
+    // run's delimiters (keeping the source valid CommonMark) re-arms that
+    // run's styles so the next styled keystroke re-enters the run.
+    final continuation = _armedContinuationOverride;
+    _armedContinuationOverride = null;
+    if (continuation != null) {
+      _pendingInlineStyles = continuation;
+    } else if (_pendingInlineStyles.isNotEmpty) {
       _pendingInlineStyles = <FlarkMarkdownInlineStyle>{};
     }
     if (_mutedInlineStyles.isNotEmpty) {
       _mutedInlineStyles = <FlarkMarkdownInlineStyle>{};
     }
+    final authoredMarkers = _pendingAuthoredMarkers;
+    _pendingAuthoredMarkers = null;
 
     final documentTransactions = [
       for (final transaction in result.appliedTransactions)
@@ -1061,8 +1364,37 @@ final class FlarkFlutterController extends ChangeNotifier {
         transaction: transaction,
       );
       _projection = structuralPrediction?.projection ?? prediction.projection;
+      // Delimiters the edit itself authored hide immediately in the predicted
+      // projection: the display (and the platform editable it syncs to) never
+      // sees them raw, so nothing flashes and an active IME composition
+      // survives the keystroke. The immediate parse that follows re-derives
+      // the same hidden ranges authoritatively.
+      var predictionForAdoption = prediction;
+      if (authoredMarkers != null && authoredMarkers.isNotEmpty) {
+        _projection = FlarkProjection(
+          textLength: state.document.length,
+          hiddenRanges: [
+            ..._projection.hiddenRanges,
+            for (final marker in authoredMarkers)
+              FlarkHiddenRange(
+                range: marker.range,
+                kind: FlarkHiddenRangeKind.inlineMarker,
+                opensInlineRun: marker.opens,
+                closesInlineRun: !marker.opens,
+              ),
+          ],
+          replacementRanges: _projection.replacementRanges,
+          ambiguityZones: _projection.ambiguityZones,
+        );
+        predictionForAdoption = FlarkProjectionPrediction(
+          projection: _projection,
+          touchedProjectionSensitiveRange:
+              prediction.touchedProjectionSensitiveRange,
+          invalidatedRange: prediction.invalidatedRange,
+        );
+      }
       _lastProjectionPrediction = structuralPrediction == null
-          ? prediction
+          ? predictionForAdoption
           : null;
       _renderPlan =
           structuralPrediction?.renderPlan ??
@@ -1394,6 +1726,18 @@ final class FlarkFlutterController extends ChangeNotifier {
     }
     return false;
   }
+}
+
+final class _MutedExitResolution {
+  const _MutedExitResolution(
+    this.transaction, {
+    this.continuationMarker,
+    this.authoredMarkers = const [],
+  });
+
+  final FlarkTransaction transaction;
+  final String? continuationMarker;
+  final List<FlarkAuthoredMarker> authoredMarkers;
 }
 
 final class _SelectionReplacement {

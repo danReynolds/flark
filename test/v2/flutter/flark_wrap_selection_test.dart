@@ -66,7 +66,11 @@ void main() {
           oldDisplayText: 'foo',
           newDisplayText: probe.$1,
         );
-        expect(controller.markdown, probe.$2, reason: 'wrap with "${probe.$1}"');
+        expect(
+          controller.markdown,
+          probe.$2,
+          reason: 'wrap with "${probe.$1}"',
+        );
       }
     });
 
@@ -85,7 +89,10 @@ void main() {
     });
 
     test('typing a delimiter with no selection just inserts it', () {
-      final controller = controllerFor('foo', const FlarkSelection.collapsed(3));
+      final controller = controllerFor(
+        'foo',
+        const FlarkSelection.collapsed(3),
+      );
 
       controller.applyProjectedTextEdit(
         oldDisplayText: 'foo',

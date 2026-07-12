@@ -6,6 +6,12 @@ Flark gives Flutter apps two core widgets and a thin Flutter form wrapper:
 
 Live demo and package site: <https://danreynolds.github.io/flark/>
 
+> **Status:** pre-1.0. Runs on macOS, iOS, Android, Linux, and web —
+> **Windows is not supported yet** (the parser is a Rust/WASM Comrak bridge;
+> see [Platform Support](#platform-support-and-build-requirements)). The API
+> may still change between minor versions; breaking changes are called out in
+> the [CHANGELOG](CHANGELOG.md).
+
 ```dart
 import 'package:flark/flark.dart';
 

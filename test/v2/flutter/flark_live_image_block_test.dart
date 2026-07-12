@@ -14,7 +14,10 @@ Future<void> _parse(FlarkFlutterController controller) async {
   expect(controller.applyParseResult(result), isTrue);
 }
 
-Future<void> _pump(WidgetTester tester, FlarkFlutterController controller) async {
+Future<void> _pump(
+  WidgetTester tester,
+  FlarkFlutterController controller,
+) async {
   await tester.pumpWidget(
     Directionality(
       textDirection: TextDirection.ltr,

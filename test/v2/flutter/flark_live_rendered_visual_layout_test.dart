@@ -61,7 +61,9 @@ void main() {
 
     expect(controller.markdown, '- item\n\n');
     expect(find.byKey(_listMarkerKey), findsOneWidget);
-    expect(find.byType(EditableText), findsNWidgets(3));
+    // The list's structural exit separator is absorbed, so the exit lands on
+    // one visible focused blank row — the item plus that row, no phantom.
+    expect(find.byType(EditableText), findsNWidgets(2));
 
     final editorRects = _editableRects(tester);
     expect(editorRects.last.top, greaterThan(editorRects.first.top + 18));

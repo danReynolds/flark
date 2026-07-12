@@ -1,6 +1,7 @@
 import '../core/selection/flark_selection.dart';
 import '../core/transaction/flark_source_range.dart';
 import '../core/transaction/flark_transaction.dart';
+import '../markdown/inline/flark_inline_run_scanner.dart';
 import '../markdown/parse/flark_markdown_parse_result.dart';
 
 enum FlarkHiddenRangeKind {
@@ -417,6 +418,53 @@ final class FlarkProjection {
     return sourceOffset - sourceDelta;
   }
 
+  /// The parser-recognized emphasis-family inline runs, paired from this
+  /// projection's hidden ranges.
+  ///
+  /// Every `opensInlineRun`/`closesInlineRun` marker pair becomes one span
+  /// with its delimiter cluster read from [source]; code spans are excluded
+  /// unless [includeCodeSpans] is set — their backticks must never be
+  /// whitespace-relocated, so only the marker-crossing balance repair (which
+  /// does no whitespace splitting) opts in to see them.
+  /// This is the write side's notion of "a run": the textual scanner only
+  /// approximates CommonMark's delimiter pairing, and delimiters must be
+  /// relocated only for runs the parser actually recognizes.
+  List<FlarkInlineRunScan> inlineRunScans(
+    String source, {
+    bool includeCodeSpans = false,
+  }) {
+    if (source.length != textLength) return const [];
+    final sorted = [...hiddenRanges]
+      ..sort((left, right) => left.range.start.compareTo(right.range.start));
+    final stack = <FlarkHiddenRange>[];
+    final scans = <FlarkInlineRunScan>[];
+    for (final hidden in sorted) {
+      if (hidden.opensInlineRun) {
+        stack.add(hidden);
+      } else if (hidden.closesInlineRun) {
+        if (stack.isEmpty) continue;
+        final open = stack.removeLast();
+        final markerChar = source.codeUnitAt(hidden.range.start);
+        if (markerChar != 0x2A &&
+            markerChar != 0x5F &&
+            markerChar != 0x7E &&
+            !(includeCodeSpans && markerChar == 0x60)) {
+          continue;
+        }
+        scans.add(
+          FlarkInlineRunScan(
+            openStart: open.range.start,
+            contentStart: open.range.end,
+            closeStart: hidden.range.start,
+            closeEnd: hidden.range.end,
+            marker: source.substring(hidden.range.start, hidden.range.end),
+          ),
+        );
+      }
+    }
+    return scans;
+  }
+
   int displayToSourceOffset(
     int displayOffset, {
     FlarkMapAffinity affinity = FlarkMapAffinity.downstream,
@@ -434,10 +482,24 @@ final class FlarkProjection {
 
     if (span.isHidden) {
       if (displayOffset == displayStart) {
-        final sourceOffset = affinity == FlarkMapAffinity.upstream
-            ? span.range.start
-            : span.range.end;
-        return _clampInt(sourceOffset, 0, textLength);
+        if (affinity == FlarkMapAffinity.upstream) {
+          // Adjacent hidden spans (a nested run's stacked markers, `f~~*` in
+          // `*~~ff~~*`) all collapse onto this display offset. Upstream means
+          // the smallest source offset rendering here — the start of the
+          // chain's first span. Resolving against [span] alone would land
+          // between two hidden markers, and a deletion ending there would
+          // swallow half a marker pair.
+          var first = spanIndex;
+          while (first > 0 &&
+              _projectionSpans[first - 1].isHidden &&
+              _spanDisplayStarts[first - 1] == displayStart &&
+              _projectionSpans[first - 1].range.end ==
+                  _projectionSpans[first].range.start) {
+            first -= 1;
+          }
+          return _clampInt(_projectionSpans[first].range.start, 0, textLength);
+        }
+        return _clampInt(span.range.end, 0, textLength);
       }
       final sourceDelta = _spanSourceDeltaPrefix[spanIndex];
       return _clampInt(displayOffset + sourceDelta, 0, textLength);
@@ -597,22 +659,7 @@ final class FlarkProjection {
     if (selection.start < 0 || selection.end > textLength) return selection;
 
     if (!selection.isCollapsed) {
-      final expanded = expandDeletionOverInlineRunMarkers(
-        FlarkSourceRange(selection.start, selection.end),
-      );
-      if (expanded.start == selection.start && expanded.end == selection.end) {
-        return selection;
-      }
-      final inverted = selection.baseOffset > selection.extentOffset;
-      return inverted
-          ? FlarkSelection(
-              baseOffset: expanded.end,
-              extentOffset: expanded.start,
-            )
-          : FlarkSelection(
-              baseOffset: expanded.start,
-              extentOffset: expanded.end,
-            );
+      return _expandRangeDeletionSelection(selection);
     }
 
     final caret = selection.extentOffset;
@@ -620,8 +667,10 @@ final class FlarkProjection {
 
     // Re-enter a run whose hidden closing marker the caret sits just past, so
     // the delete removes the run's last content character, not a marker char.
-    final reentered = inlineRunBoundaryStep(caret, forward: false);
-    final anchor = reentered ?? caret;
+    // The whole adjacent closing chain is walked (`~~*` in `*~~f~~*`), so a
+    // nested edge resolves to the innermost content — a single boundary step
+    // would anchor between two markers and split the inner pair.
+    final anchor = _beforeAdjacentInlineRunMarkers(caret, opening: false);
 
     // If the character to delete belongs to a hidden opening marker, step
     // before the whole marker so a marker character is never split. The delete
@@ -643,6 +692,141 @@ final class FlarkProjection {
       baseOffset: expanded.start,
       extentOffset: expanded.end,
     );
+  }
+
+  /// Adjusts a forward Delete's effective selection so the deletion never
+  /// splits or orphans a hidden inline-run marker — the mirror of
+  /// [resolveBackspaceSelection], built on the same primitives:
+  ///
+  ///  * **Non-collapsed:** identical to Backspace — expand a range covering a
+  ///    run's whole content so its now-meaningless markers go too.
+  ///  * **Just before an opening marker** (the caret outside the run):
+  ///    re-enter it forward so the first *content* character is removed, not
+  ///    a marker character (`|**bold**` → `**old**`).
+  ///  * **At a run's inside-end** (immediately before the hidden closing
+  ///    marker): step past the whole marker so a marker character is never
+  ///    split; the delete then targets the character after the run
+  ///    (`**bold|** x` → `**bold**x`), or merges lines at its end.
+  ///  * **Deleting a run's last content character:** expand over the markers
+  ///    it would orphan (`**x**` → ``).
+  ///
+  /// Adjacent stacked markers (`*~~f~~*` edges) are walked as a chain, so
+  /// the deletion always resolves to the innermost content character and
+  /// never lands between two markers of a nested pair.
+  ///
+  /// Returns the selection the forward Delete should operate on: a range to
+  /// delete exactly, a stepped caret when only hidden markers separate the
+  /// caret from the document end (nothing left to delete), or [selection]
+  /// unchanged when no inline-run marker is adjacent — the caller then
+  /// applies its default forward delete (grapheme-aware character removal,
+  /// block-aware line merges).
+  FlarkSelection resolveForwardDeleteSelection(FlarkSelection selection) {
+    if (selection.start < 0 || selection.end > textLength) return selection;
+
+    if (!selection.isCollapsed) {
+      return _expandRangeDeletionSelection(selection);
+    }
+
+    final caret = selection.extentOffset;
+    if (caret < 0 || caret >= textLength) return selection;
+
+    // A caret at a run's inside-end sits on the run's hidden closing marker;
+    // step past the whole adjacent closing chain so the delete targets the
+    // character after the run instead of splitting a marker.
+    final exited = _pastAdjacentInlineRunMarkers(caret, opening: false);
+    // Re-enter a run whose hidden opening marker starts at the deletion
+    // point, so the delete removes the run's first content character.
+    final anchor = _pastAdjacentInlineRunMarkers(exited, opening: true);
+
+    if (anchor >= textLength) {
+      // Only hidden markers separate the caret from the document end; there
+      // is nothing after them to delete.
+      return FlarkSelection.collapsed(anchor);
+    }
+
+    final expanded = expandDeletionOverInlineRunMarkers(
+      FlarkSourceRange(anchor, anchor + 1),
+    );
+    if (anchor == caret &&
+        expanded.start == anchor &&
+        expanded.end == anchor + 1) {
+      // No re-anchor and nothing to expand: defer to the caller's default
+      // forward delete so block-level handling still runs at the caret.
+      return selection;
+    }
+    return FlarkSelection(
+      baseOffset: expanded.start,
+      extentOffset: expanded.end,
+    );
+  }
+
+  /// Expands a non-collapsed deletion selection over inline-run markers the
+  /// deletion would orphan, preserving the selection's direction. Returns
+  /// [selection] unchanged when nothing expands.
+  FlarkSelection _expandRangeDeletionSelection(FlarkSelection selection) {
+    final expanded = expandDeletionOverInlineRunMarkers(
+      FlarkSourceRange(selection.start, selection.end),
+    );
+    if (expanded.start == selection.start && expanded.end == selection.end) {
+      return selection;
+    }
+    final inverted = selection.baseOffset > selection.extentOffset;
+    return inverted
+        ? FlarkSelection(baseOffset: expanded.end, extentOffset: expanded.start)
+        : FlarkSelection(
+            baseOffset: expanded.start,
+            extentOffset: expanded.end,
+          );
+  }
+
+  /// Steps [offset] backward before the chain of adjacent hidden inline-run
+  /// markers ending at it — opening markers when [opening], closing markers
+  /// otherwise. Returns [offset] unchanged when no such marker precedes it.
+  /// The backward mirror of [_pastAdjacentInlineRunMarkers].
+  int _beforeAdjacentInlineRunMarkers(int offset, {required bool opening}) {
+    var current = offset;
+    while (current > 0) {
+      _ProjectionSpan? covering;
+      for (final span in _projectionSpans) {
+        if (span.range.start > current - 1) break;
+        if (span.isHidden && current - 1 < span.range.end) {
+          covering = span;
+          break;
+        }
+      }
+      if (covering == null) return current;
+      final matches = opening
+          ? covering.opensInlineRun
+          : covering.closesInlineRun;
+      if (!matches) return current;
+      current = covering.range.start;
+    }
+    return current;
+  }
+
+  /// Steps [offset] forward past the chain of adjacent hidden inline-run
+  /// markers covering it (`start <= offset < end`) — opening markers when
+  /// [opening], closing markers otherwise. Returns [offset] unchanged when
+  /// no such marker covers it. Walking the whole chain keeps nested stacked
+  /// markers (`~~*` in `*~~f~~*`) intact as one unit.
+  int _pastAdjacentInlineRunMarkers(int offset, {required bool opening}) {
+    var current = offset;
+    while (true) {
+      _ProjectionSpan? covering;
+      for (final span in _projectionSpans) {
+        if (span.range.start > current) break;
+        if (span.isHidden && current < span.range.end) {
+          covering = span;
+          break;
+        }
+      }
+      if (covering == null) return current;
+      final matches = opening
+          ? covering.opensInlineRun
+          : covering.closesInlineRun;
+      if (!matches) return current;
+      current = covering.range.end;
+    }
   }
 
   /// The start of a hidden inline-run opening marker covering [offset]

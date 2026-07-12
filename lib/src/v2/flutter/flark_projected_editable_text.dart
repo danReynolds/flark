@@ -339,8 +339,7 @@ mixin _InlineLinkPopoverHost<T extends StatefulWidget> on State<T> {
       showWhenUnlinked: false,
       targetAnchor: Alignment.topLeft,
       followerAnchor: Alignment.topLeft,
-      offset:
-          anchor == null ? const Offset(0, 6) : anchor + const Offset(0, 4),
+      offset: anchor == null ? const Offset(0, 6) : anchor + const Offset(0, 4),
       child: UnconstrainedBox(
         alignment: Alignment.topLeft,
         child: FlarkMarkdownTheme(
@@ -744,6 +743,7 @@ final class _FlarkProjectedEditableHostState
       controller: widget.controller,
       enterUserEvent: 'input.projected.enter',
       backspaceUserEvent: 'input.projected.backspace',
+      forwardDeleteUserEvent: 'input.projected.forwardDelete',
       onHandled: widget.liveRendered ? _adoptImmediateMarkdownParse : null,
     );
   }

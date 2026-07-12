@@ -3,7 +3,6 @@ import '../core/selection/flark_selection.dart';
 import '../markdown/parse/flark_markdown_parse_result.dart';
 import '../projection/flark_projection.dart';
 import 'flark_render_plan.dart';
-import 'flark_sticky_inline_run.dart';
 
 /// The pair of derived views adopted from a parse: the offset mapping
 /// ([projection]) and the block/inline model ([renderPlan]).
@@ -30,9 +29,13 @@ final class FlarkRenderAdoption {
 ///
 /// Current pipeline:
 /// 1. **extensions** — apply registered render-plan extensions.
-/// 2. **sticky inline run** — keep an emphasis/strong/strikethrough run
-///    rendered while the caret edits inside it, even when a transient trailing
-///    space makes the parse drop the styled run.
+///
+/// (A "sticky inline run" pass used to re-hide the markers of a
+/// `**foo **`-shaped run while the caret edited inside it. It is gone: the
+/// write paths now keep inline delimiters flanking-valid at every revision —
+/// see `FlarkInlineDelimiterPlacement` — so the parse never drops an
+/// editor-authored run and the rendered view never depends on caret-local
+/// compensation.)
 abstract final class FlarkRenderReconciler {
   static FlarkRenderAdoption fromParseResult({
     required FlarkMarkdownParseResult parseResult,
@@ -61,10 +64,7 @@ abstract final class FlarkRenderReconciler {
     return adoption;
   }
 
-  static const List<_ReconciliationPass> _passes = [
-    _extensionsPass,
-    _stickyInlineRunPass,
-  ];
+  static const List<_ReconciliationPass> _passes = [_extensionsPass];
 
   static FlarkRenderAdoption _extensionsPass(
     FlarkRenderAdoption adoption,
@@ -78,22 +78,6 @@ abstract final class FlarkRenderReconciler {
         projection: adoption.projection,
         extensions: context.extensions,
       ),
-    );
-  }
-
-  static FlarkRenderAdoption _stickyInlineRunPass(
-    FlarkRenderAdoption adoption,
-    _ReconciliationContext context,
-  ) {
-    final sticky = FlarkStickyInlineRun.reconcile(
-      projection: adoption.projection,
-      renderPlan: adoption.renderPlan,
-      source: context.source,
-      selection: context.selection,
-    );
-    return FlarkRenderAdoption(
-      projection: sticky.projection,
-      renderPlan: sticky.renderPlan,
     );
   }
 }

@@ -1,5 +1,107 @@
 # Changelog
 
+## 0.2.0 - unreleased
+
+Inline-style validity rework: the editor now keeps the Markdown source valid
+CommonMark at every revision, instead of holding transiently-invalid
+delimiter placements (`**hello world **`) and hiding them with caret-local
+rendering compensation. What the editor displays is exactly what any
+consumer of `controller.markdown` — autosave, form submission, the
+standalone preview, another renderer — will see.
+
+- Typing whitespace at a styled run's edge commits it outside the
+  delimiters (`**hello** `, never `**hello **`) and keeps the style armed:
+  the next styled character re-enters the run (`**hello world**`), toggling
+  the style off and typing continues as plain text (`**hello** x` — the
+  originally reported bug), and moving the caret away leaves valid source
+  behind. Works for strong, emphasis, strikethrough, stacked `***` runs,
+  and nested runs (whitespace bubbles out through flush delimiters);
+  inline code spans keep their whitespace, since backticks legally hug it.
+- Deletions that would strand a delimiter against whitespace relocate it
+  (`**foo x**` minus `x` → `**foo** `) and keep the style armed for
+  continued typing; deleting a run's last content dissolves its delimiters,
+  cascading through emptied enclosing runs.
+- Selection wraps hug the selection's non-whitespace core (`hello ` +
+  bold → `**hello** `); wrapping a whitespace-only selection is rejected.
+  The same applies to typing `*`/`_` over a selection.
+- Muted-exit splits keep both halves valid (`**foo bar**` split after
+  `foo ` → `**foo** x**bar**`), and a muted exit with a switched-in style
+  never wraps whitespace-only text into an invalid sibling run.
+- Enter at a run's edge lands outside the delimiters (`**hello**` + Enter
+  at the trailing edge → `**hello**\n`, never `**hello\n**`).
+- Everything that relocates delimiters resolves runs from the parser's own
+  pairing (`FlarkProjection.inlineRunScans`); hand-typed literal text such
+  as a character-by-character `**foo **` is never rewritten and renders
+  literally regardless of caret position.
+- Fixed: deleting beside a nested run's stacked hidden markers could map
+  the deletion across half a marker pair (backspace in `*~~ff~~*` ate the
+  `~~` close); upstream display→source mapping now resolves to the start of
+  the whole adjacent hidden-marker chain.
+- Toolbar active-state detection is flanking-aware: a caret inside literal
+  `**foo **` or between two bold words no longer reports bold active.
+- GFM single-tilde strikethrough (`~x~`) now hides its markers like every
+  other styled run; previously it rendered struck-through with the tildes
+  still visible (the bridge only emits marker ranges for `~~`, so the
+  single-tilde ranges are synthesized on the Dart side).
+- Editor-authored delimiters hide on the same frame they are written: the
+  placement rules report the marker ranges they author and the controller
+  folds them into the predicted projection, so armed wraps, re-entry
+  relocations, edge repairs, and splits no longer flash raw markers for the
+  beat before the immediate parse — and, critically, the platform editable's
+  text never changes out from under an active IME composition, so composing
+  survives marker-creating keystrokes (previously the first bold-armed
+  keystroke cancelled GBoard/kana composition).
+- Forward Delete is routed through the boundary-aware deletion resolver like
+  Backspace, so it deletes content characters — never half of a hidden
+  marker pair — at run edges.
+- Keyboard Backspace/forward-Delete now canonicalize the deletion through the
+  same inline placement repairs as the display-space edit path: backspacing a
+  run's last word-character relocates the delimiter (`**foo x**` → `**foo** `,
+  never the invalid `**foo **`), and deleting the gap between two same-style
+  runs merges them (`**a** **b**` → `**ab**`, never the fused literal
+  `**a****b**`) — symmetrically for both keys. Previously these source-side
+  keyboard deletions bypassed the repairs and could leave invalid markdown.
+- Exiting a blockquote or list no longer leaves a phantom blank row. The
+  blank line that closes the block (`> q\n\n`, `- i\n\n`) is structural — it
+  stops the next paragraph lazy-continuing back in — and is absorbed as the
+  block's boundary so the exit shows one cursor row, not two. Previously a
+  blockquote absorbed it only in the exact resting state (so a second Enter
+  made it pop back as a skipped line), and lists never absorbed it at all;
+  both are fixed and consistent, and a blank line genuinely *between* two
+  blocks still renders.
+- New IME input suite drives real composing-region sequences through the
+  editing surfaces (predictive, autocorrect, JP/KR conversion shapes, echo
+  suppression), plus a manual device-test protocol in
+  `docs/testing/ime_device_protocol.md`. New widget-level `LiveRenderSequence`
+  harness gates rendered row structure per keystroke (the block-exit class a
+  headless gate cannot see); see `test/v2/flutter/support/README.md` for the
+  test-tier convention.
+
+Breaking:
+
+- `FlarkStickyInlineRun` is removed (with its render-reconciler pass). The
+  write paths keep runs valid, so no caret-dependent rescue exists — and
+  the old pass could disagree with the parse (e.g. hiding markers inside an
+  indented code block).
+- `FlarkProjectedTextEditAdapter.resolveDisplayEdit` is the new primary
+  entry point, returning the transaction plus the continuation the
+  controller re-arms; `transactionFromDisplayEdit` remains as a shim.
+- Muted-exit relocations engage only when the controller has parse-derived
+  runs (every editing surface parses on attach; headless drivers should
+  call `parseNow()`/`tryParseSync()` before relying on them).
+
+New headless modules (exported via `flark_core.dart`):
+`FlarkInlineDelimiterPlacement` (canonical delimiter placement),
+`FlarkInlineRunScanner` + `FlarkInlineFlanking` (flanking-aware run
+detection for surfaces without a projection). New sequence-gate suite
+(`test/v2/flutter/flark_inline_style_sequence_test.dart`) asserts display
+fidelity and caret-free export round-trip after every step of every
+scenario, including randomized sequences, and a declarative render-spec
+layer (`test/v2/flutter/flark_markdown_render_spec_test.dart`) asserts
+parse/render outcomes as one annotated string per case —
+`'hello *world*'` → `'hello <em>world</em>'` — both for loaded documents
+and for the same source typed keystroke-by-keystroke.
+
 ## 0.1.1 - 2026-06-23
 
 Architecture hardening and correctness fixes from a full-package audit,

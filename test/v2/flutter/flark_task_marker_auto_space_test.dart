@@ -43,23 +43,28 @@ void main() {
 
       await c.parseNow();
       final old2 = c.projection.projectText(c.markdown);
-      c.applyProjectedTextEdit(oldDisplayText: old2, newDisplayText: '${old2}f');
+      c.applyProjectedTextEdit(
+        oldDisplayText: old2,
+        newDisplayText: '${old2}f',
+      );
 
       expect(c.markdown, '- [ ] f');
       await c.parseNow();
       expect(hasCheckbox(c), isTrue);
     });
 
-    test('an armed wrap flags an immediate parse so the checkbox renders',
-        () async {
-      final c = FlarkFlutterController.fromMarkdown('- [ ');
-      addTearDown(c.dispose);
-      await c.parseNow();
-      c.applySelection(const FlarkSelection.collapsed(4), userEvent: 't');
-      final old = c.projection.projectText(c.markdown);
-      c.applyProjectedTextEdit(oldDisplayText: old, newDisplayText: '$old]');
-      expect(c.lastEditRequestsImmediateParse, isTrue);
-    });
+    test(
+      'an armed wrap flags an immediate parse so the checkbox renders',
+      () async {
+        final c = FlarkFlutterController.fromMarkdown('- [ ');
+        addTearDown(c.dispose);
+        await c.parseNow();
+        c.applySelection(const FlarkSelection.collapsed(4), userEvent: 't');
+        final old = c.projection.projectText(c.markdown);
+        c.applyProjectedTextEdit(oldDisplayText: old, newDisplayText: '$old]');
+        expect(c.lastEditRequestsImmediateParse, isTrue);
+      },
+    );
 
     test('ordinary typing is unaffected', () async {
       final c = FlarkFlutterController.fromMarkdown('ab');

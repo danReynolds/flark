@@ -21,6 +21,45 @@ void main() {
       );
     }
 
+    test('past a run closing on an emoji deletes the whole grapheme, not '
+        'half a surrogate pair', () async {
+      // Caret just past the run's hidden closing `**`; re-entering the run
+      // deletes the last content character, which is a surrogate pair. A raw
+      // (anchor-1, anchor) range would strand a broken half-surrogate — the
+      // resolved deletion must cover the whole grapheme. Mirror of the
+      // forward-Delete emoji regression in flark_forward_delete_test.dart.
+      final controller = FlarkFlutterController.fromMarkdown('**ok\u{1F600}**');
+      addTearDown(controller.dispose);
+      await controller.parseNow();
+      controller.applySelection(
+        const FlarkSelection.collapsed(8),
+        userEvent: 'test',
+      );
+      backspace(controller);
+      expect(controller.markdown, '**ok**');
+    });
+
+    test(
+      'an emoji before a run leading edge deletes whole, not half',
+      () async {
+        // `😀**bold**`, caret at the bold run's content start. Backspace steps
+        // before the hidden opening `**` and deletes the char before it — a
+        // surrogate pair. The engine's fallback backspace must delete the whole
+        // grapheme, not a lone code unit (which would corrupt the source).
+        final controller = FlarkFlutterController.fromMarkdown(
+          '\u{1F600}**bold**',
+        );
+        addTearDown(controller.dispose);
+        await controller.parseNow();
+        controller.applySelection(
+          const FlarkSelection.collapsed(4),
+          userEvent: 'test',
+        );
+        backspace(controller);
+        expect(controller.markdown, '**bold**');
+      },
+    );
+
     test('deleting the last character removes the orphaned markers', () async {
       for (final probe in <(String, int)>[
         ('**f**', 3),
@@ -42,19 +81,22 @@ void main() {
       }
     });
 
-    test('deleting a non-final character keeps the longer run intact', () async {
-      final controller = FlarkFlutterController.fromMarkdown('**fo**');
-      addTearDown(controller.dispose);
-      await controller.parseNow();
-      controller.applySelection(
-        const FlarkSelection.collapsed(4),
-        userEvent: 'test',
-      );
+    test(
+      'deleting a non-final character keeps the longer run intact',
+      () async {
+        final controller = FlarkFlutterController.fromMarkdown('**fo**');
+        addTearDown(controller.dispose);
+        await controller.parseNow();
+        controller.applySelection(
+          const FlarkSelection.collapsed(4),
+          userEvent: 'test',
+        );
 
-      backspace(controller);
+        backspace(controller);
 
-      expect(controller.markdown, '**f**');
-    });
+        expect(controller.markdown, '**f**');
+      },
+    );
 
     test('backspacing a whole run leaves no orphaned markers', () async {
       final controller = FlarkFlutterController.fromMarkdown('**foo**');
@@ -73,34 +115,36 @@ void main() {
       expect(controller.markdown, '');
     });
 
-    test('a caret just past the close re-enters the run, not the marker',
-        () async {
-      // Regression: the source caret sits outside the run (after the hidden
-      // closing `**`). A naive delete cut a marker char, leaving the
-      // unbalanced `**bold*`; it must drop the last content char instead.
-      for (final probe in <(String, int, String)>[
-        ('**bold**', 8, '**bol**'),
-        ('*em*', 4, '*e*'),
-        ('`code`', 6, '`cod`'),
-        ('~~done~~', 8, '~~don~~'),
-      ]) {
-        final controller = FlarkFlutterController.fromMarkdown(probe.$1);
-        addTearDown(controller.dispose);
-        await controller.parseNow();
-        controller.applySelection(
-          FlarkSelection.collapsed(probe.$2),
-          userEvent: 'test',
-        );
+    test(
+      'a caret just past the close re-enters the run, not the marker',
+      () async {
+        // Regression: the source caret sits outside the run (after the hidden
+        // closing `**`). A naive delete cut a marker char, leaving the
+        // unbalanced `**bold*`; it must drop the last content char instead.
+        for (final probe in <(String, int, String)>[
+          ('**bold**', 8, '**bol**'),
+          ('*em*', 4, '*e*'),
+          ('`code`', 6, '`cod`'),
+          ('~~done~~', 8, '~~don~~'),
+        ]) {
+          final controller = FlarkFlutterController.fromMarkdown(probe.$1);
+          addTearDown(controller.dispose);
+          await controller.parseNow();
+          controller.applySelection(
+            FlarkSelection.collapsed(probe.$2),
+            userEvent: 'test',
+          );
 
-        backspace(controller);
+          backspace(controller);
 
-        expect(
-          controller.markdown,
-          probe.$3,
-          reason: 'backspacing just past the close of "${probe.$1}"',
-        );
-      }
-    });
+          expect(
+            controller.markdown,
+            probe.$3,
+            reason: 'backspacing just past the close of "${probe.$1}"',
+          );
+        }
+      },
+    );
 
     test('backspacing plain text back into a run stays balanced', () async {
       // The reported sequence: type past a bold run, then backspace across the

@@ -18,7 +18,8 @@ Future<void> _parse(FlarkFlutterController controller) async {
 Future<void> _pumpEditor(
   WidgetTester tester,
   FlarkFlutterController controller, {
-  FlarkMarkdownInteractionConfig config = const FlarkMarkdownInteractionConfig(),
+  FlarkMarkdownInteractionConfig config =
+      const FlarkMarkdownInteractionConfig(),
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -45,7 +46,9 @@ Future<void> _tapLink(WidgetTester tester) async {
 }
 
 void main() {
-  final destinationFinder = find.byKey(const Key('FlarkLinkPopoverDestination'));
+  final destinationFinder = find.byKey(
+    const Key('FlarkLinkPopoverDestination'),
+  );
 
   testWidgets('a tap on a link opens the popover with the default actions', (
     tester,
@@ -66,7 +69,10 @@ void main() {
     expect(find.byKey(const ValueKey('FlarkLinkAction.open')), findsOneWidget);
     expect(find.byKey(const ValueKey('FlarkLinkAction.edit')), findsOneWidget);
     expect(find.byKey(const ValueKey('FlarkLinkAction.copy')), findsOneWidget);
-    expect(find.byKey(const ValueKey('FlarkLinkAction.remove')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('FlarkLinkAction.remove')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('the caret merely landing in a link does not open it', (
@@ -82,7 +88,10 @@ void main() {
     await _parse(controller);
     await _pumpEditor(tester, controller);
 
-    controller.applySelection(const FlarkSelection.collapsed(3), userEvent: 't');
+    controller.applySelection(
+      const FlarkSelection.collapsed(3),
+      userEvent: 't',
+    );
     await tester.pump();
     await tester.pump();
     expect(destinationFinder, findsNothing);
@@ -149,7 +158,10 @@ void main() {
     );
 
     await _tapLink(tester);
-    expect(find.byKey(const ValueKey('FlarkLinkAction.unfurl')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('FlarkLinkAction.unfurl')),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('FlarkLinkAction.open')), findsNothing);
   });
 }

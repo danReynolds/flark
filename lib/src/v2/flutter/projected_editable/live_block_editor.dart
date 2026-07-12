@@ -701,7 +701,7 @@ final class _FlarkLiveRenderedBlockEditorState
           selection.extentOffset <= lineRange.end;
       final shouldHost = lineText.trim().isEmpty || selectedLine;
       if (shouldHost &&
-          !_isFocusedTerminalBlockquoteExitSeparator(
+          !_isFocusedTerminalBlockExitSeparator(
             markdown: markdown,
             blocks: blocks,
             lineRange: lineRange,
@@ -726,7 +726,7 @@ final class _FlarkLiveRenderedBlockEditorState
     }
   }
 
-  static bool _isFocusedTerminalBlockquoteExitSeparator({
+  static bool _isFocusedTerminalBlockExitSeparator({
     required String markdown,
     required List<FlarkRenderBlock> blocks,
     required FlarkSourceRange lineRange,
@@ -734,8 +734,24 @@ final class _FlarkLiveRenderedBlockEditorState
   }) {
     if (!selection.isCollapsed || !lineRange.isCollapsed) return false;
     final separatorOffset = lineRange.start;
-    if (selection.extentOffset != separatorOffset + 1 ||
-        selection.extentOffset != markdown.length ||
+    // The blank line that closes a blockquote or a list (`> q\n\n`,
+    // `- i\n\n`) is structural — it exists only so the next paragraph is not
+    // lazy-continued back into the block — so it is absorbed as the block's
+    // bottom boundary rather than shown as its own editable row. Two
+    // requirements keep this from over-firing:
+    //
+    //  * the caret is at the document end, so this is the block's *exit* flow,
+    //    not editing elsewhere; and
+    //  * the separator and everything after it to the end is blank — a
+    //    terminal exit region, not a gap before more content. This both keeps
+    //    the separator hidden across a repeated Enter (`> q\n\n\n`, the caret
+    //    now further down, or it pops back as a phantom row and reads as a
+    //    skipped line) and leaves a blank line *between* two blocks
+    //    (`- one\n\n\n- two`) visible, since content follows it.
+    //
+    // Paragraphs and headings are excluded — their trailing blanks are
+    // genuine user-inserted lines, not a structural exit requirement.
+    if (selection.extentOffset != markdown.length ||
         separatorOffset <= 0 ||
         separatorOffset >= markdown.length) {
       return false;
@@ -744,10 +760,15 @@ final class _FlarkLiveRenderedBlockEditorState
         !_isLineBreakCodeUnit(markdown.codeUnitAt(separatorOffset - 1))) {
       return false;
     }
+    for (var offset = separatorOffset; offset < markdown.length; offset += 1) {
+      if (!_isLineBreakCodeUnit(markdown.codeUnitAt(offset))) return false;
+    }
     return blocks.any(
       (block) =>
-          block.kind == FlarkMarkdownBlockKind.blockquote &&
-          block.sourceRange.end == separatorOffset,
+          block.sourceRange.end == separatorOffset &&
+          (block.kind == FlarkMarkdownBlockKind.blockquote ||
+              block.listItem != null ||
+              block.taskListItem != null),
     );
   }
 
