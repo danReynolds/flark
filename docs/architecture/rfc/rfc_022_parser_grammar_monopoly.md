@@ -83,15 +83,18 @@ Scanner libraries (the pinned set):
    fail; removals must update the pin, keeping the table honest).
 2. **Adoption-time confirmation (debug builds)** — when a parse result is
    adopted over a live prediction:
-   - **Authored-claim assert (strict).** Delimiter ranges the editor itself
-     authored and pre-hid (`armed wrap`, placement relocations —
-     `_pendingAuthoredMarkers`) must be re-derived by the parse with
-     identical bounds, per the documented contract in
-     `live_edit_intent_pipeline.md` ("the immediate parse then re-derives the
-     identical hidden ranges authoritatively"). A violation means a scanner
-     authored markdown comrak disagrees with (the `**foo***` class) and
-     throws in debug builds — the entire existing suite becomes an invariant
-     gate for free.
+   - **Authored-claim assert (coverage-based).** Delimiter ranges the editor
+     itself authored and pre-hid (`armed wrap`, placement relocations —
+     `_pendingAuthoredMarkers`; command declarations deferred past the sync
+     ceiling) must be *covered by* the parse's hidden ranges. Coverage, not
+     exact bounds: an authored delimiter fused with an adjacent
+     same-character delimiter re-tokenizes as one cluster with different
+     sub-range cuts (`**foobar**` + emphasis → `***foobar***` hides `[1,3)`,
+     not the declared `[2,3)`), while a genuinely refuted claim always leaks
+     a *visible* marker character — exactly what coverage rejects. A
+     violation throws `FlarkContractViolationError` in debug builds (rethrown
+     through every parse path, never routed to the parse-error callback) —
+     the entire existing suite becomes an invariant gate for free.
    - **Geometry confirmation (counter, not throw).** Predicted
      hidden/replacement ranges outside the transaction's invalidated range
      that the parse does not confirm increment
@@ -108,7 +111,7 @@ Scanner libraries (the pinned set):
 | --- | --- | --- | --- |
 | 0 | This RFC; boundary test; adoption assert + telemetry | — | shipped with this RFC |
 | 1 | Parser-as-judge on command paths (sync-parse candidate transactions, reject on mismatch, judged parses adopt same-turn); adaptive sync-parse ceiling (latency-learned via `FlarkMarkdownParseRequest.maxSyncUtf8Bytes`, floor = old fixed cutoff) serving first-paint parses and the judge; contract violations typed (`FlarkContractViolationError`) and rethrown through the parse pipeline so a refuted grammar claim fails loudly instead of silently aborting adoption. **Two Phase 1 candidates were implemented, then reverted by suite evidence, and moved to Phase 4:** (a) keystroke-path sync-primary scheduling — adopting a parse between keystrokes shrinks the pre-parse windows the echo recognizers assume (typed-closing-fence flows changed shape), which is matrix-row-12/15 convergence and stays behind the manual IME device gate; (b) promoting geometry confirmation to an assert on a line-based blast-radius heuristic — refuted by a precise counterexample: an unclosed fence opener hides as `[13,21)` (through its newline; the body runs to EOF) and the keystroke that *closes* the fence, arbitrarily far downstream, legitimately reshapes it to `[13,20)`. An edit's honest blast radius requires fence topology, i.e. grammar — so the promotion itself must wait for parser-derived invalidation (Phase 4), exactly as this RFC's own rule predicts | toggle/wrap flanking approximations demoted to proposals | shipped |
-| 2 | Bridge protocol v2: marker sub-ranges for links/images/autolinks, multi-line ref-def spans, every structural fact as ranges; new thin Dart decoder cut over under conformance/parity/goldens | `_nativeInlineHiddenRanges`, `_referenceDefinitionRanges`, the mapper's scanner imports (~1,400 of 1,853 lines) | pending |
+| 2 | Bridge protocol v2: marker sub-ranges for links/images/autolinks, multi-line ref-def spans, every structural fact as ranges; new thin Dart decoder cut over under conformance/parity/goldens; carry the sync-parse ceiling in the bridge call (deletes the backend threshold shim); fix the known mapping gap where a nested emphasis closer abutting a strong closer drops the inner marker ranges (`**foo *bar***` — the judge currently vetoes that wrap because the surface would render the markers raw; pinned in `flark_parser_judge_test.dart`) | `_nativeInlineHiddenRanges`, `_referenceDefinitionRanges`, the mapper's scanner imports (~1,400 of 1,853 lines) | pending |
 | 3 | Preview consumes the editor's boundary-segmentation module; differential preview-vs-editor oracle over the conformance corpus | preview's bespoke span walk | pending |
 | 4 | Block-local sync reparse for inline-safe edits at any doc size (conservative structural classifier gates; async whole-doc remains the reconciler); keystroke-path sync-primary scheduling (moved here from Phase 1 — changes echo-recognizer timing, so it lands only with the manual IME device pass); parser-derived edit invalidation ranges, enabling the geometry-confirmation assert (moved here from Phase 1 — see the fence counterexample in row 1); per-list-item toggle wrapping from parsed block boundaries; delete scanners the §4 telemetry proves dead | input-engine/fence-policy structural probing | pending |
 

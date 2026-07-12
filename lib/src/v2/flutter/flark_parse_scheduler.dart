@@ -26,6 +26,32 @@ final class FlarkParseScheduler {
   /// RFC 022 parser judge so command validation and the keystroke path can
   /// never disagree on parser identity or options.
   FlarkMarkdownParseBackend get backend => _backend;
+
+  /// Synchronously parses [markdown] for the judge (a candidate state, not
+  /// the controller's current one), or returns null when that is not
+  /// affordable. Runs through the scheduler so judge parses feed the same
+  /// adaptive-ceiling learner as first-paint parses — otherwise the ceiling
+  /// would freeze after startup while the judge kept paying it blind.
+  FlarkMarkdownParseResult? parseCandidateSync({
+    required int revision,
+    required String markdown,
+    required FlarkMarkdownProfile profile,
+  }) {
+    if (_disposed) return null;
+    final backend = _backend;
+    if (backend is! FlarkSyncCapableParseBackend) return null;
+    final stopwatch = Stopwatch()..start();
+    final result = backend.parseSync(
+      FlarkMarkdownParseRequest(
+        revision: revision,
+        markdown: markdown,
+        profile: profile,
+        maxSyncUtf8Bytes: adaptiveSyncCeilingBytes,
+      ),
+    );
+    if (result != null) _recordSyncParseMicros(stopwatch.elapsedMicroseconds);
+    return result;
+  }
   final FlarkMarkdownProfile _profile;
   final Duration _debounce;
   final void Function(Object error, StackTrace stackTrace)? _onError;
@@ -167,7 +193,16 @@ final class FlarkParseScheduler {
 
   void _handleControllerChanged() {
     if (!_started || _disposed) return;
-    if (_controller.hasAuthoritativeRenderPlan) return;
+    if (_controller.hasAuthoritativeRenderPlan) {
+      // The plan just became authoritative for the current revision — e.g.
+      // the parser judge adopted its own parse right after a command's
+      // runtime adoption scheduled one. A still-pending schedule would only
+      // reparse the unchanged document and re-notify every listener.
+      _timer?.cancel();
+      _timer = null;
+      _scheduledRevision = null;
+      return;
+    }
     _schedule(immediate: false);
   }
 

@@ -276,7 +276,9 @@ final class FlarkFlutterController extends ChangeNotifier {
   /// called, this performs a one-shot parse without installing a background
   /// debounce loop, so advanced widgets that drive parsing per structural
   /// edit do not leak pending timers. Errors are routed to the configured
-  /// parse-error callback rather than thrown.
+  /// parse-error callback rather than thrown — except a
+  /// [FlarkContractViolationError] (debug builds), which is a flark defect
+  /// and rethrows so tests fail loudly instead of silently skipping adoption.
   Future<void> parseNow() async {
     if (_disposed) return;
     try {
@@ -285,6 +287,8 @@ final class FlarkFlutterController extends ChangeNotifier {
       // routes to the callback rather than escaping this never-throw method.
       final scheduler = _ensureScheduler();
       await scheduler.parseNow();
+    } on FlarkContractViolationError {
+      rethrow;
     } catch (error, stackTrace) {
       _onParseError?.call(error, stackTrace);
     }
@@ -307,7 +311,8 @@ final class FlarkFlutterController extends ChangeNotifier {
   /// on a controller that already has attached listeners can mark built
   /// elements dirty during the build phase. Errors (including backend load
   /// failures) are routed to the configured parse-error callback and report
-  /// as false, never thrown.
+  /// as false — except a [FlarkContractViolationError] (debug builds), which
+  /// is a flark defect and is thrown so tests fail loudly.
   bool tryParseSync() {
     if (_disposed) return false;
     final FlarkParseScheduler scheduler;
@@ -592,6 +597,7 @@ final class FlarkFlutterController extends ChangeNotifier {
   /// verifies the claim in debug builds when the async parse lands.
   FlarkEditorRuntimeResult _judgeAndAdopt(FlarkEditorRuntimeResult result) {
     FlarkMarkdownParseResult? judged;
+    List<FlarkSourceRange>? deferredClaims;
     if (!identical(result.runtime, _runtime)) {
       final declared = <FlarkSourceRange>[
         for (final transaction in result.appliedTransactions)
@@ -600,13 +606,18 @@ final class FlarkFlutterController extends ChangeNotifier {
       if (declared.isNotEmpty) {
         judged = _parseCandidate(result.runtime.state);
         if (judged != null) {
-          final hidden = <(int, int)>{
-            for (final range
-                in FlarkProjection.fromParseResult(judged).hiddenRanges)
-              (range.range.start, range.range.end),
-          };
+          // Coverage, not exact bounds: an authored delimiter adjacent to an
+          // existing same-character delimiter fuses into one cluster that the
+          // parser may tokenize with different sub-range boundaries
+          // (`**foobar**` + emphasis -> `***foobar***` hides [1,3), not the
+          // declared [2,3)). What matters is that every authored position is
+          // syntax (hidden), because a refuted claim always leaks a VISIBLE
+          // marker character.
+          final hidden = _sortedHiddenBounds(
+            FlarkProjection.fromParseResult(judged).hiddenRanges,
+          );
           for (final range in declared) {
-            if (hidden.contains((range.start, range.end))) continue;
+            if (_coveredByHidden(range, hidden)) continue;
             return FlarkEditorRuntimeResult(
               runtime: _runtime,
               commandResult: FlarkCommandResult.rejected(
@@ -616,12 +627,65 @@ final class FlarkFlutterController extends ChangeNotifier {
               ),
             );
           }
+        } else {
+          // Not judged (over the sync ceiling, or an async-only backend such
+          // as the browser WASM bridge): hand the declarations to the Phase 0
+          // adoption assertion, which verifies them in debug builds when the
+          // async parse for this revision lands. Set after adoption below —
+          // _adoptRuntimeResult clears the capture at entry.
+          deferredClaims = declared;
         }
       }
     }
     _adoptRuntimeResult(result);
     if (judged != null) applyParseResult(judged);
+    if (deferredClaims != null) {
+      assert(() {
+        _debugAuthoredMarkerRanges = deferredClaims;
+        return true;
+      }());
+    }
     return result;
+  }
+
+  /// Hidden-range bounds merged into sorted, coalesced `(start, end)` spans,
+  /// so coverage checks are a single binary probe per range.
+  static List<(int, int)> _sortedHiddenBounds(
+    List<FlarkHiddenRange> hiddenRanges,
+  ) {
+    final sorted = [
+      for (final hidden in hiddenRanges)
+        (hidden.range.start, hidden.range.end),
+    ]..sort((a, b) => a.$1 != b.$1 ? a.$1 - b.$1 : a.$2 - b.$2);
+    final merged = <(int, int)>[];
+    for (final span in sorted) {
+      if (merged.isNotEmpty && span.$1 <= merged.last.$2) {
+        if (span.$2 > merged.last.$2) {
+          merged[merged.length - 1] = (merged.last.$1, span.$2);
+        }
+        continue;
+      }
+      merged.add(span);
+    }
+    return merged;
+  }
+
+  /// Whether every position of [range] lies inside the merged hidden spans.
+  static bool _coveredByHidden(FlarkSourceRange range, List<(int, int)> spans) {
+    if (range.isCollapsed) return true;
+    var low = 0, high = spans.length - 1;
+    while (low <= high) {
+      final mid = (low + high) >> 1;
+      final span = spans[mid];
+      if (range.start >= span.$2) {
+        low = mid + 1;
+      } else if (range.start < span.$1) {
+        high = mid - 1;
+      } else {
+        return range.end <= span.$2;
+      }
+    }
+    return false;
   }
 
   /// Parses a candidate (not yet adopted) state synchronously, or returns
@@ -636,16 +700,11 @@ final class FlarkFlutterController extends ChangeNotifier {
       _onParseError?.call(error, stackTrace);
       return null;
     }
-    final backend = scheduler.backend;
-    if (backend is! FlarkSyncCapableParseBackend) return null;
     try {
-      return backend.parseSync(
-        FlarkMarkdownParseRequest(
-          revision: candidate.revision,
-          markdown: candidate.markdown,
-          profile: _parseProfile,
-          maxSyncUtf8Bytes: scheduler.adaptiveSyncCeilingBytes,
-        ),
+      return scheduler.parseCandidateSync(
+        revision: candidate.revision,
+        markdown: candidate.markdown,
+        profile: _parseProfile,
       );
     } catch (error, stackTrace) {
       _onParseError?.call(error, stackTrace);
@@ -1446,6 +1505,11 @@ final class FlarkFlutterController extends ChangeNotifier {
   ///   does not yet declare its non-local blast radius (Phase 1).
   void _debugConfirmPredictionAdoption(FlarkProjection authoritative) {
     if (!flarkDebugValidatePredictionAdoption) return;
+    // Coverage semantics, matching the parser judge: an authored delimiter
+    // fused with an adjacent same-character cluster may re-tokenize with
+    // different sub-range bounds, but a refuted claim always leaves a VISIBLE
+    // (uncovered) marker character.
+    final hiddenSpans = _sortedHiddenBounds(authoritative.hiddenRanges);
     final authoritativeHidden = <(int, int)>{
       for (final hidden in authoritative.hiddenRanges)
         (hidden.range.start, hidden.range.end),
@@ -1455,7 +1519,7 @@ final class FlarkFlutterController extends ChangeNotifier {
     _debugAuthoredMarkerRanges = null;
     if (authored != null) {
       for (final range in authored) {
-        if (authoritativeHidden.contains((range.start, range.end))) continue;
+        if (_coveredByHidden(range, hiddenSpans)) continue;
         final snippet = state.markdown.length <= 200
             ? state.markdown
             : '${state.markdown.substring(0, 200)}…';
