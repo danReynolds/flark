@@ -13,6 +13,22 @@ import '../render_plan/render_plan.dart';
 import 'flark_parse_scheduler.dart';
 import 'flark_text_delta_adapter.dart';
 
+/// Kill switch for the RFC 022 adoption-time confirmation (debug builds
+/// only). Leave enabled; a test exercising deliberately divergent predictions
+/// may disable it around the divergence.
+@visibleForTesting
+bool flarkDebugValidatePredictionAdoption = true;
+
+/// RFC 022 §4 telemetry: predicted hidden/replacement ranges *outside* the
+/// edited region that the authoritative parse did not confirm. Markdown is
+/// non-local (a fence opener restructures everything after it), so a nonzero
+/// count is not by itself a bug — it measures how often geometry-only
+/// prediction goes stale, and which flows need honest
+/// `projectionInvalidationRange` metadata (Phase 1) before this can be
+/// promoted to an assertion.
+@visibleForTesting
+int flarkDebugUnconfirmedPredictionRanges = 0;
+
 enum FlarkControllerEventKind {
   runtimeChanged,
   selectionChanged,
@@ -103,6 +119,12 @@ final class FlarkFlutterController extends ChangeNotifier {
   FlarkRenderPlan _renderPlan;
   int? _renderPlanRevision;
   FlarkProjectionPrediction? _lastProjectionPrediction;
+
+  // Delimiter ranges the last adopted edit itself authored and pre-hid (debug
+  // builds only). The documented contract (live_edit_intent_pipeline.md) is
+  // that the following parse re-derives these exact hidden ranges; adoption
+  // asserts that so an invalid authored write fails loudly in every test.
+  List<FlarkSourceRange>? _debugAuthoredMarkerRanges;
   FlarkMarkdownParseBackend? _parseBackend;
   FlarkMarkdownProfile _parseProfile;
   Duration _parseDebounce;
@@ -1305,6 +1327,10 @@ final class FlarkFlutterController extends ChangeNotifier {
       selection: state.selection,
       extensions: _runtime.extensions,
     );
+    assert(() {
+      _debugConfirmPredictionAdoption(adoption.projection);
+      return true;
+    }());
     _projection = adoption.projection;
     _renderPlan = adoption.renderPlan;
     _renderPlanRevision = parseResult.revision;
@@ -1315,6 +1341,72 @@ final class FlarkFlutterController extends ChangeNotifier {
     );
     notifyListeners();
     return true;
+  }
+
+  /// RFC 022 §4 adoption-time confirmation (debug builds only; see the
+  /// `flarkDebug…` globals above). Two tiers:
+  ///
+  /// * Authored claims are asserted: an edit that wrote delimiters and pre-hid
+  ///   them promised valid markdown, and the parse must re-derive those exact
+  ///   hidden ranges. A miss means a placement/wrap scanner authored markdown
+  ///   the parser disagrees with — throw so the offending flow's test fails.
+  /// * Mapped geometry is counted, not asserted, because the raw typing path
+  ///   does not yet declare its non-local blast radius (Phase 1).
+  void _debugConfirmPredictionAdoption(FlarkProjection authoritative) {
+    if (!flarkDebugValidatePredictionAdoption) return;
+    final authoritativeHidden = <(int, int)>{
+      for (final hidden in authoritative.hiddenRanges)
+        (hidden.range.start, hidden.range.end),
+    };
+
+    final authored = _debugAuthoredMarkerRanges;
+    _debugAuthoredMarkerRanges = null;
+    if (authored != null) {
+      for (final range in authored) {
+        if (authoritativeHidden.contains((range.start, range.end))) continue;
+        final snippet = state.markdown.length <= 200
+            ? state.markdown
+            : '${state.markdown.substring(0, 200)}…';
+        throw StateError(
+          'RFC 022 authored-claim violation: the editor authored a delimiter '
+          'at [${range.start}, ${range.end}) and pre-hid it, but the parse '
+          'did not re-derive that hidden range — a placement/wrap path wrote '
+          'markdown the parser disagrees with.\n'
+          'markdown: "${snippet.replaceAll('\n', r'\n')}"',
+        );
+      }
+    }
+
+    final prediction = _lastProjectionPrediction;
+    if (prediction == null ||
+        prediction.touchedProjectionSensitiveRange ||
+        prediction.projection.textLength != state.document.length) {
+      return;
+    }
+    final invalidated = prediction.invalidatedRange;
+    final authoritativeReplacements = <(int, int)>{
+      for (final replacement in authoritative.replacementRanges)
+        (replacement.range.start, replacement.range.end),
+    };
+    for (final hidden in prediction.projection.hiddenRanges) {
+      if (invalidated != null && hidden.range.intersects(invalidated)) {
+        continue;
+      }
+      if (!authoritativeHidden.contains((hidden.range.start, hidden.range.end))) {
+        flarkDebugUnconfirmedPredictionRanges += 1;
+      }
+    }
+    for (final replacement in prediction.projection.replacementRanges) {
+      if (invalidated != null && replacement.range.intersects(invalidated)) {
+        continue;
+      }
+      if (!authoritativeReplacements.contains((
+        replacement.range.start,
+        replacement.range.end,
+      ))) {
+        flarkDebugUnconfirmedPredictionRanges += 1;
+      }
+    }
   }
 
   void _adoptRuntimeResult(
@@ -1346,6 +1438,14 @@ final class FlarkFlutterController extends ChangeNotifier {
     }
     final authoredMarkers = _pendingAuthoredMarkers;
     _pendingAuthoredMarkers = null;
+    // A new adoption invalidates any earlier authored-claim capture: the
+    // ranges below are in *this* document's coordinates, and the RFC 022
+    // adoption check must never compare stale coordinates against a later
+    // revision's parse.
+    assert(() {
+      _debugAuthoredMarkerRanges = null;
+      return true;
+    }());
 
     final documentTransactions = [
       for (final transaction in result.appliedTransactions)
@@ -1408,6 +1508,12 @@ final class FlarkFlutterController extends ChangeNotifier {
               prediction.touchedProjectionSensitiveRange,
           invalidatedRange: prediction.invalidatedRange,
         );
+        assert(() {
+          _debugAuthoredMarkerRanges = [
+            for (final marker in authoredMarkers) marker.range,
+          ];
+          return true;
+        }());
       }
       _lastProjectionPrediction = structuralPrediction == null
           ? predictionForAdoption
