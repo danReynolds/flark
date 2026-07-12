@@ -16,6 +16,11 @@ This checklist records the release decision boundary for the first public
 - [x] Add a pub.dev screenshot: `screenshots/flark_surfaces.png`.
 - [x] Remove `publish_to: none` for public publishing intent.
 - [x] Add CI coverage for the full release gate: `.github/workflows/ci.yml`.
+- [x] Add per-platform launch smokes (macOS, iOS, Android, Linux) to
+  `.github/workflows/ci.yml`, driven by `scripts/verify_platform_smoke.sh` and
+  the `example/integration_test/flark_smoke_test.dart` suite. Each job compiles
+  the native bridge for its platform through `hook/build.dart` (proving the
+  cross-compile path) and, on desktop hosts, runs the on-device smoke.
 
 ## Release Dry Run
 
@@ -54,11 +59,21 @@ benchmark budgets. The web smoke includes the packaged Comrak WASM backend.
 
 ## Optional Device Dogfood Gate
 
-Run this when an iOS simulator is available and example behavior changes:
+Two suites exercise the example app end to end:
+
+- `example/test/markdown_flow_test.dart` — the exhaustive widget-level editing
+  matrix (host `flutter test`, and on Chrome via
+  `scripts/verify_web_adapter_ci.sh`).
+- `example/integration_test/flark_smoke_test.dart` — the lean cross-platform
+  launch smoke that proves the shipped parser loads and the
+  edit→parse→project→render pipeline works on a given device/desktop.
+
+Run the launch smoke on an iOS simulator when example behavior changes:
 
 ```bash
 cd example
-flutter test integration_test/markdown_flow_test.dart -d <ios-simulator-id>
+flutter test integration_test/flark_smoke_test.dart -d <ios-simulator-id>
+# or: ./scripts/verify_platform_smoke.sh --platform ios --device <ios-simulator-id>
 ```
 
 The current simulator validation was run against
@@ -66,11 +81,12 @@ The current simulator validation was run against
 common Markdown cases, source/live-rendered mode switching, forms, and native
 parser adoption.
 
-Run this on macOS when desktop behavior or native loading changes:
+Run it on macOS when desktop behavior or native loading changes:
 
 ```bash
 cd example
-flutter test integration_test/markdown_flow_test.dart -d macos
+flutter test integration_test/flark_smoke_test.dart -d macos
+# or: ./scripts/verify_platform_smoke.sh --platform macos
 ```
 
 The macOS dogfood app can be launched manually with:

@@ -63,6 +63,13 @@ if [ "$run_build" -eq 1 ]; then
   run ./scripts/build_comrak_all.sh --strict
 fi
 
+# The Rust bridge's own unit tests exercise the FFI boundary directly — most
+# importantly the catch_unwind panic guard that converts a parser panic into a
+# STATUS_ERROR response instead of unwinding across `extern "C"` and aborting
+# the host. The Dart suites load an already-built library and cannot cover this,
+# so run cargo test here (Rust is on PATH in every lane that runs this gate).
+run cargo test --locked --manifest-path native/comrak_bridge/Cargo.toml
+
 run_in_pkg flutter analyze \
   hook \
   lib \
@@ -70,6 +77,7 @@ run_in_pkg flutter analyze \
 
 run_in_pkg flutter test test/v2/native/flark_native_comrak_bridge_test.dart
 run_in_pkg flutter test test/v2/packaging/flark_v2_native_packaging_contract_test.dart
+run_in_pkg flutter test test/v2/packaging/flark_wasm_freshness_test.dart
 run_in_pkg flutter test test/v2/markdown/flark_native_comrak_parse_backend_test.dart
 run_in_pkg flutter test test/v2/markdown/flark_v2_native_upstream_contract_test.dart
 

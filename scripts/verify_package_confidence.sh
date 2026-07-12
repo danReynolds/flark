@@ -99,7 +99,10 @@ if [ "$run_native" -eq 1 ]; then
 fi
 
 if [ "$run_full_suite" -eq 1 ]; then
-  run_in_pkg flutter test test --reporter compact
+  # Benchmark-tagged tests are single-shot timing budgets that flake under the
+  # concurrency of the full suite; run them via --benchmarks (enforced lane),
+  # not here.
+  run_in_pkg flutter test test --exclude-tags benchmark --reporter compact
 fi
 
 if [ "$run_benchmarks" -eq 1 ]; then

@@ -6,14 +6,20 @@ the Stage-3 convergence work in `doc/architecture/live_edit_intent_pipeline.md`.
 Run it in the example app (`cd example && flutter run -d <device>`), in the
 Scratch document, live-rendered mode.
 
-**Known defect to watch everywhere styled input appears** (pinned by the
-skipped test in the automated suite): a keystroke that creates or relocates
-inline delimiters mid-composition (first character with a style armed; first
-character re-entering a run after a committed trailing space) clears the
-composing region and pushes a transient raw-marker editing state to the IME.
-Expected on-device symptom: the suggestion strip resets / kana composition
-cancels after that keystroke; possibly a one-frame `**` flash. Record whether
-each keyboard recovers or corrupts.
+**Formerly a known defect, now fixed in the simulated suite — confirm it holds
+on real IMEs.** A keystroke that creates or relocates inline delimiters
+mid-composition (first character with a style armed; first character re-entering
+a run after a committed trailing space) used to clear the composing region and
+push a transient raw-marker editing state to the IME. That is now fixed and
+pinned by active tests in `test/v2/flutter/flark_ime_input_test.dart` (the
+armed-composition group): the placement module reports its authored delimiter
+ranges, so the controller hides them in the *predicted* projection on the same
+frame and the editable never resyncs raw markers to the platform — the
+composing region survives. Simulated `TextEditingValue` input cannot vouch for
+real keyboards, so this pass exists to confirm the fix on-device. Watch for the
+historical symptom: the suggestion strip resetting / kana composition
+cancelling after that keystroke, or a one-frame `**` flash. Record whether each
+keyboard holds the composition or regresses.
 
 ## Matrix
 
@@ -76,12 +82,15 @@ document/preview: it must render identically.
   Enters, and a typed closing fence. Watch for dropped composition, doubled
   characters after auto-close echoes, and resync loops (GBoard).
 
-## Expected-failure bookkeeping
+## Composition-survival bookkeeping
 
-S2/S6/S10-bold currently sit on the known defect: log the observed keyboard
-behavior (composition cancelled? text still correct?) rather than pass/fail
-on composition survival alone. Document corruption or a bad export is always
-a failure.
+S2/S6/S10-bold exercise the formerly-defective armed-composition path, now
+fixed and pinned in the simulated suite. On-device they are expected to hold
+the composing region; if a real keyboard still cancels composition on the
+first marker-creating keystroke, log the observed behavior (composition
+cancelled? text still correct?) and file it against the recognizer matrix —
+that is a real regression to chase, not an accepted defect. Document
+corruption or a bad export is always a failure.
 
 ## What to record on failure
 

@@ -74,14 +74,19 @@ Future<Uri> _buildRustArtifact({
   final packageRootPath = packageRoot.toFilePath();
   final cargo = await _cargoCommand();
 
+  // Build into the hook's own output directory, never the crate's `target/`
+  // under the shared pub cache. A consumer's pub cache may be read-only, and
+  // two projects (or two concurrent build configs) sharing the cached crate
+  // would otherwise race on one `target/` dir and corrupt each other. Each
+  // build invocation gets an isolated, writable target here.
+  final cargoTargetDirectory = Directory.fromUri(
+    outputDirectory.resolve('comrak_cargo_target/'),
+  );
+  cargoTargetDirectory.createSync(recursive: true);
+  final cargoTargetPath = cargoTargetDirectory.uri.toFilePath();
+
   if (cargo.usesRustup) {
-    await _run(cargo.rustupExecutable!, [
-      'target',
-      'add',
-      plan.triple,
-      '--toolchain',
-      'stable',
-    ], workingDirectory: packageRootPath);
+    await _ensureRustTargetInstalled(cargo, plan.triple, packageRootPath);
   }
 
   await _run(
@@ -89,6 +94,11 @@ Future<Uri> _buildRustArtifact({
     [
       ...cargo.leadingArgs,
       'build',
+      // Honor the committed Cargo.lock exactly: a consumer must compile the
+      // same dependency graph the WASM binary and CI were built against, and
+      // must never silently resolve newer versions or mutate the lockfile in
+      // a read-only cache.
+      '--locked',
       '--manifest-path',
       cratePath.toFilePath(),
       '--release',
@@ -96,11 +106,11 @@ Future<Uri> _buildRustArtifact({
       plan.triple,
     ],
     workingDirectory: packageRootPath,
-    environment: cargo.buildEnvironment(plan.environment),
+    environment: cargo.buildEnvironment(plan.environment, cargoTargetPath),
   );
 
-  final builtArtifact = packageRoot.resolve(
-    '$_crateRelativePath/target/${plan.triple}/release/${plan.libraryFileName}',
+  final builtArtifact = cargoTargetDirectory.uri.resolve(
+    '${plan.triple}/release/${plan.libraryFileName}',
   );
   final builtFile = File.fromUri(builtArtifact);
   if (!builtFile.existsSync()) {
@@ -152,6 +162,38 @@ Future<_CargoCommand> _cargoCommand() async {
         'doc/parser_and_platforms.md ("Build Prerequisites") in the flark '
         'package.',
   );
+}
+
+/// Adds the cross-compile [triple] through rustup only when it is not already
+/// installed. `rustup target add` reaches out to the network on a cold target;
+/// skipping it when the target is present keeps offline and sandboxed build
+/// machines working and avoids a per-build round trip.
+Future<void> _ensureRustTargetInstalled(
+  _CargoCommand cargo,
+  String triple,
+  String workingDirectory,
+) async {
+  final installed = await Process.run(cargo.rustupExecutable!, [
+    'target',
+    'list',
+    '--installed',
+    '--toolchain',
+    'stable',
+  ], workingDirectory: workingDirectory);
+  if (installed.exitCode == 0 &&
+      (installed.stdout as String)
+          .split('\n')
+          .map((line) => line.trim())
+          .contains(triple)) {
+    return;
+  }
+  await _run(cargo.rustupExecutable!, [
+    'target',
+    'add',
+    triple,
+    '--toolchain',
+    'stable',
+  ], workingDirectory: workingDirectory);
 }
 
 Future<String?> _which(String executable) async {
@@ -213,11 +255,14 @@ final class _CargoCommand {
 
   bool get usesRustup => rustupExecutable != null;
 
-  Map<String, String>? buildEnvironment(Map<String, String>? base) {
-    if (base == null && rustcExecutable == null && toolchainBinPath == null) {
-      return null;
-    }
+  Map<String, String> buildEnvironment(
+    Map<String, String>? base,
+    String cargoTargetDir,
+  ) {
     final environment = <String, String>{...?base};
+    // Redirect cargo's output tree away from the crate source (see the call
+    // site): honored here so every child cargo invocation agrees on it.
+    environment['CARGO_TARGET_DIR'] = cargoTargetDir;
     final rustcPath = rustcExecutable;
     if (rustcPath != null) {
       environment['RUSTC'] = rustcPath;

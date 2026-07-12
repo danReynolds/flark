@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  FLUTTER_VERSION: '3.41.9'
+
 jobs:
   release-gate:
     runs-on: macos-latest
@@ -22,9 +25,98 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.41.9'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 
       - name: Run release gate
         run: ./scripts/verify_release.sh
+
+  # Platform launch smokes. Each builds the example app for a target platform,
+  # which compiles the native Comrak bridge through hook/build.dart for that
+  # platform (so a green build proves the native-assets cross-compile path),
+  # and — on desktop hosts where the app can run — executes the
+  # integration_test smoke to prove the bridge loads and parses on-device.
+  macos-smoke:
+    runs-on: macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: macOS launch smoke
+        run: ./scripts/verify_platform_smoke.sh --platform macos
+
+  ios-smoke:
+    runs-on: macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: iOS build smoke (device arm64, no signing)
+        run: ./scripts/verify_platform_smoke.sh --platform ios
+
+  linux-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Install Linux desktop build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libstdc++-12-dev \
+            xvfb
+      - name: Enable Linux desktop
+        run: flutter config --enable-linux-desktop
+      - name: Linux launch smoke (headless)
+        run: xvfb-run -a ./scripts/verify_platform_smoke.sh --platform linux
+
+  android-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      # ubuntu-latest ships an Android SDK + NDK; hook/build.dart resolves the
+      # NDK from ANDROID_NDK_LATEST_HOME (set on the runner) automatically.
+      - name: Android build smoke (compiles the bridge for every ABI)
+        run: ./scripts/verify_platform_smoke.sh --platform android
