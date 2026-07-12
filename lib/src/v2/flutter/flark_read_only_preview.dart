@@ -223,9 +223,28 @@ final class _PreviewBlock extends StatelessWidget {
     }
     final sorted = boundaries.toList()..sort();
 
+    // Images are atomic cards emitted at their start position. This is the only
+    // place a zero-width empty-alt image (`![](url)`, whose alt text projects
+    // to nothing) can be rendered, since it covers no segment; a non-zero-width
+    // image is emitted here too and its alt-text segment is suppressed below.
+    final imageRuns = [
+      for (final run in runs)
+        if (run.action?.kind == FlarkRenderInlineActionKind.image) run,
+    ]..sort((a, b) => a.displayRange.start.compareTo(b.displayRange.start));
+    var nextImage = 0;
+
     final spans = <InlineSpan>[];
-    for (var index = 0; index < sorted.length - 1; index++) {
-      final segStart = sorted[index];
+    for (var index = 0; index < sorted.length; index += 1) {
+      final pos = sorted[index];
+      while (nextImage < imageRuns.length &&
+          imageRuns[nextImage].displayRange.start.clamp(blockStart, blockEnd) ==
+              pos) {
+        spans.add(_imageSpan(context, imageRuns[nextImage]));
+        nextImage += 1;
+      }
+      if (index == sorted.length - 1) break;
+
+      final segStart = pos;
       final segEnd = sorted[index + 1];
       if (segStart >= segEnd) continue;
 
@@ -238,16 +257,10 @@ final class _PreviewBlock extends StatelessWidget {
             run,
       ];
 
-      // An image is an atomic card; render it once at its own start and skip
-      // the remaining segments inside its range (its alt text is the label).
-      final image = _coveringActionRun(
-        covering,
-        FlarkRenderInlineActionKind.image,
-      );
-      if (image != null) {
-        if (segStart == image.displayRange.start.clamp(blockStart, blockEnd)) {
-          spans.add(_imageSpan(context, image));
-        }
+      // A (non-zero-width) image's card was already emitted at its start, so
+      // suppress the alt-text segment it covers.
+      if (_coveringActionRun(covering, FlarkRenderInlineActionKind.image) !=
+          null) {
         continue;
       }
 

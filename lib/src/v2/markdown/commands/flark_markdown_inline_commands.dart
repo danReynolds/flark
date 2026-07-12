@@ -241,6 +241,14 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
     }
     final split = FlarkInlineDelimiterPlacement.splitEdgeWhitespace(segment);
     if (split.core.isEmpty) return null;
+    // A core whose edge is the marker char fuses with the injected delimiter
+    // (`foo*` + `**` → `**foo***`, which leaks the extra `*`), and a core ending
+    // in an odd backslash run escapes the injected closing marker (`a\` + `*` →
+    // `*a\*`, rendered literally). `_coreClosesDelimiterEarly` only sees full
+    // interior runs, so guard the edges here.
+    if (_coreEdgeFusesWithMarker(split.core, marker.codeUnitAt(0))) {
+      return null;
+    }
     final text = '${split.leading}$marker${split.core}$marker${split.trailing}';
     final coreStart = split.leading.length + markerLength;
     final coreEnd = coreStart + split.core.length;
@@ -287,6 +295,20 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
       index = runEnd;
     }
     return false;
+  }
+
+  /// Whether wrapping [core] in a marker whose character is [markerChar] would
+  /// fuse at an edge: the core begins or ends with the marker character (so the
+  /// injected delimiter run grows past its intended length), or it ends with an
+  /// odd run of backslashes (which escapes the injected closing marker).
+  bool _coreEdgeFusesWithMarker(String core, int markerChar) {
+    if (core.codeUnitAt(0) == markerChar) return true;
+    if (core.codeUnitAt(core.length - 1) == markerChar) return true;
+    var backslashes = 0;
+    for (var i = core.length - 1; i >= 0 && core.codeUnitAt(i) == 0x5C; i -= 1) {
+      backslashes += 1;
+    }
+    return backslashes.isOdd;
   }
 
   /// Whether the marker candidate at [candidateStart] can act as one side of

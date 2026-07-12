@@ -1691,7 +1691,10 @@ bool _isReferenceDefinitionLine(String line) {
 /// quoted/parenthesized token after the destination), so no following title
 /// line should be consumed.
 bool _referenceDefinitionLineHasTitle(String line) {
-  return RegExp(r'''^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*\S+[ \t]+["'(]''')
+  // The destination is a bare token OR an angle-bracket form that may contain
+  // spaces (`<a b>`); matching only `\S+` would stop at the space and miss a
+  // title that follows an angle destination.
+  return RegExp(r'''^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*(?:<[^>\n]*>|\S+)[ \t]+["'(]''')
       .hasMatch(line);
 }
 

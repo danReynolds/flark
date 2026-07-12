@@ -142,6 +142,47 @@ void main() {
       },
     );
 
+    testWidgets('renders an inline empty-alt image (zero-width run)', (
+      tester,
+    ) async {
+      // Regression: an empty-alt image projects to a zero-width display range,
+      // which covers no segment — the boundary-segmentation walk must still
+      // emit its card (an atomic card keyed to its start), or the image
+      // silently vanishes.
+      const markdown = 'Logo ![](asset://logo.png) here';
+      final controller = FlarkFlutterController.fromMarkdown(markdown);
+      addTearDown(controller.dispose);
+      final result = await FlarkNativeComrakParseBackend.withNativeBridge()
+          .parse(
+            const FlarkMarkdownParseRequest(
+              revision: 0,
+              markdown: markdown,
+              profile: FlarkMarkdownProfile.commonMarkGfm,
+            ),
+          );
+      expect(controller.applyParseResult(result), isTrue);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 420,
+            child: FlarkMarkdown(controller: controller),
+          ),
+        ),
+      );
+
+      expect(
+        find.byKey(const Key('FlarkReadOnlyPreviewImageCard')),
+        findsOneWidget,
+      );
+      final plains = tester
+          .widgetList<RichText>(find.byType(RichText))
+          .map((widget) => widget.text.toPlainText());
+      expect(plains.any((text) => text.contains('Logo')), isTrue);
+      expect(plains.any((text) => text.contains('here')), isTrue);
+    });
+
     testWidgets('renders image runs as default action cards', (tester) async {
       const markdown =
           'Architecture: ![Diagram](asset://diagram.png "System view")';

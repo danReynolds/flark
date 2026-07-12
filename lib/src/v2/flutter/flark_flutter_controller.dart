@@ -862,6 +862,13 @@ final class FlarkFlutterController extends ChangeNotifier {
       content = split.core;
       contentStart = range.start + split.leading.length + pair.open.length;
     } else {
+      // A code span cannot cross a blank line either (its backticks would land
+      // in separate blocks and render literally); brackets and quotes are not
+      // markdown delimiters and may span paragraphs.
+      if (replacement.inserted == '`' &&
+          _paragraphBreakPattern.hasMatch(content)) {
+        return null;
+      }
       wrapped = '${pair.open}$content${pair.close}';
     }
     return FlarkTransaction.single(

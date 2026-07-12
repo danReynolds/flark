@@ -81,6 +81,15 @@ void main() {
       );
     });
 
+    test('leaves a paragraph unstyled when the wrap would fuse at an edge', () {
+      // A marker char at the core edge fuses with the injected delimiter
+      // (`foo*` -> `**foo***`) and a trailing backslash escapes the injected
+      // closing marker (`a\` -> `*a\*`); both misparse, so leave them unstyled.
+      expect(toggleAll('foo*', FlarkMarkdownInlineStyle.strong), 'foo*');
+      expect(toggleAll('*bar', FlarkMarkdownInlineStyle.strong), '*bar');
+      expect(toggleAll('a\\', FlarkMarkdownInlineStyle.emphasis), 'a\\');
+    });
+
     test('does not regress valid interior markers when wrapping', () {
       // A space-flanked '*' is literal, and a nested emphasis run is legal
       // inside strong — neither should block the wrap.
