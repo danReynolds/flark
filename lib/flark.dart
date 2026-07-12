@@ -88,6 +88,7 @@ export 'src/v2/flutter/flutter.dart'
         FlarkMoveLinesIntent,
         FlarkControllerEvent,
         FlarkControllerEventKind,
+        FlarkContractViolationError,
         FlarkFlutterController,
         FlarkCodeLanguageOption,
         FlarkMarkdownCommands,

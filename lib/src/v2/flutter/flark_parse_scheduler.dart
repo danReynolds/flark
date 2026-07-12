@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import '../markdown/markdown.dart';
+import '../native/native_comrak_ffi.dart'
+    show flarkNativeParseIsolateThresholdBytes;
 import 'flark_flutter_controller.dart';
 
 final class FlarkParseScheduler {
@@ -18,6 +21,37 @@ final class FlarkParseScheduler {
 
   final FlarkFlutterController _controller;
   final FlarkMarkdownParseBackend _backend;
+
+  /// The backend this scheduler parses with — shared with the controller's
+  /// RFC 022 parser judge so command validation and the keystroke path can
+  /// never disagree on parser identity or options.
+  FlarkMarkdownParseBackend get backend => _backend;
+
+  /// Synchronously parses [markdown] for the judge (a candidate state, not
+  /// the controller's current one), or returns null when that is not
+  /// affordable. Runs through the scheduler so judge parses feed the same
+  /// adaptive-ceiling learner as first-paint parses — otherwise the ceiling
+  /// would freeze after startup while the judge kept paying it blind.
+  FlarkMarkdownParseResult? parseCandidateSync({
+    required int revision,
+    required String markdown,
+    required FlarkMarkdownProfile profile,
+  }) {
+    if (_disposed) return null;
+    final backend = _backend;
+    if (backend is! FlarkSyncCapableParseBackend) return null;
+    final stopwatch = Stopwatch()..start();
+    final result = backend.parseSync(
+      FlarkMarkdownParseRequest(
+        revision: revision,
+        markdown: markdown,
+        profile: profile,
+        maxSyncUtf8Bytes: adaptiveSyncCeilingBytes,
+      ),
+    );
+    if (result != null) _recordSyncParseMicros(stopwatch.elapsedMicroseconds);
+    return result;
+  }
   final FlarkMarkdownProfile _profile;
   final Duration _debounce;
   final void Function(Object error, StackTrace stackTrace)? _onError;
@@ -29,6 +63,35 @@ final class FlarkParseScheduler {
   int? _scheduledRevision;
   int? _inFlightRevision;
   Future<void>? _activeParse;
+
+  // Latency-learned sync-parse ceiling (RFC 022 §6). Starts permissive and
+  // converges on what this machine actually affords inside a frame: each
+  // successful sync parse's wall time grows the ceiling when comfortably
+  // under budget and shrinks it when over, so a fast machine parses large
+  // documents authoritatively in-frame while a slow one degrades to the
+  // worker isolate. The floor is the process-wide isolate threshold — the
+  // pre-adaptive behavior — so this can never regress below the old cutoff.
+  static const int _syncCeilingMaxBytes = 1 << 20;
+  static const int _syncBudgetGrowMicros = 2000;
+  static const int _syncBudgetShrinkMicros = 6000;
+  int _syncCeilingBytes = 1 << 16;
+
+  /// The current adaptive ceiling, shared with the controller's parser judge
+  /// so command validation affords sync parses on the same terms as the
+  /// keystroke path.
+  int get adaptiveSyncCeilingBytes =>
+      math.max(_syncCeilingBytes, flarkNativeParseIsolateThresholdBytes);
+
+  void _recordSyncParseMicros(int elapsedMicros) {
+    if (elapsedMicros <= _syncBudgetGrowMicros) {
+      _syncCeilingBytes = math.min(_syncCeilingBytes * 2, _syncCeilingMaxBytes);
+    } else if (elapsedMicros >= _syncBudgetShrinkMicros) {
+      _syncCeilingBytes = math.max(
+        _syncCeilingBytes ~/ 2,
+        flarkNativeParseIsolateThresholdBytes,
+      );
+    }
+  }
 
   void start({bool immediate = true}) {
     if (_started) return;
@@ -55,11 +118,18 @@ final class FlarkParseScheduler {
     final backend = _backend;
     if (backend is! FlarkSyncCapableParseBackend) return false;
     try {
-      final result = backend.parseSync(_requestForCurrentState());
+      final stopwatch = Stopwatch()..start();
+      final result = backend.parseSync(_requestForCurrentState(sync: true));
       if (result == null) return false;
+      _recordSyncParseMicros(stopwatch.elapsedMicroseconds);
       // Inside the try: reconciliation errors route to onError like every
       // async parse's do, instead of throwing out of a caller's initState.
       if (!_controller.applyParseResult(result)) return false;
+    } on FlarkContractViolationError {
+      // A refuted grammar claim is a flark defect, not a parse failure —
+      // swallowing it into onError silently aborts adoption and lets the
+      // editing flow diverge with no visible cause.
+      rethrow;
     } catch (error, stackTrace) {
       _onError?.call(error, stackTrace);
       return false;
@@ -74,12 +144,13 @@ final class FlarkParseScheduler {
     return _controller.hasAuthoritativeRenderPlan;
   }
 
-  FlarkMarkdownParseRequest _requestForCurrentState() {
+  FlarkMarkdownParseRequest _requestForCurrentState({bool sync = false}) {
     final state = _controller.state;
     return FlarkMarkdownParseRequest(
       revision: state.revision,
       markdown: state.markdown,
       profile: _profile,
+      maxSyncUtf8Bytes: sync ? adaptiveSyncCeilingBytes : null,
     );
   }
 
@@ -122,7 +193,16 @@ final class FlarkParseScheduler {
 
   void _handleControllerChanged() {
     if (!_started || _disposed) return;
-    if (_controller.hasAuthoritativeRenderPlan) return;
+    if (_controller.hasAuthoritativeRenderPlan) {
+      // The plan just became authoritative for the current revision — e.g.
+      // the parser judge adopted its own parse right after a command's
+      // runtime adoption scheduled one. A still-pending schedule would only
+      // reparse the unchanged document and re-notify every listener.
+      _timer?.cancel();
+      _timer = null;
+      _scheduledRevision = null;
+      return;
+    }
     _schedule(immediate: false);
   }
 
@@ -138,6 +218,15 @@ final class FlarkParseScheduler {
     // superseded before it runs — by tryParseSync adopting the revision
     // synchronously (which clears it), or by a newer revision re-scheduling —
     // and a microtask, unlike the timer, cannot be cancelled.
+    //
+    // Deliberately NOT sync-first here (RFC 022 §6): adopting a parse between
+    // two keystrokes shrinks the pre-parse windows several live-edit echo
+    // recognizers assume (matrix rows 12/15 territory — typed-closing-fence
+    // flows demonstrably change shape), and that behavior class is gated on
+    // the manual IME device pass. The keystroke path keeps its debounce until
+    // Phase 4 lands block-local reparse under that gate; the adaptive sync
+    // ceiling still serves first-paint parses and the command judge, neither
+    // of which races an echo.
     if (immediate || _debounce == Duration.zero) {
       scheduleMicrotask(() {
         if (_disposed || _scheduledRevision != revision) return;
@@ -195,6 +284,12 @@ void _ignore(
   void Function(Object error, StackTrace stackTrace)? onError,
 ) {
   future.catchError((Object error, StackTrace stackTrace) {
+    if (error is FlarkContractViolationError) {
+      // Re-raise as an uncaught async error so tests and dev builds fail
+      // loudly on a refuted grammar claim instead of routing a flark defect
+      // to the parse-error callback (see FlarkContractViolationError).
+      Error.throwWithStackTrace(error, stackTrace);
+    }
     onError?.call(error, stackTrace);
   });
 }

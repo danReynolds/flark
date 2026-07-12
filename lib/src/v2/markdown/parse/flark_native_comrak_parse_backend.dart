@@ -82,21 +82,35 @@ final class FlarkNativeComrakParseBackend
     if (request.markdown.isEmpty) return _emptyResult(request);
     final bridge = _bridge;
     if (bridge is! SyncCapableNativeComrakBridge) return null;
+    final ceiling =
+        request.maxSyncUtf8Bytes ?? flarkNativeParseIsolateThresholdBytes;
     // Decline before paying the encode: UTF-16 code units never outnumber
-    // their UTF-8 bytes, so a source at/over the byte threshold is guaranteed
-    // to be declined by the bridge — without this, every failed sync attempt
-    // on a large document would utf8-encode it in full (and the async
-    // fallback would then encode it again).
-    if (request.markdown.length >= flarkNativeParseIsolateThresholdBytes) {
-      return null;
+    // their UTF-8 bytes, so a source at/over the byte ceiling is guaranteed
+    // to be declined — without this, every failed sync attempt on a large
+    // document would utf8-encode it in full (and the async fallback would
+    // then encode it again).
+    if (request.markdown.length >= ceiling) return null;
+    final utf8Text = utf8.encode(request.markdown);
+    if (utf8Text.length >= ceiling) return null;
+    // The bridge re-checks the process-wide threshold internally, so a
+    // request ceiling above it must widen that check for the duration of the
+    // call. Single-isolate and synchronous, so nothing can observe the
+    // temporary value. Bridge protocol v2 (RFC 022 Phase 2) moves the ceiling
+    // into the bridge call and deletes this shim.
+    final saved = flarkNativeParseIsolateThresholdBytes;
+    flarkNativeParseIsolateThresholdBytes = ceiling;
+    final NativeComrakParseResult? native;
+    try {
+      native = bridge.parseSyncBelowThreshold(
+        NativeComrakParseInput(
+          revision: request.revision,
+          profile: _nativeProfile(request.profile),
+          utf8Text: utf8Text,
+        ),
+      );
+    } finally {
+      flarkNativeParseIsolateThresholdBytes = saved;
     }
-    final native = bridge.parseSyncBelowThreshold(
-      NativeComrakParseInput(
-        revision: request.revision,
-        profile: _nativeProfile(request.profile),
-        utf8Text: utf8.encode(request.markdown),
-      ),
-    );
     if (native == null) return null;
     return _mapNativeResult(request, native);
   }

@@ -107,8 +107,8 @@ void main() {
   group('list boundary + toggleStyle', () {
     // '- one\n- two' — - _ o n e \n - _ t w  o
     //                  0 1 2 3 4 5  6 7 8 9 10
-    testWidgets('strong over a selection spanning two list items wraps across '
-        'the boundary', (tester) async {
+    testWidgets('strong over a selection spanning two list items is vetoed '
+        'by the parser judge', (tester) async {
       final seq = await LiveRenderSequence.start(tester, '- one\n- two');
       seq.expectRows(['one', 'two']);
 
@@ -117,14 +117,16 @@ void main() {
       await seq.select(2, 11);
       await seq.toggleStyle(strong);
 
-      // Pinned from reality: the command wraps the whole span with no
-      // block-boundary awareness, so the `**` land on either side of the list
-      // marker. Comrak cannot match a strong run across the two list items, so
-      // each `**` parses as literal text. The source round-trips (a fresh parse
-      // shows the same literal markers), so this is not a round-trip finding —
-      // but the toggle did not produce styling, it produced literal markers.
-      seq.expectSource('- **one\n- two**');
-      seq.expectRows(['**one', 'two**']);
+      // The command still wraps the whole span with no block-boundary
+      // awareness (a single newline is not a paragraph break), so it would
+      // write `- **one\n- two**` — but comrak cannot match a strong run
+      // across two list items, so those `**` would be literal text. The
+      // RFC 022 parser judge now vetoes that authored claim and the toggle
+      // no-ops instead of spraying literal markers into the document.
+      // (Per-list-item wrapping — the enhancement — needs block boundaries
+      // from the parse and is tracked for Phase 4.)
+      seq.expectSource('- one\n- two');
+      seq.expectRows(['one', 'two']);
     });
   });
 

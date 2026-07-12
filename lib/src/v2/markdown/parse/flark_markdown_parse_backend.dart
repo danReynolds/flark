@@ -6,11 +6,22 @@ final class FlarkMarkdownParseRequest {
     required this.revision,
     required this.markdown,
     required this.profile,
+    this.maxSyncUtf8Bytes,
   });
 
   final int revision;
   final String markdown;
   final FlarkMarkdownProfile profile;
+
+  /// Caller-supplied ceiling for a synchronous parse, in UTF-8 bytes.
+  ///
+  /// A sync-capable backend declines (returns null from `parseSync`) at or
+  /// above the ceiling instead of blocking the calling isolate. Null means
+  /// the backend's own default. The parse scheduler drives this adaptively —
+  /// latency-learned rather than a fixed size cutoff (RFC 022 §6) — so a
+  /// fast machine parses large documents authoritatively in-frame while a
+  /// slow one degrades to the async path.
+  final int? maxSyncUtf8Bytes;
 }
 
 final class FlarkMarkdownParserCapabilities {
