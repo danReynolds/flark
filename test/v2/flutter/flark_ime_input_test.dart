@@ -264,6 +264,139 @@ void main() {
           display: 'the ',
           source: 'the ',
         );
+        // The editor honors the caret the platform reported after the
+        // correction, rather than one it re-derives from the text diff.
+        expect(controller.selection, const FlarkSelection.collapsed(4));
+      },
+    );
+
+    testWidgets(
+      'autocorrect that shares a trailing run with the original keeps the '
+      'caret past the shared suffix (dont -> don\'t)',
+      (tester) async {
+        // The apostrophe autocorrect: "dont" -> "don't" keeps the trailing
+        // "t", so a greedy prefix/suffix diff reads the change as inserting
+        // "'" *before* that shared "t" and would leave the caret mid-word (at
+        // offset 4). iOS reports the caret after the corrected word; the
+        // editor must honor it or the next keystroke lands inside the word.
+        // The trailing " go" makes the shared suffix — and the drift it would
+        // cause — observable end to end.
+        final controller = await _pumpLiveEditor(tester, 'dont go');
+        final editable = find.byType(EditableText);
+        await tester.showKeyboard(editable);
+        await tester.pump();
+        // The caret rests right after "dont", where the suggestion is applied.
+        controller.applyProjectedSelection(const FlarkSelection.collapsed(4));
+        await tester.pump();
+
+        await _sendIme(
+          tester,
+          const TextEditingValue(
+            text: "don't go",
+            selection: TextSelection.collapsed(offset: 5),
+          ),
+        );
+        await _expectCommitted(
+          tester,
+          controller,
+          display: "don't go",
+          source: "don't go",
+        );
+        // Landed after the corrected word (offset 5), not before its "t".
+        expect(controller.selection, const FlarkSelection.collapsed(5));
+        expect(_remoteValue(tester, editable).selection.baseOffset, 5);
+
+        // The next character therefore lands after the word, not inside it.
+        await _typeAtRemoteCaret(tester, editable, 'X');
+        await _expectCommitted(
+          tester,
+          controller,
+          display: "don'tX go",
+          source: "don'tX go",
+        );
+      },
+    );
+
+    testWidgets(
+      'retroactive autocorrect of an earlier word keeps the caret at the end '
+      '(i -> I past the untouched tail)',
+      (tester) async {
+        // iOS often fixes an earlier word — here autocapitalizing a leading
+        // "i" — while the caret is already further along. The whole " am "
+        // tail is shared, so a greedy diff would yank the recomputed caret all
+        // the way back to the correction site (offset 1). The platform's
+        // reported caret (5) must win.
+        final controller = await _pumpLiveEditor(tester, 'i am ');
+        final editable = find.byType(EditableText);
+        await tester.showKeyboard(editable);
+        await tester.pump();
+        controller.applyProjectedSelection(const FlarkSelection.collapsed(5));
+        await tester.pump();
+
+        await _sendIme(
+          tester,
+          const TextEditingValue(
+            text: 'I am ',
+            selection: TextSelection.collapsed(offset: 5),
+          ),
+        );
+        await _expectCommitted(
+          tester,
+          controller,
+          display: 'I am ',
+          source: 'I am ',
+        );
+        expect(controller.selection, const FlarkSelection.collapsed(5));
+
+        await _typeAtRemoteCaret(tester, editable, 'X');
+        await _expectCommitted(
+          tester,
+          controller,
+          display: 'I am X',
+          source: 'I am X',
+        );
+      },
+    );
+
+    testWidgets(
+      'autocorrect inside a styled run keeps the caret inside the run',
+      (tester) async {
+        // `**dont**` renders bold "dont". Autocorrect "dont" -> "don't" shares
+        // the trailing "t"; the corrected caret sits at the run's trailing
+        // display edge, which must map inside the run (before the hidden
+        // closing `**`) so the next character continues the bold rather than
+        // escaping to a plain sibling.
+        final controller = await _pumpLiveEditor(tester, '**dont**');
+        final editable = find.byType(EditableText);
+        await tester.showKeyboard(editable);
+        await tester.pump();
+        // Display "dont"; offset 4 is the run's trailing edge, inside.
+        controller.applyProjectedSelection(const FlarkSelection.collapsed(4));
+        await tester.pump();
+
+        await _sendIme(
+          tester,
+          const TextEditingValue(
+            text: "don't",
+            selection: TextSelection.collapsed(offset: 5),
+          ),
+        );
+        await _expectCommitted(
+          tester,
+          controller,
+          display: "don't",
+          source: "**don't**",
+        );
+
+        // The next character stays bold: the caret is inside the run, not
+        // after its closing marker.
+        await _typeAtRemoteCaret(tester, editable, 'X');
+        await _expectCommitted(
+          tester,
+          controller,
+          display: "don'tX",
+          source: "**don'tX**",
+        );
       },
     );
 
@@ -613,6 +746,54 @@ void main() {
       );
     });
 
+    testWidgets(
+      'autocorrect inside a blockquote keeps the caret past the shared suffix',
+      (tester) async {
+        // The host-surface apostrophe drift (dont -> don't), but on a
+        // per-block editable: the block delivers a block-local value and the
+        // caret must still land after the corrected word rather than mid-word.
+        final controller = await _pumpLiveEditor(tester, '> dont go');
+        final editable = find.descendant(
+          of: find.byKey(const Key('FlarkLiveBlockBlockquote')),
+          matching: find.byType(EditableText),
+        );
+        // Source offset 6 is the block-local "dont|".
+        controller.applySelection(
+          const FlarkSelection.collapsed(6),
+          userEvent: 'test',
+        );
+        await tester.pump();
+        await tester.showKeyboard(editable);
+        await tester.pump();
+        expect(_remoteValue(tester, editable).text, 'dont go');
+
+        // Block-local autocorrect: "dont go" -> "don't go", caret after the
+        // corrected word (block-local offset 5).
+        await _sendIme(
+          tester,
+          const TextEditingValue(
+            text: "don't go",
+            selection: TextSelection.collapsed(offset: 5),
+          ),
+        );
+        await _expectCommitted(
+          tester,
+          controller,
+          display: "don't go",
+          source: "> don't go",
+        );
+        expect(_remoteValue(tester, editable).selection.baseOffset, 5);
+
+        await _typeAtRemoteCaret(tester, editable, 'X');
+        await _expectCommitted(
+          tester,
+          controller,
+          display: "don'tX go",
+          source: "> don'tX go",
+        );
+      },
+    );
+
     testWidgets('Japanese conversion inside a list item block widget', (
       tester,
     ) async {
@@ -680,6 +861,26 @@ TextEditingValue _remoteValue(WidgetTester tester, Finder editable) {
 Future<void> _sendIme(WidgetTester tester, TextEditingValue value) async {
   tester.testTextInput.updateEditingValue(value);
   await tester.pump();
+}
+
+/// Types [char] the way the platform would after an applied edit: inserting it
+/// at the editor's last echoed caret — the value the IME currently holds — and
+/// advancing the caret past it. If the editor echoed a wrong caret, [char]
+/// lands at the wrong offset, which is exactly the drift under test.
+Future<void> _typeAtRemoteCaret(
+  WidgetTester tester,
+  Finder editable,
+  String char,
+) async {
+  final current = _remoteValue(tester, editable);
+  final caret = current.selection.baseOffset;
+  await _sendIme(
+    tester,
+    TextEditingValue(
+      text: current.text.replaceRange(caret, caret, char),
+      selection: TextSelection.collapsed(offset: caret + char.length),
+    ),
+  );
 }
 
 /// Runs one IME composition session against [editable].

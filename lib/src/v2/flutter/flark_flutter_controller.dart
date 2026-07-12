@@ -587,6 +587,7 @@ final class FlarkFlutterController extends ChangeNotifier {
   bool applyProjectedTextEdit({
     required String oldDisplayText,
     required String newDisplayText,
+    int? newDisplayCaret,
     int? undoGroupId,
     FlarkMapAffinity fallbackInsertionAffinity = FlarkMapAffinity.downstream,
   }) {
@@ -642,6 +643,7 @@ final class FlarkFlutterController extends ChangeNotifier {
       oldDisplayText: oldDisplayText,
       newDisplayText: newDisplayText,
       sourceSelectionBefore: selection,
+      newDisplayCaret: newDisplayCaret,
       undoGroupId: undoGroupId,
       fallbackInsertionAffinity: fallbackInsertionAffinity,
       insertionWrap: insertionWrap,

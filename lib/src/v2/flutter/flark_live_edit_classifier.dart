@@ -133,6 +133,7 @@ final class FlarkLiveBlockProjectedEditIntent extends FlarkLiveBlockEditIntent {
     required this.oldDisplayText,
     required this.newDisplayText,
     required this.immediateParseAfterApply,
+    this.newDisplayCaret,
   });
 
   /// The local value to edit with (a completed standalone fence opener may
@@ -146,6 +147,14 @@ final class FlarkLiveBlockProjectedEditIntent extends FlarkLiveBlockEditIntent {
   final String oldDisplayText;
   final String newDisplayText;
   final bool immediateParseAfterApply;
+
+  /// The platform's post-edit collapsed caret in [newDisplayText] (whole
+  /// document) coordinates — the block-local caret lifted by the block's
+  /// display-range start — when it reported one. Disambiguates suffix-sharing
+  /// edits (iOS autocorrect) exactly as on the host surface. Null when the
+  /// platform gave a range/invalid caret or [blockValue] was rewritten from
+  /// the platform value.
+  final int? newDisplayCaret;
 }
 
 /// Offer the change to the markdown input policy (Enter/Backspace
@@ -402,6 +411,13 @@ FlarkLiveBlockEditClassification classifyFlarkLiveBlockEdit(
         context.block,
         context.displayText,
       );
+      // Only forward the platform caret in the plain case (no fence-completion
+      // rewrite of the block value); lift the block-local caret into
+      // whole-document display coordinates so the adapter can compare it to
+      // the spliced [newDisplayText].
+      final localCaret = completedStandaloneFenceValue == null
+          ? _collapsedCaretOffset(blockValue.selection, blockValue.text.length)
+          : null;
       fallback = FlarkLiveBlockProjectedEditIntent(
         blockValue: blockValue,
         adoptBlockValue: completedStandaloneFenceValue != null,
@@ -414,6 +430,7 @@ FlarkLiveBlockEditClassification classifyFlarkLiveBlockEdit(
         immediateParseAfterApply:
             completedStandaloneFenceValue != null ||
             _editInsertsInlineRunMarker(oldLocalText, blockValue.text),
+        newDisplayCaret: localCaret == null ? null : range.start + localCaret,
       );
     }
 
@@ -513,11 +530,20 @@ final class FlarkHostProjectedEditIntent extends FlarkHostEditIntent {
     required this.oldDisplayText,
     required this.newDisplayText,
     required this.immediateParseAfterApply,
+    this.newDisplayCaret,
   });
 
   final String oldDisplayText;
   final String newDisplayText;
   final bool immediateParseAfterApply;
+
+  /// The platform's post-edit collapsed caret in [newDisplayText]
+  /// coordinates, when it reported one. Disambiguates suffix-sharing edits
+  /// (iOS autocorrect) whose greedy diff would otherwise recompute a caret
+  /// that lands mid-word. Null when the platform gave a range/invalid caret
+  /// or the new display text was rewritten from the platform value (a caret
+  /// into the platform text would no longer be meaningful).
+  final int? newDisplayCaret;
 }
 
 /// Selection-only change mapped through the projection.
@@ -620,6 +646,12 @@ FlarkHostEditClassification classifyFlarkHostEdit(
               context.oldDisplayText,
               newDisplayText,
             ));
+    // Only forward the platform caret when [newDisplayText] is the platform's
+    // own text (no fence-completion rewrite); otherwise a caret into the
+    // platform value would not index [newDisplayText].
+    final newDisplayCaret = completedCodeFenceText == null
+        ? _collapsedCaretOffset(value.selection, value.text.length)
+        : null;
     return finish(
       FlarkHostPlatformTextChangeIntent(
         policyValue: value.copyWith(text: newDisplayText),
@@ -629,6 +661,7 @@ FlarkHostEditClassification classifyFlarkHostEdit(
           oldDisplayText: context.oldDisplayText,
           newDisplayText: newDisplayText,
           immediateParseAfterApply: needsImmediateParse,
+          newDisplayCaret: newDisplayCaret,
         ),
       ),
     );
@@ -691,6 +724,18 @@ TextEditingValue flarkTextValueWithPureInsertionSelection({
       affinity: newSelection.affinity,
     ),
   );
+}
+
+/// The offset of [selection] when it is a valid collapsed caret within
+/// `[0, textLength]`, else null.
+///
+/// The upper bound matters on the block surface, where the returned offset is
+/// lifted into whole-document display coordinates: a platform caret past the
+/// block's own text would otherwise index a *following* block.
+int? _collapsedCaretOffset(TextSelection selection, int textLength) {
+  if (!selection.isValid || !selection.isCollapsed) return null;
+  final offset = selection.baseOffset;
+  return offset < 0 || offset > textLength ? null : offset;
 }
 
 _PureTextInsertion? _pureTextInsertion({

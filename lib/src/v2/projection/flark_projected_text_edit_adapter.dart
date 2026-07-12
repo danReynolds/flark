@@ -41,6 +41,7 @@ final class FlarkProjectedTextEditAdapter {
     required String oldDisplayText,
     required String newDisplayText,
     FlarkSelection? sourceSelectionBefore,
+    int? newDisplayCaret,
     int? undoGroupId,
     FlarkMapAffinity fallbackInsertionAffinity = FlarkMapAffinity.downstream,
     ({String open, String close})? insertionWrap,
@@ -51,18 +52,30 @@ final class FlarkProjectedTextEditAdapter {
       oldDisplayText: oldDisplayText,
       newDisplayText: newDisplayText,
       sourceSelectionBefore: sourceSelectionBefore,
+      newDisplayCaret: newDisplayCaret,
       undoGroupId: undoGroupId,
       fallbackInsertionAffinity: fallbackInsertionAffinity,
       insertionWrap: insertionWrap,
     )?.transaction;
   }
 
+  /// Resolves one display-text change into a source transaction.
+  ///
+  /// [newDisplayCaret] is the platform's own post-edit collapsed caret, in
+  /// the coordinates of [newDisplayText], or null when the platform reported a
+  /// range/invalid selection or the caller cannot vouch for it. It only ever
+  /// corrects the recomputed *caret* on the plain replacement path (see
+  /// [_plainPathSelectionAfter]) for the iOS-autocorrect shape the greedy diff
+  /// mis-places; it never changes the resulting document text, and the
+  /// inline-marker exit/repair paths keep the carets their placement logic
+  /// deliberately computes.
   FlarkProjectedEditResolution? resolveDisplayEdit({
     required String currentMarkdown,
     required FlarkProjection projection,
     required String oldDisplayText,
     required String newDisplayText,
     FlarkSelection? sourceSelectionBefore,
+    int? newDisplayCaret,
     int? undoGroupId,
     FlarkMapAffinity fallbackInsertionAffinity = FlarkMapAffinity.downstream,
     ({String open, String close})? insertionWrap,
@@ -70,14 +83,15 @@ final class FlarkProjectedTextEditAdapter {
     if (currentMarkdown.length != projection.textLength) return null;
     if (projection.projectText(currentMarkdown) != oldDisplayText) return null;
 
+    final oldDisplayCaret = _displayCaretAnchor(
+      projection,
+      sourceSelectionBefore,
+      oldDisplayLength: oldDisplayText.length,
+    );
     final diff = _DisplayTextDiff.between(
       oldDisplayText,
       newDisplayText,
-      anchor: _displayCaretAnchor(
-        projection,
-        sourceSelectionBefore,
-        oldDisplayLength: oldDisplayText.length,
-      ),
+      anchor: oldDisplayCaret,
     );
     if (diff == null) return null;
 
@@ -221,8 +235,14 @@ final class FlarkProjectedTextEditAdapter {
           replacementText: diff.replacementText,
         ),
         selectionBefore: sourceSelectionBefore,
-        selectionAfter: FlarkSelection.collapsed(
-          effectiveRange.start + diff.replacementText.length,
+        selectionAfter: _plainPathSelectionAfter(
+          projection: projection,
+          diff: diff,
+          effectiveRange: effectiveRange,
+          oldDisplayLength: oldDisplayText.length,
+          oldDisplayCaret: oldDisplayCaret,
+          newDisplayLength: newDisplayText.length,
+          newDisplayCaret: newDisplayCaret,
         ),
         metadata: FlarkTransactionMetadata(
           intent: FlarkTransactionIntent.input,
@@ -232,6 +252,69 @@ final class FlarkProjectedTextEditAdapter {
           projectionInvalidationRange: effectiveRange,
         ),
       ),
+    );
+  }
+
+  /// The post-edit caret for the plain replacement path.
+  ///
+  /// Defaults to the end of the replacement — where a caret that simply
+  /// follows the inserted text lands. When the platform reported a post-edit
+  /// caret [newDisplayCaret] that sits *beyond* the greedy diff's new end, in
+  /// the shared suffix the diff trimmed, honor it instead: that is the iOS
+  /// autocorrect shape (`dont` → `don't` keeps the trailing `t`; a retroactive
+  /// fix keeps the whole tail) whose greedy caret would otherwise land
+  /// mid-word. Only the caret moves — the source edit is unchanged, so every
+  /// inline-marker path upstream still sees the greedy diff — and the shared
+  /// suffix is untouched by the edit, so its old display offset maps through
+  /// the current projection and shifts by the edit's source-length delta.
+  ///
+  /// The correction is gated on the caret tracking the edit: the platform
+  /// caret must have moved from the old caret by exactly the text-length
+  /// change (`newLen - oldLen`), which every "type and the caret follows" edit
+  /// — autocorrect included — satisfies. A whole-text replacement that parks
+  /// the caret at the end regardless (what `enterText` and select-all edits
+  /// deliver) fails this and keeps the default, so a single character typed
+  /// mid-text is never mistaken for a suffix-spanning correction and the
+  /// marker exit/re-entry carets are never fought.
+  static FlarkSelection _plainPathSelectionAfter({
+    required FlarkProjection projection,
+    required _DisplayTextDiff diff,
+    required FlarkSourceRange effectiveRange,
+    required int oldDisplayLength,
+    required int? oldDisplayCaret,
+    required int newDisplayLength,
+    required int? newDisplayCaret,
+  }) {
+    final defaultCaret = effectiveRange.start + diff.replacementText.length;
+    final caret = newDisplayCaret;
+    if (caret == null ||
+        oldDisplayCaret == null ||
+        caret <= diff.newReplacementEnd ||
+        caret > newDisplayLength) {
+      return FlarkSelection.collapsed(defaultCaret);
+    }
+    // The caret must track the edit: a "type and the caret follows" change
+    // moves it by exactly the text-length delta. A whole-text replace that
+    // pins the caret to the end (enterText, select-all) does not, and must
+    // not be read as a suffix-spanning correction.
+    if (caret - oldDisplayCaret != newDisplayLength - oldDisplayLength) {
+      return FlarkSelection.collapsed(defaultCaret);
+    }
+    // The caret's offset into the trimmed shared suffix, lifted back to the
+    // old display (where the suffix began at the diff's old end).
+    final oldSuffixDisplayOffset = diff.oldEnd + (caret - diff.newReplacementEnd);
+    if (oldSuffixDisplayOffset > projection.displayLength) {
+      return FlarkSelection.collapsed(defaultCaret);
+    }
+    final sourceLengthDelta =
+        diff.replacementText.length - (effectiveRange.end - effectiveRange.start);
+    // Map with the caret-dedicated projection: a caret at a styled run's
+    // trailing display edge belongs inside the run (before its hidden closing
+    // marker), so a correction landing there continues the style rather than
+    // escaping it — matching taps and every other caret placement. Structural
+    // displayToSourceOffset would place it after the marker, outside the run.
+    return FlarkSelection.collapsed(
+      projection.displayCaretToSource(oldSuffixDisplayOffset) + sourceLengthDelta,
     );
   }
 
@@ -472,6 +555,11 @@ final class _DisplayTextDiff {
     );
     return _anchoredAtCaret(diff, oldText, newText, anchor) ?? diff;
   }
+
+  /// The greedy diff's new-text offset just past its replacement — where a
+  /// caret that merely follows the inserted text sits. The trimmed shared
+  /// suffix, if any, begins here.
+  int get newReplacementEnd => oldStart + replacementText.length;
 
   /// Re-derives an ambiguous pure insertion or deletion at the old caret.
   ///
