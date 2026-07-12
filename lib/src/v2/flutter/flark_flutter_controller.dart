@@ -19,6 +19,23 @@ import 'flark_text_delta_adapter.dart';
 @visibleForTesting
 bool flarkDebugValidatePredictionAdoption = true;
 
+/// An RFC 022 contract violation — a grammar claim the parser refuted.
+///
+/// Thrown (debug builds only) instead of a generic error so the parse
+/// pipeline can tell it apart from runtime parse failures: a load failure or
+/// a bad document routes to the parse-error callback and degrades, but a
+/// contract violation is a defect in flark itself and must fail loudly —
+/// swallowing one silently aborts adoption and lets downstream flows diverge
+/// with no visible cause.
+final class FlarkContractViolationError extends Error {
+  FlarkContractViolationError(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'FlarkContractViolationError: $message';
+}
+
 /// RFC 022 §4 telemetry: predicted hidden/replacement ranges *outside* the
 /// edited region that the authoritative parse did not confirm. Markdown is
 /// non-local (a fence opener restructures everything after it), so a nonzero
@@ -551,14 +568,89 @@ final class FlarkFlutterController extends ChangeNotifier {
     required TPayload payload,
   }) {
     final result = _runtime.dispatch(command: command, payload: payload);
-    _adoptRuntimeResult(result);
-    return result;
+    return _judgeAndAdopt(result);
   }
 
   FlarkEditorRuntimeResult applyTransaction(FlarkTransaction transaction) {
     final result = _runtime.applyTransaction(transaction);
+    // Programmatic transactions carry the same authored-marker declarations
+    // as commands, so they face the same judge. Undo/redo do not route here:
+    // history replay is pure geometry and its inverse transactions carry
+    // pre-inversion coordinates.
+    return _judgeAndAdopt(result);
+  }
+
+  /// RFC 022 parser judge: a command result whose transactions declare
+  /// authored delimiter ranges commits only if a synchronous parse of the
+  /// candidate document confirms each range as a hidden marker. On a
+  /// disagreement the command is rejected and the runtime stays untouched —
+  /// the proposal logic (delimiter placement, flanking checks) proposes; the
+  /// parser decides. When the judge's parse succeeds it is also adopted
+  /// immediately after commit, so judged commands land authoritative in the
+  /// same event turn. Documents past the sync ceiling (and async-only
+  /// backends) commit unjudged — the Phase 0 adoption assertion still
+  /// verifies the claim in debug builds when the async parse lands.
+  FlarkEditorRuntimeResult _judgeAndAdopt(FlarkEditorRuntimeResult result) {
+    FlarkMarkdownParseResult? judged;
+    if (!identical(result.runtime, _runtime)) {
+      final declared = <FlarkSourceRange>[
+        for (final transaction in result.appliedTransactions)
+          ...?transaction.metadata.authoredMarkerRanges,
+      ];
+      if (declared.isNotEmpty) {
+        judged = _parseCandidate(result.runtime.state);
+        if (judged != null) {
+          final hidden = <(int, int)>{
+            for (final range
+                in FlarkProjection.fromParseResult(judged).hiddenRanges)
+              (range.range.start, range.range.end),
+          };
+          for (final range in declared) {
+            if (hidden.contains((range.start, range.end))) continue;
+            return FlarkEditorRuntimeResult(
+              runtime: _runtime,
+              commandResult: FlarkCommandResult.rejected(
+                'The parser did not confirm an authored delimiter at '
+                '[${range.start}, ${range.end}); the edit would commit '
+                'markdown that parses differently than intended.',
+              ),
+            );
+          }
+        }
+      }
+    }
     _adoptRuntimeResult(result);
+    if (judged != null) applyParseResult(judged);
     return result;
+  }
+
+  /// Parses a candidate (not yet adopted) state synchronously, or returns
+  /// null when that is not affordable: no sync-capable backend, the document
+  /// is past the adaptive ceiling, or the backend failed to load (routed to
+  /// the parse-error callback like every other parse failure).
+  FlarkMarkdownParseResult? _parseCandidate(FlarkEditorState candidate) {
+    final FlarkParseScheduler scheduler;
+    try {
+      scheduler = _ensureScheduler();
+    } catch (error, stackTrace) {
+      _onParseError?.call(error, stackTrace);
+      return null;
+    }
+    final backend = scheduler.backend;
+    if (backend is! FlarkSyncCapableParseBackend) return null;
+    try {
+      return backend.parseSync(
+        FlarkMarkdownParseRequest(
+          revision: candidate.revision,
+          markdown: candidate.markdown,
+          profile: _parseProfile,
+          maxSyncUtf8Bytes: scheduler.adaptiveSyncCeilingBytes,
+        ),
+      );
+    } catch (error, stackTrace) {
+      _onParseError?.call(error, stackTrace);
+      return null;
+    }
   }
 
   bool applyTextEditingDelta(TextEditingDelta delta) {
@@ -1367,7 +1459,7 @@ final class FlarkFlutterController extends ChangeNotifier {
         final snippet = state.markdown.length <= 200
             ? state.markdown
             : '${state.markdown.substring(0, 200)}…';
-        throw StateError(
+        throw FlarkContractViolationError(
           'RFC 022 authored-claim violation: the editor authored a delimiter '
           'at [${range.start}, ${range.end}) and pre-hid it, but the parse '
           'did not re-derive that hidden range — a placement/wrap path wrote '
@@ -1393,6 +1485,15 @@ final class FlarkFlutterController extends ChangeNotifier {
         continue;
       }
       if (!authoritativeHidden.contains((hidden.range.start, hidden.range.end))) {
+        // Deliberately telemetry, not an assert: an unconfirmed mapped range
+        // is often legitimate non-locality. Canonical example (found when a
+        // promotion to an assert was attempted and reverted): an unclosed
+        // fence opener hides as [13,21) — through its newline, because the
+        // fence body extends to EOF — and the keystroke that CLOSES the
+        // fence, arbitrarily far downstream, reshapes it to [13,20). An
+        // edit's honest blast radius therefore needs fence topology, which
+        // is grammar; promotion waits for Phase 4's parser-derived
+        // invalidation (RFC 022 §5).
         flarkDebugUnconfirmedPredictionRanges += 1;
       }
     }

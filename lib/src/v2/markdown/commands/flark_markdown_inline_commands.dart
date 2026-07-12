@@ -166,6 +166,10 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
     final buffer = StringBuffer();
     int? firstInnerStart;
     int? lastInnerEnd;
+    // The delimiters this wrap writes, declared to the RFC 022 parser judge:
+    // the command commits only if the parser confirms each range as a hidden
+    // marker, so the placement logic above proposes rather than guarantees.
+    final authoredMarkerRanges = <FlarkSourceRange>[];
     // A paragraph break is a newline followed by one or more blank lines; a
     // single soft line break stays within one paragraph (emphasis may
     // soft-wrap across it), so only `\n\n`+ splits.
@@ -184,8 +188,12 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
         } else {
           buffer.write(wrap.text);
           final innerStart = base + wrap.innerOffset;
+          final innerEnd = innerStart + wrap.innerLength;
+          authoredMarkerRanges
+            ..add(FlarkSourceRange(innerStart - markerLength, innerStart))
+            ..add(FlarkSourceRange(innerEnd, innerEnd + markerLength));
           firstInnerStart ??= innerStart;
-          lastInnerEnd = innerStart + wrap.innerLength;
+          lastInnerEnd = innerEnd;
         }
         return '';
       },
@@ -213,6 +221,7 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
           userEvent: context.payload.userEvent,
           parseInvalidationRange: FlarkSourceRange(start, end),
           projectionInvalidationRange: FlarkSourceRange(start, end),
+          authoredMarkerRanges: authoredMarkerRanges,
         ),
       ),
     );
