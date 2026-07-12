@@ -115,7 +115,10 @@ build_host() {
   esac
 
   echo "Building host bridge artifact ($target_name)..."
-  "${CARGO_CMD[@]}" build --manifest-path "$CRATE_DIR/Cargo.toml" --release
+  # --locked like the hook and WASM builds: never silently resolve newer
+  # dependency versions or mutate the committed Cargo.lock, so every artifact
+  # (host dylib, cross-compiled libs, WASM) is built from one pinned graph.
+  "${CARGO_CMD[@]}" build --locked --manifest-path "$CRATE_DIR/Cargo.toml" --release
 }
 
 can_build_host() {

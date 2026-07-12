@@ -25,11 +25,19 @@ mkdir -p "$ASSET_DIR"
 
 echo "Building Comrak WASM bridge..."
 RUSTC="$RUSTC_CMD" "${CARGO_CMD[@]}" build \
+  --locked \
   --manifest-path "$CRATE_DIR/Cargo.toml" \
   --release \
   --target "$TARGET"
 
 cp "$CRATE_DIR/target/$TARGET/release/flark_comrak_bridge.wasm" \
   "$ASSET_DIR/flark_comrak_bridge.wasm"
+
+# Record the Rust sources this binary was built from, so the packaging
+# freshness test can fail the gate if the WASM is ever left stale relative to
+# the crate (FFI-vs-WASM behavioral drift). Keep this next to the copy above so
+# the manifest can never travel separately from the binary it describes.
+echo "Recording WASM source manifest..."
+dart run "$PACKAGE_ROOT/tool/gen_wasm_buildinfo.dart"
 
 echo "Comrak WASM bridge staged at lib/assets/wasm/flark_comrak_bridge.wasm."

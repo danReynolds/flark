@@ -31,7 +31,9 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
-  html: ^0.15.6
+  # Used only by the WASM freshness guard (tool/ + packaging test) to hash the
+  # Rust bridge sources; not part of the shipped runtime.
+  crypto: ^3.0.6
 
 flutter:
   uses-material-design: true

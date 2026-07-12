@@ -3,8 +3,8 @@
     {
       "example": 354,
       "owner": "flark-editor",
-      "reason": "Known strict mismatch in markdown package baseline for emphasis delimiter edge case.",
-      "targetMilestone": "native-comrak-cutover"
+      "reason": "Emphasis delimiter edge case where comrak's output differs from the upstream example; accepted as a permanent deviation after the native-comrak cutover shipped.",
+      "targetMilestone": "accepted-1.0"
     }
   ],
   "gfm": []

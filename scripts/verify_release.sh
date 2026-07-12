@@ -79,7 +79,12 @@ run_in_dir "$REPO_ROOT/example" flutter test test --reporter compact
 run ./scripts/verify_web_adapter_ci.sh
 
 run ./scripts/verify_native_editor_ci.sh --skip-build
-run flutter test test --reporter compact
+# Exclude benchmark-tagged tests here: they are single-shot wall-clock budget
+# checks that flake when run concurrently with the full suite, and they have a
+# dedicated enforced lane below (verify_benchmark_lane.sh). Running them twice —
+# once unenforced-but-still-asserting under contention, once properly — only
+# adds flakiness.
+run flutter test test --exclude-tags benchmark --reporter compact
 
 if [ "$run_benchmarks" -eq 1 ]; then
   run ./scripts/verify_benchmark_lane.sh
