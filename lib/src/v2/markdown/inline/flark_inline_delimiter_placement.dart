@@ -298,6 +298,28 @@ abstract final class FlarkInlineDelimiterPlacement {
     return _relocateEdges(source, run, split, caretInContent, runs);
   }
 
+  /// Maps a caret at [caretInContent] — an offset into the run's rebuilt
+  /// content `leading + core + trailing` — to its absolute position in the
+  /// document. [leadingBase], [coreBase], and [trailingBase] are the absolute
+  /// offsets at which each zone begins in the rebuilt text; the caret rides
+  /// whichever zone it falls in.
+  static int _caretAfterThroughSplit(
+    int caretInContent,
+    FlarkInlineEdgeWhitespace split, {
+    required int leadingBase,
+    required int coreBase,
+    required int trailingBase,
+  }) {
+    final coreEnd = split.leading.length + split.core.length;
+    if (caretInContent <= split.leading.length) {
+      return leadingBase + caretInContent;
+    }
+    if (caretInContent <= coreEnd) {
+      return coreBase + (caretInContent - split.leading.length);
+    }
+    return trailingBase + (caretInContent - coreEnd);
+  }
+
   /// Rebuilds the nesting around [run] with its new content [split] so edge
   /// whitespace sits outside every delimiter it would otherwise touch.
   ///
@@ -395,22 +417,17 @@ abstract final class FlarkInlineDelimiterPlacement {
       recordMarker(buffer, markers[level], opens: false);
     }
 
-    final int caretAfter;
     final coreEnd = split.leading.length + split.core.length;
-    if (caretInContent <= split.leading.length) {
-      // Within the leading whitespace, which sits at [leadingLength -
-      // split.leading.length] in the rebuilt text.
-      caretAfter =
-          innerOpenStart +
-          leadingLength -
-          split.leading.length +
-          caretInContent;
-    } else if (caretInContent <= coreEnd) {
-      caretAfter =
-          innerOpenStart + coreStart + (caretInContent - split.leading.length);
-    } else {
-      caretAfter = innerOpenStart + trailingStart + (caretInContent - coreEnd);
-    }
+    final caretAfter = _caretAfterThroughSplit(
+      caretInContent,
+      split,
+      // Leading whitespace sits [split.leading.length] before [leadingLength]
+      // in the rebuilt text; core and trailing at their recorded buffer
+      // offsets.
+      leadingBase: innerOpenStart + leadingLength - split.leading.length,
+      coreBase: innerOpenStart + coreStart,
+      trailingBase: innerOpenStart + trailingStart,
+    );
     return FlarkInlinePlacementEdit(
       range: FlarkSourceRange(innerOpenStart, innerCloseEnd),
       replacement: buffer.toString(),
@@ -1010,26 +1027,21 @@ abstract final class FlarkInlineDelimiterPlacement {
     final replacement =
         '${split.leading}$marker${split.core}$marker${split.trailing}';
     final coreEnd = split.leading.length + split.core.length;
-    final int caretAfter;
-    String? continuation;
-    if (caretInContent <= split.leading.length) {
-      caretAfter = rangeStart + caretInContent;
-    } else if (caretInContent <= coreEnd) {
-      caretAfter =
-          rangeStart +
-          split.leading.length +
-          marker.length +
-          (caretInContent - split.leading.length);
-    } else {
-      caretAfter =
+    final caretAfter = _caretAfterThroughSplit(
+      caretInContent,
+      split,
+      leadingBase: rangeStart,
+      coreBase: rangeStart + split.leading.length + marker.length,
+      trailingBase:
           rangeStart +
           split.leading.length +
           marker.length +
           split.core.length +
-          marker.length +
-          (caretInContent - coreEnd);
-      continuation = marker;
-    }
+          marker.length,
+    );
+    // A caret in the trailing zone lands past the reopened close, so keep the
+    // style armed for the next keystroke.
+    final continuation = caretInContent > coreEnd ? marker : null;
     return _verified(
       source,
       FlarkInlinePlacementEdit(
@@ -1095,28 +1107,12 @@ abstract final class FlarkInlineDelimiterPlacement {
     List<FlarkInlineRunScan> runs,
     int offset,
   ) {
-    FlarkInlineRunScan? outer;
-    for (final run in runs) {
-      if (run.closeEnd == offset) {
-        outer = run;
-        break;
-      }
-    }
-    if (outer == null) return null;
-    final chain = [outer];
-    var found = true;
-    while (found) {
-      found = false;
-      for (final run in runs) {
-        if (run.closeEnd == chain.last.closeStart &&
-            run.openStart >= chain.last.openStart) {
-          chain.add(run);
-          found = true;
-          break;
-        }
-      }
-    }
-    return chain;
+    return _runChain(
+      runs,
+      (run) => run.closeEnd == offset,
+      (run, inner) =>
+          run.closeEnd == inner.closeStart && run.openStart >= inner.openStart,
+    );
   }
 
   /// The contiguous chain of runs whose opening clusters start exactly at
@@ -1125,9 +1121,28 @@ abstract final class FlarkInlineDelimiterPlacement {
     List<FlarkInlineRunScan> runs,
     int offset,
   ) {
+    return _runChain(
+      runs,
+      (run) => run.openStart == offset,
+      (run, inner) =>
+          run.openStart == inner.contentStart && run.closeEnd <= inner.closeEnd,
+    );
+  }
+
+  /// Builds a run chain outermost-first: the first run matching [isOutermost]
+  /// seeds it, then each run [extendsInward] accepts against the current
+  /// innermost is appended. Returns null when nothing matches [isOutermost].
+  /// Shared skeleton for the mirror-image [_closeChainEndingAt] (walks in
+  /// through adjacent closes) and [_openChainStartingAt] (adjacent opens).
+  static List<FlarkInlineRunScan>? _runChain(
+    List<FlarkInlineRunScan> runs,
+    bool Function(FlarkInlineRunScan run) isOutermost,
+    bool Function(FlarkInlineRunScan candidate, FlarkInlineRunScan inner)
+    extendsInward,
+  ) {
     FlarkInlineRunScan? outer;
     for (final run in runs) {
-      if (run.openStart == offset) {
+      if (isOutermost(run)) {
         outer = run;
         break;
       }
@@ -1138,8 +1153,7 @@ abstract final class FlarkInlineDelimiterPlacement {
     while (found) {
       found = false;
       for (final run in runs) {
-        if (run.openStart == chain.last.contentStart &&
-            run.closeEnd <= chain.last.closeEnd) {
+        if (extendsInward(run, chain.last)) {
           chain.add(run);
           found = true;
           break;
@@ -1262,27 +1276,13 @@ abstract final class FlarkInlineDelimiterPlacement {
       whitespaceStart -= 1;
     }
     if (whitespaceStart == caret) return null;
-    FlarkInlineRunScan? outermost;
-    for (final run in runs) {
-      if (run.closeEnd == whitespaceStart) {
-        outermost = run;
-        break;
-      }
-    }
-    if (outermost == null) return null;
-    var innermost = outermost;
-    var found = true;
-    while (found) {
-      found = false;
-      for (final run in runs) {
-        if (run.closeEnd == innermost.closeStart &&
-            run.openStart >= innermost.openStart) {
-          innermost = run;
-          found = true;
-          break;
-        }
-      }
-    }
+    // The gap's run spans the whole close cluster ending at the whitespace:
+    // the outermost run closing there down through its innermost stacked
+    // close.
+    final chain = _closeChainEndingAt(runs, whitespaceStart);
+    if (chain == null) return null;
+    final outermost = chain.first;
+    final innermost = chain.last;
     return FlarkInlineReentryGap(
       run: FlarkInlineRunScan(
         openStart: outermost.openStart,
@@ -1303,31 +1303,12 @@ abstract final class FlarkInlineDelimiterPlacement {
     int end, [
     List<FlarkInlineRunScan>? runs,
   ]) {
-    FlarkInlineRunScan? innermost;
-    if (runs != null) {
-      for (final run in runs) {
-        if (run.contentStart <= start &&
-            end <= run.closeStart &&
-            (innermost == null || run.contentStart > innermost.contentStart)) {
-          innermost = run;
-        }
-      }
-      return innermost;
-    }
-    for (final marker in FlarkInlineRunScanner.allMarkers) {
-      final run = FlarkInlineRunScanner.validEnclosingRun(
-        source,
-        start,
-        marker,
-      );
-      if (run != null &&
-          run.contentStart <= start &&
-          end <= run.closeStart &&
-          (innermost == null || run.contentStart > innermost.contentStart)) {
-        innermost = run;
-      }
-    }
-    return innermost;
+    return _innermostRunWhere(
+      source,
+      start,
+      runs,
+      (run) => run.contentStart <= start && end <= run.closeStart,
+    );
   }
 
   /// The innermost run whose content contains the whole span
@@ -1338,12 +1319,33 @@ abstract final class FlarkInlineDelimiterPlacement {
     int closeEnd, [
     List<FlarkInlineRunScan>? runs,
   ]) {
+    // The proper-containment clause (`openStart`/`closeEnd` strictly wider)
+    // only filters the [runs] branch; a scanner-found run always encloses the
+    // probe, so `validEnclosingRun` never returns the probed run itself.
+    return _innermostRunWhere(
+      source,
+      openStart,
+      runs,
+      (run) =>
+          run.contentStart <= openStart &&
+          closeEnd <= run.closeStart &&
+          (run.openStart < openStart || run.closeEnd > closeEnd),
+    );
+  }
+
+  /// The innermost run (largest [FlarkInlineRunScan.contentStart]) satisfying
+  /// [contains]: from [runs] when provided, else discovered from the textual
+  /// scanner by probing an enclosing run at [probeOffset] for every marker.
+  static FlarkInlineRunScan? _innermostRunWhere(
+    String source,
+    int probeOffset,
+    List<FlarkInlineRunScan>? runs,
+    bool Function(FlarkInlineRunScan run) contains,
+  ) {
     FlarkInlineRunScan? innermost;
     if (runs != null) {
       for (final run in runs) {
-        if (run.contentStart <= openStart &&
-            closeEnd <= run.closeStart &&
-            (run.openStart < openStart || run.closeEnd > closeEnd) &&
+        if (contains(run) &&
             (innermost == null || run.contentStart > innermost.contentStart)) {
           innermost = run;
         }
@@ -1353,12 +1355,11 @@ abstract final class FlarkInlineDelimiterPlacement {
     for (final marker in FlarkInlineRunScanner.allMarkers) {
       final run = FlarkInlineRunScanner.validEnclosingRun(
         source,
-        openStart,
+        probeOffset,
         marker,
       );
       if (run != null &&
-          run.contentStart <= openStart &&
-          closeEnd <= run.closeStart &&
+          contains(run) &&
           (innermost == null || run.contentStart > innermost.contentStart)) {
         innermost = run;
       }

@@ -138,16 +138,11 @@ final class FlarkProjectedTextEditAdapter {
         edgeSensitive: !insertionWrap.open.contains('`'),
         runs: runs,
       );
-      return FlarkProjectedEditResolution(
-        _placementTransaction(
-          placement,
-          sourceSelectionBefore: sourceSelectionBefore,
-          undoGroupId: undoGroupId,
-          userEvent: 'input.projected.pendingInlineStyle',
-        ),
-        continuationMarker: placement.continuationMarker,
-        requestsImmediateParse: true,
-        authoredMarkers: placement.authoredMarkers,
+      return _resolutionFromPlacement(
+        placement,
+        sourceSelectionBefore: sourceSelectionBefore,
+        undoGroupId: undoGroupId,
+        userEvent: 'input.projected.pendingInlineStyle',
       );
     }
 
@@ -164,16 +159,11 @@ final class FlarkProjectedTextEditAdapter {
       runs: runs,
     );
     if (repair != null) {
-      return FlarkProjectedEditResolution(
-        _placementTransaction(
-          repair,
-          sourceSelectionBefore: sourceSelectionBefore,
-          undoGroupId: undoGroupId,
-          userEvent: 'input.projected.inlineEdgeRepair',
-        ),
-        continuationMarker: repair.continuationMarker,
-        requestsImmediateParse: true,
-        authoredMarkers: repair.authoredMarkers,
+      return _resolutionFromPlacement(
+        repair,
+        sourceSelectionBefore: sourceSelectionBefore,
+        undoGroupId: undoGroupId,
+        userEvent: 'input.projected.inlineEdgeRepair',
       );
     }
 
@@ -212,16 +202,11 @@ final class FlarkProjectedTextEditAdapter {
                 runs: runs,
               );
     if (balance != null) {
-      return FlarkProjectedEditResolution(
-        _placementTransaction(
-          balance,
-          sourceSelectionBefore: sourceSelectionBefore,
-          undoGroupId: undoGroupId,
-          userEvent: 'input.projected.inlineMarkerBalanceRepair',
-        ),
-        continuationMarker: balance.continuationMarker,
-        requestsImmediateParse: true,
-        authoredMarkers: balance.authoredMarkers,
+      return _resolutionFromPlacement(
+        balance,
+        sourceSelectionBefore: sourceSelectionBefore,
+        undoGroupId: undoGroupId,
+        userEvent: 'input.projected.inlineMarkerBalanceRepair',
       );
     }
 
@@ -247,6 +232,29 @@ final class FlarkProjectedTextEditAdapter {
           projectionInvalidationRange: effectiveRange,
         ),
       ),
+    );
+  }
+
+  /// Wraps a placement [edit] into its resolution: the same transaction,
+  /// continuation marker, immediate-parse request, and authored markers used by
+  /// every inline-placement branch (armed wrap, content-edit repair, and
+  /// marker-balance repair), which differ only by [edit] and [userEvent].
+  static FlarkProjectedEditResolution _resolutionFromPlacement(
+    FlarkInlinePlacementEdit edit, {
+    required FlarkSelection? sourceSelectionBefore,
+    required int? undoGroupId,
+    required String userEvent,
+  }) {
+    return FlarkProjectedEditResolution(
+      _placementTransaction(
+        edit,
+        sourceSelectionBefore: sourceSelectionBefore,
+        undoGroupId: undoGroupId,
+        userEvent: userEvent,
+      ),
+      continuationMarker: edit.continuationMarker,
+      requestsImmediateParse: true,
+      authoredMarkers: edit.authoredMarkers,
     );
   }
 

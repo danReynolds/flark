@@ -254,7 +254,8 @@ int? _findOpeningDelimiter(String text, String delimiter, int probeOffset) {
   while (searchOffset >= 0) {
     final index = text.lastIndexOf(delimiter, searchOffset);
     if (index < 0) return null;
-    if (!_isEscaped(text, index) && _isDelimiterRun(text, index, delimiter)) {
+    if (!FlarkInlineFlanking.isEscaped(text, index) &&
+        _isDelimiterRun(text, index, delimiter)) {
       return index;
     }
     searchOffset = index - 1;
@@ -267,7 +268,8 @@ int? _findClosingDelimiter(String text, String delimiter, int startOffset) {
   while (searchOffset < text.length) {
     final index = text.indexOf(delimiter, searchOffset);
     if (index < 0) return null;
-    if (!_isEscaped(text, index) && _isDelimiterRun(text, index, delimiter)) {
+    if (!FlarkInlineFlanking.isEscaped(text, index) &&
+        _isDelimiterRun(text, index, delimiter)) {
       return index;
     }
     searchOffset = index + delimiter.length;
@@ -289,15 +291,6 @@ bool _isDelimiterRun(String text, int offset, String delimiter) {
     return before != codeUnit && after != codeUnit;
   }
   return true;
-}
-
-bool _isEscaped(String text, int offset) {
-  var slashCount = 0;
-  for (var cursor = offset - 1; cursor >= 0; cursor -= 1) {
-    if (text.codeUnitAt(cursor) != 92) break;
-    slashCount += 1;
-  }
-  return slashCount.isOdd;
 }
 
 int? _headingLevel(String line) {
