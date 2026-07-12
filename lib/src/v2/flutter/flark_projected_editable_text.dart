@@ -674,6 +674,7 @@ final class _FlarkProjectedEditableHostState
         final applied = widget.controller.applyProjectedTextEdit(
           oldDisplayText: intent.oldDisplayText,
           newDisplayText: intent.newDisplayText,
+          newDisplayCaret: intent.newDisplayCaret,
           undoGroupId: compositionUndoGroupId,
         );
         if (!applied) {
