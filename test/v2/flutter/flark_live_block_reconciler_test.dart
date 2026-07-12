@@ -31,6 +31,29 @@ void main() {
       expect(idsAfter[2], idsBefore[2]);
     });
 
+    test('an edit that duplicates a sibling does not swap their ids', () {
+      // Regression: editing a block into text identical to an adjacent
+      // same-type sibling used to let the edited block claim the sibling's id
+      // (a greedy content match), swapping their widget State/focus/IME. Each
+      // block must keep its own id so the focused input is never torn down.
+      final reconciler = FlarkLiveBlockReconciler();
+      final before = _doc([
+        ('paragraph', 'all'),
+        ('paragraph', 'alpha'),
+      ]);
+      final idsBefore = reconciler.assignIds(before.blocks, before.text);
+
+      // Edit block 0 'all' -> 'alpha', making it identical to block 1.
+      final after = _doc([
+        ('paragraph', 'alpha'),
+        ('paragraph', 'alpha'),
+      ]);
+      final idsAfter = reconciler.assignIds(after.blocks, after.text);
+
+      expect(idsAfter[0], idsBefore[0]);
+      expect(idsAfter[1], idsBefore[1]);
+    });
+
     test('edited middle block keeps its id', () {
       final reconciler = FlarkLiveBlockReconciler();
       final before = _doc([

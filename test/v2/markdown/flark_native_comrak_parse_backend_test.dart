@@ -1465,6 +1465,80 @@ void main() {
     });
 
     test(
+      'real native hides the whole link tail even when the destination or '
+      'title contains parentheses',
+      () async {
+        final libPath = flarkNativeBridgeLibraryPathForPlatform();
+        if (libPath.isEmpty || !File(libPath).existsSync()) {
+          return;
+        }
+
+        final backend = FlarkNativeComrakParseBackend.withNativeBridge(
+          overrideLibraryPath: libPath,
+        );
+
+        // Regression: hiding used to scan for the first unescaped ')', which
+        // mis-located the link close whenever the destination held balanced
+        // parens, used an angle-bracket destination, or the title contained
+        // ')'. The tail leaked into the projected display (e.g. 'Foo)').
+        final cases = <String, String>{
+          '[Foo](https://en.wikipedia.org/wiki/Foo_(disambiguation))': 'Foo',
+          '[x](/a(b)c)': 'x',
+          '![alt](/a(b).png)': 'alt',
+          '[x](/u "a)")': 'x',
+          '[x](<a)b>)': 'x',
+          // Control: a paren-free URL must still hide cleanly.
+          '[ok](https://ok.com)': 'ok',
+        };
+
+        for (final entry in cases.entries) {
+          final result = await backend.parse(
+            FlarkMarkdownParseRequest(
+              revision: 1,
+              markdown: entry.key,
+              profile: FlarkMarkdownProfile.commonMarkGfm,
+            ),
+          );
+          expect(
+            FlarkProjection.fromParseResult(result).projectText(entry.key),
+            entry.value,
+            reason: 'projected display for ${entry.key}',
+          );
+        }
+      },
+    );
+
+    test(
+      'real native hides a reference definition whose title is on the next '
+      'line',
+      () async {
+        final libPath = flarkNativeBridgeLibraryPathForPlatform();
+        if (libPath.isEmpty || !File(libPath).existsSync()) {
+          return;
+        }
+        final backend = FlarkNativeComrakParseBackend.withNativeBridge(
+          overrideLibraryPath: libPath,
+        );
+        const markdown = '[foo]: /url\n"the title"\n\nSee it.\n';
+        final result = await backend.parse(
+          const FlarkMarkdownParseRequest(
+            revision: 1,
+            markdown: markdown,
+            profile: FlarkMarkdownProfile.commonMarkGfm,
+          ),
+        );
+        final projected = FlarkProjection.fromParseResult(
+          result,
+        ).projectText(markdown);
+        // Regression: the continuation title line used to leak into the
+        // projection because detection was single-line only.
+        expect(projected, isNot(contains('the title')));
+        expect(projected, isNot(contains('/url')));
+        expect(projected, contains('See it.'));
+      },
+    );
+
+    test(
       'real native output carries v2 action and table/task metadata',
       () async {
         final libPath = flarkNativeBridgeLibraryPathForPlatform();

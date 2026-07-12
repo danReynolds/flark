@@ -21,6 +21,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Extended-grapheme-cluster segmentation for editing (Backspace over flags,
+  # ZWJ emoji, and NFD combining pairs). Pure Dart — safe for the headless core.
+  characters: ^1.4.0
   ffi: ^2.1.4
   hooks: ^1.0.3
   code_assets: ^1.0.0

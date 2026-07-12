@@ -9,6 +9,13 @@ import 'flark_image_popover.dart';
 import 'flark_inline_image.dart';
 import 'flark_link_popover.dart';
 
+/// Invoked with a link's raw markdown [destination] when the user opens it.
+///
+/// Flark never launches URLs itself, so it passes the destination through
+/// verbatim — including `javascript:`, `data:`, and relative URLs, and without
+/// percent-decoding. The host is responsible for validating the scheme before
+/// navigating; do not hand an untrusted destination straight to a URL launcher
+/// or a `WebView`.
 typedef FlarkLinkOpenCallback = void Function(String destination);
 typedef FlarkLinkEditCallback =
     void Function(BuildContext context, FlarkRenderOverlayTarget target);

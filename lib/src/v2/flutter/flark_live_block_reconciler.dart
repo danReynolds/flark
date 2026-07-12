@@ -59,19 +59,28 @@ final class FlarkLiveBlockReconciler {
     final resolved = List<String?>.filled(realIndices.length, null);
     final claimed = List<bool>.filled(_previous.length, false);
 
-    // Pass 1: exact content-key match (greedy, first unclaimed per key).
-    final prevByKey = <String, List<int>>{};
-    for (var p = 0; p < _previous.length; p += 1) {
-      (prevByKey[_previous[p].key] ??= <int>[]).add(p);
-    }
+    // Pass 1: exact content-key match, driven from the previous blocks so that
+    // when several new blocks share a key each previous block binds to the new
+    // block at the CLOSEST index. A naive first-unclaimed match let an edit
+    // that makes a block identical to a same-type sibling ('all' → 'alpha' next
+    // to an existing 'alpha') hand the sibling's id to the edited block,
+    // swapping their widget State/focus/IME connection mid-edit — the "wrong id
+    // assignment ⇒ wrong reuse" risk this module exists to prevent.
+    final newByKey = <String, List<int>>{};
     for (var k = 0; k < keys.length; k += 1) {
-      final bucket = prevByKey[keys[k]];
-      if (bucket == null) continue;
-      for (final p in bucket) {
-        if (claimed[p]) continue;
+      (newByKey[keys[k]] ??= <int>[]).add(k);
+    }
+    for (var p = 0; p < _previous.length; p += 1) {
+      final candidates = newByKey[_previous[p].key];
+      if (candidates == null) continue;
+      int? best;
+      for (final k in candidates) {
+        if (resolved[k] != null) continue;
+        if (best == null || (k - p).abs() < (best - p).abs()) best = k;
+      }
+      if (best != null) {
+        resolved[best] = _previous[p].id;
         claimed[p] = true;
-        resolved[k] = _previous[p].id;
-        break;
       }
     }
 

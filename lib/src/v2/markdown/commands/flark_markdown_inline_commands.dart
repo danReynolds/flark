@@ -151,41 +151,62 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
     }
 
     // No equivalent form brackets the selection: apply the style fresh with the
-    // canonical marker (`equivalentMarkers.first`).
+    // canonical marker (`equivalentMarkers.first`), wrapping each PARAGRAPH in
+    // the selection independently. A single delimiter pair cannot span a blank
+    // line — `**alpha\n\nbeta**` is literal text, not one bold run — so a
+    // multi-paragraph selection wrapped as a whole would commit invalid
+    // markdown through the public toggle API and break the always-valid-inline
+    // invariant. Per the "valid subset" contract, a paragraph whose wrap would
+    // collide with an interior same-marker run that closes the delimiter early
+    // (`**a**b**`) is left unstyled instead.
     final marker = context.payload.style.marker;
     final markerLength = marker.length;
+    final isCode = context.payload.style == FlarkMarkdownInlineStyle.inlineCode;
 
-    // The wrap hugs the selection's non-whitespace core: CommonMark refuses a
-    // delimiter stranded against whitespace (`**hello **` is literal text), so
-    // edge whitespace stays outside the markers and a whitespace-only
-    // selection has nothing to style. Inline code is exempt — backticks may
-    // legally hug whitespace, and relocating it would change the span's text.
-    var wrapped = '$marker$selectedText$marker';
-    var innerStart = start + markerLength;
-    var innerLength = selectedText.length;
-    if (context.payload.style != FlarkMarkdownInlineStyle.inlineCode) {
-      final split = FlarkInlineDelimiterPlacement.splitEdgeWhitespace(
-        selectedText,
+    final buffer = StringBuffer();
+    int? firstInnerStart;
+    int? lastInnerEnd;
+    // A paragraph break is a newline followed by one or more blank lines; a
+    // single soft line break stays within one paragraph (emphasis may
+    // soft-wrap across it), so only `\n\n`+ splits.
+    final paragraphBreak = RegExp(r'\n(?:[ \t]*\n)+');
+    selectedText.splitMapJoin(
+      paragraphBreak,
+      onMatch: (match) {
+        buffer.write(match[0]);
+        return '';
+      },
+      onNonMatch: (segment) {
+        final base = start + buffer.length;
+        final wrap = _wrapFreshParagraph(segment, marker, markerLength, isCode);
+        if (wrap == null) {
+          buffer.write(segment);
+        } else {
+          buffer.write(wrap.text);
+          final innerStart = base + wrap.innerOffset;
+          firstInnerStart ??= innerStart;
+          lastInnerEnd = innerStart + wrap.innerLength;
+        }
+        return '';
+      },
+    );
+
+    if (firstInnerStart == null || lastInnerEnd == null) {
+      return FlarkCommandResult.rejected(
+        'Inline style toggling requires non-whitespace content.',
       );
-      if (split.core.isEmpty) {
-        return FlarkCommandResult.rejected(
-          'Inline style toggling requires non-whitespace content.',
-        );
-      }
-      wrapped = '${split.leading}$marker${split.core}$marker${split.trailing}';
-      innerStart = start + split.leading.length + markerLength;
-      innerLength = split.core.length;
     }
+
     return FlarkCommandResult.handled(
       transaction: FlarkTransaction.single(
         FlarkSourceOperation.replace(
           replacedRange: FlarkSourceRange(start, end),
-          replacementText: wrapped,
+          replacementText: buffer.toString(),
         ),
         selectionBefore: selection,
         selectionAfter: FlarkSelection(
-          baseOffset: innerStart,
-          extentOffset: innerStart + innerLength,
+          baseOffset: firstInnerStart!,
+          extentOffset: lastInnerEnd!,
         ),
         metadata: FlarkTransactionMetadata(
           intent: FlarkTransactionIntent.command,
@@ -195,6 +216,77 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
         ),
       ),
     );
+  }
+
+  /// Wraps a single paragraph [segment] in [marker], hugging its non-whitespace
+  /// core (CommonMark refuses a delimiter stranded against whitespace, so edge
+  /// whitespace stays outside the markers). Returns null — leaving the segment
+  /// unstyled — when there is nothing to style (whitespace-only) or when the
+  /// wrap would collide with an interior same-marker run that closes the
+  /// delimiter early. Inline code is verbatim: backticks may hug whitespace and
+  /// interior markers are literal, so it is wrapped as-is.
+  ({String text, int innerOffset, int innerLength})? _wrapFreshParagraph(
+    String segment,
+    String marker,
+    int markerLength,
+    bool isCode,
+  ) {
+    if (isCode) {
+      if (segment.isEmpty) return null;
+      return (
+        text: '$marker$segment$marker',
+        innerOffset: markerLength,
+        innerLength: segment.length,
+      );
+    }
+    final split = FlarkInlineDelimiterPlacement.splitEdgeWhitespace(segment);
+    if (split.core.isEmpty) return null;
+    final text = '${split.leading}$marker${split.core}$marker${split.trailing}';
+    final coreStart = split.leading.length + markerLength;
+    final coreEnd = coreStart + split.core.length;
+    if (_coreClosesDelimiterEarly(text, coreStart, coreEnd, markerLength)) {
+      return null;
+    }
+    return (
+      text: text,
+      innerOffset: coreStart,
+      innerLength: split.core.length,
+    );
+  }
+
+  /// Whether the wrapped [text]'s core (`[coreStart, coreEnd)`) contains an
+  /// unescaped marker run of at least [markerLength] that can close the opening
+  /// delimiter — which would make `marker + core + marker` misparse (the inner
+  /// run closes the run early and the trailing marker leaks as literal text).
+  ///
+  /// Length-aware so a strong wrap (`**`) is not tripped by a nested emphasis
+  /// `*b*`, and flanking-aware so a space-flanked interior marker (`2 * 3`,
+  /// which is literal) does not block the wrap.
+  bool _coreClosesDelimiterEarly(
+    String text,
+    int coreStart,
+    int coreEnd,
+    int markerLength,
+  ) {
+    final markerChar = text.codeUnitAt(coreStart - 1);
+    var index = coreStart;
+    while (index < coreEnd) {
+      if (text.codeUnitAt(index) != markerChar ||
+          FlarkInlineFlanking.isEscaped(text, index)) {
+        index += 1;
+        continue;
+      }
+      var runEnd = index;
+      while (runEnd < coreEnd && text.codeUnitAt(runEnd) == markerChar) {
+        runEnd += 1;
+      }
+      if (runEnd - index >= markerLength &&
+          FlarkInlineFlanking.canClose(text, index, runEnd)) {
+        return true;
+      }
+      index = runEnd;
+    }
+    return false;
   }
 
   /// Whether the marker candidate at [candidateStart] can act as one side of

@@ -82,7 +82,9 @@ final class FlarkHistoryStack {
     required FlarkDocument documentBefore,
     FlarkDocument? documentAfter,
   }) {
-    if (!transaction.metadata.addToHistory || !transaction.changesDocument) {
+    // Source-neutral (selection-only) transactions change nothing to record
+    // and cannot invalidate the redo stack.
+    if (!transaction.changesDocument) {
       return this;
     }
 
@@ -98,6 +100,19 @@ final class FlarkHistoryStack {
     );
     if (identical(effectiveDocumentAfter, documentBefore)) {
       return this;
+    }
+
+    if (!transaction.metadata.addToHistory) {
+      // The document changed but this edit opts out of undo history: add no
+      // undo entry, but the redo stack now assumes a stale (pre-edit) document,
+      // so replaying it would misapply against shifted ranges — drop it.
+      return redoEntries.isEmpty
+          ? this
+          : FlarkHistoryStack(
+              undoEntries: undoEntries,
+              redoEntries: const <FlarkHistoryEntry>[],
+              maxEntries: maxEntries,
+            );
     }
 
     final inverse = transaction.invert(documentBefore);

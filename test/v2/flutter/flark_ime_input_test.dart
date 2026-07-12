@@ -172,6 +172,57 @@ void main() {
     );
 
     testWidgets(
+      'voice dictation delivers one composing chunk, commits plainly (S10)',
+      (tester) async {
+        // Dictation arrives as a large compose-then-commit chunk rather than
+        // per-character stages. Covers device-protocol row 9 / scenario S10,
+        // which had no simulated coverage.
+        final controller = await _pumpLiveEditor(tester, '');
+        final editable = find.byType(EditableText);
+        await tester.showKeyboard(editable);
+        await tester.pump();
+        await _composeAndCommit(
+          tester,
+          editable,
+          regionStart: 0,
+          stages: const ['hello world'],
+          commit: 'hello world ',
+        );
+        await _expectCommitted(
+          tester,
+          controller,
+          display: 'hello world ',
+          source: 'hello world ',
+        );
+      },
+    );
+
+    testWidgets(
+      'voice dictation with strong armed wraps the dictated chunk (S10)',
+      (tester) async {
+        final controller = await _pumpLiveEditor(tester, '');
+        final editable = find.byType(EditableText);
+        await tester.showKeyboard(editable);
+        await tester.pump();
+        controller.commands.toggleInlineStyle(FlarkMarkdownInlineStyle.strong);
+        await tester.pump();
+        await _composeAndCommit(
+          tester,
+          editable,
+          regionStart: 0,
+          stages: const ['hello world'],
+          commit: 'hello world ',
+        );
+        await _expectCommitted(
+          tester,
+          controller,
+          display: 'hello world ',
+          source: '**hello world** ',
+        );
+      },
+    );
+
+    testWidgets(
       'autocorrect replaces the word behind the caret in one committed update',
       (tester) async {
         final controller = await _pumpLiveEditor(tester, '');

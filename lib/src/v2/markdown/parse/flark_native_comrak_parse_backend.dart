@@ -1204,12 +1204,22 @@ List<FlarkMarkdownHiddenRange> _nativeInlineHiddenRanges(
     final labelEnd = _findLinkLabelEnd(markdown, start + markerLength, end);
     if (labelEnd == null || labelEnd + 1 >= end) continue;
 
-    final destinationEnd = switch (markdown.codeUnitAt(labelEnd + 1)) {
-      0x28 => _findUnescaped(markdown, ')', labelEnd + 2, end),
-      0x5B => _findUnescaped(markdown, ']', labelEnd + 2, end),
-      _ => null,
-    };
-    if (destinationEnd == null || destinationEnd + 1 > end) continue;
+    // The token spans the whole link/image, so comrak's own end byte is the
+    // authoritative close of the trailing `](dest "title")` (inline) or
+    // `][ref]` (full reference). Hide from the label's `]` through `end`
+    // regardless of the destination/title contents.
+    //
+    // The previous scan for the first unescaped `)` mis-located the close when
+    // the destination held balanced parens (`.../Foo_(disambiguation)`, a very
+    // common Wikipedia shape), used an angle-bracket destination (`<a)b>`), or
+    // carried a title containing `)` — leaking the tail (`Foo)`, `xb>)`, `x")`)
+    // into the projected display and skewing display↔source caret mapping.
+    final afterLabel = markdown.codeUnitAt(labelEnd + 1);
+    if (afterLabel != 0x28 && afterLabel != 0x5B) {
+      // A shortcut reference (`[foo]`) has no inline destination or explicit
+      // reference span to hide; leave it source-visible (unchanged behavior).
+      continue;
+    }
 
     ranges.add(
       FlarkMarkdownHiddenRange(
@@ -1222,7 +1232,7 @@ List<FlarkMarkdownHiddenRange> _nativeInlineHiddenRanges(
       FlarkMarkdownHiddenRange(
         kind: FlarkMarkdownHiddenRangeKind.linkDestination,
         type: 'linkDestination',
-        sourceRange: FlarkSourceRange(labelEnd, destinationEnd + 1),
+        sourceRange: FlarkSourceRange(labelEnd, end),
       ),
     );
   }
@@ -1241,15 +1251,6 @@ int? _findLinkLabelEnd(String source, int start, int limit) {
     if (unit != 0x5D) continue;
     depth--;
     if (depth == 0) return index;
-  }
-  return null;
-}
-
-int? _findUnescaped(String source, String needle, int start, int limit) {
-  final needleUnit = needle.codeUnitAt(0);
-  for (var index = start; index < limit; index++) {
-    if (source.codeUnitAt(index) != needleUnit) continue;
-    if (!FlarkInlineFlanking.isEscaped(source, index)) return index;
   }
   return null;
 }
@@ -1643,17 +1644,38 @@ Map<String, int> _rangeJson(FlarkSourceRange range) {
 
 List<FlarkSourceRange> _referenceDefinitionRanges(String markdown) {
   final ranges = <FlarkSourceRange>[];
+  // Precompute line spans so a definition can consume a trailing title line.
+  final starts = <int>[];
+  final endsWithBreak = <int>[];
+  final texts = <String>[];
   var lineStart = 0;
   while (lineStart <= markdown.length) {
     final nextBreak = markdown.indexOf('\n', lineStart);
     final lineEnd = nextBreak == -1 ? markdown.length : nextBreak;
-    final lineEndWithBreak = nextBreak == -1 ? lineEnd : nextBreak + 1;
-    final line = markdown.substring(lineStart, lineEnd);
-    if (_isReferenceDefinitionLine(line)) {
-      ranges.add(FlarkSourceRange(lineStart, lineEndWithBreak));
-    }
+    starts.add(lineStart);
+    endsWithBreak.add(nextBreak == -1 ? lineEnd : nextBreak + 1);
+    texts.add(markdown.substring(lineStart, lineEnd));
     if (nextBreak == -1) break;
     lineStart = nextBreak + 1;
+  }
+
+  for (var i = 0; i < texts.length; i += 1) {
+    if (!_isReferenceDefinitionLine(texts[i])) continue;
+    final defStart = starts[i];
+    var end = endsWithBreak[i];
+    // CommonMark allows a reference definition's title to sit on the line
+    // immediately after the destination. When the opening line carries only
+    // the destination, consume a single following standalone-title line so it
+    // does not render as stray visible text (comrak has already folded it into
+    // the definition). Rarer shapes — the label alone on the first line, or a
+    // title wrapped across several lines — are left visible.
+    if (!_referenceDefinitionLineHasTitle(texts[i]) &&
+        i + 1 < texts.length &&
+        _isStandaloneTitleLine(texts[i + 1])) {
+      end = endsWithBreak[i + 1];
+      i += 1;
+    }
+    ranges.add(FlarkSourceRange(defStart, end));
   }
   return ranges;
 }
@@ -1663,6 +1685,22 @@ bool _isReferenceDefinitionLine(String line) {
     return false;
   }
   return RegExp(r'^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*\S').hasMatch(line);
+}
+
+/// Whether a reference-definition opening line already carries its title (a
+/// quoted/parenthesized token after the destination), so no following title
+/// line should be consumed.
+bool _referenceDefinitionLineHasTitle(String line) {
+  return RegExp(r'''^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*\S+[ \t]+["'(]''')
+      .hasMatch(line);
+}
+
+/// Whether [line] is entirely a single reference-definition title token
+/// (`"…"`, `'…'`, or `(…)`), the shape a title takes when it wraps onto the
+/// line after the destination.
+bool _isStandaloneTitleLine(String line) {
+  return RegExp(r'''^[ \t]*(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\))[ \t]*$''')
+      .hasMatch(line);
 }
 
 bool _isFootnoteShortcutReference(
