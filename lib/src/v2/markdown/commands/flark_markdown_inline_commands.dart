@@ -234,13 +234,6 @@ final class FlarkMarkdownInlineEditingExtension extends FlarkExtension {
   bool _hasUnescapedMarkerAt(String text, int offset, String marker) {
     if (offset < 0 || offset + marker.length > text.length) return false;
     if (text.substring(offset, offset + marker.length) != marker) return false;
-
-    var backslashCount = 0;
-    var cursor = offset - 1;
-    while (cursor >= 0 && text.codeUnitAt(cursor) == 0x5C) {
-      backslashCount += 1;
-      cursor -= 1;
-    }
-    return backslashCount.isEven;
+    return !FlarkInlineFlanking.isEscaped(text, offset);
   }
 }

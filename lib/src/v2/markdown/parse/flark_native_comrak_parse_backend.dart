@@ -5,6 +5,7 @@ import '../../core/document/flark_utf8_utf16_mapper.dart';
 import '../../core/transaction/flark_source_range.dart';
 import '../../native/native_comrak_bridge_factory.dart';
 import '../../native/native_comrak_ffi.dart';
+import '../inline/flark_inline_flanking.dart';
 import '../source/flark_markdown_fenced_code_scanner.dart';
 import 'flark_markdown_parse_backend.dart';
 import 'flark_markdown_parse_protocol.dart';
@@ -413,22 +414,22 @@ FlarkMarkdownParseResult _mapNativeResult(
     renderBlocks,
     mappedMarkerRanges,
   );
-  final nativeMarkdownMarkerRanges = _nativeMarkdownMarkerHiddenRanges([
-    ...mappedMarkerRanges,
-    ...singleTildeMarkerRanges,
-  ], [
-        ...referenceDefinitionRanges,
-        ...rawHtmlRanges,
-        for (final range in nativeInlineHiddenRanges) range.sourceRange,
-        ...markerOnlyBlockquoteRanges,
-        ...markerOnlyHeadingRanges,
-        ...markerOnlyListItemRanges,
-        ...syntheticListMarkerRanges,
-        ...codeFenceOpeningMarkerRanges,
-        ...codeFenceOpeningInfoRanges,
-        ...codeFenceClosingLineRanges,
-        ...partialStrongIntentMarkerRanges,
-      ]);
+  final nativeMarkdownMarkerRanges = _nativeMarkdownMarkerHiddenRanges(
+    [...mappedMarkerRanges, ...singleTildeMarkerRanges],
+    [
+      ...referenceDefinitionRanges,
+      ...rawHtmlRanges,
+      for (final range in nativeInlineHiddenRanges) range.sourceRange,
+      ...markerOnlyBlockquoteRanges,
+      ...markerOnlyHeadingRanges,
+      ...markerOnlyListItemRanges,
+      ...syntheticListMarkerRanges,
+      ...codeFenceOpeningMarkerRanges,
+      ...codeFenceOpeningInfoRanges,
+      ...codeFenceClosingLineRanges,
+      ...partialStrongIntentMarkerRanges,
+    ],
+  );
   final hiddenRanges = [
     for (final range in referenceDefinitionRanges)
       FlarkMarkdownHiddenRange(
@@ -1232,7 +1233,7 @@ int? _findLinkLabelEnd(String source, int start, int limit) {
   var depth = 1;
   for (var index = start; index < limit; index++) {
     final unit = source.codeUnitAt(index);
-    if (_isEscapedAt(source, index)) continue;
+    if (FlarkInlineFlanking.isEscaped(source, index)) continue;
     if (unit == 0x5B) {
       depth++;
       continue;
@@ -1248,19 +1249,9 @@ int? _findUnescaped(String source, String needle, int start, int limit) {
   final needleUnit = needle.codeUnitAt(0);
   for (var index = start; index < limit; index++) {
     if (source.codeUnitAt(index) != needleUnit) continue;
-    if (!_isEscapedAt(source, index)) return index;
+    if (!FlarkInlineFlanking.isEscaped(source, index)) return index;
   }
   return null;
-}
-
-bool _isEscapedAt(String source, int index) {
-  var backslashCount = 0;
-  var cursor = index - 1;
-  while (cursor >= 0 && source.codeUnitAt(cursor) == 0x5C) {
-    backslashCount++;
-    cursor--;
-  }
-  return backslashCount.isOdd;
 }
 
 List<NativeComrakBlockSpan> _normalizeNativeCodeBlockRanges(
