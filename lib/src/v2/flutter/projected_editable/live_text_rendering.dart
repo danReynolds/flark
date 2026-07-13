@@ -11,31 +11,23 @@ List<_LiveRenderedTextSegment> _blockTextSegments({
 }) {
   if (textLength <= 0) return const [];
 
-  final boundaries = <int>{0, textLength};
-  for (final run in block.inlineRuns) {
-    final start = (run.displayRange.start - globalDisplayStart).clamp(
-      0,
-      textLength,
-    );
-    final end = (run.displayRange.end - globalDisplayStart).clamp(
-      0,
-      textLength,
-    );
-    if (start >= end) continue;
-    boundaries
-      ..add(start)
-      ..add(end);
-  }
+  // The ONE shared segmentation model (flarkSegmentInlineRuns — RFC 022
+  // Phase 3), also consumed by the read-only preview, so the two surfaces
+  // cut overlapping (nested) runs identically and cannot drift. This surface
+  // keys segments by style signature and merges adjacent equals for reuse.
+  final shared = flarkSegmentInlineRuns(
+    start: globalDisplayStart,
+    end: globalDisplayStart + textLength,
+    runs: block.inlineRuns,
+  );
 
-  final sorted = boundaries.toList()..sort();
   final segments = <_LiveRenderedTextSegment>[];
-  for (var index = 0; index < sorted.length - 1; index++) {
-    final start = sorted[index];
-    final end = sorted[index + 1];
-    if (start >= end) continue;
+  for (final segment in shared) {
+    final start = segment.start - globalDisplayStart;
+    final end = segment.end - globalDisplayStart;
     final signature = _LiveRenderedTextStyleSignature.forRange(
-      globalDisplayStart + start,
-      globalDisplayStart + end,
+      segment.start,
+      segment.end,
       blocks: [block],
       runs: block.inlineRuns,
     );

@@ -201,73 +201,57 @@ final class _PreviewBlock extends StatelessWidget {
       return const <InlineSpan>[TextSpan(text: '')];
     }
 
-    // Comrak emits one inline token per AST node, so nested styles
-    // (`***x***`, `**[x](u)**`, `~~**x**~~`) produce runs that OVERLAP over the
-    // same display columns. A flat cursor walk emitted each overlapping run's
-    // slice, rendering the text twice (`boldbold`). Instead, cut the block at
-    // every run boundary and, per segment, merge the styles of the runs that
-    // cover it — the same covering-style model the live editor uses in
-    // `live_text_rendering.dart`, so each column is emitted exactly once.
-    final runs = [
-      for (final run in block.inlineRuns)
-        if (run.displayRange.end > blockStart &&
-            run.displayRange.start < blockEnd)
-          run,
-    ];
+    // Overlapping (nested) inline runs render through the ONE shared
+    // segmentation model (flarkSegmentInlineRuns — RFC 022 Phase 3), the
+    // same implementation the live editor consumes, so each display column
+    // is emitted exactly once and the two surfaces cannot drift.
+    final segments = flarkSegmentInlineRuns(
+      start: blockStart,
+      end: blockEnd,
+      runs: block.inlineRuns,
+    );
 
-    final boundaries = <int>{blockStart, blockEnd};
-    for (final run in runs) {
-      boundaries
-        ..add(run.displayRange.start.clamp(blockStart, blockEnd))
-        ..add(run.displayRange.end.clamp(blockStart, blockEnd));
-    }
-    final sorted = boundaries.toList()..sort();
-
-    // Images are atomic cards emitted at their start position. This is the only
-    // place a zero-width empty-alt image (`![](url)`, whose alt text projects
-    // to nothing) can be rendered, since it covers no segment; a non-zero-width
-    // image is emitted here too and its alt-text segment is suppressed below.
+    // Images are atomic cards emitted at their start position. This is the
+    // only place a zero-width empty-alt image (`![](url)`, whose alt text
+    // projects to nothing) can be rendered, since it covers no segment; a
+    // non-zero-width image is emitted here too and its alt-text segment is
+    // suppressed below.
     final imageRuns = [
-      for (final run in runs)
-        if (run.action?.kind == FlarkRenderInlineActionKind.image) run,
+      for (final run in block.inlineRuns)
+        if (run.action?.kind == FlarkRenderInlineActionKind.image &&
+            run.displayRange.end >= blockStart &&
+            run.displayRange.start <= blockEnd)
+          run,
     ]..sort((a, b) => a.displayRange.start.compareTo(b.displayRange.start));
     var nextImage = 0;
 
     final spans = <InlineSpan>[];
-    for (var index = 0; index < sorted.length; index += 1) {
-      final pos = sorted[index];
+    void emitImagesAt(int position) {
       while (nextImage < imageRuns.length &&
           imageRuns[nextImage].displayRange.start.clamp(blockStart, blockEnd) ==
-              pos) {
+              position) {
         spans.add(_imageSpan(context, imageRuns[nextImage]));
         nextImage += 1;
       }
-      if (index == sorted.length - 1) break;
+    }
 
-      final segStart = pos;
-      final segEnd = sorted[index + 1];
-      if (segStart >= segEnd) continue;
-
-      // Boundary segmentation guarantees a run either fully covers a segment
-      // or does not touch it, so containment is an exact cover test.
-      final covering = [
-        for (final run in runs)
-          if (run.displayRange.start <= segStart &&
-              run.displayRange.end >= segEnd)
-            run,
-      ];
+    for (final segment in segments) {
+      emitImagesAt(segment.start);
 
       // A (non-zero-width) image's card was already emitted at its start, so
       // suppress the alt-text segment it covers.
-      if (_coveringActionRun(covering, FlarkRenderInlineActionKind.image) !=
+      if (_coveringActionRun(
+            segment.coveringRuns,
+            FlarkRenderInlineActionKind.image,
+          ) !=
           null) {
         continue;
       }
 
-      final style = _mergedInlineStyle(covering, theme);
-      final text = displayText.substring(segStart, segEnd);
+      final style = _mergedInlineStyle(segment.coveringRuns, theme);
+      final text = displayText.substring(segment.start, segment.end);
       final link = _coveringActionRun(
-        covering,
+        segment.coveringRuns,
         FlarkRenderInlineActionKind.link,
       );
       if (link != null) {
@@ -276,6 +260,7 @@ final class _PreviewBlock extends StatelessWidget {
         spans.add(TextSpan(text: text, style: style));
       }
     }
+    emitImagesAt(blockEnd);
 
     if (spans.isEmpty) {
       spans.add(TextSpan(text: displayText.substring(blockStart, blockEnd)));
