@@ -478,7 +478,6 @@ final class _LiveRenderedTextSegment {
   }) {
     if (displayText.isEmpty) return const [];
 
-    final boundaries = <int>{0, displayText.length};
     final blocks = renderPlan.allBlocks
         .where(
           (block) => !_isCollapsedOrOutside(block.displayRange, displayText),
@@ -488,26 +487,27 @@ final class _LiveRenderedTextSegment {
         .where((run) => !_isCollapsedOrOutside(run.displayRange, displayText))
         .toList();
 
-    for (final block in blocks) {
-      boundaries
-        ..add(block.displayRange.start.clamp(0, displayText.length))
-        ..add(block.displayRange.end.clamp(0, displayText.length));
-    }
-    for (final run in runs) {
-      boundaries
-        ..add(run.displayRange.start.clamp(0, displayText.length))
-        ..add(run.displayRange.end.clamp(0, displayText.length));
-    }
+    // The ONE shared segmentation model (RFC 022 Phase 3), with block edges
+    // as extra cut points since this surface segments the whole projected
+    // document at once. Signature derivation and adjacent-equal merging stay
+    // local, as in the per-block surface.
+    final shared = flarkSegmentInlineRuns(
+      start: 0,
+      end: displayText.length,
+      runs: runs,
+      extraBoundaries: [
+        for (final block in blocks) ...[
+          block.displayRange.start,
+          block.displayRange.end,
+        ],
+      ],
+    );
 
-    final sortedBoundaries = boundaries.toList()..sort();
     final segments = <_LiveRenderedTextSegment>[];
-    for (var index = 0; index < sortedBoundaries.length - 1; index++) {
-      final start = sortedBoundaries[index];
-      final end = sortedBoundaries[index + 1];
-      if (start >= end) continue;
+    for (final segment in shared) {
       final signature = _LiveRenderedTextStyleSignature.forRange(
-        start,
-        end,
+        segment.start,
+        segment.end,
         blocks: blocks,
         runs: runs,
       );
@@ -516,15 +516,15 @@ final class _LiveRenderedTextSegment {
         segments.add(
           _LiveRenderedTextSegment(
             start: previous.start,
-            end: end,
+            end: segment.end,
             signature: signature,
           ),
         );
       } else {
         segments.add(
           _LiveRenderedTextSegment(
-            start: start,
-            end: end,
+            start: segment.start,
+            end: segment.end,
             signature: signature,
           ),
         );

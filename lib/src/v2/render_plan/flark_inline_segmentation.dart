@@ -30,15 +30,18 @@ final class FlarkInlineSegment {
   final List<FlarkRenderInlineRun> coveringRuns;
 }
 
-/// Cuts the display window `[start, end)` at every intersecting run edge and
-/// reports each resulting segment with its covering runs. Segments partition
-/// the window exactly: they are adjacent, non-empty, and concatenate back to
-/// `[start, end)`. Zero-width runs (an empty-alt image's display range)
-/// cover no segment; they are the caller's to place by position.
+/// Cuts the display window `[start, end)` at every intersecting run edge —
+/// plus any [extraBoundaries] the caller needs, e.g. block edges when
+/// segmenting a whole projected document — and reports each resulting
+/// segment with its covering runs. Segments partition the window exactly:
+/// they are adjacent, non-empty, and concatenate back to `[start, end)`.
+/// Zero-width runs (an empty-alt image's display range) cover no segment;
+/// they are the caller's to place by position.
 List<FlarkInlineSegment> flarkSegmentInlineRuns({
   required int start,
   required int end,
   required List<FlarkRenderInlineRun> runs,
+  Iterable<int> extraBoundaries = const [],
 }) {
   if (start >= end) return const [];
 
@@ -52,6 +55,9 @@ List<FlarkInlineSegment> flarkSegmentInlineRuns({
     boundaries
       ..add(run.displayRange.start.clamp(start, end))
       ..add(run.displayRange.end.clamp(start, end));
+  }
+  for (final boundary in extraBoundaries) {
+    boundaries.add(boundary.clamp(start, end));
   }
   final sorted = boundaries.toList()..sort();
 

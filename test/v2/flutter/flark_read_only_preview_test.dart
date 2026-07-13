@@ -142,6 +142,40 @@ void main() {
       },
     );
 
+    testWidgets('renders a solo empty-alt image block (zero-width block)', (
+      tester,
+    ) async {
+      // `![](url)` alone: the whole block projects to no display text, but
+      // the picture must still render — the live editor shows it for this
+      // exact case, and the surfaces must not diverge.
+      const markdown = '![](asset://logo.png)';
+      final controller = FlarkFlutterController.fromMarkdown(markdown);
+      addTearDown(controller.dispose);
+      final result = await FlarkNativeComrakParseBackend.withNativeBridge()
+          .parse(
+            const FlarkMarkdownParseRequest(
+              revision: 0,
+              markdown: markdown,
+              profile: FlarkMarkdownProfile.commonMarkGfm,
+            ),
+          );
+      expect(controller.applyParseResult(result), isTrue);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 420,
+            child: FlarkMarkdown(controller: controller),
+          ),
+        ),
+      );
+      expect(
+        find.byKey(const Key('FlarkReadOnlyPreviewImageCard')),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('renders an inline empty-alt image (zero-width run)', (
       tester,
     ) async {

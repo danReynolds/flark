@@ -23,6 +23,13 @@ void main() {
     return;
   }
 
+  // Deliberately scoped to documents whose block chrome contributes zero
+  // CHARACTERS in both surfaces. Excluded classes render character-bearing
+  // chrome on one side only and would false-fail: ordered lists (the editor
+  // paints a `1.` label as Text), checked task boxes (the preview's box is a
+  // `✓` Text, the editor's a CustomPaint), fenced code (editor language
+  // badge), tables, and images (preview card labels). Unordered bullets and
+  // quote rails are paint-only in both surfaces and stay in scope.
   const corpus = <String>[
     'plain paragraph text',
     'nested ***bold italic*** emphasis',

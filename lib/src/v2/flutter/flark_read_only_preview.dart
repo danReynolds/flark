@@ -198,7 +198,16 @@ final class _PreviewBlock extends StatelessWidget {
     final blockStart = block.displayRange.start.clamp(0, displayText.length);
     final blockEnd = block.displayRange.end.clamp(blockStart, displayText.length);
     if (blockStart >= blockEnd) {
-      return const <InlineSpan>[TextSpan(text: '')];
+      // A block whose display projects to nothing can still carry an
+      // empty-alt image (`![](url)` alone on a line) — the live editor
+      // renders its picture for exactly this case, so the preview must too
+      // or the surfaces diverge.
+      return [
+        for (final run in block.inlineRuns)
+          if (run.action?.kind == FlarkRenderInlineActionKind.image)
+            _imageSpan(context, run),
+        const TextSpan(text: ''),
+      ];
     }
 
     // Overlapping (nested) inline runs render through the ONE shared
@@ -211,9 +220,9 @@ final class _PreviewBlock extends StatelessWidget {
       runs: block.inlineRuns,
     );
 
-    // Images are atomic cards emitted at their start position. This is the
-    // only place a zero-width empty-alt image (`![](url)`, whose alt text
-    // projects to nothing) can be rendered, since it covers no segment; a
+    // Images are atomic cards emitted at their start position (a zero-width
+    // empty-alt image covers no segment, so position is the only handle on
+    // it; the collapsed-block case above is the other zero-width home). A
     // non-zero-width image is emitted here too and its alt-text segment is
     // suppressed below.
     final imageRuns = [
