@@ -55,15 +55,26 @@ pub(crate) struct JsonDiagnostic {
     is_error: bool,
 }
 
+/// Payload schema revision, independent of the C ABI version: the ABI guards
+/// the struct/entry-point layout while this guards the JSON's semantic
+/// contract (which facts the bridge owns). The Dart side records a diagnostic
+/// when the payload predates what it expects, so a stale artifact degrades
+/// visibly instead of silently rendering markup raw.
+/// 2: per-token link/image markerRanges + referenceDefinitionRanges.
+pub(crate) const PAYLOAD_PROTOCOL_VERSION: u32 = 2;
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct JsonParsePayload {
+    pub(crate) protocol_version: u32,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) blocks: Vec<JsonBlock>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) inline_tokens: Vec<JsonInlineToken>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) marker_ranges: Vec<JsonRange>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) reference_definition_ranges: Vec<JsonRange>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) replacement_ranges: Vec<JsonReplacementRange>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -77,9 +88,11 @@ pub(crate) fn diagnostic_payload(message: &str) -> Vec<u8> {
         .replace('\\', "\\\\")
         .replace('"', "\\\"")
         .replace('\n', "\\n");
+    // Carries the CURRENT protocol version: an error from an up-to-date
+    // artifact must not also read as a stale artifact downstream.
     format!(
-        "{{\"blocks\":[],\"inlineTokens\":[],\"markerRanges\":[],\"replacementRanges\":[],\"exclusionRanges\":[],\"diagnostics\":[{{\"startByte\":0,\"endByte\":0,\"message\":\"{}\",\"code\":\"COMRAK_BRIDGE_ERROR\",\"isError\":true}}]}}",
-        escaped
+        "{{\"protocolVersion\":{},\"blocks\":[],\"inlineTokens\":[],\"markerRanges\":[],\"replacementRanges\":[],\"exclusionRanges\":[],\"diagnostics\":[{{\"startByte\":0,\"endByte\":0,\"message\":\"{}\",\"code\":\"COMRAK_BRIDGE_ERROR\",\"isError\":true}}]}}",
+        PAYLOAD_PROTOCOL_VERSION, escaped
     )
     .into_bytes()
 }

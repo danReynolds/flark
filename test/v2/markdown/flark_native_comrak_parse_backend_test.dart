@@ -1212,6 +1212,27 @@ void main() {
       },
     );
 
+    test('a pre-v2 payload protocol surfaces a stale-artifact diagnostic',
+        () async {
+      final bridge = _FakeNativeComrakBridge(
+        const NativeComrakParseResult(revision: 3, protocolVersion: 1),
+      );
+      final backend = FlarkNativeComrakParseBackend(bridge: bridge);
+      final result = await backend.parse(
+        const FlarkMarkdownParseRequest(
+          revision: 3,
+          markdown: 'x',
+          profile: FlarkMarkdownProfile.commonMarkGfm,
+        ),
+      );
+      expect(
+        result.diagnostics.map((diagnostic) => diagnostic.code),
+        contains('COMRAK_PROTOCOL_STALE'),
+        reason: 'a stale artifact must degrade visibly, not silently render '
+            'link/reference markup raw',
+      );
+    });
+
     test('adds reference-definition and raw-html hidden ranges', () async {
       const text =
           '[id]: https://example.com\n\n<div>raw</div>\n\ntext <span>x</span>';
@@ -1239,6 +1260,16 @@ void main() {
                 endByte: mapper.utf8OffsetForUtf16Offset(htmlInlineEnd),
               ),
               styles: const {'htmlInline'},
+            ),
+          ],
+          // Bridge protocol v2 (RFC 022 Phase 2b): definition ranges arrive
+          // bridge-derived; the mapper no longer classifies them itself.
+          referenceDefinitionRanges: [
+            NativeComrakRange(
+              startByte: 0,
+              endByte: mapper.utf8OffsetForUtf16Offset(
+                '[id]: https://example.com\n'.length,
+              ),
             ),
           ],
         ),

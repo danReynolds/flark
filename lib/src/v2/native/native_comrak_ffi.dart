@@ -215,9 +215,22 @@ class NativeComrakDiagnostic {
 }
 
 /// Parsed native markdown payload for a controller revision.
+/// The payload protocol revision this Dart layer targets. Independent of the
+/// C ABI version: the ABI guards the struct/entry-point layout while this
+/// guards which structural facts the payload carries (RFC 022 bridge
+/// protocol). A result decoded from an older payload triggers a non-error
+/// diagnostic so a stale artifact degrades visibly instead of silently
+/// rendering link/reference markup raw.
+const int flarkNativeBridgeProtocolVersion = 2;
+
 class NativeComrakParseResult {
   /// Controller revision represented by this result.
   final int revision;
+
+  /// Payload protocol revision the producing bridge spoke (see
+  /// [flarkNativeBridgeProtocolVersion]). Decoded payloads without the field
+  /// report 1.
+  final int protocolVersion;
 
   /// Structural block spans.
   final List<NativeComrakBlockSpan> blocks;
@@ -227,6 +240,10 @@ class NativeComrakParseResult {
 
   /// Source marker byte ranges.
   final List<NativeComrakRange> markerRanges;
+
+  /// Byte ranges of link reference definitions the parser consumed
+  /// (bridge-derived and validated against block coverage; RFC 022 Phase 2b).
+  final List<NativeComrakRange> referenceDefinitionRanges;
 
   /// Source replacements for projected text.
   final List<NativeComrakReplacementRange> replacementRanges;
@@ -240,9 +257,11 @@ class NativeComrakParseResult {
   /// Creates a native parse result.
   const NativeComrakParseResult({
     required this.revision,
+    this.protocolVersion = flarkNativeBridgeProtocolVersion,
     this.blocks = const [],
     this.inlineTokens = const [],
     this.markerRanges = const [],
+    this.referenceDefinitionRanges = const [],
     this.replacementRanges = const [],
     this.exclusionRanges = const [],
     this.diagnostics = const [],
@@ -257,9 +276,11 @@ class NativeComrakParseResult {
   NativeComrakParseResult withDiagnostic(NativeComrakDiagnostic diagnostic) {
     return NativeComrakParseResult(
       revision: revision,
+      protocolVersion: protocolVersion,
       blocks: blocks,
       inlineTokens: inlineTokens,
       markerRanges: markerRanges,
+      referenceDefinitionRanges: referenceDefinitionRanges,
       replacementRanges: replacementRanges,
       exclusionRanges: exclusionRanges,
       diagnostics: [...diagnostics, diagnostic],
@@ -271,9 +292,14 @@ class NativeComrakParseResult {
       identical(this, other) ||
       other is NativeComrakParseResult &&
           revision == other.revision &&
+          protocolVersion == other.protocolVersion &&
           _listEquals(blocks, other.blocks) &&
           _listEquals(inlineTokens, other.inlineTokens) &&
           _listEquals(markerRanges, other.markerRanges) &&
+          _listEquals(
+            referenceDefinitionRanges,
+            other.referenceDefinitionRanges,
+          ) &&
           _listEquals(replacementRanges, other.replacementRanges) &&
           _listEquals(exclusionRanges, other.exclusionRanges) &&
           _listEquals(diagnostics, other.diagnostics);
@@ -281,9 +307,11 @@ class NativeComrakParseResult {
   @override
   int get hashCode => Object.hash(
     revision,
+    protocolVersion,
     Object.hashAll(blocks),
     Object.hashAll(inlineTokens),
     Object.hashAll(markerRanges),
+    Object.hashAll(referenceDefinitionRanges),
     Object.hashAll(replacementRanges),
     Object.hashAll(exclusionRanges),
     Object.hashAll(diagnostics),
@@ -438,6 +466,16 @@ class NativeComrakPayloadCodec {
       }
     }
 
+    final referenceDefinitionRanges = <NativeComrakRange>[];
+    final rawReferenceDefinitionRanges = decoded['referenceDefinitionRanges'];
+    if (rawReferenceDefinitionRanges is List) {
+      for (final rawRange in rawReferenceDefinitionRanges) {
+        if (rawRange is Map<String, dynamic>) {
+          referenceDefinitionRanges.add(readRange(rawRange));
+        }
+      }
+    }
+
     final replacementRanges = <NativeComrakReplacementRange>[];
     final rawReplacementRanges = decoded['replacementRanges'];
     if (rawReplacementRanges is List) {
@@ -481,9 +519,15 @@ class NativeComrakPayloadCodec {
 
     return NativeComrakParseResult(
       revision: revision,
+      // Payloads that predate the protocolVersion field are protocol 1.
+      protocolVersion: switch (decoded['protocolVersion']) {
+        final int version when version > 0 => version,
+        _ => 1,
+      },
       blocks: blocks,
       inlineTokens: inlineTokens,
       markerRanges: markerRanges,
+      referenceDefinitionRanges: referenceDefinitionRanges,
       replacementRanges: replacementRanges,
       exclusionRanges: exclusionRanges,
       diagnostics: diagnostics,

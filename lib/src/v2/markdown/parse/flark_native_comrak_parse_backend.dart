@@ -334,9 +334,14 @@ FlarkMarkdownParseResult _mapNativeResult(
     for (final block in renderBlocks) _mapRange(mapper, block.range),
   ];
   final mappedBlockRangeIndex = _FlarkSourceRangeIndex(mappedBlockRanges);
-  final referenceDefinitionRanges = _referenceDefinitionRanges(
-    request.markdown,
-  ).where((range) => !mappedBlockRangeIndex.overlaps(range)).toList();
+  // Bridge-derived (RFC 022 Phase 2b): the bridge classifies definition line
+  // runs and validates them against comrak's own block output, so these
+  // arrive pre-refuted. The block-overlap filter stays as a cheap belt
+  // against renderBlocks/native.blocks divergence.
+  final referenceDefinitionRanges = [
+    for (final range in native.referenceDefinitionRanges)
+      _mapRange(mapper, range),
+  ].where((range) => !mappedBlockRangeIndex.overlaps(range)).toList();
   final rawHtmlRanges = [
     for (final block in native.blocks)
       if (_blockType(block.type) == 'htmlBlock') _mapRange(mapper, block.range),
@@ -533,6 +538,20 @@ FlarkMarkdownParseResult _mapNativeResult(
       FlarkMarkdownDiagnostic(
         code: 'COMRAK_REVISION_MISMATCH',
         message: 'Native parse revision mismatch.',
+        sourceRange: const FlarkSourceRange(0, 0),
+      ),
+    // A stale artifact must degrade visibly: an older payload cannot carry
+    // the structural facts this layer no longer derives itself (link/image
+    // markup, reference definitions), so those render source-visible until
+    // the artifact is rebuilt.
+    if (native.protocolVersion < flarkNativeBridgeProtocolVersion)
+      FlarkMarkdownDiagnostic(
+        code: 'COMRAK_PROTOCOL_STALE',
+        message:
+            'Native bridge payload protocol '
+            '${native.protocolVersion} predates the expected '
+            '$flarkNativeBridgeProtocolVersion; link and reference markup '
+            'may render source-visible. Rebuild the native/WASM artifacts.',
         sourceRange: const FlarkSourceRange(0, 0),
       ),
   ];
@@ -1652,69 +1671,9 @@ Map<String, int> _rangeJson(FlarkSourceRange range) {
   return {'start': range.start, 'end': range.end};
 }
 
-List<FlarkSourceRange> _referenceDefinitionRanges(String markdown) {
-  final ranges = <FlarkSourceRange>[];
-  // Precompute line spans so a definition can consume a trailing title line.
-  final starts = <int>[];
-  final endsWithBreak = <int>[];
-  final texts = <String>[];
-  var lineStart = 0;
-  while (lineStart <= markdown.length) {
-    final nextBreak = markdown.indexOf('\n', lineStart);
-    final lineEnd = nextBreak == -1 ? markdown.length : nextBreak;
-    starts.add(lineStart);
-    endsWithBreak.add(nextBreak == -1 ? lineEnd : nextBreak + 1);
-    texts.add(markdown.substring(lineStart, lineEnd));
-    if (nextBreak == -1) break;
-    lineStart = nextBreak + 1;
-  }
 
-  for (var i = 0; i < texts.length; i += 1) {
-    if (!_isReferenceDefinitionLine(texts[i])) continue;
-    final defStart = starts[i];
-    var end = endsWithBreak[i];
-    // CommonMark allows a reference definition's title to sit on the line
-    // immediately after the destination. When the opening line carries only
-    // the destination, consume a single following standalone-title line so it
-    // does not render as stray visible text (comrak has already folded it into
-    // the definition). Rarer shapes — the label alone on the first line, or a
-    // title wrapped across several lines — are left visible.
-    if (!_referenceDefinitionLineHasTitle(texts[i]) &&
-        i + 1 < texts.length &&
-        _isStandaloneTitleLine(texts[i + 1])) {
-      end = endsWithBreak[i + 1];
-      i += 1;
-    }
-    ranges.add(FlarkSourceRange(defStart, end));
-  }
-  return ranges;
-}
 
-bool _isReferenceDefinitionLine(String line) {
-  if (RegExp(r'^[ \t]{0,3}\[\^[^\]\n]+\]:').hasMatch(line)) {
-    return false;
-  }
-  return RegExp(r'^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*\S').hasMatch(line);
-}
 
-/// Whether a reference-definition opening line already carries its title (a
-/// quoted/parenthesized token after the destination), so no following title
-/// line should be consumed.
-bool _referenceDefinitionLineHasTitle(String line) {
-  // The destination is a bare token OR an angle-bracket form that may contain
-  // spaces (`<a b>`); matching only `\S+` would stop at the space and miss a
-  // title that follows an angle destination.
-  return RegExp(r'''^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*(?:<[^>\n]*>|\S+)[ \t]+["'(]''')
-      .hasMatch(line);
-}
-
-/// Whether [line] is entirely a single reference-definition title token
-/// (`"…"`, `'…'`, or `(…)`), the shape a title takes when it wraps onto the
-/// line after the destination.
-bool _isStandaloneTitleLine(String line) {
-  return RegExp(r'''^[ \t]*(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\))[ \t]*$''')
-      .hasMatch(line);
-}
 
 bool _isFootnoteShortcutReference(
   String markdown,
