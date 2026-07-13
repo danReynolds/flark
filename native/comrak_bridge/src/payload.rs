@@ -88,9 +88,11 @@ pub(crate) fn diagnostic_payload(message: &str) -> Vec<u8> {
         .replace('\\', "\\\\")
         .replace('"', "\\\"")
         .replace('\n', "\\n");
+    // Carries the CURRENT protocol version: an error from an up-to-date
+    // artifact must not also read as a stale artifact downstream.
     format!(
-        "{{\"blocks\":[],\"inlineTokens\":[],\"markerRanges\":[],\"replacementRanges\":[],\"exclusionRanges\":[],\"diagnostics\":[{{\"startByte\":0,\"endByte\":0,\"message\":\"{}\",\"code\":\"COMRAK_BRIDGE_ERROR\",\"isError\":true}}]}}",
-        escaped
+        "{{\"protocolVersion\":{},\"blocks\":[],\"inlineTokens\":[],\"markerRanges\":[],\"replacementRanges\":[],\"exclusionRanges\":[],\"diagnostics\":[{{\"startByte\":0,\"endByte\":0,\"message\":\"{}\",\"code\":\"COMRAK_BRIDGE_ERROR\",\"isError\":true}}]}}",
+        PAYLOAD_PROTOCOL_VERSION, escaped
     )
     .into_bytes()
 }

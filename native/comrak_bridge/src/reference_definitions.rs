@@ -70,9 +70,19 @@ pub(crate) fn collect_reference_definition_ranges(
 
 /// The parser's verdict: a consumed definition produces no block over its
 /// lines, so any intersecting block token refutes the classification.
+///
+/// Pure list CONTAINER spans are exempt: their line-expanded range brackets
+/// every line between the first and last item — including a consumed
+/// definition sandwiched between items — so counting them would refute real
+/// definitions. `list_item` spans still refute: a definition-shaped line
+/// inside a fenced code block inside an item is covered only by the item
+/// (nested code blocks are suppressed from the block vec), and it must stay
+/// visible as code.
 fn covered_by_any_block(range: &JsonRange, blocks: &[JsonBlock]) -> bool {
     blocks.iter().any(|block| {
-        block.start_byte < range.end_byte && block.end_byte > range.start_byte
+        !matches!(block.kind, "unordered_list" | "ordered_list")
+            && block.start_byte < range.end_byte
+            && block.end_byte > range.start_byte
     })
 }
 
@@ -288,6 +298,36 @@ mod tests {
         assert_eq!(
             def_ranges("[a]: /a\n[b]: /b\n\nx\n"),
             vec![(0, 8), (8, 16)],
+        );
+    }
+
+    /// A consumed definition sandwiched between list items is bracketed by
+    /// the list CONTAINER's line-expanded span but covered by no item or
+    /// leaf block; container spans must not refute it (regression pin).
+    #[test]
+    fn definition_between_list_items_is_still_collected() {
+        assert_eq!(
+            def_ranges("- a\n\n  [foo]: /url\n\n- b\n\nsee [foo]\n"),
+            vec![(5, 19)],
+        );
+    }
+
+    /// A definition-shaped line inside a fenced code block inside a list
+    /// item is covered by the ITEM span (the nested code block is suppressed
+    /// from the block vec) and must stay refuted — visible as code.
+    #[test]
+    fn definition_shape_in_code_inside_list_item_stays_refuted() {
+        assert_eq!(def_ranges("- a\n\n  ```\n  [foo]: /url\n  ```\n"), vec![]);
+    }
+
+    /// An error payload from a CURRENT artifact must not read as stale.
+    #[test]
+    fn diagnostic_payload_carries_the_current_protocol_version() {
+        let payload = crate::payload::diagnostic_payload("boom");
+        let json: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+        assert_eq!(
+            json["protocolVersion"].as_u64(),
+            Some(crate::payload::PAYLOAD_PROTOCOL_VERSION as u64),
         );
     }
 }
