@@ -1,7 +1,9 @@
 use crate::marker_mapping::{collect_block_marker_ranges, collect_inline_marker_ranges};
 use crate::payload::{
     JsonBlock, JsonInlineToken, JsonParsePayload, JsonRange, JsonReplacementRange,
+    PAYLOAD_PROTOCOL_VERSION,
 };
+use crate::reference_definitions::collect_reference_definition_ranges;
 use crate::source_ranges::{
     end_of_line, leading_indent, line_content_end, line_start_for_offset, normalize_ranges,
 };
@@ -141,10 +143,14 @@ pub(crate) fn parse_to_payload(text: &str, profile: u8) -> Result<Vec<u8>, Strin
     let marker_ranges = normalize_ranges(marker_ranges, text.len());
     let replacement_ranges = collect_entity_replacement_ranges(text, &exclusion_ranges);
 
+    let reference_definition_ranges =
+        collect_reference_definition_ranges(text, &blocks);
     let payload = JsonParsePayload {
+        protocol_version: PAYLOAD_PROTOCOL_VERSION,
         blocks,
         inline_tokens,
         marker_ranges,
+        reference_definition_ranges,
         replacement_ranges,
         exclusion_ranges,
         diagnostics: Vec::new(),

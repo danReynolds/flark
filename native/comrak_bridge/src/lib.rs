@@ -2,6 +2,7 @@ mod abi;
 mod marker_mapping;
 mod parser;
 mod payload;
+mod reference_definitions;
 mod source_ranges;
 
 use std::any::Any;
