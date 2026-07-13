@@ -572,19 +572,50 @@ fn link_marker_ranges<'a>(
     text: &str,
     line_index: &LineIndex,
 ) -> Vec<JsonRange> {
-    // Flark's documented GitHub-footnote stance: `[^label]` is footnote
-    // syntax on GitHub, which flark does not support yet, so it must stay
-    // source-visible rather than be reinterpreted as a styled reference link
-    // (comrak, with footnotes off, resolves it against a `[^label]: …`
-    // definition). No markup ranges means the surface renders it literally.
-    if plain_text(node).starts_with('^') {
+    let bytes = text.as_bytes();
+    let start = token_start as usize;
+    let end = token_end as usize;
+    if end > bytes.len() || start >= end {
         return Vec::new();
     }
+
     let mut ranges = Vec::new();
     match children_byte_span(node, text, line_index) {
         Some((children_start, children_end)) => {
             let children_start = children_start.clamp(token_start, token_end);
             let children_end = children_end.clamp(children_start, token_end);
+            // Shape-validate the derivation against the token's own bytes: a
+            // bracketed form's tail must begin at `]` and an angle autolink's
+            // at `>`. When it does not — a label child whose sourcepos spans
+            // a line break inflates children_end to the token end (tail
+            // lost), or a trailing softbreak leaves the newline inside the
+            // tail — the derivation cannot represent the form faithfully, so
+            // emit NO ranges and let the whole link render source-visible
+            // instead of half-hidden.
+            let tail_marker = match bytes[start] {
+                b'[' | b'!' => b']',
+                b'<' => b'>',
+                _ => return Vec::new(), // bare GFM autolink: no markup
+            };
+            let tail_start = children_end as usize;
+            if tail_start >= end || bytes[tail_start] != tail_marker {
+                return Vec::new();
+            }
+            // Flark's documented GitHub-footnote stance: a SHORTCUT
+            // `[^label]` is footnote syntax on GitHub, which flark does not
+            // support yet, so it stays source-visible rather than becoming a
+            // styled reference link (comrak, with footnotes off, resolves it
+            // against a `[^label]: …` definition). Scoped to the exact
+            // shortcut shape — a one-byte `]` tail and a literal unescaped
+            // `^` after `[` — so inline `[^x](u)`, escaped `[\^x]`, and
+            // image forms keep ordinary link markup.
+            if bytes[start] == b'['
+                && tail_start + 1 == end
+                && start + 1 < end
+                && bytes[start + 1] == b'^'
+            {
+                return Vec::new();
+            }
             if children_start > token_start {
                 ranges.push(JsonRange {
                     start_byte: token_start,
@@ -889,12 +920,36 @@ mod link_marker_tests {
         );
     }
 
-    /// GitHub-footnote stance: `[^1]` is footnote syntax on GitHub, which
-    /// flark does not support yet, so it stays source-visible instead of
-    /// being reinterpreted as a styled reference link.
+    /// GitHub-footnote stance: a SHORTCUT `[^1]` is footnote syntax on
+    /// GitHub, which flark does not support yet, so it stays source-visible
+    /// instead of being reinterpreted as a styled reference link.
     #[test]
     fn footnote_shaped_reference_stays_source_visible() {
         assert_eq!(token_markers("[^1]\n\n[^1]: note\n", "link"), vec![]);
+    }
+
+    /// The stance is scoped to the shortcut shape: an INLINE link whose
+    /// label happens to start with `^` is an ordinary link and keeps its
+    /// markup hidden.
+    #[test]
+    fn caret_labelled_inline_link_keeps_markup() {
+        assert_eq!(token_markers("[^x](u)", "link"), vec![(0, 1), (3, 7)]);
+    }
+
+    /// A label child whose sourcepos spans a line break inflates the
+    /// children span to the token end, so no tail can be derived — the whole
+    /// link renders source-visible rather than half-hidden.
+    #[test]
+    fn wrapped_styled_label_falls_back_to_source_visible() {
+        assert_eq!(token_markers("[*foo\nbar*](u) tail", "link"), vec![]);
+    }
+
+    /// A trailing softbreak leaves the newline at the front of the derived
+    /// tail; hiding it would merge display lines, so the link renders
+    /// source-visible instead.
+    #[test]
+    fn trailing_softbreak_label_falls_back_to_source_visible() {
+        assert_eq!(token_markers("[foo\n](u)", "link"), vec![]);
     }
 
     #[test]
