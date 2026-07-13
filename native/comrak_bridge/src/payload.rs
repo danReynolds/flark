@@ -24,6 +24,13 @@ pub(crate) struct JsonInlineToken {
     pub(crate) styles: Vec<&'static str>,
     pub(crate) start_byte: u32,
     pub(crate) end_byte: u32,
+    /// Delimiter sub-ranges of this token derived from the AST (RFC 022
+    /// Phase 2): for links/images/autolinks/reference links, the label
+    /// opener and the `](…)` / `][ref]` / `>` tail, computed from the
+    /// children's sourcepos — never by re-scanning source text. Empty for
+    /// styles whose markers already travel in the flat `marker_ranges` vec.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) marker_ranges: Vec<JsonRange>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) payload: Option<serde_json::Value>,
 }

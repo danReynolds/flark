@@ -112,6 +112,12 @@ class NativeComrakInlineToken {
   /// Native style names applied to [range].
   final Set<String> styles;
 
+  /// Delimiter sub-ranges of this token derived from the parser's AST
+  /// (RFC 022 bridge protocol v2): for links/images/autolinks, the label
+  /// opener and the destination/reference tail. Empty for tokens whose
+  /// markers travel in the payload-level marker ranges.
+  final List<NativeComrakRange> markerRanges;
+
   /// Optional native inline metadata.
   final Map<String, Object?> payload;
 
@@ -119,6 +125,7 @@ class NativeComrakInlineToken {
   const NativeComrakInlineToken({
     required this.range,
     required this.styles,
+    this.markerRanges = const [],
     this.payload = const {},
   });
 
@@ -128,12 +135,14 @@ class NativeComrakInlineToken {
       other is NativeComrakInlineToken &&
           range == other.range &&
           _setEquals(styles, other.styles) &&
+          _listEquals(markerRanges, other.markerRanges) &&
           _mapEquals(payload, other.payload);
 
   @override
   int get hashCode => Object.hash(
     range,
     Object.hashAllUnordered(styles),
+    Object.hashAll(markerRanges),
     Object.hashAllUnordered(
       payload.entries.map((entry) => Object.hash(entry.key, entry.value)),
     ),
@@ -408,6 +417,11 @@ class NativeComrakPayloadCodec {
           NativeComrakInlineToken(
             range: readRange(rawToken),
             styles: readStyles(rawToken['styles']),
+            markerRanges: [
+              if (rawToken['markerRanges'] case final List raw)
+                for (final rawRange in raw)
+                  if (rawRange is Map<String, dynamic>) readRange(rawRange),
+            ],
             payload: readPayload(rawToken['payload']),
           ),
         );

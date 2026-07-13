@@ -30,6 +30,10 @@ void main() {
     'lib/src/v2/flutter/flark_projected_editable_text.dart',
     'lib/src/v2/markdown/commands/flark_markdown_command_capabilities.dart',
     'lib/src/v2/markdown/commands/flark_markdown_inline_commands.dart',
+    // NOTE: the parse backend imports ONLY the fenced-code scanner now
+    // (fence synthesis; Phase 4 deletes it). Its inline-flanking import was
+    // removed by bridge protocol v2 — link/image markup now arrives as
+    // AST-derived per-token ranges instead of Dart source scanning.
     'lib/src/v2/markdown/parse/flark_native_comrak_parse_backend.dart',
     'lib/src/v2/markdown/source/flark_markdown_fenced_code_policy.dart',
     'lib/src/v2/markdown/source/flark_markdown_input_engine.dart',

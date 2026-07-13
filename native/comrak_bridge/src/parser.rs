@@ -445,12 +445,14 @@ fn collect_node<'a>(
             styles: vec!["bold"],
             start_byte: inline_range.start_byte,
             end_byte: inline_range.end_byte,
+            marker_ranges: Vec::new(),
             payload: None,
         }),
         NodeValue::Emph => inline_tokens.push(JsonInlineToken {
             styles: vec!["italic"],
             start_byte: inline_range.start_byte,
             end_byte: inline_range.end_byte,
+            marker_ranges: Vec::new(),
             payload: None,
         }),
         NodeValue::Code(_) => {
@@ -458,6 +460,7 @@ fn collect_node<'a>(
                 styles: vec!["code"],
                 start_byte: inline_range.start_byte,
                 end_byte: inline_range.end_byte,
+                marker_ranges: Vec::new(),
                 payload: None,
             });
             exclusion_ranges.push(JsonRange {
@@ -469,12 +472,20 @@ fn collect_node<'a>(
             styles: vec!["strikethrough"],
             start_byte: inline_range.start_byte,
             end_byte: inline_range.end_byte,
+            marker_ranges: Vec::new(),
             payload: None,
         }),
         NodeValue::Link(link) => inline_tokens.push(JsonInlineToken {
             styles: vec!["link"],
             start_byte: inline_range.start_byte,
             end_byte: inline_range.end_byte,
+            marker_ranges: link_marker_ranges(
+                node,
+                inline_range.start_byte,
+                inline_range.end_byte,
+                text,
+                line_index,
+            ),
             payload: Some(serde_json::json!({
                 "destination": link.url.as_str(),
                 "href": link.url.as_str(),
@@ -486,6 +497,13 @@ fn collect_node<'a>(
             styles: vec!["image"],
             start_byte: inline_range.start_byte,
             end_byte: inline_range.end_byte,
+            marker_ranges: link_marker_ranges(
+                node,
+                inline_range.start_byte,
+                inline_range.end_byte,
+                text,
+                line_index,
+            ),
             payload: Some(serde_json::json!({
                 "destination": link.url.as_str(),
                 "src": link.url.as_str(),
@@ -498,6 +516,7 @@ fn collect_node<'a>(
                 styles: vec!["htmlInline"],
                 start_byte: inline_range.start_byte,
                 end_byte: inline_range.end_byte,
+                marker_ranges: Vec::new(),
                 payload: None,
             });
             exclusion_ranges.push(JsonRange {
@@ -515,6 +534,107 @@ fn empty_string_as_null(value: &str) -> Option<&str> {
     } else {
         Some(value)
     }
+}
+
+/// The byte span covered by [node]'s children (the link/image label
+/// content), from the first child's start to the last child's end. None when
+/// the node has no children with usable sourcepos (an empty label, `![](u)`).
+fn children_byte_span<'a>(
+    node: &'a AstNode<'a>,
+    text: &str,
+    line_index: &LineIndex,
+) -> Option<(u32, u32)> {
+    let mut span: Option<(u32, u32)> = None;
+    for child in node.children() {
+        let child_sourcepos = child.data.borrow().sourcepos;
+        let Some(range) = sourcepos_to_range(child_sourcepos, text, line_index) else {
+            continue;
+        };
+        span = Some(match span {
+            None => (range.start_byte, range.end_byte),
+            Some((start, end)) => (start.min(range.start_byte), end.max(range.end_byte)),
+        });
+    }
+    span
+}
+
+/// Marker sub-ranges for a link or image token, derived from the AST: the
+/// label opener (`[`, `![`, `<`) spans from the token start to the first
+/// child, and the tail (`](dest "title")`, `][ref]`, `]`, `>`) from the last
+/// child to the token end. An empty label (no children) makes the whole
+/// token markup. Bare GFM autolinks have children spanning the entire token
+/// and produce no ranges. Clamped so a sourcepos quirk can never hide
+/// content outside the token.
+fn link_marker_ranges<'a>(
+    node: &'a AstNode<'a>,
+    token_start: u32,
+    token_end: u32,
+    text: &str,
+    line_index: &LineIndex,
+) -> Vec<JsonRange> {
+    let bytes = text.as_bytes();
+    let start = token_start as usize;
+    let end = token_end as usize;
+    if end > bytes.len() || start >= end {
+        return Vec::new();
+    }
+
+    let mut ranges = Vec::new();
+    match children_byte_span(node, text, line_index) {
+        Some((children_start, children_end)) => {
+            let children_start = children_start.clamp(token_start, token_end);
+            let children_end = children_end.clamp(children_start, token_end);
+            // Shape-validate the derivation against the token's own bytes: a
+            // bracketed form's tail must begin at `]` and an angle autolink's
+            // at `>`. When it does not — a label child whose sourcepos spans
+            // a line break inflates children_end to the token end (tail
+            // lost), or a trailing softbreak leaves the newline inside the
+            // tail — the derivation cannot represent the form faithfully, so
+            // emit NO ranges and let the whole link render source-visible
+            // instead of half-hidden.
+            let tail_marker = match bytes[start] {
+                b'[' | b'!' => b']',
+                b'<' => b'>',
+                _ => return Vec::new(), // bare GFM autolink: no markup
+            };
+            let tail_start = children_end as usize;
+            if tail_start >= end || bytes[tail_start] != tail_marker {
+                return Vec::new();
+            }
+            // Flark's documented GitHub-footnote stance: a SHORTCUT
+            // `[^label]` is footnote syntax on GitHub, which flark does not
+            // support yet, so it stays source-visible rather than becoming a
+            // styled reference link (comrak, with footnotes off, resolves it
+            // against a `[^label]: …` definition). Scoped to the exact
+            // shortcut shape — a one-byte `]` tail and a literal unescaped
+            // `^` after `[` — so inline `[^x](u)`, escaped `[\^x]`, and
+            // image forms keep ordinary link markup.
+            if bytes[start] == b'['
+                && tail_start + 1 == end
+                && start + 1 < end
+                && bytes[start + 1] == b'^'
+            {
+                return Vec::new();
+            }
+            if children_start > token_start {
+                ranges.push(JsonRange {
+                    start_byte: token_start,
+                    end_byte: children_start,
+                });
+            }
+            if token_end > children_end {
+                ranges.push(JsonRange {
+                    start_byte: children_end,
+                    end_byte: token_end,
+                });
+            }
+        }
+        None => ranges.push(JsonRange {
+            start_byte: token_start,
+            end_byte: token_end,
+        }),
+    }
+    ranges
 }
 
 fn plain_text<'a>(node: &'a AstNode<'a>) -> String {
@@ -722,5 +842,154 @@ fn extract_code_payload(info: &str) -> Option<serde_json::Value> {
         None
     } else {
         Some(serde_json::json!({ "language": language }))
+    }
+}
+
+#[cfg(test)]
+mod link_marker_tests {
+    use super::parse_to_payload;
+
+    fn token_markers(md: &str, style: &str) -> Vec<(u64, u64)> {
+        let payload = parse_to_payload(md, 1).unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+        let tokens = json["inlineTokens"].as_array().expect("tokens");
+        let token = tokens
+            .iter()
+            .find(|token| {
+                token["styles"]
+                    .as_array()
+                    .is_some_and(|styles| styles.iter().any(|s| s == style))
+            })
+            .unwrap_or_else(|| panic!("no {style} token in {md:?}"));
+        match token["markerRanges"].as_array() {
+            None => Vec::new(),
+            Some(ranges) => ranges
+                .iter()
+                .map(|range| {
+                    (
+                        range["startByte"].as_u64().unwrap(),
+                        range["endByte"].as_u64().unwrap(),
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    /// The label opener and destination tail come from the AST children's
+    /// sourcepos, so parenthesized destinations and titles are covered by
+    /// construction — the class of scanning bug this replaces.
+    #[test]
+    fn inline_link_with_parenthesized_destination() {
+        assert_eq!(
+            token_markers("[Foo](https://en.org/Foo_(d))", "link"),
+            vec![(0, 1), (4, 29)],
+        );
+    }
+
+    #[test]
+    fn image_with_empty_alt_is_all_markup() {
+        assert_eq!(token_markers("![](u.png)", "image"), vec![(0, 10)]);
+    }
+
+    #[test]
+    fn angle_autolink_hides_only_the_brackets() {
+        assert_eq!(
+            token_markers("<https://example.com>", "link"),
+            vec![(0, 1), (20, 21)],
+        );
+    }
+
+    #[test]
+    fn bare_gfm_autolink_has_no_markup() {
+        assert_eq!(token_markers("see www.example.com now", "link"), vec![]);
+    }
+
+    #[test]
+    fn full_reference_link_hides_label_brackets_and_reference_tail() {
+        assert_eq!(
+            token_markers("[foo][bar]\n\n[bar]: /url\n", "link"),
+            vec![(0, 1), (4, 10)],
+        );
+    }
+
+    #[test]
+    fn shortcut_reference_link_hides_only_the_brackets() {
+        assert_eq!(
+            token_markers("[foo]\n\n[foo]: /url\n", "link"),
+            vec![(0, 1), (4, 5)],
+        );
+    }
+
+    /// GitHub-footnote stance: a SHORTCUT `[^1]` is footnote syntax on
+    /// GitHub, which flark does not support yet, so it stays source-visible
+    /// instead of being reinterpreted as a styled reference link.
+    #[test]
+    fn footnote_shaped_reference_stays_source_visible() {
+        assert_eq!(token_markers("[^1]\n\n[^1]: note\n", "link"), vec![]);
+    }
+
+    /// The stance is scoped to the shortcut shape: an INLINE link whose
+    /// label happens to start with `^` is an ordinary link and keeps its
+    /// markup hidden.
+    #[test]
+    fn caret_labelled_inline_link_keeps_markup() {
+        assert_eq!(token_markers("[^x](u)", "link"), vec![(0, 1), (3, 7)]);
+    }
+
+    /// A label child whose sourcepos spans a line break inflates the
+    /// children span to the token end, so no tail can be derived — the whole
+    /// link renders source-visible rather than half-hidden.
+    #[test]
+    fn wrapped_styled_label_falls_back_to_source_visible() {
+        assert_eq!(token_markers("[*foo\nbar*](u) tail", "link"), vec![]);
+    }
+
+    /// A trailing softbreak leaves the newline at the front of the derived
+    /// tail; hiding it would merge display lines, so the link renders
+    /// source-visible instead.
+    #[test]
+    fn trailing_softbreak_label_falls_back_to_source_visible() {
+        assert_eq!(token_markers("[foo\n](u)", "link"), vec![]);
+    }
+
+    #[test]
+    fn styled_label_spans_from_first_to_last_child() {
+        assert_eq!(
+            token_markers("[**x** y](u)", "link"),
+            vec![(0, 1), (8, 12)],
+        );
+    }
+
+    /// Pre-existing comrak limitation, pinned: sourcepos for an inline link
+    /// whose parenthesized tail wraps onto the next line stops at the first
+    /// line, so the token (and therefore its markup) is confined there and
+    /// the continuation renders as visible text — identical confinement to
+    /// the scanning this replaces.
+    #[test]
+    fn multi_line_destination_tail_clamps_to_token_end() {
+        assert_eq!(
+            token_markers("[a](u\n\"t\")", "link"),
+            vec![(0, 1), (2, 5)],
+        );
+    }
+
+    /// Regression pin for the abutting-closers case: comrak emits the inner
+    /// emphasis token and the flat marker ranges cover every delimiter byte.
+    #[test]
+    fn nested_emphasis_abutting_strong_closer_keeps_all_markers() {
+        let payload = parse_to_payload("**foo *bar***", 1).unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+        let markers: Vec<(u64, u64)> = json["markerRanges"]
+            .as_array()
+            .expect("markers")
+            .iter()
+            .map(|range| {
+                (
+                    range["startByte"].as_u64().unwrap(),
+                    range["endByte"].as_u64().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(markers, vec![(0, 2), (6, 7), (10, 11), (11, 13)]);
     }
 }

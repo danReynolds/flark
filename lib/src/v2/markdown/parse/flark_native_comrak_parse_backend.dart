@@ -5,7 +5,6 @@ import '../../core/document/flark_utf8_utf16_mapper.dart';
 import '../../core/transaction/flark_source_range.dart';
 import '../../native/native_comrak_bridge_factory.dart';
 import '../../native/native_comrak_ffi.dart';
-import '../inline/flark_inline_flanking.dart';
 import '../source/flark_markdown_fenced_code_scanner.dart';
 import 'flark_markdown_parse_backend.dart';
 import 'flark_markdown_parse_protocol.dart';
@@ -356,9 +355,15 @@ FlarkMarkdownParseResult _mapNativeResult(
     native.inlineTokens,
     mappedMarkerRanges,
   );
+  final claimedMarkerIndex = _FlarkSourceRangeIndex(mappedMarkerRanges);
   final partialStrongIntentInlineTokens = [
     for (final token in native.inlineTokens)
-      if (_isPartialStrongIntentEmphasis(request.markdown, mapper, token))
+      if (_isPartialStrongIntentEmphasis(
+        request.markdown,
+        mapper,
+        token,
+        claimedMarkerIndex,
+      ))
         token,
   ];
   final partialStrongIntentMarkerRanges = [
@@ -366,6 +371,7 @@ FlarkMarkdownParseResult _mapNativeResult(
       ..._partialStrongIntentMarkerRanges(
         request.markdown,
         _mapRange(mapper, token.range),
+        claimedMarkerIndex,
       ),
   ];
   final markerOnlyBlockquoteRanges = [
@@ -1191,6 +1197,15 @@ List<FlarkSourceRange> _singleTildeStrikethroughMarkerRanges(
   return ranges;
 }
 
+/// Hidden ranges for link and image markup, consumed directly from the
+/// bridge's AST-derived per-token marker ranges (RFC 022 bridge protocol v2)
+/// — no source scanning. The opener (`[`, `![`, `<`) keeps the inlineMarker
+/// kind; the tail (`](dest "title")`, `][ref]`, `]`, `>`) keeps the
+/// linkDestination kind, so downstream projection/caret semantics are
+/// unchanged. Tokens without marker ranges (bare GFM autolinks) have no
+/// markup to hide. Compared to the scanning this replaces, shortcut
+/// references and angle autolinks now hide their brackets like every other
+/// link form instead of rendering them raw.
 List<FlarkMarkdownHiddenRange> _nativeInlineHiddenRanges(
   String markdown,
   FlarkUtf8Utf16Mapper mapper,
@@ -1201,72 +1216,36 @@ List<FlarkMarkdownHiddenRange> _nativeInlineHiddenRanges(
     final isImage = token.styles.any((style) => _inlineType(style) == 'image');
     final isLink = token.styles.any((style) => _inlineType(style) == 'link');
     if (!isImage && !isLink) continue;
+    if (token.markerRanges.isEmpty) continue;
 
-    final sourceRange = _mapRange(mapper, token.range);
-    final start = sourceRange.start;
-    final end = sourceRange.end;
-    if (start < 0 || end > markdown.length || start >= end) continue;
-
-    final markerLength = isImage ? 2 : 1;
-    if (start + markerLength >= end) continue;
-    if (isImage) {
-      if (!markdown.startsWith('![', start)) continue;
-    } else if (markdown.codeUnitAt(start) != 0x5B) {
+    final tokenRange = _mapRange(mapper, token.range);
+    if (tokenRange.start < 0 ||
+        tokenRange.end > markdown.length ||
+        tokenRange.start >= tokenRange.end) {
       continue;
     }
 
-    final labelEnd = _findLinkLabelEnd(markdown, start + markerLength, end);
-    if (labelEnd == null || labelEnd + 1 >= end) continue;
-
-    // The token spans the whole link/image, so comrak's own end byte is the
-    // authoritative close of the trailing `](dest "title")` (inline) or
-    // `][ref]` (full reference). Hide from the label's `]` through `end`
-    // regardless of the destination/title contents.
-    //
-    // The previous scan for the first unescaped `)` mis-located the close when
-    // the destination held balanced parens (`.../Foo_(disambiguation)`, a very
-    // common Wikipedia shape), used an angle-bracket destination (`<a)b>`), or
-    // carried a title containing `)` — leaking the tail (`Foo)`, `xb>)`, `x")`)
-    // into the projected display and skewing display↔source caret mapping.
-    final afterLabel = markdown.codeUnitAt(labelEnd + 1);
-    if (afterLabel != 0x28 && afterLabel != 0x5B) {
-      // A shortcut reference (`[foo]`) has no inline destination or explicit
-      // reference span to hide; leave it source-visible (unchanged behavior).
-      continue;
+    for (final rawMarker in token.markerRanges) {
+      final marker = _mapRange(mapper, rawMarker);
+      if (marker.start < tokenRange.start ||
+          marker.end > tokenRange.end ||
+          marker.start >= marker.end) {
+        continue;
+      }
+      final opensToken = marker.start == tokenRange.start &&
+          marker.end < tokenRange.end;
+      ranges.add(
+        FlarkMarkdownHiddenRange(
+          kind: opensToken
+              ? FlarkMarkdownHiddenRangeKind.inlineMarker
+              : FlarkMarkdownHiddenRangeKind.linkDestination,
+          type: opensToken ? 'inlineMarker' : 'linkDestination',
+          sourceRange: FlarkSourceRange(marker.start, marker.end),
+        ),
+      );
     }
-
-    ranges.add(
-      FlarkMarkdownHiddenRange(
-        kind: FlarkMarkdownHiddenRangeKind.inlineMarker,
-        type: 'inlineMarker',
-        sourceRange: FlarkSourceRange(start, start + markerLength),
-      ),
-    );
-    ranges.add(
-      FlarkMarkdownHiddenRange(
-        kind: FlarkMarkdownHiddenRangeKind.linkDestination,
-        type: 'linkDestination',
-        sourceRange: FlarkSourceRange(labelEnd, end),
-      ),
-    );
   }
   return ranges;
-}
-
-int? _findLinkLabelEnd(String source, int start, int limit) {
-  var depth = 1;
-  for (var index = start; index < limit; index++) {
-    final unit = source.codeUnitAt(index);
-    if (FlarkInlineFlanking.isEscaped(source, index)) continue;
-    if (unit == 0x5B) {
-      depth++;
-      continue;
-    }
-    if (unit != 0x5D) continue;
-    depth--;
-    if (depth == 0) return index;
-  }
-  return null;
 }
 
 List<NativeComrakBlockSpan> _normalizeNativeCodeBlockRanges(
@@ -1488,18 +1467,30 @@ bool _isPartialStrongIntentEmphasis(
   String markdown,
   FlarkUtf8Utf16Mapper mapper,
   NativeComrakInlineToken token,
+  _FlarkSourceRangeIndex claimedMarkers,
 ) {
   final styles = token.styles.map(_inlineType).toSet();
   if (styles.length != 1 || !styles.contains('emphasis')) return false;
   return _partialStrongIntentMarkerRanges(
     markdown,
     _mapRange(mapper, token.range),
+    claimedMarkers,
   ).isNotEmpty;
 }
 
+/// An emphasis run flanked by a bare same-marker character is likely a user
+/// mid-typing strong (`**foo*` on the way to `**foo**`), so its markers stay
+/// literal instead of committing to emphasis for a keystroke. The adjacency
+/// only signals intent when the neighboring character is UNCLAIMED — not part
+/// of any marker range the parser already matched. Without that check, the
+/// heuristic misfired on fully-parsed nesting whose emphasis legitimately
+/// abuts its parent's delimiter (`**foo *bar***`: the em close touches the
+/// strong close), overriding the parser's verdict and leaving the inner
+/// markers visible — exactly the freelance-grammar class RFC 022 removes.
 List<FlarkSourceRange> _partialStrongIntentMarkerRanges(
   String markdown,
   FlarkSourceRange range,
+  _FlarkSourceRangeIndex claimedMarkers,
 ) {
   if (range.start < 0 || range.end > markdown.length) return const [];
   if (range.end - range.start < 3) return const [];
@@ -1508,10 +1499,15 @@ List<FlarkSourceRange> _partialStrongIntentMarkerRanges(
   if (marker != 0x2A && marker != 0x5F) return const [];
   if (markdown.codeUnitAt(range.end - 1) != marker) return const [];
 
-  final hasSameMarkerBefore =
-      range.start > 0 && markdown.codeUnitAt(range.start - 1) == marker;
-  final hasSameMarkerAfter =
-      range.end < markdown.length && markdown.codeUnitAt(range.end) == marker;
+  bool unclaimed(int offset) =>
+      !claimedMarkers.overlaps(FlarkSourceRange(offset, offset + 1));
+
+  final hasSameMarkerBefore = range.start > 0 &&
+      markdown.codeUnitAt(range.start - 1) == marker &&
+      unclaimed(range.start - 1);
+  final hasSameMarkerAfter = range.end < markdown.length &&
+      markdown.codeUnitAt(range.end) == marker &&
+      unclaimed(range.end);
   if (!hasSameMarkerBefore && !hasSameMarkerAfter) return const [];
 
   return [
