@@ -104,6 +104,13 @@ set +e
 status=$?
 set -e
 
+if [ "$status" -eq 0 ] && ! grep -Eq '^test result: ok\. [1-9][0-9]* passed;' "$log_file"; then
+  status=65
+  printf '%s\n' \
+    'error: exact test filter matched no passing test; use its fully qualified name' \
+    >>"$log_file"
+fi
+
 finished="$(date '+%s')"
 elapsed=$((finished - started))
 
