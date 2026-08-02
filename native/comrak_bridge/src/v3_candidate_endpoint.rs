@@ -18,8 +18,9 @@ use flark_engine::parser_internal::{
     M11OwnedSnapshotPoll, M11OwnedSnapshotStream, M11ParserPageError,
     M11ParserSourceRangeAuthority, M11PublicationError, M11RecursiveGreenFrameId,
     M11RecursiveGreenLocation, M11RecursiveGreenPoint, M11RecursiveGreenRowEditCapability,
-    M11RecursiveGreenRowQueryLimits, M11ReferenceResolver, M11RetainedCandidatePublication,
-    M11SnapshotFrame, M11SnapshotFrameKind, M11_MAX_ROLE_RECORDS, M11_MAX_SNAPSHOT_FRAME_BYTES,
+    M11RecursiveGreenRowQueryLimits, M11RecursiveGreenRowQueryOutcome, M11ReferenceResolver,
+    M11RetainedCandidatePublication, M11SnapshotFrame, M11SnapshotFrameKind, M11_MAX_ROLE_RECORDS,
+    M11_MAX_SNAPSHOT_FRAME_BYTES,
 };
 use flark_engine::{
     CertifiedSource, DocumentRuntime, DocumentRuntimeError, IncrementalSourceFactsPlan,
@@ -2422,7 +2423,7 @@ impl CandidateEndpoint {
         }
 
         let green = self.recursive_green.installed_session(command.base_ack)?;
-        let row_window = green.query_renderable_rows(
+        let row_window = match green.query_renderable_rows_bounded(
             runtime,
             M11RecursiveGreenPoint::new(
                 usize::try_from(command.start_byte_offset)
@@ -2433,7 +2434,14 @@ impl CandidateEndpoint {
             ),
             u64::from(command.end_byte_offset),
             row_limits,
-        )?;
+        )? {
+            M11RecursiveGreenRowQueryOutcome::Window(window) => window,
+            M11RecursiveGreenRowQueryOutcome::BudgetExceeded(_) => {
+                return Err(CandidateEndpointError::ViewportInlineLimitExceeded(
+                    "recursive-Green viewport range budget",
+                ));
+            }
+        };
         if row_window.start_ordinal() != command.start_entry_ordinal || row_window.rows().is_empty()
         {
             return Err(CandidateEndpointError::InvalidAuthority);
