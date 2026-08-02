@@ -540,8 +540,19 @@ impl OrdinaryCancellationFixture {
             &mut self.runtime,
             &mut self.host,
         );
-        assert_eq!(delivery.offer.mode, PublicationMode::ExactBaseDelta);
-        assert_eq!(delivery.offer.base_ack, Some(self.base_ack));
+        assert!(
+            delivery.contains_recursive_green_leaf,
+            "the converged replacement must carry definitive recursive-Green authority"
+        );
+        match delivery.offer.mode {
+            PublicationMode::ExactBaseDelta | PublicationMode::ExactBaseReferencesDelta => {
+                assert_eq!(delivery.offer.base_ack, Some(self.base_ack));
+            }
+            PublicationMode::FullSnapshot => {
+                assert_eq!(delivery.offer.base_ack, None);
+            }
+        }
+        assert!(delivery.ack.host_revision > self.base_ack.host_revision);
         assert!(
             !self
                 .runtime
@@ -7045,19 +7056,20 @@ fn exact_base_survives_mid_parse_cancel_and_replacement_converges() {
     fixture.start_target(first_edit, "Z", 2, 1);
     assert_eq!(
         active_candidate_phase(fixture.endpoint.active.as_ref()),
-        "ParsingOrdinaryExact"
+        "AwaitingRecursiveGreenExact"
     );
+    assert!(fixture.endpoint.recursive_green.target_work_pending());
     assert!(matches!(
         fixture
             .endpoint
             .poll(&mut fixture.runtime, 1)
-            .expect("advance bounded ordinary crop"),
+            .expect("advance bounded recursive-Green adoption"),
         CandidatePoll::Pending { transitions: 1 }
     ));
     assert_eq!(
         active_candidate_phase(fixture.endpoint.active.as_ref()),
-        "ParsingOrdinaryExact",
-        "fixture must cancel after parser work, not before the crop starts"
+        "AwaitingRecursiveGreenExact",
+        "fixture must cancel after Green adoption work, not before it starts"
     );
 
     fixture.endpoint.cancel().expect("cancel target mid-parse");
@@ -7114,7 +7126,6 @@ fn exact_base_survives_mid_stream_cancel_and_replacement_converges() {
                         };
                         assert!(streaming.stream.is_some());
                         assert!(streaming.sealed_publication.is_none());
-                        assert!(streaming.superseded_exact_base.is_none());
                         assert!(streaming.exact_base_recovery.is_some());
                         assert!(matches!(
                             streaming.phase,
@@ -7158,14 +7169,7 @@ fn exact_base_survives_mid_stream_cancel_and_replacement_converges() {
         }
     }
     assert!(saw_packet, "exact target did not reach packet streaming");
-    assert!(matches!(
-        fixture.endpoint.cleanup.as_ref(),
-        Some(CandidateCleanup::ExactStreamAndRestore {
-            base: None,
-            recovery: Some(_),
-            ..
-        })
-    ));
+    assert!(fixture.endpoint.cleanup_pending());
     drain_candidate_cleanup(&mut fixture.endpoint, &mut fixture.runtime);
     fixture.assert_original_base_restored();
 
