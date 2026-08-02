@@ -615,14 +615,22 @@ fn resolved_recursive_green_automatic(
         .locate_point(runtime, point)?
         .ok_or(CandidateEndpointError::InvalidState)?;
     if M11RecursiveGreenInlineLeafKind::from_green_kind(location.owner().kind()).is_some() {
-        return resolved_recursive_green_inline_leaf(
+        match resolved_recursive_green_inline_leaf(
             session,
             runtime,
             command,
             byte_offset,
             utf16_offset,
             affinity,
-        );
+        ) {
+            Ok(resolved) => return Ok(resolved),
+            Err(CandidateEndpointError::PersistentRecursiveGreen(
+                M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "recursive-Green point is not owned by a final inline-bearing leaf",
+                ),
+            )) => {}
+            Err(error) => return Err(error),
+        }
     }
 
     resolved_recursive_green_unsupported(

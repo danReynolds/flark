@@ -3,15 +3,17 @@
 use super::*;
 use crate::v3_endpoint::standard_document_runtime_config;
 use crate::v3_host_store::{
-    HOST_M11_VIEWPORT_BYTES, HOST_RECURSIVE_GREEN_ROW_PATH_RECORD_BYTES,
-    HOST_RECURSIVE_GREEN_ROW_RANGE_HEADER_BYTES, HOST_RECURSIVE_GREEN_ROW_RANGE_SCHEMA,
-    HOST_RECURSIVE_GREEN_ROW_RECORD_BYTES, HostBlockRangeBudget, HostBlockRangeOutcome,
-    HostBlockRangeQuery, HostConfig, HostInlineSidecarQueryOutcome, HostMetricAffinity,
-    HostMetricRange, HostPointQuery, HostPollOutcome as NativeHostPollOutcome, HostQueryBudget,
+    HostBlockRangeBudget, HostBlockRangeOutcome, HostBlockRangeQuery, HostConfig,
+    HostInlineSidecarQueryOutcome, HostMetricAffinity, HostMetricRange, HostPointQuery,
+    HostPollOutcome as NativeHostPollOutcome, HostQueryBudget, HostSourceGapReason,
     HostSourceMetric, HostStructuralOrdinalWindowBudget, HostStructuralOrdinalWindowOutcome,
     HostStructuralOrdinalWindowQuery, HostStructuralQueryOutcome,
     HostViewportPresentationPollOutcome as NativeViewportPresentationPollOutcome, HostWorkGrant,
     InlineSidecarHostPollOutcome as NativeInlineSidecarHostPollOutcome, NativeCandidateHost,
+    HOST_M11_VIEWPORT_BYTES, HOST_RECURSIVE_GREEN_ANCESTOR_RECORD_BYTES,
+    HOST_RECURSIVE_GREEN_ROW_PATH_RECORD_BYTES, HOST_RECURSIVE_GREEN_ROW_RANGE_HEADER_BYTES,
+    HOST_RECURSIVE_GREEN_ROW_RANGE_SCHEMA, HOST_RECURSIVE_GREEN_ROW_RECORD_BYTES,
+    HOST_RECURSIVE_GREEN_VIEWPORT_HEADER_BYTES, HOST_RECURSIVE_GREEN_VIEWPORT_SCHEMA,
 };
 use crate::v3_publication_wire::{
     decode_viewport_presentation_child_frame, decode_viewport_presentation_directory,
@@ -351,23 +353,29 @@ fn assert_installed_candidate_has_no_inline(
                 affinity: HostMetricAffinity::Downstream,
                 budget: HostQueryBudget {
                     maximum_encoded_bytes: HOST_M11_VIEWPORT_BYTES as u32,
-                    maximum_open_depth: 1,
-                    maximum_leaf_count: 3,
-                    maximum_tree_nodes_visited: 3,
+                    maximum_open_depth: 64,
+                    maximum_leaf_count: 64,
+                    maximum_tree_nodes_visited: 256,
                 },
             },
             &mut output,
         )
         .expect("query installed exact candidate");
-    let HostStructuralQueryOutcome::Viewport { receipt, .. } = outcome else {
-        panic!("exact candidate must expose its structural viewport: {outcome:?}");
-    };
-    assert_eq!(receipt.encoded_bytes, HOST_M11_VIEWPORT_BYTES as u32);
-    assert_eq!(
-        u32::from_le_bytes(output[8..12].try_into().expect("viewport schema")),
-        1,
-        "canonical publication must not embed inline presentation authority"
-    );
+    match outcome {
+        HostStructuralQueryOutcome::Viewport { receipt, .. } => {
+            let schema = u32::from_le_bytes(output[8..12].try_into().expect("viewport schema"));
+            assert!(
+                matches!(schema, 1 | HOST_RECURSIVE_GREEN_VIEWPORT_SCHEMA),
+                "canonical publication must expose either legacy structural or recursive-Green authority"
+            );
+            assert!(receipt.encoded_bytes <= HOST_M11_VIEWPORT_BYTES as u32);
+        }
+        HostStructuralQueryOutcome::SourceGap {
+            reason: HostSourceGapReason::EncodedByteLimit,
+            ..
+        } => {}
+        other => panic!("exact candidate must fail closed without inline authority: {other:?}"),
+    }
 }
 
 #[derive(Debug)]
@@ -527,11 +535,10 @@ impl OrdinaryCancellationFixture {
                 .source(),
             self.base_version
         );
-        assert!(
-            self.endpoint
-                .has_exact_base_for(&self.runtime, self.base_version)
-                .expect("inspect restored exact base")
-        );
+        assert!(self
+            .endpoint
+            .has_exact_base_for(&self.runtime, self.base_version)
+            .expect("inspect restored exact base"));
     }
 
     fn deliver_replacement(&mut self, target: flark_engine::SourceVersion) -> ExactDelivery {
@@ -561,11 +568,10 @@ impl OrdinaryCancellationFixture {
             "the delivery helper must mirror production and commit before returning"
         );
         drain_candidate_cleanup(&mut self.endpoint, &mut self.runtime);
-        assert!(
-            self.endpoint
-                .has_exact_base_for(&self.runtime, target)
-                .expect("replacement becomes exact base")
-        );
+        assert!(self
+            .endpoint
+            .has_exact_base_for(&self.runtime, target)
+            .expect("replacement becomes exact base"));
         delivery
     }
 }
@@ -691,20 +697,18 @@ fn deliver_endpoint_to_independent_host_with_fuel(
                     }
                 };
                 packet_frames.push(frames);
-                assert!(
-                    endpoint
-                        .handle_host_poll(
-                            event_id,
-                            offer_id,
-                            HostPollPhase::PacketCredit,
-                            HostPollResult::Completed(HostPollOutcome::PacketCredit {
-                                offer_id: credited_offer_id,
-                                next_frame_ordinal,
-                            }),
-                        )
-                        .expect("producer accepts exact host packet credit")
-                        .is_none()
-                );
+                assert!(endpoint
+                    .handle_host_poll(
+                        event_id,
+                        offer_id,
+                        HostPollPhase::PacketCredit,
+                        HostPollResult::Completed(HostPollOutcome::PacketCredit {
+                            offer_id: credited_offer_id,
+                            next_frame_ordinal,
+                        }),
+                    )
+                    .expect("producer accepts exact host packet credit")
+                    .is_none());
             }
             CandidateEventBody::Commit(commit) => {
                 host.request_commit(commit)
@@ -1559,11 +1563,9 @@ fn nested_local_edit_preempts_legacy_parse_and_installs_exact_recursive_green_de
     let plan = runtime
         .begin_incremental_source_facts(profile, parser_profile, SourceFactsRootLimits::default())
         .expect("begin incremental source facts");
-    assert!(
-        endpoint
-            .has_incremental_base_for_plan(&runtime, &plan)
-            .expect("exact-base preflight")
-    );
+    assert!(endpoint
+        .has_incremental_base_for_plan(&runtime, &plan)
+        .expect("exact-base preflight"));
     let witness = complete_incremental_source_facts(&mut runtime);
     let target_lease = runtime
         .snapshot_current_source()
@@ -1593,33 +1595,25 @@ fn nested_local_edit_preempts_legacy_parse_and_installs_exact_recursive_green_de
             "the scheduler must not poll a fallback parser before Green adoption resolves"
         );
     }
-    assert!(
-        endpoint
-            .recursive_green
-            .ready_update_for(base_delivery.ack, target_source)
-            .is_some()
-    );
+    assert!(endpoint
+        .recursive_green
+        .ready_update_for(base_delivery.ack, target_source)
+        .is_some());
 
     let target_delivery =
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
     assert_eq!(target_delivery.offer.mode, PublicationMode::ExactBaseDelta);
     assert_eq!(target_delivery.offer.base_ack, Some(base_delivery.ack));
-    assert!(
-        target_delivery
-            .packet_frames
-            .iter()
-            .flatten()
-            .any(|(kind, _)| {
-                *kind == CandidateSnapshotFrameKind::RecursiveGreenReplacementPage
-            })
-    );
-    assert!(
-        target_delivery
-            .packet_frames
-            .iter()
-            .flatten()
-            .all(|(kind, _)| { *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage })
-    );
+    assert!(target_delivery
+        .packet_frames
+        .iter()
+        .flatten()
+        .any(|(kind, _)| { *kind == CandidateSnapshotFrameKind::RecursiveGreenReplacementPage }));
+    assert!(target_delivery
+        .packet_frames
+        .iter()
+        .flatten()
+        .all(|(kind, _)| { *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage }));
     assert!(target_delivery.contains_recursive_green_leaf);
     assert!(
         !target_delivery.contains_recursive_green_branch,
@@ -1649,8 +1643,9 @@ fn nested_local_edit_preempts_legacy_parse_and_installs_exact_recursive_green_de
 }
 
 #[test]
-fn small_nested_edit_clean_fallback_publishes_recursive_green_snapshot() {
+fn small_nested_edit_uses_bounded_recursive_green_local_adoption() {
     const SOURCE: &str = "- a\n  > **b** and _c_\n  ```\n  code\n  ```\n- **d**\n";
+    const MAXIMUM_REPLACEMENT_RECORDS: u32 = 64;
     let profile = SourceFactsScanProfile::new(4).expect("dense test profile");
     let parser_profile = ParserProfileId::new(1).expect("parser profile");
     let binding = SessionBinding {
@@ -1698,11 +1693,9 @@ fn small_nested_edit_clean_fallback_publishes_recursive_green_snapshot() {
     let plan = runtime
         .begin_incremental_source_facts(profile, parser_profile, SourceFactsRootLimits::default())
         .expect("plan small nested incremental facts");
-    assert!(
-        endpoint
-            .has_incremental_base_for_plan(&runtime, &plan)
-            .expect("small nested exact-base preflight")
-    );
+    assert!(endpoint
+        .has_incremental_base_for_plan(&runtime, &plan)
+        .expect("small nested exact-base preflight"));
     let witness = complete_incremental_source_facts(&mut runtime);
     let target_lease = runtime
         .snapshot_current_source()
@@ -1728,26 +1721,42 @@ fn small_nested_edit_clean_fallback_publishes_recursive_green_snapshot() {
             CandidatePoll::Pending { transitions: 1 }
         ));
     }
-    assert!(
-        endpoint
-            .recursive_green
-            .ready_update_for(base_delivery.ack, target_source)
-            .is_none()
-    );
+    assert!(endpoint
+        .recursive_green
+        .ready_update_for(base_delivery.ack, target_source)
+        .is_some());
     assert_eq!(
         active_candidate_phase(endpoint.active.as_ref()),
         "AwaitingRecursiveGreenExact"
     );
     let delivery =
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
-    assert_eq!(delivery.offer.mode, PublicationMode::FullSnapshot);
-    assert_eq!(delivery.offer.base_ack, None);
+    assert_eq!(delivery.offer.mode, PublicationMode::ExactBaseDelta);
+    assert_eq!(delivery.offer.base_ack, Some(base_delivery.ack));
+    assert_eq!(delivery.ack.source_version, target_wire_source);
+    assert!(
+        delivery.offer.transferred_record_count < delivery.offer.target_record_count,
+        "local adoption must retain unchanged exact-base records"
+    );
+    let recursive_green_replacement_records = delivery
+        .packet_frames
+        .iter()
+        .flatten()
+        .filter(|(kind, _)| *kind == CandidateSnapshotFrameKind::RecursiveGreenReplacementPage)
+        .map(|(_, records)| *records)
+        .sum::<u32>();
+    assert!(
+        recursive_green_replacement_records > 0
+            && recursive_green_replacement_records <= MAXIMUM_REPLACEMENT_RECORDS,
+        "local adoption must publish a bounded nonempty recursive-Green replacement"
+    );
     assert!(
         delivery
             .packet_frames
             .iter()
             .flatten()
-            .all(|(kind, _)| { *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage })
+            .all(|(kind, _)| *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage),
+        "recursive-Green local adoption must not revive legacy block replacement"
     );
     assert!(delivery.contains_recursive_green_leaf);
     let (owner_kind, _, ancestry) =
@@ -1757,10 +1766,35 @@ fn small_nested_edit_clean_fallback_publishes_recursive_green_snapshot() {
     assert_eq!(
         endpoint.recursive_green_path_receipt(),
         RecursiveGreenPathReceipt {
-            local_adoption_deliveries: 0,
-            clean_fallback_deliveries: 1,
+            local_adoption_deliveries: 1,
+            clean_fallback_deliveries: 0,
         }
     );
+
+    let retained = endpoint
+        .retained
+        .as_ref()
+        .expect("retained small nested target");
+    assert_eq!(
+        retained
+            .publication
+            .descriptor(&runtime)
+            .expect("small nested target descriptor")
+            .source_revision,
+        target_source.revision().get()
+    );
+    assert_eq!(
+        retained
+            .restart
+            .as_ref()
+            .expect("small nested target restart authority")
+            .source(),
+        target_source
+    );
+    drain_candidate_cleanup(&mut endpoint, &mut runtime);
+    assert!(endpoint
+        .has_exact_base_for(&runtime, target_source)
+        .expect("small nested target exact-base continuity"));
 
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
@@ -1774,8 +1808,8 @@ fn initial_large_fence_retains_recursive_green_authority_for_its_first_edit() {
         source.push_str(&format!("line-{ordinal:04}\n"));
     }
     source.push_str("```\n");
-    let edit_start = body_start + source[body_start..].find("line-1250").expect("middle line")
-        + "line-".len();
+    let edit_start =
+        body_start + source[body_start..].find("line-1250").expect("middle line") + "line-".len();
 
     let profile = SourceFactsScanProfile::new(4_096).expect("production scan profile");
     let parser_profile = ParserProfileId::new(1).expect("parser profile");
@@ -1823,11 +1857,7 @@ fn initial_large_fence_retains_recursive_green_authority_for_its_first_edit() {
         .source()
         .current();
     let plan = runtime
-        .begin_incremental_source_facts(
-            profile,
-            parser_profile,
-            SourceFactsRootLimits::default(),
-        )
+        .begin_incremental_source_facts(profile, parser_profile, SourceFactsRootLimits::default())
         .expect("plan large fence SourceFacts replacement");
     assert!(
         endpoint
@@ -1844,13 +1874,7 @@ fn initial_large_fence_retains_recursive_green_authority_for_its_first_edit() {
     host.observe_source_version(target_wire_source)
         .expect("host observes large fence target");
     endpoint
-        .start_incremental(
-            &runtime,
-            target_lease,
-            witness,
-            binding,
-            target_completion,
-        )
+        .start_incremental(&runtime, target_lease, witness, binding, target_completion)
         .expect("start recursive large fence edit");
     assert_eq!(
         active_candidate_phase(endpoint.active.as_ref()),
@@ -1862,12 +1886,13 @@ fn initial_large_fence_retains_recursive_green_authority_for_its_first_edit() {
     assert_eq!(target_delivery.ack.source_version, target_wire_source);
     let (owner_kind, _, _) =
         recursive_green_query_shape(&host, target_wire_source, edit_start, edit_start);
-    assert_eq!(owner_kind, 7, "the edited owner remains a Green fenced code row");
-    assert!(
-        !runtime
-            .commit_persistent_source_facts_delta(target)
-            .expect("target SourceFacts already committed by delivery")
+    assert_eq!(
+        owner_kind, 7,
+        "the edited owner remains a Green fenced code row"
     );
+    assert!(!runtime
+        .commit_persistent_source_facts_delta(target)
+        .expect("target SourceFacts already committed by delivery"));
 
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
@@ -1913,9 +1938,10 @@ fn bullet_list_local_edit_delivers_exact_delta_with_unit_fuel() {
         .cancel_for_edit(&mut runtime)
         .expect("prepare edit cancellation");
     assert!(
-        endpoint
+        !endpoint
             .prepare_bullet_list_local_edit(&runtime, caret..caret, caret_utf16..caret_utf16,)
-            .expect("prepare local list edit")
+            .expect("classify local list edit"),
+        "recursive-Green authority supersedes the legacy list-only preparation lane"
     );
     let target_version = runtime
         .apply_edit(base_version, caret..caret, "🧪")
@@ -1966,7 +1992,7 @@ fn bullet_list_local_edit_delivers_exact_delta_with_unit_fuel() {
         .expect("start local list candidate");
     assert_eq!(
         active_candidate_phase(endpoint.active.as_ref()),
-        "ParsingBulletListLocal"
+        "AwaitingRecursiveGreenExact"
     );
 
     let delivery =
@@ -1979,12 +2005,22 @@ fn bullet_list_local_edit_delivers_exact_delta_with_unit_fuel() {
         target_version
     );
     assert!(
-        delivery
-            .packet_frames
-            .iter()
-            .flatten()
-            .any(|(kind, _)| { *kind == CandidateSnapshotFrameKind::BlockSequenceReplacementPage }),
-        "local list delivery must use the existing exact block-splice stream"
+        delivery.packet_frames.iter().flatten().any(|(kind, _)| {
+            *kind == CandidateSnapshotFrameKind::RecursiveGreenReplacementPage
+        }),
+        "local list delivery must publish its recursive-Green splice"
+    );
+    assert!(delivery
+        .packet_frames
+        .iter()
+        .flatten()
+        .all(|(kind, _)| *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage));
+    assert_eq!(
+        endpoint.recursive_green_path_receipt(),
+        RecursiveGreenPathReceipt {
+            local_adoption_deliveries: 1,
+            clean_fallback_deliveries: 0,
+        }
     );
     assert!(
         endpoint.bullet_list_local_edit.is_none(),
@@ -1993,7 +2029,7 @@ fn bullet_list_local_edit_delivers_exact_delta_with_unit_fuel() {
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
 
-fn started_bullet_list_local_fixture(
+fn started_recursive_green_bullet_edit_fixture(
     document_session: [u32; 4],
 ) -> (
     DocumentRuntime,
@@ -2042,9 +2078,10 @@ fn started_bullet_list_local_fixture(
         .cancel_for_edit(&mut runtime)
         .expect("pre-edit cancellation");
     assert!(
-        endpoint
+        !endpoint
             .prepare_bullet_list_local_edit(&runtime, caret..caret, caret_utf16..caret_utf16,)
-            .expect("prepare cancellation list edit")
+            .expect("classify cancellation list edit"),
+        "recursive-Green authority must bypass the legacy list-only lane"
     );
     runtime
         .apply_edit(base_version, caret..caret, "x")
@@ -2052,11 +2089,9 @@ fn started_bullet_list_local_fixture(
     let plan = runtime
         .begin_incremental_source_facts(profile, parser_profile, SourceFactsRootLimits::default())
         .expect("plan cancellation list facts");
-    assert!(
-        endpoint
-            .has_incremental_base_for_plan(&runtime, &plan)
-            .expect("cancellation local preflight")
-    );
+    assert!(endpoint
+        .has_incremental_base_for_plan(&runtime, &plan)
+        .expect("cancellation local preflight"));
     let witness = complete_incremental_source_facts(&mut runtime);
     let target_lease = runtime
         .snapshot_current_source()
@@ -2069,7 +2104,7 @@ fn started_bullet_list_local_fixture(
         .expect("start cancellation local candidate");
     assert_eq!(
         active_candidate_phase(endpoint.active.as_ref()),
-        "ParsingBulletListLocal"
+        "AwaitingRecursiveGreenExact"
     );
     (runtime, endpoint, host, base_version, caret, caret_utf16)
 }
@@ -2077,12 +2112,12 @@ fn started_bullet_list_local_fixture(
 #[test]
 fn bullet_list_local_edit_cancellation_restores_base_across_pipeline_phases() {
     for (case, phase) in [
-        ([101, 102, 103, 104], "ParsingBulletListLocal"),
+        ([101, 102, 103, 104], "AwaitingRecursiveGreenExact"),
         ([111, 112, 113, 114], "BuildingExact"),
         ([121, 122, 123, 124], "Streaming"),
     ] {
         let (mut runtime, mut endpoint, mut host, base, caret, caret_utf16) =
-            started_bullet_list_local_fixture(case);
+            started_recursive_green_bullet_edit_fixture(case);
         for _ in 0..100_000 {
             if active_candidate_phase(endpoint.active.as_ref()) == phase {
                 break;
@@ -2112,22 +2147,21 @@ fn bullet_list_local_edit_cancellation_restores_base_across_pipeline_phases() {
             .expect("edit cancellation restores exact base");
         assert!(endpoint.active.is_none());
         assert!(endpoint.retained.is_some());
-        assert!(endpoint.bullet_list_local_edit.is_some());
-        assert!(
-            endpoint
-                .has_exact_base_for(&runtime, base)
-                .expect("restored exact base remains eligible during target cleanup")
-        );
+        assert!(endpoint.bullet_list_local_edit.is_none());
+        assert!(endpoint
+            .has_exact_base_for(&runtime, base)
+            .expect("restored exact base remains eligible during target cleanup"));
 
-        if phase == "ParsingBulletListLocal" {
+        if phase == "AwaitingRecursiveGreenExact" {
             assert!(
-                endpoint
+                !endpoint
                     .prepare_bullet_list_local_edit(
                         &runtime,
                         caret..caret,
                         caret_utf16..caret_utf16,
                     )
-                    .expect("preserve cumulative local island")
+                    .expect("classify restored local edit"),
+                "restored recursive-Green authority must remain off the legacy list lane"
             );
             endpoint.cancel().expect("normal cancel");
             assert!(
@@ -2135,11 +2169,9 @@ fn bullet_list_local_edit_cancellation_restores_base_across_pipeline_phases() {
                 "normal cancellation must discard rolling local authority"
             );
         } else if phase == "BuildingExact" {
-            assert!(
-                !endpoint
-                    .prepare_bullet_list_local_edit(&runtime, 3..3, 3..3)
-                    .expect("outside-island preparation")
-            );
+            assert!(!endpoint
+                .prepare_bullet_list_local_edit(&runtime, 3..3, 3..3)
+                .expect("outside-island preparation"));
             assert!(
                 endpoint.bullet_list_local_edit.is_none(),
                 "outside-island preparation must drop rolling authority"
@@ -2166,11 +2198,9 @@ fn active_candidate_phase(active: Option<&ActiveCandidate>) -> &'static str {
 }
 
 fn push_test_frame(builder: &mut PacketBuilder, ordinal: u32, byte_len: usize) {
-    assert!(
-        builder
-            .can_accept(byte_len, MAXIMUM_PACKET_ENCODED_BYTES)
-            .expect("bounded packet metric")
-    );
+    assert!(builder
+        .can_accept(byte_len, MAXIMUM_PACKET_ENCODED_BYTES)
+        .expect("bounded packet metric"));
     builder
         .push(
             ordinal,
@@ -2692,22 +2722,20 @@ fn deliver_viewport_presentation_with_unit_fuel(
                         outcome => panic!("unexpected viewport packet outcome: {outcome:?}"),
                     }
                 };
-                assert!(
-                    endpoint
-                        .handle_viewport_presentation_host_poll(
-                            event_id,
-                            packet_offer_id,
-                            ViewportPresentationHostPollPhase::PacketCredit,
-                            ViewportPresentationHostPollResult::Completed(
-                                ViewportPresentationHostPollOutcome::PacketCredit {
-                                    offer_id: credited_offer_id,
-                                    next_frame_ordinal: credited_next_frame_ordinal,
-                                },
-                            ),
-                        )
-                        .expect("accept exact viewport packet credit")
-                        .is_none()
-                );
+                assert!(endpoint
+                    .handle_viewport_presentation_host_poll(
+                        event_id,
+                        packet_offer_id,
+                        ViewportPresentationHostPollPhase::PacketCredit,
+                        ViewportPresentationHostPollResult::Completed(
+                            ViewportPresentationHostPollOutcome::PacketCredit {
+                                offer_id: credited_offer_id,
+                                next_frame_ordinal: credited_next_frame_ordinal,
+                            },
+                        ),
+                    )
+                    .expect("accept exact viewport packet credit")
+                    .is_none());
                 assert!(
                     endpoint.has_poll_work(),
                     "accepted packet credit must wake the next packet or commit"
@@ -2900,6 +2928,10 @@ Tap any block to move the live editor, then start typing.";
     endpoint
         .request_viewport_inline_batch(&runtime, viewport_command(2))
         .expect("accepted checkpoint viewport");
+    let initial_parser_transitions = match endpoint.viewport_inline_batch.as_ref() {
+        Some(ViewportInlineBatchState::Running(running)) => running.total_parser_transitions,
+        _ => panic!("accepted checkpoint viewport must begin in the running phase"),
+    };
 
     let mut preparation_polls = 0_usize;
     let mut preparation_transitions = 0_usize;
@@ -2911,8 +2943,9 @@ Tap any block to move the live editor, then start typing.";
                 assert_eq!(ready.total_ready_roots, 5);
                 assert_eq!(
                     ready.total_parser_transitions,
-                    u64::try_from(preparation_transitions)
-                        .expect("bounded preparation transitions")
+                    initial_parser_transitions
+                        + u64::try_from(preparation_transitions)
+                            .expect("bounded preparation transitions")
                 );
                 assert!(ready.total_parser_transitions < 10_000);
                 break;
@@ -3060,7 +3093,7 @@ fn viewport_inline_batch_publishes_twenty_four_children_then_post_begin_point_wa
 
     let limits = ViewportInlineBatchLimits {
         maximum_structural_entries: 47,
-        maximum_storage_pages: 2,
+        maximum_storage_pages: 25,
         maximum_inline_leaves: PARAGRAPHS as u32,
         maximum_inline_leaf_source_bytes: 8 * 1024,
         maximum_inline_source_bytes: 8 * 1024,
@@ -3085,9 +3118,7 @@ fn viewport_inline_batch_publishes_twenty_four_children_then_post_begin_point_wa
     truncated_end.end_utf16_offset = truncated_end.end_utf16_offset.saturating_sub(1);
     assert!(matches!(
         endpoint.request_viewport_inline_batch(&runtime, truncated_end),
-        Err(CandidateEndpointError::Derive(
-            M11CandidateDerivationError::ResultRangeMismatch
-        ))
+        Err(CandidateEndpointError::InvalidAuthority)
     ));
     assert!(endpoint.viewport_inline_batch.is_none());
     let mut one_byte_leaf_limit = command(1);
@@ -3110,7 +3141,7 @@ fn viewport_inline_batch_publishes_twenty_four_children_then_post_begin_point_wa
         matches!(
             aggregate_source_result,
             Err(CandidateEndpointError::ViewportInlineLimitExceeded(
-                "viewport range budget"
+                "inline source bytes"
             ))
         ),
         "unexpected aggregate source bound result: {aggregate_source_result:?}",
@@ -3129,36 +3160,12 @@ fn viewport_inline_batch_publishes_twenty_four_children_then_post_begin_point_wa
     blank_only.limits.maximum_inline_source_bytes = 1;
     blank_only.limits.maximum_fact_records = 1;
     blank_only.limits.maximum_projection_bytes = 1;
-    blank_only.limits.maximum_parser_transitions = 1;
-    endpoint
-        .request_viewport_inline_batch(&runtime, blank_only)
-        .expect("admit blank-only viewport");
+    blank_only.limits.maximum_storage_pages = 25;
+    blank_only.limits.maximum_parser_transitions = 100_000;
     assert!(matches!(
-        endpoint.viewport_inline_batch,
-        Some(ViewportInlineBatchState::Running(ref running))
-            if running.active.is_none()
-                && running.pending.is_empty()
+        endpoint.request_viewport_inline_batch(&runtime, blank_only),
+        Err(CandidateEndpointError::InvalidAuthority)
     ));
-    let before_blank_ready = runtime.arena_metrics();
-    assert_eq!(
-        endpoint
-            .poll_viewport_inline_batch(&mut runtime, 1)
-            .expect("finish blank-only viewport without reference scan"),
-        0
-    );
-    assert!(matches!(
-        endpoint.viewport_inline_batch,
-        Some(ViewportInlineBatchState::Ready(ref ready))
-            if ready.leaves.is_empty() && ready.total_parser_transitions == 0
-    ));
-    assert_eq!(runtime.arena_metrics(), before_blank_ready);
-    endpoint.cancel_viewport_presentation();
-    assert_eq!(
-        endpoint
-            .poll_viewport_inline_batch(&mut runtime, 1)
-            .expect("close blank-only viewport"),
-        0
-    );
     assert!(endpoint.viewport_inline_batch.is_none());
 
     let mut fact_limited = command(2);
@@ -3286,8 +3293,8 @@ fn viewport_inline_batch_publishes_twenty_four_children_then_post_begin_point_wa
     };
     assert_eq!(ready.command, command(4));
     assert_eq!(ready.descriptor, retained_descriptor);
-    assert_eq!(ready.range_receipt.visited_entries(), 47);
-    assert!(ready.range_receipt.storage_pages_visited() <= 2);
+    assert_eq!(ready.range_receipt.visited_entries(), PARAGRAPHS as u64);
+    assert!(ready.range_receipt.storage_pages_visited() <= u64::from(limits.maximum_storage_pages));
     assert_eq!(
         ready.range_receipt.next_byte_offset(),
         u64::try_from(source.len()).expect("bounded source")
@@ -3305,7 +3312,7 @@ fn viewport_inline_batch_publishes_twenty_four_children_then_post_begin_point_wa
     let mut unsupported = 0_usize;
     for (index, leaf) in ready.leaves.iter().enumerate() {
         assert_eq!(leaf.geometry.kind, M11BlockSequenceEntryKind::Paragraph);
-        assert_eq!(leaf.geometry.entry_ordinal, (index * 2) as u64);
+        assert_eq!(leaf.geometry.entry_ordinal, index as u64);
         assert_eq!(
             leaf.geometry.block_source.start,
             paragraph_starts[index] as u32
@@ -3367,43 +3374,12 @@ fn viewport_inline_batch_publishes_twenty_four_children_then_post_begin_point_wa
 
     let mut transition_limited = command(5);
     transition_limited.limits.maximum_parser_transitions = 1;
-    endpoint
-        .request_viewport_inline_batch(&runtime, transition_limited)
-        .expect("start transition-limited viewport batch");
-    let mut observed_transition_limit = false;
-    for _ in 0..1_000_000 {
-        match endpoint
-            .poll(&mut runtime, 1)
-            .expect("transition-limited viewport remains attempt-local")
-        {
-            CandidatePoll::Pending { transitions } => {
-                assert_eq!(
-                    transitions, 1,
-                    "active bounded viewport work must never yield zero progress"
-                );
-            }
-            CandidatePoll::ViewportPresentationUnavailable {
-                transitions,
-                viewport_generation,
-                reason,
-            } => {
-                assert!(transitions <= 1);
-                assert_eq!(viewport_generation, 5);
-                assert_eq!(
-                    reason,
-                    ViewportPresentationUnavailableReason::BudgetExceeded
-                );
-                observed_transition_limit = true;
-                break;
-            }
-            CandidatePoll::ViewportPresentationEvent { .. }
-            | CandidatePoll::Event { .. }
-            | CandidatePoll::HotInlineEvent { .. } => {
-                panic!("transition-limited viewport must fail before publication")
-            }
-        }
-    }
-    assert!(observed_transition_limit);
+    assert!(matches!(
+        endpoint.request_viewport_inline_batch(&runtime, transition_limited),
+        Err(CandidateEndpointError::ViewportInlineLimitExceeded(
+            "recursive-Green viewport range budget"
+        ))
+    ));
     assert!(endpoint.viewport_inline_batch.is_none());
     assert!(endpoint.pending_viewport_unavailable.is_none());
 
@@ -4048,11 +4024,9 @@ fn length_changing_direct_link_edit_before_late_references_recertifies_inline() 
     let plan = runtime
         .begin_incremental_source_facts(profile, parser_profile, SourceFactsRootLimits::default())
         .expect("plan direct-link SourceFacts");
-    assert!(
-        endpoint
-            .has_incremental_base_for_plan(&runtime, &plan)
-            .expect("preflight direct-link exact base")
-    );
+    assert!(endpoint
+        .has_incremental_base_for_plan(&runtime, &plan)
+        .expect("preflight direct-link exact base"));
     let witness = complete_incremental_source_facts(&mut runtime);
     let target_lease = runtime
         .snapshot_current_source()
@@ -4222,30 +4196,80 @@ fn block_quote_request_reaches_typed_sidecar_and_reclaims_with_unit_fuel() {
         target: InlineRefinementTarget::Automatic,
     };
 
+    if endpoint
+        .recursive_green
+        .has_installed_session_for(delivery.ack)
+    {
+        let point = SOURCE.find('α').expect("quoted inline point");
+        let point_utf16 = SOURCE[..point].encode_utf16().count();
+        let (owner_kind, range, ancestry) =
+            recursive_green_query_shape(&host, delivery.ack.source_version, point, point_utf16);
+        assert_eq!(owner_kind, 5);
+        assert_eq!(ancestry.first(), Some(&1));
+        assert!(ancestry.contains(&2));
+        assert_eq!(ancestry.last(), Some(&5));
+        let owner_frame =
+            recursive_green_owner_frame(&host, delivery.ack.source_version, point, point_utf16);
+        let green_command = |generation: u32| InlineRefinementCommand {
+            byte_offset: u32::try_from(point).expect("quoted byte point"),
+            utf16_offset: u32::try_from(point_utf16).expect("quoted UTF-16 point"),
+            ..command(generation)
+        };
+
+        endpoint
+            .request_hot_inline(&mut runtime, green_command(1))
+            .expect("request cancellable Green quote Paragraph");
+        endpoint.cancel_hot_inline();
+        while endpoint.hot_inline_has_poll_work() {
+            assert!(
+                endpoint
+                    .poll_hot_inline(&mut runtime, 1)
+                    .expect("reclaim cancelled Green quote Paragraph")
+                    <= 1
+            );
+        }
+
+        endpoint
+            .request_hot_inline(&mut runtime, green_command(2))
+            .expect("request Green quote Paragraph");
+        let (begin, ack) = deliver_hot_inline_sidecar_to_independent_host_with_unit_fuel(
+            &mut endpoint,
+            &mut runtime,
+            &mut host,
+            80_000,
+        );
+        assert_eq!(
+            begin.binding.owner(),
+            Some(HotInlineSidecarOwner::RecursiveGreenFrame(owner_frame))
+        );
+        let point = u32::try_from(point).expect("quoted byte point");
+        assert!(begin.binding.physical_start_utf8 <= point);
+        assert!(point < begin.binding.physical_end_utf8);
+        assert!(begin.binding.physical_start_utf8 >= range[0]);
+        assert!(begin.binding.physical_end_utf8 >= range[1]);
+        assert!(matches!(
+            begin.envelope.disposition,
+            HotInlineSidecarDisposition::Unsupported {
+                reason: HOT_INLINE_UNSUPPORTED_NOT_INLINE_LEAF,
+                ..
+            }
+        ));
+        assert_eq!(ack.disposition, InlineSidecarAckDisposition::Unsupported);
+        close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
+        return;
+    }
+
     endpoint
         .request_hot_inline(&mut runtime, command(1))
         .expect("first block-quote demand");
-    assert!(matches!(
-        endpoint
-            .poll(&mut runtime, 1)
-            .expect("bounded block-quote projection"),
-        CandidatePoll::Pending { transitions } if transitions <= 1
-    ));
-    assert!(
-        endpoint.hot_inline_sidecar.is_none(),
-        "one transition cannot publish a multi-line projection"
-    );
     endpoint.cancel_hot_inline();
-    for _ in 0..100_000 {
-        if !endpoint.hot_inline_has_poll_work() {
-            break;
-        }
-        assert!(matches!(
+    while endpoint.hot_inline_has_poll_work() {
+        assert!(
             endpoint
-                .poll(&mut runtime, 1)
-                .expect("fuelled block-quote cancellation"),
-            CandidatePoll::Pending { transitions } if transitions <= 1
-        ));
+                .poll_hot_inline(&mut runtime, 1)
+                .expect("reclaim cancelled Green block quote")
+                <= 1
+        );
     }
     assert!(!endpoint.hot_inline_has_poll_work());
 
@@ -4554,6 +4578,66 @@ fn ordered_item_targets_preserve_exact_metadata_and_fail_closed_across_lifecycle
     };
     let middle = SOURCE.find("**bold**").expect("ordered middle content") + 2;
 
+    if endpoint
+        .recursive_green
+        .has_installed_session_for(delivery.ack)
+    {
+        let (owner_kind, _, ancestry) = recursive_green_query_shape(
+            &host,
+            delivery.ack.source_version,
+            middle,
+            SOURCE[..middle].encode_utf16().count(),
+        );
+        assert_eq!(owner_kind, 5);
+        assert_eq!(ancestry, vec![1, 3, 4, 5]);
+        for (generation, target) in [
+            (1, InlineRefinementTarget::BulletListItemProjection),
+            (2, InlineRefinementTarget::OrderedListItemProjection),
+            (3, InlineRefinementTarget::OrderedListItemInline),
+        ] {
+            endpoint
+                .request_hot_inline(&mut runtime, command(generation, middle, target))
+                .expect("legacy list target becomes typed unsupported on Green authority");
+            let (begin, ack) = deliver_hot_inline_sidecar_to_independent_host_with_unit_fuel(
+                &mut endpoint,
+                &mut runtime,
+                &mut host,
+                75_000,
+            );
+            assert!(matches!(
+                begin.envelope.disposition,
+                HotInlineSidecarDisposition::Unsupported {
+                    reason: HOT_INLINE_UNSUPPORTED_LEGACY_BLOCK_TARGET,
+                    ..
+                }
+            ));
+            assert_eq!(ack.disposition, InlineSidecarAckDisposition::Unsupported);
+        }
+        let mut stale = command(4, middle, InlineRefinementTarget::OrderedListItemProjection);
+        stale.source_version.revision += 1;
+        assert!(matches!(
+            endpoint.request_hot_inline(&mut runtime, stale),
+            Err(CandidateEndpointError::InvalidAuthority)
+        ));
+        endpoint
+            .request_hot_inline(
+                &mut runtime,
+                command(4, middle, InlineRefinementTarget::OrderedListItemProjection),
+            )
+            .expect("request cancellable typed unsupported target");
+        endpoint.cancel_hot_inline();
+        while endpoint.hot_inline_has_poll_work() {
+            assert!(
+                endpoint
+                    .poll_hot_inline(&mut runtime, 1)
+                    .expect("reclaim cancelled ordered target")
+                    <= 1
+            );
+        }
+        close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
+        return;
+    }
+
     assert!(matches!(
         endpoint.request_hot_inline(
             &mut runtime,
@@ -4775,137 +4859,242 @@ fn ordered_item_targets_preserve_exact_metadata_and_fail_closed_across_lifecycle
 }
 
 #[test]
-fn terminal_empty_bullet_item_projection_preserves_physical_or_predecessor_ending() {
-    const ITEM_RECORD_BYTES: usize = 28;
-    const COMPACT_METADATA_BYTES: usize = 8;
-    const TERMINAL_VIEWPORT_BYTES: usize = 268;
-    for (case, source, expected_item_bytes, expected_ending) in [
-        (0_u32, "- alpha\n-   \n", 5_u32, 1_u8),
-        (1, "- alpha\n-   ", 4, 1),
-        (2, "- alpha\r\n-   ", 4, 2),
-    ] {
-        let profile = SourceFactsScanProfile::new(8).expect("test profile");
-        let parser_profile = ParserProfileId::new(1).expect("parser profile");
-        let binding = SessionBinding {
-            document_session: [746, 747, 748, 749 + case],
-            source_session_identity: 750 + case,
-            worker_generation: 1,
-        };
-        let mut runtime =
-            DocumentRuntime::new(source, standard_document_runtime_config()).expect("runtime");
-        let (certified, completion) =
-            complete_clean_source_facts(&mut runtime, profile, parser_profile, 1, 0);
-        let mut endpoint = CandidateEndpoint::new();
-        endpoint
-            .start(certified, binding, completion)
-            .expect("start segmented candidate");
-        let mut host = NativeCandidateHost::new(HostConfig {
-            document_session: binding.document_session,
-            grammar_revision: GRAMMAR_REVISION,
-            syntax_profile: 1,
-            authority_mask: AUTHORITY_MASK_ALL_ROLES,
-            maximum_query_bytes: 64 * 1024,
-        })
-        .expect("independent host");
-        host.observe_source_version(source_version_for(binding, completion))
-            .expect("host observes source");
-        let delivery = deliver_endpoint_to_independent_host_with_unit_fuel(
-            &mut endpoint,
-            &mut runtime,
-            &mut host,
-        );
-        drain_candidate_cleanup(&mut endpoint, &mut runtime);
+fn terminal_empty_list_item_reaches_host_as_marker_free_editable_row() {
+    const SOURCE: &str = "- alpha\n-   ";
+    let profile = SourceFactsScanProfile::new(8).expect("test profile");
+    let parser_profile = ParserProfileId::new(1).expect("parser profile");
+    let binding = SessionBinding {
+        document_session: [746, 747, 748, 749],
+        source_session_identity: 750,
+        worker_generation: 1,
+    };
+    let mut runtime =
+        DocumentRuntime::new(SOURCE, standard_document_runtime_config()).expect("runtime");
+    let (certified, completion) =
+        complete_clean_source_facts(&mut runtime, profile, parser_profile, 1, 0);
+    let mut endpoint = CandidateEndpoint::new();
+    endpoint
+        .start(certified, binding, completion)
+        .expect("start terminal-empty candidate");
+    let mut host = NativeCandidateHost::new(HostConfig {
+        document_session: binding.document_session,
+        grammar_revision: GRAMMAR_REVISION,
+        syntax_profile: 1,
+        authority_mask: AUTHORITY_MASK_ALL_ROLES,
+        maximum_query_bytes: 64 * 1024,
+    })
+    .expect("terminal-empty host");
+    host.observe_source_version(source_version_for(binding, completion))
+        .expect("host observes terminal-empty source");
+    let delivery =
+        deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
+    drain_candidate_cleanup(&mut endpoint, &mut runtime);
 
-        let item_start = source.rfind("-   ").expect("terminal marker-only item");
-        endpoint
-            .request_hot_inline(
-                &mut runtime,
-                InlineRefinementCommand {
-                    binding,
-                    refinement_generation: 1,
-                    source_version: delivery.ack.source_version,
-                    base_ack: delivery.ack,
-                    byte_offset: (item_start + 1) as u32,
-                    utf16_offset: (item_start + 1) as u32,
-                    affinity: InlinePointAffinity::After,
-                    target: InlineRefinementTarget::BulletListItemProjection,
+    let eof_bytes = SOURCE.len() as u64;
+    let eof_utf16 = SOURCE.encode_utf16().count() as u64;
+    let rows = endpoint
+        .recursive_green
+        .installed_session(delivery.ack)
+        .expect("terminal-empty Green session remains current")
+        .query_renderable_rows(
+            &runtime,
+            M11RecursiveGreenPoint::new(0, 0, SourceBoundaryAffinity::After),
+            eof_bytes,
+            M11RecursiveGreenRowQueryLimits::new(8, 25, 512, 16, 512)
+                .expect("terminal-empty row limits"),
+        )
+        .expect("query terminal-empty rows");
+    assert!(rows.complete());
+    assert_eq!(rows.rows().len(), 2);
+    assert_eq!(rows.rows()[0].kind().get(), 5);
+    let first_physical = rows.rows()[0].physical_range();
+    let first_physical_utf16 = rows.rows()[0].physical_utf16_range();
+    let empty = &rows.rows()[1];
+    assert_eq!(empty.kind().get(), 14);
+    assert_eq!(empty.physical_range(), eof_bytes..eof_bytes);
+    assert_eq!(empty.physical_utf16_range(), eof_utf16..eof_utf16);
+    assert_eq!(empty.editable_range(), Some(eof_bytes..eof_bytes));
+    assert_eq!(empty.editable_utf16_range(), Some(eof_utf16..eof_utf16));
+    assert_eq!(
+        empty
+            .path()
+            .iter()
+            .map(|frame| frame.kind().get())
+            .collect::<Vec<_>>(),
+        vec![1, 3, 4, 14]
+    );
+    let list = empty.path()[1]
+        .property()
+        .expect("terminal row retains List facts");
+    assert_eq!(list.tag().get(), 1);
+    assert_eq!(&list.as_bytes()[..2], &[1, b'-']);
+    let item = empty.path()[2]
+        .property()
+        .expect("terminal row retains Item facts");
+    assert_eq!(item.tag().get(), 2);
+    let item_start = SOURCE.rfind("-   ").expect("terminal marker-only item") as u64;
+    assert_eq!(empty.path()[2].physical_range(), item_start..eof_bytes);
+
+    let (owner_kind, point_range, point_ancestry) = recursive_green_query_shape(
+        &host,
+        delivery.ack.source_version,
+        eof_bytes as usize,
+        eof_utf16 as usize,
+    );
+    assert_eq!(owner_kind, 14, "EOF selects the terminal-empty row");
+    assert_eq!(
+        point_range,
+        [
+            eof_bytes as u32,
+            eof_bytes as u32,
+            eof_utf16 as u32,
+            eof_utf16 as u32,
+        ]
+    );
+    assert_eq!(point_ancestry, vec![1, 3, 4, 14]);
+
+    let requested_range = HostMetricRange {
+        start: HostSourceMetric { bytes: 0, utf16: 0 },
+        end: HostSourceMetric {
+            bytes: eof_bytes as u32,
+            utf16: eof_utf16 as u32,
+        },
+    };
+    let mut encoded_rows = vec![0xa5_u8; 16 * 1024];
+    let HostBlockRangeOutcome::Page {
+        covered_range,
+        continuation,
+        receipt,
+        ..
+    } = host
+        .query_structural_range(
+            HostBlockRangeQuery {
+                source_version: delivery.ack.source_version,
+                requested_range,
+                budget: HostBlockRangeBudget {
+                    maximum_encoded_bytes: encoded_rows.len() as u32,
+                    maximum_block_count: 8,
+                    maximum_storage_pages_visited: 25,
+                    maximum_open_depth: 16,
+                    maximum_tree_nodes_visited: 512,
                 },
-            )
-            .expect("request terminal selected-item projection");
-        let (begin, ack) = deliver_hot_inline_sidecar_to_independent_host_with_unit_fuel(
-            &mut endpoint,
-            &mut runtime,
-            &mut host,
-            77_000 + case * 1_000,
-        );
-        assert_eq!(ack.disposition, InlineSidecarAckDisposition::Authoritative);
-        assert_eq!(begin.binding.visible_start_utf8, item_start as u32);
-        assert_eq!(begin.binding.visible_end_utf8, source.len() as u32);
+                continuation: None,
+            },
+            &mut encoded_rows,
+        )
+        .expect("query terminal-empty row directory")
+    else {
+        panic!("terminal-empty rows must reach the independent host");
+    };
+    assert_eq!(covered_range, requested_range);
+    assert!(continuation.is_none());
+    assert!(receipt.complete);
+    assert_eq!(receipt.block_count, 2);
+    assert_eq!(
+        receipt.encoded_bytes as usize,
+        HOST_RECURSIVE_GREEN_ROW_RANGE_HEADER_BYTES
+            + 2 * HOST_RECURSIVE_GREEN_ROW_RECORD_BYTES
+            + 8 * HOST_RECURSIVE_GREEN_ROW_PATH_RECORD_BYTES
+    );
+    let read_u16 = |offset: usize| {
+        u16::from_le_bytes(
+            encoded_rows[offset..offset + 2]
+                .try_into()
+                .expect("wire u16"),
+        )
+    };
+    let read_u32 = |offset: usize| {
+        u32::from_le_bytes(
+            encoded_rows[offset..offset + 4]
+                .try_into()
+                .expect("wire u32"),
+        )
+    };
+    let empty_record =
+        HOST_RECURSIVE_GREEN_ROW_RANGE_HEADER_BYTES + HOST_RECURSIVE_GREEN_ROW_RECORD_BYTES;
+    assert_eq!(read_u16(empty_record + 16), 14);
+    assert_eq!(
+        (
+            read_u32(empty_record + 32),
+            read_u32(empty_record + 36),
+            read_u32(empty_record + 40),
+            read_u32(empty_record + 44),
+        ),
+        (
+            eof_bytes as u32,
+            eof_utf16 as u32,
+            eof_bytes as u32,
+            eof_utf16 as u32
+        )
+    );
+    assert_eq!(
+        (
+            read_u32(empty_record + 48),
+            read_u32(empty_record + 52),
+            read_u32(empty_record + 56),
+            read_u32(empty_record + 60),
+        ),
+        (
+            eof_bytes as u32,
+            eof_utf16 as u32,
+            eof_bytes as u32,
+            eof_utf16 as u32
+        )
+    );
 
-        let mut compact = [0_u8; ITEM_RECORD_BYTES];
-        let compact_query = host
-            .query_inline_sidecar(begin.binding, &mut compact)
-            .expect("query terminal compact sidecar");
+    endpoint
+        .request_viewport_inline_batch(
+            &runtime,
+            ViewportInlineBatchCommand {
+                binding,
+                viewport_generation: 1,
+                source_version: delivery.ack.source_version,
+                base_ack: delivery.ack,
+                start_entry_ordinal: rows.start_ordinal(),
+                start_byte_offset: first_physical.start as u32,
+                start_utf16_offset: first_physical_utf16.start as u32,
+                end_byte_offset: eof_bytes as u32,
+                end_utf16_offset: eof_utf16 as u32,
+                limits: ViewportInlineBatchLimits {
+                    maximum_structural_entries: 2,
+                    maximum_storage_pages: 25,
+                    maximum_inline_leaves: 1,
+                    maximum_inline_leaf_source_bytes: 64,
+                    maximum_inline_source_bytes: 64,
+                    maximum_fact_records: 64,
+                    maximum_projection_bytes: 64 * 1024,
+                    maximum_parser_transitions: 10_000,
+                },
+            },
+        )
+        .expect("request terminal-empty viewport");
+    for _ in 0..10_000 {
+        if matches!(
+            endpoint.viewport_inline_batch,
+            Some(ViewportInlineBatchState::Ready(_))
+        ) {
+            break;
+        }
         assert!(
-            matches!(
-                &compact_query,
-                HostInlineSidecarQueryOutcome::Authoritative {
-                    fact_count: 1,
-                    encoded_bytes,
-                    ..
-                } if *encoded_bytes == ITEM_RECORD_BYTES as u32
-            ),
-            "unexpected terminal compact query: {compact_query:?}"
+            endpoint
+                .poll_viewport_inline_batch(&mut runtime, 1)
+                .expect("poll terminal-empty viewport")
+                <= 1
         );
-        assert_eq!(
-            u32::from_le_bytes(compact[4..8].try_into().unwrap()),
-            expected_item_bytes
-        );
-        assert_eq!(u32::from_le_bytes(compact[20..24].try_into().unwrap()), 0);
-        assert_eq!(u32::from_le_bytes(compact[24..28].try_into().unwrap()), 0);
-
-        let mut viewport = [0xa5_u8; TERMINAL_VIEWPORT_BYTES];
-        let HostStructuralQueryOutcome::Viewport { receipt, .. } = host
-            .query_structural(
-                HostPointQuery {
-                    source_version: delivery.ack.source_version,
-                    position: HostSourceMetric {
-                        bytes: source.len() as u32,
-                        utf16: source.len() as u32,
-                    },
-                    affinity: HostMetricAffinity::Downstream,
-                    budget: HostQueryBudget {
-                        maximum_encoded_bytes: TERMINAL_VIEWPORT_BYTES as u32,
-                        maximum_open_depth: 3,
-                        maximum_leaf_count: 8,
-                        maximum_tree_nodes_visited: 256,
-                    },
-                },
-                &mut viewport,
-            )
-            .expect("query terminal compact viewport")
-        else {
-            panic!("terminal selected item must join the structural list");
-        };
-        assert_eq!(receipt.encoded_bytes, TERMINAL_VIEWPORT_BYTES as u32);
-        assert_eq!(u32::from_le_bytes(viewport[8..12].try_into().unwrap()), 6);
-        assert_eq!(u16::from_le_bytes(viewport[20..22].try_into().unwrap()), 2);
-        assert_eq!(viewport[22], 5);
-        let payload = TERMINAL_VIEWPORT_BYTES - COMPACT_METADATA_BYTES - ITEM_RECORD_BYTES;
-        assert_eq!(
-            u32::from_le_bytes(viewport[payload..payload + 4].try_into().unwrap()),
-            1
-        );
-        assert_eq!(
-            viewport[payload + 4],
-            expected_ending,
-            "EOF must inherit the immediate predecessor's authenticated ending"
-        );
-        assert_eq!(&viewport[payload + 5..payload + 8], &[0; 3]);
-        assert_eq!(&viewport[payload + COMPACT_METADATA_BYTES..], &compact);
-
-        close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
     }
+    let Some(ViewportInlineBatchState::Ready(ready)) = endpoint.viewport_inline_batch.as_ref()
+    else {
+        panic!("terminal-empty viewport did not become ready");
+    };
+    assert_eq!(ready.range_receipt.visited_entries(), 2);
+    assert_eq!(ready.leaves.len(), 1, "the empty row needs no HIO1 child");
+    assert_eq!(ready.total_ready_roots, 1);
+    let (_, _, authoritative, unsupported, closures) =
+        deliver_viewport_presentation_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
+    assert_eq!(authoritative + unsupported, 1);
+    assert_eq!(closures, 1);
+
+    close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
 
 #[test]
@@ -4967,6 +5156,78 @@ fn bullet_list_request_reaches_typed_sidecar_and_selected_item_path() {
         affinity: InlinePointAffinity::After,
         target: InlineRefinementTarget::Automatic,
     };
+    if endpoint
+        .recursive_green
+        .has_installed_session_for(delivery.ack)
+    {
+        let (owner_kind, range, ancestry) =
+            recursive_green_query_shape(&host, delivery.ack.source_version, 20, 15);
+        assert_eq!(owner_kind, 5);
+        assert_eq!(ancestry, vec![1, 3, 4, 5]);
+        let owner_frame = recursive_green_owner_frame(&host, delivery.ack.source_version, 20, 15);
+        endpoint
+            .request_hot_inline(&mut runtime, command(1))
+            .expect("request cancellable Green list Paragraph");
+        endpoint.cancel_hot_inline();
+        while endpoint.hot_inline_has_poll_work() {
+            assert!(
+                endpoint
+                    .poll_hot_inline(&mut runtime, 1)
+                    .expect("reclaim cancelled Green list Paragraph")
+                    <= 1
+            );
+        }
+        endpoint
+            .request_hot_inline(&mut runtime, command(2))
+            .expect("request Green list Paragraph");
+        let (begin, ack) = deliver_hot_inline_sidecar_to_independent_host_with_unit_fuel(
+            &mut endpoint,
+            &mut runtime,
+            &mut host,
+            80_000,
+        );
+        assert_eq!(
+            begin.binding.owner(),
+            Some(HotInlineSidecarOwner::RecursiveGreenFrame(owner_frame))
+        );
+        assert_eq!(begin.binding.physical_start_utf8, range[0]);
+        assert_eq!(begin.binding.physical_end_utf8, range[1] + 1);
+        assert!(matches!(
+            begin.envelope.disposition,
+            HotInlineSidecarDisposition::Authoritative { fact_count: 0, .. }
+        ));
+        assert_eq!(ack.disposition, InlineSidecarAckDisposition::Authoritative);
+        endpoint
+            .request_hot_inline(
+                &mut runtime,
+                InlineRefinementCommand {
+                    refinement_generation: 3,
+                    target: InlineRefinementTarget::BulletListItemProjection,
+                    ..command(3)
+                },
+            )
+            .expect("request typed legacy list target");
+        let (unsupported, unsupported_ack) =
+            deliver_hot_inline_sidecar_to_independent_host_with_unit_fuel(
+                &mut endpoint,
+                &mut runtime,
+                &mut host,
+                80_000,
+            );
+        assert!(matches!(
+            unsupported.envelope.disposition,
+            HotInlineSidecarDisposition::Unsupported {
+                reason: HOT_INLINE_UNSUPPORTED_LEGACY_BLOCK_TARGET,
+                ..
+            }
+        ));
+        assert_eq!(
+            unsupported_ack.disposition,
+            InlineSidecarAckDisposition::Unsupported
+        );
+        close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
+        return;
+    }
     endpoint
         .request_hot_inline(&mut runtime, command(1))
         .expect("first bullet-list demand");
@@ -5263,6 +5524,54 @@ fn bullet_list_nonzero_leaf_root_joins_absolute_selected_item_path() {
     let delivery =
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
+
+    if endpoint
+        .recursive_green
+        .has_installed_session_for(delivery.ack)
+    {
+        let (owner_kind, range, ancestry) =
+            recursive_green_query_shape(&host, delivery.ack.source_version, 23, 18);
+        assert_eq!(owner_kind, 5);
+        assert_eq!(ancestry, vec![1, 3, 4, 5]);
+        assert_eq!(range, [23, SOURCE.len() as u32, 18, 22]);
+        let owner_frame = recursive_green_owner_frame(&host, delivery.ack.source_version, 23, 18);
+        let before_frame = recursive_green_owner_frame(&host, delivery.ack.source_version, 0, 0);
+        assert_ne!(owner_frame, before_frame);
+        endpoint
+            .request_hot_inline(
+                &mut runtime,
+                InlineRefinementCommand {
+                    binding,
+                    refinement_generation: 1,
+                    source_version: delivery.ack.source_version,
+                    base_ack: delivery.ack,
+                    byte_offset: 23,
+                    utf16_offset: 18,
+                    affinity: InlinePointAffinity::After,
+                    target: InlineRefinementTarget::Automatic,
+                },
+            )
+            .expect("nonzero-root Green Paragraph demand");
+        let (begin, ack) = deliver_hot_inline_sidecar_to_independent_host_with_unit_fuel(
+            &mut endpoint,
+            &mut runtime,
+            &mut host,
+            80_000,
+        );
+        assert_eq!(
+            begin.binding.owner(),
+            Some(HotInlineSidecarOwner::RecursiveGreenFrame(owner_frame))
+        );
+        assert_eq!(begin.binding.physical_start_utf8, range[0]);
+        assert_eq!(begin.binding.physical_end_utf8, range[1]);
+        assert!(matches!(
+            begin.envelope.disposition,
+            HotInlineSidecarDisposition::Authoritative { fact_count: 0, .. }
+        ));
+        assert_eq!(ack.disposition, InlineSidecarAckDisposition::Authoritative);
+        close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
+        return;
+    }
 
     endpoint
         .request_hot_inline(
@@ -5579,12 +5888,8 @@ fn atx_heading_reaches_independent_host_and_refines_only_its_content() {
     let inline_end = inline_start + "**β😀**".len();
     let inline_point = inline_start + 2;
     let inline_point_utf16 = SOURCE[..inline_point].encode_utf16().count();
-    let (owner_kind, range, ancestry) = recursive_green_query_shape(
-        &host,
-        source_version,
-        inline_point,
-        inline_point_utf16,
-    );
+    let (owner_kind, range, ancestry) =
+        recursive_green_query_shape(&host, source_version, inline_point, inline_point_utf16);
     assert_eq!(owner_kind, 12, "the active row is a Green Heading");
     assert_eq!(
         range,
@@ -5891,7 +6196,6 @@ fn thematic_break_large_interior_paragraph_transition_stays_exact() {
     const PARAGRAPHS: usize = 4_096;
     const EDITED_PARAGRAPH: usize = PARAGRAPHS / 2;
     const MAXIMUM_TRANSFERRED_RECORDS: u32 = 64;
-    const VIEWPORT_HEADER_BYTES: usize = 20;
     const THEMATIC_SOURCE: &str = "  - - -  \r\n";
 
     let profile = SourceFactsScanProfile::new(4_096).expect("production scan profile");
@@ -5932,7 +6236,7 @@ fn thematic_break_large_interior_paragraph_transition_stays_exact() {
 
     for phase in 0..2 {
         let middle_marker = format!("paragraph {EDITED_PARAGRAPH:04} ");
-        let (edit_range, replacement, expected_middle_variant) = if phase == 0 {
+        let (edit_range, replacement, expected_middle_kind) = if phase == 0 {
             let middle_start = current_source
                 .find(&middle_marker)
                 .expect("middle Paragraph");
@@ -5940,7 +6244,7 @@ fn thematic_break_large_interior_paragraph_transition_stays_exact() {
                 .find('\n')
                 .map(|offset| middle_start + offset + 1)
                 .expect("middle Paragraph line ending");
-            (middle_start..middle_end, THEMATIC_SOURCE.to_owned(), 6_u8)
+            (middle_start..middle_end, THEMATIC_SOURCE.to_owned(), 13_u16)
         } else {
             let middle_start = current_source
                 .find(THEMATIC_SOURCE)
@@ -5951,7 +6255,7 @@ fn thematic_break_large_interior_paragraph_transition_stays_exact() {
                     "paragraph {EDITED_PARAGRAPH:04} replacement {}\n",
                     "z".repeat(24)
                 ),
-                1_u8,
+                5_u16,
             )
         };
         let mut target_source = current_source.clone();
@@ -5994,8 +6298,8 @@ fn thematic_break_large_interior_paragraph_transition_stays_exact() {
             .expect("start thematic-break crop");
         assert_eq!(
             active_candidate_phase(endpoint.active.as_ref()),
-            "ParsingOrdinaryExact",
-            "phase {phase} must use the bounded ordinary crop"
+            "AwaitingRecursiveGreenExact",
+            "phase {phase} must await recursive-Green adoption before selecting its exact route"
         );
         let delivery = deliver_endpoint_to_independent_host_with_unit_fuel(
             &mut endpoint,
@@ -6010,22 +6314,27 @@ fn thematic_break_large_interior_paragraph_transition_stays_exact() {
             delivery.offer.transferred_record_count,
             delivery.offer.target_record_count
         );
-        let block_replacement_records = delivery
+        let recursive_green_replacement_records = delivery
             .packet_frames
             .iter()
             .flatten()
-            .filter(|(kind, _)| *kind == CandidateSnapshotFrameKind::BlockSequenceReplacementPage)
+            .filter(|(kind, _)| *kind == CandidateSnapshotFrameKind::RecursiveGreenReplacementPage)
             .map(|(_, records)| *records)
             .sum::<u32>();
         assert!(
-            block_replacement_records > 0
-                && block_replacement_records <= MAXIMUM_TRANSFERRED_RECORDS,
-            "phase {phase} must publish one bounded structural splice"
+            recursive_green_replacement_records > 0
+                && recursive_green_replacement_records <= MAXIMUM_TRANSFERRED_RECORDS,
+            "phase {phase} must publish one bounded recursive-Green splice"
         );
+        assert!(delivery
+            .packet_frames
+            .iter()
+            .flatten()
+            .all(|(kind, _)| *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage));
 
         for ordinal in [0, EDITED_PARAGRAPH, PARAGRAPHS - 1] {
             let paragraph_marker = format!("paragraph {ordinal:04} ");
-            let block_start = if ordinal == EDITED_PARAGRAPH && expected_middle_variant == 6 {
+            let block_start = if ordinal == EDITED_PARAGRAPH && expected_middle_kind == 13 {
                 target_source
                     .find(THEMATIC_SOURCE)
                     .expect("target thematic break")
@@ -6038,126 +6347,52 @@ fn thematic_break_large_interior_paragraph_transition_stays_exact() {
                 .find('\n')
                 .map(|offset| block_start + offset + 1)
                 .expect("target block line ending");
-            let point = if ordinal == EDITED_PARAGRAPH && expected_middle_variant == 6 {
+            let point = if ordinal == EDITED_PARAGRAPH && expected_middle_kind == 13 {
                 block_start + 2
             } else {
                 block_start + paragraph_marker.len()
             };
-            let mut output = [0_u8; HOST_M11_VIEWPORT_BYTES];
-            let outcome = host
-                .query_structural(
-                    HostPointQuery {
-                        source_version,
-                        position: HostSourceMetric {
-                            bytes: u32::try_from(point).expect("query byte"),
-                            utf16: u32::try_from(target_source[..point].encode_utf16().count())
-                                .expect("query UTF-16"),
-                        },
-                        affinity: HostMetricAffinity::Downstream,
-                        budget: HostQueryBudget {
-                            maximum_encoded_bytes: HOST_M11_VIEWPORT_BYTES as u32,
-                            maximum_open_depth: 64,
-                            maximum_leaf_count: 64,
-                            maximum_tree_nodes_visited: 256,
-                        },
-                    },
-                    &mut output,
-                )
-                .expect("query exact thematic-break target");
-            let HostStructuralQueryOutcome::Viewport { range, receipt, .. } = outcome else {
-                panic!("phase {phase} must expose block {ordinal} exactly: {outcome:?}");
+            let expected_owner_kind = if ordinal == EDITED_PARAGRAPH {
+                expected_middle_kind
+            } else {
+                5
             };
-            assert_eq!(receipt.encoded_bytes, HOST_M11_VIEWPORT_BYTES as u32);
-            assert_eq!(range.start.bytes as usize, block_start);
-            assert_eq!(range.end.bytes as usize, block_end);
+            let semantic_end = if expected_owner_kind == 13 {
+                block_end - 2
+            } else {
+                block_end - 1
+            };
+            let point_utf16 = target_source[..point].encode_utf16().count();
+            let (owner_kind, range, ancestry) =
+                recursive_green_query_shape(&host, source_version, point, point_utf16);
+            assert_eq!(owner_kind, expected_owner_kind);
+            assert_eq!(range[0] as usize, block_start);
+            assert_eq!(range[1] as usize, semantic_end);
             assert_eq!(
-                range.start.utf16 as usize,
+                range[2] as usize,
                 target_source[..block_start].encode_utf16().count()
             );
             assert_eq!(
-                range.end.utf16 as usize,
-                target_source[..block_end].encode_utf16().count()
+                range[3] as usize,
+                target_source[..semantic_end].encode_utf16().count()
             );
-            let green = &output[VIEWPORT_HEADER_BYTES..VIEWPORT_HEADER_BYTES + 80];
-            let projection = &output[VIEWPORT_HEADER_BYTES + 80..];
-            let expected_variant = if ordinal == EDITED_PARAGRAPH {
-                expected_middle_variant
-            } else {
-                1
-            };
-            assert_eq!(green[12], expected_variant);
-            assert_eq!(projection[12], expected_variant);
-            for record in [green, projection] {
-                assert_eq!(
-                    u64::from_le_bytes(record[16..24].try_into().unwrap()),
-                    block_start as u64
-                );
-                assert_eq!(
-                    u64::from_le_bytes(record[24..32].try_into().unwrap()),
-                    block_end as u64
-                );
-            }
-            if expected_variant == 6 {
-                assert_eq!(
-                    u64::from_le_bytes(green[32..40].try_into().unwrap()),
-                    block_start as u64
-                );
-                assert_eq!(
-                    u64::from_le_bytes(green[40..48].try_into().unwrap()),
-                    block_start as u64
-                );
-                assert_eq!(u64::from_le_bytes(green[48..56].try_into().unwrap()), 0x22d);
-                assert_eq!(
-                    u32::from_le_bytes(green[56..60].try_into().unwrap()) as usize,
-                    block_start + 2
-                );
-                assert_eq!(
-                    u32::from_le_bytes(green[60..64].try_into().unwrap()) as usize,
-                    block_start + 7
-                );
-                assert_eq!(
-                    u32::from_le_bytes(green[64..68].try_into().unwrap()) as usize,
-                    block_start + 9
-                );
-                assert_eq!(
-                    u32::from_le_bytes(green[68..72].try_into().unwrap()) as usize,
-                    block_end
-                );
-                assert_eq!(u64::from_le_bytes(green[72..80].try_into().unwrap()), 3);
-                assert_eq!(
-                    u64::from_le_bytes(projection[32..40].try_into().unwrap()),
-                    block_start as u64
-                );
-                assert_eq!(
-                    u64::from_le_bytes(projection[40..48].try_into().unwrap()),
-                    block_start as u64
-                );
-                assert_eq!(
-                    u64::from_le_bytes(projection[48..56].try_into().unwrap()),
-                    0
-                );
-            }
+            assert_eq!(ancestry.first(), Some(&1));
+            assert_eq!(ancestry.last(), Some(&expected_owner_kind));
         }
 
         let retained = endpoint
             .retained
             .as_ref()
             .expect("retained thematic-break target");
-        let CandidateRestartAuthority::Ordinary(checkpoints) = retained
-            .restart
-            .as_ref()
-            .expect("thematic-break restart authority")
-        else {
-            panic!("thematic-break phase must retain ordinary target checkpoints");
-        };
-        assert_eq!(checkpoints.source(), target_version);
-        assert!(checkpoints.is_segmented_top_level());
+        assert!(matches!(
+            retained.restart.as_ref(),
+            Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
+                if *source == target_version
+        ));
         drain_candidate_cleanup(&mut endpoint, &mut runtime);
-        assert!(
-            endpoint
-                .has_exact_base_for(&runtime, target_version)
-                .expect("next thematic-break revision authority")
-        );
+        assert!(endpoint
+            .has_exact_base_for(&runtime, target_version)
+            .expect("next thematic-break revision authority"));
 
         current_source = target_source;
         current_version = target_version;
@@ -6172,7 +6407,6 @@ fn setext_large_interior_paragraph_h1_h2_paragraph_sequence_stays_exact() {
     const PARAGRAPHS: usize = 4_096;
     const EDITED_PARAGRAPH: usize = PARAGRAPHS / 2;
     const MAXIMUM_TRANSFERRED_RECORDS: u32 = 64;
-    const VIEWPORT_HEADER_BYTES: usize = 20;
 
     let profile = SourceFactsScanProfile::new(4_096).expect("production scan profile");
     let parser_profile = ParserProfileId::new(1).expect("parser profile");
@@ -6219,26 +6453,21 @@ fn setext_large_interior_paragraph_h1_h2_paragraph_sequence_stays_exact() {
             .find('\n')
             .map(|offset| middle_start + offset + 1)
             .expect("middle content line ending");
-        let (edit_range, replacement, expected_variant, expected_level) = match phase {
-            0 => (
-                content_line_end..content_line_end + 1,
-                "===\n\n",
-                5_u8,
-                1_u64,
-            ),
+        let (edit_range, replacement, expected_middle_kind) = match phase {
+            0 => (content_line_end..content_line_end + 1, "===\n\n", 12_u16),
             1 => {
                 let marker_start = current_source[middle_start..]
                     .find("===\n\n")
                     .map(|offset| middle_start + offset)
                     .expect("H1 underline");
-                (marker_start..marker_start + 3, "---", 5_u8, 2_u64)
+                (marker_start..marker_start + 3, "---", 12_u16)
             }
             2 => {
                 let marker_start = current_source[middle_start..]
                     .find("---\n\n")
                     .map(|offset| middle_start + offset)
                     .expect("H2 underline");
-                (marker_start..marker_start + 5, "\n", 1_u8, 0_u64)
+                (marker_start..marker_start + 5, "\n", 5_u16)
             }
             _ => unreachable!(),
         };
@@ -6282,8 +6511,8 @@ fn setext_large_interior_paragraph_h1_h2_paragraph_sequence_stays_exact() {
             .expect("start Setext crop");
         assert_eq!(
             active_candidate_phase(endpoint.active.as_ref()),
-            "ParsingOrdinaryExact",
-            "Setext phase {phase} must use the bounded ordinary crop"
+            "AwaitingRecursiveGreenExact",
+            "Setext phase {phase} must await recursive-Green adoption before selecting its exact route"
         );
         let delivery = deliver_endpoint_to_independent_host_with_unit_fuel(
             &mut endpoint,
@@ -6298,18 +6527,23 @@ fn setext_large_interior_paragraph_h1_h2_paragraph_sequence_stays_exact() {
             delivery.offer.transferred_record_count,
             delivery.offer.target_record_count
         );
-        let block_replacement_records = delivery
+        let recursive_green_replacement_records = delivery
             .packet_frames
             .iter()
             .flatten()
-            .filter(|(kind, _)| *kind == CandidateSnapshotFrameKind::BlockSequenceReplacementPage)
+            .filter(|(kind, _)| *kind == CandidateSnapshotFrameKind::RecursiveGreenReplacementPage)
             .map(|(_, records)| *records)
             .sum::<u32>();
         assert!(
-            block_replacement_records > 0
-                && block_replacement_records <= MAXIMUM_TRANSFERRED_RECORDS,
-            "Setext phase {phase} must publish one bounded structural splice"
+            recursive_green_replacement_records > 0
+                && recursive_green_replacement_records <= MAXIMUM_TRANSFERRED_RECORDS,
+            "Setext phase {phase} must publish one bounded recursive-Green splice"
         );
+        assert!(delivery
+            .packet_frames
+            .iter()
+            .flatten()
+            .all(|(kind, _)| *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage));
 
         for ordinal in [0, EDITED_PARAGRAPH, PARAGRAPHS - 1] {
             let marker = format!("paragraph {ordinal:04} ");
@@ -6320,86 +6554,40 @@ fn setext_large_interior_paragraph_h1_h2_paragraph_sequence_stays_exact() {
                 .find('\n')
                 .map(|offset| paragraph_start + offset + 1)
                 .expect("target content line ending");
-            let paragraph_end = if ordinal == EDITED_PARAGRAPH && expected_variant == 5 {
-                content_end + 4
-            } else {
-                content_end
-            };
-            let mut output = [0_u8; HOST_M11_VIEWPORT_BYTES];
             let point = paragraph_start + marker.len();
-            let outcome = host
-                .query_structural(
-                    HostPointQuery {
-                        source_version,
-                        position: HostSourceMetric {
-                            bytes: u32::try_from(point).expect("query byte"),
-                            utf16: u32::try_from(target_source[..point].encode_utf16().count())
-                                .expect("query UTF-16"),
-                        },
-                        affinity: HostMetricAffinity::Downstream,
-                        budget: HostQueryBudget {
-                            maximum_encoded_bytes: HOST_M11_VIEWPORT_BYTES as u32,
-                            maximum_open_depth: 64,
-                            maximum_leaf_count: 64,
-                            maximum_tree_nodes_visited: 256,
-                        },
-                    },
-                    &mut output,
-                )
-                .expect("query exact Setext target");
-            let HostStructuralQueryOutcome::Viewport { range, receipt, .. } = outcome else {
-                panic!("Setext phase {phase} must expose block {ordinal} exactly: {outcome:?}");
+            let point_utf16 = target_source[..point].encode_utf16().count();
+            let (owner_kind, range, ancestry) =
+                recursive_green_query_shape(&host, source_version, point, point_utf16);
+            let expected_owner_kind = if ordinal == EDITED_PARAGRAPH {
+                expected_middle_kind
+            } else {
+                5
             };
-            assert_eq!(receipt.encoded_bytes, HOST_M11_VIEWPORT_BYTES as u32);
-            assert_eq!(range.start.bytes as usize, paragraph_start);
-            assert_eq!(range.end.bytes as usize, paragraph_end);
+            assert_eq!(owner_kind, expected_owner_kind);
+            assert_eq!(range[0] as usize, paragraph_start);
+            assert_eq!(range[1] as usize, content_end - 1);
             assert_eq!(
-                range.start.utf16 as usize,
+                range[2] as usize,
                 target_source[..paragraph_start].encode_utf16().count()
             );
             assert_eq!(
-                range.end.utf16 as usize,
-                target_source[..paragraph_end].encode_utf16().count()
+                range[3] as usize,
+                target_source[..content_end - 1].encode_utf16().count()
             );
-            let green = &output[VIEWPORT_HEADER_BYTES..VIEWPORT_HEADER_BYTES + 80];
-            let projection = &output[VIEWPORT_HEADER_BYTES + 80..];
-            let variant = if ordinal == EDITED_PARAGRAPH {
-                expected_variant
-            } else {
-                1
-            };
-            assert_eq!(green[12], variant);
-            assert_eq!(projection[12], variant);
-            if ordinal == EDITED_PARAGRAPH && expected_variant == 5 {
-                assert_eq!(
-                    u64::from_le_bytes(green[48..56].try_into().unwrap()),
-                    expected_level
-                );
-                assert_eq!(
-                    u64::from_le_bytes(green[32..40].try_into().unwrap()) as usize,
-                    paragraph_start
-                );
-                assert_eq!(
-                    u64::from_le_bytes(green[40..48].try_into().unwrap()) as usize,
-                    content_end - 1
-                );
-            }
+            assert_eq!(ancestry.first(), Some(&1));
+            assert_eq!(ancestry.last(), Some(&expected_owner_kind));
         }
 
         let retained = endpoint.retained.as_ref().expect("retained Setext target");
-        let CandidateRestartAuthority::Ordinary(checkpoints) =
-            retained.restart.as_ref().expect("Setext restart authority")
-        else {
-            panic!("Setext phase must retain ordinary target checkpoints");
-        };
-        assert_eq!(checkpoints.source(), target_version);
-        assert!(checkpoints.is_segmented_top_level());
+        assert!(matches!(
+            retained.restart.as_ref(),
+            Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
+                if *source == target_version
+        ));
         drain_candidate_cleanup(&mut endpoint, &mut runtime);
-        assert!(
-            endpoint
-                .has_exact_base_for(&runtime, target_version)
-                .expect("next Setext revision authority")
-        );
+        assert!(endpoint
+            .has_exact_base_for(&runtime, target_version)
+            .expect("next Setext revision authority"));
 
         current_source = target_source;
         current_version = target_version;
@@ -6732,11 +6920,14 @@ fn ordinary_paragraph_bof_edit_streams_exact_segmented_delta_and_keeps_late_inli
         panic!("exact BOF candidate must author a structural viewport: {outcome:?}");
     };
     output.truncate(receipt.encoded_bytes as usize);
-    assert_eq!(output.len(), HOST_M11_VIEWPORT_BYTES);
+    assert_eq!(
+        output.len(),
+        HOST_RECURSIVE_GREEN_VIEWPORT_HEADER_BYTES + 2 * HOST_RECURSIVE_GREEN_ANCESTOR_RECORD_BYTES
+    );
     assert_eq!(
         u32::from_le_bytes(output[8..12].try_into().expect("viewport schema")),
-        1,
-        "segmented exact crop must not embed inline presentation authority"
+        HOST_RECURSIVE_GREEN_VIEWPORT_SCHEMA,
+        "exact BOF delivery must preserve recursive-Green authority"
     );
     endpoint
         .request_hot_inline(
@@ -6779,11 +6970,9 @@ fn ordinary_paragraph_bof_edit_streams_exact_segmented_delta_and_keeps_late_inli
     let plan = runtime
         .begin_incremental_source_facts(profile, parser_profile, SourceFactsRootLimits::default())
         .expect("plan unsupported exact SourceFacts");
-    assert!(
-        endpoint
-            .has_incremental_base_for_plan(&runtime, &plan)
-            .expect("preflight unsupported exact crop")
-    );
+    assert!(endpoint
+        .has_incremental_base_for_plan(&runtime, &plan)
+        .expect("preflight unsupported exact crop"));
     let witness = complete_incremental_source_facts(&mut runtime);
     let target_lease = runtime
         .snapshot_current_source()
@@ -6818,11 +7007,9 @@ fn ordinary_paragraph_bof_edit_streams_exact_segmented_delta_and_keeps_late_inli
     );
     assert_installed_candidate_has_no_inline(&host, unsupported_source_version);
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
-    assert!(
-        endpoint
-            .has_exact_base_for(&runtime, unsupported_version)
-            .expect("unsupported target remains an exact base")
-    );
+    assert!(endpoint
+        .has_exact_base_for(&runtime, unsupported_version)
+        .expect("unsupported target remains an exact base"));
 
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
@@ -6913,20 +7100,18 @@ fn exact_base_survives_mid_stream_cancel_and_replacement_converges() {
                             .endpoint
                             .accept_credit(credit, event_id)
                             .expect("accept target Packet credit");
-                        assert!(
-                            fixture
-                                .endpoint
-                                .handle_host_poll(
-                                    event_id,
-                                    offer_id,
-                                    HostPollPhase::PacketCredit,
-                                    HostPollResult::Rejected(
-                                        crate::v3_publication_wire::HostRejectReason::Superseded,
-                                    ),
-                                )
-                                .expect("reject target mid-stream")
-                                .is_none()
-                        );
+                        assert!(fixture
+                            .endpoint
+                            .handle_host_poll(
+                                event_id,
+                                offer_id,
+                                HostPollPhase::PacketCredit,
+                                HostPollResult::Rejected(
+                                    crate::v3_publication_wire::HostRejectReason::Superseded,
+                                ),
+                            )
+                            .expect("reject target mid-stream")
+                            .is_none());
                         saw_packet = true;
                         break;
                     }
@@ -7035,20 +7220,27 @@ fn ordinary_paragraph_middle_edit_streams_exact_segmented_delta() {
 
     assert_eq!(target_delivery.offer.mode, PublicationMode::ExactBaseDelta);
     assert_eq!(target_delivery.offer.base_ack, Some(base_delivery.ack));
-    let block_replacement_frames = target_delivery
+    let block_replacement_records = target_delivery
         .packet_frames
         .iter()
         .flatten()
         .filter(|(kind, _)| *kind == CandidateSnapshotFrameKind::BlockSequenceReplacementPage)
-        .collect::<Vec<_>>();
+        .map(|(_, records)| *records)
+        .sum::<u32>();
     assert_eq!(
-        block_replacement_frames.len(),
-        1,
-        "one local ordinary-Paragraph edit must transfer one packed block page"
+        block_replacement_records, 0,
+        "recursive-Green authority must not fall through to legacy block replacement"
     );
-    assert_eq!(
-        block_replacement_frames[0].1, 1,
-        "one BlockSequence replacement page is one canonical transport record"
+    let recursive_green_replacement_records = target_delivery
+        .packet_frames
+        .iter()
+        .flatten()
+        .filter(|(kind, _)| *kind == CandidateSnapshotFrameKind::RecursiveGreenReplacementPage)
+        .map(|(_, records)| *records)
+        .sum::<u32>();
+    assert!(
+        recursive_green_replacement_records > 0,
+        "one local ordinary-Paragraph edit must transfer a Green replacement window"
     );
     let target_source_version = source_version_for(binding, target_completion);
     let mut output = vec![0_u8; 4096];
@@ -7074,33 +7266,31 @@ fn ordinary_paragraph_middle_edit_streams_exact_segmented_delta() {
     let HostStructuralQueryOutcome::Viewport { receipt, .. } = outcome else {
         panic!("replayed target must expose the edited Paragraph: {outcome:?}");
     };
-    assert_eq!(receipt.encoded_bytes, HOST_M11_VIEWPORT_BYTES as u32);
+    assert_eq!(
+        receipt.encoded_bytes as usize,
+        HOST_RECURSIVE_GREEN_VIEWPORT_HEADER_BYTES + 2 * HOST_RECURSIVE_GREEN_ANCESTOR_RECORD_BYTES
+    );
     assert_eq!(
         u32::from_le_bytes(output[8..12].try_into().expect("viewport schema")),
-        1,
-        "persistent block reuse must not manufacture inline authority"
+        HOST_RECURSIVE_GREEN_VIEWPORT_SCHEMA,
+        "persistent Green reuse must preserve exact structural authority without inline facts"
     );
     assert!(
         target_delivery.offer.transferred_record_count < target_delivery.offer.target_record_count,
         "exact middle delta must omit authenticated reused records"
     );
-    let retained = endpoint.retained.as_ref().expect("retained target base");
-    let CandidateRestartAuthority::Ordinary(checkpoints) =
-        retained.restart.as_ref().expect("target restart authority")
-    else {
-        panic!("ordinary crop must retain ordinary target checkpoints");
-    };
-    assert_eq!(checkpoints.source(), target_version);
-    assert!(
-        checkpoints.len() > 2,
-        "target must preserve sparse authority on both sides of the crop"
-    );
-    drain_candidate_cleanup(&mut endpoint, &mut runtime);
-    assert!(
+    assert!(matches!(
         endpoint
-            .has_exact_base_for(&runtime, target_version)
-            .expect("next-revision exact base")
-    );
+            .retained
+            .as_ref()
+            .and_then(|retained| retained.restart.as_ref()),
+        Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
+            if *source == target_version
+    ));
+    drain_candidate_cleanup(&mut endpoint, &mut runtime);
+    assert!(endpoint
+        .has_exact_base_for(&runtime, target_version)
+        .expect("next-revision exact base"));
 
     let late_inline_point = base_source
         .find("bold")
@@ -7182,11 +7372,9 @@ fn independent_host_4096_paragraph_distant_middle_edits_remain_bounded_exact_del
         Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
             if *source == base_version
     ));
-    assert!(
-        endpoint
-            .recursive_green
-            .has_installed_session_for(base_delivery.ack)
-    );
+    assert!(endpoint
+        .recursive_green
+        .has_installed_session_for(base_delivery.ack));
 
     let paragraph_start = base_source
         .find("paragraph 2048 ")
@@ -7267,9 +7455,11 @@ fn independent_host_4096_paragraph_distant_middle_edits_remain_bounded_exact_del
         "the exact delta must carry a nonempty recursive-Green replacement window"
     );
     assert!(
-        target_delivery.packet_frames.iter().flatten().all(|(kind, _)| {
-            *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage
-        }),
+        target_delivery
+            .packet_frames
+            .iter()
+            .flatten()
+            .all(|(kind, _)| { *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage }),
         "a recursive-Green base must never fall through to legacy block replacement"
     );
     assert!(target_delivery.contains_recursive_green_leaf);
@@ -7320,11 +7510,9 @@ fn independent_host_4096_paragraph_distant_middle_edits_remain_bounded_exact_del
     );
 
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
-    assert!(
-        endpoint
-            .has_exact_base_for(&runtime, target_version)
-            .expect("target exact-base continuity")
-    );
+    assert!(endpoint
+        .has_exact_base_for(&runtime, target_version)
+        .expect("target exact-base continuity"));
 
     let second_paragraph = target_source
         .find("paragraph 3072 ")
@@ -7382,12 +7570,13 @@ fn independent_host_4096_paragraph_distant_middle_edits_remain_bounded_exact_del
     assert_eq!(second_delivery.offer.base_ack, Some(target_delivery.ack));
     assert_eq!(second_delivery.ack.source_version, second_source_version);
     assert!(
-        second_delivery.offer.transferred_record_count
-            < second_delivery.offer.target_record_count
+        second_delivery.offer.transferred_record_count < second_delivery.offer.target_record_count
     );
-    assert!(second_delivery.packet_frames.iter().flatten().all(|(kind, _)| {
-        *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage
-    }));
+    assert!(second_delivery
+        .packet_frames
+        .iter()
+        .flatten()
+        .all(|(kind, _)| { *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage }));
     assert_eq!(
         endpoint.recursive_green_path_receipt(),
         RecursiveGreenPathReceipt {
@@ -7404,11 +7593,9 @@ fn independent_host_4096_paragraph_distant_middle_edits_remain_bounded_exact_del
         second_delivery.offer.transferred_record_count,
     );
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
-    assert!(
-        endpoint
-            .has_exact_base_for(&runtime, second_version)
-            .expect("distant target exact-base continuity")
-    );
+    assert!(endpoint
+        .has_exact_base_for(&runtime, second_version)
+        .expect("distant target exact-base continuity"));
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
 
@@ -7457,11 +7644,9 @@ fn independent_host_4096_paragraph_first_edit_is_bounded_exact_delta() {
         Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
             if *source == base_version
     ));
-    assert!(
-        endpoint
-            .recursive_green
-            .has_installed_session_for(base_delivery.ack)
-    );
+    assert!(endpoint
+        .recursive_green
+        .has_installed_session_for(base_delivery.ack));
 
     let edit_start = base_source
         .find("aaaaaaaa")
@@ -7537,9 +7722,11 @@ fn independent_host_4096_paragraph_first_edit_is_bounded_exact_delta() {
             && recursive_green_replacement_records <= MAXIMUM_TRANSFERRED_RECORDS,
         "the first-block recursive splice must publish a bounded nonempty replacement"
     );
-    assert!(target_delivery.packet_frames.iter().flatten().all(|(kind, _)| {
-        *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage
-    }));
+    assert!(target_delivery
+        .packet_frames
+        .iter()
+        .flatten()
+        .all(|(kind, _)| { *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage }));
 
     for ordinal in [0, PARAGRAPHS / 2, PARAGRAPHS - 1] {
         let marker = format!("paragraph {ordinal:04} ");
@@ -7562,11 +7749,9 @@ fn independent_host_4096_paragraph_first_edit_is_bounded_exact_delta() {
     }
 
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
-    assert!(
-        endpoint
-            .has_exact_base_for(&runtime, target_version)
-            .expect("first-edit recursive exact base")
-    );
+    assert!(endpoint
+        .has_exact_base_for(&runtime, target_version)
+        .expect("first-edit recursive exact base"));
 
     let next_edit = target_source
         .find("paragraph 2048 ")
@@ -7580,11 +7765,9 @@ fn independent_host_4096_paragraph_first_edit_is_bounded_exact_delta() {
     let next_plan = runtime
         .begin_incremental_source_facts(profile, parser_profile, SourceFactsRootLimits::default())
         .expect("plan next exact edit");
-    assert!(
-        endpoint
-            .has_incremental_base_for_plan(&runtime, &next_plan)
-            .expect("preflight next exact edit")
-    );
+    assert!(endpoint
+        .has_incremental_base_for_plan(&runtime, &next_plan)
+        .expect("preflight next exact edit"));
     let next_witness = complete_incremental_source_facts(&mut runtime);
     let next_completion = completion_for_persistent_target(&runtime, 3, 2);
     host.observe_source_version(source_version_for(binding, next_completion))
@@ -7605,11 +7788,9 @@ fn independent_host_4096_paragraph_first_edit_is_bounded_exact_delta() {
     assert_eq!(next_delivery.offer.mode, PublicationMode::ExactBaseDelta);
     assert_eq!(next_delivery.offer.base_ack, Some(target_delivery.ack));
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
-    assert!(
-        endpoint
-            .has_exact_base_for(&runtime, next_version)
-            .expect("next-revision exact base")
-    );
+    assert!(endpoint
+        .has_exact_base_for(&runtime, next_version)
+        .expect("next-revision exact base"));
 
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
@@ -7656,10 +7837,12 @@ fn independent_host_4096_paragraph_final_edit_is_bounded_exact_delta() {
             .retained
             .as_ref()
             .and_then(|retained| retained.restart.as_ref()),
-        Some(CandidateRestartAuthority::Ordinary(checkpoints))
-            if checkpoints.source() == base_version
-                && checkpoints.is_segmented_top_level()
+        Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
+            if *source == base_version
     ));
+    assert!(endpoint
+        .recursive_green
+        .has_installed_session_for(base_delivery.ack));
 
     let edit_start = base_source
         .rfind("aaaaaaaa")
@@ -7705,86 +7888,8 @@ fn independent_host_4096_paragraph_final_edit_is_bounded_exact_delta() {
         .expect("start segmented EOF crop");
     assert_eq!(
         active_candidate_phase(endpoint.active.as_ref()),
-        "ParsingOrdinaryExact",
-        "the final-block edit must enter the boundary crop, not exact-clean fallback"
-    );
-
-    let Some(ActiveCandidate::ParsingOrdinaryExact(mut parsing)) = endpoint.active.take() else {
-        unreachable!("phase asserted above")
-    };
-    let mut crop_poll_transitions = 0_usize;
-    let ordinary_result = loop {
-        match parsing.job.poll(1).expect("poll segmented EOF crop") {
-            OrdinaryExactPoll::Pending { transitions } => {
-                assert!(transitions <= 1);
-                crop_poll_transitions = crop_poll_transitions
-                    .checked_add(transitions)
-                    .expect("EOF crop transition count");
-            }
-            OrdinaryExactPoll::Complete {
-                transitions,
-                result,
-            } => {
-                assert!(transitions <= 1);
-                crop_poll_transitions = crop_poll_transitions
-                    .checked_add(transitions)
-                    .expect("EOF crop transition count");
-                break result;
-            }
-        }
-    };
-    let OrdinaryExactResult::Boundary(cropped) = &ordinary_result else {
-        panic!("a final-block edit must complete the EOF boundary route");
-    };
-    let work = cropped.work();
-    let crop_range = work.target_crop_bytes();
-    assert!(
-        crop_range.start > 0,
-        "EOF crop must retain an authenticated document prefix"
-    );
-    assert_eq!(crop_range.end, target_source.len());
-    assert!(crop_range.start <= edit_start);
-    assert_eq!(work.crop_source_bytes_discovered(), crop_range.len());
-    assert_eq!(work.crop_source_bytes_read(), crop_range.len());
-    assert!(
-        work.crop_source_bytes_discovered() <= M11_SEGMENTED_TOP_LEVEL_CROP_MAX_BYTES,
-        "EOF crop read {} of {} document bytes",
-        work.crop_source_bytes_discovered(),
-        target_source.len()
-    );
-    assert!(
-        work.reused_prefix_checkpoints() > 0,
-        "EOF restart must retain upstream restart authority"
-    );
-    assert_eq!(
-        work.fresh_crop_checkpoints(),
-        0,
-        "a final-block crop need not mint a checkpoint beyond EOF"
-    );
-    assert_eq!(work.reused_suffix_checkpoints(), 0);
-    assert_eq!(work.convergence_ordinal_delta(), None);
-    assert!(
-        crop_poll_transitions >= work.checkpoint_merge_transitions(),
-        "the work receipt must not charge more merge work than endpoint polling performed"
-    );
-
-    let ParsingOrdinaryExactCandidate {
-        context,
-        base,
-        witness,
-        ..
-    } = *parsing;
-    endpoint.active = Some(
-        match begin_exact_candidate_build_ordinary(
-            &mut runtime,
-            context,
-            base,
-            witness,
-            ordinary_result,
-        ) {
-            Ok(active) => active,
-            Err(failure) => panic!("start exact segmented EOF build: {}", failure.error),
-        },
+        "AwaitingRecursiveGreenExact",
+        "the final-block edit must wait on bounded Green adoption, not exact-clean fallback"
     );
     let target_delivery =
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
@@ -7800,17 +7905,23 @@ fn independent_host_4096_paragraph_final_edit_is_bounded_exact_delta() {
     assert!(
         target_delivery.offer.transferred_record_count < target_delivery.offer.target_record_count
     );
-    let block_replacement_records = target_delivery
+    let recursive_green_replacement_records = target_delivery
         .packet_frames
         .iter()
         .flatten()
-        .filter(|(kind, _)| *kind == CandidateSnapshotFrameKind::BlockSequenceReplacementPage)
+        .filter(|(kind, _)| *kind == CandidateSnapshotFrameKind::RecursiveGreenReplacementPage)
         .map(|(_, records)| *records)
         .sum::<u32>();
     assert!(
-        block_replacement_records > 0 && block_replacement_records <= MAXIMUM_TRANSFERRED_RECORDS,
-        "the final-block splice must publish a bounded nonempty replacement"
+        recursive_green_replacement_records > 0
+            && recursive_green_replacement_records <= MAXIMUM_TRANSFERRED_RECORDS,
+        "the final-block Green splice must publish a bounded nonempty replacement"
     );
+    assert!(target_delivery
+        .packet_frames
+        .iter()
+        .flatten()
+        .all(|(kind, _)| *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage));
 
     for ordinal in [0, PARAGRAPHS / 2, PARAGRAPHS - 1] {
         let marker = format!("paragraph {ordinal:04} ");
@@ -7822,44 +7933,31 @@ fn independent_host_4096_paragraph_final_edit_is_bounded_exact_delta() {
             .map(|offset| paragraph_start + offset + 1)
             .expect("target Paragraph line ending");
         let point = paragraph_start + marker.len();
-        let mut output = [0_u8; HOST_M11_VIEWPORT_BYTES];
-        let outcome = host
-            .query_structural(
-                HostPointQuery {
-                    source_version: target_source_version,
-                    position: HostSourceMetric {
-                        bytes: u32::try_from(point).expect("Paragraph point byte"),
-                        utf16: u32::try_from(point).expect("ASCII Paragraph point UTF-16"),
-                    },
-                    affinity: HostMetricAffinity::Downstream,
-                    budget: HostQueryBudget {
-                        maximum_encoded_bytes: HOST_M11_VIEWPORT_BYTES as u32,
-                        maximum_open_depth: 64,
-                        maximum_leaf_count: 64,
-                        maximum_tree_nodes_visited: 256,
-                    },
-                },
-                &mut output,
-            )
-            .expect("query installed EOF target");
-        let HostStructuralQueryOutcome::Viewport { range, receipt, .. } = outcome else {
-            panic!("installed target must expose Paragraph {ordinal}: {outcome:?}");
-        };
-        assert_eq!(receipt.encoded_bytes, HOST_M11_VIEWPORT_BYTES as u32);
-        assert_eq!(range.start.bytes as usize, paragraph_start);
-        assert_eq!(range.start.utf16 as usize, paragraph_start);
-        assert_eq!(range.end.bytes as usize, paragraph_end);
-        assert_eq!(range.end.utf16 as usize, paragraph_end);
+        let (owner_kind, range, ancestry) =
+            recursive_green_query_shape(&host, target_source_version, point, point);
+        assert_eq!(owner_kind, 5);
+        assert_eq!(range[0] as usize, paragraph_start);
+        assert_eq!(range[1] as usize, paragraph_end - 1);
+        assert_eq!(range[2] as usize, paragraph_start);
+        assert_eq!(range[3] as usize, paragraph_end - 1);
+        assert!(!ancestry.is_empty());
     }
 
-    let retained = endpoint.retained.as_ref().expect("retained EOF target");
-    let CandidateRestartAuthority::Ordinary(checkpoints) =
-        retained.restart.as_ref().expect("target restart authority")
-    else {
-        panic!("segmented EOF crop must retain ordinary target checkpoints");
-    };
-    assert_eq!(checkpoints.source(), target_version);
-    assert!(checkpoints.is_segmented_top_level());
+    assert!(matches!(
+        endpoint
+            .retained
+            .as_ref()
+            .and_then(|retained| retained.restart.as_ref()),
+        Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
+            if *source == target_version
+    ));
+    assert_eq!(
+        endpoint.recursive_green_path_receipt(),
+        RecursiveGreenPathReceipt {
+            local_adoption_deliveries: 1,
+            clean_fallback_deliveries: 0,
+        }
+    );
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
 
     let next_edit = target_source
@@ -7874,11 +7972,9 @@ fn independent_host_4096_paragraph_final_edit_is_bounded_exact_delta() {
     let next_plan = runtime
         .begin_incremental_source_facts(profile, parser_profile, SourceFactsRootLimits::default())
         .expect("plan next exact edit");
-    assert!(
-        endpoint
-            .has_incremental_base_for_plan(&runtime, &next_plan)
-            .expect("preflight next exact edit")
-    );
+    assert!(endpoint
+        .has_incremental_base_for_plan(&runtime, &next_plan)
+        .expect("preflight next exact edit"));
     let next_witness = complete_incremental_source_facts(&mut runtime);
     let next_completion = completion_for_persistent_target(&runtime, 3, 2);
     host.observe_source_version(source_version_for(binding, next_completion))
@@ -7899,11 +7995,9 @@ fn independent_host_4096_paragraph_final_edit_is_bounded_exact_delta() {
     assert_eq!(next_delivery.offer.mode, PublicationMode::ExactBaseDelta);
     assert_eq!(next_delivery.offer.base_ack, Some(target_delivery.ack));
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
-    assert!(
-        endpoint
-            .has_exact_base_for(&runtime, next_version)
-            .expect("next-revision exact base")
-    );
+    assert!(endpoint
+        .has_exact_base_for(&runtime, next_version)
+        .expect("next-revision exact base"));
 
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
@@ -7911,7 +8005,6 @@ fn independent_host_4096_paragraph_final_edit_is_bounded_exact_delta() {
 #[test]
 fn mixed_atx_and_fence_edits_crop_locally_while_unclosed_fence_falls_back() {
     const PARAGRAPHS: usize = 4_096;
-    const VIEWPORT_HEADER_BYTES: usize = 20;
 
     let profile = SourceFactsScanProfile::new(4_096).expect("production scan profile");
     let parser_profile = ParserProfileId::new(1).expect("parser profile");
@@ -7999,7 +8092,7 @@ fn mixed_atx_and_fence_edits_crop_locally_while_unclosed_fence_falls_back() {
         .expect("start bounded ATX crop");
     assert_eq!(
         active_candidate_phase(endpoint.active.as_ref()),
-        "ParsingOrdinaryExact"
+        "AwaitingRecursiveGreenExact"
     );
     let heading_delivery =
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
@@ -8010,35 +8103,13 @@ fn mixed_atx_and_fence_edits_crop_locally_while_unclosed_fence_falls_back() {
             < heading_delivery.offer.target_record_count
     );
     let heading_source_version = source_version_for(binding, heading_completion);
-    let mut heading_output = [0_u8; HOST_M11_VIEWPORT_BYTES];
-    let heading_outcome = host
-        .query_structural(
-            HostPointQuery {
-                source_version: heading_source_version,
-                position: HostSourceMetric {
-                    bytes: u32::try_from(heading_edit + 1).expect("heading point"),
-                    utf16: u32::try_from(heading_edit + 1).expect("ASCII heading point"),
-                },
-                affinity: HostMetricAffinity::Downstream,
-                budget: HostQueryBudget {
-                    maximum_encoded_bytes: HOST_M11_VIEWPORT_BYTES as u32,
-                    maximum_open_depth: 64,
-                    maximum_leaf_count: 64,
-                    maximum_tree_nodes_visited: 256,
-                },
-            },
-            &mut heading_output,
-        )
-        .expect("query cropped ATX target");
-    assert!(matches!(
-        heading_outcome,
-        HostStructuralQueryOutcome::Viewport { .. }
-    ));
-    assert_eq!(
-        heading_output[VIEWPORT_HEADER_BYTES + 12],
-        4,
-        "independent host must retain the ATX structured kind"
-    );
+    let heading_point = heading_edit + 1;
+    let (owner_kind, range, ancestry) =
+        recursive_green_query_shape(&host, heading_source_version, heading_point, heading_point);
+    assert_eq!(owner_kind, 12, "the edited owner remains a Green Heading");
+    assert!(range[0] as usize <= heading_point && heading_point < range[1] as usize);
+    assert_eq!(ancestry.first(), Some(&1));
+    assert_eq!(ancestry.last(), Some(&12));
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
 
     let fence_edit = base_source.find("value = 1").expect("fence body") + "value = ".len();
@@ -8073,42 +8144,19 @@ fn mixed_atx_and_fence_edits_crop_locally_while_unclosed_fence_falls_back() {
         .expect("start bounded fenced-code crop");
     assert_eq!(
         active_candidate_phase(endpoint.active.as_ref()),
-        "ParsingOrdinaryExact"
+        "AwaitingRecursiveGreenExact"
     );
     let fence_delivery =
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
     assert_eq!(fence_delivery.offer.mode, PublicationMode::ExactBaseDelta);
     assert_eq!(fence_delivery.offer.base_ack, Some(heading_delivery.ack));
     let fence_source_version = source_version_for(binding, fence_completion);
-    let mut fence_output = [0_u8; HOST_M11_VIEWPORT_BYTES];
-    let fence_outcome = host
-        .query_structural(
-            HostPointQuery {
-                source_version: fence_source_version,
-                position: HostSourceMetric {
-                    bytes: u32::try_from(fence_edit).expect("fence point"),
-                    utf16: u32::try_from(fence_edit).expect("ASCII fence point"),
-                },
-                affinity: HostMetricAffinity::Downstream,
-                budget: HostQueryBudget {
-                    maximum_encoded_bytes: HOST_M11_VIEWPORT_BYTES as u32,
-                    maximum_open_depth: 64,
-                    maximum_leaf_count: 64,
-                    maximum_tree_nodes_visited: 256,
-                },
-            },
-            &mut fence_output,
-        )
-        .expect("query cropped fenced-code target");
-    assert!(matches!(
-        fence_outcome,
-        HostStructuralQueryOutcome::Viewport { .. }
-    ));
-    assert_eq!(
-        fence_output[VIEWPORT_HEADER_BYTES + 12],
-        3,
-        "independent host must retain the fenced-code structured kind"
-    );
+    let (owner_kind, range, ancestry) =
+        recursive_green_query_shape(&host, fence_source_version, fence_edit, fence_edit);
+    assert_eq!(owner_kind, 7, "the edited owner remains Green fenced code");
+    assert!(range[0] as usize <= fence_edit && fence_edit < range[1] as usize);
+    assert_eq!(ancestry.first(), Some(&1));
+    assert_eq!(ancestry.last(), Some(&7));
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
 
     let indented_edit = base_source
@@ -8146,7 +8194,7 @@ fn mixed_atx_and_fence_edits_crop_locally_while_unclosed_fence_falls_back() {
         .expect("start bounded indented-code crop");
     assert_eq!(
         active_candidate_phase(endpoint.active.as_ref()),
-        "ParsingOrdinaryExact"
+        "AwaitingRecursiveGreenExact"
     );
     let indented_delivery =
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
@@ -8161,35 +8209,15 @@ fn mixed_atx_and_fence_edits_crop_locally_while_unclosed_fence_falls_back() {
         "the middle indented-code delta must retain the large authenticated prefix and suffix"
     );
     let indented_source_version = source_version_for(binding, indented_completion);
-    let mut indented_output = [0_u8; HOST_M11_VIEWPORT_BYTES];
-    let indented_outcome = host
-        .query_structural(
-            HostPointQuery {
-                source_version: indented_source_version,
-                position: HostSourceMetric {
-                    bytes: u32::try_from(indented_edit).expect("indented-code point"),
-                    utf16: u32::try_from(indented_edit).expect("ASCII indented-code point"),
-                },
-                affinity: HostMetricAffinity::Downstream,
-                budget: HostQueryBudget {
-                    maximum_encoded_bytes: HOST_M11_VIEWPORT_BYTES as u32,
-                    maximum_open_depth: 64,
-                    maximum_leaf_count: 64,
-                    maximum_tree_nodes_visited: 256,
-                },
-            },
-            &mut indented_output,
-        )
-        .expect("query cropped indented-code target");
-    assert!(matches!(
-        indented_outcome,
-        HostStructuralQueryOutcome::Viewport { .. }
-    ));
+    let (owner_kind, range, ancestry) =
+        recursive_green_query_shape(&host, indented_source_version, indented_edit, indented_edit);
     assert_eq!(
-        indented_output[VIEWPORT_HEADER_BYTES + 12],
-        7,
-        "independent host must retain the indented-code structured kind"
+        owner_kind, 6,
+        "the edited owner remains Green indented code"
     );
+    assert!(range[0] as usize <= indented_edit && indented_edit < range[1] as usize);
+    assert_eq!(ancestry.first(), Some(&1));
+    assert_eq!(ancestry.last(), Some(&6));
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
 
     let quote_edit = base_source
@@ -8227,7 +8255,7 @@ fn mixed_atx_and_fence_edits_crop_locally_while_unclosed_fence_falls_back() {
         .expect("start bounded block-quote crop");
     assert_eq!(
         active_candidate_phase(endpoint.active.as_ref()),
-        "ParsingOrdinaryExact"
+        "AwaitingRecursiveGreenExact"
     );
     let quote_delivery =
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
@@ -8239,35 +8267,16 @@ fn mixed_atx_and_fence_edits_crop_locally_while_unclosed_fence_falls_back() {
         "the middle block-quote delta must retain the large authenticated prefix and suffix"
     );
     let quote_source_version = source_version_for(binding, quote_completion);
-    let mut quote_output = [0_u8; HOST_M11_VIEWPORT_BYTES];
-    let quote_outcome = host
-        .query_structural(
-            HostPointQuery {
-                source_version: quote_source_version,
-                position: HostSourceMetric {
-                    bytes: u32::try_from(quote_edit).expect("block-quote point"),
-                    utf16: u32::try_from(quote_edit).expect("ASCII block-quote point"),
-                },
-                affinity: HostMetricAffinity::Downstream,
-                budget: HostQueryBudget {
-                    maximum_encoded_bytes: HOST_M11_VIEWPORT_BYTES as u32,
-                    maximum_open_depth: 64,
-                    maximum_leaf_count: 64,
-                    maximum_tree_nodes_visited: 256,
-                },
-            },
-            &mut quote_output,
-        )
-        .expect("query cropped block-quote target");
-    assert!(matches!(
-        quote_outcome,
-        HostStructuralQueryOutcome::Viewport { .. }
-    ));
+    let (owner_kind, range, ancestry) =
+        recursive_green_query_shape(&host, quote_source_version, quote_edit, quote_edit);
     assert_eq!(
-        quote_output[VIEWPORT_HEADER_BYTES + 12],
-        8,
-        "independent host must retain the block-quote structured kind"
+        owner_kind, 5,
+        "the edited quote child remains a Green Paragraph"
     );
+    assert!(range[0] as usize <= quote_edit && quote_edit < range[1] as usize);
+    assert_eq!(ancestry.first(), Some(&1));
+    assert!(ancestry.contains(&2));
+    assert_eq!(ancestry.last(), Some(&5));
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
 
     let terminal_quote_edit = base_source
@@ -8309,7 +8318,7 @@ fn mixed_atx_and_fence_edits_crop_locally_while_unclosed_fence_falls_back() {
         .expect("start bounded terminal block-quote crop");
     assert_eq!(
         active_candidate_phase(endpoint.active.as_ref()),
-        "ParsingOrdinaryExact"
+        "AwaitingRecursiveGreenExact"
     );
     let terminal_quote_delivery =
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
@@ -8327,36 +8336,20 @@ fn mixed_atx_and_fence_edits_crop_locally_while_unclosed_fence_falls_back() {
         "the terminal block-quote delta must retain its authenticated prefix"
     );
     let terminal_quote_source_version = source_version_for(binding, terminal_quote_completion);
-    let mut terminal_quote_output = [0_u8; HOST_M11_VIEWPORT_BYTES];
-    let terminal_quote_outcome = host
-        .query_structural(
-            HostPointQuery {
-                source_version: terminal_quote_source_version,
-                position: HostSourceMetric {
-                    bytes: u32::try_from(terminal_quote_edit).expect("terminal block-quote point"),
-                    utf16: u32::try_from(terminal_quote_edit)
-                        .expect("ASCII terminal block-quote point"),
-                },
-                affinity: HostMetricAffinity::Downstream,
-                budget: HostQueryBudget {
-                    maximum_encoded_bytes: HOST_M11_VIEWPORT_BYTES as u32,
-                    maximum_open_depth: 64,
-                    maximum_leaf_count: 64,
-                    maximum_tree_nodes_visited: 256,
-                },
-            },
-            &mut terminal_quote_output,
-        )
-        .expect("query cropped terminal block-quote target");
-    assert!(matches!(
-        terminal_quote_outcome,
-        HostStructuralQueryOutcome::Viewport { .. }
-    ));
-    assert_eq!(
-        terminal_quote_output[VIEWPORT_HEADER_BYTES + 12],
-        8,
-        "independent host must retain the terminal block-quote structured kind"
+    let (owner_kind, range, ancestry) = recursive_green_query_shape(
+        &host,
+        terminal_quote_source_version,
+        terminal_quote_edit,
+        terminal_quote_edit,
     );
+    assert_eq!(
+        owner_kind, 5,
+        "the edited owner remains the Paragraph inside a Green block quote"
+    );
+    assert!(range[0] as usize <= terminal_quote_edit && terminal_quote_edit < range[1] as usize);
+    assert_eq!(ancestry.first(), Some(&1));
+    assert!(ancestry.contains(&2));
+    assert_eq!(ancestry.last(), Some(&5));
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
 
     let terminal_nested_quote_edit = base_source
@@ -8383,7 +8376,9 @@ fn mixed_atx_and_fence_edits_crop_locally_while_unclosed_fence_falls_back() {
     );
     let unsupported_quote_witness = complete_incremental_source_facts(&mut runtime);
     let unsupported_quote_completion = completion_for_persistent_target(&runtime, 7, 6);
-    host.observe_source_version(source_version_for(binding, unsupported_quote_completion))
+    let unsupported_quote_source_version =
+        source_version_for(binding, unsupported_quote_completion);
+    host.observe_source_version(unsupported_quote_source_version)
         .expect("host observes unsupported terminal block-quote target");
     endpoint
         .start_incremental(
@@ -8400,9 +8395,34 @@ fn mixed_atx_and_fence_edits_crop_locally_while_unclosed_fence_falls_back() {
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
     assert_eq!(
         unsupported_quote_delivery.offer.mode,
-        PublicationMode::FullSnapshot,
-        "a nested quote at EOF must fail closed instead of publishing an exact local splice"
+        PublicationMode::ExactBaseDelta,
+        "the definitive Green parser can adopt a nested quote without a whole-document fallback"
     );
+    assert_eq!(
+        unsupported_quote_delivery.offer.base_ack,
+        Some(terminal_quote_delivery.ack)
+    );
+    assert!(unsupported_quote_delivery
+        .packet_frames
+        .iter()
+        .flatten()
+        .any(|(kind, records)| {
+            *kind == CandidateSnapshotFrameKind::RecursiveGreenReplacementPage && *records > 0
+        }));
+    assert!(unsupported_quote_delivery
+        .packet_frames
+        .iter()
+        .flatten()
+        .all(|(kind, _)| *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage));
+    let nested_content = terminal_nested_quote_edit + 1;
+    let (owner_kind, _, ancestry) = recursive_green_query_shape(
+        &host,
+        unsupported_quote_source_version,
+        nested_content,
+        nested_content,
+    );
+    assert_eq!(owner_kind, 5);
+    assert_eq!(ancestry.iter().filter(|kind| **kind == 2).count(), 2);
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
 
     let closing_fence = base_source
@@ -8444,15 +8464,67 @@ fn mixed_atx_and_fence_edits_crop_locally_while_unclosed_fence_falls_back() {
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
     assert_eq!(
         divergent_delivery.offer.mode,
-        PublicationMode::FullSnapshot,
-        "an unclosed fence that crosses convergence must fail closed into a definitive parse"
+        PublicationMode::ExactBaseDelta,
+        "the definitive clean fallback may retain the exact base when canonical references match"
     );
+    assert_eq!(
+        divergent_delivery.offer.base_ack,
+        Some(unsupported_quote_delivery.ack)
+    );
+    assert_eq!(
+        endpoint.recursive_green_path_receipt(),
+        RecursiveGreenPathReceipt {
+            local_adoption_deliveries: 6,
+            clean_fallback_deliveries: 1,
+        },
+        "the unclosed fence must still take the definitive clean escape hatch"
+    );
+    let divergent_source_version = source_version_for(binding, divergent_completion);
+    let (owner_kind, _, ancestry) =
+        recursive_green_query_shape(&host, divergent_source_version, fence_edit, fence_edit);
+    assert_eq!(
+        owner_kind, 7,
+        "the unclosed fence must consume the former suffix"
+    );
+    assert_eq!(ancestry.first(), Some(&1));
+    assert_eq!(ancestry.last(), Some(&7));
+    let divergent_tail_point = base_source
+        .rfind("terminal quote continuation")
+        .expect("terminal suffix consumed by the unclosed fence")
+        - 3;
+    let mut tail_output = [0_u8; 4 * 1024];
+    let tail_outcome = host
+        .query_structural(
+            HostPointQuery {
+                source_version: divergent_source_version,
+                position: HostSourceMetric {
+                    bytes: u32::try_from(divergent_tail_point).expect("distant tail byte"),
+                    utf16: u32::try_from(divergent_tail_point).expect("ASCII distant tail UTF-16"),
+                },
+                affinity: HostMetricAffinity::Downstream,
+                budget: HostQueryBudget {
+                    maximum_encoded_bytes: tail_output.len() as u32,
+                    maximum_open_depth: 16,
+                    maximum_leaf_count: 64,
+                    maximum_tree_nodes_visited: 256,
+                },
+            },
+            &mut tail_output,
+        )
+        .expect("bounded distant-tail query");
+    assert!(matches!(
+        tail_outcome,
+        HostStructuralQueryOutcome::SourceGap {
+            reason: HostSourceGapReason::TreeNodeLimit,
+            ..
+        }
+    ));
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
 
 #[test]
-fn segmented_over_cap_restart_falls_back_and_reuses_packed_block_pages() {
+fn legacy_segmented_over_cap_edit_locally_adopts_recursive_green() {
     let profile = SourceFactsScanProfile::new(64).expect("bounded test profile");
     let parser_profile = ParserProfileId::new(1).expect("parser profile");
     let binding = SessionBinding {
@@ -8490,9 +8562,12 @@ fn segmented_over_cap_restart_falls_back_and_reuses_packed_block_pages() {
             .retained
             .as_ref()
             .and_then(|retained| retained.restart.as_ref()),
-        Some(CandidateRestartAuthority::Ordinary(checkpoints))
-            if checkpoints.source() == base_version && checkpoints.is_segmented_top_level()
+        Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
+            if *source == base_version
     ));
+    assert!(endpoint
+        .recursive_green
+        .has_installed_session_for(base_delivery.ack));
 
     let edit_start = base_source
         .find("paragraph 2048 ")
@@ -8532,12 +8607,10 @@ fn segmented_over_cap_restart_falls_back_and_reuses_packed_block_pages() {
     endpoint
         .start_incremental(&runtime, target_lease, witness, binding, target_completion)
         .expect("start typed over-cap exact-clean fallback");
-    assert!(
-        matches!(
-            endpoint.active,
-            Some(ActiveCandidate::ParsingExactFallback(_))
-        ),
-        "an over-cap local restart must enter the definitive clean parser, not fault"
+    assert_eq!(
+        active_candidate_phase(endpoint.active.as_ref()),
+        "AwaitingRecursiveGreenExact",
+        "the retired segmented byte cap must not force a whole-document clean parse"
     );
     let target_delivery =
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
@@ -8548,63 +8621,49 @@ fn segmented_over_cap_restart_falls_back_and_reuses_packed_block_pages() {
         .packet_frames
         .iter()
         .flatten()
-        .filter(|(kind, _)| *kind == CandidateSnapshotFrameKind::BlockSequenceReplacementPage)
+        .filter(|(kind, _)| *kind == CandidateSnapshotFrameKind::RecursiveGreenReplacementPage)
         .map(|(_, records)| usize::try_from(*records).expect("record count"))
         .sum::<usize>();
     assert!(
         (1..16).contains(&replacement_pages),
-        "one local edit should transfer only boundary-local packed pages, got \
+        "one local edit should transfer only a boundary-local Green splice, got \
              {replacement_pages}"
     );
+    assert!(target_delivery
+        .packet_frames
+        .iter()
+        .flatten()
+        .all(|(kind, _)| *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage));
     assert!(
         target_delivery.offer.transferred_record_count
             < target_delivery.offer.target_record_count / 4,
         "exact target must omit the large retained block/source-fact majority"
     );
     let target_source_version = source_version_for(binding, target_completion);
-    let mut output = vec![0_u8; 4096];
-    let outcome = host
-        .query_structural(
-            HostPointQuery {
-                source_version: target_source_version,
-                position: HostSourceMetric {
-                    bytes: u32::try_from(edit_start).expect("test edit byte"),
-                    utf16: u32::try_from(edit_start).expect("ASCII test edit UTF-16"),
-                },
-                affinity: HostMetricAffinity::Downstream,
-                budget: HostQueryBudget {
-                    maximum_encoded_bytes: output.len() as u32,
-                    maximum_open_depth: 64,
-                    maximum_leaf_count: 64,
-                    maximum_tree_nodes_visited: 256,
-                },
-            },
-            &mut output,
-        )
-        .expect("query independently replayed target");
-    let HostStructuralQueryOutcome::Viewport { receipt, .. } = outcome else {
-        panic!("replayed target must expose the edited Paragraph: {outcome:?}");
-    };
-    assert_eq!(receipt.encoded_bytes, HOST_M11_VIEWPORT_BYTES as u32);
-    assert_eq!(
-        u32::from_le_bytes(output[8..12].try_into().expect("viewport schema")),
-        1,
-        "persistent block reuse must not manufacture inline authority"
-    );
+    let (owner_kind, range, ancestry) =
+        recursive_green_query_shape(&host, target_source_version, edit_start, edit_start);
+    assert_eq!(owner_kind, 5);
+    assert!(range[0] as usize <= edit_start && edit_start < range[1] as usize);
+    assert!(!ancestry.is_empty());
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
-    assert!(
-        endpoint
-            .has_exact_base_for(&runtime, target_version)
-            .expect("segmented target exact-base continuity")
-    );
+    assert!(endpoint
+        .has_exact_base_for(&runtime, target_version)
+        .expect("segmented target exact-base continuity"));
     assert!(matches!(
         endpoint
             .retained
             .as_ref()
             .and_then(|retained| retained.restart.as_ref()),
-        Some(CandidateRestartAuthority::Ordinary(checkpoints))
-            if checkpoints.source() == target_version && checkpoints.is_segmented_top_level()
+        Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
+            if *source == target_version
     ));
+    assert_eq!(
+        endpoint.recursive_green_path_receipt(),
+        RecursiveGreenPathReceipt {
+            local_adoption_deliveries: 1,
+            clean_fallback_deliveries: 0,
+        }
+    );
 
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
@@ -8619,7 +8678,6 @@ fn tight_bullet_item_edit_uses_authenticated_block_delta() {
         worker_generation: 1,
     };
     let mut base_source = String::new();
-    let mut list_start = 0;
     for ordinal in 0..512 {
         use std::fmt::Write as _;
         writeln!(
@@ -8629,7 +8687,6 @@ fn tight_bullet_item_edit_uses_authenticated_block_delta() {
         )
         .expect("paragraph fixture write");
         if ordinal == 255 {
-            list_start = base_source.len();
             base_source.push_str("  - α😀 first\r\n  - beta second\r\n\r\n");
         }
     }
@@ -8637,6 +8694,8 @@ fn tight_bullet_item_edit_uses_authenticated_block_delta() {
         .find("beta second")
         .expect("selected Bullet List item");
     let edit_start_utf16 = base_source[..edit_start].encode_utf16().count();
+    let mut target_source = base_source.clone();
+    target_source.replace_range(edit_start..edit_start + 1, "β");
 
     let mut runtime = DocumentRuntime::new(&base_source, standard_document_runtime_config())
         .expect("Bullet List exact-delta runtime");
@@ -8692,7 +8751,7 @@ fn tight_bullet_item_edit_uses_authenticated_block_delta() {
         .expect("start authenticated Bullet List crop");
     assert_eq!(
         active_candidate_phase(endpoint.active.as_ref()),
-        "ParsingOrdinaryExact",
+        "AwaitingRecursiveGreenExact",
     );
     let target_delivery =
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
@@ -8708,64 +8767,60 @@ fn tight_bullet_item_edit_uses_authenticated_block_delta() {
         target_delivery.offer.transferred_record_count < target_delivery.offer.target_record_count,
         "the target must retain document records outside the changed list"
     );
+    let recursive_green_replacement_records = target_delivery
+        .packet_frames
+        .iter()
+        .flatten()
+        .filter(|(kind, _)| *kind == CandidateSnapshotFrameKind::RecursiveGreenReplacementPage)
+        .map(|(_, records)| *records)
+        .sum::<u32>();
     assert!(
-        target_delivery
-            .packet_frames
-            .iter()
-            .flatten()
-            .any(|(kind, _)| *kind == CandidateSnapshotFrameKind::BlockSequenceReplacementPage)
+        recursive_green_replacement_records > 0 && recursive_green_replacement_records <= 64,
+        "one list-item edit must publish one bounded recursive-Green splice"
     );
+    assert!(target_delivery
+        .packet_frames
+        .iter()
+        .flatten()
+        .all(|(kind, _)| *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage));
 
-    let mut output = vec![0_u8; 4096];
-    let outcome = host
-        .query_structural(
-            HostPointQuery {
-                source_version: target_source_version,
-                position: HostSourceMetric {
-                    bytes: u32::try_from(edit_start).expect("edit byte"),
-                    utf16: u32::try_from(edit_start_utf16).expect("edit UTF-16"),
-                },
-                affinity: HostMetricAffinity::Downstream,
-                budget: HostQueryBudget {
-                    maximum_encoded_bytes: output.len() as u32,
-                    maximum_open_depth: 64,
-                    maximum_leaf_count: 64,
-                    maximum_tree_nodes_visited: 256,
-                },
-            },
-            &mut output,
-        )
-        .expect("query independently replayed Bullet List");
-    let HostStructuralQueryOutcome::Viewport { range, .. } = outcome else {
-        panic!("exact-delta target must expose the edited Bullet List: {outcome:?}");
-    };
-    assert_eq!(range.start.bytes as usize, list_start);
-    assert!(range.end.bytes as usize > edit_start);
+    let selected_end = target_source[edit_start..]
+        .find("\r\n")
+        .map(|offset| edit_start + offset)
+        .expect("selected item line ending");
+    let (owner_kind, range, ancestry) =
+        recursive_green_query_shape(&host, target_source_version, edit_start, edit_start_utf16);
     assert_eq!(
-        u32::from_le_bytes(output[8..12].try_into().expect("viewport schema")),
-        1,
+        owner_kind, 5,
+        "the edited list row remains a Green Paragraph"
     );
+    assert_eq!(range[0] as usize, edit_start);
+    assert_eq!(range[1] as usize, selected_end);
+    assert_eq!(range[2] as usize, edit_start_utf16);
+    assert_eq!(
+        range[3] as usize,
+        target_source[..selected_end].encode_utf16().count()
+    );
+    assert_eq!(ancestry, vec![1, 3, 4, 5]);
 
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
-    assert!(
-        endpoint
-            .has_exact_base_for(&runtime, target_version)
-            .expect("Bullet List target exact-base continuity")
-    );
+    assert!(endpoint
+        .has_exact_base_for(&runtime, target_version)
+        .expect("Bullet List target exact-base continuity"));
     assert!(matches!(
         endpoint
             .retained
             .as_ref()
             .and_then(|retained| retained.restart.as_ref()),
-        Some(CandidateRestartAuthority::Ordinary(checkpoints))
-            if checkpoints.source() == target_version && checkpoints.is_segmented_top_level()
+        Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
+            if *source == target_version
     ));
 
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
 
 #[test]
-fn ordinary_paragraph_eof_edit_streams_delta_then_semantic_split_falls_back() {
+fn ordinary_paragraph_eof_edit_and_semantic_split_use_local_adoption() {
     let profile = SourceFactsScanProfile::new(2).expect("dense test profile");
     let parser_profile = ParserProfileId::new(1).expect("parser profile");
     let binding = SessionBinding {
@@ -8844,20 +8899,18 @@ fn ordinary_paragraph_eof_edit_streams_delta_then_semantic_split_falls_back() {
         "exact EOF delta must omit authenticated reused records"
     );
     assert_installed_candidate_has_no_inline(&host, source_version_for(binding, target_completion));
-    let retained = endpoint.retained.as_ref().expect("retained EOF target");
-    let CandidateRestartAuthority::Ordinary(checkpoints) =
-        retained.restart.as_ref().expect("EOF target authority")
-    else {
-        panic!("EOF crop must retain ordinary target checkpoints");
-    };
-    assert_eq!(checkpoints.source(), target_version);
-    assert!(checkpoints.len() > 2);
-    drain_candidate_cleanup(&mut endpoint, &mut runtime);
-    assert!(
+    assert!(matches!(
         endpoint
-            .has_exact_base_for(&runtime, target_version)
-            .expect("next EOF exact base")
-    );
+            .retained
+            .as_ref()
+            .and_then(|retained| retained.restart.as_ref()),
+        Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
+            if *source == target_version
+    ));
+    drain_candidate_cleanup(&mut endpoint, &mut runtime);
+    assert!(endpoint
+        .has_exact_base_for(&runtime, target_version)
+        .expect("next EOF exact base"));
 
     let second_paragraph_start = first_target_source.len() + 1;
     let second_paragraph_start_utf16 = first_target_source.encode_utf16().count() + 1;
@@ -8895,71 +8948,71 @@ fn ordinary_paragraph_eof_edit_streams_delta_then_semantic_split_falls_back() {
             binding,
             split_completion,
         )
-        .expect("start EOF crop before semantic decline");
+        .expect("start EOF semantic-split adoption");
     assert_eq!(
         active_candidate_phase(endpoint.active.as_ref()),
-        "ParsingOrdinaryExact"
+        "AwaitingRecursiveGreenExact"
     );
     let split_delivery =
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
 
-    assert_eq!(split_delivery.offer.mode, PublicationMode::FullSnapshot);
-    assert_eq!(split_delivery.offer.base_ack, None);
-    assert_eq!(
-        split_delivery.offer.transferred_record_count,
-        split_delivery.offer.target_record_count
-    );
-    let mut output = [0_u8; HOST_M11_VIEWPORT_BYTES];
-    let outcome = host
-        .query_structural(
-            HostPointQuery {
-                source_version: split_source_version,
-                position: HostSourceMetric {
-                    bytes: u32::try_from(second_paragraph_start + 1)
-                        .expect("second Paragraph byte"),
-                    utf16: u32::try_from(second_paragraph_start_utf16 + 1)
-                        .expect("second Paragraph UTF-16"),
-                },
-                affinity: HostMetricAffinity::Downstream,
-                budget: HostQueryBudget {
-                    maximum_encoded_bytes: HOST_M11_VIEWPORT_BYTES as u32,
-                    maximum_open_depth: 64,
-                    maximum_leaf_count: 64,
-                    maximum_tree_nodes_visited: 256,
-                },
-            },
-            &mut output,
-        )
-        .expect("query clean-fallback second Paragraph");
-    let HostStructuralQueryOutcome::Viewport { range, .. } = outcome else {
-        panic!("clean fallback must install the second Paragraph: {outcome:?}");
-    };
-    assert_eq!(range.start.bytes as usize, second_paragraph_start);
-    assert_eq!(
-        u32::from_le_bytes(output[8..12].try_into().expect("viewport schema")),
-        1
-    );
-    let retained = endpoint
-        .retained
-        .as_ref()
-        .expect("retained segmented EOF target");
-    let Some(CandidateRestartAuthority::Ordinary(checkpoints)) = retained.restart.as_ref() else {
-        panic!("clean EOF fallback must retain segmented restart authority");
-    };
-    assert_eq!(checkpoints.source(), split_target_version);
-    assert!(checkpoints.is_segmented_top_level());
-    drain_candidate_cleanup(&mut endpoint, &mut runtime);
+    assert_eq!(split_delivery.offer.mode, PublicationMode::ExactBaseDelta);
+    assert_eq!(split_delivery.offer.base_ack, Some(target_delivery.ack));
+    assert_eq!(split_delivery.ack.source_version, split_source_version);
     assert!(
-        endpoint
-            .has_exact_base_for(&runtime, split_target_version)
-            .expect("segmented EOF target exact-base continuity")
+        split_delivery.offer.transferred_record_count < split_delivery.offer.target_record_count,
+        "the semantic split must retain exact records outside its terminal Green splice"
     );
+    assert!(split_delivery
+        .packet_frames
+        .iter()
+        .flatten()
+        .any(|(kind, _)| *kind == CandidateSnapshotFrameKind::RecursiveGreenReplacementPage));
+    assert!(split_delivery
+        .packet_frames
+        .iter()
+        .flatten()
+        .all(|(kind, _)| *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage));
+    let (owner_kind, range, ancestry) = recursive_green_query_shape(
+        &host,
+        split_source_version,
+        second_paragraph_start + 1,
+        second_paragraph_start_utf16 + 1,
+    );
+    assert_eq!(owner_kind, 5, "the appended block is a Green Paragraph");
+    assert_eq!(range[0] as usize, second_paragraph_start);
+    assert_eq!(
+        range[2] as usize, second_paragraph_start_utf16,
+        "the appended Paragraph must retain exact UTF-16 coordinates"
+    );
+    assert!(!ancestry.is_empty());
+    assert!(matches!(
+        endpoint
+            .retained
+            .as_ref()
+            .and_then(|retained| retained.restart.as_ref()),
+        Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
+            if *source == split_target_version
+    ));
+    assert_eq!(
+        endpoint.recursive_green_path_receipt(),
+        RecursiveGreenPathReceipt {
+            local_adoption_deliveries: 2,
+            clean_fallback_deliveries: 0,
+        },
+        "both EOF edits must commit through bounded local Green adoption",
+    );
+    drain_candidate_cleanup(&mut endpoint, &mut runtime);
+    assert!(endpoint
+        .has_exact_base_for(&runtime, split_target_version)
+        .expect("segmented EOF target exact-base continuity"));
 
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
 
 #[test]
-fn ordinary_crop_blank_boundary_falls_back_to_fresh_full_snapshot() {
+fn ordinary_crop_blank_boundary_uses_bounded_recursive_green_local_adoption() {
+    const MAXIMUM_REPLACEMENT_RECORDS: u32 = 64;
     let profile = SourceFactsScanProfile::new(2).expect("dense test profile");
     let parser_profile = ParserProfileId::new(1).expect("parser profile");
     let binding = SessionBinding {
@@ -8971,7 +9024,7 @@ fn ordinary_crop_blank_boundary_falls_back_to_fresh_full_snapshot() {
         .map(|ordinal| format!("ordinary prose line {ordinal:04} {}\n", "a".repeat(40)))
         .collect();
     let mut runtime = DocumentRuntime::new(&base_source, standard_document_runtime_config())
-        .expect("ordinary fallback runtime");
+        .expect("ordinary local-adoption runtime");
     let (certified, base_completion) =
         complete_clean_source_facts(&mut runtime, profile, parser_profile, 1, 0);
     let base_version = certified.source();
@@ -8986,7 +9039,7 @@ fn ordinary_crop_blank_boundary_falls_back_to_fresh_full_snapshot() {
         authority_mask: AUTHORITY_MASK_ALL_ROLES,
         maximum_query_bytes: 64 * 1024,
     })
-    .expect("independent fallback host");
+    .expect("independent local-adoption host");
     host.observe_source_version(source_version_for(binding, base_completion))
         .expect("host observes ordinary base");
     let base_delivery =
@@ -9019,50 +9072,88 @@ fn ordinary_crop_blank_boundary_falls_back_to_fresh_full_snapshot() {
         .snapshot_current_source()
         .expect("borrow blank-boundary target");
     let target_completion = completion_for_persistent_target(&runtime, 2, 1);
-    host.observe_source_version(source_version_for(binding, target_completion))
+    let target_wire_source = source_version_for(binding, target_completion);
+    host.observe_source_version(target_wire_source)
         .expect("host observes blank-boundary target");
     endpoint
         .start_incremental(&runtime, target_lease, witness, binding, target_completion)
-        .expect("start bounded crop before semantic decline");
+        .expect("start bounded blank-boundary adoption");
+    assert_eq!(
+        active_candidate_phase(endpoint.active.as_ref()),
+        "AwaitingRecursiveGreenExact"
+    );
+    while endpoint.recursive_green.target_work_pending() {
+        assert!(matches!(
+            endpoint
+                .poll(&mut runtime, 1)
+                .expect("advance blank-boundary Green adoption"),
+            CandidatePoll::Pending { transitions: 1 }
+        ));
+    }
+    assert!(endpoint
+        .recursive_green
+        .ready_update_for(base_delivery.ack, target_version)
+        .is_some());
     let target_delivery =
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
 
-    assert_eq!(target_delivery.offer.mode, PublicationMode::FullSnapshot);
-    assert_eq!(target_delivery.offer.base_ack, None);
-    assert_eq!(
-        target_delivery.offer.transferred_record_count,
-        target_delivery.offer.target_record_count
+    assert_eq!(target_delivery.offer.mode, PublicationMode::ExactBaseDelta);
+    assert_eq!(target_delivery.offer.base_ack, Some(base_delivery.ack));
+    assert_eq!(target_delivery.ack.source_version, target_wire_source);
+    assert!(
+        target_delivery.offer.transferred_record_count < target_delivery.offer.target_record_count,
+        "local adoption must retain unchanged exact-base records"
+    );
+    let recursive_green_replacement_records = target_delivery
+        .packet_frames
+        .iter()
+        .flatten()
+        .filter(|(kind, _)| *kind == CandidateSnapshotFrameKind::RecursiveGreenReplacementPage)
+        .map(|(_, records)| *records)
+        .sum::<u32>();
+    assert!(
+        recursive_green_replacement_records > 0
+            && recursive_green_replacement_records <= MAXIMUM_REPLACEMENT_RECORDS,
+        "local adoption must publish a bounded nonempty recursive-Green replacement"
     );
     assert!(
-        !target_delivery
+        target_delivery
             .packet_frames
             .iter()
             .flatten()
-            .any(|(kind, _)| *kind == CandidateSnapshotFrameKind::SourceFactsReplacementPage)
+            .all(|(kind, _)| *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage),
+        "recursive-Green local adoption must not revive legacy block replacement"
+    );
+    assert_eq!(
+        endpoint.recursive_green_path_receipt(),
+        RecursiveGreenPathReceipt {
+            local_adoption_deliveries: 1,
+            clean_fallback_deliveries: 0,
+        }
     );
     let retained = endpoint
         .retained
         .as_ref()
-        .expect("retained fallback target");
+        .expect("retained local-adoption target");
     assert_eq!(
         retained
             .publication
             .descriptor(&runtime)
-            .expect("fallback descriptor")
+            .expect("local-adoption descriptor")
             .source_revision,
         target_version.revision().get()
     );
-    let Some(CandidateRestartAuthority::Ordinary(checkpoints)) = retained.restart.as_ref() else {
-        panic!("clean fallback must retain the segmented target restart authority");
-    };
-    assert_eq!(checkpoints.source(), target_version);
-    assert!(checkpoints.is_segmented_top_level());
+    assert!(matches!(
+        retained.restart.as_ref(),
+        Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
+            if *source == target_version
+    ));
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
     assert!(
         endpoint
             .has_exact_base_for(&runtime, target_version)
             .expect("segmented target eligibility"),
-        "the segmented clean target remains eligible for exact-base discovery"
+        "the segmented local-adoption target remains eligible for exact-base discovery"
     );
 
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
@@ -9141,13 +9232,11 @@ fn leading_crop_new_definition_falls_back_with_fresh_references() {
         target_delivery.offer.transferred_record_count,
         target_delivery.offer.target_record_count
     );
-    assert!(
-        target_delivery
-            .packet_frames
-            .iter()
-            .flatten()
-            .all(|(kind, _)| *kind != CandidateSnapshotFrameKind::SourceFactsReplacementPage)
-    );
+    assert!(target_delivery
+        .packet_frames
+        .iter()
+        .flatten()
+        .all(|(kind, _)| *kind != CandidateSnapshotFrameKind::SourceFactsReplacementPage));
     assert_eq!(
         host.role_record_count(flark_engine::m11_host::M11HostRole::References)
             .expect("fresh target References"),
@@ -9167,11 +9256,9 @@ fn leading_crop_new_definition_falls_back_with_fresh_references() {
         "fallback must install fresh target checkpoint semantics"
     );
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
-    assert!(
-        endpoint
-            .has_exact_base_for(&runtime, target_version)
-            .expect("next target exact base")
-    );
+    assert!(endpoint
+        .has_exact_base_for(&runtime, target_version)
+        .expect("next target exact base"));
 
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
@@ -9190,6 +9277,13 @@ fn length_changing_edit_before_late_definition_rebuilds_reference_coordinates() 
         .expect("late-definition fixture write");
     }
     base_source.push_str("[late]: /target\n");
+    let last_paragraph_start = base_source
+        .find("Paragraph 8191")
+        .expect("last Paragraph start");
+    let last_paragraph_end = base_source[last_paragraph_start..]
+        .find("\n\n")
+        .map(|offset| last_paragraph_start + offset + 1)
+        .expect("last Paragraph end");
 
     let profile = SourceFactsScanProfile::new(64).expect("dense coordinate-shift profile");
     let parser_profile = ParserProfileId::new(1).expect("parser profile");
@@ -9230,7 +9324,8 @@ fn length_changing_edit_before_late_definition_rebuilds_reference_coordinates() 
             .retained
             .as_ref()
             .and_then(|retained| retained.restart.as_ref()),
-        Some(CandidateRestartAuthority::ExactBaseOnly { .. })
+        Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
+            if *source == base_version
     ));
 
     let edit_start = base_source
@@ -9286,12 +9381,18 @@ fn length_changing_edit_before_late_definition_rebuilds_reference_coordinates() 
             .expect("reused equal-length References"),
         1
     );
-    drain_candidate_cleanup(&mut endpoint, &mut runtime);
-    assert!(
-        endpoint
-            .has_exact_base_for(&runtime, equal_length_version)
-            .expect("equal-length exact-base continuity")
+    assert_eq!(
+        endpoint.recursive_green_path_receipt(),
+        RecursiveGreenPathReceipt {
+            local_adoption_deliveries: 0,
+            clean_fallback_deliveries: 1,
+        },
+        "an edit before reference coverage must take the definitive clean path even when its canonical reference coordinates remain equal",
     );
+    drain_candidate_cleanup(&mut endpoint, &mut runtime);
+    assert!(endpoint
+        .has_exact_base_for(&runtime, equal_length_version)
+        .expect("equal-length exact-base continuity"));
 
     let target_version = runtime
         .apply_edit(
@@ -9302,6 +9403,7 @@ fn length_changing_edit_before_late_definition_rebuilds_reference_coordinates() 
         .expect("length-changing early edit")
         .source()
         .current();
+    let coordinate_delta = "Expanded p".len() - 1;
     let plan = runtime
         .begin_incremental_source_facts(profile, parser_profile, SourceFactsRootLimits::default())
         .expect("plan late-definition SourceFacts");
@@ -9339,6 +9441,29 @@ fn length_changing_edit_before_late_definition_rebuilds_reference_coordinates() 
             .expect("rebuilt target References"),
         1
     );
+    let target_source_version = source_version_for(binding, target_completion);
+    let target_last_paragraph_start = last_paragraph_start + coordinate_delta;
+    let target_last_paragraph_end = last_paragraph_end + coordinate_delta;
+    let (owner_kind, range, ancestry) = recursive_green_query_shape(
+        &host,
+        target_source_version,
+        target_last_paragraph_start + 1,
+        target_last_paragraph_start + 1,
+    );
+    assert_eq!(owner_kind, 5, "the shifted tail remains a Green Paragraph");
+    assert_eq!(range[0] as usize, target_last_paragraph_start);
+    assert_eq!(range[2] as usize, target_last_paragraph_start);
+    assert_eq!(range[1] as usize, target_last_paragraph_end - 1);
+    assert_eq!(range[3] as usize, target_last_paragraph_end - 1);
+    assert!(!ancestry.is_empty());
+    assert_eq!(
+        endpoint.recursive_green_path_receipt(),
+        RecursiveGreenPathReceipt {
+            local_adoption_deliveries: 0,
+            clean_fallback_deliveries: 2,
+        },
+        "the length-changing edit must rebuild shifted reference coordinates through the clean escape hatch",
+    );
     assert_eq!(
         endpoint
             .retained
@@ -9350,6 +9475,9 @@ fn length_changing_edit_before_late_definition_rebuilds_reference_coordinates() 
     );
 
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
+    assert!(endpoint
+        .has_exact_base_for(&runtime, target_version)
+        .expect("rebuilt target exact-base continuity"));
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
 
@@ -9416,11 +9544,9 @@ fn leading_references_use_the_production_exact_delta_path<
         Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
             if *source == base_version
     ));
-    assert!(
-        endpoint
-            .recursive_green
-            .has_installed_session_for(base_delivery.ack)
-    );
+    assert!(endpoint
+        .recursive_green
+        .has_installed_session_for(base_delivery.ack));
 
     let edit_start = tail_start
         + base_source[tail_start..]
@@ -9515,11 +9641,9 @@ fn leading_references_use_the_production_exact_delta_path<
     );
 
     drain_candidate_cleanup_with_fuel(&mut endpoint, &mut runtime, FUEL);
-    assert!(
-        endpoint
-            .has_exact_base_for(&runtime, target_version)
-            .expect("next large-reference exact base")
-    );
+    assert!(endpoint
+        .has_exact_base_for(&runtime, target_version)
+        .expect("next large-reference exact base"));
     close_exact_pair_to_zero_with_fuel(&mut endpoint, &mut runtime, &mut host, FUEL);
 }
 
@@ -9614,11 +9738,9 @@ fn frozen_leading_references_allow_bounded_middle_paragraph_exact_delta() {
         Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
             if *source == base_version
     ));
-    assert!(
-        endpoint
-            .recursive_green
-            .has_installed_session_for(base_delivery.ack)
-    );
+    assert!(endpoint
+        .recursive_green
+        .has_installed_session_for(base_delivery.ack));
 
     let edited_range = paragraph_ranges[EDITED_PARAGRAPH].clone();
     let edit_start = edited_range.start
@@ -9696,8 +9818,8 @@ fn frozen_leading_references_allow_bounded_middle_paragraph_exact_delta() {
 
     let edited_target_range = edited_range.start..edited_range.end + coordinate_delta - 1;
     let last_base_range = paragraph_ranges[PARAGRAPHS - 1].clone();
-    let last_target_range = last_base_range.start + coordinate_delta
-        ..last_base_range.end + coordinate_delta - 1;
+    let last_target_range =
+        last_base_range.start + coordinate_delta..last_base_range.end + coordinate_delta - 1;
     for (name, paragraph_range, point) in [
         (
             "first tail Paragraph",
@@ -9722,7 +9844,10 @@ fn frozen_leading_references_allow_bounded_middle_paragraph_exact_delta() {
         assert_eq!(range[2] as usize, paragraph_range.start, "{name}");
         assert_eq!(range[1] as usize, paragraph_range.end, "{name}");
         assert_eq!(range[3] as usize, paragraph_range.end, "{name}");
-        assert!(!ancestry.is_empty(), "{name} retains authenticated ancestry");
+        assert!(
+            !ancestry.is_empty(),
+            "{name} retains authenticated ancestry"
+        );
     }
 
     drain_candidate_cleanup_with_fuel(&mut endpoint, &mut runtime, FUEL);
@@ -9782,11 +9907,9 @@ fn exact_base_delta_round_trips_at_the_sixteen_frame_replay_boundary() {
     let base_delivery =
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
     assert_eq!(base_delivery.offer.mode, PublicationMode::FullSnapshot);
-    assert!(
-        endpoint
-            .has_exact_base_for(&runtime, base_version)
-            .expect("inspect retained base")
-    );
+    assert!(endpoint
+        .has_exact_base_for(&runtime, base_version)
+        .expect("inspect retained base"));
 
     let target_source = format!("{PREFIX}{}", "b".repeat(TAIL_BYTES));
     let target_version = runtime
@@ -9832,11 +9955,9 @@ fn exact_base_delta_round_trips_at_the_sixteen_frame_replay_boundary() {
         .expect("exact delta packet");
     assert_eq!(boundary_packet.len(), 16);
     assert_eq!(boundary_packet[0].0, CandidateSnapshotFrameKind::Begin);
-    assert!(
-        boundary_packet[1..]
-            .iter()
-            .all(|(kind, _)| *kind == CandidateSnapshotFrameKind::SourceFactsReplacementPage)
-    );
+    assert!(boundary_packet[1..]
+        .iter()
+        .all(|(kind, _)| *kind == CandidateSnapshotFrameKind::SourceFactsReplacementPage));
     assert!(
         target_delivery
             .packet_frames
@@ -9890,11 +10011,9 @@ fn exact_base_delta_round_trips_at_the_sixteen_frame_replay_boundary() {
         target_version
     );
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
-    assert!(
-        endpoint
-            .has_exact_base_for(&runtime, target_version)
-            .expect("next-revision exact base")
-    );
+    assert!(endpoint
+        .has_exact_base_for(&runtime, target_version)
+        .expect("next-revision exact base"));
 
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
@@ -9954,20 +10073,18 @@ fn one_acknowledged_base_survives_rejection_replaces_without_a_chain_and_closes(
                             .endpoint
                             .accept_credit(credit, event_id)
                             .expect("accept rejected target Packet credit");
-                        assert!(
-                            fixture
-                                .endpoint
-                                .handle_host_poll(
-                                    event_id,
-                                    offer_id,
-                                    HostPollPhase::PacketCredit,
-                                    HostPollResult::Rejected(
-                                        crate::v3_publication_wire::HostRejectReason::Superseded,
-                                    ),
-                                )
-                                .expect("reject pending recursive-Green update")
-                                .is_none()
-                        );
+                        assert!(fixture
+                            .endpoint
+                            .handle_host_poll(
+                                event_id,
+                                offer_id,
+                                HostPollPhase::PacketCredit,
+                                HostPollResult::Rejected(
+                                    crate::v3_publication_wire::HostRejectReason::Superseded,
+                                ),
+                            )
+                            .expect("reject pending recursive-Green update")
+                            .is_none());
                         saw_packet = true;
                         break;
                     }
@@ -9987,7 +10104,10 @@ fn one_acknowledged_base_survives_rejection_replaces_without_a_chain_and_closes(
             }
         }
     }
-    assert!(saw_packet, "pending Green update did not reach packet streaming");
+    assert!(
+        saw_packet,
+        "pending Green update did not reach packet streaming"
+    );
     drain_candidate_cleanup(&mut fixture.endpoint, &mut fixture.runtime);
     while !fixture.runtime.poll_retirement(256).complete {}
     fixture.assert_original_base_restored();
@@ -10020,12 +10140,10 @@ fn one_acknowledged_base_survives_rejection_replaces_without_a_chain_and_closes(
         "the delivery helper must commit the replacement before returning"
     );
     drain_candidate_cleanup(&mut fixture.endpoint, &mut fixture.runtime);
-    assert!(
-        fixture
-            .endpoint
-            .has_exact_base_for(&fixture.runtime, replacement)
-            .expect("replacement becomes exact base")
-    );
+    assert!(fixture
+        .endpoint
+        .has_exact_base_for(&fixture.runtime, replacement)
+        .expect("replacement becomes exact base"));
     while !fixture.runtime.poll_retirement(256).complete {}
     assert!(replacement_delivery.ack.host_revision > fixture.base_ack.host_revision);
     assert!(
@@ -10050,16 +10168,17 @@ fn one_acknowledged_base_survives_rejection_replaces_without_a_chain_and_closes(
         .expect("persistent page lookup")
         .expect("replacement persistent page")
         .id();
-    fixture.endpoint.begin_close().expect("begin endpoint close");
+    fixture
+        .endpoint
+        .begin_close()
+        .expect("begin endpoint close");
     drain_candidate_cleanup(&mut fixture.endpoint, &mut fixture.runtime);
     while !fixture.runtime.poll_retirement(256).complete {}
     assert!(fixture.endpoint.retained.is_none());
-    assert!(
-        !fixture
-            .endpoint
-            .recursive_green
-            .has_installed_session_for(replacement_delivery.ack)
-    );
+    assert!(!fixture
+        .endpoint
+        .recursive_green
+        .has_installed_session_for(replacement_delivery.ack));
     assert_eq!(
         fixture
             .runtime
@@ -10083,10 +10202,7 @@ fn one_acknowledged_base_survives_rejection_replaces_without_a_chain_and_closes(
         "the replacement must own one base-sized Green graph, not an old revision chain"
     );
 
-    fixture
-        .runtime
-        .begin_close()
-        .expect("begin runtime close");
+    fixture.runtime.begin_close().expect("begin runtime close");
     while !fixture
         .runtime
         .poll_close(256)
@@ -10189,16 +10305,12 @@ fn packet_builder_enforces_exact_count_body_and_offer_caps() {
     for ordinal in 0..MAXIMUM_PACKET_FRAME_COUNT {
         push_test_frame(&mut count_limited, ordinal, 1);
     }
-    assert!(
-        count_limited
-            .saturated(MAXIMUM_PACKET_ENCODED_BYTES)
-            .expect("count saturation")
-    );
-    assert!(
-        !count_limited
-            .can_accept(1, MAXIMUM_PACKET_ENCODED_BYTES)
-            .expect("count boundary")
-    );
+    assert!(count_limited
+        .saturated(MAXIMUM_PACKET_ENCODED_BYTES)
+        .expect("count saturation"));
+    assert!(!count_limited
+        .can_accept(1, MAXIMUM_PACKET_ENCODED_BYTES)
+        .expect("count boundary"));
 
     let mut body_limited = PacketBuilder::default();
     for ordinal in 0..12 {
@@ -10209,30 +10321,22 @@ fn packet_builder_enforces_exact_count_body_and_offer_caps() {
         body_limited.aggregate_frame_bytes,
         MAXIMUM_PACKET_AGGREGATE_FRAME_BYTES as usize
     );
-    assert!(
-        body_limited
-            .saturated(MAXIMUM_PACKET_ENCODED_BYTES)
-            .expect("body saturation")
-    );
-    assert!(
-        !body_limited
-            .can_accept(1, MAXIMUM_PACKET_ENCODED_BYTES)
-            .expect("body boundary")
-    );
+    assert!(body_limited
+        .saturated(MAXIMUM_PACKET_ENCODED_BYTES)
+        .expect("body saturation"));
+    assert!(!body_limited
+        .can_accept(1, MAXIMUM_PACKET_ENCODED_BYTES)
+        .expect("body boundary"));
 
     let mut offer_limited = PacketBuilder::default();
     push_test_frame(&mut offer_limited, 0, 10);
     let exact_offer_cap = offer_limited.encoded_len().expect("encoded length");
-    assert!(
-        offer_limited
-            .saturated(exact_offer_cap)
-            .expect("offer saturation")
-    );
-    assert!(
-        !offer_limited
-            .can_accept(1, exact_offer_cap)
-            .expect("offer boundary")
-    );
+    assert!(offer_limited
+        .saturated(exact_offer_cap)
+        .expect("offer saturation"));
+    assert!(!offer_limited
+        .can_accept(1, exact_offer_cap)
+        .expect("offer boundary"));
 }
 
 #[test]
@@ -10318,20 +10422,18 @@ fn packet_credit_requires_exact_frame_range_and_host_cursor() {
         ),
         Err(CandidateEndpointError::InvalidState)
     ));
-    assert!(
-        endpoint
-            .handle_host_poll(
-                77,
+    assert!(endpoint
+        .handle_host_poll(
+            77,
+            offer_id,
+            HostPollPhase::PacketCredit,
+            HostPollResult::Completed(HostPollOutcome::PacketCredit {
                 offer_id,
-                HostPollPhase::PacketCredit,
-                HostPollResult::Completed(HostPollOutcome::PacketCredit {
-                    offer_id,
-                    next_frame_ordinal: 7,
-                }),
-            )
-            .expect("exact host packet cursor")
-            .is_none()
-    );
+                next_frame_ordinal: 7,
+            }),
+        )
+        .expect("exact host packet cursor")
+        .is_none());
     cancel_endpoint_to_zero(runtime, endpoint);
 }
 
