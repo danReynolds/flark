@@ -12,7 +12,7 @@ use crate::source::{SourceBoundaryAffinity, SourceVersion};
 
 use super::build::M11RecursiveGreenRoot;
 use super::codec::{
-    decode_leaf, decode_packed_event, is_renderable_row_kind,
+    decode_leaf, decode_packed_event, is_renderable_row_kind, EMPTY_ITEM_ROW_KIND,
     M11RecursiveGreenCachedRowEditCapability, M11RecursiveGreenCoveragePart,
     M11RecursiveGreenError, M11RecursiveGreenFrameId, M11RecursiveGreenKind,
     M11RecursiveGreenLogicalAtom, M11RecursiveGreenSourceMetric, PackedGreenEvent,
@@ -1670,13 +1670,79 @@ pub(super) fn locate_renderable_rows_in_arena(
                 "renderable-row summary selected a non-row frame",
             ));
         }
-        if open.byte_start >= requested_end_byte && ordinal != start_ordinal {
+        let empty_item_row_at_requested_end = boundary.final_kind.get() == EMPTY_ITEM_ROW_KIND
+            && open.byte_start == requested_end_byte
+            && boundary.byte_end == requested_end_byte;
+        if open.byte_start >= requested_end_byte
+            && ordinal != start_ordinal
+            && !empty_item_row_at_requested_end
+        {
             complete = true;
             break;
         }
         let editable = point_zipper_row_editable(arena, tree, open, boundary, &mut work)?;
         let mut path = Vec::new();
-        if let Some((anchor_byte, anchor_utf16)) = editable.ancestry_point {
+        if boundary.final_kind.get() == EMPTY_ITEM_ROW_KIND {
+            if open.byte_start != boundary.byte_end
+                || open.utf16_start != boundary.utf16_end
+                || editable.bytes != Some(open.byte_start..open.byte_start)
+                || editable.utf16 != Some(open.utf16_start..open.utf16_start)
+            {
+                return Err(M11RecursiveGreenError::Corrupt(
+                    "empty-item row carried nonempty geometry",
+                ));
+            }
+            let point_byte = usize::try_from(open.byte_start)
+                .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+            let point_utf16 = usize::try_from(open.utf16_start)
+                .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+            let location = locate_point_in_arena_zipper_prepared(
+                arena,
+                tree,
+                summary,
+                M11RecursiveGreenPoint::new(
+                    point_byte,
+                    point_utf16,
+                    SourceBoundaryAffinity::Before,
+                ),
+                &mut work,
+            )?
+            .ok_or(M11RecursiveGreenError::Corrupt(
+                "empty-item row has no predecessor ancestry",
+            ))?;
+            path.try_reserve_exact(location.zipper_open.len() + 1)
+                .map_err(|_| M11RecursiveGreenError::InvalidState)?;
+            for candidate in location.zipper_open.iter().copied() {
+                let candidate_boundary = point_zipper_frame_boundary(
+                    arena,
+                    tree,
+                    root_leaf_count,
+                    candidate,
+                    &mut work,
+                )?;
+                path.push(M11RecursiveGreenRowPathFrame {
+                    frame: candidate.frame,
+                    kind: candidate_boundary.final_kind,
+                    physical: candidate.byte_start..candidate_boundary.byte_end,
+                    physical_utf16: candidate.utf16_start..candidate_boundary.utf16_end,
+                    property: candidate_boundary.final_property,
+                    close: candidate_boundary.close,
+                });
+            }
+            if path.last().is_none_or(|ancestor| ancestor.kind().get() != 4) {
+                return Err(M11RecursiveGreenError::Corrupt(
+                    "empty-item row is not nested directly in an Item",
+                ));
+            }
+            path.push(M11RecursiveGreenRowPathFrame {
+                frame: open.frame,
+                kind: boundary.final_kind,
+                physical: open.byte_start..boundary.byte_end,
+                physical_utf16: open.utf16_start..boundary.utf16_end,
+                property: boundary.final_property,
+                close: boundary.close,
+            });
+        } else if let Some((anchor_byte, anchor_utf16)) = editable.ancestry_point {
             let can_reuse_start = ordinal == start_ordinal
                 && start_row_open.is_some_and(|candidate| candidate.frame == open.frame);
             let queried_location = if can_reuse_start {

@@ -109,6 +109,120 @@ fn clean_session_retains_green_and_reference_authority_for_late_queries() {
 }
 
 #[test]
+fn terminal_empty_list_items_emit_one_editable_row_without_duplicating_nonempty_items() {
+    for (source, item_start, list_style, marker) in [
+        ("- alpha\n-   ", 8_usize, 1_u8, b'-'),
+        ("7) alpha\n0)   ", 9_usize, 2_u8, b')'),
+    ] {
+        let mut runtime = DocumentRuntime::new(source, DocumentRuntimeConfig::default())
+            .expect("terminal-empty list runtime");
+        let mut session = build_session(&mut runtime);
+        let window = session
+            .query_renderable_rows(
+                &runtime,
+                M11RecursiveGreenPoint::new(0, 0, SourceBoundaryAffinity::After),
+                source.len() as u64,
+                M11RecursiveGreenRowQueryLimits::new(8, 8, 512, 16, 512)
+                    .expect("terminal-empty row limits"),
+            )
+            .expect("terminal-empty row query");
+        assert!(window.complete(), "source={source:?}");
+        assert_eq!(window.rows().len(), 2, "source={source:?}");
+        assert_eq!(window.rows()[0].kind().get(), 5, "source={source:?}");
+
+        let empty = &window.rows()[1];
+        assert_eq!(empty.kind().get(), 14, "source={source:?}");
+        assert_eq!(
+            empty.physical_range(),
+            source.len() as u64..source.len() as u64,
+            "source={source:?}",
+        );
+        assert_eq!(
+            empty.edit_capability(),
+            M11RecursiveGreenRowEditCapability::Contiguous,
+        );
+        assert_eq!(
+            empty.editable_range(),
+            Some(source.len() as u64..source.len() as u64),
+            "source={source:?}",
+        );
+        assert_eq!(
+            empty.editable_utf16_range(),
+            Some(
+                source.encode_utf16().count() as u64..source.encode_utf16().count() as u64,
+            ),
+            "source={source:?}",
+        );
+        assert_eq!(
+            empty
+                .path()
+                .iter()
+                .map(|frame| frame.kind().get())
+                .collect::<Vec<_>>(),
+            vec![1, 3, 4, 14],
+            "source={source:?}",
+        );
+        let list = empty.path()[1]
+            .property()
+            .expect("empty row retains List facts");
+        assert_eq!(list.tag().get(), 1);
+        assert_eq!(list.as_bytes()[0], list_style);
+        assert_eq!(
+            list.as_bytes()[if list_style == 1 { 1 } else { 2 }],
+            marker,
+        );
+        let item = empty.path()[2]
+            .property()
+            .expect("empty row retains Item facts");
+        assert_eq!(item.tag().get(), 2);
+        assert_eq!(
+            empty.path()[2].physical_range(),
+            item_start as u64..source.len() as u64,
+        );
+
+        release_session(&mut runtime, &mut session);
+        runtime.begin_close().expect("begin terminal-empty close");
+        while !runtime
+            .poll_close(64)
+            .expect("poll terminal-empty close")
+            .complete
+        {}
+    }
+
+    let source = "- alpha\n- beta";
+    let mut runtime = DocumentRuntime::new(source, DocumentRuntimeConfig::default())
+        .expect("nonempty list runtime");
+    let mut session = build_session(&mut runtime);
+    let window = session
+        .query_renderable_rows(
+            &runtime,
+            M11RecursiveGreenPoint::new(0, 0, SourceBoundaryAffinity::After),
+            source.len() as u64,
+            M11RecursiveGreenRowQueryLimits::new(8, 8, 512, 16, 512)
+                .expect("nonempty row limits"),
+        )
+        .expect("nonempty row query");
+    assert_eq!(
+        window
+            .rows()
+            .iter()
+            .map(|row| row.kind().get())
+            .collect::<Vec<_>>(),
+        vec![5, 5],
+    );
+    assert!(window.rows().iter().all(|row| {
+        row.path()
+            .iter()
+            .map(|frame| frame.kind().get())
+            .eq([1, 3, 4, 5])
+    }));
+
+    release_session(&mut runtime, &mut session);
+    runtime.begin_close().expect("begin nonempty close");
+    while !runtime.poll_close(64).expect("poll nonempty close").complete {}
+}
+
+#[test]
 fn leading_reference_visible_remainder_edit_uses_local_recursive_green_adoption() {
     const REFERENCES: usize = 128;
     let mut source = String::new();

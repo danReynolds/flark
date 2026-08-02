@@ -48,6 +48,7 @@ const KIND_FENCED_CODE: u16 = 7;
 const KIND_HTML_BLOCK: u16 = 8;
 pub(super) const KIND_HEADING: u16 = 12;
 const KIND_THEMATIC_BREAK: u16 = 13;
+const KIND_EMPTY_ITEM_ROW: u16 = 14;
 
 const FACT_LIST: u16 = 1;
 const FACT_ITEM: u16 = 2;
@@ -284,6 +285,7 @@ struct OpenFrame {
     kind: BlockKind,
     fence: Option<FenceFold>,
     row_editable: Option<RowEditableFold>,
+    has_renderable_descendant: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -307,7 +309,7 @@ pub(super) struct M11ReferenceStagedTerminator {
 
 #[derive(Clone, Copy, Debug)]
 struct PendingEvents {
-    events: [Option<M11RecursiveGreenEvent>; 2],
+    events: [Option<M11RecursiveGreenEvent>; 3],
     len: u8,
     next: u8,
     in_flight: bool,
@@ -316,7 +318,7 @@ struct PendingEvents {
 impl PendingEvents {
     const fn one(event: M11RecursiveGreenEvent) -> Self {
         Self {
-            events: [Some(event), None],
+            events: [Some(event), None, None],
             len: 1,
             next: 0,
             in_flight: false,
@@ -325,8 +327,21 @@ impl PendingEvents {
 
     const fn two(first: M11RecursiveGreenEvent, second: M11RecursiveGreenEvent) -> Self {
         Self {
-            events: [Some(first), Some(second)],
+            events: [Some(first), Some(second), None],
             len: 2,
+            next: 0,
+            in_flight: false,
+        }
+    }
+
+    const fn three(
+        first: M11RecursiveGreenEvent,
+        second: M11RecursiveGreenEvent,
+        third: M11RecursiveGreenEvent,
+    ) -> Self {
+        Self {
+            events: [Some(first), Some(second), Some(third)],
+            len: 3,
             next: 0,
             in_flight: false,
         }
@@ -2208,6 +2223,13 @@ impl M11BlockWriter {
         &mut self,
         kind: BlockKind,
     ) -> Result<M11BlockWriterOfferStatus, M11BlockWriterError> {
+        if is_renderable_block_kind(kind) {
+            for ancestor in &mut self.open {
+                if matches!(ancestor.kind, BlockKind::Item(_)) {
+                    ancestor.has_renderable_descendant = true;
+                }
+            }
+        }
         let green_kind = green_kind(kind);
         let property = open_property(kind)?;
         let frame = M11RecursiveGreenFrameId::new(self.next_frame)
@@ -2233,6 +2255,7 @@ impl M11BlockWriter {
                 physical_base,
                 !matches!(kind, BlockKind::FencedCode(_)),
             )),
+            has_renderable_descendant: false,
         });
         let enter = M11RecursiveGreenEvent::Enter {
             frame,
@@ -2474,21 +2497,52 @@ impl M11BlockWriter {
         if frame.kind != kind {
             return self.reject("close kind differs from open frame");
         }
+        let needs_empty_item_row =
+            matches!(frame.kind, BlockKind::Item(_)) && !frame.has_renderable_descendant;
         let close = self.close_facts(frame, final_facts)?;
         self.open.pop();
-        self.pending = Some(Pending::Events(PendingEvents::one(
-            M11RecursiveGreenEvent::Exit {
-                frame: frame.id,
-                final_kind: green_kind(kind),
-                close,
-                last_line_blank,
-                child: M11RecursiveGreenClosedChild::new(
-                    child.ends_blank(),
-                    child.item_loose_if_nonlast(),
-                    child.item_loose_if_last(),
-                ),
-            },
-        )));
+        let item_exit = M11RecursiveGreenEvent::Exit {
+            frame: frame.id,
+            final_kind: green_kind(kind),
+            close,
+            last_line_blank,
+            child: M11RecursiveGreenClosedChild::new(
+                child.ends_blank(),
+                child.item_loose_if_nonlast(),
+                child.item_loose_if_last(),
+            ),
+        };
+        self.pending = Some(Pending::Events(if needs_empty_item_row {
+            for ancestor in &mut self.open {
+                if matches!(ancestor.kind, BlockKind::Item(_)) {
+                    ancestor.has_renderable_descendant = true;
+                }
+            }
+            let row_frame = M11RecursiveGreenFrameId::new(self.next_frame)
+                .ok_or(M11BlockWriterError::CounterOverflow)?;
+            self.next_frame = self
+                .next_frame
+                .checked_add(1)
+                .ok_or(M11BlockWriterError::CounterOverflow)?;
+            let row_kind = M11RecursiveGreenKind::new(KIND_EMPTY_ITEM_ROW)
+                .expect("empty-item row kind is nonzero");
+            PendingEvents::three(
+                M11RecursiveGreenEvent::Enter {
+                    frame: row_frame,
+                    kind: row_kind,
+                },
+                M11RecursiveGreenEvent::Exit {
+                    frame: row_frame,
+                    final_kind: row_kind,
+                    close: None,
+                    last_line_blank: false,
+                    child: M11RecursiveGreenClosedChild::new(false, false, false),
+                },
+                item_exit,
+            )
+        } else {
+            PendingEvents::one(item_exit)
+        }));
         Ok(M11BlockWriterOfferStatus::Pending)
     }
 
