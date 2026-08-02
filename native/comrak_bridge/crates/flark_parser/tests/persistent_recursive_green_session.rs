@@ -150,7 +150,11 @@ fn leading_reference_visible_remainder_edit_uses_local_recursive_green_adoption(
 
     release_session(&mut clean_runtime, &mut clean);
     clean_runtime.begin_close().expect("begin clean close");
-    while !clean_runtime.poll_close(64).expect("poll clean close").complete {}
+    while !clean_runtime
+        .poll_close(64)
+        .expect("poll clean close")
+        .complete
+    {}
     release_session(&mut runtime, &mut superseded);
     release_session(&mut runtime, &mut target);
     runtime.begin_close().expect("begin close");
@@ -212,10 +216,12 @@ fn local_adoption_cancel_after_splice_releases_target_and_returns_complete_origi
     let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
         .expect("cancellation runtime");
     let session = build_session(&mut runtime);
+    while !runtime.poll_retirement(1).complete {}
     let base_source = session.source();
     let base_checkpoints = session.checkpoint_count();
     let base_references = session.reference_occurrence_count();
-    let base_resident_nodes = runtime.arena_metrics().resident_nodes;
+    let base_arena_metrics = runtime.arena_metrics();
+    let base_resident_nodes = base_arena_metrics.resident_nodes;
     assert!(base_checkpoints >= 3);
     let base_page_probe_offsets = [
         source.find("Paragraph 010").expect("prefix page probe"),
@@ -289,7 +295,31 @@ fn local_adoption_cancel_after_splice_releases_target_and_returns_complete_origi
                 .expect("restored base page identity")
         })
     );
-    assert!(runtime.arena_metrics().resident_nodes < target_resident_nodes);
+    assert!(target_resident_nodes > base_resident_nodes);
+    let restored_arena_metrics = runtime.arena_metrics();
+    assert_eq!(
+        (
+            restored_arena_metrics.resident_nodes,
+            restored_arena_metrics.live_payload_bytes,
+            restored_arena_metrics.reserved_external_payload_bytes,
+            restored_arena_metrics.pending_reclaims,
+            restored_arena_metrics.live_builds,
+            restored_arena_metrics.pending_build_aborts,
+        ),
+        (
+            base_arena_metrics.resident_nodes,
+            base_arena_metrics.live_payload_bytes,
+            base_arena_metrics.reserved_external_payload_bytes,
+            base_arena_metrics.pending_reclaims,
+            base_arena_metrics.live_builds,
+            base_arena_metrics.pending_build_aborts,
+        ),
+        "post-splice cancellation must restore every live arena metric",
+    );
+    assert!(
+        restored_arena_metrics.allocated_slots >= base_arena_metrics.allocated_slots,
+        "allocator slot high-water must remain monotonic",
+    );
 
     release_session(&mut runtime, &mut base);
     runtime.begin_close().expect("begin runtime close");
