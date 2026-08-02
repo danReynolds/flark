@@ -63,6 +63,22 @@ pub struct M11RecursiveGreenStructuralBoundary {
     open: Box<[M11RecursiveGreenBoundaryFrame]>,
 }
 
+/// Parser-internal replica of one move-only boundary, scoped to exactly one
+/// adoption transaction.
+///
+/// This is deliberately not `Clone`: the trusted parser-internal consumer can
+/// ask an original committed boundary to mint a replica for a private
+/// transaction, and that transaction must consume the replica with the same
+/// identity before it can splice. The feature-gated parser seam is an explicit
+/// trust boundary; this wrapper prevents accidental general cloning rather
+/// than defending against a deliberately repeated internal mint request.
+#[doc(hidden)]
+#[must_use = "a structural boundary transaction replica must be consumed or discarded"]
+pub struct M11RecursiveGreenStructuralBoundaryTransactionReplica {
+    transaction_id: u64,
+    boundary: M11RecursiveGreenStructuralBoundary,
+}
+
 impl fmt::Debug for M11RecursiveGreenStructuralBoundary {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -130,6 +146,34 @@ impl M11RecursiveGreenStructuralBoundary {
         &self.open
     }
 
+    /// Mints one parser-transaction replica without making committed Green
+    /// boundary authority generally cloneable.
+    #[doc(hidden)]
+    pub fn replicate_for_parser_transaction(
+        &self,
+        transaction_id: u64,
+    ) -> Result<M11RecursiveGreenStructuralBoundaryTransactionReplica, M11RecursiveGreenError> {
+        if transaction_id == 0 {
+            return Err(M11RecursiveGreenError::InvalidState);
+        }
+        let mut open = Vec::new();
+        open.try_reserve_exact(self.open.len())
+            .map_err(|_| M11RecursiveGreenError::InvalidState)?;
+        open.extend_from_slice(&self.open);
+        Ok(M11RecursiveGreenStructuralBoundaryTransactionReplica {
+            transaction_id,
+            boundary: Self {
+                runtime_identity: self.runtime_identity,
+                green_identity: self.green_identity,
+                source: self.source,
+                event_cut: self.event_cut,
+                physical: self.physical,
+                logical: self.logical,
+                open: open.into_boxed_slice(),
+            },
+        })
+    }
+
     pub(super) fn rebound(
         runtime_identity: StrongIdentity,
         green_identity: StrongIdentity,
@@ -150,6 +194,168 @@ impl M11RecursiveGreenStructuralBoundary {
         }
     }
 }
+
+impl M11RecursiveGreenStructuralBoundaryTransactionReplica {
+    /// Recovers move-only boundary authority only for the transaction that
+    /// minted this replica.
+    #[doc(hidden)]
+    pub fn into_boundary_for_parser_transaction(
+        self,
+        transaction_id: u64,
+    ) -> Result<M11RecursiveGreenStructuralBoundary, M11RecursiveGreenError> {
+        if transaction_id == 0 || self.transaction_id != transaction_id {
+            return Err(M11RecursiveGreenError::SourceAuthorityMismatch);
+        }
+        Ok(self.boundary)
+    }
+}
+
+/// Move-only proof that one authenticated structural splice preserved the
+/// exact Green prefix and suffix surrounding its replacement.
+///
+/// The capability is minted only by
+/// [`splice_m11_recursive_green_structural_atomic`]. It can rebind an existing
+/// base boundary to the new root without accepting caller-supplied coordinate
+/// deltas or Green identities.
+#[doc(hidden)]
+#[must_use = "structural splice rebase authority must be used or discarded"]
+pub struct M11RecursiveGreenStructuralSpliceRebase {
+    runtime_identity: StrongIdentity,
+    base_green_identity: StrongIdentity,
+    target_green_identity: StrongIdentity,
+    base_source: crate::SourceVersion,
+    target_source: crate::SourceVersion,
+    base_event_start: u64,
+    base_event_end: u64,
+    target_event_end: u64,
+    base_physical_start: super::codec::M11RecursiveGreenSourceMetric,
+    base_physical_end: super::codec::M11RecursiveGreenSourceMetric,
+    target_physical_end: super::codec::M11RecursiveGreenSourceMetric,
+    base_logical_start: super::codec::M11RecursiveGreenSourceMetric,
+    base_logical_end: super::codec::M11RecursiveGreenSourceMetric,
+    target_logical_end: super::codec::M11RecursiveGreenSourceMetric,
+    target_event_count: u64,
+    target_physical_total: super::codec::M11RecursiveGreenSourceMetric,
+    target_logical_total: super::codec::M11RecursiveGreenSourceMetric,
+}
+
+impl M11RecursiveGreenStructuralSpliceRebase {
+    /// Consumes one boundary strictly inside the splice's unchanged prefix and
+    /// rebinds it to the target Green identity. Prefix coordinates are exact
+    /// identities because the splice lineage proved that source unchanged.
+    pub fn rebase_prefix(
+        &self,
+        mut boundary: M11RecursiveGreenStructuralBoundary,
+    ) -> Result<M11RecursiveGreenStructuralBoundary, M11RecursiveGreenError> {
+        self.validate_base_boundary(&boundary)?;
+        if boundary.event_cut >= self.base_event_start
+            || boundary.physical.bytes() > self.base_physical_start.bytes()
+            || boundary.physical.utf16() > self.base_physical_start.utf16()
+            || boundary.logical.bytes() > self.base_logical_start.bytes()
+            || boundary.logical.utf16() > self.base_logical_start.utf16()
+        {
+            return Err(M11RecursiveGreenError::SourceAuthorityMismatch);
+        }
+        self.validate_target_coordinates(boundary.event_cut, boundary.physical, boundary.logical)?;
+        boundary.green_identity = self.target_green_identity;
+        boundary.source = self.target_source;
+        Ok(boundary)
+    }
+
+    /// Consumes one boundary strictly inside the splice's unchanged suffix and
+    /// rebinds it using the authenticated event, physical, and logical deltas
+    /// at convergence.
+    pub fn rebase_suffix(
+        &self,
+        mut boundary: M11RecursiveGreenStructuralBoundary,
+    ) -> Result<M11RecursiveGreenStructuralBoundary, M11RecursiveGreenError> {
+        self.validate_base_boundary(&boundary)?;
+        if boundary.event_cut <= self.base_event_end
+            || boundary.physical.bytes() < self.base_physical_end.bytes()
+            || boundary.physical.utf16() < self.base_physical_end.utf16()
+            || boundary.logical.bytes() < self.base_logical_end.bytes()
+            || boundary.logical.utf16() < self.base_logical_end.utf16()
+        {
+            return Err(M11RecursiveGreenError::SourceAuthorityMismatch);
+        }
+        let event_cut = translate_cut(
+            boundary.event_cut,
+            self.base_event_end,
+            self.target_event_end,
+        )?;
+        let physical = translate_metric(
+            boundary.physical,
+            self.base_physical_end,
+            self.target_physical_end,
+        )?;
+        let logical = translate_metric(
+            boundary.logical,
+            self.base_logical_end,
+            self.target_logical_end,
+        )?;
+        self.validate_target_coordinates(event_cut, physical, logical)?;
+        boundary.green_identity = self.target_green_identity;
+        boundary.source = self.target_source;
+        boundary.event_cut = event_cut;
+        boundary.physical = physical;
+        boundary.logical = logical;
+        Ok(boundary)
+    }
+
+    fn validate_base_boundary(
+        &self,
+        boundary: &M11RecursiveGreenStructuralBoundary,
+    ) -> Result<(), M11RecursiveGreenError> {
+        if boundary.runtime_identity != self.runtime_identity
+            || boundary.green_identity != self.base_green_identity
+            || boundary.source != self.base_source
+        {
+            return Err(M11RecursiveGreenError::SourceAuthorityMismatch);
+        }
+        Ok(())
+    }
+
+    fn validate_target_coordinates(
+        &self,
+        event_cut: u64,
+        physical: super::codec::M11RecursiveGreenSourceMetric,
+        logical: super::codec::M11RecursiveGreenSourceMetric,
+    ) -> Result<(), M11RecursiveGreenError> {
+        if event_cut > self.target_event_count
+            || physical.bytes() > self.target_physical_total.bytes()
+            || physical.utf16() > self.target_physical_total.utf16()
+            || logical.bytes() > self.target_logical_total.bytes()
+            || logical.utf16() > self.target_logical_total.utf16()
+        {
+            return Err(M11RecursiveGreenError::SourceAuthorityMismatch);
+        }
+        Ok(())
+    }
+}
+
+fn translate_cut(value: u64, base: u64, target: u64) -> Result<u64, M11RecursiveGreenError> {
+    if target >= base {
+        value
+            .checked_add(target - base)
+            .ok_or(M11RecursiveGreenError::CounterOverflow)
+    } else {
+        value
+            .checked_sub(base - target)
+            .ok_or(M11RecursiveGreenError::CounterOverflow)
+    }
+}
+
+fn translate_metric(
+    value: super::codec::M11RecursiveGreenSourceMetric,
+    base: super::codec::M11RecursiveGreenSourceMetric,
+    target: super::codec::M11RecursiveGreenSourceMetric,
+) -> Result<super::codec::M11RecursiveGreenSourceMetric, M11RecursiveGreenError> {
+    super::codec::M11RecursiveGreenSourceMetric::new(
+        translate_cut(value.bytes(), base.bytes(), target.bytes())?,
+        translate_cut(value.utf16(), base.utf16(), target.utf16())?,
+    )
+    .ok_or(M11RecursiveGreenError::CounterOverflow)
+}
 use super::splice::{
     abort_seal_after_failure, add_inspection, build_replacement_pages, derive_coverage_atoms,
     metric_between, release_tree_after_failure, validate_lineage,
@@ -159,7 +365,8 @@ use super::splice::{
 ///
 /// The ranges are not authority by themselves.  They name the exact events
 /// removed from the retained base and the exact replacement events in the
-/// locally authenticated target; publication must revalidate them against
+/// locally authenticated target, including any unchanged boundary events
+/// repacked into replacement leaves. Publication must revalidate them against
 /// those two roots before using them as an exact-base delta.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct M11RecursiveGreenStructuralSpliceSelection {
@@ -362,6 +569,7 @@ pub fn splice_m11_recursive_green_structural_atomic(
         M11RecursiveGreenStructuralSpliceReceipt,
         M11RecursiveGreenStructuralBoundary,
         M11RecursiveGreenStructuralBoundary,
+        M11RecursiveGreenStructuralSpliceRebase,
     ),
     M11RecursiveGreenError,
 > {
@@ -484,9 +692,25 @@ pub fn splice_m11_recursive_green_structural_atomic(
     }
 
     let replacement_events = replacement_summary.events;
+    let boundary_events_retained = plan.boundary_events_retained;
     let boundary_events_reencoded = plan
         .boundary_events_retained
         .checked_add(replacement_events)
+        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+    let transport_event_start = base_event_range
+        .start
+        .checked_sub(
+            u64::try_from(plan.prefix_events_retained)
+                .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+        )
+        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+    let base_transport_event_end = transport_event_start
+        .checked_add(base_event_range.end - base_event_range.start)
+        .and_then(|end| end.checked_add(boundary_events_retained))
+        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+    let target_transport_event_end = transport_event_start
+        .checked_add(replacement_events)
+        .and_then(|end| end.checked_add(boundary_events_retained))
         .ok_or(M11RecursiveGreenError::CounterOverflow)?;
     plan.events.splice(
         plan.prefix_events_retained..plan.prefix_events_retained,
@@ -585,8 +809,8 @@ pub fn splice_m11_recursive_green_structural_atomic(
         .checked_add(replacement_events)
         .ok_or(M11RecursiveGreenError::CounterOverflow)?;
     let selection = M11RecursiveGreenStructuralSpliceSelection::new(
-        base_event_range.clone(),
-        start.event_cut..target_event_cut,
+        transport_event_start..base_transport_event_end,
+        transport_event_start..target_transport_event_end,
     )?;
     let receipt = match make_structural_receipt(
         base,
@@ -624,6 +848,31 @@ pub fn splice_m11_recursive_green_structural_atomic(
             .ok_or(M11RecursiveGreenError::CounterOverflow)?,
     )
     .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+    let rebase = M11RecursiveGreenStructuralSpliceRebase {
+        runtime_identity: runtime.producer_identity(),
+        base_green_identity: start.green_identity,
+        target_green_identity,
+        base_source,
+        target_source,
+        base_event_start: start.event_cut,
+        base_event_end: end.event_cut,
+        target_event_end: target_event_cut,
+        base_physical_start: start.physical,
+        base_physical_end: end.physical,
+        target_physical_end: target_end_physical,
+        base_logical_start: start.logical,
+        base_logical_end: end.logical,
+        target_logical_end: target_logical,
+        target_event_count: summary.events,
+        target_physical_total: super::codec::M11RecursiveGreenSourceMetric::from_validated(
+            summary.physical_bytes,
+            summary.physical_utf16,
+        ),
+        target_logical_total: super::codec::M11RecursiveGreenSourceMetric::from_validated(
+            summary.logical_bytes,
+            summary.logical_utf16,
+        ),
+    };
     let target_start_boundary = M11RecursiveGreenStructuralBoundary::rebound(
         runtime.producer_identity(),
         target_green_identity,
@@ -656,6 +905,7 @@ pub fn splice_m11_recursive_green_structural_atomic(
         receipt,
         target_start_boundary,
         target_end_boundary,
+        rebase,
     ))
 }
 
@@ -979,12 +1229,18 @@ fn make_structural_receipt(
 ) -> Result<M11RecursiveGreenStructuralSpliceReceipt, M11RecursiveGreenError> {
     let base_event_range = selection.base_event_range();
     let target_event_range = selection.target_event_range();
+    let boundary_events_retained = boundary_events_reencoded
+        .checked_sub(replacement_events)
+        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+    let transported_base_events = deleted_events
+        .checked_add(boundary_events_retained)
+        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
     let base_storage_pages = base.storage_page_count();
     let reused_storage_pages = base_storage_pages
         .checked_sub(deleted_storage_pages)
         .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-    if base_event_range.end - base_event_range.start != deleted_events
-        || target_event_range.end - target_event_range.start != replacement_events
+    if base_event_range.end - base_event_range.start != transported_base_events
+        || target_event_range.end - target_event_range.start != boundary_events_reencoded
         || base_event_range.end > base.event_count()
         || u64::try_from(mutation.leaves_deleted)
             .map_err(|_| M11RecursiveGreenError::CounterOverflow)?

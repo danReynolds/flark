@@ -4,9 +4,9 @@ use flark_engine::{
     ExactUnchangedSuffixWitness, SOURCE_CURSOR_WINDOW_BYTES,
 };
 use flark_parser::block_core::{
-    M11BlockRestartCheckpoint, M11BlockStructuralAdoptionReceipt, M11BlockWriter,
-    M11BlockWriterOfferStatus, M11BlockWriterPollStatus, M11DirectBlockController,
-    M11DirectBlockPollStatus,
+    BlockCommand, BlockKind, M11BlockRestartCheckpoint, M11BlockStructuralAdoptionReceipt,
+    M11BlockTerminalConvergenceCheckpoint, M11BlockWriter, M11BlockWriterOfferStatus,
+    M11BlockWriterPollStatus, M11DirectBlockController, M11DirectBlockPollStatus,
 };
 use flark_parser::{
     M11ExactController, M11SourceLinePollStatus, M11SourceLineSource, SnapshotLinePoll,
@@ -176,14 +176,32 @@ fn finish_document(
     controller: &mut M11DirectBlockController,
     writer: &mut M11BlockWriter,
     runtime: &mut DocumentRuntime,
-) -> M11RecursiveGreenRoot {
+) -> (M11RecursiveGreenRoot, M11BlockTerminalConvergenceCheckpoint) {
     controller.begin_finish().expect("parser finish begins");
+    let mut terminal = None;
     loop {
         let receipt = controller.poll_finish(FUEL).expect("finish poll");
         assert!(receipt.transitions <= FUEL);
         match receipt.status {
             M11DirectBlockPollStatus::Pending => {}
             M11DirectBlockPollStatus::CommandReady => {
+                let command = *controller
+                    .pending_command()
+                    .expect("finish command is ready");
+                if matches!(
+                    command,
+                    BlockCommand::Close {
+                        kind: BlockKind::Document,
+                        ..
+                    }
+                ) {
+                    assert!(terminal.is_none(), "one terminal convergence boundary");
+                    terminal = Some(
+                        writer
+                            .capture_terminal_convergence_checkpoint()
+                            .expect("terminal convergence checkpoint"),
+                    );
+                }
                 write_pending_command(controller, writer, runtime);
             }
             M11DirectBlockPollStatus::ExternalWorkReady => {
@@ -192,7 +210,10 @@ fn finish_document(
             M11DirectBlockPollStatus::Complete => break,
         }
     }
-    writer.take_root().expect("completed recursive Green root")
+    (
+        writer.take_root().expect("completed recursive Green root"),
+        terminal.expect("terminal convergence boundary was observed"),
+    )
 }
 
 fn clean_with_boundaries(
@@ -203,6 +224,7 @@ fn clean_with_boundaries(
     M11RecursiveGreenRoot,
     M11BlockRestartCheckpoint,
     M11BlockRestartCheckpoint,
+    M11BlockTerminalConvergenceCheckpoint,
 ) {
     let writer_lease = runtime.snapshot_current_source().expect("writer lease");
     let scanner_lease = runtime.snapshot_current_source().expect("scanner lease");
@@ -221,11 +243,12 @@ fn clean_with_boundaries(
             convergence = Some(capture(&controller, &writer));
         }
     }
-    let root = finish_document(&mut controller, &mut writer, runtime);
+    let (root, terminal) = finish_document(&mut controller, &mut writer, runtime);
     (
         root,
         restart.expect("restart boundary was observed"),
         convergence.expect("convergence boundary was observed"),
+        terminal,
     )
 }
 
@@ -239,7 +262,8 @@ fn clean(runtime: &mut DocumentRuntime) -> M11RecursiveGreenRoot {
     while let Some((next, _)) = drive_line(scanner, &mut controller, &mut writer, runtime) {
         scanner = next;
     }
-    finish_document(&mut controller, &mut writer, runtime)
+    let (root, _terminal) = finish_document(&mut controller, &mut writer, runtime);
+    root
 }
 
 fn prefix_witness(
@@ -277,6 +301,7 @@ fn local_edit(
     base_root: &M11RecursiveGreenRoot,
     restart: M11BlockRestartCheckpoint,
     convergence: M11BlockRestartCheckpoint,
+    retained_terminal: M11BlockTerminalConvergenceCheckpoint,
     edit: std::ops::Range<usize>,
     replacement: &str,
 ) -> (
@@ -284,6 +309,7 @@ fn local_edit(
     M11BlockStructuralAdoptionReceipt,
     M11BlockRestartCheckpoint,
     M11BlockRestartCheckpoint,
+    M11BlockTerminalConvergenceCheckpoint,
 ) {
     let base = base_root.source();
     let restart_parser = restart.parser_physical();
@@ -344,7 +370,7 @@ fn local_edit(
     let parser = controller
         .capture_restart()
         .expect("target convergence parser capture");
-    writer
+    let (root, receipt, checkpoints, terminal) = writer
         .adopt_converged_fragment(
             parser,
             target_restart,
@@ -353,8 +379,23 @@ fn local_edit(
             base_root,
             green_prefix,
             Some(green_suffix),
+            Vec::new(),
+            Vec::new(),
+            retained_terminal,
         )
-        .expect("authenticated structural Green adoption")
+        .expect("authenticated structural Green adoption");
+    let mut checkpoints = checkpoints.into_iter();
+    let restart = checkpoints
+        .next()
+        .expect("target restart checkpoint was retained");
+    let convergence = checkpoints
+        .next()
+        .expect("target convergence checkpoint was retained");
+    assert!(
+        checkpoints.next().is_none(),
+        "fixture retains only restart and convergence checkpoints"
+    );
+    (root, receipt, restart, convergence, terminal)
 }
 
 fn release(runtime: &mut DocumentRuntime, mut root: M11RecursiveGreenRoot) {
@@ -371,7 +412,7 @@ fn large_mixed_document_two_structural_edits_restart_converge_and_reuse_suffix()
     let fixture = mixed_fixture();
     let mut runtime =
         DocumentRuntime::new(&fixture.source, DocumentRuntimeConfig::default()).expect("runtime");
-    let (base_root, restart0, convergence0) = clean_with_boundaries(
+    let (base_root, restart0, convergence0, terminal0) = clean_with_boundaries(
         &mut runtime,
         fixture.restart_parser_cut,
         fixture.convergence_parser_cut,
@@ -385,11 +426,12 @@ fn large_mixed_document_two_structural_edits_restart_converge_and_reuse_suffix()
     const FIRST: &str = "- alpha\n- beta\n\n> gamma\n";
     let first_delta = isize::try_from(FIRST.len()).expect("replacement length")
         - isize::try_from(fixture.edit.len()).expect("base edit length");
-    let (root1, receipt1, restart1, convergence1) = local_edit(
+    let (root1, receipt1, restart1, convergence1, terminal1) = local_edit(
         &mut runtime,
         &base_root,
         restart0,
         convergence0,
+        terminal0,
         fixture.edit.clone(),
         FIRST,
     );
@@ -424,11 +466,12 @@ fn large_mixed_document_two_structural_edits_restart_converge_and_reuse_suffix()
         .expect("pre-second-edit distant page identity");
     let second_delta = isize::try_from(SECOND.len()).expect("replacement length")
         - isize::try_from(FIRST.len()).expect("first replacement length");
-    let (root2, receipt2, _restart2, _convergence2) = local_edit(
+    let (root2, receipt2, _restart2, _convergence2, _terminal2) = local_edit(
         &mut runtime,
         &root1,
         restart1,
         convergence1,
+        terminal1,
         first_start..first_end,
         SECOND,
     );

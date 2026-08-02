@@ -29,6 +29,35 @@ fn release_session(
     while !session.poll_release(runtime, 64).expect("poll release") {}
 }
 
+fn cancellation_fixture() -> (String, usize) {
+    let mut source = String::from("[a]: /target\n\n");
+    for ordinal in 0..240 {
+        source.push_str(&format!(
+            "Paragraph {ordinal:03} carries enough ordinary source for sparse restart spacing.\n\n"
+        ));
+    }
+    let edit_start = source
+        .find("Paragraph 140")
+        .and_then(|paragraph| {
+            source[paragraph..]
+                .find("ordinary")
+                .map(|word| paragraph + word)
+        })
+        .expect("late cancellation edit");
+    (source, edit_start)
+}
+
+fn assert_original_base(
+    base: &M11PersistentRecursiveGreenSession,
+    source: flark_engine::SourceVersion,
+    checkpoints: usize,
+    references: u64,
+) {
+    assert_eq!(base.source(), source);
+    assert_eq!(base.checkpoint_count(), checkpoints);
+    assert_eq!(base.reference_occurrence_count(), references);
+}
+
 #[test]
 fn clean_session_retains_green_and_reference_authority_for_late_queries() {
     let source = "[a]: /target\n\nbefore\n\nLate **bold** [a].\n";
@@ -55,6 +84,146 @@ fn clean_session_retains_green_and_reference_authority_for_late_queries() {
     release_session(&mut runtime, &mut session);
     runtime.begin_close().expect("begin runtime close");
     while !runtime.poll_close(64).expect("poll close").complete {}
+}
+
+#[test]
+fn local_adoption_cancel_before_splice_returns_complete_original_base() {
+    let (source, edit_start) = cancellation_fixture();
+    let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
+        .expect("cancellation runtime");
+    let session = build_session(&mut runtime);
+    let base_source = session.source();
+    let base_checkpoints = session.checkpoint_count();
+    let base_references = session.reference_occurrence_count();
+    let base_resident_nodes = runtime.arena_metrics().resident_nodes;
+    assert!(base_checkpoints >= 3);
+
+    runtime
+        .apply_edit(
+            base_source,
+            edit_start..edit_start + "ordinary".len(),
+            "precise_",
+        )
+        .expect("cancellation edit");
+    let target_lease = runtime
+        .snapshot_current_source()
+        .expect("cancellation target lease");
+    let mut adoption = session
+        .begin_local_adoption(
+            &runtime,
+            target_lease,
+            edit_start..edit_start + "ordinary".len(),
+        )
+        .unwrap_or_else(|failure| panic!("cancellation adoption start: {}", failure.error()));
+
+    adoption
+        .begin_cancel(&mut runtime)
+        .expect("begin pre-splice cancellation");
+    while !adoption
+        .poll_cancel(&mut runtime, 1)
+        .expect("poll pre-splice cancellation")
+    {}
+    let mut base = adoption
+        .take_base_after_cancel()
+        .expect("complete base after pre-splice cancellation");
+    assert_original_base(&base, base_source, base_checkpoints, base_references);
+    assert_eq!(runtime.arena_metrics().resident_nodes, base_resident_nodes);
+
+    release_session(&mut runtime, &mut base);
+    runtime.begin_close().expect("begin runtime close");
+    while !runtime.poll_close(64).expect("poll runtime close").complete {}
+    assert_eq!(runtime.arena_metrics().resident_nodes, 0);
+}
+
+#[test]
+fn local_adoption_cancel_after_splice_releases_target_and_returns_complete_original_base() {
+    let (source, edit_start) = cancellation_fixture();
+    let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
+        .expect("cancellation runtime");
+    let session = build_session(&mut runtime);
+    let base_source = session.source();
+    let base_checkpoints = session.checkpoint_count();
+    let base_references = session.reference_occurrence_count();
+    let base_resident_nodes = runtime.arena_metrics().resident_nodes;
+    assert!(base_checkpoints >= 3);
+    let base_page_probe_offsets = [
+        source.find("Paragraph 010").expect("prefix page probe"),
+        source.find("Paragraph 140").expect("edited page probe"),
+        source.find("Paragraph 230").expect("suffix page probe"),
+    ];
+    let base_page_probes = base_page_probe_offsets.map(|probe| {
+        session
+            .storage_page_identity_at_source_byte_for_diagnostics(&runtime, probe)
+            .expect("base page identity")
+    });
+
+    runtime
+        .apply_edit(
+            base_source,
+            edit_start..edit_start + "ordinary".len(),
+            "precise_",
+        )
+        .expect("cancellation edit");
+    let target_lease = runtime
+        .snapshot_current_source()
+        .expect("cancellation target lease");
+    let mut adoption = session
+        .begin_local_adoption(
+            &runtime,
+            target_lease,
+            edit_start..edit_start + "ordinary".len(),
+        )
+        .unwrap_or_else(|failure| panic!("cancellation adoption start: {}", failure.error()));
+
+    let mut target_resident_nodes = None;
+    for _ in 0..20_000 {
+        let poll = adoption
+            .poll(&mut runtime, 1)
+            .expect("poll adoption through structural splice");
+        match poll.status() {
+            M11PersistentRecursiveGreenAdoptionStatus::Pending => {}
+            M11PersistentRecursiveGreenAdoptionStatus::Complete => {
+                panic!("adoption completed before the post-splice cancellation checkpoint")
+            }
+            M11PersistentRecursiveGreenAdoptionStatus::CleanFallbackRequired => {
+                panic!("post-splice cancellation fixture required clean fallback")
+            }
+            M11PersistentRecursiveGreenAdoptionStatus::Cancelled => {
+                panic!("adoption cancelled before cancellation was requested")
+            }
+        }
+        if runtime.arena_metrics().resident_nodes > base_resident_nodes {
+            target_resident_nodes = Some(runtime.arena_metrics().resident_nodes);
+            break;
+        }
+    }
+    let target_resident_nodes =
+        target_resident_nodes.expect("target Green root was never installed");
+
+    adoption
+        .begin_cancel(&mut runtime)
+        .expect("begin post-splice cancellation");
+    while !adoption
+        .poll_cancel(&mut runtime, 1)
+        .expect("poll post-splice cancellation")
+    {}
+    let mut base = adoption
+        .take_base_after_cancel()
+        .expect("complete base after post-splice cancellation");
+    assert_original_base(&base, base_source, base_checkpoints, base_references);
+    assert_eq!(
+        base_page_probes,
+        base_page_probe_offsets.map(|probe| {
+            base.storage_page_identity_at_source_byte_for_diagnostics(&runtime, probe)
+                .expect("restored base page identity")
+        })
+    );
+    assert!(runtime.arena_metrics().resident_nodes < target_resident_nodes);
+
+    release_session(&mut runtime, &mut base);
+    runtime.begin_close().expect("begin runtime close");
+    while !runtime.poll_close(64).expect("poll runtime close").complete {}
+    assert_eq!(runtime.arena_metrics().resident_nodes, 0);
 }
 
 #[test]

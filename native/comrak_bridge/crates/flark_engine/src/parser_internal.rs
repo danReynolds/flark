@@ -2,6 +2,8 @@
 //!
 //! `flark-parser` is the only workspace consumer. The facade keeps arena IDs,
 //! build journals, manifest internals, and host roots inside `flark-engine`.
+//! This is a trusted workspace boundary, not a capability sandbox: its sole
+//! consumer must preserve the documented single-transaction ownership rules.
 
 use std::fmt;
 use std::marker::PhantomData;

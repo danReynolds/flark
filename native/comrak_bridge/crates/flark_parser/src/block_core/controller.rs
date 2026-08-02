@@ -129,6 +129,16 @@ pub struct M11DirectBlockRestart {
     restart_join: Option<u64>,
 }
 
+/// Crate-private parser-state replica scoped to one adoption transaction.
+///
+/// Keeping this separate from `M11DirectBlockRestart` avoids making restart
+/// authority publicly cloneable while an exact adoption keeps its base
+/// checkpoint intact.
+pub(crate) struct M11DirectBlockRestartTransactionReplica {
+    transaction_id: u64,
+    restart: M11DirectBlockRestart,
+}
+
 impl std::fmt::Debug for M11DirectBlockRestart {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -142,6 +152,29 @@ impl std::fmt::Debug for M11DirectBlockRestart {
 }
 
 impl M11DirectBlockRestart {
+    pub(crate) fn replicate_for_transaction(
+        &self,
+        transaction_id: u64,
+    ) -> Result<M11DirectBlockRestartTransactionReplica, M11DirectBlockError> {
+        if transaction_id == 0 {
+            return Err(M11DirectBlockError::Invariant(
+                "restart transaction identity must be nonzero",
+            ));
+        }
+        Ok(M11DirectBlockRestartTransactionReplica {
+            transaction_id,
+            restart: Self {
+                grammar: self.grammar.clone(),
+                output: self.output.clone(),
+                line_ordinal: self.line_ordinal,
+                last_line_length: self.last_line_length,
+                open_kinds: self.open_kinds.clone(),
+                deferred: self.deferred,
+                restart_join: self.restart_join,
+            },
+        })
+    }
+
     #[must_use]
     pub const fn line_ordinal(&self) -> u64 {
         self.line_ordinal
@@ -150,6 +183,38 @@ impl M11DirectBlockRestart {
     #[must_use]
     pub const fn last_line_length(&self) -> u64 {
         self.last_line_length
+    }
+
+    /// Rebases this unchanged-suffix cursor by the authenticated line delta
+    /// observed at parser convergence.
+    ///
+    /// The suffix bytes remain exact lineage authority, so its preceding-line
+    /// length does not change. Only the absolute physical-line ordinal moves
+    /// when the replaced fragment inserted or removed line endings.
+    pub(super) fn rebase_unchanged_suffix_line_ordinal(
+        &mut self,
+        base_convergence_line_ordinal: u64,
+        target_convergence_line_ordinal: u64,
+    ) -> Result<(), M11DirectBlockError> {
+        if self.line_ordinal < base_convergence_line_ordinal {
+            return Err(M11DirectBlockError::Invariant(
+                "retained suffix restart follows parser convergence",
+            ));
+        }
+        self.line_ordinal = if target_convergence_line_ordinal >= base_convergence_line_ordinal {
+            self.line_ordinal
+                .checked_add(target_convergence_line_ordinal - base_convergence_line_ordinal)
+                .ok_or(M11DirectBlockError::Invariant(
+                    "rebased restart line ordinal fits u64",
+                ))?
+        } else {
+            self.line_ordinal
+                .checked_sub(base_convergence_line_ordinal - target_convergence_line_ordinal)
+                .ok_or(M11DirectBlockError::Invariant(
+                    "rebased restart line ordinal remains nonnegative",
+                ))?
+        };
+        Ok(())
     }
 
     #[must_use]
@@ -172,6 +237,20 @@ impl M11DirectBlockRestart {
     pub fn is_future_compatible_with(&self, old: &Self) -> bool {
         self.grammar.is_future_grammar_compatible(&old.grammar)
             && self.output.is_future_line_local_compatible(&old.output)
+    }
+}
+
+impl M11DirectBlockRestartTransactionReplica {
+    pub(crate) fn into_restart(
+        self,
+        transaction_id: u64,
+    ) -> Result<M11DirectBlockRestart, M11DirectBlockError> {
+        if transaction_id == 0 || self.transaction_id != transaction_id {
+            return Err(M11DirectBlockError::Invariant(
+                "restart replica crossed adoption transactions",
+            ));
+        }
+        Ok(self.restart)
     }
 }
 

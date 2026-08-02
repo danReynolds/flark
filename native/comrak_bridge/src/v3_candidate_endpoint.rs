@@ -139,6 +139,7 @@ enum ActiveCandidate {
     },
     ParsingExact(Box<ParsingExactCandidate>),
     ParsingOrdinaryExact(Box<ParsingOrdinaryExactCandidate>),
+    AwaitingRecursiveGreenExact(Box<AwaitingRecursiveGreenExactCandidate>),
     ParsingBulletListLocal(Box<ParsingBulletListLocalCandidate>),
     ParsingExactFallback(Box<ParsingExactFallbackCandidate>),
     BuildingExactFallback {
@@ -187,6 +188,16 @@ struct ParsingExactCandidate {
 struct ParsingOrdinaryExactCandidate {
     context: CandidateContext,
     job: OrdinaryExactJob,
+    base: ExactCandidateBase,
+    witness: Box<PersistentSourceFactsDeltaWitness>,
+}
+
+/// Exact-base transaction parked behind the authoritative recursive-Green
+/// adoption. No clean parser is allocated unless that adoption explicitly
+/// requests the clean fallback.
+struct AwaitingRecursiveGreenExactCandidate {
+    context: CandidateContext,
+    certified: PersistentCertifiedSource,
     base: ExactCandidateBase,
     witness: Box<PersistentSourceFactsDeltaWitness>,
 }
@@ -377,6 +388,12 @@ struct RetainedCandidateBase {
 enum CandidateRestartAuthority {
     Leading(LeadingReferencesRestartCheckpoint),
     Ordinary(M11OrdinaryParagraphRestartCheckpoints),
+    /// Exact retained publication whose bounded restart authority is owned by
+    /// the endpoint's matching persistent recursive-Green session.
+    RecursiveGreen {
+        source: flark_engine::SourceVersion,
+        binding: M11ParserBinding,
+    },
     /// Exact retained publication authority without a bounded parser restart.
     ///
     /// This keeps segmented documents eligible for an exact-base transaction
@@ -393,6 +410,7 @@ impl CandidateRestartAuthority {
         match self {
             Self::Leading(restart) => restart.source(),
             Self::Ordinary(restarts) => restarts.source(),
+            Self::RecursiveGreen { source, .. } => *source,
             Self::ExactBaseOnly { source, .. } => *source,
         }
     }
@@ -401,6 +419,7 @@ impl CandidateRestartAuthority {
         match self {
             Self::Leading(restart) => restart.binding(),
             Self::Ordinary(restarts) => restarts.binding(),
+            Self::RecursiveGreen { binding, .. } => *binding,
             Self::ExactBaseOnly { binding, .. } => *binding,
         }
     }
@@ -3657,6 +3676,44 @@ impl CandidateEndpoint {
                     },
                 )));
             }
+            CandidateRestartAuthority::RecursiveGreen { source, binding } => {
+                let mut base = base;
+                base.restart = Some(CandidateRestartAuthority::RecursiveGreen {
+                    source,
+                    binding,
+                });
+                if source != witness.base()
+                    || binding != parser_binding
+                    || !self
+                        .recursive_green
+                        .owns_recursive_base_authority(recursive_green_base_ack)
+                {
+                    self.restore_exact_base(base)?;
+                    return Err(CandidateEndpointError::InvalidAuthority);
+                }
+                let certified = match runtime.certify_current_persistent_source() {
+                    Ok(certified) => certified,
+                    Err(error) => {
+                        self.restore_exact_base(base)?;
+                        return Err(error.into());
+                    }
+                };
+                if certified.source() != target
+                    || certified.parser_profile() != witness.parser_profile()
+                    || certified.source_facts_profile() != witness.profile()
+                {
+                    self.restore_exact_base(base)?;
+                    return Err(CandidateEndpointError::InvalidAuthority);
+                }
+                self.active = Some(ActiveCandidate::AwaitingRecursiveGreenExact(Box::new(
+                    AwaitingRecursiveGreenExactCandidate {
+                        context,
+                        certified,
+                        base,
+                        witness,
+                    },
+                )));
+            }
             CandidateRestartAuthority::ExactBaseOnly { source, binding } => {
                 let mut base = base;
                 base.restart = Some(CandidateRestartAuthority::ExactBaseOnly { source, binding });
@@ -5898,6 +5955,14 @@ impl CandidateEndpoint {
                         true,
                     ))
                 }
+                ActiveCandidate::AwaitingRecursiveGreenExact(awaiting) => {
+                    Some((
+                        awaiting.base.ack,
+                        awaiting.witness.target(),
+                        awaiting.witness.parser_profile(),
+                        true,
+                    ))
+                }
                 ActiveCandidate::ParsingExactFallback(parsing) => {
                     Some((
                         parsing.base.ack,
@@ -5997,6 +6062,15 @@ impl CandidateEndpoint {
                 };
                 (context, base, witness, certified)
             }
+            ActiveCandidate::AwaitingRecursiveGreenExact(awaiting) => {
+                let AwaitingRecursiveGreenExactCandidate {
+                    context,
+                    certified,
+                    base,
+                    witness,
+                } = *awaiting;
+                (context, base, witness, certified)
+            }
             ActiveCandidate::ParsingExactFallback(parsing) => {
                 let ParsingExactFallbackCandidate {
                     context,
@@ -6026,7 +6100,7 @@ impl CandidateEndpoint {
             });
             return Err(CandidateEndpointError::InvalidAuthority);
         }
-        let next_restart = CandidateRestartAuthority::ExactBaseOnly {
+        let next_restart = CandidateRestartAuthority::RecursiveGreen {
             source: target_source,
             binding: M11ParserBinding::new(witness.parser_profile(), GRAMMAR_REVISION),
         };
@@ -6631,6 +6705,10 @@ impl CandidateEndpoint {
                             }
                         }
                     }
+                }
+                ActiveCandidate::AwaitingRecursiveGreenExact(awaiting) => {
+                    self.active = Some(ActiveCandidate::AwaitingRecursiveGreenExact(awaiting));
+                    return Err(CandidateEndpointError::InvalidState);
                 }
                 ActiveCandidate::ParsingBulletListLocal(mut parsing) => {
                     let polled = match parsing.job.poll(fuel - transitions) {
@@ -7979,6 +8057,13 @@ impl CandidateEndpoint {
                 base.restart = Some(CandidateRestartAuthority::Ordinary(restart));
                 self.restore_exact_base(base)
             }
+            ActiveCandidate::AwaitingRecursiveGreenExact(awaiting) => {
+                if self.cleanup.is_some() {
+                    self.active = Some(ActiveCandidate::AwaitingRecursiveGreenExact(awaiting));
+                    return Err(CandidateEndpointError::Busy);
+                }
+                self.restore_exact_base(awaiting.base)
+            }
             ActiveCandidate::ParsingBulletListLocal(parsing) => {
                 let ParsingBulletListLocalCandidate {
                     job,
@@ -8532,6 +8617,9 @@ impl CandidateEndpoint {
             Some(ActiveCandidate::Building { .. }) => "Building",
             Some(ActiveCandidate::ParsingExact(_)) => "ParsingExact",
             Some(ActiveCandidate::ParsingOrdinaryExact(_)) => "ParsingOrdinaryExact",
+            Some(ActiveCandidate::AwaitingRecursiveGreenExact(_)) => {
+                "AwaitingRecursiveGreenExact"
+            }
             Some(ActiveCandidate::ParsingBulletListLocal(_)) => "ParsingBulletListLocal",
             Some(ActiveCandidate::ParsingExactFallback(_)) => "ParsingExactFallback",
             Some(ActiveCandidate::BuildingExactFallback { .. }) => "BuildingExactFallback",
@@ -8715,6 +8803,18 @@ impl CandidateEndpoint {
                             && target_eof_is_exact)
                     }
                 }
+            }
+            CandidateRestartAuthority::RecursiveGreen { source, binding } => {
+                let retained = self
+                    .retained
+                    .as_ref()
+                    .ok_or(CandidateEndpointError::InvalidState)?;
+                Ok(*source == plan.base()
+                    && plan.source() == target.version()
+                    && binding.grammar_revision() == GRAMMAR_REVISION
+                    && self
+                        .recursive_green
+                        .owns_recursive_base_authority(retained.ack))
             }
             CandidateRestartAuthority::ExactBaseOnly { source, .. } => {
                 Ok(*source == plan.base() && plan.source() == target.version())

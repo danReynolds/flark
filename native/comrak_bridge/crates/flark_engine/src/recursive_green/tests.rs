@@ -1,15 +1,19 @@
 use super::{
-    splice_m11_recursive_green_coverage_atomic, M11RecursiveGreenBuild,
-    M11RecursiveGreenBuildStatus, M11RecursiveGreenCloseFacts, M11RecursiveGreenClosedChild,
-    M11RecursiveGreenCoveragePart, M11RecursiveGreenEvent, M11RecursiveGreenFactTag,
-    M11RecursiveGreenFrameId, M11RecursiveGreenKind, M11RecursiveGreenLogicalAction,
-    M11RecursiveGreenLogicalAtom, M11RecursiveGreenLogicalPosition, M11RecursiveGreenLogicalRange,
-    M11RecursiveGreenPoint, M11RecursiveGreenSourceMetric,
+    splice_m11_recursive_green_coverage_atomic, splice_m11_recursive_green_structural_atomic,
+    M11RecursiveGreenBuild, M11RecursiveGreenBuildStatus, M11RecursiveGreenCloseFacts,
+    M11RecursiveGreenClosedChild, M11RecursiveGreenCoveragePart, M11RecursiveGreenError,
+    M11RecursiveGreenEvent, M11RecursiveGreenFactTag, M11RecursiveGreenFrameId,
+    M11RecursiveGreenKind, M11RecursiveGreenLogicalAction, M11RecursiveGreenLogicalAtom,
+    M11RecursiveGreenLogicalPosition, M11RecursiveGreenLogicalRange, M11RecursiveGreenPoint,
+    M11RecursiveGreenRoot, M11RecursiveGreenSourceMetric, M11RecursiveGreenStructuralBoundary,
     M11RecursiveGreenTerminalFragmentBarrierStatus, M11RecursiveGreenTerminalFragmentCursorStatus,
     M11RecursiveGreenTerminalFragmentDisposition, M11RecursiveGreenTerminalFragmentRewrite,
     M11RecursiveGreenTerminalFragmentRewritePoll,
 };
-use crate::{DocumentRuntime, DocumentRuntimeConfig, SourceBoundaryAffinity, ARENA_PAGE_BYTES};
+use crate::{
+    DocumentRuntime, DocumentRuntimeConfig, SourceBoundaryAffinity, ARENA_PAGE_BYTES,
+    SOURCE_CURSOR_WINDOW_BYTES,
+};
 
 use super::codec::{
     decode_leaf, decode_packed_event, encode_leaf_header, encode_packed_event, packed_event_len,
@@ -64,6 +68,196 @@ fn offer_fast(
 fn close_runtime(runtime: &mut DocumentRuntime) {
     runtime.begin_close().expect("begin close");
     while !runtime.poll_close(64).expect("poll close").complete {}
+}
+
+fn structural_rebase_fixture(
+    runtime: &mut DocumentRuntime,
+) -> (
+    M11RecursiveGreenRoot,
+    M11RecursiveGreenStructuralBoundary,
+    M11RecursiveGreenStructuralBoundary,
+    M11RecursiveGreenStructuralBoundary,
+    M11RecursiveGreenStructuralBoundary,
+) {
+    let lease = runtime.snapshot_current_source().expect("source lease");
+    let mut build = M11RecursiveGreenBuild::new(runtime, lease).expect("Green build");
+    offer(
+        &mut build,
+        runtime,
+        M11RecursiveGreenEvent::Enter {
+            frame: frame(1),
+            kind: kind(1),
+        },
+    );
+    let prefix = build
+        .capture_structural_boundary()
+        .expect("prefix boundary");
+    let mut start = None;
+    let mut end = None;
+    let mut suffix = None;
+
+    for (id, text_bytes) in [(2, 2_u64), (3, 2), (4, 2)] {
+        offer(
+            &mut build,
+            runtime,
+            M11RecursiveGreenEvent::Enter {
+                frame: frame(id),
+                kind: kind(2),
+            },
+        );
+        offer(
+            &mut build,
+            runtime,
+            M11RecursiveGreenEvent::Coverage {
+                physical: metric(text_bytes, text_bytes),
+                owner_depth: 0,
+                part: M11RecursiveGreenCoveragePart::Content,
+                logical: M11RecursiveGreenLogicalAction::Identity,
+            },
+        );
+        offer(
+            &mut build,
+            runtime,
+            M11RecursiveGreenEvent::Exit {
+                frame: frame(id),
+                final_kind: kind(2),
+                close: None,
+                last_line_blank: false,
+                child: M11RecursiveGreenClosedChild::default(),
+            },
+        );
+        let boundary = build
+            .capture_structural_boundary()
+            .expect("child boundary");
+        match id {
+            2 => start = Some(boundary),
+            3 => end = Some(boundary),
+            4 => suffix = Some(boundary),
+            _ => unreachable!(),
+        }
+    }
+    offer(
+        &mut build,
+        runtime,
+        M11RecursiveGreenEvent::Exit {
+            frame: frame(1),
+            final_kind: kind(1),
+            close: None,
+            last_line_blank: false,
+            child: M11RecursiveGreenClosedChild::default(),
+        },
+    );
+    build.finish_input().expect("finish Green input");
+    loop {
+        let poll = build.poll(runtime, 1).expect("poll Green finish");
+        if poll.status() == M11RecursiveGreenBuildStatus::Complete {
+            break;
+        }
+        assert_eq!(poll.status(), M11RecursiveGreenBuildStatus::Pending);
+    }
+    (
+        build.take_root().expect("Green root"),
+        prefix,
+        start.expect("replacement start"),
+        end.expect("replacement end"),
+        suffix.expect("suffix boundary"),
+    )
+}
+
+#[test]
+fn structural_splice_rebase_preserves_prefix_shifts_suffix_and_rejects_wrong_base() {
+    let mut runtime =
+        DocumentRuntime::new("a\nb\nc\n", DocumentRuntimeConfig::default()).expect("runtime");
+    let (mut base, prefix, start, end, suffix) = structural_rebase_fixture(&mut runtime);
+    let (mut wrong_base, wrong_prefix, _, _, _) = structural_rebase_fixture(&mut runtime);
+    let base_source = base.source();
+
+    runtime
+        .apply_edit(base_source, 2..4, "L\nM\n")
+        .expect("length-changing balanced edit");
+    let target_source = runtime.current_source_version().expect("target source");
+    let target_lease = runtime.snapshot_current_source().expect("target lease");
+    let unchanged_prefix = runtime
+        .mint_exact_unchanged_prefix_witness(base_source, 2, 2)
+        .expect("unchanged prefix");
+    let unchanged_suffix = runtime
+        .mint_exact_unchanged_suffix_witness(base_source, 4, 4)
+        .expect("unchanged suffix");
+    let replacement = [
+        M11RecursiveGreenEvent::Enter {
+            frame: frame(5),
+            kind: kind(2),
+        },
+        M11RecursiveGreenEvent::Coverage {
+            physical: metric(2, 2),
+            owner_depth: 0,
+            part: M11RecursiveGreenCoveragePart::Content,
+            logical: M11RecursiveGreenLogicalAction::Identity,
+        },
+        M11RecursiveGreenEvent::Exit {
+            frame: frame(5),
+            final_kind: kind(2),
+            close: None,
+            last_line_blank: false,
+            child: M11RecursiveGreenClosedChild::default(),
+        },
+        M11RecursiveGreenEvent::Enter {
+            frame: frame(6),
+            kind: kind(2),
+        },
+        M11RecursiveGreenEvent::Coverage {
+            physical: metric(2, 2),
+            owner_depth: 0,
+            part: M11RecursiveGreenCoveragePart::Content,
+            logical: M11RecursiveGreenLogicalAction::Identity,
+        },
+        M11RecursiveGreenEvent::Exit {
+            frame: frame(6),
+            final_kind: kind(2),
+            close: None,
+            last_line_blank: false,
+            child: M11RecursiveGreenClosedChild::default(),
+        },
+    ];
+    let (mut target, _, _, _, rebase) = splice_m11_recursive_green_structural_atomic(
+        &mut runtime,
+        &base,
+        target_lease,
+        Some(unchanged_prefix),
+        Some(unchanged_suffix),
+        start,
+        end,
+        metric(6, 6),
+        &replacement,
+    )
+    .expect("balanced structural splice");
+
+    let target_prefix = rebase.rebase_prefix(prefix).expect("rebase prefix");
+    assert_eq!(target_prefix.source(), target_source);
+    assert_eq!(target_prefix.event_cut(), 1);
+    assert_eq!(target_prefix.physical_metric(), metric(0, 0));
+    assert_eq!(target_prefix.logical_metric(), metric(0, 0));
+
+    let target_suffix = rebase.rebase_suffix(suffix).expect("rebase suffix");
+    assert_eq!(target_suffix.source(), target_source);
+    assert_eq!(target_suffix.event_cut(), 13);
+    assert_eq!(target_suffix.physical_metric(), metric(8, 8));
+    assert_eq!(target_suffix.logical_metric(), metric(8, 8));
+
+    assert!(matches!(
+        rebase.rebase_prefix(wrong_prefix),
+        Err(M11RecursiveGreenError::SourceAuthorityMismatch)
+    ));
+
+    for root in [&mut target, &mut base, &mut wrong_base] {
+        root.begin_release(&mut runtime).expect("release root");
+        while !root
+            .poll_release(&mut runtime, 64)
+            .expect("poll root release")
+            .complete()
+        {}
+    }
+    close_runtime(&mut runtime);
 }
 
 #[test]
@@ -186,6 +380,32 @@ fn active_terminal_fragment_cursor_and_visible_suffix_rewrite_preserve_projectio
         }
     }
     assert_eq!(projected, b"   [x]: /u\nvisible");
+
+    let mut chunk_cursor = build
+        .open_terminal_fragment_cursor(&binding)
+        .expect("open chunked logical cursor");
+    let mut chunk_projected = Vec::new();
+    loop {
+        let poll = build
+            .poll_terminal_fragment_cursor_chunk(&mut runtime, &mut chunk_cursor, 1)
+            .expect("poll chunked logical cursor");
+        assert!(poll.transitions() <= 1);
+        match poll.status() {
+            M11RecursiveGreenTerminalFragmentCursorStatus::Pending => {}
+            M11RecursiveGreenTerminalFragmentCursorStatus::ByteReady => {
+                let ready = chunk_cursor.ready_chunk();
+                assert!(!ready.is_empty());
+                assert!(ready.len() <= SOURCE_CURSOR_WINDOW_BYTES);
+                let ready_len = ready.len();
+                chunk_projected.extend_from_slice(ready);
+                chunk_cursor
+                    .consume_ready_prefix(ready_len)
+                    .expect("consume projected chunk");
+            }
+            M11RecursiveGreenTerminalFragmentCursorStatus::Complete => break,
+        }
+    }
+    assert_eq!(chunk_projected, projected);
 
     let prefix = build
         .bind_terminal_fragment_logical_range(

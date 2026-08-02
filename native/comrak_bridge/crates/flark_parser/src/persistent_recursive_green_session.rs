@@ -11,10 +11,9 @@ use flark_engine::parser_internal::{
     M11RecursiveGreenError, M11RecursiveGreenFrameQueryError, M11RecursiveGreenFrameQueryLimits,
     M11RecursiveGreenLocation, M11RecursiveGreenPoint, M11RecursiveGreenRoot,
     M11RecursiveGreenRowQueryLimits, M11RecursiveGreenRowWindow,
-    M11RecursiveGreenStoragePageIdentity,
-    M11RecursiveGreenStructuralSpliceSelection, M11ReferenceJournal,
-    M11ReferenceJournalAdoptionStatus, M11ReferenceJournalError, M11ReferenceJournalRoot,
-    M11ReferenceJournalStatus, M11ReferenceJournalUnchangedPrefixAdoption,
+    M11RecursiveGreenStoragePageIdentity, M11RecursiveGreenStructuralSpliceSelection,
+    M11ReferenceJournal, M11ReferenceJournalAdoptionStatus, M11ReferenceJournalError,
+    M11ReferenceJournalRoot, M11ReferenceJournalStatus, M11ReferenceJournalUnchangedPrefixAdoption,
 };
 use flark_engine::{
     DocumentRuntime, DocumentRuntimeError, ExactUnchangedPrefixWitness,
@@ -22,14 +21,13 @@ use flark_engine::{
 };
 
 use crate::block_core::{
-    resolve_m11_recursive_green_inline_leaf_fence,
-    resolve_m11_recursive_green_paragraph_fence, BlockCommand, BlockKind,
-    M11BlockRestartCheckpoint, M11BlockRestartError, M11BlockStructuralAdoptionReceipt,
-    M11BlockTerminalConvergenceCheckpoint, M11BlockWriter, M11BlockWriterError,
-    M11BlockWriterOfferStatus, M11BlockWriterPollStatus, M11DirectBlockController,
-    M11DirectBlockControllerError, M11DirectBlockError, M11DirectBlockPollStatus,
-    M11DirectSourceLineAdmission, M11ReferenceRendezvous, M11ReferenceRendezvousError,
-    M11ReferenceRendezvousStatus, SourceMetric,
+    resolve_m11_recursive_green_inline_leaf_fence, resolve_m11_recursive_green_paragraph_fence,
+    BlockCommand, BlockKind, M11BlockRestartCheckpoint, M11BlockRestartError,
+    M11BlockStructuralAdoptionReceipt, M11BlockTerminalConvergenceCheckpoint, M11BlockWriter,
+    M11BlockWriterError, M11BlockWriterOfferStatus, M11BlockWriterPollStatus,
+    M11DirectBlockController, M11DirectBlockControllerError, M11DirectBlockError,
+    M11DirectBlockPollStatus, M11DirectSourceLineAdmission, M11ReferenceRendezvous,
+    M11ReferenceRendezvousError, M11ReferenceRendezvousStatus, SourceMetric,
 };
 use crate::recursive_green_paragraph_inline::{
     M11RecursiveGreenInlineLeafPreparation, M11RecursiveGreenParagraphInlinePreparation,
@@ -994,14 +992,55 @@ enum AdoptionPhase {
     CleanFallbackRequired,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AdoptionConvergence {
-    Ordinary(M11BlockRestartCheckpoint),
-    Terminal(M11BlockTerminalConvergenceCheckpoint),
+    Ordinary { checkpoint_index: usize },
+    Terminal,
 }
 
-enum AdoptedConvergence {
-    Ordinary(M11BlockRestartCheckpoint),
-    Terminal(M11BlockTerminalConvergenceCheckpoint),
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct AdoptionCheckpointSelection {
+    transaction_id: u64,
+    restart_index: usize,
+    convergence: AdoptionConvergence,
+}
+
+struct RebasedOrdinaryCheckpointSet {
+    checkpoints: Vec<M11BlockRestartCheckpoint>,
+    terminal: M11BlockTerminalConvergenceCheckpoint,
+}
+
+enum AdoptedCheckpointSet {
+    Ordinary(RebasedOrdinaryCheckpointSet),
+    Terminal {
+        checkpoints: Vec<M11BlockRestartCheckpoint>,
+        terminal: M11BlockTerminalConvergenceCheckpoint,
+    },
+}
+
+fn replicate_base_checkpoint_range(
+    base: &M11PersistentRecursiveGreenSession,
+    range: Range<usize>,
+    transaction_id: u64,
+) -> Result<Vec<M11BlockRestartCheckpoint>, M11BlockRestartError> {
+    let checkpoints = base
+        .checkpoints
+        .get(range)
+        .ok_or(M11BlockRestartError::Pairing(
+            "retained checkpoint range escaped the base session",
+        ))?;
+    let mut replicas = Vec::new();
+    replicas
+        .try_reserve_exact(checkpoints.len())
+        .map_err(|_| M11BlockWriterError::Allocation)?;
+    for checkpoint in checkpoints {
+        replicas.push(
+            checkpoint
+                .replicate_for_transaction(transaction_id)?
+                .into_checkpoint(transaction_id)?,
+        );
+    }
+    Ok(replicas)
 }
 
 /// Fuelled same-island restart/convergence adoption. Any reference work in
@@ -1020,13 +1059,13 @@ pub struct M11PersistentRecursiveGreenAdoption {
     writer: Option<M11BlockWriter>,
     writer_command_pending: bool,
     target_restart: Option<M11BlockRestartCheckpoint>,
-    convergence: Option<AdoptionConvergence>,
+    checkpoint_selection: AdoptionCheckpointSelection,
     green_prefix: Option<ExactUnchangedPrefixWitness>,
     green_suffix: Option<ExactUnchangedSuffixWitness>,
     reference_prefix: Option<ExactUnchangedPrefixWitness>,
     reference_adoption: Option<M11ReferenceJournalUnchangedPrefixAdoption>,
     target_green: Option<M11RecursiveGreenRoot>,
-    adopted_convergence: Option<AdoptedConvergence>,
+    adopted_checkpoints: Option<AdoptedCheckpointSet>,
     recursive_green_splice: Option<M11RecursiveGreenStructuralSpliceSelection>,
     output: Option<M11PersistentRecursiveGreenUpdate>,
     work: M11PersistentRecursiveGreenAdoptionWork,
@@ -1114,19 +1153,19 @@ impl M11PersistentRecursiveGreenAdoption {
                         "recursive-Green adoption omitted its base session",
                     ),
                 )?;
-                let restart = self.target_restart.take().ok_or(
-                    M11PersistentRecursiveGreenSessionError::InvalidState(
-                        "recursive-Green adoption omitted its target restart",
-                    ),
-                )?;
                 let (checkpoints, terminal_convergence) = match self
-                    .adopted_convergence
+                    .adopted_checkpoints
                     .take()
                     .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
-                        "recursive-Green adoption omitted target convergence",
+                        "recursive-Green adoption omitted target checkpoint authority",
                     ))? {
-                    AdoptedConvergence::Ordinary(convergence) => (vec![restart, convergence], None),
-                    AdoptedConvergence::Terminal(terminal) => (vec![restart], Some(terminal)),
+                    AdoptedCheckpointSet::Ordinary(rebased) => {
+                        (rebased.checkpoints, Some(rebased.terminal))
+                    }
+                    AdoptedCheckpointSet::Terminal {
+                        checkpoints,
+                        terminal,
+                    } => (checkpoints, Some(terminal)),
                 };
                 let target = M11PersistentRecursiveGreenSession {
                     source: self.target,
@@ -1233,8 +1272,8 @@ impl M11PersistentRecursiveGreenAdoption {
                             )?;
                             if end == self.target_parser_end {
                                 self.phase = if matches!(
-                                    self.convergence.as_ref(),
-                                    Some(AdoptionConvergence::Terminal(_))
+                                    self.checkpoint_selection.convergence,
+                                    AdoptionConvergence::Terminal
                                 ) {
                                     AdoptionPhase::BeginTerminalFinish
                                 } else {
@@ -1262,8 +1301,8 @@ impl M11PersistentRecursiveGreenAdoption {
                     SnapshotLineRetainedPoll::Complete(scanner) => {
                         drop(scanner.into_source_lease());
                         if matches!(
-                            self.convergence.as_ref(),
-                            Some(AdoptionConvergence::Terminal(_))
+                            self.checkpoint_selection.convergence,
+                            AdoptionConvergence::Terminal
                         ) && self.target_parser_end == self.target.byte_len()
                         {
                             self.phase = AdoptionPhase::BeginTerminalFinish;
@@ -1317,6 +1356,7 @@ impl M11PersistentRecursiveGreenAdoption {
                 }
             }
             AdoptionPhase::AdoptGreen => {
+                let selection = self.checkpoint_selection;
                 let writer = self.writer.take().ok_or(
                     M11PersistentRecursiveGreenSessionError::InvalidState(
                         "recursive-Green crop writer is missing",
@@ -1327,11 +1367,6 @@ impl M11PersistentRecursiveGreenAdoption {
                         "recursive-Green adoption omitted target restart",
                     ),
                 )?;
-                let convergence = self.convergence.take().ok_or(
-                    M11PersistentRecursiveGreenSessionError::InvalidState(
-                        "recursive-Green adoption omitted base convergence",
-                    ),
-                )?;
                 let green_prefix = self.green_prefix.take().ok_or(
                     M11PersistentRecursiveGreenSessionError::InvalidState(
                         "recursive-Green adoption omitted prefix lineage",
@@ -1339,11 +1374,12 @@ impl M11PersistentRecursiveGreenAdoption {
                 )?;
                 let green_suffix = self.green_suffix.take();
                 let reference_prefix = self.reference_prefix.take();
-                let parser = if matches!(&convergence, AdoptionConvergence::Ordinary(_)) {
-                    Some(self.controller_mut()?.capture_restart()?)
-                } else {
-                    None
-                };
+                let parser =
+                    if matches!(selection.convergence, AdoptionConvergence::Ordinary { .. }) {
+                        Some(self.controller_mut()?.capture_restart()?)
+                    } else {
+                        None
+                    };
                 let adoption_result = {
                     let base = self.base.as_ref().ok_or(
                         M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -1355,48 +1391,101 @@ impl M11PersistentRecursiveGreenAdoption {
                             "recursive-Green base omitted its structural root",
                         ),
                     )?;
-                    match convergence {
-                        AdoptionConvergence::Ordinary(old_convergence) => writer
-                            .adopt_converged_fragment(
-                                parser.ok_or(
-                                    M11PersistentRecursiveGreenSessionError::InvalidState(
-                                        "ordinary convergence omitted its parser restart",
-                                    ),
-                                )?,
-                                target_restart,
-                                old_convergence,
-                                runtime,
-                                green_base,
-                                green_prefix,
-                                green_suffix,
-                            )
-                            .map(|(green, receipt, restart, convergence)| {
-                                (
-                                    green,
-                                    receipt,
-                                    restart,
-                                    AdoptedConvergence::Ordinary(convergence),
+                    match selection.convergence {
+                        AdoptionConvergence::Ordinary { checkpoint_index } => {
+                            let old_convergence = base
+                                .checkpoints
+                                .get(checkpoint_index)
+                                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                                    "ordinary convergence checkpoint index escaped the base",
+                                ))?
+                                .replicate_for_transaction(selection.transaction_id)?
+                                .into_checkpoint(selection.transaction_id)?;
+                            let retained_prefix = replicate_base_checkpoint_range(
+                                base,
+                                0..selection.restart_index,
+                                selection.transaction_id,
+                            )?;
+                            let retained_suffix = replicate_base_checkpoint_range(
+                                base,
+                                checkpoint_index + 1..base.checkpoints.len(),
+                                selection.transaction_id,
+                            )?;
+                            let retained_terminal = base
+                                .terminal_convergence
+                                .as_ref()
+                                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                                    "ordinary adoption omitted terminal checkpoint authority",
+                                ))?
+                                .replicate_for_transaction(selection.transaction_id)?
+                                .into_checkpoint(selection.transaction_id)?;
+                            writer
+                                .adopt_converged_fragment(
+                                    parser.ok_or(
+                                        M11PersistentRecursiveGreenSessionError::InvalidState(
+                                            "ordinary convergence omitted its parser restart",
+                                        ),
+                                    )?,
+                                    target_restart,
+                                    old_convergence,
+                                    runtime,
+                                    green_base,
+                                    green_prefix,
+                                    green_suffix,
+                                    retained_prefix,
+                                    retained_suffix,
+                                    retained_terminal,
                                 )
-                            }),
-                        AdoptionConvergence::Terminal(old_terminal) => writer
-                            .adopt_converged_terminal_fragment(
-                                target_restart,
-                                old_terminal,
-                                runtime,
-                                green_base,
-                                green_prefix,
-                            )
-                            .map(|(green, receipt, restart, terminal)| {
-                                (
-                                    green,
-                                    receipt,
-                                    restart,
-                                    AdoptedConvergence::Terminal(terminal),
+                                .map(|(green, receipt, checkpoints, terminal)| {
+                                    (
+                                        green,
+                                        receipt,
+                                        AdoptedCheckpointSet::Ordinary(
+                                            RebasedOrdinaryCheckpointSet {
+                                                checkpoints,
+                                                terminal,
+                                            },
+                                        ),
+                                    )
+                                })
+                        }
+                        AdoptionConvergence::Terminal => {
+                            let old_terminal = base
+                                .terminal_convergence
+                                .as_ref()
+                                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                                    "terminal adoption omitted terminal checkpoint authority",
+                                ))?
+                                .replicate_for_transaction(selection.transaction_id)?
+                                .into_checkpoint(selection.transaction_id)?;
+                            let retained_prefix = replicate_base_checkpoint_range(
+                                base,
+                                0..selection.restart_index,
+                                selection.transaction_id,
+                            )?;
+                            writer
+                                .adopt_converged_terminal_fragment(
+                                    target_restart,
+                                    old_terminal,
+                                    runtime,
+                                    green_base,
+                                    green_prefix,
+                                    retained_prefix,
                                 )
-                            }),
+                                .map(|(green, receipt, checkpoints, terminal)| {
+                                    (
+                                        green,
+                                        receipt,
+                                        AdoptedCheckpointSet::Terminal {
+                                            checkpoints,
+                                            terminal,
+                                        },
+                                    )
+                                })
+                        }
                     }
                 };
-                let (green, receipt, restart, convergence) = match adoption_result {
+                let (green, receipt, checkpoints) = match adoption_result {
                     Ok(result) => result,
                     Err(
                         M11BlockRestartError::Pairing(
@@ -1415,8 +1504,7 @@ impl M11PersistentRecursiveGreenAdoption {
                 // Install move-only Green authority before any later fallible
                 // work so cancellation always has a root it can release.
                 self.target_green = Some(green);
-                self.target_restart = Some(restart);
-                self.adopted_convergence = Some(convergence);
+                self.adopted_checkpoints = Some(checkpoints);
                 self.controller = None;
                 self.record_structural_work(receipt)?;
                 let reference_adoption = {
@@ -1562,11 +1650,10 @@ impl M11PersistentRecursiveGreenAdoption {
         self.controller = None;
         self.writer = None;
         self.target_restart = None;
-        self.convergence = None;
         self.green_prefix = None;
         self.green_suffix = None;
         self.reference_prefix = None;
-        self.adopted_convergence = None;
+        self.adopted_checkpoints = None;
         self.cancelling = true;
         Ok(())
     }
@@ -1775,7 +1862,7 @@ impl M11PersistentRecursiveGreenSession {
     /// The base session is returned intact when no sparse checkpoint pair can
     /// prove the edit, or when reference coverage intersects the edit.
     pub fn begin_local_adoption(
-        mut self,
+        self,
         runtime: &DocumentRuntime,
         target_lease: SourceSnapshotLease,
         base_edit: Range<usize>,
@@ -1815,8 +1902,8 @@ impl M11PersistentRecursiveGreenSession {
                 ),
             )?;
             let convergence_search_start = restart_index + 1;
-            let convergence_offset = self.checkpoints[convergence_search_start..]
-                .partition_point(|checkpoint| {
+            let convergence_offset =
+                self.checkpoints[convergence_search_start..].partition_point(|checkpoint| {
                     (checkpoint.parser_physical().bytes() as usize) < base_edit.end
                         || (checkpoint.accepted_physical().bytes() as usize) < base_edit.end
                 });
@@ -1829,26 +1916,38 @@ impl M11PersistentRecursiveGreenSession {
                 ));
             }
 
-            let convergence_checkpoint =
-                convergence_index.map(|index| self.checkpoints.remove(index));
-            let restart = self.checkpoints.remove(restart_index);
+            let selected_terminal = convergence_index.is_none_or(|index| {
+                let checkpoint = &self.checkpoints[index];
+                checkpoint.parser_physical().bytes() as usize == self.source.byte_len()
+                    && checkpoint.parser_physical().utf16() as usize == self.source.utf16_len()
+            });
+            if self.terminal_convergence.is_none() {
+                return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "recursive-Green session omitted its terminal convergence authority",
+                ));
+            }
+            let restart = self.checkpoints.get(restart_index).ok_or(
+                M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "restart checkpoint index escaped the base",
+                ),
+            )?;
             let parser_restart = restart.parser_physical();
             let green_restart = restart.accepted_physical();
             let (parser_convergence, green_convergence, convergence) =
-                if let Some(convergence_checkpoint) = convergence_checkpoint {
+                if let Some(convergence_index) = convergence_index {
+                    let convergence_checkpoint = self.checkpoints.get(convergence_index).ok_or(
+                        M11PersistentRecursiveGreenSessionError::InvalidState(
+                            "convergence checkpoint index escaped the base",
+                        ),
+                    )?;
                     let parser_convergence = convergence_checkpoint.parser_physical();
                     let green_convergence = convergence_checkpoint.accepted_physical();
-                    let terminal_convergence = parser_convergence.bytes() as usize
-                        == self.source.byte_len()
-                        && parser_convergence.utf16() as usize == self.source.utf16_len();
-                    let convergence = if terminal_convergence {
-                        AdoptionConvergence::Terminal(self.terminal_convergence.take().ok_or(
-                        M11PersistentRecursiveGreenSessionError::InvalidState(
-                            "recursive-Green session omitted its terminal convergence authority",
-                        ),
-                    )?)
+                    let convergence = if selected_terminal {
+                        AdoptionConvergence::Terminal
                     } else {
-                        AdoptionConvergence::Ordinary(convergence_checkpoint)
+                        AdoptionConvergence::Ordinary {
+                            checkpoint_index: convergence_index,
+                        }
                     };
                     (parser_convergence, green_convergence, convergence)
                 } else {
@@ -1869,19 +1968,15 @@ impl M11PersistentRecursiveGreenSession {
                             "recursive-Green terminal source metric is invalid",
                         ),
                     )?;
-                    let terminal =
-                        self.terminal_convergence
-                            .take()
-                            .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
-                            "recursive-Green session omitted its terminal convergence authority",
-                        ))?;
-                    (eof, eof, AdoptionConvergence::Terminal(terminal))
+                    (eof, eof, AdoptionConvergence::Terminal)
                 };
             let next_line_ordinal = u32::try_from(restart.next_line_ordinal()).map_err(|_| {
                 M11PersistentRecursiveGreenSessionError::InvalidState(
                     "recursive-Green restart line ordinal exceeds u32",
                 )
             })?;
+            let transaction_id = M11BlockRestartCheckpoint::allocate_adoption_transaction_id()?;
+            let restart = restart.replicate_for_transaction(transaction_id)?;
 
             let parser_prefix = runtime.mint_exact_unchanged_prefix_witness(
                 self.source,
@@ -1934,7 +2029,8 @@ impl M11PersistentRecursiveGreenSession {
                     "recursive-Green session omitted its structural root",
                 ),
             )?;
-            let joined = restart.resume(runtime, green, target_lease, parser_prefix)?;
+            let joined =
+                restart.resume(transaction_id, runtime, green, target_lease, parser_prefix)?;
             let (controller, writer) = joined.into_local_fragment()?;
             let target_restart = writer
                 .capture_restart_checkpoint(controller.capture_restart()?)
@@ -1954,13 +2050,17 @@ impl M11PersistentRecursiveGreenSession {
                 writer: Some(writer),
                 writer_command_pending: false,
                 target_restart: Some(target_restart),
-                convergence: Some(convergence),
+                checkpoint_selection: AdoptionCheckpointSelection {
+                    transaction_id,
+                    restart_index,
+                    convergence,
+                },
                 green_prefix: Some(green_prefix),
                 green_suffix,
                 reference_prefix,
                 reference_adoption: None,
                 target_green: None,
-                adopted_convergence: None,
+                adopted_checkpoints: None,
                 recursive_green_splice: None,
                 output: None,
                 work: M11PersistentRecursiveGreenAdoptionWork::default(),
@@ -2016,14 +2116,16 @@ impl M11PersistentRecursiveGreenSession {
         let inline_source = to_u32_range(fence.inline_source_range())?;
         let inline_source_utf16 = to_u32_range(fence.inline_source_utf16_range())?;
         let query_receipt = fence.receipt();
-        Ok(M11RecursiveGreenInlineLeafPreparation::from_persistent_session(
-            block_source,
-            block_source_utf16,
-            inline_source,
-            inline_source_utf16,
-            query_receipt,
-            fence,
-        ))
+        Ok(
+            M11RecursiveGreenInlineLeafPreparation::from_persistent_session(
+                block_source,
+                block_source_utf16,
+                inline_source,
+                inline_source_utf16,
+                query_receipt,
+                fence,
+            ),
+        )
     }
 
     pub fn prepare_paragraph_inline(

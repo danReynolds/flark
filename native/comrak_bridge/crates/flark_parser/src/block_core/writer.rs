@@ -18,6 +18,7 @@ use flark_engine::parser_internal::{
     M11RecursiveGreenFactTag, M11RecursiveGreenFrameId, M11RecursiveGreenKind,
     M11RecursiveGreenLogicalAction, M11RecursiveGreenPropertyChunk, M11RecursiveGreenReclaimPoll,
     M11RecursiveGreenRoot, M11RecursiveGreenSourceMetric, M11RecursiveGreenStructuralBoundary,
+    M11RecursiveGreenStructuralBoundaryTransactionReplica, M11RecursiveGreenStructuralSpliceRebase,
     M11RecursiveGreenStructuralSpliceReceipt, M11RecursiveGreenStructuralSpliceSelection,
 };
 use flark_engine::{
@@ -25,6 +26,7 @@ use flark_engine::{
     ExactUnchangedSuffixWitness, SourceEditError, SourceSnapshotLease, SourceVersion,
 };
 
+use super::controller::M11DirectBlockRestartTransactionReplica;
 use super::{
     BlockCommand, BlockKind, BulletMarker, CoveragePart, FenceCharacter, FencedCodeBoundary,
     FinalFacts, HeadingStyle, LineEnding, LineSourcePosition, LineSourceRange, ListDelimiter,
@@ -51,6 +53,7 @@ const FACT_CODE: u16 = 4;
 const FACT_HTML: u16 = 5;
 
 static RESTART_JOIN_IDS: AtomicU64 = AtomicU64::new(1);
+static ADOPTION_TRANSACTION_IDS: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug)]
 pub enum M11BlockWriterError {
@@ -527,6 +530,41 @@ pub struct M11BlockRestartCheckpoint {
     green_boundary: Option<M11RecursiveGreenStructuralBoundary>,
 }
 
+/// Private identity joining every parser and Green replica minted for one
+/// persistent-session adoption attempt.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct M11BlockAdoptionTransactionId(u64);
+
+/// Private checkpoint replica. The original checkpoint remains in the base
+/// session until the target transaction commits.
+pub(crate) struct M11BlockRestartCheckpointTransactionReplica {
+    transaction: M11BlockAdoptionTransactionId,
+    source: SourceVersion,
+    parser: M11DirectBlockRestartTransactionReplica,
+    open: Box<[OpenFrame]>,
+    next_frame: u64,
+    accepted_physical: SourceMetric,
+    parser_physical: SourceMetric,
+    logical: SourceMetric,
+    event_cut: u64,
+    staged: Option<StagedSource>,
+    restart_join: Option<u64>,
+    green_boundary: Option<M11RecursiveGreenStructuralBoundaryTransactionReplica>,
+}
+
+/// Private EOF-boundary replica paired with the same adoption identity as all
+/// ordinary checkpoint replicas in the transaction.
+pub(crate) struct M11BlockTerminalConvergenceCheckpointTransactionReplica {
+    transaction: M11BlockAdoptionTransactionId,
+    source: SourceVersion,
+    open: Box<[OpenFrame]>,
+    next_frame: u64,
+    accepted_physical: SourceMetric,
+    logical: SourceMetric,
+    event_cut: u64,
+    green_boundary: Option<M11RecursiveGreenStructuralBoundaryTransactionReplica>,
+}
+
 /// Authenticated Green cut after every source-backed child has closed and
 /// immediately before the parser emits `Close(Document)` at EOF.
 ///
@@ -559,6 +597,36 @@ impl fmt::Debug for M11BlockRestartCheckpoint {
 }
 
 impl M11BlockRestartCheckpoint {
+    pub(crate) fn allocate_adoption_transaction_id() -> Result<u64, M11BlockRestartError> {
+        Ok(M11BlockAdoptionTransactionId::allocate()?.get())
+    }
+
+    pub(crate) fn replicate_for_transaction(
+        &self,
+        transaction_id: u64,
+    ) -> Result<M11BlockRestartCheckpointTransactionReplica, M11BlockRestartError> {
+        let transaction = M11BlockAdoptionTransactionId::from_raw(transaction_id)?;
+        let green_boundary = self
+            .green_boundary
+            .as_ref()
+            .map(|boundary| boundary.replicate_for_parser_transaction(transaction.get()))
+            .transpose()?;
+        Ok(M11BlockRestartCheckpointTransactionReplica {
+            transaction,
+            source: self.source,
+            parser: self.parser.replicate_for_transaction(transaction.get())?,
+            open: replicate_open_frames(&self.open)?,
+            next_frame: self.next_frame,
+            accepted_physical: self.accepted_physical,
+            parser_physical: self.parser_physical,
+            logical: self.logical,
+            event_cut: self.event_cut,
+            staged: self.staged,
+            restart_join: self.restart_join,
+            green_boundary,
+        })
+    }
+
     #[must_use]
     pub const fn source(&self) -> SourceVersion {
         self.source
@@ -660,6 +728,75 @@ impl M11BlockRestartCheckpoint {
     }
 }
 
+impl M11BlockAdoptionTransactionId {
+    pub(crate) fn allocate() -> Result<Self, M11BlockRestartError> {
+        ADOPTION_TRANSACTION_IDS
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                current.checked_add(1)
+            })
+            .map(Self)
+            .map_err(|_| M11BlockRestartError::Pairing("adoption transaction identity exhausted"))
+    }
+
+    const fn get(self) -> u64 {
+        self.0
+    }
+
+    fn from_raw(value: u64) -> Result<Self, M11BlockRestartError> {
+        if value == 0 {
+            return Err(M11BlockRestartError::Pairing(
+                "adoption transaction identity must be nonzero",
+            ));
+        }
+        Ok(Self(value))
+    }
+}
+
+impl M11BlockRestartCheckpointTransactionReplica {
+    pub(crate) fn into_checkpoint(
+        self,
+        transaction_id: u64,
+    ) -> Result<M11BlockRestartCheckpoint, M11BlockRestartError> {
+        let transaction = M11BlockAdoptionTransactionId::from_raw(transaction_id)?;
+        if self.transaction != transaction {
+            return Err(M11BlockRestartError::Pairing(
+                "checkpoint replica crossed adoption transactions",
+            ));
+        }
+        let green_boundary = match self.green_boundary {
+            Some(boundary) => {
+                Some(boundary.into_boundary_for_parser_transaction(transaction.get())?)
+            }
+            None => None,
+        };
+        Ok(M11BlockRestartCheckpoint {
+            source: self.source,
+            parser: self.parser.into_restart(transaction.get())?,
+            open: self.open,
+            next_frame: self.next_frame,
+            accepted_physical: self.accepted_physical,
+            parser_physical: self.parser_physical,
+            logical: self.logical,
+            event_cut: self.event_cut,
+            staged: self.staged,
+            restart_join: self.restart_join,
+            green_boundary,
+        })
+    }
+
+    pub(crate) fn resume(
+        self,
+        transaction_id: u64,
+        runtime: &DocumentRuntime,
+        base: &M11RecursiveGreenRoot,
+        target_lease: SourceSnapshotLease,
+        prefix: ExactUnchangedPrefixWitness,
+    ) -> Result<M11JoinedBlockRestart, M11BlockRestartError> {
+        self.into_checkpoint(transaction_id)?
+            .resume(runtime, base, target_lease, prefix)
+    }
+}
+
 impl fmt::Debug for M11BlockTerminalConvergenceCheckpoint {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -671,6 +808,68 @@ impl fmt::Debug for M11BlockTerminalConvergenceCheckpoint {
             .field("event_cut", &self.event_cut)
             .finish_non_exhaustive()
     }
+}
+
+impl M11BlockTerminalConvergenceCheckpoint {
+    pub(crate) fn replicate_for_transaction(
+        &self,
+        transaction_id: u64,
+    ) -> Result<M11BlockTerminalConvergenceCheckpointTransactionReplica, M11BlockRestartError> {
+        let transaction = M11BlockAdoptionTransactionId::from_raw(transaction_id)?;
+        let green_boundary = self
+            .green_boundary
+            .as_ref()
+            .map(|boundary| boundary.replicate_for_parser_transaction(transaction.get()))
+            .transpose()?;
+        Ok(M11BlockTerminalConvergenceCheckpointTransactionReplica {
+            transaction,
+            source: self.source,
+            open: replicate_open_frames(&self.open)?,
+            next_frame: self.next_frame,
+            accepted_physical: self.accepted_physical,
+            logical: self.logical,
+            event_cut: self.event_cut,
+            green_boundary,
+        })
+    }
+}
+
+impl M11BlockTerminalConvergenceCheckpointTransactionReplica {
+    pub(crate) fn into_checkpoint(
+        self,
+        transaction_id: u64,
+    ) -> Result<M11BlockTerminalConvergenceCheckpoint, M11BlockRestartError> {
+        let transaction = M11BlockAdoptionTransactionId::from_raw(transaction_id)?;
+        if self.transaction != transaction {
+            return Err(M11BlockRestartError::Pairing(
+                "terminal checkpoint replica crossed adoption transactions",
+            ));
+        }
+        let green_boundary = match self.green_boundary {
+            Some(boundary) => {
+                Some(boundary.into_boundary_for_parser_transaction(transaction.get())?)
+            }
+            None => None,
+        };
+        Ok(M11BlockTerminalConvergenceCheckpoint {
+            source: self.source,
+            open: self.open,
+            next_frame: self.next_frame,
+            accepted_physical: self.accepted_physical,
+            logical: self.logical,
+            event_cut: self.event_cut,
+            green_boundary,
+        })
+    }
+}
+
+fn replicate_open_frames(open: &[OpenFrame]) -> Result<Box<[OpenFrame]>, M11BlockRestartError> {
+    let mut replica = Vec::new();
+    replica
+        .try_reserve_exact(open.len())
+        .map_err(|_| M11BlockWriterError::Allocation)?;
+    replica.extend_from_slice(open);
+    Ok(replica.into_boxed_slice())
 }
 
 /// Parser plus writer seed reconstructed by one successful composite join.
@@ -1129,12 +1328,15 @@ impl M11BlockWriter {
         base: &M11RecursiveGreenRoot,
         prefix: ExactUnchangedPrefixWitness,
         suffix: Option<ExactUnchangedSuffixWitness>,
+        mut retained_prefix: Vec<M11BlockRestartCheckpoint>,
+        mut retained_suffix: Vec<M11BlockRestartCheckpoint>,
+        mut retained_terminal: M11BlockTerminalConvergenceCheckpoint,
     ) -> Result<
         (
             M11RecursiveGreenRoot,
             M11BlockStructuralAdoptionReceipt,
-            M11BlockRestartCheckpoint,
-            M11BlockRestartCheckpoint,
+            Vec<M11BlockRestartCheckpoint>,
+            M11BlockTerminalConvergenceCheckpoint,
         ),
         M11BlockRestartError,
     > {
@@ -1167,6 +1369,13 @@ impl M11BlockWriter {
                 "target fragment did not converge to its exact base boundary",
             ));
         }
+        if fresh.parser.last_line_length() != old_convergence.parser.last_line_length() {
+            return Err(M11BlockRestartError::Pairing(
+                "target convergence changed unchanged-suffix line length",
+            ));
+        }
+        let base_convergence_line_ordinal = old_convergence.parser.line_ordinal();
+        let target_convergence_line_ordinal = fresh.parser.line_ordinal();
 
         if target_restart.source != fresh.source
             || target_restart.green_boundary.is_some()
@@ -1267,7 +1476,7 @@ impl M11BlockWriter {
         let high_level_events = fragment.events.len();
         let fragment_source_bytes_read = fragment.source_bytes_read;
         let target_end_physical = green_metric(fresh.accepted_physical)?;
-        let (mut root, green, target_start_boundary, target_end_boundary) =
+        let (mut root, green, target_start_boundary, target_end_boundary, rebase) =
             splice_m11_recursive_green_structural_atomic(
                 runtime,
                 base,
@@ -1304,6 +1513,54 @@ impl M11BlockWriter {
         }
         target_restart.green_boundary = Some(target_start_boundary);
         fresh.green_boundary = Some(target_end_boundary);
+        let Some(target_frame_floor) = root.maximum_frame_id().checked_add(1) else {
+            root.begin_release(runtime)?;
+            return Err(M11BlockRestartError::Pairing(
+                "target Green frame identity space is exhausted",
+            ));
+        };
+        let rebased =
+            (|| {
+                for checkpoint in &mut retained_prefix {
+                    rebase_retained_prefix_checkpoint(checkpoint, &rebase, target_frame_floor)?;
+                }
+                for checkpoint in &mut retained_suffix {
+                    rebase_retained_suffix_checkpoint(
+                        checkpoint,
+                        &rebase,
+                        old_convergence.accepted_physical,
+                        fresh.accepted_physical,
+                        old_convergence.logical,
+                        fresh.logical,
+                        base_convergence_line_ordinal,
+                        target_convergence_line_ordinal,
+                        target_frame_floor,
+                    )?;
+                }
+                rebase_retained_terminal_checkpoint(
+                    &mut retained_terminal,
+                    &rebase,
+                    target_frame_floor,
+                )?;
+                let additional = 2_usize.checked_add(retained_suffix.len()).ok_or(
+                    M11BlockRestartError::Pairing("rebased checkpoint count overflow"),
+                )?;
+                retained_prefix
+                    .try_reserve(additional)
+                    .map_err(|_| M11BlockWriterError::Allocation)?;
+                retained_prefix.push(target_restart);
+                retained_prefix.push(fresh);
+                retained_prefix.append(&mut retained_suffix);
+                validate_rebased_checkpoint_set(&retained_prefix, &retained_terminal)?;
+                Ok::<_, M11BlockRestartError>((retained_prefix, retained_terminal))
+            })();
+        let (checkpoints, terminal) = match rebased {
+            Ok(rebased) => rebased,
+            Err(error) => {
+                root.begin_release(runtime)?;
+                return Err(error);
+            }
+        };
         Ok((
             root,
             M11BlockStructuralAdoptionReceipt {
@@ -1311,8 +1568,8 @@ impl M11BlockWriter {
                 high_level_events,
                 fragment_source_bytes_read,
             },
-            target_restart,
-            fresh,
+            checkpoints,
+            terminal,
         ))
     }
 
@@ -1331,11 +1588,12 @@ impl M11BlockWriter {
         runtime: &mut DocumentRuntime,
         base: &M11RecursiveGreenRoot,
         prefix: ExactUnchangedPrefixWitness,
+        mut retained_prefix: Vec<M11BlockRestartCheckpoint>,
     ) -> Result<
         (
             M11RecursiveGreenRoot,
             M11BlockStructuralAdoptionReceipt,
-            M11BlockRestartCheckpoint,
+            Vec<M11BlockRestartCheckpoint>,
             M11BlockTerminalConvergenceCheckpoint,
         ),
         M11BlockRestartError,
@@ -1449,7 +1707,7 @@ impl M11BlockWriter {
         let high_level_events = fragment.events.len();
         let fragment_source_bytes_read = fragment.source_bytes_read;
         let target_end_physical = green_metric(target_physical)?;
-        let (mut root, green, target_start_boundary, target_end_boundary) =
+        let (mut root, green, target_start_boundary, target_end_boundary, rebase) =
             splice_m11_recursive_green_structural_atomic(
                 runtime,
                 base,
@@ -1493,6 +1751,30 @@ impl M11BlockWriter {
             event_cut: target_end_boundary.event_cut(),
             green_boundary: Some(target_end_boundary),
         };
+        let Some(target_frame_floor) = root.maximum_frame_id().checked_add(1) else {
+            root.begin_release(runtime)?;
+            return Err(M11BlockRestartError::Pairing(
+                "target Green frame identity space is exhausted",
+            ));
+        };
+        let rebased = (|| {
+            for checkpoint in &mut retained_prefix {
+                rebase_retained_prefix_checkpoint(checkpoint, &rebase, target_frame_floor)?;
+            }
+            retained_prefix
+                .try_reserve(1)
+                .map_err(|_| M11BlockWriterError::Allocation)?;
+            retained_prefix.push(target_restart);
+            validate_rebased_checkpoint_set(&retained_prefix, &target_terminal)?;
+            Ok::<_, M11BlockRestartError>(retained_prefix)
+        })();
+        let checkpoints = match rebased {
+            Ok(checkpoints) => checkpoints,
+            Err(error) => {
+                root.begin_release(runtime)?;
+                return Err(error);
+            }
+        };
         Ok((
             root,
             M11BlockStructuralAdoptionReceipt {
@@ -1500,7 +1782,7 @@ impl M11BlockWriter {
                 high_level_events,
                 fragment_source_bytes_read,
             },
-            target_restart,
+            checkpoints,
             target_terminal,
         ))
     }
@@ -2112,6 +2394,216 @@ fn same_open_path(left: &[OpenFrame], right: &[OpenFrame]) -> bool {
             .iter()
             .zip(right)
             .all(|(left, right)| left.id == right.id && left.kind == right.kind)
+}
+
+fn rebase_retained_prefix_checkpoint(
+    checkpoint: &mut M11BlockRestartCheckpoint,
+    rebase: &M11RecursiveGreenStructuralSpliceRebase,
+    target_frame_floor: u64,
+) -> Result<(), M11BlockRestartError> {
+    let boundary = checkpoint
+        .green_boundary
+        .take()
+        .ok_or(M11BlockRestartError::Pairing(
+            "retained prefix checkpoint lacks committed Green authority",
+        ))?;
+    validate_restart_boundary(checkpoint, &boundary)?;
+    let boundary = rebase.rebase_prefix(boundary)?;
+    checkpoint.source = boundary.source();
+    checkpoint.accepted_physical = block_metric(boundary.physical_metric())?;
+    checkpoint.logical = block_metric(boundary.logical_metric())?;
+    checkpoint.event_cut = boundary.event_cut();
+    checkpoint.next_frame = checkpoint.next_frame.max(target_frame_floor);
+    validate_restart_boundary(checkpoint, &boundary)?;
+    checkpoint.green_boundary = Some(boundary);
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rebase_retained_suffix_checkpoint(
+    checkpoint: &mut M11BlockRestartCheckpoint,
+    rebase: &M11RecursiveGreenStructuralSpliceRebase,
+    base_physical_end: SourceMetric,
+    target_physical_end: SourceMetric,
+    base_logical_end: SourceMetric,
+    target_logical_end: SourceMetric,
+    base_convergence_line_ordinal: u64,
+    target_convergence_line_ordinal: u64,
+    target_frame_floor: u64,
+) -> Result<(), M11BlockRestartError> {
+    let boundary = checkpoint
+        .green_boundary
+        .take()
+        .ok_or(M11BlockRestartError::Pairing(
+            "retained suffix checkpoint lacks committed Green authority",
+        ))?;
+    validate_restart_boundary(checkpoint, &boundary)?;
+    checkpoint.parser_physical = translate_block_metric(
+        checkpoint.parser_physical,
+        base_physical_end,
+        target_physical_end,
+    )?;
+    checkpoint.parser.rebase_unchanged_suffix_line_ordinal(
+        base_convergence_line_ordinal,
+        target_convergence_line_ordinal,
+    )?;
+    for frame in &mut checkpoint.open {
+        let Some(fence) = frame.fence.as_mut() else {
+            continue;
+        };
+        let after_convergence = fence.logical_base.bytes() >= base_logical_end.bytes()
+            && fence.logical_base.utf16() >= base_logical_end.utf16();
+        let before_convergence = fence.logical_base.bytes() <= base_logical_end.bytes()
+            && fence.logical_base.utf16() <= base_logical_end.utf16();
+        if !after_convergence && !before_convergence {
+            return Err(M11BlockRestartError::Pairing(
+                "retained suffix frame crossed logical convergence coordinates",
+            ));
+        }
+        if after_convergence {
+            fence.logical_base =
+                translate_block_metric(fence.logical_base, base_logical_end, target_logical_end)?;
+        }
+    }
+    let boundary = rebase.rebase_suffix(boundary)?;
+    checkpoint.source = boundary.source();
+    checkpoint.accepted_physical = block_metric(boundary.physical_metric())?;
+    checkpoint.logical = block_metric(boundary.logical_metric())?;
+    checkpoint.event_cut = boundary.event_cut();
+    checkpoint.next_frame = checkpoint.next_frame.max(target_frame_floor);
+    validate_restart_boundary(checkpoint, &boundary)?;
+    checkpoint.green_boundary = Some(boundary);
+    Ok(())
+}
+
+fn rebase_retained_terminal_checkpoint(
+    checkpoint: &mut M11BlockTerminalConvergenceCheckpoint,
+    rebase: &M11RecursiveGreenStructuralSpliceRebase,
+    target_frame_floor: u64,
+) -> Result<(), M11BlockRestartError> {
+    let boundary = checkpoint
+        .green_boundary
+        .take()
+        .ok_or(M11BlockRestartError::Pairing(
+            "retained terminal checkpoint lacks committed Green authority",
+        ))?;
+    validate_terminal_boundary(checkpoint, &boundary)?;
+    let boundary = rebase.rebase_suffix(boundary)?;
+    checkpoint.source = boundary.source();
+    checkpoint.accepted_physical = block_metric(boundary.physical_metric())?;
+    checkpoint.logical = block_metric(boundary.logical_metric())?;
+    checkpoint.event_cut = boundary.event_cut();
+    checkpoint.next_frame = checkpoint.next_frame.max(target_frame_floor);
+    validate_terminal_boundary(checkpoint, &boundary)?;
+    checkpoint.green_boundary = Some(boundary);
+    Ok(())
+}
+
+fn validate_restart_boundary(
+    checkpoint: &M11BlockRestartCheckpoint,
+    boundary: &M11RecursiveGreenStructuralBoundary,
+) -> Result<(), M11BlockRestartError> {
+    if boundary.source() != checkpoint.source
+        || boundary.event_cut() != checkpoint.event_cut
+        || boundary.physical_metric().bytes() != checkpoint.accepted_physical.bytes()
+        || boundary.physical_metric().utf16() != checkpoint.accepted_physical.utf16()
+        || boundary.logical_metric().bytes() != checkpoint.logical.bytes()
+        || boundary.logical_metric().utf16() != checkpoint.logical.utf16()
+        || !boundary_matches_open(boundary, &checkpoint.open)
+    {
+        return Err(M11BlockRestartError::Pairing(
+            "retained restart checkpoint differs from its Green boundary",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_terminal_boundary(
+    checkpoint: &M11BlockTerminalConvergenceCheckpoint,
+    boundary: &M11RecursiveGreenStructuralBoundary,
+) -> Result<(), M11BlockRestartError> {
+    if boundary.source() != checkpoint.source
+        || boundary.event_cut() != checkpoint.event_cut
+        || boundary.physical_metric().bytes() != checkpoint.accepted_physical.bytes()
+        || boundary.physical_metric().utf16() != checkpoint.accepted_physical.utf16()
+        || boundary.logical_metric().bytes() != checkpoint.logical.bytes()
+        || boundary.logical_metric().utf16() != checkpoint.logical.utf16()
+        || !boundary_matches_open(boundary, &checkpoint.open)
+    {
+        return Err(M11BlockRestartError::Pairing(
+            "retained terminal checkpoint differs from its Green boundary",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_rebased_checkpoint_set(
+    checkpoints: &[M11BlockRestartCheckpoint],
+    terminal: &M11BlockTerminalConvergenceCheckpoint,
+) -> Result<(), M11BlockRestartError> {
+    if checkpoints.is_empty()
+        || checkpoints.iter().any(|checkpoint| {
+            checkpoint.source != terminal.source || checkpoint.green_boundary.is_none()
+        })
+        || checkpoints.windows(2).any(|pair| {
+            pair[0].parser_physical.bytes() > pair[1].parser_physical.bytes()
+                || pair[0].parser_physical.utf16() > pair[1].parser_physical.utf16()
+                || pair[0].accepted_physical.bytes() > pair[1].accepted_physical.bytes()
+                || pair[0].accepted_physical.utf16() > pair[1].accepted_physical.utf16()
+        })
+        || terminal.green_boundary.is_none()
+        || terminal.accepted_physical.bytes()
+            != u64::try_from(terminal.source.byte_len()).unwrap_or(u64::MAX)
+        || terminal.accepted_physical.utf16()
+            != u64::try_from(terminal.source.utf16_len()).unwrap_or(u64::MAX)
+    {
+        return Err(M11BlockRestartError::Pairing(
+            "rebased checkpoint set is not ordered target authority",
+        ));
+    }
+    Ok(())
+}
+
+fn block_metric(
+    metric: M11RecursiveGreenSourceMetric,
+) -> Result<SourceMetric, M11BlockRestartError> {
+    SourceMetric::new(metric.bytes(), metric.utf16()).ok_or(M11BlockRestartError::Pairing(
+        "recursive-Green checkpoint metric is invalid",
+    ))
+}
+
+fn translate_block_metric(
+    value: SourceMetric,
+    base: SourceMetric,
+    target: SourceMetric,
+) -> Result<SourceMetric, M11BlockRestartError> {
+    SourceMetric::new(
+        translate_checkpoint_cut(value.bytes(), base.bytes(), target.bytes())?,
+        translate_checkpoint_cut(value.utf16(), base.utf16(), target.utf16())?,
+    )
+    .ok_or(M11BlockRestartError::Pairing(
+        "rebased checkpoint metric is invalid",
+    ))
+}
+
+fn translate_checkpoint_cut(
+    value: u64,
+    base: u64,
+    target: u64,
+) -> Result<u64, M11BlockRestartError> {
+    if target >= base {
+        value
+            .checked_add(target - base)
+            .ok_or(M11BlockRestartError::Pairing(
+                "rebased checkpoint coordinate overflow",
+            ))
+    } else {
+        value
+            .checked_sub(base - target)
+            .ok_or(M11BlockRestartError::Pairing(
+                "rebased checkpoint coordinate underflow",
+            ))
+    }
 }
 
 fn boundary_matches_open(

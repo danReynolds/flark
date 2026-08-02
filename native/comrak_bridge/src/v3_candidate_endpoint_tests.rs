@@ -2101,6 +2101,7 @@ fn active_candidate_phase(active: Option<&ActiveCandidate>) -> &'static str {
         Some(ActiveCandidate::Building { .. }) => "Building",
         Some(ActiveCandidate::ParsingExact(_)) => "ParsingExact",
         Some(ActiveCandidate::ParsingOrdinaryExact(_)) => "ParsingOrdinaryExact",
+        Some(ActiveCandidate::AwaitingRecursiveGreenExact(_)) => "AwaitingRecursiveGreenExact",
         Some(ActiveCandidate::ParsingBulletListLocal(_)) => "ParsingBulletListLocal",
         Some(ActiveCandidate::ParsingExactFallback(_)) => "ParsingExactFallback",
         Some(ActiveCandidate::BuildingExactFallback { .. }) => "BuildingExactFallback",
@@ -7311,7 +7312,7 @@ fn ordinary_paragraph_middle_edit_streams_exact_segmented_delta() {
 }
 
 #[test]
-fn independent_host_4096_paragraph_middle_edit_is_bounded_exact_delta() {
+fn independent_host_4096_paragraph_distant_middle_edits_remain_bounded_exact_deltas() {
     const PARAGRAPHS: usize = 4_096;
 
     let profile = SourceFactsScanProfile::new(4_096).expect("production scan profile");
@@ -7361,17 +7362,21 @@ fn independent_host_4096_paragraph_middle_edit_is_bounded_exact_delta() {
     let paragraph_start = base_source
         .find("paragraph 2048 ")
         .expect("middle Paragraph");
-    let edit_start = paragraph_start + "paragraph 2048 ".len() + 16;
+    let paragraph_line_end = base_source[paragraph_start..]
+        .find('\n')
+        .map(|offset| paragraph_start + offset)
+        .expect("middle Paragraph line ending");
+    let edit_start = paragraph_line_end + 1;
     let mut target_source = base_source.clone();
-    target_source.replace_range(edit_start..edit_start + 1, "Z");
+    target_source.replace_range(edit_start..edit_start + 1, "\n\n");
     let paragraph_end = target_source[paragraph_start..]
         .find('\n')
         .map(|offset| paragraph_start + offset + 1)
         .expect("middle Paragraph line ending");
     let incremental_started = std::time::Instant::now();
     let target_version = runtime
-        .apply_edit(base_version, edit_start..edit_start + 1, "Z")
-        .expect("shape-preserving middle Paragraph edit")
+        .apply_edit(base_version, edit_start..edit_start + 1, "\n\n")
+        .expect("middle Paragraph newline insertion")
         .source()
         .current();
     let plan = runtime
@@ -7454,8 +7459,8 @@ fn independent_host_4096_paragraph_middle_edit_is_bounded_exact_delta() {
     let (owner_kind, range, ancestry) = recursive_green_query_shape(
         &host,
         target_source_version,
-        edit_start,
-        edit_start,
+        paragraph_start + "paragraph 2048 ".len(),
+        paragraph_start + "paragraph 2048 ".len(),
     );
     assert_eq!(owner_kind, 5, "the edited owner remains a Green Paragraph");
     let paragraph_content_end = paragraph_end - 1;
@@ -7490,6 +7495,90 @@ fn independent_host_4096_paragraph_middle_edit_is_bounded_exact_delta() {
         endpoint
             .has_exact_base_for(&runtime, target_version)
             .expect("target exact-base continuity")
+    );
+
+    let second_paragraph = target_source
+        .find("paragraph 3072 ")
+        .expect("distant Paragraph");
+    let second_edit_start = second_paragraph + "paragraph 3072 ".len() + 16;
+    let second_incremental_started = std::time::Instant::now();
+    let second_version = runtime
+        .apply_edit(
+            target_version,
+            second_edit_start..second_edit_start + 1,
+            "Y",
+        )
+        .expect("shape-preserving distant Paragraph edit")
+        .source()
+        .current();
+    let second_plan = runtime
+        .begin_incremental_source_facts(profile, parser_profile, SourceFactsRootLimits::default())
+        .expect("plan distant SourceFacts replacement");
+    assert_eq!(
+        second_plan.exact_parser_base_byte_range(),
+        Some(&(second_edit_start..second_edit_start + 1))
+    );
+    assert!(
+        endpoint
+            .has_incremental_base_for_plan(&runtime, &second_plan)
+            .expect("preflight distant ordinary crop"),
+        "a successful local edit must preserve restart authority in distant unchanged regions"
+    );
+    let second_witness = complete_incremental_source_facts(&mut runtime);
+    let second_completion = completion_for_persistent_target(&runtime, 3, 2);
+    let second_source_version = source_version_for(binding, second_completion);
+    host.observe_source_version(second_source_version)
+        .expect("host observes distant target");
+    endpoint
+        .start_incremental(
+            &runtime,
+            runtime
+                .snapshot_current_source()
+                .expect("borrow distant exact target"),
+            second_witness,
+            binding,
+            second_completion,
+        )
+        .expect("start distant ordinary crop");
+    assert_eq!(
+        active_candidate_phase(endpoint.active.as_ref()),
+        "AwaitingRecursiveGreenExact",
+        "moving the caret must wait on retained recursive-Green authority without starting a \
+         whole-document clean parse"
+    );
+    let second_delivery =
+        deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
+    let second_incremental_elapsed = second_incremental_started.elapsed();
+    assert_eq!(second_delivery.offer.mode, PublicationMode::ExactBaseDelta);
+    assert_eq!(second_delivery.offer.base_ack, Some(target_delivery.ack));
+    assert_eq!(second_delivery.ack.source_version, second_source_version);
+    assert!(
+        second_delivery.offer.transferred_record_count
+            < second_delivery.offer.target_record_count
+    );
+    assert!(second_delivery.packet_frames.iter().flatten().all(|(kind, _)| {
+        *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage
+    }));
+    assert_eq!(
+        endpoint.recursive_green_path_receipt(),
+        RecursiveGreenPathReceipt {
+            local_adoption_deliveries: 2,
+            clean_fallback_deliveries: 0,
+        },
+        "both edits must remain on the recursive-Green local-adoption path"
+    );
+    eprintln!(
+        "m11_4096_paragraph_newline_then_distant_delta second_incremental_ms={} \
+         target_records={} transferred_records={}",
+        second_incremental_elapsed.as_millis(),
+        second_delivery.offer.target_record_count,
+        second_delivery.offer.transferred_record_count,
+    );
+    drain_candidate_cleanup(&mut endpoint, &mut runtime);
+    assert!(
+        endpoint
+            .has_exact_base_for(&runtime, second_version)
+            .expect("distant target exact-base continuity")
     );
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
@@ -9593,6 +9682,7 @@ fn four_thousand_ninety_six_leading_references_use_the_production_exact_delta_pa
 }
 
 #[test]
+#[ignore = "large-scale release benchmark; the 4,096-reference case remains in the default suite"]
 fn one_hundred_thousand_leading_references_use_the_production_exact_delta_path() {
     leading_references_use_the_production_exact_delta_path::<100_000, 64>();
 }
