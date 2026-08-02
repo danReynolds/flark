@@ -204,6 +204,31 @@ pub(crate) struct SequenceInspectionReceipt {
     pub(crate) node_headers_decoded: u64,
     pub(crate) summary_combinations: u64,
     pub(crate) spec: SequenceSpecInspection,
+    maximum_node_headers_decoded: Option<u64>,
+    node_header_limit_exhausted: bool,
+}
+
+impl SequenceInspectionReceipt {
+    /// Starts an otherwise-empty inspection with one exact positive
+    /// node-header budget. The default receipt remains unlimited.
+    pub(crate) fn with_node_header_limit(maximum: u64) -> Option<Self> {
+        if maximum == 0 {
+            return None;
+        }
+        Some(Self {
+            maximum_node_headers_decoded: Some(maximum),
+            ..Self::default()
+        })
+    }
+
+    /// Whether an attempted header read was refused by the configured limit.
+    ///
+    /// This is deliberately distinct from the spec error returned by the
+    /// measured operation, so a semantic query wrapper can map exhaustion to
+    /// its typed budget outcome rather than treating it as corrupt storage.
+    pub(crate) const fn node_header_limit_exhausted(self) -> bool {
+        self.node_header_limit_exhausted
+    }
 }
 
 /// Payload and associative-summary semantics for one persistent sequence.
@@ -556,6 +581,15 @@ fn sequence_node_header<Spec: SequenceSpec>(
     id: ArenaId,
     inspection: &mut SequenceInspectionReceipt,
 ) -> Result<DecodedSequenceNodeHeader<Spec::Summary>, Spec::Error> {
+    if inspection
+        .maximum_node_headers_decoded
+        .is_some_and(|maximum| inspection.node_headers_decoded >= maximum)
+    {
+        inspection.node_header_limit_exhausted = true;
+        return Err(Spec::invalid(
+            "sequence node-header inspection limit exhausted",
+        ));
+    }
     let payload = arena.payload(id)?;
     inspection.node_headers_decoded = inspection
         .node_headers_decoded
@@ -2883,6 +2917,59 @@ mod tests {
     }
 
     #[test]
+    fn node_header_fuel_is_exact_sticky_and_precedes_payload_access() {
+        assert_eq!(SequenceInspectionReceipt::with_node_header_limit(0), None);
+
+        let mut arena = PageArena::new(limits(64)).expect("arena");
+        let root = four_leaf_tree(&mut arena);
+        let root_id = root.root_id_for_test().expect("root id");
+
+        let mut exact = SequenceInspectionReceipt::with_node_header_limit(3)
+            .expect("positive exact header limit");
+        let decoded = sequence_node::<TestSpec>(&arena, root_id, &mut exact)
+            .expect("three-header branch decode");
+        assert_eq!(decoded.measure.leaves, 4);
+        assert_eq!(exact.node_headers_decoded, 3);
+        assert!(!exact.node_header_limit_exhausted());
+
+        let mut short = SequenceInspectionReceipt::with_node_header_limit(2)
+            .expect("positive short header limit");
+        assert!(matches!(
+            sequence_node::<TestSpec>(&arena, root_id, &mut short),
+            Err(TestError::Invalid(
+                "sequence node-header inspection limit exhausted"
+            ))
+        ));
+        assert_eq!(short.node_headers_decoded, 2);
+        assert!(short.node_header_limit_exhausted());
+        let inspected_payload_bytes = short.spec.payload_bytes_inspected;
+
+        let mut unlimited = SequenceInspectionReceipt::default();
+        sequence_node::<TestSpec>(&arena, root_id, &mut unlimited)
+            .expect("default inspection remains unlimited");
+        sequence_node::<TestSpec>(&arena, root_id, &mut unlimited)
+            .expect("unlimited inspection can continue");
+        assert_eq!(unlimited.node_headers_decoded, 6);
+        assert!(!unlimited.node_header_limit_exhausted());
+
+        assert!(root.release(&mut arena).is_ok());
+        drain(&mut arena);
+        assert_eq!(arena.metrics().resident_nodes, 0);
+
+        // The exhausted receipt must refuse before touching even a now-stale
+        // arena ID. An arena lookup here would return `TestError::Arena`.
+        assert!(matches!(
+            sequence_node_header::<TestSpec>(&arena, root_id, &mut short),
+            Err(TestError::Invalid(
+                "sequence node-header inspection limit exhausted"
+            ))
+        ));
+        assert_eq!(short.node_headers_decoded, 2);
+        assert_eq!(short.spec.payload_bytes_inspected, inspected_payload_bytes);
+        assert!(short.node_header_limit_exhausted());
+    }
+
+    #[test]
     fn summary_and_prefix_routing_keep_semantics_separate_from_shape() {
         let mut arena = PageArena::new(limits(64)).expect("arena");
         let root = four_leaf_tree(&mut arena);
@@ -3191,6 +3278,7 @@ mod tests {
                         payload_bytes_inspected: 114,
                         spec_items_hashed: 0,
                     },
+                    ..SequenceInspectionReceipt::default()
                 },
                 committed_leaves_retained: 32,
                 reserved_owner_slots: 1,
