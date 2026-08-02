@@ -12,6 +12,13 @@ readiness are not claimed.
 - `0f05668` records the engine lab, live-editor demo, and package guidance.
 - `1f0d414` moves the endpoint's inline tests into a sibling module without a
   runtime or protocol change.
+- `ae0d54a` isolates the endpoint error/event contract without changing its
+  wire or ownership semantics.
+- `5dd2b22` isolates recursive-Green authority, adoption, cancellation, and
+  cleanup behind the `CandidateEndpoint` facade. A pre/post extraction A/B run
+  produced the same 25 passing, 32 failing, and one ignored endpoint tests.
+- `17c89b2` is the rebuilt native/Wasm checkpoint after bounded recursive-Green
+  point, row, and inline-query work. Native and Wasm digests agree exactly.
 
 The disposable parser-research lab remains available locally but is ignored by
 Git. Only findings and proof receipts referenced by RFC 023 are tracked. Cargo
@@ -36,6 +43,23 @@ It uses a document larger than 512 KiB and verifies:
 The existing `distant winning definition edit atomically recertifies reference
 family` Chrome case remains a green large-document Worker/Wasm control.
 
+The current large-reference checkpoint additionally covers a 2,377,852-byte
+document with 100,000 distinct definitions and early, middle, and final
+reference uses in one visible tail. The packaged native runtime returns exact
+recursive-Green point, row, and inline facts before and after a literal tail
+edit. On the current workstation that edit took 6.2 ms, replacement publication
+14.7 ms, the post-edit point query 2.3 ms, and the post-edit inline query 6.4 ms.
+The 35-second cold build and 319.7 ms maximum heartbeat gap are diagnostic
+receipts, not launch SLOs.
+
+A separate 2,500-line fenced-code Flutter checkpoint stays on recursive Green
+through its first middle-body edit, retains one `EditableTextState` and input
+client, and exposes only a bounded marker-free body island. The focused native
+Flutter case, native/Wasm digest parity (3/3 on each backend), and focused
+Flutter Chrome marker-free checkpoint are green on the rebuilt bytes. This is
+functional cross-platform evidence, not a fresh 100,000-reference Chrome timing
+receipt.
+
 The Chrome heading gate exposed and now covers a Web-specific ownership bug:
 Wasm memory growth detached a pre-call JavaScript `DataView`. Structural range
 and ordinal-window queries now reacquire `memoryData` after the Wasm call before
@@ -44,15 +68,22 @@ decoding receipts.
 ## Maintainability boundary
 
 Before `1f0d414`, `v3_candidate_endpoint.rs` was 22,908 lines. Roughly half was
-an inline test module. It is now split into:
+an inline test module. That commit first split it into:
 
 - `v3_candidate_endpoint.rs`: 11,603 production lines;
 - `v3_candidate_endpoint_tests.rs`: 10,918 test lines.
 
-The production unit is still too large. Its next extraction order is:
+The production unit is still too large. Its current split is:
 
-1. endpoint error/event contract;
-2. recursive-Green authority/session ownership;
+- `v3_candidate_endpoint.rs`: 10,903 facade/orchestration lines;
+- `v3_candidate_endpoint_contract.rs`: 351 error/event-contract lines;
+- `v3_candidate_endpoint_recursive_green.rs`: 764 authority/session lines; and
+- `v3_candidate_endpoint_tests.rs`: 10,707 test lines.
+
+The remaining extraction order is:
+
+1. completed — endpoint error/event contract;
+2. completed — recursive-Green authority/session ownership;
 3. viewport preparation and streaming;
 4. hot-inline preparation and streaming;
 5. exact-candidate crop/build planning and packet streaming.
@@ -63,11 +94,14 @@ not authorize a parser or protocol redesign.
 
 ## Known non-green evidence
 
-The complete inline endpoint unit-test module currently reports 18 passing and
-39 failing tests. The failures include stale manifest-size/role expectations
-and earlier crop/publication assumptions, but they have not yet been classified
-case by case and therefore cannot be treated as harmless. The focused native
-and Chrome product gates above are green, while this internal batch is an open
+The complete endpoint unit-test module currently reports 25 passing, 32 failing,
+and one intentionally ignored large-scale case in release mode. The exact same
+counts and failure names occur at `17c89b2` and after `5dd2b22`, proving that the
+ownership extraction added no drift. The failures include intermediate-phase
+expectations from the older crop pipeline, older viewport limits, and earlier
+restart/publication assumptions. They have not yet been classified case by case
+and therefore cannot be treated as harmless. The focused native and Chrome
+product gates above are green, while this internal batch remains an open
 consolidation gate rather than release evidence.
 
 CommonMark support also remains a fail-closed supported subset. The 652-fixture
