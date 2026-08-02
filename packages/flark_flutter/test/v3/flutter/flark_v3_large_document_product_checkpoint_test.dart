@@ -13,9 +13,9 @@ const String _initialTargetMarkdown = '**β😀** and _em_.';
 const String _composedTargetMarkdown = '**βに😀** and _em_.';
 const String _pastedTargetMarkdown = '**βに😀** and _paste🌍_.';
 
-const String _initialDisplay = 'β😀 and em.\n';
-const String _composedDisplay = 'βに😀 and em.\n';
-const String _pastedDisplay = 'βに😀 and paste🌍.\n';
+const String _initialDisplay = 'β😀 and em.';
+const String _composedDisplay = 'βに😀 and em.';
+const String _pastedDisplay = 'βに😀 and paste🌍.';
 
 const int _mixedDocumentMinimumUtf16 = 512 * 1024;
 const String _lateTargetMarkdown =
@@ -502,7 +502,10 @@ void main() {
         growable: false,
       );
       const heading = '## mixed **heading**\n';
-      const fence = '```dart\nlet value = 1;\n```\n';
+      const initialFenceBody =
+          'let value = 1;\n'
+          'let other = value + 1;\n';
+      const fence = '```dart\n$initialFenceBody```\n';
       final initialSource =
           '${paragraphs.take(_middleParagraphIndex).join('\n\n')}\n\n'
           '$heading\n'
@@ -526,7 +529,13 @@ void main() {
         expectedProjectedMarkdown: 'mixed **heading**',
         expectedRevision: initialRevision,
       );
-      expect(initialHeading.structure.heading!.level, 2);
+      expect(initialHeading, isA<FlarkV3RecursiveGreenPointQuery>());
+      final headingRow = _exactRowAt(harness.runtime, headingCaret);
+      final headingFact = headingRow.path
+          .singleWhere((frame) => frame.isRowOwner)
+          .fact;
+      expect(headingFact, isA<FlarkV3RecursiveGreenHeadingPathFact>());
+      expect((headingFact! as FlarkV3RecursiveGreenHeadingPathFact).level, 2);
       expect(
         harness.binding.controller.editingController.text,
         isNot(anyOf(contains('##'), contains('**'))),
@@ -584,9 +593,34 @@ void main() {
       );
       await harness.waitForExactFence(
         tester,
-        expectedDisplay: 'let value = 1;\n',
-        expectedProjectedMarkdown: 'let value = 1;\n',
+        expectedDisplay: initialFenceBody,
+        expectedProjectedMarkdown: initialFenceBody,
         expectedRevision: headingRevision,
+      );
+      final fenceRow = _exactRowAt(harness.runtime, fencePoint);
+      expect(fenceRow.kind, FlarkV3RecursiveGreenKind.fencedCode);
+      expect(
+        fenceRow.editCapability,
+        FlarkV3RecursiveGreenRowEditCapability.contiguous,
+      );
+      expect(
+        fenceRow.editableSource!.startUtf16,
+        harness.binding.controller.inputIslandGlobalStartUtf16,
+      );
+      expect(
+        fenceRow.editableSource!.endUtf16,
+        harness.binding.controller.inputIslandGlobalEndUtf16,
+      );
+      expect(
+        harness.binding.controller.paintState.blockStyleLease?.kind,
+        FlarkV3FlutterBlockStyleKind.fencedCode,
+      );
+      expect(
+        tester
+            .widget<EditableText>(find.byKey(harness.editableKey))
+            .style
+            .fontFamily,
+        'monospace',
       );
       expect(
         harness.binding.controller.editingController.text,
@@ -600,7 +634,7 @@ void main() {
         clientId: clientId,
       );
 
-      const fenceDisplay = 'let value = 1;\n';
+      const fenceDisplay = initialFenceBody;
       final valueOffset = fenceDisplay.indexOf('1');
       (editableState as DeltaTextInputClient).updateEditingValueWithDeltas([
         TextEditingDeltaReplacement(
@@ -615,8 +649,8 @@ void main() {
       expect(fenceRevision, headingRevision + 1);
       await harness.waitForExactFence(
         tester,
-        expectedDisplay: 'let value = 2;\n',
-        expectedProjectedMarkdown: 'let value = 2;\n',
+        expectedDisplay: fenceDisplay.replaceFirst('1', '2'),
+        expectedProjectedMarkdown: fenceDisplay.replaceFirst('1', '2'),
         expectedRevision: fenceRevision,
       );
       expect(harness.runtime.exportMarkdown(), contains('let value = 2;\n'));
@@ -642,11 +676,15 @@ void main() {
       ];
       for (var index = 0; index < queryPoints.length; index += 1) {
         final query = harness.runtime.queryAtUtf16(queryPoints[index]);
-        expect(query, isA<FlarkV3DocumentStructuralQuery>());
-        final structuralQuery = query as FlarkV3DocumentStructuralQuery;
-        expect(structuralQuery.structure.kind, expectedKinds[index]);
-        expect(structuralQuery.sourceRevision, fenceRevision);
-        expect(structuralQuery.structureRevision, fenceRevision);
+        expect(_structureKindOf(query), expectedKinds[index]);
+        expect(query.sourceRevision, fenceRevision);
+        expect(_structureRevisionOf(query), fenceRevision);
+        expect(
+          _documentStructureKindOf(
+            _exactRowAt(harness.runtime, queryPoints[index]).kind,
+          ),
+          expectedKinds[index],
+        );
       }
 
       await harness.close(tester);
@@ -786,7 +824,8 @@ final class _LargeDocumentHarness {
     tester,
     kind: FlarkV3DocumentStructureKind.paragraph,
     expectedDisplay: expectedDisplay,
-    expectedProjectedMarkdown: '$expectedTargetMarkdown\n',
+    expectedProjectedMarkdown: expectedTargetMarkdown,
+    expectedLegacyProjectedMarkdown: '$expectedTargetMarkdown\n',
     expectedRevision: expectedRevision,
     requireCertifiedInline: true,
     timeout: timeout,
@@ -794,7 +833,7 @@ final class _LargeDocumentHarness {
     convergenceProbe: convergenceProbe,
   );
 
-  Future<FlarkV3DocumentStructuralQuery> waitForExactHeading(
+  Future<FlarkV3DocumentQueryResult> waitForExactHeading(
     WidgetTester tester, {
     required String expectedDisplay,
     required String expectedProjectedMarkdown,
@@ -804,11 +843,12 @@ final class _LargeDocumentHarness {
     kind: FlarkV3DocumentStructureKind.heading,
     expectedDisplay: expectedDisplay,
     expectedProjectedMarkdown: expectedProjectedMarkdown,
+    expectedLegacyProjectedMarkdown: expectedProjectedMarkdown,
     expectedRevision: expectedRevision,
     requireCertifiedInline: true,
   );
 
-  Future<FlarkV3DocumentStructuralQuery> waitForExactFence(
+  Future<FlarkV3DocumentQueryResult> waitForExactFence(
     WidgetTester tester, {
     required String expectedDisplay,
     required String expectedProjectedMarkdown,
@@ -818,15 +858,17 @@ final class _LargeDocumentHarness {
     kind: FlarkV3DocumentStructureKind.fencedCode,
     expectedDisplay: expectedDisplay,
     expectedProjectedMarkdown: expectedProjectedMarkdown,
+    expectedLegacyProjectedMarkdown: expectedProjectedMarkdown,
     expectedRevision: expectedRevision,
     requireCertifiedInline: false,
   );
 
-  Future<T> _waitForExactStructure<T extends FlarkV3DocumentQueryResult>(
+  Future<FlarkV3DocumentQueryResult> _waitForExactStructure(
     WidgetTester tester, {
     required FlarkV3DocumentStructureKind kind,
     required String expectedDisplay,
     required String expectedProjectedMarkdown,
+    required String expectedLegacyProjectedMarkdown,
     required int expectedRevision,
     required bool requireCertifiedInline,
     Duration timeout = const Duration(seconds: 60),
@@ -883,23 +925,32 @@ final class _LargeDocumentHarness {
                 query.projection.projectedSource.startUtf16,
                 query.projection.projectedSource.endUtf16,
               ) ==
-              expectedProjectedMarkdown;
+              expectedLegacyProjectedMarkdown;
+      final expectedRecursiveKind = _recursiveGreenKindOf(kind);
+      final activeIslandSourceCurrent =
+          runtime.readSourceRange(
+            binding.controller.inputIslandGlobalStartUtf16,
+            binding.controller.inputIslandGlobalEndUtf16,
+          ) ==
+          expectedProjectedMarkdown;
       final recursiveGreenQueryCurrent =
-          kind == FlarkV3DocumentStructureKind.paragraph &&
+          expectedRecursiveKind != null &&
           query is FlarkV3RecursiveGreenPointQuery &&
           query.sourceRevision == expectedRevision &&
           query.structureRevision == expectedRevision &&
-          query.owner.kind == FlarkV3RecursiveGreenKind.paragraph &&
-          query.paragraphSource != null &&
-          query.inlineSource != null &&
+          query.owner.kind == expectedRecursiveKind &&
+          activeIslandSourceCurrent &&
+          (!expectedRecursiveKind.isInlineBearing ||
+              (query.paragraphSource != null &&
+                  query.inlineSource != null &&
+                  runtime.readSourceRange(
+                        query.inlineSource!.startUtf16,
+                        query.inlineSource!.endUtf16,
+                      ) ==
+                      expectedProjectedMarkdown)) &&
           (!requireCertifiedInline ||
               (query.inlineFacts != null &&
-                  binding.controller.hasCertifiedInlinePresentation)) &&
-          runtime.readSourceRange(
-                query.paragraphSource!.startUtf16,
-                query.paragraphSource!.endUtf16,
-              ) ==
-              expectedProjectedMarkdown;
+                  binding.controller.hasCertifiedInlinePresentation));
       if (status.state == FlarkV3DocumentRuntimeState.open &&
           status.sourceRevision == expectedRevision &&
           status.certifiedSourceRevision == expectedRevision &&
@@ -913,10 +964,11 @@ final class _LargeDocumentHarness {
               binding.controller.inputIslandGlobalStartUtf16,
           lessThanOrEqualTo(_maximumIslandUtf16),
         );
-        return query as T;
+        return query!;
       }
     }
     final status = runtime.status;
+    final terminalQuery = binding.controller.paintState.documentQuery;
     throw TestFailure(
       'Timed out waiting for exact-current ${kind.name}: '
       'expectedRevision=$expectedRevision, '
@@ -927,7 +979,12 @@ final class _LargeDocumentHarness {
       'inline=${status.inlinePresentationGeneration}/'
       '${status.inlineAttemptOutcomeGeneration}, '
       'paint=${binding.controller.paintState.mode.name}, '
-      'query=${binding.controller.paintState.documentQuery.runtimeType}, '
+      'query=${terminalQuery.runtimeType}, '
+      'recursive=${switch (terminalQuery) {
+        FlarkV3RecursiveGreenPointQuery(:final owner, :final source, :final coveragePart, logicalAtom: final atom) => '${owner.kind}/${source.startUtf16}..${source.endUtf16}/'
+            '$coveragePart/${atom.kind}',
+        _ => 'n/a',
+      }}, '
       'island=${binding.controller.inputIslandGlobalStartUtf16}..'
       '${binding.controller.inputIslandGlobalEndUtf16}, '
       'display=${binding.controller.editingController.text}.',
@@ -962,6 +1019,56 @@ final class _LargeDocumentHarness {
     binding.dispose();
     focusNode.dispose();
   }
+}
+
+FlarkV3RecursiveGreenKind? _recursiveGreenKindOf(
+  FlarkV3DocumentStructureKind kind,
+) => switch (kind) {
+  FlarkV3DocumentStructureKind.paragraph => FlarkV3RecursiveGreenKind.paragraph,
+  FlarkV3DocumentStructureKind.heading => FlarkV3RecursiveGreenKind.heading,
+  FlarkV3DocumentStructureKind.fencedCode =>
+    FlarkV3RecursiveGreenKind.fencedCode,
+  _ => null,
+};
+
+FlarkV3DocumentStructureKind? _structureKindOf(
+  FlarkV3DocumentQueryResult query,
+) => switch (query) {
+  FlarkV3DocumentStructuralQuery(:final structure) => structure.kind,
+  FlarkV3RecursiveGreenPointQuery(:final owner) => _documentStructureKindOf(
+    owner.kind,
+  ),
+  _ => null,
+};
+
+FlarkV3DocumentStructureKind? _documentStructureKindOf(
+  FlarkV3RecursiveGreenKind? kind,
+) => switch (kind) {
+  FlarkV3RecursiveGreenKind.paragraph => FlarkV3DocumentStructureKind.paragraph,
+  FlarkV3RecursiveGreenKind.heading => FlarkV3DocumentStructureKind.heading,
+  FlarkV3RecursiveGreenKind.fencedCode =>
+    FlarkV3DocumentStructureKind.fencedCode,
+  _ => null,
+};
+
+int? _structureRevisionOf(FlarkV3DocumentQueryResult query) => switch (query) {
+  FlarkV3DocumentStructuralQuery(:final structureRevision) => structureRevision,
+  FlarkV3RecursiveGreenPointQuery(:final structureRevision) =>
+    structureRevision,
+  _ => null,
+};
+
+FlarkV3RecursiveGreenRenderableRow _exactRowAt(
+  FlarkV3DocumentRuntime runtime,
+  int positionUtf16,
+) {
+  final result = runtime.queryBlockRange(positionUtf16, positionUtf16 + 1);
+  expect(result, isA<FlarkV3RecursiveGreenRowRange>());
+  final range = result as FlarkV3RecursiveGreenRowRange;
+  expect(range.sourceRevision, runtime.sourceRevision);
+  expect(range.structureRevision, runtime.sourceRevision);
+  expect(range.selectedRow, isNotNull);
+  return range.selectedRow!;
 }
 
 final class _RecordingFrameScheduler implements FlarkV3FrameScheduler {

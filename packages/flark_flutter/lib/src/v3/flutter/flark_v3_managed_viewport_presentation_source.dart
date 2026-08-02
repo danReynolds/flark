@@ -1275,8 +1275,6 @@ bool _recursiveGreenQueryMatchesRow(
   if (editableSource == null ||
       query.owner.frameId != row.frameId ||
       query.owner.kind != row.kind ||
-      !_sameOptionalSpan(query.paragraphSource, row.physicalSource) ||
-      !_sameOptionalSpan(query.inlineSource, editableSource) ||
       query.ancestry.length != row.path.length) {
     return false;
   }
@@ -1288,7 +1286,17 @@ bool _recursiveGreenQueryMatchesRow(
       return false;
     }
   }
-  return true;
+  if (row.kind.isInlineBearing) {
+    return _sameOptionalSpan(query.paragraphSource, row.physicalSource) &&
+        _sameOptionalSpan(query.inlineSource, editableSource);
+  }
+  return row.kind == FlarkV3RecursiveGreenKind.fencedCode &&
+      row.presentationKind ==
+          FlarkV3RecursiveGreenRowPresentationKind.fencedCode &&
+      row.literal &&
+      row.editCapability == FlarkV3RecursiveGreenRowEditCapability.contiguous &&
+      query.isIdentityEditableContent &&
+      _sourceSpanContainsSpan(editableSource, query.source);
 }
 
 bool _sameOptionalSpan(FlarkV3SourceSpan? left, FlarkV3SourceSpan right) =>
@@ -1299,6 +1307,15 @@ bool _sameSourceSpan(FlarkV3SourceSpan left, FlarkV3SourceSpan right) =>
     left.endUtf8 == right.endUtf8 &&
     left.startUtf16 == right.startUtf16 &&
     left.endUtf16 == right.endUtf16;
+
+bool _sourceSpanContainsSpan(
+  FlarkV3SourceSpan outer,
+  FlarkV3SourceSpan inner,
+) =>
+    inner.startUtf8 >= outer.startUtf8 &&
+    inner.endUtf8 <= outer.endUtf8 &&
+    inner.startUtf16 >= outer.startUtf16 &&
+    inner.endUtf16 <= outer.endUtf16;
 
 bool _isHighSurrogate(int codeUnit) => codeUnit >= 0xD800 && codeUnit <= 0xDBFF;
 

@@ -68,6 +68,16 @@ final class FlarkV3ManagedFlutterBinding {
               affinity: affinity,
               budget: budget,
             ),
+        queryRecursiveGreenRow: (query) => lease.queryBlockRange(
+          query.source.startUtf16,
+          query.source.endUtf16,
+          budget: FlarkV3DocumentBlockRangeBudget(
+            maximumEncodedBytes: queryBudget.maxEncodedBytes,
+            maximumBlockCount: 1,
+            maximumOpenDepth: queryBudget.maxOpenDepth,
+            maximumTreeNodesVisited: queryBudget.maxTreeNodesVisited,
+          ),
+        ),
         ensureActiveProjectionAtUtf16:
             (positionUtf16, {required affinity, required query}) =>
                 lease.ensureActiveProjectionAtUtf16(
@@ -221,6 +231,11 @@ typedef FlarkV3ManagedActiveProjectionDemand =
       required FlarkV3DocumentQueryResult query,
     });
 
+typedef FlarkV3ManagedRecursiveGreenRowQuery =
+    FlarkV3DocumentBlockRangeResult Function(
+      FlarkV3RecursiveGreenPointQuery query,
+    );
+
 /// Package-internal selection-to-query coordinator shared with focused fakes.
 ///
 /// The public binding remains the runtime owner. Keeping this seam separate
@@ -233,6 +248,7 @@ final class FlarkV3ManagedFlutterRefreshCoordinator {
     required this.queryBudget,
     required this.isExactCurrent,
     required this.queryAtUtf16,
+    this.queryRecursiveGreenRow,
     required this.ensureActiveProjectionAtUtf16,
     required this.inlinePresentationGeneration,
     required this.inlineAttemptOutcomeGeneration,
@@ -244,6 +260,7 @@ final class FlarkV3ManagedFlutterRefreshCoordinator {
   final FlarkV3HostQueryBudget queryBudget;
   final bool Function() isExactCurrent;
   final FlarkV3ManagedDocumentPointQuery queryAtUtf16;
+  final FlarkV3ManagedRecursiveGreenRowQuery? queryRecursiveGreenRow;
   final FlarkV3ManagedActiveProjectionDemand ensureActiveProjectionAtUtf16;
   final int Function() inlinePresentationGeneration;
   final int Function() inlineAttemptOutcomeGeneration;
@@ -292,6 +309,7 @@ final class FlarkV3ManagedFlutterRefreshCoordinator {
           queryBudget: queryBudget,
           isExactCurrent: isExactCurrent,
           queryAtUtf16: _queryAtUtf16WithCache,
+          queryRecursiveGreenRow: queryRecursiveGreenRow,
           ensureActiveProjectionAtUtf16: ensureActiveProjectionAtUtf16,
           shouldRequestInline: () => !_lastPointQueryReusedCache,
         );
@@ -513,6 +531,7 @@ void _refreshInlineIsland({
   required FlarkV3HostQueryBudget queryBudget,
   required bool Function() isExactCurrent,
   required FlarkV3ManagedDocumentPointQuery queryAtUtf16,
+  FlarkV3ManagedRecursiveGreenRowQuery? queryRecursiveGreenRow,
   required FlarkV3ManagedActiveProjectionDemand ensureActiveProjectionAtUtf16,
   required bool Function() shouldRequestInline,
 }) {
@@ -611,6 +630,46 @@ void _refreshInlineIsland({
             expectedSource: document.sourceVersion,
             recursiveQuery: recursiveQuery,
           ),
+        );
+      case final FlarkV3RecursiveGreenPointQuery recursiveQuery
+          when recursiveQuery.owner.kind ==
+              FlarkV3RecursiveGreenKind.fencedCode:
+        final rowRange = queryRecursiveGreenRow?.call(recursiveQuery);
+        final row = rowRange is FlarkV3RecursiveGreenRowRange
+            ? rowRange.selectedRow
+            : null;
+        final editableSource = row?.editableSource;
+        if (rowRange is! FlarkV3RecursiveGreenRowRange ||
+            row == null ||
+            editableSource == null) {
+          _handoffToExactRangeIfNeeded(
+            controller,
+            recursiveQuery.source,
+            controller.globalEditingState,
+          );
+          controller.adoptLiteralSourcePaint();
+          return;
+        }
+        if (rowRange.sourceRevision != recursiveQuery.sourceRevision ||
+            rowRange.structureRevision != recursiveQuery.structureRevision ||
+            !_recursiveGreenFenceRowMatchesQuery(recursiveQuery, row) ||
+            !_sourceSpanContainsEditingState(
+              editableSource,
+              controller.globalEditingState,
+            )) {
+          throw const FormatException(
+            'Recursive fenced-code row does not bind the active point query.',
+          );
+        }
+        _handoffWithinParserAuthorizedRangeIfNeeded(
+          controller,
+          editableSource,
+          controller.globalEditingState,
+        );
+        controller.adoptLiteralSourcePaint();
+        controller.adoptRecursiveGreenRowAuthority(
+          structuralAck: rowRange.structuralAck,
+          row: row,
         );
       case FlarkV3RecursiveGreenPointQuery(:final source):
         _handoffToExactRangeIfNeeded(
@@ -1259,11 +1318,51 @@ void _handoffWithinParserAuthorizedRangeIfNeeded(
   );
 }
 
+bool _recursiveGreenFenceRowMatchesQuery(
+  FlarkV3RecursiveGreenPointQuery query,
+  FlarkV3RecursiveGreenRenderableRow row,
+) {
+  final editableSource = row.editableSource;
+  if (editableSource == null ||
+      row.kind != FlarkV3RecursiveGreenKind.fencedCode ||
+      row.presentationKind !=
+          FlarkV3RecursiveGreenRowPresentationKind.fencedCode ||
+      !row.selected ||
+      row.inlineCapable ||
+      !row.literal ||
+      row.editCapability != FlarkV3RecursiveGreenRowEditCapability.contiguous ||
+      !query.isIdentityEditableContent ||
+      query.owner.frameId != row.frameId ||
+      query.owner.kind != row.kind ||
+      !_sourceSpanContainsSpan(editableSource, query.source) ||
+      query.ancestry.length != row.path.length) {
+    return false;
+  }
+  for (var index = 0; index < row.path.length; index += 1) {
+    final queryFrame = query.ancestry[index];
+    final rowFrame = row.path[index];
+    if (queryFrame.frameId != rowFrame.frameId ||
+        queryFrame.kind != rowFrame.kind) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool _sameSourceSpan(FlarkV3SourceSpan left, FlarkV3SourceSpan right) =>
     left.startUtf8 == right.startUtf8 &&
     left.endUtf8 == right.endUtf8 &&
     left.startUtf16 == right.startUtf16 &&
     left.endUtf16 == right.endUtf16;
+
+bool _sourceSpanContainsSpan(
+  FlarkV3SourceSpan outer,
+  FlarkV3SourceSpan inner,
+) =>
+    inner.startUtf8 >= outer.startUtf8 &&
+    inner.endUtf8 <= outer.endUtf8 &&
+    inner.startUtf16 >= outer.startUtf16 &&
+    inner.endUtf16 <= outer.endUtf16;
 
 FlarkV3SourceSpan _collapsedSourceSpanAt(
   FlarkV3SourceDocument source,

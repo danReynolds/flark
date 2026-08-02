@@ -227,11 +227,13 @@ final class FlarkV3FlutterPaintState {
          atomicBlockLease: atomicBlockLease,
        );
 
-  const FlarkV3FlutterPaintState.exactManagedRecursiveParagraph({
+  const FlarkV3FlutterPaintState.exactManagedRecursive({
     required FlarkV3UiSourceIdentity uiSource,
     required FlarkV3SourceVersion sourceVersion,
     required FlarkV3StructuralAck ack,
     required FlarkV3RecursiveGreenPointQuery documentQuery,
+    FlarkV3FlutterBlockStyleLease? blockStyleLease,
+    FlarkV3FlutterAtomicBlockLease? atomicBlockLease,
   }) : this._(
          mode: FlarkV3FlutterPaintMode.exactStructural,
          uiSource: uiSource,
@@ -241,8 +243,8 @@ final class FlarkV3FlutterPaintState {
          uiSourceGap: null,
          sourceGap: null,
          documentQuery: documentQuery,
-         blockStyleLease: null,
-         atomicBlockLease: null,
+         blockStyleLease: blockStyleLease,
+         atomicBlockLease: atomicBlockLease,
        );
 
   final FlarkV3FlutterPaintMode mode;
@@ -566,8 +568,7 @@ final class FlarkV3FlutterLiveController extends ChangeNotifier {
         _managedDocumentQueryAck != structuralAck ||
         query is! FlarkV3RecursiveGreenPointQuery ||
         !_recursiveGreenQueryMatchesRow(query, row) ||
-        _inputIslandGlobalStartUtf16 != editableSource.startUtf16 ||
-        inputIslandGlobalEndUtf16 != editableSource.endUtf16) {
+        !_recursiveGreenRowAuthorizesInputIsland(row, editableSource)) {
       throw StateError(
         'Recursive-Green row authority does not match the active editor.',
       );
@@ -578,6 +579,11 @@ final class FlarkV3FlutterLiveController extends ChangeNotifier {
     }
     _recursiveGreenRowAck = structuralAck;
     _recursiveGreenRow = row;
+    _paintBlockStyleLease = switch (row.presentationKind) {
+      FlarkV3RecursiveGreenRowPresentationKind.fencedCode =>
+        const FlarkV3FlutterBlockStyleLease.fencedCode(),
+      _ => null,
+    };
     _schedulePresentationFrame();
   }
 
@@ -630,13 +636,19 @@ final class FlarkV3FlutterLiveController extends ChangeNotifier {
 
   void _reconcilePaintLeases(FlarkV3DocumentQueryResult? query) {
     if (query is FlarkV3RecursiveGreenPointQuery) {
-      _paintBlockStyleLease = null;
       _paintAtomicBlockLease = null;
       if (_managedDocumentQueryAck != _recursiveGreenRowAck ||
           !_recursiveGreenQueryMatchesRow(query, _recursiveGreenRow)) {
         _recursiveGreenRowAck = null;
         _recursiveGreenRow = null;
       }
+      _paintBlockStyleLease = switch (_recursiveGreenRow) {
+        FlarkV3RecursiveGreenRenderableRow(
+          presentationKind: FlarkV3RecursiveGreenRowPresentationKind.fencedCode,
+        ) =>
+          const FlarkV3FlutterBlockStyleLease.fencedCode(),
+        _ => null,
+      };
       return;
     }
     if (query is! FlarkV3DocumentStructuralQuery) return;
@@ -692,6 +704,36 @@ final class FlarkV3FlutterLiveController extends ChangeNotifier {
       _inputIslandGlobalStartUtf16 >= source.startUtf16 &&
       inputIslandGlobalEndUtf16 <= source.endUtf16;
 
+  bool _recursiveGreenRowAuthorizesInputIsland(
+    FlarkV3RecursiveGreenRenderableRow row,
+    FlarkV3SourceSpan editableSource,
+  ) {
+    if (row.kind.isInlineBearing) {
+      return _inputIslandGlobalStartUtf16 == editableSource.startUtf16 &&
+          inputIslandGlobalEndUtf16 == editableSource.endUtf16;
+    }
+    return row.kind == FlarkV3RecursiveGreenKind.fencedCode &&
+        row.presentationKind ==
+            FlarkV3RecursiveGreenRowPresentationKind.fencedCode &&
+        row.literal &&
+        row.editCapability ==
+            FlarkV3RecursiveGreenRowEditCapability.contiguous &&
+        _sourceSpanContainsInputIsland(editableSource);
+  }
+
+  bool _recursiveGreenFencedRowAuthorizesCurrentInput(
+    FlarkV3RecursiveGreenPointQuery query,
+    FlarkV3StructuralAck structuralAck,
+  ) {
+    final row = _recursiveGreenRow;
+    final editableSource = row?.editableSource;
+    return row != null &&
+        editableSource != null &&
+        _recursiveGreenRowAck == structuralAck &&
+        _recursiveGreenQueryMatchesRow(query, row) &&
+        _recursiveGreenRowAuthorizesInputIsland(row, editableSource);
+  }
+
   /// Live authority guard. This becomes false synchronously on source advance
   /// and stays false until an exact-current viewport is adopted on a frame.
   bool get semanticActionsValid =>
@@ -724,7 +766,8 @@ final class FlarkV3FlutterLiveController extends ChangeNotifier {
       final editableSource = targetRow.editableSource;
       final lease = (editingController as FlarkV3InlineTextEditingController)
           .projectedInputLease;
-      return editableSource != null &&
+      if (editableSource == null) return false;
+      final exactRowAuthority =
           presentation is FlarkV3ExactStructuralPresentation &&
           presentation.ack == targetAck &&
           _paintState.ack == targetAck &&
@@ -735,8 +778,20 @@ final class FlarkV3FlutterLiveController extends ChangeNotifier {
           _sameSourceSpan(targetRow.physicalSource, targetPhysicalSource) &&
           _sameRecursiveGreenRow(_recursiveGreenRow, targetRow) &&
           query is FlarkV3RecursiveGreenPointQuery &&
-          _recursiveGreenQueryMatchesRow(query, targetRow) &&
-          lease != null &&
+          _recursiveGreenQueryMatchesRow(query, targetRow);
+      if (!exactRowAuthority) return false;
+      if (!targetRow.kind.isInlineBearing) {
+        return targetRow.kind == FlarkV3RecursiveGreenKind.fencedCode &&
+            targetRow.presentationKind ==
+                FlarkV3RecursiveGreenRowPresentationKind.fencedCode &&
+            targetRow.literal &&
+            targetRow.editCapability ==
+                FlarkV3RecursiveGreenRowEditCapability.contiguous &&
+            lease == null &&
+            _inputIslandGlobalStartUtf16 == editableSource.startUtf16 &&
+            inputIslandGlobalEndUtf16 == editableSource.endUtf16;
+      }
+      return lease != null &&
           lease.isCertified &&
           lease.certifiedSourceVersion == targetSourceVersion &&
           lease.sourceStartUtf16 == editableSource.startUtf16 &&
@@ -2377,13 +2432,19 @@ final class FlarkV3FlutterLiveController extends ChangeNotifier {
         when _managedDocumentQueryAck == exact.ack &&
             sourceRevision == sourceVersion.revision &&
             structureRevision == sourceVersion.revision &&
-            (query.owner.kind?.isInlineBearing ?? false) &&
+            ((query.owner.kind?.isInlineBearing ?? false) ||
+                _recursiveGreenFencedRowAuthorizesCurrentInput(
+                  query,
+                  exact.ack,
+                )) &&
             _managedQueryCoversCurrentPoint(query)) {
-      return FlarkV3FlutterPaintState.exactManagedRecursiveParagraph(
+      return FlarkV3FlutterPaintState.exactManagedRecursive(
         uiSource: uiSource,
         sourceVersion: sourceVersion,
         ack: exact.ack,
         documentQuery: query,
+        blockStyleLease: _paintBlockStyleLease,
+        atomicBlockLease: _paintAtomicBlockLease,
       );
     }
     if (query
@@ -2942,8 +3003,6 @@ bool _recursiveGreenQueryMatchesRow(
       editableSource == null ||
       query.owner.frameId != row.frameId ||
       query.owner.kind != row.kind ||
-      !_sameOptionalSourceSpan(query.paragraphSource, row.physicalSource) ||
-      !_sameOptionalSourceSpan(query.inlineSource, editableSource) ||
       query.ancestry.length != row.path.length) {
     return false;
   }
@@ -2955,8 +3014,27 @@ bool _recursiveGreenQueryMatchesRow(
       return false;
     }
   }
-  return true;
+  if (row.kind.isInlineBearing) {
+    return _sameOptionalSourceSpan(query.paragraphSource, row.physicalSource) &&
+        _sameOptionalSourceSpan(query.inlineSource, editableSource);
+  }
+  return row.kind == FlarkV3RecursiveGreenKind.fencedCode &&
+      row.presentationKind ==
+          FlarkV3RecursiveGreenRowPresentationKind.fencedCode &&
+      row.literal &&
+      row.editCapability == FlarkV3RecursiveGreenRowEditCapability.contiguous &&
+      query.isIdentityEditableContent &&
+      _sourceSpanContainsSpan(editableSource, query.source);
 }
+
+bool _sourceSpanContainsSpan(
+  FlarkV3SourceSpan outer,
+  FlarkV3SourceSpan inner,
+) =>
+    inner.startUtf8 >= outer.startUtf8 &&
+    inner.endUtf8 <= outer.endUtf8 &&
+    inner.startUtf16 >= outer.startUtf16 &&
+    inner.endUtf16 <= outer.endUtf16;
 
 bool _sameRecursiveGreenRow(
   FlarkV3RecursiveGreenRenderableRow? left,
