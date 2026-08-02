@@ -1628,8 +1628,8 @@ fn nested_local_edit_preempts_legacy_parse_and_installs_exact_recursive_green_de
         .expect("start nested exact candidate");
     assert_eq!(
         active_candidate_phase(endpoint.active.as_ref()),
-        "ParsingExactFallback",
-        "the legacy route is parked before recursive-Green adoption completes"
+        "AwaitingRecursiveGreenExact",
+        "the candidate waits on recursive-Green adoption before choosing its publication route"
     );
 
     while endpoint.recursive_green.target_work_pending() {
@@ -1639,8 +1639,8 @@ fn nested_local_edit_preempts_legacy_parse_and_installs_exact_recursive_green_de
         assert!(matches!(polled, CandidatePoll::Pending { transitions: 1 }));
         assert_eq!(
             active_candidate_phase(endpoint.active.as_ref()),
-            "ParsingExactFallback",
-            "the scheduler must not poll the parked whole-document parser"
+            "AwaitingRecursiveGreenExact",
+            "the scheduler must not poll a fallback parser before Green adoption resolves"
         );
     }
     assert!(
@@ -1767,7 +1767,7 @@ fn small_nested_edit_clean_fallback_publishes_recursive_green_snapshot() {
         .expect("start small nested candidate");
     assert_eq!(
         active_candidate_phase(endpoint.active.as_ref()),
-        "ParsingExactFallback"
+        "AwaitingRecursiveGreenExact"
     );
 
     while endpoint.recursive_green.target_work_pending() {
@@ -1786,7 +1786,7 @@ fn small_nested_edit_clean_fallback_publishes_recursive_green_snapshot() {
     );
     assert_eq!(
         active_candidate_phase(endpoint.active.as_ref()),
-        "ParsingExactFallback"
+        "AwaitingRecursiveGreenExact"
     );
     let delivery =
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
