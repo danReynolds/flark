@@ -79,3 +79,12 @@ Architecture and integration stay with the primary agent. Delegated tasks must
 name exact files and symbols, state one invariant and one requested artifact,
 and return after the first patch or concrete blocker. Broad repository
 rediscovery and unbounded review are not part of implementation work.
+
+Before a delegated implementation wave, the primary agent records the dirty
+paths and assigns one owner to every dirty file. A shared file moves serially
+through that owner; another agent reports the needed hunk instead of editing it
+concurrently. Only one agent runs Cargo in the worktree at a time. Use
+`./scripts/run_native_focus.sh <package> <exact-test-filter> [cargo flags...]`
+for the requested focused receipt; the full gate remains checkpoint work. The
+handoff names the changed files, exact command, log path, exit status, and first
+remaining failure.
