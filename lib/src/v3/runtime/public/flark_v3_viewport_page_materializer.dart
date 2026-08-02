@@ -593,6 +593,23 @@ final class FlarkV3ViewportPageMaterializer {
         }
     }
 
+    if (row.kind.isTerminalEmptyItem) {
+      if (entry != null ||
+          row.presentationKind !=
+              FlarkV3RecursiveGreenRowPresentationKind.inline ||
+          editableSource.startUtf16 != editableSource.endUtf16 ||
+          editableSource.startUtf8 != editableSource.endUtf8) {
+        return fallback(FlarkV3ViewportBlockFallbackReason.payloadRejected);
+      }
+      return FlarkV3MaterializedRecursiveGreenRow.authoritative(
+        identity: identity,
+        structuralAck: structuralAck,
+        row: row,
+        entry: null,
+        displayText: '',
+      );
+    }
+
     switch (row.presentationKind) {
       case FlarkV3RecursiveGreenRowPresentationKind.fencedCode:
         if (entry != null) {

@@ -164,6 +164,7 @@ final class FlarkV3ParserAuthoredBlockPresentation {
   }) {
     final row = materialized.row;
     final visibleSource = row.editableSource ?? row.physicalSource;
+    final physicalSource = row.presentationPhysicalSource;
     final ordinal = _recursiveGreenOrdinalAsInt(row.globalOrdinal);
     final kind = _recursiveGreenDocumentKind(row.kind);
     final headingLevel = _recursiveGreenHeadingLevel(row);
@@ -194,10 +195,22 @@ final class FlarkV3ParserAuthoredBlockPresentation {
               materialized.inlineFacts!,
               projection,
             );
+      final inputLease = projection != null
+          ? FlarkV3ProjectedInputLease.fromInlineProjection(projection)
+          : row.kind.isTerminalEmptyItem
+          ? FlarkV3ProjectedInputLease.fromSourceProjection(
+              FlarkV3SourceProjection.fromSource(
+                sourceStartUtf16: visibleSource.startUtf16,
+                sourceText: '',
+                pieces: const <FlarkV3SourceProjectionPiece>[],
+                certifiedSourceVersion: materialized.identity.sourceVersion,
+              ),
+            )
+          : null;
       return FlarkV3ParserAuthoredBlockPresentation.authoritative(
         identity: materialized.identity,
         ordinal: ordinal,
-        physicalSource: row.physicalSource,
+        physicalSource: physicalSource,
         visibleSource: visibleSource,
         kind: kind,
         displayText: materialized.displayText,
@@ -207,15 +220,13 @@ final class FlarkV3ParserAuthoredBlockPresentation {
         estimatedExtent: estimatedExtent,
         recursiveGreenStructuralAck: materialized.structuralAck,
         recursiveGreenRow: row,
-        recursiveGreenInputLease: projection == null
-            ? null
-            : FlarkV3ProjectedInputLease.fromInlineProjection(projection),
+        recursiveGreenInputLease: inputLease,
       );
     }
     return FlarkV3ParserAuthoredBlockPresentation.unsupported(
       identity: materialized.identity,
       ordinal: ordinal,
-      physicalSource: row.physicalSource,
+      physicalSource: physicalSource,
       visibleSource: visibleSource,
       kind: kind,
       fallbackReason: materialized.fallbackReason,
@@ -321,7 +332,7 @@ final class FlarkV3ParserAuthoredBlockPresentation {
     if ((green == null) != (recursiveGreenStructuralAck == null) ||
         green != null &&
             (green.globalOrdinal != BigInt.from(ordinal) ||
-                !_sameSpan(green.physicalSource, physicalSource) ||
+                !_sameSpan(green.presentationPhysicalSource, physicalSource) ||
                 !_sameSpan(
                   green.editableSource ?? green.physicalSource,
                   visibleSource,
@@ -334,7 +345,7 @@ final class FlarkV3ParserAuthoredBlockPresentation {
     if (greenInputLease != null &&
         (green == null ||
             !isAuthoritative ||
-            !green.kind.isInlineBearing ||
+            !(green.kind.isInlineBearing || green.kind.isTerminalEmptyItem) ||
             greenInputLease.certifiedSourceVersion != identity.sourceVersion ||
             greenInputLease.sourceStartUtf16 != visibleSource.startUtf16 ||
             greenInputLease.sourceEndUtf16 != visibleSource.endUtf16 ||
@@ -455,6 +466,8 @@ FlarkV3DocumentStructureKind _recursiveGreenDocumentKind(
   FlarkV3RecursiveGreenKind.heading => FlarkV3DocumentStructureKind.heading,
   FlarkV3RecursiveGreenKind.thematicBreak =>
     FlarkV3DocumentStructureKind.thematicBreak,
+  FlarkV3RecursiveGreenKind.terminalEmptyItem =>
+    FlarkV3DocumentStructureKind.empty,
   _ => FlarkV3DocumentStructureKind.unknown,
 };
 

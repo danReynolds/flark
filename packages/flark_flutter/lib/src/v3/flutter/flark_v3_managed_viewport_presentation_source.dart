@@ -1290,6 +1290,20 @@ bool _recursiveGreenQueryMatchesRow(
     return _sameOptionalSpan(query.paragraphSource, row.physicalSource) &&
         _sameOptionalSpan(query.inlineSource, editableSource);
   }
+  if (row.kind.isTerminalEmptyItem) {
+    return row.presentationKind ==
+            FlarkV3RecursiveGreenRowPresentationKind.inline &&
+        row.editCapability ==
+            FlarkV3RecursiveGreenRowEditCapability.contiguous &&
+        !row.inlineCapable &&
+        query.isIdentityEditableContent &&
+        query.pointUtf8 == editableSource.startUtf8 &&
+        query.pointUtf16 == editableSource.startUtf16 &&
+        query.paragraphSource == null &&
+        query.inlineSource == null &&
+        query.inlineFacts == null &&
+        _sourceSpanContainsSpan(row.presentationPhysicalSource, query.source);
+  }
   return row.kind == FlarkV3RecursiveGreenKind.fencedCode &&
       row.presentationKind ==
           FlarkV3RecursiveGreenRowPresentationKind.fencedCode &&

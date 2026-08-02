@@ -49,6 +49,73 @@ const String _recursiveGreenCm321AfterBurst =
 void main() {
   group('v3 virtualized live surface acceptance', () {
     testWidgets(
+      'terminal-empty Green item activates one collapsed marker-free lease',
+      (tester) async {
+        const source = '- alpha\n-   ';
+        final harness = await _VirtualizedSurfaceHarness.mount(
+          tester,
+          source: source,
+          initialCaretUtf16: source.length,
+          viewportSize: const Size(640, 320),
+        );
+        addTearDown(harness.close);
+
+        await harness.waitForExactViewport();
+
+        final production = harness as _ProductionVirtualizedSurfaceHarness;
+        final presentation = production._activeBlock;
+        final row = presentation.recursiveGreenRow;
+        expect(row, isNotNull);
+        expect(row!.kind, FlarkV3RecursiveGreenKind.terminalEmptyItem);
+        expect(
+          (row.physicalSource.startUtf16, row.physicalSource.endUtf16),
+          (source.length, source.length),
+        );
+        expect(
+          (row.editableSource!.startUtf16, row.editableSource!.endUtf16),
+          (source.length, source.length),
+        );
+        expect(
+          (
+            presentation.physicalSource.startUtf16,
+            presentation.physicalSource.endUtf16,
+          ),
+          (source.indexOf('-   '), source.length),
+        );
+        expect(presentation.kind, FlarkV3DocumentStructureKind.empty);
+        expect(presentation.displayText, isEmpty);
+        expect(harness.activeDisplayText, isEmpty);
+        expect(harness.activeRecursiveGreenAuthorityCurrent, isTrue);
+        final marker = find.byKey(
+          const ValueKey<Object>(('flark-v3-green-list', 0)),
+        );
+        expect(marker, findsWidgets);
+        expect(tester.getSize(marker.first).height, greaterThan(0));
+
+        final editable = _editableText();
+        final editableState = tester.state<EditableTextState>(editable);
+        editableState.requestKeyboard();
+        await tester.pump();
+        (editableState as DeltaTextInputClient).updateEditingValueWithDeltas([
+          const TextEditingDeltaInsertion(
+            oldText: '',
+            textInserted: 'x',
+            insertionOffset: 0,
+            selection: TextSelection.collapsed(offset: 1),
+            composing: TextRange.empty,
+          ),
+        ]);
+
+        await harness.waitForExactViewport();
+
+        expect(harness.exportMarkdown(), '- alpha\n-   x');
+        expect(harness.activeDisplayText, 'x');
+        expect(harness.activeRecursiveGreenAuthorityCurrent, isTrue);
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
+
+    testWidgets(
       'nested Green row stays marker-free across passive activation and burst',
       (tester) async {
         final nestedPoint = _recursiveGreenCm321.indexOf('b**');
@@ -896,12 +963,9 @@ void main() {
               )
               .toList(growable: false);
           expect(emphasisRuns, isNotEmpty);
-          expect(
-            <FlarkV3InlineFactKind>{
-              for (final run in emphasisRuns) ...run.styles,
-            },
-            contains(FlarkV3InlineFactKind.emphasis),
-          );
+          expect(<FlarkV3InlineFactKind>{
+            for (final run in emphasisRuns) ...run.styles,
+          }, contains(FlarkV3InlineFactKind.emphasis));
 
           final referenceStart = block.displayText.indexOf(referenceValue);
           expect(referenceStart, greaterThanOrEqualTo(0));
@@ -914,12 +978,9 @@ void main() {
               )
               .toList(growable: false);
           expect(referenceRuns, isNotEmpty);
-          expect(
-            <FlarkV3InlineFactKind>{
-              for (final run in referenceRuns) ...run.styles,
-            },
-            contains(FlarkV3InlineFactKind.strong),
-          );
+          expect(<FlarkV3InlineFactKind>{
+            for (final run in referenceRuns) ...run.styles,
+          }, contains(FlarkV3InlineFactKind.strong));
           final references = referenceRuns
               .map((run) => run.linkAnnotation)
               .whereType<FlarkV3InlineLinkAnnotation>()
@@ -1725,7 +1786,7 @@ final class _ProductionVirtualizedSurfaceHarness
             active?.kind == FlarkV3DocumentStructureKind.heading;
         if (active?.recursiveGreenRow != null &&
             query is FlarkV3RecursiveGreenPointQuery &&
-            _spanContains(active!.physicalSource, selection) &&
+            _spanContainsCaret(active!.physicalSource, selection) &&
             (!inlineActive ||
                 binding.controller.hasCertifiedInlinePresentation) &&
             activeRecursiveGreenAuthorityCurrent) {
@@ -1738,8 +1799,8 @@ final class _ProductionVirtualizedSurfaceHarness
             query is FlarkV3DocumentStructuralQuery &&
             binding.controller.semanticActionsValid &&
             active.kind == query.structure.kind &&
-            _spanContains(active.physicalSource, selection) &&
-            _spanContains(query.structure.source, selection) &&
+            _spanContainsCaret(active.physicalSource, selection) &&
+            _spanContainsCaret(query.structure.source, selection) &&
             (!inlineActive ||
                 binding.controller.hasCertifiedInlinePresentation)) {
           await tester.pump();
@@ -1858,6 +1919,9 @@ _PassiveBlockSnapshot _passiveSnapshot(
 
 bool _spanContains(FlarkV3SourceSpan span, int positionUtf16) =>
     positionUtf16 >= span.startUtf16 && positionUtf16 < span.endUtf16;
+
+bool _spanContainsCaret(FlarkV3SourceSpan span, int positionUtf16) =>
+    positionUtf16 >= span.startUtf16 && positionUtf16 <= span.endUtf16;
 
 ({int startUtf16, int endUtf16}) _initialInputIsland(
   FlarkV3DocumentRuntime runtime,

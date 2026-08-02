@@ -708,7 +708,7 @@ final class FlarkV3FlutterLiveController extends ChangeNotifier {
     FlarkV3RecursiveGreenRenderableRow row,
     FlarkV3SourceSpan editableSource,
   ) {
-    if (row.kind.isInlineBearing) {
+    if (row.kind.isInlineBearing || row.kind.isTerminalEmptyItem) {
       return _inputIslandGlobalStartUtf16 == editableSource.startUtf16 &&
           inputIslandGlobalEndUtf16 == editableSource.endUtf16;
     }
@@ -732,6 +732,27 @@ final class FlarkV3FlutterLiveController extends ChangeNotifier {
         _recursiveGreenRowAck == structuralAck &&
         _recursiveGreenQueryMatchesRow(query, row) &&
         _recursiveGreenRowAuthorizesInputIsland(row, editableSource);
+  }
+
+  bool _recursiveGreenTerminalEmptyRowAuthorizesCurrentInput(
+    FlarkV3RecursiveGreenPointQuery query,
+    FlarkV3StructuralAck structuralAck,
+  ) {
+    final row = _recursiveGreenRow;
+    final editableSource = row?.editableSource;
+    final lease = (editingController as FlarkV3InlineTextEditingController)
+        .projectedInputLease;
+    return row != null &&
+        row.kind.isTerminalEmptyItem &&
+        editableSource != null &&
+        _recursiveGreenRowAck == structuralAck &&
+        _recursiveGreenQueryMatchesRow(query, row) &&
+        _recursiveGreenRowAuthorizesInputIsland(row, editableSource) &&
+        lease != null &&
+        lease.isCertified &&
+        lease.certifiedSourceVersion == sourceVersion &&
+        lease.sourceStartUtf16 == editableSource.startUtf16 &&
+        lease.sourceEndUtf16 == editableSource.endUtf16;
   }
 
   /// Live authority guard. This becomes false synchronously on source advance
@@ -775,12 +796,16 @@ final class FlarkV3FlutterLiveController extends ChangeNotifier {
           _recursiveGreenRowAck == targetAck &&
           sourceVersion == targetSourceVersion &&
           editingController.text == targetDisplayText &&
-          _sameSourceSpan(targetRow.physicalSource, targetPhysicalSource) &&
+          _sameSourceSpan(
+            targetRow.presentationPhysicalSource,
+            targetPhysicalSource,
+          ) &&
           _sameRecursiveGreenRow(_recursiveGreenRow, targetRow) &&
           query is FlarkV3RecursiveGreenPointQuery &&
           _recursiveGreenQueryMatchesRow(query, targetRow);
       if (!exactRowAuthority) return false;
-      if (!targetRow.kind.isInlineBearing) {
+      if (!targetRow.kind.isInlineBearing &&
+          !targetRow.kind.isTerminalEmptyItem) {
         return targetRow.kind == FlarkV3RecursiveGreenKind.fencedCode &&
             targetRow.presentationKind ==
                 FlarkV3RecursiveGreenRowPresentationKind.fencedCode &&
@@ -2433,6 +2458,10 @@ final class FlarkV3FlutterLiveController extends ChangeNotifier {
             sourceRevision == sourceVersion.revision &&
             structureRevision == sourceVersion.revision &&
             ((query.owner.kind?.isInlineBearing ?? false) ||
+                _recursiveGreenTerminalEmptyRowAuthorizesCurrentInput(
+                  query,
+                  exact.ack,
+                ) ||
                 _recursiveGreenFencedRowAuthorizesCurrentInput(
                   query,
                   exact.ack,
@@ -3017,6 +3046,20 @@ bool _recursiveGreenQueryMatchesRow(
   if (row.kind.isInlineBearing) {
     return _sameOptionalSourceSpan(query.paragraphSource, row.physicalSource) &&
         _sameOptionalSourceSpan(query.inlineSource, editableSource);
+  }
+  if (row.kind.isTerminalEmptyItem) {
+    return row.presentationKind ==
+            FlarkV3RecursiveGreenRowPresentationKind.inline &&
+        row.editCapability ==
+            FlarkV3RecursiveGreenRowEditCapability.contiguous &&
+        !row.inlineCapable &&
+        query.isIdentityEditableContent &&
+        query.pointUtf8 == editableSource.startUtf8 &&
+        query.pointUtf16 == editableSource.startUtf16 &&
+        query.paragraphSource == null &&
+        query.inlineSource == null &&
+        query.inlineFacts == null &&
+        _sourceSpanContainsSpan(row.presentationPhysicalSource, query.source);
   }
   return row.kind == FlarkV3RecursiveGreenKind.fencedCode &&
       row.presentationKind ==

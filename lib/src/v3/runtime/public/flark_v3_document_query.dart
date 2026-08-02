@@ -499,7 +499,8 @@ enum FlarkV3RecursiveGreenKind {
   fencedCode(7),
   htmlBlock(8),
   heading(12),
-  thematicBreak(13);
+  thematicBreak(13),
+  terminalEmptyItem(14);
 
   const FlarkV3RecursiveGreenKind(this.id);
 
@@ -508,6 +509,9 @@ enum FlarkV3RecursiveGreenKind {
   bool get isInlineBearing =>
       this == FlarkV3RecursiveGreenKind.paragraph ||
       this == FlarkV3RecursiveGreenKind.heading;
+
+  bool get isTerminalEmptyItem =>
+      this == FlarkV3RecursiveGreenKind.terminalEmptyItem;
 }
 
 enum FlarkV3RecursiveGreenCoveragePart {
@@ -924,6 +928,23 @@ final class FlarkV3RecursiveGreenRenderableRow {
   final FlarkV3SourceSpan physicalSource;
   final FlarkV3SourceSpan? editableSource;
   final List<FlarkV3RecursiveGreenRowPathFrame> path;
+
+  /// Authenticated source geometry used to place this row in an editor.
+  ///
+  /// A terminal-empty Item owns no Green source bytes of its own. Its nearest
+  /// Item ancestor retains the exact marker/item range while [editableSource]
+  /// remains the collapsed EOF insertion point. Other rows present their own
+  /// physical Green range directly.
+  FlarkV3SourceSpan get presentationPhysicalSource {
+    if (!kind.isTerminalEmptyItem) return physicalSource;
+    final item = _nearestRecursiveGreenItemFrame(path);
+    if (item == null) {
+      throw StateError(
+        'A terminal-empty recursive-Green row has no Item presentation owner.',
+      );
+    }
+    return item.physicalSource;
+  }
 }
 
 /// Exact-current bounded recursive-Green row directory returned by the normal
@@ -1786,8 +1807,27 @@ final class FlarkV3DocumentQueryDecoder {
     }
     final sourceBytes = expectedSource.metric.bytes;
     final sourceUtf16 = expectedSource.metric.utf16;
-    if (startUtf8 >= endUtf8 ||
-        startUtf16 >= endUtf16 ||
+    final terminalEmptyEof =
+        ownerKind == FlarkV3RecursiveGreenKind.terminalEmptyItem.id &&
+        sourceBytes > 0 &&
+        sourceUtf16 > 0 &&
+        startUtf8 == sourceBytes &&
+        endUtf8 == sourceBytes &&
+        startUtf16 == sourceUtf16 &&
+        endUtf16 == sourceUtf16 &&
+        physicalUtf8 == 0 &&
+        physicalUtf16 == 0 &&
+        logicalUtf8 == 0 &&
+        logicalUtf16 == 0 &&
+        pointUtf8 == sourceBytes &&
+        pointUtf16 == sourceUtf16 &&
+        affinityTag == 1 &&
+        coverageTag == 1 &&
+        logicalAtomTag == 1 &&
+        logicalArgument0 == 0 &&
+        logicalArgument1 == 0;
+    if ((!terminalEmptyEof &&
+            (startUtf8 >= endUtf8 || startUtf16 >= endUtf16)) ||
         endUtf8 > sourceBytes ||
         endUtf16 > sourceUtf16 ||
         endUtf8 - startUtf8 != physicalUtf8 ||
@@ -1821,10 +1861,11 @@ final class FlarkV3DocumentQueryDecoder {
                 pointUtf16 > 0)
         ? pointUtf16 - 1
         : pointUtf16;
-    if (effectiveUtf8 < startUtf8 ||
-        effectiveUtf8 >= endUtf8 ||
-        effectiveUtf16 < startUtf16 ||
-        effectiveUtf16 >= endUtf16 ||
+    if ((!terminalEmptyEof &&
+            (effectiveUtf8 < startUtf8 ||
+                effectiveUtf8 >= endUtf8 ||
+                effectiveUtf16 < startUtf16 ||
+                effectiveUtf16 >= endUtf16)) ||
         viewport.range.start.bytes != startUtf8 ||
         viewport.range.start.utf16 != startUtf16 ||
         viewport.range.end.bytes != endUtf8 ||
@@ -2189,6 +2230,7 @@ final class FlarkV3DocumentQueryDecoder {
       reader.expectEnd('recursive-Green row record');
       final selected = rowFlags & _recursiveGreenRowSelectedFlag != 0;
       final inlineCapable = rowFlags & _recursiveGreenRowInlineCapableFlag != 0;
+      final literal = rowFlags & _recursiveGreenRowLiteralFlag != 0;
       if (rowFlags & ~_recursiveGreenRowFlagMask != 0 ||
           frameId == BigInt.zero ||
           globalOrdinal != startGlobalRowOrdinal + BigInt.from(index) ||
@@ -2199,6 +2241,14 @@ final class FlarkV3DocumentQueryDecoder {
           (editCapability !=
                   FlarkV3RecursiveGreenRowEditCapability.contiguous &&
               inlineCapable) ||
+          !_recursiveGreenTerminalEmptyRecordIsCanonical(
+            kind: kind,
+            inlineCapable: inlineCapable,
+            literal: literal,
+            editCapability: editCapability,
+            physicalSource: physicalSource,
+            editableSource: editableSource,
+          ) ||
           selected != (selectedRowIndex == index) ||
           !_recursiveGreenPresentationMatchesKind(presentationKind, kind)) {
         throw const FlarkV3DocumentQueryException(
@@ -2212,7 +2262,7 @@ final class FlarkV3DocumentQueryDecoder {
           kind: kind,
           selected: selected,
           inlineCapable: inlineCapable,
-          literal: rowFlags & _recursiveGreenRowLiteralFlag != 0,
+          literal: literal,
           pathStart: pathStart,
           pathCount: rowPathCount,
           presentationKind: presentationKind,
@@ -2302,6 +2352,7 @@ final class FlarkV3DocumentQueryDecoder {
                 !frames.add(frame.frameId) ||
                 !_containsSpan(frame.physicalSource, raw.physicalSource),
           ) ||
+          !_recursiveGreenTerminalEmptyPathIsCanonical(raw, path) ||
           priorPhysical != null &&
               (raw.physicalSource.startUtf8 < priorPhysical.endUtf8 ||
                   raw.physicalSource.startUtf16 < priorPhysical.endUtf16)) {
@@ -3696,7 +3747,8 @@ bool _recursiveGreenPresentationMatchesKind(
 ) => switch (presentation) {
   FlarkV3RecursiveGreenRowPresentationKind.inline =>
     kind == FlarkV3RecursiveGreenKind.paragraph ||
-        kind == FlarkV3RecursiveGreenKind.heading,
+        kind == FlarkV3RecursiveGreenKind.heading ||
+        kind == FlarkV3RecursiveGreenKind.terminalEmptyItem,
   FlarkV3RecursiveGreenRowPresentationKind.fencedCode =>
     kind == FlarkV3RecursiveGreenKind.fencedCode,
   FlarkV3RecursiveGreenRowPresentationKind.indentedCode =>
@@ -3706,6 +3758,49 @@ bool _recursiveGreenPresentationMatchesKind(
   FlarkV3RecursiveGreenRowPresentationKind.thematicBreak =>
     kind == FlarkV3RecursiveGreenKind.thematicBreak,
 };
+
+bool _recursiveGreenTerminalEmptyRecordIsCanonical({
+  required FlarkV3RecursiveGreenKind kind,
+  required bool inlineCapable,
+  required bool literal,
+  required FlarkV3RecursiveGreenRowEditCapability editCapability,
+  required FlarkV3SourceSpan physicalSource,
+  required FlarkV3SourceSpan? editableSource,
+}) {
+  if (!kind.isTerminalEmptyItem) return true;
+  return !inlineCapable &&
+      !literal &&
+      editCapability == FlarkV3RecursiveGreenRowEditCapability.contiguous &&
+      editableSource != null &&
+      _sameSpan(physicalSource, editableSource) &&
+      physicalSource.startUtf8 == physicalSource.endUtf8 &&
+      physicalSource.startUtf16 == physicalSource.endUtf16;
+}
+
+bool _recursiveGreenTerminalEmptyPathIsCanonical(
+  _DecodedRecursiveGreenRow row,
+  List<FlarkV3RecursiveGreenRowPathFrame> path,
+) {
+  if (!row.kind.isTerminalEmptyItem) return true;
+  final owner = path.last;
+  final item = _nearestRecursiveGreenItemFrame(path);
+  return item != null &&
+      item.fact is FlarkV3RecursiveGreenItemPathFact &&
+      item.physicalSource.startUtf8 < item.physicalSource.endUtf8 &&
+      item.physicalSource.startUtf16 < item.physicalSource.endUtf16 &&
+      item.physicalSource.endUtf8 == row.physicalSource.endUtf8 &&
+      item.physicalSource.endUtf16 == row.physicalSource.endUtf16 &&
+      _sameSpan(owner.physicalSource, row.physicalSource);
+}
+
+FlarkV3RecursiveGreenRowPathFrame? _nearestRecursiveGreenItemFrame(
+  List<FlarkV3RecursiveGreenRowPathFrame> path,
+) {
+  for (final frame in path.reversed) {
+    if (frame.kind == FlarkV3RecursiveGreenKind.item) return frame;
+  }
+  return null;
+}
 
 final class _M11Reader {
   _M11Reader(this.bytes) : data = ByteData.sublistView(bytes);

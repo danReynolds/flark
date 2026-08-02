@@ -68,16 +68,22 @@ final class FlarkV3ManagedFlutterBinding {
               affinity: affinity,
               budget: budget,
             ),
-        queryRecursiveGreenRow: (query) => lease.queryBlockRange(
-          query.source.startUtf16,
-          query.source.endUtf16,
-          budget: FlarkV3DocumentBlockRangeBudget(
-            maximumEncodedBytes: queryBudget.maxEncodedBytes,
-            maximumBlockCount: 1,
-            maximumOpenDepth: queryBudget.maxOpenDepth,
-            maximumTreeNodesVisited: queryBudget.maxTreeNodesVisited,
-          ),
-        ),
+        queryRecursiveGreenRow: (query) {
+          final (startUtf16, endUtf16) = _recursiveGreenRowProbeRange(
+            runtime,
+            query,
+          );
+          return lease.queryBlockRange(
+            startUtf16,
+            endUtf16,
+            budget: FlarkV3DocumentBlockRangeBudget(
+              maximumEncodedBytes: queryBudget.maxEncodedBytes,
+              maximumBlockCount: 1,
+              maximumOpenDepth: queryBudget.maxOpenDepth,
+              maximumTreeNodesVisited: queryBudget.maxTreeNodesVisited,
+            ),
+          );
+        },
         ensureActiveProjectionAtUtf16:
             (positionUtf16, {required affinity, required query}) =>
                 lease.ensureActiveProjectionAtUtf16(
@@ -630,6 +636,45 @@ void _refreshInlineIsland({
             expectedSource: document.sourceVersion,
             recursiveQuery: recursiveQuery,
           ),
+        );
+      case final FlarkV3RecursiveGreenPointQuery recursiveQuery
+          when recursiveQuery.owner.kind?.isTerminalEmptyItem ?? false:
+        final rowRange = queryRecursiveGreenRow?.call(recursiveQuery);
+        final row = rowRange is FlarkV3RecursiveGreenRowRange
+            ? rowRange.selectedRow
+            : null;
+        final editableSource = row?.editableSource;
+        if (rowRange is! FlarkV3RecursiveGreenRowRange ||
+            row == null ||
+            editableSource == null) {
+          _handoffToExactRangeIfNeeded(
+            controller,
+            recursiveQuery.source,
+            controller.globalEditingState,
+          );
+          controller.adoptLiteralSourcePaint();
+          return;
+        }
+        if (rowRange.sourceRevision != recursiveQuery.sourceRevision ||
+            rowRange.structureRevision != recursiveQuery.structureRevision ||
+            !_recursiveGreenTerminalEmptyRowMatchesQuery(recursiveQuery, row) ||
+            !_sourceSpanContainsEditingState(
+              editableSource,
+              controller.globalEditingState,
+            )) {
+          throw const FormatException(
+            'Recursive terminal-empty row does not bind the active point query.',
+          );
+        }
+        _handoffTerminalEmptyItemIfNeeded(
+          controller,
+          editableSource,
+          controller.globalEditingState,
+          document.sourceVersion,
+        );
+        controller.adoptRecursiveGreenRowAuthority(
+          structuralAck: rowRange.structuralAck,
+          row: row,
         );
       case final FlarkV3RecursiveGreenPointQuery recursiveQuery
           when recursiveQuery.owner.kind ==
@@ -1347,6 +1392,98 @@ bool _recursiveGreenFenceRowMatchesQuery(
     }
   }
   return true;
+}
+
+(int, int) _recursiveGreenRowProbeRange(
+  FlarkV3DocumentRuntime runtime,
+  FlarkV3RecursiveGreenPointQuery query,
+) {
+  final source = query.source;
+  if (!(query.owner.kind?.isTerminalEmptyItem ?? false) ||
+      source.startUtf16 != source.endUtf16 ||
+      source.endUtf16 != runtime.sourceLengthUtf16 ||
+      source.endUtf16 == 0) {
+    return (source.startUtf16, source.endUtf16);
+  }
+  var startUtf16 = source.endUtf16 - 1;
+  final trailingUnit = runtime
+      .readSourceRange(startUtf16, source.endUtf16)
+      .codeUnitAt(0);
+  if (trailingUnit >= 0xdc00 && trailingUnit <= 0xdfff && startUtf16 > 0) {
+    final previousUnit = runtime
+        .readSourceRange(startUtf16 - 1, startUtf16)
+        .codeUnitAt(0);
+    if (previousUnit >= 0xd800 && previousUnit <= 0xdbff) {
+      startUtf16 -= 1;
+    }
+  }
+  return (startUtf16, source.endUtf16);
+}
+
+bool _recursiveGreenTerminalEmptyRowMatchesQuery(
+  FlarkV3RecursiveGreenPointQuery query,
+  FlarkV3RecursiveGreenRenderableRow row,
+) {
+  final editableSource = row.editableSource;
+  if (!row.kind.isTerminalEmptyItem ||
+      editableSource == null ||
+      row.presentationKind != FlarkV3RecursiveGreenRowPresentationKind.inline ||
+      row.editCapability != FlarkV3RecursiveGreenRowEditCapability.contiguous ||
+      row.inlineCapable ||
+      query.owner.frameId != row.frameId ||
+      query.owner.kind != row.kind ||
+      !query.isIdentityEditableContent ||
+      query.pointUtf8 != editableSource.startUtf8 ||
+      query.pointUtf16 != editableSource.startUtf16 ||
+      query.paragraphSource != null ||
+      query.inlineSource != null ||
+      query.inlineFacts != null ||
+      !_sourceSpanContainsSpan(row.presentationPhysicalSource, query.source) ||
+      query.ancestry.length != row.path.length) {
+    return false;
+  }
+  for (var index = 0; index < row.path.length; index += 1) {
+    final queryFrame = query.ancestry[index];
+    final rowFrame = row.path[index];
+    if (queryFrame.frameId != rowFrame.frameId ||
+        queryFrame.kind != rowFrame.kind) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void _handoffTerminalEmptyItemIfNeeded(
+  FlarkV3FlutterLiveController controller,
+  FlarkV3SourceSpan editableSource,
+  FlarkV3GlobalEditingState globalEditingState,
+  FlarkV3SourceVersion sourceVersion,
+) {
+  final current =
+      (controller.editingController as FlarkV3InlineTextEditingController)
+          .projectedInputLease;
+  if (current != null &&
+      current.isCertified &&
+      current.certifiedSourceVersion == sourceVersion &&
+      current.sourceStartUtf16 == editableSource.startUtf16 &&
+      current.sourceEndUtf16 == editableSource.endUtf16 &&
+      current.displayText.isEmpty &&
+      controller.inputIslandGlobalStartUtf16 == editableSource.startUtf16 &&
+      controller.inputIslandGlobalEndUtf16 == editableSource.endUtf16) {
+    return;
+  }
+  final lease = FlarkV3ProjectedInputLease.fromSourceProjection(
+    FlarkV3SourceProjection.fromSource(
+      sourceStartUtf16: editableSource.startUtf16,
+      sourceText: '',
+      pieces: const <FlarkV3SourceProjectionPiece>[],
+      certifiedSourceVersion: sourceVersion,
+    ),
+  );
+  controller.handoffProjectedInputIslandToExactRange(
+    inputLease: lease,
+    nextGlobalEditingState: globalEditingState,
+  );
 }
 
 bool _sameSourceSpan(FlarkV3SourceSpan left, FlarkV3SourceSpan right) =>
