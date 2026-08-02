@@ -2955,7 +2955,6 @@ impl NativeCandidateHost {
             || u64::from(events_scanned) > descriptor.event_count()
             || u64::from(storage_pages_visited) > descriptor.storage_page_count()
             || location.ancestry_len() > location.maximum_open_depth()
-            || encoded_bytes > maximum_encoded_bytes
         {
             return Ok(source_gap(
                 query.source_version,
@@ -2969,6 +2968,17 @@ impl NativeCandidateHost {
                 query.source_version,
                 range,
                 HostSourceGapReason::OpenDepthLimit,
+                // The zipper keeps exact overrun telemetry internally, but a
+                // wire receipt is caller-admitted work authority. Do not send
+                // a counter that necessarily exceeds the declared envelope.
+                HostViewportReceipt::default(),
+            ));
+        }
+        if encoded_bytes > maximum_encoded_bytes {
+            return Ok(source_gap(
+                query.source_version,
+                range,
+                HostSourceGapReason::UndecodableClosure,
                 receipt,
             ));
         }
@@ -2977,7 +2987,7 @@ impl NativeCandidateHost {
                 query.source_version,
                 range,
                 HostSourceGapReason::LeafLimit,
-                receipt,
+                HostViewportReceipt::default(),
             ));
         }
         if tree_nodes_visited > query.budget.maximum_tree_nodes_visited {
@@ -2985,7 +2995,7 @@ impl NativeCandidateHost {
                 query.source_version,
                 range,
                 HostSourceGapReason::TreeNodeLimit,
-                receipt,
+                HostViewportReceipt::default(),
             ));
         }
 
@@ -3648,7 +3658,12 @@ impl NativeCandidateHost {
             None
         };
         if let Some(reason) = gap {
-            return Ok(source_gap(query.source_version, range, reason, receipt));
+            return Ok(source_gap(
+                query.source_version,
+                range,
+                reason,
+                HostViewportReceipt::default(),
+            ));
         }
         if output.len() < encoded_bytes {
             return Err(HostStoreError::new(
@@ -11030,8 +11045,9 @@ mod tests {
         let certified = runtime
             .take_certified_source()
             .expect("recursive Green certification");
-        let candidate = M11ParserCandidate::derive_with_recursive_green(certified, &result)
-            .expect("recursive Green candidate");
+        let candidate =
+            M11ParserCandidate::derive_with_recursive_green(certified, &result, &session)
+                .expect("recursive Green candidate");
         let mut writer = candidate
             .into_writer_with_recursive_green(
                 &mut runtime,
@@ -16816,6 +16832,68 @@ mod tests {
         );
         assert!(event_work[1] <= receipts[1].leaf_count * 128);
         assert!(receipts[1].tree_nodes_visited <= receipts[0].tree_nodes_visited + 128);
+    }
+
+    #[test]
+    fn recursive_green_budget_gaps_return_only_admitted_receipts() {
+        const SOURCE: &str = "- a\n  > b\n  ```\n  c\n  ```\n- d\n";
+        let document = [0x341, 2, 3, 4];
+        let snapshot = recursive_green_snapshot(document, [0x343, 6, 7, 8], 1, 1, SOURCE);
+        let mut host = host_for(document);
+        install(&mut host, &snapshot);
+
+        let point = SOURCE.find("> b").expect("nested quote") + 2;
+        let query = query_for(
+            snapshot.source,
+            HostSourceMetric {
+                bytes: u32::try_from(point).expect("point bytes"),
+                utf16: u32::try_from(SOURCE[..point].encode_utf16().count()).expect("point UTF-16"),
+            },
+            HostMetricAffinity::Downstream,
+            FULL_QUERY_BUDGET,
+        );
+        let mut output = vec![0_u8; FULL_QUERY_BUDGET.maximum_encoded_bytes as usize];
+        let HostStructuralQueryOutcome::Viewport { receipt, .. } = host
+            .query_structural(query, &mut output)
+            .expect("admitted recursive-Green query")
+        else {
+            panic!("recursive-Green fixture must produce a viewport");
+        };
+        assert!(receipt.open_depth > 0);
+        assert!(receipt.leaf_count > 0);
+        assert!(receipt.tree_nodes_visited > 0);
+
+        let mut low_depth = query;
+        low_depth.budget.maximum_open_depth = receipt.open_depth - 1;
+        let mut low_leaf = query;
+        low_leaf.budget.maximum_leaf_count = receipt.leaf_count - 1;
+        let mut low_tree = query;
+        low_tree.budget.maximum_tree_nodes_visited = receipt.tree_nodes_visited - 1;
+        for (under_budget, expected_reason) in [
+            (low_depth, HostSourceGapReason::OpenDepthLimit),
+            (low_leaf, HostSourceGapReason::LeafLimit),
+            (low_tree, HostSourceGapReason::TreeNodeLimit),
+        ] {
+            let mut untouched = vec![0xa5; output.len()];
+            let HostStructuralQueryOutcome::SourceGap {
+                reason,
+                receipt: gap_receipt,
+                ..
+            } = host
+                .query_structural(under_budget, &mut untouched)
+                .expect("under-budget Green query")
+            else {
+                panic!("under-budget Green query must return a typed gap");
+            };
+            assert_eq!(reason, expected_reason);
+            assert_eq!(
+                gap_receipt,
+                HostViewportReceipt::default(),
+                "a budget gap cannot claim work outside caller authority"
+            );
+            assert!(untouched.iter().all(|byte| *byte == 0xa5));
+        }
+        close_host(&mut host);
     }
 
     #[test]

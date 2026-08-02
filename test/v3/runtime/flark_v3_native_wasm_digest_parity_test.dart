@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flark/flark_adapter.dart';
+import 'package:flark/flark_v3.dart';
 import 'package:flark/src/v3/runtime/public/flark_v3_platform_host_store_factory.dart';
 import 'package:test/test.dart';
 
@@ -88,6 +89,38 @@ void main() {
       expect(actual, _expectedDigests);
       expect(runtime.status.structureCurrent, isTrue);
       expect(runtime.exportMarkdown(), _fixture);
+
+      await runtime.close().timeout(const Duration(seconds: 10));
+    },
+    timeout: const Timeout(Duration(minutes: 1)),
+  );
+
+  test(
+    'native and real Wasm decode an admitted recursive-Green budget gap',
+    () async {
+      final runtime = await FlarkV3DocumentRuntime.open(
+        _fixture,
+        nativeLibraryPath: platform.flarkV3DigestParityNativeLibraryPath,
+        webAssets: platform.flarkV3DigestParityWebAssets,
+      );
+      addTearDown(() => runtime.close());
+      await runtime.initialReady.timeout(const Duration(seconds: 20));
+
+      final boundedGap = runtime.queryAtUtf16(
+        _fixture.indexOf('Café'),
+        budget: const FlarkV3DocumentQueryBudget(maximumTreeNodesVisited: 1),
+      );
+      expect(
+        boundedGap,
+        isA<FlarkV3DocumentSourceGapQuery>(),
+        reason:
+            'Both native FFI and Web Wasm decoders must accept a typed budget '
+            'gap whose receipt stays inside caller authority.',
+      );
+      expect(
+        (boundedGap as FlarkV3DocumentSourceGapQuery).reason,
+        FlarkV3DocumentQueryGapReason.treeNodeLimit,
+      );
 
       await runtime.close().timeout(const Duration(seconds: 10));
     },
