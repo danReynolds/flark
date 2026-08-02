@@ -23,13 +23,17 @@ void main() {
         maximumIslandUtf16: 64,
       );
 
-      final initialQuery = await harness.waitForFence(
+      final initialFence = await harness.waitForExactFence(
         tester,
-        closed: true,
+        expectedBodyStartUtf16: prefix.length,
+        expectedBodyEndUtf16: prefix.length + body.length,
         expectedIslandText: body,
       );
-      expect(initialQuery.structure.fencedCode!.rawInfoSource.startUtf16, 3);
-      expect(initialQuery.structure.fencedCode!.rawInfoSource.endUtf16, 7);
+      initialFence.expectExposedFacts(
+        legacyClosed: true,
+        rawInfoStartUtf16: 3,
+        rawInfoEndUtf16: 7,
+      );
       expect(
         harness.binding.controller.inputIslandGlobalStartUtf16,
         prefix.length,
@@ -77,10 +81,16 @@ void main() {
 
       const editedBody = "print('x!');\n";
       expect(harness.runtime.exportMarkdown(), '$prefix$editedBody$closer');
-      await harness.waitForFence(
+      final editedFence = await harness.waitForExactFence(
         tester,
-        closed: true,
+        expectedBodyStartUtf16: prefix.length,
+        expectedBodyEndUtf16: prefix.length + editedBody.length,
         expectedIslandText: editedBody,
+      );
+      editedFence.expectExposedFacts(
+        legacyClosed: true,
+        rawInfoStartUtf16: 3,
+        rawInfoEndUtf16: 7,
       );
       expect(harness.editableKey.currentState, same(editableState));
       expect(_setClientCalls(tester), hasLength(initialSetClientCalls.length));
@@ -107,16 +117,14 @@ void main() {
         maximumIslandUtf16: 64,
       );
 
-      final query = await harness.waitForFence(
+      final fence = await harness.waitForExactFence(
         tester,
-        closed: false,
+        expectedBodyStartUtf16: prefix.length,
+        expectedBodyEndUtf16: source.length,
         expectedIslandText: body,
       );
-      final fence = query.structure.fencedCode!;
-      expect(fence.closingMarker, isNull);
-      expect(fence.bodySource.endUtf16, source.length);
-      expect(query.projection.projectedSource.startUtf16, prefix.length);
-      expect(query.projection.projectedSource.endUtf16, source.length);
+      fence.expectExposedFacts(legacyClosed: false);
+      expect(fence.editableSource.endUtf16, source.length);
       expect(
         harness.binding.controller.hasProjectedInlinePresentation,
         isFalse,
@@ -147,11 +155,13 @@ void main() {
         caretUtf16: prefix.length + 2,
         maximumIslandUtf16: 64,
       );
-      await harness.waitForFence(
+      final initialFence = await harness.waitForExactFence(
         tester,
-        closed: true,
+        expectedBodyStartUtf16: prefix.length,
+        expectedBodyEndUtf16: prefix.length + body.length,
         expectedIslandText: body,
       );
+      initialFence.expectExposedFacts(legacyClosed: true);
 
       harness.editableState.requestKeyboard();
       await tester.pump();
@@ -173,11 +183,13 @@ void main() {
         ),
       );
       expect(harness.runtime.exportMarkdown(), '$prefix$body');
-      await harness.waitForFence(
+      final unclosedFence = await harness.waitForExactFence(
         tester,
-        closed: false,
+        expectedBodyStartUtf16: prefix.length,
+        expectedBodyEndUtf16: prefix.length + body.length,
         expectedIslandText: body,
       );
+      unclosedFence.expectExposedFacts(legacyClosed: false);
       _expectSameInputClient(
         tester,
         harness,
@@ -197,11 +209,13 @@ void main() {
         ),
       );
       expect(harness.runtime.exportMarkdown(), source);
-      await harness.waitForFence(
+      final restoredFence = await harness.waitForExactFence(
         tester,
-        closed: true,
+        expectedBodyStartUtf16: prefix.length,
+        expectedBodyEndUtf16: prefix.length + body.length,
         expectedIslandText: body,
       );
+      restoredFence.expectExposedFacts(legacyClosed: true);
       _expectSameInputClient(
         tester,
         harness,
@@ -224,7 +238,8 @@ void main() {
         growable: false,
       ).join();
       final source = '$prefix$body$closer';
-      final caret = prefix.length + body.length ~/ 2;
+      final middleBodyOffset = body.indexOf('line-1250') + 'line-'.length;
+      final caret = prefix.length + middleBodyOffset;
       const maximumIslandUtf16 = 8192;
       final islandStart = caret - maximumIslandUtf16 ~/ 2;
       final islandEnd = islandStart + maximumIslandUtf16;
@@ -237,11 +252,14 @@ void main() {
         maximumIslandUtf16: maximumIslandUtf16,
       );
 
-      final query = await harness.waitForFence(tester, closed: true);
-      expect(
-        query.structure.fencedCode!.bodySource.endUtf16,
-        greaterThan(8192),
+      final initialFence = await harness.waitForExactFence(
+        tester,
+        expectedBodyStartUtf16: prefix.length,
+        expectedBodyEndUtf16: prefix.length + body.length,
       );
+      expect(initialFence.query, isA<FlarkV3RecursiveGreenPointQuery>());
+      initialFence.expectExposedFacts(legacyClosed: true);
+      expect(initialFence.editableSource.endUtf16, greaterThan(8192));
       expect(
         harness.binding.controller.inputIslandGlobalEndUtf16 -
             harness.binding.controller.inputIslandGlobalStartUtf16,
@@ -266,6 +284,73 @@ void main() {
         reason:
             'a bounded body shard must retain the fence structural authority '
             'rather than fall back after rejecting the whole body',
+      );
+
+      harness.editableState.requestKeyboard();
+      await tester.pump();
+      final editableState = harness.editableState;
+      final initialSetClientCount = _setClientCalls(tester).length;
+      final clientId =
+          (_setClientCalls(tester).last.arguments as List<dynamic>).first
+              as int;
+      final localEditOffset =
+          caret - harness.binding.controller.inputIslandGlobalStartUtf16;
+      final oldIslandText = harness.binding.controller.editingController.text;
+      expect(
+        oldIslandText.substring(localEditOffset, localEditOffset + 1),
+        '1',
+      );
+      (editableState as DeltaTextInputClient).updateEditingValueWithDeltas([
+        TextEditingDeltaReplacement(
+          oldText: oldIslandText,
+          replacementText: 'X',
+          replacedRange: TextRange(
+            start: localEditOffset,
+            end: localEditOffset + 1,
+          ),
+          selection: TextSelection.collapsed(offset: localEditOffset + 1),
+          composing: TextRange.empty,
+        ),
+      ]);
+      await tester.pump();
+
+      final editedBody = body.replaceRange(
+        middleBodyOffset,
+        middleBodyOffset + 1,
+        'X',
+      );
+      expect(harness.runtime.exportMarkdown(), '$prefix$editedBody$closer');
+      final editedFence = await harness.waitForExactFence(
+        tester,
+        expectedBodyStartUtf16: prefix.length,
+        expectedBodyEndUtf16: prefix.length + editedBody.length,
+      );
+      expect(editedFence.query, isA<FlarkV3RecursiveGreenPointQuery>());
+      editedFence.expectExposedFacts(legacyClosed: true);
+      expect(editedFence.query.sourceRevision, harness.runtime.sourceRevision);
+      expect(
+        harness.binding.controller.paintState.mode,
+        FlarkV3FlutterPaintMode.exactStructural,
+      );
+      expect(
+        harness.binding.controller.inputIslandGlobalEndUtf16 -
+            harness.binding.controller.inputIslandGlobalStartUtf16,
+        lessThanOrEqualTo(maximumIslandUtf16),
+      );
+      expect(
+        harness.binding.controller.editingController.text,
+        contains('line-X250'),
+      );
+      expect(
+        harness.binding.controller.editingController.text,
+        isNot(contains('```')),
+      );
+      _expectSameInputClient(
+        tester,
+        harness,
+        editableState: editableState,
+        setClientCount: initialSetClientCount,
+        clientId: clientId,
       );
     },
     timeout: const Timeout(Duration(seconds: 30)),
@@ -293,14 +378,16 @@ void main() {
         maximumIslandUtf16: maximumIslandUtf16,
       );
 
-      await harness.waitForFence(
+      final fence = await harness.waitForExactFence(
         tester,
-        closed: true,
+        expectedBodyStartUtf16: prefix.length,
+        expectedBodyEndUtf16: prefix.length + body.length,
         expectedIslandText: source.substring(
           prefix.length,
           prefix.length + maximumIslandUtf16,
         ),
       );
+      fence.expectExposedFacts(legacyClosed: true);
       expect(
         harness.binding.controller.inputIslandGlobalStartUtf16,
         prefix.length,
@@ -406,9 +493,10 @@ final class _ManagedFenceHarness {
 
   EditableTextState get editableState => editableKey.currentState!;
 
-  Future<FlarkV3DocumentStructuralQuery> waitForFence(
+  Future<_FenceInspection> waitForExactFence(
     WidgetTester tester, {
-    required bool closed,
+    required int expectedBodyStartUtf16,
+    required int expectedBodyEndUtf16,
     String? expectedIslandText,
   }) async {
     final stopwatch = Stopwatch()..start();
@@ -418,14 +506,35 @@ final class _ManagedFenceHarness {
         () => Future<void>.delayed(const Duration(milliseconds: 1)),
       );
       final query = binding.controller.paintState.documentQuery;
+      final islandStart = binding.controller.inputIslandGlobalStartUtf16;
+      final islandEnd = binding.controller.inputIslandGlobalEndUtf16;
       if (runtime.status.structureCurrent &&
-          query is FlarkV3DocumentStructuralQuery &&
-          query.structure.kind == FlarkV3DocumentStructureKind.fencedCode &&
-          query.structure.fencedCode!.closed == closed &&
+          binding.controller.paintState.mode ==
+              FlarkV3FlutterPaintMode.exactStructural &&
+          binding.controller.paintState.blockStyleLease?.kind ==
+              FlarkV3FlutterBlockStyleKind.fencedCode &&
+          query != null &&
+          islandStart >= expectedBodyStartUtf16 &&
+          islandEnd <= expectedBodyEndUtf16 &&
+          runtime.readSourceRange(islandStart, islandEnd) ==
+              binding.controller.editingController.text &&
           (expectedIslandText == null ||
               binding.controller.editingController.text ==
                   expectedIslandText)) {
-        return query;
+        final inspection = _inspectFence(runtime, query);
+        if (inspection != null &&
+            _spanHasUtf16(
+              inspection.physicalSource,
+              0,
+              runtime.exportMarkdown().length,
+            ) &&
+            _spanHasUtf16(
+              inspection.editableSource,
+              expectedBodyStartUtf16,
+              expectedBodyEndUtf16,
+            )) {
+          return inspection;
+        }
       }
     }
     final query = binding.controller.paintState.documentQuery;
@@ -443,6 +552,126 @@ final class _ManagedFenceHarness {
     );
   }
 }
+
+final class _FenceInspection {
+  const _FenceInspection({
+    required this.query,
+    required this.physicalSource,
+    required this.editableSource,
+    required this.legacyFacts,
+    required this.recursiveFacts,
+  });
+
+  final FlarkV3DocumentQueryResult query;
+  final FlarkV3SourceSpan physicalSource;
+  final FlarkV3SourceSpan editableSource;
+  final FlarkV3FencedCodeFacts? legacyFacts;
+  final FlarkV3RecursiveGreenCodePathFact? recursiveFacts;
+
+  void expectExposedFacts({
+    required bool legacyClosed,
+    int? rawInfoStartUtf16,
+    int? rawInfoEndUtf16,
+  }) {
+    final legacy = legacyFacts;
+    if (legacy != null) {
+      expect(legacy.closed, legacyClosed);
+      if (rawInfoStartUtf16 != null) {
+        expect(legacy.rawInfoSource.startUtf16, rawInfoStartUtf16);
+      }
+      if (rawInfoEndUtf16 != null) {
+        expect(legacy.rawInfoSource.endUtf16, rawInfoEndUtf16);
+      }
+    }
+    final recursive = recursiveFacts;
+    if (recursive != null) {
+      expect(recursive.marker, FlarkV3CodeFenceMarker.backtick);
+      expect(recursive.fenceOffsetColumns, 0);
+      expect(recursive.minimumClosingLength, BigInt.from(3));
+    }
+  }
+}
+
+_FenceInspection? _inspectFence(
+  FlarkV3DocumentRuntime runtime,
+  FlarkV3DocumentQueryResult query,
+) {
+  if (query.sourceRevision != runtime.sourceRevision) return null;
+  switch (query) {
+    case FlarkV3DocumentStructuralQuery(
+      :final structureRevision,
+      :final structure,
+      :final projection,
+    ):
+      final facts = structure.fencedCode;
+      if (structureRevision != runtime.sourceRevision ||
+          structure.kind != FlarkV3DocumentStructureKind.fencedCode ||
+          facts == null ||
+          !_sameSourceSpan(projection.projectedSource, facts.bodySource)) {
+        return null;
+      }
+      return _FenceInspection(
+        query: query,
+        physicalSource: structure.source,
+        editableSource: facts.bodySource,
+        legacyFacts: facts,
+        recursiveFacts: null,
+      );
+    case final FlarkV3RecursiveGreenPointQuery recursiveQuery:
+      if (recursiveQuery.structureRevision != runtime.sourceRevision ||
+          recursiveQuery.owner.kind != FlarkV3RecursiveGreenKind.fencedCode ||
+          !recursiveQuery.isIdentityEditableContent) {
+        return null;
+      }
+      final range = runtime.queryBlockRange(
+        recursiveQuery.source.startUtf16,
+        recursiveQuery.source.endUtf16,
+      );
+      expect(range, isA<FlarkV3RecursiveGreenRowRange>());
+      final greenRange = range as FlarkV3RecursiveGreenRowRange;
+      expect(
+        (greenRange.sourceRevision, greenRange.structureRevision),
+        (recursiveQuery.sourceRevision, recursiveQuery.structureRevision),
+      );
+      expect(greenRange.selectedRow, isNotNull);
+      final row = greenRange.selectedRow!;
+      expect(row.kind, FlarkV3RecursiveGreenKind.fencedCode);
+      expect(
+        row.presentationKind,
+        FlarkV3RecursiveGreenRowPresentationKind.fencedCode,
+      );
+      expect(row.literal, isTrue);
+      expect(
+        row.editCapability,
+        FlarkV3RecursiveGreenRowEditCapability.contiguous,
+      );
+      expect(row.frameId, recursiveQuery.owner.frameId);
+      expect(row.editableSource, isNotNull);
+      final editableSource = row.editableSource!;
+      final ownerFrame = row.path.singleWhere((frame) => frame.isRowOwner);
+      final recursiveFacts = ownerFrame.fact;
+      expect(ownerFrame.frameId, row.frameId);
+      expect(recursiveFacts, isA<FlarkV3RecursiveGreenCodePathFact>());
+      return _FenceInspection(
+        query: recursiveQuery,
+        physicalSource: row.physicalSource,
+        editableSource: editableSource,
+        legacyFacts: null,
+        recursiveFacts: recursiveFacts! as FlarkV3RecursiveGreenCodePathFact,
+      );
+    case _:
+      return null;
+  }
+}
+
+bool _spanHasUtf16(FlarkV3SourceSpan span, int startUtf16, int endUtf16) =>
+    span.startUtf16 == startUtf16 && span.endUtf16 == endUtf16;
+
+bool _sameSourceSpan(FlarkV3SourceSpan left, FlarkV3SourceSpan right) =>
+    left.startUtf8 == right.startUtf8 &&
+    left.endUtf8 == right.endUtf8 &&
+    left.startUtf16 == right.startUtf16 &&
+    left.endUtf16 == right.endUtf16;
 
 List<MethodCall> _setClientCalls(WidgetTester tester) => tester
     .testTextInput
