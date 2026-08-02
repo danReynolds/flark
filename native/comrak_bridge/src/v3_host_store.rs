@@ -16940,11 +16940,25 @@ mod tests {
                 panic!("under-budget Green query must return a typed gap");
             };
             assert_eq!(reason, expected_reason);
-            assert_eq!(
-                gap_receipt,
-                HostViewportReceipt::default(),
-                "a budget gap cannot claim work outside caller authority"
-            );
+            if expected_reason == HostSourceGapReason::TreeNodeLimit {
+                // Hard tree fuel stops before attempting the first
+                // out-of-authority header, so its exact consumed receipt is
+                // safe to expose. Depth/leaf limits are checked after the
+                // location is complete and therefore retain an empty receipt.
+                assert_eq!(
+                    gap_receipt.tree_nodes_visited,
+                    under_budget.budget.maximum_tree_nodes_visited
+                );
+                assert!(gap_receipt.open_depth <= under_budget.budget.maximum_open_depth);
+                assert!(gap_receipt.leaf_count <= under_budget.budget.maximum_leaf_count);
+                assert_eq!(gap_receipt.encoded_bytes, 0);
+            } else {
+                assert_eq!(
+                    gap_receipt,
+                    HostViewportReceipt::default(),
+                    "a post-check budget gap cannot claim out-of-authority work"
+                );
+            }
             assert!(untouched.iter().all(|byte| *byte == 0xa5));
         }
         close_host(&mut host);
