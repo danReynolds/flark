@@ -47,9 +47,9 @@ pub(crate) enum ReferenceValueCleanerError {
     InvalidUtf8,
 }
 
-impl fmt::Display for ReferenceValueCleanerError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
+impl ReferenceValueCleanerError {
+    pub(crate) const fn message(self) -> &'static str {
+        match self {
             Self::InputAlreadyPending => "one cleaner input byte is already pending",
             Self::OutputNotConsumed => "cleaner output must be consumed before input advances",
             Self::InputAlreadyFinished => "cleaner input is already finished",
@@ -57,7 +57,13 @@ impl fmt::Display for ReferenceValueCleanerError {
             Self::CounterOverflow => "reference-value cleaner counter overflow",
             Self::InternalOutputOverflow => "reference-value cleaner output bound was exceeded",
             Self::InvalidUtf8 => "reference-value entity candidate is not valid UTF-8",
-        })
+        }
+    }
+}
+
+impl fmt::Display for ReferenceValueCleanerError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.message())
     }
 }
 

@@ -51,7 +51,7 @@ pub enum M11ReferenceRendezvousError {
     Writer(M11BlockWriterError),
     Green(M11RecursiveGreenError),
     Journal(M11ReferenceJournalError),
-    Cleaner(ReferenceValueCleanerError),
+    Cleaner(&'static str),
     InvalidState(&'static str),
     CounterOverflow,
     ZeroFuel,
@@ -64,7 +64,7 @@ impl fmt::Display for M11ReferenceRendezvousError {
             Self::Writer(error) => error.fmt(formatter),
             Self::Green(error) => error.fmt(formatter),
             Self::Journal(error) => error.fmt(formatter),
-            Self::Cleaner(error) => error.fmt(formatter),
+            Self::Cleaner(message) => formatter.write_str(message),
             Self::InvalidState(message) => formatter.write_str(message),
             Self::CounterOverflow => formatter.write_str("reference rendezvous counter overflow"),
             Self::ZeroFuel => formatter.write_str("reference rendezvous requires nonzero fuel"),
@@ -100,7 +100,7 @@ impl From<M11ReferenceJournalError> for M11ReferenceRendezvousError {
 
 impl From<ReferenceValueCleanerError> for M11ReferenceRendezvousError {
     fn from(error: ReferenceValueCleanerError) -> Self {
-        Self::Cleaner(error)
+        Self::Cleaner(error.message())
     }
 }
 
