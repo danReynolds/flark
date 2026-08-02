@@ -135,6 +135,83 @@ void main() {
       expect(endpoint.closed, isTrue);
     },
   );
+
+  test(
+    'async status delivery preserves open fault closing and closed ordering',
+    () async {
+      final sourceSession = FlarkV3SourceSession.fromString('status ordering');
+      final documentSession = FlarkV3DocumentSessionId(151, 152, 153, 154);
+      final document = FlarkDocumentSession.attach(
+        sourceSession: sourceSession,
+        documentSession: documentSession,
+        hostStore: _FailureHostStore(),
+      );
+      final binding = FlarkV3ParserSessionBinding(
+        documentSession: documentSession,
+        sourceSessionIdentity: sourceSession.sourceSessionIdentity,
+        workerGeneration: sourceSession.workerGeneration,
+      );
+      final endpoint = _ProtocolFailureEndpoint(binding);
+      final runtime = await FlarkV3DocumentRuntimePlatformAttachment.attach(
+        document: document,
+        parserBinding: binding,
+        platformEndpoint: FlarkV3PlatformEndpointHandle(
+          endpoint: endpoint,
+          done: endpoint.done,
+        ),
+      );
+
+      // Let the attachment notification retain its existing no-replay
+      // broadcast behavior before observing the transitions under test.
+      await Future<void>.delayed(Duration.zero);
+      final observedFuture = runtime.statuses.toList();
+
+      final opened = runtime.statuses.firstWhere(
+        (status) => status.state == FlarkV3DocumentRuntimeState.open,
+      );
+      endpoint.emit(
+        FlarkV3ParserSessionWireCodec.encodeEvent(
+          FlarkV3ParserSessionOpenedEvent(
+            binding: binding,
+            eventId: 1,
+            mode: FlarkV3ParserOpenMode.fresh,
+          ),
+          expectedBinding: binding,
+        ),
+      );
+      await opened.timeout(const Duration(seconds: 1));
+
+      endpoint.emit(
+        FlarkV3ParserSessionWireCodec.encodeEvent(
+          FlarkV3ParserSessionFailedEvent(
+            binding: binding,
+            eventId: 2,
+            failureCode: 4,
+          ),
+          expectedBinding: binding,
+        ),
+      );
+      await expectLater(
+        runtime.initialReady,
+        throwsA(isA<FlarkV3RuntimeParserFailure>()),
+      );
+      expect(runtime.status.state, FlarkV3DocumentRuntimeState.faulted);
+
+      await runtime.close().timeout(const Duration(seconds: 1));
+      final observed = await observedFuture.timeout(const Duration(seconds: 1));
+      final states = observed.map((status) => status.state).toList();
+      final openIndex = states.indexOf(FlarkV3DocumentRuntimeState.open);
+      final faultedIndex = states.indexOf(FlarkV3DocumentRuntimeState.faulted);
+      final closingIndex = states.indexOf(FlarkV3DocumentRuntimeState.closing);
+      final closedIndex = states.indexOf(FlarkV3DocumentRuntimeState.closed);
+      expect(openIndex, greaterThanOrEqualTo(0));
+      expect(faultedIndex, greaterThan(openIndex));
+      expect(closingIndex, greaterThan(faultedIndex));
+      expect(closedIndex, greaterThan(closingIndex));
+      expect(states.last, FlarkV3DocumentRuntimeState.closed);
+      expect(endpoint.closed, isTrue);
+    },
+  );
 }
 
 final class _ProtocolFailureEndpoint implements FlarkV3ByteEndpoint {

@@ -113,6 +113,149 @@ void main() {
   }
 
   test(
+    'status delivery coalesces a source burst and retains exact inline close',
+    () async {
+      final runtime = await openFlarkV3PublicRuntimeForTest('**seed**\n');
+      StreamSubscription<FlarkV3DocumentRuntimeStatus>? subscription;
+      final observed = <FlarkV3DocumentRuntimeStatus>[];
+      final streamDone = Completer<void>();
+      var closed = false;
+      try {
+        await runtime.initialReady.timeout(const Duration(seconds: 10));
+        await Future<void>.delayed(Duration.zero);
+        final beforeInline = runtime.status;
+        subscription = runtime.statuses.listen(
+          observed.add,
+          onDone: streamDone.complete,
+        );
+        final initialQuery = await runtime
+            .queryInlineAtUtf16(3)
+            .timeout(const Duration(seconds: 10));
+        expect(switch (initialQuery) {
+          FlarkV3DocumentStructuralQuery(:final inlineFacts) => inlineFacts,
+          FlarkV3RecursiveGreenPointQuery(:final inlineFacts) => inlineFacts,
+          _ => null,
+        }, isNotNull);
+        await Future<void>.delayed(Duration.zero);
+        final initial = runtime.status;
+        expect(initial.structureCurrent, isTrue);
+        expect(
+          observed.any(
+            (status) =>
+                status.sourceRevision == beforeInline.sourceRevision &&
+                status.inlinePresentationGeneration >
+                    beforeInline.inlinePresentationGeneration,
+          ),
+          isTrue,
+          reason: 'inline presentation is a semantic delivery barrier',
+        );
+        final callbackCountBeforeBurst = observed.length;
+        const replacements = 'abcde';
+        for (var index = 0; index < replacements.length; index += 1) {
+          final receipt = runtime.apply(
+            FlarkV3SourceTransaction.single(
+              baseRevision: runtime.sourceRevision,
+              operation: FlarkV3SourceEdit(
+                startUtf16: 2,
+                endUtf16: 3,
+                replacement: replacements[index],
+              ),
+            ),
+          );
+          expect(receipt.sourceRevision, initial.sourceRevision + index + 1);
+          expect(
+            runtime.status.sourceRevision,
+            receipt.sourceRevision,
+            reason: 'the synchronous status must never be coalesced',
+          );
+          expect(runtime.status.structureCurrent, isFalse);
+        }
+        expect(
+          observed,
+          hasLength(callbackCountBeforeBurst),
+          reason: 'status callbacks remain asynchronous to source mutation',
+        );
+
+        final latestRevision = initial.sourceRevision + replacements.length;
+        await runtime.statuses
+            .firstWhere(
+              (status) =>
+                  status.sourceRevision == latestRevision &&
+                  status.structureRevision == latestRevision &&
+                  status.structureCurrent,
+            )
+            .timeout(const Duration(seconds: 10));
+        await Future<void>.delayed(Duration.zero);
+
+        final pendingBurst = observed
+            .where(
+              (status) =>
+                  status.state == initial.state &&
+                  status.sourceRevision > initial.sourceRevision &&
+                  status.certifiedSourceRevision ==
+                      initial.certifiedSourceRevision &&
+                  !status.sourceCurrent &&
+                  status.structureRevision == initial.structureRevision &&
+                  status.structureGeneration == initial.structureGeneration &&
+                  !status.structureCurrent &&
+                  status.inlinePresentationGeneration ==
+                      initial.inlinePresentationGeneration &&
+                  status.inlineAttemptOutcomeGeneration ==
+                      initial.inlineAttemptOutcomeGeneration &&
+                  status.viewportPresentationGeneration ==
+                      initial.viewportPresentationGeneration &&
+                  status.viewportPresentationAttemptOutcomeGeneration ==
+                      initial.viewportPresentationAttemptOutcomeGeneration &&
+                  status.viewportPresentationUnavailableReason ==
+                      initial.viewportPresentationUnavailableReason &&
+                  status.recoveryAvailable == initial.recoveryAvailable,
+            )
+            .toList(growable: false);
+        expect(pendingBurst, hasLength(1));
+        expect(pendingBurst.single.sourceRevision, latestRevision);
+        expect(
+          observed,
+          contains(
+            isA<FlarkV3DocumentRuntimeStatus>()
+                .having(
+                  (status) => status.sourceRevision,
+                  'sourceRevision',
+                  latestRevision,
+                )
+                .having(
+                  (status) => status.structureRevision,
+                  'structureRevision',
+                  latestRevision,
+                )
+                .having(
+                  (status) => status.structureCurrent,
+                  'structureCurrent',
+                  isTrue,
+                ),
+          ),
+        );
+        await runtime.close().timeout(const Duration(seconds: 10));
+        closed = true;
+        await streamDone.future.timeout(const Duration(seconds: 1));
+        final closingIndex = observed.indexWhere(
+          (status) => status.state == FlarkV3DocumentRuntimeState.closing,
+        );
+        final closedIndex = observed.indexWhere(
+          (status) => status.state == FlarkV3DocumentRuntimeState.closed,
+        );
+        expect(closingIndex, greaterThanOrEqualTo(0));
+        expect(closedIndex, greaterThan(closingIndex));
+      } finally {
+        await subscription?.cancel();
+        if (!closed) {
+          await runtime.close().timeout(const Duration(seconds: 10));
+        }
+      }
+    },
+    timeout: const Timeout(Duration(seconds: 30)),
+  );
+
+  test(
     '1 MiB document coalesces a synchronous local edit burst exactly',
     () async {
       final source = _largeBurstDocument();

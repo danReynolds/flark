@@ -532,6 +532,36 @@ final class FlarkV3DocumentRuntimeStatus {
     viewportPresentationUnavailableReason,
     recoveryAvailable,
   );
+
+  bool _canSupersedePendingSourceStatus(
+    FlarkV3DocumentRuntimeStatus previous,
+  ) =>
+      sourceRevision > previous.sourceRevision &&
+      (!sourceCurrent || !structureCurrent) &&
+      (!previous.sourceCurrent || !previous.structureCurrent) &&
+      state == previous.state &&
+      certifiedSourceRevision == previous.certifiedSourceRevision &&
+      sourceCurrent == previous.sourceCurrent &&
+      structureRevision == previous.structureRevision &&
+      structureGeneration == previous.structureGeneration &&
+      structureCurrent == previous.structureCurrent &&
+      inlinePresentationGeneration == previous.inlinePresentationGeneration &&
+      inlineAttemptOutcomeGeneration ==
+          previous.inlineAttemptOutcomeGeneration &&
+      viewportPresentationGeneration ==
+          previous.viewportPresentationGeneration &&
+      viewportPresentationAttemptOutcomeGeneration ==
+          previous.viewportPresentationAttemptOutcomeGeneration &&
+      viewportPresentationUnavailableReason ==
+          previous.viewportPresentationUnavailableReason &&
+      recoveryAvailable == previous.recoveryAvailable;
+}
+
+final class _FlarkV3PendingStatusDelivery {
+  const _FlarkV3PendingStatusDelivery(this.status, {required this.barrier});
+
+  final FlarkV3DocumentRuntimeStatus status;
+  final bool barrier;
 }
 
 /// Dart-first owner of the v3 parser endpoint and session execution loop.
@@ -632,6 +662,7 @@ final class FlarkV3DocumentRuntime {
   final Future<void> _endpointDone;
   final StreamController<FlarkV3DocumentRuntimeStatus> _statuses =
       StreamController<FlarkV3DocumentRuntimeStatus>.broadcast();
+  final List<_FlarkV3PendingStatusDelivery> _pendingStatusDeliveries = [];
   final Completer<void> _initialReady = Completer<void>.sync();
   final Object _blockRangeContinuationOwner = Object();
   FlarkV3StructuralAck? _observedStructuralAck;
@@ -643,6 +674,7 @@ final class FlarkV3DocumentRuntime {
       );
 
   FlarkV3DocumentRuntimeStatus? _lastPublishedStatus;
+  bool _statusDeliveryScheduled = false;
   Object? _lastLeafProjectionDemand;
   int _leafProjectionDemandAttempts = 0;
   int? _leafProjectionDemandLastRequestedOutcomeGeneration;
@@ -665,6 +697,11 @@ final class FlarkV3DocumentRuntime {
   Future<void> get initialReady => _initialReady.future;
 
   /// Bounded status changes. [status] is the synchronous current snapshot.
+  ///
+  /// Pending snapshots produced in one caller turn may coalesce when their
+  /// only semantic difference is a newer source revision. Exact structure,
+  /// inline, viewport, lifecycle, recovery, and terminal transitions retain
+  /// their original order.
   Stream<FlarkV3DocumentRuntimeStatus> get statuses => _statuses.stream;
 
   FlarkV3DocumentRuntimeStatus get status => _status();
@@ -1979,6 +2016,7 @@ final class FlarkV3DocumentRuntime {
       closeStack ??= stackTrace;
     }
     _publishStatus(force: true);
+    _flushPendingStatusDeliveries();
     await _statuses.close();
 
     final terminal = _terminalFailure;
@@ -2007,7 +2045,7 @@ final class FlarkV3DocumentRuntime {
     final next = _status();
     if (!force && next == _lastPublishedStatus) return;
     _lastPublishedStatus = next;
-    _statuses.add(next);
+    _enqueueStatusDelivery(next, barrier: force);
     if (!_initialReady.isCompleted) {
       final parserFailure = _executor.lastFailure;
       if (next.state == FlarkV3DocumentRuntimeState.faulted &&
@@ -2019,6 +2057,46 @@ final class FlarkV3DocumentRuntime {
       } else if (next.structureCurrent) {
         _initialReady.complete();
       }
+    }
+  }
+
+  void _enqueueStatusDelivery(
+    FlarkV3DocumentRuntimeStatus next, {
+    required bool barrier,
+  }) {
+    // Preserve broadcast-stream no-replay semantics while buffering.
+    if (!_statuses.hasListener) return;
+    final last = _pendingStatusDeliveries.lastOrNull;
+    if (!barrier &&
+        last != null &&
+        !last.barrier &&
+        next._canSupersedePendingSourceStatus(last.status)) {
+      _pendingStatusDeliveries[_pendingStatusDeliveries.length - 1] =
+          _FlarkV3PendingStatusDelivery(next, barrier: false);
+    } else {
+      _pendingStatusDeliveries.add(
+        _FlarkV3PendingStatusDelivery(next, barrier: barrier),
+      );
+    }
+    if (_statusDeliveryScheduled) return;
+    _statusDeliveryScheduled = true;
+    scheduleMicrotask(_flushPendingStatusDeliveries);
+  }
+
+  void _flushPendingStatusDeliveries() {
+    _statusDeliveryScheduled = false;
+    if (_pendingStatusDeliveries.isEmpty) return;
+    if (_statuses.isClosed) {
+      _pendingStatusDeliveries.clear();
+      return;
+    }
+    final pending = List<_FlarkV3PendingStatusDelivery>.of(
+      _pendingStatusDeliveries,
+      growable: false,
+    );
+    _pendingStatusDeliveries.clear();
+    for (final delivery in pending) {
+      _statuses.add(delivery.status);
     }
   }
 
