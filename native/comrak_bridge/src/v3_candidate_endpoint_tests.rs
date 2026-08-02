@@ -5543,7 +5543,6 @@ fn close_after_sidecar_commit_before_delivery_receipt_reclaims_typed_roots() {
 #[test]
 fn atx_heading_reaches_independent_host_and_refines_only_its_content() {
     const SOURCE: &str = "p\n\n  ### **β😀** ###  \r\n\n# before <tag>\n";
-    const VIEWPORT_HEADER_BYTES: usize = 20;
     let profile = SourceFactsScanProfile::new(8).expect("test profile");
     let parser_profile = ParserProfileId::new(1).expect("parser profile");
     let binding = SessionBinding {
@@ -5578,72 +5577,26 @@ fn atx_heading_reaches_independent_host_and_refines_only_its_content() {
     let heading_end = heading_start + "  ### **β😀** ###  \r\n".len();
     let inline_start = SOURCE.find("**β😀**").expect("heading content");
     let inline_end = inline_start + "**β😀**".len();
-    let mut output = [0_u8; HOST_M11_VIEWPORT_BYTES];
-    let outcome = host
-        .query_structural(
-            HostPointQuery {
-                source_version,
-                position: HostSourceMetric {
-                    bytes: u32::try_from(inline_start + 2).unwrap(),
-                    utf16: u32::try_from(SOURCE[..inline_start + 2].encode_utf16().count())
-                        .unwrap(),
-                },
-                affinity: HostMetricAffinity::Downstream,
-                budget: HostQueryBudget {
-                    maximum_encoded_bytes: HOST_M11_VIEWPORT_BYTES as u32,
-                    maximum_open_depth: 64,
-                    maximum_leaf_count: 64,
-                    maximum_tree_nodes_visited: 256,
-                },
-            },
-            &mut output,
-        )
-        .expect("independent ATX Heading query");
-    let HostStructuralQueryOutcome::Viewport { range, receipt, .. } = outcome else {
-        panic!("ATX Heading must author an independent viewport: {outcome:?}");
-    };
-    assert_eq!(receipt.encoded_bytes, HOST_M11_VIEWPORT_BYTES as u32);
-    assert_eq!(range.start.bytes as usize, heading_start);
-    assert_eq!(
-        range.start.utf16 as usize,
-        SOURCE[..heading_start].encode_utf16().count()
+    let inline_point = inline_start + 2;
+    let inline_point_utf16 = SOURCE[..inline_point].encode_utf16().count();
+    let (owner_kind, range, ancestry) = recursive_green_query_shape(
+        &host,
+        source_version,
+        inline_point,
+        inline_point_utf16,
     );
-    assert_eq!(range.end.bytes as usize, heading_end);
+    assert_eq!(owner_kind, 12, "the active row is a Green Heading");
     assert_eq!(
-        range.end.utf16 as usize,
-        SOURCE[..heading_end].encode_utf16().count()
+        range,
+        [
+            inline_start as u32,
+            inline_end as u32,
+            SOURCE[..inline_start].encode_utf16().count() as u32,
+            SOURCE[..inline_end].encode_utf16().count() as u32,
+        ]
     );
-    let green = &output[VIEWPORT_HEADER_BYTES..VIEWPORT_HEADER_BYTES + 80];
-    let projection = &output[VIEWPORT_HEADER_BYTES + 80..];
-    assert_eq!(green[12], 4);
-    assert_eq!(projection[12], 4);
-    assert_eq!(
-        u64::from_le_bytes(green[16..24].try_into().unwrap()),
-        heading_start as u64
-    );
-    assert_eq!(
-        u64::from_le_bytes(green[24..32].try_into().unwrap()),
-        heading_end as u64
-    );
-    assert_eq!(
-        u64::from_le_bytes(green[32..40].try_into().unwrap()),
-        inline_start as u64
-    );
-    assert_eq!(
-        u64::from_le_bytes(green[40..48].try_into().unwrap()),
-        inline_end as u64
-    );
-    assert_eq!(u64::from_le_bytes(green[48..56].try_into().unwrap()), 0x503);
-    assert_eq!(u32::from_le_bytes(green[56..60].try_into().unwrap()), 5);
-    assert_eq!(u32::from_le_bytes(green[60..64].try_into().unwrap()), 8);
-    assert_eq!(
-        u64::from_le_bytes(projection[32..40].try_into().unwrap()),
-        inline_start as u64
-    );
-    assert_eq!(
-        u64::from_le_bytes(projection[40..48].try_into().unwrap()),
-        inline_end as u64
-    );
+    assert_eq!(ancestry.first(), Some(&1));
+    assert_eq!(ancestry.last(), Some(&12));
 
     let command = |generation: u32, byte_offset: usize| InlineRefinementCommand {
         binding,
@@ -5720,7 +5673,6 @@ fn atx_heading_reaches_independent_host_and_refines_only_its_content() {
 #[test]
 fn setext_h1_h2_reach_independent_host_with_content_only_inline_fences() {
     const SOURCE: &str = "**H1 β😀**\r\n  ===  \r\n\n_H2_\n---\n";
-    const VIEWPORT_HEADER_BYTES: usize = 20;
     let profile = SourceFactsScanProfile::new(8).expect("test profile");
     let parser_profile = ParserProfileId::new(1).expect("parser profile");
     let binding = SessionBinding {
@@ -5767,126 +5719,27 @@ fn setext_h1_h2_reach_independent_host_with_content_only_inline_fences() {
     let h2_line_ending_start = h2_marker_end;
     let h2_end = h2_line_ending_start + 1;
     let headings = [
-        (
-            h1_start,
-            h1_end,
-            h1_start,
-            h1_inline_end,
-            h1_marker_start,
-            h1_marker_end,
-            h1_line_ending_start,
-            h1_end,
-            0x201_u64,
-        ),
-        (
-            h2_start,
-            h2_end,
-            h2_start,
-            h2_inline_end,
-            h2_marker_start,
-            h2_marker_end,
-            h2_line_ending_start,
-            h2_end,
-            2_u64,
-        ),
+        (h1_start, h1_end, h1_start, h1_inline_end),
+        (h2_start, h2_end, h2_start, h2_inline_end),
     ];
-    for (
-        source_start,
-        source_end,
-        inline_start,
-        inline_end,
-        marker_start,
-        marker_end,
-        line_ending_start,
-        line_ending_end,
-        metadata,
-    ) in headings
-    {
-        let mut output = [0_u8; HOST_M11_VIEWPORT_BYTES];
+    for (_source_start, _source_end, inline_start, inline_end) in headings {
         let point = inline_start + 1;
-        let outcome = host
-            .query_structural(
-                HostPointQuery {
-                    source_version,
-                    position: HostSourceMetric {
-                        bytes: u32::try_from(point).expect("Setext point byte"),
-                        utf16: u32::try_from(SOURCE[..point].encode_utf16().count())
-                            .expect("Setext point UTF-16"),
-                    },
-                    affinity: HostMetricAffinity::Downstream,
-                    budget: HostQueryBudget {
-                        maximum_encoded_bytes: HOST_M11_VIEWPORT_BYTES as u32,
-                        maximum_open_depth: 64,
-                        maximum_leaf_count: 64,
-                        maximum_tree_nodes_visited: 256,
-                    },
-                },
-                &mut output,
-            )
-            .expect("independent Setext query");
-        let HostStructuralQueryOutcome::Viewport { range, receipt, .. } = outcome else {
-            panic!("Setext Heading must author an independent viewport: {outcome:?}");
-        };
-        assert_eq!(receipt.encoded_bytes, HOST_M11_VIEWPORT_BYTES as u32);
-        assert_eq!(range.start.bytes as usize, source_start);
+        let point_utf16 = SOURCE[..point].encode_utf16().count();
+        let (owner_kind, range, ancestry) =
+            recursive_green_query_shape(&host, source_version, point, point_utf16);
+        assert_eq!(owner_kind, 12, "the active row is a Green Heading");
+        assert_eq!(range[0] as usize, inline_start);
+        assert_eq!(range[1] as usize, inline_end);
         assert_eq!(
-            range.start.utf16 as usize,
-            SOURCE[..source_start].encode_utf16().count()
-        );
-        assert_eq!(range.end.bytes as usize, source_end);
-        assert_eq!(
-            range.end.utf16 as usize,
-            SOURCE[..source_end].encode_utf16().count()
-        );
-        let green = &output[VIEWPORT_HEADER_BYTES..VIEWPORT_HEADER_BYTES + 80];
-        let projection = &output[VIEWPORT_HEADER_BYTES + 80..];
-        assert_eq!(green[12], 5);
-        assert_eq!(projection[12], 5);
-        assert_eq!(
-            u64::from_le_bytes(green[16..24].try_into().unwrap()),
-            source_start as u64
+            range[2] as usize,
+            SOURCE[..inline_start].encode_utf16().count()
         );
         assert_eq!(
-            u64::from_le_bytes(green[24..32].try_into().unwrap()),
-            source_end as u64
+            range[3] as usize,
+            SOURCE[..inline_end].encode_utf16().count()
         );
-        assert_eq!(
-            u64::from_le_bytes(green[32..40].try_into().unwrap()),
-            inline_start as u64
-        );
-        assert_eq!(
-            u64::from_le_bytes(green[40..48].try_into().unwrap()),
-            inline_end as u64
-        );
-        assert_eq!(
-            u64::from_le_bytes(green[48..56].try_into().unwrap()),
-            metadata
-        );
-        assert_eq!(
-            u32::from_le_bytes(green[56..60].try_into().unwrap()) as usize,
-            marker_start
-        );
-        assert_eq!(
-            u32::from_le_bytes(green[60..64].try_into().unwrap()) as usize,
-            marker_end
-        );
-        assert_eq!(
-            u32::from_le_bytes(green[64..68].try_into().unwrap()) as usize,
-            line_ending_start
-        );
-        assert_eq!(
-            u32::from_le_bytes(green[68..72].try_into().unwrap()) as usize,
-            line_ending_end
-        );
-        assert_eq!(u64::from_le_bytes(green[72..80].try_into().unwrap()), 0);
-        assert_eq!(
-            u64::from_le_bytes(projection[32..40].try_into().unwrap()),
-            inline_start as u64
-        );
-        assert_eq!(
-            u64::from_le_bytes(projection[40..48].try_into().unwrap()),
-            inline_end as u64
-        );
+        assert_eq!(ancestry.first(), Some(&1));
+        assert_eq!(ancestry.last(), Some(&12));
     }
 
     let command = |generation: u32, byte_offset: usize| InlineRefinementCommand {
@@ -5943,7 +5796,6 @@ fn setext_h1_h2_reach_independent_host_with_content_only_inline_fences() {
 #[test]
 fn thematic_break_reaches_independent_host_with_empty_projection_and_not_inline_sidecar() {
     const SOURCE: &str = "p\n\n  - - -  \r\n\nq";
-    const VIEWPORT_HEADER_BYTES: usize = 20;
     let profile = SourceFactsScanProfile::new(8).expect("test profile");
     let parser_profile = ParserProfileId::new(1).expect("parser profile");
     let binding = SessionBinding {
@@ -5984,96 +5836,22 @@ fn thematic_break_reaches_independent_host_with_empty_projection_and_not_inline_
         .find("\r\n")
         .map(|offset| marker_end + offset)
         .expect("thematic line ending");
-    let thematic_end = line_ending_start + 2;
-    let mut output = [0_u8; HOST_M11_VIEWPORT_BYTES];
-    let outcome = host
-        .query_structural(
-            HostPointQuery {
-                source_version,
-                position: HostSourceMetric {
-                    bytes: u32::try_from(marker_start).expect("thematic query byte"),
-                    utf16: u32::try_from(SOURCE[..marker_start].encode_utf16().count())
-                        .expect("thematic query UTF-16"),
-                },
-                affinity: HostMetricAffinity::Downstream,
-                budget: HostQueryBudget {
-                    maximum_encoded_bytes: HOST_M11_VIEWPORT_BYTES as u32,
-                    maximum_open_depth: 64,
-                    maximum_leaf_count: 64,
-                    maximum_tree_nodes_visited: 256,
-                },
-            },
-            &mut output,
-        )
-        .expect("independent thematic-break query");
-    let HostStructuralQueryOutcome::Viewport { range, receipt, .. } = outcome else {
-        panic!("thematic break must author an independent viewport: {outcome:?}");
-    };
-    assert_eq!(receipt.encoded_bytes, HOST_M11_VIEWPORT_BYTES as u32);
-    assert_eq!(range.start.bytes as usize, thematic_start);
+    let marker_utf16 = SOURCE[..marker_start].encode_utf16().count();
+    let (owner_kind, range, ancestry) =
+        recursive_green_query_shape(&host, source_version, marker_start, marker_utf16);
+    assert_eq!(owner_kind, 13, "the active row is a Green thematic break");
+    assert_eq!(range[0] as usize, thematic_start);
+    assert_eq!(range[1] as usize, line_ending_start);
     assert_eq!(
-        range.start.utf16 as usize,
+        range[2] as usize,
         SOURCE[..thematic_start].encode_utf16().count()
     );
-    assert_eq!(range.end.bytes as usize, thematic_end);
     assert_eq!(
-        range.end.utf16 as usize,
-        SOURCE[..thematic_end].encode_utf16().count()
+        range[3] as usize,
+        SOURCE[..line_ending_start].encode_utf16().count()
     );
-
-    let green = &output[VIEWPORT_HEADER_BYTES..VIEWPORT_HEADER_BYTES + 80];
-    let projection = &output[VIEWPORT_HEADER_BYTES + 80..];
-    assert_eq!(green[12], 6);
-    assert_eq!(projection[12], 6);
-    for record in [green, projection] {
-        assert_eq!(
-            u64::from_le_bytes(record[16..24].try_into().unwrap()),
-            thematic_start as u64
-        );
-        assert_eq!(
-            u64::from_le_bytes(record[24..32].try_into().unwrap()),
-            thematic_end as u64
-        );
-    }
-    assert_eq!(
-        u64::from_le_bytes(green[32..40].try_into().unwrap()),
-        thematic_start as u64
-    );
-    assert_eq!(
-        u64::from_le_bytes(green[40..48].try_into().unwrap()),
-        thematic_start as u64
-    );
-    assert_eq!(u64::from_le_bytes(green[48..56].try_into().unwrap()), 0x22d);
-    assert_eq!(
-        u32::from_le_bytes(green[56..60].try_into().unwrap()) as usize,
-        marker_start
-    );
-    assert_eq!(
-        u32::from_le_bytes(green[60..64].try_into().unwrap()) as usize,
-        marker_end
-    );
-    assert_eq!(
-        u32::from_le_bytes(green[64..68].try_into().unwrap()) as usize,
-        line_ending_start
-    );
-    assert_eq!(
-        u32::from_le_bytes(green[68..72].try_into().unwrap()) as usize,
-        thematic_end
-    );
-    assert_eq!(u64::from_le_bytes(green[72..80].try_into().unwrap()), 3);
-    assert_eq!(
-        u64::from_le_bytes(projection[32..40].try_into().unwrap()),
-        thematic_start as u64
-    );
-    assert_eq!(
-        u64::from_le_bytes(projection[40..48].try_into().unwrap()),
-        thematic_start as u64
-    );
-    assert_eq!(
-        u64::from_le_bytes(projection[48..56].try_into().unwrap()),
-        0,
-        "a thematic break has no inline projection runs"
-    );
+    assert_eq!(ancestry.first(), Some(&1));
+    assert_eq!(ancestry.last(), Some(&13));
 
     endpoint
         .request_hot_inline(
@@ -6095,7 +5873,7 @@ fn thematic_break_reaches_independent_host_with_empty_projection_and_not_inline_
         deliver_hot_inline_sidecar_with_unit_fuel(&mut endpoint, &mut runtime, 60_000);
     assert_eq!(begin.base_ack, delivery.ack);
     assert_eq!(begin.binding.physical_start_utf8 as usize, thematic_start);
-    assert_eq!(begin.binding.physical_end_utf8 as usize, thematic_end);
+    assert_eq!(begin.binding.physical_end_utf8 as usize, line_ending_start);
     assert!(matches!(
         begin.envelope.disposition,
         HotInlineSidecarDisposition::Unsupported {
