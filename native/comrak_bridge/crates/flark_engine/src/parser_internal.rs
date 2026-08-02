@@ -771,6 +771,87 @@ impl M11CandidateBuild {
         })
     }
 
+    /// Starts a cold recursive-Green candidate by retaining the parser
+    /// session's already-committed References journal instead of rebuilding an
+    /// equivalent second canonical reference tree.
+    ///
+    /// SourceFacts, recursive Green, and References are authenticated and
+    /// retained in one failure-atomic candidate journal. The caller continues
+    /// to own both `recursive_green` and `references`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_persistent_source_facts_recursive_green_and_reference_journal(
+        runtime: &mut DocumentRuntime,
+        document: [u8; 16],
+        publication: [u8; 16],
+        source: SourceVersion,
+        parse_generation: u64,
+        syntax_profile: u32,
+        source_facts_profile: SourceFactsScanProfile,
+        records: M11RoleRecords,
+        recursive_green: &M11RecursiveGreenRoot,
+        references: &M11ReferenceJournalRoot,
+    ) -> Result<Self, M11PublicationError> {
+        let parse_generation = CandidateGeneration::from_wire(parse_generation).ok_or(
+            M11PublicationError(ErrorInner::Invalid("parse generation must be nonzero")),
+        )?;
+        let parser_profile = ParserProfileId::new(u64::from(syntax_profile)).ok_or(
+            M11PublicationError(ErrorInner::Invalid("syntax profile must be nonzero")),
+        )?;
+        let authority = CandidateAuthority::new(
+            StrongIdentity::new(document)?,
+            StrongIdentity::new(publication)?,
+            source,
+            parse_generation,
+            syntax_profile,
+        )?;
+        let arena_limits = runtime.producer_arena().limits();
+        if arena_limits.max_slots != M11_CANDIDATE_ARENA_MAX_SLOTS
+            || arena_limits.max_live_payload_bytes != M11_CANDIDATE_ARENA_MAX_LIVE_PAYLOAD_BYTES
+            || arena_limits.max_children_per_node != M11_MAX_ROLE_RECORDS
+        {
+            return Err(M11PublicationError(ErrorInner::Invalid(
+                "document runtime does not use the M1.1 producer arena envelope",
+            )));
+        }
+        let limits = ReferenceRootLimits {
+            arena: arena_limits,
+            ..ReferenceRootLimits::default()
+        };
+        let runtime_identity = runtime.producer_identity();
+        let (arena, persistent) = runtime.producer_arena_and_persistent_source_facts();
+        let persistent = persistent.ok_or(M11PublicationError(ErrorInner::Invalid(
+            "document runtime has no current persistent SourceFacts authority",
+        )))?;
+        let assembler = CandidateManifestAssembler::
+            new_with_persistent_source_facts_recursive_green_and_reference_journal(
+                arena,
+                persistent,
+                recursive_green,
+                references,
+                runtime_identity,
+                authority,
+                source,
+                parser_profile,
+                source_facts_profile,
+                limits,
+                records.0,
+            )?;
+        let inspection = assembler
+            .persistent_source_facts_setup()
+            .expect("persistent constructor records its bounded setup");
+        Ok(Self {
+            runtime_identity,
+            assembler: Some(assembler),
+            publication: None,
+            persistent_source_facts_setup: Some(M11PersistentSourceFactsSetupReceipt {
+                node_headers_decoded: inspection.node_headers_decoded,
+                summary_combinations: inspection.summary_combinations,
+                payload_bytes_inspected: inspection.spec.payload_bytes_inspected,
+                semantic_items_hashed: inspection.spec.spec_items_hashed,
+            }),
+        })
+    }
+
     /// Starts an exact target whose Green role retains one recursive tree
     /// while References retain the canonical content of `base`.
     ///
@@ -4691,6 +4772,42 @@ mod persistent_projection_adoption_tests {
         }
     }
 
+    fn build_reference_journal_root(
+        runtime: &mut DocumentRuntime,
+        source: SourceVersion,
+    ) -> M11ReferenceJournalRoot {
+        let mut journal = M11ReferenceJournal::new(runtime, source, 1).expect("reference journal");
+        journal
+            .offer_occurrence(
+                runtime,
+                M11ReferenceJournalOccurrence::new(
+                    M11ReferenceJournalRange::new(0..5, 0..5),
+                    M11ReferenceJournalRange::new(0..1, 0..1),
+                    M11ReferenceJournalRange::new(2..4, 2..4),
+                    None,
+                    &b"a"[..],
+                    &b"ph"[..],
+                    None,
+                ),
+            )
+            .expect("journal reference");
+        loop {
+            let poll = journal.poll(runtime, 64).expect("poll journal input");
+            if poll.status() == M11ReferenceJournalStatus::NeedsInput {
+                break;
+            }
+            assert_eq!(poll.status(), M11ReferenceJournalStatus::Pending);
+        }
+        journal.finish_input(runtime).expect("finish journal input");
+        loop {
+            let poll = journal.poll(runtime, 64).expect("finish journal");
+            if poll.status() == M11ReferenceJournalStatus::Complete {
+                return journal.take_root().expect("reference journal root");
+            }
+            assert_eq!(poll.status(), M11ReferenceJournalStatus::Pending);
+        }
+    }
+
     fn retain_publication(
         runtime: &DocumentRuntime,
         publication: M11CandidatePublication,
@@ -6030,6 +6147,100 @@ mod persistent_projection_adoption_tests {
         {}
         host.begin_close().expect("close host");
         while !host.poll_close(256).expect("poll host close") {}
+        runtime.begin_close().expect("close runtime");
+        while !runtime
+            .poll_close(256)
+            .expect("poll runtime close")
+            .complete
+        {}
+        assert_eq!(runtime.arena_metrics().resident_nodes, 0);
+    }
+
+    #[test]
+    fn cold_recursive_green_candidate_retains_the_session_reference_journal() {
+        let mut runtime = runtime_with_source("alpha\nbeta");
+        let source = runtime.current_source_version().expect("current source");
+        let parser_profile = ParserProfileId::new(1).expect("parser profile");
+        let scan_profile = SourceFactsScanProfile::new(32).expect("scan profile");
+        install_source_facts(&mut runtime, scan_profile, parser_profile);
+        let mut green = build_recursive_green_root(&mut runtime);
+        let mut references = build_reference_journal_root(&mut runtime, source);
+
+        let mut build =
+            M11CandidateBuild::new_with_persistent_source_facts_recursive_green_and_reference_journal(
+                &mut runtime,
+                [0xb1; 16],
+                [0xb2; 16],
+                source,
+                1,
+                1,
+                scan_profile,
+                M11RoleRecords::persistent_recursive_green_projection_records([
+                    Box::<[u8]>::from(&b"projection"[..]),
+                ])
+                .expect("Projection records"),
+                &green,
+                &references,
+            )
+            .expect("cold recursive Green candidate");
+        assert!(
+            !build.references_idle(),
+            "retained References must not open a second reference builder"
+        );
+
+        green
+            .begin_release(&mut runtime)
+            .expect("release original Green root");
+        while !green
+            .poll_release(&mut runtime, 64)
+            .expect("poll original Green release")
+            .complete()
+        {}
+        references
+            .begin_release(&mut runtime)
+            .expect("release original References root");
+        while !references
+            .poll_release(&mut runtime, 64)
+            .expect("poll original References release")
+            .complete()
+        {}
+
+        while matches!(
+            build
+                .poll(&mut runtime, 256)
+                .expect("publish cold recursive Green candidate"),
+            M11CandidateBuildPoll::Pending { .. }
+        ) {}
+        let publication = build.into_publication().expect("candidate publication");
+        let published = publication.publication().expect("published manifest");
+        let descriptor = decode_manifest(
+            runtime.producer_arena(),
+            published.root_id(),
+            published.authority(),
+        )
+        .expect("validated candidate manifest");
+        assert_eq!(
+            descriptor.metadata[role_index(CandidateRole::References)].record_count,
+            1
+        );
+        assert_eq!(
+            descriptor.metadata[role_index(CandidateRole::Green)].schema,
+            PERSISTENT_RECURSIVE_GREEN_ROLE_SCHEMA
+        );
+        let canonical_references = runtime
+            .producer_arena()
+            .child_at(
+                descriptor.children[role_index(CandidateRole::References)],
+                0,
+            )
+            .expect("canonical References root");
+        runtime
+            .producer_arena()
+            .payload(canonical_references)
+            .expect("candidate retains References after session-root release");
+
+        let mut retained = retain_publication(&runtime, publication);
+        close_retained(&mut runtime, &mut retained);
         runtime.begin_close().expect("close runtime");
         while !runtime
             .poll_close(256)

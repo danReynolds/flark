@@ -12,10 +12,11 @@ use crate::source::{SourceBoundaryAffinity, SourceVersion};
 
 use super::build::M11RecursiveGreenRoot;
 use super::codec::{
-    M11RecursiveGreenCoveragePart, M11RecursiveGreenError, M11RecursiveGreenFrameId,
-    M11RecursiveGreenKind, M11RecursiveGreenLogicalAtom, M11RecursiveGreenSourceMetric,
-    PackedGreenEvent, RecursiveGreenSpec, RecursiveGreenSummary, decode_leaf, decode_packed_event,
-    is_renderable_row_kind,
+    decode_leaf, decode_packed_event, is_renderable_row_kind,
+    M11RecursiveGreenCachedRowEditCapability, M11RecursiveGreenCoveragePart,
+    M11RecursiveGreenError, M11RecursiveGreenFrameId, M11RecursiveGreenKind,
+    M11RecursiveGreenLogicalAtom, M11RecursiveGreenSourceMetric, PackedGreenEvent,
+    RecursiveGreenSpec, RecursiveGreenSummary,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -673,15 +674,16 @@ struct ResolvedFrame {
 }
 
 impl M11RecursiveGreenRoot {
-    /// Returns a bounded source-ordered window of parser-authored renderable
-    /// rows and their exact recursive container paths.
-    pub fn locate_renderable_rows(
+    /// Returns either an exact row window or the precise caller budget that
+    /// prevented one. Budget exhaustion remains distinct from malformed Green
+    /// state for integrations that can surface a typed source gap.
+    pub fn locate_renderable_rows_bounded(
         &self,
         runtime: &DocumentRuntime,
         point: M11RecursiveGreenPoint,
         requested_end_byte: u64,
         limits: M11RecursiveGreenRowQueryLimits,
-    ) -> Result<M11RecursiveGreenRowWindow, M11RecursiveGreenError> {
+    ) -> Result<M11RecursiveGreenRowQueryOutcome, M11RecursiveGreenError> {
         self.ensure_runtime(runtime)?;
         if point.byte_offset > self.source().byte_len()
             || point.utf16_offset > self.source().utf16_len()
@@ -694,14 +696,26 @@ impl M11RecursiveGreenRoot {
             .tree
             .as_ref()
             .ok_or(M11RecursiveGreenError::InvalidState)?;
-        match locate_renderable_rows_in_arena(
+        locate_renderable_rows_in_arena(
             runtime.producer_arena(),
             tree.as_ref(),
             self.summary,
             point,
             requested_end_byte,
             limits,
-        )? {
+        )
+    }
+
+    /// Returns a bounded source-ordered window of parser-authored renderable
+    /// rows and their exact recursive container paths.
+    pub fn locate_renderable_rows(
+        &self,
+        runtime: &DocumentRuntime,
+        point: M11RecursiveGreenPoint,
+        requested_end_byte: u64,
+        limits: M11RecursiveGreenRowQueryLimits,
+    ) -> Result<M11RecursiveGreenRowWindow, M11RecursiveGreenError> {
+        match self.locate_renderable_rows_bounded(runtime, point, requested_end_byte, limits)? {
             M11RecursiveGreenRowQueryOutcome::Window(window) => Ok(window),
             M11RecursiveGreenRowQueryOutcome::BudgetExceeded(_) => {
                 Err(M11RecursiveGreenError::ZeroFuel)
@@ -1466,6 +1480,18 @@ pub(super) fn locate_renderable_rows_in_arena(
             "renderable Green query lost its root measure",
         ))?
         .leaves();
+    // The point lookup has already authenticated the complete open path. If
+    // the requested point is inside a renderable row, retain that exact open
+    // for the first row instead of rank-selecting the same row again.
+    let mut start_row_open = None;
+    for candidate in start_location.zipper_open.iter().rev().copied() {
+        let boundary =
+            point_zipper_frame_boundary(arena, tree, root_leaf_count, candidate, &mut work)?;
+        if is_renderable_row_kind(boundary.final_kind) {
+            start_row_open = Some(candidate);
+            break;
+        }
+    }
     let mut rows = Vec::new();
     rows.try_reserve_exact(
         usize::try_from(limits.maximum_rows)
@@ -1476,9 +1502,18 @@ pub(super) fn locate_renderable_rows_in_arena(
     let mut complete = false;
     let mut maximum_open_depth = 0_usize;
     while ordinal < total_rows && rows.len() < limits.maximum_rows as usize {
-        let open = point_zipper_open_for_row_ordinal(arena, tree, ordinal, &mut work)?.ok_or(
-            M11RecursiveGreenError::Corrupt("renderable-row rank/select omitted its frame"),
-        )?;
+        let open = if ordinal == start_ordinal {
+            match start_row_open {
+                Some(open) => open,
+                None => point_zipper_open_for_row_ordinal(arena, tree, ordinal, &mut work)?.ok_or(
+                    M11RecursiveGreenError::Corrupt("renderable-row rank/select omitted its frame"),
+                )?,
+            }
+        } else {
+            point_zipper_open_for_row_ordinal(arena, tree, ordinal, &mut work)?.ok_or(
+                M11RecursiveGreenError::Corrupt("renderable-row rank/select omitted its frame"),
+            )?
+        };
         let boundary = point_zipper_frame_boundary(arena, tree, root_leaf_count, open, &mut work)?;
         if !is_renderable_row_kind(boundary.final_kind) {
             return Err(M11RecursiveGreenError::Corrupt(
@@ -1492,20 +1527,33 @@ pub(super) fn locate_renderable_rows_in_arena(
         let editable = point_zipper_row_editable(arena, tree, open, boundary, &mut work)?;
         let mut path = Vec::new();
         if let Some((anchor_byte, anchor_utf16)) = editable.ancestry_point {
-            let point_byte = usize::try_from(anchor_byte)
-                .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
-            let point_utf16 = usize::try_from(anchor_utf16)
-                .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
-            let location = locate_point_in_arena_zipper_prepared(
-                arena,
-                tree,
-                summary,
-                M11RecursiveGreenPoint::new(point_byte, point_utf16, SourceBoundaryAffinity::After),
-                &mut work,
-            )?
-            .ok_or(M11RecursiveGreenError::Corrupt(
-                "renderable row has no editable point ancestry",
-            ))?;
+            let can_reuse_start = ordinal == start_ordinal
+                && start_row_open.is_some_and(|candidate| candidate.frame == open.frame);
+            let queried_location = if can_reuse_start {
+                None
+            } else {
+                let point_byte = usize::try_from(anchor_byte)
+                    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+                let point_utf16 = usize::try_from(anchor_utf16)
+                    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+                Some(
+                    locate_point_in_arena_zipper_prepared(
+                        arena,
+                        tree,
+                        summary,
+                        M11RecursiveGreenPoint::new(
+                            point_byte,
+                            point_utf16,
+                            SourceBoundaryAffinity::After,
+                        ),
+                        &mut work,
+                    )?
+                    .ok_or(M11RecursiveGreenError::Corrupt(
+                        "renderable row has no editable point ancestry",
+                    ))?,
+                )
+            };
+            let location = queried_location.as_ref().unwrap_or(&start_location);
             let row_index = location
                 .zipper_open
                 .iter()
@@ -2270,6 +2318,37 @@ struct PointZipperRowEditable {
     ancestry_point: Option<(u64, u64)>,
 }
 
+fn validate_fenced_close_semantic(
+    tag: u16,
+    bytes: &[u8],
+) -> Result<((u64, u64), (u64, u64)), M11RecursiveGreenError> {
+    if tag != 4 || bytes.len() != 49 {
+        return Err(M11RecursiveGreenError::Corrupt(
+            "fenced-code row carried invalid close facts",
+        ));
+    }
+    let read_metric = |offset: usize| {
+        u64::from_le_bytes(
+            bytes[offset..offset + 8]
+                .try_into()
+                .expect("validated fenced-code close-fact width"),
+        )
+    };
+    let info_end = (read_metric(1), read_metric(9));
+    let literal_start = (read_metric(17), read_metric(25));
+    let logical_end = (read_metric(33), read_metric(41));
+    if info_end.0 > literal_start.0
+        || info_end.1 > literal_start.1
+        || literal_start.0 > logical_end.0
+        || literal_start.1 > logical_end.1
+    {
+        return Err(M11RecursiveGreenError::Corrupt(
+            "fenced-code logical projection bounds are reversed",
+        ));
+    }
+    Ok((literal_start, logical_end))
+}
+
 fn point_zipper_row_editable(
     arena: &crate::storage::PageArena,
     tree: MeasuredSequenceRef<'_, RecursiveGreenSpec>,
@@ -2277,35 +2356,90 @@ fn point_zipper_row_editable(
     boundary: PointZipperFrameBoundary,
     work: &mut PointZipperWork,
 ) -> Result<PointZipperRowEditable, M11RecursiveGreenError> {
+    let cached = if let Some(close) = boundary.close.as_ref() {
+        match (boundary.final_kind.get(), close.tag().get()) {
+            (7, 4) if close.as_bytes().len() == 25 => {
+                let cached =
+                    close
+                        .cached_row_editable(1)?
+                        .ok_or(M11RecursiveGreenError::Corrupt(
+                            "fenced-code cached geometry has invalid width",
+                        ))?;
+                if !matches!(cached.0, [0] | [1]) {
+                    return Err(M11RecursiveGreenError::Corrupt(
+                        "fenced-code cached geometry has invalid closed flag",
+                    ));
+                }
+                Some(cached)
+            }
+            (7, 4) if close.as_bytes().len() == 49 => None,
+            (7, _) => {
+                return Err(M11RecursiveGreenError::Corrupt(
+                    "fenced-code row carried invalid close facts",
+                ));
+            }
+            (_, 6) => Some(close.cached_row_editable(0)?.ok_or(
+                M11RecursiveGreenError::Corrupt("row carried invalid cached geometry width"),
+            )?),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    if let Some((_, cached)) = cached {
+        let relative_start = cached.start();
+        let relative_end = cached.end();
+        let frame_bytes = boundary.byte_end.checked_sub(open.byte_start).ok_or(
+            M11RecursiveGreenError::Corrupt("cached row ends before its Enter"),
+        )?;
+        let frame_utf16 = boundary.utf16_end.checked_sub(open.utf16_start).ok_or(
+            M11RecursiveGreenError::Corrupt("cached row UTF-16 ends before its Enter"),
+        )?;
+        if relative_end.bytes() > frame_bytes || relative_end.utf16() > frame_utf16 {
+            return Err(M11RecursiveGreenError::Corrupt(
+                "cached row-editable geometry exceeds its frame",
+            ));
+        }
+        let start = open
+            .byte_start
+            .checked_add(relative_start.bytes())
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        let utf16_start = open
+            .utf16_start
+            .checked_add(relative_start.utf16())
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        let end = open
+            .byte_start
+            .checked_add(relative_end.bytes())
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        let utf16_end = open
+            .utf16_start
+            .checked_add(relative_end.utf16())
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        let ancestry_point =
+            (start != end || utf16_start != utf16_end).then_some((start, utf16_start));
+        return Ok(match cached.capability() {
+            M11RecursiveGreenCachedRowEditCapability::Contiguous => PointZipperRowEditable {
+                capability: M11RecursiveGreenRowEditCapability::Contiguous,
+                bytes: Some(start..end),
+                utf16: Some(utf16_start..utf16_end),
+                ancestry_point,
+            },
+            M11RecursiveGreenCachedRowEditCapability::Unavailable => PointZipperRowEditable {
+                capability: M11RecursiveGreenRowEditCapability::Unavailable,
+                bytes: None,
+                utf16: None,
+                ancestry_point,
+            },
+        });
+    }
     let fenced_literal = if boundary.final_kind.get() == 7 {
         let close = boundary.close.ok_or(M11RecursiveGreenError::Corrupt(
             "fenced-code row omitted its close facts",
         ))?;
         let bytes = close.as_bytes();
-        if close.tag().get() != 4 || bytes.len() != 49 {
-            return Err(M11RecursiveGreenError::Corrupt(
-                "fenced-code row carried invalid close facts",
-            ));
-        }
-        let read_metric = |offset: usize| {
-            u64::from_le_bytes(
-                bytes[offset..offset + 8]
-                    .try_into()
-                    .expect("validated fenced-code close-fact width"),
-            )
-        };
-        let info_end = (read_metric(1), read_metric(9));
-        let literal_start = (read_metric(17), read_metric(25));
-        let logical_end = (read_metric(33), read_metric(41));
-        if info_end.0 > literal_start.0
-            || info_end.1 > literal_start.1
-            || literal_start.0 > logical_end.0
-            || literal_start.1 > logical_end.1
-        {
-            return Err(M11RecursiveGreenError::Corrupt(
-                "fenced-code logical projection bounds are reversed",
-            ));
-        }
+        let (literal_start, logical_end) =
+            validate_fenced_close_semantic(close.tag().get(), bytes)?;
         Some((literal_start, logical_end))
     } else {
         None

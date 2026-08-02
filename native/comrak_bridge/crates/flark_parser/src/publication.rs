@@ -161,6 +161,7 @@ pub enum M11CandidateDerivationError {
     AllocationFailed,
     SegmentedCandidateRequiresOwningPath,
     RecursiveGreenPublicationMismatch,
+    RecursiveGreenReferenceMismatch,
     ReferenceCook(ReferenceCookError),
     PersistentRecursiveGreen(M11PersistentRecursiveGreenSessionError),
     InlinePublication(M11InlinePublicationError),
@@ -235,6 +236,9 @@ impl fmt::Display for M11CandidateDerivationError {
                 .write_str("segmented parser output requires the owning block publication path"),
             Self::RecursiveGreenPublicationMismatch => formatter.write_str(
                 "recursive-Green candidate requires its dedicated persistent-root writer path",
+            ),
+            Self::RecursiveGreenReferenceMismatch => formatter.write_str(
+                "recursive-Green session references do not match the clean parse terminal",
             ),
             Self::ReferenceCook(error) => error.fmt(formatter),
             Self::PersistentRecursiveGreen(error) => error.fmt(formatter),
@@ -344,8 +348,13 @@ pub struct M11ParserCandidate {
     syntax_profile: u32,
     source_facts_profile: SourceFactsScanProfile,
     roles: M11CandidateRolePlan,
-    references: Option<ReferenceCooker>,
-    reuse_references: bool,
+    references: M11CandidateReferencePlan,
+}
+
+enum M11CandidateReferencePlan {
+    Cook(ReferenceCooker),
+    PersistentSession,
+    ExactBase,
 }
 
 enum M11CandidateRolePlan {
@@ -2106,14 +2115,15 @@ pub enum M11PublishedOrderedListItemInlineFenceOutcome {
 }
 
 impl M11ParserCandidate {
-    /// Derives ordinary Projection and References records for a candidate
-    /// whose canonical Green role will retain a session-owned recursive tree.
+    /// Derives the bounded Projection record for a candidate whose canonical
+    /// Green and References roles retain the session-owned parser roots.
     ///
     /// No materialized Green summary is encoded. The resulting candidate can
     /// only be transferred through [`Self::into_writer_with_recursive_green`].
     pub fn derive_with_recursive_green(
         certified: CertifiedSource,
         result: &M11CleanDocumentResult,
+        session: &M11PersistentRecursiveGreenSession,
     ) -> Result<Self, M11CandidateDerivationError> {
         let source = certified.source();
         validate_whole_source_result(source, result)?;
@@ -2127,13 +2137,18 @@ impl M11ParserCandidate {
         }
         let syntax_profile = u32::try_from(certified.parser_profile().get())
             .map_err(|_| M11CandidateDerivationError::ParserProfileOverflow)?;
+        let definition_count = u64::try_from(result_definitions(result).len())
+            .map_err(|_| M11CandidateDerivationError::MetricOverflow)?;
+        if session.source() != source
+            || session.syntax_profile() != syntax_profile
+            || session.reference_occurrence_count() != definition_count
+        {
+            return Err(M11CandidateDerivationError::RecursiveGreenReferenceMismatch);
+        }
         let source_facts_profile = certified.facts().profile();
         let projection = encode_recursive_green_projection(source)?;
-        let definitions = result_definitions(result);
-        let (lease, certified_profile, _facts) = certified.into_parts();
+        let (_lease, certified_profile, _facts) = certified.into_parts();
         debug_assert_eq!(certified_profile.get(), u64::from(syntax_profile));
-        let plans = derive_reference_plans(definitions, &lease)?;
-        let references = ReferenceCooker::new(lease, plans);
         Ok(Self {
             source,
             syntax_profile,
@@ -2141,8 +2156,7 @@ impl M11ParserCandidate {
             roles: M11CandidateRolePlan::RecursiveGreen {
                 projection: vec![projection],
             },
-            references: Some(references),
-            reuse_references: false,
+            references: M11CandidateReferencePlan::PersistentSession,
         })
     }
 
@@ -2155,6 +2169,7 @@ impl M11ParserCandidate {
     pub fn derive_with_recursive_green_from_persistent(
         certified: PersistentCertifiedSource,
         result: &M11CleanDocumentResult,
+        session: &M11PersistentRecursiveGreenSession,
     ) -> Result<Self, M11CandidateDerivationError> {
         let source = certified.source();
         validate_whole_source_result(source, result)?;
@@ -2163,14 +2178,19 @@ impl M11ParserCandidate {
         }
         let syntax_profile = u32::try_from(certified.parser_profile().get())
             .map_err(|_| M11CandidateDerivationError::ParserProfileOverflow)?;
+        let definition_count = u64::try_from(result_definitions(result).len())
+            .map_err(|_| M11CandidateDerivationError::MetricOverflow)?;
+        if session.source() != source
+            || session.syntax_profile() != syntax_profile
+            || session.reference_occurrence_count() != definition_count
+        {
+            return Err(M11CandidateDerivationError::RecursiveGreenReferenceMismatch);
+        }
         let source_facts_profile = certified.source_facts_profile();
         let projection = encode_recursive_green_projection(source)?;
-        let definitions = result_definitions(result);
-        let (lease, certified_profile, certified_source_facts_profile) = certified.into_parts();
+        let (_lease, certified_profile, certified_source_facts_profile) = certified.into_parts();
         debug_assert_eq!(certified_profile.get(), u64::from(syntax_profile));
         debug_assert_eq!(certified_source_facts_profile, source_facts_profile);
-        let plans = derive_reference_plans(definitions, &lease)?;
-        let references = ReferenceCooker::new(lease, plans);
         Ok(Self {
             source,
             syntax_profile,
@@ -2178,8 +2198,7 @@ impl M11ParserCandidate {
             roles: M11CandidateRolePlan::RecursiveGreen {
                 projection: vec![projection],
             },
-            references: Some(references),
-            reuse_references: false,
+            references: M11CandidateReferencePlan::PersistentSession,
         })
     }
 
@@ -2223,8 +2242,7 @@ impl M11ParserCandidate {
             roles: M11CandidateRolePlan::RecursiveGreen {
                 projection: vec![projection],
             },
-            references: None,
-            reuse_references: true,
+            references: M11CandidateReferencePlan::ExactBase,
         })
     }
 
@@ -2270,8 +2288,7 @@ impl M11ParserCandidate {
                 projection,
                 persistent_inline_projection,
             },
-            references: Some(references),
-            reuse_references: false,
+            references: M11CandidateReferencePlan::Cook(references),
         })
     }
 
@@ -2314,8 +2331,7 @@ impl M11ParserCandidate {
                 block_splice: None,
                 leaves_are_replacement: false,
             },
-            references: Some(references),
-            reuse_references: false,
+            references: M11CandidateReferencePlan::Cook(references),
         })
     }
 
@@ -2351,8 +2367,7 @@ impl M11ParserCandidate {
                 block_splice: None,
                 leaves_are_replacement: false,
             },
-            references: Some(references),
-            reuse_references: false,
+            references: M11CandidateReferencePlan::Cook(references),
         })
     }
 
@@ -2400,8 +2415,7 @@ impl M11ParserCandidate {
                 block_splice: Some(block_splice),
                 leaves_are_replacement: false,
             },
-            references: None,
-            reuse_references: true,
+            references: M11CandidateReferencePlan::ExactBase,
         })
     }
 
@@ -2439,8 +2453,7 @@ impl M11ParserCandidate {
                 block_splice,
                 leaves_are_replacement,
             },
-            references: None,
-            reuse_references: true,
+            references: M11CandidateReferencePlan::ExactBase,
         })
     }
 
@@ -2506,8 +2519,14 @@ impl M11ParserCandidate {
             source_facts_profile,
             roles,
             references,
-            reuse_references,
         } = self;
+        let (references, reuse_references) = match references {
+            M11CandidateReferencePlan::Cook(references) => (Some(references), false),
+            M11CandidateReferencePlan::ExactBase => (None, true),
+            M11CandidateReferencePlan::PersistentSession => {
+                return Err(M11CandidateDerivationError::RecursiveGreenPublicationMismatch);
+            }
+        };
         if reuse_references && !matches!(&roles, M11CandidateRolePlan::Segmented { .. }) {
             return Err(M11CandidateDerivationError::ExactBaseReferencesRequired);
         }
@@ -2641,9 +2660,8 @@ impl M11ParserCandidate {
             source_facts_profile,
             roles,
             references,
-            reuse_references,
         } = self;
-        if reuse_references
+        if !matches!(references, M11CandidateReferencePlan::PersistentSession)
             || session.source() != source
             || session.syntax_profile() != syntax_profile
         {
@@ -2654,7 +2672,9 @@ impl M11ParserCandidate {
         };
         let records = M11RoleRecords::persistent_recursive_green_projection_records(projection)?;
         let recursive_green = session.current_green_root(runtime)?;
-        let build = M11CandidateBuild::new_with_persistent_source_facts_and_recursive_green(
+        let reference_journal = session.current_reference_root(runtime)?;
+        let build = M11CandidateBuild::
+            new_with_persistent_source_facts_recursive_green_and_reference_journal(
             runtime,
             document,
             publication,
@@ -2664,13 +2684,14 @@ impl M11ParserCandidate {
             source_facts_profile,
             records,
             recursive_green,
+            reference_journal,
         )?;
         Ok(M11ParserCandidateWriter {
             build: Some(build),
             segmented: None,
-            references,
+            references: None,
             reuse_references: false,
-            references_finished: false,
+            references_finished: true,
             block_splice_selection: None,
             block_splice_receipt: None,
             aborting: false,
@@ -2701,9 +2722,8 @@ impl M11ParserCandidate {
             source_facts_profile,
             roles,
             references,
-            reuse_references,
         } = self;
-        if !reuse_references || references.is_some() {
+        if !matches!(references, M11CandidateReferencePlan::ExactBase) {
             return Err(M11CandidateDerivationError::ExactBaseReferencesRequired);
         }
         let M11CandidateRolePlan::RecursiveGreen { projection } = roles else {
@@ -2777,11 +2797,10 @@ impl M11ParserCandidate {
             source_facts_profile,
             roles,
             references,
-            reuse_references,
         } = self;
-        if reuse_references {
+        let M11CandidateReferencePlan::Cook(references) = references else {
             return Err(M11CandidateDerivationError::ExactBaseReferencesRequired);
-        }
+        };
         let M11CandidateRolePlan::Flat {
             green,
             projection,
@@ -2808,7 +2827,7 @@ impl M11ParserCandidate {
         Ok(M11ParserCandidateWriter {
             build: Some(build),
             segmented: None,
-            references,
+            references: Some(references),
             reuse_references: false,
             references_finished: false,
             block_splice_selection: None,

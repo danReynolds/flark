@@ -6405,13 +6405,13 @@ impl CandidateEndpoint {
                             );
                             let writer = match publication_path {
                                 CleanPublicationPath::RecursiveGreenInitial => {
-                                    let candidate =
-                                        M11ParserCandidate::derive_with_recursive_green(
-                                            certified, &result,
-                                        )?;
                                     let session = self
                                         .recursive_green
                                         .initial_clean_ready_session(source, syntax_profile)?;
+                                    let candidate =
+                                        M11ParserCandidate::derive_with_recursive_green(
+                                            certified, &result, session,
+                                        )?;
                                     candidate.into_writer_with_recursive_green(
                                         runtime,
                                         document_bytes(context.binding.document_session),
@@ -6920,10 +6920,19 @@ impl CandidateEndpoint {
                                                 });
                                             return Err(error.into());
                                         }
-                                    };
+                                };
                                 drop(consumed_witness);
+                                let session = self
+                                    .recursive_green
+                                    .incremental_clean_ready_session(
+                                        target_source,
+                                        syntax_profile,
+                                    )
+                                    .ok_or(CandidateEndpointError::InvalidState)?;
                                 let candidate = match M11ParserCandidate::
-                                    derive_with_recursive_green_from_persistent(certified, &result)
+                                    derive_with_recursive_green_from_persistent(
+                                        certified, &result, session,
+                                    )
                                 {
                                     Ok(candidate) => candidate,
                                     Err(error) => {
@@ -6941,10 +6950,6 @@ impl CandidateEndpoint {
                                     context.completion,
                                     context.parse_generation,
                                 );
-                                let session = self
-                                    .recursive_green
-                                    .incremental_clean_ready_session(target_source, syntax_profile)
-                                    .ok_or(CandidateEndpointError::InvalidState)?;
                                 let writer = match candidate.into_writer_with_recursive_green(
                                     runtime,
                                     document_bytes(context.binding.document_session),

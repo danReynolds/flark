@@ -23,6 +23,9 @@ const MAX_PACKED_EVENT_BYTES: usize = 14 + 3 + M11_RECURSIVE_GREEN_CLOSE_FACTS_M
 pub(super) const GREEN_EVENTS_PER_PAGE_MAX: usize = 128;
 pub const M11_RECURSIVE_GREEN_PROPERTY_CHUNK_MAX_BYTES: usize = 32;
 pub const M11_RECURSIVE_GREEN_CLOSE_FACTS_MAX_BYTES: usize = 64;
+const M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_MAGIC: [u8; 4] = *b"RGEO";
+const M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_VERSION: u8 = 1;
+const M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_BYTES: usize = 24;
 
 #[derive(Debug)]
 pub enum M11RecursiveGreenError {
@@ -259,6 +262,163 @@ impl M11RecursiveGreenCloseFacts {
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes[..usize::from(self.len)]
+    }
+
+    /// Appends versioned, frame-relative editable geometry to grammar-owned
+    /// close facts. The trailer is covered by the canonical Green commitment,
+    /// while remaining relative to the frame Enter so unchanged suffix rows
+    /// can move without rewriting their facts.
+    pub fn new_with_cached_row_editable(
+        tag: M11RecursiveGreenFactTag,
+        semantic: &[u8],
+        cached: M11RecursiveGreenCachedRowEditable,
+    ) -> Result<Self, M11RecursiveGreenError> {
+        let total = semantic
+            .len()
+            .checked_add(M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_BYTES)
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        if total > M11_RECURSIVE_GREEN_CLOSE_FACTS_MAX_BYTES {
+            return Err(M11RecursiveGreenError::InvalidEvent);
+        }
+        let mut bytes = [0_u8; M11_RECURSIVE_GREEN_CLOSE_FACTS_MAX_BYTES];
+        bytes[..semantic.len()].copy_from_slice(semantic);
+        let mut cursor = semantic.len();
+        bytes[cursor..cursor + 4].copy_from_slice(&M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_MAGIC);
+        cursor += 4;
+        bytes[cursor] = M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_VERSION;
+        cursor += 1;
+        bytes[cursor] = match cached.capability {
+            M11RecursiveGreenCachedRowEditCapability::Contiguous => 1,
+            M11RecursiveGreenCachedRowEditCapability::Unavailable => 2,
+        };
+        cursor += 3; // capability plus two reserved zero bytes
+        for metric in [cached.start, cached.end] {
+            let source_bytes =
+                u32::try_from(metric.bytes()).map_err(|_| M11RecursiveGreenError::InvalidEvent)?;
+            let source_utf16 =
+                u32::try_from(metric.utf16()).map_err(|_| M11RecursiveGreenError::InvalidEvent)?;
+            bytes[cursor..cursor + 4].copy_from_slice(&source_bytes.to_le_bytes());
+            cursor += 4;
+            bytes[cursor..cursor + 4].copy_from_slice(&source_utf16.to_le_bytes());
+            cursor += 4;
+        }
+        debug_assert_eq!(cursor, total);
+        Self::new(tag, &bytes[..total])
+    }
+
+    /// Splits the optional cached row trailer from the grammar-owned prefix.
+    /// Older roots without the trailer remain valid and return `None`.
+    pub fn cached_row_editable(
+        &self,
+        semantic_bytes: usize,
+    ) -> Result<Option<(&[u8], M11RecursiveGreenCachedRowEditable)>, M11RecursiveGreenError> {
+        let bytes = self.as_bytes();
+        let expected = semantic_bytes
+            .checked_add(M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_BYTES)
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        if bytes.len() != expected {
+            return Ok(None);
+        }
+        let semantic_end = semantic_bytes;
+        let trailer = &bytes[semantic_end..];
+        if trailer[..4] != M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_MAGIC {
+            return Ok(None);
+        }
+        if trailer[4] != M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_VERSION
+            || trailer[6] != 0
+            || trailer[7] != 0
+        {
+            return Err(M11RecursiveGreenError::Corrupt(
+                "invalid cached row-editable trailer header",
+            ));
+        }
+        let capability = match trailer[5] {
+            1 => M11RecursiveGreenCachedRowEditCapability::Contiguous,
+            2 => M11RecursiveGreenCachedRowEditCapability::Unavailable,
+            _ => {
+                return Err(M11RecursiveGreenError::Corrupt(
+                    "invalid cached row-editable capability",
+                ));
+            }
+        };
+        let read_metric = |offset: usize| {
+            let bytes = u64::from(u32::from_le_bytes(
+                trailer[offset..offset + 4]
+                    .try_into()
+                    .expect("validated cached row trailer width"),
+            ));
+            let utf16 = u64::from(u32::from_le_bytes(
+                trailer[offset + 4..offset + 8]
+                    .try_into()
+                    .expect("validated cached row trailer width"),
+            ));
+            M11RecursiveGreenSourceMetric::new(bytes, utf16).ok_or(M11RecursiveGreenError::Corrupt(
+                "invalid cached row-editable metric",
+            ))
+        };
+        let start = read_metric(8)?;
+        let end = read_metric(16)?;
+        if start.bytes() > end.bytes() || start.utf16() > end.utf16() {
+            return Err(M11RecursiveGreenError::Corrupt(
+                "cached row-editable bounds are reversed",
+            ));
+        }
+        Ok(Some((
+            &bytes[..semantic_end],
+            M11RecursiveGreenCachedRowEditable {
+                capability,
+                start,
+                end,
+            },
+        )))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum M11RecursiveGreenCachedRowEditCapability {
+    Contiguous,
+    Unavailable,
+}
+
+/// Parser-certified physical geometry relative to one renderable frame Enter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct M11RecursiveGreenCachedRowEditable {
+    capability: M11RecursiveGreenCachedRowEditCapability,
+    start: M11RecursiveGreenSourceMetric,
+    end: M11RecursiveGreenSourceMetric,
+}
+
+impl M11RecursiveGreenCachedRowEditable {
+    #[must_use]
+    pub const fn new(
+        capability: M11RecursiveGreenCachedRowEditCapability,
+        start: M11RecursiveGreenSourceMetric,
+        end: M11RecursiveGreenSourceMetric,
+    ) -> Option<Self> {
+        if start.bytes() > end.bytes() || start.utf16() > end.utf16() {
+            None
+        } else {
+            Some(Self {
+                capability,
+                start,
+                end,
+            })
+        }
+    }
+
+    #[must_use]
+    pub const fn capability(self) -> M11RecursiveGreenCachedRowEditCapability {
+        self.capability
+    }
+
+    #[must_use]
+    pub const fn start(self) -> M11RecursiveGreenSourceMetric {
+        self.start
+    }
+
+    #[must_use]
+    pub const fn end(self) -> M11RecursiveGreenSourceMetric {
+        self.end
     }
 }
 

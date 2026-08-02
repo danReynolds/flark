@@ -37,6 +37,8 @@ use crate::recursive_green::{
     PersistentM11RecursiveGreenRoleDescriptor, PersistentM11RecursiveGreenRootClaim,
     PERSISTENT_RECURSIVE_GREEN_ROLE_DESCRIPTOR_BYTES,
 };
+#[cfg(feature = "parser-internal")]
+use crate::reference_journal::{M11ReferenceJournalError, M11ReferenceJournalRoot};
 use crate::reference_root::{
     AuthoritativeReferenceFact, AuthoritativeReferenceFactStart, ReferenceBuildPoll,
     ReferenceRootBuilder, ReferenceRootError, ReferenceRootLimits, ReferenceRootView,
@@ -831,6 +833,17 @@ fn map_recursive_green_manifest_error(error: M11RecursiveGreenError) -> Manifest
     }
 }
 
+#[cfg(feature = "parser-internal")]
+fn map_reference_journal_manifest_error(error: M11ReferenceJournalError) -> ManifestError {
+    if error.is_wrong_runtime() || error.is_source_authority_mismatch() {
+        ManifestError::CrossAuthority
+    } else if error.is_resource_limit() {
+        ManifestError::CapacityPreflight
+    } else {
+        ManifestError::Corrupt("persistent References validation failed")
+    }
+}
+
 fn next_record_role(role: CandidateRole) -> Option<CandidateRole> {
     match role {
         CandidateRole::SourceFacts => Some(CandidateRole::Green),
@@ -1328,6 +1341,136 @@ impl CandidateManifestAssembler {
             build: Some(build),
             phase: ManifestPhase::References,
             references: Some(references),
+            persistent_source_facts: Some(retained_source_facts),
+            persistent_source_facts_setup,
+            persistent_blocks: None,
+            persistent_recursive_green: Some(retained_recursive_green),
+            persistent_inline_projection: None,
+            reference_reserve: reserve,
+            records,
+            source_facts_schema: PERSISTENT_SOURCE_FACTS_ROLE_SCHEMA,
+            green_schema: PERSISTENT_RECURSIVE_GREEN_ROLE_SCHEMA,
+            projection_schema: PROJECTION_SCHEMA,
+            roles: std::array::from_fn(|_| None),
+            _not_sync: PhantomData,
+        })
+    }
+
+    /// Starts one cold candidate that retains the parser session's three
+    /// already-committed authorities into a single failure-atomic journal:
+    ///
+    /// - the runtime-owned persistent SourceFacts root for `source`;
+    /// - one persistent recursive Green root for the same source; and
+    /// - the session-owned canonical References journal root.
+    ///
+    /// Fresh candidate wrappers bind all retained canonical content to
+    /// `authority`. The parser session continues to own `recursive_green` and
+    /// `references`; this candidate only retains their arena roots.
+    #[cfg(feature = "parser-internal")]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_with_persistent_source_facts_recursive_green_and_reference_journal(
+        arena: &mut PageArena,
+        persistent: &PersistentSourceFactsRoot,
+        recursive_green: &M11RecursiveGreenRoot,
+        references: &M11ReferenceJournalRoot,
+        runtime_identity: StrongIdentity,
+        authority: CandidateAuthority,
+        source: SourceVersion,
+        parser_profile: ParserProfileId,
+        scan_profile: SourceFactsScanProfile,
+        reference_limits: ReferenceRootLimits,
+        records: CanonicalRoleInputs,
+    ) -> Result<Self, ManifestError> {
+        records.validate(reference_limits.arena.max_children_per_node, false)?;
+        if records.source_facts.is_some() || records.green.is_some() || records.projection.is_none()
+        {
+            return Err(ManifestError::InvalidRole);
+        }
+        let source_bytes =
+            u64::try_from(source.byte_len()).map_err(|_| ManifestError::InvalidAuthority)?;
+        let source_utf16 =
+            u64::try_from(source.utf16_len()).map_err(|_| ManifestError::InvalidAuthority)?;
+        if arena.limits() != reference_limits.arena
+            || reference_limits.arena.max_children_per_node < CANDIDATE_ROLE_COUNT
+            || u32::try_from(parser_profile.get()).ok() != Some(authority.syntax_profile)
+        {
+            return Err(ManifestError::InvalidLimits);
+        }
+        if authority.source_root != source.root()
+            || authority.source_revision != source.revision()
+            || authority.source_bytes != source_bytes
+            || authority.source_utf16 != source_utf16
+        {
+            return Err(ManifestError::CrossAuthority);
+        }
+
+        let reserve = reference_reserve(&records)?;
+        let initial_nodes = reserve
+            .nodes
+            .checked_add(1) // candidate anchor; every canonical root is retained
+            .ok_or(ManifestError::CapacityPreflight)?;
+        let initial_payload = reserve
+            .payload_bytes
+            .checked_add(PERSISTENT_SOURCE_FACTS_ROLE_DESCRIPTOR_BYTES)
+            .and_then(|value| value.checked_add(PERSISTENT_RECURSIVE_GREEN_ROLE_DESCRIPTOR_BYTES))
+            .and_then(|value| value.checked_add(CANDIDATE_HEADER_BYTES))
+            .ok_or(ManifestError::CapacityPreflight)?;
+        preflight_remaining(
+            arena,
+            reference_limits.arena,
+            initial_nodes,
+            initial_payload,
+        )?;
+
+        let (build, retained_source_facts, retained_recursive_green, retained_references, metadata) = {
+            let mut session = arena.begin_build()?;
+            let staged = (|| -> Result<_, ManifestError> {
+                let anchor = encode_candidate_header(ANCHOR_TAG, authority);
+                let _ = session.allocate(&anchor, &[])?;
+                let retained_source_facts = persistent
+                    .retain_for_publication(&mut session, source, parser_profile, scan_profile)
+                    .map_err(map_source_facts_manifest_error)?;
+                let retained_recursive_green = recursive_green
+                    .retain_for_publication(&mut session, runtime_identity, source)
+                    .map_err(map_recursive_green_manifest_error)?;
+                let (retained_references, metadata) = references
+                    .retain_for_publication(&mut session, runtime_identity, source)
+                    .map_err(map_reference_journal_manifest_error)?;
+                Ok((
+                    retained_source_facts,
+                    retained_recursive_green,
+                    retained_references,
+                    metadata,
+                ))
+            })();
+            match staged {
+                Ok((source_facts, recursive_green, references, metadata)) => {
+                    let build = session
+                        .suspend()
+                        .expect("journalled cold recursive Green candidate must suspend");
+                    (build, source_facts, recursive_green, references, metadata)
+                }
+                Err(error) => {
+                    let build = session
+                        .suspend()
+                        .expect("failed cold recursive Green journal must suspend for abort");
+                    arena
+                        .abort_build(build)
+                        .expect("same-arena cold recursive Green journal must abort");
+                    return Err(error);
+                }
+            }
+        };
+        let persistent_source_facts_setup = Some(retained_source_facts.inspection());
+        Ok(Self {
+            authority,
+            arena_limits: reference_limits.arena,
+            build: Some(build),
+            phase: ManifestPhase::WrapRetainedReference(RetainedReferenceContent {
+                owner: retained_references,
+                metadata,
+            }),
+            references: None,
             persistent_source_facts: Some(retained_source_facts),
             persistent_source_facts_setup,
             persistent_blocks: None,

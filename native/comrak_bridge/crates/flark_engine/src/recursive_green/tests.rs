@@ -1,11 +1,12 @@
 use super::{
     splice_m11_recursive_green_coverage_atomic, splice_m11_recursive_green_structural_atomic,
-    M11RecursiveGreenBuild, M11RecursiveGreenBuildStatus, M11RecursiveGreenCloseFacts,
-    M11RecursiveGreenClosedChild, M11RecursiveGreenCoveragePart, M11RecursiveGreenError,
-    M11RecursiveGreenEvent, M11RecursiveGreenFactTag, M11RecursiveGreenFrameId,
-    M11RecursiveGreenKind, M11RecursiveGreenLogicalAction, M11RecursiveGreenLogicalAtom,
-    M11RecursiveGreenLogicalPosition, M11RecursiveGreenLogicalRange, M11RecursiveGreenPoint,
-    M11RecursiveGreenRoot, M11RecursiveGreenSourceMetric, M11RecursiveGreenStructuralBoundary,
+    M11RecursiveGreenBuild, M11RecursiveGreenBuildStatus, M11RecursiveGreenCachedRowEditCapability,
+    M11RecursiveGreenCachedRowEditable, M11RecursiveGreenCloseFacts, M11RecursiveGreenClosedChild,
+    M11RecursiveGreenCoveragePart, M11RecursiveGreenError, M11RecursiveGreenEvent,
+    M11RecursiveGreenFactTag, M11RecursiveGreenFrameId, M11RecursiveGreenKind,
+    M11RecursiveGreenLogicalAction, M11RecursiveGreenLogicalAtom, M11RecursiveGreenLogicalPosition,
+    M11RecursiveGreenLogicalRange, M11RecursiveGreenPoint, M11RecursiveGreenRoot,
+    M11RecursiveGreenSourceMetric, M11RecursiveGreenStructuralBoundary,
     M11RecursiveGreenTerminalFragmentBarrierStatus, M11RecursiveGreenTerminalFragmentCursorStatus,
     M11RecursiveGreenTerminalFragmentDisposition, M11RecursiveGreenTerminalFragmentRewrite,
     M11RecursiveGreenTerminalFragmentRewritePoll,
@@ -126,9 +127,7 @@ fn structural_rebase_fixture(
                 child: M11RecursiveGreenClosedChild::default(),
             },
         );
-        let boundary = build
-            .capture_structural_boundary()
-            .expect("child boundary");
+        let boundary = build.capture_structural_boundary().expect("child boundary");
         match id {
             2 => start = Some(boundary),
             3 => end = Some(boundary),
@@ -1149,6 +1148,50 @@ fn close_facts_round_trip_full_capacity_without_narrowing_offsets() {
             expected,
         );
     }
+}
+
+#[test]
+fn cached_row_close_facts_round_trip_without_expanding_event_enums() {
+    let cached = M11RecursiveGreenCachedRowEditable::new(
+        M11RecursiveGreenCachedRowEditCapability::Contiguous,
+        metric(5, 5),
+        metric(u64::from(u32::MAX) - 3, u64::from(u32::MAX) - 7),
+    )
+    .expect("ordered cached row geometry");
+    let close = M11RecursiveGreenCloseFacts::new_with_cached_row_editable(
+        M11RecursiveGreenFactTag::new(6).expect("nonzero row tag"),
+        &[],
+        cached,
+    )
+    .expect("cached row close facts");
+    let (semantic, decoded) = close
+        .cached_row_editable(0)
+        .expect("decode cached row facts")
+        .expect("cached row trailer");
+    assert!(semantic.is_empty());
+    assert_eq!(decoded, cached);
+    assert_eq!(close.as_bytes().len(), 24);
+
+    let oversized = M11RecursiveGreenCachedRowEditable::new(
+        M11RecursiveGreenCachedRowEditCapability::Contiguous,
+        metric(0, 0),
+        metric(u64::from(u32::MAX) + 1, u64::from(u32::MAX) + 1),
+    )
+    .expect("ordered oversized geometry");
+    assert!(matches!(
+        M11RecursiveGreenCloseFacts::new_with_cached_row_editable(
+            M11RecursiveGreenFactTag::new(6).expect("nonzero row tag"),
+            &[],
+            oversized,
+        ),
+        Err(M11RecursiveGreenError::InvalidEvent)
+    ));
+
+    let public_bytes = std::mem::size_of::<M11RecursiveGreenEvent>();
+    let packed_bytes = std::mem::size_of::<PackedGreenEvent>();
+    eprintln!("recursive_green_event_sizes public={public_bytes} packed={packed_bytes}");
+    assert!(public_bytes <= 88);
+    assert!(packed_bytes <= 88);
 }
 
 #[test]

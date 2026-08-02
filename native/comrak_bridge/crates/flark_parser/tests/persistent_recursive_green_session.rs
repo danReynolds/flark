@@ -1,5 +1,8 @@
-use flark_engine::parser_internal::M11RecursiveGreenPoint;
-use flark_engine::{DocumentRuntime, DocumentRuntimeConfig, SourceBoundaryAffinity};
+use flark_engine::parser_internal::{
+    M11RecursiveGreenPoint, M11RecursiveGreenRowEditCapability, M11RecursiveGreenRowQueryLimits,
+    M11RecursiveGreenRowQueryOutcome,
+};
+use flark_engine::{ArenaLimits, DocumentRuntime, DocumentRuntimeConfig, SourceBoundaryAffinity};
 use flark_parser::{
     M11PersistentRecursiveGreenAdoptionStatus, M11PersistentRecursiveGreenBuildStatus,
     M11PersistentRecursiveGreenCleanPlan, M11PersistentRecursiveGreenSession,
@@ -19,6 +22,10 @@ fn build_session(runtime: &mut DocumentRuntime) -> M11PersistentRecursiveGreenSe
             return build.take_session().expect("persistent session");
         }
     }
+}
+
+fn utf16_offset(source: &str, byte: usize) -> usize {
+    source[..byte].encode_utf16().count()
 }
 
 fn release_session(
@@ -134,6 +141,26 @@ fn leading_reference_visible_remainder_edit_uses_local_recursive_green_adoption(
     let mut superseded = update.take_base().expect("superseded base");
     let mut target = update.take_target().expect("target session");
     assert_eq!(target.reference_occurrence_count(), REFERENCES as u64);
+    let visible_start = target_source.rfind("visible").expect("visible suffix");
+    let row_window = target
+        .query_renderable_rows(
+            &runtime,
+            M11RecursiveGreenPoint::new(edit_start, edit_start, SourceBoundaryAffinity::After),
+            target_source.len() as u64,
+            M11RecursiveGreenRowQueryLimits::new(1, 25, 3_200, 64, 512)
+                .expect("nonzero row limits"),
+        )
+        .expect("retained visible-suffix row query");
+    let row = row_window.rows().first().expect("retained visible row");
+    assert_eq!(row.kind().get(), 5);
+    assert_eq!(
+        row.edit_capability(),
+        M11RecursiveGreenRowEditCapability::Contiguous
+    );
+    assert_eq!(
+        row.editable_range(),
+        Some(visible_start as u64..(target_source.len() - 1) as u64),
+    );
 
     let incremental_digest = target
         .semantic_digest_for_diagnostics(&runtime)
@@ -571,6 +598,191 @@ fn commonmark_321_and_325_stay_generic_exact_and_local_inside_a_large_session() 
     while !clean_runtime
         .poll_close(64)
         .expect("poll clean runtime close")
+        .complete
+    {}
+}
+
+#[test]
+fn large_fenced_row_query_uses_cached_literal_geometry_within_normal_budget() {
+    const BODY_LINES: usize = 2_500;
+    let mut source = String::from("before\r\n\r\n```rust\r\n");
+    let literal_start = source.len();
+    for ordinal in 0..BODY_LINES {
+        source.push_str(&format!("body {ordinal:04} α\r\n"));
+    }
+    let literal_end = source.len();
+    source.push_str("```\r\n");
+    let mut point = literal_start + (literal_end - literal_start) / 2;
+    while !source.is_char_boundary(point) {
+        point -= 1;
+    }
+    let mut runtime =
+        DocumentRuntime::new(&source, DocumentRuntimeConfig::default()).expect("fence runtime");
+    let mut session = build_session(&mut runtime);
+    let window = session
+        .query_renderable_rows(
+            &runtime,
+            M11RecursiveGreenPoint::new(
+                point,
+                utf16_offset(&source, point),
+                SourceBoundaryAffinity::After,
+            ),
+            source.len() as u64,
+            M11RecursiveGreenRowQueryLimits::new(1, 25, 3_200, 64, 320)
+                .expect("nonzero row limits"),
+        )
+        .expect("large fence row query");
+    let row = window.rows().first().expect("large fence row");
+    assert_eq!(row.kind().get(), 7);
+    assert_eq!(
+        row.edit_capability(),
+        M11RecursiveGreenRowEditCapability::Contiguous
+    );
+    assert_eq!(
+        row.editable_range(),
+        Some(literal_start as u64..literal_end as u64)
+    );
+    assert_eq!(
+        row.editable_utf16_range(),
+        Some(
+            utf16_offset(&source, literal_start) as u64..utf16_offset(&source, literal_end) as u64
+        )
+    );
+    assert!(window.receipt().events_scanned() < 3_200);
+    assert!(window.receipt().storage_pages_visited() <= 25);
+    assert!(window.receipt().node_headers_decoded() <= 320);
+
+    release_session(&mut runtime, &mut session);
+    runtime.begin_close().expect("begin fence close");
+    while !runtime.poll_close(64).expect("poll fence close").complete {}
+}
+
+#[test]
+fn fenced_cached_geometry_is_exact_for_empty_crlf_and_unclosed_literals() {
+    let cases = [
+        ("```\n```\n", 4_usize, 4_usize),
+        ("~~~lang\r\n~~~\r\n", 9_usize, 9_usize),
+        ("```\r\nalpha\r\nbeta", 5_usize, 16_usize),
+    ];
+    for (source, literal_start, literal_end) in cases {
+        let mut runtime = DocumentRuntime::new(source, DocumentRuntimeConfig::default())
+            .expect("fence edge runtime");
+        let mut session = build_session(&mut runtime);
+        let window = session
+            .query_renderable_rows(
+                &runtime,
+                M11RecursiveGreenPoint::new(0, 0, SourceBoundaryAffinity::After),
+                source.len() as u64,
+                M11RecursiveGreenRowQueryLimits::new(1, 8, 128, 16, 1_024)
+                    .expect("nonzero row limits"),
+            )
+            .expect("fence edge row query");
+        let row = window.rows().first().expect("fence edge row");
+        assert_eq!(row.kind().get(), 7);
+        assert_eq!(
+            row.edit_capability(),
+            M11RecursiveGreenRowEditCapability::Contiguous
+        );
+        assert_eq!(
+            row.editable_range(),
+            Some(literal_start as u64..literal_end as u64),
+            "source={source:?}"
+        );
+        assert_eq!(
+            row.editable_utf16_range(),
+            Some(
+                utf16_offset(source, literal_start) as u64
+                    ..utf16_offset(source, literal_end) as u64
+            ),
+            "source={source:?}"
+        );
+
+        release_session(&mut runtime, &mut session);
+        runtime.begin_close().expect("begin fence edge close");
+        while !runtime
+            .poll_close(64)
+            .expect("poll fence edge close")
+            .complete
+        {}
+    }
+}
+
+#[test]
+#[ignore = "large-scale cached-row release gate"]
+fn one_hundred_thousand_leading_references_query_visible_tail_within_normal_budget() {
+    const REFERENCES: usize = 100_000;
+    let mut source = String::new();
+    source.reserve(REFERENCES * 32 + 32);
+    for ordinal in 0..REFERENCES {
+        source.push_str(&format!("[r{ordinal}]: /target/{ordinal}\n"));
+    }
+    let literal_start = source.len();
+    source.push_str("visible **bold** tail\n");
+    let literal_end = source.len() - 1;
+    let point = literal_start + "visible **".len();
+    let mut runtime = DocumentRuntime::new(
+        &source,
+        DocumentRuntimeConfig {
+            arena_limits: ArenaLimits {
+                max_slots: 131_072,
+                ..ArenaLimits::default()
+            },
+            ..DocumentRuntimeConfig::default()
+        },
+    )
+    .expect("large reference runtime");
+    let build_started = std::time::Instant::now();
+    let mut session = build_session(&mut runtime);
+    let build_elapsed = build_started.elapsed();
+    assert_eq!(session.reference_occurrence_count(), REFERENCES as u64);
+    let query_started = std::time::Instant::now();
+    let outcome = session
+        .query_renderable_rows_bounded(
+            &runtime,
+            M11RecursiveGreenPoint::new(
+                point,
+                utf16_offset(&source, point),
+                SourceBoundaryAffinity::After,
+            ),
+            source.len() as u64,
+            M11RecursiveGreenRowQueryLimits::new(1, 25, 3_200, 64, 512)
+                .expect("nonzero row limits"),
+        )
+        .expect("large reference visible-tail row query outcome");
+    let query_elapsed = query_started.elapsed();
+    let window = match outcome {
+        M11RecursiveGreenRowQueryOutcome::Window(window) => window,
+        M11RecursiveGreenRowQueryOutcome::BudgetExceeded(exceeded) => panic!(
+            "large reference row query exhausted {:?}: {:?}",
+            exceeded.limit(),
+            exceeded.receipt(),
+        ),
+    };
+    let row = window.rows().first().expect("visible-tail Paragraph row");
+    assert_eq!(row.kind().get(), 5);
+    assert_eq!(
+        row.edit_capability(),
+        M11RecursiveGreenRowEditCapability::Contiguous
+    );
+    assert_eq!(
+        row.editable_range(),
+        Some(literal_start as u64..literal_end as u64)
+    );
+    assert!(window.receipt().events_scanned() < 3_200);
+    assert!(window.receipt().storage_pages_visited() <= 25);
+    assert!(window.receipt().node_headers_decoded() <= 512);
+    eprintln!(
+        "reference_100k build={build_elapsed:?} query={query_elapsed:?} events={} pages={} nodes={}",
+        window.receipt().events_scanned(),
+        window.receipt().storage_pages_visited(),
+        window.receipt().node_headers_decoded(),
+    );
+
+    release_session(&mut runtime, &mut session);
+    runtime.begin_close().expect("begin reference close");
+    while !runtime
+        .poll_close(64)
+        .expect("poll reference close")
         .complete
     {}
 }

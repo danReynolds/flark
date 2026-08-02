@@ -10,7 +10,7 @@ use std::{fmt, ops::Range};
 use flark_engine::parser_internal::{
     M11RecursiveGreenError, M11RecursiveGreenFrameQueryError, M11RecursiveGreenFrameQueryLimits,
     M11RecursiveGreenLocation, M11RecursiveGreenPoint, M11RecursiveGreenRoot,
-    M11RecursiveGreenRowQueryLimits, M11RecursiveGreenRowWindow,
+    M11RecursiveGreenRowQueryLimits, M11RecursiveGreenRowQueryOutcome, M11RecursiveGreenRowWindow,
     M11RecursiveGreenStoragePageIdentity, M11RecursiveGreenStructuralSpliceSelection,
     M11ReferenceJournal, M11ReferenceJournalAdoptionStatus, M11ReferenceJournalError,
     M11ReferenceJournalRoot, M11ReferenceJournalStatus, M11ReferenceJournalUnchangedPrefixAdoption,
@@ -340,18 +340,14 @@ impl M11PersistentRecursiveGreenCleanBuild {
                 self.rendezvous = Some(rendezvous);
             } else if let Some(remainder) = rendezvous.take_leading_reference_remainder() {
                 let (parser, green) = remainder.into_parts();
-                let checkpoint = writer
-                    .capture_leading_reference_remainder_checkpoint(parser, green)?;
+                let checkpoint =
+                    writer.capture_leading_reference_remainder_checkpoint(parser, green)?;
                 let insertion = self.checkpoints.partition_point(|existing| {
                     existing.parser_physical().bytes() < checkpoint.parser_physical().bytes()
                 });
-                if self
-                    .checkpoints
-                    .get(insertion)
-                    .is_some_and(|existing| {
-                        existing.parser_physical() == checkpoint.parser_physical()
-                    })
-                {
+                if self.checkpoints.get(insertion).is_some_and(|existing| {
+                    existing.parser_physical() == checkpoint.parser_physical()
+                }) {
                     return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
                         "leading-reference remainder duplicated a restart cut",
                     ));
@@ -1773,6 +1769,23 @@ impl M11PersistentRecursiveGreenSession {
         requested_end_byte: u64,
         limits: M11RecursiveGreenRowQueryLimits,
     ) -> Result<M11RecursiveGreenRowWindow, M11PersistentRecursiveGreenSessionError> {
+        match self.query_renderable_rows_bounded(runtime, point, requested_end_byte, limits)? {
+            M11RecursiveGreenRowQueryOutcome::Window(window) => Ok(window),
+            M11RecursiveGreenRowQueryOutcome::BudgetExceeded(_) => Err(
+                M11PersistentRecursiveGreenSessionError::Green(M11RecursiveGreenError::ZeroFuel),
+            ),
+        }
+    }
+
+    /// Preserves the exact exhausted budget for callers that can represent a
+    /// typed row-query gap.
+    pub fn query_renderable_rows_bounded(
+        &self,
+        runtime: &DocumentRuntime,
+        point: M11RecursiveGreenPoint,
+        requested_end_byte: u64,
+        limits: M11RecursiveGreenRowQueryLimits,
+    ) -> Result<M11RecursiveGreenRowQueryOutcome, M11PersistentRecursiveGreenSessionError> {
         if runtime.current_source_version() != Some(self.source) || self.release_begun {
             return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
                 "recursive-Green row query is not bound to the current live source",
@@ -1784,7 +1797,7 @@ impl M11PersistentRecursiveGreenSession {
             .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
                 "recursive-Green session omitted its structural root",
             ))?
-            .locate_renderable_rows(runtime, point, requested_end_byte, limits)?)
+            .locate_renderable_rows_bounded(runtime, point, requested_end_byte, limits)?)
     }
 
     pub fn locate_point(
@@ -1825,6 +1838,27 @@ impl M11PersistentRecursiveGreenSession {
             .as_ref()
             .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
                 "recursive-Green session omitted its structural root",
+            ))
+    }
+
+    /// Borrows the live parser-authenticated reference root for the same
+    /// failure-atomic publication setup as [`Self::current_green_root`].
+    ///
+    /// The session keeps its committed owner; the candidate manifest retains
+    /// the canonical root and binds it to the publication's fresh authority.
+    pub(crate) fn current_reference_root<'session>(
+        &'session self,
+        runtime: &DocumentRuntime,
+    ) -> Result<&'session M11ReferenceJournalRoot, M11PersistentRecursiveGreenSessionError> {
+        if runtime.current_source_version() != Some(self.source) || self.release_begun {
+            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "recursive-Green session is not the current live source",
+            ));
+        }
+        self.references
+            .as_ref()
+            .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "recursive-Green session omitted its reference root",
             ))
     }
 

@@ -13,7 +13,8 @@ use std::{
 
 use flark_engine::parser_internal::{
     splice_m11_recursive_green_structural_atomic, M11RecursiveGreenBuild,
-    M11RecursiveGreenBuildStatus, M11RecursiveGreenCloseFacts, M11RecursiveGreenClosedChild,
+    M11RecursiveGreenBuildStatus, M11RecursiveGreenCachedRowEditCapability,
+    M11RecursiveGreenCachedRowEditable, M11RecursiveGreenCloseFacts, M11RecursiveGreenClosedChild,
     M11RecursiveGreenCoveragePart, M11RecursiveGreenError, M11RecursiveGreenEvent,
     M11RecursiveGreenFactTag, M11RecursiveGreenFrameId, M11RecursiveGreenKind,
     M11RecursiveGreenLogicalAction, M11RecursiveGreenPropertyChunk, M11RecursiveGreenReclaimPoll,
@@ -53,6 +54,7 @@ const FACT_ITEM: u16 = 2;
 const FACT_HEADING: u16 = 3;
 const FACT_CODE: u16 = 4;
 const FACT_HTML: u16 = 5;
+const FACT_ROW_EDITABLE: u16 = 6;
 
 static RESTART_JOIN_IDS: AtomicU64 = AtomicU64::new(1);
 static ADOPTION_TRANSACTION_IDS: AtomicU64 = AtomicU64::new(1);
@@ -184,10 +186,104 @@ struct FenceFold {
 }
 
 #[derive(Clone, Copy, Debug)]
+struct RowEditableFold {
+    physical_base: SourceMetric,
+    start: Option<SourceMetric>,
+    end: SourceMetric,
+    gap_after: bool,
+    contiguous: bool,
+    tracking: bool,
+}
+
+impl RowEditableFold {
+    const fn new(physical_base: SourceMetric, tracking: bool) -> Self {
+        Self {
+            physical_base,
+            start: None,
+            end: SourceMetric::new(0, 0).expect("zero source metric is valid"),
+            gap_after: false,
+            contiguous: true,
+            tracking,
+        }
+    }
+
+    fn reset_at(&mut self, physical: SourceMetric) -> Result<(), M11BlockWriterError> {
+        let relative = metric_difference(physical, self.physical_base)?;
+        self.start = Some(relative);
+        self.end = relative;
+        self.gap_after = false;
+        self.contiguous = true;
+        self.tracking = true;
+        Ok(())
+    }
+
+    fn observe(
+        &mut self,
+        physical_start: SourceMetric,
+        physical: SourceMetric,
+        compatible: bool,
+    ) -> Result<(), M11BlockWriterError> {
+        if !self.tracking {
+            return Ok(());
+        }
+        let start = metric_difference(physical_start, self.physical_base)?;
+        let end = start
+            .checked_add(physical)
+            .ok_or(M11BlockWriterError::CounterOverflow)?;
+        if compatible {
+            if self.start.is_some() && self.gap_after {
+                self.contiguous = false;
+            }
+            self.start.get_or_insert(start);
+            self.end = end;
+            self.gap_after = false;
+        } else if self.start.is_some() {
+            self.gap_after = true;
+        }
+        Ok(())
+    }
+
+    fn retain_visible_suffix_at(
+        &mut self,
+        physical: SourceMetric,
+    ) -> Result<(), M11BlockWriterError> {
+        let relative = metric_difference(physical, self.physical_base)?;
+        if relative.bytes() > self.end.bytes() || relative.utf16() > self.end.utf16() {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "reference suffix begins after Paragraph editable coverage",
+            ));
+        }
+        self.start = Some(relative);
+        self.gap_after = false;
+        // The authenticated rewrite removed every preceding projection atom;
+        // contiguity is re-established at the surviving suffix boundary.
+        self.contiguous = true;
+        Ok(())
+    }
+
+    fn cached(self) -> Result<M11RecursiveGreenCachedRowEditable, M11BlockWriterError> {
+        let start = self.start.unwrap_or_default();
+        M11RecursiveGreenCachedRowEditable::new(
+            if self.contiguous {
+                M11RecursiveGreenCachedRowEditCapability::Contiguous
+            } else {
+                M11RecursiveGreenCachedRowEditCapability::Unavailable
+            },
+            green_metric_allow_empty(start)?,
+            green_metric_allow_empty(self.end)?,
+        )
+        .ok_or(M11BlockWriterError::InvalidCommand(
+            "cached row-editable bounds are reversed",
+        ))
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 struct OpenFrame {
     id: M11RecursiveGreenFrameId,
     kind: BlockKind,
     fence: Option<FenceFold>,
+    row_editable: Option<RowEditableFold>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -499,6 +595,7 @@ impl M11BlockFragmentOutput {
 #[must_use = "block writers require root transfer or explicit cancellation"]
 pub struct M11BlockWriter {
     source: SourceVersion,
+    geometry_lease: Option<SourceSnapshotLease>,
     output: WriterOutput,
     open: Vec<OpenFrame>,
     next_frame: u64,
@@ -709,12 +806,19 @@ impl M11BlockRestartCheckpoint {
             })
             .map_err(|_| M11BlockRestartError::Pairing("restart join identity exhausted"))?;
         let controller = M11DirectBlockController::resume_joined(self.parser, restart_join)?;
+        let geometry_lease = runtime.snapshot_current_source()?;
+        if geometry_lease.version() != target_lease.version() {
+            return Err(M11BlockRestartError::Pairing(
+                "row geometry lease differs from target source",
+            ));
+        }
         Ok(M11JoinedBlockRestart {
             controller,
             writer: M11BlockWriterRestartSeed {
                 base_source: self.source,
                 target_source: target_lease.version(),
                 target_lease,
+                geometry_lease,
                 open: self.open,
                 next_frame,
                 base_maximum_frame_id: base.maximum_frame_id(),
@@ -908,6 +1012,7 @@ pub(super) struct M11BlockWriterRestartSeed {
     base_source: SourceVersion,
     target_source: SourceVersion,
     target_lease: SourceSnapshotLease,
+    geometry_lease: SourceSnapshotLease,
     open: Box<[OpenFrame]>,
     next_frame: u64,
     base_maximum_frame_id: u64,
@@ -944,6 +1049,7 @@ impl M11BlockWriterRestartSeed {
         let external_open_depth = self.open.len();
         Ok(M11BlockWriter {
             source: self.target_source,
+            geometry_lease: Some(self.geometry_lease),
             output: WriterOutput::Fragment(M11BlockFragmentOutput {
                 lease: Some(self.target_lease),
                 events,
@@ -998,8 +1104,17 @@ impl M11BlockWriter {
         lease: SourceSnapshotLease,
     ) -> Result<Self, M11BlockWriterError> {
         let source = lease.version();
+        let geometry_lease = runtime.snapshot_current_source().map_err(|_| {
+            M11BlockWriterError::InvalidCommand("row geometry source is unavailable")
+        })?;
+        if geometry_lease.version() != source {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "row geometry source differs from writer source",
+            ));
+        }
         Ok(Self {
             source,
+            geometry_lease: Some(geometry_lease),
             output: WriterOutput::Document(M11RecursiveGreenBuild::new(runtime, lease)?),
             open: Vec::new(),
             next_frame: 1,
@@ -1079,6 +1194,7 @@ impl M11BlockWriter {
         frame: M11RecursiveGreenFrameId,
         remove_paragraph: bool,
         consume_staged_terminator: bool,
+        visible_remainder: Option<SourceMetric>,
     ) -> Result<Option<M11RecursiveGreenEvent>, M11BlockWriterError> {
         if self.pending.is_some()
             || self.open.last().map(|open| open.id) != Some(frame)
@@ -1090,6 +1206,14 @@ impl M11BlockWriter {
         }
         if remove_paragraph {
             self.open.pop();
+        } else if let Some(visible_remainder) = visible_remainder {
+            self.open
+                .last_mut()
+                .and_then(|frame| frame.row_editable.as_mut())
+                .ok_or(M11BlockWriterError::InvalidCommand(
+                    "reference suffix lost Paragraph row geometry",
+                ))?
+                .retain_visible_suffix_at(visible_remainder)?;
         }
         if !consume_staged_terminator {
             return Ok(None);
@@ -2096,6 +2220,7 @@ impl M11BlockWriter {
             .try_reserve(1)
             .map_err(|_| M11BlockWriterError::Allocation)?;
         let logical_base = self.current_logical_metric()?;
+        let physical_base = self.current_physical_metric()?;
         self.open.push(OpenFrame {
             id: frame,
             kind,
@@ -2104,6 +2229,10 @@ impl M11BlockWriter {
                 info_end: None,
                 literal_start: None,
             }),
+            row_editable: is_renderable_block_kind(kind).then_some(RowEditableFold::new(
+                physical_base,
+                !matches!(kind, BlockKind::FencedCode(_)),
+            )),
         });
         let enter = M11RecursiveGreenEvent::Enter {
             frame,
@@ -2126,6 +2255,7 @@ impl M11BlockWriter {
         self.require_no_staged_source()?;
         self.advance_line(source)?;
         let owner_depth = owner_depth(&self.open, owner)?;
+        self.observe_row_coverage(owner_depth, green_part(part), logical, source.metric())?;
         let logical = green_logical_action(logical)?;
         self.pending = Some(Pending::Events(PendingEvents::one(
             M11RecursiveGreenEvent::Coverage {
@@ -2198,6 +2328,15 @@ impl M11BlockWriter {
                 M11RecursiveGreenLogicalAction::None,
             ),
         };
+        self.observe_row_coverage(
+            owner_depth,
+            part,
+            match resolution {
+                TerminatorResolution::ContinueCanonicalNewline => LogicalAction::CanonicalNewline,
+                TerminatorResolution::CloseNone => LogicalAction::None,
+            },
+            metric,
+        )?;
         self.pending = Some(Pending::Events(PendingEvents::one(
             M11RecursiveGreenEvent::Coverage {
                 physical: green_metric(metric)?,
@@ -2228,10 +2367,17 @@ impl M11BlockWriter {
         let Some(StagedSource::BlankGap { metric }) = self.staged.take() else {
             return self.reject("blank-gap resolution has no staged gap");
         };
+        let owner_depth = owner_depth(&self.open, owner)?;
+        self.observe_row_coverage(
+            owner_depth,
+            M11RecursiveGreenCoveragePart::Gap,
+            LogicalAction::None,
+            metric,
+        )?;
         self.pending = Some(Pending::Events(PendingEvents::one(
             M11RecursiveGreenEvent::Coverage {
                 physical: green_metric(metric)?,
-                owner_depth: owner_depth(&self.open, owner)?,
+                owner_depth,
                 part: M11RecursiveGreenCoveragePart::Gap,
                 logical: M11RecursiveGreenLogicalAction::None,
             },
@@ -2276,6 +2422,7 @@ impl M11BlockWriter {
         boundary: FencedCodeBoundary,
     ) -> Result<M11BlockWriterOfferStatus, M11BlockWriterError> {
         let logical_now = self.current_logical_metric()?;
+        let physical_now = self.current_physical_metric()?;
         let frame = self
             .open
             .last_mut()
@@ -2299,6 +2446,13 @@ impl M11BlockWriter {
                 if fold.info_end.is_some() && fold.literal_start.is_none() =>
             {
                 fold.literal_start = Some(relative);
+                frame
+                    .row_editable
+                    .as_mut()
+                    .ok_or(M11BlockWriterError::InvalidCommand(
+                        "FencedCode row-editable fold is absent",
+                    ))?
+                    .reset_at(physical_now)?;
             }
             FencedCodeBoundary::InfoEnd | FencedCodeBoundary::LiteralStart => {
                 return self.reject("fence boundaries are duplicated or reversed");
@@ -2391,11 +2545,179 @@ impl M11BlockWriter {
         )
     }
 
+    fn current_physical_metric(&self) -> Result<SourceMetric, M11BlockWriterError> {
+        let receipt = self.output.receipt();
+        SourceMetric::new(receipt.source_bytes, receipt.source_utf16).ok_or(
+            M11BlockWriterError::InvalidCommand("green physical metric is invalid"),
+        )
+    }
+
+    fn observe_row_coverage(
+        &mut self,
+        owner_depth: u32,
+        part: M11RecursiveGreenCoveragePart,
+        logical: LogicalAction,
+        physical: SourceMetric,
+    ) -> Result<(), M11BlockWriterError> {
+        let Some(row_index) = self
+            .open
+            .iter()
+            .rposition(|frame| frame.row_editable.is_some())
+        else {
+            return Ok(());
+        };
+        if !self.open[row_index]
+            .row_editable
+            .is_some_and(|fold| fold.tracking)
+        {
+            return Ok(());
+        }
+        let owner_index = self
+            .open
+            .len()
+            .checked_sub(
+                usize::try_from(owner_depth)
+                    .map_err(|_| M11BlockWriterError::CounterOverflow)?
+                    .checked_add(1)
+                    .ok_or(M11BlockWriterError::CounterOverflow)?,
+            )
+            .ok_or(M11BlockWriterError::InvalidCommand(
+                "row-editable coverage owner is outside the open path",
+            ))?;
+        let physical_start = self.current_physical_metric()?;
+        let source_compatible =
+            owner_index == row_index && part == M11RecursiveGreenCoveragePart::Content;
+        if source_compatible && logical == LogicalAction::CanonicalText {
+            return self.observe_canonical_text_row_coverage(row_index, physical_start, physical);
+        }
+        let compatible = source_compatible
+            && matches!(
+                logical,
+                LogicalAction::Identity | LogicalAction::CanonicalNewline
+            );
+        self.observe_row_segment(row_index, physical_start, physical, compatible)
+    }
+
+    fn observe_canonical_text_row_coverage(
+        &mut self,
+        row_index: usize,
+        physical_start: SourceMetric,
+        physical: SourceMetric,
+    ) -> Result<(), M11BlockWriterError> {
+        let start_byte = usize::try_from(physical_start.bytes())
+            .map_err(|_| M11BlockWriterError::CounterOverflow)?;
+        let physical_bytes =
+            usize::try_from(physical.bytes()).map_err(|_| M11BlockWriterError::CounterOverflow)?;
+        let end_byte = start_byte
+            .checked_add(physical_bytes)
+            .ok_or(M11BlockWriterError::CounterOverflow)?;
+        let lease = self
+            .geometry_lease
+            .take()
+            .ok_or(M11BlockWriterError::Poisoned)?;
+        let mut cursor = lease.cursor_in(start_byte..end_byte)?;
+        let mut chunk = [0_u8; 512];
+        let mut absolute_bytes = physical_start.bytes();
+        let mut absolute_utf16 = physical_start.utf16();
+        let mut segment_start = physical_start;
+        let mut saw_nul = false;
+        while cursor.position() < cursor.end() {
+            let read = cursor.read(&mut chunk);
+            if read == 0 {
+                return Err(M11BlockWriterError::InvalidCommand(
+                    "canonical-text geometry cursor stopped early",
+                ));
+            }
+            for byte in chunk[..read].iter().copied() {
+                if byte == 0 {
+                    let absolute = SourceMetric::new(absolute_bytes, absolute_utf16)
+                        .ok_or(M11BlockWriterError::CounterOverflow)?;
+                    saw_nul = true;
+                    let prefix = metric_difference(absolute, segment_start)?;
+                    if prefix.bytes() != 0 {
+                        self.observe_row_segment(row_index, segment_start, prefix, true)?;
+                    }
+                    let nul_metric = SourceMetric::new(1, 1).expect("NUL source metric is valid");
+                    self.observe_row_segment(row_index, absolute, nul_metric, false)?;
+                    segment_start = absolute
+                        .checked_add(nul_metric)
+                        .ok_or(M11BlockWriterError::CounterOverflow)?;
+                    absolute_bytes = segment_start.bytes();
+                    absolute_utf16 = segment_start.utf16();
+                    continue;
+                }
+                let utf16 = if byte < 0x80 || (0xc0..0xf0).contains(&byte) {
+                    1
+                } else if byte >= 0xf0 {
+                    2
+                } else {
+                    0
+                };
+                absolute_bytes = absolute_bytes
+                    .checked_add(1)
+                    .ok_or(M11BlockWriterError::CounterOverflow)?;
+                absolute_utf16 = absolute_utf16
+                    .checked_add(utf16)
+                    .ok_or(M11BlockWriterError::CounterOverflow)?;
+            }
+        }
+        let lease = cursor.finish()?;
+        if lease.version() != self.source {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "canonical-text geometry crossed source versions",
+            ));
+        }
+        self.geometry_lease = Some(lease);
+        let physical_end = physical_start
+            .checked_add(physical)
+            .ok_or(M11BlockWriterError::CounterOverflow)?;
+        let absolute = SourceMetric::new(absolute_bytes, absolute_utf16)
+            .ok_or(M11BlockWriterError::CounterOverflow)?;
+        if absolute != physical_end {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "canonical-text geometry differs from source metrics",
+            ));
+        }
+        if !saw_nul {
+            return self.observe_row_segment(row_index, physical_start, physical, true);
+        }
+        let suffix = metric_difference(physical_end, segment_start)?;
+        if suffix.bytes() != 0 {
+            self.observe_row_segment(row_index, segment_start, suffix, true)?;
+        }
+        Ok(())
+    }
+
+    fn observe_row_segment(
+        &mut self,
+        row_index: usize,
+        physical_start: SourceMetric,
+        physical: SourceMetric,
+        compatible: bool,
+    ) -> Result<(), M11BlockWriterError> {
+        self.open
+            .get_mut(row_index)
+            .and_then(|frame| frame.row_editable.as_mut())
+            .ok_or(M11BlockWriterError::InvalidCommand(
+                "renderable frame lost its row-editable fold",
+            ))?
+            .observe(physical_start, physical, compatible)
+    }
+
     fn close_facts(
         &self,
         frame: OpenFrame,
         facts: FinalFacts,
     ) -> Result<Option<M11RecursiveGreenCloseFacts>, M11BlockWriterError> {
+        let cached_row = frame
+            .row_editable
+            .map(RowEditableFold::cached)
+            .transpose()?;
+        if cached_row.is_some() != is_renderable_block_kind(frame.kind) {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "row-editable close facts differ from final block kind",
+            ));
+        }
         match (frame.kind, facts) {
             (BlockKind::List(_), FinalFacts::List { tight }) => {
                 Ok(Some(close_facts(FACT_LIST, &[u8::from(tight)])?))
@@ -2421,23 +2743,22 @@ impl M11BlockWriter {
                         "FencedCode logical boundaries are out of order",
                     ));
                 }
-                let mut payload = [0_u8; 49];
-                payload[0] = u8::from(facts.closed());
-                let mut cursor = 1;
-                for metric in [info_end, literal_start, logical_end] {
-                    payload[cursor..cursor + 8].copy_from_slice(&metric.bytes().to_le_bytes());
-                    cursor += 8;
-                    payload[cursor..cursor + 8].copy_from_slice(&metric.utf16().to_le_bytes());
-                    cursor += 8;
-                }
-                Ok(Some(close_facts(FACT_CODE, &payload)?))
+                Ok(Some(close_facts_with_cached_row(
+                    FACT_CODE,
+                    &[u8::from(facts.closed())],
+                    cached_row.ok_or(M11BlockWriterError::InvalidCommand(
+                        "FencedCode close lost cached row geometry",
+                    ))?,
+                )?))
             }
             (BlockKind::List(_), _)
             | (BlockKind::FencedCode(_), _)
             | (_, FinalFacts::List { .. } | FinalFacts::FencedCode(_)) => Err(
                 M11BlockWriterError::InvalidCommand("close facts differ from block kind"),
             ),
-            (_, FinalFacts::None) => Ok(None),
+            (_, FinalFacts::None) => cached_row
+                .map(|cached| close_facts_with_cached_row(FACT_ROW_EDITABLE, &[], cached))
+                .transpose(),
         }
     }
 
@@ -2506,6 +2827,9 @@ fn rebase_retained_suffix_checkpoint(
         target_convergence_line_ordinal,
     )?;
     for frame in &mut checkpoint.open {
+        if let Some(row) = frame.row_editable.as_mut() {
+            rebase_retained_row_fold(row, base_physical_end, target_physical_end)?;
+        }
         let Some(fence) = frame.fence.as_mut() else {
             continue;
         };
@@ -2644,6 +2968,51 @@ fn translate_block_metric(
     ))
 }
 
+fn rebase_retained_row_fold(
+    row: &mut RowEditableFold,
+    base_convergence: SourceMetric,
+    target_convergence: SourceMetric,
+) -> Result<(), M11BlockRestartError> {
+    let base = row.physical_base;
+    let target_base = translate_row_fold_cut(base, base_convergence, target_convergence)?;
+    row.start = row
+        .start
+        .map(|relative| {
+            let absolute = base
+                .checked_add(relative)
+                .ok_or(M11BlockRestartError::Pairing("retained row start overflow"))?;
+            let target = translate_row_fold_cut(absolute, base_convergence, target_convergence)?;
+            metric_difference(target, target_base).map_err(M11BlockRestartError::Writer)
+        })
+        .transpose()?;
+    let absolute_end = base
+        .checked_add(row.end)
+        .ok_or(M11BlockRestartError::Pairing("retained row end overflow"))?;
+    let target_end = translate_row_fold_cut(absolute_end, base_convergence, target_convergence)?;
+    row.end = metric_difference(target_end, target_base).map_err(M11BlockRestartError::Writer)?;
+    row.physical_base = target_base;
+    Ok(())
+}
+
+fn translate_row_fold_cut(
+    value: SourceMetric,
+    base: SourceMetric,
+    target: SourceMetric,
+) -> Result<SourceMetric, M11BlockRestartError> {
+    let after = value.bytes() >= base.bytes() && value.utf16() >= base.utf16();
+    let before = value.bytes() <= base.bytes() && value.utf16() <= base.utf16();
+    if !after && !before {
+        return Err(M11BlockRestartError::Pairing(
+            "retained row cut crossed physical convergence coordinates",
+        ));
+    }
+    if after {
+        translate_block_metric(value, base, target)
+    } else {
+        Ok(value)
+    }
+}
+
 fn translate_checkpoint_cut(
     value: u64,
     base: u64,
@@ -2766,6 +3135,18 @@ fn close_facts(tag: u16, bytes: &[u8]) -> Result<M11RecursiveGreenCloseFacts, M1
     Ok(M11RecursiveGreenCloseFacts::new(fact_tag(tag), bytes)?)
 }
 
+fn close_facts_with_cached_row(
+    tag: u16,
+    semantic: &[u8],
+    cached: M11RecursiveGreenCachedRowEditable,
+) -> Result<M11RecursiveGreenCloseFacts, M11BlockWriterError> {
+    Ok(M11RecursiveGreenCloseFacts::new_with_cached_row_editable(
+        fact_tag(tag),
+        semantic,
+        cached,
+    )?)
+}
+
 fn open_property(
     kind: BlockKind,
 ) -> Result<Option<M11RecursiveGreenPropertyChunk>, M11BlockWriterError> {
@@ -2833,6 +3214,26 @@ fn green_metric(
 ) -> Result<M11RecursiveGreenSourceMetric, M11BlockWriterError> {
     M11RecursiveGreenSourceMetric::new(metric.bytes(), metric.utf16()).ok_or(
         M11BlockWriterError::InvalidCommand("source metric is not a nonempty UTF-8 partition"),
+    )
+}
+
+fn green_metric_allow_empty(
+    metric: SourceMetric,
+) -> Result<M11RecursiveGreenSourceMetric, M11BlockWriterError> {
+    M11RecursiveGreenSourceMetric::new(metric.bytes(), metric.utf16()).ok_or(
+        M11BlockWriterError::InvalidCommand("source metric axes differ in emptiness"),
+    )
+}
+
+const fn is_renderable_block_kind(kind: BlockKind) -> bool {
+    matches!(
+        kind,
+        BlockKind::Paragraph
+            | BlockKind::IndentedCode
+            | BlockKind::FencedCode(_)
+            | BlockKind::HtmlBlock(_)
+            | BlockKind::Heading(_)
+            | BlockKind::ThematicBreak
     )
 }
 

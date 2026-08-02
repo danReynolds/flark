@@ -3,8 +3,8 @@ use flark_engine::parser_internal::{
     M11BlockSequenceEntryKind, M11BlockSequencePoint, M11CandidateHost, M11CandidatePublication,
     M11InlineProjectionRoot, M11InstalledCandidate, M11OwnedSnapshotPoll,
     M11ParserSourceRangeAuthority, M11RecursiveGreenCoveragePart, M11RecursiveGreenPoint,
-    M11RetainedCandidatePublication, M11Role, M11SnapshotFrameKind, M11SnapshotPoll,
-    M11_MAX_ROLE_RECORDS,
+    M11ReferenceResolution, M11RetainedCandidatePublication, M11Role, M11SnapshotFrameKind,
+    M11SnapshotPoll, M11_MAX_ROLE_RECORDS,
 };
 use flark_engine::{
     ArenaLimits, DocumentRuntime, DocumentRuntimeConfig, DocumentRuntimeError, ParserProfileId,
@@ -341,6 +341,13 @@ fn retain(
     };
     drop(writer);
 
+    retain_publication(runtime, publication)
+}
+
+fn retain_publication(
+    runtime: &mut DocumentRuntime,
+    publication: Box<M11CandidatePublication>,
+) -> M11RetainedCandidatePublication {
     let mut stream = publication
         .into_snapshot_stream(runtime)
         .expect("owned snapshot stream");
@@ -734,8 +741,9 @@ fn recursive_green_role_round_trips_nested_commonmark_to_an_independent_host() {
     let certified = runtime
         .take_certified_source()
         .expect("runtime certification");
-    let candidate = M11ParserCandidate::derive_with_recursive_green(certified, &result)
-        .expect("recursive Green candidate");
+    let candidate =
+        M11ParserCandidate::derive_with_recursive_green(certified, &result, &green_session)
+            .expect("recursive Green candidate");
     let mut writer = candidate
         .into_writer_with_recursive_green(&mut runtime, DOCUMENT, [0x7a; 16], 1, &green_session)
         .expect("recursive Green candidate writer");
@@ -753,9 +761,12 @@ fn recursive_green_role_round_trips_nested_commonmark_to_an_independent_host() {
     let second_certified = runtime
         .take_certified_source()
         .expect("second runtime certification");
-    let second_candidate =
-        M11ParserCandidate::derive_with_recursive_green(second_certified, &second_result)
-            .expect("second recursive Green candidate");
+    let second_candidate = M11ParserCandidate::derive_with_recursive_green(
+        second_certified,
+        &second_result,
+        &green_session,
+    )
+    .expect("second recursive Green candidate");
     let mut second_writer = second_candidate
         .into_writer_with_recursive_green(&mut runtime, DOCUMENT, [0x7b; 16], 2, &green_session)
         .expect("second recursive Green candidate writer");
@@ -1858,6 +1869,128 @@ fn unsupported_block_quote_shape_stays_literal_in_publication() {
 
     close_host(&mut host);
     close_publication(&mut runtime, &mut publication);
+    close_runtime(runtime);
+}
+
+#[test]
+fn cold_recursive_green_publication_retains_the_session_reference_journal() {
+    const DEFINITIONS: usize = 4_096;
+    const MAXIMUM_CONSTANT_PUBLICATION_NODES: usize = 64;
+
+    let mut text = String::new();
+    text.reserve(DEFINITIONS * 28);
+    for ordinal in 0..DEFINITIONS {
+        use std::fmt::Write as _;
+        writeln!(&mut text, "[label-{ordinal}]: /u/{ordinal}").expect("reference fixture write");
+    }
+    text.push_str("[early][label-0] [middle][label-2048] [last][label-4095] visible tail\n");
+
+    let mut runtime = producer_runtime(&text);
+    let source = runtime.current_source_version().expect("source");
+    prepare_runtime_source_facts(&mut runtime, 4_096);
+    let result = parse(
+        runtime
+            .certified_source()
+            .expect("completed certification")
+            .exact_parse_lease(),
+    );
+    let mut green_session = recursive_green_session(&mut runtime);
+    assert_eq!(
+        green_session.reference_occurrence_count(),
+        DEFINITIONS as u64
+    );
+    let session_nodes = runtime.arena_metrics().resident_nodes;
+    let certified = runtime
+        .take_certified_source()
+        .expect("runtime certification");
+    let candidate =
+        M11ParserCandidate::derive_with_recursive_green(certified, &result, &green_session)
+            .expect("recursive Green candidate");
+    let mut writer = candidate
+        .into_writer_with_recursive_green(&mut runtime, DOCUMENT, [0x7c; 16], 1, &green_session)
+        .expect("recursive Green candidate writer");
+    assert!(
+        runtime.arena_metrics().resident_nodes
+            <= session_nodes + MAXIMUM_CONSTANT_PUBLICATION_NODES,
+        "writer setup must retain the session roots without a definition-sized copy",
+    );
+
+    // The writer owns retained Green and References edges before the parser
+    // session is released. Publication must therefore need no source recook.
+    close_recursive_green_session(&mut runtime, &mut green_session);
+    let publication = loop {
+        match writer
+            .poll(&mut runtime, 64)
+            .expect("candidate writer poll")
+        {
+            M11ParserCandidateWriterPoll::Pending { transitions } => {
+                assert!((1..=64).contains(&transitions));
+            }
+            M11ParserCandidateWriterPoll::Published {
+                transitions,
+                publication,
+            } => {
+                assert!(transitions <= 64);
+                break publication;
+            }
+        }
+    };
+    assert_eq!(
+        writer.reference_cook_receipt(),
+        M11ReferenceCookReceipt::default(),
+        "cold recursive Green publication must not cook a duplicate reference tree",
+    );
+    assert!(
+        runtime.arena_metrics().resident_nodes
+            <= session_nodes + MAXIMUM_CONSTANT_PUBLICATION_NODES,
+        "published wrappers must add only constant arena residency",
+    );
+    drop(writer);
+
+    let mut host = M11CandidateHost::new(DOCUMENT, source, 1).expect("independent host");
+    let installed = install(&runtime, &mut host, &publication);
+    assert_eq!(installed.parse_generation(), 1);
+
+    let mut retained = retain_publication(&mut runtime, publication);
+    loop {
+        let poll = retained
+            .poll_reference_resolver(&mut runtime, 64)
+            .expect("poll reference resolver");
+        assert!(poll.transitions() <= 64);
+        if poll.ready() {
+            assert_eq!(poll.occurrence_count(), DEFINITIONS as u64);
+            assert_eq!(poll.indexed_occurrences(), DEFINITIONS as u64);
+            assert_eq!(poll.unique_label_count(), DEFINITIONS as u64);
+            break;
+        }
+        assert!(poll.transitions() > 0);
+    }
+    let resolver = retained
+        .reference_resolver(&runtime)
+        .expect("reference resolver authority")
+        .expect("ready reference resolver");
+    for ordinal in [0, DEFINITIONS / 2, DEFINITIONS - 1] {
+        let label = format!("label-{ordinal}");
+        let destination = format!("/u/{ordinal}");
+        let M11ReferenceResolution::Resolved(resolved) = resolver
+            .resolve(&runtime, &label, 64)
+            .expect("resolve retained reference")
+        else {
+            panic!("{label} must resolve from the retained session journal");
+        };
+        assert_eq!(resolved.definition_ordinal(), ordinal as u64);
+        assert_eq!(resolved.cooked_destination(), destination);
+        assert_eq!(resolved.cooked_title(), None);
+        let source_range = resolved.destination_source();
+        assert_eq!(
+            &text.as_bytes()[source_range.start as usize..source_range.end as usize],
+            destination.as_bytes(),
+        );
+    }
+    drop(resolver);
+
+    close_host(&mut host);
+    close_retained(&mut runtime, &mut retained);
     close_runtime(runtime);
 }
 

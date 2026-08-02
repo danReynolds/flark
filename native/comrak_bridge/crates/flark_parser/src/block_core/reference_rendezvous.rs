@@ -13,21 +13,19 @@ use flark_block_core_donor::DirectReferencePrefixSource;
 use flark_engine::parser_internal::{
     M11RecursiveGreenBuildStatus, M11RecursiveGreenError, M11RecursiveGreenFrameId,
     M11RecursiveGreenLogicalPosition, M11RecursiveGreenLogicalRange,
-    M11RecursiveGreenStructuralBoundary,
-    M11RecursiveGreenTerminalFragmentBarrierStatus, M11RecursiveGreenTerminalFragmentBinding,
-    M11RecursiveGreenTerminalFragmentCursor, M11RecursiveGreenTerminalFragmentCursorStatus,
-    M11RecursiveGreenTerminalFragmentDisposition, M11RecursiveGreenTerminalFragmentIdentity,
-    M11RecursiveGreenTerminalFragmentRewrite, M11RecursiveGreenTerminalFragmentRewritePoll,
-    M11RecursiveGreenTerminalFragmentRewriteWork, M11ReferenceJournal, M11ReferenceJournalError,
-    M11ReferenceJournalOccurrenceStart, M11ReferenceJournalRange, M11ReferenceJournalValueKind,
+    M11RecursiveGreenStructuralBoundary, M11RecursiveGreenTerminalFragmentBarrierStatus,
+    M11RecursiveGreenTerminalFragmentBinding, M11RecursiveGreenTerminalFragmentCursor,
+    M11RecursiveGreenTerminalFragmentCursorStatus, M11RecursiveGreenTerminalFragmentDisposition,
+    M11RecursiveGreenTerminalFragmentIdentity, M11RecursiveGreenTerminalFragmentRewrite,
+    M11RecursiveGreenTerminalFragmentRewritePoll, M11RecursiveGreenTerminalFragmentRewriteWork,
+    M11ReferenceJournal, M11ReferenceJournalError, M11ReferenceJournalOccurrenceStart,
+    M11ReferenceJournalRange, M11ReferenceJournalValueKind,
 };
 use flark_engine::DocumentRuntime;
 
-use super::writer::M11ReferenceStagedTerminator;
 use super::controller::M11DirectLeadingReferenceRemainderContinuation;
-use super::{
-    M11BlockWriter, M11BlockWriterError, M11DirectBlockController, M11DirectBlockError,
-};
+use super::writer::M11ReferenceStagedTerminator;
+use super::{M11BlockWriter, M11BlockWriterError, M11DirectBlockController, M11DirectBlockError};
 use crate::reference_value::{
     ReferenceValueBodyCleaner, ReferenceValueCleanerError, ReferenceValueCleanerStatus,
 };
@@ -1203,11 +1201,12 @@ impl M11ReferenceRendezvous {
                     .value_cook
                     .as_mut()
                 {
-                    let ready = replay.ready_byte().ok_or(
-                        M11ReferenceRendezvousError::InvalidState(
-                            "reference value replay reported no ready byte",
-                        ),
-                    )?;
+                    let ready =
+                        replay
+                            .ready_byte()
+                            .ok_or(M11ReferenceRendezvousError::InvalidState(
+                                "reference value replay reported no ready byte",
+                            ))?;
                     let byte = replay.read_byte(ready.relative_offset())?;
                     cook.offer_source_byte(byte)?;
                 } else {
@@ -1541,9 +1540,7 @@ impl M11ReferenceRendezvous {
         let poll = writer
             .reference_green_build_mut()?
             .poll_terminal_fragment_rewrite(runtime, rewrite, 1)?;
-        let M11RecursiveGreenTerminalFragmentRewritePoll::Complete {
-            mut authority, ..
-        } = poll
+        let M11RecursiveGreenTerminalFragmentRewritePoll::Complete { mut authority, .. } = poll
         else {
             return Ok(());
         };
@@ -1575,10 +1572,23 @@ impl M11ReferenceRendezvous {
             ));
         }
         self.remainder_boundary = authority.take_visible_remainder_boundary();
+        let visible_remainder = self
+            .remainder_boundary
+            .as_ref()
+            .map(|boundary| {
+                let physical = boundary.physical_metric();
+                super::SourceMetric::new(physical.bytes(), physical.utf16()).ok_or(
+                    M11ReferenceRendezvousError::InvalidState(
+                        "visible reference remainder has valid physical geometry",
+                    ),
+                )
+            })
+            .transpose()?;
         let gap = writer.complete_reference_fragment(
             self.frame,
             remove,
             reference_only && self.staged.is_some(),
+            visible_remainder,
         )?;
         if let Some(gap) = gap {
             writer.reference_green_build_mut()?.offer_event(gap)?;
@@ -1639,13 +1649,13 @@ impl M11ReferenceRendezvous {
             ));
         }
         if disposition == donor::DirectReferencePrefixDisposition::VisibleRemainder {
-            let green = self.remainder_boundary.take().ok_or(
-                M11ReferenceRendezvousError::InvalidState(
-                    "visible reference remainder lost its Green cut",
-                ),
-            )?;
-            let Some(mut parser) =
-                controller.capture_leading_reference_remainder_continuation()?
+            let green =
+                self.remainder_boundary
+                    .take()
+                    .ok_or(M11ReferenceRendezvousError::InvalidState(
+                        "visible reference remainder lost its Green cut",
+                    ))?;
+            let Some(mut parser) = controller.capture_leading_reference_remainder_continuation()?
             else {
                 // A visible remainder may be recognized while a later line is
                 // still active (notably Setext resolution). The parse remains
@@ -1735,9 +1745,10 @@ impl donor::DirectReferencePrefixSource for ProjectedReferenceSource<'_> {
     }
 
     fn access_budget(&self) -> usize {
-        self.cursor.ready_chunk().len().saturating_add(usize::from(
-            self.cursor.is_final() && self.virtual_lf,
-        ))
+        self.cursor
+            .ready_chunk()
+            .len()
+            .saturating_add(usize::from(self.cursor.is_final() && self.virtual_lf))
     }
 
     fn read_byte(&mut self, relative_offset: usize) -> Result<u8, Self::Error> {
