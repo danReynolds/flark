@@ -1,9 +1,16 @@
 # Architecture position: flark as a robust live markdown editor
 
-**Status:** POSITION, 2026-07-12 — written at the close of the RFC 022
+**Status:** HISTORICAL POSITION, 2026-07-12 — written at the close of the RFC 022
 hardening program (Phases 0–3 + 2b merged; Phase 4 gated). Input to the
 launch/Phase-4 sequencing decision; merging this document does not by itself
-adopt §5.
+adopt §5. Its conclusion did not survive the later large-document, source,
+parser-authority, output-lifetime, and Flutter-layout gates for the product now
+in scope. The chronological findings and RFC 023 are themselves outdated; the
+current candidate and remaining falsifiers are maintained in the
+[live proof ledger](../../tool/parser_research/ARCHITECTURE_PROOF_LEDGER.md)
+and its linked state partitions. Preserve this paper as the evidence-backed
+small-document/v2 position that the subsequent investigation challenged, not
+as the current implementation recommendation.
 **Author:** architecture review follow-through (see PRs #27, #29, #30–#34)
 **Related:** `rfc/rfc_022_parser_grammar_monopoly.md` (the accepted contract
 and phase log), `../production_readiness/audit_2026-05-01.md` (the pre-split

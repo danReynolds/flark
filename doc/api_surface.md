@@ -5,10 +5,11 @@
 Most Flutter apps should import only:
 
 ```dart
-import 'package:flark/flark.dart';
+import 'package:flark_flutter/flark_flutter.dart';
 ```
 
-This exports the promoted application surface:
+This re-exports the shared engine types and adds the promoted Flutter
+application surface:
 
 - `FlarkMarkdownEditor`
 - `FlarkMarkdownEditorFormField`
@@ -19,16 +20,22 @@ This exports the promoted application surface:
 - core runtime result and transaction types commonly needed by app toolbars
 - `FlarkNativeComrakParseBackend` and native preflight diagnostics
 
-## Headless Core
+## Dart Engine
 
-Use the core barrel for non-widget runtime work:
+Pure-Dart consumers normally import the Flutter-independent engine package:
 
 ```dart
-import 'package:flark/flark_core.dart';
+import 'package:flark/flark.dart';
 ```
 
-This exports document state, source transactions, command registration,
-projection, parser DTOs, and render plans without Flutter widgets.
+For narrower or preview surfaces, `package:flark/flark_core.dart` exports the
+v2 core and `package:flark/flark_v3.dart` exposes the in-progress v3
+document-session engine. None imports Flutter.
+
+The v3 preview barrel is deliberately small: the document runtime, source-edit
+values, semantic revision status, bounded query values, and explicit Web asset
+configuration. Parser bindings, host stores, source certification, endpoint
+frames, and attachment choreography are not normal application API.
 
 ## Advanced Integrations
 
@@ -36,11 +43,13 @@ Use the advanced barrel for custom parsers, native bridge tests, extension
 work, or deeper render-plan integration:
 
 ```dart
-import 'package:flark/flark_advanced.dart';
+import 'package:flark_flutter/flark_flutter_advanced.dart';
 ```
 
-This is intentionally broader than the app import but still excludes
-implementation-only Flutter widgets and schedulers.
+Use `package:flark/flark_advanced.dart` when the integration is Dart-only.
+Both advanced barrels are intentionally broader than the normal app imports.
+Official adapter work that needs the unstable v3 assembly SPI uses
+`package:flark/flark_adapter.dart`; applications should not import it.
 
 ## Widget Rule
 

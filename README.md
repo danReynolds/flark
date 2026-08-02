@@ -1,8 +1,14 @@
 # Flark
 
-Markdown-first editing and rendering for Flutter.
+Live Markdown infrastructure for Dart and Flutter.
 
-Flark gives Flutter apps two core widgets and a thin Flutter form wrapper:
+The `flark` package is the platform-neutral engine. The `flark_flutter`
+package adds Flutter input, rendering, widgets, and form integration:
+
+Today the supported editor is the v2 Comrak-backed implementation. The
+Flutter-independent v3 session/parser architecture is the selected production
+direction and remains an explicit preview until its isolate/Worker and public
+facade gates close.
 
 Live demo and package site: <https://danreynolds.github.io/flark/>
 
@@ -13,7 +19,7 @@ Live demo and package site: <https://danreynolds.github.io/flark/>
 > the [CHANGELOG](CHANGELOG.md).
 
 ```dart
-import 'package:flark/flark.dart';
+import 'package:flark_flutter/flark_flutter.dart';
 
 FlarkMarkdownEditor(
   initialMarkdown: '# Hello\n\nEdit **Markdown** without losing the source.',
@@ -30,7 +36,7 @@ The document truth stays FlarkMarkdown. The editor, preview, toolbar commands,
 projection layer, and rendered block widgets all work from that same source
 document instead of converting user content into a private rich-text model.
 
-![Flark visual surfaces](test/v2/flutter/goldens/flark_v2_surfaces.png)
+![Flark visual surfaces](screenshots/flark_surfaces.png)
 
 ## Why Flark
 
@@ -43,8 +49,9 @@ document instead of converting user content into a private rich-text model.
   state, and render plans in sync.
 - The default parser is Comrak: native FFI on macOS, iOS, Android, and Linux;
   packaged WASM on web.
-- The headless Dart core owns transactions, commands, projection, history, and
-  render plans without importing Flutter.
+- The Dart engine owns transactions, commands, projection, history, parser
+  lifecycle, and render plans without importing Flutter.
+- `flark_flutter` depends on `flark`; the engine never depends on Flutter.
 
 ## Shared Editor and Preview
 
@@ -105,20 +112,44 @@ colors.
 
 ## Imports
 
-Most apps should use one import:
+Flutter apps should depend on `flark_flutter` and use one import:
+
+```dart
+import 'package:flark_flutter/flark_flutter.dart';
+```
+
+Pure-Dart consumers depend on `flark`:
 
 ```dart
 import 'package:flark/flark.dart';
 ```
 
-Advanced imports are split by intent:
+Advanced imports are split by package:
 
-- `package:flark/flark_core.dart`: headless document/runtime/projection/render
+- `package:flark/flark_core.dart`: document/runtime/projection/render
   plan APIs.
-- `package:flark/flark_advanced.dart`: full parser, native bridge, extension,
-  and Flutter integration surface.
+- `package:flark/flark_advanced.dart`: full engine, parser, native bridge, and
+  extension surface.
+- `package:flark_flutter/flark_flutter_advanced.dart`: full Flutter adapter
+  plus the engine adapter SPI.
 
 Deep imports under `src/` are for Flark internals and white-box package tests.
+
+Dart web applications can own parser-module delivery without a Flutter asset
+API:
+
+```dart
+final backend = FlarkNativeComrakParseBackend.withNativeBridge(
+  wasmSource: NativeComrakWasmUriSource(
+    Uri.parse('/assets/flark_comrak_bridge.wasm'),
+  ),
+);
+```
+
+`NativeComrakWasmBytesSource` is available when the application already owns
+the module bytes. Dart-only web deployments must serve or load the packaged
+`flark_comrak_bridge.wasm` file and provide its URI or bytes explicitly;
+`flark_flutter` performs that asset-bundle step automatically for Flutter web.
 
 ## Performance
 
@@ -140,12 +171,16 @@ the enforced lane and methodology.
 | --- | --- | --- |
 | macOS, iOS, Linux | Native Comrak (Rust FFI) | Rust (`rustup` recommended) |
 | Android | Native Comrak (Rust FFI) | Rust + Android NDK |
-| Web | Packaged Comrak WASM | none (prebundled) |
+| Dart web | Comrak WASM | serve the packaged module and provide its URI/bytes |
+| Flutter web | Packaged Comrak WASM | none (adapter loads the bundled asset) |
 | Windows | — | not supported yet |
 
-Native targets compile the bundled Rust bridge during `flutter build` via the
-package build hook, so a Rust toolchain must be on `PATH` for those builds.
-Web needs no extra tooling. See
+Native consumers compile the bundled Rust bridge through `flark`'s package
+build hook; Flutter receives that native asset transitively through
+`flark_flutter`. A Rust toolchain must be on `PATH` for native builds. Web
+needs no Rust toolchain; Dart-only web apps choose the public URL or byte loader
+for the prebuilt module, while the Flutter adapter configures its asset bundle.
+See
 [Parser and Platforms](doc/parser_and_platforms.md) for details.
 
 ## Documentation
@@ -161,8 +196,8 @@ Web needs no extra tooling. See
 ## Example App
 
 The `example/` app is the dogfood workbench and GitHub Pages site. It imports
-only `package:flark/flark.dart` and exercises source, live-rendered, form,
-toolbar, docs, and read-only rendering flows.
+only `package:flark_flutter/flark_flutter.dart` and exercises source,
+live-rendered, form, toolbar, docs, and read-only rendering flows.
 
 ```bash
 cd example
@@ -186,6 +221,7 @@ Full release gate:
 Visual baselines:
 
 ```bash
+cd packages/flark_flutter
 flutter test test/v2/flutter/flark_v2_visual_golden_test.dart
 ```
 

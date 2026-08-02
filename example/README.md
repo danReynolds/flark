@@ -1,9 +1,11 @@
 # Flark Example And Web Site
 
 This Flutter app is both the package integration harness and the GitHub Pages
-site. It depends on the local package through `path: ..`, imports only
-`package:flark/flark.dart`, and exercises the editable editor, read-only
-preview, toolbar commands, docs examples, and package feature breakdown.
+site. It depends on the local `flark_flutter` package, which in turn depends on
+the root `flark` engine, imports only
+`package:flark_flutter/flark_flutter.dart`, and exercises the editable editor,
+read-only preview, toolbar commands, docs examples, and package feature
+breakdown.
 
 Run it locally:
 

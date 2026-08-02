@@ -47,9 +47,10 @@ evidence for more live-block constant-factor work.
 Harness:
 
 ```bash
-flutter test test/v2/performance/flark_live_rendered_rebuild_benchmark_test.dart \
+(cd packages/flark_flutter && \
+  flutter test test/v2/performance/flark_live_rendered_rebuild_benchmark_test.dart \
   --tags benchmark \
-  --reporter compact
+  --reporter compact)
 ```
 
 Latest local snapshot:
@@ -129,12 +130,15 @@ Harness:
 ./scripts/verify_benchmark_lane.sh
 ```
 
-The enforced lane runs:
+The enforced lane runs both the Dart engine and Flutter adapter benchmark
+packages. Prefer the script above; its effective commands are:
 
 ```bash
-flutter test --tags benchmark test/v2/performance \
+(dart run -DFLARK_BENCHMARK_ENFORCE_BUDGETS=true test:test \
+  --tags benchmark test/v2/performance --reporter compact)
+(cd packages/flark_flutter && flutter test --tags benchmark test/v2/performance \
   --dart-define=FLARK_BENCHMARK_ENFORCE_BUDGETS=true \
-  --reporter compact
+  --reporter compact)
 ```
 
 Each benchmark prints a `flark_benchmark` line with min/median/p95/max. Budgets
@@ -181,11 +185,13 @@ peer-leading debug numbers.
 Harnesses:
 
 ```bash
-flutter test test/v2/performance/flark_large_document_editor_benchmark_test.dart \
+(cd packages/flark_flutter && \
+  flutter test test/v2/performance/flark_large_document_editor_benchmark_test.dart \
   --tags benchmark \
-  --reporter compact
-cd benchmark/peer && flutter test test/quill_large_document_benchmark_test.dart
-cd ../peer_supereditor && flutter test test/super_editor_large_document_benchmark_test.dart
+  --reporter compact)
+(cd benchmark/peer && flutter test test/quill_large_document_benchmark_test.dart)
+(cd benchmark/peer_supereditor && \
+  flutter test test/super_editor_large_document_benchmark_test.dart)
 ```
 
 Latest local snapshot, debug test-VM in a 600px viewport:

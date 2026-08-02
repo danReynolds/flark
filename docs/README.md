@@ -15,6 +15,15 @@ Start here for package-level docs:
 
 Current planning docs:
 
+- [Flark v3 Definitive Architecture Summary](architecture/v3/architecture_summary.md):
+  implementation baseline, Dart-first package boundary, runtime ownership,
+  and production gates.
+- [Flark v3 Production Implementation Plan](architecture/v3/implementation_plan.md):
+  active milestone sequence, acceptance gates, and current implementation
+  state.
+- [RFC 023: Incremental Live Markdown Engine](architecture/rfc/rfc_023_incremental_live_markdown_engine.md):
+  full large-document engine rationale, behavioral inheritance gates,
+  alternatives, and evidence chain.
 - [DX and Ergonomics Peer Audit](architecture/flark/dx_ergonomics_peer_audit_2026-06-05.md):
   where Flark stands against Flutter editor peers and what app-facing DX work
   should come next.

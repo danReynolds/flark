@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flark/flark.dart';
+import 'package:flark_flutter/flark_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 const _heroArtworkAsset = 'assets/flark_atelier.jpg';
@@ -649,9 +649,19 @@ class _TopBar extends StatelessWidget {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final compact = constraints.maxWidth < 860;
+                final phone = constraints.maxWidth < 420;
                 return Row(
                   children: [
-                    const _Brand(),
+                    if (phone)
+                      Tooltip(
+                        message: 'Flark',
+                        child: Semantics(
+                          label: 'Flark',
+                          child: const _Glyph(size: 34),
+                        ),
+                      )
+                    else
+                      const _Brand(),
                     const Spacer(),
                     if (!compact) ...[
                       _NavLink(label: 'Playground', onTap: onPlayground),
@@ -660,11 +670,19 @@ class _TopBar extends StatelessWidget {
                       _NavLink(label: 'Docs', onTap: onDocs),
                       const SizedBox(width: 14),
                     ],
-                    _GhostButton(
-                      icon: Icons.code_rounded,
-                      label: compact ? 'GitHub' : 'View source',
-                      onPressed: () => _open(_repoUrl),
-                    ),
+                    if (phone)
+                      IconButton(
+                        tooltip: 'View source on GitHub',
+                        icon: const Icon(Icons.code_rounded),
+                        color: _C.ink,
+                        onPressed: () => _open(_repoUrl),
+                      )
+                    else
+                      _GhostButton(
+                        icon: Icons.code_rounded,
+                        label: compact ? 'GitHub' : 'View source',
+                        onPressed: () => _open(_repoUrl),
+                      ),
                   ],
                 );
               },
@@ -1307,39 +1325,72 @@ class _WindowBar extends StatelessWidget {
         border: Border(bottom: BorderSide(color: _C.lineSoft)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-      child: Row(
-        children: [
-          const _Dot(_C.terracotta),
-          const SizedBox(width: 7),
-          const _Dot(_C.ochre),
-          const SizedBox(width: 7),
-          const _Dot(_C.sage),
-          const SizedBox(width: 16),
-          const _Glyph(size: 22),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Text(
-              'Flark Markdown',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: _sans(14, FontWeight.w700, _C.ink),
-            ),
-          ),
-          const SizedBox(width: 12),
-          const _LivePill(),
-          const SizedBox(width: 8),
-          _ParseBadge(controller: controller),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compactStatus = constraints.maxWidth < 420;
+          return Row(
+            children: [
+              const _Dot(_C.terracotta),
+              const SizedBox(width: 7),
+              const _Dot(_C.ochre),
+              const SizedBox(width: 7),
+              const _Dot(_C.sage),
+              const SizedBox(width: 16),
+              const _Glyph(size: 22),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  'Flark Markdown',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _sans(14, FontWeight.w700, _C.ink),
+                ),
+              ),
+              const SizedBox(width: 12),
+              _LivePill(compact: compactStatus),
+              const SizedBox(width: 8),
+              _ParseBadge(controller: controller),
+            ],
+          );
+        },
       ),
     );
   }
 }
 
 class _LivePill extends StatelessWidget {
-  const _LivePill();
+  const _LivePill({this.compact = false});
+
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    final dot = Container(
+      width: 7,
+      height: 7,
+      decoration: const BoxDecoration(
+        color: _C.terracotta,
+        shape: BoxShape.circle,
+      ),
+    );
+    if (compact) {
+      return Tooltip(
+        message: 'Live playground',
+        child: Semantics(
+          label: 'Live playground',
+          child: Container(
+            decoration: BoxDecoration(
+              color: _C.card,
+              border: Border.all(color: _C.line),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            padding: const EdgeInsets.all(10),
+            child: dot,
+          ),
+        ),
+      );
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: _C.card,
@@ -1350,14 +1401,7 @@ class _LivePill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 7,
-            height: 7,
-            decoration: const BoxDecoration(
-              color: _C.terracotta,
-              shape: BoxShape.circle,
-            ),
-          ),
+          dot,
           const SizedBox(width: 7),
           // Required string: 'Live playground'
           Text(
@@ -1371,10 +1415,15 @@ class _LivePill extends StatelessWidget {
 }
 
 class _ThemeToggle extends StatelessWidget {
-  const _ThemeToggle({required this.dark, required this.onToggle});
+  const _ThemeToggle({
+    required this.dark,
+    required this.onToggle,
+    this.compact = false,
+  });
 
   final bool dark;
   final VoidCallback onToggle;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -1405,15 +1454,17 @@ class _ThemeToggle extends StatelessWidget {
                   size: 13,
                   color: dark ? const Color(0xFFE0AC53) : _C.ochre,
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  dark ? 'Dark' : 'Light',
-                  style: _sans(
-                    12,
-                    FontWeight.w700,
-                    dark ? const Color(0xFFADBAC7) : _C.inkSoft,
+                if (!compact) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    dark ? 'Dark' : 'Light',
+                    style: _sans(
+                      12,
+                      FontWeight.w700,
+                      dark ? const Color(0xFFADBAC7) : _C.inkSoft,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -1428,11 +1479,13 @@ class _ExpandToggle extends StatelessWidget {
     required this.expanded,
     required this.onToggle,
     this.dark = false,
+    this.compact = false,
   });
 
   final bool expanded;
   final VoidCallback onToggle;
   final bool dark;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -1465,15 +1518,17 @@ class _ExpandToggle extends StatelessWidget {
                   size: 13,
                   color: dark ? const Color(0xFF5FB8AE) : _C.teal,
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  expanded ? 'Close' : 'Expand',
-                  style: _sans(
-                    12,
-                    FontWeight.w700,
-                    dark ? const Color(0xFFADBAC7) : _C.inkSoft,
+                if (!compact) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    expanded ? 'Close' : 'Expand',
+                    style: _sans(
+                      12,
+                      FontWeight.w700,
+                      dark ? const Color(0xFFADBAC7) : _C.inkSoft,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -1610,11 +1665,13 @@ class _ThemeStudioToggle extends StatelessWidget {
     required this.open,
     required this.dark,
     required this.onToggle,
+    this.compact = false,
   });
 
   final bool open;
   final bool dark;
   final VoidCallback onToggle;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -1645,15 +1702,17 @@ class _ThemeStudioToggle extends StatelessWidget {
                   size: 13,
                   color: dark ? const Color(0xFFB69DF8) : _C.terracotta,
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  'Theme',
-                  style: _sans(
-                    12,
-                    FontWeight.w700,
-                    dark ? const Color(0xFFADBAC7) : _C.inkSoft,
+                if (!compact) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    'Theme',
+                    style: _sans(
+                      12,
+                      FontWeight.w700,
+                      dark ? const Color(0xFFADBAC7) : _C.inkSoft,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -2667,30 +2726,53 @@ class _EditorPane extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 10),
-          child: Row(
-            children: [
-              const Icon(Icons.edit_note_rounded, size: 17, color: _C.inkFaint),
-              const SizedBox(width: 7),
-              // Required string: 'Live Markdown field'
-              Expanded(
-                child: Text(
-                  'Live Markdown field',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: _sans(13, FontWeight.w700, _C.inkSoft, spacing: 0.2),
-                ),
-              ),
-              const SizedBox(width: 8),
-              _ThemeToggle(dark: dark, onToggle: onToggleTheme),
-              const SizedBox(width: 8),
-              _ThemeStudioToggle(
-                open: themeStudioOpen,
-                dark: dark,
-                onToggle: onToggleThemeStudio,
-              ),
-              const SizedBox(width: 8),
-              _ExpandToggle(expanded: false, onToggle: onToggleExpand),
-            ],
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 520;
+              return Row(
+                children: [
+                  const Icon(
+                    Icons.edit_note_rounded,
+                    size: 17,
+                    color: _C.inkFaint,
+                  ),
+                  const SizedBox(width: 7),
+                  // Required string: 'Live Markdown field'
+                  Expanded(
+                    child: Text(
+                      'Live Markdown field',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _sans(
+                        13,
+                        FontWeight.w700,
+                        _C.inkSoft,
+                        spacing: 0.2,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _ThemeToggle(
+                    dark: dark,
+                    onToggle: onToggleTheme,
+                    compact: compact,
+                  ),
+                  const SizedBox(width: 8),
+                  _ThemeStudioToggle(
+                    open: themeStudioOpen,
+                    dark: dark,
+                    onToggle: onToggleThemeStudio,
+                    compact: compact,
+                  ),
+                  const SizedBox(width: 8),
+                  _ExpandToggle(
+                    expanded: false,
+                    onToggle: onToggleExpand,
+                    compact: compact,
+                  ),
+                ],
+              );
+            },
           ),
         ),
         Expanded(
@@ -3026,7 +3108,7 @@ class _ApiSection extends StatelessWidget {
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
             child: Text(
-              "Import package:flark/flark.dart and you have everything the "
+              "Import package:flark_flutter/flark_flutter.dart and you have everything the "
               'playground above uses. Drop in a field, share a controller, or '
               'wire commands into your own UI.',
               style: _sans(17, FontWeight.w400, _C.inkSoft),
@@ -3570,7 +3652,7 @@ class _Footer extends StatelessWidget {
                         vertical: 8,
                       ),
                       child: Text(
-                        "import 'package:flark/flark.dart';",
+                        "import 'package:flark_flutter/flark_flutter.dart';",
                         style: _mono(
                           13,
                           FontWeight.w500,

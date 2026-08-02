@@ -2,8 +2,8 @@
 
 **Status:** Stages 1–2 complete (classifiers extracted, standalone library,
 table-tested). Stage 3 behavioral convergence is gated on a manual IME pass.
-**Code:** `lib/src/v2/flutter/flark_live_edit_classifier.dart`
-**Tests:** `test/v2/flutter/flark_live_edit_classifier_test.dart`
+**Code:** `packages/flark_flutter/lib/src/v2/flutter/flark_live_edit_classifier.dart`
+**Tests:** `packages/flark_flutter/test/v2/flutter/flark_live_edit_classifier_test.dart`
 
 ## Why this exists
 
@@ -170,7 +170,7 @@ side typing lands on:
    the resolver returns the selection unchanged and the intent falls through
    to Flutter's display-space default (grapheme-aware, handles plain line
    merges), so plain forward deletion is untouched. Gated by
-   `test/v2/flutter/flark_forward_delete_test.dart`.
+   `packages/flark_flutter/test/v2/flutter/flark_forward_delete_test.dart`.
 9. **Edit anchors never round-trip the caret through display space.** The
    input-policy/shortcut selection appliers on both surfaces skip the
    re-application when the controller's source selection already renders at
@@ -201,7 +201,8 @@ side typing lands on:
    rewritten and renders literally regardless of caret position. Code spans
    are exempt throughout — backticks may legally hug whitespace, and moving
    it would change the code text. The invariant is gated by
-   `test/v2/flutter/flark_inline_style_sequence_test.dart`: after every
+   `packages/flark_flutter/test/v2/flutter/flark_inline_style_sequence_test.dart`:
+   after every
    step of every sequence, the display must equal what the user typed and a
    fresh caret-free parse of `controller.markdown` must render the same
    display.

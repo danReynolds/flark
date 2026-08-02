@@ -2,7 +2,7 @@ import 'package:example/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flark/flark.dart';
+import 'package:flark_flutter/flark_flutter.dart';
 
 void main() {
   testWidgets('example supports common live markdown editing flows', (
@@ -222,11 +222,15 @@ Future<void> _settleParsing(WidgetTester tester) async {
       await tester.pump();
       return;
     }
-    await tester.runAsync(controller.parseNow);
-    await tester.pump();
-    if (controller.hasAuthoritativeRenderPlan) return;
+    // The mounted editor already owns a scheduled parse. On Web that parse may
+    // have started in the widget test's fake-async zone before the WASM asset
+    // Future completes in the root zone. Awaiting the existing parse from
+    // runAsync deadlocks: its continuation needs the next pump. Advance the
+    // debounce/fake-async side, give browser work real time, then pump the
+    // completion back into the widget tree.
+    await tester.pump(const Duration(milliseconds: 50));
     await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
     });
     await tester.pump();
   }

@@ -16,7 +16,7 @@
 import 'dart:io';
 import 'dart:ui' show FrameTiming;
 
-import 'package:flark/flark.dart';
+import 'package:flark_flutter/flark_flutter.dart';
 import 'package:flutter/material.dart';
 
 const _blockCount = int.fromEnvironment(

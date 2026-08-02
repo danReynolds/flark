@@ -3,7 +3,8 @@
 ## Package Setup
 
 ```bash
-flutter pub get
+dart pub get
+cd packages/flark_flutter && flutter pub get
 ```
 
 ## Fast Gate
@@ -22,6 +23,17 @@ render-plan, Flutter, example, native, and packaging tests.
 ```
 
 This is the release-readiness gate for package maintainers.
+
+To inspect both publish archives without publishing them:
+
+```bash
+./scripts/verify_publish_archives.sh
+```
+
+The script validates the nested `flark_flutter` package from an isolated Git
+discovery boundary. This is required because the repository root is itself the
+published `flark` package and intentionally excludes `packages/` from its own
+archive.
 
 ## Docs
 

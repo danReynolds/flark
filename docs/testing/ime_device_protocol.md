@@ -1,7 +1,8 @@
 # IME device-test protocol
 
 Manual pass for real-keyboard behavior the simulated suite
-(`test/v2/flutter/flark_ime_input_test.dart`) cannot vouch for. It also gates
+(`packages/flark_flutter/test/v2/flutter/flark_ime_input_test.dart`) cannot
+vouch for. It also gates
 the Stage-3 convergence work in `doc/architecture/live_edit_intent_pipeline.md`.
 Run it in the example app (`cd example && flutter run -d <device>`), in the
 Scratch document, live-rendered mode.
@@ -11,7 +12,8 @@ on real IMEs.** A keystroke that creates or relocates inline delimiters
 mid-composition (first character with a style armed; first character re-entering
 a run after a committed trailing space) used to clear the composing region and
 push a transient raw-marker editing state to the IME. That is now fixed and
-pinned by active tests in `test/v2/flutter/flark_ime_input_test.dart` (the
+pinned by active tests in
+`packages/flark_flutter/test/v2/flutter/flark_ime_input_test.dart` (the
 armed-composition group): the placement module reports its authored delimiter
 ranges, so the controller hides them in the *predicted* projection on the same
 frame and the editable never resyncs raw markers to the platform — the

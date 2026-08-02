@@ -25,7 +25,7 @@
 import 'package:example/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flark/flark.dart';
+import 'package:flark_flutter/flark_flutter.dart';
 import 'package:integration_test/integration_test.dart';
 
 void main() {
@@ -42,7 +42,8 @@ void main() {
     expect(
       _controller(tester).hasAuthoritativeRenderPlan,
       isTrue,
-      reason: 'the native/WASM Comrak bridge must load and parse on this '
+      reason:
+          'the native/WASM Comrak bridge must load and parse on this '
           'platform',
     );
     expect(find.text('Flark Markdown Editor'), findsOneWidget);
@@ -66,8 +67,9 @@ void main() {
     // Select "bold" and toggle strong through the toolbar (deterministic on
     // every platform, unlike synthesizing a key chord).
     expect(
-      _controller(tester)
-          .applySelection(const FlarkSelection(baseOffset: 0, extentOffset: 4)),
+      _controller(
+        tester,
+      ).applySelection(const FlarkSelection(baseOffset: 0, extentOffset: 4)),
       isTrue,
     );
     await tester.pump();
@@ -138,11 +140,13 @@ Future<void> _settleParsing(WidgetTester tester) async {
       await tester.pump();
       return;
     }
-    await tester.runAsync(controller.parseNow);
-    await tester.pump();
-    if (controller.hasAuthoritativeRenderPlan) return;
+    // Keep the browser event loop and the binding's clock moving separately.
+    // A Web parse can start before runAsync and must be pumped after its
+    // root-zone WASM work completes; awaiting that already-started Future from
+    // runAsync can otherwise wait on the very pump it prevents.
+    await tester.pump(const Duration(milliseconds: 50));
     await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
     });
     await tester.pump();
   }

@@ -3,7 +3,7 @@
 ## Editor
 
 ```dart
-import 'package:flark/flark.dart';
+import 'package:flark_flutter/flark_flutter.dart';
 
 FlarkMarkdownEditor(
   initialMarkdown: '# Notes\n\n- Write Markdown\n- Keep source truth',
@@ -198,7 +198,8 @@ a standard text-field semantics node. Interactive chrome is labeled for
 assistive technology: task checkboxes report a checkbox role with checked state
 (`"Task, completed"` / `"Task, not completed"`), and the code-fence copy control
 is a labeled button. IME composition into block fields groups into single undo
-steps. Coverage lives in `test/v2/flutter/flark_live_rendered_a11y_test.dart`.
+steps. Coverage lives in
+`packages/flark_flutter/test/v2/flutter/flark_live_rendered_a11y_test.dart`.
 
 ## Parse Errors
 

@@ -190,7 +190,7 @@ Consequences worth remembering:
 
 ## The gates
 
-[`flark_inline_style_sequence_test.dart`](../../../test/v2/flutter/flark_inline_style_sequence_test.dart)
+[`flark_inline_style_sequence_test.dart`](../../../packages/flark_flutter/test/v2/flutter/flark_inline_style_sequence_test.dart)
 drives a real controller + real comrak parse through user-level sequences and
 asserts after **every step**:
 
@@ -213,9 +213,9 @@ Unit coverage for the placement/scanner modules lives in
 `flark_inline_run_scanner_test.dart`.
 
 On top of the harness sits a declarative one-string layer
-([`render_spec.dart`](../../../test/v2/flutter/support/render_spec.dart),
+([`render_spec.dart`](../../../packages/flark_flutter/test/v2/flutter/support/render_spec.dart),
 specs in
-[`flark_markdown_render_spec_test.dart`](../../../test/v2/flutter/flark_markdown_render_spec_test.dart)):
+[`flark_markdown_render_spec_test.dart`](../../../packages/flark_flutter/test/v2/flutter/flark_markdown_render_spec_test.dart)):
 `expectRendered(source, rendered)` asserts a parsed document's display as one
 annotated string (`'hello *world*'` → `'hello <em>world</em>'`; literal
 shapes appear literally), and `expectTypedRendered` types the same source

@@ -4,7 +4,7 @@ import 'package:example/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flark/flark.dart';
+import 'package:flark_flutter/flark_flutter.dart';
 
 void main() {
   setUp(() {
@@ -180,6 +180,23 @@ void main() {
       find.byKey(const ValueKey('flark-example-command-table')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('window status compacts without overflow at phone width', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(const FlarkExampleApp());
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Live playground'), findsNothing);
+    expect(find.bySemanticsLabel('Live playground'), findsOneWidget);
+    expect(find.text('Parsed'), findsOneWidget);
+    semantics.dispose();
   });
 
   testWidgets('toolbar can load common markdown scenarios', (tester) async {

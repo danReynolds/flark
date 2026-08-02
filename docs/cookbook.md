@@ -7,7 +7,7 @@ Use the app barrel unless a recipe explicitly says otherwise:
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flark/flark.dart';
+import 'package:flark_flutter/flark_flutter.dart';
 ```
 
 ## Simple Editor
