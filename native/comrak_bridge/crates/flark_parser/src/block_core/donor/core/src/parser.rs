@@ -3345,6 +3345,9 @@ fn validate_direct_pause_shape(
     let terminal_is_paragraph = frames
         .last()
         .is_some_and(|frame| frame.kind == DirectBlockKind::Paragraph);
+    let terminal_is_indented_code = frames
+        .last()
+        .is_some_and(|frame| frame.kind == DirectBlockKind::IndentedCode);
     let paragraph_has_content = match (terminal_is_paragraph, paragraph) {
         (true, Some(paragraph))
             if paragraph.frame_depth == frames.len() - 1 && paragraph.has_visible_content =>
@@ -3358,9 +3361,9 @@ fn validate_direct_pause_shape(
             ));
         }
     };
-    if deferred.terminator && !paragraph_has_content {
+    if deferred.terminator && !(paragraph_has_content || terminal_is_indented_code) {
         return Err(ParseError::Invariant(
-            "direct restart output terminator targets an open paragraph",
+            "direct restart output terminator targets an open paragraph or indented code",
         ));
     }
     if let Some(depth) = deferred.blank_gap_floor
@@ -3453,6 +3456,10 @@ fn validate_direct_grammar_shape(grammar: &DirectGrammarContinuation) -> Result<
         .frames
         .last()
         .is_some_and(|frame| frame.kind == DirectGrammarKind::Paragraph);
+    let terminal_is_indented_code = grammar
+        .frames
+        .last()
+        .is_some_and(|frame| frame.kind == DirectGrammarKind::IndentedCode);
     let paragraph_has_content = match (terminal_is_paragraph, grammar.paragraph) {
         (true, Some(paragraph))
             if paragraph.frame_depth == grammar.frames.len() - 1
@@ -3467,9 +3474,9 @@ fn validate_direct_grammar_shape(grammar: &DirectGrammarContinuation) -> Result<
             ));
         }
     };
-    if grammar.deferred.terminator && !paragraph_has_content {
+    if grammar.deferred.terminator && !(paragraph_has_content || terminal_is_indented_code) {
         return Err(ParseError::Invariant(
-            "direct durable grammar terminator targets an open Paragraph",
+            "direct durable grammar terminator targets an open Paragraph or IndentedCode",
         ));
     }
     if let Some(depth) = grammar.deferred.blank_gap_floor
@@ -7454,6 +7461,17 @@ fn validate_direct_pause_kind(kind: &BlockKind) -> Result<DirectBlockKind, Parse
             literal,
             closed: false,
         } if *fence_length >= 3 && *fence_offset <= 3 && info.is_empty() && literal.is_empty()
+    ) || matches!(
+        kind,
+        BlockKind::CodeBlock {
+            fenced: false,
+            fence_char: 0,
+            fence_length: 0,
+            fence_offset: 0,
+            info,
+            literal,
+            closed: true,
+        } if info.is_empty() && literal.is_empty()
     );
     if !supported {
         return Err(ParseError::Invariant(
@@ -7929,11 +7947,17 @@ impl DirectValueBlockParser {
         let terminal_is_paragraph = frames
             .last()
             .is_some_and(|frame| frame.kind == DirectBlockKind::Paragraph);
-        if (terminal_is_paragraph && !*paragraph_has_content)
-            || (*pending_terminator && !terminal_is_paragraph)
-        {
+        let terminal_is_indented_code = frames
+            .last()
+            .is_some_and(|frame| frame.kind == DirectBlockKind::IndentedCode);
+        if terminal_is_paragraph && !*paragraph_has_content {
             return Err(ParseError::Invariant(
                 "direct pause paragraph deferred state targets its terminal frame",
+            ));
+        }
+        if *pending_terminator && !(terminal_is_paragraph || terminal_is_indented_code) {
+            return Err(ParseError::Invariant(
+                "direct pause terminator targets an open paragraph or indented code",
             ));
         }
         if let Some(depth) = floor_depth
@@ -8099,6 +8123,10 @@ impl DirectValueBlockParser {
             }
         }
         let terminal_is_paragraph = matches!(kinds.last(), Some(BlockKind::Paragraph));
+        let terminal_is_indented_code = matches!(
+            kinds.last(),
+            Some(BlockKind::CodeBlock { fenced: false, .. })
+        );
         let paragraph_has_content = match (terminal_is_paragraph, paragraph) {
             (true, Some(paragraph))
                 if paragraph.frame_depth == frames.len() - 1 && paragraph.has_visible_content =>
@@ -8112,9 +8140,9 @@ impl DirectValueBlockParser {
                 ));
             }
         };
-        if pending_terminator && !paragraph_has_content {
+        if pending_terminator && !(paragraph_has_content || terminal_is_indented_code) {
             return Err(ParseError::Invariant(
-                "direct pause terminator targets an open paragraph",
+                "direct pause terminator targets an open paragraph or indented code",
             ));
         }
         if let Some(depth) = pending_blank_gap_floor

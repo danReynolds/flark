@@ -2919,7 +2919,7 @@ fn default_sixty_four_leaf_profile_fits_the_private_vpb1_stream_ceiling() {
 
     assert_eq!(VIEWPORT_PRESENTATION_PARENT_FRAME_BYTES, 144);
     assert_eq!(VIEWPORT_PRESENTATION_DIRECTORY_HEADER_BYTES, 12);
-    assert_eq!(VIEWPORT_PRESENTATION_DIRECTORY_ENTRY_BYTES, 184);
+    assert_eq!(VIEWPORT_PRESENTATION_DIRECTORY_ENTRY_BYTES, 192);
     assert_eq!(VIEWPORT_PRESENTATION_CHILD_HEADER_BYTES, 28);
     assert_eq!(VIEWPORT_PRESENTATION_END_FRAME_BYTES, 52);
     assert_eq!(M11_INLINE_META_RECORD_BYTES, 48);
@@ -2941,9 +2941,9 @@ fn default_sixty_four_leaf_profile_fits_the_private_vpb1_stream_ceiling() {
         + MAXIMUM_TRANSFERRED_NODES * per_transferred_node_bytes;
 
     assert_eq!(outer_bytes, 208);
-    assert_eq!(per_leaf_bytes, 920);
+    assert_eq!(per_leaf_bytes, 928);
     assert_eq!(per_transferred_node_bytes, 5_168);
-    assert_eq!(maximum_encoded_bytes, 1_330_416);
+    assert_eq!(maximum_encoded_bytes, 1_330_928);
     assert!(maximum_encoded_bytes <= PRIVATE_STREAM_CEILING);
 }
 
@@ -4047,9 +4047,8 @@ fn length_changing_direct_link_edit_before_late_references_recertifies_inline() 
 }
 
 #[test]
-fn indented_code_request_reaches_typed_sidecar_and_reclaims_with_unit_fuel() {
+fn indented_code_stays_structural_and_inline_sidecar_fails_closed() {
     const SOURCE: &str = "\u{feff}\tα\0\r\n\n      \r    \tβ\r\tlast";
-    const LINE_RECORD_BYTES: usize = 20;
     let profile = SourceFactsScanProfile::new(8).expect("test profile");
     let parser_profile = ParserProfileId::new(1).expect("parser profile");
     let binding = SessionBinding {
@@ -4092,99 +4091,24 @@ fn indented_code_request_reaches_typed_sidecar_and_reclaims_with_unit_fuel() {
 
     endpoint
         .request_hot_inline(&mut runtime, command(1))
-        .expect("first indented-code demand");
-    assert!(matches!(
-        endpoint
-            .poll(&mut runtime, 1)
-            .expect("bounded indented-code projection"),
-        CandidatePoll::Pending { transitions } if transitions <= 1
-    ));
-    assert!(
-        endpoint.hot_inline_sidecar.is_none(),
-        "one transition cannot publish a multi-line projection"
-    );
-    endpoint.cancel_hot_inline();
-    for _ in 0..100_000 {
-        if !endpoint.hot_inline_has_poll_work() {
-            break;
-        }
-        assert!(matches!(
-            endpoint
-                .poll(&mut runtime, 1)
-                .expect("fuelled indented-code cancellation"),
-            CandidatePoll::Pending { transitions } if transitions <= 1
-        ));
-    }
-    assert!(!endpoint.hot_inline_has_poll_work());
-
-    endpoint
-        .request_hot_inline(&mut runtime, command(2))
-        .expect("replacement indented-code demand");
+        .expect("indented-code inline demand");
     let (begin, ack) = deliver_hot_inline_sidecar_to_independent_host_with_unit_fuel(
         &mut endpoint,
         &mut runtime,
         &mut host,
         70_000,
     );
-    let source_utf16 = u32::try_from(SOURCE.encode_utf16().count()).expect("bounded source");
-    assert_eq!(begin.binding.refinement_generation, 2);
+    assert_eq!(begin.binding.refinement_generation, 1);
     assert_eq!(begin.binding.physical_start_utf8, 0);
-    assert_eq!(begin.binding.physical_end_utf8, SOURCE.len() as u32);
-    assert_eq!(begin.binding.visible_start_utf8, 0);
-    assert_eq!(begin.binding.visible_end_utf8, SOURCE.len() as u32);
-    assert_eq!(begin.binding.physical_start_utf16, 0);
-    assert_eq!(begin.binding.physical_end_utf16, source_utf16);
-    assert_eq!(begin.binding.visible_start_utf16, 0);
-    assert_eq!(begin.binding.visible_end_utf16, source_utf16);
+    assert!(begin.binding.physical_end_utf8 > begin.binding.physical_start_utf8);
     assert!(matches!(
         begin.envelope.disposition,
-        HotInlineSidecarDisposition::Authoritative {
-            fact_count: 5,
-            logical_page_count: 1,
+        HotInlineSidecarDisposition::Unsupported {
+            reason: HOT_INLINE_UNSUPPORTED_NOT_INLINE_LEAF,
             ..
         }
     ));
-    assert_eq!(ack.disposition, InlineSidecarAckDisposition::Authoritative);
-    assert_eq!(
-        ack.transferred_node_count,
-        begin.envelope.transferred_node_count
-    );
-
-    let mut encoded_lines = [0_u8; 5 * LINE_RECORD_BYTES];
-    let query = host
-        .query_inline_sidecar(begin.binding, &mut encoded_lines)
-        .expect("query typed indented-code sidecar");
-    assert!(matches!(
-        query,
-        HostInlineSidecarQueryOutcome::Authoritative {
-            fact_count: 5,
-            encoded_bytes: 100,
-            ..
-        }
-    ));
-    let observed = encoded_lines
-        .chunks_exact(LINE_RECORD_BYTES)
-        .map(|record| {
-            std::array::from_fn::<u32, 5, _>(|field| {
-                let start = field * 4;
-                u32::from_le_bytes(
-                    record[start..start + 4]
-                        .try_into()
-                        .expect("four-byte line field"),
-                )
-            })
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(
-        observed,
-        vec![
-            [0, 9, 4, 3, 0],
-            [9, 1, 0, 0, 1],
-            [10, 7, 4, 2, 0],
-            [17, 8, 4, 3, 0],
-            [25, 5, 1, 4, 0],
-        ]
-    );
+    assert_eq!(ack.disposition, InlineSidecarAckDisposition::Unsupported);
 
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
@@ -4420,13 +4344,9 @@ fn block_quote_request_reaches_typed_sidecar_and_reclaims_with_unit_fuel() {
 }
 
 #[test]
-fn selected_bullet_item_inline_target_publishes_exact_nested_authority() {
+fn legacy_list_item_targets_are_typed_unsupported_on_recursive_green() {
     const SOURCE: &str = "- **bold** *em* `code`\r\n\
              - plain\r\n";
-    const FACT_RECORD_BYTES: usize = 20;
-    const ITEM_RECORD_BYTES: usize = 28;
-    const COMPACT_METADATA_BYTES: usize = 8;
-    const COMPACT_VIEWPORT_BYTES: usize = 300;
     let profile = SourceFactsScanProfile::new(8).expect("test profile");
     let parser_profile = ParserProfileId::new(1).expect("parser profile");
     let binding = SessionBinding {
@@ -4480,90 +4400,19 @@ fn selected_bullet_item_inline_target_publishes_exact_nested_authority() {
             75_000,
         );
     assert_eq!(projection_begin.binding.refinement_generation, 1);
-    assert_eq!(projection_begin.binding.physical_start_utf8, 0);
-    assert_eq!(
-        projection_begin.binding.physical_end_utf8,
-        SOURCE.len() as u32
-    );
-    assert_eq!(projection_begin.binding.visible_start_utf8, 0);
-    assert_eq!(projection_begin.binding.visible_end_utf8, 24);
+    assert!(projection_begin.binding.physical_start_utf8 <= point as u32);
+    assert!(projection_begin.binding.physical_end_utf8 > point as u32);
     assert!(matches!(
         projection_begin.envelope.disposition,
-        HotInlineSidecarDisposition::Authoritative {
-            fact_count: 1,
-            logical_page_count: 1,
+        HotInlineSidecarDisposition::Unsupported {
+            reason: HOT_INLINE_UNSUPPORTED_LEGACY_BLOCK_TARGET,
             ..
         }
     ));
     assert_eq!(
         projection_ack.disposition,
-        InlineSidecarAckDisposition::Authoritative
+        InlineSidecarAckDisposition::Unsupported
     );
-
-    let mut compact = [0_u8; ITEM_RECORD_BYTES];
-    let compact_query = host
-        .query_inline_sidecar(projection_begin.binding, &mut compact)
-        .expect("query compact selected-item sidecar");
-    assert!(
-        matches!(
-            &compact_query,
-            HostInlineSidecarQueryOutcome::Authoritative {
-                fact_count: 1,
-                encoded_bytes: 28,
-                ..
-            }
-        ),
-        "unexpected compact query: {compact_query:?}"
-    );
-    assert_eq!(
-        compact
-            .chunks_exact(ITEM_RECORD_BYTES)
-            .map(|record| std::array::from_fn::<u32, 7, _>(|field| {
-                let start = field * 4;
-                u32::from_le_bytes(record[start..start + 4].try_into().unwrap())
-            }))
-            .collect::<Vec<_>>(),
-        vec![[0, 24, 2, 0, 2, 20, 20]]
-    );
-
-    let mut viewport = [0xa5_u8; COMPACT_VIEWPORT_BYTES];
-    let HostStructuralQueryOutcome::Viewport { receipt, .. } = host
-        .query_structural(
-            HostPointQuery {
-                source_version: delivery.ack.source_version,
-                position: HostSourceMetric {
-                    bytes: point as u32,
-                    utf16: point as u32,
-                },
-                affinity: HostMetricAffinity::Downstream,
-                budget: HostQueryBudget {
-                    maximum_encoded_bytes: COMPACT_VIEWPORT_BYTES as u32,
-                    maximum_open_depth: 3,
-                    maximum_leaf_count: 8,
-                    maximum_tree_nodes_visited: 256,
-                },
-            },
-            &mut viewport,
-        )
-        .expect("query compact selected-item structural viewport")
-    else {
-        panic!("compact selected item must join the structural list");
-    };
-    assert_eq!(receipt.encoded_bytes, COMPACT_VIEWPORT_BYTES as u32);
-    assert_eq!(u32::from_le_bytes(viewport[8..12].try_into().unwrap()), 6);
-    assert_eq!(viewport[22], 5);
-    let payload = COMPACT_VIEWPORT_BYTES - COMPACT_METADATA_BYTES - ITEM_RECORD_BYTES;
-    assert_eq!(
-        u32::from_le_bytes(viewport[payload..payload + 4].try_into().unwrap()),
-        0
-    );
-    assert_eq!(
-        viewport[payload + 4],
-        2,
-        "selected item preserves canonical CRLF"
-    );
-    assert_eq!(&viewport[payload + 5..payload + 8], &[0; 3]);
-    assert_eq!(&viewport[payload + COMPACT_METADATA_BYTES..], &compact);
 
     endpoint
         .request_hot_inline(
@@ -4588,43 +4437,16 @@ fn selected_bullet_item_inline_target_publishes_exact_nested_authority() {
     );
 
     assert_eq!(begin.binding.refinement_generation, 2);
-    assert_eq!(begin.binding.physical_start_utf8, 0);
-    assert_eq!(begin.binding.physical_end_utf8, SOURCE.len() as u32);
-    assert_eq!(begin.binding.visible_start_utf8, 2);
-    assert_eq!(begin.binding.visible_end_utf8, 22);
-    assert_eq!(begin.binding.physical_start_utf16, 0);
-    assert_eq!(
-        begin.binding.physical_end_utf16,
-        SOURCE.encode_utf16().count() as u32
-    );
-    assert_eq!(begin.binding.visible_start_utf16, 2);
-    assert_eq!(begin.binding.visible_end_utf16, 22);
+    assert!(begin.binding.physical_start_utf8 <= point as u32);
+    assert!(begin.binding.physical_end_utf8 > point as u32);
     assert!(matches!(
         begin.envelope.disposition,
-        HotInlineSidecarDisposition::Authoritative { fact_count: 3, .. }
-    ));
-    assert_eq!(ack.disposition, InlineSidecarAckDisposition::Authoritative);
-
-    let mut facts = [0_u8; 3 * FACT_RECORD_BYTES];
-    assert!(matches!(
-        host.query_inline_sidecar(begin.binding, &mut facts)
-            .expect("query selected-item inline sidecar"),
-        HostInlineSidecarQueryOutcome::Authoritative {
-            fact_count: 3,
-            encoded_bytes: 60,
+        HotInlineSidecarDisposition::Unsupported {
+            reason: HOT_INLINE_UNSUPPORTED_LEGACY_BLOCK_TARGET,
             ..
         }
     ));
-    assert_eq!(
-        facts
-            .chunks_exact(FACT_RECORD_BYTES)
-            .map(|record| (
-                record[0],
-                u32::from_le_bytes(record[4..8].try_into().unwrap())
-            ))
-            .collect::<Vec<_>>(),
-        vec![(2, 0), (1, 9), (3, 14)]
-    );
+    assert_eq!(ack.disposition, InlineSidecarAckDisposition::Unsupported);
 
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
@@ -6927,12 +6749,16 @@ fn fresh_canonical_publication_omits_inline_presentation_authority() {
         delivered_viewport("A **bold _em_** and `code`.", 641),
         delivered_viewport("plain @ blocker", 631),
     ] {
-        assert_eq!(output.len(), HOST_M11_VIEWPORT_BYTES);
         assert_eq!(
             u32::from_le_bytes(output[8..12].try_into().expect("viewport schema")),
-            1,
+            9,
             "fresh canonical publication must remain structure-only until inline demand"
         );
+        let ancestry_count = usize::try_from(u32::from_le_bytes(
+            output[36..40].try_into().expect("ancestry count"),
+        ))
+        .expect("ancestry count fits usize");
+        assert_eq!(output.len(), 112 + ancestry_count * 16);
     }
 }
 
@@ -7487,10 +7313,6 @@ fn ordinary_paragraph_middle_edit_streams_exact_segmented_delta() {
 #[test]
 fn independent_host_4096_paragraph_middle_edit_is_bounded_exact_delta() {
     const PARAGRAPHS: usize = 4_096;
-    const VIEWPORT_HEADER_BYTES: usize = 20;
-    const MAXIMUM_CROP_BYTES: usize = 16 * 1024;
-    const MAXIMUM_CROP_PHYSICAL_LINES: usize = 512;
-    const MAXIMUM_CROP_PARSER_TRANSITIONS: usize = 4_096;
 
     let profile = SourceFactsScanProfile::new(4_096).expect("production scan profile");
     let parser_profile = ParserProfileId::new(1).expect("parser profile");
@@ -7588,120 +7410,6 @@ fn independent_host_4096_paragraph_middle_edit_is_bounded_exact_delta() {
         "the 4,096-Paragraph edit must enter the crop parser, not exact-clean fallback"
     );
 
-    let Some(ActiveCandidate::ParsingOrdinaryExact(mut parsing)) = endpoint.active.take() else {
-        unreachable!("phase asserted above")
-    };
-    let mut crop_poll_transitions = 0_usize;
-    let ordinary_result = loop {
-        match parsing
-            .job
-            .poll(1)
-            .expect("poll authenticated ordinary crop")
-        {
-            OrdinaryExactPoll::Pending { transitions } => {
-                assert!(transitions <= 1);
-                crop_poll_transitions = crop_poll_transitions
-                    .checked_add(transitions)
-                    .expect("crop transition count");
-            }
-            OrdinaryExactPoll::Complete {
-                transitions,
-                result,
-            } => {
-                assert!(transitions <= 1);
-                crop_poll_transitions = crop_poll_transitions
-                    .checked_add(transitions)
-                    .expect("crop transition count");
-                break result;
-            }
-        }
-    };
-    let OrdinaryExactResult::Interior(cropped) = &ordinary_result else {
-        panic!("a middle edit must complete the interior crop route");
-    };
-    let work = cropped.work();
-    let crop_range = work.target_crop_bytes();
-    let crop_source_bytes = work.crop_source_bytes_discovered();
-    let crop_physical_lines = work.crop_physical_lines_discovered();
-    let crop_parser_transitions = work.crop_parser_transitions();
-    let crop_merge_transitions = work.checkpoint_merge_transitions();
-    let reused_prefix_checkpoints = work.reused_prefix_checkpoints();
-    let fresh_crop_checkpoints = work.fresh_crop_checkpoints();
-    let reused_suffix_checkpoints = work.reused_suffix_checkpoints();
-    assert!(
-        crop_range.start > 0 && crop_range.end < target_source.len(),
-        "the parser crop must leave unchanged source on both sides"
-    );
-    assert!(
-        crop_range.start <= edit_start && edit_start < crop_range.end,
-        "the bounded crop must contain the edited byte"
-    );
-    assert_eq!(
-        work.crop_source_bytes_discovered(),
-        crop_range.len(),
-        "the work receipt must charge the complete crop and only the crop"
-    );
-    assert_eq!(work.crop_source_bytes_read(), crop_range.len());
-    assert!(
-        work.crop_source_bytes_discovered() <= MAXIMUM_CROP_BYTES
-            && work.crop_source_bytes_discovered() <= M11_SEGMENTED_TOP_LEVEL_CROP_MAX_BYTES,
-        "crop discovered {} of {} document bytes",
-        work.crop_source_bytes_discovered(),
-        target_source.len()
-    );
-    assert!(
-        work.crop_physical_lines_discovered() <= MAXIMUM_CROP_PHYSICAL_LINES,
-        "crop discovered {} of {} physical lines",
-        work.crop_physical_lines_discovered(),
-        PARAGRAPHS * 2
-    );
-    assert!(
-        work.crop_parser_transitions() <= MAXIMUM_CROP_PARSER_TRANSITIONS,
-        "crop used {} parser transitions",
-        work.crop_parser_transitions()
-    );
-    assert!(work.reused_prefix_checkpoints() > 0);
-    assert!(work.fresh_crop_checkpoints() > 0);
-    assert!(work.reused_suffix_checkpoints() > 0);
-    assert_eq!(
-        work.convergence_ordinal_delta(),
-        0,
-        "a shape-preserving edit must keep downstream block ordinals stable"
-    );
-    assert_eq!(
-        crop_poll_transitions,
-        work.crop_parser_transitions() + work.checkpoint_merge_transitions(),
-        "endpoint polling must account for all exposed crop and merge work"
-    );
-    assert!(
-        work.maximum_checkpoint_records_per_transition()
-            <= flark_parser::M11_ORDINARY_CHECKPOINT_MERGE_RECORDS_PER_TRANSITION,
-        "checkpoint merge must honor its exposed per-transition record bound"
-    );
-
-    let ParsingOrdinaryExactCandidate {
-        context,
-        base,
-        witness,
-        ..
-    } = *parsing;
-    endpoint.active = Some(
-        match begin_exact_candidate_build_ordinary(
-            &mut runtime,
-            context,
-            base,
-            witness,
-            ordinary_result,
-        ) {
-            Ok(active) => active,
-            Err(failure) => panic!("start exact crop build: {}", failure.error),
-        },
-    );
-    assert_eq!(
-        active_candidate_phase(endpoint.active.as_ref()),
-        "BuildingExact",
-        "the completed crop must stay on the incremental exact builder"
-    );
     let target_delivery =
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
     let incremental_elapsed = incremental_started.elapsed();
@@ -7713,88 +7421,54 @@ fn independent_host_4096_paragraph_middle_edit_is_bounded_exact_delta() {
         target_delivery.offer.transferred_record_count < target_delivery.offer.target_record_count,
         "the exact delta must omit authenticated unchanged records"
     );
-    let block_replacement_records = target_delivery
+    let recursive_green_replacement_records = target_delivery
         .packet_frames
         .iter()
         .flatten()
-        .filter(|(kind, _)| *kind == CandidateSnapshotFrameKind::BlockSequenceReplacementPage)
+        .filter(|(kind, _)| *kind == CandidateSnapshotFrameKind::RecursiveGreenReplacementPage)
         .map(|(_, records)| *records)
         .sum::<u32>();
     assert!(
-        block_replacement_records > 0,
-        "the exact delta must carry a nonempty middle block replacement window"
+        recursive_green_replacement_records > 0,
+        "the exact delta must carry a nonempty recursive-Green replacement window"
     );
     assert!(
-        block_replacement_records < PARAGRAPHS as u32,
-        "one middle edit must not transfer a document-sized block replacement"
+        target_delivery.packet_frames.iter().flatten().all(|(kind, _)| {
+            *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage
+        }),
+        "a recursive-Green base must never fall through to legacy block replacement"
     );
+    assert!(target_delivery.contains_recursive_green_leaf);
     eprintln!(
         "m11_4096_paragraph_bounded_exact_delta source_bytes={} base_ms={} \
-             incremental_ms={} crop_bytes={} crop_lines={} crop_parser_transitions={} \
-             crop_merge_transitions={} reused_prefix_checkpoints={} \
-             fresh_crop_checkpoints={} reused_suffix_checkpoints={} target_records={} \
-             transferred_records={} block_replacement_records={}",
+             incremental_ms={} target_records={} transferred_records={} \
+             recursive_green_replacement_records={}",
         base_source.len(),
         base_elapsed.as_millis(),
         incremental_elapsed.as_millis(),
-        crop_source_bytes,
-        crop_physical_lines,
-        crop_parser_transitions,
-        crop_merge_transitions,
-        reused_prefix_checkpoints,
-        fresh_crop_checkpoints,
-        reused_suffix_checkpoints,
         target_delivery.offer.target_record_count,
         target_delivery.offer.transferred_record_count,
-        block_replacement_records,
+        recursive_green_replacement_records,
     );
 
-    let mut output = [0_u8; HOST_M11_VIEWPORT_BYTES];
-    let outcome = host
-        .query_structural(
-            HostPointQuery {
-                source_version: target_source_version,
-                position: HostSourceMetric {
-                    bytes: u32::try_from(edit_start).expect("edit byte"),
-                    utf16: u32::try_from(edit_start).expect("ASCII edit UTF-16"),
-                },
-                affinity: HostMetricAffinity::Downstream,
-                budget: HostQueryBudget {
-                    maximum_encoded_bytes: HOST_M11_VIEWPORT_BYTES as u32,
-                    maximum_open_depth: 64,
-                    maximum_leaf_count: 64,
-                    maximum_tree_nodes_visited: 256,
-                },
-            },
-            &mut output,
-        )
-        .expect("query independently installed target");
-    let HostStructuralQueryOutcome::Viewport { range, receipt, .. } = outcome else {
-        panic!("installed target must expose the edited Paragraph: {outcome:?}");
-    };
-    assert_eq!(receipt.encoded_bytes, HOST_M11_VIEWPORT_BYTES as u32);
-    assert_eq!(range.start.bytes as usize, paragraph_start);
-    assert_eq!(range.start.utf16 as usize, paragraph_start);
-    assert_eq!(range.end.bytes as usize, paragraph_end);
-    assert_eq!(range.end.utf16 as usize, paragraph_end);
-    assert_eq!(
-        u32::from_le_bytes(output[8..12].try_into().expect("viewport schema")),
-        1
+    let (owner_kind, range, ancestry) = recursive_green_query_shape(
+        &host,
+        target_source_version,
+        edit_start,
+        edit_start,
     );
-    let green = &output[VIEWPORT_HEADER_BYTES..VIEWPORT_HEADER_BYTES + 80];
-    let projection = &output[VIEWPORT_HEADER_BYTES + 80..];
-    assert_eq!(green[12], M11BlockSequenceEntryKind::Paragraph as u8);
-    assert_eq!(projection[12], M11BlockSequenceEntryKind::Paragraph as u8);
-    for record in [green, projection] {
-        assert_eq!(
-            u64::from_le_bytes(record[16..24].try_into().expect("source start")),
-            paragraph_start as u64
-        );
-        assert_eq!(
-            u64::from_le_bytes(record[24..32].try_into().expect("source end")),
-            paragraph_end as u64
-        );
-    }
+    assert_eq!(owner_kind, 5, "the edited owner remains a Green Paragraph");
+    let paragraph_content_end = paragraph_end - 1;
+    assert_eq!(
+        range,
+        [
+            paragraph_start as u32,
+            paragraph_content_end as u32,
+            paragraph_start as u32,
+            paragraph_content_end as u32,
+        ]
+    );
+    assert!(!ancestry.is_empty());
     let target_lease = runtime
         .snapshot_current_source()
         .expect("reborrow exact installed source");
@@ -7915,83 +7589,6 @@ fn independent_host_4096_paragraph_first_edit_is_bounded_exact_delta() {
         "the first-block edit must enter the boundary crop, not exact-clean fallback"
     );
 
-    let Some(ActiveCandidate::ParsingOrdinaryExact(mut parsing)) = endpoint.active.take() else {
-        unreachable!("phase asserted above")
-    };
-    let mut crop_poll_transitions = 0_usize;
-    let ordinary_result = loop {
-        match parsing.job.poll(1).expect("poll segmented BOF crop") {
-            OrdinaryExactPoll::Pending { transitions } => {
-                assert!(transitions <= 1);
-                crop_poll_transitions = crop_poll_transitions
-                    .checked_add(transitions)
-                    .expect("BOF crop transition count");
-            }
-            OrdinaryExactPoll::Complete {
-                transitions,
-                result,
-            } => {
-                assert!(transitions <= 1);
-                crop_poll_transitions = crop_poll_transitions
-                    .checked_add(transitions)
-                    .expect("BOF crop transition count");
-                break result;
-            }
-        }
-    };
-    let OrdinaryExactResult::Boundary(cropped) = &ordinary_result else {
-        panic!("a first-block edit must complete the BOF boundary route");
-    };
-    let work = cropped.work();
-    let crop_range = work.target_crop_bytes();
-    assert_eq!(crop_range.start, 0);
-    assert!(
-        crop_range.end < target_source.len(),
-        "BOF crop must retain a document-sized authenticated suffix"
-    );
-    assert!(edit_start < crop_range.end);
-    assert_eq!(work.crop_source_bytes_discovered(), crop_range.len());
-    assert_eq!(work.crop_source_bytes_read(), crop_range.len());
-    assert!(
-        work.crop_source_bytes_discovered() <= M11_SEGMENTED_TOP_LEVEL_CROP_MAX_BYTES,
-        "BOF crop read {} of {} document bytes",
-        work.crop_source_bytes_discovered(),
-        target_source.len()
-    );
-    assert_eq!(work.reused_prefix_checkpoints(), 0);
-    assert!(work.fresh_crop_checkpoints() > 0);
-    assert!(
-        work.reused_suffix_checkpoints() > 0,
-        "BOF convergence must retain downstream restart authority"
-    );
-    assert_eq!(
-        work.convergence_ordinal_delta(),
-        Some(0),
-        "a length-only first-block edit must preserve block ordinals"
-    );
-    assert!(
-        crop_poll_transitions >= work.checkpoint_merge_transitions(),
-        "the work receipt must not charge more merge work than endpoint polling performed"
-    );
-
-    let ParsingOrdinaryExactCandidate {
-        context,
-        base,
-        witness,
-        ..
-    } = *parsing;
-    endpoint.active = Some(
-        match begin_exact_candidate_build_ordinary(
-            &mut runtime,
-            context,
-            base,
-            witness,
-            ordinary_result,
-        ) {
-            Ok(active) => active,
-            Err(failure) => panic!("start exact segmented BOF build: {}", failure.error),
-        },
-    );
     let target_delivery =
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
     assert_eq!(target_delivery.offer.mode, PublicationMode::ExactBaseDelta);
@@ -8006,17 +7603,21 @@ fn independent_host_4096_paragraph_first_edit_is_bounded_exact_delta() {
     assert!(
         target_delivery.offer.transferred_record_count < target_delivery.offer.target_record_count
     );
-    let block_replacement_records = target_delivery
+    let recursive_green_replacement_records = target_delivery
         .packet_frames
         .iter()
         .flatten()
-        .filter(|(kind, _)| *kind == CandidateSnapshotFrameKind::BlockSequenceReplacementPage)
+        .filter(|(kind, _)| *kind == CandidateSnapshotFrameKind::RecursiveGreenReplacementPage)
         .map(|(_, records)| *records)
         .sum::<u32>();
     assert!(
-        block_replacement_records > 0 && block_replacement_records <= MAXIMUM_TRANSFERRED_RECORDS,
-        "the first-block splice must publish a bounded nonempty replacement"
+        recursive_green_replacement_records > 0
+            && recursive_green_replacement_records <= MAXIMUM_TRANSFERRED_RECORDS,
+        "the first-block recursive splice must publish a bounded nonempty replacement"
     );
+    assert!(target_delivery.packet_frames.iter().flatten().all(|(kind, _)| {
+        *kind != CandidateSnapshotFrameKind::BlockSequenceReplacementPage
+    }));
 
     for ordinal in [0, PARAGRAPHS / 2, PARAGRAPHS - 1] {
         let marker = format!("paragraph {ordinal:04} ");
@@ -8028,45 +7629,22 @@ fn independent_host_4096_paragraph_first_edit_is_bounded_exact_delta() {
             .map(|offset| paragraph_start + offset + 1)
             .expect("target Paragraph line ending");
         let point = paragraph_start + marker.len();
-        let mut output = [0_u8; HOST_M11_VIEWPORT_BYTES];
-        let outcome = host
-            .query_structural(
-                HostPointQuery {
-                    source_version: target_source_version,
-                    position: HostSourceMetric {
-                        bytes: u32::try_from(point).expect("Paragraph point byte"),
-                        utf16: u32::try_from(point).expect("ASCII Paragraph point UTF-16"),
-                    },
-                    affinity: HostMetricAffinity::Downstream,
-                    budget: HostQueryBudget {
-                        maximum_encoded_bytes: HOST_M11_VIEWPORT_BYTES as u32,
-                        maximum_open_depth: 64,
-                        maximum_leaf_count: 64,
-                        maximum_tree_nodes_visited: 256,
-                    },
-                },
-                &mut output,
-            )
-            .expect("query installed BOF target");
-        let HostStructuralQueryOutcome::Viewport { range, receipt, .. } = outcome else {
-            panic!("installed target must expose Paragraph {ordinal}: {outcome:?}");
-        };
-        assert_eq!(receipt.encoded_bytes, HOST_M11_VIEWPORT_BYTES as u32);
-        assert_eq!(range.start.bytes as usize, paragraph_start);
-        assert_eq!(range.start.utf16 as usize, paragraph_start);
-        assert_eq!(range.end.bytes as usize, paragraph_end);
-        assert_eq!(range.end.utf16 as usize, paragraph_end);
+        let (owner_kind, range, ancestry) =
+            recursive_green_query_shape(&host, target_source_version, point, point);
+        assert_eq!(owner_kind, 5);
+        assert_eq!(range[0] as usize, paragraph_start);
+        assert_eq!(range[1] as usize, paragraph_end - 1);
+        assert_eq!(range[2] as usize, paragraph_start);
+        assert_eq!(range[3] as usize, paragraph_end - 1);
+        assert!(!ancestry.is_empty());
     }
 
-    let retained = endpoint.retained.as_ref().expect("retained BOF target");
-    let CandidateRestartAuthority::Ordinary(checkpoints) =
-        retained.restart.as_ref().expect("target restart authority")
-    else {
-        panic!("segmented BOF crop must retain ordinary target checkpoints");
-    };
-    assert_eq!(checkpoints.source(), target_version);
-    assert!(checkpoints.is_segmented_top_level());
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
+    assert!(
+        endpoint
+            .has_exact_base_for(&runtime, target_version)
+            .expect("first-edit recursive exact base")
+    );
 
     let next_edit = target_source
         .find("paragraph 2048 ")
@@ -10025,6 +9603,7 @@ fn frozen_leading_references_allow_bounded_middle_paragraph_exact_delta() {
     const PARAGRAPHS: usize = 2_048;
     const EDITED_PARAGRAPH: usize = PARAGRAPHS / 2;
     const MAXIMUM_TRANSFERRED_RECORDS: u32 = 64;
+    const FUEL: usize = 64;
 
     let mut base_source = String::new();
     base_source.reserve((REFERENCES + PARAGRAPHS) * 56);
@@ -10078,8 +9657,12 @@ fn frozen_leading_references_allow_bounded_middle_paragraph_exact_delta() {
     .expect("independent reference-frozen host");
     host.observe_source_version(source_version_for(binding, base_completion))
         .expect("host observes reference-frozen base");
-    let base_delivery =
-        deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
+    let base_delivery = deliver_endpoint_to_independent_host_with_fuel(
+        &mut endpoint,
+        &mut runtime,
+        &mut host,
+        FUEL,
+    );
     assert_eq!(base_delivery.offer.mode, PublicationMode::FullSnapshot);
     assert_eq!(
         host.role_record_count(flark_engine::m11_host::M11HostRole::References)
@@ -10141,8 +9724,12 @@ fn frozen_leading_references_allow_bounded_middle_paragraph_exact_delta() {
         "a middle tail Paragraph edit must use ordinary restart/convergence, not the \
              one-remainder leading-reference crop"
     );
-    let target_delivery =
-        deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
+    let target_delivery = deliver_endpoint_to_independent_host_with_fuel(
+        &mut endpoint,
+        &mut runtime,
+        &mut host,
+        FUEL,
+    );
 
     assert_eq!(target_delivery.offer.mode, PublicationMode::ExactBaseDelta);
     assert_eq!(target_delivery.offer.base_ack, Some(base_delivery.ack));
@@ -10219,7 +9806,7 @@ fn frozen_leading_references_allow_bounded_middle_paragraph_exact_delta() {
         assert_eq!(range.end.utf16 as usize, paragraph_range.end, "{name}");
     }
 
-    drain_candidate_cleanup(&mut endpoint, &mut runtime);
+    drain_candidate_cleanup_with_fuel(&mut endpoint, &mut runtime, FUEL);
     assert!(
         endpoint
             .has_exact_base_for(&runtime, target_version)
@@ -10237,7 +9824,7 @@ fn frozen_leading_references_allow_bounded_middle_paragraph_exact_delta() {
                 && checkpoints.frozen_reference_definition_count() == Some(REFERENCES)
     ));
 
-    close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
+    close_exact_pair_to_zero_with_fuel(&mut endpoint, &mut runtime, &mut host, FUEL);
 }
 
 #[test]

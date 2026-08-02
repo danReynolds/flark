@@ -9,8 +9,9 @@ use std::{fmt, ops::Range};
 
 use flark_engine::parser_internal::{
     M11RecursiveGreenError, M11RecursiveGreenFrameQueryError, M11RecursiveGreenFrameQueryLimits,
-    M11RecursiveGreenPoint, M11RecursiveGreenRoot, M11RecursiveGreenRowQueryLimits,
-    M11RecursiveGreenRowWindow, M11RecursiveGreenStoragePageIdentity,
+    M11RecursiveGreenLocation, M11RecursiveGreenPoint, M11RecursiveGreenRoot,
+    M11RecursiveGreenRowQueryLimits, M11RecursiveGreenRowWindow,
+    M11RecursiveGreenStoragePageIdentity,
     M11RecursiveGreenStructuralSpliceSelection, M11ReferenceJournal,
     M11ReferenceJournalAdoptionStatus, M11ReferenceJournalError, M11ReferenceJournalRoot,
     M11ReferenceJournalStatus, M11ReferenceJournalUnchangedPrefixAdoption,
@@ -1675,6 +1676,25 @@ impl M11PersistentRecursiveGreenSession {
             .locate_renderable_rows(runtime, point, requested_end_byte, limits)?)
     }
 
+    pub fn locate_point(
+        &self,
+        runtime: &DocumentRuntime,
+        point: M11RecursiveGreenPoint,
+    ) -> Result<Option<M11RecursiveGreenLocation>, M11PersistentRecursiveGreenSessionError> {
+        if runtime.current_source_version() != Some(self.source) || self.release_begun {
+            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "recursive-Green point query is not bound to the current live source",
+            ));
+        }
+        Ok(self
+            .green
+            .as_ref()
+            .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "recursive-Green session omitted its structural root",
+            ))?
+            .locate_point(runtime, point)?)
+    }
+
     /// Borrows the live structural root for one authority-checked parser-side
     /// publication setup.
     ///
@@ -1785,29 +1805,24 @@ impl M11PersistentRecursiveGreenSession {
                 ));
             }
 
-            let restart_index = self
-                .checkpoints
-                .iter()
-                .enumerate()
-                .rev()
-                .find(|(_, checkpoint)| {
-                    checkpoint.parser_physical().bytes() as usize <= base_edit.start
-                        && checkpoint.accepted_physical().bytes() as usize <= base_edit.start
-                })
-                .map(|(index, _)| index)
-                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+            let restart_boundary = self.checkpoints.partition_point(|checkpoint| {
+                checkpoint.parser_physical().bytes() as usize <= base_edit.start
+                    && checkpoint.accepted_physical().bytes() as usize <= base_edit.start
+            });
+            let restart_index = restart_boundary.checked_sub(1).ok_or(
+                M11PersistentRecursiveGreenSessionError::InvalidState(
                     "sparse recursive-Green index has no restart before the edit",
-                ))?;
-            let convergence_index = self
-                .checkpoints
-                .iter()
-                .enumerate()
-                .skip(restart_index + 1)
-                .find(|(_, checkpoint)| {
-                    checkpoint.parser_physical().bytes() as usize >= base_edit.end
-                        && checkpoint.accepted_physical().bytes() as usize >= base_edit.end
-                })
-                .map(|(index, _)| index);
+                ),
+            )?;
+            let convergence_search_start = restart_index + 1;
+            let convergence_offset = self.checkpoints[convergence_search_start..]
+                .partition_point(|checkpoint| {
+                    (checkpoint.parser_physical().bytes() as usize) < base_edit.end
+                        || (checkpoint.accepted_physical().bytes() as usize) < base_edit.end
+                });
+            let convergence_index = convergence_search_start
+                .checked_add(convergence_offset)
+                .filter(|index| *index < self.checkpoints.len());
             if convergence_index.is_none() && self.terminal_convergence.is_none() {
                 return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
                     "sparse recursive-Green index has no convergence after the edit",

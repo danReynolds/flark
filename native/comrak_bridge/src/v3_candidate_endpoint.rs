@@ -17,7 +17,8 @@ use flark_engine::parser_internal::{
     M11IndentedCodeProjectionError, M11IndentedCodeProjectionRoot, M11InlineProjectionError,
     M11InlineProjectionRoot, M11MarkedLineProjectionKind, M11OwnedSnapshotPoll,
     M11OwnedSnapshotStream, M11ParserPageError, M11ParserSourceRangeAuthority, M11PublicationError,
-    M11RecursiveGreenFrameId, M11RecursiveGreenPoint, M11RecursiveGreenRowEditCapability,
+    M11RecursiveGreenFrameId, M11RecursiveGreenLocation, M11RecursiveGreenPoint,
+    M11RecursiveGreenRowEditCapability,
     M11RecursiveGreenRowQueryLimits, M11ReferenceResolver, M11RetainedCandidatePublication,
     M11SnapshotFrame, M11SnapshotFrameKind,
 };
@@ -109,6 +110,7 @@ const GRAMMAR_REVISION: u32 = crate::FLARK_V3_GRAMMAR_REVISION;
 const AUTHORITY_MASK_ALL_ROLES: u32 = 0x1f;
 const HOT_INLINE_UNSUPPORTED_NOT_INLINE_LEAF: u32 = 0x2000_0001;
 const HOT_INLINE_UNSUPPORTED_PARSER: u32 = 0x2000_0002;
+const HOT_INLINE_UNSUPPORTED_LEGACY_BLOCK_TARGET: u32 = 0x2000_0003;
 /// Maximum base or target semantic entries inspected atomically while
 /// deciding whether an exact-clean fallback can reuse packed block pages.
 ///
@@ -810,6 +812,46 @@ impl RecursiveGreenEndpointSlot {
         }
     }
 
+    fn incremental_clean_ready_for_recursive_base(
+        &self,
+        base_ack: StructuralAck,
+        target: flark_engine::SourceVersion,
+        syntax_profile: u32,
+    ) -> bool {
+        matches!(
+            self.pending.as_ref(),
+            Some(PendingRecursiveGreen::ReadyClean {
+                target: ready,
+                base: Some(base),
+                origin: RecursiveGreenCleanOrigin::IncrementalFallback,
+            }) if base.ack == base_ack
+                && ready.source() == target
+                && ready.syntax_profile() == syntax_profile
+        )
+    }
+
+    fn owns_recursive_base_authority(&self, ack: StructuralAck) -> bool {
+        self.installed.as_ref().is_some_and(|installed| installed.ack == ack)
+            || match self.pending.as_ref() {
+                Some(PendingRecursiveGreen::Adoption { base_ack, .. })
+                | Some(PendingRecursiveGreen::CancellingAdoptionForFallback {
+                    base_ack,
+                    ..
+                })
+                | Some(PendingRecursiveGreen::ReadyUpdate { base_ack, .. }) => *base_ack == ack,
+                Some(PendingRecursiveGreen::CleanPlan {
+                    base: Some(base), ..
+                })
+                | Some(PendingRecursiveGreen::CleanBuild {
+                    base: Some(base), ..
+                })
+                | Some(PendingRecursiveGreen::ReadyClean {
+                    base: Some(base), ..
+                }) => base.ack == ack,
+                _ => false,
+            }
+    }
+
     fn commit_delivery(&mut self, ack: StructuralAck) -> Result<(), CandidateEndpointError> {
         if !self.ready_for(ack) || self.installed.is_some() {
             return Err(CandidateEndpointError::InvalidAuthority);
@@ -901,6 +943,12 @@ impl RecursiveGreenEndpointSlot {
             return Err(CandidateEndpointError::InvalidAuthority);
         }
         Ok(&installed.session)
+    }
+
+    fn has_installed_session_for(&self, ack: StructuralAck) -> bool {
+        self.installed.as_ref().is_some_and(|installed| {
+            installed.ack == ack && recursive_green_session_matches_ack(&installed.session, ack)
+        })
     }
 
     fn request_cancel_pending(&mut self) -> Result<(), CandidateEndpointError> {
@@ -1229,6 +1277,147 @@ const fn recursive_green_inline_leaf_sequence_kind(
         M11RecursiveGreenInlineLeafKind::Paragraph => M11BlockSequenceEntryKind::Paragraph,
         M11RecursiveGreenInlineLeafKind::Heading => M11BlockSequenceEntryKind::Structured,
     }
+}
+
+fn resolved_recursive_green_inline_leaf(
+    session: &M11PersistentRecursiveGreenSession,
+    runtime: &DocumentRuntime,
+    command: InlineRefinementCommand,
+    byte_offset: usize,
+    utf16_offset: usize,
+    affinity: SourceBoundaryAffinity,
+) -> Result<ResolvedHotInlineDemand, CandidateEndpointError> {
+    let parser_profile =
+        flark_engine::ParserProfileId::new(u64::from(command.base_ack.syntax_profile))
+            .ok_or(CandidateEndpointError::MetricOverflow)?;
+    let prepared = session.prepare_inline_leaf(
+        runtime,
+        M11RecursiveGreenPoint::new(byte_offset, utf16_offset, affinity),
+    )?;
+    let block_source = prepared.block_source_range();
+    let block_source_utf16 = prepared.block_source_utf16_range();
+    let inline_source = prepared.inline_source_range();
+    let inline_source_utf16 = prepared.inline_source_utf16_range();
+    let fence = prepared.into_fence();
+    let identity = HotInlineLeafIdentity {
+        kind: recursive_green_inline_leaf_sequence_kind(fence.kind()),
+        byte_start: block_source.start,
+        byte_end: block_source.end,
+        utf16_start: block_source_utf16.start,
+        utf16_end: block_source_utf16.end,
+        inline_byte_start: inline_source.start,
+        inline_byte_end: inline_source.end,
+        inline_utf16_start: inline_source_utf16.start,
+        inline_utf16_end: inline_source_utf16.end,
+        owner: HotInlineLeafOwner::RecursiveGreenFrame(fence.frame()),
+    };
+    Ok(ResolvedHotInlineDemand::PreparedInlineLeaf {
+        command,
+        identity,
+        inline_source,
+        inline_source_utf16,
+        parser_profile,
+        fence,
+    })
+}
+
+fn resolved_recursive_green_automatic(
+    session: &M11PersistentRecursiveGreenSession,
+    runtime: &DocumentRuntime,
+    command: InlineRefinementCommand,
+    byte_offset: usize,
+    utf16_offset: usize,
+    affinity: SourceBoundaryAffinity,
+) -> Result<ResolvedHotInlineDemand, CandidateEndpointError> {
+    let point = M11RecursiveGreenPoint::new(byte_offset, utf16_offset, affinity);
+    let location = session
+        .locate_point(runtime, point)?
+        .ok_or(CandidateEndpointError::InvalidState)?;
+    if M11RecursiveGreenInlineLeafKind::from_green_kind(location.owner().kind()).is_some() {
+        return resolved_recursive_green_inline_leaf(
+            session,
+            runtime,
+            command,
+            byte_offset,
+            utf16_offset,
+            affinity,
+        );
+    }
+
+    resolved_recursive_green_unsupported(
+        command,
+        location,
+        HotInlineUnsupported::NotInlineLeaf {
+            kind: M11BlockSequenceEntryKind::Structured,
+        },
+    )
+}
+
+fn resolved_recursive_green_legacy_target(
+    session: &M11PersistentRecursiveGreenSession,
+    runtime: &DocumentRuntime,
+    command: InlineRefinementCommand,
+    byte_offset: usize,
+    utf16_offset: usize,
+    affinity: SourceBoundaryAffinity,
+) -> Result<ResolvedHotInlineDemand, CandidateEndpointError> {
+    let location = session
+        .locate_point(
+            runtime,
+            M11RecursiveGreenPoint::new(byte_offset, utf16_offset, affinity),
+        )?
+        .ok_or(CandidateEndpointError::InvalidState)?;
+    resolved_recursive_green_unsupported(
+        command,
+        location,
+        HotInlineUnsupported::LegacyBlockTarget {
+            target: command.target,
+        },
+    )
+}
+
+fn resolved_recursive_green_unsupported(
+    command: InlineRefinementCommand,
+    location: M11RecursiveGreenLocation,
+    unsupported: HotInlineUnsupported,
+) -> Result<ResolvedHotInlineDemand, CandidateEndpointError> {
+    let source = location.byte_range();
+    let source_utf16 = location.utf16_range();
+    let byte_start = u32::try_from(source.start)
+        .map_err(|_| CandidateEndpointError::MetricOverflow)?;
+    let byte_end =
+        u32::try_from(source.end).map_err(|_| CandidateEndpointError::MetricOverflow)?;
+    let utf16_start = u32::try_from(source_utf16.start)
+        .map_err(|_| CandidateEndpointError::MetricOverflow)?;
+    let utf16_end =
+        u32::try_from(source_utf16.end).map_err(|_| CandidateEndpointError::MetricOverflow)?;
+    if byte_start >= byte_end || utf16_start >= utf16_end {
+        return Err(CandidateEndpointError::InvalidState);
+    }
+    let kind = M11BlockSequenceEntryKind::Structured;
+    let parser_profile =
+        flark_engine::ParserProfileId::new(u64::from(command.base_ack.syntax_profile))
+            .ok_or(CandidateEndpointError::MetricOverflow)?;
+    Ok(ResolvedHotInlineDemand::Unsupported(Box::new(HotInlineReady {
+        command,
+        identity: HotInlineLeafIdentity {
+            kind,
+            byte_start,
+            byte_end,
+            utf16_start,
+            utf16_end,
+            inline_byte_start: byte_start,
+            inline_byte_end: byte_end,
+            inline_utf16_start: utf16_start,
+            inline_utf16_end: utf16_end,
+            owner: HotInlineLeafOwner::RecursiveGreenFrame(location.owner().frame()),
+        },
+        inline_source: byte_start..byte_end,
+        inline_source_utf16: utf16_start..utf16_end,
+        parser_profile,
+        authority: None,
+        publication: HotInlineReadyPublication::Unsupported(unsupported),
+    })))
 }
 
 impl HotInlineLeafIdentity {
@@ -2505,6 +2694,7 @@ pub(crate) enum HotInlineReadyPublication {
 pub(crate) enum HotInlineUnsupported {
     NotInlineLeaf { kind: M11BlockSequenceEntryKind },
     Parser(M11InlineProjectionUnsupportedRecord),
+    LegacyBlockTarget { target: InlineRefinementTarget },
 }
 
 #[allow(dead_code)] // Accessors support focused parser/sidecar authority tests.
@@ -3945,41 +4135,45 @@ impl CandidateEndpoint {
         let point = M11BlockSequencePoint::new(byte_offset, utf16_offset, affinity);
         let resolved = match command.target {
             InlineRefinementTarget::RecursiveGreenParagraph => {
-                let parser_profile =
-                    flark_engine::ParserProfileId::new(u64::from(command.base_ack.syntax_profile))
-                        .ok_or(CandidateEndpointError::MetricOverflow)?;
-                let prepared = self
-                    .recursive_green
-                    .installed_session(command.base_ack)?
-                    .prepare_inline_leaf(
-                        runtime,
-                        M11RecursiveGreenPoint::new(byte_offset, utf16_offset, affinity),
-                    )?;
-                let block_source = prepared.block_source_range();
-                let block_source_utf16 = prepared.block_source_utf16_range();
-                let inline_source = prepared.inline_source_range();
-                let inline_source_utf16 = prepared.inline_source_utf16_range();
-                let fence = prepared.into_fence();
-                let identity = HotInlineLeafIdentity {
-                    kind: recursive_green_inline_leaf_sequence_kind(fence.kind()),
-                    byte_start: block_source.start,
-                    byte_end: block_source.end,
-                    utf16_start: block_source_utf16.start,
-                    utf16_end: block_source_utf16.end,
-                    inline_byte_start: inline_source.start,
-                    inline_byte_end: inline_source.end,
-                    inline_utf16_start: inline_source_utf16.start,
-                    inline_utf16_end: inline_source_utf16.end,
-                    owner: HotInlineLeafOwner::RecursiveGreenFrame(fence.frame()),
-                };
-                ResolvedHotInlineDemand::PreparedInlineLeaf {
+                resolved_recursive_green_inline_leaf(
+                    self.recursive_green.installed_session(command.base_ack)?,
+                    runtime,
                     command,
-                    identity,
-                    inline_source,
-                    inline_source_utf16,
-                    parser_profile,
-                    fence,
-                }
+                    byte_offset,
+                    utf16_offset,
+                    affinity,
+                )?
+            }
+            InlineRefinementTarget::Automatic
+                if self
+                    .recursive_green
+                    .has_installed_session_for(command.base_ack) =>
+            {
+                resolved_recursive_green_automatic(
+                    self.recursive_green.installed_session(command.base_ack)?,
+                    runtime,
+                    command,
+                    byte_offset,
+                    utf16_offset,
+                    affinity,
+                )?
+            }
+            InlineRefinementTarget::BulletListItemProjection
+            | InlineRefinementTarget::BulletListItemInline
+            | InlineRefinementTarget::OrderedListItemProjection
+            | InlineRefinementTarget::OrderedListItemInline
+                if self
+                    .recursive_green
+                    .has_installed_session_for(command.base_ack) =>
+            {
+                resolved_recursive_green_legacy_target(
+                    self.recursive_green.installed_session(command.base_ack)?,
+                    runtime,
+                    command,
+                    byte_offset,
+                    utf16_offset,
+                    affinity,
+                )?
             }
             InlineRefinementTarget::Automatic => match resolve_m11_published_inline_leaf_fence(
                 runtime,
@@ -4554,6 +4748,10 @@ impl CandidateEndpoint {
                     HotInlineUnsupported::Parser(record) => {
                         (HOT_INLINE_UNSUPPORTED_PARSER, record.into_encoded())
                     }
+                    HotInlineUnsupported::LegacyBlockTarget { target } => (
+                        HOT_INLINE_UNSUPPORTED_LEGACY_BLOCK_TARGET,
+                        encode_legacy_block_target_metadata(target),
+                    ),
                 };
                 (
                     M11HotInlineSidecarSnapshotEncoder::unsupported(
@@ -5682,27 +5880,51 @@ impl CandidateEndpoint {
         &mut self,
         runtime: &mut DocumentRuntime,
     ) -> Result<bool, CandidateEndpointError> {
-        let Some((base_ack, target_source)) =
+        let Some((base_ack, target_source, syntax_profile, can_preempt_to_clean)) =
             self.active.as_ref().and_then(|active| match active {
                 ActiveCandidate::ParsingExact(parsing) => {
-                    Some((parsing.base.ack, parsing.witness.target()))
+                    Some((
+                        parsing.base.ack,
+                        parsing.witness.target(),
+                        parsing.witness.parser_profile(),
+                        true,
+                    ))
                 }
                 ActiveCandidate::ParsingOrdinaryExact(parsing) => {
-                    Some((parsing.base.ack, parsing.witness.target()))
+                    Some((
+                        parsing.base.ack,
+                        parsing.witness.target(),
+                        parsing.witness.parser_profile(),
+                        true,
+                    ))
                 }
                 ActiveCandidate::ParsingExactFallback(parsing) => {
-                    Some((parsing.base.ack, parsing.witness.target()))
+                    Some((
+                        parsing.base.ack,
+                        parsing.witness.target(),
+                        parsing.witness.parser_profile(),
+                        false,
+                    ))
                 }
                 _ => None,
             })
         else {
             return Ok(false);
         };
-        if self
+        let syntax_profile = u32::try_from(syntax_profile.get())
+            .map_err(|_| CandidateEndpointError::MetricOverflow)?;
+        let update_ready = self
             .recursive_green
             .ready_update_for(base_ack, target_source)
-            .is_none()
-        {
+            .is_some();
+        let clean_ready = self
+            .recursive_green
+            .incremental_clean_ready_for_recursive_base(
+                base_ack,
+                target_source,
+                syntax_profile,
+            );
+        if !update_ready && !(clean_ready && can_preempt_to_clean) {
             return Ok(false);
         }
 
@@ -5710,7 +5932,7 @@ impl CandidateEndpoint {
             .active
             .take()
             .ok_or(CandidateEndpointError::InvalidState)?;
-        let (context, mut base, witness, certified) = match active {
+        let (context, base, witness, certified) = match active {
             ActiveCandidate::ParsingExact(parsing) => {
                 let ParsingExactCandidate {
                     context,
@@ -5808,6 +6030,29 @@ impl CandidateEndpoint {
             source: target_source,
             binding: M11ParserBinding::new(witness.parser_profile(), GRAMMAR_REVISION),
         };
+        if clean_ready && can_preempt_to_clean {
+            let job = match M11CleanParseJob::new(certified.exact_parse_lease()) {
+                Ok(job) => job,
+                Err(error) => {
+                    self.recursive_green.request_cancel_pending()?;
+                    self.cleanup = Some(CandidateCleanup::RetainedPublication {
+                        publication: base.publication,
+                        begun: false,
+                    });
+                    return Err(error.into());
+                }
+            };
+            self.active = Some(ActiveCandidate::ParsingExactFallback(Box::new(
+                ParsingExactFallbackCandidate {
+                    context,
+                    certified,
+                    job,
+                    base,
+                    witness,
+                },
+            )));
+            return Ok(true);
+        }
         let update = self
             .recursive_green
             .ready_update_for(base_ack, target_source)
@@ -6925,6 +7170,21 @@ impl CandidateEndpoint {
                     next_restart,
                     structural_path,
                 } => {
+                    if structural_path == ExactStructuralPath::LegacyBlocks
+                        && self
+                            .recursive_green
+                            .owns_recursive_base_authority(base.ack)
+                    {
+                        self.active = Some(ActiveCandidate::BuildingExact {
+                            context,
+                            writer,
+                            base,
+                            witness,
+                            next_restart,
+                            structural_path,
+                        });
+                        return Err(CandidateEndpointError::InvalidState);
+                    }
                     let polled = match writer.poll_reusing_references(
                         runtime,
                         fuel - transitions,
@@ -11130,6 +11390,21 @@ fn encode_not_inline_leaf_metadata(kind: M11BlockSequenceEntryKind) -> Box<[u8]>
     encoded[0..4].copy_from_slice(b"HUN1");
     encoded[4..8].copy_from_slice(&1_u32.to_le_bytes());
     encoded[8] = kind as u8;
+    encoded.into()
+}
+
+fn encode_legacy_block_target_metadata(target: InlineRefinementTarget) -> Box<[u8]> {
+    let target = match target {
+        InlineRefinementTarget::BulletListItemInline => 1,
+        InlineRefinementTarget::BulletListItemProjection => 2,
+        InlineRefinementTarget::OrderedListItemInline => 3,
+        InlineRefinementTarget::OrderedListItemProjection => 4,
+        InlineRefinementTarget::Automatic | InlineRefinementTarget::RecursiveGreenParagraph => 0,
+    };
+    let mut encoded = [0_u8; 12];
+    encoded[0..4].copy_from_slice(b"HUT1");
+    encoded[4..8].copy_from_slice(&1_u32.to_le_bytes());
+    encoded[8] = target;
     encoded.into()
 }
 

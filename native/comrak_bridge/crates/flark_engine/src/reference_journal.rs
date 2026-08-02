@@ -262,6 +262,7 @@ enum JournalPhase {
     Building,
     Streaming,
     Indexing,
+    DrainingPage,
     Finishing,
     ReadyForSeal,
     Sealing,
@@ -460,8 +461,12 @@ impl M11ReferenceJournal {
     }
 
     #[must_use]
-    pub const fn is_idle(&self) -> bool {
+    pub fn is_idle(&self) -> bool {
         matches!(self.phase, JournalPhase::Accepting)
+            && self
+                .builder
+                .as_ref()
+                .is_some_and(ReferenceRootBuilder::is_idle)
     }
 
     pub fn finish_input(
@@ -493,7 +498,10 @@ impl M11ReferenceJournal {
         while transitions < fuel {
             match self.phase {
                 JournalPhase::Accepting => break,
-                JournalPhase::Building | JournalPhase::Streaming | JournalPhase::Finishing => {
+                JournalPhase::Building
+                | JournalPhase::Streaming
+                | JournalPhase::DrainingPage
+                | JournalPhase::Finishing => {
                     let used = self.poll_builder_once(runtime)?;
                     transitions += used;
                     if used == 0 {
@@ -510,7 +518,15 @@ impl M11ReferenceJournal {
                         .checked_add(polled.transitions)
                         .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?;
                     if polled.complete {
-                        self.phase = JournalPhase::Accepting;
+                        self.phase = if self
+                            .builder
+                            .as_ref()
+                            .is_some_and(ReferenceRootBuilder::is_idle)
+                        {
+                            JournalPhase::Accepting
+                        } else {
+                            JournalPhase::DrainingPage
+                        };
                     }
                 }
                 JournalPhase::ReadyForSeal => {
@@ -539,6 +555,7 @@ impl M11ReferenceJournal {
         runtime: &mut DocumentRuntime,
     ) -> Result<usize, M11ReferenceJournalError> {
         let was_building = self.phase == JournalPhase::Building;
+        let was_draining_page = self.phase == JournalPhase::DrainingPage;
         let build = self
             .build
             .take()
@@ -565,6 +582,14 @@ impl M11ReferenceJournal {
                     self.phase = JournalPhase::Indexing;
                 } else if idle && was_building {
                     return self.fail(M11ReferenceJournalError(ErrorInner::InvalidState));
+                } else if was_draining_page
+                    && (idle
+                        || self
+                            .builder
+                            .as_ref()
+                            .is_some_and(ReferenceRootBuilder::is_idle))
+                {
+                    self.phase = JournalPhase::Accepting;
                 }
                 Ok(transitions)
             }
@@ -1373,6 +1398,88 @@ mod tests {
             root.winner_ordinal(&runtime, b"a").expect("winner"),
             Some(0)
         );
+        root.begin_release(&mut runtime)
+            .expect("begin root release");
+        while !root
+            .poll_release(&mut runtime, 64)
+            .expect("poll root release")
+            .complete()
+        {}
+        runtime.begin_close().expect("begin runtime close");
+        while !runtime.poll_close(64).expect("poll runtime close").complete {}
+    }
+
+    #[test]
+    fn full_reference_pages_drain_before_accepting_the_next_occurrence() {
+        const OCCURRENCES: usize = 129;
+        let mut source_text = String::new();
+        let mut occurrences = Vec::with_capacity(OCCURRENCES);
+        for ordinal in 0..OCCURRENCES {
+            let label = format!("r{ordinal:03}");
+            let start = source_text.len();
+            let destination_start = start + label.len() + 4;
+            source_text.push('[');
+            source_text.push_str(&label);
+            source_text.push_str("]: /d\n");
+            let end = source_text.len() - 1;
+            occurrences.push((
+                start as u64..end as u64,
+                (start + 1) as u64..(start + 1 + label.len()) as u64,
+                destination_start as u64..(destination_start + 2) as u64,
+                label.into_bytes(),
+            ));
+        }
+
+        let mut runtime = DocumentRuntime::new(&source_text, DocumentRuntimeConfig::default())
+            .expect("runtime");
+        let source = runtime.current_source_version().expect("source");
+        let mut journal = M11ReferenceJournal::new(&mut runtime, source, 1).expect("journal");
+        for (source, label_source, destination_source, label) in occurrences {
+            assert!(journal.is_idle(), "journal must authenticate readiness");
+            journal
+                .begin_occurrence_stream(
+                    &runtime,
+                    M11ReferenceJournalOccurrenceStart::new(
+                        M11ReferenceJournalRange::new(source.clone(), source),
+                        M11ReferenceJournalRange::new(label_source.clone(), label_source),
+                        M11ReferenceJournalRange::new(
+                            destination_source.clone(),
+                            destination_source,
+                        ),
+                        None,
+                        label,
+                        2,
+                        None,
+                    ),
+                )
+                .expect("begin occurrence after any full-page drain");
+            while journal
+                .stream_capacity(M11ReferenceJournalValueKind::Destination)
+                .expect("destination capacity")
+                == 0
+            {
+                let polled = journal.poll(&mut runtime, 64).expect("prepare stream");
+                assert_eq!(polled.status(), M11ReferenceJournalStatus::Pending);
+            }
+            assert_eq!(
+                journal
+                    .offer_stream_bytes(M11ReferenceJournalValueKind::Destination, b"/d")
+                    .expect("stream destination"),
+                2
+            );
+            settle_input(&mut journal, &mut runtime);
+        }
+
+        journal.finish_input(&runtime).expect("finish input");
+        loop {
+            let polled = journal.poll(&mut runtime, 64).expect("finish journal");
+            if polled.status() == M11ReferenceJournalStatus::Complete {
+                break;
+            }
+            assert_eq!(polled.status(), M11ReferenceJournalStatus::Pending);
+        }
+        let mut root = journal.take_root().expect("journal root");
+        assert_eq!(root.occurrence_count(), OCCURRENCES as u64);
         root.begin_release(&mut runtime)
             .expect("begin root release");
         while !root
