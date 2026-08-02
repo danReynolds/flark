@@ -2667,6 +2667,18 @@ class _QueryResultPanel extends StatelessWidget {
         'Source revision ${gap.sourceRevision}; structure '
             '${gap.structureRevision}; range ${_formatSpan(gap.range)}.',
       ),
+      FlarkV3RecursiveGreenPointQuery recursive => (
+        'EXACT RECURSIVE GREEN · '
+            '${recursive.owner.kind?.name ?? 'kind-${recursive.owner.kindId}'}',
+        'Source/structure ${recursive.sourceRevision}/'
+            '${recursive.structureRevision}; '
+            'atom ${_formatSpan(recursive.source)}; '
+            '${recursive.coveragePart.name}/'
+            '${recursive.logicalAtom.kind.name}; ancestry '
+            '${recursive.ancestry.length}; work '
+            '${recursive.work.eventsScanned} events across '
+            '${recursive.work.storagePagesVisited} pages.',
+      ),
       FlarkV3DocumentStructuralQuery structural => (
         'EXACT STRUCTURE · ${structural.structure.kind.name}',
         'Source/structure ${structural.sourceRevision}/'
