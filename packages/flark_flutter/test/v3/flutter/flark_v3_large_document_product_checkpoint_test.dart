@@ -438,17 +438,17 @@ void main() {
       );
       expect(
         deliveredStatusCallbacks,
-        lessThanOrEqualTo(_rapidInsertion.length + 16),
+        lessThanOrEqualTo(6),
         reason:
-            'source edges plus bounded exact/inline convergence must not '
-            'create an open-ended managed status drain',
+            'the coalesced source edge plus bounded exact/inline convergence '
+            'must not create an open-ended managed status drain',
       );
       expect(
         harness.frameScheduler.scheduledCallbackCount,
-        lessThan(deliveredStatusCallbacks),
+        lessThanOrEqualTo(deliveredStatusCallbacks),
         reason:
-            'managed status progress must coalesce onto fewer Flutter frame '
-            'callbacks than raw runtime notifications',
+            'managed status progress must not amplify runtime notifications '
+            'into additional Flutter frames',
       );
       expect(
         harness.frameScheduler.scheduledCallbackCount,
