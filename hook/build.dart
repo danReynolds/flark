@@ -50,18 +50,24 @@ Iterable<Uri> _nativeDependencyUris(Uri crateRoot) sync* {
   final crateDirectory = Directory.fromUri(crateRoot);
   if (!crateDirectory.existsSync()) return;
 
-  for (final entity in crateDirectory.listSync(recursive: true)) {
-    if (entity is! File) continue;
-    final path = entity.path;
-    if (path.contains(
-          '${Platform.pathSeparator}target${Platform.pathSeparator}',
-        ) ||
-        path.contains(
-          '${Platform.pathSeparator}dist${Platform.pathSeparator}',
-        )) {
-      continue;
+  // Dependency discovery runs on every hook invocation. Prune build outputs
+  // before descent: a Cargo target tree can contain tens of thousands of files.
+  final pending = <Directory>[crateDirectory];
+  final visitedDirectories = <String>{};
+  while (pending.isNotEmpty) {
+    final directory = pending.removeLast();
+    if (!visitedDirectories.add(directory.resolveSymbolicLinksSync())) continue;
+    for (final entity in directory.listSync()) {
+      if (entity is File) {
+        yield entity.uri;
+        continue;
+      }
+      if (entity is! Directory) continue;
+
+      final name = entity.path.split(Platform.pathSeparator).last;
+      if (name == 'target' || name == 'dist') continue;
+      pending.add(entity);
     }
-    yield entity.uri;
   }
 }
 
