@@ -917,14 +917,11 @@ fn clean_cm321_schema9_point_and_schema10_viewport_are_typed_and_exact() {
             .ack,
         delivery.ack
     );
-    assert_eq!(
+    assert!(
         endpoint
             .recursive_green
-            .installed
-            .as_ref()
-            .expect("installed recursive-Green session")
-            .ack,
-        delivery.ack
+            .has_installed_session_for(delivery.ack),
+        "installed recursive-Green session must retain the delivered ACK"
     );
 
     let source_version = source_version_for(binding, completion);
