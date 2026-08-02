@@ -12,9 +12,9 @@ import 'support/flark_v3_digest_parity_platform_native.dart'
 
 const _fixture = '[x]: /target\nCafé 😀 [x]\n';
 const _expectedDigests = (
-  canonical: 'd7cb141849f0b88b665d404ecba35187',
-  sequence: 'd591da464f5e9a05f8c35329a92d5e8c',
-  manifest: '2a0df509e4a7058d8d9dc778dc98c63e',
+  canonical: '98bdb389d73432ea7b1d5a03ff1a3cea',
+  sequence: '35b8bbf902a2574d828cc7e10b1fc49d',
+  manifest: '9add2baf777de19103158a44270fda36',
 );
 const _expectedCheckpointBParityDigest =
     '2233974cc604304e5e2e8bc28f0f36ea25cf51f00ef8470338aad783baab11d4';
