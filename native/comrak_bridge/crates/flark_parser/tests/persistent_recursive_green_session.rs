@@ -88,6 +88,21 @@ fn clean_session_retains_green_and_reference_authority_for_late_queries() {
     );
     assert_eq!(prepared.driver_work(), 0);
 
+    let prepared_leaf = session
+        .prepare_inline_leaf(
+            &runtime,
+            M11RecursiveGreenPoint::new(point, point, SourceBoundaryAffinity::After),
+        )
+        .expect("bounded retained Green row query");
+    assert_eq!(
+        prepared_leaf.block_source_range(),
+        prepared.block_source_range()
+    );
+    assert_eq!(
+        prepared_leaf.inline_source_range(),
+        prepared.inline_source_range()
+    );
+
     release_session(&mut runtime, &mut session);
     runtime.begin_close().expect("begin runtime close");
     while !runtime.poll_close(64).expect("poll close").complete {}
@@ -184,6 +199,70 @@ fn leading_reference_visible_remainder_edit_uses_local_recursive_green_adoption(
     {}
     release_session(&mut runtime, &mut superseded);
     release_session(&mut runtime, &mut target);
+    runtime.begin_close().expect("begin close");
+    while !runtime.poll_close(64).expect("poll close").complete {}
+}
+
+#[test]
+#[ignore = "large-scale bounded inline preparation gate"]
+fn leading_reference_visible_tail_inline_preparation_uses_bounded_row_geometry() {
+    const REFERENCES: usize = 9_000;
+    let mut source = String::new();
+    for ordinal in 0..REFERENCES {
+        source.push_str(&format!("[r{ordinal}]: /target/{ordinal}\n"));
+    }
+    source.push_str("visible **bold** tail\n");
+    let point = source.rfind("bold").expect("visible tail point");
+    let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
+        .expect("leading-reference runtime");
+    let mut session = build_session(&mut runtime);
+
+    let prepared = session
+        .prepare_inline_leaf(
+            &runtime,
+            M11RecursiveGreenPoint::new(
+                point,
+                utf16_offset(&source, point),
+                SourceBoundaryAffinity::After,
+            ),
+        )
+        .expect("bounded visible-tail inline preparation");
+    assert_eq!(prepared.block_source_range(), 0..source.len() as u32);
+    assert_eq!(
+        prepared.inline_source_range(),
+        (source.len() - "visible **bold** tail\n".len()) as u32..(source.len() - 1) as u32,
+    );
+    assert!(prepared.query_receipt().storage_pages_visited() <= 25);
+    assert!(prepared.query_receipt().node_headers_decoded() <= 512);
+
+    release_session(&mut runtime, &mut session);
+    runtime.begin_close().expect("begin close");
+    while !runtime.poll_close(64).expect("poll close").complete {}
+}
+
+#[test]
+fn bounded_inline_preparation_rejects_unrendered_separator_points() {
+    let source = "\nfirst\n\nsecond\n";
+    let mut runtime =
+        DocumentRuntime::new(source, DocumentRuntimeConfig::default()).expect("separator runtime");
+    let mut session = build_session(&mut runtime);
+    for point in [0, source.find("\n\n").expect("middle separator") + 1] {
+        assert!(
+            session
+                .prepare_inline_leaf(
+                    &runtime,
+                    M11RecursiveGreenPoint::new(
+                        point,
+                        utf16_offset(source, point),
+                        SourceBoundaryAffinity::After,
+                    ),
+                )
+                .is_err(),
+            "unrendered separator at {point} must not borrow the next row",
+        );
+    }
+
+    release_session(&mut runtime, &mut session);
     runtime.begin_close().expect("begin close");
     while !runtime.poll_close(64).expect("poll close").complete {}
 }

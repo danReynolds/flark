@@ -21,7 +21,7 @@ use flark_engine::{
 };
 
 use crate::block_core::{
-    resolve_m11_recursive_green_inline_leaf_fence, resolve_m11_recursive_green_paragraph_fence,
+    resolve_m11_recursive_green_inline_leaf_row_fence, resolve_m11_recursive_green_paragraph_fence,
     BlockCommand, BlockKind, M11BlockRestartCheckpoint, M11BlockRestartError,
     M11BlockStructuralAdoptionReceipt, M11BlockTerminalConvergenceCheckpoint, M11BlockWriter,
     M11BlockWriterError, M11BlockWriterOfferStatus, M11BlockWriterPollStatus,
@@ -2151,12 +2151,12 @@ impl M11PersistentRecursiveGreenSession {
                 "recursive-Green session is not the current live source",
             ));
         }
-        let limits = M11RecursiveGreenFrameQueryLimits::new(64, 8192, 64, 8192).ok_or(
+        let limits = M11RecursiveGreenRowQueryLimits::new(1, 25, 3_200, 64, 512).ok_or(
             M11PersistentRecursiveGreenSessionError::InvalidState(
                 "recursive-Green query limits must be nonzero",
             ),
         )?;
-        let fence = resolve_m11_recursive_green_inline_leaf_fence(
+        let fence = resolve_m11_recursive_green_inline_leaf_row_fence(
             runtime,
             self.green
                 .as_ref()
@@ -2165,6 +2165,7 @@ impl M11PersistentRecursiveGreenSession {
                 ))?,
             point,
             limits,
+            8192,
         )?
         .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
             "recursive-Green point is not owned by a final inline-bearing leaf",

@@ -35,8 +35,9 @@ pub use controller::{
 };
 pub use paragraph_fence::{
     resolve_m11_recursive_green_inline_leaf_fence,
-    resolve_m11_recursive_green_paragraph_fence, M11RecursiveGreenInlineLeafFence,
-    M11RecursiveGreenInlineLeafKind, M11RecursiveGreenParagraphFence,
+    resolve_m11_recursive_green_inline_leaf_row_fence, resolve_m11_recursive_green_paragraph_fence,
+    M11RecursiveGreenInlineLeafFence, M11RecursiveGreenInlineLeafKind,
+    M11RecursiveGreenParagraphFence,
 };
 pub use reference_rendezvous::{
     M11ReferenceRendezvous, M11ReferenceRendezvousError, M11ReferenceRendezvousPoll,

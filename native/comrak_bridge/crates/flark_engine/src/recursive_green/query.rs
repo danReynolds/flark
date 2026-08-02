@@ -176,6 +176,7 @@ pub enum M11RecursiveGreenFrameQueryBound {
     StoragePagesVisited,
     EventsScanned,
     OpenDepth,
+    TreeNodesVisited,
     InlineSourceBytes,
 }
 
@@ -1424,6 +1425,112 @@ impl M11RecursiveGreenRoot {
         }))
     }
 
+    /// Selects one final inline-bearing renderable row through the bounded
+    /// row zipper and mints exact source authority from its cached close
+    /// geometry.
+    ///
+    /// Unlike [`Self::locate_frame_fence_for_kinds`], this path does not need
+    /// to replay every event from a long-lived frame's `Enter` to its `Exit`.
+    /// The row query authenticates the final kind, frame, physical envelope,
+    /// and contiguous editable range before this method creates authority.
+    pub fn locate_renderable_row_fence_for_kinds(
+        &self,
+        runtime: &DocumentRuntime,
+        point: M11RecursiveGreenPoint,
+        expected_kinds: &[M11RecursiveGreenKind],
+        limits: M11RecursiveGreenRowQueryLimits,
+        maximum_inline_source_bytes: u64,
+    ) -> Result<Option<M11RecursiveGreenFrameFence>, M11RecursiveGreenFrameQueryError> {
+        if maximum_inline_source_bytes == 0 || limits.maximum_rows != 1 {
+            return Err(M11RecursiveGreenError::InvalidState.into());
+        }
+        let requested_end_byte = u64::try_from(self.source().byte_len())
+            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+        let window = match self.locate_renderable_rows_bounded(
+            runtime,
+            point,
+            requested_end_byte,
+            limits,
+        )? {
+            M11RecursiveGreenRowQueryOutcome::Window(window) => window,
+            M11RecursiveGreenRowQueryOutcome::BudgetExceeded(exceeded) => {
+                let bound = match exceeded.limit() {
+                    M11RecursiveGreenRowQueryLimit::StoragePages => {
+                        M11RecursiveGreenFrameQueryBound::StoragePagesVisited
+                    }
+                    M11RecursiveGreenRowQueryLimit::EventsScanned => {
+                        M11RecursiveGreenFrameQueryBound::EventsScanned
+                    }
+                    M11RecursiveGreenRowQueryLimit::TreeNodes => {
+                        M11RecursiveGreenFrameQueryBound::TreeNodesVisited
+                    }
+                    M11RecursiveGreenRowQueryLimit::OpenDepth => {
+                        M11RecursiveGreenFrameQueryBound::OpenDepth
+                    }
+                };
+                return Err(M11RecursiveGreenFrameQueryError::BoundExceeded(bound));
+            }
+        };
+        let Some(row) = window.rows().first() else {
+            return Ok(None);
+        };
+        let effective_byte = match (point.affinity, point.byte_offset) {
+            (SourceBoundaryAffinity::Before, offset) if offset > 0 => offset - 1,
+            (_, offset) if offset == self.source().byte_len() && offset > 0 => offset - 1,
+            (_, offset) => offset,
+        };
+        let effective_byte =
+            u64::try_from(effective_byte).map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+        if effective_byte < row.physical.start || effective_byte >= row.physical.end {
+            // The row zipper may legitimately advance across an unrendered
+            // separator. Such a row is useful to viewport callers, but it
+            // does not own this inline-refinement point.
+            return Ok(None);
+        }
+        if !expected_kinds.contains(&row.kind)
+            || row.edit_capability != M11RecursiveGreenRowEditCapability::Contiguous
+        {
+            return Ok(None);
+        }
+        let Some(inline_source) = row.editable.clone() else {
+            return Err(M11RecursiveGreenError::Corrupt(
+                "contiguous recursive-Green row omitted editable bytes",
+            )
+            .into());
+        };
+        let Some(inline_source_utf16) = row.editable_utf16.clone() else {
+            return Err(M11RecursiveGreenError::Corrupt(
+                "contiguous recursive-Green row omitted editable UTF-16",
+            )
+            .into());
+        };
+        if inline_source.end.saturating_sub(inline_source.start) > maximum_inline_source_bytes {
+            return Err(M11RecursiveGreenFrameQueryError::BoundExceeded(
+                M11RecursiveGreenFrameQueryBound::InlineSourceBytes,
+            ));
+        }
+        let inline_start = usize::try_from(inline_source.start)
+            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+        let inline_end = usize::try_from(inline_source.end)
+            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+        let authority = M11ParserSourceRangeAuthority::new(
+            runtime,
+            self.lease()?.duplicate(),
+            inline_start..inline_end,
+        )?;
+        Ok(Some(M11RecursiveGreenFrameFence {
+            source: self.source(),
+            frame: row.frame,
+            kind: row.kind,
+            block_source: row.physical.clone(),
+            block_source_utf16: row.physical_utf16.clone(),
+            inline_source,
+            inline_source_utf16,
+            receipt: window.receipt(),
+            authority,
+        }))
+    }
+
     /// Compatibility entry point for callers that admit exactly one final
     /// recursive-Green kind.
     pub fn locate_frame_fence(
@@ -1488,13 +1595,7 @@ pub(super) fn locate_point_in_arena_bounded(
     if maximum_tree_nodes_visited == 0 {
         return Err(M11RecursiveGreenError::InvalidState);
     }
-    locate_point_in_arena_zipper_bounded(
-        arena,
-        tree,
-        summary,
-        point,
-        maximum_tree_nodes_visited,
-    )
+    locate_point_in_arena_zipper_bounded(arena, tree, summary, point, maximum_tree_nodes_visited)
 }
 
 pub(super) fn locate_renderable_rows_in_arena(
@@ -2717,10 +2818,8 @@ fn locate_point_in_arena_zipper_bounded(
     maximum_tree_nodes_visited: u64,
 ) -> Result<M11RecursiveGreenPointQueryOutcome, M11RecursiveGreenError> {
     let mut work = PointZipperWork {
-        inspection: SequenceInspectionReceipt::with_node_header_limit(
-            maximum_tree_nodes_visited,
-        )
-        .ok_or(M11RecursiveGreenError::InvalidState)?,
+        inspection: SequenceInspectionReceipt::with_node_header_limit(maximum_tree_nodes_visited)
+            .ok_or(M11RecursiveGreenError::InvalidState)?,
         ..PointZipperWork::default()
     };
     let mut maximum_open_depth = 0_usize;
