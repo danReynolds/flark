@@ -4,6 +4,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import '../flark_v3_byte_endpoint.dart';
+import '../flark_v3_wire_protocol.dart';
 import 'flark_v3_native_endpoint_bindings.dart';
 import 'flark_v3_native_library_locator.dart';
 
@@ -891,6 +892,16 @@ final class _NativeEndpointWorker implements Finalizable {
         : hostPoll
         ? 'dispatchHostPoll'
         : 'dispatch';
+    final opcode = frame.length >= FlarkV3WireProtocol.headerBytes
+        ? FlarkV3WireOpcode.fromCode(
+            ByteData.sublistView(
+              frame,
+              0,
+              FlarkV3WireProtocol.headerBytes,
+            ).getUint16(8, Endian.little),
+          )
+        : null;
+    final diagnosedOperation = '$operation(${opcode?.name ?? 'malformed'})';
     if (result.receipt.hasOutstandingEvent) {
       final newlyDelivered = _isNewOutstanding(
         result.receipt.outstandingEventId,
@@ -911,7 +922,10 @@ final class _NativeEndpointWorker implements Finalizable {
           viewportPresentationHostPoll: viewportPresentationHostPoll,
         );
       } else if (!newlyDelivered) {
-        _requireStatus('${operation}WithOutstandingCredit', result.status);
+        _requireStatus(
+          '${diagnosedOperation}WithOutstandingCredit',
+          result.status,
+        );
       }
       if (!hostResult &&
           result.status == flarkV3NativeStatusOk &&
@@ -922,7 +936,7 @@ final class _NativeEndpointWorker implements Finalizable {
     }
     final completedEventKind = _deliveredEventKind;
     _clearDeliveredEvent();
-    _requireStatus(operation, result.status);
+    _requireStatus(diagnosedOperation, result.status);
     if (!hostResult &&
         result.receipt.action == flarkV3NativeActionCloseLatched) {
       _blockedDispatch.supersedeForClose();

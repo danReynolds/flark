@@ -733,7 +733,7 @@ final class FlarkV3DocumentRuntime {
         _terminalFailure != null ||
         _executor.state == FlarkV3SessionDriverState.closing ||
         _executor.state == FlarkV3SessionDriverState.closed) {
-      throw StateError('The Flark v3 document runtime is not queryable.');
+      throw _notQueryableStateError();
     }
     final source = _document.source;
     if (positionUtf16 < 0 || positionUtf16 > source.utf16Length) {
@@ -1310,8 +1310,20 @@ final class FlarkV3DocumentRuntime {
         _terminalFailure != null ||
         _executor.state == FlarkV3SessionDriverState.closing ||
         _executor.state == FlarkV3SessionDriverState.closed) {
-      throw StateError('The Flark v3 document runtime is not queryable.');
+      throw _notQueryableStateError();
     }
+  }
+
+  StateError _notQueryableStateError() {
+    final parserFailure = _executor.lastFailure;
+    final hostRejection = _executor.lastHostRejection;
+    return StateError(
+      'The Flark v3 document runtime is not queryable '
+      '(state: ${_executor.state.name}, '
+      'terminalFailure: ${_terminalFailure?.$1}, '
+      'parserFailure: ${parserFailure?.failureCode}, '
+      'hostRejection: ${hostRejection?.reason.name}).',
+    );
   }
 
   void _validateBlockRangeBudget(FlarkV3DocumentBlockRangeBudget budget) {
