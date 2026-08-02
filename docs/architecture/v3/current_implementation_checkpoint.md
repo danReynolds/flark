@@ -19,9 +19,16 @@ readiness are not claimed.
   produced the same 25 passing, 32 failing, and one ignored endpoint tests.
 - `46fb82f` isolates viewport presentation preparation and credited VPB1
   streaming. The same full-module baseline remained unchanged after the move.
+- `5f55fc7` isolates hot-inline preparation and credited HIO1 sidecar
+  streaming. The full endpoint failure set remained unchanged after the move.
 - `e37c44c` updates two obsolete intermediate scheduler assertions to the
   recursive-Green waiting phase; both tests then reach their unchanged terminal
   adoption/fallback, source, publication, query, receipt, and reclamation checks.
+- `dd22eed` replaces a synthetic flat-publication lifecycle fixture with a real
+  recursive-Green base, rejected update, replacement, and close proof. It does
+  not weaken the recursive-Green delivery barrier.
+- `9f111ad` isolates exact-candidate crop/build planning and credited candidate
+  packet streaming behind the endpoint facade.
 - `17c89b2` is the rebuilt native/Wasm checkpoint after bounded recursive-Green
   point, row, and inline-query work. Native and Wasm digests agree exactly.
 
@@ -78,22 +85,26 @@ an inline test module. That commit first split it into:
 - `v3_candidate_endpoint.rs`: 11,603 production lines;
 - `v3_candidate_endpoint_tests.rs`: 10,918 test lines.
 
-The production unit is still too large. Its current split is:
+The production endpoint is now split into these cohesive units:
 
-- `v3_candidate_endpoint.rs`: 9,645 facade/orchestration lines;
+- `v3_candidate_endpoint.rs`: 7,994 facade/orchestration lines;
+- `v3_candidate_endpoint_candidate.rs`: 1,136 exact-candidate crop/build and
+  credited packet-streaming lines;
 - `v3_candidate_endpoint_contract.rs`: 351 error/event-contract lines;
+- `v3_candidate_endpoint_hot_inline.rs`: 542 hot-inline preparation/streaming
+  lines;
 - `v3_candidate_endpoint_recursive_green.rs`: 764 authority/session lines;
 - `v3_candidate_endpoint_viewport.rs`: 1,268 viewport preparation/streaming
   lines; and
-- `v3_candidate_endpoint_tests.rs`: 10,707 test lines.
+- `v3_candidate_endpoint_tests.rs`: 10,716 test lines.
 
-The remaining extraction order is:
+The planned extraction order is complete:
 
 1. completed — endpoint error/event contract;
 2. completed — recursive-Green authority/session ownership;
 3. completed — viewport preparation and streaming;
-4. hot-inline preparation and streaming;
-5. exact-candidate crop/build planning and packet streaming.
+4. completed — hot-inline preparation and streaming;
+5. completed — exact-candidate crop/build planning and packet streaming.
 
 `CandidateEndpoint` remains the facade. Extractions must preserve wire types,
 state transitions, cancellation, root ownership, and product behavior; they do
@@ -101,13 +112,17 @@ not authorize a parser or protocol redesign.
 
 ## Known non-green evidence
 
-The complete endpoint unit-test module currently reports 27 passing, 30 failing,
+The complete endpoint unit-test module currently reports 28 passing, 29 failing,
 and one intentionally ignored large-scale case in release mode. The exact same
 25/32/1 counts and failure names occurred at `17c89b2`, after `5dd2b22`, and
 after `46fb82f`, proving that both extractions added no drift. Two tests now
 pass after only their obsolete intermediate phase assertions were updated; all
 of their terminal product and lifecycle assertions remain unchanged. The
-remaining failures include intermediate-phase
+hot-inline extraction preserved the resulting 27/30/1 set. The production-shaped
+recursive-Green lifecycle rewrite then made one more test genuinely green, and
+the combined post-rewrite/exact-candidate extraction gate produced the expected
+28/29/1 result with every other failure name unchanged. The remaining failures
+include intermediate-phase
 expectations from the older crop pipeline, older viewport limits, and earlier
 restart/publication assumptions. They have not yet been classified case by case
 and therefore cannot be treated as harmless. The focused native and Chrome
