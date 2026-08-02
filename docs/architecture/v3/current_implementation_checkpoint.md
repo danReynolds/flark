@@ -17,6 +17,11 @@ readiness are not claimed.
 - `5dd2b22` isolates recursive-Green authority, adoption, cancellation, and
   cleanup behind the `CandidateEndpoint` facade. A pre/post extraction A/B run
   produced the same 25 passing, 32 failing, and one ignored endpoint tests.
+- `46fb82f` isolates viewport presentation preparation and credited VPB1
+  streaming. The same full-module baseline remained unchanged after the move.
+- `e37c44c` updates two obsolete intermediate scheduler assertions to the
+  recursive-Green waiting phase; both tests then reach their unchanged terminal
+  adoption/fallback, source, publication, query, receipt, and reclamation checks.
 - `17c89b2` is the rebuilt native/Wasm checkpoint after bounded recursive-Green
   point, row, and inline-query work. Native and Wasm digests agree exactly.
 
@@ -75,16 +80,18 @@ an inline test module. That commit first split it into:
 
 The production unit is still too large. Its current split is:
 
-- `v3_candidate_endpoint.rs`: 10,903 facade/orchestration lines;
+- `v3_candidate_endpoint.rs`: 9,645 facade/orchestration lines;
 - `v3_candidate_endpoint_contract.rs`: 351 error/event-contract lines;
-- `v3_candidate_endpoint_recursive_green.rs`: 764 authority/session lines; and
+- `v3_candidate_endpoint_recursive_green.rs`: 764 authority/session lines;
+- `v3_candidate_endpoint_viewport.rs`: 1,268 viewport preparation/streaming
+  lines; and
 - `v3_candidate_endpoint_tests.rs`: 10,707 test lines.
 
 The remaining extraction order is:
 
 1. completed — endpoint error/event contract;
 2. completed — recursive-Green authority/session ownership;
-3. viewport preparation and streaming;
+3. completed — viewport preparation and streaming;
 4. hot-inline preparation and streaming;
 5. exact-candidate crop/build planning and packet streaming.
 
@@ -94,10 +101,13 @@ not authorize a parser or protocol redesign.
 
 ## Known non-green evidence
 
-The complete endpoint unit-test module currently reports 25 passing, 32 failing,
+The complete endpoint unit-test module currently reports 27 passing, 30 failing,
 and one intentionally ignored large-scale case in release mode. The exact same
-counts and failure names occur at `17c89b2` and after `5dd2b22`, proving that the
-ownership extraction added no drift. The failures include intermediate-phase
+25/32/1 counts and failure names occurred at `17c89b2`, after `5dd2b22`, and
+after `46fb82f`, proving that both extractions added no drift. Two tests now
+pass after only their obsolete intermediate phase assertions were updated; all
+of their terminal product and lifecycle assertions remain unchanged. The
+remaining failures include intermediate-phase
 expectations from the older crop pipeline, older viewport limits, and earlier
 restart/publication assumptions. They have not yet been classified case by case
 and therefore cannot be treated as harmless. The focused native and Chrome
