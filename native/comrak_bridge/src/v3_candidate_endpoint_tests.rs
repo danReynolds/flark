@@ -7397,10 +7397,14 @@ fn independent_host_4096_paragraph_distant_middle_edits_remain_bounded_exact_del
             .retained
             .as_ref()
             .and_then(|retained| retained.restart.as_ref()),
-        Some(CandidateRestartAuthority::Ordinary(checkpoints))
-            if checkpoints.source() == base_version
-                && checkpoints.is_segmented_top_level()
+        Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
+            if *source == base_version
     ));
+    assert!(
+        endpoint
+            .recursive_green
+            .has_installed_session_for(base_delivery.ack)
+    );
 
     let paragraph_start = base_source
         .find("paragraph 2048 ")
@@ -7454,8 +7458,8 @@ fn independent_host_4096_paragraph_distant_middle_edits_remain_bounded_exact_del
         .expect("start bounded ordinary crop");
     assert_eq!(
         active_candidate_phase(endpoint.active.as_ref()),
-        "ParsingOrdinaryExact",
-        "the 4,096-Paragraph edit must enter the crop parser, not exact-clean fallback"
+        "AwaitingRecursiveGreenExact",
+        "the 4,096-Paragraph edit must wait on bounded Green adoption, not exact-clean fallback"
     );
 
     let target_delivery =
@@ -7668,10 +7672,14 @@ fn independent_host_4096_paragraph_first_edit_is_bounded_exact_delta() {
             .retained
             .as_ref()
             .and_then(|retained| retained.restart.as_ref()),
-        Some(CandidateRestartAuthority::Ordinary(checkpoints))
-            if checkpoints.source() == base_version
-                && checkpoints.is_segmented_top_level()
+        Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
+            if *source == base_version
     ));
+    assert!(
+        endpoint
+            .recursive_green
+            .has_installed_session_for(base_delivery.ack)
+    );
 
     let edit_start = base_source
         .find("aaaaaaaa")
@@ -7717,8 +7725,8 @@ fn independent_host_4096_paragraph_first_edit_is_bounded_exact_delta() {
         .expect("start segmented BOF crop");
     assert_eq!(
         active_candidate_phase(endpoint.active.as_ref()),
-        "ParsingOrdinaryExact",
-        "the first-block edit must enter the boundary crop, not exact-clean fallback"
+        "AwaitingRecursiveGreenExact",
+        "the first-block edit must wait on bounded Green adoption, not exact-clean fallback"
     );
 
     let target_delivery =
@@ -9618,13 +9626,19 @@ fn leading_references_use_the_production_exact_delta_path<
             .expect("base References"),
         REFERENCES as u64
     );
-    let retained = endpoint.retained.as_ref().expect("retained base");
-    let CandidateRestartAuthority::Leading(restart) =
-        retained.restart.as_ref().expect("leading restart")
-    else {
-        panic!("large-reference base must retain leading-reference authority");
-    };
-    assert_eq!(restart.definition_count(), REFERENCES);
+    assert!(matches!(
+        endpoint
+            .retained
+            .as_ref()
+            .and_then(|retained| retained.restart.as_ref()),
+        Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
+            if *source == base_version
+    ));
+    assert!(
+        endpoint
+            .recursive_green
+            .has_installed_session_for(base_delivery.ack)
+    );
 
     let edit_start = tail_start
         + base_source[tail_start..]
@@ -9658,8 +9672,8 @@ fn leading_references_use_the_production_exact_delta_path<
         .expect("start production large-reference exact crop");
     assert_eq!(
         active_candidate_phase(endpoint.active.as_ref()),
-        "ParsingExact",
-        "the exact tail edit must enter the local leading-reference crop"
+        "AwaitingRecursiveGreenExact",
+        "the exact tail edit must wait on bounded Green adoption"
     );
     let target_delivery = deliver_endpoint_to_independent_host_with_fuel(
         &mut endpoint,
@@ -9815,11 +9829,14 @@ fn frozen_leading_references_allow_bounded_middle_paragraph_exact_delta() {
             .retained
             .as_ref()
             .and_then(|retained| retained.restart.as_ref()),
-        Some(CandidateRestartAuthority::Ordinary(checkpoints))
-            if checkpoints.source() == base_version
-                && checkpoints.is_segmented_top_level()
-                && checkpoints.frozen_reference_definition_count() == Some(REFERENCES)
+        Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
+            if *source == base_version
     ));
+    assert!(
+        endpoint
+            .recursive_green
+            .has_installed_session_for(base_delivery.ack)
+    );
 
     let edited_range = paragraph_ranges[EDITED_PARAGRAPH].clone();
     let edit_start = edited_range.start
@@ -9861,9 +9878,8 @@ fn frozen_leading_references_allow_bounded_middle_paragraph_exact_delta() {
         .expect("start reference-frozen ordinary crop");
     assert_eq!(
         active_candidate_phase(endpoint.active.as_ref()),
-        "ParsingOrdinaryExact",
-        "a middle tail Paragraph edit must use ordinary restart/convergence, not the \
-             one-remainder leading-reference crop"
+        "AwaitingRecursiveGreenExact",
+        "a middle tail Paragraph edit must wait on bounded Green adoption"
     );
     let target_delivery = deliver_endpoint_to_independent_host_with_fuel(
         &mut endpoint,
@@ -9896,14 +9912,14 @@ fn frozen_leading_references_allow_bounded_middle_paragraph_exact_delta() {
         REFERENCES as u64
     );
 
-    let edited_target_range = edited_range.start..edited_range.end + coordinate_delta;
+    let edited_target_range = edited_range.start..edited_range.end + coordinate_delta - 1;
     let last_base_range = paragraph_ranges[PARAGRAPHS - 1].clone();
-    let last_target_range =
-        last_base_range.start + coordinate_delta..last_base_range.end + coordinate_delta;
+    let last_target_range = last_base_range.start + coordinate_delta
+        ..last_base_range.end + coordinate_delta - 1;
     for (name, paragraph_range, point) in [
         (
             "first tail Paragraph",
-            0..paragraph_ranges[0].end,
+            paragraph_ranges[0].start..paragraph_ranges[0].end - 1,
             paragraph_ranges[0].start + 1,
         ),
         (
@@ -9917,34 +9933,14 @@ fn frozen_leading_references_allow_bounded_middle_paragraph_exact_delta() {
             last_target_range.start + 1,
         ),
     ] {
-        let mut output = [0_u8; HOST_M11_VIEWPORT_BYTES];
-        let outcome = host
-            .query_structural(
-                HostPointQuery {
-                    source_version: target_source_version,
-                    position: HostSourceMetric {
-                        bytes: u32::try_from(point).expect("query byte"),
-                        utf16: u32::try_from(point).expect("ASCII query UTF-16"),
-                    },
-                    affinity: HostMetricAffinity::Downstream,
-                    budget: HostQueryBudget {
-                        maximum_encoded_bytes: HOST_M11_VIEWPORT_BYTES as u32,
-                        maximum_open_depth: 64,
-                        maximum_leaf_count: 64,
-                        maximum_tree_nodes_visited: 256,
-                    },
-                },
-                &mut output,
-            )
-            .unwrap_or_else(|error| panic!("query {name}: {error}"));
-        let HostStructuralQueryOutcome::Viewport { range, receipt, .. } = outcome else {
-            panic!("installed target must expose {name}: {outcome:?}");
-        };
-        assert_eq!(receipt.encoded_bytes, HOST_M11_VIEWPORT_BYTES as u32);
-        assert_eq!(range.start.bytes as usize, paragraph_range.start, "{name}");
-        assert_eq!(range.start.utf16 as usize, paragraph_range.start, "{name}");
-        assert_eq!(range.end.bytes as usize, paragraph_range.end, "{name}");
-        assert_eq!(range.end.utf16 as usize, paragraph_range.end, "{name}");
+        let (owner_kind, range, ancestry) =
+            recursive_green_query_shape(&host, target_source_version, point, point);
+        assert_eq!(owner_kind, 5, "{name} remains a Green Paragraph");
+        assert_eq!(range[0] as usize, paragraph_range.start, "{name}");
+        assert_eq!(range[2] as usize, paragraph_range.start, "{name}");
+        assert_eq!(range[1] as usize, paragraph_range.end, "{name}");
+        assert_eq!(range[3] as usize, paragraph_range.end, "{name}");
+        assert!(!ancestry.is_empty(), "{name} retains authenticated ancestry");
     }
 
     drain_candidate_cleanup_with_fuel(&mut endpoint, &mut runtime, FUEL);
@@ -9959,10 +9955,8 @@ fn frozen_leading_references_allow_bounded_middle_paragraph_exact_delta() {
             .retained
             .as_ref()
             .and_then(|retained| retained.restart.as_ref()),
-        Some(CandidateRestartAuthority::Ordinary(checkpoints))
-            if checkpoints.source() == target_version
-                && checkpoints.is_segmented_top_level()
-                && checkpoints.frozen_reference_definition_count() == Some(REFERENCES)
+        Some(CandidateRestartAuthority::RecursiveGreen { source, .. })
+            if *source == target_version
     ));
 
     close_exact_pair_to_zero_with_fuel(&mut endpoint, &mut runtime, &mut host, FUEL);
