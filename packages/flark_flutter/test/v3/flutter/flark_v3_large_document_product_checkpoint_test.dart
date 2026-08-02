@@ -20,8 +20,7 @@ const String _pastedDisplay = 'βに😀 and paste🌍.\n';
 const int _mixedDocumentMinimumUtf16 = 512 * 1024;
 const String _lateTargetMarkdown =
     'Late active **β😀bold** stays _fluid_ with `code`.';
-const String _lateTargetDisplay =
-    'Late active β😀bold stays fluid with code.\n';
+const String _lateTargetDisplay = 'Late active β😀bold stays fluid with code.';
 const String _rapidInsertion = 'swift';
 
 void main() {
@@ -256,8 +255,9 @@ void main() {
         timeout: const Duration(seconds: 10),
         failFastOnTerminalInlineAttempt: true,
       );
+      expect(initialQuery, isA<FlarkV3RecursiveGreenPointQuery>());
       expect(
-        initialQuery.inlineFacts!.facts.map((fact) => fact.kind),
+        _inlineFactsOf(initialQuery)!.facts.map((fact) => fact.kind),
         containsAll([
           FlarkV3InlineFactKind.strong,
           FlarkV3InlineFactKind.emphasis,
@@ -289,13 +289,33 @@ void main() {
       );
 
       final currentStructureRevisions = <int>[];
+      var deliveredStatusCallbacks = 0;
+      var highestDeliveredSourceRevision = initialRevision;
       final statusSubscription = harness.runtime.statuses.listen((status) {
+        deliveredStatusCallbacks += 1;
+        if (status.sourceRevision > highestDeliveredSourceRevision) {
+          highestDeliveredSourceRevision = status.sourceRevision;
+        }
         if (status.sourceRevision > initialRevision &&
             status.structureCurrent) {
           currentStructureRevisions.add(status.structureRevision!);
         }
       });
       addTearDown(statusSubscription.cancel);
+
+      // Start the measurement with no setup progress left in the async status
+      // stream or Flutter frame queue. The burst below deliberately does not
+      // yield between platform deltas.
+      await tester.pump();
+      await runManagedRuntimeAsyncForTest(
+        tester,
+        () => Future<void>.delayed(Duration.zero),
+      );
+      deliveredStatusCallbacks = 0;
+      highestDeliveredSourceRevision = initialRevision;
+      harness.frameScheduler.resetMeasurements();
+      final convergenceProbe = _ManagedConvergenceProbe();
+      final convergenceClock = Stopwatch()..start();
 
       var currentDisplay = _lateTargetDisplay;
       var insertionOffset = currentDisplay.indexOf('bold') + 'bold'.length;
@@ -330,6 +350,17 @@ void main() {
       }
 
       final finalRevision = initialRevision + _rapidInsertion.length;
+      final queuedStatusRevisionGap =
+          finalRevision - highestDeliveredSourceRevision;
+      expect(deliveredStatusCallbacks, 0);
+      expect(
+        queuedStatusRevisionGap,
+        _rapidInsertion.length,
+        reason:
+            'the async status stream currently queues one revision edge per '
+            'zero-cadence source edit; recording the complete backlog keeps '
+            'future coalescing work measurable',
+      );
       final finalTargetMarkdown = _lateTargetMarkdown.replaceFirst(
         '**β😀bold**',
         '**β😀bold$_rapidInsertion**',
@@ -357,7 +388,10 @@ void main() {
         expectedRevision: finalRevision,
         timeout: const Duration(seconds: 10),
         failFastOnTerminalInlineAttempt: true,
+        convergenceProbe: convergenceProbe,
       );
+      convergenceClock.stop();
+      expect(finalQuery, isA<FlarkV3RecursiveGreenPointQuery>());
       expect(
         harness.runtime.status.structureGeneration,
         initialStructureGeneration + 1,
@@ -365,7 +399,7 @@ void main() {
       expect(currentStructureRevisions, isNotEmpty);
       expect(currentStructureRevisions, everyElement(finalRevision));
       expect(
-        finalQuery.inlineFacts!.facts.map((fact) => fact.kind),
+        _inlineFactsOf(finalQuery)!.facts.map((fact) => fact.kind),
         containsAll([
           FlarkV3InlineFactKind.strong,
           FlarkV3InlineFactKind.emphasis,
@@ -388,7 +422,6 @@ void main() {
         setClientCount: initialSetClientCount,
         clientId: clientId,
       );
-      await harness.close(tester);
       // Widget tests run debug/JIT code, so the cold callback is a regression
       // sentinel rather than the production frame-time SLO. The product SLO
       // is measured in the profile/device lane; this gate proves the hot path
@@ -397,15 +430,64 @@ void main() {
         Duration(microseconds: callbackMicroseconds.first),
         lessThan(const Duration(milliseconds: 25)),
       );
-      expect(
-        callbackMicroseconds.skip(1),
-        everyElement(lessThan(2000)),
-      );
+      expect(callbackMicroseconds.skip(1), everyElement(lessThan(2000)));
       expect(maximumCallback, lessThan(const Duration(milliseconds: 25)));
       expect(
         Duration(microseconds: totalCallbackMicroseconds),
         lessThan(const Duration(milliseconds: 50)),
       );
+      expect(
+        deliveredStatusCallbacks,
+        lessThanOrEqualTo(_rapidInsertion.length + 16),
+        reason:
+            'source edges plus bounded exact/inline convergence must not '
+            'create an open-ended managed status drain',
+      );
+      expect(
+        harness.frameScheduler.scheduledCallbackCount,
+        lessThan(deliveredStatusCallbacks),
+        reason:
+            'managed status progress must coalesce onto fewer Flutter frame '
+            'callbacks than raw runtime notifications',
+      );
+      expect(
+        harness.frameScheduler.scheduledCallbackCount,
+        lessThanOrEqualTo(4),
+      );
+      expect(
+        harness.frameScheduler.maximumCallback,
+        lessThan(const Duration(milliseconds: 25)),
+        reason:
+            'a scheduled presentation callback must not absorb '
+            'document-sized query/projection work',
+      );
+      expect(
+        convergenceProbe.maximumFlutterPump,
+        lessThan(const Duration(milliseconds: 50)),
+        reason:
+            'the complete Flutter frame, including marker-free span '
+            'materialization, must remain a debug/JIT sub-frame sentinel',
+      );
+      expect(
+        convergenceClock.elapsed,
+        lessThan(const Duration(seconds: 2)),
+        reason:
+            'a five-edit zero-cadence burst must visibly converge well inside '
+            'the separate 10 second fail-safe timeout',
+      );
+      print(
+        'managed-zero-cadence receipt: edits=${_rapidInsertion.length}, '
+        'queuedRevisionEdges=$queuedStatusRevisionGap, '
+        'statusCallbacks=$deliveredStatusCallbacks, '
+        'scheduledFrames=${harness.frameScheduler.scheduledCallbackCount}, '
+        'maxDeltaUs=${maximumCallback.inMicroseconds}, '
+        'maxFrameCallbackUs='
+        '${harness.frameScheduler.maximumCallback.inMicroseconds}, '
+        'maxFlutterPumpUs='
+        '${convergenceProbe.maximumFlutterPump.inMicroseconds}, '
+        'exactConvergenceUs=${convergenceClock.elapsedMicroseconds}',
+      );
+      await harness.close(tester);
     },
     timeout: const Timeout(Duration(minutes: 3)),
   );
@@ -620,6 +702,7 @@ final class _LargeDocumentHarness {
     required this.binding,
     required this.editableKey,
     required this.focusNode,
+    required this.frameScheduler,
   });
 
   static Future<_LargeDocumentHarness> mount(
@@ -633,6 +716,7 @@ final class _LargeDocumentHarness {
       tester,
       () => openManagedRuntimeForTest(source),
     );
+    final frameScheduler = _RecordingFrameScheduler();
     final binding = FlarkV3ManagedFlutterBinding.attach(
       runtime: runtime,
       inputIsland: FlarkV3InputIslandSnapshot(
@@ -651,12 +735,14 @@ final class _LargeDocumentHarness {
         maxLeafCount: 256,
         maxTreeNodesVisited: 1024,
       ),
+      frameScheduler: frameScheduler,
     );
     final harness = _LargeDocumentHarness._(
       runtime: runtime,
       binding: binding,
       editableKey: GlobalKey<EditableTextState>(),
       focusNode: FocusNode(),
+      frameScheduler: frameScheduler,
     );
     addTearDown(() => harness._disposeAfterFailure(tester));
 
@@ -682,18 +768,20 @@ final class _LargeDocumentHarness {
   final FlarkV3ManagedFlutterBinding binding;
   final GlobalKey<EditableTextState> editableKey;
   final FocusNode focusNode;
+  final _RecordingFrameScheduler frameScheduler;
 
   bool _uiDisposed = false;
 
   EditableTextState get editableState => editableKey.currentState!;
 
-  Future<FlarkV3DocumentStructuralQuery> waitForExactParagraph(
+  Future<FlarkV3DocumentQueryResult> waitForExactParagraph(
     WidgetTester tester, {
     required String expectedTargetMarkdown,
     required String expectedDisplay,
     required int expectedRevision,
     Duration timeout = const Duration(seconds: 60),
     bool failFastOnTerminalInlineAttempt = false,
+    _ManagedConvergenceProbe? convergenceProbe,
   }) => _waitForExactStructure(
     tester,
     kind: FlarkV3DocumentStructureKind.paragraph,
@@ -703,6 +791,7 @@ final class _LargeDocumentHarness {
     requireCertifiedInline: true,
     timeout: timeout,
     failFastOnTerminalInlineAttempt: failFastOnTerminalInlineAttempt,
+    convergenceProbe: convergenceProbe,
   );
 
   Future<FlarkV3DocumentStructuralQuery> waitForExactHeading(
@@ -733,7 +822,7 @@ final class _LargeDocumentHarness {
     requireCertifiedInline: false,
   );
 
-  Future<FlarkV3DocumentStructuralQuery> _waitForExactStructure(
+  Future<T> _waitForExactStructure<T extends FlarkV3DocumentQueryResult>(
     WidgetTester tester, {
     required FlarkV3DocumentStructureKind kind,
     required String expectedDisplay,
@@ -742,13 +831,17 @@ final class _LargeDocumentHarness {
     required bool requireCertifiedInline,
     Duration timeout = const Duration(seconds: 60),
     bool failFastOnTerminalInlineAttempt = false,
+    _ManagedConvergenceProbe? convergenceProbe,
   }) async {
     final startingInlinePresentation =
         runtime.status.inlinePresentationGeneration;
     final startingInlineOutcome = runtime.status.inlineAttemptOutcomeGeneration;
     final stopwatch = Stopwatch()..start();
     while (stopwatch.elapsed < timeout) {
+      final pumpClock = Stopwatch()..start();
       await tester.pump(const Duration(milliseconds: 1));
+      pumpClock.stop();
+      convergenceProbe?.recordFlutterPump(pumpClock.elapsed);
       await runManagedRuntimeAsyncForTest(
         tester,
         () => Future<void>.delayed(const Duration(milliseconds: 1)),
@@ -778,12 +871,7 @@ final class _LargeDocumentHarness {
           'target=$expectedProjectedMarkdown.',
         );
       }
-      if (status.state == FlarkV3DocumentRuntimeState.open &&
-          status.sourceRevision == expectedRevision &&
-          status.certifiedSourceRevision == expectedRevision &&
-          status.sourceCurrent &&
-          status.structureRevision == expectedRevision &&
-          status.structureCurrent &&
+      final structuralQueryCurrent =
           query is FlarkV3DocumentStructuralQuery &&
           query.sourceRevision == expectedRevision &&
           query.structureRevision == expectedRevision &&
@@ -791,18 +879,41 @@ final class _LargeDocumentHarness {
           (!requireCertifiedInline ||
               (query.inlineFacts != null &&
                   binding.controller.hasCertifiedInlinePresentation)) &&
-          binding.controller.editingController.text == expectedDisplay &&
           runtime.readSourceRange(
                 query.projection.projectedSource.startUtf16,
                 query.projection.projectedSource.endUtf16,
               ) ==
-              expectedProjectedMarkdown) {
+              expectedProjectedMarkdown;
+      final recursiveGreenQueryCurrent =
+          kind == FlarkV3DocumentStructureKind.paragraph &&
+          query is FlarkV3RecursiveGreenPointQuery &&
+          query.sourceRevision == expectedRevision &&
+          query.structureRevision == expectedRevision &&
+          query.owner.kind == FlarkV3RecursiveGreenKind.paragraph &&
+          query.paragraphSource != null &&
+          query.inlineSource != null &&
+          (!requireCertifiedInline ||
+              (query.inlineFacts != null &&
+                  binding.controller.hasCertifiedInlinePresentation)) &&
+          runtime.readSourceRange(
+                query.paragraphSource!.startUtf16,
+                query.paragraphSource!.endUtf16,
+              ) ==
+              expectedProjectedMarkdown;
+      if (status.state == FlarkV3DocumentRuntimeState.open &&
+          status.sourceRevision == expectedRevision &&
+          status.certifiedSourceRevision == expectedRevision &&
+          status.sourceCurrent &&
+          status.structureRevision == expectedRevision &&
+          status.structureCurrent &&
+          binding.controller.editingController.text == expectedDisplay &&
+          (structuralQueryCurrent || recursiveGreenQueryCurrent)) {
         expect(
           binding.controller.inputIslandGlobalEndUtf16 -
               binding.controller.inputIslandGlobalStartUtf16,
           lessThanOrEqualTo(_maximumIslandUtf16),
         );
-        return query;
+        return query as T;
       }
     }
     final status = runtime.status;
@@ -853,8 +964,56 @@ final class _LargeDocumentHarness {
   }
 }
 
-void _expectStrongAndEmphasis(FlarkV3DocumentStructuralQuery query) {
-  final inline = query.inlineFacts;
+final class _RecordingFrameScheduler implements FlarkV3FrameScheduler {
+  final FlarkV3FlutterFrameScheduler _delegate =
+      const FlarkV3FlutterFrameScheduler();
+
+  int _measurementGeneration = 0;
+  int scheduledCallbackCount = 0;
+  Duration maximumCallback = Duration.zero;
+
+  void resetMeasurements() {
+    _measurementGeneration += 1;
+    scheduledCallbackCount = 0;
+    maximumCallback = Duration.zero;
+  }
+
+  @override
+  void schedule(VoidCallback callback) {
+    final generation = _measurementGeneration;
+    scheduledCallbackCount += 1;
+    _delegate.schedule(() {
+      if (generation != _measurementGeneration) {
+        callback();
+        return;
+      }
+      final callbackClock = Stopwatch()..start();
+      callback();
+      callbackClock.stop();
+      if (callbackClock.elapsed > maximumCallback) {
+        maximumCallback = callbackClock.elapsed;
+      }
+    });
+  }
+}
+
+final class _ManagedConvergenceProbe {
+  Duration maximumFlutterPump = Duration.zero;
+
+  void recordFlutterPump(Duration elapsed) {
+    if (elapsed > maximumFlutterPump) maximumFlutterPump = elapsed;
+  }
+}
+
+FlarkV3InlineFacts? _inlineFactsOf(FlarkV3DocumentQueryResult query) =>
+    switch (query) {
+      FlarkV3DocumentStructuralQuery(:final inlineFacts) => inlineFacts,
+      FlarkV3RecursiveGreenPointQuery(:final inlineFacts) => inlineFacts,
+      _ => null,
+    };
+
+void _expectStrongAndEmphasis(FlarkV3DocumentQueryResult query) {
+  final inline = _inlineFactsOf(query);
   expect(inline, isNotNull);
   expect(inline!.disposition, FlarkV3InlineFactsDisposition.authoritative);
   expect(
