@@ -216,21 +216,19 @@ fn collect_token_marker_ranges(ranges: &mut Vec<JsonRange>, bytes: &[u8], token:
         return;
     }
 
-    if token.styles.iter().any(|style| *style == "bold") {
-        if has_wrapping_marker(bytes, start, end, b"**") {
-            push_wrapping_marker_ranges(ranges, start, end, 2, len);
-        } else if has_wrapping_marker(bytes, start, end, b"__") {
-            push_wrapping_marker_ranges(ranges, start, end, 2, len);
-        }
+    if token.styles.contains(&"bold")
+        && (has_wrapping_marker(bytes, start, end, b"**")
+            || has_wrapping_marker(bytes, start, end, b"__"))
+    {
+        push_wrapping_marker_ranges(ranges, start, end, 2, len);
     }
-    if token.styles.iter().any(|style| *style == "italic") {
-        if has_wrapping_marker(bytes, start, end, b"*") {
-            push_wrapping_marker_ranges(ranges, start, end, 1, len);
-        } else if has_wrapping_marker(bytes, start, end, b"_") {
-            push_wrapping_marker_ranges(ranges, start, end, 1, len);
-        }
+    if token.styles.contains(&"italic")
+        && (has_wrapping_marker(bytes, start, end, b"*")
+            || has_wrapping_marker(bytes, start, end, b"_"))
+    {
+        push_wrapping_marker_ranges(ranges, start, end, 1, len);
     }
-    if token.styles.iter().any(|style| *style == "code") {
+    if token.styles.contains(&"code") {
         let leading = count_edge_byte(bytes, start, end, b'`', true);
         let trailing = count_edge_byte(bytes, start, end, b'`', false);
         let marker_len = leading.min(trailing);
@@ -238,9 +236,7 @@ fn collect_token_marker_ranges(ranges: &mut Vec<JsonRange>, bytes: &[u8], token:
             push_wrapping_marker_ranges(ranges, start, end, marker_len, len);
         }
     }
-    if token.styles.iter().any(|style| *style == "strikethrough")
-        && has_wrapping_marker(bytes, start, end, b"~~")
-    {
+    if token.styles.contains(&"strikethrough") && has_wrapping_marker(bytes, start, end, b"~~") {
         push_wrapping_marker_ranges(ranges, start, end, 2, len);
     }
 }

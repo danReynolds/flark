@@ -1,0 +1,147 @@
+import 'package:flutter/widgets.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:flark_flutter/flark_flutter.dart';
+import 'package:flark_flutter/src/v2/flutter/flark_default_parse_backend.dart';
+
+import '../support/flark_test_backend.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('native Comrak backend loads the required WASM bridge on web', () async {
+    final backend = flarkTestNativeBackend();
+    final result = await backend.parse(
+      const FlarkMarkdownParseRequest(
+        revision: 7,
+        markdown: '| A | B |\n| - | - |\n| **x** | y |\n',
+        profile: FlarkMarkdownProfile.commonMarkGfm,
+      ),
+    );
+
+    expect(
+      result.diagnostics.where(
+        (diagnostic) => diagnostic.extensions['isError'] == true,
+      ),
+      isEmpty,
+      reason: result.diagnostics
+          .map((diagnostic) => '${diagnostic.code}: ${diagnostic.message}')
+          .join('\n'),
+    );
+    expect(result.extensions['nativeParser'], 'comrak');
+    expect(result.extensions['nativeRevision'], 7);
+    expect(result.blocks.map((block) => block.type), contains('table'));
+    expect(result.inlineTokens.map((token) => token.type), contains('strong'));
+  });
+
+  test('Flutter default backend resolves the packaged WASM asset', () async {
+    final result = await flarkDefaultParseBackend().parse(
+      const FlarkMarkdownParseRequest(
+        revision: 8,
+        markdown: '# Default web',
+        profile: FlarkMarkdownProfile.commonMarkGfm,
+      ),
+    );
+
+    expect(
+      result.diagnostics.where(
+        (diagnostic) => diagnostic.extensions['isError'] == true,
+      ),
+      isEmpty,
+      reason: result.diagnostics
+          .map((diagnostic) => '${diagnostic.code}: ${diagnostic.message}')
+          .join('\n'),
+    );
+    expect(result.blocks.map((block) => block.type), contains('heading'));
+  });
+
+  testWidgets('promoted v2 surfaces require Comrak by default on web', (
+    tester,
+  ) async {
+    final parseErrors = <Object>[];
+    final controller = FlarkFlutterController.fromMarkdown(
+      '# Web',
+      parseDebounce: Duration.zero,
+      onParseError: (error, stackTrace) => parseErrors.add(error),
+    );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Column(
+          children: [
+            FlarkMarkdownEditor(controller: controller),
+            FlarkMarkdown(
+              markdown: '# Preview',
+              parseDebounce: Duration.zero,
+              onParseError: (error, stackTrace) => parseErrors.add(error),
+            ),
+          ],
+        ),
+      ),
+    );
+    await _waitForAuthoritativeRenderPlan(tester, controller);
+
+    expect(parseErrors, isEmpty, reason: parseErrors.join('\n'));
+    expect(
+      controller.hasAuthoritativeRenderPlan,
+      isTrue,
+      reason: parseErrors.join('\n'),
+    );
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).controller.text,
+      'Web',
+    );
+    expect(find.text('Preview'), findsOneWidget);
+    expect(find.text('# Preview'), findsNothing);
+  });
+
+  testWidgets('promoted v2 surfaces render Comrak WASM plans', (tester) async {
+    final backend = flarkTestNativeBackend();
+    final controller = FlarkFlutterController.fromMarkdown(
+      '# Web',
+      parseBackend: backend,
+    );
+    addTearDown(controller.dispose);
+
+    final parseResult = await tester.runAsync(() async {
+      return backend.parse(
+        FlarkMarkdownParseRequest(
+          revision: controller.state.revision,
+          markdown: '# Web',
+          profile: FlarkMarkdownProfile.commonMarkGfm,
+        ),
+      );
+    });
+
+    expect(controller.applyParseResult(parseResult!), isTrue);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkMarkdownEditor(controller: controller),
+      ),
+    );
+    await tester.pump();
+
+    expect(controller.hasAuthoritativeRenderPlan, isTrue);
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).controller.text,
+      'Web',
+    );
+  });
+}
+
+Future<void> _waitForAuthoritativeRenderPlan(
+  WidgetTester tester,
+  FlarkFlutterController controller,
+) async {
+  await tester.pump();
+  for (var attempt = 0; attempt < 50; attempt++) {
+    if (controller.hasAuthoritativeRenderPlan) break;
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    });
+    await tester.pump();
+  }
+}

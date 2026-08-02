@@ -4,9 +4,24 @@ mod parser;
 mod payload;
 mod reference_definitions;
 mod source_ranges;
+mod v3_candidate_endpoint;
+mod v3_checkpoint_b_probe;
+pub mod v3_endpoint;
+mod v3_host_native_api;
+mod v3_host_registry;
+mod v3_host_store;
+mod v3_native_api;
+pub mod v3_publication_wire;
+mod v3_registry;
+pub mod v3_session_wire;
+#[cfg(target_arch = "wasm32")]
+mod v3_wasm_api;
+pub mod v3_wire;
 
 use std::any::Any;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+
+pub(crate) const FLARK_V3_GRAMMAR_REVISION: u32 = flark_parser::M11_GRAMMAR_REVISION;
 
 use abi::{
     allocate_response, free_response, FlarkComrakResponse, ABI_VERSION, STATUS_ERROR, STATUS_OK,
@@ -32,15 +47,20 @@ pub extern "C" fn flark_comrak_input_alloc(len: u32) -> *mut u8 {
 }
 
 #[no_mangle]
-pub extern "C" fn flark_comrak_input_free(ptr: *mut u8, len: u32) {
+/// Releases an input allocation returned by [`flark_comrak_input_alloc`].
+///
+/// # Safety
+///
+/// `ptr` must be either null or the still-live pointer returned for exactly
+/// `len` bytes by `flark_comrak_input_alloc`, and it must be released once.
+pub unsafe extern "C" fn flark_comrak_input_free(ptr: *mut u8, len: u32) {
     if ptr.is_null() || len == 0 {
         return;
     }
 
     // SAFETY: pointer/capacity originate from `flark_comrak_input_alloc`.
-    unsafe {
-        let _ = Vec::from_raw_parts(ptr, 0, len as usize);
-    }
+    // SAFETY: guaranteed by this function's caller contract.
+    unsafe { drop(Vec::from_raw_parts(ptr, 0, len as usize)) };
 }
 
 #[no_mangle]
@@ -175,8 +195,7 @@ mod tests {
     #[test]
     fn normal_document_parses_to_ok() {
         let text = "# Title\n\nHello **world**.\n";
-        let response_ptr =
-            flark_comrak_parse(1, 1, text.as_ptr(), text.len() as u32);
+        let response_ptr = flark_comrak_parse(1, 1, text.as_ptr(), text.len() as u32);
         assert!(!response_ptr.is_null());
         // SAFETY: the pointer originates from flark_comrak_parse.
         let response = unsafe { &*response_ptr };

@@ -1,8 +1,7 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flark/flark_advanced.dart';
+import 'package:test/test.dart';
 
 import '../support/flark_test_paths.dart';
 
@@ -12,7 +11,7 @@ void main() {
 
     if (libPath.isEmpty || !File(libPath).existsSync()) {
       test('native bridge not built; feature matrix suite skipped', () {
-        debugPrint('Skipped markdown feature matrix: native bridge missing.');
+        stdout.writeln('Skipped markdown feature matrix: native bridge missing.');
         expect(true, isTrue);
       });
       return;

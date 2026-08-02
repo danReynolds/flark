@@ -1,0 +1,21 @@
+name: flark_archive_flutter_consumer
+description: External Flutter consumer used by Flark's publish archive gate.
+publish_to: none
+version: 0.0.0+1
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flark: any
+  flark_flutter: any
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

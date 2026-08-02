@@ -45,7 +45,7 @@ final class FlarkAuthoredMarker {
   final bool opens;
 }
 
-/// [text] split into the edge whitespace CommonMark refuses to style and the
+/// Input text split into the edge whitespace CommonMark refuses to style and the
 /// core that can sit against delimiters.
 final class FlarkInlineEdgeWhitespace {
   const FlarkInlineEdgeWhitespace({

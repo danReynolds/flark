@@ -1,8 +1,8 @@
-/// Full Flark v2 API.
+/// Full platform-neutral Flark engine API.
 ///
 /// Most apps should import `package:flark/flark.dart`.
-/// This barrel remains as an explicit full-v2 surface for integrations that
-/// want the complete v2 type set from one import.
+/// Flutter integrations should import
+/// `package:flark_flutter/flark_flutter_advanced.dart`.
 ///
 /// {@canonicalFor flark_command.FlarkCommandHandler}
 /// {@canonicalFor flark_command.FlarkCommandPriority}
@@ -34,6 +34,13 @@
 /// {@canonicalFor flark_markdown_table_commands.FlarkMarkdownTableEditingExtension}
 /// {@canonicalFor flark_native_comrak_parse_backend.FlarkNativeComrakParseProfile}
 /// {@canonicalFor flark_native_comrak_parse_backend.FlarkNativeComrakProfiledParseResult}
+/// {@canonicalFor native_comrak_bridge_factory.createNativeComrakBridge}
+/// {@canonicalFor native_comrak_bridge_factory.preflightNativeComrakBridge}
+/// {@canonicalFor native_comrak_ffi.NativeComrakBlockSpan}
+/// {@canonicalFor native_comrak_ffi.NativeComrakDiagnostic}
+/// {@canonicalFor native_comrak_ffi.NativeComrakInlineToken}
+/// {@canonicalFor native_comrak_ffi.NativeComrakPayloadCodec}
+/// {@canonicalFor native_comrak_ffi.NativeComrakRange}
 /// {@canonicalFor flark_projected_text_edit_adapter.FlarkProjectedTextEditAdapter}
 /// {@canonicalFor flark_projection.FlarkCursorMask}
 /// {@canonicalFor flark_projection.FlarkHiddenRange}
@@ -82,41 +89,6 @@ export 'src/v2/core/core.dart'
         FlarkTransactionIntent,
         FlarkTransactionMetadata,
         FlarkUtf8Utf16Mapper;
-export 'src/v2/flutter/flutter.dart'
-    show
-        FlarkCommandAction,
-        FlarkCommandActions,
-        FlarkCommandIntent,
-        FlarkCommandInvocation,
-        FlarkIndentListAction,
-        FlarkIndentListIntent,
-        FlarkMoveLinesAction,
-        FlarkMoveLinesIntent,
-        FlarkControllerEvent,
-        FlarkControllerEventKind,
-        FlarkContractViolationError,
-        FlarkFlutterController,
-        FlarkCodeLanguageOption,
-        FlarkMarkdownCommands,
-        FlarkMarkdownControllerCommandFacade,
-        FlarkMarkdownControllerCommands,
-        FlarkMarkdownTheme,
-        FlarkMarkdownThemeData,
-        FlarkCodeSyntaxThemeData,
-        FlarkMarkdown,
-        FlarkMarkdownEditor,
-        FlarkMarkdownEditorFormField,
-        // Deprecated aliases, retained until 1.0:
-        Markdown,
-        MarkdownEditor,
-        MarkdownEditorFormField,
-        FlarkMarkdownEditingMode,
-        FlarkMarkdownInteractionConfig,
-        FlarkLinkEditCallback,
-        FlarkLinkOpenCallback,
-        FlarkOverlayTargetWidgetBuilder,
-        FlarkPreviewBlockWidgetBuilder,
-        FlarkTypedCommandInvocation;
 export 'src/v2/markdown/markdown.dart'
     show
         FlarkApplyLinkEditPayload,
@@ -223,6 +195,10 @@ export 'src/v2/native/native.dart'
         NativeComrakBridgeLoadException,
         NativeComrakBridgeLoadFailureKind,
         NativeComrakBridgePreflightResult,
+        NativeComrakWasmBytesLoaderSource,
+        NativeComrakWasmBytesSource,
+        NativeComrakWasmSource,
+        NativeComrakWasmUriSource,
         NativeComrakDiagnostic,
         NativeComrakInlineToken,
         NativeComrakParseInput,

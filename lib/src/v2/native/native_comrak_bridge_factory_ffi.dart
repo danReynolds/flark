@@ -143,9 +143,9 @@ class FfiNativeComrakBridge
       // form resolves; the absolute path beside the executable is the fallback.
       const frameworkBinary =
           'flark_comrak_bridge.framework/flark_comrak_bridge';
-      final bundledPath = File(Platform.resolvedExecutable).parent.uri
-          .resolve('Frameworks/$frameworkBinary')
-          .toFilePath();
+      final bundledPath = File(
+        Platform.resolvedExecutable,
+      ).parent.uri.resolve('Frameworks/$frameworkBinary').toFilePath();
       final candidates = <String>['@rpath/$frameworkBinary', bundledPath];
       Object? lastError;
       for (final candidate in candidates) {
@@ -562,12 +562,16 @@ class FfiNativeComrakBridge
   }
 }
 
-NativeComrakBridge createNativeComrakBridge({String? overrideLibraryPath}) {
+NativeComrakBridge createNativeComrakBridge({
+  String? overrideLibraryPath,
+  NativeComrakWasmSource? wasmSource,
+}) {
   return FfiNativeComrakBridge.load(overrideLibraryPath: overrideLibraryPath);
 }
 
 NativeComrakBridgePreflightResult preflightNativeComrakBridge({
   String? overrideLibraryPath,
+  NativeComrakWasmSource? wasmSource,
 }) {
   try {
     FfiNativeComrakBridge.load(overrideLibraryPath: overrideLibraryPath);

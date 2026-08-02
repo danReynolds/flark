@@ -1,8 +1,8 @@
-/// Flark source-first markdown editor and preview API.
+/// Flark's Dart-first Markdown engine API.
 ///
-/// New apps should start here. Lower-level headless APIs live in
-/// `flark_core.dart`; the complete advanced API lives in
-/// `flark_advanced.dart`.
+/// Dart applications should start here. Flutter applications should import
+/// `package:flark_flutter/flark_flutter.dart`, which re-exports this engine
+/// surface and adds widgets, input, layout, and presentation adapters.
 library;
 
 export 'flark_core.dart'
@@ -76,41 +76,6 @@ export 'flark_core.dart'
         FlarkRenderTableDescriptor,
         FlarkRenderTaskListItemDescriptor,
         applyFlarkRenderPlanExtensions;
-export 'src/v2/flutter/flutter.dart'
-    show
-        FlarkCommandAction,
-        FlarkCommandActions,
-        FlarkCommandIntent,
-        FlarkCommandInvocation,
-        FlarkIndentListAction,
-        FlarkIndentListIntent,
-        FlarkMoveLinesAction,
-        FlarkMoveLinesIntent,
-        FlarkControllerEvent,
-        FlarkControllerEventKind,
-        FlarkContractViolationError,
-        FlarkFlutterController,
-        FlarkCodeLanguageOption,
-        FlarkMarkdownCommands,
-        FlarkMarkdownControllerCommandFacade,
-        FlarkMarkdownShortcuts,
-        FlarkMarkdownTheme,
-        FlarkMarkdownThemeData,
-        FlarkCodeSyntaxThemeData,
-        FlarkMarkdown,
-        FlarkMarkdownEditor,
-        FlarkMarkdownEditorFormField,
-        // Deprecated aliases, retained until 1.0:
-        Markdown,
-        MarkdownEditor,
-        MarkdownEditorFormField,
-        FlarkMarkdownEditingMode,
-        FlarkMarkdownInteractionConfig,
-        FlarkLinkEditCallback,
-        FlarkLinkOpenCallback,
-        FlarkOverlayTargetWidgetBuilder,
-        FlarkPreviewBlockWidgetBuilder,
-        FlarkTypedCommandInvocation;
 export 'src/v2/markdown/markdown.dart' show FlarkNativeComrakParseBackend;
 export 'src/v2/native/native_comrak_ffi.dart'
     show
@@ -118,6 +83,10 @@ export 'src/v2/native/native_comrak_ffi.dart'
         SyncCapableNativeComrakBridge,
         NativeComrakBridgeLoadException,
         NativeComrakBridgeLoadFailureKind,
+        NativeComrakWasmBytesLoaderSource,
+        NativeComrakWasmBytesSource,
+        NativeComrakWasmSource,
+        NativeComrakWasmUriSource,
         NativeComrakParseInput,
         NativeComrakParseResult,
         NativeComrakProfile,

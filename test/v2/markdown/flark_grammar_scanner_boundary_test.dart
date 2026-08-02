@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 /// RFC 022 (parser grammar monopoly): grammar belongs to the parser;
 /// everything else is geometry. The textual-analysis scanner libraries are
@@ -23,11 +23,6 @@ void main() {
 
   // Keep in sync with the disposition table in RFC 022 §3.
   const allowedImporters = {
-    'lib/src/v2/flutter/flark_flutter_controller.dart',
-    'lib/src/v2/flutter/flark_live_code_fence_input_policy.dart',
-    'lib/src/v2/flutter/flark_live_edit_classifier.dart',
-    'lib/src/v2/flutter/flark_markdown_input_policy.dart',
-    'lib/src/v2/flutter/flark_projected_editable_text.dart',
     'lib/src/v2/markdown/commands/flark_markdown_command_capabilities.dart',
     'lib/src/v2/markdown/commands/flark_markdown_inline_commands.dart',
     // NOTE: the parse backend imports ONLY the fenced-code scanner now

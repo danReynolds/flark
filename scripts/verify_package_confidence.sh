@@ -2,8 +2,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PKG_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-REPO_ROOT="$PKG_ROOT"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ENGINE_ROOT="$REPO_ROOT"
+FLUTTER_PACKAGE_ROOT="$REPO_ROOT/packages/flark_flutter"
 
 run_full_suite=0
 run_native=1
@@ -17,7 +18,7 @@ Usage:
   ./scripts/verify_package_confidence.sh [options]
 
 Options:
-  --full-suite       Also run the full package test suite (`flutter test test`).
+  --full-suite       Also run both complete package test suites.
   --skip-native      Skip native backend/parity tests (useful if native artifacts are not built).
   --benchmarks       Run benchmark lane with enforced budgets.
   -h, --help         Show this help.
@@ -48,11 +49,20 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 
-run_in_pkg() {
+run_in_engine() {
   echo
   echo "==> (cd . && $*)"
   (
-    cd "$PKG_ROOT"
+    cd "$ENGINE_ROOT"
+    "$@"
+  )
+}
+
+run_in_flutter() {
+  echo
+  echo "==> (cd packages/flark_flutter && $*)"
+  (
+    cd "$FLUTTER_PACKAGE_ROOT"
     "$@"
   )
 }
@@ -61,52 +71,67 @@ run_in_example() {
   echo
   echo "==> (cd example && $*)"
   (
-    cd "$PKG_ROOT/example"
+    cd "$REPO_ROOT/example"
     "$@"
   )
 }
 
 echo "Flark package confidence gate"
 echo "Repo: $REPO_ROOT"
-echo "Package: $PKG_ROOT"
+echo "Engine package: $ENGINE_ROOT"
+echo "Flutter package: $FLUTTER_PACKAGE_ROOT"
 
-run_in_pkg flutter analyze hook lib test
+# Fail quickly when packaged Web bytes lag the Rust source or when the root,
+# Flutter, and example asset identities diverge.
+run_in_engine dart test \
+  test/v2/packaging/flark_wasm_freshness_test.dart \
+  --reporter compact
+run_in_engine dart test \
+  test/v3/packaging/flark_v3_web_asset_contract_test.dart \
+  --reporter compact
+run_in_engine dart test \
+  test/v3/conformance/flark_v3_commonmark_coverage_ledger_test.dart \
+  --reporter compact
+
+run_in_engine dart analyze hook lib test
+run_in_flutter flutter analyze lib test
 
 # High-signal regression suites (fast enough for local confidence).
-run_in_pkg flutter test test/v2/core
-run_in_pkg flutter test test/v2/markdown
-run_in_pkg flutter test test/v2/projection
-run_in_pkg flutter test test/v2/render_plan
-run_in_pkg flutter test test/v2/flutter/flark_flutter_controller_test.dart
-run_in_pkg flutter test test/v2/flutter/flark_markdown_surface_test.dart
-run_in_pkg flutter test test/v2/flutter/flark_markdown_input_policy_contract_test.dart
-run_in_pkg flutter test test/v2/flutter/flark_live_code_fence_input_policy_test.dart
-run_in_pkg flutter test test/v2/flutter/flark_live_rendered_transition_matrix_test.dart
-run_in_pkg flutter test test/v2/flutter/flark_live_rendered_visual_layout_test.dart
-run_in_pkg flutter test test/v2/flutter/flark_live_rendered_editable_text_test.dart
-run_in_pkg flutter test test/v2/flutter/flark_read_only_preview_test.dart
-run_in_pkg flutter test test/v2/flutter/flark_render_plan_overlay_controls_test.dart
-run_in_pkg flutter test test/v2/flutter/flark_v2_visual_golden_test.dart
-run_in_pkg flutter test test/v2/flutter/flark_markdown_web_smoke_test.dart -d chrome --reporter compact
+run_in_engine dart test test/v2/core
+run_in_engine dart test test/v2/markdown
+run_in_engine dart test test/v2/projection
+run_in_engine dart test test/v2/render_plan
+run_in_flutter flutter test test/v2/flutter/flark_flutter_controller_test.dart
+run_in_flutter flutter test test/v2/flutter/flark_markdown_surface_test.dart
+run_in_flutter flutter test test/v2/flutter/flark_markdown_input_policy_contract_test.dart
+run_in_flutter flutter test test/v2/flutter/flark_live_code_fence_input_policy_test.dart
+run_in_flutter flutter test test/v2/flutter/flark_live_rendered_transition_matrix_test.dart
+run_in_flutter flutter test test/v2/flutter/flark_live_rendered_visual_layout_test.dart
+run_in_flutter flutter test test/v2/flutter/flark_live_rendered_editable_text_test.dart
+run_in_flutter flutter test test/v2/flutter/flark_read_only_preview_test.dart
+run_in_flutter flutter test test/v2/flutter/flark_render_plan_overlay_controls_test.dart
+run_in_flutter flutter test test/v2/flutter/flark_v2_visual_golden_test.dart
+run_in_flutter flutter test test/v2/flutter/flark_markdown_web_smoke_test.dart -d chrome --reporter compact
 run_in_example flutter test test/widget_test.dart --reporter compact
 run_in_example flutter test test/markdown_flow_test.dart -d chrome --reporter compact
 
 if [ "$run_native" -eq 1 ]; then
-  run_in_pkg flutter test test/v2/native/flark_native_comrak_bridge_test.dart
-  run_in_pkg flutter test test/v2/packaging/flark_v2_native_packaging_contract_test.dart
-  run_in_pkg flutter test test/v2/markdown/flark_native_comrak_parse_backend_test.dart
-  run_in_pkg flutter test test/v2/markdown/flark_v2_native_upstream_contract_test.dart
+  run_in_engine dart test test/v2/native/flark_native_comrak_bridge_test.dart
+  run_in_engine dart test test/v2/packaging/flark_v2_native_packaging_contract_test.dart
+  run_in_engine dart test test/v2/markdown/flark_native_comrak_parse_backend_test.dart
+  run_in_engine dart test test/v2/markdown/flark_v2_native_upstream_contract_test.dart
 fi
 
 if [ "$run_full_suite" -eq 1 ]; then
   # Benchmark-tagged tests are single-shot timing budgets that flake under the
   # concurrency of the full suite; run them via --benchmarks (enforced lane),
   # not here.
-  run_in_pkg flutter test test --exclude-tags benchmark --reporter compact
+  run_in_engine dart test test --exclude-tags benchmark --reporter compact
+  run_in_flutter flutter test test --exclude-tags benchmark --reporter compact
 fi
 
 if [ "$run_benchmarks" -eq 1 ]; then
-  run_in_pkg ./scripts/verify_benchmark_lane.sh
+  run_in_engine ./scripts/verify_benchmark_lane.sh
 fi
 
 echo

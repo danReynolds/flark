@@ -1,0 +1,6 @@
+[package]
+name = "generated_scanner_gate"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "BSD-2-Clause"

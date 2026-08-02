@@ -1,9 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flark/flark_advanced.dart';
+import 'package:test/test.dart';
 
 import '../support/flark_test_paths.dart';
 
@@ -215,7 +214,7 @@ Iterable<FlarkMarkdownBlockNode> _allBlocks(
 }
 
 void _printScore(_LaneScore score) {
-  debugPrint(
+  stdout.writeln(
     '${score.laneName}: passed=${score.passed} failed=${score.failed} '
     'compared=${score.compared} skipped=${score.skipped} total=${score.total} '
     'passRate=${score.passRate.toStringAsFixed(4)} '
@@ -224,7 +223,7 @@ void _printScore(_LaneScore score) {
     'determinism=${score.determinismFailures}',
   );
   if (score.samples.isNotEmpty) {
-    debugPrint('${score.laneName} samples: ${score.samples.join(', ')}');
+    stdout.writeln('${score.laneName} samples: ${score.samples.join(', ')}');
   }
 }
 

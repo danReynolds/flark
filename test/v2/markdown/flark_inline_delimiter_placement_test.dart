@@ -1,7 +1,7 @@
 import 'package:flark/src/v2/core/core.dart';
 import 'package:flark/src/v2/markdown/inline/flark_inline_delimiter_placement.dart';
 import 'package:flark/src/v2/markdown/inline/flark_inline_run_scanner.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 String _apply(String source, FlarkInlinePlacementEdit edit) {
   return source.replaceRange(

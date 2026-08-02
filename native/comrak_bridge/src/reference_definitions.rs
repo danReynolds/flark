@@ -155,8 +155,7 @@ fn definition_line_has_title(line: &[u8]) -> bool {
             cursor += 1;
         }
         Some(byte) if !byte.is_ascii_whitespace() => {
-            while matches!(rest.get(cursor), Some(byte) if !byte.is_ascii_whitespace())
-            {
+            while matches!(rest.get(cursor), Some(byte) if !byte.is_ascii_whitespace()) {
                 cursor += 1;
             }
         }
@@ -224,7 +223,6 @@ fn label_length(rest: &[u8]) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::parser::parse_to_payload;
 
     fn def_ranges(md: &str) -> Vec<(u64, u64)> {
@@ -251,18 +249,12 @@ mod tests {
 
     #[test]
     fn inline_title_definition_is_one_line() {
-        assert_eq!(
-            def_ranges("[foo]: /url \"title\"\n\nx\n"),
-            vec![(0, 20)],
-        );
+        assert_eq!(def_ranges("[foo]: /url \"title\"\n\nx\n"), vec![(0, 20)],);
     }
 
     #[test]
     fn next_line_title_is_folded() {
-        assert_eq!(
-            def_ranges("[foo]: /url\n\"title\"\n\nx\n"),
-            vec![(0, 20)],
-        );
+        assert_eq!(def_ranges("[foo]: /url\n\"title\"\n\nx\n"), vec![(0, 20)],);
     }
 
     #[test]
@@ -295,10 +287,7 @@ mod tests {
 
     #[test]
     fn consecutive_definitions_collect_individually() {
-        assert_eq!(
-            def_ranges("[a]: /a\n[b]: /b\n\nx\n"),
-            vec![(0, 8), (8, 16)],
-        );
+        assert_eq!(def_ranges("[a]: /a\n[b]: /b\n\nx\n"), vec![(0, 8), (8, 16)],);
     }
 
     /// A consumed definition sandwiched between list items is bracketed by

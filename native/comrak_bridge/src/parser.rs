@@ -4,9 +4,7 @@ use crate::payload::{
     PAYLOAD_PROTOCOL_VERSION,
 };
 use crate::reference_definitions::collect_reference_definition_ranges;
-use crate::source_ranges::{
-    end_of_line, leading_indent, line_content_end, line_start_for_offset, normalize_ranges,
-};
+use crate::source_ranges::{end_of_line, leading_indent, line_content_end, normalize_ranges};
 use comrak::nodes::{
     AstNode, ListType, NodeHeading, NodeList, NodeValue, Sourcepos, TableAlignment,
 };
@@ -143,8 +141,7 @@ pub(crate) fn parse_to_payload(text: &str, profile: u8) -> Result<Vec<u8>, Strin
     let marker_ranges = normalize_ranges(marker_ranges, text.len());
     let replacement_ranges = collect_entity_replacement_ranges(text, &exclusion_ranges);
 
-    let reference_definition_ranges =
-        collect_reference_definition_ranges(text, &blocks);
+    let reference_definition_ranges = collect_reference_definition_ranges(text, &blocks);
     let payload = JsonParsePayload {
         protocol_version: PAYLOAD_PROTOCOL_VERSION,
         blocks,
@@ -287,7 +284,7 @@ fn collect_node<'a>(
     if inline_range.end_byte <= inline_range.start_byte {
         return;
     }
-    let line_range = expand_range_to_full_lines(text, inline_range);
+    let line_range = full_line_range(sourcepos, text, line_index);
     let inside_list_or_quote = has_list_or_quote_ancestor(node);
 
     match &data.value {
@@ -775,7 +772,7 @@ fn is_link_reference_definition_line(line: &str) -> bool {
     if close <= 1 {
         return false;
     }
-    let after = remainder[close + 2..].trim_start_matches(|ch| ch == ' ' || ch == '\t');
+    let after = remainder[close + 2..].trim_start_matches([' ', '\t']);
     !after.is_empty()
 }
 
@@ -788,23 +785,15 @@ fn sourcepos_to_range(
         return None;
     }
 
-    let start = line_index.column_start_offset(
-        sourcepos.start.line as usize,
-        sourcepos.start.column as usize,
-        text,
-    );
-    let mut end = line_index.column_end_offset(
-        sourcepos.end.line as usize,
-        sourcepos.end.column as usize,
-        text,
-    );
+    let start = line_index.column_start_offset(sourcepos.start.line, sourcepos.start.column, text);
+    let mut end = line_index.column_end_offset(sourcepos.end.line, sourcepos.end.column, text);
 
     if end < start {
         end = start;
     }
 
     if sourcepos.start.line != sourcepos.end.line {
-        let line_end = line_index.line_end_with_break(sourcepos.end.line as usize, text);
+        let line_end = line_index.line_end_with_break(sourcepos.end.line, text);
         if line_end > end {
             end = line_end;
         }
@@ -816,7 +805,10 @@ fn sourcepos_to_range(
     })
 }
 
-fn expand_range_to_full_lines(text: &str, range: JsonRange) -> JsonRange {
+// Called for every AST descendant, including inline nodes. Derive the range
+// from the existing line index: scanning backward/forward through `text` here
+// makes an inline-rich single-line paragraph quadratic.
+fn full_line_range(sourcepos: Sourcepos, text: &str, line_index: &LineIndex) -> JsonRange {
     let text_len = text.len();
     if text_len == 0 {
         return JsonRange {
@@ -825,16 +817,8 @@ fn expand_range_to_full_lines(text: &str, range: JsonRange) -> JsonRange {
         };
     }
 
-    let start = line_start_for_offset(text, (range.start_byte as usize).min(text_len - 1));
-    let end_anchor = if range.end_byte == 0 {
-        start
-    } else {
-        (range.end_byte as usize)
-            .saturating_sub(1)
-            .min(text_len.saturating_sub(1))
-    };
-    let end_line_start = line_start_for_offset(text, end_anchor);
-    let end = end_of_line(text, end_line_start).min(text_len);
+    let start = line_index.line_start(sourcepos.start.line, text_len);
+    let end = line_index.line_end_with_break(sourcepos.end.line, text);
 
     JsonRange {
         start_byte: start as u32,
@@ -960,10 +944,7 @@ mod link_marker_tests {
 
     #[test]
     fn styled_label_spans_from_first_to_last_child() {
-        assert_eq!(
-            token_markers("[**x** y](u)", "link"),
-            vec![(0, 1), (8, 12)],
-        );
+        assert_eq!(token_markers("[**x** y](u)", "link"), vec![(0, 1), (8, 12)],);
     }
 
     /// Pre-existing comrak limitation, pinned: sourcepos for an inline link
@@ -973,10 +954,7 @@ mod link_marker_tests {
     /// the scanning this replaces.
     #[test]
     fn multi_line_destination_tail_clamps_to_token_end() {
-        assert_eq!(
-            token_markers("[a](u\n\"t\")", "link"),
-            vec![(0, 1), (2, 5)],
-        );
+        assert_eq!(token_markers("[a](u\n\"t\")", "link"), vec![(0, 1), (2, 5)],);
     }
 
     /// Regression pin for the abutting-closers case: comrak emits the inner

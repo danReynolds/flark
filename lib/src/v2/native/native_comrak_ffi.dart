@@ -543,6 +543,42 @@ abstract interface class NativeComrakBridge {
   Future<NativeComrakParseResult> parse(NativeComrakParseInput input);
 }
 
+/// Runtime-neutral source for the web parser module.
+///
+/// A Dart web application can provide a URI it serves itself or already-loaded
+/// bytes. Flutter adapters may obtain those bytes from an asset bundle without
+/// making the engine import Flutter asset APIs.
+sealed class NativeComrakWasmSource {
+  const NativeComrakWasmSource();
+}
+
+/// Loads the web parser module from [uri].
+final class NativeComrakWasmUriSource extends NativeComrakWasmSource {
+  const NativeComrakWasmUriSource(this.uri);
+
+  final Uri uri;
+}
+
+/// Instantiates the web parser module from caller-owned [bytes].
+///
+/// The bridge copies the bytes when it is created, so callers may safely reuse
+/// or release their buffer after `createNativeComrakBridge` returns.
+final class NativeComrakWasmBytesSource extends NativeComrakWasmSource {
+  const NativeComrakWasmBytesSource(this.bytes);
+
+  final Uint8List bytes;
+}
+
+/// Lazily obtains web parser module bytes from a platform adapter.
+///
+/// The loader is invoked once per bridge load attempt. Its result is copied
+/// before instantiation, so an asset cache may safely reuse its buffer.
+final class NativeComrakWasmBytesLoaderSource extends NativeComrakWasmSource {
+  const NativeComrakWasmBytesLoaderSource(this.load);
+
+  final Future<Uint8List> Function() load;
+}
+
 /// Optional bridge capability for phase-attributed parse benchmarks.
 abstract interface class ProfiledNativeComrakBridge
     implements NativeComrakBridge {
@@ -571,6 +607,9 @@ abstract interface class SyncCapableNativeComrakBridge
 
 /// Failure categories for loading the native comrak bridge.
 enum NativeComrakBridgeLoadFailureKind {
+  /// The caller supplied incompatible or empty bridge configuration.
+  invalidConfiguration,
+
   /// The current Dart runtime does not support `dart:ffi`.
   unsupportedFfi,
 

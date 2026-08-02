@@ -1,6 +1,9 @@
 import 'native_comrak_ffi.dart';
 
-NativeComrakBridge createNativeComrakBridge({String? overrideLibraryPath}) {
+NativeComrakBridge createNativeComrakBridge({
+  String? overrideLibraryPath,
+  NativeComrakWasmSource? wasmSource,
+}) {
   throw NativeComrakBridgeLoadException(
     kind: NativeComrakBridgeLoadFailureKind.unsupportedFfi,
     message: 'Native comrak bridge is unavailable without dart:ffi support.',
@@ -12,6 +15,7 @@ NativeComrakBridge createNativeComrakBridge({String? overrideLibraryPath}) {
 
 NativeComrakBridgePreflightResult preflightNativeComrakBridge({
   String? overrideLibraryPath,
+  NativeComrakWasmSource? wasmSource,
 }) {
   return const NativeComrakBridgePreflightResult.unavailable(
     NativeComrakBridgeLoadException(

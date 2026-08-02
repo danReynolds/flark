@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:flark/src/v2/markdown/source/flark_markdown_fenced_code_policy.dart';
 import 'package:flark/flark_advanced.dart';
 

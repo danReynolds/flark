@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "corpus": {
+    "name": "CommonMark",
+    "specVersion": "0.31.2",
+    "fixture": "test/fixtures/commonmark/upstream/common_mark_tests.json",
+    "sha256": "d431b29d97b6f73e69d547109cf5081578fac931e72afe95639ebe766c1b2a20",
+    "expectedExamples": 652
+  },
+  "statusDefinitions": {
+    "authoritative_supported_probe": "A numbered v3 test checks Flark's authoritative internal semantic projection for this fixture. This is not an HTML-render equivalence claim.",
+    "intentional_fail_closed": "A numbered v3 test checks that the unsupported shape does not publish incorrect authoritative semantics.",
+    "intentional_extension_divergence": "The selected GFM profile deliberately renders semantics that strict CommonMark leaves literal, and a numbered v3 test pins that difference.",
+    "unclassified": "No fixture-numbered v3 conformance claim is recorded yet. This status includes both likely-working and known-incomplete grammar and must never be counted as a pass."
+  },
+  "evidenceSources": {
+    "block_exact_clean": {
+      "path": "native/comrak_bridge/crates/flark_parser/tests/exact_clean.rs",
+      "anchors": [
+        "fn commonmark_107_through_118_preserve_top_level_indented_code_precedence()",
+        "fn commonmark_thematic_break_examples_keep_top_level_precedence()",
+        "fn commonmark_230_and_231_keep_quote_indentation_precedence_fail_closed()",
+        "fn commonmark_232_234_and_237_separate_lazy_text_from_real_block_openers()",
+        "fn commonmark_239_242_and_244_make_blank_container_boundaries_explicit()",
+        "fn commonmark_250_and_251_withhold_nested_quote_semantics_without_eating_boundaries()",
+        "fn commonmark_235_and_252_fail_closed_for_list_code_and_reference_children()"
+      ]
+    },
+    "inline_projection": {
+      "path": "native/comrak_bridge/crates/flark_parser/src/inline_projection_job.rs",
+      "anchors": [
+        "fn commonmark_12_projects_all_32_ascii_punctuation_escapes_exactly()",
+        "fn commonmark_13_and_16_keep_non_punctuation_literal_and_project_hard_break()",
+        "fn commonmark_14_block_openers_are_literal_without_weakening_link_hazards()",
+        "fn commonmark_15_17_and_20_preserve_precedence_and_opaque_content()",
+        "fn commonmark_480_and_481_autolinks_shield_internal_emphasis_closers()",
+        "fn commonmark_direct_link_and_image_forms_are_authoritative()",
+        "fn commonmark_direct_labels_preserve_nested_inline_facts_and_link_precedence()",
+        "fn commonmark_angle_and_gfm_bare_autolink_profiles_are_pinned_by_number()"
+      ]
+    }
+  },
+  "classifications": [
+    {
+      "status": "authoritative_supported_probe",
+      "selectors": [
+        "12-17",
+        "20",
+        "43-45",
+        "47-59",
+        "107",
+        "110-118",
+        "231",
+        "234",
+        "242",
+        "480-482",
+        "485",
+        "489",
+        "496",
+        "510",
+        "516-518",
+        "572",
+        "574-575",
+        "594-601",
+        "603-605"
+      ],
+      "expectedCount": 60,
+      "evidence": [
+        "block_exact_clean",
+        "inline_projection"
+      ]
+    },
+    {
+      "status": "intentional_fail_closed",
+      "selectors": [
+        "46",
+        "60-61",
+        "108-109",
+        "230",
+        "235",
+        "237",
+        "239",
+        "244",
+        "250-252",
+        "602",
+        "606-610"
+      ],
+      "expectedCount": 19,
+      "evidence": [
+        "block_exact_clean",
+        "inline_projection"
+      ]
+    },
+    {
+      "status": "intentional_extension_divergence",
+      "selectors": [
+        "611-612"
+      ],
+      "expectedCount": 2,
+      "evidence": [
+        "inline_projection"
+      ]
+    },
+    {
+      "status": "unclassified",
+      "selectors": [
+        "1-11",
+        "18-19",
+        "21-42",
+        "62-106",
+        "119-229",
+        "232-233",
+        "236",
+        "238",
+        "240-241",
+        "243",
+        "245-249",
+        "253-479",
+        "483-484",
+        "486-488",
+        "490-495",
+        "497-509",
+        "511-515",
+        "519-571",
+        "573",
+        "576-593",
+        "613-652"
+      ],
+      "expectedCount": 571,
+      "evidence": []
+    }
+  ]
+}

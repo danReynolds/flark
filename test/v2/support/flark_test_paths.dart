@@ -22,7 +22,8 @@ String flarkNativeBridgeLibraryPathForPlatform() {
 
 String _resolveExistingPath(List<String> candidates) {
   for (final candidate in candidates) {
-    if (File(candidate).existsSync()) return candidate;
+    final file = File(candidate);
+    if (file.existsSync()) return file.absolute.path;
   }
   return candidates.isEmpty ? '' : candidates.first;
 }

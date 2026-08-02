@@ -1,0 +1,30 @@
+[package]
+name = "flark-parser"
+version = "0.0.0"
+edition = "2021"
+publish = false
+# Flark-authored code remains MIT. The mechanically correspondent block
+# controller/protocol retains Comrak's BSD-2-Clause terms and notice.
+license = "MIT AND BSD-2-Clause"
+
+[dependencies]
+caseless = "=0.2.2"
+comrak = { version = "=0.54.0", default-features = false }
+finl_unicode = { version = "=1.4.0", features = ["categories"] }
+flark-engine = { path = "../flark_engine", features = ["parser-internal"] }
+flark-block-core-donor = { path = "src/block_core/donor/core" }
+
+[dev-dependencies]
+blake3 = "1.8"
+entities = "=1.0.1"
+sha2 = "0.10"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+# Do not enable the toolchain-version-sensitive `pedantic` group wholesale.
+# Parser hot paths opt into individual pedantic lints when they encode a real
+# correctness or resource invariant; the workspace gate denies every selected
+# warning.

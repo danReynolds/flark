@@ -45,7 +45,7 @@ final class FlarkInlineReentryGap {
 /// these checks disagree with the parser exactly on the malformed shapes this
 /// package must not write — see `FlarkInlineDelimiterPlacement`.
 abstract final class FlarkInlineRunScanner {
-  /// The delimiter clusters that carry [markerChar]-family styles. Longer
+  /// The delimiter clusters that carry a marker-character family. Longer
   /// clusters come before their prefixes so a probe never matches inside a
   /// longer run; `~` last covers GFM's single-tilde strikethrough.
   static const List<String> allMarkers = [

@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
 void main() {
   group('Flark v2 native packaging contract', () {
@@ -61,22 +61,52 @@ void main() {
       expect(hook, isNot(contains('LookupInProcess()')));
     });
 
-    test('package declares browser WASM bridge assets', () {
-      final pubspec = _read('pubspec.yaml');
+    test('Dart engine owns WASM while Flutter adapter declares its asset', () {
+      final enginePubspec = _read('pubspec.yaml');
+      final adapterPubspec = _read('packages/flark_flutter/pubspec.yaml');
+      final adapterOverrides = _read(
+        'packages/flark_flutter/pubspec_overrides.yaml',
+      );
       final buildAll = _read('scripts/build_comrak_all.sh');
       final wasmBuild = _read('scripts/build_comrak_wasm.sh');
       final webFactory = _read(
         'lib/src/v2/native/native_comrak_bridge_factory_web.dart',
       );
+      final flutterWebLoader = _read(
+        'packages/flark_flutter/lib/src/v2/flutter/'
+        'flark_default_parse_backend_web.dart',
+      );
 
-      expect(pubspec, contains('lib/assets/wasm/flark_comrak_bridge.wasm'));
+      expect(enginePubspec, isNot(contains('sdk: flutter')));
+      expect(adapterPubspec, contains('flark: ^0.1.1'));
+      expect(adapterOverrides, contains('path: ../..'));
+      expect(
+        adapterPubspec,
+        contains('lib/assets/wasm/flark_comrak_bridge.wasm'),
+      );
       expect(buildAll, contains('--wasm-only'));
       expect(wasmBuild, contains('wasm32-unknown-unknown'));
       expect(wasmBuild, contains('lib/assets/wasm/flark_comrak_bridge.wasm'));
+      expect(wasmBuild, contains('packages/flark_flutter/lib/assets/wasm'));
       expect(webFactory, contains('dart:js_interop'));
-      expect(webFactory, contains('dart:ui_web'));
       expect(webFactory, contains('dart:js_interop_unsafe'));
-      expect(webFactory, contains('assetManager.getAssetUrl'));
+      expect(webFactory, isNot(contains('dart:ui_web')));
+      expect(webFactory, isNot(contains('assetManager')));
+      expect(webFactory, contains('NativeComrakWasmUriSource'));
+      expect(webFactory, contains('NativeComrakWasmBytesSource'));
+      expect(webFactory, contains('NativeComrakWasmBytesLoaderSource'));
+      expect(webFactory, contains('Uint8List.fromList(bytes)'));
+      expect(webFactory, isNot(contains('flark_flutter')));
+      expect(webFactory, isNot(contains('rootBundle')));
+      expect(flutterWebLoader, contains("'dart:ui_web'"));
+      expect(flutterWebLoader, contains('assetManager.load'));
+      expect(
+        flutterWebLoader,
+        contains('packages/flark_flutter/lib/assets/wasm/'),
+      );
+      expect(flutterWebLoader, contains('packages/flark_flutter/assets/wasm/'));
+      expect(flutterWebLoader, contains('NativeComrakWasmBytesLoaderSource'));
+      expect(webFactory, contains('Uri.base.resolve'));
       expect(webFactory, contains('WebAssembly'));
       expect(webFactory, contains('fetch'));
     });

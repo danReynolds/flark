@@ -3,15 +3,13 @@ import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
-import 'dart:ui_web' as ui_web;
 
 import 'native_comrak_ffi.dart';
 
 const int _kAbiVersion = 1;
 const int _kStatusOk = 0;
+const String _kPackageTestAssetBase = 'packages/flark/assets/wasm/';
 const String _kLocalAssetBase = 'lib/assets/wasm/';
-const String _kPackageAssetBase = 'packages/flark/lib/assets/wasm/';
-const String _kPackageFileAssetBase = 'packages/flark/assets/wasm/';
 
 extension type _FetchResponse(JSObject _) implements JSObject {
   external JSBoolean get ok;
@@ -33,32 +31,68 @@ extension type _WasmMemory(JSObject _) implements JSObject {
 }
 
 final class WasmNativeComrakBridge implements NativeComrakBridge {
-  WasmNativeComrakBridge._({required List<_WasmAssetKeys> assetKeys})
-    : _assetKeys = assetKeys;
+  WasmNativeComrakBridge._({
+    required List<Uri> wasmUris,
+    required Uint8List? wasmBytes,
+    required Future<Uint8List> Function()? wasmBytesLoader,
+  }) : _wasmUris = wasmUris,
+       _wasmBytes = wasmBytes,
+       _wasmBytesLoader = wasmBytesLoader;
 
-  final List<_WasmAssetKeys> _assetKeys;
+  final List<Uri> _wasmUris;
+  final Uint8List? _wasmBytes;
+  final Future<Uint8List> Function()? _wasmBytesLoader;
 
   Future<_LoadedWasmComrakModule>? _moduleFuture;
 
-  factory WasmNativeComrakBridge.load({String? overrideLibraryPath}) {
-    if (overrideLibraryPath != null && overrideLibraryPath.isNotEmpty) {
-      throw NativeComrakBridgeLoadException(
-        kind: NativeComrakBridgeLoadFailureKind.unsupportedPlatform,
-        message:
-            'overrideLibraryPath is not supported by the browser WASM bridge.',
-        platform: 'web',
-        overrideLibraryPath: overrideLibraryPath,
-        remediationSteps: const [
-          'Bundle the package WASM assets and use the default browser loader.',
-        ],
-      );
-    }
-
-    return WasmNativeComrakBridge._(assetKeys: _defaultAssetKeys());
+  factory WasmNativeComrakBridge.load({
+    String? overrideLibraryPath,
+    NativeComrakWasmSource? wasmSource,
+  }) {
+    final configurationError = _validateWasmSource(wasmSource);
+    if (configurationError != null) throw configurationError;
+    final configuredUri =
+        overrideLibraryPath == null || overrideLibraryPath.isEmpty
+        ? null
+        : Uri.base.resolve(overrideLibraryPath);
+    return switch (wasmSource) {
+      NativeComrakWasmUriSource(:final uri) => WasmNativeComrakBridge._(
+        wasmUris: <Uri>[uri],
+        wasmBytes: null,
+        wasmBytesLoader: null,
+      ),
+      NativeComrakWasmBytesSource(:final bytes) => WasmNativeComrakBridge._(
+        wasmUris: const <Uri>[],
+        wasmBytes: Uint8List.fromList(bytes),
+        wasmBytesLoader: null,
+      ),
+      NativeComrakWasmBytesLoaderSource(:final load) =>
+        WasmNativeComrakBridge._(
+          wasmUris: const <Uri>[],
+          wasmBytes: null,
+          wasmBytesLoader: load,
+        ),
+      null => WasmNativeComrakBridge._(
+        wasmUris: configuredUri == null ? _defaultWasmUris() : [configuredUri],
+        wasmBytes: null,
+        wasmBytesLoader: null,
+      ),
+    };
   }
 
   @override
-  Future<NativeComrakParseResult> parse(NativeComrakParseInput input) {
+  Future<NativeComrakParseResult> parse(NativeComrakParseInput input) async {
+    // Platform adapters may need their caller zone to resolve module bytes
+    // (a platform asset bundle is the important case). Load there, then execute
+    // the already-instantiated module in the root zone so fake-async UI tests
+    // cannot stall the parser's Promise completion.
+    if (_decodeMarkdownInput(input) != null) {
+      try {
+        await _module();
+      } catch (error) {
+        return _wasmFailure(input, error);
+      }
+    }
     return Zone.root.run(() => _parseInRootZone(input));
   }
 
@@ -149,18 +183,25 @@ final class WasmNativeComrakBridge implements NativeComrakBridge {
         ]);
       }
     } catch (error) {
-      return NativeComrakParseResult(
-        revision: input.revision,
-        diagnostics: [
-          NativeComrakDiagnostic(
-            range: const NativeComrakRange(startByte: 0, endByte: 0),
-            message: 'Failed to load or run Comrak WASM bridge: $error',
-            code: 'COMRAK_WASM_LOAD_FAILED',
-            isError: true,
-          ),
-        ],
-      );
+      return _wasmFailure(input, error);
     }
+  }
+
+  NativeComrakParseResult _wasmFailure(
+    NativeComrakParseInput input,
+    Object error,
+  ) {
+    return NativeComrakParseResult(
+      revision: input.revision,
+      diagnostics: [
+        NativeComrakDiagnostic(
+          range: const NativeComrakRange(startByte: 0, endByte: 0),
+          message: 'Failed to load or run Comrak WASM bridge: $error',
+          code: 'COMRAK_WASM_LOAD_FAILED',
+          isError: true,
+        ),
+      ],
+    );
   }
 
   Future<_LoadedWasmComrakModule> _module() {
@@ -181,28 +222,47 @@ final class WasmNativeComrakBridge implements NativeComrakBridge {
   }
 
   Future<_LoadedWasmComrakModule> _loadModule() async {
+    final configuredBytes = _wasmBytes;
+    if (configuredBytes != null) {
+      final instance = await _instantiateWasmBytes(configuredBytes);
+      return _validateLoadedModule(instance);
+    }
+
+    final configuredLoader = _wasmBytesLoader;
+    if (configuredLoader != null) {
+      final loadedBytes = Uint8List.fromList(await configuredLoader());
+      if (loadedBytes.isEmpty) {
+        throw StateError('The Comrak WASM byte loader returned no bytes.');
+      }
+      final instance = await _instantiateWasmBytes(loadedBytes);
+      return _validateLoadedModule(instance);
+    }
+
     Object? lastError;
-    for (final keys in _assetKeys) {
+    for (final wasmUri in _wasmUris) {
       try {
-        final wasmUrl = _assetUrl(keys);
-        final instance = await _instantiateWasmAsset(wasmUrl);
-        _validateExports(instance.exports);
-        final abiVersion = _callExportInt(
-          instance.exports,
-          'flark_comrak_bridge_version',
-        );
-        if (abiVersion != _kAbiVersion) {
-          throw StateError(
-            'Comrak WASM ABI mismatch: bridge=$_kAbiVersion library=$abiVersion.',
-          );
-        }
-        return _LoadedWasmComrakModule(instance: instance);
+        final instance = await _instantiateWasmAsset(wasmUri.toString());
+        return _validateLoadedModule(instance);
       } catch (error) {
         lastError = error;
       }
     }
 
     throw lastError ?? StateError('No Comrak WASM asset URLs were generated.');
+  }
+
+  _LoadedWasmComrakModule _validateLoadedModule(_WasmInstance instance) {
+    _validateExports(instance.exports);
+    final abiVersion = _callExportInt(
+      instance.exports,
+      'flark_comrak_bridge_version',
+    );
+    if (abiVersion != _kAbiVersion) {
+      throw StateError(
+        'Comrak WASM ABI mismatch: bridge=$_kAbiVersion library=$abiVersion.',
+      );
+    }
+    return _LoadedWasmComrakModule(instance: instance);
   }
 }
 
@@ -212,61 +272,56 @@ final class _LoadedWasmComrakModule {
   final _WasmInstance instance;
 }
 
-final class _WasmAssetKeys {
-  const _WasmAssetKeys({
-    required this.wasmKey,
-    this.resolveWithAssetManager = true,
-  });
-
-  final String wasmKey;
-  final bool resolveWithAssetManager;
-}
-
-NativeComrakBridge createNativeComrakBridge({String? overrideLibraryPath}) {
-  return WasmNativeComrakBridge.load(overrideLibraryPath: overrideLibraryPath);
+NativeComrakBridge createNativeComrakBridge({
+  String? overrideLibraryPath,
+  NativeComrakWasmSource? wasmSource,
+}) {
+  return WasmNativeComrakBridge.load(
+    overrideLibraryPath: overrideLibraryPath,
+    wasmSource: wasmSource,
+  );
 }
 
 NativeComrakBridgePreflightResult preflightNativeComrakBridge({
   String? overrideLibraryPath,
+  NativeComrakWasmSource? wasmSource,
 }) {
-  if (overrideLibraryPath != null && overrideLibraryPath.isNotEmpty) {
-    return NativeComrakBridgePreflightResult.unavailable(
-      NativeComrakBridgeLoadException(
-        kind: NativeComrakBridgeLoadFailureKind.unsupportedPlatform,
-        message:
-            'overrideLibraryPath is not supported by the browser WASM bridge.',
-        platform: 'web',
-        overrideLibraryPath: overrideLibraryPath,
-        remediationSteps: const [
-          'Bundle the package WASM assets and use the default browser loader.',
-        ],
-      ),
-    );
+  final configurationError = _validateWasmSource(wasmSource);
+  if (configurationError != null) {
+    return NativeComrakBridgePreflightResult.unavailable(configurationError);
   }
-
   return const NativeComrakBridgePreflightResult.available();
 }
 
-List<_WasmAssetKeys> _defaultAssetKeys() {
-  return const [
-    _WasmAssetKeys(wasmKey: '${_kPackageAssetBase}flark_comrak_bridge.wasm'),
-    _WasmAssetKeys(wasmKey: '${_kLocalAssetBase}flark_comrak_bridge.wasm'),
-    // Flutter's Chrome package-test server serves package files from lib/ at
-    // /packages/<package>/<lib-relative-path>; production web builds use the
-    // asset manager entries above.
-    _WasmAssetKeys(
-      wasmKey: '${_kPackageFileAssetBase}flark_comrak_bridge.wasm',
-      resolveWithAssetManager: false,
-    ),
+List<Uri> _defaultWasmUris() {
+  return [
+    // Dart's Chrome package-test server exposes files below lib/ here.
+    Uri.base.resolve('${_kPackageTestAssetBase}flark_comrak_bridge.wasm'),
+    // A Dart web application may copy the module beside its own lib assets.
+    // Production applications should prefer an explicit [wasmSource], because
+    // deployment pipelines choose their own public asset layout.
+    Uri.base.resolve('${_kLocalAssetBase}flark_comrak_bridge.wasm'),
   ];
 }
 
-String _assetUrl(_WasmAssetKeys keys) {
-  final rawUrl = keys.resolveWithAssetManager
-      ? ui_web.assetManager.getAssetUrl(keys.wasmKey)
-      : keys.wasmKey;
-  final root = Uri.base.replace(path: '/', query: null, fragment: null);
-  return root.resolve(rawUrl).toString();
+NativeComrakBridgeLoadException? _validateWasmSource(
+  NativeComrakWasmSource? source,
+) {
+  final message = switch (source) {
+    NativeComrakWasmUriSource(:final uri) when uri.toString().isEmpty =>
+      'The Comrak WASM module URI cannot be empty.',
+    NativeComrakWasmBytesSource(:final bytes) when bytes.isEmpty =>
+      'The Comrak WASM module bytes cannot be empty.',
+    _ => null,
+  };
+  if (message == null) return null;
+  return NativeComrakBridgeLoadException(
+    kind: NativeComrakBridgeLoadFailureKind.invalidConfiguration,
+    message: message,
+    remediationSteps: const [
+      'Provide a non-empty WASM URI, byte buffer, or lazy byte loader.',
+    ],
+  );
 }
 
 Future<_WasmInstance> _instantiateWasmAsset(String wasmUrl) async {
@@ -283,6 +338,14 @@ Future<_WasmInstance> _instantiateWasmAsset(String wasmUrl) async {
   }
 
   final bytes = await response.arrayBuffer().toDart;
+  return _instantiateWasmBuffer(bytes);
+}
+
+Future<_WasmInstance> _instantiateWasmBytes(Uint8List bytes) {
+  return _instantiateWasmBuffer(bytes.toJS);
+}
+
+Future<_WasmInstance> _instantiateWasmBuffer(JSAny bytes) async {
   final webAssembly = globalContext.getProperty<JSObject>('WebAssembly'.toJS);
   final instantiate = webAssembly.getProperty<JSFunction>('instantiate'.toJS);
   final result =

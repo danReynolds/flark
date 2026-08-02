@@ -3,6 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ENGINE_ROOT="$REPO_ROOT"
+FLUTTER_PACKAGE_ROOT="$REPO_ROOT/packages/flark_flutter"
 
 run_benchmarks=1
 run_native_build=1
@@ -65,9 +67,12 @@ run_in_dir() {
   )
 }
 
-run flutter pub get
-run flutter analyze hook lib test
+run dart pub get
+run_in_dir "$FLUTTER_PACKAGE_ROOT" flutter pub get
+run dart analyze hook lib test
+run_in_dir "$FLUTTER_PACKAGE_ROOT" flutter analyze lib test
 run dart doc --dry-run
+run ./scripts/verify_publish_archives.sh
 
 if [ "$run_native_build" -eq 1 ]; then
   run ./scripts/build_comrak_all.sh --host-only
@@ -84,7 +89,8 @@ run ./scripts/verify_native_editor_ci.sh --skip-build
 # dedicated enforced lane below (verify_benchmark_lane.sh). Running them twice —
 # once unenforced-but-still-asserting under contention, once properly — only
 # adds flakiness.
-run flutter test test --exclude-tags benchmark --reporter compact
+run dart test test --exclude-tags benchmark --reporter compact
+run_in_dir "$FLUTTER_PACKAGE_ROOT" flutter test test --exclude-tags benchmark --reporter compact
 
 if [ "$run_benchmarks" -eq 1 ]; then
   run ./scripts/verify_benchmark_lane.sh

@@ -1,9 +1,10 @@
 @Tags(<String>['benchmark'])
 library;
 
-import 'package:flutter/foundation.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'dart:io';
+
 import 'package:flark/flark_advanced.dart';
+import 'package:test/test.dart';
 
 const _enforceTrackingBudgets = bool.fromEnvironment(
   'FLARK_BENCHMARK_ENFORCE_BUDGETS',
@@ -157,7 +158,7 @@ void main() {
       () async {
         final backend = FlarkNativeComrakParseBackend.tryLoad();
         if (backend == null) {
-          debugPrint('flark_benchmark native_comrak_120k skipped=no_bridge');
+          stdout.writeln('flark_benchmark native_comrak_120k skipped=no_bridge');
           return;
         }
         final markdown = _realisticMarkdown(sectionCount: 900);
@@ -193,7 +194,7 @@ void main() {
       test('native parse and decode at ${size.label} when present', () async {
         final backend = FlarkNativeComrakParseBackend.tryLoad();
         if (backend == null) {
-          debugPrint(
+          stdout.writeln(
             'flark_benchmark native_parse_${size.label} skipped=no_bridge',
           );
           return;
@@ -233,7 +234,7 @@ void main() {
         () async {
           final backend = FlarkNativeComrakParseBackend.tryLoad();
           if (backend == null) {
-            debugPrint(
+            stdout.writeln(
               'flark_benchmark native_parse_profile_${size.label} '
               'skipped=no_bridge',
             );
@@ -442,7 +443,7 @@ void _consume(int value) {
 }
 
 void _report(_BenchmarkResult result) {
-  debugPrint('flark_benchmark ${result.summary}');
+  stdout.writeln('flark_benchmark ${result.summary}');
 }
 
 void _reportParseProfile(
@@ -451,7 +452,7 @@ void _reportParseProfile(
 ) {
   if (profiles.isEmpty) return;
   final latest = profiles.last;
-  debugPrint(
+  stdout.writeln(
     'flark_benchmark $name iterations=${profiles.length} '
     'total_median=${_formatDuration(_medianDuration(profiles, (p) => p.total))} '
     'total_p95=${_formatDuration(_p95Duration(profiles, (p) => p.total))} '

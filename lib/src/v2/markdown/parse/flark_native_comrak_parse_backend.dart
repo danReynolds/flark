@@ -21,30 +21,39 @@ final class FlarkNativeComrakParseBackend
   const FlarkNativeComrakParseBackend({required NativeComrakBridge bridge})
     : _bridge = bridge;
 
-  static FlarkNativeComrakParseBackend? tryLoad({String? overrideLibraryPath}) {
+  static FlarkNativeComrakParseBackend? tryLoad({
+    String? overrideLibraryPath,
+    NativeComrakWasmSource? wasmSource,
+  }) {
     final preflight = preflightNativeComrakBridge(
       overrideLibraryPath: overrideLibraryPath,
+      wasmSource: wasmSource,
     );
     if (!preflight.isAvailable) return null;
     return FlarkNativeComrakParseBackend.withNativeBridge(
       overrideLibraryPath: overrideLibraryPath,
+      wasmSource: wasmSource,
     );
   }
 
   static NativeComrakBridgePreflightResult preflight({
     String? overrideLibraryPath,
+    NativeComrakWasmSource? wasmSource,
   }) {
     return preflightNativeComrakBridge(
       overrideLibraryPath: overrideLibraryPath,
+      wasmSource: wasmSource,
     );
   }
 
   factory FlarkNativeComrakParseBackend.withNativeBridge({
     String? overrideLibraryPath,
+    NativeComrakWasmSource? wasmSource,
   }) {
     return FlarkNativeComrakParseBackend(
       bridge: createNativeComrakBridge(
         overrideLibraryPath: overrideLibraryPath,
+        wasmSource: wasmSource,
       ),
     );
   }
@@ -1251,8 +1260,8 @@ List<FlarkMarkdownHiddenRange> _nativeInlineHiddenRanges(
           marker.start >= marker.end) {
         continue;
       }
-      final opensToken = marker.start == tokenRange.start &&
-          marker.end < tokenRange.end;
+      final opensToken =
+          marker.start == tokenRange.start && marker.end < tokenRange.end;
       ranges.add(
         FlarkMarkdownHiddenRange(
           kind: opensToken
@@ -1521,10 +1530,12 @@ List<FlarkSourceRange> _partialStrongIntentMarkerRanges(
   bool unclaimed(int offset) =>
       !claimedMarkers.overlaps(FlarkSourceRange(offset, offset + 1));
 
-  final hasSameMarkerBefore = range.start > 0 &&
+  final hasSameMarkerBefore =
+      range.start > 0 &&
       markdown.codeUnitAt(range.start - 1) == marker &&
       unclaimed(range.start - 1);
-  final hasSameMarkerAfter = range.end < markdown.length &&
+  final hasSameMarkerAfter =
+      range.end < markdown.length &&
       markdown.codeUnitAt(range.end) == marker &&
       unclaimed(range.end);
   if (!hasSameMarkerBefore && !hasSameMarkerAfter) return const [];
@@ -1670,10 +1681,6 @@ FlarkSourceRange _mapRange(
 Map<String, int> _rangeJson(FlarkSourceRange range) {
   return {'start': range.start, 'end': range.end};
 }
-
-
-
-
 
 bool _isFootnoteShortcutReference(
   String markdown,

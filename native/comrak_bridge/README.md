@@ -17,6 +17,13 @@ Current state:
   `flark_comrak_parse`, `flark_comrak_response_free`).
 - Parse uses `comrak` and returns JSON payloads with block spans, inline spans,
   block + inline delimiter marker ranges, exclusion ranges, and diagnostics.
+- The native-only v3 endpoint ABI uses bounded caller-owned byte buffers and
+  generation-checked `{slot, generation}` handles over serialized Rust
+  endpoints. Normal removal is accepted only after the credited close protocol
+  reaches `Removable`; `flark_v3_endpoint_emergency_destroy` is the separately
+  named finalization fallback. Dart `NativeFinalizer` wiring uses a distinct
+  opaque token containing only that handle (never an endpoint pointer), and
+  wrappers must keep the owner reachable through every in-flight FFI call.
 - Dart wiring lives in `lib/src/v2/native/native_comrak_ffi.dart` for FFI
   targets and `lib/src/v2/native/native_comrak_bridge_factory_web.dart` for
   browser WASM.

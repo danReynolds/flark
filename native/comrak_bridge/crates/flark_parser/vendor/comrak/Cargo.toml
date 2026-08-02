@@ -1,0 +1,37 @@
+[package]
+name = "comrak"
+version = "0.54.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+license = "BSD-2-Clause"
+build = "build.rs"
+
+[lib]
+name = "comrak"
+path = "src/lib.rs"
+
+# This private donor is always built without optional rendering/CLI features.
+# The empty declarations preserve rustc's checked-cfg vocabulary for pristine
+# upstream source while keeping optional dependency trees out of Flark's lock.
+[features]
+default = []
+arbitrary = []
+attributes = []
+bon = []
+phoenix_heex = []
+shortcodes = []
+syntect = []
+
+[dependencies]
+caseless = "0.2"
+finl_unicode = { version = "1.4.0", features = ["categories"] }
+jetscii = "0.5.3"
+phf = "0.13"
+rustc-hash = "2"
+smallvec = "1.13"
+typed-arena = "2.0.2"
+
+[build-dependencies]
+entities = "1"
+phf_codegen = "0.13"

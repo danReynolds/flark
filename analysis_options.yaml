@@ -1,7 +1,8 @@
-include: package:flutter_lints/flutter.yaml
+include: package:lints/recommended.yaml
 
 analyzer:
   exclude:
     - native/comrak_bridge/target/**
     - native/comrak_bridge/dist/**
     - benchmark/**
+    - tool/archive_consumer/**

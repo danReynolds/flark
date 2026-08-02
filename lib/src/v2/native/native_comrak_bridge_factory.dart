@@ -6,11 +6,20 @@ import 'native_comrak_bridge_factory_stub.dart'
 
 /// Creates the platform native comrak bridge.
 ///
-/// When [overrideLibraryPath] is provided, the bridge attempts to load that
-/// dynamic library instead of the platform default candidate paths.
-NativeComrakBridge createNativeComrakBridge({String? overrideLibraryPath}) {
+/// When [overrideLibraryPath] is provided, a native bridge attempts to load
+/// that dynamic library instead of the platform defaults. On web,
+/// [wasmSource] supplies an application-served URI, already-loaded bytes, or a
+/// lazy platform byte loader. Each platform consumes its own option, so a
+/// cross-platform caller may provide both [overrideLibraryPath] and
+/// [wasmSource]. When no web source is supplied, Dart-package URI candidates
+/// are tried.
+NativeComrakBridge createNativeComrakBridge({
+  String? overrideLibraryPath,
+  NativeComrakWasmSource? wasmSource,
+}) {
   return bridge_factory.createNativeComrakBridge(
     overrideLibraryPath: overrideLibraryPath,
+    wasmSource: wasmSource,
   );
 }
 
@@ -20,8 +29,10 @@ NativeComrakBridge createNativeComrakBridge({String? overrideLibraryPath}) {
 /// user- or developer-facing remediation path.
 NativeComrakBridgePreflightResult preflightNativeComrakBridge({
   String? overrideLibraryPath,
+  NativeComrakWasmSource? wasmSource,
 }) {
   return bridge_factory.preflightNativeComrakBridge(
     overrideLibraryPath: overrideLibraryPath,
+    wasmSource: wasmSource,
   );
 }

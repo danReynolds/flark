@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
+[workspace]
+members = [".", "crates/flark_engine", "crates/flark_parser"]
+exclude = ["crates/flark_parser/vendor/comrak"]
+resolver = "2"
+
 [lib]
 crate-type = ["cdylib", "staticlib"]
 
@@ -16,3 +21,9 @@ comrak = { version = "0.50", default-features = false }
 entities = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+flark-engine = { path = "crates/flark_engine" }
+flark-parser = { path = "crates/flark_parser" }
+blake3 = "1"
+
+[patch.crates-io]
+comrak = { path = "crates/flark_parser/vendor/comrak" }

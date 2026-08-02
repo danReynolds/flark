@@ -1,0 +1,6 @@
+# Local monorepo development uses the engine checkout. This file is not part
+# of the published dependency contract; pub consumers resolve the hosted
+# `flark` constraint declared in pubspec.yaml.
+dependency_overrides:
+  flark:
+    path: ../..
