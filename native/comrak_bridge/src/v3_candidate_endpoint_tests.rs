@@ -203,41 +203,6 @@ fn poll_to_packet_event(
     panic!("candidate packet did not become available");
 }
 
-fn seal_stream(runtime: &DocumentRuntime, streaming: &mut StreamingCandidate) {
-    loop {
-        let (_, event) = poll_to_packet_event(runtime, streaming, 256);
-        let CandidateCredit::Packet { end, .. } = event.credit else {
-            panic!("snapshot traversal must emit a packet");
-        };
-        if end {
-            assert!(streaming.stream.is_none());
-            assert!(streaming.sealed_publication.is_some());
-            return;
-        }
-        streaming.phase = StreamPhase::NeedPacket;
-    }
-}
-
-fn deliver_stream(
-    endpoint: &mut CandidateEndpoint,
-    runtime: &DocumentRuntime,
-    mut streaming: StreamingCandidate,
-) -> StructuralAck {
-    assert!(endpoint.active.is_none());
-    seal_stream(runtime, &mut streaming);
-    streaming.phase = StreamPhase::AwaitDeliveryReceipt;
-    let ack = streaming.expected_ack.expect("sealed expected ACK");
-    endpoint.active = Some(ActiveCandidate::Streaming(Box::new(streaming)));
-    endpoint
-        .accept_credit(CandidateCredit::Delivery, 1)
-        .expect("accept exact delivery receipt");
-    assert_eq!(
-        endpoint.retained.as_ref().map(|retained| retained.ack),
-        Some(ack)
-    );
-    ack
-}
-
 fn drain_candidate_cleanup(endpoint: &mut CandidateEndpoint, runtime: &mut DocumentRuntime) {
     drain_candidate_cleanup_with_fuel(endpoint, runtime, 1);
 }
@@ -257,36 +222,6 @@ fn drain_candidate_cleanup_with_fuel(
             .expect("bounded candidate cleanup");
     }
     panic!("candidate cleanup did not complete");
-}
-
-fn install_persistent_source_facts(runtime: &mut DocumentRuntime) {
-    runtime
-        .begin_source_facts(
-            SourceFactsScanProfile::new(4).expect("source-fact profile"),
-            ParserProfileId::new(1).expect("parser profile"),
-            SourceFactsRootLimits::default(),
-        )
-        .expect("begin persistent SourceFacts");
-    loop {
-        match runtime
-            .poll_source_facts(128, 64)
-            .expect("bounded SourceFacts poll")
-        {
-            RuntimeSourceFactsPoll::Pending(_)
-            | RuntimeSourceFactsPoll::PromotionPending { .. }
-            | RuntimeSourceFactsPoll::ScanComplete { .. } => {}
-            RuntimeSourceFactsPoll::Complete { .. } => break,
-            RuntimeSourceFactsPoll::IncrementalScanComplete { .. }
-            | RuntimeSourceFactsPoll::IncrementalComplete { .. } => {
-                panic!("clean SourceFacts job became incremental")
-            }
-        }
-    }
-    drop(
-        runtime
-            .take_certified_source()
-            .expect("completed certification"),
-    );
 }
 
 fn complete_clean_source_facts(
@@ -451,6 +386,7 @@ struct OrdinaryCancellationFixture {
     base_source: String,
     base_version: flark_engine::SourceVersion,
     base_ack: StructuralAck,
+    initial_persistent_resident_nodes: usize,
     runtime: DocumentRuntime,
     endpoint: CandidateEndpoint,
     host: NativeCandidateHost,
@@ -473,6 +409,8 @@ impl OrdinaryCancellationFixture {
         let (certified, base_completion) =
             complete_clean_source_facts(&mut runtime, profile, parser_profile, 1, 0);
         let base_version = certified.source();
+        while !runtime.poll_retirement(256).complete {}
+        let initial_persistent_resident_nodes = runtime.arena_metrics().resident_nodes;
         let mut endpoint = CandidateEndpoint::new();
         endpoint
             .start(certified, binding, base_completion)
@@ -500,6 +438,7 @@ impl OrdinaryCancellationFixture {
             base_source,
             base_version,
             base_ack: base_delivery.ack,
+            initial_persistent_resident_nodes,
             runtime,
             endpoint,
             host,
@@ -10186,147 +10125,217 @@ fn exact_base_delta_round_trips_at_the_sixteen_frame_replay_boundary() {
 
 #[test]
 fn one_acknowledged_base_survives_rejection_replaces_without_a_chain_and_closes() {
-    let mut runtime = DocumentRuntime::new(TEST_SOURCE, standard_document_runtime_config())
-        .expect("test runtime");
-    install_persistent_source_facts(&mut runtime);
-    while !runtime.poll_retirement(256).complete {}
-    let persistent_page = runtime
+    let mut fixture = OrdinaryCancellationFixture::new([741, 742, 743, 744]);
+    drain_candidate_cleanup(&mut fixture.endpoint, &mut fixture.runtime);
+    while !fixture.runtime.poll_retirement(256).complete {}
+
+    assert!(
+        fixture
+            .endpoint
+            .recursive_green
+            .has_installed_session_for(fixture.base_ack),
+        "the acknowledged base must own a real recursive-Green session"
+    );
+    let acknowledged_base_resident_nodes = fixture.runtime.arena_metrics().resident_nodes;
+    let acknowledged_base_owned_nodes = acknowledged_base_resident_nodes
+        .checked_sub(fixture.initial_persistent_resident_nodes)
+        .expect("acknowledged base adds parser-owned residency");
+    assert!(acknowledged_base_owned_nodes > 0);
+
+    let rejected_edit = fixture.edit_offset(512);
+    fixture.start_target(rejected_edit, "Z", 2, 1);
+    assert!(fixture.endpoint.recursive_green.target_work_pending());
+    assert!(
+        fixture
+            .endpoint
+            .recursive_green
+            .owns_recursive_base_authority(fixture.base_ack),
+        "the pending Green update must retain restoration authority for the acknowledged base"
+    );
+
+    let mut saw_packet = false;
+    for event_id in 1..1_000_000_u32 {
+        match fixture
+            .endpoint
+            .poll(&mut fixture.runtime, 1)
+            .expect("advance exact target to packet streaming")
+        {
+            CandidatePoll::Pending { transitions } => assert_eq!(transitions, 1),
+            CandidatePoll::Event { transitions, event } => {
+                assert!(transitions <= 1);
+                let CandidateEvent { credit, body } = *event;
+                match body {
+                    CandidateEventBody::Begin(_) => fixture
+                        .endpoint
+                        .accept_credit(credit, event_id)
+                        .expect("accept rejected target Begin credit"),
+                    CandidateEventBody::Packet { encoded } => {
+                        let packet = decode_publication_packet(&encoded)
+                            .expect("decode rejected recursive-Green packet");
+                        assert!(packet.frame_count > 0);
+                        let offer_id = packet.offer_id;
+                        fixture
+                            .endpoint
+                            .accept_credit(credit, event_id)
+                            .expect("accept rejected target Packet credit");
+                        assert!(
+                            fixture
+                                .endpoint
+                                .handle_host_poll(
+                                    event_id,
+                                    offer_id,
+                                    HostPollPhase::PacketCredit,
+                                    HostPollResult::Rejected(
+                                        crate::v3_publication_wire::HostRejectReason::Superseded,
+                                    ),
+                                )
+                                .expect("reject pending recursive-Green update")
+                                .is_none()
+                        );
+                        saw_packet = true;
+                        break;
+                    }
+                    CandidateEventBody::Commit(_) | CandidateEventBody::DeliveryAcknowledged(_) => {
+                        panic!("fixture must reject the Green update before commit")
+                    }
+                }
+            }
+            CandidatePoll::HotInlineEvent { .. } => {
+                panic!("structural lifecycle fixture emitted hot-inline work")
+            }
+            CandidatePoll::ViewportPresentationEvent { .. } => {
+                panic!("structural lifecycle fixture emitted viewport work")
+            }
+            CandidatePoll::ViewportPresentationUnavailable { .. } => {
+                panic!("structural lifecycle fixture emitted viewport unavailability")
+            }
+        }
+    }
+    assert!(saw_packet, "pending Green update did not reach packet streaming");
+    drain_candidate_cleanup(&mut fixture.endpoint, &mut fixture.runtime);
+    while !fixture.runtime.poll_retirement(256).complete {}
+    fixture.assert_original_base_restored();
+    assert!(
+        fixture
+            .endpoint
+            .recursive_green
+            .has_installed_session_for(fixture.base_ack),
+        "rejection must restore the acknowledged recursive-Green session"
+    );
+    assert!(!fixture.endpoint.recursive_green.target_work_pending());
+    assert!(!fixture.endpoint.cleanup_pending());
+
+    let replacement_edit = fixture.edit_offset(513);
+    let replacement = fixture.start_target(replacement_edit, "Y", 3, 2);
+    let replacement_delivery = deliver_endpoint_to_independent_host_with_unit_fuel(
+        &mut fixture.endpoint,
+        &mut fixture.runtime,
+        &mut fixture.host,
+    );
+    assert!(
+        replacement_delivery.contains_recursive_green_leaf,
+        "the accumulated replacement must carry definitive recursive-Green authority"
+    );
+    assert!(
+        !fixture
+            .runtime
+            .commit_persistent_source_facts_delta(replacement)
+            .expect("inspect delivered SourceFacts transaction"),
+        "the delivery helper must commit the replacement before returning"
+    );
+    drain_candidate_cleanup(&mut fixture.endpoint, &mut fixture.runtime);
+    assert!(
+        fixture
+            .endpoint
+            .has_exact_base_for(&fixture.runtime, replacement)
+            .expect("replacement becomes exact base")
+    );
+    while !fixture.runtime.poll_retirement(256).complete {}
+    assert!(replacement_delivery.ack.host_revision > fixture.base_ack.host_revision);
+    assert!(
+        fixture
+            .endpoint
+            .recursive_green
+            .has_installed_session_for(replacement_delivery.ack),
+        "the replacement delivery must install its recursive-Green session"
+    );
+    assert!(
+        !fixture
+            .endpoint
+            .recursive_green
+            .has_installed_session_for(fixture.base_ack),
+        "the superseded recursive-Green base must not remain installed"
+    );
+    let replacement_resident_nodes = fixture.runtime.arena_metrics().resident_nodes;
+
+    let persistent_page = fixture
+        .runtime
         .persistent_source_facts_page(0)
         .expect("persistent page lookup")
-        .expect("persistent page")
+        .expect("replacement persistent page")
         .id();
-    let persistent_resident_nodes = runtime.arena_metrics().resident_nodes;
-    let mut endpoint = CandidateEndpoint::new();
-
-    let first_stream = streaming_for_runtime(&mut runtime, 4, 1);
-    let first_ack = deliver_stream(&mut endpoint, &runtime, first_stream);
-    assert!(!endpoint.cleanup_pending());
-    while !runtime.poll_retirement(256).complete {}
-    let retained_resident_nodes = runtime.arena_metrics().resident_nodes;
-    assert!(retained_resident_nodes > persistent_resident_nodes);
-    let first_publication = endpoint
-        .retained
-        .as_ref()
-        .expect("first retained base")
-        .publication
-        .descriptor(&runtime)
-        .expect("first retained descriptor")
-        .publication;
-
-    let mut rejected = streaming_for_runtime(&mut runtime, 4, 2);
-    rejected.phase = StreamPhase::AwaitPacketHost {
-        poll_ticket: 17,
-        next_frame_ordinal: 0,
-        end: false,
-    };
-    let rejected_offer = rejected.offer.offer_id;
-    endpoint.active = Some(ActiveCandidate::Streaming(Box::new(rejected)));
+    fixture.endpoint.begin_close().expect("begin endpoint close");
+    drain_candidate_cleanup(&mut fixture.endpoint, &mut fixture.runtime);
+    while !fixture.runtime.poll_retirement(256).complete {}
+    assert!(fixture.endpoint.retained.is_none());
     assert!(
-        endpoint
-            .handle_host_poll(
-                17,
-                rejected_offer,
-                HostPollPhase::PacketCredit,
-                HostPollResult::Rejected(crate::v3_publication_wire::HostRejectReason::Superseded,),
-            )
-            .expect("reject newer candidate")
-            .is_none()
-    );
-    drain_candidate_cleanup(&mut endpoint, &mut runtime);
-    assert_eq!(
-        endpoint.retained.as_ref().map(|retained| retained.ack),
-        Some(first_ack)
+        !fixture
+            .endpoint
+            .recursive_green
+            .has_installed_session_for(replacement_delivery.ack)
     );
     assert_eq!(
-        runtime
+        fixture
+            .runtime
             .persistent_source_facts_page(0)
             .expect("persistent page lookup")
-            .expect("persistent page survives rejection")
+            .expect("persistent page survives endpoint close")
             .id(),
         persistent_page
     );
+    let persistent_baseline = fixture.runtime.arena_metrics();
+    assert!(persistent_baseline.resident_nodes > 0);
+    assert!(persistent_baseline.resident_nodes < acknowledged_base_resident_nodes);
+    assert_eq!(persistent_baseline.pending_reclaims, 0);
+    assert_eq!(persistent_baseline.live_builds, 0);
+    assert_eq!(persistent_baseline.pending_build_aborts, 0);
     assert_eq!(
-        runtime.arena_metrics().resident_nodes,
-        retained_resident_nodes
+        replacement_resident_nodes
+            .checked_sub(persistent_baseline.resident_nodes)
+            .expect("replacement retains parser-owned residency"),
+        acknowledged_base_owned_nodes,
+        "the replacement must own one base-sized Green graph, not an old revision chain"
     );
 
-    let second_stream = streaming_for_runtime(&mut runtime, 4, 2);
-    let second_ack = deliver_stream(&mut endpoint, &runtime, second_stream);
-    assert!(second_ack.host_revision > first_ack.host_revision);
-    assert!(endpoint.cleanup_pending());
-    assert_eq!(
-        endpoint.retained.as_ref().map(|retained| retained.ack),
-        Some(second_ack)
-    );
-    drain_candidate_cleanup(&mut endpoint, &mut runtime);
-    let second_publication = endpoint
-        .retained
-        .as_ref()
-        .expect("second retained base")
-        .publication
-        .descriptor(&runtime)
-        .expect("second retained descriptor")
-        .publication;
-    assert_ne!(second_publication, first_publication);
-    assert_eq!(
-        runtime.arena_metrics().resident_nodes,
-        retained_resident_nodes,
-        "replacing a same-shaped base must not retain an old revision chain"
-    );
-
-    let cancelled = streaming_for_runtime(&mut runtime, 4, 3);
-    endpoint.active = Some(ActiveCandidate::Streaming(Box::new(cancelled)));
-    endpoint.cancel().expect("cancel newer candidate");
-    drain_candidate_cleanup(&mut endpoint, &mut runtime);
-    assert_eq!(
-        endpoint.retained.as_ref().map(|retained| retained.ack),
-        Some(second_ack)
-    );
-    assert_eq!(
-        runtime.arena_metrics().resident_nodes,
-        retained_resident_nodes
-    );
-
-    let stale_stream = streaming_for_runtime(&mut runtime, 4, 2);
-    let mut stale_stream = stale_stream;
-    seal_stream(&runtime, &mut stale_stream);
-    stale_stream.phase = StreamPhase::AwaitDeliveryReceipt;
-    endpoint.active = Some(ActiveCandidate::Streaming(Box::new(stale_stream)));
-    assert!(matches!(
-        endpoint.accept_credit(CandidateCredit::Delivery, 18),
-        Err(CandidateEndpointError::InvalidAuthority)
-    ));
-    assert_eq!(
-        endpoint.retained.as_ref().map(|retained| retained.ack),
-        Some(second_ack)
-    );
-    endpoint.cancel().expect("cancel rejected stale delivery");
-    drain_candidate_cleanup(&mut endpoint, &mut runtime);
-
-    endpoint.begin_close().expect("begin endpoint close");
-    drain_candidate_cleanup(&mut endpoint, &mut runtime);
-    assert!(endpoint.retained.is_none());
-    assert_eq!(
-        runtime
-            .persistent_source_facts_page(0)
-            .expect("persistent page lookup")
-            .expect("persistent page survives producer close")
-            .id(),
-        persistent_page
-    );
-    assert_eq!(
-        runtime.arena_metrics().resident_nodes,
-        persistent_resident_nodes,
-        "producer shutdown must leave persistent SourceFacts resident"
-    );
-
-    runtime.begin_close().expect("begin runtime close");
-    while !runtime
+    fixture
+        .runtime
+        .begin_close()
+        .expect("begin runtime close");
+    while !fixture
+        .runtime
         .poll_close(256)
         .expect("poll runtime close")
         .complete
     {}
-    assert_eq!(runtime.arena_metrics().resident_nodes, 0);
+    assert_eq!(fixture.runtime.arena_metrics().resident_nodes, 0);
+
+    fixture.host.begin_close().expect("begin host close");
+    loop {
+        match fixture
+            .host
+            .poll(HostWorkGrant {
+                inspect_bytes: 0,
+                copy_bytes: 0,
+                transitions: 256,
+            })
+            .expect("poll host close")
+        {
+            NativeHostPollOutcome::Pending => {}
+            NativeHostPollOutcome::Closed => break,
+            outcome => panic!("unexpected host close outcome: {outcome:?}"),
+        }
+    }
+    assert!(fixture.host.is_removable());
 }
 
 #[test]
