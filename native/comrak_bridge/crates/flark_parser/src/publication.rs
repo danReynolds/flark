@@ -2202,6 +2202,37 @@ impl M11ParserCandidate {
         })
     }
 
+    /// Returns whether a clean recursive-Green session and an exact retained
+    /// publication have identical canonical References content.
+    ///
+    /// The engine authenticates and compares the compact canonical role
+    /// identities. No reference records are traversed or exposed here.
+    pub fn clean_recursive_green_references_match_exact_base(
+        runtime: &DocumentRuntime,
+        session: &M11PersistentRecursiveGreenSession,
+        base: &M11RetainedCandidatePublication,
+    ) -> Result<bool, M11CandidateDerivationError> {
+        let references = session.current_reference_root(runtime)?;
+        Ok(base.has_same_canonical_references(runtime, references)?)
+    }
+
+    /// Derives a clean recursive-Green target whose independently parsed
+    /// References are known to match the exact base and will therefore be
+    /// retained from that base during publication.
+    ///
+    /// The writer reauthenticates canonical equality before allocating the
+    /// target manifest.
+    pub fn derive_with_clean_recursive_green_reusing_references(
+        certified: PersistentCertifiedSource,
+        result: &M11CleanDocumentResult,
+        session: &M11PersistentRecursiveGreenSession,
+    ) -> Result<Self, M11CandidateDerivationError> {
+        let mut candidate =
+            Self::derive_with_recursive_green_from_persistent(certified, result, session)?;
+        candidate.references = M11CandidateReferencePlan::ExactBase;
+        Ok(candidate)
+    }
+
     /// Derives an exact target whose Green role will retain the completed
     /// update's recursive tree while References remain owned by the retained
     /// exact base.
@@ -2765,6 +2796,77 @@ impl M11ParserCandidate {
                 recursive_green,
                 base,
             )?;
+        Ok(M11ParserCandidateWriter {
+            build: Some(build),
+            segmented: None,
+            references: None,
+            reuse_references: true,
+            references_finished: true,
+            block_splice_selection: None,
+            block_splice_receipt: None,
+            aborting: false,
+        })
+    }
+
+    /// Transfers a clean recursive-Green target as an exact-base candidate by
+    /// replacing the whole Green role while retaining canonical References
+    /// from `base`.
+    ///
+    /// Unlike the local-adoption path, this clean fallback has no structural
+    /// splice selection. Canonical References equality is reauthenticated in
+    /// O(1) work before the target manifest is allocated.
+    #[allow(clippy::too_many_arguments)]
+    pub fn into_writer_with_clean_recursive_green_reusing_references(
+        self,
+        runtime: &mut DocumentRuntime,
+        document: [u8; 16],
+        publication: [u8; 16],
+        parse_generation: u64,
+        session: &M11PersistentRecursiveGreenSession,
+        base: &M11RetainedCandidatePublication,
+    ) -> Result<M11ParserCandidateWriter, M11CandidateDerivationError> {
+        let Self {
+            source,
+            syntax_profile,
+            source_facts_profile,
+            roles,
+            references,
+        } = self;
+        if !matches!(references, M11CandidateReferencePlan::ExactBase) {
+            return Err(M11CandidateDerivationError::ExactBaseReferencesRequired);
+        }
+        let M11CandidateRolePlan::RecursiveGreen { projection } = roles else {
+            return Err(M11CandidateDerivationError::RecursiveGreenPublicationMismatch);
+        };
+        if session.source() != source || session.syntax_profile() != syntax_profile {
+            return Err(M11CandidateDerivationError::RecursiveGreenPublicationMismatch);
+        }
+        let reference_journal = session.current_reference_root(runtime)?;
+        if !base.has_same_canonical_references(runtime, reference_journal)? {
+            return Err(M11CandidateDerivationError::RecursiveGreenReferenceMismatch);
+        }
+        let exact_base_descriptor = base.descriptor(runtime)?;
+        if exact_base_descriptor.document != document
+            || exact_base_descriptor.syntax_profile != syntax_profile
+            || exact_base_descriptor.parse_generation >= parse_generation
+        {
+            return Err(M11CandidateDerivationError::ExactBaseReferencesRequired);
+        }
+        let records = M11RoleRecords::persistent_recursive_green_projection_records(projection)?;
+        let recursive_green = session.current_green_root(runtime)?;
+        let build = M11CandidateBuild::
+            new_with_persistent_source_facts_and_recursive_green_reusing_references(
+            runtime,
+            document,
+            publication,
+            source,
+            parse_generation,
+            syntax_profile,
+            source_facts_profile,
+            records,
+            recursive_green,
+            base,
+        )?;
         Ok(M11ParserCandidateWriter {
             build: Some(build),
             segmented: None,

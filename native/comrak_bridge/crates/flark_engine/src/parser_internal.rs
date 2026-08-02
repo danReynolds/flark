@@ -2441,6 +2441,31 @@ impl Drop for M11RetainedCandidatePublication {
 }
 
 impl M11RetainedCandidatePublication {
+    /// Compares one live parser-owned References journal with this sealed
+    /// publication's authenticated canonical References role in O(1) work.
+    ///
+    /// The compact role identity stays engine-private; callers receive only
+    /// equality and cannot manufacture or mutate canonical metadata.
+    #[doc(hidden)]
+    pub fn has_same_canonical_references(
+        &self,
+        runtime: &DocumentRuntime,
+        references: &M11ReferenceJournalRoot,
+    ) -> Result<bool, M11PublicationError> {
+        validate_runtime(self.runtime_identity, runtime)?;
+        let publication = self.publication()?;
+        let authority = publication.authority();
+        let descriptor =
+            decode_manifest_descriptor(runtime.producer_arena(), publication.root_id(), authority)?;
+        let metadata = descriptor.metadata[role_index(CandidateRole::References)];
+        let _ =
+            persistent_reference_manifest_root(runtime.producer_arena(), &descriptor, authority)?;
+        let live_metadata = references
+            .canonical_metadata(runtime)
+            .map_err(|_| M11PublicationError::invalid_state())?;
+        Ok(metadata == live_metadata)
+    }
+
     /// Advances the root-bound reference winner acceleration under caller
     /// fuel. Exact-base publications sharing the same canonical References
     /// root move this progress through the exact-stream capability chain.

@@ -8,19 +8,18 @@
 use std::{collections::VecDeque, fmt, ops::Range};
 
 use flark_engine::parser_internal::{
-    M11_MAX_ROLE_RECORDS, M11_MAX_SNAPSHOT_FRAME_BYTES, M11BlockQuoteProjectionError,
-    M11BlockQuoteProjectionRoot, M11BlockSequenceEntryKind, M11BlockSequencePoint,
-    M11BlockSequenceSpliceSelection, M11CandidateDescriptor, M11CandidatePublication,
-    M11HotInlineCanonicalLineEnding, M11HotInlineSidecarBinding, M11HotInlineSidecarDescriptor,
-    M11HotInlineSidecarDisposition, M11HotInlineSidecarFrame, M11HotInlineSidecarFrameKind,
-    M11HotInlineSidecarOwner, M11HotInlineSidecarSnapshotEncoder, M11HotInlineSidecarSnapshotPoll,
-    M11IndentedCodeProjectionError, M11IndentedCodeProjectionRoot, M11InlineProjectionError,
-    M11InlineProjectionRoot, M11MarkedLineProjectionKind, M11OwnedSnapshotPoll,
-    M11OwnedSnapshotStream, M11ParserPageError, M11ParserSourceRangeAuthority, M11PublicationError,
-    M11RecursiveGreenFrameId, M11RecursiveGreenLocation, M11RecursiveGreenPoint,
-    M11RecursiveGreenRowEditCapability,
+    M11BlockQuoteProjectionError, M11BlockQuoteProjectionRoot, M11BlockSequenceEntryKind,
+    M11BlockSequencePoint, M11BlockSequenceSpliceSelection, M11CandidateDescriptor,
+    M11CandidatePublication, M11HotInlineCanonicalLineEnding, M11HotInlineSidecarBinding,
+    M11HotInlineSidecarDescriptor, M11HotInlineSidecarDisposition, M11HotInlineSidecarFrame,
+    M11HotInlineSidecarFrameKind, M11HotInlineSidecarOwner, M11HotInlineSidecarSnapshotEncoder,
+    M11HotInlineSidecarSnapshotPoll, M11IndentedCodeProjectionError, M11IndentedCodeProjectionRoot,
+    M11InlineProjectionError, M11InlineProjectionRoot, M11MarkedLineProjectionKind,
+    M11OwnedSnapshotPoll, M11OwnedSnapshotStream, M11ParserPageError,
+    M11ParserSourceRangeAuthority, M11PublicationError, M11RecursiveGreenFrameId,
+    M11RecursiveGreenLocation, M11RecursiveGreenPoint, M11RecursiveGreenRowEditCapability,
     M11RecursiveGreenRowQueryLimits, M11ReferenceResolver, M11RetainedCandidatePublication,
-    M11SnapshotFrame, M11SnapshotFrameKind,
+    M11SnapshotFrame, M11SnapshotFrameKind, M11_MAX_ROLE_RECORDS, M11_MAX_SNAPSHOT_FRAME_BYTES,
 };
 use flark_engine::{
     CertifiedSource, DocumentRuntime, DocumentRuntimeError, IncrementalSourceFactsPlan,
@@ -28,11 +27,12 @@ use flark_engine::{
     SourceSnapshotLease,
 };
 use flark_parser::{
+    block_core::{M11RecursiveGreenInlineLeafFence, M11RecursiveGreenInlineLeafKind},
+    resolve_m11_published_block_quote_leaf_fence, resolve_m11_published_bullet_list_item_fences,
+    resolve_m11_published_bullet_list_item_inline_fence,
+    resolve_m11_published_bullet_list_leaf_fence, resolve_m11_published_indented_code_leaf_fence,
+    resolve_m11_published_inline_leaf_fence, resolve_m11_published_ordered_list_item_fences,
     LeadingReferencesCheckpointError, LeadingReferencesRestartCheckpoint,
-    M11_BLOCK_QUOTE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
-    M11_BULLET_LIST_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
-    M11_INDENTED_CODE_PROJECTION_JOB_MAX_POLL_TRANSITIONS, M11_INLINE_META_RECORD_BYTES,
-    M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS, M11_SEGMENTED_TOP_LEVEL_CROP_MAX_BYTES,
     M11BlockQuoteProjectionJob, M11BlockQuoteProjectionJobError,
     M11BlockQuoteProjectionJobPollStatus, M11BulletListItemProjectionJob,
     M11BulletListItemProjectionJobPollStatus, M11BulletListLocalDeltaError,
@@ -64,41 +64,39 @@ use flark_parser::{
     M11PublishedInlineLeafFenceResolution, M11PublishedInlineRangeError,
     M11PublishedOrderedListItemInlineFenceOutcome, M11PublishedOrderedListItemProjectionFence,
     M11RecursiveGreenParagraphPreparationError,
-    block_core::{M11RecursiveGreenInlineLeafFence, M11RecursiveGreenInlineLeafKind},
-    resolve_m11_published_block_quote_leaf_fence, resolve_m11_published_bullet_list_item_fences,
-    resolve_m11_published_bullet_list_item_inline_fence,
-    resolve_m11_published_bullet_list_leaf_fence, resolve_m11_published_indented_code_leaf_fence,
-    resolve_m11_published_inline_leaf_fence, resolve_m11_published_ordered_list_item_fences,
+    M11_BLOCK_QUOTE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
+    M11_BULLET_LIST_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
+    M11_INDENTED_CODE_PROJECTION_JOB_MAX_POLL_TRANSITIONS, M11_INLINE_META_RECORD_BYTES,
+    M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS, M11_SEGMENTED_TOP_LEVEL_CROP_MAX_BYTES,
 };
 
 use crate::v3_publication_wire::{
-    CandidateSnapshotFrameKind, CandidateTransportDigest, CandidateTransportDigestError,
-    CommitRequest, DecodeError, EncodeError, HOT_INLINE_SIDECAR_SCHEMA, HostPollOutcome,
-    HostPollPhase, HostPollResult, HotInlineSidecarBegin, HotInlineSidecarBinding,
-    HotInlineSidecarCommitRequest, HotInlineSidecarDisposition, HotInlineSidecarEnvelopeMetrics,
-    HotInlineSidecarEventBody, HotInlineSidecarFrameKind, HotInlineSidecarMode,
-    HotInlineSidecarOwner, HotInlineSidecarTransportDigest, InlineSidecarAck,
+    decode_publication_packet, encode_publication_packet_into,
+    encode_viewport_presentation_child_frame_into, encode_viewport_presentation_directory_into,
+    encode_viewport_presentation_end_frame_into, encode_viewport_presentation_parent_frame_into,
+    protocol_digest128_from_blake3, viewport_presentation_aggregate_envelope_digest256,
+    viewport_presentation_root_stream_digest256, CandidateSnapshotFrameKind,
+    CandidateTransportDigest, CandidateTransportDigestError, CommitRequest, DecodeError,
+    EncodeError, HostPollOutcome, HostPollPhase, HostPollResult, HotInlineSidecarBegin,
+    HotInlineSidecarBinding, HotInlineSidecarCommitRequest, HotInlineSidecarDisposition,
+    HotInlineSidecarEnvelopeMetrics, HotInlineSidecarEventBody, HotInlineSidecarFrameKind,
+    HotInlineSidecarMode, HotInlineSidecarOwner, HotInlineSidecarTransportDigest, InlineSidecarAck,
     InlineSidecarAckDisposition, InlineSidecarHostPollOutcome, InlineSidecarHostPollPhase,
-    InlineSidecarHostPollResult, MAXIMUM_PACKET_AGGREGATE_FRAME_BYTES,
-    MAXIMUM_PACKET_ENCODED_BYTES, MAXIMUM_PACKET_FRAME_COUNT, OfferBegin, OfferLimits,
-    PACKET_FRAME_DESCRIPTOR_BYTES, PACKET_HEADER_BYTES, ProtocolDigestDomain, PublicationEventBody,
-    PublicationMode, PublicationPacketFrameInput, PublicationPacketInput, SourceVersion,
-    StructuralAck, VIEWPORT_PRESENTATION_CHILD_HEADER_BYTES,
-    VIEWPORT_PRESENTATION_DIRECTORY_ENTRY_BYTES, VIEWPORT_PRESENTATION_DIRECTORY_HEADER_BYTES,
-    VIEWPORT_PRESENTATION_END_FRAME_BYTES, VIEWPORT_PRESENTATION_PARENT_FRAME_BYTES,
-    ViewportPresentationAck, ViewportPresentationBegin, ViewportPresentationBinding,
-    ViewportPresentationChildFrameInput, ViewportPresentationCommitRequest,
-    ViewportPresentationDirectoryEntry, ViewportPresentationEndFrame,
-    ViewportPresentationEventBody, ViewportPresentationFrameKind,
+    InlineSidecarHostPollResult, OfferBegin, OfferLimits, ProtocolDigestDomain,
+    PublicationEventBody, PublicationMode, PublicationPacketFrameInput, PublicationPacketInput,
+    SourceVersion, StructuralAck, ViewportPresentationAck, ViewportPresentationBegin,
+    ViewportPresentationBinding, ViewportPresentationChildFrameInput,
+    ViewportPresentationCommitRequest, ViewportPresentationDirectoryEntry,
+    ViewportPresentationEndFrame, ViewportPresentationEventBody, ViewportPresentationFrameKind,
     ViewportPresentationHostPollOutcome, ViewportPresentationHostPollPhase,
     ViewportPresentationHostPollResult, ViewportPresentationMetricRange, ViewportPresentationMode,
     ViewportPresentationOfferLimits, ViewportPresentationQueryLimits,
     ViewportPresentationTransportDigest, ViewportPresentationTransportDigestError,
-    ViewportPresentationVisitStart, decode_publication_packet, encode_publication_packet_into,
-    encode_viewport_presentation_child_frame_into, encode_viewport_presentation_directory_into,
-    encode_viewport_presentation_end_frame_into, encode_viewport_presentation_parent_frame_into,
-    protocol_digest128_from_blake3, viewport_presentation_aggregate_envelope_digest256,
-    viewport_presentation_root_stream_digest256,
+    ViewportPresentationVisitStart, HOT_INLINE_SIDECAR_SCHEMA,
+    MAXIMUM_PACKET_AGGREGATE_FRAME_BYTES, MAXIMUM_PACKET_ENCODED_BYTES, MAXIMUM_PACKET_FRAME_COUNT,
+    PACKET_FRAME_DESCRIPTOR_BYTES, PACKET_HEADER_BYTES, VIEWPORT_PRESENTATION_CHILD_HEADER_BYTES,
+    VIEWPORT_PRESENTATION_DIRECTORY_ENTRY_BYTES, VIEWPORT_PRESENTATION_DIRECTORY_HEADER_BYTES,
+    VIEWPORT_PRESENTATION_END_FRAME_BYTES, VIEWPORT_PRESENTATION_PARENT_FRAME_BYTES,
 };
 use crate::v3_session_wire::{
     InlinePointAffinity, InlineRefinementCommand, InlineRefinementTarget, SessionBinding,
@@ -185,6 +183,7 @@ enum CleanPublicationPath {
 enum ExactStructuralPath {
     LegacyBlocks,
     RecursiveGreen,
+    RecursiveGreenWholeRole,
 }
 
 struct ParsingExactCandidate {
@@ -664,12 +663,11 @@ fn resolved_recursive_green_unsupported(
 ) -> Result<ResolvedHotInlineDemand, CandidateEndpointError> {
     let source = location.byte_range();
     let source_utf16 = location.utf16_range();
-    let byte_start = u32::try_from(source.start)
-        .map_err(|_| CandidateEndpointError::MetricOverflow)?;
-    let byte_end =
-        u32::try_from(source.end).map_err(|_| CandidateEndpointError::MetricOverflow)?;
-    let utf16_start = u32::try_from(source_utf16.start)
-        .map_err(|_| CandidateEndpointError::MetricOverflow)?;
+    let byte_start =
+        u32::try_from(source.start).map_err(|_| CandidateEndpointError::MetricOverflow)?;
+    let byte_end = u32::try_from(source.end).map_err(|_| CandidateEndpointError::MetricOverflow)?;
+    let utf16_start =
+        u32::try_from(source_utf16.start).map_err(|_| CandidateEndpointError::MetricOverflow)?;
     let utf16_end =
         u32::try_from(source_utf16.end).map_err(|_| CandidateEndpointError::MetricOverflow)?;
     if byte_start >= byte_end || utf16_start >= utf16_end {
@@ -679,26 +677,28 @@ fn resolved_recursive_green_unsupported(
     let parser_profile =
         flark_engine::ParserProfileId::new(u64::from(command.base_ack.syntax_profile))
             .ok_or(CandidateEndpointError::MetricOverflow)?;
-    Ok(ResolvedHotInlineDemand::Unsupported(Box::new(HotInlineReady {
-        command,
-        identity: HotInlineLeafIdentity {
-            kind,
-            byte_start,
-            byte_end,
-            utf16_start,
-            utf16_end,
-            inline_byte_start: byte_start,
-            inline_byte_end: byte_end,
-            inline_utf16_start: utf16_start,
-            inline_utf16_end: utf16_end,
-            owner: HotInlineLeafOwner::RecursiveGreenFrame(location.owner().frame()),
+    Ok(ResolvedHotInlineDemand::Unsupported(Box::new(
+        HotInlineReady {
+            command,
+            identity: HotInlineLeafIdentity {
+                kind,
+                byte_start,
+                byte_end,
+                utf16_start,
+                utf16_end,
+                inline_byte_start: byte_start,
+                inline_byte_end: byte_end,
+                inline_utf16_start: utf16_start,
+                inline_utf16_end: utf16_end,
+                owner: HotInlineLeafOwner::RecursiveGreenFrame(location.owner().frame()),
+            },
+            inline_source: byte_start..byte_end,
+            inline_source_utf16: utf16_start..utf16_end,
+            parser_profile,
+            authority: None,
+            publication: HotInlineReadyPublication::Unsupported(unsupported),
         },
-        inline_source: byte_start..byte_end,
-        inline_source_utf16: utf16_start..utf16_end,
-        parser_profile,
-        authority: None,
-        publication: HotInlineReadyPublication::Unsupported(unsupported),
-    })))
+    )))
 }
 
 impl HotInlineLeafIdentity {
@@ -2269,10 +2269,7 @@ impl CandidateEndpoint {
             }
             CandidateRestartAuthority::RecursiveGreen { source, binding } => {
                 let mut base = base;
-                base.restart = Some(CandidateRestartAuthority::RecursiveGreen {
-                    source,
-                    binding,
-                });
+                base.restart = Some(CandidateRestartAuthority::RecursiveGreen { source, binding });
                 if source != witness.base()
                     || binding != parser_binding
                     || !self
@@ -3262,7 +3259,6 @@ impl CandidateEndpoint {
         };
         Some(*ready)
     }
-
 
     fn schedule_failed_hot_inline_publication(
         &mut self,
@@ -4321,38 +4317,30 @@ impl CandidateEndpoint {
     ) -> Result<bool, CandidateEndpointError> {
         let Some((base_ack, target_source, syntax_profile, can_preempt_to_clean)) =
             self.active.as_ref().and_then(|active| match active {
-                ActiveCandidate::ParsingExact(parsing) => {
-                    Some((
-                        parsing.base.ack,
-                        parsing.witness.target(),
-                        parsing.witness.parser_profile(),
-                        true,
-                    ))
-                }
-                ActiveCandidate::ParsingOrdinaryExact(parsing) => {
-                    Some((
-                        parsing.base.ack,
-                        parsing.witness.target(),
-                        parsing.witness.parser_profile(),
-                        true,
-                    ))
-                }
-                ActiveCandidate::AwaitingRecursiveGreenExact(awaiting) => {
-                    Some((
-                        awaiting.base.ack,
-                        awaiting.witness.target(),
-                        awaiting.witness.parser_profile(),
-                        true,
-                    ))
-                }
-                ActiveCandidate::ParsingExactFallback(parsing) => {
-                    Some((
-                        parsing.base.ack,
-                        parsing.witness.target(),
-                        parsing.witness.parser_profile(),
-                        false,
-                    ))
-                }
+                ActiveCandidate::ParsingExact(parsing) => Some((
+                    parsing.base.ack,
+                    parsing.witness.target(),
+                    parsing.witness.parser_profile(),
+                    true,
+                )),
+                ActiveCandidate::ParsingOrdinaryExact(parsing) => Some((
+                    parsing.base.ack,
+                    parsing.witness.target(),
+                    parsing.witness.parser_profile(),
+                    true,
+                )),
+                ActiveCandidate::AwaitingRecursiveGreenExact(awaiting) => Some((
+                    awaiting.base.ack,
+                    awaiting.witness.target(),
+                    awaiting.witness.parser_profile(),
+                    true,
+                )),
+                ActiveCandidate::ParsingExactFallback(parsing) => Some((
+                    parsing.base.ack,
+                    parsing.witness.target(),
+                    parsing.witness.parser_profile(),
+                    false,
+                )),
                 _ => None,
             })
         else {
@@ -4366,11 +4354,7 @@ impl CandidateEndpoint {
             .is_some();
         let clean_ready = self
             .recursive_green
-            .incremental_clean_ready_for_recursive_base(
-                base_ack,
-                target_source,
-                syntax_profile,
-            );
+            .incremental_clean_ready_for_recursive_base(base_ack, target_source, syntax_profile);
         if !update_ready && !(clean_ready && can_preempt_to_clean) {
             return Ok(false);
         }
@@ -5300,6 +5284,85 @@ impl CandidateEndpoint {
                                 .incremental_clean_ready_session(target_source, syntax_profile)
                                 .is_some()
                             {
+                                let session = self
+                                    .recursive_green
+                                    .incremental_clean_ready_session(target_source, syntax_profile)
+                                    .ok_or(CandidateEndpointError::InvalidState)?;
+                                let references_match = match M11ParserCandidate::
+                                    clean_recursive_green_references_match_exact_base(
+                                        runtime,
+                                        session,
+                                        &base.publication,
+                                    ) {
+                                    Ok(matches) => matches,
+                                    Err(error) => {
+                                        self.cleanup =
+                                            Some(CandidateCleanup::RetainedPublication {
+                                                publication: base.publication,
+                                                begun: false,
+                                            });
+                                        return Err(error.into());
+                                    }
+                                };
+                                if references_match {
+                                    let candidate = match M11ParserCandidate::
+                                        derive_with_clean_recursive_green_reusing_references(
+                                            certified, &result, session,
+                                        ) {
+                                        Ok(candidate) => candidate,
+                                        Err(error) => {
+                                            self.cleanup =
+                                                Some(CandidateCleanup::RetainedPublication {
+                                                    publication: base.publication,
+                                                    begun: false,
+                                                });
+                                            return Err(error.into());
+                                        }
+                                    };
+                                    let publication = derive_identity(
+                                        b"publication",
+                                        context.binding,
+                                        context.completion,
+                                        context.parse_generation,
+                                    );
+                                    let writer = match candidate
+                                        .into_writer_with_clean_recursive_green_reusing_references(
+                                            runtime,
+                                            document_bytes(context.binding.document_session),
+                                            publication,
+                                            u64::from(context.parse_generation),
+                                            session,
+                                            &base.publication,
+                                        ) {
+                                        Ok(writer) => writer,
+                                        Err(error) => {
+                                            self.cleanup =
+                                                Some(CandidateCleanup::RetainedPublication {
+                                                    publication: base.publication,
+                                                    begun: false,
+                                                });
+                                            return Err(error.into());
+                                        }
+                                    };
+                                    let Some(next_restart) = next_restart else {
+                                        self.cleanup =
+                                            Some(CandidateCleanup::RetainedPublication {
+                                                publication: base.publication,
+                                                begun: false,
+                                            });
+                                        return Err(CandidateEndpointError::InvalidState);
+                                    };
+                                    self.active = Some(ActiveCandidate::BuildingExact {
+                                        context,
+                                        writer: Box::new(writer),
+                                        base,
+                                        witness,
+                                        next_restart,
+                                        structural_path:
+                                            ExactStructuralPath::RecursiveGreenWholeRole,
+                                    });
+                                    continue;
+                                }
                                 let consumed_witness =
                                     match runtime.take_persistent_source_facts_delta(witness) {
                                         Ok(witness) => witness,
@@ -5311,15 +5374,8 @@ impl CandidateEndpoint {
                                                 });
                                             return Err(error.into());
                                         }
-                                };
+                                    };
                                 drop(consumed_witness);
-                                let session = self
-                                    .recursive_green
-                                    .incremental_clean_ready_session(
-                                        target_source,
-                                        syntax_profile,
-                                    )
-                                    .ok_or(CandidateEndpointError::InvalidState)?;
                                 let candidate = match M11ParserCandidate::
                                     derive_with_recursive_green_from_persistent(
                                         certified, &result, session,
@@ -5645,9 +5701,7 @@ impl CandidateEndpoint {
                     structural_path,
                 } => {
                     if structural_path == ExactStructuralPath::LegacyBlocks
-                        && self
-                            .recursive_green
-                            .owns_recursive_base_authority(base.ack)
+                        && self.recursive_green.owns_recursive_base_authority(base.ack)
                     {
                         self.active = Some(ActiveCandidate::BuildingExact {
                             context,
@@ -5772,21 +5826,43 @@ impl CandidateEndpoint {
                                         }
                                     }
                                 }
+                                ExactStructuralPath::RecursiveGreenWholeRole => None,
                             };
-                            let stream_result = match recursive_green_selection {
-                                Some(selection) => publication
-                                    .into_exact_base_snapshot_stream_selecting_recursive_green_splice(
-                                        runtime,
-                                        base.publication,
-                                        witness,
-                                        selection,
-                                    ),
-                                None => publication
+                            let stream_result = match (
+                                structural_path,
+                                recursive_green_selection,
+                            ) {
+                                (ExactStructuralPath::RecursiveGreen, Some(selection)) => {
+                                    publication
+                                        .into_exact_base_snapshot_stream_selecting_recursive_green_splice(
+                                            runtime,
+                                            base.publication,
+                                            witness,
+                                            selection,
+                                        )
+                                }
+                                (ExactStructuralPath::LegacyBlocks, None) => publication
                                     .into_exact_base_snapshot_stream_selecting_block_splice(
                                         runtime,
                                         base.publication,
                                         witness,
                                     ),
+                                (ExactStructuralPath::RecursiveGreenWholeRole, None) => publication
+                                    .into_exact_base_snapshot_stream(
+                                        runtime,
+                                        base.publication,
+                                        witness,
+                                    ),
+                                _ => {
+                                    self.cleanup = Some(CandidateCleanup::ExactPublications {
+                                        target: publication,
+                                        target_begun: false,
+                                        target_complete: false,
+                                        base: base.publication,
+                                        base_begun: false,
+                                    });
+                                    return Err(CandidateEndpointError::InvalidState);
+                                }
                             };
                             let stream = match stream_result {
                                 Ok(stream) => stream,
@@ -7013,9 +7089,7 @@ impl CandidateEndpoint {
             Some(ActiveCandidate::Building { .. }) => "Building",
             Some(ActiveCandidate::ParsingExact(_)) => "ParsingExact",
             Some(ActiveCandidate::ParsingOrdinaryExact(_)) => "ParsingOrdinaryExact",
-            Some(ActiveCandidate::AwaitingRecursiveGreenExact(_)) => {
-                "AwaitingRecursiveGreenExact"
-            }
+            Some(ActiveCandidate::AwaitingRecursiveGreenExact(_)) => "AwaitingRecursiveGreenExact",
             Some(ActiveCandidate::ParsingBulletListLocal(_)) => "ParsingBulletListLocal",
             Some(ActiveCandidate::ParsingExactFallback(_)) => "ParsingExactFallback",
             Some(ActiveCandidate::BuildingExactFallback { .. }) => "BuildingExactFallback",
@@ -7531,9 +7605,6 @@ impl PacketBuilder {
     }
 }
 
-
-
-
 fn resolved_inline_leaf(
     command: InlineRefinementCommand,
     fence: M11PublishedInlineLeafFence,
@@ -7788,7 +7859,6 @@ fn start_resolved_hot_inline(
     }
 }
 
-
 fn derive_identity(
     domain: &[u8],
     binding: SessionBinding,
@@ -7925,8 +7995,6 @@ fn hot_inline_wire_binding(binding: &M11HotInlineSidecarBinding) -> HotInlineSid
         visible_end_utf16: binding.visible_range_utf16().end,
     }
 }
-
-
 
 fn hash_source_version(hasher: &mut blake3::Hasher, source: SourceVersion) {
     for word in source.document_session {

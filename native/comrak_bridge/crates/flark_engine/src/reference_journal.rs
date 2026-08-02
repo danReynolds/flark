@@ -858,6 +858,17 @@ impl M11ReferenceJournalRoot {
         self.metadata.record_count
     }
 
+    /// Returns the complete canonical role identity to engine-owned
+    /// publication code without exposing its representation across the
+    /// parser boundary.
+    pub(crate) fn canonical_metadata(
+        &self,
+        runtime: &DocumentRuntime,
+    ) -> Result<RoleMetadata, M11ReferenceJournalError> {
+        self.ensure_live(runtime)?;
+        Ok(self.metadata)
+    }
+
     /// End of the last parser-authenticated reference occurrence.
     ///
     /// Zero means the committed reference set is empty. A target revision may
@@ -1430,8 +1441,8 @@ mod tests {
             ));
         }
 
-        let mut runtime = DocumentRuntime::new(&source_text, DocumentRuntimeConfig::default())
-            .expect("runtime");
+        let mut runtime =
+            DocumentRuntime::new(&source_text, DocumentRuntimeConfig::default()).expect("runtime");
         let source = runtime.current_source_version().expect("source");
         let mut journal = M11ReferenceJournal::new(&mut runtime, source, 1).expect("journal");
         for (source, label_source, destination_source, label) in occurrences {
