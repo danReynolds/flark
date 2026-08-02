@@ -789,17 +789,43 @@ impl M11BlockRestartCheckpoint {
         target_lease: SourceSnapshotLease,
         prefix: ExactUnchangedPrefixWitness,
     ) -> Result<M11JoinedBlockRestart, M11BlockRestartError> {
-        let prefix = runtime.take_exact_unchanged_prefix_witness(prefix)?;
+        self.resume_with_prefix(runtime, base, target_lease, Some(prefix))
+    }
+
+    pub(crate) fn resume_at_document_start(
+        self,
+        runtime: &DocumentRuntime,
+        base: &M11RecursiveGreenRoot,
+        target_lease: SourceSnapshotLease,
+    ) -> Result<M11JoinedBlockRestart, M11BlockRestartError> {
+        self.resume_with_prefix(runtime, base, target_lease, None)
+    }
+
+    fn resume_with_prefix(
+        self,
+        runtime: &DocumentRuntime,
+        base: &M11RecursiveGreenRoot,
+        target_lease: SourceSnapshotLease,
+        prefix: Option<ExactUnchangedPrefixWitness>,
+    ) -> Result<M11JoinedBlockRestart, M11BlockRestartError> {
+        let prefix = prefix
+            .map(|prefix| runtime.take_exact_unchanged_prefix_witness(prefix))
+            .transpose()?;
         let parser_byte_cut = usize::try_from(self.parser_physical.bytes())
             .map_err(|_| M11BlockRestartError::Pairing("parser byte cut fits usize"))?;
         let parser_utf16_cut = usize::try_from(self.parser_physical.utf16())
             .map_err(|_| M11BlockRestartError::Pairing("parser UTF-16 cut fits usize"))?;
         if base.source() != self.source
             || base.event_count() < self.event_cut
-            || prefix.base() != self.source
-            || prefix.target() != target_lease.version()
-            || prefix.byte_end() != parser_byte_cut
-            || prefix.utf16_end() != parser_utf16_cut
+            || match prefix.as_ref() {
+                Some(prefix) => {
+                    prefix.base() != self.source
+                        || prefix.target() != target_lease.version()
+                        || prefix.byte_end() != parser_byte_cut
+                        || prefix.utf16_end() != parser_utf16_cut
+                }
+                None => parser_byte_cut != 0 || parser_utf16_cut != 0,
+            }
         {
             return Err(M11BlockRestartError::Pairing(
                 "source lineage does not end at the parser restart cut",
@@ -915,6 +941,17 @@ impl M11BlockRestartCheckpointTransactionReplica {
     ) -> Result<M11JoinedBlockRestart, M11BlockRestartError> {
         self.into_checkpoint(transaction_id)?
             .resume(runtime, base, target_lease, prefix)
+    }
+
+    pub(crate) fn resume_at_document_start(
+        self,
+        transaction_id: u64,
+        runtime: &DocumentRuntime,
+        base: &M11RecursiveGreenRoot,
+        target_lease: SourceSnapshotLease,
+    ) -> Result<M11JoinedBlockRestart, M11BlockRestartError> {
+        self.into_checkpoint(transaction_id)?
+            .resume_at_document_start(runtime, base, target_lease)
     }
 }
 
@@ -1524,7 +1561,7 @@ impl M11BlockWriter {
         mut old_convergence: M11BlockRestartCheckpoint,
         runtime: &mut DocumentRuntime,
         base: &M11RecursiveGreenRoot,
-        prefix: ExactUnchangedPrefixWitness,
+        prefix: Option<ExactUnchangedPrefixWitness>,
         suffix: Option<ExactUnchangedSuffixWitness>,
         mut retained_prefix: Vec<M11BlockRestartCheckpoint>,
         mut retained_suffix: Vec<M11BlockRestartCheckpoint>,
@@ -1652,12 +1689,16 @@ impl M11BlockWriter {
                     && fresh_end_utf16 == fresh.source.utf16_len()
             }
         };
-        if prefix.base() != base.source()
-            || prefix.target() != fresh.source
-            || prefix.byte_end() != start_byte
-            || prefix.utf16_end() != start_utf16
-            || !suffix_matches
-        {
+        let prefix_matches = match prefix.as_ref() {
+            Some(prefix) => {
+                prefix.base() == base.source()
+                    && prefix.target() == fresh.source
+                    && prefix.byte_end() == start_byte
+                    && prefix.utf16_end() == start_utf16
+            }
+            None => start_byte == 0 && start_utf16 == 0,
+        };
+        if !prefix_matches || !suffix_matches {
             return Err(M11BlockRestartError::Pairing(
                 "prefix/suffix lineage differs from restart convergence cuts",
             ));
@@ -1679,7 +1720,7 @@ impl M11BlockWriter {
                 runtime,
                 base,
                 target_lease,
-                Some(prefix),
+                prefix,
                 suffix,
                 provenance.start_boundary,
                 end_boundary,
@@ -1785,7 +1826,7 @@ impl M11BlockWriter {
         mut old_terminal: M11BlockTerminalConvergenceCheckpoint,
         runtime: &mut DocumentRuntime,
         base: &M11RecursiveGreenRoot,
-        prefix: ExactUnchangedPrefixWitness,
+        prefix: Option<ExactUnchangedPrefixWitness>,
         mut retained_prefix: Vec<M11BlockRestartCheckpoint>,
     ) -> Result<
         (
@@ -1880,11 +1921,16 @@ impl M11BlockWriter {
             .map_err(|_| M11BlockRestartError::Pairing("restart byte cut fits usize"))?;
         let start_utf16 = usize::try_from(provenance.target_accepted_start.utf16())
             .map_err(|_| M11BlockRestartError::Pairing("restart UTF-16 cut fits usize"))?;
-        if prefix.base() != base.source()
-            || prefix.target() != self.source
-            || prefix.byte_end() != start_byte
-            || prefix.utf16_end() != start_utf16
-        {
+        let prefix_matches = match prefix.as_ref() {
+            Some(prefix) => {
+                prefix.base() == base.source()
+                    && prefix.target() == self.source
+                    && prefix.byte_end() == start_byte
+                    && prefix.utf16_end() == start_utf16
+            }
+            None => start_byte == 0 && start_utf16 == 0,
+        };
+        if !prefix_matches {
             return Err(M11BlockRestartError::Pairing(
                 "terminal prefix lineage differs from the restart cut",
             ));
@@ -1909,7 +1955,7 @@ impl M11BlockWriter {
                 runtime,
                 base,
                 target_lease,
-                Some(prefix),
+                prefix,
                 None,
                 provenance.start_boundary,
                 end_boundary,

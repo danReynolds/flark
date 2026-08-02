@@ -377,7 +377,7 @@ fn local_edit(
             convergence,
             runtime,
             base_root,
-            green_prefix,
+            Some(green_prefix),
             Some(green_suffix),
             Vec::new(),
             Vec::new(),

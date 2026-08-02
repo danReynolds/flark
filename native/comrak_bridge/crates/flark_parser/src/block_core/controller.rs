@@ -387,6 +387,26 @@ impl M11DirectBlockController {
             .parser
             .capture_line_boundary_pause()
             .map_err(map_parse_error)?;
+        self.restart_from_pause(pause)
+    }
+
+    /// Captures the exact Document-only BOF continuation before physical line
+    /// one. The writer still has to join it to source and Green authority.
+    pub(crate) fn capture_document_start_restart(
+        &self,
+    ) -> Result<M11DirectBlockRestart, M11DirectBlockError> {
+        self.ensure_live()?;
+        let pause = self
+            .parser
+            .capture_document_start_pause()
+            .map_err(map_parse_error)?;
+        self.restart_from_pause(pause)
+    }
+
+    fn restart_from_pause(
+        &self,
+        pause: donor::DirectLineBoundaryPause,
+    ) -> Result<M11DirectBlockRestart, M11DirectBlockError> {
         let view = pause.pairing_view();
         let line_ordinal = u64::try_from(view.line_number())
             .map_err(|_| M11DirectBlockError::Invariant("line ordinal fits u64"))?;

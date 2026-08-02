@@ -384,6 +384,11 @@ impl M11PersistentRecursiveGreenCleanBuild {
                         self.offer_pending_command()?;
                     } else {
                         if !self.initial_boundary_captured {
+                            // Preserve an authenticated Document-only restart at
+                            // BOF. Without this cut, an edit in the first sparse
+                            // checkpoint interval has no predecessor and must
+                            // fall back to a whole-document clean build.
+                            self.capture_document_start_checkpoint()?;
                             self.initial_boundary_captured = true;
                         }
                         self.phase = CleanPhase::Scanning;
@@ -616,6 +621,41 @@ impl M11PersistentRecursiveGreenCleanBuild {
             })?;
             self.checkpoints.push(checkpoint);
         }
+        Ok(())
+    }
+
+    fn capture_document_start_checkpoint(
+        &mut self,
+    ) -> Result<(), M11PersistentRecursiveGreenSessionError> {
+        if !self.checkpoints.is_empty() {
+            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "recursive-Green BOF checkpoint must be first",
+            ));
+        }
+        let parser = self.controller_mut()?.capture_document_start_restart()?;
+        let checkpoint = self
+            .writer_mut()?
+            .capture_restart_checkpoint(parser)
+            .map_err(|_| {
+                M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "direct parser and recursive-Green BOF checkpoint diverged",
+                )
+            })?;
+        if checkpoint.accepted_physical() != SourceMetric::default()
+            || checkpoint.parser_physical() != SourceMetric::default()
+            || checkpoint.logical_metric() != SourceMetric::default()
+            || checkpoint.open_kinds().count() != 1
+        {
+            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "recursive-Green BOF checkpoint is Document-only at source zero",
+            ));
+        }
+        self.checkpoints.try_reserve(1).map_err(|_| {
+            M11PersistentRecursiveGreenSessionError::InvalidState(
+                "recursive-Green BOF checkpoint allocation failed",
+            )
+        })?;
+        self.checkpoints.push(checkpoint);
         Ok(())
     }
 
@@ -1081,6 +1121,7 @@ pub struct M11PersistentRecursiveGreenAdoption {
     target_restart: Option<M11BlockRestartCheckpoint>,
     checkpoint_selection: AdoptionCheckpointSelection,
     green_prefix: Option<ExactUnchangedPrefixWitness>,
+    document_start: bool,
     green_suffix: Option<ExactUnchangedSuffixWitness>,
     reference_prefix: Option<ExactUnchangedPrefixWitness>,
     reference_adoption: Option<M11ReferenceJournalUnchangedPrefixAdoption>,
@@ -1387,11 +1428,12 @@ impl M11PersistentRecursiveGreenAdoption {
                         "recursive-Green adoption omitted target restart",
                     ),
                 )?;
-                let green_prefix = self.green_prefix.take().ok_or(
-                    M11PersistentRecursiveGreenSessionError::InvalidState(
+                let green_prefix = self.green_prefix.take();
+                if green_prefix.is_none() && !self.document_start {
+                    return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
                         "recursive-Green adoption omitted prefix lineage",
-                    ),
-                )?;
+                    ));
+                }
                 let green_suffix = self.green_suffix.take();
                 let reference_prefix = self.reference_prefix.take();
                 let parser =
@@ -2036,16 +2078,26 @@ impl M11PersistentRecursiveGreenSession {
             let transaction_id = M11BlockRestartCheckpoint::allocate_adoption_transaction_id()?;
             let restart = restart.replicate_for_transaction(transaction_id)?;
 
-            let parser_prefix = runtime.mint_exact_unchanged_prefix_witness(
-                self.source,
-                parser_restart.bytes() as usize,
-                parser_restart.utf16() as usize,
-            )?;
-            let green_prefix = runtime.mint_exact_unchanged_prefix_witness(
-                self.source,
-                green_restart.bytes() as usize,
-                green_restart.utf16() as usize,
-            )?;
+            let document_start = parser_restart == SourceMetric::default()
+                && green_restart == SourceMetric::default();
+            let parser_prefix = if document_start {
+                None
+            } else {
+                Some(runtime.mint_exact_unchanged_prefix_witness(
+                    self.source,
+                    parser_restart.bytes() as usize,
+                    parser_restart.utf16() as usize,
+                )?)
+            };
+            let green_prefix = if document_start {
+                None
+            } else {
+                Some(runtime.mint_exact_unchanged_prefix_witness(
+                    self.source,
+                    green_restart.bytes() as usize,
+                    green_restart.utf16() as usize,
+                )?)
+            };
             let green_suffix = if green_convergence.bytes() as usize == self.source.byte_len()
                 && green_convergence.utf16() as usize == self.source.utf16_len()
             {
@@ -2081,17 +2133,33 @@ impl M11PersistentRecursiveGreenSession {
             };
 
             let scanner_lease = runtime.snapshot_current_source()?;
-            let target_parser_start = parser_prefix.byte_end();
+            let target_parser_start = parser_prefix
+                .as_ref()
+                .map_or(0, ExactUnchangedPrefixWitness::byte_end);
             let green = self.green.as_ref().ok_or(
                 M11PersistentRecursiveGreenSessionError::InvalidState(
                     "recursive-Green session omitted its structural root",
                 ),
             )?;
-            let joined =
-                restart.resume(transaction_id, runtime, green, target_lease, parser_prefix)?;
+            let joined = match parser_prefix {
+                Some(parser_prefix) => {
+                    restart.resume(transaction_id, runtime, green, target_lease, parser_prefix)?
+                }
+                None => restart.resume_at_document_start(
+                    transaction_id,
+                    runtime,
+                    green,
+                    target_lease,
+                )?,
+            };
             let (controller, writer) = joined.into_local_fragment()?;
+            let parser_restart = if document_start {
+                controller.capture_document_start_restart()?
+            } else {
+                controller.capture_restart()?
+            };
             let target_restart = writer
-                .capture_restart_checkpoint(controller.capture_restart()?)
+                .capture_restart_checkpoint(parser_restart)
                 .map_err(M11PersistentRecursiveGreenSessionError::Restart)?;
             let scanner =
                 SnapshotLineScanner::new_at(scanner_lease, target_parser_start, next_line_ordinal)?;
@@ -2113,7 +2181,8 @@ impl M11PersistentRecursiveGreenSession {
                     restart_index,
                     convergence,
                 },
-                green_prefix: Some(green_prefix),
+                green_prefix,
+                document_start,
                 green_suffix,
                 reference_prefix,
                 reference_adoption: None,

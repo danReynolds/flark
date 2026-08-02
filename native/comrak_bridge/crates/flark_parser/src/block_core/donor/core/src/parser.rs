@@ -2458,15 +2458,17 @@ impl DirectLineBoundaryResumeCursor {
     ///
     /// # Errors
     ///
-    /// Returns [`ParseError::Invariant`] for a zero/exhausted ordinal or a
-    /// value that does not fit this target. This cursor stores only scalars, so
-    /// its preceding-line length deliberately has no recognizer-window cap.
+    /// Returns [`ParseError::Invariant`] for an invalid/exhausted ordinal or a
+    /// value that does not fit this target. Ordinal zero is reserved for the
+    /// canonical Document-only restart at BOF and therefore requires a zero
+    /// preceding-line length. This cursor stores only scalars, so its ordinary
+    /// preceding-line length deliberately has no recognizer-window cap.
     pub fn new(line_ordinal: u64, last_line_length: u64) -> Result<Self, ParseError> {
         let line_number = usize::try_from(line_ordinal)
             .map_err(|_| ParseError::Invariant("direct rebound line ordinal fits usize"))?;
         let last_line_length = usize::try_from(last_line_length)
             .map_err(|_| ParseError::Invariant("direct rebound last-line length fits usize"))?;
-        if line_number == 0 || line_number == usize::MAX {
+        if line_number == usize::MAX || (line_number == 0 && last_line_length != 0) {
             return Err(ParseError::Invariant(
                 "direct rebound line cursor is inside parser limits",
             ));
@@ -7760,6 +7762,23 @@ impl DirectValueBlockParser {
     #[doc(hidden)]
     #[allow(clippy::too_many_lines)]
     pub fn capture_line_boundary_pause(&self) -> Result<DirectLineBoundaryPause, ParseError> {
+        self.capture_pause(false)
+    }
+
+    /// Captures the canonical Document-only parser state before physical line
+    /// one. This is the BOF counterpart to a line-boundary pause and exists so
+    /// the first sparse checkpoint interval can be reparsed and converged
+    /// without a whole-document fallback.
+    #[doc(hidden)]
+    pub fn capture_document_start_pause(&self) -> Result<DirectLineBoundaryPause, ParseError> {
+        self.capture_pause(true)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn capture_pause(
+        &self,
+        allow_document_start: bool,
+    ) -> Result<DirectLineBoundaryPause, ParseError> {
         let Self {
             parser,
             line_work,
@@ -7770,7 +7789,9 @@ impl DirectValueBlockParser {
             next_source_line_admission: _,
             active_source_line_admission,
         } = self;
-        if !line_complete
+        let is_document_start =
+            allow_document_start && parser.line_number == 0 && parser.last_line_length == 0;
+        if (!*line_complete && !is_document_start)
             || *finished
             || line_work.is_some()
             || finish_work.is_some()
@@ -7817,7 +7838,7 @@ impl DirectValueBlockParser {
             || !opened_this_line.is_empty()
             || !tree.events.is_empty()
             || direct_segmented_line.is_some()
-            || *line_number == 0
+            || (*line_number == 0 && !is_document_start)
         {
             return Err(ParseError::Invariant(
                 "direct pause has canonical parser-owned boundary state",
@@ -8006,6 +8027,21 @@ impl DirectValueBlockParser {
             })
             .transpose()?;
 
+        if is_document_start
+            && (frames.len() != 1
+                || current_frame != 0
+                || frames[0].last_line_blank
+                || frames[0].closed_children != crate::tree::ChildSequenceFold::default()
+                || *pending_terminator
+                || *pending_blank_gap
+                || floor_depth.is_some()
+                || paragraph.is_some())
+        {
+            return Err(ParseError::Invariant(
+                "direct document-start pause is canonical",
+            ));
+        }
+
         Ok(DirectLineBoundaryPause {
             schema: DIRECT_LINE_BOUNDARY_PAUSE_SCHEMA,
             profile: *profile,
@@ -8099,14 +8135,15 @@ impl DirectValueBlockParser {
             deferred,
             paragraph,
         } = pause;
+        let is_document_start = cursor.line_number == 0;
         if schema != DIRECT_LINE_BOUNDARY_PAUSE_SCHEMA
             || profile != SyntaxProfile::CommonMark
             || frames.is_empty()
             || u32::try_from(frames.len()).is_err()
             || current_frame.checked_add(1) != Some(frames.len())
             || frames[0].kind != DirectBlockKind::Document
-            || cursor.line_number == 0
             || cursor.line_number == usize::MAX
+            || (is_document_start && cursor.last_line_length != 0)
         {
             return Err(ParseError::Invariant(
                 "direct line-boundary pause header is valid",
@@ -8163,6 +8200,20 @@ impl DirectValueBlockParser {
                 ));
             }
         };
+        if is_document_start
+            && (frames.len() != 1
+                || current_frame != 0
+                || frames[0].last_line_blank
+                || frames[0].closed_children != crate::tree::ChildSequenceFold::default()
+                || pending_terminator
+                || pending_blank_gap
+                || pending_blank_gap_floor.is_some()
+                || paragraph.is_some())
+        {
+            return Err(ParseError::Invariant(
+                "direct document-start pause is canonical",
+            ));
+        }
         if pending_terminator && !(paragraph_has_content || terminal_is_indented_code) {
             return Err(ParseError::Invariant(
                 "direct pause terminator targets an open paragraph or indented code",
