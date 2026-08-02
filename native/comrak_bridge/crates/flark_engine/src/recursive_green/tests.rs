@@ -439,6 +439,41 @@ fn active_terminal_fragment_cursor_and_visible_suffix_rewrite_preserve_projectio
     let prefix = replay
         .take_completed_range()
         .expect("range replay authenticates both cuts");
+    let prefix_physical_end = prefix
+        .physical_range()
+        .expect("prefix has physical authority")
+        .byte_range()
+        .end;
+    let empty = build
+        .bind_terminal_fragment_logical_range(
+            &binding,
+            M11RecursiveGreenLogicalRange::new(
+                M11RecursiveGreenLogicalPosition::new(11, 11).unwrap(),
+                M11RecursiveGreenLogicalPosition::new(11, 11).unwrap(),
+            )
+            .unwrap(),
+        )
+        .expect("bind empty range at the monotonic cursor");
+    build
+        .retarget_terminal_fragment_range_replay_forward(&binding, &mut replay, empty)
+        .expect("retarget completed replay to adjacent empty range");
+    assert_eq!(
+        build
+            .poll_terminal_fragment_cursor(&mut runtime, &mut replay, 1)
+            .expect("poll empty range")
+            .status(),
+        M11RecursiveGreenTerminalFragmentCursorStatus::Complete
+    );
+    let empty = replay
+        .take_completed_range()
+        .expect("empty range retains exact point authority");
+    assert_eq!(
+        empty
+            .physical_range()
+            .expect("empty range has physical point")
+            .byte_range(),
+        prefix_physical_end..prefix_physical_end
+    );
     let mut rewrite = build
         .begin_terminal_fragment_rewrite(
             &mut runtime,

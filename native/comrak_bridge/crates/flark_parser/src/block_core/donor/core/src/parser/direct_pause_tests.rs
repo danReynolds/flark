@@ -141,7 +141,8 @@ fn leading_reference_remainder_continuation_resumes_without_replaying_prefix_sta
         .reference_finalize_resume_once = Some(DirectReferencePrefixDisposition::VisibleRemainder);
     let continuation = parser
         .capture_leading_reference_remainder_continuation()
-        .expect("capture remainder continuation");
+        .expect("capture remainder continuation")
+        .expect("quiescent top-level remainder is eligible");
     let (grammar, output) = continuation.into_restart_parts();
     let cursor = DirectLineBoundaryResumeCursor::new(1, 11).expect("prefix cursor");
     let mut resumed = DirectValueBlockParser::resume_restart_parts(&grammar, output, cursor)

@@ -102,6 +102,18 @@ fn commonmark_214_reference_only_paragraph_rebases_the_open_line() {
 }
 
 #[test]
+fn commonmark_200_empty_destination_retains_its_source_point() {
+    drive_document("[foo]: <>\n\n[foo]\n")
+        .expect("CM200 retains an authenticated zero-width destination range");
+}
+
+#[test]
+fn commonmark_215_setext_resolution_skips_unsafe_remainder_checkpoint() {
+    drive_document("[foo]: /url\nbar\n===\n[foo]\n")
+        .expect("CM215 remains authoritative when the Setext line is active");
+}
+
+#[test]
 fn production_controller_commonmark_coverage_is_monotonic_and_fail_closed() {
     assert_eq!(
         sha256(COMMONMARK_FIXTURES.as_bytes()),

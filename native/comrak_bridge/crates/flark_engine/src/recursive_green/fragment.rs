@@ -489,6 +489,27 @@ impl M11RecursiveGreenBuild {
         range: M11RecursiveGreenTerminalFragmentRange,
     ) -> Result<(), M11RecursiveGreenError> {
         let stamp = self.validate_fragment_binding(binding)?;
+        let empty_at_cursor = range.range.bytes.start == range.range.bytes.end
+            && range.range.utf16.start == range.range.utf16.end
+            && range.range.bytes.start == cursor.available_bytes
+            && range.range.utf16.start == cursor.logical_utf16;
+        let empty_physical = if empty_at_cursor {
+            let endpoint = match cursor.yielded_physical {
+                Some(physical) => (physical.byte_end, physical.utf16_end),
+                None if cursor.available_bytes == 0 && cursor.logical_utf16 == 0 => {
+                    (stamp.source_before.bytes(), stamp.source_before.utf16())
+                }
+                None => return Err(M11RecursiveGreenError::InvalidState),
+            };
+            Some(PhysicalSpan {
+                byte_start: endpoint.0,
+                byte_end: endpoint.0,
+                utf16_start: endpoint.1,
+                utf16_end: endpoint.1,
+            })
+        } else {
+            None
+        };
         if range.stamp != stamp
             || cursor.stamp != stamp
             || !cursor.complete
@@ -505,10 +526,10 @@ impl M11RecursiveGreenBuild {
         cursor.expected_yield_utf16 = Some(range.range.utf16.clone());
         cursor.range_authority = Some(range);
         cursor.yielded_bytes = 0;
-        cursor.yielded_physical = None;
+        cursor.yielded_physical = empty_physical;
         cursor.last_raw_contribution = None;
         cursor.ready_base_offset = 0;
-        cursor.complete = false;
+        cursor.complete = empty_at_cursor;
         Ok(())
     }
 

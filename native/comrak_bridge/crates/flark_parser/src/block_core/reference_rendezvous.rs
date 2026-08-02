@@ -1129,7 +1129,16 @@ impl M11ReferenceRendezvous {
             ))?
             .segment_started;
         if !segment_started {
-            if empty {
+            // Label/value ranges are durable source facts even when their
+            // logical extent is empty (for example the destination in
+            // `[foo]: <>`). Replay the zero-width range so Green authenticates
+            // its exact physical point; only syntax/gap segments may advance
+            // without retaining range authority.
+            let retains_range = matches!(
+                kind,
+                SegmentKind::Label | SegmentKind::Destination | SegmentKind::Title
+            );
+            if empty && !retains_range {
                 let active =
                     self.active
                         .as_mut()
@@ -1630,12 +1639,21 @@ impl M11ReferenceRendezvous {
             ));
         }
         if disposition == donor::DirectReferencePrefixDisposition::VisibleRemainder {
-            let mut parser = controller.capture_leading_reference_remainder_continuation()?;
             let green = self.remainder_boundary.take().ok_or(
                 M11ReferenceRendezvousError::InvalidState(
                     "visible reference remainder lost its Green cut",
                 ),
             )?;
+            let Some(mut parser) =
+                controller.capture_leading_reference_remainder_continuation()?
+            else {
+                // A visible remainder may be recognized while a later line is
+                // still active (notably Setext resolution). The parse remains
+                // authoritative, but this retrospective cut is then not a
+                // safe line-boundary restart checkpoint.
+                self.phase = Phase::Complete;
+                return Ok(());
+            };
             let physical = green.physical_metric();
             let cut = super::SourceMetric::new(physical.bytes(), physical.utf16()).ok_or(
                 M11ReferenceRendezvousError::InvalidState(

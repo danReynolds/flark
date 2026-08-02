@@ -8469,19 +8469,19 @@ impl DirectValueBlockParser {
     /// only the top-level `Document -> Paragraph` shape reached immediately
     /// after committing `VisibleRemainder` is accepted. The source-owning
     /// consumer must independently bind the physical cursor at the
-    /// rendezvous-authenticated prefix end.
+    /// rendezvous-authenticated prefix end. A valid visible-remainder parse
+    /// returns `None` when a later line is active or that narrow shape is not
+    /// present; checkpoint ineligibility never invalidates the parse itself.
     #[doc(hidden)]
     pub fn capture_leading_reference_remainder_continuation(
         &self,
-    ) -> Result<DirectLeadingReferenceRemainderContinuation, ParseError> {
+    ) -> Result<Option<DirectLeadingReferenceRemainderContinuation>, ParseError> {
         if self.pending_command().is_some()
             || self.line_work.is_some()
             || self.finished
             || self.active_source_line_admission.is_some()
         {
-            return Err(ParseError::Invariant(
-                "leading-reference remainder capture is parser-quiescent",
-            ));
+            return Ok(None);
         }
         let direct = self
             .parser
@@ -8492,14 +8492,17 @@ impl DirectValueBlockParser {
             != Some(DirectReferencePrefixDisposition::VisibleRemainder)
             || direct.pending_external_work.is_some()
             || direct.reference_work_id.is_some()
-            || direct.emission_stack.len() != 2
+        {
+            return Err(ParseError::Invariant(
+                "leading-reference remainder follows its committed parser terminal",
+            ));
+        }
+        if direct.emission_stack.len() != 2
             || direct.emission_stack.first().copied() != Some(self.parser.tree.root)
             || direct.emission_stack.last().copied() != Some(self.parser.current)
             || self.parser.tree.nodes.len() != 2
         {
-            return Err(ParseError::Invariant(
-                "leading-reference remainder is a top-level Paragraph cut",
-            ));
+            return Ok(None);
         }
         let root = self.parser.tree.node(direct.emission_stack[0]);
         let paragraph = self.parser.tree.node(direct.emission_stack[1]);
@@ -8511,9 +8514,7 @@ impl DirectValueBlockParser {
             || root.children.as_slice() != [paragraph.id]
             || !paragraph.children.is_empty()
         {
-            return Err(ParseError::Invariant(
-                "leading-reference remainder owns one open top-level Paragraph",
-            ));
+            return Ok(None);
         }
         let output = DirectRestartOutput {
             schema: DIRECT_LINE_BOUNDARY_PAUSE_SCHEMA,
@@ -8543,7 +8544,10 @@ impl DirectValueBlockParser {
             }),
         };
         let (grammar, output) = direct_restart_output_into_parts(output)?;
-        Ok(DirectLeadingReferenceRemainderContinuation { grammar, output })
+        Ok(Some(DirectLeadingReferenceRemainderContinuation {
+            grammar,
+            output,
+        }))
     }
 
     #[must_use]

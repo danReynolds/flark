@@ -603,16 +603,20 @@ impl M11DirectBlockController {
 
     pub(super) fn capture_leading_reference_remainder_continuation(
         &self,
-    ) -> Result<M11DirectLeadingReferenceRemainderContinuation, M11DirectBlockError> {
+    ) -> Result<Option<M11DirectLeadingReferenceRemainderContinuation>, M11DirectBlockError> {
         self.ensure_live()?;
-        Ok(M11DirectLeadingReferenceRemainderContinuation {
-            donor: self
-                .parser
-                .capture_leading_reference_remainder_continuation()
-                .map_err(map_parse_error)?,
+        let Some(donor) = self
+            .parser
+            .capture_leading_reference_remainder_continuation()
+            .map_err(map_parse_error)?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(M11DirectLeadingReferenceRemainderContinuation {
+            donor,
             restart_join: self.restart_join,
             cursor: None,
-        })
+        }))
     }
 
     /// Maps one ready donor command, returning whether it is consumer-visible.
