@@ -58,7 +58,7 @@ use crate::recursive_green::{
     plan_persistent_m11_recursive_green_semantic_splice,
     validate_imported_m11_recursive_green_node, M11RecursiveGreenError,
     M11RecursiveGreenHostReplay, M11RecursiveGreenHostReplayPoll, M11RecursiveGreenHostSpliceClaim,
-    M11RecursiveGreenHostSpliceWork, M11RecursiveGreenLocation, M11RecursiveGreenPoint,
+    M11RecursiveGreenHostSpliceWork, M11RecursiveGreenPoint, M11RecursiveGreenPointQueryOutcome,
     M11RecursiveGreenRowOrdinalWindow, M11RecursiveGreenRowQueryLimits,
     M11RecursiveGreenRowQueryOutcome, PersistentM11RecursiveGreenRoleDescriptor,
     PersistentM11RecursiveGreenRootClaim, PERSISTENT_RECURSIVE_GREEN_ROLE_DESCRIPTOR_BYTES,
@@ -3908,7 +3908,8 @@ impl CandidateHostStore {
         &self,
         snapshot: InstalledCandidateSnapshot,
         point: M11RecursiveGreenPoint,
-    ) -> Result<Option<M11RecursiveGreenLocation>, CandidateHostError> {
+        maximum_tree_nodes_visited: u64,
+    ) -> Result<Option<M11RecursiveGreenPointQueryOutcome>, CandidateHostError> {
         let installed = self.installed.as_ref().ok_or(CandidateHostError::NoOffer)?;
         if installed.authority != snapshot.authority {
             return Err(CandidateHostError::CrossAuthority);
@@ -3916,8 +3917,15 @@ impl CandidateHostStore {
         let Some(green) = installed.persistent_recursive_green else {
             return Ok(None);
         };
-        persistent_m11_recursive_green_locate_point(&self.arena, green.root, green.claim, point)
-            .map_err(Into::into)
+        persistent_m11_recursive_green_locate_point(
+            &self.arena,
+            green.root,
+            green.claim,
+            point,
+            maximum_tree_nodes_visited,
+        )
+        .map(Some)
+        .map_err(Into::into)
     }
 
     pub(crate) fn persistent_recursive_green_rows(

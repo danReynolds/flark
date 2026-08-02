@@ -21,7 +21,8 @@ use flark_engine::m11_host::{
     M11HostPersistentBlockVisitDisposition, M11HostPersistentBlockVisitEntry,
     M11HostPersistentBlockVisitStart, M11HostPersistentRecursiveGreenDescriptor,
     M11HostRecursiveGreenCoveragePart, M11HostRecursiveGreenLocation,
-    M11HostRecursiveGreenLogicalAtom, M11HostRecursiveGreenRow,
+    M11HostRecursiveGreenLogicalAtom, M11HostRecursiveGreenPointQueryOutcome,
+    M11HostRecursiveGreenRow,
     M11HostRecursiveGreenRowEditCapability, M11HostRecursiveGreenRowOrdinalWindow,
     M11HostRecursiveGreenRowPath, M11HostRecursiveGreenRowQueryLimit,
     M11HostRecursiveGreenRowQueryOutcome, M11HostRole, M11HostSourceVersion,
@@ -2866,7 +2867,7 @@ impl NativeCandidateHost {
             ));
         }
 
-        let Some(location) = engine
+        let Some(point_outcome) = engine
             .persistent_recursive_green_point(
                 installed,
                 u64::from(query.position.bytes),
@@ -2875,6 +2876,7 @@ impl NativeCandidateHost {
                     HostMetricAffinity::Upstream => M11HostBlockAffinity::Before,
                     HostMetricAffinity::Downstream => M11HostBlockAffinity::After,
                 },
+                u64::from(query.budget.maximum_tree_nodes_visited),
             )
             .map_err(map_engine_error)?
         else {
@@ -2884,6 +2886,45 @@ impl NativeCandidateHost {
                 HostSourceGapReason::UnavailableFacts,
                 HostViewportReceipt::default(),
             ));
+        };
+        let location = match point_outcome {
+            M11HostRecursiveGreenPointQueryOutcome::Location(location) => location,
+            M11HostRecursiveGreenPointQueryOutcome::NotFound => {
+                return Ok(source_gap(
+                    query.source_version,
+                    whole_range,
+                    HostSourceGapReason::UnavailableFacts,
+                    HostViewportReceipt::default(),
+                ));
+            }
+            M11HostRecursiveGreenPointQueryOutcome::BudgetExceeded(exceeded) => {
+                let open_depth = u32::try_from(exceeded.maximum_open_depth()).map_err(|_| {
+                    HostStoreError::invalid("Green point budget receipt exceeds the wire")
+                })?;
+                let tree_nodes_visited = u32::try_from(exceeded.node_headers_decoded())
+                    .map_err(|_| {
+                        HostStoreError::invalid("Green point budget receipt exceeds the wire")
+                    })?;
+                let summary_nodes_skipped = u32::try_from(exceeded.summary_combinations())
+                    .map_err(|_| {
+                        HostStoreError::invalid("Green point budget receipt exceeds the wire")
+                    })?;
+                let leaf_count = u32::try_from(exceeded.storage_pages_visited()).map_err(|_| {
+                    HostStoreError::invalid("Green point budget receipt exceeds the wire")
+                })?;
+                return Ok(source_gap(
+                    query.source_version,
+                    whole_range,
+                    HostSourceGapReason::TreeNodeLimit,
+                    HostViewportReceipt {
+                        encoded_bytes: 0,
+                        leaf_count,
+                        open_depth,
+                        tree_nodes_visited,
+                        summary_nodes_skipped,
+                    },
+                ));
+            }
         };
 
         let ancestry_count = u32::try_from(location.ancestry_len())
@@ -6627,10 +6668,23 @@ fn encode_recursive_green_path_record(
     if path.property_tag() != 0 {
         flags |= HOST_RECURSIVE_GREEN_PATH_OPEN_FACT_FLAG;
     }
-    if path.close_tag() != 0 {
+    // Tag 6 is the engine-private cached row-geometry trailer. It is covered
+    // by the Green commitment but is not a presentation fact on the host
+    // wire. Preserve semantic close facts (1..=5) and hide only that internal
+    // transport tag from consumers.
+    let presentation_close_tag = match path.close_tag() {
+        value @ 0..=5 => value,
+        6 => 0,
+        _ => {
+            return Err(HostStoreError::invalid(
+                "unknown Green presentation fact tag",
+            ));
+        }
+    };
+    if presentation_close_tag != 0 {
         flags |= HOST_RECURSIVE_GREEN_PATH_CLOSE_FACT_FLAG;
     }
-    let fact_kind = match path.property_tag().max(path.close_tag()) {
+    let fact_kind = match path.property_tag().max(presentation_close_tag) {
         0 => 0_u16,
         value @ 1..=5 => value,
         _ => {
@@ -16894,6 +16948,146 @@ mod tests {
             assert!(untouched.iter().all(|byte| *byte == 0xa5));
         }
         close_host(&mut host);
+    }
+
+    #[test]
+    fn recursive_green_row_range_retains_visible_suffix_after_leading_references() {
+        const REFERENCES: usize = 128;
+        let mut source = String::new();
+        for ordinal in 0..REFERENCES {
+            source.push_str(&format!("[r{ordinal}]: /target/{ordinal}\n"));
+        }
+        let visible_start = source.len();
+        source.push_str("visible **bold** tail\n");
+        let point = visible_start + "visible ".len();
+        let document = [0x351, 2, 3, 4];
+        let snapshot = recursive_green_snapshot(document, [0x353, 6, 7, 8], 1, 1, &source);
+        let mut host = host_for(document);
+        install(&mut host, &snapshot);
+        let requested = HostMetricRange {
+            start: HostSourceMetric {
+                bytes: point as u32,
+                utf16: point as u32,
+            },
+            end: HostSourceMetric {
+                bytes: point as u32 + 1,
+                utf16: point as u32 + 1,
+            },
+        };
+        let budget = HostBlockRangeBudget {
+            maximum_encoded_bytes: 4_096,
+            maximum_block_count: 24,
+            maximum_storage_pages_visited: 25,
+            maximum_open_depth: 16,
+            maximum_tree_nodes_visited: 512,
+        };
+        let mut output = vec![0xa5; budget.maximum_encoded_bytes as usize];
+        let HostBlockRangeOutcome::Page {
+            covered_range,
+            continuation,
+            receipt,
+            ..
+        } = host
+            .query_structural_range(
+                block_range_query(snapshot.source, requested, budget, None),
+                &mut output,
+            )
+            .expect("reference-prefix recursive-Green row range")
+        else {
+            panic!("reference-prefix recursive-Green row range must be exact");
+        };
+        assert_eq!(covered_range, whole_source_range(snapshot.source));
+        assert!(continuation.is_none());
+        assert_eq!(receipt.block_count, 1);
+        assert!(receipt.complete);
+        assert!(receipt.storage_pages_visited <= 25);
+        assert!(receipt.tree_nodes_visited <= 512);
+        assert_eq!(&output[..8], BLOCK_RANGE_MAGIC);
+        close_host(&mut host);
+    }
+
+    #[test]
+    fn recursive_green_row_wire_hides_cached_geometry_but_keeps_semantic_facts() {
+        let fixtures = [
+            ("plain\n", 1_usize, 5_u16, 0_u16, false, false),
+            ("# title\n", 3, 12, 3, true, false),
+            ("```dart\ncode\n```\n", 9, 7, 4, true, true),
+        ];
+        for (ordinal, (source, point, owner_kind, fact_kind, has_open, has_close)) in
+            fixtures.into_iter().enumerate()
+        {
+            let document = [0x361 + ordinal as u32, 2, 3, 4];
+            let snapshot =
+                recursive_green_snapshot(document, [0x371 + ordinal as u32, 6, 7, 8], 1, 1, source);
+            let mut host = host_for(document);
+            install(&mut host, &snapshot);
+            let requested = HostMetricRange {
+                start: HostSourceMetric {
+                    bytes: point as u32,
+                    utf16: point as u32,
+                },
+                end: HostSourceMetric {
+                    bytes: point as u32 + 1,
+                    utf16: point as u32 + 1,
+                },
+            };
+            let budget = HostBlockRangeBudget {
+                maximum_encoded_bytes: 4_096,
+                maximum_block_count: 24,
+                maximum_storage_pages_visited: 25,
+                maximum_open_depth: 16,
+                maximum_tree_nodes_visited: 512,
+            };
+            let mut output = vec![0xa5; budget.maximum_encoded_bytes as usize];
+            let HostBlockRangeOutcome::Page { receipt, .. } = host
+                .query_structural_range(
+                    block_range_query(snapshot.source, requested, budget, None),
+                    &mut output,
+                )
+                .expect("schema-11 recursive-Green row range")
+            else {
+                panic!("schema-11 fixture must produce one row");
+            };
+            assert_eq!(receipt.block_count, 1);
+            let row_count = read_u32(&output, 24) as usize;
+            let path_count = read_u32(&output, 28) as usize;
+            assert_eq!(row_count, 1);
+            assert!(path_count >= 2);
+            let row_offset = HOST_RECURSIVE_GREEN_ROW_RANGE_HEADER_BYTES;
+            let path_start = read_u32(&output, row_offset + 20) as usize;
+            let path_len = read_u32(&output, row_offset + 24) as usize;
+            let owner_ordinal = path_start + path_len - 1;
+            let owner_offset = HOST_RECURSIVE_GREEN_ROW_RANGE_HEADER_BYTES
+                + row_count * HOST_RECURSIVE_GREEN_ROW_RECORD_BYTES
+                + owner_ordinal * HOST_RECURSIVE_GREEN_ROW_PATH_RECORD_BYTES;
+            let encoded_owner_kind = u16::from_le_bytes(
+                output[owner_offset + 8..owner_offset + 10]
+                    .try_into()
+                    .unwrap(),
+            );
+            let flags = u16::from_le_bytes(
+                output[owner_offset + 10..owner_offset + 12]
+                    .try_into()
+                    .unwrap(),
+            );
+            let encoded_fact_kind = u16::from_le_bytes(
+                output[owner_offset + 12..owner_offset + 14]
+                    .try_into()
+                    .unwrap(),
+            );
+            assert_eq!(encoded_owner_kind, owner_kind);
+            assert_ne!(flags & HOST_RECURSIVE_GREEN_PATH_ROW_OWNER_FLAG, 0);
+            assert_eq!(
+                flags & HOST_RECURSIVE_GREEN_PATH_OPEN_FACT_FLAG != 0,
+                has_open
+            );
+            assert_eq!(
+                flags & HOST_RECURSIVE_GREEN_PATH_CLOSE_FACT_FLAG != 0,
+                has_close
+            );
+            assert_eq!(encoded_fact_kind, fact_kind);
+            close_host(&mut host);
+        }
     }
 
     #[test]

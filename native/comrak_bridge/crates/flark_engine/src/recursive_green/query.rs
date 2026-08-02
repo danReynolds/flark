@@ -353,6 +353,30 @@ impl M11RecursiveGreenLocation {
     }
 }
 
+/// The result of one point lookup under an exact measured-tree node budget.
+///
+/// `NotFound` is intentionally distinct from a missing persistent Green role
+/// at the host boundary. `BudgetExceeded` never carries a partially resolved
+/// location.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum M11RecursiveGreenPointQueryOutcome {
+    Location(M11RecursiveGreenLocation),
+    NotFound,
+    BudgetExceeded(M11RecursiveGreenPointBudgetExceeded),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct M11RecursiveGreenPointBudgetExceeded {
+    receipt: M11RecursiveGreenQueryReceipt,
+}
+
+impl M11RecursiveGreenPointBudgetExceeded {
+    #[must_use]
+    pub const fn receipt(self) -> M11RecursiveGreenQueryReceipt {
+        self.receipt
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct M11RecursiveGreenRowQueryLimits {
     maximum_rows: u32,
@@ -1445,7 +1469,32 @@ pub(super) fn locate_point_in_arena(
     summary: RecursiveGreenSummary,
     point: M11RecursiveGreenPoint,
 ) -> Result<Option<M11RecursiveGreenLocation>, M11RecursiveGreenError> {
-    locate_point_in_arena_zipper(arena, tree, summary, point)
+    match locate_point_in_arena_zipper_bounded(arena, tree, summary, point, u64::MAX)? {
+        M11RecursiveGreenPointQueryOutcome::Location(location) => Ok(Some(location)),
+        M11RecursiveGreenPointQueryOutcome::NotFound => Ok(None),
+        M11RecursiveGreenPointQueryOutcome::BudgetExceeded(_) => Err(
+            M11RecursiveGreenError::Corrupt("unlimited recursive Green point query exhausted"),
+        ),
+    }
+}
+
+pub(super) fn locate_point_in_arena_bounded(
+    arena: &crate::storage::PageArena,
+    tree: MeasuredSequenceRef<'_, RecursiveGreenSpec>,
+    summary: RecursiveGreenSummary,
+    point: M11RecursiveGreenPoint,
+    maximum_tree_nodes_visited: u64,
+) -> Result<M11RecursiveGreenPointQueryOutcome, M11RecursiveGreenError> {
+    if maximum_tree_nodes_visited == 0 {
+        return Err(M11RecursiveGreenError::InvalidState);
+    }
+    locate_point_in_arena_zipper_bounded(
+        arena,
+        tree,
+        summary,
+        point,
+        maximum_tree_nodes_visited,
+    )
 }
 
 pub(super) fn locate_renderable_rows_in_arena(
@@ -1784,16 +1833,16 @@ impl PointZipperWork {
     }
 
     fn finish_receipt(
-        mut self,
+        &self,
         maximum_open_depth: usize,
     ) -> Result<M11RecursiveGreenQueryReceipt, M11RecursiveGreenError> {
-        self.inspection.spec.payload_bytes_inspected = self
+        let payload_bytes_inspected = self
             .inspection
             .spec
             .payload_bytes_inspected
             .checked_add(self.decoded.payload_bytes_inspected)
             .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-        self.inspection.spec.spec_items_hashed = self
+        let events_authenticated = self
             .inspection
             .spec
             .spec_items_hashed
@@ -1802,8 +1851,8 @@ impl PointZipperWork {
         Ok(M11RecursiveGreenQueryReceipt {
             node_headers_decoded: self.inspection.node_headers_decoded,
             summary_combinations: self.inspection.summary_combinations,
-            payload_bytes_inspected: self.inspection.spec.payload_bytes_inspected,
-            events_authenticated: self.inspection.spec.spec_items_hashed,
+            payload_bytes_inspected,
+            events_authenticated,
             storage_pages_visited: self.storage_pages_visited,
             events_scanned: self.events_scanned,
             maximum_open_depth,
@@ -2660,49 +2709,75 @@ fn query_work_exceeded_limit(
     }
 }
 
-fn locate_point_in_arena_zipper(
+fn locate_point_in_arena_zipper_bounded(
     arena: &crate::storage::PageArena,
     tree: MeasuredSequenceRef<'_, RecursiveGreenSpec>,
     summary: RecursiveGreenSummary,
     point: M11RecursiveGreenPoint,
-) -> Result<Option<M11RecursiveGreenLocation>, M11RecursiveGreenError> {
-    let mut work = PointZipperWork::default();
-    let Some(prepared) =
-        locate_point_in_arena_zipper_prepared(arena, tree, summary, point, &mut work)?
-    else {
-        return Ok(None);
+    maximum_tree_nodes_visited: u64,
+) -> Result<M11RecursiveGreenPointQueryOutcome, M11RecursiveGreenError> {
+    let mut work = PointZipperWork {
+        inspection: SequenceInspectionReceipt::with_node_header_limit(
+            maximum_tree_nodes_visited,
+        )
+        .ok_or(M11RecursiveGreenError::InvalidState)?,
+        ..PointZipperWork::default()
     };
-    let root_leaf_count = tree
-        .summary(arena, &mut work.inspection)?
-        .ok_or(M11RecursiveGreenError::Corrupt(
-            "nonempty Green query lost its root measure",
-        ))?
-        .leaves();
-    let mut ancestry = Vec::new();
-    ancestry
-        .try_reserve_exact(prepared.zipper_open.len())
-        .map_err(|_| M11RecursiveGreenError::InvalidState)?;
-    for frame in prepared.zipper_open.iter().copied() {
-        let kind = point_zipper_final_kind(arena, tree, root_leaf_count, frame, &mut work)?;
-        ancestry.push(M11RecursiveGreenAncestor {
-            frame: frame.frame,
-            kind,
-        });
+    let mut maximum_open_depth = 0_usize;
+    let resolved: Result<Option<M11RecursiveGreenLocation>, M11RecursiveGreenError> = (|| {
+        let Some(prepared) =
+            locate_point_in_arena_zipper_prepared(arena, tree, summary, point, &mut work)?
+        else {
+            return Ok(None);
+        };
+        maximum_open_depth = prepared.zipper_open.len();
+        let root_leaf_count = tree
+            .summary(arena, &mut work.inspection)?
+            .ok_or(M11RecursiveGreenError::Corrupt(
+                "nonempty Green query lost its root measure",
+            ))?
+            .leaves();
+        let mut ancestry = Vec::new();
+        ancestry
+            .try_reserve_exact(prepared.zipper_open.len())
+            .map_err(|_| M11RecursiveGreenError::InvalidState)?;
+        for frame in prepared.zipper_open.iter().copied() {
+            let kind = point_zipper_final_kind(arena, tree, root_leaf_count, frame, &mut work)?;
+            ancestry.push(M11RecursiveGreenAncestor {
+                frame: frame.frame,
+                kind,
+            });
+        }
+        let receipt = work.finish_receipt(ancestry.len())?;
+        Ok(Some(M11RecursiveGreenLocation {
+            byte_range: prepared.byte_range,
+            utf16_range: prepared.utf16_range,
+            physical: prepared.physical,
+            logical: prepared.logical,
+            part: prepared.part,
+            atom: prepared.atom,
+            owner_index: prepared.owner_index,
+            ancestry,
+            receipt,
+            zipper_open: prepared.zipper_open,
+            renderable_rows_before: prepared.renderable_rows_before,
+        }))
+    })();
+
+    // Measured-sequence fuel exhaustion deliberately uses the spec-invalid
+    // sentinel internally. Intercept it before it can escape as corruption.
+    if work.inspection.node_header_limit_exhausted() {
+        return Ok(M11RecursiveGreenPointQueryOutcome::BudgetExceeded(
+            M11RecursiveGreenPointBudgetExceeded {
+                receipt: work.finish_receipt(maximum_open_depth)?,
+            },
+        ));
     }
-    let receipt = work.finish_receipt(ancestry.len())?;
-    Ok(Some(M11RecursiveGreenLocation {
-        byte_range: prepared.byte_range,
-        utf16_range: prepared.utf16_range,
-        physical: prepared.physical,
-        logical: prepared.logical,
-        part: prepared.part,
-        atom: prepared.atom,
-        owner_index: prepared.owner_index,
-        ancestry,
-        receipt,
-        zipper_open: prepared.zipper_open,
-        renderable_rows_before: prepared.renderable_rows_before,
-    }))
+
+    match resolved? {
+        Some(location) => Ok(M11RecursiveGreenPointQueryOutcome::Location(location)),
+        None => Ok(M11RecursiveGreenPointQueryOutcome::NotFound),
+    }
 }
 
 fn locate_point_in_arena_zipper_prepared(

@@ -930,6 +930,57 @@ fn point_zipper_matches_linear_oracle_and_is_document_size_independent() {
     close_runtime(&mut large_runtime);
 }
 
+#[test]
+fn point_zipper_tree_node_fuel_is_exact_and_returns_no_partial_location() {
+    let (mut runtime, mut root, point) = build_point_query_scale_fixture(2048);
+    let baseline = root
+        .locate_point(&runtime, point)
+        .expect("unbounded point query")
+        .expect("point location");
+    let exact_limit = baseline.receipt().node_headers_decoded();
+    assert!(exact_limit > 1, "fixture must require multiple node headers");
+
+    let exact = super::query::locate_point_in_arena_bounded(
+        runtime.producer_arena(),
+        root.tree.as_ref().expect("point tree").as_ref(),
+        root.summary,
+        point,
+        exact_limit,
+    )
+    .expect("exact-budget point query");
+    let exact = match exact {
+        super::M11RecursiveGreenPointQueryOutcome::Location(location) => location,
+        other => panic!("exact budget must return the complete location: {other:?}"),
+    };
+    assert_point_location_semantics_equal(&exact, &baseline);
+    assert_eq!(exact.receipt().node_headers_decoded(), exact_limit);
+
+    let one_short = super::query::locate_point_in_arena_bounded(
+        runtime.producer_arena(),
+        root.tree.as_ref().expect("point tree").as_ref(),
+        root.summary,
+        point,
+        exact_limit - 1,
+    )
+    .expect("one-short point query returns a typed outcome");
+    let exceeded = match one_short {
+        super::M11RecursiveGreenPointQueryOutcome::BudgetExceeded(exceeded) => exceeded,
+        other => panic!("one-short budget must return only budget evidence: {other:?}"),
+    };
+    assert_eq!(
+        exceeded.receipt().node_headers_decoded(),
+        exact_limit - 1
+    );
+
+    root.begin_release(&mut runtime).expect("release point root");
+    while !root
+        .poll_release(&mut runtime, 64)
+        .expect("poll point root release")
+        .complete()
+    {}
+    close_runtime(&mut runtime);
+}
+
 fn fold_events(events: &[PackedGreenEvent]) -> RecursiveGreenSummary {
     events
         .iter()

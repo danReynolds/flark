@@ -43,8 +43,10 @@ use crate::inline_projection::{
 };
 use crate::recursive_green::{
     M11RecursiveGreenCoveragePart, M11RecursiveGreenLocation, M11RecursiveGreenLogicalAtom,
-    M11RecursiveGreenPoint, M11RecursiveGreenRenderableRow, M11RecursiveGreenRowBudgetExceeded,
-    M11RecursiveGreenRowEditCapability, M11RecursiveGreenRowOrdinalWindow,
+    M11RecursiveGreenPoint, M11RecursiveGreenPointBudgetExceeded,
+    M11RecursiveGreenPointQueryOutcome, M11RecursiveGreenRenderableRow,
+    M11RecursiveGreenRowBudgetExceeded, M11RecursiveGreenRowEditCapability,
+    M11RecursiveGreenRowOrdinalWindow,
     M11RecursiveGreenRowPathFrame, M11RecursiveGreenRowQueryLimit, M11RecursiveGreenRowQueryLimits,
     M11RecursiveGreenRowQueryOutcome, M11RecursiveGreenRowWindow,
 };
@@ -613,6 +615,43 @@ impl M11HostRecursiveGreenLocation {
     pub const fn summary_combinations(&self) -> u64 {
         self.0.receipt().summary_combinations()
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct M11HostRecursiveGreenPointBudgetExceeded(M11RecursiveGreenPointBudgetExceeded);
+
+impl M11HostRecursiveGreenPointBudgetExceeded {
+    #[must_use]
+    pub const fn node_headers_decoded(self) -> u64 {
+        self.0.receipt().node_headers_decoded()
+    }
+
+    #[must_use]
+    pub const fn summary_combinations(self) -> u64 {
+        self.0.receipt().summary_combinations()
+    }
+
+    #[must_use]
+    pub const fn storage_pages_visited(self) -> u64 {
+        self.0.receipt().storage_pages_visited()
+    }
+
+    #[must_use]
+    pub const fn events_scanned(self) -> u64 {
+        self.0.receipt().events_scanned()
+    }
+
+    #[must_use]
+    pub const fn maximum_open_depth(self) -> usize {
+        self.0.receipt().maximum_open_depth()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum M11HostRecursiveGreenPointQueryOutcome {
+    Location(M11HostRecursiveGreenLocation),
+    NotFound,
+    BudgetExceeded(M11HostRecursiveGreenPointBudgetExceeded),
 }
 
 pub struct M11HostRecursiveGreenRowWindow(M11RecursiveGreenRowWindow);
@@ -2826,17 +2865,40 @@ impl M11CandidateHost {
         byte_offset: u64,
         utf16_offset: u64,
         affinity: M11HostBlockAffinity,
-    ) -> Result<Option<M11HostRecursiveGreenLocation>, M11HostError> {
+        maximum_tree_nodes_visited: u64,
+    ) -> Result<Option<M11HostRecursiveGreenPointQueryOutcome>, M11HostError> {
         let byte_offset = usize::try_from(byte_offset)
             .map_err(|_| M11HostError::invalid("Green byte point exceeds this target"))?;
         let utf16_offset = usize::try_from(utf16_offset)
             .map_err(|_| M11HostError::invalid("Green UTF-16 point exceeds this target"))?;
+        if maximum_tree_nodes_visited == 0 {
+            return Err(M11HostError::invalid(
+                "Green point tree-node budget must be nonzero",
+            ));
+        }
         self.0
             .persistent_recursive_green_point(
                 installed.0,
                 M11RecursiveGreenPoint::new(byte_offset, utf16_offset, affinity.engine()),
+                maximum_tree_nodes_visited,
             )
-            .map(|location| location.map(M11HostRecursiveGreenLocation))
+            .map(|outcome| {
+                outcome.map(|outcome| match outcome {
+                    M11RecursiveGreenPointQueryOutcome::Location(location) => {
+                        M11HostRecursiveGreenPointQueryOutcome::Location(
+                            M11HostRecursiveGreenLocation(location),
+                        )
+                    }
+                    M11RecursiveGreenPointQueryOutcome::NotFound => {
+                        M11HostRecursiveGreenPointQueryOutcome::NotFound
+                    }
+                    M11RecursiveGreenPointQueryOutcome::BudgetExceeded(exceeded) => {
+                        M11HostRecursiveGreenPointQueryOutcome::BudgetExceeded(
+                            M11HostRecursiveGreenPointBudgetExceeded(exceeded),
+                        )
+                    }
+                })
+            })
             .map_err(Into::into)
     }
 

@@ -4506,9 +4506,22 @@ impl M11CandidateHost {
         installed: M11InstalledCandidate,
         point: M11RecursiveGreenPoint,
     ) -> Result<Option<M11RecursiveGreenLocation>, M11PublicationError> {
-        self.0
-            .persistent_recursive_green_point(installed.0, point)
-            .map_err(Into::into)
+        let Some(outcome) = self
+            .0
+            .persistent_recursive_green_point(installed.0, point, u64::MAX)
+            .map_err(M11PublicationError::from)?
+        else {
+            return Ok(None);
+        };
+        match outcome {
+            crate::recursive_green::M11RecursiveGreenPointQueryOutcome::Location(location) => {
+                Ok(Some(location))
+            }
+            crate::recursive_green::M11RecursiveGreenPointQueryOutcome::NotFound => Ok(None),
+            crate::recursive_green::M11RecursiveGreenPointQueryOutcome::BudgetExceeded(_) => {
+                unreachable!("u64::MAX recursive Green query budget cannot be exhausted")
+            }
+        }
     }
 
     pub fn abort_snapshot(&mut self) -> Result<bool, M11PublicationError> {

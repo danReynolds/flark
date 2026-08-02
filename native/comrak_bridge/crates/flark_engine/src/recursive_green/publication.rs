@@ -14,8 +14,8 @@ use super::codec::{
     M11RecursiveGreenError, RecursiveGreenCommitment, RecursiveGreenSpec, RecursiveGreenSummary,
 };
 use super::query::{
-    locate_point_in_arena, locate_renderable_row_ordinal_window_in_arena,
-    locate_renderable_rows_in_arena, M11RecursiveGreenLocation, M11RecursiveGreenPoint,
+    locate_point_in_arena_bounded, locate_renderable_row_ordinal_window_in_arena,
+    locate_renderable_rows_in_arena, M11RecursiveGreenPoint, M11RecursiveGreenPointQueryOutcome,
     M11RecursiveGreenRowOrdinalWindow, M11RecursiveGreenRowQueryLimits,
     M11RecursiveGreenRowQueryOutcome,
 };
@@ -415,17 +415,19 @@ pub(crate) fn persistent_m11_recursive_green_locate_point(
     root: Option<ArenaId>,
     claim: PersistentM11RecursiveGreenRootClaim,
     point: M11RecursiveGreenPoint,
-) -> Result<Option<M11RecursiveGreenLocation>, M11RecursiveGreenError> {
+    maximum_tree_nodes_visited: u64,
+) -> Result<M11RecursiveGreenPointQueryOutcome, M11RecursiveGreenError> {
     if (claim.event_count() == 0) != root.is_none() {
         return Err(M11RecursiveGreenError::Corrupt(
             "installed recursive Green root changed shape",
         ));
     }
-    locate_point_in_arena(
+    locate_point_in_arena_bounded(
         arena,
         MeasuredSequenceRef::<RecursiveGreenSpec>::from_imported_root(root),
         claim.summary,
         point,
+        maximum_tree_nodes_visited,
     )
 }
 
