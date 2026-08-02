@@ -1819,6 +1819,113 @@ fn small_nested_edit_clean_fallback_publishes_recursive_green_snapshot() {
 }
 
 #[test]
+fn initial_large_fence_retains_recursive_green_authority_for_its_first_edit() {
+    const BODY_LINES: usize = 2_500;
+    let mut source = String::from("```text\n");
+    let body_start = source.len();
+    for ordinal in 0..BODY_LINES {
+        source.push_str(&format!("line-{ordinal:04}\n"));
+    }
+    source.push_str("```\n");
+    let edit_start = body_start + source[body_start..].find("line-1250").expect("middle line")
+        + "line-".len();
+
+    let profile = SourceFactsScanProfile::new(4_096).expect("production scan profile");
+    let parser_profile = ParserProfileId::new(1).expect("parser profile");
+    let binding = SessionBinding {
+        document_session: [351, 352, 353, 354],
+        source_session_identity: 355,
+        worker_generation: 1,
+    };
+    let mut runtime = DocumentRuntime::new(&source, standard_document_runtime_config())
+        .expect("large fence runtime");
+    let (certified, base_completion) =
+        complete_clean_source_facts(&mut runtime, profile, parser_profile, 1, 0);
+    let base_source = certified.source();
+    let mut endpoint = CandidateEndpoint::new();
+    endpoint
+        .start(certified, binding, base_completion)
+        .expect("start large fence base");
+    let mut host = NativeCandidateHost::new(HostConfig {
+        document_session: binding.document_session,
+        grammar_revision: GRAMMAR_REVISION,
+        syntax_profile: 1,
+        authority_mask: AUTHORITY_MASK_ALL_ROLES,
+        maximum_query_bytes: 64 * 1024,
+    })
+    .expect("large fence host");
+    host.observe_source_version(source_version_for(binding, base_completion))
+        .expect("host observes large fence base");
+    let base_delivery =
+        deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
+    assert!(base_delivery.contains_recursive_green_leaf);
+    assert!(matches!(
+        endpoint
+            .retained
+            .as_ref()
+            .and_then(|retained| retained.restart.as_ref()),
+        Some(CandidateRestartAuthority::RecursiveGreen { .. })
+    ));
+
+    endpoint
+        .cancel_for_edit(&mut runtime)
+        .expect("prepare first large fence edit");
+    let target = runtime
+        .apply_edit(base_source, edit_start..edit_start + 1, "X")
+        .expect("edit large fence body")
+        .source()
+        .current();
+    let plan = runtime
+        .begin_incremental_source_facts(
+            profile,
+            parser_profile,
+            SourceFactsRootLimits::default(),
+        )
+        .expect("plan large fence SourceFacts replacement");
+    assert!(
+        endpoint
+            .has_incremental_base_for_plan(&runtime, &plan)
+            .expect("preflight retained recursive Green"),
+        "the initial Green snapshot must not depend on a legacy crop for its first edit"
+    );
+    let witness = complete_incremental_source_facts(&mut runtime);
+    let target_lease = runtime
+        .snapshot_current_source()
+        .expect("borrow large fence target");
+    let target_completion = completion_for_persistent_target(&runtime, 2, 1);
+    let target_wire_source = source_version_for(binding, target_completion);
+    host.observe_source_version(target_wire_source)
+        .expect("host observes large fence target");
+    endpoint
+        .start_incremental(
+            &runtime,
+            target_lease,
+            witness,
+            binding,
+            target_completion,
+        )
+        .expect("start recursive large fence edit");
+    assert_eq!(
+        active_candidate_phase(endpoint.active.as_ref()),
+        "AwaitingRecursiveGreenExact"
+    );
+    let target_delivery =
+        deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
+    assert!(target_delivery.contains_recursive_green_leaf);
+    assert_eq!(target_delivery.ack.source_version, target_wire_source);
+    let (owner_kind, _, _) =
+        recursive_green_query_shape(&host, target_wire_source, edit_start, edit_start);
+    assert_eq!(owner_kind, 7, "the edited owner remains a Green fenced code row");
+    assert!(
+        !runtime
+            .commit_persistent_source_facts_delta(target)
+            .expect("target SourceFacts already committed by delivery")
+    );
+
+    close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
+}
+
+#[test]
 fn bullet_list_local_edit_delivers_exact_delta_with_unit_fuel() {
     let profile = SourceFactsScanProfile::new(4).expect("dense test profile");
     let parser_profile = ParserProfileId::new(1).expect("parser profile");

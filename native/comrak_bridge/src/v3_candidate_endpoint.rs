@@ -6395,8 +6395,17 @@ impl CandidateEndpoint {
                                 .map_err(|_| CandidateEndpointError::MetricOverflow)?;
                             let parser_binding =
                                 M11ParserBinding::current(certified.parser_profile());
-                            let next_restart =
+                            let parser_restart =
                                 take_candidate_restart_authority(&mut result, parser_binding)?;
+                            let next_restart = match publication_path {
+                                CleanPublicationPath::RecursiveGreenInitial => {
+                                    Some(CandidateRestartAuthority::RecursiveGreen {
+                                        source,
+                                        binding: parser_binding,
+                                    })
+                                }
+                                CleanPublicationPath::LegacyBlocks => parser_restart,
+                            };
                             let publication = derive_identity(
                                 b"publication",
                                 context.binding,
