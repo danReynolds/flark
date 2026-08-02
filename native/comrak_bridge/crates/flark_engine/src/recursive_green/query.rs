@@ -12,11 +12,11 @@ use crate::source::{SourceBoundaryAffinity, SourceVersion};
 
 use super::build::M11RecursiveGreenRoot;
 use super::codec::{
-    decode_leaf, decode_packed_event, is_renderable_row_kind, EMPTY_ITEM_ROW_KIND,
+    decode_leaf, decode_packed_event, is_renderable_row_kind,
     M11RecursiveGreenCachedRowEditCapability, M11RecursiveGreenCoveragePart,
     M11RecursiveGreenError, M11RecursiveGreenFrameId, M11RecursiveGreenKind,
     M11RecursiveGreenLogicalAtom, M11RecursiveGreenSourceMetric, PackedGreenEvent,
-    RecursiveGreenSpec, RecursiveGreenSummary,
+    RecursiveGreenSpec, RecursiveGreenSummary, EMPTY_ITEM_ROW_KIND,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1729,7 +1729,10 @@ pub(super) fn locate_renderable_rows_in_arena(
                     close: candidate_boundary.close,
                 });
             }
-            if path.last().is_none_or(|ancestor| ancestor.kind().get() != 4) {
+            if path
+                .last()
+                .is_none_or(|ancestor| ancestor.kind().get() != 4)
+            {
                 return Err(M11RecursiveGreenError::Corrupt(
                     "empty-item row is not nested directly in an Item",
                 ));
@@ -2889,45 +2892,89 @@ fn locate_point_in_arena_zipper_bounded(
         ..PointZipperWork::default()
     };
     let mut maximum_open_depth = 0_usize;
-    let resolved: Result<Option<M11RecursiveGreenLocation>, M11RecursiveGreenError> = (|| {
-        let Some(prepared) =
-            locate_point_in_arena_zipper_prepared(arena, tree, summary, point, &mut work)?
-        else {
-            return Ok(None);
-        };
-        maximum_open_depth = prepared.zipper_open.len();
-        let root_leaf_count = tree
-            .summary(arena, &mut work.inspection)?
-            .ok_or(M11RecursiveGreenError::Corrupt(
-                "nonempty Green query lost its root measure",
-            ))?
-            .leaves();
-        let mut ancestry = Vec::new();
-        ancestry
-            .try_reserve_exact(prepared.zipper_open.len())
-            .map_err(|_| M11RecursiveGreenError::InvalidState)?;
-        for frame in prepared.zipper_open.iter().copied() {
-            let kind = point_zipper_final_kind(arena, tree, root_leaf_count, frame, &mut work)?;
-            ancestry.push(M11RecursiveGreenAncestor {
-                frame: frame.frame,
-                kind,
-            });
-        }
-        let receipt = work.finish_receipt(ancestry.len())?;
-        Ok(Some(M11RecursiveGreenLocation {
-            byte_range: prepared.byte_range,
-            utf16_range: prepared.utf16_range,
-            physical: prepared.physical,
-            logical: prepared.logical,
-            part: prepared.part,
-            atom: prepared.atom,
-            owner_index: prepared.owner_index,
-            ancestry,
-            receipt,
-            zipper_open: prepared.zipper_open,
-            renderable_rows_before: prepared.renderable_rows_before,
-        }))
-    })();
+    let resolved: Result<Option<M11RecursiveGreenLocation>, M11RecursiveGreenError> =
+        (|| {
+            let Some(mut prepared) =
+                locate_point_in_arena_zipper_prepared(arena, tree, summary, point, &mut work)?
+            else {
+                return Ok(None);
+            };
+            let root_leaf_count = tree
+                .summary(arena, &mut work.inspection)?
+                .ok_or(M11RecursiveGreenError::Corrupt(
+                    "nonempty Green query lost its root measure",
+                ))?
+                .leaves();
+            let is_after_eof = point.affinity == SourceBoundaryAffinity::After
+                && u64::try_from(point.byte_offset).ok() == Some(summary.physical_bytes)
+                && u64::try_from(point.utf16_offset).ok() == Some(summary.physical_utf16);
+            if is_after_eof && prepared.renderable_rows_before < summary.renderable_row_exits {
+                let row = point_zipper_open_for_row_ordinal(
+                    arena,
+                    tree,
+                    prepared.renderable_rows_before,
+                    &mut work,
+                )?
+                .ok_or(M11RecursiveGreenError::Corrupt(
+                    "EOF renderable-row summary omitted its successor",
+                ))?;
+                let boundary =
+                    point_zipper_frame_boundary(arena, tree, root_leaf_count, row, &mut work)?;
+                if boundary.final_kind.get() == EMPTY_ITEM_ROW_KIND
+                    && row.byte_start == summary.physical_bytes
+                    && row.utf16_start == summary.physical_utf16
+                    && boundary.byte_end == summary.physical_bytes
+                    && boundary.utf16_end == summary.physical_utf16
+                {
+                    let parent = prepared.zipper_open.last().copied().ok_or(
+                        M11RecursiveGreenError::Corrupt("empty EOF row omitted its Item parent"),
+                    )?;
+                    let parent_kind =
+                        point_zipper_final_kind(arena, tree, root_leaf_count, parent, &mut work)?;
+                    if parent_kind.get() != 4 {
+                        return Err(M11RecursiveGreenError::Corrupt(
+                            "empty EOF row is not nested directly in an Item",
+                        ));
+                    }
+                    prepared.owner_index = prepared.zipper_open.len();
+                    prepared.zipper_open.push(row);
+                    prepared.byte_range = summary.physical_bytes..summary.physical_bytes;
+                    prepared.utf16_range = summary.physical_utf16..summary.physical_utf16;
+                    prepared.physical = M11RecursiveGreenSourceMetric::new(0, 0)
+                        .expect("empty source metric is valid");
+                    prepared.logical = M11RecursiveGreenSourceMetric::new(0, 0)
+                        .expect("empty logical metric is valid");
+                    prepared.part = M11RecursiveGreenCoveragePart::Content;
+                    prepared.atom = M11RecursiveGreenLogicalAtom::Identity;
+                }
+            }
+            maximum_open_depth = prepared.zipper_open.len();
+            let mut ancestry = Vec::new();
+            ancestry
+                .try_reserve_exact(prepared.zipper_open.len())
+                .map_err(|_| M11RecursiveGreenError::InvalidState)?;
+            for frame in prepared.zipper_open.iter().copied() {
+                let kind = point_zipper_final_kind(arena, tree, root_leaf_count, frame, &mut work)?;
+                ancestry.push(M11RecursiveGreenAncestor {
+                    frame: frame.frame,
+                    kind,
+                });
+            }
+            let receipt = work.finish_receipt(ancestry.len())?;
+            Ok(Some(M11RecursiveGreenLocation {
+                byte_range: prepared.byte_range,
+                utf16_range: prepared.utf16_range,
+                physical: prepared.physical,
+                logical: prepared.logical,
+                part: prepared.part,
+                atom: prepared.atom,
+                owner_index: prepared.owner_index,
+                ancestry,
+                receipt,
+                zipper_open: prepared.zipper_open,
+                renderable_rows_before: prepared.renderable_rows_before,
+            }))
+        })();
 
     // Measured-sequence fuel exhaustion deliberately uses the spec-invalid
     // sentinel internally. Intercept it before it can escape as corruption.

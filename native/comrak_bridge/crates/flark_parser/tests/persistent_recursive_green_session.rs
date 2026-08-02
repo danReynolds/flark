@@ -148,9 +148,7 @@ fn terminal_empty_list_items_emit_one_editable_row_without_duplicating_nonempty_
         );
         assert_eq!(
             empty.editable_utf16_range(),
-            Some(
-                source.encode_utf16().count() as u64..source.encode_utf16().count() as u64,
-            ),
+            Some(source.encode_utf16().count() as u64..source.encode_utf16().count() as u64,),
             "source={source:?}",
         );
         assert_eq!(
@@ -167,10 +165,7 @@ fn terminal_empty_list_items_emit_one_editable_row_without_duplicating_nonempty_
             .expect("empty row retains List facts");
         assert_eq!(list.tag().get(), 1);
         assert_eq!(list.as_bytes()[0], list_style);
-        assert_eq!(
-            list.as_bytes()[if list_style == 1 { 1 } else { 2 }],
-            marker,
-        );
+        assert_eq!(list.as_bytes()[if list_style == 1 { 1 } else { 2 }], marker,);
         let item = empty.path()[2]
             .property()
             .expect("empty row retains Item facts");
@@ -179,6 +174,74 @@ fn terminal_empty_list_items_emit_one_editable_row_without_duplicating_nonempty_
             empty.path()[2].physical_range(),
             item_start as u64..source.len() as u64,
         );
+
+        let suffix_start = source.len() - 1;
+        let suffix = session
+            .query_renderable_rows(
+                &runtime,
+                M11RecursiveGreenPoint::new(
+                    suffix_start,
+                    utf16_offset(source, suffix_start),
+                    SourceBoundaryAffinity::After,
+                ),
+                source.len() as u64,
+                M11RecursiveGreenRowQueryLimits::new(1, 8, 512, 16, 512)
+                    .expect("terminal-empty suffix row limits"),
+            )
+            .expect("terminal-empty nonempty suffix range");
+        assert!(suffix.complete(), "source={source:?}");
+        assert_eq!(suffix.rows().len(), 1, "source={source:?}");
+        assert_eq!(suffix.rows()[0].kind().get(), 14, "source={source:?}");
+        assert_eq!(
+            suffix.rows()[0].editable_range(),
+            Some(source.len() as u64..source.len() as u64),
+            "source={source:?}",
+        );
+
+        let eof = session
+            .locate_point(
+                &runtime,
+                M11RecursiveGreenPoint::new(
+                    source.len(),
+                    source.encode_utf16().count(),
+                    SourceBoundaryAffinity::After,
+                ),
+            )
+            .expect("query terminal-empty EOF")
+            .expect("terminal-empty EOF location");
+        assert_eq!(
+            eof.byte_range(),
+            source.len() as u64..source.len() as u64,
+            "source={source:?}",
+        );
+        assert_eq!(
+            eof.utf16_range(),
+            source.encode_utf16().count() as u64..source.encode_utf16().count() as u64,
+            "source={source:?}",
+        );
+        assert_eq!(eof.owner().kind().get(), 14, "source={source:?}");
+        assert_eq!(
+            eof.ancestry()
+                .iter()
+                .map(|ancestor| ancestor.kind().get())
+                .collect::<Vec<_>>(),
+            vec![1, 3, 4, 14],
+            "source={source:?}",
+        );
+
+        let before_eof = session
+            .locate_point(
+                &runtime,
+                M11RecursiveGreenPoint::new(
+                    source.len(),
+                    source.encode_utf16().count(),
+                    SourceBoundaryAffinity::Before,
+                ),
+            )
+            .expect("query terminal-empty EOF with upstream affinity")
+            .expect("terminal-empty upstream EOF location");
+        assert_eq!(before_eof.owner().kind().get(), 4, "source={source:?}");
+        assert_ne!(before_eof.byte_range().start, before_eof.byte_range().end);
 
         release_session(&mut runtime, &mut session);
         runtime.begin_close().expect("begin terminal-empty close");
@@ -198,8 +261,7 @@ fn terminal_empty_list_items_emit_one_editable_row_without_duplicating_nonempty_
             &runtime,
             M11RecursiveGreenPoint::new(0, 0, SourceBoundaryAffinity::After),
             source.len() as u64,
-            M11RecursiveGreenRowQueryLimits::new(8, 8, 512, 16, 512)
-                .expect("nonempty row limits"),
+            M11RecursiveGreenRowQueryLimits::new(8, 8, 512, 16, 512).expect("nonempty row limits"),
         )
         .expect("nonempty row query");
     assert_eq!(
@@ -219,7 +281,11 @@ fn terminal_empty_list_items_emit_one_editable_row_without_duplicating_nonempty_
 
     release_session(&mut runtime, &mut session);
     runtime.begin_close().expect("begin nonempty close");
-    while !runtime.poll_close(64).expect("poll nonempty close").complete {}
+    while !runtime
+        .poll_close(64)
+        .expect("poll nonempty close")
+        .complete
+    {}
 }
 
 #[test]

@@ -9,7 +9,6 @@
 use std::fmt;
 
 use flark_engine::m11_host::{
-    M11_CANDIDATE_ARENA_MAX_SLOTS, M11_HOST_MAXIMUM_FRAME_BYTES, M11_HOST_MAXIMUM_PROGRAM_CHILDREN,
     M11CandidateHost, M11HostBlockAffinity, M11HostBlockKind, M11HostBlockQuoteCursor,
     M11HostBlockQuoteCursorPoll, M11HostBlockQuoteLine, M11HostBlockQuoteSidecarDescriptor,
     M11HostBlockUnsupportedReason, M11HostCanonicalLineEnding, M11HostError, M11HostFrameKind,
@@ -22,27 +21,28 @@ use flark_engine::m11_host::{
     M11HostPersistentBlockVisitStart, M11HostPersistentRecursiveGreenDescriptor,
     M11HostRecursiveGreenCoveragePart, M11HostRecursiveGreenLocation,
     M11HostRecursiveGreenLogicalAtom, M11HostRecursiveGreenPointQueryOutcome,
-    M11HostRecursiveGreenRow,
-    M11HostRecursiveGreenRowEditCapability, M11HostRecursiveGreenRowOrdinalWindow,
-    M11HostRecursiveGreenRowPath, M11HostRecursiveGreenRowQueryLimit,
-    M11HostRecursiveGreenRowQueryOutcome, M11HostRole, M11HostSourceVersion,
+    M11HostRecursiveGreenRow, M11HostRecursiveGreenRowEditCapability,
+    M11HostRecursiveGreenRowOrdinalWindow, M11HostRecursiveGreenRowPath,
+    M11HostRecursiveGreenRowQueryLimit, M11HostRecursiveGreenRowQueryOutcome, M11HostRole,
+    M11HostSourceVersion, M11_CANDIDATE_ARENA_MAX_SLOTS, M11_HOST_MAXIMUM_FRAME_BYTES,
+    M11_HOST_MAXIMUM_PROGRAM_CHILDREN,
 };
 use flark_parser::{
-    M11_GREEN_RECORD_BYTES, M11_INLINE_FACT_RECORD_BYTES, M11_INLINE_FACTS_PER_PAGE,
+    M11_GREEN_RECORD_BYTES, M11_INLINE_FACTS_PER_PAGE, M11_INLINE_FACT_RECORD_BYTES,
     M11_INLINE_META_MAGIC, M11_INLINE_META_RECORD_BYTES, M11_INLINE_PAGE_HEADER_BYTES,
     M11_INLINE_PAGE_MAGIC, M11_INLINE_SCHEMA, M11_PROJECTION_RECORD_BYTES,
 };
 
 use crate::v3_publication_wire::{
-    BLOCK_QUOTE_PROJECTION_DESCRIPTOR_BYTES, CandidateSnapshotFrameKind, CandidateTransportDigest,
-    CommitRequest, Digest128, HOT_INLINE_SIDECAR_SCHEMA, HotInlineSidecarBegin,
-    HotInlineSidecarBinding, HotInlineSidecarCommitRequest, HotInlineSidecarDisposition,
-    HotInlineSidecarEnvelopeMetrics, HotInlineSidecarFrameKind, HotInlineSidecarOwner,
-    HotInlineSidecarTransportDigest, Id128, InlineSidecarAck, InlineSidecarAckDisposition,
-    MAXIMUM_PACKET_AGGREGATE_FRAME_BYTES, MAXIMUM_PACKET_ENCODED_BYTES, MAXIMUM_PACKET_FRAME_COUNT,
-    OfferBegin, PACKET_FRAME_DESCRIPTOR_BYTES, PACKET_HEADER_BYTES, ProtocolDigestDomain,
+    protocol_digest128_from_blake3, CandidateSnapshotFrameKind, CandidateTransportDigest,
+    CommitRequest, Digest128, HotInlineSidecarBegin, HotInlineSidecarBinding,
+    HotInlineSidecarCommitRequest, HotInlineSidecarDisposition, HotInlineSidecarEnvelopeMetrics,
+    HotInlineSidecarFrameKind, HotInlineSidecarOwner, HotInlineSidecarTransportDigest, Id128,
+    InlineSidecarAck, InlineSidecarAckDisposition, OfferBegin, ProtocolDigestDomain,
     PublicationMode, PublicationPacket, SourceVersion, StructuralAck,
-    protocol_digest128_from_blake3,
+    BLOCK_QUOTE_PROJECTION_DESCRIPTOR_BYTES, HOT_INLINE_SIDECAR_SCHEMA,
+    MAXIMUM_PACKET_AGGREGATE_FRAME_BYTES, MAXIMUM_PACKET_ENCODED_BYTES, MAXIMUM_PACKET_FRAME_COUNT,
+    PACKET_FRAME_DESCRIPTOR_BYTES, PACKET_HEADER_BYTES,
 };
 
 #[path = "v3_viewport_host.rs"]
@@ -50,9 +50,9 @@ mod viewport_presentation_host;
 
 use viewport_presentation_host::ViewportPresentationHost;
 pub(crate) use viewport_presentation_host::{
+    HostViewportPresentationPollOutcome, HostViewportPresentationQueryOutcome,
     HOST_VIEWPORT_PRESENTATION_DIRECTORY_ENTRY_BYTES, HOST_VIEWPORT_PRESENTATION_HEADER_BYTES,
-    HOST_VIEWPORT_PRESENTATION_SCHEMA, HostViewportPresentationPollOutcome,
-    HostViewportPresentationQueryOutcome,
+    HOST_VIEWPORT_PRESENTATION_SCHEMA,
 };
 
 pub(crate) const HOST_INLINE_SIDECAR_MAXIMUM_QUERY_BYTES: u32 = 128 * 1024;
@@ -126,6 +126,7 @@ pub const HOST_RECURSIVE_GREEN_ANCESTOR_RECORD_BYTES: usize = 16;
 pub const HOST_RECURSIVE_GREEN_KIND_REGISTRY_SCHEMA: u32 = 1;
 pub const HOST_RECURSIVE_GREEN_COVERAGE_SCHEMA: u32 = 1;
 pub const HOST_RECURSIVE_GREEN_LOGICAL_ATOM_SCHEMA: u32 = 1;
+const HOST_RECURSIVE_GREEN_EMPTY_ITEM_ROW_KIND: u16 = 14;
 const HOST_RECURSIVE_GREEN_ANCESTOR_OWNER_FLAG: u16 = 1;
 const M11_VIEWPORT_V7_HEADER_BYTES: usize = 32;
 const M11_LEAF_PROJECTION_PAYLOAD_INLINE: u8 = 1;
@@ -2901,8 +2902,8 @@ impl NativeCandidateHost {
                 let open_depth = u32::try_from(exceeded.maximum_open_depth()).map_err(|_| {
                     HostStoreError::invalid("Green point budget receipt exceeds the wire")
                 })?;
-                let tree_nodes_visited = u32::try_from(exceeded.node_headers_decoded())
-                    .map_err(|_| {
+                let tree_nodes_visited =
+                    u32::try_from(exceeded.node_headers_decoded()).map_err(|_| {
                         HostStoreError::invalid("Green point budget receipt exceeds the wire")
                     })?;
                 let summary_nodes_skipped = u32::try_from(exceeded.summary_combinations())
@@ -2981,10 +2982,30 @@ impl NativeCandidateHost {
             summary_nodes_skipped,
         };
 
+        // Kind 14 is the parser-authenticated terminal-empty Item row. It is
+        // the one renderable owner whose exact physical viewport is a point:
+        // the editable insertion position at document EOF. Keep every other
+        // zero-width or interior point fail-closed.
+        let authenticated_empty_item_eof = location.owner().kind()
+            == HOST_RECURSIVE_GREEN_EMPTY_ITEM_ROW_KIND
+            && range.start.bytes == query.source_version.utf8_length
+            && range.end.bytes == query.source_version.utf8_length
+            && range.start.utf16 == query.source_version.utf16_length
+            && range.end.utf16 == query.source_version.utf16_length
+            && query.position == range.start
+            && query.affinity == HostMetricAffinity::Downstream
+            && physical_bytes == 0
+            && physical_utf16 == 0
+            && logical_bytes == 0
+            && logical_utf16 == 0
+            && location.part() == M11HostRecursiveGreenCoveragePart::Content
+            && location.logical_atom() == M11HostRecursiveGreenLogicalAtom::Identity;
+        let nonempty_range =
+            range.start.bytes < range.end.bytes && range.start.utf16 < range.end.utf16;
+
         if ancestry_count == 0
             || owner_index >= ancestry_count
-            || range.start.bytes >= range.end.bytes
-            || range.start.utf16 >= range.end.utf16
+            || (!nonempty_range && !authenticated_empty_item_eof)
             || range.end.bytes > query.source_version.utf8_length
             || range.end.utf16 > query.source_version.utf16_length
             || physical_bytes != range.end.bytes - range.start.bytes
@@ -6586,6 +6607,10 @@ fn encode_recursive_green_row_record(
         6 => (3, HOST_RECURSIVE_GREEN_ROW_LITERAL_FLAG),
         8 => (4, HOST_RECURSIVE_GREEN_ROW_LITERAL_FLAG),
         13 => (5, HOST_RECURSIVE_GREEN_ROW_LITERAL_FLAG),
+        // A terminal-empty Item is an inline-shaped presentation row without
+        // an inline payload. Its zero-width editable point and authenticated
+        // Item ancestor are sufficient for marker-free editing.
+        HOST_RECURSIVE_GREEN_EMPTY_ITEM_ROW_KIND => (1, 0),
         _ => {
             return Err(HostStoreError::invalid(
                 "Green row kind is outside the renderable registry",
@@ -9199,38 +9224,38 @@ mod tests {
     use super::*;
     use crate::v3_endpoint::standard_document_runtime_config;
     use crate::v3_publication_wire::{
-        PublicationPacketFrameInput, PublicationPacketInput,
-        VIEWPORT_PRESENTATION_CHILD_HEADER_BYTES, VIEWPORT_PRESENTATION_DIRECTORY_ENTRY_BYTES,
-        VIEWPORT_PRESENTATION_DIRECTORY_HEADER_BYTES, VIEWPORT_PRESENTATION_END_FRAME_BYTES,
-        VIEWPORT_PRESENTATION_PARENT_FRAME_BYTES, ViewportPresentationBegin,
-        ViewportPresentationBinding, ViewportPresentationChildFrameInput,
-        ViewportPresentationCommitRequest, ViewportPresentationDirectoryEntry,
-        ViewportPresentationEndFrame, ViewportPresentationEnvelopeMetrics,
-        ViewportPresentationFrameKind, ViewportPresentationMetricRange, ViewportPresentationMode,
-        ViewportPresentationOfferLimits, ViewportPresentationQueryLimits,
-        ViewportPresentationTransportDigest, ViewportPresentationVisitStart,
         decode_publication_packet_envelope, encode_publication_packet_into,
         encode_viewport_presentation_child_frame_into, encode_viewport_presentation_directory_into,
         encode_viewport_presentation_end_frame_into,
         encode_viewport_presentation_parent_frame_into,
         viewport_presentation_aggregate_envelope_digest256,
-        viewport_presentation_root_stream_digest256,
+        viewport_presentation_root_stream_digest256, PublicationPacketFrameInput,
+        PublicationPacketInput, ViewportPresentationBegin, ViewportPresentationBinding,
+        ViewportPresentationChildFrameInput, ViewportPresentationCommitRequest,
+        ViewportPresentationDirectoryEntry, ViewportPresentationEndFrame,
+        ViewportPresentationEnvelopeMetrics, ViewportPresentationFrameKind,
+        ViewportPresentationMetricRange, ViewportPresentationMode, ViewportPresentationOfferLimits,
+        ViewportPresentationQueryLimits, ViewportPresentationTransportDigest,
+        ViewportPresentationVisitStart, VIEWPORT_PRESENTATION_CHILD_HEADER_BYTES,
+        VIEWPORT_PRESENTATION_DIRECTORY_ENTRY_BYTES, VIEWPORT_PRESENTATION_DIRECTORY_HEADER_BYTES,
+        VIEWPORT_PRESENTATION_END_FRAME_BYTES, VIEWPORT_PRESENTATION_PARENT_FRAME_BYTES,
     };
     use flark_engine::m11_host::{M11HostInlineProjectionDescriptor, M11HostLimits};
     use flark_engine::parser_internal::{
-        BlockQuoteLineV1, M11BlockQuoteProjectionBuild, M11BlockQuoteProjectionBuildStatus,
-        M11BlockRoleRecord, M11BlockSequenceBuild, M11BlockSequenceBuildStatus,
-        M11BlockSequenceEntry, M11BlockSequenceRoot, M11BlockUnsupportedReason, M11CandidateBuild,
-        M11CandidateBuildPoll, M11HotInlineCanonicalLineEnding, M11HotInlineSidecarDescriptor,
+        splice_m11_block_sequence_atomic, BlockQuoteLineV1, M11BlockQuoteProjectionBuild,
+        M11BlockQuoteProjectionBuildStatus, M11BlockRoleRecord, M11BlockSequenceBuild,
+        M11BlockSequenceBuildStatus, M11BlockSequenceEntry, M11BlockSequenceRoot,
+        M11BlockUnsupportedReason, M11CandidateBuild, M11CandidateBuildPoll,
+        M11HotInlineCanonicalLineEnding, M11HotInlineSidecarDescriptor,
         M11HotInlineSidecarDisposition, M11HotInlineSidecarFrame, M11HotInlineSidecarFrameKind,
         M11HotInlineSidecarSnapshotEncoder, M11HotInlineSidecarSnapshotPoll, M11InlineLinkValue,
         M11InlineProjectionBuild, M11InlineProjectionBuildStatus, M11InlineProjectionFact,
         M11InlineProjectionKind, M11OwnedSnapshotPoll, M11ReferenceRange, M11ReferenceRecord,
-        M11RoleRecords, M11SnapshotFrameKind, splice_m11_block_sequence_atomic,
+        M11RoleRecords, M11SnapshotFrameKind,
     };
     use flark_engine::{
-        DocumentRuntime, ParserProfileId, RuntimeSourceFactsPoll, SOURCE_SEED_PAGE_MAX_UTF16,
-        SourceFactsRootLimits, SourceFactsScanProfile, SourceRevision, SourceSeedBuilder,
+        DocumentRuntime, ParserProfileId, RuntimeSourceFactsPoll, SourceFactsRootLimits,
+        SourceFactsScanProfile, SourceRevision, SourceSeedBuilder, SOURCE_SEED_PAGE_MAX_UTF16,
     };
     use flark_parser::{
         M11CleanParseJob, M11CleanParsePoll, M11ParserCandidate, M11ParserCandidateWriterPoll,
@@ -13761,8 +13786,8 @@ mod tests {
         tampered[40] ^= 1;
         let mut no_authority =
             [0xa5; HOST_BLOCK_RANGE_HEADER_BYTES + HOST_BLOCK_RANGE_RECORD_BYTES];
-        assert!(
-            host.query_structural_range(
+        assert!(host
+            .query_structural_range(
                 block_range_query(
                     snapshot.source,
                     requested,
@@ -13771,8 +13796,7 @@ mod tests {
                 ),
                 &mut no_authority,
             )
-            .is_err()
-        );
+            .is_err());
         assert_eq!(
             no_authority,
             [0xa5; HOST_BLOCK_RANGE_HEADER_BYTES + HOST_BLOCK_RANGE_RECORD_BYTES]
@@ -14564,14 +14588,12 @@ mod tests {
             1,
             1,
             "# h\n",
-            vec![
-                M11BlockSequenceEntry::unsupported(
-                    4,
-                    4,
-                    M11BlockUnsupportedReason::new(0x0002_0002).expect("ATX reason"),
-                )
-                .expect("unsupported"),
-            ],
+            vec![M11BlockSequenceEntry::unsupported(
+                4,
+                4,
+                M11BlockUnsupportedReason::new(0x0002_0002).expect("ATX reason"),
+            )
+            .expect("unsupported")],
             false,
         );
         let mut unsupported_host = host_for(unsupported_document);
@@ -14608,14 +14630,12 @@ mod tests {
                 1,
                 1,
                 "# h\n",
-                vec![
-                    M11BlockSequenceEntry::unsupported(
-                        4,
-                        4,
-                        M11BlockUnsupportedReason::new(reason).expect("typed unsupported reason"),
-                    )
-                    .expect("unsupported"),
-                ],
+                vec![M11BlockSequenceEntry::unsupported(
+                    4,
+                    4,
+                    M11BlockUnsupportedReason::new(reason).expect("typed unsupported reason"),
+                )
+                .expect("unsupported")],
                 false,
             );
             let mut host = host_for(document);
@@ -16853,11 +16873,9 @@ mod tests {
                 HOST_RECURSIVE_GREEN_VIEWPORT_HEADER_BYTES
                     + 5 * HOST_RECURSIVE_GREEN_ANCESTOR_RECORD_BYTES
             );
-            assert!(
-                output[receipt.encoded_bytes as usize..]
-                    .iter()
-                    .all(|byte| *byte == 0xa5)
-            );
+            assert!(output[receipt.encoded_bytes as usize..]
+                .iter()
+                .all(|byte| *byte == 0xa5));
 
             if index == 1 {
                 let mut under_budget = query;
@@ -17017,6 +17035,64 @@ mod tests {
         assert!(receipt.storage_pages_visited <= 25);
         assert!(receipt.tree_nodes_visited <= 512);
         assert_eq!(&output[..8], BLOCK_RANGE_MAGIC);
+        close_host(&mut host);
+    }
+
+    #[test]
+    fn recursive_green_row_range_includes_terminal_empty_item_at_eof() {
+        let source = "- alpha\n-   ";
+        let document = [0x359, 2, 3, 4];
+        let snapshot = recursive_green_snapshot(document, [0x35a, 6, 7, 8], 1, 1, source);
+        let mut host = host_for(document);
+        install(&mut host, &snapshot);
+        let suffix_start = source.len() - 1;
+        let requested = HostMetricRange {
+            start: HostSourceMetric {
+                bytes: suffix_start as u32,
+                utf16: source[..suffix_start].encode_utf16().count() as u32,
+            },
+            end: HostSourceMetric {
+                bytes: source.len() as u32,
+                utf16: source.encode_utf16().count() as u32,
+            },
+        };
+        let budget = HostBlockRangeBudget {
+            maximum_encoded_bytes: 4_096,
+            maximum_block_count: 1,
+            maximum_storage_pages_visited: 25,
+            maximum_open_depth: 16,
+            maximum_tree_nodes_visited: 512,
+        };
+        let mut output = vec![0xa5; budget.maximum_encoded_bytes as usize];
+        let HostBlockRangeOutcome::Page {
+            covered_range,
+            continuation,
+            receipt,
+            ..
+        } = host
+            .query_structural_range(
+                block_range_query(snapshot.source, requested, budget, None),
+                &mut output,
+            )
+            .expect("terminal-empty recursive-Green suffix range")
+        else {
+            panic!("terminal-empty suffix must return its collapsed row");
+        };
+        assert_eq!(covered_range, requested);
+        assert!(continuation.is_none());
+        assert!(receipt.complete);
+        assert_eq!(receipt.block_count, 1);
+        assert_eq!(read_u32(&output, 24), 1);
+        assert_eq!(read_u32(&output, 28), 4);
+        let row = HOST_RECURSIVE_GREEN_ROW_RANGE_HEADER_BYTES;
+        assert_eq!(
+            u16::from_le_bytes(output[row + 16..row + 18].try_into().expect("row kind")),
+            14,
+        );
+        assert_eq!(read_u32(&output, row + 32), source.len() as u32);
+        assert_eq!(read_u32(&output, row + 40), source.len() as u32);
+        assert_eq!(read_u32(&output, row + 48), source.len() as u32);
+        assert_eq!(read_u32(&output, row + 56), source.len() as u32);
         close_host(&mut host);
     }
 
