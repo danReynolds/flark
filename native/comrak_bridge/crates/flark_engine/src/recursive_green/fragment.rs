@@ -12,7 +12,7 @@ use crate::measured_sequence::{
     ResumableMeasuredSequenceBuilder, ResumableSequenceProgress, SequenceInspectionReceipt,
     SequenceSpecInspection,
 };
-use crate::source::SourceCursor;
+use crate::source::{SourceCursor, SOURCE_CURSOR_WINDOW_BYTES};
 use crate::storage::ARENA_PAGE_BYTES;
 
 use super::build::{
@@ -198,8 +198,8 @@ struct PhysicalSpan {
 
 /// Fuelled sequential decoder over one active unpublished terminal fragment.
 ///
-/// A cursor caches at most one packed leaf, one source window and one ready
-/// byte. Range replay uses the same type with a private yield interval.
+/// A cursor caches at most one packed leaf, one source window and one bounded
+/// ready chunk. Range replay uses the same type with a private yield interval.
 #[must_use = "terminal-fragment cursors must reach completion or be discarded with the build"]
 pub struct M11RecursiveGreenTerminalFragmentCursor {
     stamp: M11RecursiveGreenTerminalFragmentStamp,
@@ -211,7 +211,10 @@ pub struct M11RecursiveGreenTerminalFragmentCursor {
     leaf_event_cursor: usize,
     leaf_events_remaining: u16,
     atom: Option<ProjectedAtom>,
-    ready: Option<M11RecursiveGreenProjectedByte>,
+    ready_bytes: Vec<u8>,
+    ready_raw_contributions: Vec<u8>,
+    ready_start: usize,
+    ready_base_offset: u64,
     available_bytes: u64,
     logical_utf16: u64,
     last_raw_contribution: Option<(u64, u8)>,
@@ -236,6 +239,14 @@ impl M11RecursiveGreenTerminalFragmentCursor {
         let mut open = Vec::new();
         open.try_reserve_exact(16)
             .map_err(|_| M11RecursiveGreenError::InvalidState)?;
+        let mut ready_bytes = Vec::new();
+        ready_bytes
+            .try_reserve_exact(SOURCE_CURSOR_WINDOW_BYTES)
+            .map_err(|_| M11RecursiveGreenError::InvalidState)?;
+        let mut ready_raw_contributions = Vec::new();
+        ready_raw_contributions
+            .try_reserve_exact(SOURCE_CURSOR_WINDOW_BYTES)
+            .map_err(|_| M11RecursiveGreenError::InvalidState)?;
         open.push(stamp.frame);
         let empty_at_origin = yield_bytes.start == 0 && yield_bytes.end == 0;
         Ok(Self {
@@ -251,7 +262,10 @@ impl M11RecursiveGreenTerminalFragmentCursor {
             leaf_event_cursor: 0,
             leaf_events_remaining: 0,
             atom: None,
-            ready: None,
+            ready_bytes,
+            ready_raw_contributions,
+            ready_start: 0,
+            ready_base_offset: 0,
             available_bytes: 0,
             logical_utf16: 0,
             last_raw_contribution: None,
@@ -280,21 +294,73 @@ impl M11RecursiveGreenTerminalFragmentCursor {
     }
 
     #[must_use]
-    pub const fn ready_byte(&self) -> Option<M11RecursiveGreenProjectedByte> {
-        self.ready
+    pub fn ready_byte(&self) -> Option<M11RecursiveGreenProjectedByte> {
+        let index = self.ready_start;
+        Some(M11RecursiveGreenProjectedByte {
+            relative_offset: self
+                .ready_base_offset
+                .checked_add(u64::try_from(index).ok()?)?,
+            byte: *self.ready_bytes.get(index)?,
+        })
     }
 
-    /// Consumes the sole ready byte at its exact sequential offset.
+    /// The next sequential projected bytes, bounded by one source window.
+    #[must_use]
+    pub fn ready_chunk(&self) -> &[u8] {
+        &self.ready_bytes[self.ready_start..]
+    }
+
+    /// Consumes one ready byte at its exact sequential offset.
     pub fn read_byte(&mut self, relative_offset: u64) -> Result<u8, M11RecursiveGreenError> {
-        let ready = self
-            .ready
-            .take()
-            .ok_or(M11RecursiveGreenError::InvalidState)?;
-        if ready.relative_offset != relative_offset {
-            self.ready = Some(ready);
+        let index = self.ready_start;
+        let expected = self
+            .ready_base_offset
+            .checked_add(
+                u64::try_from(index).map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+            )
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        if expected != relative_offset {
             return Err(M11RecursiveGreenError::InvalidState);
         }
-        Ok(ready.byte)
+        let byte = *self
+            .ready_bytes
+            .get(index)
+            .ok_or(M11RecursiveGreenError::InvalidState)?;
+        self.consume_ready_prefix(1)?;
+        Ok(byte)
+    }
+
+    /// Consumes a sequential prefix of the bounded ready chunk.
+    pub fn consume_ready_prefix(&mut self, len: usize) -> Result<(), M11RecursiveGreenError> {
+        if len == 0 || len > self.ready_chunk().len() {
+            return Err(M11RecursiveGreenError::InvalidState);
+        }
+        let last = self
+            .ready_start
+            .checked_add(len - 1)
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        let offset = self
+            .ready_base_offset
+            .checked_add(
+                u64::try_from(last).map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+            )
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        let contribution = *self
+            .ready_raw_contributions
+            .get(last)
+            .ok_or(M11RecursiveGreenError::InvalidState)?;
+        self.last_raw_contribution = Some((offset, contribution));
+        self.ready_start = self
+            .ready_start
+            .checked_add(len)
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        if self.ready_start == self.ready_bytes.len() {
+            self.ready_bytes.clear();
+            self.ready_raw_contributions.clear();
+            self.ready_start = 0;
+            self.ready_base_offset = self.yielded_bytes;
+        }
+        Ok(())
     }
 
     /// Returns the physical-codepoint contribution associated with the last
@@ -320,7 +386,7 @@ impl M11RecursiveGreenTerminalFragmentCursor {
     pub fn take_completed_range(
         &mut self,
     ) -> Result<M11RecursiveGreenTerminalFragmentRange, M11RecursiveGreenError> {
-        if !self.complete || self.ready.is_some() {
+        if !self.complete || !self.ready_chunk().is_empty() {
             return Err(M11RecursiveGreenError::InvalidState);
         }
         let mut authority = self
@@ -410,6 +476,42 @@ impl M11RecursiveGreenBuild {
         M11RecursiveGreenTerminalFragmentCursor::new(stamp, bytes, Some(utf16), Some(range))
     }
 
+    /// Retargets a completed replay to a later range without discarding its
+    /// decoded event, projection, or open-frame position.
+    ///
+    /// Reference definitions are emitted in source order. Keeping one cursor
+    /// at that monotonic boundary avoids replaying the already authenticated
+    /// Paragraph prefix for every nested label and value range.
+    pub fn retarget_terminal_fragment_range_replay_forward(
+        &self,
+        binding: &M11RecursiveGreenTerminalFragmentBinding,
+        cursor: &mut M11RecursiveGreenTerminalFragmentCursor,
+        range: M11RecursiveGreenTerminalFragmentRange,
+    ) -> Result<(), M11RecursiveGreenError> {
+        let stamp = self.validate_fragment_binding(binding)?;
+        if range.stamp != stamp
+            || cursor.stamp != stamp
+            || !cursor.complete
+            || !cursor.ready_chunk().is_empty()
+            || cursor.range_authority.is_some()
+            || range.range.bytes.start < cursor.available_bytes
+            || range.range.utf16.start < cursor.logical_utf16
+            || range.range.bytes.start > range.range.bytes.end
+            || range.range.utf16.start > range.range.utf16.end
+        {
+            return Err(M11RecursiveGreenError::InvalidState);
+        }
+        cursor.yield_bytes = range.range.bytes.clone();
+        cursor.expected_yield_utf16 = Some(range.range.utf16.clone());
+        cursor.range_authority = Some(range);
+        cursor.yielded_bytes = 0;
+        cursor.yielded_physical = None;
+        cursor.last_raw_contribution = None;
+        cursor.ready_base_offset = 0;
+        cursor.complete = false;
+        Ok(())
+    }
+
     pub fn poll_terminal_fragment_cursor(
         &mut self,
         runtime: &mut DocumentRuntime,
@@ -420,7 +522,7 @@ impl M11RecursiveGreenBuild {
             return Err(M11RecursiveGreenError::ZeroFuel);
         }
         self.ensure_fragment_cursor(runtime, cursor)?;
-        if cursor.ready.is_some() {
+        if !cursor.ready_chunk().is_empty() {
             return Ok(cursor_poll(
                 M11RecursiveGreenTerminalFragmentCursorStatus::ByteReady,
                 0,
@@ -438,7 +540,7 @@ impl M11RecursiveGreenBuild {
             if cursor.atom.is_some() {
                 self.step_fragment_atom(cursor)?;
                 transitions += 1;
-                if cursor.ready.is_some() {
+                if !cursor.ready_chunk().is_empty() {
                     return Ok(cursor_poll(
                         M11RecursiveGreenTerminalFragmentCursorStatus::ByteReady,
                         transitions,
@@ -474,6 +576,93 @@ impl M11RecursiveGreenBuild {
             }
             self.step_fragment_event(cursor)?;
             transitions += 1;
+        }
+        Ok(cursor_poll(
+            M11RecursiveGreenTerminalFragmentCursorStatus::Pending,
+            transitions,
+        ))
+    }
+
+    /// Advances by bounded projection quanta and exposes up to one 4 KiB
+    /// source window as a sequential ready chunk. One unit of caller fuel
+    /// performs at most `SOURCE_CURSOR_WINDOW_BYTES` projection/event steps.
+    pub fn poll_terminal_fragment_cursor_chunk(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+        cursor: &mut M11RecursiveGreenTerminalFragmentCursor,
+        fuel: usize,
+    ) -> Result<M11RecursiveGreenTerminalFragmentCursorPoll, M11RecursiveGreenError> {
+        if fuel == 0 {
+            return Err(M11RecursiveGreenError::ZeroFuel);
+        }
+        self.ensure_fragment_cursor(runtime, cursor)?;
+        if !cursor.ready_chunk().is_empty() {
+            return Ok(cursor_poll(
+                M11RecursiveGreenTerminalFragmentCursorStatus::ByteReady,
+                0,
+            ));
+        }
+        if cursor.complete {
+            return Ok(cursor_poll(
+                M11RecursiveGreenTerminalFragmentCursorStatus::Complete,
+                0,
+            ));
+        }
+
+        let mut transitions = 0;
+        while transitions < fuel {
+            let mut quantum_steps = 0;
+            while cursor.ready_chunk().len() < SOURCE_CURSOR_WINDOW_BYTES
+                && quantum_steps < SOURCE_CURSOR_WINDOW_BYTES
+                && !cursor.complete
+            {
+                if cursor.atom.is_some() {
+                    self.step_fragment_atom(cursor)?;
+                    quantum_steps += 1;
+                    continue;
+                }
+                if cursor.next_event == cursor.stamp.events_end {
+                    if cursor.open != [cursor.stamp.frame]
+                        || cursor.physical_position != cursor.stamp.source_end.bytes()
+                    {
+                        return Err(M11RecursiveGreenError::Corrupt(
+                            "terminal-fragment cursor changed its frozen boundary",
+                        ));
+                    }
+                    if let Some(expected) = &cursor.expected_yield_utf16 {
+                        let actual_end = cursor.logical_utf16;
+                        if cursor.available_bytes < cursor.yield_bytes.end
+                            || actual_end < expected.end
+                        {
+                            return Err(M11RecursiveGreenError::InvalidPoint);
+                        }
+                    }
+                    cursor.complete = true;
+                    break;
+                }
+                if cursor.leaf_events_remaining == 0 {
+                    self.load_fragment_leaf(runtime, cursor)?;
+                    quantum_steps += 1;
+                    continue;
+                }
+                self.step_fragment_event(cursor)?;
+                quantum_steps += 1;
+            }
+            if quantum_steps > 0 {
+                transitions += 1;
+            }
+            if !cursor.ready_chunk().is_empty() {
+                return Ok(cursor_poll(
+                    M11RecursiveGreenTerminalFragmentCursorStatus::ByteReady,
+                    transitions,
+                ));
+            }
+            if cursor.complete {
+                return Ok(cursor_poll(
+                    M11RecursiveGreenTerminalFragmentCursorStatus::Complete,
+                    transitions,
+                ));
+            }
         }
         Ok(cursor_poll(
             M11RecursiveGreenTerminalFragmentCursorStatus::Pending,
@@ -751,11 +940,11 @@ impl M11RecursiveGreenBuild {
                 },
                 None => physical,
             });
-            cursor.last_raw_contribution = Some((cursor.yielded_bytes, raw_contribution));
-            cursor.ready = Some(M11RecursiveGreenProjectedByte {
-                relative_offset: cursor.yielded_bytes,
-                byte,
-            });
+            if cursor.ready_bytes.is_empty() {
+                cursor.ready_base_offset = cursor.yielded_bytes;
+            }
+            cursor.ready_bytes.push(byte);
+            cursor.ready_raw_contributions.push(raw_contribution);
             cursor.yielded_bytes = cursor
                 .yielded_bytes
                 .checked_add(1)

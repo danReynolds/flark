@@ -9,6 +9,7 @@ use std::fmt;
 use std::ops::Range;
 
 use flark_block_core_donor as donor;
+use flark_block_core_donor::DirectReferencePrefixSource;
 use flark_engine::parser_internal::{
     M11RecursiveGreenBuildStatus, M11RecursiveGreenError, M11RecursiveGreenFrameId,
     M11RecursiveGreenLogicalPosition, M11RecursiveGreenLogicalRange,
@@ -24,7 +25,6 @@ use flark_engine::DocumentRuntime;
 use super::writer::M11ReferenceStagedTerminator;
 use super::{M11BlockWriter, M11BlockWriterError, M11DirectBlockController, M11DirectBlockError};
 use crate::reference_value::{
-    clean_title_body_range, CleanReferenceValueChunk, DestinationTrimProbe,
     ReferenceValueBodyCleaner, ReferenceValueCleanerError, ReferenceValueCleanerStatus,
 };
 
@@ -119,16 +119,27 @@ enum Phase {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum OccurrencePhase {
-    Source,
+    SourcePrefix,
     Label,
-    ProbeDestination,
-    ProbeTitle,
-    CountDestination,
-    CountTitle,
+    LabelDestinationGap,
+    Destination,
+    DestinationTitleGap,
+    Title,
+    SourceSuffix,
     BeginJournal,
     EmitDestination,
     EmitTitle,
     AwaitJournal,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SegmentKind {
+    SourcePrefix,
+    Label,
+    Gap,
+    Destination,
+    Title,
+    SourceSuffix,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -192,83 +203,343 @@ impl LogicalSpan {
             M11ReferenceRendezvousError::InvalidState("reference range is not monotonic"),
         )
     }
+}
 
-    fn select_ascii(&self, selected: Range<usize>) -> Result<Self, M11ReferenceRendezvousError> {
-        let raw_len = usize::try_from(self.bytes.end - self.bytes.start)
-            .map_err(|_| M11ReferenceRendezvousError::CounterOverflow)?;
-        if selected.start > selected.end || selected.end > raw_len {
+const COOKED_SCRATCH_PAGE_BYTES: usize = 4 * 1024;
+// This is the exact production `ReferenceRootLimits` per-fact bound. The
+// rendezvous enforces it before retaining cooked scratch, then the journal
+// independently preflights the same bound before accepting the occurrence.
+const MAX_COOKED_REFERENCE_FACT_BYTES: usize = 16 * 1024 * 1024;
+
+struct CookedScratch {
+    pages: Vec<Box<[u8]>>,
+    len: usize,
+    maximum: usize,
+}
+
+impl CookedScratch {
+    fn new(maximum: usize) -> Self {
+        Self {
+            pages: Vec::new(),
+            len: 0,
+            maximum,
+        }
+    }
+
+    fn append(&mut self, mut bytes: &[u8]) -> Result<(), M11ReferenceRendezvousError> {
+        let target = self
+            .len
+            .checked_add(bytes.len())
+            .ok_or(M11ReferenceRendezvousError::CounterOverflow)?;
+        if target > self.maximum {
             return Err(M11ReferenceRendezvousError::InvalidState(
-                "reference value selection left its source cut",
+                "reference cooked value exceeds its hard per-fact bound",
             ));
         }
-        let start = u64::try_from(selected.start)
-            .map_err(|_| M11ReferenceRendezvousError::CounterOverflow)?;
-        let end = u64::try_from(selected.end)
-            .map_err(|_| M11ReferenceRendezvousError::CounterOverflow)?;
-        let trailing = u64::try_from(raw_len - selected.end)
-            .map_err(|_| M11ReferenceRendezvousError::CounterOverflow)?;
-        Ok(Self {
-            bytes: (self.bytes.start + start)..(self.bytes.start + end),
-            // Destination trimming and title delimiters are ASCII, therefore
-            // every removed byte is exactly one logical UTF-16 unit.
-            utf16: (self.utf16.start + start)..(self.utf16.end - trailing),
-        })
-    }
-}
-
-#[derive(Default)]
-struct ValueProbe {
-    destination: DestinationTrimProbe,
-    len: usize,
-    first: Option<u8>,
-    last: Option<u8>,
-}
-
-impl ValueProbe {
-    fn push(&mut self, kind: ValueKind, byte: u8) -> Result<(), M11ReferenceRendezvousError> {
-        self.first.get_or_insert(byte);
-        self.last = Some(byte);
-        self.len = self
-            .len
-            .checked_add(1)
-            .ok_or(M11ReferenceRendezvousError::CounterOverflow)?;
-        if kind == ValueKind::Destination {
-            self.destination.push(byte)?;
+        while !bytes.is_empty() {
+            let page_offset = self.len % COOKED_SCRATCH_PAGE_BYTES;
+            if page_offset == 0 {
+                self.pages.try_reserve(1).map_err(|_| {
+                    M11ReferenceRendezvousError::InvalidState(
+                        "reference cooked scratch allocation failed",
+                    )
+                })?;
+                let mut page = Vec::new();
+                page.try_reserve_exact(COOKED_SCRATCH_PAGE_BYTES)
+                    .map_err(|_| {
+                        M11ReferenceRendezvousError::InvalidState(
+                            "reference cooked scratch allocation failed",
+                        )
+                    })?;
+                page.resize(COOKED_SCRATCH_PAGE_BYTES, 0);
+                self.pages.push(page.into_boxed_slice());
+            }
+            let take = bytes.len().min(COOKED_SCRATCH_PAGE_BYTES - page_offset);
+            let page = self
+                .pages
+                .last_mut()
+                .ok_or(M11ReferenceRendezvousError::InvalidState(
+                    "reference cooked scratch lost its page",
+                ))?;
+            page[page_offset..page_offset + take].copy_from_slice(&bytes[..take]);
+            self.len += take;
+            bytes = &bytes[take..];
         }
         Ok(())
     }
 
-    fn finish(self, kind: ValueKind) -> Range<usize> {
-        match kind {
-            ValueKind::Destination => self.destination.finish(),
-            ValueKind::Title => clean_title_body_range(self.len, self.first, self.last),
-        }
+    fn remaining_from(&self, offset: usize, maximum: usize) -> &[u8] {
+        debug_assert!(offset < self.len);
+        let page_index = offset / COOKED_SCRATCH_PAGE_BYTES;
+        let page_offset = offset % COOKED_SCRATCH_PAGE_BYTES;
+        let available = (self.len - offset)
+            .min(COOKED_SCRATCH_PAGE_BYTES - page_offset)
+            .min(maximum);
+        &self.pages[page_index][page_offset..page_offset + available]
+    }
+
+    const fn len(&self) -> usize {
+        self.len
     }
 }
 
-struct CleanPass {
-    cursor: M11RecursiveGreenTerminalFragmentCursor,
+enum StreamingValueMode {
+    Destination {
+        saw_non_space: bool,
+        pending_spaces: usize,
+        pending_non_space: Option<u8>,
+    },
+    Title {
+        saw_first: bool,
+        expected_close: Option<u8>,
+        held_last: Option<u8>,
+        pending_feed: Option<u8>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StreamingValuePoll {
+    NeedsSource,
+    Progress,
+    Complete,
+}
+
+struct StreamingValueCook {
+    mode: StreamingValueMode,
     cleaner: ReferenceValueBodyCleaner,
-    needs_input: bool,
-    pending: Option<CleanReferenceValueChunk>,
-    pending_offset: usize,
+    cleaner_needs_input: bool,
+    source_finished: bool,
+    finish_sent: bool,
+    complete: bool,
+    output: CookedScratch,
+}
+
+impl StreamingValueCook {
+    fn new(kind: ValueKind, maximum: usize) -> Self {
+        Self {
+            mode: match kind {
+                ValueKind::Destination => StreamingValueMode::Destination {
+                    saw_non_space: false,
+                    pending_spaces: 0,
+                    pending_non_space: None,
+                },
+                ValueKind::Title => StreamingValueMode::Title {
+                    saw_first: false,
+                    expected_close: None,
+                    held_last: None,
+                    pending_feed: None,
+                },
+            },
+            cleaner: ReferenceValueBodyCleaner::new(),
+            cleaner_needs_input: true,
+            source_finished: false,
+            finish_sent: false,
+            complete: false,
+            output: CookedScratch::new(maximum),
+        }
+    }
+
+    fn can_accept_source(&self) -> bool {
+        if self.source_finished {
+            return false;
+        }
+        match &self.mode {
+            StreamingValueMode::Destination {
+                pending_non_space, ..
+            } => pending_non_space.is_none(),
+            StreamingValueMode::Title { pending_feed, .. } => pending_feed.is_none(),
+        }
+    }
+
+    fn offer_source_byte(&mut self, byte: u8) -> Result<(), M11ReferenceRendezvousError> {
+        if !self.can_accept_source() {
+            return Err(M11ReferenceRendezvousError::InvalidState(
+                "reference value source advanced before its cleaner",
+            ));
+        }
+        match &mut self.mode {
+            StreamingValueMode::Destination {
+                saw_non_space,
+                pending_spaces,
+                pending_non_space,
+            } => {
+                if is_comrak_space(byte) {
+                    if *saw_non_space {
+                        *pending_spaces = pending_spaces
+                            .checked_add(1)
+                            .ok_or(M11ReferenceRendezvousError::CounterOverflow)?;
+                    }
+                } else {
+                    *saw_non_space = true;
+                    *pending_non_space = Some(byte);
+                }
+            }
+            StreamingValueMode::Title {
+                saw_first,
+                expected_close,
+                held_last,
+                pending_feed,
+            } => {
+                if !*saw_first {
+                    *saw_first = true;
+                    *expected_close = match byte {
+                        b'\'' | b'"' => Some(byte),
+                        b'(' => Some(b')'),
+                        _ => {
+                            *pending_feed = Some(byte);
+                            None
+                        }
+                    };
+                } else if expected_close.is_some() {
+                    if let Some(previous) = held_last.replace(byte) {
+                        *pending_feed = Some(previous);
+                    }
+                } else {
+                    *pending_feed = Some(byte);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn finish_source(&mut self) -> Result<(), M11ReferenceRendezvousError> {
+        if self.source_finished {
+            return Err(M11ReferenceRendezvousError::InvalidState(
+                "reference value source finished twice",
+            ));
+        }
+        match &mut self.mode {
+            StreamingValueMode::Destination { pending_spaces, .. } => {
+                // These are trailing spaces. Internal runs were retained until
+                // the next non-space proved that they belong to the body.
+                *pending_spaces = 0;
+            }
+            StreamingValueMode::Title {
+                saw_first,
+                expected_close,
+                held_last,
+                ..
+            } => {
+                if !*saw_first {
+                    return Err(M11ReferenceRendezvousError::InvalidState(
+                        "reference title source is empty",
+                    ));
+                }
+                if let Some(expected) = expected_close {
+                    if held_last.take() != Some(*expected) {
+                        return Err(M11ReferenceRendezvousError::InvalidState(
+                            "reference title delimiters changed after recognition",
+                        ));
+                    }
+                }
+            }
+        }
+        self.source_finished = true;
+        Ok(())
+    }
+
+    fn poll_one(&mut self) -> Result<StreamingValuePoll, M11ReferenceRendezvousError> {
+        if self.complete {
+            return Ok(StreamingValuePoll::Complete);
+        }
+        if !self.cleaner_needs_input {
+            return match self.cleaner.poll()? {
+                ReferenceValueCleanerStatus::Progress => Ok(StreamingValuePoll::Progress),
+                ReferenceValueCleanerStatus::NeedInput => {
+                    self.cleaner_needs_input = true;
+                    Ok(StreamingValuePoll::Progress)
+                }
+                ReferenceValueCleanerStatus::OutputReady => {
+                    let chunk = self.cleaner.take_output()?;
+                    self.output.append(chunk.bytes())?;
+                    Ok(StreamingValuePoll::Progress)
+                }
+                ReferenceValueCleanerStatus::Complete => {
+                    self.complete = true;
+                    Ok(StreamingValuePoll::Complete)
+                }
+            };
+        }
+
+        let next = match &mut self.mode {
+            StreamingValueMode::Destination {
+                pending_spaces,
+                pending_non_space,
+                ..
+            } => {
+                if pending_non_space.is_some() && *pending_spaces > 0 {
+                    *pending_spaces -= 1;
+                    Some(b' ')
+                } else {
+                    pending_non_space.take()
+                }
+            }
+            StreamingValueMode::Title { pending_feed, .. } => pending_feed.take(),
+        };
+        if let Some(byte) = next {
+            self.cleaner.offer_byte(byte)?;
+            self.cleaner_needs_input = false;
+            return Ok(StreamingValuePoll::Progress);
+        }
+        if !self.source_finished {
+            return Ok(StreamingValuePoll::NeedsSource);
+        }
+        if !self.finish_sent {
+            self.cleaner.finish_input()?;
+            self.cleaner_needs_input = false;
+            self.finish_sent = true;
+            return Ok(StreamingValuePoll::Progress);
+        }
+        Err(M11ReferenceRendezvousError::InvalidState(
+            "reference cleaner requested input after source completion",
+        ))
+    }
+
+    fn take_output(&mut self) -> Result<CookedScratch, M11ReferenceRendezvousError> {
+        if !self.complete {
+            return Err(M11ReferenceRendezvousError::InvalidState(
+                "reference cooked scratch was taken before completion",
+            ));
+        }
+        Ok(std::mem::replace(&mut self.output, CookedScratch::new(0)))
+    }
+}
+
+fn is_comrak_space(byte: u8) -> bool {
+    matches!(byte, b'\t' | b'\n' | b'\r' | b' ')
+}
+
+#[derive(Clone, Debug)]
+struct PhysicalEnvelope {
+    bytes: Range<u64>,
+    utf16: Range<u64>,
+}
+
+impl PhysicalEnvelope {
+    fn include(&mut self, bytes: Range<u64>, utf16: Range<u64>) {
+        self.bytes.end = bytes.end;
+        self.utf16.end = utf16.end;
+    }
+
+    fn into_journal(self) -> M11ReferenceJournalRange {
+        M11ReferenceJournalRange::new(self.bytes, self.utf16)
+    }
 }
 
 struct ActiveOccurrence {
     definition: donor::DirectReferenceDefinition,
     ack: Option<OutputAck>,
     phase: OccurrencePhase,
-    replay: Option<M11RecursiveGreenTerminalFragmentCursor>,
-    probe: ValueProbe,
-    clean: Option<CleanPass>,
+    segment_started: bool,
+    value_cook: Option<StreamingValueCook>,
+    source_envelope: Option<PhysicalEnvelope>,
     source: Option<M11ReferenceJournalRange>,
     label_source: Option<M11ReferenceJournalRange>,
     destination_source: Option<M11ReferenceJournalRange>,
     title_source: Option<M11ReferenceJournalRange>,
-    destination_selected: Option<LogicalSpan>,
-    title_selected: Option<LogicalSpan>,
-    destination_len: Option<usize>,
-    title_len: Option<usize>,
+    cooked_destination: Option<CookedScratch>,
+    cooked_title: Option<CookedScratch>,
+    emit_offset: usize,
 }
 
 impl ActiveOccurrence {
@@ -276,20 +547,85 @@ impl ActiveOccurrence {
         Self {
             definition,
             ack: Some(ack),
-            phase: OccurrencePhase::Source,
-            replay: None,
-            probe: ValueProbe::default(),
-            clean: None,
+            phase: OccurrencePhase::SourcePrefix,
+            segment_started: false,
+            value_cook: None,
+            source_envelope: None,
             source: None,
             label_source: None,
             destination_source: None,
             title_source: None,
-            destination_selected: None,
-            title_selected: None,
-            destination_len: None,
-            title_len: None,
+            cooked_destination: None,
+            cooked_title: None,
+            emit_offset: 0,
         }
     }
+}
+
+fn logical_span(byte_start: u64, byte_end: u64, utf16_start: u64, utf16_end: u64) -> LogicalSpan {
+    LogicalSpan {
+        bytes: byte_start..byte_end,
+        utf16: utf16_start..utf16_end,
+    }
+}
+
+fn advance_occurrence_segment(
+    active: &mut ActiveOccurrence,
+    has_title: bool,
+) -> Result<(), M11ReferenceRendezvousError> {
+    active.segment_started = false;
+    active.phase = match active.phase {
+        OccurrencePhase::SourcePrefix => OccurrencePhase::Label,
+        OccurrencePhase::Label => OccurrencePhase::LabelDestinationGap,
+        OccurrencePhase::LabelDestinationGap => OccurrencePhase::Destination,
+        OccurrencePhase::Destination => {
+            if has_title {
+                OccurrencePhase::DestinationTitleGap
+            } else {
+                OccurrencePhase::SourceSuffix
+            }
+        }
+        OccurrencePhase::DestinationTitleGap => OccurrencePhase::Title,
+        OccurrencePhase::Title => OccurrencePhase::SourceSuffix,
+        OccurrencePhase::SourceSuffix => OccurrencePhase::BeginJournal,
+        _ => {
+            return Err(M11ReferenceRendezvousError::InvalidState(
+                "reference segment completed outside the segment transaction",
+            ));
+        }
+    };
+    Ok(())
+}
+
+fn finalize_occurrence_source(
+    active: &mut ActiveOccurrence,
+    base: donor::DirectReferenceLogicalPosition,
+    fragment_end: M11RecursiveGreenLogicalPosition,
+    staged: Option<M11ReferenceStagedTerminator>,
+) -> Result<(), M11ReferenceRendezvousError> {
+    let source = LogicalSpan::from_direct(&active.definition.logical_source, base)?;
+    let mut envelope =
+        active
+            .source_envelope
+            .take()
+            .ok_or(M11ReferenceRendezvousError::InvalidState(
+                "reference source traversal produced no physical envelope",
+            ))?;
+    if source.bytes.end > fragment_end.bytes() || source.utf16.end > fragment_end.utf16() {
+        let staged = staged.ok_or(M11ReferenceRendezvousError::InvalidState(
+            "reference source escaped Green without a staged terminator",
+        ))?;
+        if envelope.bytes.end != staged.start.bytes() || envelope.utf16.end != staged.start.utf16()
+        {
+            return Err(M11ReferenceRendezvousError::InvalidState(
+                "reference source did not join its staged terminator",
+            ));
+        }
+        envelope.bytes.end = staged.end.bytes();
+        envelope.utf16.end = staged.end.utf16();
+    }
+    active.source = Some(envelope.into_journal());
+    Ok(())
 }
 
 /// One fuelled reference-prefix transaction for the active Paragraph.
@@ -302,6 +638,7 @@ pub struct M11ReferenceRendezvous {
     binding: Option<M11RecursiveGreenTerminalFragmentBinding>,
     identity: Option<Identity>,
     scan: Option<M11RecursiveGreenTerminalFragmentCursor>,
+    range_replay: Option<M11RecursiveGreenTerminalFragmentCursor>,
     work: Option<Work>,
     active: Option<ActiveOccurrence>,
     terminal: Option<TerminalOutput>,
@@ -333,6 +670,7 @@ impl M11ReferenceRendezvous {
             binding: None,
             identity: None,
             scan: None,
+            range_replay: None,
             work: None,
             active: None,
             terminal: None,
@@ -438,10 +776,10 @@ impl M11ReferenceRendezvous {
             .ok_or(M11ReferenceRendezvousError::InvalidState(
                 "reference scan cursor disappeared",
             ))?;
-        if scan.ready_byte().is_none() && !scan.is_final() {
+        if scan.ready_chunk().is_empty() && !scan.is_final() {
             let _ = writer
                 .reference_green_build_mut()?
-                .poll_terminal_fragment_cursor(runtime, scan, 1)?;
+                .poll_terminal_fragment_cursor_chunk(runtime, scan, 1)?;
         }
         let identity = self
             .identity
@@ -455,13 +793,17 @@ impl M11ReferenceRendezvous {
             virtual_lf: staged.is_some(),
             virtual_raw: staged.map_or(0, |value| value.raw_codepoint_contribution),
         };
+        let scan_fuel = source
+            .access_budget()
+            .min(flark_engine::SOURCE_CURSOR_WINDOW_BYTES)
+            .max(1);
         let receipt = self
             .work
             .as_mut()
             .ok_or(M11ReferenceRendezvousError::InvalidState(
                 "reference scanner work disappeared",
             ))?
-            .poll_source(&mut source, 1, false)
+            .poll_source(&mut source, scan_fuel, false)
             .map_err(map_donor_poll_error)?;
         match receipt.status {
             donor::DirectReferencePrefixPollStatus::NeedMore => {}
@@ -538,16 +880,16 @@ impl M11ReferenceRendezvous {
             ))?
             .phase;
         match phase {
-            OccurrencePhase::Source
+            OccurrencePhase::SourcePrefix
             | OccurrencePhase::Label
-            | OccurrencePhase::ProbeDestination
-            | OccurrencePhase::ProbeTitle => self.poll_occurrence_range(writer, runtime),
-            OccurrencePhase::CountDestination | OccurrencePhase::CountTitle => {
-                self.poll_occurrence_clean(writer, journal, runtime, false)
-            }
+            | OccurrencePhase::LabelDestinationGap
+            | OccurrencePhase::Destination
+            | OccurrencePhase::DestinationTitleGap
+            | OccurrencePhase::Title
+            | OccurrencePhase::SourceSuffix => self.poll_occurrence_segment(writer, runtime),
             OccurrencePhase::BeginJournal => self.begin_journal(journal, runtime),
             OccurrencePhase::EmitDestination | OccurrencePhase::EmitTitle => {
-                self.poll_occurrence_clean(writer, journal, runtime, true)
+                self.poll_occurrence_scratch(journal, runtime)
             }
             OccurrencePhase::AwaitJournal => {
                 if !journal.is_idle() {
@@ -596,155 +938,303 @@ impl M11ReferenceRendezvous {
         }
     }
 
-    fn poll_occurrence_range(
+    fn poll_occurrence_segment(
         &mut self,
         writer: &mut M11BlockWriter,
         runtime: &mut DocumentRuntime,
     ) -> Result<(), M11ReferenceRendezvousError> {
         let base = self.request.logical_base();
         let fragment_end = self.fragment_logical_end()?;
-        let staged = self.staged;
-        let active = self
-            .active
-            .as_mut()
-            .ok_or(M11ReferenceRendezvousError::InvalidState(
-                "reference occurrence disappeared",
-            ))?;
-        let (direct, probe_kind) = match active.phase {
-            OccurrencePhase::Source => (&active.definition.logical_source, None),
-            OccurrencePhase::Label => (&active.definition.logical_label, None),
-            OccurrencePhase::ProbeDestination => (
-                &active.definition.logical_destination,
-                Some(ValueKind::Destination),
-            ),
-            OccurrencePhase::ProbeTitle => (
-                active.definition.logical_title.as_ref().ok_or(
-                    M11ReferenceRendezvousError::InvalidState(
-                        "reference title phase has no title range",
+        let (kind, span, has_title) = {
+            let active = self
+                .active
+                .as_ref()
+                .ok_or(M11ReferenceRendezvousError::InvalidState(
+                    "reference occurrence disappeared",
+                ))?;
+            let source = LogicalSpan::from_direct(&active.definition.logical_source, base)?;
+            let label = LogicalSpan::from_direct(&active.definition.logical_label, base)?;
+            let destination =
+                LogicalSpan::from_direct(&active.definition.logical_destination, base)?;
+            let title = active
+                .definition
+                .logical_title
+                .as_ref()
+                .map(|range| LogicalSpan::from_direct(range, base))
+                .transpose()?;
+            let selected = match active.phase {
+                OccurrencePhase::SourcePrefix => (
+                    SegmentKind::SourcePrefix,
+                    logical_span(
+                        source.bytes.start,
+                        label.bytes.start,
+                        source.utf16.start,
+                        label.utf16.start,
                     ),
-                )?,
-                Some(ValueKind::Title),
-            ),
-            _ => {
-                return Err(M11ReferenceRendezvousError::InvalidState(
-                    "reference range poll entered a non-range phase",
+                ),
+                OccurrencePhase::Label => (SegmentKind::Label, label.clone()),
+                OccurrencePhase::LabelDestinationGap => (
+                    SegmentKind::Gap,
+                    logical_span(
+                        label.bytes.end,
+                        destination.bytes.start,
+                        label.utf16.end,
+                        destination.utf16.start,
+                    ),
+                ),
+                OccurrencePhase::Destination => (SegmentKind::Destination, destination.clone()),
+                OccurrencePhase::DestinationTitleGap => {
+                    let title = title
+                        .as_ref()
+                        .ok_or(M11ReferenceRendezvousError::InvalidState(
+                            "reference title gap has no title",
+                        ))?;
+                    (
+                        SegmentKind::Gap,
+                        logical_span(
+                            destination.bytes.end,
+                            title.bytes.start,
+                            destination.utf16.end,
+                            title.utf16.start,
+                        ),
+                    )
+                }
+                OccurrencePhase::Title => (
+                    SegmentKind::Title,
+                    title
+                        .clone()
+                        .ok_or(M11ReferenceRendezvousError::InvalidState(
+                            "reference title phase has no title",
+                        ))?,
+                ),
+                OccurrencePhase::SourceSuffix => {
+                    let start = title.as_ref().unwrap_or(&destination);
+                    (
+                        SegmentKind::SourceSuffix,
+                        logical_span(
+                            start.bytes.end,
+                            source.bytes.end,
+                            start.utf16.end,
+                            source.utf16.end,
+                        ),
+                    )
+                }
+                _ => {
+                    return Err(M11ReferenceRendezvousError::InvalidState(
+                        "reference segment entered a non-segment phase",
+                    ));
+                }
+            };
+            (selected.0, selected.1, title.is_some())
+        };
+        let clipped = clip_to_fragment(&span, fragment_end, self.staged.is_some())?;
+        let empty =
+            clipped.bytes.start == clipped.bytes.end && clipped.utf16.start == clipped.utf16.end;
+
+        if matches!(kind, SegmentKind::Destination | SegmentKind::Title) {
+            let active = self
+                .active
+                .as_mut()
+                .ok_or(M11ReferenceRendezvousError::InvalidState(
+                    "reference occurrence disappeared",
+                ))?;
+            if active.value_cook.is_none() {
+                let normalized_len = active.definition.normalized_label.as_bytes().len();
+                let already_cooked = active
+                    .cooked_destination
+                    .as_ref()
+                    .map_or(0, CookedScratch::len);
+                let maximum = MAX_COOKED_REFERENCE_FACT_BYTES
+                    .checked_sub(normalized_len)
+                    .and_then(|remaining| remaining.checked_sub(already_cooked))
+                    .ok_or(M11ReferenceRendezvousError::InvalidState(
+                        "reference cooked values exceed their hard per-fact bound",
+                    ))?;
+                active.value_cook = Some(StreamingValueCook::new(
+                    if kind == SegmentKind::Destination {
+                        ValueKind::Destination
+                    } else {
+                        ValueKind::Title
+                    },
+                    maximum,
                 ));
             }
-        };
-        let span = LogicalSpan::from_direct(direct, base)?;
-        if active.replay.is_none() {
-            let clipped = clip_to_fragment(&span, fragment_end, staged.is_some())?;
+            match active
+                .value_cook
+                .as_mut()
+                .ok_or(M11ReferenceRendezvousError::InvalidState(
+                    "reference value cleaner disappeared",
+                ))?
+                .poll_one()?
+            {
+                StreamingValuePoll::Progress => return Ok(()),
+                StreamingValuePoll::Complete => {
+                    let output = active
+                        .value_cook
+                        .as_mut()
+                        .ok_or(M11ReferenceRendezvousError::InvalidState(
+                            "reference value cleaner disappeared",
+                        ))?
+                        .take_output()?;
+                    active.value_cook = None;
+                    if kind == SegmentKind::Destination {
+                        active.cooked_destination = Some(output);
+                    } else {
+                        active.cooked_title = Some(output);
+                    }
+                    advance_occurrence_segment(active, has_title)?;
+                    return Ok(());
+                }
+                StreamingValuePoll::NeedsSource => {}
+            }
+        }
+
+        let segment_started = self
+            .active
+            .as_ref()
+            .ok_or(M11ReferenceRendezvousError::InvalidState(
+                "reference occurrence disappeared",
+            ))?
+            .segment_started;
+        if !segment_started {
+            if empty {
+                let active =
+                    self.active
+                        .as_mut()
+                        .ok_or(M11ReferenceRendezvousError::InvalidState(
+                            "reference occurrence disappeared",
+                        ))?;
+                active.segment_started = true;
+                if let Some(cook) = active.value_cook.as_mut() {
+                    cook.finish_source()?;
+                } else {
+                    if active.phase == OccurrencePhase::SourceSuffix {
+                        finalize_occurrence_source(active, base, fragment_end, self.staged)?;
+                    }
+                    advance_occurrence_segment(active, has_title)?;
+                }
+                return Ok(());
+            }
             let binding =
                 self.binding
                     .as_ref()
                     .ok_or(M11ReferenceRendezvousError::InvalidState(
-                        "reference range lost its fragment binding",
+                        "reference segment lost its fragment binding",
                     ))?;
             let build = writer.reference_green_build_mut()?;
             let range = build.bind_terminal_fragment_logical_range(binding, clipped.green()?)?;
-            active.replay = Some(build.open_terminal_fragment_range_replay(binding, range)?);
-            active.probe = ValueProbe::default();
+            if let Some(replay) = self.range_replay.as_mut() {
+                build.retarget_terminal_fragment_range_replay_forward(binding, replay, range)?;
+            } else {
+                self.range_replay =
+                    Some(build.open_terminal_fragment_range_replay(binding, range)?);
+            }
+            self.active
+                .as_mut()
+                .ok_or(M11ReferenceRendezvousError::InvalidState(
+                    "reference occurrence disappeared",
+                ))?
+                .segment_started = true;
             return Ok(());
         }
-        let replay = active
-            .replay
-            .as_mut()
-            .ok_or(M11ReferenceRendezvousError::InvalidState(
-                "reference replay disappeared",
-            ))?;
-        let polled = writer
-            .reference_green_build_mut()?
-            .poll_terminal_fragment_cursor(runtime, replay, 1)?;
+
+        let replay =
+            self.range_replay
+                .as_mut()
+                .ok_or(M11ReferenceRendezvousError::InvalidState(
+                    "reference forward replay disappeared",
+                ))?;
+        let build = writer.reference_green_build_mut()?;
+        let polled = if matches!(kind, SegmentKind::Destination | SegmentKind::Title) {
+            build.poll_terminal_fragment_cursor(runtime, replay, 1)?
+        } else {
+            build.poll_terminal_fragment_cursor_chunk(runtime, replay, 1)?
+        };
         match polled.status() {
             M11RecursiveGreenTerminalFragmentCursorStatus::Pending => Ok(()),
             M11RecursiveGreenTerminalFragmentCursorStatus::ByteReady => {
-                let ready =
-                    replay
-                        .ready_byte()
-                        .ok_or(M11ReferenceRendezvousError::InvalidState(
-                            "reference replay reported no ready byte",
-                        ))?;
-                let byte = replay.read_byte(ready.relative_offset())?;
-                if let Some(kind) = probe_kind {
-                    active.probe.push(kind, byte)?;
+                if let Some(cook) = self
+                    .active
+                    .as_mut()
+                    .ok_or(M11ReferenceRendezvousError::InvalidState(
+                        "reference occurrence disappeared",
+                    ))?
+                    .value_cook
+                    .as_mut()
+                {
+                    let ready = replay.ready_byte().ok_or(
+                        M11ReferenceRendezvousError::InvalidState(
+                            "reference value replay reported no ready byte",
+                        ),
+                    )?;
+                    let byte = replay.read_byte(ready.relative_offset())?;
+                    cook.offer_source_byte(byte)?;
+                } else {
+                    let ready = replay.ready_chunk().len();
+                    if ready == 0 {
+                        return Err(M11ReferenceRendezvousError::InvalidState(
+                            "reference range replay reported an empty ready chunk",
+                        ));
+                    }
+                    replay.consume_ready_prefix(ready)?;
                 }
                 Ok(())
             }
             M11RecursiveGreenTerminalFragmentCursorStatus::Complete => {
-                let mut completed = active
-                    .replay
-                    .take()
-                    .ok_or(M11ReferenceRendezvousError::InvalidState(
-                        "completed reference replay disappeared",
-                    ))?
-                    .take_completed_range()?;
+                let completed = replay.take_completed_range()?;
                 let physical =
                     completed
                         .physical_range()
                         .ok_or(M11ReferenceRendezvousError::InvalidState(
-                            "nonempty reference range has no physical envelope",
+                            "nonempty reference segment has no physical envelope",
                         ))?;
-                let mut byte_range = physical.byte_range();
-                let mut utf16_range = physical.utf16_range();
-                let includes_virtual =
-                    span.bytes.end > fragment_end.bytes() || span.utf16.end > fragment_end.utf16();
-                if includes_virtual {
-                    let staged = staged.ok_or(M11ReferenceRendezvousError::InvalidState(
-                        "reference range escaped Green without a staged terminator",
-                    ))?;
-                    if byte_range.end != staged.start.bytes()
-                        || utf16_range.end != staged.start.utf16()
-                    {
-                        return Err(M11ReferenceRendezvousError::InvalidState(
-                            "reference source did not join its staged terminator",
-                        ));
+                let bytes = physical.byte_range();
+                let utf16 = physical.utf16_range();
+                let active =
+                    self.active
+                        .as_mut()
+                        .ok_or(M11ReferenceRendezvousError::InvalidState(
+                            "reference occurrence disappeared",
+                        ))?;
+                match active.source_envelope.as_mut() {
+                    Some(envelope) => envelope.include(bytes.clone(), utf16.clone()),
+                    None => {
+                        active.source_envelope = Some(PhysicalEnvelope {
+                            bytes: bytes.clone(),
+                            utf16: utf16.clone(),
+                        });
                     }
-                    byte_range.end = staged.end.bytes();
-                    utf16_range.end = staged.end.utf16();
                 }
-                let journal_range = M11ReferenceJournalRange::new(byte_range, utf16_range);
-                match active.phase {
-                    OccurrencePhase::Source => {
-                        active.source = Some(journal_range);
-                        active.phase = OccurrencePhase::Label;
+                match kind {
+                    SegmentKind::Label => {
+                        active.label_source = Some(M11ReferenceJournalRange::new(bytes, utf16));
                     }
-                    OccurrencePhase::Label => {
-                        active.label_source = Some(journal_range);
-                        active.phase = OccurrencePhase::ProbeDestination;
+                    SegmentKind::Destination => {
+                        active.destination_source =
+                            Some(M11ReferenceJournalRange::new(bytes, utf16));
                     }
-                    OccurrencePhase::ProbeDestination => {
-                        let selected =
-                            std::mem::take(&mut active.probe).finish(ValueKind::Destination);
-                        active.destination_selected = Some(span.select_ascii(selected)?);
-                        active.destination_source = Some(journal_range);
-                        active.phase = if active.definition.logical_title.is_some() {
-                            OccurrencePhase::ProbeTitle
-                        } else {
-                            OccurrencePhase::CountDestination
-                        };
+                    SegmentKind::Title => {
+                        active.title_source = Some(M11ReferenceJournalRange::new(bytes, utf16));
                     }
-                    OccurrencePhase::ProbeTitle => {
-                        let selected = std::mem::take(&mut active.probe).finish(ValueKind::Title);
-                        active.title_selected = Some(span.select_ascii(selected)?);
-                        active.title_source = Some(journal_range);
-                        active.phase = OccurrencePhase::CountDestination;
-                    }
-                    _ => unreachable!("range phase was checked above"),
+                    SegmentKind::SourcePrefix | SegmentKind::Gap | SegmentKind::SourceSuffix => {}
                 }
-                // Keep the authenticated authority's lifetime explicit until
-                // its physical envelope has been consumed.
-                let _ = &mut completed;
+                if let Some(cook) = active.value_cook.as_mut() {
+                    cook.finish_source()?;
+                } else {
+                    if active.phase == OccurrencePhase::SourceSuffix {
+                        finalize_occurrence_source(active, base, fragment_end, self.staged)?;
+                    }
+                    advance_occurrence_segment(active, has_title)?;
+                }
                 Ok(())
             }
         }
     }
 
-    fn poll_occurrence_clean(
+    fn poll_occurrence_scratch(
         &mut self,
-        writer: &mut M11BlockWriter,
         journal: &mut M11ReferenceJournal,
         runtime: &mut DocumentRuntime,
-        emit: bool,
     ) -> Result<(), M11ReferenceRendezvousError> {
         let active = self
             .active
@@ -752,169 +1242,57 @@ impl M11ReferenceRendezvous {
             .ok_or(M11ReferenceRendezvousError::InvalidState(
                 "reference occurrence disappeared",
             ))?;
-        let kind = match active.phase {
-            OccurrencePhase::CountDestination | OccurrencePhase::EmitDestination => {
-                ValueKind::Destination
-            }
-            OccurrencePhase::CountTitle | OccurrencePhase::EmitTitle => ValueKind::Title,
+        let (kind, scratch) = match active.phase {
+            OccurrencePhase::EmitDestination => (
+                ValueKind::Destination,
+                active.cooked_destination.as_ref().ok_or(
+                    M11ReferenceRendezvousError::InvalidState(
+                        "reference occurrence lost its cooked destination",
+                    ),
+                )?,
+            ),
+            OccurrencePhase::EmitTitle => (
+                ValueKind::Title,
+                active
+                    .cooked_title
+                    .as_ref()
+                    .ok_or(M11ReferenceRendezvousError::InvalidState(
+                        "reference occurrence lost its cooked title",
+                    ))?,
+            ),
             _ => {
                 return Err(M11ReferenceRendezvousError::InvalidState(
-                    "reference cleaner entered a non-value phase",
+                    "reference scratch entered a non-emission phase",
                 ));
             }
         };
-        if active.clean.is_none() {
-            let span = match kind {
-                ValueKind::Destination => active.destination_selected.as_ref(),
-                ValueKind::Title => active.title_selected.as_ref(),
-            }
-            .ok_or(M11ReferenceRendezvousError::InvalidState(
-                "reference cleaner lost its selected range",
-            ))?;
-            let binding =
-                self.binding
-                    .as_ref()
-                    .ok_or(M11ReferenceRendezvousError::InvalidState(
-                        "reference cleaner lost its fragment binding",
-                    ))?;
-            let build = writer.reference_green_build_mut()?;
-            let range = build.bind_terminal_fragment_logical_range(binding, span.green()?)?;
-            let cursor = build.open_terminal_fragment_range_replay(binding, range)?;
-            active.clean = Some(CleanPass {
-                cursor,
-                cleaner: ReferenceValueBodyCleaner::new(),
-                needs_input: true,
-                pending: None,
-                pending_offset: 0,
-            });
-            return Ok(());
-        }
-        let clean = active
-            .clean
-            .as_mut()
-            .ok_or(M11ReferenceRendezvousError::InvalidState(
-                "reference cleaner disappeared",
-            ))?;
-        if emit && clean.pending.is_some() {
-            let capacity = journal.stream_capacity(kind.journal())?;
-            if capacity == 0 {
-                let _ = journal.poll(runtime, 1)?;
-                return Ok(());
-            }
-            let (consumed, output_len) = {
-                let bytes = clean
-                    .pending
-                    .as_ref()
-                    .ok_or(M11ReferenceRendezvousError::InvalidState(
-                        "reference cleaner output disappeared",
-                    ))?
-                    .bytes();
-                let end = clean
-                    .pending_offset
-                    .saturating_add(capacity)
-                    .min(bytes.len());
-                (
-                    journal
-                        .offer_stream_bytes(kind.journal(), &bytes[clean.pending_offset..end])?,
-                    bytes.len(),
-                )
+        if active.emit_offset == scratch.len() {
+            active.emit_offset = 0;
+            active.phase = if kind == ValueKind::Destination && active.cooked_title.is_some() {
+                OccurrencePhase::EmitTitle
+            } else {
+                OccurrencePhase::AwaitJournal
             };
-            if consumed == 0 {
-                return Err(M11ReferenceRendezvousError::InvalidState(
-                    "reference journal accepted zero bytes with positive capacity",
-                ));
-            }
-            clean.pending_offset = clean
-                .pending_offset
-                .checked_add(consumed)
-                .ok_or(M11ReferenceRendezvousError::CounterOverflow)?;
-            if clean.pending_offset == output_len {
-                clean.pending = None;
-                clean.pending_offset = 0;
-            }
             return Ok(());
         }
-        if clean.needs_input {
-            let polled = writer
-                .reference_green_build_mut()?
-                .poll_terminal_fragment_cursor(runtime, &mut clean.cursor, 1)?;
-            match polled.status() {
-                M11RecursiveGreenTerminalFragmentCursorStatus::Pending => return Ok(()),
-                M11RecursiveGreenTerminalFragmentCursorStatus::ByteReady => {
-                    let ready = clean.cursor.ready_byte().ok_or(
-                        M11ReferenceRendezvousError::InvalidState(
-                            "reference cleaner source reported no byte",
-                        ),
-                    )?;
-                    let byte = clean.cursor.read_byte(ready.relative_offset())?;
-                    clean.cleaner.offer_byte(byte)?;
-                    clean.needs_input = false;
-                    return Ok(());
-                }
-                M11RecursiveGreenTerminalFragmentCursorStatus::Complete => {
-                    let _ = clean.cursor.take_completed_range()?;
-                    clean.cleaner.finish_input()?;
-                    clean.needs_input = false;
-                    return Ok(());
-                }
-            }
+        let capacity = journal.stream_capacity(kind.journal())?;
+        if capacity == 0 {
+            let _ = journal.poll(runtime, 1)?;
+            return Ok(());
         }
-        match clean.cleaner.poll()? {
-            ReferenceValueCleanerStatus::Progress => Ok(()),
-            ReferenceValueCleanerStatus::NeedInput => {
-                clean.needs_input = true;
-                Ok(())
-            }
-            ReferenceValueCleanerStatus::OutputReady => {
-                let output = clean.cleaner.take_output()?;
-                if emit {
-                    clean.pending = Some(output);
-                    clean.pending_offset = 0;
-                }
-                Ok(())
-            }
-            ReferenceValueCleanerStatus::Complete => {
-                let cooked_len = usize::try_from(clean.cleaner.receipt().output_bytes)
-                    .map_err(|_| M11ReferenceRendezvousError::CounterOverflow)?;
-                active.clean = None;
-                if emit {
-                    let declared = match kind {
-                        ValueKind::Destination => active.destination_len,
-                        ValueKind::Title => active.title_len,
-                    }
-                    .ok_or(M11ReferenceRendezvousError::InvalidState(
-                        "reference emit pass lost its counted length",
-                    ))?;
-                    if declared != cooked_len {
-                        return Err(M11ReferenceRendezvousError::InvalidState(
-                            "reference count and emit passes diverged",
-                        ));
-                    }
-                    active.phase = if kind == ValueKind::Destination
-                        && active.definition.logical_title.is_some()
-                    {
-                        OccurrencePhase::EmitTitle
-                    } else {
-                        OccurrencePhase::AwaitJournal
-                    };
-                } else {
-                    match kind {
-                        ValueKind::Destination => active.destination_len = Some(cooked_len),
-                        ValueKind::Title => active.title_len = Some(cooked_len),
-                    }
-                    active.phase = if kind == ValueKind::Destination
-                        && active.definition.logical_title.is_some()
-                    {
-                        OccurrencePhase::CountTitle
-                    } else {
-                        OccurrencePhase::BeginJournal
-                    };
-                }
-                Ok(())
-            }
+        let bytes = scratch.remaining_from(active.emit_offset, capacity);
+        let consumed = journal.offer_stream_bytes(kind.journal(), bytes)?;
+        if consumed == 0 {
+            return Err(M11ReferenceRendezvousError::InvalidState(
+                "reference journal accepted zero retained bytes with positive capacity",
+            ));
         }
+        active.emit_offset = active
+            .emit_offset
+            .checked_add(consumed)
+            .ok_or(M11ReferenceRendezvousError::CounterOverflow)?;
+        Ok(())
     }
-
     fn begin_journal(
         &mut self,
         journal: &mut M11ReferenceJournal,
@@ -934,6 +1312,14 @@ impl M11ReferenceRendezvous {
         let normalized = std::mem::take(&mut active.definition.normalized_label)
             .into_bytes()
             .into_boxed_slice();
+        let destination_len = active
+            .cooked_destination
+            .as_ref()
+            .ok_or(M11ReferenceRendezvousError::InvalidState(
+                "reference occurrence lost its cooked destination",
+            ))?
+            .len();
+        let title_len = active.cooked_title.as_ref().map(CookedScratch::len);
         journal.begin_occurrence_stream(
             runtime,
             M11ReferenceJournalOccurrenceStart::new(
@@ -956,12 +1342,8 @@ impl M11ReferenceRendezvous {
                 )?,
                 active.title_source.take(),
                 normalized,
-                active
-                    .destination_len
-                    .ok_or(M11ReferenceRendezvousError::InvalidState(
-                        "reference occurrence lost its destination length",
-                    ))?,
-                active.title_len,
+                destination_len,
+                title_len,
             ),
         )?;
         active.phase = OccurrencePhase::EmitDestination;
@@ -1019,6 +1401,10 @@ impl M11ReferenceRendezvous {
             .ok_or(M11ReferenceRendezvousError::InvalidState(
                 "reference terminal lost its fragment binding",
             ))?;
+        // Every occurrence range has already been consumed monotonically.
+        // The final structural rewrite performs one independent linear prefix
+        // validation, never one replay per occurrence.
+        self.range_replay = None;
         let build = writer.reference_green_build_mut()?;
         let range = build.bind_terminal_fragment_logical_range(binding, span.green()?)?;
         self.terminal_replay = Some(build.open_terminal_fragment_range_replay(binding, range)?);
@@ -1039,18 +1425,18 @@ impl M11ReferenceRendezvous {
                 ))?;
         match writer
             .reference_green_build_mut()?
-            .poll_terminal_fragment_cursor(runtime, replay, 1)?
+            .poll_terminal_fragment_cursor_chunk(runtime, replay, 1)?
             .status()
         {
             M11RecursiveGreenTerminalFragmentCursorStatus::Pending => Ok(()),
             M11RecursiveGreenTerminalFragmentCursorStatus::ByteReady => {
-                let ready =
-                    replay
-                        .ready_byte()
-                        .ok_or(M11ReferenceRendezvousError::InvalidState(
-                            "terminal range replay reported no byte",
-                        ))?;
-                let _ = replay.read_byte(ready.relative_offset())?;
+                let ready = replay.ready_chunk().len();
+                if ready == 0 {
+                    return Err(M11ReferenceRendezvousError::InvalidState(
+                        "terminal range replay reported an empty ready chunk",
+                    ));
+                }
+                replay.consume_ready_prefix(ready)?;
                 Ok(())
             }
             M11RecursiveGreenTerminalFragmentCursorStatus::Complete => {
@@ -1271,7 +1657,9 @@ impl donor::DirectReferencePrefixSource for ProjectedReferenceSource<'_> {
     }
 
     fn access_budget(&self) -> usize {
-        usize::from(self.cursor.ready_byte().is_some() || self.cursor.is_final() && self.virtual_lf)
+        self.cursor.ready_chunk().len().saturating_add(usize::from(
+            self.cursor.is_final() && self.virtual_lf,
+        ))
     }
 
     fn read_byte(&mut self, relative_offset: usize) -> Result<u8, Self::Error> {
@@ -1353,4 +1741,105 @@ fn map_infallible_donor_error(
     M11ReferenceRendezvousError::InvalidState(
         "reference scanner rejected its linear acknowledgement",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::persistent_recursive_green_session::{
+        M11PersistentRecursiveGreenBuildStatus, M11PersistentRecursiveGreenCleanPlan,
+    };
+    use flark_engine::DocumentRuntimeConfig;
+
+    fn cook_once(kind: ValueKind, source: &[u8]) -> Vec<u8> {
+        let mut cook = StreamingValueCook::new(kind, 1024);
+        let mut source_offset = 0;
+        loop {
+            match cook.poll_one().expect("single-pass value cook") {
+                StreamingValuePoll::NeedsSource if source_offset < source.len() => {
+                    cook.offer_source_byte(source[source_offset])
+                        .expect("offer value source");
+                    source_offset += 1;
+                }
+                StreamingValuePoll::NeedsSource => {
+                    cook.finish_source().expect("finish value source");
+                }
+                StreamingValuePoll::Progress => {}
+                StreamingValuePoll::Complete => break,
+            }
+        }
+        let scratch = cook.take_output().expect("take cooked scratch");
+        let mut output = Vec::with_capacity(scratch.len());
+        let mut offset = 0;
+        while offset < scratch.len() {
+            let bytes = scratch.remaining_from(offset, usize::MAX);
+            output.extend_from_slice(bytes);
+            offset += bytes.len();
+        }
+        output
+    }
+
+    fn same_paragraph_reference_transitions(definitions: usize) -> usize {
+        let mut source = String::new();
+        for ordinal in 0..definitions {
+            use std::fmt::Write as _;
+            writeln!(&mut source, "[ref-{ordinal}]: /target-{ordinal}")
+                .expect("reference fixture write");
+        }
+        let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
+            .expect("reference slope runtime");
+        let plan = M11PersistentRecursiveGreenCleanPlan::new(
+            runtime.snapshot_current_source().expect("scanner lease"),
+            runtime.snapshot_current_source().expect("writer lease"),
+            1,
+        )
+        .expect("reference slope plan");
+        let mut build = plan.begin(&mut runtime).expect("reference slope build");
+        let mut transitions = 0_usize;
+        loop {
+            let poll = build.poll(&mut runtime, 1).expect("reference slope poll");
+            transitions = transitions
+                .checked_add(poll.transitions())
+                .expect("reference slope transition count");
+            if poll.status() == M11PersistentRecursiveGreenBuildStatus::Complete {
+                break;
+            }
+        }
+        let mut session = build.take_session().expect("reference slope session");
+        assert_eq!(session.reference_occurrence_count(), definitions as u64);
+        session
+            .begin_release(&mut runtime)
+            .expect("begin session release");
+        while !session
+            .poll_release(&mut runtime, 64)
+            .expect("poll session release")
+        {}
+        runtime.begin_close().expect("begin runtime close");
+        while !runtime.poll_close(64).expect("poll runtime close").complete {}
+        transitions
+    }
+
+    #[test]
+    fn same_paragraph_reference_work_has_linear_doubling_slope() {
+        let small = same_paragraph_reference_transitions(32);
+        let doubled = same_paragraph_reference_transitions(64);
+        eprintln!(
+            "same_paragraph_reference_slope definitions=32 transitions={small} \
+             definitions=64 transitions={doubled} ratio={:.3}",
+            doubled as f64 / small as f64,
+        );
+        assert!(
+            doubled < small * 3,
+            "doubling same-Paragraph definitions grew from {small} to {doubled} transitions"
+        );
+    }
+
+    #[test]
+    fn single_pass_value_cooking_preserves_trim_title_entity_and_escape_semantics() {
+        assert_eq!(
+            cook_once(ValueKind::Destination, b" \t/a&amp;b\\* \r"),
+            b"/a&b*"
+        );
+        assert_eq!(cook_once(ValueKind::Title, b"\"a&amp;b\\*\""), b"a&b*");
+    }
 }
