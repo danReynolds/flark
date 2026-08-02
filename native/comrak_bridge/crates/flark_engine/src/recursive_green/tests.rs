@@ -458,7 +458,7 @@ fn active_terminal_fragment_cursor_and_visible_suffix_rewrite_preserve_projectio
             }
             M11RecursiveGreenTerminalFragmentRewritePoll::Complete {
                 transitions,
-                authority,
+                mut authority,
             } => {
                 assert!(transitions <= 1);
                 assert_eq!(authority.frame(), frame(3));
@@ -466,6 +466,14 @@ fn active_terminal_fragment_cursor_and_visible_suffix_rewrite_preserve_projectio
                     authority.disposition(),
                     M11RecursiveGreenTerminalFragmentDisposition::Surviving
                 );
+                let boundary = authority
+                    .take_visible_remainder_boundary()
+                    .expect("retain rewrite authenticates the definition/remainder cut");
+                assert_eq!(boundary.physical_metric().bytes(), 12);
+                assert_eq!(boundary.physical_metric().utf16(), 12);
+                assert_eq!(boundary.logical_metric().bytes(), 0);
+                assert_eq!(boundary.logical_metric().utf16(), 0);
+                assert_eq!(boundary.open_path().len(), 3);
                 break;
             }
         }

@@ -591,7 +591,8 @@ pub fn splice_m11_recursive_green_structural_atomic(
         || start.physical.utf16() > end.physical.utf16()
         || start.logical.bytes() > end.logical.bytes()
         || start.logical.utf16() > end.logical.utf16()
-        || start.open != end.open
+        || end.open.len() > start.open.len()
+        || start.open[..end.open.len()] != end.open[..]
     {
         return Err(M11RecursiveGreenError::SourceAuthorityMismatch);
     }
@@ -605,6 +606,9 @@ pub fn splice_m11_recursive_green_structural_atomic(
         ..usize::try_from(target_end_physical.bytes())
             .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
     let external_open_depth = start.open.len();
+    let external_closes = external_open_depth
+        .checked_sub(end.open.len())
+        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
     if base_event_range.start >= base_event_range.end
         || base_event_range.end > base.event_count()
         || base_byte_range.start > base_byte_range.end
@@ -664,8 +668,9 @@ pub fn splice_m11_recursive_green_structural_atomic(
         end.physical,
         end.logical,
     )?;
-    if plan.deleted_summary.balance != 0
-        || plan.deleted_summary.minimum_prefix != 0
+    if plan.deleted_summary.unmatched_closes()?
+        != u64::try_from(external_closes).map_err(|_| M11RecursiveGreenError::CounterOverflow)?
+        || plan.deleted_summary.unmatched_opens()? != 0
         || plan.deleted_summary.oldest_open.is_some()
     {
         return Err(M11RecursiveGreenError::InvalidPoint);
@@ -674,7 +679,8 @@ pub fn splice_m11_recursive_green_structural_atomic(
     let (replacement, replacement_summary) = pack_structural_fragment(
         &target_lease,
         &target_byte_range,
-        external_open_depth,
+        &start.open,
+        &end.open,
         base.maximum_frame_id(),
         events,
     )?;
@@ -684,8 +690,10 @@ pub fn splice_m11_recursive_green_structural_atomic(
         || replacement_summary.physical_utf16
             != u64::try_from(target_utf16_end - target_utf16_start)
                 .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
-        || replacement_summary.balance != 0
-        || replacement_summary.minimum_prefix != 0
+        || replacement_summary.unmatched_closes()?
+            != u64::try_from(external_closes)
+                .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
+        || replacement_summary.unmatched_opens()? != 0
         || replacement_summary.oldest_open.is_some()
     {
         return Err(M11RecursiveGreenError::IncompleteCoverage);
@@ -889,7 +897,7 @@ pub fn splice_m11_recursive_green_structural_atomic(
         target_event_cut,
         target_end_physical,
         target_logical,
-        start.open,
+        end.open,
     );
     Ok((
         M11RecursiveGreenRoot::from_splice(
@@ -1054,7 +1062,8 @@ fn plan_structural_splice(
 fn pack_structural_fragment(
     lease: &SourceSnapshotLease,
     target_range: &Range<usize>,
-    external_open_depth: usize,
+    start_open: &[M11RecursiveGreenBoundaryFrame],
+    end_open: &[M11RecursiveGreenBoundaryFrame],
     base_maximum_frame_id: u64,
     events: &[M11RecursiveGreenEvent],
 ) -> Result<(Vec<PackedGreenEvent>, RecursiveGreenSummary), M11RecursiveGreenError> {
@@ -1063,8 +1072,9 @@ fn pack_structural_fragment(
         .try_reserve(events.len())
         .map_err(|_| M11RecursiveGreenError::InvalidState)?;
     let mut open: Vec<(M11RecursiveGreenFrameId, M11RecursiveGreenKind)> = Vec::new();
-    open.try_reserve(32)
+    open.try_reserve(start_open.len().saturating_add(32))
         .map_err(|_| M11RecursiveGreenError::InvalidState)?;
+    open.extend(start_open.iter().map(|frame| (frame.frame, frame.kind)));
     let mut source_cursor = target_range.start;
     let mut last_new_frame = base_maximum_frame_id;
     let mut property_adjacent = false;
@@ -1092,13 +1102,10 @@ fn pack_structural_fragment(
                 part,
                 logical,
             } => {
-                let total_depth = external_open_depth
-                    .checked_add(open.len())
-                    .ok_or(M11RecursiveGreenError::CounterOverflow)?;
                 if physical.is_empty()
                     || usize::try_from(owner_depth)
                         .ok()
-                        .is_none_or(|depth| depth >= total_depth)
+                        .is_none_or(|depth| depth >= open.len())
                 {
                     return Err(M11RecursiveGreenError::InvalidEvent);
                 }
@@ -1162,7 +1169,14 @@ fn pack_structural_fragment(
             }
         }
     }
-    if source_cursor != target_range.end || !open.is_empty() || packed.is_empty() {
+    if source_cursor != target_range.end
+        || open.len() != end_open.len()
+        || !open
+            .iter()
+            .zip(end_open)
+            .all(|((frame, kind), expected)| *frame == expected.frame && *kind == expected.kind)
+        || packed.is_empty()
+    {
         return Err(M11RecursiveGreenError::IncompleteCoverage);
     }
     let summary = fold_events(&packed)?.ok_or(M11RecursiveGreenError::InvalidEvent)?;

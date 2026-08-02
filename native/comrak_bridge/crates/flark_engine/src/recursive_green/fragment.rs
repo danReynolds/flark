@@ -1003,6 +1003,7 @@ pub enum M11RecursiveGreenTerminalFragmentDisposition {
 pub struct M11RecursiveGreenTerminalFragmentRewriteAuthority {
     stamp: M11RecursiveGreenTerminalFragmentStamp,
     disposition: M11RecursiveGreenTerminalFragmentDisposition,
+    visible_remainder_boundary: Option<super::adopt::M11RecursiveGreenStructuralBoundary>,
 }
 
 impl M11RecursiveGreenTerminalFragmentRewriteAuthority {
@@ -1014,6 +1015,16 @@ impl M11RecursiveGreenTerminalFragmentRewriteAuthority {
     #[must_use]
     pub const fn disposition(&self) -> M11RecursiveGreenTerminalFragmentDisposition {
         self.disposition
+    }
+
+    /// Takes the authenticated structural cut between a removed logical
+    /// prefix and its surviving terminal-frame suffix, when this authority
+    /// completed a `RetainVisibleSuffix` rewrite.
+    #[doc(hidden)]
+    pub fn take_visible_remainder_boundary(
+        &mut self,
+    ) -> Option<super::adopt::M11RecursiveGreenStructuralBoundary> {
+        self.visible_remainder_boundary.take()
     }
 }
 
@@ -1066,6 +1077,7 @@ pub struct M11RecursiveGreenTerminalFragmentRewriteWork {
     replacement: Option<ResumableMeasuredSequenceBuilder<RecursiveGreenSpec>>,
     replacement_root: Option<MeasuredSequenceBuildRoot<RecursiveGreenSpec>>,
     first_leaf: u64,
+    first_event: u64,
     next_leaf: u64,
     end_leaf: u64,
     next_original_event: u64,
@@ -1075,6 +1087,10 @@ pub struct M11RecursiveGreenTerminalFragmentRewriteWork {
     pending_output: [Option<PackedGreenEvent>; 2],
     pending_output_next: u8,
     pending_output_len: u8,
+    boundary_after_pending_output: Option<u8>,
+    emitted_events: u64,
+    visible_remainder_event_cut: Option<u64>,
+    visible_remainder_physical: Option<M11RecursiveGreenSourceMetric>,
     page: [u8; ARENA_PAGE_BYTES],
     page_len: usize,
     page_events: u16,
@@ -1093,6 +1109,7 @@ impl M11RecursiveGreenBuild {
         rewrite: M11RecursiveGreenTerminalFragmentRewrite,
     ) -> Result<M11RecursiveGreenTerminalFragmentRewriteWork, M11RecursiveGreenError> {
         let stamp = self.validate_fragment_binding(&binding)?;
+        let mut visible_remainder_physical = None;
         let mode = match rewrite {
             M11RecursiveGreenTerminalFragmentRewrite::Unchanged => RewriteMode::Unchanged,
             M11RecursiveGreenTerminalFragmentRewrite::RemoveWrapper { whole_fragment } => {
@@ -1110,6 +1127,14 @@ impl M11RecursiveGreenBuild {
                 if removed_prefix.range.bytes.start != 0 || removed_prefix.range.utf16.start != 0 {
                     return Err(M11RecursiveGreenError::InvalidPoint);
                 }
+                let physical = removed_prefix
+                    .physical_range()
+                    .ok_or(M11RecursiveGreenError::InvalidState)?;
+                let bytes = physical.byte_range();
+                let utf16 = physical.utf16_range();
+                visible_remainder_physical = Some(M11RecursiveGreenSourceMetric::from_validated(
+                    bytes.end, utf16.end,
+                ));
                 RewriteMode::Retain {
                     cut_bytes: removed_prefix.range.bytes.end,
                     cut_utf16: removed_prefix.range.utf16.end,
@@ -1138,6 +1163,7 @@ impl M11RecursiveGreenBuild {
             replacement: None,
             replacement_root: None,
             first_leaf,
+            first_event,
             next_leaf: first_leaf,
             end_leaf,
             next_original_event: first_event,
@@ -1147,6 +1173,10 @@ impl M11RecursiveGreenBuild {
             pending_output: [None, None],
             pending_output_next: 0,
             pending_output_len: 0,
+            boundary_after_pending_output: None,
+            emitted_events: 0,
+            visible_remainder_event_cut: None,
+            visible_remainder_physical,
             page: [0; ARENA_PAGE_BYTES],
             page_len: GREEN_LEAF_HEADER_BYTES,
             page_events: 0,
@@ -1198,7 +1228,20 @@ impl M11RecursiveGreenBuild {
                             self.begin_rewrite_page_push(runtime, work)?;
                             work.phase = RewritePhase::PushPage;
                         } else {
+                            let output_index = work.pending_output_next;
                             append_rewrite_event(work, event)?;
+                            work.emitted_events = work
+                                .emitted_events
+                                .checked_add(1)
+                                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+                            if work.boundary_after_pending_output == Some(output_index) {
+                                work.visible_remainder_event_cut = Some(
+                                    work.first_event
+                                        .checked_add(work.emitted_events)
+                                        .ok_or(M11RecursiveGreenError::CounterOverflow)?,
+                                );
+                                work.boundary_after_pending_output = None;
+                            }
                             work.pending_output_next += 1;
                             if work.pending_output_next == work.pending_output_len {
                                 work.pending_output = [None, None];
@@ -1499,6 +1542,9 @@ impl M11RecursiveGreenBuild {
                     } else {
                         (owner_depth, part)
                     };
+                    if work.logical_bytes == cut_bytes {
+                        work.boundary_after_pending_output = Some(0);
+                    }
                     return Ok([
                         Some(PackedGreenEvent::Coverage {
                             physical,
@@ -1549,6 +1595,7 @@ impl M11RecursiveGreenBuild {
                     physical.bytes() - prefix_bytes,
                     physical.utf16() - prefix_utf16,
                 )?;
+                work.boundary_after_pending_output = Some(0);
                 Ok([
                     Some(PackedGreenEvent::Coverage {
                         physical: prefix,
@@ -1713,6 +1760,27 @@ impl M11RecursiveGreenBuild {
         } else {
             M11RecursiveGreenTerminalFragmentDisposition::Surviving
         };
+        let visible_remainder_boundary = if matches!(work.mode, RewriteMode::Retain { .. }) {
+            let event_cut = work
+                .visible_remainder_event_cut
+                .ok_or(M11RecursiveGreenError::InvalidState)?;
+            let physical = work
+                .visible_remainder_physical
+                .ok_or(M11RecursiveGreenError::InvalidState)?;
+            Some(
+                super::adopt::M11RecursiveGreenStructuralBoundary::from_build(
+                    self.runtime_identity,
+                    self.green_identity,
+                    self.source,
+                    event_cut,
+                    physical,
+                    work.stamp.logical_before,
+                    self.open.iter().map(|frame| (frame.frame, frame.kind)),
+                )?,
+            )
+        } else {
+            None
+        };
         self.active_fragment = None;
         self.phase = BuildPhase::Accepting;
         work.phase = RewritePhase::Complete;
@@ -1721,6 +1789,7 @@ impl M11RecursiveGreenBuild {
             authority: M11RecursiveGreenTerminalFragmentRewriteAuthority {
                 stamp: work.stamp,
                 disposition,
+                visible_remainder_boundary,
             },
         })
     }

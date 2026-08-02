@@ -2592,6 +2592,29 @@ pub struct DirectRestartOutput {
     paragraph: Option<DirectPauseParagraphState>,
 }
 
+/// Opaque donor continuation immediately after a leading reference-definition
+/// prefix and before the surviving visible Paragraph remainder.
+///
+/// The reference rendezvous may mint this only from its committed
+/// `VisibleRemainder` terminal. Source coordinates and writer/Green authority
+/// deliberately remain consumer-owned and must be joined separately.
+#[doc(hidden)]
+#[must_use = "a leading-reference remainder continuation must be joined or discarded"]
+pub struct DirectLeadingReferenceRemainderContinuation {
+    grammar: DirectGrammarContinuation,
+    output: DirectRestartOutput,
+}
+
+impl DirectLeadingReferenceRemainderContinuation {
+    /// Consume the semantic continuation into the ordinary restart parts used
+    /// by the direct parser's joined-resume path.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn into_restart_parts(self) -> (DirectGrammarContinuation, DirectRestartOutput) {
+        (self.grammar, self.output)
+    }
+}
+
 /// Opaque borrowed view of only the per-frame line-local blankness retained by
 /// an existing donor restart sample.
 ///
@@ -8437,6 +8460,90 @@ impl DirectValueBlockParser {
                 DirectReferencePrefixCommitStatus::ReferenceOnlyArmed
             }
         })
+    }
+
+    /// Captures the donor-owned continuation at the internal cut between a
+    /// leading reference-definition prefix and its visible Paragraph suffix.
+    ///
+    /// This is intentionally narrower than a general mid-block checkpoint:
+    /// only the top-level `Document -> Paragraph` shape reached immediately
+    /// after committing `VisibleRemainder` is accepted. The source-owning
+    /// consumer must independently bind the physical cursor at the
+    /// rendezvous-authenticated prefix end.
+    #[doc(hidden)]
+    pub fn capture_leading_reference_remainder_continuation(
+        &self,
+    ) -> Result<DirectLeadingReferenceRemainderContinuation, ParseError> {
+        if self.pending_command().is_some()
+            || self.line_work.is_some()
+            || self.finished
+            || self.active_source_line_admission.is_some()
+        {
+            return Err(ParseError::Invariant(
+                "leading-reference remainder capture is parser-quiescent",
+            ));
+        }
+        let direct = self
+            .parser
+            .direct
+            .as_ref()
+            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        if direct.reference_finalize_resume_once
+            != Some(DirectReferencePrefixDisposition::VisibleRemainder)
+            || direct.pending_external_work.is_some()
+            || direct.reference_work_id.is_some()
+            || direct.emission_stack.len() != 2
+            || direct.emission_stack.first().copied() != Some(self.parser.tree.root)
+            || direct.emission_stack.last().copied() != Some(self.parser.current)
+            || self.parser.tree.nodes.len() != 2
+        {
+            return Err(ParseError::Invariant(
+                "leading-reference remainder is a top-level Paragraph cut",
+            ));
+        }
+        let root = self.parser.tree.node(direct.emission_stack[0]);
+        let paragraph = self.parser.tree.node(direct.emission_stack[1]);
+        if !root.open
+            || !paragraph.open
+            || root.kind != BlockKind::Document
+            || paragraph.kind != BlockKind::Paragraph
+            || paragraph.parent != Some(root.id)
+            || root.children.as_slice() != [paragraph.id]
+            || !paragraph.children.is_empty()
+        {
+            return Err(ParseError::Invariant(
+                "leading-reference remainder owns one open top-level Paragraph",
+            ));
+        }
+        let output = DirectRestartOutput {
+            schema: DIRECT_LINE_BOUNDARY_PAUSE_SCHEMA,
+            profile: self.parser.profile,
+            current_frame: 1,
+            frames: vec![
+                DirectPauseFrame {
+                    kind: DirectBlockKind::Document,
+                    last_line_blank: false,
+                    closed_children: root.historical_children,
+                },
+                DirectPauseFrame {
+                    kind: DirectBlockKind::Paragraph,
+                    last_line_blank: false,
+                    closed_children: paragraph.historical_children,
+                },
+            ]
+            .into_boxed_slice(),
+            // The removed definition terminator is already represented by
+            // Green Gap coverage. Re-emitting it would create a logical
+            // newline before the visible suffix.
+            deferred: DirectDeferredState::default(),
+            paragraph: Some(DirectPauseParagraphState {
+                frame_depth: 1,
+                has_visible_content: true,
+                may_have_reference_prefix: false,
+            }),
+        };
+        let (grammar, output) = direct_restart_output_into_parts(output)?;
+        Ok(DirectLeadingReferenceRemainderContinuation { grammar, output })
     }
 
     #[must_use]

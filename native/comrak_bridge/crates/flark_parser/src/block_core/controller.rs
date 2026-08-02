@@ -13,6 +13,7 @@ use std::{
 };
 
 use flark_block_core_donor as donor;
+use flark_engine::{LineEnding as SourceLineEnding, SourceBoundaryAffinity, SourceSnapshotLease};
 
 use super::{
     BlockCommand, BlockKind, BulletMarker, ClosedChild, CoveragePart, FenceCharacter,
@@ -127,6 +128,88 @@ pub struct M11DirectBlockRestart {
     open_kinds: Box<[BlockKind]>,
     deferred: M11DirectBlockDeferredRole,
     restart_join: Option<u64>,
+}
+
+/// Donor-certified semantic continuation at the internal cut after leading
+/// reference definitions and before their visible Paragraph remainder.
+/// Physical cursor and writer/Green authority are joined separately.
+pub(crate) struct M11DirectLeadingReferenceRemainderContinuation {
+    donor: donor::DirectLeadingReferenceRemainderContinuation,
+    restart_join: Option<u64>,
+    cursor: Option<(u64, u64)>,
+}
+
+impl M11DirectLeadingReferenceRemainderContinuation {
+    pub(super) fn bind_authenticated_source_cut(
+        &mut self,
+        lease: &SourceSnapshotLease,
+        cut: SourceMetric,
+    ) -> Result<(), M11DirectBlockError> {
+        let byte_cut = usize::try_from(cut.bytes())
+            .map_err(|_| M11DirectBlockError::Invariant("remainder byte cut fits usize"))?;
+        let utf16_cut = usize::try_from(cut.utf16())
+            .map_err(|_| M11DirectBlockError::Invariant("remainder UTF-16 cut fits usize"))?;
+        if self.cursor.is_some()
+            || lease.utf16_offset_for_byte(byte_cut).map_err(|_| {
+                M11DirectBlockError::Invariant("remainder cut is a source scalar boundary")
+            })? != utf16_cut
+            || !lease.is_physical_line_start(byte_cut).map_err(|_| {
+                M11DirectBlockError::Invariant("remainder cut is inside current source")
+            })?
+        {
+            return Err(M11DirectBlockError::Invariant(
+                "remainder cut is one exact physical-line boundary",
+            ));
+        }
+        let previous = lease
+            .locate_physical_line(byte_cut, SourceBoundaryAffinity::Before)
+            .map_err(|_| M11DirectBlockError::Invariant("remainder predecessor line exists"))?
+            .ok_or(M11DirectBlockError::Invariant(
+                "remainder follows at least one definition line",
+            ))?;
+        let ending_bytes = match previous.ending() {
+            SourceLineEnding::CrLf => 2,
+            SourceLineEnding::Lf | SourceLineEnding::Cr => 1,
+            SourceLineEnding::Eof => 0,
+        };
+        let next_ordinal =
+            previous
+                .ordinal()
+                .checked_add(1)
+                .ok_or(M11DirectBlockError::Invariant(
+                    "remainder ordinal does not overflow",
+                ))?;
+        let last_line_length = previous
+            .byte_range()
+            .len()
+            .checked_sub(ending_bytes)
+            .ok_or(M11DirectBlockError::Invariant(
+                "remainder predecessor terminator is inside its line",
+            ))?;
+        self.cursor = Some((
+            u64::try_from(next_ordinal)
+                .map_err(|_| M11DirectBlockError::Invariant("remainder ordinal fits u64"))?,
+            u64::try_from(last_line_length)
+                .map_err(|_| M11DirectBlockError::Invariant("remainder line length fits u64"))?,
+        ));
+        Ok(())
+    }
+
+    pub(super) fn into_restart(self) -> Result<M11DirectBlockRestart, M11DirectBlockError> {
+        let (line_ordinal, last_line_length) = self.cursor.ok_or(
+            M11DirectBlockError::Invariant("remainder continuation has its source cursor"),
+        )?;
+        let (grammar, output) = self.donor.into_restart_parts();
+        Ok(M11DirectBlockRestart {
+            grammar,
+            output,
+            line_ordinal,
+            last_line_length,
+            open_kinds: vec![BlockKind::Document, BlockKind::Paragraph].into_boxed_slice(),
+            deferred: M11DirectBlockDeferredRole::None,
+            restart_join: self.restart_join,
+        })
+    }
 }
 
 /// Crate-private parser-state replica scoped to one adoption transaction.
@@ -516,6 +599,20 @@ impl M11DirectBlockController {
             .commit_reference_prefix_terminal(ack, identity)
             .map_err(map_parse_error)
             .inspect_err(|_| self.poisoned = true)
+    }
+
+    pub(super) fn capture_leading_reference_remainder_continuation(
+        &self,
+    ) -> Result<M11DirectLeadingReferenceRemainderContinuation, M11DirectBlockError> {
+        self.ensure_live()?;
+        Ok(M11DirectLeadingReferenceRemainderContinuation {
+            donor: self
+                .parser
+                .capture_leading_reference_remainder_continuation()
+                .map_err(map_parse_error)?,
+            restart_join: self.restart_join,
+            cursor: None,
+        })
     }
 
     /// Maps one ready donor command, returning whether it is consumer-visible.

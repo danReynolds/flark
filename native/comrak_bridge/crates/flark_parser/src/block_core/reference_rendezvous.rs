@@ -13,6 +13,7 @@ use flark_block_core_donor::DirectReferencePrefixSource;
 use flark_engine::parser_internal::{
     M11RecursiveGreenBuildStatus, M11RecursiveGreenError, M11RecursiveGreenFrameId,
     M11RecursiveGreenLogicalPosition, M11RecursiveGreenLogicalRange,
+    M11RecursiveGreenStructuralBoundary,
     M11RecursiveGreenTerminalFragmentBarrierStatus, M11RecursiveGreenTerminalFragmentBinding,
     M11RecursiveGreenTerminalFragmentCursor, M11RecursiveGreenTerminalFragmentCursorStatus,
     M11RecursiveGreenTerminalFragmentDisposition, M11RecursiveGreenTerminalFragmentIdentity,
@@ -23,7 +24,10 @@ use flark_engine::parser_internal::{
 use flark_engine::DocumentRuntime;
 
 use super::writer::M11ReferenceStagedTerminator;
-use super::{M11BlockWriter, M11BlockWriterError, M11DirectBlockController, M11DirectBlockError};
+use super::controller::M11DirectLeadingReferenceRemainderContinuation;
+use super::{
+    M11BlockWriter, M11BlockWriterError, M11DirectBlockController, M11DirectBlockError,
+};
 use crate::reference_value::{
     ReferenceValueBodyCleaner, ReferenceValueCleanerError, ReferenceValueCleanerStatus,
 };
@@ -43,6 +47,24 @@ pub enum M11ReferenceRendezvousStatus {
 pub struct M11ReferenceRendezvousPoll {
     pub transitions: usize,
     pub status: M11ReferenceRendezvousStatus,
+}
+
+/// Joined parser and Green authority at the internal cut after a leading
+/// reference-definition prefix and before its visible Paragraph remainder.
+pub(crate) struct M11LeadingReferenceRemainder {
+    parser: M11DirectLeadingReferenceRemainderContinuation,
+    green: M11RecursiveGreenStructuralBoundary,
+}
+
+impl M11LeadingReferenceRemainder {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        M11DirectLeadingReferenceRemainderContinuation,
+        M11RecursiveGreenStructuralBoundary,
+    ) {
+        (self.parser, self.green)
+    }
 }
 
 #[derive(Debug)]
@@ -644,6 +666,8 @@ pub struct M11ReferenceRendezvous {
     terminal: Option<TerminalOutput>,
     terminal_replay: Option<M11RecursiveGreenTerminalFragmentCursor>,
     rewrite: Option<M11RecursiveGreenTerminalFragmentRewriteWork>,
+    remainder_boundary: Option<M11RecursiveGreenStructuralBoundary>,
+    remainder: Option<M11LeadingReferenceRemainder>,
 }
 
 impl M11ReferenceRendezvous {
@@ -676,7 +700,15 @@ impl M11ReferenceRendezvous {
             terminal: None,
             terminal_replay: None,
             rewrite: None,
+            remainder_boundary: None,
+            remainder: None,
         })
+    }
+
+    pub(crate) fn take_leading_reference_remainder(
+        &mut self,
+    ) -> Option<M11LeadingReferenceRemainder> {
+        self.remainder.take()
     }
 
     pub fn poll(
@@ -734,7 +766,7 @@ impl M11ReferenceRendezvous {
             Phase::TerminalRange => self.poll_terminal_range(writer, runtime),
             Phase::Rewrite => self.poll_rewrite(writer, runtime),
             Phase::Gap => self.poll_gap(writer, runtime),
-            Phase::Commit => self.commit_terminal(controller),
+            Phase::Commit => self.commit_terminal(controller, runtime),
             Phase::Complete => Ok(()),
             Phase::Failed => Err(M11ReferenceRendezvousError::InvalidState(
                 "reference rendezvous is failed",
@@ -1500,7 +1532,10 @@ impl M11ReferenceRendezvous {
         let poll = writer
             .reference_green_build_mut()?
             .poll_terminal_fragment_rewrite(runtime, rewrite, 1)?;
-        let M11RecursiveGreenTerminalFragmentRewritePoll::Complete { authority, .. } = poll else {
+        let M11RecursiveGreenTerminalFragmentRewritePoll::Complete {
+            mut authority, ..
+        } = poll
+        else {
             return Ok(());
         };
         if authority.frame() != self.frame {
@@ -1530,6 +1565,7 @@ impl M11ReferenceRendezvous {
                 "reference rewrite disposition disagrees with parser chronology",
             ));
         }
+        self.remainder_boundary = authority.take_visible_remainder_boundary();
         let gap = writer.complete_reference_fragment(
             self.frame,
             remove,
@@ -1559,6 +1595,7 @@ impl M11ReferenceRendezvous {
     fn commit_terminal(
         &mut self,
         controller: &mut M11DirectBlockController,
+        runtime: &mut DocumentRuntime,
     ) -> Result<(), M11ReferenceRendezvousError> {
         let identity = self
             .identity
@@ -1591,6 +1628,29 @@ impl M11ReferenceRendezvous {
             return Err(M11ReferenceRendezvousError::InvalidState(
                 "reference parser commit disagrees with its terminal",
             ));
+        }
+        if disposition == donor::DirectReferencePrefixDisposition::VisibleRemainder {
+            let mut parser = controller.capture_leading_reference_remainder_continuation()?;
+            let green = self.remainder_boundary.take().ok_or(
+                M11ReferenceRendezvousError::InvalidState(
+                    "visible reference remainder lost its Green cut",
+                ),
+            )?;
+            let physical = green.physical_metric();
+            let cut = super::SourceMetric::new(physical.bytes(), physical.utf16()).ok_or(
+                M11ReferenceRendezvousError::InvalidState(
+                    "visible reference remainder cut has valid source metrics",
+                ),
+            )?;
+            let lease = runtime.snapshot_current_source().map_err(|_| {
+                M11ReferenceRendezvousError::InvalidState(
+                    "visible reference remainder retains current source authority",
+                )
+            })?;
+            parser.bind_authenticated_source_cut(&lease, cut)?;
+            self.remainder = Some(M11LeadingReferenceRemainder { parser, green });
+        } else {
+            self.remainder_boundary = None;
         }
         self.phase = Phase::Complete;
         Ok(())

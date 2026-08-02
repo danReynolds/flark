@@ -338,6 +338,30 @@ impl M11PersistentRecursiveGreenCleanBuild {
             let poll = rendezvous.poll(controller, writer, journal, runtime, 1)?;
             if poll.status != M11ReferenceRendezvousStatus::Complete {
                 self.rendezvous = Some(rendezvous);
+            } else if let Some(remainder) = rendezvous.take_leading_reference_remainder() {
+                let (parser, green) = remainder.into_parts();
+                let checkpoint = writer
+                    .capture_leading_reference_remainder_checkpoint(parser, green)?;
+                let insertion = self.checkpoints.partition_point(|existing| {
+                    existing.parser_physical().bytes() < checkpoint.parser_physical().bytes()
+                });
+                if self
+                    .checkpoints
+                    .get(insertion)
+                    .is_some_and(|existing| {
+                        existing.parser_physical() == checkpoint.parser_physical()
+                    })
+                {
+                    return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "leading-reference remainder duplicated a restart cut",
+                    ));
+                }
+                self.checkpoints.try_reserve(1).map_err(|_| {
+                    M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "leading-reference restart allocation failed",
+                    )
+                })?;
+                self.checkpoints.insert(insertion, checkpoint);
             }
             return Ok(());
         }

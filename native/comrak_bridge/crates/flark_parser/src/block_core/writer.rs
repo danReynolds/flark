@@ -26,7 +26,9 @@ use flark_engine::{
     ExactUnchangedSuffixWitness, SourceEditError, SourceSnapshotLease, SourceVersion,
 };
 
-use super::controller::M11DirectBlockRestartTransactionReplica;
+use super::controller::{
+    M11DirectBlockRestartTransactionReplica, M11DirectLeadingReferenceRemainderContinuation,
+};
 use super::{
     BlockCommand, BlockKind, BulletMarker, CoveragePart, FenceCharacter, FencedCodeBoundary,
     FinalFacts, HeadingStyle, LineEnding, LineSourcePosition, LineSourceRange, ListDelimiter,
@@ -1260,6 +1262,63 @@ impl M11BlockWriter {
         })
     }
 
+    /// Joins a donor-certified leading-reference remainder continuation to
+    /// the exact structural cut minted by the canonical Green rewrite.
+    pub(crate) fn capture_leading_reference_remainder_checkpoint(
+        &self,
+        parser: M11DirectLeadingReferenceRemainderContinuation,
+        green_boundary: M11RecursiveGreenStructuralBoundary,
+    ) -> Result<M11BlockRestartCheckpoint, M11BlockRestartError> {
+        if self.poisoned
+            || self.document_complete
+            || self.pending.is_some()
+            || self.line_cursor != LineSourcePosition::default()
+            || self.open.len() != 2
+            || self.open[0].kind != BlockKind::Document
+            || self.open[1].kind != BlockKind::Paragraph
+        {
+            return Err(M11BlockRestartError::Pairing(
+                "leading-reference remainder writer is a quiescent top-level Paragraph",
+            ));
+        }
+        let physical = green_boundary.physical_metric();
+        let logical = green_boundary.logical_metric();
+        if green_boundary.source() != self.source
+            || green_boundary.open_path().len() != self.open.len()
+            || !green_boundary
+                .open_path()
+                .iter()
+                .zip(&self.open)
+                .all(|(green, writer)| {
+                    green.frame() == writer.id && green.kind() == green_kind(writer.kind)
+                })
+        {
+            return Err(M11BlockRestartError::Pairing(
+                "leading-reference remainder Green and writer paths differ",
+            ));
+        }
+        let accepted_physical = SourceMetric::new(physical.bytes(), physical.utf16()).ok_or(
+            M11BlockRestartError::Pairing("leading-reference physical cut is valid"),
+        )?;
+        let logical = SourceMetric::new(logical.bytes(), logical.utf16()).ok_or(
+            M11BlockRestartError::Pairing("leading-reference logical cut is valid"),
+        )?;
+        let parser = parser.into_restart()?;
+        Ok(M11BlockRestartCheckpoint {
+            source: self.source,
+            parser,
+            open: self.open.clone().into_boxed_slice(),
+            next_frame: self.next_frame,
+            accepted_physical,
+            parser_physical: accepted_physical,
+            logical,
+            event_cut: green_boundary.event_cut(),
+            staged: None,
+            restart_join: self.restart_join,
+            green_boundary: Some(green_boundary),
+        })
+    }
+
     /// Captures the stable EOF cut used to replace a reparsed document tail.
     /// The parser must be paused on its pending `Close(Document)` command;
     /// this writer-side proof independently requires that every child frame
@@ -1631,7 +1690,6 @@ impl M11BlockWriter {
             || provenance.base_event_cut >= old_terminal.event_cut
             || provenance.target_accepted_start.bytes() >= target_physical.bytes()
             || !same_open_path(&self.open, &old_terminal.open)
-            || !boundary_matches_open(&provenance.start_boundary, &old_terminal.open)
         {
             return Err(M11BlockRestartError::Pairing(
                 "target tail did not converge at the pre-Document-close boundary",

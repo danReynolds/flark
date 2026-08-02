@@ -87,6 +87,77 @@ fn clean_session_retains_green_and_reference_authority_for_late_queries() {
 }
 
 #[test]
+fn leading_reference_visible_remainder_edit_uses_local_recursive_green_adoption() {
+    const REFERENCES: usize = 128;
+    let mut source = String::new();
+    for ordinal in 0..REFERENCES {
+        source.push_str(&format!("[r{ordinal}]: /target/{ordinal}\n"));
+    }
+    source.push_str("visible **bold** tail\n");
+    let edit_start = source.rfind("bold").expect("visible tail edit");
+    let mut target_source = source.clone();
+    target_source.replace_range(edit_start..edit_start + 4, "strong");
+
+    let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
+        .expect("leading-reference runtime");
+    let session = build_session(&mut runtime);
+    assert_eq!(session.reference_occurrence_count(), REFERENCES as u64);
+    assert!(session.checkpoint_count() >= 2);
+    let base = session.source();
+    runtime
+        .apply_edit(base, edit_start..edit_start + 4, "strong")
+        .expect("visible tail edit");
+    let target_lease = runtime.snapshot_current_source().expect("target lease");
+    let mut adoption = session
+        .begin_local_adoption(&runtime, target_lease, edit_start..edit_start + 4)
+        .unwrap_or_else(|failure| panic!("remainder adoption start: {}", failure.error()));
+    loop {
+        match adoption
+            .poll(&mut runtime, 64)
+            .expect("poll remainder adoption")
+            .status()
+        {
+            M11PersistentRecursiveGreenAdoptionStatus::Pending => {}
+            M11PersistentRecursiveGreenAdoptionStatus::Complete => break,
+            M11PersistentRecursiveGreenAdoptionStatus::CleanFallbackRequired => {
+                panic!("visible remainder edit required clean fallback")
+            }
+            M11PersistentRecursiveGreenAdoptionStatus::Cancelled => {
+                panic!("visible remainder edit was cancelled")
+            }
+        }
+    }
+    let mut update = adoption.take_update().expect("local remainder update");
+    assert!(update.work().source_bytes_read() < 256);
+    assert!(update.work().green_tree_nodes_rebuilt() < 64);
+    assert!(update.work().reference_rebind_transitions() <= 4);
+    let mut superseded = update.take_base().expect("superseded base");
+    let mut target = update.take_target().expect("target session");
+    assert_eq!(target.reference_occurrence_count(), REFERENCES as u64);
+
+    let incremental_digest = target
+        .semantic_digest_for_diagnostics(&runtime)
+        .expect("incremental digest");
+    let mut clean_runtime = DocumentRuntime::new(&target_source, DocumentRuntimeConfig::default())
+        .expect("clean oracle runtime");
+    let mut clean = build_session(&mut clean_runtime);
+    assert_eq!(
+        incremental_digest,
+        clean
+            .semantic_digest_for_diagnostics(&clean_runtime)
+            .expect("clean digest")
+    );
+
+    release_session(&mut clean_runtime, &mut clean);
+    clean_runtime.begin_close().expect("begin clean close");
+    while !clean_runtime.poll_close(64).expect("poll clean close").complete {}
+    release_session(&mut runtime, &mut superseded);
+    release_session(&mut runtime, &mut target);
+    runtime.begin_close().expect("begin close");
+    while !runtime.poll_close(64).expect("poll close").complete {}
+}
+
+#[test]
 fn local_adoption_cancel_before_splice_returns_complete_original_base() {
     let (source, edit_start) = cancellation_fixture();
     let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())

@@ -120,3 +120,56 @@ fn adversarial_deep_mass_close_uses_one_linear_stack_pass() {
     apply_stack(&close_commands, &mut stack);
     assert_eq!(stack, vec![DirectBlockKind::Document]);
 }
+
+#[test]
+fn leading_reference_remainder_continuation_resumes_without_replaying_prefix_state() {
+    let mut parser = DirectValueBlockParser::new(SyntaxProfile::CommonMark).expect("parser");
+    parser
+        .acknowledge_command()
+        .expect("acknowledge document open");
+    drive_line(&mut parser, "[ref]: /url\n");
+    drive_line(&mut parser, "visible\n");
+
+    // The reference actor is independently tested; install the exact state it
+    // leaves after joining a VisibleRemainder terminal so this focused donor
+    // test exercises only the new retrospective continuation primitive.
+    parser
+        .parser
+        .direct
+        .as_mut()
+        .expect("direct hooks")
+        .reference_finalize_resume_once = Some(DirectReferencePrefixDisposition::VisibleRemainder);
+    let continuation = parser
+        .capture_leading_reference_remainder_continuation()
+        .expect("capture remainder continuation");
+    let (grammar, output) = continuation.into_restart_parts();
+    let cursor = DirectLineBoundaryResumeCursor::new(1, 11).expect("prefix cursor");
+    let mut resumed = DirectValueBlockParser::resume_restart_parts(&grammar, output, cursor)
+        .expect("resume remainder continuation");
+
+    let pause = resumed
+        .capture_line_boundary_pause()
+        .expect("remainder starts at a normal line boundary");
+    assert_eq!(
+        pause.pairing_view().deferred_role(),
+        DirectLineBoundaryDeferredRole::None,
+        "removed definition terminator is already Green Gap coverage",
+    );
+    assert_eq!(
+        pause.paragraph,
+        Some(DirectPauseParagraphState {
+            frame_depth: 1,
+            has_visible_content: true,
+            may_have_reference_prefix: false,
+        }),
+        "the visible suffix cannot request reference recognition again",
+    );
+
+    let (commands, _) = drive_line(&mut resumed, "changed\n");
+    assert!(
+        commands
+            .iter()
+            .all(|command| !matches!(command, DirectCommand::ResolveTerminator { .. })),
+        "the removed prefix terminator is not replayed into visible logical text",
+    );
+}

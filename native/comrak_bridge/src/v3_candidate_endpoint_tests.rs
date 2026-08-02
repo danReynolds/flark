@@ -9643,6 +9643,14 @@ fn leading_references_use_the_production_exact_delta_path<
         REFERENCES as u64
     );
     assert_eq!(
+        endpoint.recursive_green_path_receipt(),
+        RecursiveGreenPathReceipt {
+            local_adoption_deliveries: 1,
+            clean_fallback_deliveries: 0,
+        },
+        "the large reference prefix must stay on the bounded recursive-Green adoption path",
+    );
+    assert_eq!(
         endpoint
             .retained
             .as_ref()
