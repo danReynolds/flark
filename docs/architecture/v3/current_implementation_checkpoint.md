@@ -31,6 +31,15 @@ readiness are not claimed.
   packet streaming behind the endpoint facade.
 - `17c89b2` is the rebuilt native/Wasm checkpoint after bounded recursive-Green
   point, row, and inline-query work. Native and Wasm digests agree exactly.
+- `2fa3b65` migrates the large-reference and 4,096-Paragraph fixtures to
+  recursive-Green scheduling authority while preserving their bounded transfer,
+  exact query, and next-edit continuity assertions.
+- `5c58dce` moves cancellation ownership to recursive Green and proves that
+  mid-parse and mid-stream replacement restore the acknowledged base and reclaim
+  every retained root.
+- `f5b91f1` migrates ATX, Setext, and thematic-break viewport fixtures from the
+  displaced fixed-buffer schema to recursive-Green row geometry. All three
+  focused release fixtures are green.
 
 The disposable parser-research lab remains available locally but is ignored by
 Git. Only findings and proof receipts referenced by RFC 023 are tracked. Cargo
@@ -96,7 +105,7 @@ The production endpoint is now split into these cohesive units:
 - `v3_candidate_endpoint_recursive_green.rs`: 764 authority/session lines;
 - `v3_candidate_endpoint_viewport.rs`: 1,268 viewport preparation/streaming
   lines; and
-- `v3_candidate_endpoint_tests.rs`: 10,716 test lines.
+- `v3_candidate_endpoint_tests.rs`: 10,492 test lines.
 
 The planned extraction order is complete:
 
@@ -112,22 +121,21 @@ not authorize a parser or protocol redesign.
 
 ## Known non-green evidence
 
-The complete endpoint unit-test module currently reports 28 passing, 29 failing,
-and one intentionally ignored large-scale case in release mode. The exact same
-25/32/1 counts and failure names occurred at `17c89b2`, after `5dd2b22`, and
-after `46fb82f`, proving that both extractions added no drift. Two tests now
-pass after only their obsolete intermediate phase assertions were updated; all
-of their terminal product and lifecycle assertions remain unchanged. The
-hot-inline extraction preserved the resulting 27/30/1 set. The production-shaped
-recursive-Green lifecycle rewrite then made one more test genuinely green, and
-the combined post-rewrite/exact-candidate extraction gate produced the expected
-28/29/1 result with every other failure name unchanged. The remaining failures
-include intermediate-phase
-expectations from the older crop pipeline, older viewport limits, and earlier
-restart/publication assumptions. They have not yet been classified case by case
-and therefore cannot be treated as harmless. The focused native and Chrome
-product gates above are green, while this internal batch remains an open
-consolidation gate rather than release evidence.
+The complete endpoint unit-test module currently reports 36 passing, 21 failing,
+and one intentionally ignored large-scale case in release mode. The sequence
+from 28/29/1 through 31/26/1, 33/24/1, and 36/21/1 introduced no new failure
+names. Each improvement replaced displaced route or transport assumptions while
+preserving terminal publication, query, cancellation, continuity, and
+reclamation assertions.
+
+The remaining failures are now classified. Most still assert the older
+ordinary-crop phase, block-page topology, fixed viewport schema, or legacy
+list/quote sidecar ownership. Two production gaps remain explicit rather than
+being relabeled as fixture drift: a marker-only terminal list item has no
+marker-free editable presentation row, and local edits inside a long single
+Paragraph can publish a `FullSnapshot` instead of an `ExactBaseDelta`. The
+focused native and Chrome product gates above are green, while this internal
+batch remains an open consolidation gate rather than release evidence.
 
 CommonMark support also remains a fail-closed supported subset. The 652-fixture
 ledger, not feature names or this checkpoint, controls conformance claims.
