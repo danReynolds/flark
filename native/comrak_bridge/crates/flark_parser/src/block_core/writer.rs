@@ -12,15 +12,16 @@ use std::{
 };
 
 use flark_engine::parser_internal::{
-    splice_m11_recursive_green_structural_atomic, M11RecursiveGreenBuild,
-    M11RecursiveGreenBuildStatus, M11RecursiveGreenCachedRowEditCapability,
+    splice_m11_recursive_green_structural_with_spanning_exit_repairs_atomic,
+    M11RecursiveGreenBuild, M11RecursiveGreenBuildStatus, M11RecursiveGreenCachedRowEditCapability,
     M11RecursiveGreenCachedRowEditable, M11RecursiveGreenCloseFacts, M11RecursiveGreenClosedChild,
     M11RecursiveGreenCoveragePart, M11RecursiveGreenError, M11RecursiveGreenEvent,
     M11RecursiveGreenFactTag, M11RecursiveGreenFrameId, M11RecursiveGreenKind,
     M11RecursiveGreenLogicalAction, M11RecursiveGreenPropertyChunk, M11RecursiveGreenReclaimPoll,
-    M11RecursiveGreenRoot, M11RecursiveGreenSourceMetric, M11RecursiveGreenStructuralBoundary,
-    M11RecursiveGreenStructuralBoundaryTransactionReplica, M11RecursiveGreenStructuralSpliceRebase,
-    M11RecursiveGreenStructuralSpliceReceipt, M11RecursiveGreenStructuralSpliceSelection,
+    M11RecursiveGreenRoot, M11RecursiveGreenSourceMetric, M11RecursiveGreenSpanningExitRepair,
+    M11RecursiveGreenStructuralBoundary, M11RecursiveGreenStructuralBoundaryTransactionReplica,
+    M11RecursiveGreenStructuralSpliceRebase, M11RecursiveGreenStructuralSpliceReceipt,
+    M11RecursiveGreenStructuralSpliceSelection,
 };
 use flark_engine::{
     DocumentRuntime, DocumentRuntimeError, ExactUnchangedPrefixWitness,
@@ -179,14 +180,14 @@ impl M11BlockWriterPoll {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct FenceFold {
     logical_base: SourceMetric,
     info_end: Option<SourceMetric>,
     literal_start: Option<SourceMetric>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct RowEditableFold {
     physical_base: SourceMetric,
     start: Option<SourceMetric>,
@@ -1704,6 +1705,7 @@ impl M11BlockWriter {
             ));
         }
 
+        let spanning_exit_repairs = plan_open_row_exit_repairs(&fresh.open, &old_convergence.open)?;
         let WriterOutput::Fragment(mut fragment) = self.output else {
             return Err(M11BlockRestartError::Pairing(
                 "convergence adoption requires a local fragment output",
@@ -1716,7 +1718,7 @@ impl M11BlockWriter {
         let fragment_source_bytes_read = fragment.source_bytes_read;
         let target_end_physical = green_metric(fresh.accepted_physical)?;
         let (mut root, green, target_start_boundary, target_end_boundary, rebase) =
-            splice_m11_recursive_green_structural_atomic(
+            splice_m11_recursive_green_structural_with_spanning_exit_repairs_atomic(
                 runtime,
                 base,
                 target_lease,
@@ -1726,6 +1728,7 @@ impl M11BlockWriter {
                 end_boundary,
                 target_end_physical,
                 &fragment.events,
+                &spanning_exit_repairs,
             )?;
         let boundary_logical = target_end_boundary.logical_metric();
         if target_end_boundary.source() != fresh.source
@@ -1822,6 +1825,7 @@ impl M11BlockWriter {
     /// has the base frame identity.
     pub fn adopt_converged_terminal_fragment(
         mut self,
+        terminal_close: BlockCommand,
         mut target_restart: M11BlockRestartCheckpoint,
         mut old_terminal: M11BlockTerminalConvergenceCheckpoint,
         runtime: &mut DocumentRuntime,
@@ -1939,6 +1943,36 @@ impl M11BlockWriter {
         let target_source = self.source;
         let target_open = self.open.clone().into_boxed_slice();
         let target_next_frame = self.next_frame;
+        let BlockCommand::Close {
+            kind: terminal_kind,
+            final_facts,
+            last_line_blank,
+            child,
+        } = terminal_close
+        else {
+            return Err(M11BlockRestartError::Pairing(
+                "terminal convergence omitted its pending close state",
+            ));
+        };
+        let terminal_frame = *self.open.last().ok_or(M11BlockRestartError::Pairing(
+            "terminal convergence omitted its open Document",
+        ))?;
+        if terminal_kind != terminal_frame.kind || terminal_frame.kind != BlockKind::Document {
+            return Err(M11BlockRestartError::Pairing(
+                "terminal convergence close differs from its open Document",
+            ));
+        }
+        let terminal_repair = M11RecursiveGreenSpanningExitRepair::Exact {
+            frame: terminal_frame.id,
+            final_kind: green_kind(terminal_kind),
+            close: self.close_facts(terminal_frame, final_facts)?,
+            last_line_blank,
+            child: M11RecursiveGreenClosedChild::new(
+                child.ends_blank(),
+                child.item_loose_if_nonlast(),
+                child.item_loose_if_last(),
+            ),
+        };
         let WriterOutput::Fragment(mut fragment) = self.output else {
             return Err(M11BlockRestartError::Pairing(
                 "terminal convergence adoption requires a local fragment output",
@@ -1951,7 +1985,7 @@ impl M11BlockWriter {
         let fragment_source_bytes_read = fragment.source_bytes_read;
         let target_end_physical = green_metric(target_physical)?;
         let (mut root, green, target_start_boundary, target_end_boundary, rebase) =
-            splice_m11_recursive_green_structural_atomic(
+            splice_m11_recursive_green_structural_with_spanning_exit_repairs_atomic(
                 runtime,
                 base,
                 target_lease,
@@ -1961,6 +1995,7 @@ impl M11BlockWriter {
                 end_boundary,
                 target_end_physical,
                 &fragment.events,
+                &[terminal_repair],
             )?;
         let target_boundary_logical = target_end_boundary.logical_metric();
         if target_end_boundary.source() != target_source
@@ -2886,6 +2921,54 @@ fn same_open_path(left: &[OpenFrame], right: &[OpenFrame]) -> bool {
             .iter()
             .zip(right)
             .all(|(left, right)| left.id == right.id && left.kind == right.kind)
+}
+
+fn plan_open_row_exit_repairs(
+    fresh: &[OpenFrame],
+    old: &[OpenFrame],
+) -> Result<Vec<M11RecursiveGreenSpanningExitRepair>, M11BlockRestartError> {
+    if !same_open_path(fresh, old) {
+        return Err(M11BlockRestartError::Pairing(
+            "spanning Exit repair open paths differ",
+        ));
+    }
+    let mut repairs = Vec::new();
+    repairs
+        .try_reserve_exact(fresh.len())
+        .map_err(|_| M11BlockWriterError::Allocation)?;
+    for (fresh, old) in fresh.iter().zip(old) {
+        if fresh.fence != old.fence
+            || fresh.has_renderable_descendant != old.has_renderable_descendant
+        {
+            return Err(M11BlockRestartError::Pairing(
+                "ordinary spanning Exit state requires clean fallback",
+            ));
+        }
+        match (fresh.row_editable, old.row_editable) {
+            (None, None) => {}
+            (Some(fresh_row), Some(old_row))
+                if fresh_row.physical_base == old_row.physical_base
+                    && fresh_row.start == old_row.start
+                    && fresh_row.gap_after == old_row.gap_after
+                    && fresh_row.contiguous == old_row.contiguous
+                    && fresh_row.tracking == old_row.tracking =>
+            {
+                if fresh_row.end != old_row.end {
+                    repairs.push(M11RecursiveGreenSpanningExitRepair::TranslateCachedRow {
+                        frame: fresh.id,
+                        base_convergence_end: green_metric_allow_empty(old_row.end)?,
+                        target_convergence_end: green_metric_allow_empty(fresh_row.end)?,
+                    });
+                }
+            }
+            _ => {
+                return Err(M11BlockRestartError::Pairing(
+                    "ordinary spanning Exit state requires clean fallback",
+                ));
+            }
+        }
+    }
+    Ok(repairs)
 }
 
 fn rebase_retained_prefix_checkpoint(

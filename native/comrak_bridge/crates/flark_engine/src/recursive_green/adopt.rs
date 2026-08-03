@@ -12,8 +12,9 @@ use std::ops::Range;
 use crate::candidate_manifest::StrongIdentity;
 use crate::document::{DocumentRuntime, ExactUnchangedPrefixWitness, ExactUnchangedSuffixWitness};
 use crate::measured_sequence::{
-    begin_measured_sequence_seal, splice_measured_sequence_atomic, SequenceInspectionReceipt,
-    SequenceMutationReceipt,
+    begin_measured_sequence_seal, splice_measured_sequence_atomic,
+    splice_measured_sequence_build_root_atomic, SequenceInspectionReceipt, SequenceMutationReceipt,
+    SequenceSummaryPartitionDirection,
 };
 use crate::source::SourceSnapshotLease;
 use crate::storage::PageArena;
@@ -23,9 +24,9 @@ use super::build::{
     allocate_recursive_green_identity, M11RecursiveGreenBuildReceipt, M11RecursiveGreenRoot,
 };
 use super::codec::{
-    decode_leaf, decode_packed_event, packed_event_summary, M11RecursiveGreenError,
-    M11RecursiveGreenEvent, M11RecursiveGreenFrameId, M11RecursiveGreenKind, PackedGreenEvent,
-    RecursiveGreenSpec, RecursiveGreenSummary,
+    decode_leaf, decode_packed_event, packed_event_len, packed_event_summary,
+    M11RecursiveGreenError, M11RecursiveGreenEvent, M11RecursiveGreenFrameId,
+    M11RecursiveGreenKind, PackedGreenEvent, RecursiveGreenSpec, RecursiveGreenSummary,
 };
 
 /// One frame on a parser/Green-certified restart boundary.
@@ -540,6 +541,51 @@ struct StructuralSplicePlan {
     prefix_events_retained: usize,
     boundary_events_retained: u64,
     inspection: SequenceInspectionReceipt,
+    end_leaf_ordinal: u64,
+    end_event_index: usize,
+}
+
+/// One bounded repair to an Exit retained beyond a structural convergence cut.
+///
+/// A local replacement can change cached state owned by a frame which stays
+/// open at convergence. The matching Exit remains in the authenticated suffix,
+/// so the splice repairs that one event by summary-guided relative depth rather
+/// than scanning or repacking the intervening suffix.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum M11RecursiveGreenSpanningExitRepair {
+    /// Translate an existing frame-relative cached row trailer by the exact
+    /// geometry delta observed at convergence. All grammar-owned close bytes
+    /// and close-state bits remain unchanged.
+    TranslateCachedRow {
+        frame: M11RecursiveGreenFrameId,
+        base_convergence_end: super::codec::M11RecursiveGreenSourceMetric,
+        target_convergence_end: super::codec::M11RecursiveGreenSourceMetric,
+    },
+    /// Replace the complete Exit state with parser/writer-certified target
+    /// facts, as used at the pre-Document-close terminal boundary.
+    Exact {
+        frame: M11RecursiveGreenFrameId,
+        final_kind: M11RecursiveGreenKind,
+        close: Option<super::codec::M11RecursiveGreenCloseFacts>,
+        last_line_blank: bool,
+        child: super::codec::M11RecursiveGreenClosedChild,
+    },
+}
+
+impl M11RecursiveGreenSpanningExitRepair {
+    const fn frame(self) -> M11RecursiveGreenFrameId {
+        match self {
+            Self::TranslateCachedRow { frame, .. } | Self::Exact { frame, .. } => frame,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct LocatedSpanningExitRepair {
+    leaf_ordinal: u64,
+    event_index: usize,
+    replacement: PackedGreenEvent,
 }
 
 /// Replaces one exact balanced event interval and adopts its unchanged suffix.
@@ -563,6 +609,45 @@ pub fn splice_m11_recursive_green_structural_atomic(
     end: M11RecursiveGreenStructuralBoundary,
     target_end_physical: super::codec::M11RecursiveGreenSourceMetric,
     events: &[M11RecursiveGreenEvent],
+) -> Result<
+    (
+        M11RecursiveGreenRoot,
+        M11RecursiveGreenStructuralSpliceReceipt,
+        M11RecursiveGreenStructuralBoundary,
+        M11RecursiveGreenStructuralBoundary,
+        M11RecursiveGreenStructuralSpliceRebase,
+    ),
+    M11RecursiveGreenError,
+> {
+    splice_m11_recursive_green_structural_with_spanning_exit_repairs_atomic(
+        runtime,
+        base,
+        target_lease,
+        prefix,
+        suffix,
+        start,
+        end,
+        target_end_physical,
+        events,
+        &[],
+    )
+}
+
+/// Replaces one balanced event interval and repairs the bounded set of
+/// retained Exits belonging to frames still open at convergence.
+#[doc(hidden)]
+#[allow(clippy::too_many_arguments)]
+pub fn splice_m11_recursive_green_structural_with_spanning_exit_repairs_atomic(
+    runtime: &mut DocumentRuntime,
+    base: &M11RecursiveGreenRoot,
+    target_lease: SourceSnapshotLease,
+    prefix: Option<ExactUnchangedPrefixWitness>,
+    suffix: Option<ExactUnchangedSuffixWitness>,
+    start: M11RecursiveGreenStructuralBoundary,
+    end: M11RecursiveGreenStructuralBoundary,
+    target_end_physical: super::codec::M11RecursiveGreenSourceMetric,
+    events: &[M11RecursiveGreenEvent],
+    spanning_exit_repairs: &[M11RecursiveGreenSpanningExitRepair],
 ) -> Result<
     (
         M11RecursiveGreenRoot,
@@ -668,6 +753,13 @@ pub fn splice_m11_recursive_green_structural_atomic(
         end.physical,
         end.logical,
     )?;
+    let located_exit_repairs = plan_spanning_exit_repairs(
+        runtime.producer_arena(),
+        tree,
+        &end,
+        spanning_exit_repairs,
+        &mut plan.inspection,
+    )?;
     if plan.deleted_summary.unmatched_closes()?
         != u64::try_from(external_closes).map_err(|_| M11RecursiveGreenError::CounterOverflow)?
         || plan.deleted_summary.unmatched_opens()? != 0
@@ -725,13 +817,63 @@ pub fn splice_m11_recursive_green_structural_atomic(
         replacement,
     );
 
+    let mut far_repair_leaves = Vec::<(u64, Vec<PackedGreenEvent>)>::new();
+    let mut repair_cursor = 0_usize;
+    while repair_cursor < located_exit_repairs.len() {
+        let leaf_ordinal = located_exit_repairs[repair_cursor].leaf_ordinal;
+        let group_end = located_exit_repairs[repair_cursor..]
+            .iter()
+            .position(|repair| repair.leaf_ordinal != leaf_ordinal)
+            .map_or(located_exit_repairs.len(), |offset| repair_cursor + offset);
+        if leaf_ordinal == plan.end_leaf_ordinal {
+            for repair in &located_exit_repairs[repair_cursor..group_end] {
+                let suffix_index = repair
+                    .event_index
+                    .checked_sub(plan.end_event_index)
+                    .ok_or(M11RecursiveGreenError::InvalidEvent)?;
+                let event_index = plan
+                    .prefix_events_retained
+                    .checked_add(replacement_events as usize)
+                    .and_then(|index| index.checked_add(suffix_index))
+                    .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+                let event = plan
+                    .events
+                    .get_mut(event_index)
+                    .ok_or(M11RecursiveGreenError::InvalidEvent)?;
+                *event = repair.replacement;
+            }
+        } else {
+            if leaf_ordinal < plan.storage_range.end {
+                return Err(M11RecursiveGreenError::InvalidEvent);
+            }
+            let located = tree
+                .as_ref()
+                .locate_leaf_with_prefix(
+                    runtime.producer_arena(),
+                    leaf_ordinal,
+                    &mut plan.inspection,
+                )?
+                .ok_or(M11RecursiveGreenError::InvalidPoint)?;
+            let mut events =
+                decode_events(runtime.producer_arena(), located.id, &mut plan.inspection)?;
+            for repair in &located_exit_repairs[repair_cursor..group_end] {
+                let event = events
+                    .get_mut(repair.event_index)
+                    .ok_or(M11RecursiveGreenError::InvalidEvent)?;
+                *event = repair.replacement;
+            }
+            far_repair_leaves.push((leaf_ordinal, events));
+        }
+        repair_cursor = group_end;
+    }
+
     let mut mutation = SequenceMutationReceipt::default();
     add_inspection(&mut mutation.inspection, plan.inspection)?;
     let mut session = runtime.producer_arena_mut().begin_build()?;
     let replacement_root = build_replacement_pages(&mut session, &plan.events, &mut mutation)?;
-    let replacement_storage_pages = u64::try_from(mutation.leaves_adopted)
+    let main_replacement_storage_pages = u64::try_from(mutation.leaves_adopted)
         .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
-    let root = splice_measured_sequence_atomic::<RecursiveGreenSpec>(
+    let mut root = splice_measured_sequence_atomic::<RecursiveGreenSpec>(
         &mut session,
         tree,
         plan.storage_range.clone(),
@@ -741,6 +883,56 @@ pub fn splice_m11_recursive_green_structural_atomic(
     .ok_or(M11RecursiveGreenError::Corrupt(
         "structural Green splice produced an empty root",
     ))?;
+    let removed_main_pages = plan
+        .storage_range
+        .end
+        .checked_sub(plan.storage_range.start)
+        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+    for (base_leaf_ordinal, events) in far_repair_leaves {
+        let adopted_before = mutation.leaves_adopted;
+        let replacement = build_replacement_pages(&mut session, &events, &mut mutation)?;
+        if mutation.leaves_adopted != adopted_before.saturating_add(1) {
+            return Err(M11RecursiveGreenError::InvalidEvent);
+        }
+        let target_leaf_ordinal = base_leaf_ordinal
+            .checked_sub(removed_main_pages)
+            .and_then(|ordinal| ordinal.checked_add(main_replacement_storage_pages))
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        root = splice_measured_sequence_build_root_atomic::<RecursiveGreenSpec>(
+            &mut session,
+            root,
+            target_leaf_ordinal
+                ..target_leaf_ordinal
+                    .checked_add(1)
+                    .ok_or(M11RecursiveGreenError::CounterOverflow)?,
+            Some(replacement),
+            &mut mutation,
+        )?
+        .ok_or(M11RecursiveGreenError::Corrupt(
+            "spanning Exit repair produced an empty root",
+        ))?;
+    }
+    let deleted_storage_pages = removed_main_pages
+        .checked_add(
+            u64::try_from(
+                located_exit_repairs
+                    .iter()
+                    .filter(|repair| repair.leaf_ordinal != plan.end_leaf_ordinal)
+                    .map(|repair| repair.leaf_ordinal)
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len(),
+            )
+            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+        )
+        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+    let replacement_storage_pages = u64::try_from(mutation.leaves_adopted)
+        .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+    mutation.leaves_reused = usize::try_from(
+        base.storage_page_count()
+            .checked_sub(deleted_storage_pages)
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?,
+    )
+    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
     let build = session.suspend()?;
     let mut seal = match begin_measured_sequence_seal(runtime.producer_arena_mut(), build, root) {
         Ok(seal) => seal,
@@ -827,7 +1019,7 @@ pub fn splice_m11_recursive_green_structural_atomic(
         replacement_events,
         plan.boundary_events_decoded,
         boundary_events_reencoded,
-        plan.storage_range.end - plan.storage_range.start,
+        deleted_storage_pages,
         replacement_storage_pages,
         mutation,
         seal_transitions,
@@ -1056,6 +1248,8 @@ fn plan_structural_splice(
         boundary_events_retained: u64::try_from(start_index + suffix_len)
             .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
         inspection,
+        end_leaf_ordinal: end.ordinal,
+        end_event_index: end_index,
     })
 }
 
@@ -1203,6 +1397,265 @@ fn decode_events(
         ));
     }
     Ok(events)
+}
+
+fn plan_spanning_exit_repairs(
+    arena: &PageArena,
+    tree: &super::build::GreenSequenceTree,
+    end: &M11RecursiveGreenStructuralBoundary,
+    repairs: &[M11RecursiveGreenSpanningExitRepair],
+    inspection: &mut SequenceInspectionReceipt,
+) -> Result<Vec<LocatedSpanningExitRepair>, M11RecursiveGreenError> {
+    let mut located_repairs = Vec::new();
+    located_repairs
+        .try_reserve_exact(repairs.len())
+        .map_err(|_| M11RecursiveGreenError::InvalidState)?;
+    for (repair_index, repair) in repairs.iter().copied().enumerate() {
+        if repairs[..repair_index]
+            .iter()
+            .any(|candidate| candidate.frame() == repair.frame())
+        {
+            return Err(M11RecursiveGreenError::InvalidEvent);
+        }
+        let open_index = end
+            .open
+            .iter()
+            .position(|candidate| candidate.frame == repair.frame())
+            .ok_or(M11RecursiveGreenError::SourceAuthorityMismatch)?;
+        let relative_depth = end
+            .open
+            .len()
+            .checked_sub(open_index + 1)
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        let (leaf_ordinal, event_index, old) = locate_spanning_exit(
+            arena,
+            tree,
+            end.event_cut,
+            relative_depth,
+            repair.frame(),
+            inspection,
+        )?;
+        let replacement = apply_spanning_exit_repair(old, repair)?;
+        if packed_event_len(old) != packed_event_len(replacement) {
+            return Err(M11RecursiveGreenError::InvalidEvent);
+        }
+        if old != replacement {
+            located_repairs.push(LocatedSpanningExitRepair {
+                leaf_ordinal,
+                event_index,
+                replacement,
+            });
+        }
+    }
+    located_repairs.sort_unstable_by_key(|repair| (repair.leaf_ordinal, repair.event_index));
+    Ok(located_repairs)
+}
+
+fn locate_spanning_exit(
+    arena: &PageArena,
+    tree: &super::build::GreenSequenceTree,
+    event_cut: u64,
+    wanted_relative_depth: usize,
+    expected_frame: M11RecursiveGreenFrameId,
+    inspection: &mut SequenceInspectionReceipt,
+) -> Result<(u64, usize, PackedGreenEvent), M11RecursiveGreenError> {
+    let start = tree
+        .as_ref()
+        .locate_leaf_containing_metric(arena, event_cut, |summary| summary.events, inspection)?
+        .ok_or(M11RecursiveGreenError::InvalidPoint)?;
+    let start_prefix_events = start.prefix.map_or(0, |summary| summary.events);
+    let start_index = usize::try_from(
+        event_cut
+            .checked_sub(start_prefix_events)
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?,
+    )
+    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+    let mut relative_depth = 0_i64;
+    let wanted_relative_depth = i64::try_from(wanted_relative_depth)
+        .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+    let start_events = decode_events(arena, start.id, inspection)?;
+    if start_index > start_events.len() {
+        return Err(M11RecursiveGreenError::Corrupt(
+            "spanning Exit cut escaped its selected leaf",
+        ));
+    }
+    if let Some(found) = find_spanning_exit_in_leaf(
+        &start_events,
+        start_index,
+        &mut relative_depth,
+        wanted_relative_depth,
+        expected_frame,
+    )? {
+        return Ok((start.ordinal, found.0, found.1));
+    }
+
+    let range_start = start
+        .ordinal
+        .checked_add(1)
+        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+    let leaf_count = tree
+        .as_ref()
+        .summary(arena, inspection)?
+        .ok_or(M11RecursiveGreenError::InvalidState)?
+        .leaves();
+    if range_start >= leaf_count {
+        return Err(M11RecursiveGreenError::Corrupt(
+            "spanning Green frame has no retained Exit",
+        ));
+    }
+    let exit_leaf = tree
+        .as_ref()
+        .locate_leaf_by_monotone_summary(
+            arena,
+            range_start..leaf_count,
+            SequenceSummaryPartitionDirection::Forward,
+            inspection,
+            |candidate| {
+                Ok(relative_depth
+                    .checked_add(candidate.minimum_prefix)
+                    .ok_or(M11RecursiveGreenError::CounterOverflow)?
+                    < -wanted_relative_depth)
+            },
+        )?
+        .ok_or(M11RecursiveGreenError::Corrupt(
+            "spanning Green frame has no summary-selected Exit",
+        ))?;
+    if let Some(before) = exit_leaf.accumulated {
+        relative_depth = relative_depth
+            .checked_add(before.balance)
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+    }
+    let events = decode_events(arena, exit_leaf.id, inspection)?;
+    let found = find_spanning_exit_in_leaf(
+        &events,
+        0,
+        &mut relative_depth,
+        wanted_relative_depth,
+        expected_frame,
+    )?
+    .ok_or(M11RecursiveGreenError::Corrupt(
+        "summary-selected Green leaf omitted its spanning Exit",
+    ))?;
+    Ok((exit_leaf.ordinal, found.0, found.1))
+}
+
+fn find_spanning_exit_in_leaf(
+    events: &[PackedGreenEvent],
+    start: usize,
+    relative_depth: &mut i64,
+    wanted_relative_depth: i64,
+    expected_frame: M11RecursiveGreenFrameId,
+) -> Result<Option<(usize, PackedGreenEvent)>, M11RecursiveGreenError> {
+    for (index, event) in events.iter().copied().enumerate().skip(start) {
+        match event {
+            PackedGreenEvent::Enter { .. } => {
+                *relative_depth = relative_depth
+                    .checked_add(1)
+                    .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+            }
+            PackedGreenEvent::Exit { frame, .. } if *relative_depth == -wanted_relative_depth => {
+                if frame != expected_frame {
+                    return Err(M11RecursiveGreenError::Corrupt(
+                        "relative-depth spanning Exit differs from its open frame",
+                    ));
+                }
+                return Ok(Some((index, event)));
+            }
+            PackedGreenEvent::Exit { .. } => {
+                *relative_depth = relative_depth
+                    .checked_sub(1)
+                    .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+            }
+            PackedGreenEvent::Property(_)
+            | PackedGreenEvent::Coverage { .. }
+            | PackedGreenEvent::RetypeOpen { .. } => {}
+        }
+    }
+    Ok(None)
+}
+
+fn apply_spanning_exit_repair(
+    old: PackedGreenEvent,
+    repair: M11RecursiveGreenSpanningExitRepair,
+) -> Result<PackedGreenEvent, M11RecursiveGreenError> {
+    let PackedGreenEvent::Exit {
+        frame,
+        final_kind,
+        close,
+        last_line_blank,
+        child,
+    } = old
+    else {
+        return Err(M11RecursiveGreenError::InvalidEvent);
+    };
+    if frame != repair.frame() {
+        return Err(M11RecursiveGreenError::SourceAuthorityMismatch);
+    }
+    match repair {
+        M11RecursiveGreenSpanningExitRepair::TranslateCachedRow {
+            base_convergence_end,
+            target_convergence_end,
+            ..
+        } => {
+            let close = close.ok_or(M11RecursiveGreenError::InvalidEvent)?;
+            let (semantic, cached) = close
+                .split_cached_row_editable()?
+                .ok_or(M11RecursiveGreenError::InvalidEvent)?;
+            let start =
+                translate_row_cut(cached.start(), base_convergence_end, target_convergence_end)?;
+            let end =
+                translate_row_cut(cached.end(), base_convergence_end, target_convergence_end)?;
+            let cached = super::codec::M11RecursiveGreenCachedRowEditable::new(
+                cached.capability(),
+                start,
+                end,
+            )
+            .ok_or(M11RecursiveGreenError::InvalidEvent)?;
+            Ok(PackedGreenEvent::Exit {
+                frame,
+                final_kind,
+                close: Some(
+                    super::codec::M11RecursiveGreenCloseFacts::new_with_cached_row_editable(
+                        close.tag(),
+                        semantic,
+                        cached,
+                    )?,
+                ),
+                last_line_blank,
+                child,
+            })
+        }
+        M11RecursiveGreenSpanningExitRepair::Exact {
+            final_kind,
+            close,
+            last_line_blank,
+            child,
+            ..
+        } => Ok(PackedGreenEvent::Exit {
+            frame,
+            final_kind,
+            close,
+            last_line_blank,
+            child,
+        }),
+    }
+}
+
+fn translate_row_cut(
+    value: super::codec::M11RecursiveGreenSourceMetric,
+    base: super::codec::M11RecursiveGreenSourceMetric,
+    target: super::codec::M11RecursiveGreenSourceMetric,
+) -> Result<super::codec::M11RecursiveGreenSourceMetric, M11RecursiveGreenError> {
+    let after = value.bytes() >= base.bytes() && value.utf16() >= base.utf16();
+    let before = value.bytes() <= base.bytes() && value.utf16() <= base.utf16();
+    if !after && !before {
+        return Err(M11RecursiveGreenError::InvalidEvent);
+    }
+    if after {
+        translate_metric(value, base, target)
+    } else {
+        Ok(value)
+    }
 }
 
 fn fold_events(

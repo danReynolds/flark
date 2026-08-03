@@ -372,6 +372,22 @@ impl M11RecursiveGreenCloseFacts {
             },
         )))
     }
+
+    /// Splits a canonical cached-row trailer without requiring storage to know
+    /// the grammar-owned semantic prefix width.
+    #[doc(hidden)]
+    pub fn split_cached_row_editable(
+        &self,
+    ) -> Result<Option<(&[u8], M11RecursiveGreenCachedRowEditable)>, M11RecursiveGreenError> {
+        let Some(semantic_bytes) = self
+            .as_bytes()
+            .len()
+            .checked_sub(M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_BYTES)
+        else {
+            return Ok(None);
+        };
+        self.cached_row_editable(semantic_bytes)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

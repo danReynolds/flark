@@ -616,9 +616,16 @@ impl M11PersistentRecursiveGreenCleanBuild {
             .checkpoints
             .last()
             .is_none_or(|previous| previous.accepted_physical() != checkpoint.accepted_physical());
-        let is_spaced_top_level = checkpoint.open_kinds().count() == 1
-            && cut.saturating_sub(previous_cut) >= CHECKPOINT_STRIDE_BYTES;
-        if is_distinct && (force || is_spaced_top_level) {
+        let open_depth = u64::try_from(checkpoint.open_kinds().count()).map_err(|_| {
+            M11PersistentRecursiveGreenSessionError::InvalidState("checkpoint open depth fits u64")
+        })?;
+        let minimum_stride = CHECKPOINT_STRIDE_BYTES
+            .checked_mul(open_depth.max(1))
+            .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "checkpoint spacing fits u64",
+            ))?;
+        let is_spaced_restart = cut.saturating_sub(previous_cut) >= minimum_stride;
+        if is_distinct && (force || is_spaced_restart) {
             self.checkpoints.try_reserve(1).map_err(|_| {
                 M11PersistentRecursiveGreenSessionError::InvalidState(
                     "recursive-Green checkpoint allocation failed",
@@ -850,6 +857,32 @@ pub struct M11PersistentRecursiveGreenSession {
     release_begun: bool,
     green_release_complete: bool,
     references_release_complete: bool,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CheckpointStorageReceipt {
+    checkpoints: usize,
+    retained_open_frames: usize,
+    maximum_open_depth: usize,
+}
+
+#[cfg(test)]
+impl CheckpointStorageReceipt {
+    #[must_use]
+    const fn checkpoints(self) -> usize {
+        self.checkpoints
+    }
+
+    #[must_use]
+    const fn retained_open_frames(self) -> usize {
+        self.retained_open_frames
+    }
+
+    #[must_use]
+    const fn maximum_open_depth(self) -> usize {
+        self.maximum_open_depth
+    }
 }
 
 /// A failed local-adoption start returns the still-owned base session so the
@@ -1423,6 +1456,16 @@ impl M11PersistentRecursiveGreenAdoption {
             }
             AdoptionPhase::AdoptGreen => {
                 let selection = self.checkpoint_selection;
+                let terminal_close =
+                    if matches!(selection.convergence, AdoptionConvergence::Terminal) {
+                        Some(*self.controller_mut()?.pending_command().ok_or(
+                            M11PersistentRecursiveGreenSessionError::InvalidState(
+                                "terminal convergence omitted its pending Document close",
+                            ),
+                        )?)
+                    } else {
+                        None
+                    };
                 let writer = self.writer.take().ok_or(
                     M11PersistentRecursiveGreenSessionError::InvalidState(
                         "recursive-Green crop writer is missing",
@@ -1532,6 +1575,11 @@ impl M11PersistentRecursiveGreenAdoption {
                             )?;
                             writer
                                 .adopt_converged_terminal_fragment(
+                                    terminal_close.ok_or(
+                                        M11PersistentRecursiveGreenSessionError::InvalidState(
+                                            "terminal convergence omitted its close state",
+                                        ),
+                                    )?,
                                     target_restart,
                                     old_terminal,
                                     runtime,
@@ -1560,6 +1608,9 @@ impl M11PersistentRecursiveGreenAdoption {
                         )
                         | M11BlockRestartError::Pairing(
                             "target tail did not converge at the pre-Document-close boundary",
+                        )
+                        | M11BlockRestartError::Pairing(
+                            "ordinary spanning Exit state requires clean fallback",
                         ),
                     ) => {
                         self.controller = None;
@@ -1919,6 +1970,22 @@ impl M11PersistentRecursiveGreenSession {
         self.references
             .as_ref()
             .map_or(0, M11ReferenceJournalRoot::occurrence_count)
+    }
+
+    #[cfg(test)]
+    fn checkpoint_storage_receipt_for_diagnostics(&self) -> CheckpointStorageReceipt {
+        let mut retained_open_frames = 0_usize;
+        let mut maximum_open_depth = 0_usize;
+        for checkpoint in &self.checkpoints {
+            let depth = checkpoint.open_kinds().len();
+            retained_open_frames = retained_open_frames.saturating_add(depth);
+            maximum_open_depth = maximum_open_depth.max(depth);
+        }
+        CheckpointStorageReceipt {
+            checkpoints: self.checkpoints.len(),
+            retained_open_frames,
+            maximum_open_depth,
+        }
     }
 
     /// Full semantic digest used by clean-vs-incremental conformance gates.
@@ -2458,4 +2525,76 @@ fn to_u32_range(range: Range<u64>) -> Result<Range<u32>, M11PersistentRecursiveG
             "recursive-Green range exceeds the candidate ABI",
         )
     })?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use flark_engine::DocumentRuntimeConfig;
+
+    fn build_session(runtime: &mut DocumentRuntime) -> M11PersistentRecursiveGreenSession {
+        let plan = M11PersistentRecursiveGreenCleanPlan::new(
+            runtime.snapshot_current_source().expect("scanner lease"),
+            runtime.snapshot_current_source().expect("writer lease"),
+            1,
+        )
+        .expect("clean plan");
+        let mut build = plan.begin(runtime).expect("clean build");
+        loop {
+            let poll = build.poll(runtime, 64).expect("poll clean build");
+            if poll.status() == M11PersistentRecursiveGreenBuildStatus::Complete {
+                return build.take_session().expect("persistent session");
+            }
+        }
+    }
+
+    #[test]
+    fn checkpoint_storage_scales_with_bytes_in_a_deep_open_container() {
+        const DEPTH: usize = 24;
+        const LINES: usize = 4_096;
+
+        let marker = "> ".repeat(DEPTH);
+        let mut source = String::new();
+        for ordinal in 0..LINES {
+            source.push_str(&marker);
+            source.push_str(&format!(
+                "deep quoted line {ordinal:04} remains in one paragraph for bounded restart storage.\n"
+            ));
+        }
+        source.push('\n');
+
+        let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
+            .expect("deep quote runtime");
+        let mut session = build_session(&mut runtime);
+        let receipt = session.checkpoint_storage_receipt_for_diagnostics();
+        assert!(
+            receipt.maximum_open_depth() >= DEPTH + 2,
+            "receipt={receipt:?}",
+        );
+
+        // A fixed 4 KiB cadence would retain every open frame at every cut.
+        // Scaling the cadence by open depth keeps aggregate retained frames
+        // linear in source bytes even for deeply nested parser recipes.
+        let source_quanta = source.len().div_ceil(CHECKPOINT_STRIDE_BYTES as usize);
+        assert!(
+            receipt.retained_open_frames() <= source_quanta + 3 * receipt.maximum_open_depth(),
+            "source_quanta={source_quanta} receipt={receipt:?}",
+        );
+        assert!(
+            receipt.checkpoints() * DEPTH < source_quanta + 3 * DEPTH,
+            "source_quanta={source_quanta} receipt={receipt:?}",
+        );
+
+        session.begin_release(&mut runtime).expect("begin release");
+        while !session
+            .poll_release(&mut runtime, 64)
+            .expect("poll release")
+        {}
+        runtime.begin_close().expect("begin deep quote close");
+        while !runtime
+            .poll_close(64)
+            .expect("poll deep quote close")
+            .complete
+        {}
+    }
 }

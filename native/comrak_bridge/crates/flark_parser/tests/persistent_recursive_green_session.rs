@@ -826,6 +826,155 @@ fn large_session_keeps_two_late_edits_local_and_reference_rebind_constant() {
 }
 
 #[test]
+fn large_block_quote_edit_restarts_inside_the_open_container_and_reuses_distant_pages() {
+    const QUOTE_LINES: usize = 2_048;
+    const EDIT_LINE: usize = QUOTE_LINES / 2;
+    let mut source = String::new();
+    for ordinal in 0..128 {
+        source.push_str(&format!(
+            "Prefix paragraph {ordinal:03} keeps a distant Green page reusable.\n\n"
+        ));
+    }
+    for ordinal in 0..QUOTE_LINES {
+        source.push_str(&format!(
+            "> quoted line {ordinal:04} carries alpha through one open paragraph.\n"
+        ));
+    }
+    source.push('\n');
+    let suffix_start = source.len();
+    for ordinal in 0..128 {
+        source.push_str(&format!(
+            "Suffix paragraph {ordinal:03} keeps another distant Green page reusable.\n\n"
+        ));
+    }
+
+    let edit_line = format!("> quoted line {EDIT_LINE:04} carries alpha");
+    let edit_start = source
+        .find(&edit_line)
+        .map(|line| line + edit_line.find("alpha").expect("alpha in edit line"))
+        .expect("middle quote edit");
+    let edit_end = edit_start + "alpha".len();
+    let mut target_source = source.clone();
+    target_source.replace_range(edit_start..edit_end, "βeta");
+    assert_eq!(target_source.len(), source.len());
+    assert_eq!(
+        target_source.encode_utf16().count() + 1,
+        source.encode_utf16().count(),
+    );
+
+    let prefix_probe = source.find("Prefix paragraph 000").expect("prefix probe");
+    let suffix_probe = suffix_start
+        + source[suffix_start..]
+            .find("Suffix paragraph 127")
+            .expect("suffix probe");
+    let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
+        .expect("large block-quote runtime");
+    let session = build_session(&mut runtime);
+    let base_prefix_page = session
+        .storage_page_identity_at_source_byte_for_diagnostics(&runtime, prefix_probe)
+        .expect("base prefix page");
+    let base_suffix_page = session
+        .storage_page_identity_at_source_byte_for_diagnostics(&runtime, suffix_probe)
+        .expect("base suffix page");
+
+    let base = session.source();
+    runtime
+        .apply_edit(base, edit_start..edit_end, "βeta")
+        .expect("edit inside block quote");
+    let target_lease = runtime
+        .snapshot_current_source()
+        .expect("block-quote target lease");
+    let mut adoption = session
+        .begin_local_adoption(&runtime, target_lease, edit_start..edit_end)
+        .unwrap_or_else(|failure| panic!("block-quote adoption start: {}", failure.error()));
+    loop {
+        match adoption
+            .poll(&mut runtime, 64)
+            .expect("block-quote adoption")
+            .status()
+        {
+            M11PersistentRecursiveGreenAdoptionStatus::Pending => {}
+            M11PersistentRecursiveGreenAdoptionStatus::Complete => break,
+            M11PersistentRecursiveGreenAdoptionStatus::CleanFallbackRequired => {
+                panic!("block-quote content edit unexpectedly required clean fallback")
+            }
+            M11PersistentRecursiveGreenAdoptionStatus::Cancelled => {
+                panic!("block-quote content edit was cancelled")
+            }
+        }
+    }
+
+    let mut update = adoption.take_update().expect("block-quote update");
+    let work = update.work();
+    assert!(
+        work.source_bytes_read() < 16 * 1024,
+        "an edit halfway through one large quote must not reparse the whole container: {work:?}",
+    );
+    assert!(work.green_tree_nodes_rebuilt() < 512, "work={work:?}");
+    let mut superseded = update.take_base().expect("block-quote base");
+    let mut target = update.take_target().expect("block-quote target");
+    assert_eq!(
+        target
+            .storage_page_identity_at_source_byte_for_diagnostics(&runtime, prefix_probe)
+            .expect("target prefix page"),
+        base_prefix_page,
+    );
+    assert_eq!(
+        target
+            .storage_page_identity_at_source_byte_for_diagnostics(&runtime, suffix_probe)
+            .expect("target suffix page"),
+        base_suffix_page,
+    );
+    let edited_utf16 = utf16_offset(&target_source, edit_start);
+    let location = target
+        .locate_point(
+            &runtime,
+            M11RecursiveGreenPoint::new(edit_start, edited_utf16, SourceBoundaryAffinity::After),
+        )
+        .expect("incremental quote query")
+        .expect("incremental quote location");
+    assert_eq!(
+        location
+            .ancestry()
+            .iter()
+            .map(|frame| frame.kind().get())
+            .collect::<Vec<_>>(),
+        vec![1, 2, 5],
+    );
+
+    let incremental_digest = target
+        .semantic_digest_for_diagnostics(&runtime)
+        .expect("incremental quote digest");
+    let mut clean_runtime = DocumentRuntime::new(&target_source, DocumentRuntimeConfig::default())
+        .expect("clean quote runtime");
+    let mut clean = build_session(&mut clean_runtime);
+    assert_eq!(
+        clean
+            .semantic_digest_for_diagnostics(&clean_runtime)
+            .expect("clean quote digest"),
+        incremental_digest,
+    );
+
+    release_session(&mut runtime, &mut superseded);
+    release_session(&mut runtime, &mut target);
+    runtime.begin_close().expect("begin quote runtime close");
+    while !runtime
+        .poll_close(64)
+        .expect("poll quote runtime close")
+        .complete
+    {}
+    release_session(&mut clean_runtime, &mut clean);
+    clean_runtime
+        .begin_close()
+        .expect("begin clean quote runtime close");
+    while !clean_runtime
+        .poll_close(64)
+        .expect("poll clean quote runtime close")
+        .complete
+    {}
+}
+
+#[test]
 fn commonmark_321_and_structure_changing_325_stay_generic_exact_and_local_in_a_large_session() {
     const CM321: &str = "- a\n  > b\n  ```\n  c\n  ```\n- d\n";
     const CM325: &str = "* foo\n  * bar\n\n  baz\n";
