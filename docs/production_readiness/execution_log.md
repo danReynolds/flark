@@ -1453,8 +1453,8 @@ append-only unless correcting a factual error.
   granting provisional semantic authority.
 - Removed a debug-stack-amplifying return-by-value wrapper around the 91,856-byte
   inline projection state. The exact native fixture now passes on the normal
-  2 MiB test stack; shrinking that state to a heap-backed or phase-specific
-  handle remains follow-up stack hygiene.
+  2 MiB test stack. The later generic recursive-container gate below completes
+  the heap-backed phase-state follow-up.
 - Rebuilt the host and mirrored Worker/Wasm artifacts at ABI `0x30007`.
 - Verification:
   - focused native endpoint projected-inline fixture: passed 1/1 on the normal
@@ -1467,3 +1467,40 @@ append-only unless correcting a factual error.
   - example engine-lab tests: passed 12/12;
   - focused Dart and Flutter analysis: clean; and
   - `cargo fmt --check` plus `git diff --check`: clean.
+
+### V3 Generic Recursive-Container Gate — 2026-08-02
+
+- Replaced inline storage for every mutually exclusive parser scratch phase
+  with heap ownership. `M11InlineProjectionJob` fell from 91,856 bytes to 4,768
+  bytes and now has an executable 8 KiB ceiling.
+- Boxed endpoint-owned recursive-Green clean-build, adoption, fallback, and
+  cleanup jobs at their phase boundaries. This removes normal-test-stack
+  amplification without changing fuel, cancellation, or publication
+  semantics.
+- Upgraded the >512 KiB container probe from a CM321 leaf-text replacement to
+  an 819,053-byte CM325 base structural edit: `baz` becomes `* βaz`. The edit
+  creates a
+  second nested-list Item, flips outer/nested List tightness, and produces
+  distinct `+3` UTF-8 and `+2` UTF-16 suffix displacement.
+- The parser-session gate asserts patterned-fuel bounded work, exact target row
+  geometry, CM321 retention, distant arena-page identity reuse, and equality
+  with a clean target semantic digest.
+- The production endpoint gate asserts unit-fuel exact-base delta publication,
+  no legacy block replacement, independent-host ancestry and schema-11 List
+  facts, distinct byte/UTF-16 rebasing, and complete close/reclamation.
+- Verification:
+  - `cargo test -p flark-parser --lib --locked`: passed 162/162;
+  - `cargo test -p flark-parser --test persistent_recursive_green_session --locked`:
+    passed 10/10 with two intentional ignored large-scale cases;
+  - focused clean CM321 endpoint gate: passed 1/1 on the normal stack;
+  - focused 819,056-byte structure-changing endpoint gate: passed 1/1 on the normal
+    stack;
+  - focused small nested-edit endpoint gate: passed 1/1;
+  - focused recursive-Green cancellation/cleanup endpoint gate: passed 1/1;
+  - `cargo fmt --all -- --check`: passed; and
+  - `git diff --check`: passed.
+
+This completes the hardest recursive-container architecture gate. It is not a
+652-example CommonMark coverage claim; examples 321 and 325 remain classified
+as unclaimed until the proven grammar control is promoted into the production
+runtime and the ledger is updated against that path.

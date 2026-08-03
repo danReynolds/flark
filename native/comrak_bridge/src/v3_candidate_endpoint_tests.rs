@@ -1393,6 +1393,22 @@ fn recursive_green_query_shape(
     byte_offset: usize,
     utf16_offset: usize,
 ) -> (u16, [u32; 4], Vec<u16>) {
+    recursive_green_query_shape_with_tree_budget(
+        host,
+        source_version,
+        byte_offset,
+        utf16_offset,
+        256,
+    )
+}
+
+fn recursive_green_query_shape_with_tree_budget(
+    host: &NativeCandidateHost,
+    source_version: SourceVersion,
+    byte_offset: usize,
+    utf16_offset: usize,
+    maximum_tree_nodes_visited: u32,
+) -> (u16, [u32; 4], Vec<u16>) {
     let mut output = vec![0_u8; 4 * 1024];
     let outcome = host
         .query_structural(
@@ -1407,7 +1423,7 @@ fn recursive_green_query_shape(
                     maximum_encoded_bytes: 4 * 1024,
                     maximum_open_depth: 16,
                     maximum_leaf_count: 64,
-                    maximum_tree_nodes_visited: 256,
+                    maximum_tree_nodes_visited,
                 },
             },
             &mut output,
@@ -1493,20 +1509,113 @@ fn recursive_green_owner_frame(
     u64::from_le_bytes(output[start..start + 8].try_into().expect("owner frame ID"))
 }
 
+fn recursive_green_row_list_tightness(
+    host: &NativeCandidateHost,
+    source_version: SourceVersion,
+    requested_range: HostMetricRange,
+) -> Vec<u32> {
+    let mut output = vec![0_u8; 8 * 1024];
+    let HostBlockRangeOutcome::Page {
+        continuation,
+        receipt,
+        ..
+    } = host
+        .query_structural_range(
+            HostBlockRangeQuery {
+                source_version,
+                requested_range,
+                budget: HostBlockRangeBudget {
+                    maximum_encoded_bytes: output.len() as u32,
+                    maximum_block_count: 1,
+                    maximum_storage_pages_visited: 128,
+                    maximum_open_depth: 16,
+                    maximum_tree_nodes_visited: 4096,
+                },
+                continuation: None,
+            },
+            &mut output,
+        )
+        .expect("query exact recursive-Green row")
+    else {
+        panic!("exact recursive-Green row must be available");
+    };
+    assert!(continuation.is_none());
+    assert!(receipt.complete);
+    assert_eq!(receipt.block_count, 1);
+    assert_eq!(&output[..8], b"FLKVR001");
+    assert_eq!(
+        u32::from_le_bytes(output[8..12].try_into().expect("row schema")),
+        HOST_RECURSIVE_GREEN_ROW_RANGE_SCHEMA,
+    );
+    let row_count = usize::try_from(u32::from_le_bytes(
+        output[24..28].try_into().expect("row count"),
+    ))
+    .expect("row count fits");
+    let path_count = usize::try_from(u32::from_le_bytes(
+        output[28..32].try_into().expect("path count"),
+    ))
+    .expect("path count fits");
+    assert_eq!(row_count, 1);
+    let row_offset = HOST_RECURSIVE_GREEN_ROW_RANGE_HEADER_BYTES;
+    let path_start = usize::try_from(u32::from_le_bytes(
+        output[row_offset + 20..row_offset + 24]
+            .try_into()
+            .expect("path start"),
+    ))
+    .expect("path start fits");
+    let path_len = usize::try_from(u32::from_le_bytes(
+        output[row_offset + 24..row_offset + 28]
+            .try_into()
+            .expect("path length"),
+    ))
+    .expect("path length fits");
+    assert_eq!(path_start, 0);
+    assert_eq!(path_len, path_count);
+    let paths_offset = HOST_RECURSIVE_GREEN_ROW_RANGE_HEADER_BYTES
+        + row_count * HOST_RECURSIVE_GREEN_ROW_RECORD_BYTES;
+    (0..path_count)
+        .filter_map(|index| {
+            let offset = paths_offset + index * HOST_RECURSIVE_GREEN_ROW_PATH_RECORD_BYTES;
+            let kind = u16::from_le_bytes(
+                output[offset + 8..offset + 10]
+                    .try_into()
+                    .expect("path kind"),
+            );
+            if kind != 3 {
+                return None;
+            }
+            assert_eq!(
+                u16::from_le_bytes(
+                    output[offset + 12..offset + 14]
+                        .try_into()
+                        .expect("List fact kind"),
+                ),
+                1,
+            );
+            Some(u32::from_le_bytes(
+                output[offset + 44..offset + 48]
+                    .try_into()
+                    .expect("List tightness"),
+            ))
+        })
+        .collect()
+}
+
 #[test]
 fn nested_local_edit_preempts_legacy_parse_and_installs_exact_recursive_green_delta() {
     const CM321: &str = "- a\n  > b\n  ```\n  c\n  ```\n- d\n";
     const CM325: &str = "* foo\n  * bar\n\n  baz\n";
-    const LENGTH_DELTA: usize = "beta".len() - 1;
+    const BYTE_DELTA: usize = "* βaz".len() - "baz".len();
+    const UTF16_DELTA: usize = 5 - 3;
     let mut source = String::new();
     for ordinal in 0..9_000 {
         source.push_str(&format!(
                 "Prefix paragraph {ordinal:05} carries enough ordinary source for sparse restart spacing.\n\n"
             ));
     }
-    let cm321_start = source.len();
     source.push_str(CM321);
     source.push('\n');
+    let cm325_start = source.len();
     source.push_str(CM325);
     source.push('\n');
     for ordinal in 0..1_000 {
@@ -1553,14 +1662,39 @@ fn nested_local_edit_preempts_legacy_parse_and_installs_exact_recursive_green_de
     let distant_utf16 = source[..distant_byte].encode_utf16().count();
     let distant_before =
         recursive_green_query_shape(&host, base_wire_source, distant_byte, distant_utf16);
+    let base_baz_byte = cm325_start + CM325.find("baz").expect("lazy outer-item Paragraph");
+    let base_baz =
+        recursive_green_query_shape(&host, base_wire_source, base_baz_byte, base_baz_byte);
+    assert_eq!(base_baz.0, 5);
+    assert_eq!(base_baz.2, vec![1, 3, 4, 5]);
+    let base_bar_start = cm325_start + CM325.find("bar").expect("nested List Paragraph");
+    assert_eq!(
+        recursive_green_row_list_tightness(
+            &host,
+            base_wire_source,
+            HostMetricRange {
+                start: HostSourceMetric {
+                    bytes: base_bar_start as u32,
+                    utf16: base_bar_start as u32,
+                },
+                end: HostSourceMetric {
+                    bytes: (base_bar_start + 4) as u32,
+                    utf16: (base_bar_start + 4) as u32,
+                },
+            },
+        ),
+        vec![0, 1],
+        "the independent base host sees a loose outer List and tight nested List",
+    );
 
     endpoint
         .cancel_for_edit(&mut runtime)
         .expect("prepare nested edit");
-    let edited_byte = cm321_start + CM321.find("> b").expect("nested quote content") + 2;
+    let edited_byte = base_baz_byte;
+    let edited_end = edited_byte + "baz".len();
     runtime
-        .apply_edit(base_source, edited_byte..edited_byte + 1, "beta")
-        .expect("apply nested local edit");
+        .apply_edit(base_source, edited_byte..edited_end, "* βaz")
+        .expect("turn the lazy outer-item Paragraph into a second nested-list Item");
     let plan = runtime
         .begin_incremental_source_facts(profile, parser_profile, SourceFactsRootLimits::default())
         .expect("begin incremental source facts");
@@ -1600,6 +1734,13 @@ fn nested_local_edit_preempts_legacy_parse_and_installs_exact_recursive_green_de
         .recursive_green
         .ready_update_for(base_delivery.ack, target_source)
         .is_some());
+    let adoption_work = endpoint
+        .recursive_green
+        .ready_update_for(base_delivery.ack, target_source)
+        .expect("completed CM325 structural update")
+        .work();
+    assert!(adoption_work.source_bytes_read() < 16 * 1024);
+    assert!(adoption_work.green_tree_nodes_rebuilt() < 256);
 
     let target_delivery =
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
@@ -1628,17 +1769,67 @@ fn nested_local_edit_preempts_legacy_parse_and_installs_exact_recursive_green_de
         }
     );
 
-    let distant_after = recursive_green_query_shape(
+    let edited_probe_byte = edited_byte + "* β".len();
+    let edited_probe_utf16 = edited_byte + "* β".encode_utf16().count();
+    assert_ne!(edited_probe_byte, edited_probe_utf16);
+    let edited_shape = recursive_green_query_shape_with_tree_budget(
         &host,
         target_wire_source,
-        distant_byte + LENGTH_DELTA,
-        distant_utf16 + LENGTH_DELTA,
+        edited_probe_byte,
+        edited_probe_utf16,
+        1024,
+    );
+    assert_eq!(edited_shape.0, 5);
+    assert_eq!(
+        edited_shape.1,
+        [
+            (edited_byte + 2) as u32,
+            (edited_byte + 6) as u32,
+            (edited_byte + 2) as u32,
+            (edited_byte + 5) as u32,
+        ]
+    );
+    assert_eq!(
+        edited_shape.2,
+        vec![1, 3, 4, 3, 4, 5],
+        "the independent host must observe a second nested-list Item, not the old lazy Paragraph",
+    );
+    assert_eq!(
+        recursive_green_row_list_tightness(
+            &host,
+            target_wire_source,
+            HostMetricRange {
+                start: HostSourceMetric {
+                    bytes: (edited_byte + 2) as u32,
+                    utf16: (edited_byte + 2) as u32,
+                },
+                end: HostSourceMetric {
+                    bytes: (edited_byte + 7) as u32,
+                    utf16: (edited_byte + 6) as u32,
+                },
+            },
+        ),
+        vec![1, 0],
+        "the independent target host sees a tight outer List and loose nested List",
+    );
+
+    let distant_after = recursive_green_query_shape_with_tree_budget(
+        &host,
+        target_wire_source,
+        distant_byte + BYTE_DELTA,
+        distant_utf16 + UTF16_DELTA,
+        1024,
     );
     assert_eq!(distant_after.0, distant_before.0);
     assert_eq!(distant_after.2, distant_before.2);
     assert_eq!(
         distant_after.1,
-        distant_before.1.map(|metric| metric + LENGTH_DELTA as u32)
+        [
+            distant_before.1[0] + BYTE_DELTA as u32,
+            distant_before.1[1] + BYTE_DELTA as u32,
+            distant_before.1[2] + UTF16_DELTA as u32,
+            distant_before.1[3] + UTF16_DELTA as u32,
+        ],
     );
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }

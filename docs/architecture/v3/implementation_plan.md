@@ -401,6 +401,19 @@ counterexample (example 325). It must preserve exact byte and UTF-16 source
 ownership, work under arbitrary fuel partitions, and update a local edit in a
 large surrounding document without scanning or rewriting unrelated siblings.
 
+That probe is now green. In an 819,053-byte base source, the production
+local-adoption
+path changes CM325's `baz` Paragraph into a second nested-list Item containing
+`β`. Patterned parser fuel and unit-fuel endpoint scheduling preserve exact
+three-byte/two-UTF-16 displacement, read less than 16 KiB, rebuild fewer than
+256 Green nodes, retain distant storage pages, and converge to the clean target
+digest. Independent host replay observes the exact ancestry and the List close
+facts flipping from outer-loose/inner-tight to outer-tight/inner-loose. The
+clean CM321 schema-9/schema-11/inline/viewport gate remains green on the normal
+Rust stack. These are architecture receipts; examples 321 and 325 remain
+ledger-unclassified until the promoted production grammar drives their
+official claims.
+
 The narrow `M11CleanLeaf::{BlockQuote,BulletList,OrderedList}` variants remain
 valid staged product slices, but they are not the full-container storage model.
 Broader containers must lower into the already-selected source-ordered packed
@@ -433,14 +446,14 @@ The current shortest path to decisive product evidence is:
 2. **Completed — install an honest CommonMark ledger.** Keep all 652 fixtures
    classified exactly once and refuse to convert inventory or safe fallback
    into a conformance percentage.
-3. **In progress — compose the hardest container slice.** Stream CommonMark
+3. **Completed — compose the hardest container slice.** Stream CommonMark
    321 into generic serialized green, keep 325 as the nested/loose discriminator,
    and prove fuel invariance, exact source ownership, and local mutation in a
    large surrounding document.
-4. **Promote the proven grammar control.** Move the 652-exact value-block
-   line/finish machine onto the current refillable source, fuelled worker, and
-   candidate-writer APIs without its vector tree, copied source strings, or
-   test renderer.
+4. **In progress — promote the proven grammar control.** Move the 652-exact
+   value-block line/finish machine onto the current refillable source, fuelled
+   worker, and candidate-writer APIs without its vector tree, copied source
+   strings, or test renderer.
 5. **Join incrementality and publication.** Prove exact restart/convergence,
    changed-prefix plus retained-suffix composition, atomic multi-root adoption,
    cancellation, and reclamation through the production native and Wasm host.

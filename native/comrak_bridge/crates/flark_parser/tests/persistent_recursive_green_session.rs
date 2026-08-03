@@ -1,6 +1,6 @@
 use flark_engine::parser_internal::{
-    M11RecursiveGreenPoint, M11RecursiveGreenRowEditCapability, M11RecursiveGreenRowQueryLimits,
-    M11RecursiveGreenRowQueryOutcome,
+    M11RecursiveGreenPoint, M11RecursiveGreenRenderableRow, M11RecursiveGreenRowEditCapability,
+    M11RecursiveGreenRowQueryLimits, M11RecursiveGreenRowQueryOutcome,
 };
 use flark_engine::{ArenaLimits, DocumentRuntime, DocumentRuntimeConfig, SourceBoundaryAffinity};
 use flark_parser::{
@@ -26,6 +26,18 @@ fn build_session(runtime: &mut DocumentRuntime) -> M11PersistentRecursiveGreenSe
 
 fn utf16_offset(source: &str, byte: usize) -> usize {
     source[..byte].encode_utf16().count()
+}
+
+fn list_tightness(row: &M11RecursiveGreenRenderableRow) -> Vec<u8> {
+    row.path()
+        .iter()
+        .filter(|frame| frame.kind().get() == 3)
+        .map(|frame| {
+            let close = frame.close().expect("List close facts");
+            assert_eq!(close.tag().get(), 1);
+            close.as_bytes()[0]
+        })
+        .collect()
 }
 
 fn release_session(
@@ -726,7 +738,7 @@ fn large_session_keeps_two_late_edits_local_and_reference_rebind_constant() {
 }
 
 #[test]
-fn commonmark_321_and_325_stay_generic_exact_and_local_inside_a_large_session() {
+fn commonmark_321_and_structure_changing_325_stay_generic_exact_and_local_in_a_large_session() {
     const CM321: &str = "- a\n  > b\n  ```\n  c\n  ```\n- d\n";
     const CM325: &str = "* foo\n  * bar\n\n  baz\n";
 
@@ -739,6 +751,7 @@ fn commonmark_321_and_325_stay_generic_exact_and_local_inside_a_large_session() 
     let cm321_start = source.len();
     source.push_str(CM321);
     source.push('\n');
+    let cm325_start = source.len();
     source.push_str(CM325);
     source.push('\n');
     for ordinal in 0..1_000 {
@@ -748,14 +761,21 @@ fn commonmark_321_and_325_stay_generic_exact_and_local_inside_a_large_session() 
     }
     assert!(source.len() > 512 * 1024);
 
-    let edit_start = cm321_start + CM321.find("> b").expect("quote child") + 2;
+    let edit_start = cm325_start + CM325.find("baz").expect("lazy outer-item Paragraph");
+    let edit_end = edit_start + "baz".len();
     let prefix_probe = source.find("Prefix paragraph 00000").expect("prefix probe");
     let suffix_probe = source
         .rfind("Trailing paragraph 0999")
         .expect("suffix probe");
     let mut target_source = source.clone();
-    target_source.replace_range(edit_start..edit_start + 1, "beta");
-    const LENGTH_DELTA: usize = "beta".len() - 1;
+    target_source.replace_range(edit_start..edit_end, "* βaz");
+    const BYTE_DELTA: usize = "* βaz".len() - "baz".len();
+    const UTF16_DELTA: usize = 5 - 3;
+    assert_eq!(target_source.len(), source.len() + BYTE_DELTA);
+    assert_eq!(
+        target_source.encode_utf16().count(),
+        source.encode_utf16().count() + UTF16_DELTA,
+    );
 
     let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
         .expect("large recursive-container runtime");
@@ -766,24 +786,63 @@ fn commonmark_321_and_325_stay_generic_exact_and_local_inside_a_large_session() 
     let base_suffix_page = session0
         .storage_page_identity_at_source_byte_for_diagnostics(&runtime, suffix_probe)
         .expect("base suffix page");
+    let base_bar = cm325_start + CM325.find("bar").expect("nested List Paragraph");
+    let base_rows = session0
+        .query_renderable_rows(
+            &runtime,
+            M11RecursiveGreenPoint::new(base_bar, base_bar, SourceBoundaryAffinity::After),
+            u64::try_from(cm325_start + CM325.len()).expect("CM325 base end fits"),
+            M11RecursiveGreenRowQueryLimits::new(4, 32, 4096, 16, 4096)
+                .expect("bounded CM325 base row limits"),
+        )
+        .expect("base nested-list rows");
+    let base_bar_row = base_rows
+        .rows()
+        .iter()
+        .find(|row| {
+            row.editable_range().is_some_and(|range| {
+                range.start <= base_bar as u64 && (base_bar as u64) < range.end
+            })
+        })
+        .expect("base nested-list Paragraph row");
+    assert_eq!(
+        base_bar_row
+            .path()
+            .iter()
+            .map(|frame| frame.kind().get())
+            .collect::<Vec<_>>(),
+        vec![1, 3, 4, 3, 4, 5],
+    );
+    assert_eq!(
+        list_tightness(base_bar_row),
+        vec![0, 1],
+        "CM325 starts with a loose outer List and tight nested List",
+    );
 
     let base = session0.source();
     runtime
-        .apply_edit(base, edit_start..edit_start + 1, "beta")
-        .expect("edit nested quote child");
+        .apply_edit(base, edit_start..edit_end, "* βaz")
+        .expect("turn the lazy outer-item Paragraph into a second nested-list Item");
     let target_lease = runtime
         .snapshot_current_source()
         .expect("recursive-container target lease");
     let mut adoption = session0
-        .begin_local_adoption(&runtime, target_lease, edit_start..edit_start + 1)
+        .begin_local_adoption(&runtime, target_lease, edit_start..edit_end)
         .unwrap_or_else(|failure| panic!("container adoption start: {}", failure.error()));
+    let mut fuel_index = 0_usize;
+    const FUEL_PATTERN: [usize; 4] = [1, 7, 3, 64];
     loop {
-        let poll = adoption.poll(&mut runtime, 64).expect("container adoption");
+        let fuel = FUEL_PATTERN[fuel_index % FUEL_PATTERN.len()];
+        fuel_index += 1;
+        let poll = adoption
+            .poll(&mut runtime, fuel)
+            .expect("container adoption");
+        assert!(poll.transitions() <= fuel);
         match poll.status() {
             M11PersistentRecursiveGreenAdoptionStatus::Pending => {}
             M11PersistentRecursiveGreenAdoptionStatus::Complete => break,
             M11PersistentRecursiveGreenAdoptionStatus::CleanFallbackRequired => {
-                panic!("nested container edit unexpectedly required clean fallback")
+                panic!("structure-changing CM325 edit unexpectedly required clean fallback")
             }
             M11PersistentRecursiveGreenAdoptionStatus::Cancelled => {
                 panic!("nested container adoption was cancelled")
@@ -808,24 +867,84 @@ fn commonmark_321_and_325_stay_generic_exact_and_local_inside_a_large_session() 
         target
             .storage_page_identity_at_source_byte_for_diagnostics(
                 &runtime,
-                suffix_probe + LENGTH_DELTA,
+                suffix_probe + BYTE_DELTA,
             )
             .expect("target suffix page"),
         base_suffix_page,
     );
-    let prepared = target
-        .prepare_paragraph_inline(
+    let cm321_probe = cm321_start + CM321.find("> b").expect("retained quote child") + 2;
+    let cm321_location = target
+        .locate_point(
+            &runtime,
+            M11RecursiveGreenPoint::new(cm321_probe, cm321_probe, SourceBoundaryAffinity::After),
+        )
+        .expect("retained CM321 query")
+        .expect("retained CM321 location");
+    assert_eq!(
+        cm321_location
+            .ancestry()
+            .iter()
+            .map(|ancestor| ancestor.kind().get())
+            .collect::<Vec<_>>(),
+        vec![1, 3, 4, 2, 5],
+    );
+    let edited_content_byte = edit_start + "* β".len();
+    let edited_content_utf16 = utf16_offset(&target_source, edited_content_byte);
+    assert_ne!(edited_content_byte, edited_content_utf16);
+    let row_window = target
+        .query_renderable_rows(
             &runtime,
             M11RecursiveGreenPoint::new(
-                edit_start + 1,
-                edit_start + 1,
+                edited_content_byte,
+                edited_content_utf16,
                 SourceBoundaryAffinity::After,
             ),
+            u64::try_from(cm325_start + CM325.len() + BYTE_DELTA).expect("CM325 target end fits"),
+            M11RecursiveGreenRowQueryLimits::new(4, 32, 4096, 16, 4096)
+                .expect("bounded CM325 row limits"),
         )
-        .expect("nested quote Paragraph query");
-    assert!(target_source[prepared.inline_source_range().start as usize
-        ..prepared.inline_source_range().end as usize]
-        .contains("beta"));
+        .expect("edited nested-list Paragraph rows");
+    let edited_row = row_window
+        .rows()
+        .iter()
+        .find(|row| {
+            row.editable_range().is_some_and(|range| {
+                range.start <= edited_content_byte as u64
+                    && (edited_content_byte as u64) < range.end
+            })
+        })
+        .expect("edited nested-list Paragraph row");
+    assert_eq!(edited_row.kind().get(), 5);
+    assert_eq!(
+        edited_row
+            .path()
+            .iter()
+            .map(|frame| frame.kind().get())
+            .collect::<Vec<_>>(),
+        vec![1, 3, 4, 3, 4, 5],
+        "the former outer-item Paragraph must become a second nested-list Item",
+    );
+    assert_eq!(
+        edited_row.physical_range(),
+        (edit_start + 2) as u64..(edit_start + 7) as u64,
+    );
+    assert_eq!(
+        edited_row.physical_utf16_range(),
+        (edit_start + 2) as u64..(edit_start + 6) as u64,
+    );
+    assert_eq!(
+        edited_row.editable_range(),
+        Some((edit_start + 2) as u64..(edit_start + 6) as u64),
+    );
+    assert_eq!(
+        edited_row.editable_utf16_range(),
+        Some((edit_start + 2) as u64..(edit_start + 5) as u64),
+    );
+    assert_eq!(
+        list_tightness(edited_row),
+        vec![1, 0],
+        "the edit makes the nested list loose while the outer list becomes tight",
+    );
 
     let incremental_digest = target
         .semantic_digest_for_diagnostics(&runtime)

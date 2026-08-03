@@ -578,20 +578,20 @@ pub struct M11InlineProjectionJob {
     source_range: Range<u32>,
     parser_profile: ParserProfileId,
     phase: ProjectionJobPhase,
-    code_job: Option<M11InlineCodeJob>,
+    code_job: Option<Box<M11InlineCodeJob>>,
     code: Option<M11InlineCodeRuns>,
-    autolink_job: Option<M11InlineAutolinkJob>,
-    opaque_job: Option<M11InlineOpaqueResolveJob>,
-    opaque: Option<M11InlineOpaqueCandidates>,
-    direct_job: Option<M11InlineDirectJob>,
+    autolink_job: Option<Box<M11InlineAutolinkJob>>,
+    opaque_job: Option<Box<M11InlineOpaqueResolveJob>>,
+    opaque: Option<Box<M11InlineOpaqueCandidates>>,
+    direct_job: Option<Box<M11InlineDirectJob>>,
     reference_resolver: Option<M11ReferenceResolver>,
     direct: Option<M11InlineDirectCandidates>,
     bare_autolink_job: Option<M11InlineBareAutolinkJob>,
-    hazard_job: Option<M11InlineHazardJob>,
-    emphasis_job: Option<M11InlineEmphasisJob>,
-    candidates: Option<M11InlineCandidates>,
-    leaf_scanner: Option<M11InlineLexScanner>,
-    projection: Option<M11InlineProjectionBuild>,
+    hazard_job: Option<Box<M11InlineHazardJob>>,
+    emphasis_job: Option<Box<M11InlineEmphasisJob>>,
+    candidates: Option<Box<M11InlineCandidates>>,
+    leaf_scanner: Option<Box<M11InlineLexScanner>>,
+    projection: Option<Box<M11InlineProjectionBuild>>,
     root: Option<M11InlineProjectionRoot>,
     unsupported: Option<M11InlineProjectionUnsupported>,
     output: Option<M11InlineProjectionOutput>,
@@ -902,7 +902,7 @@ impl M11InlineProjectionJob {
             source_range,
             parser_profile,
             phase: ProjectionJobPhase::Code,
-            code_job: Some(code_job),
+            code_job: Some(Box::new(code_job)),
             code: None,
             autolink_job: None,
             opaque_job: None,
@@ -1122,12 +1122,12 @@ impl M11InlineProjectionJob {
             .ok_or(M11InlineProjectionJobError::InvalidState)?;
         drop(self.code_job.take());
         self.code = Some(code);
-        self.autolink_job = Some(M11InlineAutolinkJob::new(
+        self.autolink_job = Some(Box::new(M11InlineAutolinkJob::new(
             runtime,
             self.code
                 .as_ref()
                 .ok_or(M11InlineProjectionJobError::InvalidState)?,
-        )?);
+        )?));
         self.phase = ProjectionJobPhase::Autolink;
         *transitions += 1;
         Ok(())
@@ -1166,7 +1166,7 @@ impl M11InlineProjectionJob {
                 .ok_or(M11InlineProjectionJobError::InvalidState)?,
         )?;
         drop(self.autolink_job.take());
-        self.opaque_job = Some(opaque_job);
+        self.opaque_job = Some(Box::new(opaque_job));
         self.phase = ProjectionJobPhase::ResolveOpaque;
         *transitions += 1;
         Ok(())
@@ -1197,23 +1197,25 @@ impl M11InlineProjectionJob {
         runtime: &DocumentRuntime,
         transitions: &mut usize,
     ) -> Result<(), M11InlineProjectionJobError> {
-        self.opaque = Some(
+        self.opaque = Some(Box::new(
             self.opaque_job
                 .as_mut()
                 .ok_or(M11InlineProjectionJobError::InvalidState)?
                 .take_output()
                 .ok_or(M11InlineProjectionJobError::InvalidState)?,
-        );
+        ));
         drop(self.opaque_job.take());
         let opaque = self
             .opaque
             .as_ref()
             .ok_or(M11InlineProjectionJobError::InvalidState)?;
-        self.direct_job = Some(if let Some(resolver) = self.reference_resolver.take() {
-            M11InlineDirectJob::new_with_reference_resolver(runtime, opaque, resolver)?
-        } else {
-            M11InlineDirectJob::new(runtime, opaque)?
-        });
+        self.direct_job = Some(Box::new(
+            if let Some(resolver) = self.reference_resolver.take() {
+                M11InlineDirectJob::new_with_reference_resolver(runtime, opaque, resolver)?
+            } else {
+                M11InlineDirectJob::new(runtime, opaque)?
+            },
+        ));
         self.phase = ProjectionJobPhase::Direct;
         *transitions += 1;
         Ok(())
@@ -1317,7 +1319,7 @@ impl M11InlineProjectionJob {
             .as_mut()
             .ok_or(M11InlineProjectionJobError::InvalidState)?
             .install_augmented(augmented)?;
-        self.hazard_job = Some(M11InlineHazardJob::new_with_direct(
+        self.hazard_job = Some(Box::new(M11InlineHazardJob::new_with_direct(
             runtime,
             self.opaque
                 .as_ref()
@@ -1325,7 +1327,7 @@ impl M11InlineProjectionJob {
             self.direct
                 .as_ref()
                 .ok_or(M11InlineProjectionJobError::InvalidState)?,
-        )?);
+        )?));
         self.phase = ProjectionJobPhase::Hazard;
         *transitions += 1;
         Ok(())
@@ -1374,12 +1376,12 @@ impl M11InlineProjectionJob {
                     .opaque
                     .take()
                     .ok_or(M11InlineProjectionJobError::InvalidState)?;
-                self.emphasis_job = Some(M11InlineEmphasisJob::new_with_direct(
-                    opaque,
+                self.emphasis_job = Some(Box::new(M11InlineEmphasisJob::new_with_direct(
+                    *opaque,
                     self.direct
                         .as_ref()
                         .ok_or(M11InlineProjectionJobError::InvalidState)?,
-                )?);
+                )?));
                 self.phase = ProjectionJobPhase::Emphasis;
             }
             M11InlineHazardDisposition::Unsupported { kind, start, end } => {
@@ -1426,7 +1428,7 @@ impl M11InlineProjectionJob {
             .take_output()
             .ok_or(M11InlineProjectionJobError::InvalidState)?;
         drop(self.emphasis_job.take());
-        self.candidates = Some(candidates);
+        self.candidates = Some(Box::new(candidates));
         let candidates = self
             .candidates
             .as_ref()
@@ -1476,12 +1478,16 @@ impl M11InlineProjectionJob {
             .as_ref()
             .ok_or(M11InlineProjectionJobError::InvalidState)?;
         candidates.validate_source(runtime)?;
-        self.projection = Some(M11InlineProjectionBuild::new_from_source_authority(
-            runtime,
-            candidates.source_authority()?,
-            self.parser_profile,
-        )?);
-        self.leaf_scanner = Some(M11InlineLexScanner::new(candidates.source_cursor(runtime)?));
+        self.projection = Some(Box::new(
+            M11InlineProjectionBuild::new_from_source_authority(
+                runtime,
+                candidates.source_authority()?,
+                self.parser_profile,
+            )?,
+        ));
+        self.leaf_scanner = Some(Box::new(M11InlineLexScanner::new(
+            candidates.source_cursor(runtime)?,
+        )));
         self.phase = ProjectionJobPhase::Emit;
         *transitions += 1;
         Ok(())
@@ -2561,6 +2567,11 @@ mod tests {
     };
 
     const TEST_PROFILE: u64 = 0x1703;
+
+    #[test]
+    fn phase_scratch_is_heap_owned_and_job_stays_stack_bounded() {
+        assert!(std::mem::size_of::<M11InlineProjectionJob>() <= 8 * 1024);
+    }
 
     #[derive(Debug, Eq, PartialEq)]
     struct Resolution {

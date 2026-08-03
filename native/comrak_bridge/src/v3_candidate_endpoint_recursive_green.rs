@@ -30,18 +30,18 @@ enum PendingRecursiveGreen {
         origin: RecursiveGreenCleanOrigin,
     },
     CleanBuild {
-        build: M11PersistentRecursiveGreenCleanBuild,
+        build: Box<M11PersistentRecursiveGreenCleanBuild>,
         base: Option<InstalledRecursiveGreen>,
         origin: RecursiveGreenCleanOrigin,
     },
     Adoption {
         base_ack: StructuralAck,
-        adoption: M11PersistentRecursiveGreenAdoption,
+        adoption: Box<M11PersistentRecursiveGreenAdoption>,
     },
     CancellingAdoptionForFallback {
         base_ack: StructuralAck,
         syntax_profile: u32,
-        adoption: M11PersistentRecursiveGreenAdoption,
+        adoption: Box<M11PersistentRecursiveGreenAdoption>,
         begun: bool,
     },
     ReadyClean {
@@ -61,12 +61,12 @@ enum RecursiveGreenCleanup {
         begun: bool,
     },
     CleanBuild {
-        build: M11PersistentRecursiveGreenCleanBuild,
+        build: Box<M11PersistentRecursiveGreenCleanBuild>,
         restore: Option<InstalledRecursiveGreen>,
         begun: bool,
     },
     Adoption {
-        adoption: M11PersistentRecursiveGreenAdoption,
+        adoption: Box<M11PersistentRecursiveGreenAdoption>,
         restore_ack: StructuralAck,
         begun: bool,
     },
@@ -174,7 +174,10 @@ impl RecursiveGreenEndpointSlot {
             .begin_local_adoption(runtime, target_lease, base_edit)
         {
             Ok(adoption) => {
-                self.pending = Some(PendingRecursiveGreen::Adoption { base_ack, adoption });
+                self.pending = Some(PendingRecursiveGreen::Adoption {
+                    base_ack,
+                    adoption: Box::new(adoption),
+                });
             }
             Err(failure) => {
                 let base = InstalledRecursiveGreen {
@@ -242,7 +245,7 @@ impl RecursiveGreenEndpointSlot {
                     _ => return Err(CandidateEndpointError::InvalidState),
                 };
                 self.pending = Some(PendingRecursiveGreen::CleanBuild {
-                    build,
+                    build: Box::new(build),
                     base,
                     origin,
                 });

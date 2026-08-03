@@ -111,14 +111,56 @@ The product checkpoint proves:
 
 The focused native endpoint fixture passes on the normal 2 MiB Rust test stack.
 That gate also exposed and removed a debug-stack-amplifying return-by-value
-wrapper around the 91,856-byte inline projection state. The state object's size
-remains a follow-up native/Wasm stack-hygiene item: a later cleanup should make
-it a small handle over heap-backed or phase-specific state, without reopening
-this protocol or presentation architecture.
+wrapper around the 91,856-byte inline projection state. The subsequent
+recursive-container gate completed that stack-hygiene work: mutually exclusive
+phase scratch is now heap-owned and the inline job itself is 4,768 bytes, with
+an 8 KiB regression ceiling. Endpoint-owned recursive-Green clean-build and
+adoption jobs are likewise boxed at their phase boundaries. Both the clean
+CM321 endpoint and the large local-adoption endpoint now pass on the normal
+Rust test stack.
 
 This closes inline composition for the admitted quote slice. Nested and
 multi-child BlockQuotes, authenticated local restart/convergence inside quotes,
 and broader CommonMark container coverage remain open.
+
+## Generic recursive-container checkpoint
+
+The hardest pre-promotion container probe is now green through the production
+parser, endpoint, publication, and independent host. The fixture embeds
+CommonMark examples 321 and 325 in an 819,053-byte base document. Its local
+edit replaces
+CM325's outer-item `baz` Paragraph with `* βaz`, changing real recursive
+structure rather than merely changing leaf text.
+
+The paired gates prove:
+
+- the base path changes from `Document/List/Item/Paragraph` to
+  `Document/List/Item/List/Item/Paragraph`;
+- independent host schema-11 facts change from outer-loose/inner-tight to
+  outer-tight/inner-loose;
+- the `β` edit rebases the suffix by three UTF-8 bytes but two UTF-16 code
+  units, with exact row and editable ranges;
+- adoption under patterned fuel reads less than 16 KiB of source and rebuilds
+  fewer than 256 Green nodes;
+- distant prefix and shifted-suffix arena pages retain identity;
+- the incremental semantic digest equals an independent clean target build;
+- the endpoint preempts the legacy parser, publishes an exact-base
+  recursive-Green delta under unit fuel, and the independent host rebuilds
+  branches rather than receiving transported branch pages; and
+- clean CM321 point, row, inline, and viewport publication remains green on
+  the same generic representation.
+
+The 819,056-byte target point lookups in this proof use an explicit bounded
+1,024-tree-node budget; the existing smaller/default-budget query gates remain
+unchanged. This is not a new latency SLO. It records the actual admitted budget
+for the structurally edited target so later query tuning cannot silently claim
+the 256-node receipt.
+
+This validates the serialized-Green container architecture and completes the
+hardest-container gate. It does **not** convert examples 321 or 325 into official
+v3 CommonMark coverage: they remain ledger-unclassified until the 652-exact
+grammar control is promoted into the production runtime and the ledger points
+at that runtime evidence.
 
 ## Maintainability boundary
 
