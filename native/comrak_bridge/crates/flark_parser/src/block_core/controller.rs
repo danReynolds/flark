@@ -440,12 +440,16 @@ impl M11DirectBlockController {
     pub fn capture_restart_if_available(
         &self,
     ) -> Result<Option<M11DirectBlockRestart>, M11DirectBlockError> {
-        match self.capture_restart() {
-            Ok(restart) => Ok(Some(restart)),
-            Err(M11DirectBlockError::Invariant(
-                "direct restart line-local blankness is donor-reachable",
-            )) => Ok(None),
-            Err(error) => Err(error),
+        self.ensure_live()?;
+        match self
+            .parser
+            .capture_line_boundary_pause_if_available()
+            .map_err(map_parse_error)?
+        {
+            donor::DirectLineBoundaryPauseCapture::Available(pause) => {
+                self.restart_from_pause(pause).map(Some)
+            }
+            donor::DirectLineBoundaryPauseCapture::Unavailable => Ok(None),
         }
     }
 

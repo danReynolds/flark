@@ -2435,6 +2435,20 @@ pub struct DirectLineBoundaryPause {
     paragraph: Option<DirectPauseParagraphState>,
 }
 
+/// Result of asking the definitive parser for an optional restart sample.
+///
+/// [`Self::Unavailable`] is not a parse failure. It means the current valid
+/// line boundary contains state that this restart codec cannot yet reproduce,
+/// so a sparse-index consumer must simply omit that sample. Every malformed
+/// parser state and codec invariant remains an ordinary [`ParseError`].
+#[doc(hidden)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[must_use = "an optional restart sample must be retained or deliberately skipped"]
+pub enum DirectLineBoundaryPauseCapture {
+    Available(DirectLineBoundaryPause),
+    Unavailable,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct DirectPauseCursor {
     line_number: usize,
@@ -7457,7 +7471,7 @@ impl ValueBlockParser {
     }
 }
 
-fn validate_direct_pause_kind(kind: &BlockKind) -> Result<DirectBlockKind, ParseError> {
+fn capture_direct_pause_kind(kind: &BlockKind) -> Result<Option<DirectBlockKind>, ParseError> {
     let supported = matches!(
         kind,
         BlockKind::Document
@@ -7499,16 +7513,41 @@ fn validate_direct_pause_kind(kind: &BlockKind) -> Result<DirectBlockKind, Parse
         } if info.is_empty() && literal.is_empty()
     );
     if !supported {
-        return Err(ParseError::Invariant(
-            "direct pause frame kind is a supported open direct block",
-        ));
+        return Ok(None);
     }
     let direct = direct_block_kind(kind)?;
     // Keep the reverse projection exercised at capture time. This makes a new
     // direct kind or newly observable fact fail the pause seam rather than
     // silently falling out of its reconstruction contract.
     let _ = direct_pause_block_kind(direct)?;
-    Ok(direct)
+    Ok(Some(direct))
+}
+
+fn direct_pause_line_local_output_is_available(
+    frames: &[DirectPauseFrame],
+    current_frame: usize,
+    deferred: DirectDeferredState,
+) -> bool {
+    let mut blank_frame = None;
+    for (depth, frame) in frames.iter().enumerate() {
+        if !frame.last_line_blank {
+            continue;
+        }
+        if blank_frame.replace(depth).is_some()
+            || depth != current_frame
+            || !deferred.blank_gap
+            || matches!(
+                frame.kind,
+                DirectBlockKind::BlockQuote
+                    | DirectBlockKind::Paragraph
+                    | DirectBlockKind::Heading(_)
+                    | DirectBlockKind::FencedCode(_)
+            )
+        {
+            return false;
+        }
+    }
+    true
 }
 
 fn direct_pause_block_kind(kind: DirectBlockKind) -> Result<BlockKind, ParseError> {
@@ -7762,6 +7801,22 @@ impl DirectValueBlockParser {
     #[doc(hidden)]
     #[allow(clippy::too_many_lines)]
     pub fn capture_line_boundary_pause(&self) -> Result<DirectLineBoundaryPause, ParseError> {
+        match self.capture_pause(false)? {
+            DirectLineBoundaryPauseCapture::Available(pause) => Ok(pause),
+            DirectLineBoundaryPauseCapture::Unavailable => Err(ParseError::Invariant(
+                "direct pause boundary has a resumable representation",
+            )),
+        }
+    }
+
+    /// Captures a restart sample when the acknowledged boundary is representable
+    /// by the current codec. A valid but non-resumable boundary is reported as
+    /// [`DirectLineBoundaryPauseCapture::Unavailable`]; parser and codec
+    /// invariants continue to propagate as errors.
+    #[doc(hidden)]
+    pub fn capture_line_boundary_pause_if_available(
+        &self,
+    ) -> Result<DirectLineBoundaryPauseCapture, ParseError> {
         self.capture_pause(false)
     }
 
@@ -7771,14 +7826,19 @@ impl DirectValueBlockParser {
     /// without a whole-document fallback.
     #[doc(hidden)]
     pub fn capture_document_start_pause(&self) -> Result<DirectLineBoundaryPause, ParseError> {
-        self.capture_pause(true)
+        match self.capture_pause(true)? {
+            DirectLineBoundaryPauseCapture::Available(pause) => Ok(pause),
+            DirectLineBoundaryPauseCapture::Unavailable => Err(ParseError::Invariant(
+                "direct document-start pause is resumable",
+            )),
+        }
     }
 
     #[allow(clippy::too_many_lines)]
     fn capture_pause(
         &self,
         allow_document_start: bool,
-    ) -> Result<DirectLineBoundaryPause, ParseError> {
+    ) -> Result<DirectLineBoundaryPauseCapture, ParseError> {
         let Self {
             parser,
             line_work,
@@ -7942,6 +8002,7 @@ impl DirectValueBlockParser {
         frames
             .try_reserve_exact(path.len())
             .map_err(|_| ParseError::Invariant("direct pause frame allocation failed"))?;
+        let mut restart_available = true;
         for (depth, id) in path.iter().copied().enumerate() {
             if id.index() != depth {
                 return Err(ParseError::Invariant(
@@ -7971,17 +8032,23 @@ impl DirectValueBlockParser {
                     "direct pause frame is compact bounded scratch",
                 ));
             }
-            let kind = validate_direct_pause_kind(&node.kind)?;
-            if depth > 0 && kind == DirectBlockKind::Document {
-                return Err(ParseError::Invariant(
-                    "direct pause document is the root frame",
-                ));
+            if let Some(kind) = capture_direct_pause_kind(&node.kind)? {
+                if depth > 0 && kind == DirectBlockKind::Document {
+                    return Err(ParseError::Invariant(
+                        "direct pause document is the root frame",
+                    ));
+                }
+                frames.push(DirectPauseFrame {
+                    kind,
+                    last_line_blank: node.last_line_blank,
+                    closed_children: node.historical_children,
+                });
+            } else {
+                restart_available = false;
             }
-            frames.push(DirectPauseFrame {
-                kind,
-                last_line_blank: node.last_line_blank,
-                closed_children: node.historical_children,
-            });
+        }
+        if !restart_available {
+            return Ok(DirectLineBoundaryPauseCapture::Unavailable);
         }
         if frames.first().map(|frame| frame.kind) != Some(DirectBlockKind::Document) {
             return Err(ParseError::Invariant(
@@ -8042,22 +8109,29 @@ impl DirectValueBlockParser {
             ));
         }
 
-        Ok(DirectLineBoundaryPause {
-            schema: DIRECT_LINE_BOUNDARY_PAUSE_SCHEMA,
-            profile: *profile,
-            cursor: DirectPauseCursor {
-                line_number: *line_number,
-                last_line_length: *last_line_length,
+        let deferred = DirectDeferredState {
+            terminator: *pending_terminator,
+            blank_gap: *pending_blank_gap,
+            blank_gap_floor: floor_depth,
+        };
+        if !direct_pause_line_local_output_is_available(&frames, current_frame, deferred) {
+            return Ok(DirectLineBoundaryPauseCapture::Unavailable);
+        }
+
+        Ok(DirectLineBoundaryPauseCapture::Available(
+            DirectLineBoundaryPause {
+                schema: DIRECT_LINE_BOUNDARY_PAUSE_SCHEMA,
+                profile: *profile,
+                cursor: DirectPauseCursor {
+                    line_number: *line_number,
+                    last_line_length: *last_line_length,
+                },
+                current_frame,
+                frames: frames.into_boxed_slice(),
+                deferred,
+                paragraph,
             },
-            current_frame,
-            frames: frames.into_boxed_slice(),
-            deferred: DirectDeferredState {
-                terminator: *pending_terminator,
-                blank_gap: *pending_blank_gap,
-                blank_gap_floor: floor_depth,
-            },
-            paragraph,
-        })
+        ))
     }
 
     /// Capture and split the in-memory direct pause into grammar equality and

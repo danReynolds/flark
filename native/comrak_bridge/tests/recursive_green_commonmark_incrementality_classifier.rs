@@ -27,6 +27,7 @@ enum AdoptionOutcome {
     Complete,
     CleanFallback,
     StartFailure,
+    AdoptionPollFailure(String),
     BaseBuildFailure(String),
 }
 
@@ -36,6 +37,7 @@ struct SectionCounts {
     complete: usize,
     clean_fallback: usize,
     start_failure: usize,
+    adoption_poll_failure: usize,
     base_build_failure: usize,
 }
 
@@ -46,6 +48,7 @@ impl SectionCounts {
             AdoptionOutcome::Complete => self.complete += 1,
             AdoptionOutcome::CleanFallback => self.clean_fallback += 1,
             AdoptionOutcome::StartFailure => self.start_failure += 1,
+            AdoptionOutcome::AdoptionPollFailure(_) => self.adoption_poll_failure += 1,
             AdoptionOutcome::BaseBuildFailure(_) => self.base_build_failure += 1,
         }
     }
@@ -70,6 +73,7 @@ fn classify_commonmark_micro_edits_by_incremental_adoption_outcome() {
     let mut totals = SectionCounts::default();
     let mut digest_mismatches = Vec::new();
     let mut first_base_build_failure = None;
+    let mut first_adoption_poll_failure = None;
 
     for (index, fixture) in fixtures.iter().enumerate() {
         assert_eq!(
@@ -83,6 +87,11 @@ fn classify_commonmark_micro_edits_by_incremental_adoption_outcome() {
                 format!("CM{} ({:?}): {error}", fixture.example, fixture.section)
             });
         }
+        if let AdoptionOutcome::AdoptionPollFailure(error) = &outcome {
+            first_adoption_poll_failure.get_or_insert_with(|| {
+                format!("CM{} ({:?}): {error}", fixture.example, fixture.section)
+            });
+        }
         sections
             .entry(fixture.section.clone())
             .or_default()
@@ -92,24 +101,29 @@ fn classify_commonmark_micro_edits_by_incremental_adoption_outcome() {
 
     for (section, counts) in &sections {
         println!(
-            "commonmark_incrementality section={section:?} total={} complete={} clean_fallback={} start_failure={} base_build_failure={}",
+            "commonmark_incrementality section={section:?} total={} complete={} clean_fallback={} start_failure={} adoption_poll_failure={} base_build_failure={}",
             counts.total,
             counts.complete,
             counts.clean_fallback,
             counts.start_failure,
+            counts.adoption_poll_failure,
             counts.base_build_failure,
         );
     }
     println!(
-        "commonmark_incrementality total={} complete={} clean_fallback={} start_failure={} base_build_failure={}",
+        "commonmark_incrementality total={} complete={} clean_fallback={} start_failure={} adoption_poll_failure={} base_build_failure={}",
         totals.total,
         totals.complete,
         totals.clean_fallback,
         totals.start_failure,
+        totals.adoption_poll_failure,
         totals.base_build_failure,
     );
     if let Some(failure) = first_base_build_failure {
         println!("commonmark_incrementality first_base_build_failure={failure}");
+    }
+    if let Some(failure) = first_adoption_poll_failure {
+        println!("commonmark_incrementality first_adoption_poll_failure={failure}");
     }
 
     assert_eq!(totals.total, EXPECTED_EXAMPLES);
@@ -172,15 +186,49 @@ fn classify_fixture(
         }
     };
 
-    let status = (0..MAX_POLLS)
-        .find_map(|_| {
-            let status = adoption
-                .poll(&mut runtime, POLL_FUEL)
-                .unwrap_or_else(|error| panic!("CM{} poll adoption: {error}", fixture.example))
-                .status();
-            (status != M11PersistentRecursiveGreenAdoptionStatus::Pending).then_some(status)
-        })
-        .unwrap_or_else(|| panic!("CM{} adoption exceeded poll guard", fixture.example));
+    let mut status = None;
+    for _ in 0..MAX_POLLS {
+        let poll = match adoption.poll(&mut runtime, POLL_FUEL) {
+            Ok(poll) => poll,
+            Err(error) => {
+                let failure = format!("poll adoption: {error}");
+                adoption
+                    .begin_cancel(&mut runtime)
+                    .unwrap_or_else(|cancel_error| {
+                        panic!(
+                            "CM{} begin failed-adoption cancel: {cancel_error}",
+                            fixture.example
+                        )
+                    });
+                while !adoption
+                    .poll_cancel(&mut runtime, POLL_FUEL)
+                    .unwrap_or_else(|cancel_error| {
+                        panic!(
+                            "CM{} poll failed-adoption cancel: {cancel_error}",
+                            fixture.example
+                        )
+                    })
+                {}
+                let mut base = adoption.take_base_after_cancel().unwrap_or_else(|| {
+                    panic!("CM{} failed-adoption cancel omitted base", fixture.example)
+                });
+                release_session(
+                    &mut runtime,
+                    &mut base,
+                    fixture.example,
+                    "adoption-poll-failure base",
+                );
+                close_runtime(runtime, fixture.example, "adoption poll failure");
+                return AdoptionOutcome::AdoptionPollFailure(failure);
+            }
+        };
+        if poll.status() != M11PersistentRecursiveGreenAdoptionStatus::Pending {
+            status = Some(poll.status());
+            break;
+        }
+    }
+    let status =
+        status.unwrap_or_else(|| panic!("CM{} adoption exceeded poll guard", fixture.example));
 
     match status {
         M11PersistentRecursiveGreenAdoptionStatus::Complete => {

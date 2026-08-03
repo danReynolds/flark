@@ -53,6 +53,49 @@ fn apply_stack(commands: &[DirectCommand], stack: &mut Vec<DirectBlockKind>) {
 }
 
 #[test]
+fn valid_open_html_boundary_is_unavailable_without_poisoning_the_parse() {
+    let mut parser = DirectValueBlockParser::new(SyntaxProfile::CommonMark).expect("parser");
+    parser
+        .acknowledge_command()
+        .expect("acknowledge document open");
+
+    drive_line(&mut parser, "<a href=\"/bar\\/)\">\n");
+    assert!(matches!(
+        parser
+            .capture_line_boundary_pause_if_available()
+            .expect("valid HTML boundary is not a parser failure"),
+        DirectLineBoundaryPauseCapture::Unavailable,
+    ));
+
+    drive_line(&mut parser, "\n");
+    assert!(matches!(
+        parser
+            .capture_line_boundary_pause_if_available()
+            .expect("parse continues after skipped sample"),
+        DirectLineBoundaryPauseCapture::Available(_),
+    ));
+}
+
+#[test]
+fn optional_capture_propagates_malformed_parser_state() {
+    let mut parser = DirectValueBlockParser::new(SyntaxProfile::CommonMark).expect("parser");
+    parser
+        .acknowledge_command()
+        .expect("acknowledge document open");
+    drive_line(&mut parser, "ordinary paragraph\n");
+
+    let root = parser.parser.tree.root;
+    parser.parser.tree.node_mut(root).open = false;
+    assert_eq!(
+        parser.capture_line_boundary_pause_if_available(),
+        Err(ParseError::Invariant(
+            "direct pause frame is compact bounded scratch",
+        )),
+        "optional sampling must not relabel malformed state as unavailable",
+    );
+}
+
+#[test]
 fn adversarial_deep_mass_close_uses_one_linear_stack_pass() {
     const DEPTH: usize = 512;
 
