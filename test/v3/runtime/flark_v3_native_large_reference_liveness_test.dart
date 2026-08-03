@@ -137,6 +137,118 @@ Future<FlarkV3RecursiveGreenPointQuery> _queryAndExpectReferenceLinks({
 
 void main() {
   test(
+    'reference-definition destination edit recertifies unchanged recursive Paragraph fanout',
+    () async {
+      const initial = '[id]: /old\n\nFirst [one][id].\n\nSecond [two][id].\n';
+      const edited = '[id]: /new\n\nFirst [one][id].\n\nSecond [two][id].\n';
+      final firstPointUtf16 = initial.indexOf('one') + 1;
+      final secondPointUtf16 = initial.indexOf('two') + 1;
+      final destinationStart = initial.indexOf('/old');
+      final runtime = await FlarkV3DocumentRuntime.open(
+        initial,
+      ).timeout(const Duration(seconds: 20));
+      addTearDown(() => _closeIfOpen(runtime));
+      await runtime.initialReady.timeout(const Duration(seconds: 20));
+
+      Future<FlarkV3RecursiveGreenPointQuery> expectReference({
+        required int pointUtf16,
+        required String editableSource,
+        required int revision,
+        required String destination,
+      }) async {
+        final structural = _expectExactRecursiveGreenParagraph(
+          runtime: runtime,
+          pointUtf16: pointUtf16,
+          revision: revision,
+          expectedEditableSource: editableSource,
+        );
+        final result = await runtime
+            .queryInlineAtUtf16(pointUtf16)
+            .timeout(const Duration(seconds: 20));
+        expect(result, isA<FlarkV3RecursiveGreenPointQuery>());
+        final refined = result as FlarkV3RecursiveGreenPointQuery;
+        expect(refined.sourceRevision, revision);
+        expect(refined.structureRevision, revision);
+        expect(refined.owner.frameId, structural.owner.frameId);
+        expect(refined.inlineFacts, isNotNull);
+        final inline = refined.inlineFacts!;
+        expect(inline.sourceVersion.revision, revision);
+        expect(inline.disposition, FlarkV3InlineFactsDisposition.authoritative);
+        expect(inline.facts, hasLength(1));
+        final fact = inline.facts.single;
+        expect(fact.kind, FlarkV3InlineFactKind.referenceLink);
+        final link = fact.linkAnnotation;
+        expect(link, isNotNull);
+        expect(link!.kind, FlarkV3InlineLinkKind.reference);
+        expect(
+          link.targetRecipe,
+          FlarkV3InlineLinkTargetRecipe.companionCookedValue,
+        );
+        expect(link.destination, destination);
+        expect(link.title, isNull);
+        expect(
+          runtime.readSourceRange(
+            link.destinationSource.startUtf16,
+            link.destinationSource.endUtf16,
+          ),
+          destination,
+        );
+        return refined;
+      }
+
+      final initialFirst = await expectReference(
+        pointUtf16: firstPointUtf16,
+        editableSource: 'First [one][id].',
+        revision: 1,
+        destination: '/old',
+      );
+      final initialSecond = await expectReference(
+        pointUtf16: secondPointUtf16,
+        editableSource: 'Second [two][id].',
+        revision: 1,
+        destination: '/old',
+      );
+      final receipt = runtime.apply(
+        FlarkV3SourceTransaction.single(
+          baseRevision: 1,
+          operation: FlarkV3SourceEdit(
+            startUtf16: destinationStart,
+            endUtf16: destinationStart + '/old'.length,
+            replacement: '/new',
+          ),
+        ),
+      );
+      expect(receipt.changed, isTrue);
+      expect(receipt.sourceRevision, 2);
+      expect(runtime.exportMarkdown(), edited);
+      final current = await _awaitCurrent(runtime);
+      expect(current.sourceRevision, 2);
+      expect(current.structureRevision, 2);
+
+      final editedFirst = await expectReference(
+        pointUtf16: firstPointUtf16,
+        editableSource: 'First [one][id].',
+        revision: 2,
+        destination: '/new',
+      );
+      final editedSecond = await expectReference(
+        pointUtf16: secondPointUtf16,
+        editableSource: 'Second [two][id].',
+        revision: 2,
+        destination: '/new',
+      );
+      expect(editedFirst.owner.kind, FlarkV3RecursiveGreenKind.paragraph);
+      expect(editedSecond.owner.kind, FlarkV3RecursiveGreenKind.paragraph);
+      expect(editedFirst.inlineSource, isNotNull);
+      expect(editedSecond.inlineSource, isNotNull);
+      expect(initialFirst.inlineFacts!.sourceVersion.revision, 1);
+      expect(initialSecond.inlineFacts!.sourceVersion.revision, 1);
+      expect(runtime.exportMarkdown(), edited);
+    },
+    timeout: const Timeout(Duration(minutes: 1)),
+  );
+
+  test(
     '100,000 definitions cross the native isolate and FFI host without caller-thread stalls',
     () async {
       const definitions = 100_000;

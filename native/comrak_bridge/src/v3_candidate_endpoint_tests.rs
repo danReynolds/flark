@@ -10486,6 +10486,9 @@ fn packet_builder_accumulates_across_small_poll_grants_and_flushes_on_end() {
     cancel_streaming_to_zero(runtime, streaming);
 }
 
+#[path = "v3_candidate_endpoint_recursive_green_tests.rs"]
+mod recursive_green_tests;
+
 #[test]
 fn packet_builder_enforces_exact_count_body_and_offer_caps() {
     let mut count_limited = PacketBuilder::default();
