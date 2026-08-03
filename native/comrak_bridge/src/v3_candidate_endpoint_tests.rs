@@ -8492,33 +8492,18 @@ fn mixed_atx_and_fence_edits_crop_locally_while_unclosed_fence_falls_back() {
         .rfind("terminal quote continuation")
         .expect("terminal suffix consumed by the unclosed fence")
         - 3;
-    let mut tail_output = [0_u8; 4 * 1024];
-    let tail_outcome = host
-        .query_structural(
-            HostPointQuery {
-                source_version: divergent_source_version,
-                position: HostSourceMetric {
-                    bytes: u32::try_from(divergent_tail_point).expect("distant tail byte"),
-                    utf16: u32::try_from(divergent_tail_point).expect("ASCII distant tail UTF-16"),
-                },
-                affinity: HostMetricAffinity::Downstream,
-                budget: HostQueryBudget {
-                    maximum_encoded_bytes: tail_output.len() as u32,
-                    maximum_open_depth: 16,
-                    maximum_leaf_count: 64,
-                    maximum_tree_nodes_visited: 256,
-                },
-            },
-            &mut tail_output,
-        )
-        .expect("bounded distant-tail query");
-    assert!(matches!(
-        tail_outcome,
-        HostStructuralQueryOutcome::SourceGap {
-            reason: HostSourceGapReason::TreeNodeLimit,
-            ..
-        }
-    ));
+    let (owner_kind, range, ancestry) = recursive_green_query_shape(
+        &host,
+        divergent_source_version,
+        divergent_tail_point,
+        divergent_tail_point,
+    );
+    assert_eq!(
+        owner_kind, 7,
+        "the standard 256-node budget must resolve the distant tail inside the unclosed fence"
+    );
+    assert!(range[0] as usize <= divergent_tail_point && divergent_tail_point < range[1] as usize);
+    assert_eq!(ancestry, vec![1, 7]);
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }

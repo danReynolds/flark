@@ -2293,19 +2293,17 @@ fn point_zipper_frame_boundary_uncached(
             "Green Exit search crossed before its selected leaf",
         ));
     }
-    let exit_with_prefix = tree
-        .locate_leaf_with_prefix(arena, exit_leaf.ordinal, &mut work.inspection)?
-        .ok_or(M11RecursiveGreenError::Corrupt(
-            "summary-selected Green Exit leaf disappeared",
-        ))?;
-    byte_end = exit_with_prefix
-        .prefix
-        .unwrap_or_else(RecursiveGreenSummary::empty)
-        .physical_bytes;
-    utf16_end = exit_with_prefix
-        .prefix
-        .unwrap_or_else(RecursiveGreenSummary::empty)
-        .physical_utf16;
+    // The partition search already authenticated the exact summary of every
+    // leaf between the Enter leaf and the selected Exit leaf. `byte_end` and
+    // `utf16_end` have likewise consumed the remainder of the Enter leaf, so
+    // advancing by that accumulated summary produces the selected leaf's
+    // absolute source prefix without a second root-to-leaf traversal.
+    byte_end = byte_end
+        .checked_add(before_exit_leaf.physical_bytes)
+        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+    utf16_end = utf16_end
+        .checked_add(before_exit_leaf.physical_utf16)
+        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
     for (index, event) in work
         .decode_leaf_events(arena, exit_leaf.id)?
         .into_iter()
