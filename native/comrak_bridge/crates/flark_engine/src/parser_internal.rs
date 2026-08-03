@@ -28,8 +28,8 @@ use crate::host_store::{
     classify_snapshot_frame, CandidateHostError, CandidateHostInstallPoll, CandidateHostLimits,
     CandidateHostStore, CandidateSnapshotEncodePoll, CandidateSnapshotEncoder,
     CandidateSnapshotEncoderState, InstalledCandidateSnapshot, SnapshotFrameKind,
-    M11_MAXIMUM_SNAPSHOT_CHILDREN, M11_MAXIMUM_SNAPSHOT_FRAME_BYTES, SNAPSHOT_CHILD_ORDINAL_BYTES,
-    SNAPSHOT_NODE_HEADER_BYTES,
+    M11_MAXIMUM_RECURSIVE_GREEN_SPLICE_SEGMENTS, M11_MAXIMUM_SNAPSHOT_CHILDREN,
+    M11_MAXIMUM_SNAPSHOT_FRAME_BYTES, SNAPSHOT_CHILD_ORDINAL_BYTES, SNAPSHOT_NODE_HEADER_BYTES,
 };
 use crate::indented_code_projection::PERSISTENT_INDENTED_CODE_PROJECTION_DESCRIPTOR_BYTES;
 use crate::inline_overlay::{
@@ -122,6 +122,10 @@ pub const M11_MAX_ROLE_RECORDS: usize = M11_MAXIMUM_SNAPSHOT_CHILDREN;
 /// Maximum encoded bytes in one closed M1.1 snapshot frame, including the
 /// fixed header, all serialized child ordinals, and the maximum arena payload.
 pub const M11_MAX_SNAPSHOT_FRAME_BYTES: usize = M11_MAXIMUM_SNAPSHOT_FRAME_BYTES;
+/// Maximum disjoint recursive-Green leaf segments carried by one exact-base
+/// transaction Begin frame. Larger valid selections use whole-role transport.
+pub const M11_MAX_RECURSIVE_GREEN_SPLICE_SEGMENTS: usize =
+    M11_MAXIMUM_RECURSIVE_GREEN_SPLICE_SEGMENTS;
 const M11_CANDIDATE_ARENA_MAX_LIVE_PAYLOAD_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Debug)]
@@ -1748,21 +1752,31 @@ impl M11CandidatePublication {
             let (state, transferred_canonical_record_count) = if let Some(selection) =
                 recursive_green_selection
             {
+                if selection.segments().len() > M11_MAX_RECURSIVE_GREEN_SPLICE_SEGMENTS {
+                    return Err(M11PublicationError::invalid_state());
+                }
                 let transferred = exact_base_transferred_record_count_with_recursive_green_splice(
                     runtime.producer_arena(),
                     target_publication,
                     witness.target_page_range(),
-                    selection,
+                    &selection,
                 )?;
+                let mut green_event_ranges = Vec::new();
+                green_event_ranges
+                    .try_reserve_exact(selection.segments().len())
+                    .map_err(|_| ArenaError::AllocationFailed)?;
+                for segment in selection.segments() {
+                    green_event_ranges
+                        .push((segment.base_event_range(), segment.target_event_range()));
+                }
                 let state = CandidateSnapshotEncoderState::
-                    new_exact_base_delta_with_recursive_green_splice(
+                    new_exact_base_delta_with_recursive_green_splices(
                         runtime.producer_arena(),
                         base_publication,
                         target_publication,
                         witness.base_page_range().clone(),
                         witness.target_page_range().clone(),
-                        selection.base_event_range(),
-                        selection.target_event_range(),
+                        &green_event_ranges,
                     )?;
                 (state, transferred)
             } else if let Some(selection) = block_selection {
@@ -3050,7 +3064,7 @@ fn exact_base_transferred_record_count_with_recursive_green_splice(
     arena: &PageArena,
     target: &PublishedManifest,
     target_page_range: &Range<u64>,
-    selection: M11RecursiveGreenStructuralSpliceSelection,
+    selection: &M11RecursiveGreenStructuralSpliceSelection,
 ) -> Result<u64, M11PublicationError> {
     let descriptor = decode_manifest_descriptor(arena, target.root_id(), target.authority())?;
     let source_facts = descriptor.metadata[role_index(CandidateRole::SourceFacts)];
@@ -3062,22 +3076,37 @@ fn exact_base_transferred_record_count_with_recursive_green_splice(
         )));
     }
     let green = persistent_recursive_green_manifest_role(arena, &descriptor, target.authority())?;
-    let target_plan = plan_persistent_m11_recursive_green_semantic_splice(
-        arena,
-        green.root,
-        green.descriptor,
-        selection.target_event_range(),
-    )?;
+    let mut structural_pages = 0_u64;
+    let mut previous_end = 0_u64;
+    for segment in selection.segments() {
+        let target_plan = plan_persistent_m11_recursive_green_semantic_splice(
+            arena,
+            green.root,
+            green.descriptor,
+            segment.target_event_range(),
+        )?;
+        if target_plan.storage_page_range.start < previous_end {
+            return Err(M11PublicationError(ErrorInner::Invalid(
+                "exact-base target recursive Green page ranges overlap",
+            )));
+        }
+        previous_end = target_plan.storage_page_range.end;
+        structural_pages = structural_pages
+            .checked_add(
+                target_plan
+                    .storage_page_range
+                    .end
+                    .checked_sub(target_plan.storage_page_range.start)
+                    .ok_or(M11PublicationError(ErrorInner::Invalid(
+                        "exact-base target recursive Green page range underflow",
+                    )))?,
+            )
+            .ok_or(M11PublicationError(ErrorInner::Invalid(
+                "exact-base target recursive Green page count overflow",
+            )))?;
+    }
     (target_page_range.end - target_page_range.start)
-        .checked_add(
-            target_plan
-                .storage_page_range
-                .end
-                .checked_sub(target_plan.storage_page_range.start)
-                .ok_or(M11PublicationError(ErrorInner::Invalid(
-                    "exact-base target recursive Green page range underflow",
-                )))?,
-        )
+        .checked_add(structural_pages)
         .and_then(|total| {
             total.checked_add(
                 descriptor.metadata[role_index(CandidateRole::Projection)].record_count,

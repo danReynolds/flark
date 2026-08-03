@@ -3,6 +3,22 @@
 use super::*;
 
 #[test]
+fn sparse_segment_envelope_falls_back_to_whole_role_transport() {
+    assert_eq!(
+        recursive_green_publication_path(M11_MAX_RECURSIVE_GREEN_SPLICE_SEGMENTS),
+        ExactStructuralPath::RecursiveGreen,
+    );
+    assert_eq!(
+        recursive_green_publication_path(M11_MAX_RECURSIVE_GREEN_SPLICE_SEGMENTS + 1),
+        ExactStructuralPath::RecursiveGreenWholeRole,
+    );
+    assert_eq!(
+        recursive_green_publication_path(0),
+        ExactStructuralPath::RecursiveGreenWholeRole,
+    );
+}
+
+#[test]
 fn paragraph_split_publishes_two_roots_atomically_and_retains_distant_suffix() {
     let mut source = String::new();
     for ordinal in 0..512 {
@@ -154,7 +170,6 @@ fn paragraph_split_publishes_two_roots_atomically_and_retains_distant_suffix() {
 }
 
 #[test]
-#[ignore = "ExactBaseDelta must publish sparse far spanning-Exit repair pages"]
 fn large_quote_utf16_edit_publishes_the_repaired_paragraph_endpoint() {
     const QUOTE_LINES: usize = 2_048;
     const EDIT_LINE: usize = QUOTE_LINES / 2;
@@ -283,6 +298,24 @@ fn large_quote_utf16_edit_publishes_the_repaired_paragraph_endpoint() {
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
     assert_eq!(target_delivery.offer.mode, PublicationMode::ExactBaseDelta);
     assert_eq!(target_delivery.offer.base_ack, Some(base_delivery.ack));
+    assert!(
+        target_delivery.offer.transferred_record_count <= 64,
+        "one middle quote edit transferred {} of {} records",
+        target_delivery.offer.transferred_record_count,
+        target_delivery.offer.target_record_count,
+    );
+    let recursive_green_replacement_records = target_delivery
+        .packet_frames
+        .iter()
+        .flatten()
+        .filter(|(kind, _)| *kind == CandidateSnapshotFrameKind::RecursiveGreenReplacementPage)
+        .map(|(_, records)| *records)
+        .sum::<u32>();
+    assert!(
+        (2..=8).contains(&recursive_green_replacement_records),
+        "the checkpoint-aligned local fragment and far repaired Exit must stay within a \
+         bounded packed-leaf payload: {recursive_green_replacement_records}",
+    );
     assert_eq!(
         endpoint.recursive_green_path_receipt(),
         RecursiveGreenPathReceipt {

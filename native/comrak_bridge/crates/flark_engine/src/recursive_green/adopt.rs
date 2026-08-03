@@ -24,8 +24,8 @@ use super::build::{
     allocate_recursive_green_identity, M11RecursiveGreenBuildReceipt, M11RecursiveGreenRoot,
 };
 use super::codec::{
-    decode_leaf, decode_packed_event, packed_event_len, packed_event_summary,
-    M11RecursiveGreenError, M11RecursiveGreenEvent, M11RecursiveGreenFrameId,
+    decode_leaf, decode_packed_event, is_renderable_row_kind, packed_event_len,
+    packed_event_summary, M11RecursiveGreenError, M11RecursiveGreenEvent, M11RecursiveGreenFrameId,
     M11RecursiveGreenKind, PackedGreenEvent, RecursiveGreenSpec, RecursiveGreenSummary,
 };
 
@@ -362,35 +362,26 @@ use super::splice::{
     metric_between, release_tree_after_failure, validate_lineage,
 };
 
-/// Parser-selected event intervals for one exact structural Green splice.
+/// One complete changed packed-leaf event segment in an exact Green delta.
 ///
-/// The ranges are not authority by themselves.  They name the exact events
-/// removed from the retained base and the exact replacement events in the
-/// locally authenticated target, including any unchanged boundary events
-/// repacked into replacement leaves. Publication must revalidate them against
-/// those two roots before using them as an exact-base delta.
+/// A segment names the base events removed from publication and the target
+/// events replacing them. The owning selection authenticates ordering and the
+/// unchanged event gaps between segments.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct M11RecursiveGreenStructuralSpliceSelection {
+pub struct M11RecursiveGreenStructuralSpliceSegment {
     base_event_start: u64,
     base_event_end: u64,
     target_event_start: u64,
     target_event_end: u64,
 }
 
-impl M11RecursiveGreenStructuralSpliceSelection {
-    /// Binds base and target event ranges at the same semantic event cut.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`M11RecursiveGreenError::InvalidPoint`] for reversed ranges
-    /// or ranges that do not begin at the same event ordinal.
+impl M11RecursiveGreenStructuralSpliceSegment {
     pub fn new(
         base_event_range: Range<u64>,
         target_event_range: Range<u64>,
     ) -> Result<Self, M11RecursiveGreenError> {
-        if base_event_range.start > base_event_range.end
-            || target_event_range.start > target_event_range.end
-            || base_event_range.start != target_event_range.start
+        if base_event_range.start >= base_event_range.end
+            || target_event_range.start >= target_event_range.end
         {
             return Err(M11RecursiveGreenError::InvalidPoint);
         }
@@ -403,18 +394,160 @@ impl M11RecursiveGreenStructuralSpliceSelection {
     }
 
     #[must_use]
-    pub fn base_event_range(self) -> Range<u64> {
+    pub fn base_event_range(&self) -> Range<u64> {
         self.base_event_start..self.base_event_end
     }
 
     #[must_use]
-    pub fn target_event_range(self) -> Range<u64> {
+    pub fn target_event_range(&self) -> Range<u64> {
         self.target_event_start..self.target_event_end
     }
 }
 
+/// Parser-selected complete changed packed-leaf segments for one exact
+/// structural Green splice.
+///
+/// The segments are not authority by themselves. They name the exact events
+/// removed from the retained base and the exact replacement events in the
+/// locally authenticated target. The first segment is the primary parser
+/// splice; later segments are distinct far leaves repaired for frames which
+/// remain open at convergence. Segments are sorted, nonoverlapping, and every
+/// unchanged gap has the same event length in base and target coordinates.
+/// Publication must revalidate them against both sealed roots.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct M11RecursiveGreenStructuralSpliceSelection {
+    segments: Box<[M11RecursiveGreenStructuralSpliceSegment]>,
+}
+
+impl M11RecursiveGreenStructuralSpliceSelection {
+    /// Binds one base and target packed-leaf range at the same event cut.
+    pub fn new(
+        base_event_range: Range<u64>,
+        target_event_range: Range<u64>,
+    ) -> Result<Self, M11RecursiveGreenError> {
+        let mut segments = Vec::new();
+        segments
+            .try_reserve_exact(1)
+            .map_err(|_| M11RecursiveGreenError::InvalidState)?;
+        segments.push(M11RecursiveGreenStructuralSpliceSegment::new(
+            base_event_range,
+            target_event_range,
+        )?);
+        Self::from_segments(segments.into_boxed_slice())
+    }
+
+    /// Validates a complete ordered sequence of changed packed-leaf ranges.
+    ///
+    /// The first base and target cuts must match. Every later target start is
+    /// derived from the preceding target end plus the unchanged base gap,
+    /// which carries the cumulative event delta without signed arithmetic.
+    pub fn from_segments(
+        segments: Box<[M11RecursiveGreenStructuralSpliceSegment]>,
+    ) -> Result<Self, M11RecursiveGreenError> {
+        let Some(first) = segments.first() else {
+            return Err(M11RecursiveGreenError::InvalidPoint);
+        };
+        if first.base_event_start != first.target_event_start {
+            return Err(M11RecursiveGreenError::InvalidPoint);
+        }
+        for pair in segments.windows(2) {
+            let previous = pair[0];
+            let next = pair[1];
+            if next.base_event_start < previous.base_event_end
+                || next.target_event_start < previous.target_event_end
+            {
+                return Err(M11RecursiveGreenError::InvalidPoint);
+            }
+            let base_gap = next
+                .base_event_start
+                .checked_sub(previous.base_event_end)
+                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+            let expected_target_start = previous
+                .target_event_end
+                .checked_add(base_gap)
+                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+            if next.target_event_start != expected_target_start {
+                return Err(M11RecursiveGreenError::InvalidPoint);
+            }
+        }
+        Ok(Self { segments })
+    }
+
+    #[must_use]
+    pub fn segments(&self) -> &[M11RecursiveGreenStructuralSpliceSegment] {
+        &self.segments
+    }
+
+    /// Fallibly duplicates the bounded semantic selection without invoking an
+    /// infallible `Box<[T]>` allocation at a transport boundary.
+    pub fn try_clone(&self) -> Result<Self, M11RecursiveGreenError> {
+        let mut segments = Vec::new();
+        segments
+            .try_reserve_exact(self.segments.len())
+            .map_err(|_| {
+                M11RecursiveGreenError::Arena(crate::storage::ArenaError::AllocationFailed)
+            })?;
+        segments.extend_from_slice(&self.segments);
+        Ok(Self {
+            segments: segments.into_boxed_slice(),
+        })
+    }
+}
+
+#[cfg(test)]
+mod structural_splice_selection_tests {
+    use super::{
+        M11RecursiveGreenStructuralSpliceSegment, M11RecursiveGreenStructuralSpliceSelection,
+    };
+
+    fn segment(
+        base: std::ops::Range<u64>,
+        target: std::ops::Range<u64>,
+    ) -> M11RecursiveGreenStructuralSpliceSegment {
+        M11RecursiveGreenStructuralSpliceSegment::new(base, target).expect("valid segment")
+    }
+
+    #[test]
+    fn multi_range_selection_carries_growth_and_shrinkage_across_unchanged_gaps() {
+        let selection = M11RecursiveGreenStructuralSpliceSelection::from_segments(
+            vec![
+                segment(10..14, 10..16),
+                segment(20..25, 22..27),
+                segment(30..33, 32..35),
+            ]
+            .into_boxed_slice(),
+        )
+        .expect("ordered sparse selection");
+
+        assert_eq!(selection.segments().len(), 3);
+        assert_eq!(selection.segments()[1].base_event_range(), 20..25);
+        assert_eq!(selection.segments()[1].target_event_range(), 22..27);
+        assert_eq!(selection.try_clone().expect("fallible clone"), selection);
+
+        let shrinking = M11RecursiveGreenStructuralSpliceSelection::from_segments(
+            vec![segment(10..16, 10..14), segment(20..25, 18..23)].into_boxed_slice(),
+        )
+        .expect("ordered sparse shrinking selection");
+        assert_eq!(shrinking.segments()[1].target_event_range(), 18..23);
+    }
+
+    #[test]
+    fn multi_range_selection_rejects_overlap_and_forged_target_coordinates() {
+        for segments in [
+            vec![segment(10..14, 10..16), segment(13..18, 15..20)],
+            vec![segment(10..14, 10..16), segment(20..25, 21..26)],
+            vec![segment(10..14, 10..16), segment(20..25, 23..28)],
+        ] {
+            assert!(M11RecursiveGreenStructuralSpliceSelection::from_segments(
+                segments.into_boxed_slice(),
+            )
+            .is_err());
+        }
+    }
+}
+
 /// Exact bounded work performed by one structural Green adoption.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct M11RecursiveGreenStructuralSpliceReceipt {
     selection: M11RecursiveGreenStructuralSpliceSelection,
     base_events: u64,
@@ -443,92 +576,92 @@ pub struct M11RecursiveGreenStructuralSpliceReceipt {
 impl M11RecursiveGreenStructuralSpliceReceipt {
     /// Exact semantic event ranges selected by the successful splice.
     #[must_use]
-    pub const fn selection(self) -> M11RecursiveGreenStructuralSpliceSelection {
-        self.selection
+    pub const fn selection(&self) -> &M11RecursiveGreenStructuralSpliceSelection {
+        &self.selection
     }
 
     #[must_use]
-    pub const fn base_events(self) -> u64 {
+    pub const fn base_events(&self) -> u64 {
         self.base_events
     }
     #[must_use]
-    pub const fn deleted_events(self) -> u64 {
+    pub const fn deleted_events(&self) -> u64 {
         self.deleted_events
     }
     #[must_use]
-    pub const fn replacement_events(self) -> u64 {
+    pub const fn replacement_events(&self) -> u64 {
         self.replacement_events
     }
     #[must_use]
-    pub const fn unchanged_events_preserved(self) -> u64 {
+    pub const fn unchanged_events_preserved(&self) -> u64 {
         self.unchanged_events_preserved
     }
     #[must_use]
-    pub const fn boundary_events_decoded(self) -> u64 {
+    pub const fn boundary_events_decoded(&self) -> u64 {
         self.boundary_events_decoded
     }
     #[must_use]
-    pub const fn boundary_events_reencoded(self) -> u64 {
+    pub const fn boundary_events_reencoded(&self) -> u64 {
         self.boundary_events_reencoded
     }
     #[must_use]
-    pub const fn base_storage_pages(self) -> u64 {
+    pub const fn base_storage_pages(&self) -> u64 {
         self.base_storage_pages
     }
     #[must_use]
-    pub const fn deleted_storage_pages(self) -> u64 {
+    pub const fn deleted_storage_pages(&self) -> u64 {
         self.deleted_storage_pages
     }
     #[must_use]
-    pub const fn replacement_storage_pages(self) -> u64 {
+    pub const fn replacement_storage_pages(&self) -> u64 {
         self.replacement_storage_pages
     }
     #[must_use]
-    pub const fn reused_storage_pages(self) -> u64 {
+    pub const fn reused_storage_pages(&self) -> u64 {
         self.reused_storage_pages
     }
     #[must_use]
-    pub const fn node_headers_decoded(self) -> u64 {
+    pub const fn node_headers_decoded(&self) -> u64 {
         self.node_headers_decoded
     }
     #[must_use]
-    pub const fn summary_combinations(self) -> u64 {
+    pub const fn summary_combinations(&self) -> u64 {
         self.summary_combinations
     }
     #[must_use]
-    pub const fn payload_bytes_inspected(self) -> u64 {
+    pub const fn payload_bytes_inspected(&self) -> u64 {
         self.payload_bytes_inspected
     }
     #[must_use]
-    pub const fn events_authenticated(self) -> u64 {
+    pub const fn events_authenticated(&self) -> u64 {
         self.events_authenticated
     }
     #[must_use]
-    pub const fn tree_nodes_visited(self) -> usize {
+    pub const fn tree_nodes_visited(&self) -> usize {
         self.tree_nodes_visited
     }
     #[must_use]
-    pub const fn branches_allocated(self) -> usize {
+    pub const fn branches_allocated(&self) -> usize {
         self.branches_allocated
     }
     #[must_use]
-    pub const fn maximum_atomic_height(self) -> u16 {
+    pub const fn maximum_atomic_height(&self) -> u16 {
         self.maximum_atomic_height
     }
     #[must_use]
-    pub const fn seal_transitions(self) -> usize {
+    pub const fn seal_transitions(&self) -> usize {
         self.seal_transitions
     }
     #[must_use]
-    pub const fn lineage_transitions(self) -> usize {
+    pub const fn lineage_transitions(&self) -> usize {
         self.lineage_transitions
     }
     #[must_use]
-    pub const fn base_maximum_frame_id(self) -> u64 {
+    pub const fn base_maximum_frame_id(&self) -> u64 {
         self.base_maximum_frame_id
     }
     #[must_use]
-    pub const fn target_maximum_frame_id(self) -> u64 {
+    pub const fn target_maximum_frame_id(&self) -> u64 {
         self.target_maximum_frame_id
     }
 }
@@ -586,6 +719,12 @@ struct LocatedSpanningExitRepair {
     leaf_ordinal: u64,
     event_index: usize,
     replacement: PackedGreenEvent,
+}
+
+struct FarSpanningExitRepairLeaf {
+    base_leaf_ordinal: u64,
+    base_event_start: u64,
+    events: Vec<PackedGreenEvent>,
 }
 
 /// Replaces one exact balanced event interval and adopts its unchanged suffix.
@@ -756,7 +895,10 @@ pub fn splice_m11_recursive_green_structural_with_spanning_exit_repairs_atomic(
     let located_exit_repairs = plan_spanning_exit_repairs(
         runtime.producer_arena(),
         tree,
+        base,
+        target_source,
         &end,
+        target_end_physical,
         spanning_exit_repairs,
         &mut plan.inspection,
     )?;
@@ -817,7 +959,7 @@ pub fn splice_m11_recursive_green_structural_with_spanning_exit_repairs_atomic(
         replacement,
     );
 
-    let mut far_repair_leaves = Vec::<(u64, Vec<PackedGreenEvent>)>::new();
+    let mut far_repair_leaves = Vec::<FarSpanningExitRepairLeaf>::new();
     let mut repair_cursor = 0_usize;
     while repair_cursor < located_exit_repairs.len() {
         let leaf_ordinal = located_exit_repairs[repair_cursor].leaf_ordinal;
@@ -862,10 +1004,52 @@ pub fn splice_m11_recursive_green_structural_with_spanning_exit_repairs_atomic(
                     .ok_or(M11RecursiveGreenError::InvalidEvent)?;
                 *event = repair.replacement;
             }
-            far_repair_leaves.push((leaf_ordinal, events));
+            far_repair_leaves.push(FarSpanningExitRepairLeaf {
+                base_leaf_ordinal: leaf_ordinal,
+                base_event_start: located.prefix.map_or(0, |summary| summary.events),
+                events,
+            });
         }
         repair_cursor = group_end;
     }
+
+    let mut selected_segments = Vec::new();
+    selected_segments
+        .try_reserve_exact(
+            1_usize
+                .checked_add(far_repair_leaves.len())
+                .ok_or(M11RecursiveGreenError::CounterOverflow)?,
+        )
+        .map_err(|_| M11RecursiveGreenError::InvalidState)?;
+    selected_segments.push(M11RecursiveGreenStructuralSpliceSegment::new(
+        transport_event_start..base_transport_event_end,
+        transport_event_start..target_transport_event_end,
+    )?);
+    for far in &far_repair_leaves {
+        let event_count =
+            u64::try_from(far.events.len()).map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+        let base_event_end = far
+            .base_event_start
+            .checked_add(event_count)
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        let unchanged_gap = far
+            .base_event_start
+            .checked_sub(base_transport_event_end)
+            .ok_or(M11RecursiveGreenError::InvalidEvent)?;
+        let target_event_start = target_transport_event_end
+            .checked_add(unchanged_gap)
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        let target_event_end = target_event_start
+            .checked_add(event_count)
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        selected_segments.push(M11RecursiveGreenStructuralSpliceSegment::new(
+            far.base_event_start..base_event_end,
+            target_event_start..target_event_end,
+        )?);
+    }
+    let selection = M11RecursiveGreenStructuralSpliceSelection::from_segments(
+        selected_segments.into_boxed_slice(),
+    )?;
 
     let mut mutation = SequenceMutationReceipt::default();
     add_inspection(&mut mutation.inspection, plan.inspection)?;
@@ -888,13 +1072,14 @@ pub fn splice_m11_recursive_green_structural_with_spanning_exit_repairs_atomic(
         .end
         .checked_sub(plan.storage_range.start)
         .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-    for (base_leaf_ordinal, events) in far_repair_leaves {
+    for far in far_repair_leaves {
         let adopted_before = mutation.leaves_adopted;
-        let replacement = build_replacement_pages(&mut session, &events, &mut mutation)?;
+        let replacement = build_replacement_pages(&mut session, &far.events, &mut mutation)?;
         if mutation.leaves_adopted != adopted_before.saturating_add(1) {
             return Err(M11RecursiveGreenError::InvalidEvent);
         }
-        let target_leaf_ordinal = base_leaf_ordinal
+        let target_leaf_ordinal = far
+            .base_leaf_ordinal
             .checked_sub(removed_main_pages)
             .and_then(|ordinal| ordinal.checked_add(main_replacement_storage_pages))
             .ok_or(M11RecursiveGreenError::CounterOverflow)?;
@@ -1008,10 +1193,6 @@ pub fn splice_m11_recursive_green_structural_with_spanning_exit_repairs_atomic(
         .event_cut
         .checked_add(replacement_events)
         .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-    let selection = M11RecursiveGreenStructuralSpliceSelection::new(
-        transport_event_start..base_transport_event_end,
-        transport_event_start..target_transport_event_end,
-    )?;
     let receipt = match make_structural_receipt(
         base,
         selection,
@@ -1399,13 +1580,63 @@ fn decode_events(
     Ok(events)
 }
 
+fn validate_exact_spanning_exit_scope(
+    base: &M11RecursiveGreenRoot,
+    target_source: crate::SourceVersion,
+    end: &M11RecursiveGreenStructuralBoundary,
+    target_end_physical: super::codec::M11RecursiveGreenSourceMetric,
+    repairs: &[M11RecursiveGreenSpanningExitRepair],
+) -> Result<(), M11RecursiveGreenError> {
+    if !repairs
+        .iter()
+        .any(|repair| matches!(repair, M11RecursiveGreenSpanningExitRepair::Exact { .. }))
+    {
+        return Ok(());
+    }
+    let base_physical = super::codec::M11RecursiveGreenSourceMetric::new(
+        base.source_byte_len(),
+        base.source_utf16_len(),
+    )
+    .ok_or(M11RecursiveGreenError::Corrupt(
+        "recursive-Green root has invalid physical totals",
+    ))?;
+    let base_logical = super::codec::M11RecursiveGreenSourceMetric::new(
+        base.logical_byte_len(),
+        base.logical_utf16_len(),
+    )
+    .ok_or(M11RecursiveGreenError::Corrupt(
+        "recursive-Green root has invalid logical totals",
+    ))?;
+    let target_physical = super::codec::M11RecursiveGreenSourceMetric::new(
+        u64::try_from(target_source.byte_len())
+            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+        u64::try_from(target_source.utf16_len())
+            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+    )
+    .ok_or(M11RecursiveGreenError::SourceAuthorityMismatch)?;
+    if repairs.len() != 1
+        || end.open.len() != 1
+        || end.event_cut.checked_add(1) != Some(base.event_count())
+        || end.physical != base_physical
+        || end.logical != base_logical
+        || target_end_physical != target_physical
+    {
+        return Err(M11RecursiveGreenError::SourceAuthorityMismatch);
+    }
+    Ok(())
+}
+
 fn plan_spanning_exit_repairs(
     arena: &PageArena,
     tree: &super::build::GreenSequenceTree,
+    base: &M11RecursiveGreenRoot,
+    target_source: crate::SourceVersion,
     end: &M11RecursiveGreenStructuralBoundary,
+    target_end_physical: super::codec::M11RecursiveGreenSourceMetric,
     repairs: &[M11RecursiveGreenSpanningExitRepair],
     inspection: &mut SequenceInspectionReceipt,
 ) -> Result<Vec<LocatedSpanningExitRepair>, M11RecursiveGreenError> {
+    validate_exact_spanning_exit_scope(base, target_source, end, target_end_physical, repairs)?;
     let mut located_repairs = Vec::new();
     located_repairs
         .try_reserve_exact(repairs.len())
@@ -1435,7 +1666,13 @@ fn plan_spanning_exit_repairs(
             repair.frame(),
             inspection,
         )?;
-        let replacement = apply_spanning_exit_repair(old, repair)?;
+        let replacement = apply_spanning_exit_repair(
+            old,
+            repair,
+            end.open[open_index].kind,
+            end.physical,
+            target_end_physical,
+        )?;
         if packed_event_len(old) != packed_event_len(replacement) {
             return Err(M11RecursiveGreenError::InvalidEvent);
         }
@@ -1577,6 +1814,9 @@ fn find_spanning_exit_in_leaf(
 fn apply_spanning_exit_repair(
     old: PackedGreenEvent,
     repair: M11RecursiveGreenSpanningExitRepair,
+    boundary_kind: M11RecursiveGreenKind,
+    base_convergence_physical: super::codec::M11RecursiveGreenSourceMetric,
+    target_convergence_physical: super::codec::M11RecursiveGreenSourceMetric,
 ) -> Result<PackedGreenEvent, M11RecursiveGreenError> {
     let PackedGreenEvent::Exit {
         frame,
@@ -1597,6 +1837,17 @@ fn apply_spanning_exit_repair(
             target_convergence_end,
             ..
         } => {
+            if !is_renderable_row_kind(boundary_kind) || !is_renderable_row_kind(final_kind) {
+                return Err(M11RecursiveGreenError::SourceAuthorityMismatch);
+            }
+            let authenticated_target_convergence_end = translate_metric(
+                base_convergence_end,
+                base_convergence_physical,
+                target_convergence_physical,
+            )?;
+            if authenticated_target_convergence_end != target_convergence_end {
+                return Err(M11RecursiveGreenError::SourceAuthorityMismatch);
+            }
             let close = close.ok_or(M11RecursiveGreenError::InvalidEvent)?;
             let (semantic, cached) = close
                 .split_cached_row_editable()?
@@ -1605,6 +1856,14 @@ fn apply_spanning_exit_repair(
                 translate_row_cut(cached.start(), base_convergence_end, target_convergence_end)?;
             let end =
                 translate_row_cut(cached.end(), base_convergence_end, target_convergence_end)?;
+            let authenticated_end = translate_metric(
+                cached.end(),
+                base_convergence_physical,
+                target_convergence_physical,
+            )?;
+            if start != cached.start() || end != authenticated_end {
+                return Err(M11RecursiveGreenError::SourceAuthorityMismatch);
+            }
             let cached = super::codec::M11RecursiveGreenCachedRowEditable::new(
                 cached.capability(),
                 start,
@@ -1626,18 +1885,26 @@ fn apply_spanning_exit_repair(
             })
         }
         M11RecursiveGreenSpanningExitRepair::Exact {
-            final_kind,
-            close,
+            final_kind: repair_final_kind,
+            close: repair_close,
             last_line_blank,
             child,
             ..
-        } => Ok(PackedGreenEvent::Exit {
-            frame,
-            final_kind,
-            close,
-            last_line_blank,
-            child,
-        }),
+        } => {
+            if repair_final_kind != final_kind
+                || repair_final_kind != boundary_kind
+                || repair_close != close
+            {
+                return Err(M11RecursiveGreenError::SourceAuthorityMismatch);
+            }
+            Ok(PackedGreenEvent::Exit {
+                frame,
+                final_kind,
+                close,
+                last_line_blank,
+                child,
+            })
+        }
     }
 }
 
@@ -1655,6 +1922,206 @@ fn translate_row_cut(
         translate_metric(value, base, target)
     } else {
         Ok(value)
+    }
+}
+
+#[cfg(test)]
+mod spanning_exit_repair_tests {
+    use super::{
+        apply_spanning_exit_repair, M11RecursiveGreenSpanningExitRepair, PackedGreenEvent,
+    };
+    use crate::recursive_green::codec::{
+        M11RecursiveGreenCachedRowEditCapability, M11RecursiveGreenCachedRowEditable,
+        M11RecursiveGreenCloseFacts, M11RecursiveGreenClosedChild, M11RecursiveGreenFactTag,
+        M11RecursiveGreenFrameId, M11RecursiveGreenKind, M11RecursiveGreenSourceMetric,
+    };
+
+    fn metric(bytes: u64, utf16: u64) -> M11RecursiveGreenSourceMetric {
+        M11RecursiveGreenSourceMetric::new(bytes, utf16).expect("valid source metric")
+    }
+
+    fn cached_close(
+        tag: u16,
+        semantic: &[u8],
+        start: M11RecursiveGreenSourceMetric,
+        end: M11RecursiveGreenSourceMetric,
+    ) -> M11RecursiveGreenCloseFacts {
+        M11RecursiveGreenCloseFacts::new_with_cached_row_editable(
+            M11RecursiveGreenFactTag::new(tag).expect("nonzero fact tag"),
+            semantic,
+            M11RecursiveGreenCachedRowEditable::new(
+                M11RecursiveGreenCachedRowEditCapability::Contiguous,
+                start,
+                end,
+            )
+            .expect("ordered cached row"),
+        )
+        .expect("cached close facts")
+    }
+
+    fn exit(
+        frame: M11RecursiveGreenFrameId,
+        kind: M11RecursiveGreenKind,
+        close: Option<M11RecursiveGreenCloseFacts>,
+    ) -> PackedGreenEvent {
+        PackedGreenEvent::Exit {
+            frame,
+            final_kind: kind,
+            close,
+            last_line_blank: false,
+            child: M11RecursiveGreenClosedChild::new(false, false, false),
+        }
+    }
+
+    #[test]
+    fn exact_repair_rejects_kind_and_close_fact_substitution() {
+        let frame = M11RecursiveGreenFrameId::new(1).expect("frame");
+        let kind = M11RecursiveGreenKind::new(1).expect("kind");
+        let other_kind = M11RecursiveGreenKind::new(2).expect("other kind");
+        let close =
+            M11RecursiveGreenCloseFacts::new(M11RecursiveGreenFactTag::new(1).expect("tag"), &[7])
+                .expect("close");
+        let other_close = M11RecursiveGreenCloseFacts::new(
+            M11RecursiveGreenFactTag::new(2).expect("other tag"),
+            &[7],
+        )
+        .expect("same-width close");
+        let old = exit(frame, kind, Some(close));
+        let physical = metric(100, 90);
+
+        for repair in [
+            M11RecursiveGreenSpanningExitRepair::Exact {
+                frame,
+                final_kind: other_kind,
+                close: Some(close),
+                last_line_blank: true,
+                child: M11RecursiveGreenClosedChild::new(true, false, false),
+            },
+            M11RecursiveGreenSpanningExitRepair::Exact {
+                frame,
+                final_kind: kind,
+                close: Some(other_close),
+                last_line_blank: true,
+                child: M11RecursiveGreenClosedChild::new(true, false, false),
+            },
+        ] {
+            assert!(apply_spanning_exit_repair(old, repair, kind, physical, physical).is_err());
+        }
+
+        let repaired = apply_spanning_exit_repair(
+            old,
+            M11RecursiveGreenSpanningExitRepair::Exact {
+                frame,
+                final_kind: kind,
+                close: Some(close),
+                last_line_blank: true,
+                child: M11RecursiveGreenClosedChild::new(true, true, false),
+            },
+            kind,
+            physical,
+            physical,
+        )
+        .expect("parser-certified close state");
+        assert_eq!(
+            repaired,
+            PackedGreenEvent::Exit {
+                frame,
+                final_kind: kind,
+                close: Some(close),
+                last_line_blank: true,
+                child: M11RecursiveGreenClosedChild::new(true, true, false),
+            }
+        );
+    }
+
+    #[test]
+    fn cached_row_translation_uses_independent_authenticated_utf8_and_utf16_deltas() {
+        let frame = M11RecursiveGreenFrameId::new(1).expect("frame");
+        let kind = M11RecursiveGreenKind::new(5).expect("Paragraph kind");
+        let start = metric(10, 8);
+        let end = metric(80, 65);
+        let close = cached_close(1, &[0xA5], start, end);
+        let old = exit(frame, kind, Some(close));
+
+        // Replacing one UTF-16 surrogate pair with three ASCII code units is
+        // -1 UTF-8 byte and +1 UTF-16 code unit at every retained suffix cut.
+        let base_physical = metric(100, 80);
+        let target_physical = metric(99, 81);
+        let base_convergence_end = metric(60, 45);
+        let target_convergence_end = metric(59, 46);
+        let repaired = apply_spanning_exit_repair(
+            old,
+            M11RecursiveGreenSpanningExitRepair::TranslateCachedRow {
+                frame,
+                base_convergence_end,
+                target_convergence_end,
+            },
+            kind,
+            base_physical,
+            target_physical,
+        )
+        .expect("independent metric translation");
+        let PackedGreenEvent::Exit {
+            final_kind,
+            close: Some(repaired_close),
+            last_line_blank,
+            child,
+            ..
+        } = repaired
+        else {
+            panic!("translated Exit shape")
+        };
+        let (semantic, cached) = repaired_close
+            .split_cached_row_editable()
+            .expect("canonical trailer")
+            .expect("cached row");
+        assert_eq!(final_kind, kind);
+        assert_eq!(repaired_close.tag(), close.tag());
+        assert_eq!(semantic, &[0xA5]);
+        assert_eq!(
+            cached.capability(),
+            M11RecursiveGreenCachedRowEditCapability::Contiguous
+        );
+        assert_eq!(cached.start(), start);
+        assert_eq!(cached.end(), metric(79, 66));
+        assert!(!last_line_blank);
+        assert_eq!(
+            child,
+            M11RecursiveGreenClosedChild::new(false, false, false)
+        );
+    }
+
+    #[test]
+    fn cached_row_translation_rejects_unbound_delta_and_thresholds() {
+        let frame = M11RecursiveGreenFrameId::new(1).expect("frame");
+        let kind = M11RecursiveGreenKind::new(5).expect("Paragraph kind");
+        let start = metric(10, 8);
+        let end = metric(80, 65);
+        let old = exit(frame, kind, Some(cached_close(1, &[0xA5], start, end)));
+        let base_physical = metric(100, 80);
+        let target_physical = metric(99, 81);
+
+        for (base_convergence_end, target_convergence_end) in [
+            // The caller's UTF-16 delta omits the source-authenticated +1.
+            (metric(60, 45), metric(59, 45)),
+            // The pair has the right delta but would move the retained start.
+            (start, metric(9, 9)),
+            // The pair has the right delta but leaves the retained end stale.
+            (metric(90, 70), metric(89, 71)),
+        ] {
+            assert!(apply_spanning_exit_repair(
+                old,
+                M11RecursiveGreenSpanningExitRepair::TranslateCachedRow {
+                    frame,
+                    base_convergence_end,
+                    target_convergence_end,
+                },
+                kind,
+                base_physical,
+                target_physical,
+            )
+            .is_err());
+        }
     }
 }
 
@@ -1694,8 +2161,12 @@ fn make_structural_receipt(
     lineage_transitions: usize,
     target_maximum_frame_id: u64,
 ) -> Result<M11RecursiveGreenStructuralSpliceReceipt, M11RecursiveGreenError> {
-    let base_event_range = selection.base_event_range();
-    let target_event_range = selection.target_event_range();
+    let primary = selection
+        .segments()
+        .first()
+        .ok_or(M11RecursiveGreenError::InvalidPoint)?;
+    let base_event_range = primary.base_event_range();
+    let target_event_range = primary.target_event_range();
     let boundary_events_retained = boundary_events_reencoded
         .checked_sub(replacement_events)
         .ok_or(M11RecursiveGreenError::CounterOverflow)?;
@@ -1706,9 +2177,16 @@ fn make_structural_receipt(
     let reused_storage_pages = base_storage_pages
         .checked_sub(deleted_storage_pages)
         .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+    let target_events = base
+        .event_count()
+        .checked_sub(deleted_events)
+        .and_then(|events| events.checked_add(replacement_events))
+        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
     if base_event_range.end - base_event_range.start != transported_base_events
         || target_event_range.end - target_event_range.start != boundary_events_reencoded
-        || base_event_range.end > base.event_count()
+        || selection.segments().iter().any(|segment| {
+            segment.base_event_end > base.event_count() || segment.target_event_end > target_events
+        })
         || u64::try_from(mutation.leaves_deleted)
             .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
             != deleted_storage_pages

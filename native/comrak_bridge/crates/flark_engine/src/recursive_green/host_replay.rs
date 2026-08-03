@@ -14,7 +14,7 @@ use crate::measured_sequence::{
     ResumableSequenceProgress, SequenceInspectionReceipt, SequenceMutationReceipt,
     SequenceSpecInspection,
 };
-use crate::storage::{ArenaBuildOwner, ArenaBuildSession, PageArena};
+use crate::storage::{ArenaBuildOwner, ArenaBuildSession, ArenaError, PageArena};
 use crate::ArenaId;
 
 use super::build::GreenSequenceBuilder;
@@ -98,15 +98,27 @@ pub(crate) fn persistent_m11_recursive_green_storage_page_at(
     Ok(Some(payload))
 }
 
-/// Exact-base semantic splice claim admitted by an independent host.
+/// One exact-base semantic splice segment admitted by an independent host.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct M11RecursiveGreenHostSpliceClaim {
+pub(crate) struct M11RecursiveGreenHostSpliceSegmentClaim {
     pub(crate) base_event_range: Range<u64>,
     pub(crate) target_event_range: Range<u64>,
     pub(crate) base_storage_range: Range<u64>,
     pub(crate) target_storage_range: Range<u64>,
+}
+
+/// Exact-base semantic splice batch admitted by an independent host.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct M11RecursiveGreenHostSpliceClaim {
+    pub(crate) segments: Box<[M11RecursiveGreenHostSpliceSegmentClaim]>,
     pub(crate) base_descriptor: PersistentM11RecursiveGreenRoleDescriptor,
     pub(crate) target_descriptor: PersistentM11RecursiveGreenRoleDescriptor,
+}
+
+impl M11RecursiveGreenHostSpliceClaim {
+    pub(crate) fn segments(&self) -> &[M11RecursiveGreenHostSpliceSegmentClaim] {
+        &self.segments
+    }
 }
 
 /// Bounded work receipt for one independently authenticated Green replay.
@@ -206,24 +218,28 @@ impl M11RecursiveGreenHostReplayOutput {
 
 enum M11RecursiveGreenHostReplayPhase {
     Accepting {
+        segment_index: usize,
         builder: Option<GreenSequenceBuilder>,
         push_active: bool,
     },
-    Finishing(GreenSequenceBuilder),
-    Ready {
-        replacement: Option<MeasuredSequenceBuildRoot<RecursiveGreenSpec>>,
+    Finishing {
+        segment_index: usize,
+        builder: GreenSequenceBuilder,
     },
+    Ready,
     Complete,
     Poisoned,
 }
 
-/// Abort-journal-safe replay of one exact base-relative recursive-Green cut.
+/// Abort-journal-safe replay of exact base-relative recursive-Green cuts.
 pub(crate) struct M11RecursiveGreenHostReplay {
     base: Option<MeasuredSequenceBuildRoot<RecursiveGreenSpec>>,
     claim: M11RecursiveGreenHostSpliceClaim,
-    plan: M11RecursiveGreenSemanticSplicePlan,
-    replacement_page_count: u64,
-    replacement_summary: RecursiveGreenSummary,
+    plans: Box<[M11RecursiveGreenSemanticSplicePlan]>,
+    replacements: Vec<Option<MeasuredSequenceBuildRoot<RecursiveGreenSpec>>>,
+    current_replacement_page_count: u64,
+    current_replacement_summary: RecursiveGreenSummary,
+    total_replacement_page_count: u64,
     replacement_payload_bytes: u64,
     phase: M11RecursiveGreenHostReplayPhase,
     base_validation_receipt: SequenceMutationReceipt,
@@ -240,60 +256,120 @@ impl M11RecursiveGreenHostReplay {
     ) -> Result<Self, M11RecursiveGreenError> {
         validate_descriptor(claim.base_descriptor)?;
         validate_descriptor(claim.target_descriptor)?;
-        if claim.base_event_range.start > claim.base_event_range.end
-            || claim.target_event_range.start > claim.target_event_range.end
-            || claim.base_event_range.start != claim.target_event_range.start
-            || claim.base_storage_range.start > claim.base_storage_range.end
-            || claim.target_storage_range.start > claim.target_storage_range.end
-            || claim.base_storage_range.start != claim.target_storage_range.start
-        {
-            return Err(M11RecursiveGreenError::InvalidPoint);
-        }
-
-        let deleted_events = claim.base_event_range.end - claim.base_event_range.start;
-        let replacement_events = claim.target_event_range.end - claim.target_event_range.start;
-        let expected_target_events = claim
-            .base_descriptor
-            .event_count()
-            .checked_sub(deleted_events)
-            .and_then(|events| events.checked_add(replacement_events))
-            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-        if claim.base_event_range.end > claim.base_descriptor.event_count()
-            || claim.target_event_range.end > claim.target_descriptor.event_count()
-            || claim.target_descriptor.event_count() != expected_target_events
-        {
-            return Err(M11RecursiveGreenError::InvalidPoint);
-        }
-
         let base_root = base_owner.as_ref().map(ArenaBuildOwner::id);
         let base_claim = validate_persistent_m11_recursive_green_root(
             session.arena(),
             base_root,
             claim.base_descriptor,
         )?;
-        let plan = plan_recursive_green_semantic_splice(
-            session.arena(),
-            MeasuredSequenceRef::from_imported_root(base_root),
-            base_claim.summary(),
-            base_claim.storage_page_count(),
-            claim.base_event_range.clone(),
-        )?;
-        if plan.storage_page_range != claim.base_storage_range {
-            return Err(M11RecursiveGreenError::Corrupt(
-                "recursive Green replay storage cut differs from its semantic range",
-            ));
+
+        let mut plans = Vec::new();
+        plans
+            .try_reserve_exact(claim.segments.len())
+            .map_err(|_| M11RecursiveGreenError::Arena(ArenaError::AllocationFailed))?;
+        let mut previous_base_event_end = 0_u64;
+        let mut previous_target_event_end = 0_u64;
+        let mut previous_base_storage_end = 0_u64;
+        let mut previous_target_storage_end = 0_u64;
+        let mut deleted_events = 0_u64;
+        let mut replacement_events = 0_u64;
+        let mut deleted_pages = 0_u64;
+        let mut replacement_pages = 0_u64;
+        for segment in claim.segments.iter() {
+            if segment.base_event_range.start > segment.base_event_range.end
+                || segment.target_event_range.start > segment.target_event_range.end
+                || segment.base_storage_range.start > segment.base_storage_range.end
+                || segment.target_storage_range.start > segment.target_storage_range.end
+                || segment.base_event_range.end > claim.base_descriptor.event_count()
+                || segment.target_event_range.end > claim.target_descriptor.event_count()
+                || segment.base_storage_range.end > claim.base_descriptor.storage_page_count()
+                || segment.target_storage_range.end > claim.target_descriptor.storage_page_count()
+            {
+                return Err(M11RecursiveGreenError::InvalidPoint);
+            }
+            if segment.base_event_range.start < previous_base_event_end
+                || segment.target_event_range.start < previous_target_event_end
+                || segment.base_storage_range.start < previous_base_storage_end
+                || segment.target_storage_range.start < previous_target_storage_end
+            {
+                return Err(M11RecursiveGreenError::Corrupt(
+                    "recursive Green replay segments are not sorted and nonoverlapping",
+                ));
+            }
+            let base_event_gap = segment.base_event_range.start - previous_base_event_end;
+            let target_event_gap = segment.target_event_range.start - previous_target_event_end;
+            let base_storage_gap = segment.base_storage_range.start - previous_base_storage_end;
+            let target_storage_gap =
+                segment.target_storage_range.start - previous_target_storage_end;
+            if base_event_gap != target_event_gap || base_storage_gap != target_storage_gap {
+                return Err(M11RecursiveGreenError::Corrupt(
+                    "recursive Green replay segment ordinal mapping changed",
+                ));
+            }
+
+            let plan = plan_recursive_green_semantic_splice(
+                session.arena(),
+                MeasuredSequenceRef::from_imported_root(base_root),
+                base_claim.summary(),
+                base_claim.storage_page_count(),
+                segment.base_event_range.clone(),
+            )?;
+            if plan.storage_page_range != segment.base_storage_range {
+                return Err(M11RecursiveGreenError::Corrupt(
+                    "recursive Green replay storage cut differs from its semantic range",
+                ));
+            }
+            plans.push(M11RecursiveGreenSemanticSplicePlan {
+                storage_page_range: plan.storage_page_range,
+                prefix_events: plan.prefix_events,
+                suffix_events: plan.suffix_events,
+                boundary_events_decoded: plan.boundary_events_decoded,
+                inspection: plan.inspection,
+            });
+
+            deleted_events = deleted_events
+                .checked_add(segment.base_event_range.end - segment.base_event_range.start)
+                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+            replacement_events = replacement_events
+                .checked_add(segment.target_event_range.end - segment.target_event_range.start)
+                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+            deleted_pages = deleted_pages
+                .checked_add(segment.base_storage_range.end - segment.base_storage_range.start)
+                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+            replacement_pages = replacement_pages
+                .checked_add(segment.target_storage_range.end - segment.target_storage_range.start)
+                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+            previous_base_event_end = segment.base_event_range.end;
+            previous_target_event_end = segment.target_event_range.end;
+            previous_base_storage_end = segment.base_storage_range.end;
+            previous_target_storage_end = segment.target_storage_range.end;
         }
-        let removed_pages = claim.base_storage_range.end - claim.base_storage_range.start;
-        let replacement_pages = claim.target_storage_range.end - claim.target_storage_range.start;
+
+        let expected_target_events = claim
+            .base_descriptor
+            .event_count()
+            .checked_sub(deleted_events)
+            .and_then(|events| events.checked_add(replacement_events))
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
         let expected_target_pages = claim
             .base_descriptor
             .storage_page_count()
-            .checked_sub(removed_pages)
+            .checked_sub(deleted_pages)
             .and_then(|pages| pages.checked_add(replacement_pages))
             .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-        if claim.base_storage_range.end > claim.base_descriptor.storage_page_count()
-            || claim.target_storage_range.end > claim.target_descriptor.storage_page_count()
-            || claim.target_descriptor.storage_page_count() != expected_target_pages
+        let base_event_suffix = claim.base_descriptor.event_count() - previous_base_event_end;
+        let target_event_suffix = claim.target_descriptor.event_count() - previous_target_event_end;
+        let base_storage_suffix =
+            claim.base_descriptor.storage_page_count() - previous_base_storage_end;
+        let target_storage_suffix =
+            claim.target_descriptor.storage_page_count() - previous_target_storage_end;
+        if claim.target_descriptor.event_count() != expected_target_events
+            || base_event_suffix != target_event_suffix
+        {
+            return Err(M11RecursiveGreenError::InvalidPoint);
+        }
+        if claim.target_descriptor.storage_page_count() != expected_target_pages
+            || base_storage_suffix != target_storage_suffix
         {
             return Err(M11RecursiveGreenError::Corrupt(
                 "recursive Green replay storage-page arithmetic changed",
@@ -318,28 +394,94 @@ impl M11RecursiveGreenHostReplay {
                 None
             }
         };
-        Ok(Self {
+        let mut replacements = Vec::new();
+        replacements
+            .try_reserve_exact(claim.segments.len())
+            .map_err(|_| M11RecursiveGreenError::Arena(ArenaError::AllocationFailed))?;
+        let mut replay = Self {
             base,
             claim,
-            plan: M11RecursiveGreenSemanticSplicePlan {
-                storage_page_range: plan.storage_page_range,
-                prefix_events: plan.prefix_events,
-                suffix_events: plan.suffix_events,
-                boundary_events_decoded: plan.boundary_events_decoded,
-                inspection: plan.inspection,
-            },
-            replacement_page_count: 0,
-            replacement_summary: RecursiveGreenSummary::empty(),
+            plans: plans.into_boxed_slice(),
+            replacements,
+            current_replacement_page_count: 0,
+            current_replacement_summary: RecursiveGreenSummary::empty(),
+            total_replacement_page_count: 0,
             replacement_payload_bytes: 0,
-            phase: M11RecursiveGreenHostReplayPhase::Accepting {
-                builder: None,
-                push_active: false,
-            },
+            phase: M11RecursiveGreenHostReplayPhase::Poisoned,
             base_validation_receipt,
             replacement_receipt: SequenceMutationReceipt::default(),
             splice_receipt: SequenceMutationReceipt::default(),
             target_validation_receipt: SequenceMutationReceipt::default(),
-        })
+        };
+        let segment_index = replay.advance_empty_segments(0)?;
+        replay.phase = M11RecursiveGreenHostReplayPhase::Accepting {
+            segment_index,
+            builder: None,
+            push_active: false,
+        };
+        Ok(replay)
+    }
+
+    fn expected_segment_events(&self, segment_index: usize) -> Result<u64, M11RecursiveGreenError> {
+        let segment = self
+            .claim
+            .segments
+            .get(segment_index)
+            .ok_or(M11RecursiveGreenError::InvalidState)?;
+        let plan = self
+            .plans
+            .get(segment_index)
+            .ok_or(M11RecursiveGreenError::InvalidState)?;
+        plan.prefix_events
+            .checked_add(segment.target_event_range.end - segment.target_event_range.start)
+            .and_then(|events| events.checked_add(plan.suffix_events))
+            .ok_or(M11RecursiveGreenError::CounterOverflow)
+    }
+
+    fn expected_segment_pages(&self, segment_index: usize) -> Result<u64, M11RecursiveGreenError> {
+        let segment = self
+            .claim
+            .segments
+            .get(segment_index)
+            .ok_or(M11RecursiveGreenError::InvalidState)?;
+        Ok(segment.target_storage_range.end - segment.target_storage_range.start)
+    }
+
+    fn record_current_segment(
+        &mut self,
+        segment_index: usize,
+        replacement: Option<MeasuredSequenceBuildRoot<RecursiveGreenSpec>>,
+    ) -> Result<(), M11RecursiveGreenError> {
+        if self.replacements.len() != segment_index {
+            return Err(M11RecursiveGreenError::InvalidState);
+        }
+        let expected_pages = self.expected_segment_pages(segment_index)?;
+        let expected_events = self.expected_segment_events(segment_index)?;
+        if self.current_replacement_page_count != expected_pages
+            || self.current_replacement_summary.events != expected_events
+            || replacement.is_some() != (expected_pages != 0)
+        {
+            return Err(M11RecursiveGreenError::Corrupt(
+                "recursive Green replacement pages differ from their semantic segment",
+            ));
+        }
+        self.replacements.push(replacement);
+        self.current_replacement_page_count = 0;
+        self.current_replacement_summary = RecursiveGreenSummary::empty();
+        Ok(())
+    }
+
+    fn advance_empty_segments(
+        &mut self,
+        mut segment_index: usize,
+    ) -> Result<usize, M11RecursiveGreenError> {
+        while segment_index < self.claim.segments.len()
+            && self.expected_segment_pages(segment_index)? == 0
+        {
+            self.record_current_segment(segment_index, None)?;
+            segment_index += 1;
+        }
+        Ok(segment_index)
     }
 
     /// Admits one canonical `RGL1` replacement leaf. `RGB1` and arbitrary
@@ -351,14 +493,15 @@ impl M11RecursiveGreenHostReplay {
     ) -> Result<(), M11RecursiveGreenError> {
         let phase = std::mem::replace(&mut self.phase, M11RecursiveGreenHostReplayPhase::Poisoned);
         let M11RecursiveGreenHostReplayPhase::Accepting {
+            segment_index,
             builder,
             push_active: false,
         } = phase
         else {
             return Err(M11RecursiveGreenError::InvalidState);
         };
-        if self.replacement_page_count
-            >= self.claim.target_storage_range.end - self.claim.target_storage_range.start
+        if segment_index >= self.claim.segments.len()
+            || self.current_replacement_page_count >= self.expected_segment_pages(segment_index)?
         {
             return Err(M11RecursiveGreenError::Corrupt(
                 "too many recursive Green replacement pages",
@@ -375,8 +518,8 @@ impl M11RecursiveGreenHostReplay {
         let decoded = decode_leaf(payload, &mut inspection)?.ok_or(
             M11RecursiveGreenError::Corrupt("recursive Green replacement page is not RGL1"),
         )?;
-        self.replacement_summary = self
-            .replacement_summary
+        self.current_replacement_summary = self
+            .current_replacement_summary
             .checked_followed_by(decoded.summary)?;
         self.replacement_payload_bytes = self
             .replacement_payload_bytes
@@ -391,11 +534,16 @@ impl M11RecursiveGreenHostReplay {
             None => GreenSequenceBuilder::try_new(session, &mut self.replacement_receipt)?,
         };
         builder.begin_push(session, leaf, &mut self.replacement_receipt)?;
-        self.replacement_page_count = self
-            .replacement_page_count
+        self.current_replacement_page_count = self
+            .current_replacement_page_count
+            .checked_add(1)
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        self.total_replacement_page_count = self
+            .total_replacement_page_count
             .checked_add(1)
             .ok_or(M11RecursiveGreenError::CounterOverflow)?;
         self.phase = M11RecursiveGreenHostReplayPhase::Accepting {
+            segment_index,
             builder: Some(builder),
             push_active: true,
         };
@@ -409,30 +557,56 @@ impl M11RecursiveGreenHostReplay {
         let phase = std::mem::replace(&mut self.phase, M11RecursiveGreenHostReplayPhase::Poisoned);
         match phase {
             M11RecursiveGreenHostReplayPhase::Accepting {
+                segment_index,
                 builder: Some(mut builder),
                 push_active: true,
             } => {
                 let progress = builder.poll_push(session, &mut self.replacement_receipt)?;
-                self.phase = M11RecursiveGreenHostReplayPhase::Accepting {
-                    builder: Some(builder),
-                    push_active: progress != ResumableSequenceProgress::Complete,
-                };
-                Ok(if progress == ResumableSequenceProgress::Complete {
-                    M11RecursiveGreenHostReplayPoll::Complete
+                if progress != ResumableSequenceProgress::Complete {
+                    self.phase = M11RecursiveGreenHostReplayPhase::Accepting {
+                        segment_index,
+                        builder: Some(builder),
+                        push_active: true,
+                    };
+                    Ok(M11RecursiveGreenHostReplayPoll::Pending)
+                } else if self.current_replacement_page_count
+                    == self.expected_segment_pages(segment_index)?
+                {
+                    builder.begin_finish(session, &mut self.replacement_receipt)?;
+                    self.phase = M11RecursiveGreenHostReplayPhase::Finishing {
+                        segment_index,
+                        builder,
+                    };
+                    Ok(M11RecursiveGreenHostReplayPoll::Pending)
                 } else {
-                    M11RecursiveGreenHostReplayPoll::Pending
-                })
+                    self.phase = M11RecursiveGreenHostReplayPhase::Accepting {
+                        segment_index,
+                        builder: Some(builder),
+                        push_active: false,
+                    };
+                    Ok(M11RecursiveGreenHostReplayPoll::Complete)
+                }
             }
-            M11RecursiveGreenHostReplayPhase::Finishing(mut builder) => {
+            M11RecursiveGreenHostReplayPhase::Finishing {
+                segment_index,
+                mut builder,
+            } => {
                 let progress = builder.poll_finish(session, &mut self.replacement_receipt)?;
                 if progress == ResumableSequenceProgress::Complete {
                     let replacement = builder.take_root(session)?;
-                    self.phase = M11RecursiveGreenHostReplayPhase::Ready {
-                        replacement: Some(replacement),
+                    self.record_current_segment(segment_index, Some(replacement))?;
+                    let next_segment = self.advance_empty_segments(segment_index + 1)?;
+                    self.phase = M11RecursiveGreenHostReplayPhase::Accepting {
+                        segment_index: next_segment,
+                        builder: None,
+                        push_active: false,
                     };
                     Ok(M11RecursiveGreenHostReplayPoll::Complete)
                 } else {
-                    self.phase = M11RecursiveGreenHostReplayPhase::Finishing(builder);
+                    self.phase = M11RecursiveGreenHostReplayPhase::Finishing {
+                        segment_index,
+                        builder,
+                    };
                     Ok(M11RecursiveGreenHostReplayPoll::Pending)
                 }
             }
@@ -446,38 +620,26 @@ impl M11RecursiveGreenHostReplay {
     ) -> Result<M11RecursiveGreenHostReplayPoll, M11RecursiveGreenError> {
         let phase = std::mem::replace(&mut self.phase, M11RecursiveGreenHostReplayPhase::Poisoned);
         let M11RecursiveGreenHostReplayPhase::Accepting {
+            segment_index,
             builder,
             push_active: false,
         } = phase
         else {
             return Err(M11RecursiveGreenError::InvalidState);
         };
-        let expected_pages =
-            self.claim.target_storage_range.end - self.claim.target_storage_range.start;
-        let expected_events = self
-            .plan
-            .prefix_events
-            .checked_add(self.claim.target_event_range.end - self.claim.target_event_range.start)
-            .and_then(|events| events.checked_add(self.plan.suffix_events))
-            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-        if self.replacement_page_count != expected_pages
-            || self.replacement_summary.events != expected_events
+        if segment_index != self.claim.segments.len()
+            || builder.is_some()
+            || self.current_replacement_page_count != 0
+            || self.current_replacement_summary != RecursiveGreenSummary::empty()
+            || self.replacements.len() != self.claim.segments.len()
         {
             return Err(M11RecursiveGreenError::Corrupt(
-                "recursive Green replacement pages differ from the semantic splice",
+                "recursive Green replacement segment input is incomplete",
             ));
         }
-        match builder {
-            Some(mut builder) => {
-                builder.begin_finish(session, &mut self.replacement_receipt)?;
-                self.phase = M11RecursiveGreenHostReplayPhase::Finishing(builder);
-                Ok(M11RecursiveGreenHostReplayPoll::Pending)
-            }
-            None => {
-                self.phase = M11RecursiveGreenHostReplayPhase::Ready { replacement: None };
-                Ok(M11RecursiveGreenHostReplayPoll::Complete)
-            }
-        }
+        let _ = session;
+        self.phase = M11RecursiveGreenHostReplayPhase::Ready;
+        Ok(M11RecursiveGreenHostReplayPoll::Complete)
     }
 
     pub(crate) fn complete(
@@ -485,26 +647,39 @@ impl M11RecursiveGreenHostReplay {
         session: &mut ArenaBuildSession<'_>,
     ) -> Result<M11RecursiveGreenHostReplayOutput, M11RecursiveGreenError> {
         let phase = std::mem::replace(&mut self.phase, M11RecursiveGreenHostReplayPhase::Poisoned);
-        let M11RecursiveGreenHostReplayPhase::Ready { replacement } = phase else {
+        let M11RecursiveGreenHostReplayPhase::Ready = phase else {
             return Err(M11RecursiveGreenError::InvalidState);
         };
-        let target = match self.base.take() {
-            Some(base) => splice_measured_sequence_build_root_atomic::<RecursiveGreenSpec>(
-                session,
-                base,
-                self.claim.base_storage_range.clone(),
-                replacement,
-                &mut self.splice_receipt,
-            )?,
-            None => {
-                if self.claim.base_storage_range != (0..0) {
-                    return Err(M11RecursiveGreenError::Corrupt(
-                        "empty recursive Green replay base changed its cut",
-                    ));
+        if self.replacements.len() != self.claim.segments.len() {
+            return Err(M11RecursiveGreenError::InvalidState);
+        }
+        let mut target = self.base.take();
+        for segment_index in (0..self.claim.segments.len()).rev() {
+            let replacement = self
+                .replacements
+                .pop()
+                .ok_or(M11RecursiveGreenError::InvalidState)?;
+            let base_storage_range = self.claim.segments[segment_index]
+                .base_storage_range
+                .clone();
+            target = match target {
+                Some(base) => splice_measured_sequence_build_root_atomic::<RecursiveGreenSpec>(
+                    session,
+                    base,
+                    base_storage_range,
+                    replacement,
+                    &mut self.splice_receipt,
+                )?,
+                None => {
+                    if base_storage_range != (0..0) {
+                        return Err(M11RecursiveGreenError::Corrupt(
+                            "empty recursive Green replay base changed its cut",
+                        ));
+                    }
+                    replacement
                 }
-                replacement
-            }
-        };
+            };
+        }
         let target_owner = target.map(MeasuredSequenceBuildRoot::into_owner);
         let target_root = target_owner.as_ref().map(ArenaBuildOwner::id);
         let target_summary = match target_root {
@@ -540,42 +715,64 @@ impl M11RecursiveGreenHostReplay {
             ));
         }
 
-        let deleted_events = self.claim.base_event_range.end - self.claim.base_event_range.start;
-        let replacement_events =
-            self.claim.target_event_range.end - self.claim.target_event_range.start;
-        let deleted_pages = self.claim.base_storage_range.end - self.claim.base_storage_range.start;
+        let mut deleted_events = 0_u64;
+        let mut replacement_events = 0_u64;
+        let mut deleted_pages = 0_u64;
+        let mut boundary_events_decoded = 0_u64;
+        for (segment, plan) in self.claim.segments.iter().zip(self.plans.iter()) {
+            deleted_events = deleted_events
+                .checked_add(segment.base_event_range.end - segment.base_event_range.start)
+                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+            replacement_events = replacement_events
+                .checked_add(segment.target_event_range.end - segment.target_event_range.start)
+                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+            deleted_pages = deleted_pages
+                .checked_add(segment.base_storage_range.end - segment.base_storage_range.start)
+                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+            boundary_events_decoded = boundary_events_decoded
+                .checked_add(plan.boundary_events_decoded)
+                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        }
         let reused_storage_pages = self
             .claim
             .base_descriptor
             .storage_page_count()
             .checked_sub(deleted_pages)
             .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-        let inspections = [
-            self.base_validation_receipt.inspection,
-            self.plan.inspection,
-            self.replacement_receipt.inspection,
-            self.splice_receipt.inspection,
-            self.target_validation_receipt.inspection,
-        ];
-        let node_headers_decoded = inspections.iter().try_fold(0_u64, |total, receipt| {
-            total.checked_add(receipt.node_headers_decoded)
-        });
-        let events_authenticated = inspections.iter().try_fold(0_u64, |total, receipt| {
-            total.checked_add(receipt.spec.spec_items_hashed)
-        });
+        let mut node_headers_decoded = 0_u64;
+        let mut events_authenticated = 0_u64;
+        for receipt in [
+            &self.base_validation_receipt.inspection,
+            &self.replacement_receipt.inspection,
+            &self.splice_receipt.inspection,
+            &self.target_validation_receipt.inspection,
+        ] {
+            node_headers_decoded = node_headers_decoded
+                .checked_add(receipt.node_headers_decoded)
+                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+            events_authenticated = events_authenticated
+                .checked_add(receipt.spec.spec_items_hashed)
+                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        }
+        for plan in self.plans.iter() {
+            node_headers_decoded = node_headers_decoded
+                .checked_add(plan.inspection.node_headers_decoded)
+                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+            events_authenticated = events_authenticated
+                .checked_add(plan.inspection.spec.spec_items_hashed)
+                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        }
         let work = M11RecursiveGreenHostSpliceWork {
             base_events: self.claim.base_descriptor.event_count(),
             deleted_events,
             replacement_events,
             base_storage_pages: self.claim.base_descriptor.storage_page_count(),
-            transferred_storage_pages: self.replacement_page_count,
+            transferred_storage_pages: self.total_replacement_page_count,
             reused_storage_pages,
             transferred_payload_bytes: self.replacement_payload_bytes,
-            boundary_events_decoded: self.plan.boundary_events_decoded,
-            node_headers_decoded: node_headers_decoded
-                .ok_or(M11RecursiveGreenError::CounterOverflow)?,
-            events_authenticated: events_authenticated
-                .ok_or(M11RecursiveGreenError::CounterOverflow)?,
+            boundary_events_decoded,
+            node_headers_decoded,
+            events_authenticated,
             tree_nodes_visited: self.splice_receipt.nodes_visited,
             branches_allocated: self
                 .replacement_receipt
@@ -808,7 +1005,7 @@ mod tests {
     fn build_root(
         runtime: &mut DocumentRuntime,
         items: usize,
-        changed_item: Option<usize>,
+        changed_items: &[usize],
     ) -> M11RecursiveGreenRoot {
         let lease = runtime.snapshot_current_source().expect("source lease");
         let mut build = M11RecursiveGreenBuild::new(runtime, lease).expect("Green build");
@@ -822,7 +1019,7 @@ mod tests {
         );
         for index in 0..items {
             let frame = frame(u64::try_from(index + 2).expect("frame fits u64"));
-            let item_kind = if changed_item == Some(index) {
+            let item_kind = if changed_items.contains(&index) {
                 kind(9)
             } else {
                 kind(2)
@@ -917,13 +1114,32 @@ mod tests {
         }
     }
 
-    fn replay_case(items: usize) -> (M11RecursiveGreenHostSpliceWork, u64) {
+    fn host_replay_claim_is_rejected(
+        producer: &PageArena,
+        base_root: ArenaId,
+        claim: M11RecursiveGreenHostSpliceClaim,
+    ) -> bool {
+        let mut host = PageArena::new(ArenaLimits::default()).expect("rejecting host arena");
+        let rejected = {
+            let mut session = host.begin_build().expect("rejecting host build");
+            let base_owner = copy_closure_into_build(producer, base_root, &mut session);
+            M11RecursiveGreenHostReplay::new(&session, Some(base_owner), claim).is_err()
+        };
+        drain_host_abort(&mut host);
+        rejected
+    }
+
+    fn replay_case(
+        items: usize,
+        changed_items: &[usize],
+    ) -> (M11RecursiveGreenHostSpliceWork, u64) {
         let mut runtime =
             DocumentRuntime::new(&"x".repeat(items), DocumentRuntimeConfig::default())
                 .expect("runtime");
-        let changed_item = items / 2;
-        let mut base = build_root(&mut runtime, items, None);
-        let mut target = build_root(&mut runtime, items, Some(changed_item));
+        assert!(!changed_items.is_empty());
+        assert!(changed_items.windows(2).all(|pair| pair[0] < pair[1]));
+        let mut base = build_root(&mut runtime, items, &[]);
+        let mut target = build_root(&mut runtime, items, changed_items);
         assert_ne!(
             base.canonical_event_commitment256(),
             target.canonical_event_commitment256(),
@@ -934,31 +1150,39 @@ mod tests {
             descriptor_for(target.summary, target.page_count, target.tree_height);
         let base_root = base.tree_root_id_for_test().expect("base tree root");
         let target_root = target.tree_root_id_for_test().expect("target tree root");
-        let item_start = 1 + u64::try_from(changed_item).expect("item fits u64") * 3;
-        let event_range = item_start..item_start + 3;
-        let base_plan = plan_persistent_m11_recursive_green_semantic_splice(
-            runtime.producer_arena(),
-            Some(base_root),
-            base_descriptor,
-            event_range.clone(),
-        )
-        .expect("base semantic cut");
-        let target_plan = plan_persistent_m11_recursive_green_semantic_splice(
-            runtime.producer_arena(),
-            Some(target_root),
-            target_descriptor,
-            event_range.clone(),
-        )
-        .expect("target semantic cut");
-        assert_eq!(
-            base_plan.storage_page_range.start, target_plan.storage_page_range.start,
-            "unchanged semantic prefix must retain the packed-page boundary"
-        );
+        let mut segment_claims = Vec::new();
+        let mut target_storage_ranges = Vec::new();
+        for &changed_item in changed_items {
+            let item_start = 1 + u64::try_from(changed_item).expect("item fits u64") * 3;
+            let event_range = item_start..item_start + 3;
+            let base_plan = plan_persistent_m11_recursive_green_semantic_splice(
+                runtime.producer_arena(),
+                Some(base_root),
+                base_descriptor,
+                event_range.clone(),
+            )
+            .expect("base semantic cut");
+            let target_plan = plan_persistent_m11_recursive_green_semantic_splice(
+                runtime.producer_arena(),
+                Some(target_root),
+                target_descriptor,
+                event_range.clone(),
+            )
+            .expect("target semantic cut");
+            assert_eq!(
+                base_plan.storage_page_range.start, target_plan.storage_page_range.start,
+                "unchanged semantic prefix must retain the packed-page boundary"
+            );
+            segment_claims.push(M11RecursiveGreenHostSpliceSegmentClaim {
+                base_event_range: event_range.clone(),
+                target_event_range: event_range,
+                base_storage_range: base_plan.storage_page_range,
+                target_storage_range: target_plan.storage_page_range.clone(),
+            });
+            target_storage_ranges.push(target_plan.storage_page_range);
+        }
         let claim = M11RecursiveGreenHostSpliceClaim {
-            base_event_range: event_range.clone(),
-            target_event_range: event_range,
-            base_storage_range: base_plan.storage_page_range,
-            target_storage_range: target_plan.storage_page_range.clone(),
+            segments: segment_claims.into_boxed_slice(),
             base_descriptor,
             target_descriptor,
         };
@@ -971,23 +1195,25 @@ mod tests {
             let mut replay =
                 M11RecursiveGreenHostReplay::new(&session, Some(base_owner), claim.clone())
                     .expect("begin Green host replay");
-            for ordinal in target_plan.storage_page_range.clone() {
-                let payload = persistent_m11_recursive_green_storage_page_at(
-                    runtime.producer_arena(),
-                    Some(target_root),
-                    ordinal,
-                )
-                .expect("read target Green page")
-                .expect("target Green page exists");
-                let leaf = session.allocate(payload, &[]).expect("import target RGL1");
-                replay
-                    .offer_replacement_leaf(&mut session, leaf)
-                    .expect("offer target RGL1");
-                while replay
-                    .poll_replacement(&mut session)
-                    .expect("poll target RGL1")
-                    == M11RecursiveGreenHostReplayPoll::Pending
-                {}
+            for target_storage_range in target_storage_ranges.iter().cloned() {
+                for ordinal in target_storage_range {
+                    let payload = persistent_m11_recursive_green_storage_page_at(
+                        runtime.producer_arena(),
+                        Some(target_root),
+                        ordinal,
+                    )
+                    .expect("read target Green page")
+                    .expect("target Green page exists");
+                    let leaf = session.allocate(payload, &[]).expect("import target RGL1");
+                    replay
+                        .offer_replacement_leaf(&mut session, leaf)
+                        .expect("offer target RGL1");
+                    while replay
+                        .poll_replacement(&mut session)
+                        .expect("poll target RGL1")
+                        == M11RecursiveGreenHostReplayPoll::Pending
+                    {}
+                }
             }
             if replay
                 .finish_replacement(&session)
@@ -1068,8 +1294,8 @@ mod tests {
 
     #[test]
     fn local_semantic_replay_is_size_independent_leaf_only_and_commitment_exact() {
-        let (small, small_commitment_lane) = replay_case(256);
-        let (large, large_commitment_lane) = replay_case(8_192);
+        let (small, small_commitment_lane) = replay_case(256, &[128]);
+        let (large, large_commitment_lane) = replay_case(8_192, &[4_096]);
 
         assert!(small.base_storage_pages() >= 2);
         assert!(large.base_storage_pages() > small.base_storage_pages() * 16);
@@ -1082,5 +1308,114 @@ mod tests {
         assert!(large.reused_storage_pages() > small.reused_storage_pages() * 16);
         assert_ne!(small_commitment_lane, 0);
         assert_ne!(large_commitment_lane, 0);
+    }
+
+    #[test]
+    fn sparse_semantic_replay_applies_all_segments_in_one_host_build() {
+        let (work, commitment_lane) = replay_case(1_024, &[128, 896]);
+
+        assert_eq!(work.deleted_events(), 6);
+        assert_eq!(work.replacement_events(), 6);
+        assert!(work.transferred_storage_pages() <= 4);
+        assert!(work.reused_storage_pages() > work.transferred_storage_pages() * 8);
+        assert_ne!(commitment_lane, 0);
+    }
+
+    #[test]
+    fn splice_batch_rejects_unsorted_segments_and_broken_cumulative_mapping() {
+        let mut runtime = DocumentRuntime::new(&"x".repeat(512), DocumentRuntimeConfig::default())
+            .expect("runtime");
+        let mut base = build_root(&mut runtime, 512, &[]);
+        let descriptor = descriptor_for(base.summary, base.page_count, base.tree_height);
+        let base_root = base.tree_root_id_for_test().expect("base tree root");
+        let first_events = 1..4;
+        let later_events = 901..904;
+        let first_plan = plan_persistent_m11_recursive_green_semantic_splice(
+            runtime.producer_arena(),
+            Some(base_root),
+            descriptor,
+            first_events.clone(),
+        )
+        .expect("first semantic cut");
+        let later_plan = plan_persistent_m11_recursive_green_semantic_splice(
+            runtime.producer_arena(),
+            Some(base_root),
+            descriptor,
+            later_events.clone(),
+        )
+        .expect("later semantic cut");
+        assert!(first_plan.storage_page_range.end < later_plan.storage_page_range.start);
+
+        let first = M11RecursiveGreenHostSpliceSegmentClaim {
+            base_event_range: first_events.clone(),
+            target_event_range: first_events.clone(),
+            base_storage_range: first_plan.storage_page_range.clone(),
+            target_storage_range: first_plan.storage_page_range.clone(),
+        };
+        let later = M11RecursiveGreenHostSpliceSegmentClaim {
+            base_event_range: later_events.clone(),
+            target_event_range: later_events,
+            base_storage_range: later_plan.storage_page_range.clone(),
+            target_storage_range: later_plan.storage_page_range,
+        };
+        assert!(host_replay_claim_is_rejected(
+            runtime.producer_arena(),
+            base_root,
+            M11RecursiveGreenHostSpliceClaim {
+                segments: vec![later, first.clone()].into_boxed_slice(),
+                base_descriptor: descriptor,
+                target_descriptor: descriptor,
+            },
+        ));
+
+        let mut shifted_target = first.clone();
+        shifted_target.target_event_range = 4..7;
+        assert!(host_replay_claim_is_rejected(
+            runtime.producer_arena(),
+            base_root,
+            M11RecursiveGreenHostSpliceClaim {
+                segments: vec![shifted_target].into_boxed_slice(),
+                base_descriptor: descriptor,
+                target_descriptor: descriptor,
+            },
+        ));
+
+        let mut wrong_event_arithmetic = first.clone();
+        wrong_event_arithmetic.target_event_range = 1..5;
+        assert!(host_replay_claim_is_rejected(
+            runtime.producer_arena(),
+            base_root,
+            M11RecursiveGreenHostSpliceClaim {
+                segments: vec![wrong_event_arithmetic].into_boxed_slice(),
+                base_descriptor: descriptor,
+                target_descriptor: descriptor,
+            },
+        ));
+
+        let mut wrong_page_arithmetic = first;
+        wrong_page_arithmetic.target_storage_range.end += 1;
+        assert!(wrong_page_arithmetic.target_storage_range.end <= descriptor.storage_page_count());
+        assert!(host_replay_claim_is_rejected(
+            runtime.producer_arena(),
+            base_root,
+            M11RecursiveGreenHostSpliceClaim {
+                segments: vec![wrong_page_arithmetic].into_boxed_slice(),
+                base_descriptor: descriptor,
+                target_descriptor: descriptor,
+            },
+        ));
+
+        base.begin_release(&mut runtime).expect("release base");
+        while !base
+            .poll_release(&mut runtime, 256)
+            .expect("poll Green release")
+            .complete()
+        {}
+        runtime.begin_close().expect("begin runtime close");
+        while !runtime
+            .poll_close(256)
+            .expect("poll runtime close")
+            .complete
+        {}
     }
 }

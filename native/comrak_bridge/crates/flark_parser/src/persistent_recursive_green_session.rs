@@ -45,6 +45,9 @@ use crate::{
 
 const SOURCE_WORK_QUANTUM: usize = flark_engine::SOURCE_CURSOR_WINDOW_BYTES;
 const CHECKPOINT_STRIDE_BYTES: u64 = 4 * 1024;
+const LATER_CONVERGENCE_MAX_BYTES: usize = 64 * 1024;
+const LATER_CONVERGENCE_MAX_PHYSICAL_LINES: u64 = 512;
+const LATER_CONVERGENCE_MAX_TRANSITIONS: usize = 4_096;
 
 #[derive(Debug)]
 pub enum M11PersistentRecursiveGreenSessionError {
@@ -975,12 +978,12 @@ pub struct M11PersistentRecursiveGreenUpdate {
 ///
 /// Only a completed [`M11PersistentRecursiveGreenUpdate`] can mint this
 /// borrow. Publication uses it to join the retained base, authenticated target
-/// and exact Green event selection without accepting a caller-supplied reuse
-/// flag.
+/// and exact Green event segment selection without accepting a caller-supplied
+/// reuse flag.
 pub(crate) struct M11PersistentRecursiveGreenExactPublication<'update> {
     base: &'update M11PersistentRecursiveGreenSession,
     target: &'update M11PersistentRecursiveGreenSession,
-    recursive_green_splice: M11RecursiveGreenStructuralSpliceSelection,
+    recursive_green_splice: &'update M11RecursiveGreenStructuralSpliceSelection,
 }
 
 impl M11PersistentRecursiveGreenExactPublication<'_> {
@@ -994,7 +997,7 @@ impl M11PersistentRecursiveGreenExactPublication<'_> {
 
     pub(crate) const fn recursive_green_splice_selection(
         &self,
-    ) -> M11RecursiveGreenStructuralSpliceSelection {
+    ) -> &M11RecursiveGreenStructuralSpliceSelection {
         self.recursive_green_splice
     }
 }
@@ -1018,14 +1021,24 @@ impl M11PersistentRecursiveGreenUpdate {
         self.work
     }
 
-    /// Exact semantic Green ranges removed from the base and inserted in the
-    /// target. These survive independently of aggregate adoption work so an
-    /// exact-base publisher never has to infer a splice from event counts.
+    /// Exact changed Green leaf segments removed from the base and inserted in
+    /// the target. These survive independently of aggregate adoption work so
+    /// an exact-base publisher never has to infer sparse repairs from counts.
     #[must_use]
     pub const fn recursive_green_splice_selection(
         &self,
-    ) -> M11RecursiveGreenStructuralSpliceSelection {
-        self.recursive_green_splice
+    ) -> &M11RecursiveGreenStructuralSpliceSelection {
+        &self.recursive_green_splice
+    }
+
+    /// Fallibly duplicates the exact sparse selection for publication. The
+    /// endpoint inspects the borrowed segment count first and uses whole-role
+    /// transport when it exceeds the wire envelope.
+    pub fn try_clone_recursive_green_splice_selection(
+        &self,
+    ) -> Result<M11RecursiveGreenStructuralSpliceSelection, M11PersistentRecursiveGreenSessionError>
+    {
+        self.recursive_green_splice.try_clone().map_err(Into::into)
     }
 
     pub(crate) fn exact_publication(
@@ -1062,7 +1075,7 @@ impl M11PersistentRecursiveGreenUpdate {
         Ok(M11PersistentRecursiveGreenExactPublication {
             base,
             target,
-            recursive_green_splice: self.recursive_green_splice,
+            recursive_green_splice: &self.recursive_green_splice,
         })
     }
 
@@ -1082,6 +1095,7 @@ struct ZeroReferenceOccurrenceProof(());
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AdoptionPhase {
     ParseFragment,
+    ProbeOrdinaryConvergence,
     BeginTerminalFinish,
     FinishTerminal,
     AdoptGreen,
@@ -1101,6 +1115,14 @@ struct AdoptionCheckpointSelection {
     transaction_id: u64,
     restart_index: usize,
     convergence: AdoptionConvergence,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct LaterConvergenceSearch {
+    first_target_parser_end: usize,
+    first_base_line_ordinal: u64,
+    physical_lines: u64,
+    transitions: usize,
 }
 
 struct RebasedOrdinaryCheckpointSet {
@@ -1158,6 +1180,7 @@ pub struct M11PersistentRecursiveGreenAdoption {
     writer_command_pending: bool,
     target_restart: Option<M11BlockRestartCheckpoint>,
     checkpoint_selection: AdoptionCheckpointSelection,
+    later_convergence_search: Option<LaterConvergenceSearch>,
     green_prefix: Option<ExactUnchangedPrefixWitness>,
     document_start: bool,
     green_suffix: Option<ExactUnchangedSuffixWitness>,
@@ -1231,6 +1254,13 @@ impl M11PersistentRecursiveGreenAdoption {
         &mut self,
         runtime: &mut DocumentRuntime,
     ) -> Result<(), M11PersistentRecursiveGreenSessionError> {
+        if let Some(search) = self.later_convergence_search.as_mut() {
+            if search.transitions >= LATER_CONVERGENCE_MAX_TRANSITIONS {
+                self.phase = AdoptionPhase::CleanFallbackRequired;
+                return Ok(());
+            }
+            search.transitions += 1;
+        }
         if let Some(adoption) = self.reference_adoption.as_mut() {
             let poll = adoption.poll(runtime, 1)?;
             self.work.reference_rebind_transitions = self
@@ -1308,6 +1338,13 @@ impl M11PersistentRecursiveGreenAdoption {
             AdoptionPhase::ParseFragment => {
                 if let Some(mut active) = self.active_line.take() {
                     if active.matched {
+                        if let Some(search) = self.later_convergence_search.as_mut() {
+                            search.physical_lines = search.physical_lines.checked_add(1).ok_or(
+                                M11PersistentRecursiveGreenSessionError::InvalidState(
+                                    "later convergence physical-line work overflow",
+                                ),
+                            )?;
+                        }
                         self.current_line_end = Some(active.facts.identity().end_byte() as usize);
                         <M11DirectBlockController as M11ExactController<SnapshotLineSource>>::commit_source_line(
                             self.controller_mut()?,
@@ -1335,6 +1372,12 @@ impl M11PersistentRecursiveGreenAdoption {
                     return Ok(());
                 }
                 if let Some(line) = self.pending_line.take() {
+                    if self.later_convergence_search.is_some_and(|search| {
+                        search.physical_lines >= LATER_CONVERGENCE_MAX_PHYSICAL_LINES
+                    }) {
+                        self.phase = AdoptionPhase::CleanFallbackRequired;
+                        return Ok(());
+                    }
                     let facts = line.facts();
                     if facts.identity().end_byte() as usize > self.target_parser_end {
                         return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -1376,7 +1419,7 @@ impl M11PersistentRecursiveGreenAdoption {
                                 ) {
                                     AdoptionPhase::BeginTerminalFinish
                                 } else {
-                                    AdoptionPhase::AdoptGreen
+                                    AdoptionPhase::ProbeOrdinaryConvergence
                                 };
                             } else if end > self.target_parser_end {
                                 return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -1393,6 +1436,13 @@ impl M11PersistentRecursiveGreenAdoption {
                         "recursive-Green crop scanner baton is missing",
                     ),
                 )?;
+                if self.later_convergence_search.is_some_and(|search| {
+                    search.physical_lines >= LATER_CONVERGENCE_MAX_PHYSICAL_LINES
+                }) {
+                    self.scanner = Some(scanner);
+                    self.phase = AdoptionPhase::CleanFallbackRequired;
+                    return Ok(());
+                }
                 let (poll, _) = scanner.poll_counted_retaining_complete(SOURCE_WORK_QUANTUM)?;
                 match poll {
                     SnapshotLineRetainedPoll::Pending(scanner) => self.scanner = Some(scanner),
@@ -1405,12 +1455,22 @@ impl M11PersistentRecursiveGreenAdoption {
                         ) && self.target_parser_end == self.target.byte_len()
                         {
                             self.phase = AdoptionPhase::BeginTerminalFinish;
+                        } else if self.later_convergence_search.is_some() {
+                            self.phase = AdoptionPhase::CleanFallbackRequired;
                         } else {
                             return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
                                 "recursive-Green crop reached EOF before convergence",
                             ));
                         }
                     }
+                }
+            }
+            AdoptionPhase::ProbeOrdinaryConvergence => {
+                if self.probe_ordinary_convergence(runtime)? {
+                    self.later_convergence_search = None;
+                    self.phase = AdoptionPhase::AdoptGreen;
+                } else {
+                    self.advance_ordinary_convergence(runtime)?;
                 }
             }
             AdoptionPhase::BeginTerminalFinish => {
@@ -1425,6 +1485,7 @@ impl M11PersistentRecursiveGreenAdoption {
                         ..
                     })
                 ) {
+                    self.later_convergence_search = None;
                     self.phase = AdoptionPhase::AdoptGreen;
                     return Ok(());
                 }
@@ -1439,6 +1500,7 @@ impl M11PersistentRecursiveGreenAdoption {
                                 ..
                             })
                         ) {
+                            self.later_convergence_search = None;
                             self.phase = AdoptionPhase::AdoptGreen;
                         } else {
                             self.offer_pending_command()?;
@@ -1656,6 +1718,185 @@ impl M11PersistentRecursiveGreenAdoption {
         Ok(())
     }
 
+    fn probe_ordinary_convergence(
+        &self,
+        runtime: &DocumentRuntime,
+    ) -> Result<bool, M11PersistentRecursiveGreenSessionError> {
+        let Some(parser) = self
+            .controller
+            .as_ref()
+            .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "recursive-Green crop controller is missing",
+            ))?
+            .capture_restart_if_available()?
+        else {
+            return Ok(false);
+        };
+        let AdoptionConvergence::Ordinary { checkpoint_index } =
+            self.checkpoint_selection.convergence
+        else {
+            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "ordinary convergence probe selected the terminal boundary",
+            ));
+        };
+        let base =
+            self.base
+                .as_ref()
+                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "recursive-Green adoption omitted its base session",
+                ))?;
+        let old_convergence = base.checkpoints.get(checkpoint_index).ok_or(
+            M11PersistentRecursiveGreenSessionError::InvalidState(
+                "ordinary convergence checkpoint index escaped the base",
+            ),
+        )?;
+        let green_base =
+            base.green
+                .as_ref()
+                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "recursive-Green base omitted its structural root",
+                ))?;
+        let writer =
+            self.writer
+                .as_ref()
+                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "recursive-Green crop writer is missing",
+                ))?;
+        let target_restart = self.target_restart.as_ref().ok_or(
+            M11PersistentRecursiveGreenSessionError::InvalidState(
+                "recursive-Green adoption omitted target restart",
+            ),
+        )?;
+        Ok(writer.probe_converged_fragment(
+            parser,
+            target_restart,
+            old_convergence,
+            runtime,
+            green_base,
+            self.green_prefix.as_ref(),
+            self.green_suffix.as_ref(),
+        )?)
+    }
+
+    fn advance_ordinary_convergence(
+        &mut self,
+        runtime: &DocumentRuntime,
+    ) -> Result<(), M11PersistentRecursiveGreenSessionError> {
+        let AdoptionConvergence::Ordinary { checkpoint_index } =
+            self.checkpoint_selection.convergence
+        else {
+            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "later ordinary convergence search selected the terminal boundary",
+            ));
+        };
+        let base =
+            self.base
+                .as_ref()
+                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "recursive-Green adoption omitted its base session",
+                ))?;
+        let current = base.checkpoints.get(checkpoint_index).ok_or(
+            M11PersistentRecursiveGreenSessionError::InvalidState(
+                "ordinary convergence checkpoint index escaped the base",
+            ),
+        )?;
+        let search = self
+            .later_convergence_search
+            .get_or_insert(LaterConvergenceSearch {
+                first_target_parser_end: self.target_parser_end,
+                first_base_line_ordinal: current.next_line_ordinal(),
+                physical_lines: 0,
+                transitions: 0,
+            });
+        let first_target_parser_end = search.first_target_parser_end;
+        let first_base_line_ordinal = search.first_base_line_ordinal;
+        let Some(next_index) = checkpoint_index.checked_add(1) else {
+            return self.select_terminal_convergence_if_bounded();
+        };
+        let Some(next) = base.checkpoints.get(next_index) else {
+            return self.select_terminal_convergence_if_bounded();
+        };
+        let parser_convergence = next.parser_physical();
+        if parser_convergence.bytes() as usize == base.source.byte_len()
+            && parser_convergence.utf16() as usize == base.source.utf16_len()
+        {
+            return self.select_terminal_convergence_if_bounded();
+        }
+        let physical_lines = next
+            .next_line_ordinal()
+            .checked_sub(first_base_line_ordinal)
+            .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "later convergence checkpoint line ordinals regressed",
+            ))?;
+        if physical_lines > LATER_CONVERGENCE_MAX_PHYSICAL_LINES {
+            self.phase = AdoptionPhase::CleanFallbackRequired;
+            return Ok(());
+        }
+        let parser_suffix = runtime.mint_exact_unchanged_suffix_witness(
+            base.source,
+            parser_convergence.bytes() as usize,
+            parser_convergence.utf16() as usize,
+        )?;
+        let target_parser_end = parser_suffix.target_byte_start();
+        let later_bytes = target_parser_end
+            .checked_sub(first_target_parser_end)
+            .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "later convergence target boundary regressed",
+            ))?;
+        if later_bytes > LATER_CONVERGENCE_MAX_BYTES {
+            self.phase = AdoptionPhase::CleanFallbackRequired;
+            return Ok(());
+        }
+        let green_convergence = next.accepted_physical();
+        let green_suffix = if green_convergence.bytes() as usize == base.source.byte_len()
+            && green_convergence.utf16() as usize == base.source.utf16_len()
+        {
+            None
+        } else {
+            Some(runtime.mint_exact_unchanged_suffix_witness(
+                base.source,
+                green_convergence.bytes() as usize,
+                green_convergence.utf16() as usize,
+            )?)
+        };
+
+        self.checkpoint_selection.convergence = AdoptionConvergence::Ordinary {
+            checkpoint_index: next_index,
+        };
+        self.target_parser_end = target_parser_end;
+        self.green_suffix = green_suffix;
+        self.phase = AdoptionPhase::ParseFragment;
+        Ok(())
+    }
+
+    fn select_terminal_convergence_if_bounded(
+        &mut self,
+    ) -> Result<(), M11PersistentRecursiveGreenSessionError> {
+        let search = self.later_convergence_search.ok_or(
+            M11PersistentRecursiveGreenSessionError::InvalidState(
+                "terminal convergence fallback omitted its local search envelope",
+            ),
+        )?;
+        let terminal_bytes = self
+            .target
+            .byte_len()
+            .checked_sub(search.first_target_parser_end)
+            .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "terminal convergence target boundary regressed",
+            ))?;
+        if terminal_bytes > LATER_CONVERGENCE_MAX_BYTES
+            || search.physical_lines > LATER_CONVERGENCE_MAX_PHYSICAL_LINES
+        {
+            self.phase = AdoptionPhase::CleanFallbackRequired;
+            return Ok(());
+        }
+        self.checkpoint_selection.convergence = AdoptionConvergence::Terminal;
+        self.target_parser_end = self.target.byte_len();
+        self.green_suffix = None;
+        self.phase = AdoptionPhase::ParseFragment;
+        Ok(())
+    }
+
     fn offer_pending_command(&mut self) -> Result<(), M11PersistentRecursiveGreenSessionError> {
         let command = *self.controller_mut()?.pending_command().ok_or(
             M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -1703,7 +1944,7 @@ impl M11PersistentRecursiveGreenAdoption {
         self.work.green_tree_nodes_rebuilt = receipt.green().tree_nodes_visited();
         if self
             .recursive_green_splice
-            .replace(receipt.green_splice_selection())
+            .replace(receipt.green_splice_selection().clone())
             .is_some()
         {
             return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -1771,6 +2012,7 @@ impl M11PersistentRecursiveGreenAdoption {
         self.green_prefix = None;
         self.green_suffix = None;
         self.reference_prefix = None;
+        self.later_convergence_search = None;
         self.adopted_checkpoints = None;
         self.cancelling = true;
         Ok(())
@@ -2274,6 +2516,7 @@ impl M11PersistentRecursiveGreenSession {
                     restart_index,
                     convergence,
                 },
+                later_convergence_search: None,
                 green_prefix,
                 document_start,
                 green_suffix,

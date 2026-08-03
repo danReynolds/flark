@@ -42,8 +42,8 @@ use crate::inline_projection::{
     PersistentM11InlineProjectionHostCursor, PersistentM11InlineProjectionHostCursorPoll,
 };
 use crate::recursive_green::{
-    M11RecursiveGreenCoveragePart, M11RecursiveGreenLocation, M11RecursiveGreenLogicalAtom,
-    M11RecursiveGreenPoint, M11RecursiveGreenPointBudgetExceeded,
+    M11RecursiveGreenCoveragePart, M11RecursiveGreenError, M11RecursiveGreenLocation,
+    M11RecursiveGreenLogicalAtom, M11RecursiveGreenPoint, M11RecursiveGreenPointBudgetExceeded,
     M11RecursiveGreenPointQueryOutcome, M11RecursiveGreenRenderableRow,
     M11RecursiveGreenRowBudgetExceeded, M11RecursiveGreenRowEditCapability,
     M11RecursiveGreenRowOrdinalWindow, M11RecursiveGreenRowPathFrame,
@@ -2569,6 +2569,14 @@ impl M11HostError {
                     | CandidateHostError::Reference(_)
                     | CandidateHostError::BlockSequence(_)
                     | CandidateHostError::SourceFacts(_)
+                    | CandidateHostError::RecursiveGreen(
+                        M11RecursiveGreenError::InvalidEvent
+                            | M11RecursiveGreenError::IncompleteCoverage
+                            | M11RecursiveGreenError::InvalidPoint
+                            | M11RecursiveGreenError::SourceAuthorityMismatch
+                            | M11RecursiveGreenError::CounterOverflow
+                            | M11RecursiveGreenError::Corrupt(_)
+                    )
             )
         })
     }
@@ -2644,6 +2652,14 @@ impl M11HostError {
                             | ArenaError::BuildCapacityExceeded
                             | ArenaError::AllocationFailed
                     )
+                    | CandidateHostError::RecursiveGreen(M11RecursiveGreenError::Arena(
+                        ArenaError::CapacityExceeded
+                            | ArenaError::PayloadTooLarge
+                            | ArenaError::TooManyChildren
+                            | ArenaError::PayloadBudgetExceeded
+                            | ArenaError::BuildCapacityExceeded
+                            | ArenaError::AllocationFailed
+                    ))
             )
         })
     }
@@ -3162,11 +3178,14 @@ impl M11CandidateHost {
 #[cfg(test)]
 mod tests {
     use super::{
-        host_block_kind, M11CandidateHost, M11HostBlockKind, M11HostInlineProjectionFact,
-        M11HostInlineProjectionKind, M11HostSourceVersion,
+        host_block_kind, M11CandidateHost, M11HostBlockKind, M11HostError,
+        M11HostInlineProjectionFact, M11HostInlineProjectionKind, M11HostSourceVersion,
     };
     use crate::block_sequence::M11BlockSequenceEntryKind;
+    use crate::host_store::CandidateHostError;
     use crate::inline_projection::{M11InlineProjectionFact, M11InlineProjectionKind};
+    use crate::recursive_green::M11RecursiveGreenError;
+    use crate::storage::ArenaError;
 
     #[test]
     fn structured_block_kind_maps_to_the_host_surface() {
@@ -3226,5 +3245,26 @@ mod tests {
 
         host.begin_close().expect("close host");
         while !host.poll_close(1).expect("poll close") {}
+    }
+
+    #[test]
+    fn recursive_green_host_failures_keep_corruption_and_resource_classification() {
+        let corrupt = M11HostError::from(CandidateHostError::RecursiveGreen(
+            M11RecursiveGreenError::Corrupt("forged sparse claim"),
+        ));
+        assert!(corrupt.is_invalid());
+        assert!(!corrupt.is_resource_limit());
+
+        let allocation = M11HostError::from(CandidateHostError::RecursiveGreen(
+            M11RecursiveGreenError::Arena(ArenaError::AllocationFailed),
+        ));
+        assert!(!allocation.is_invalid());
+        assert!(allocation.is_resource_limit());
+
+        let internal = M11HostError::from(CandidateHostError::RecursiveGreen(
+            M11RecursiveGreenError::InvalidState,
+        ));
+        assert!(!internal.is_invalid());
+        assert!(!internal.is_resource_limit());
     }
 }

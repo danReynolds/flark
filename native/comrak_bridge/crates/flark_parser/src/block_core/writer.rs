@@ -389,7 +389,7 @@ struct M11BlockRestartProvenance {
 }
 
 /// Parser- and storage-side bounded work for one authenticated local adoption.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct M11BlockStructuralAdoptionReceipt {
     green: M11RecursiveGreenStructuralSpliceReceipt,
     high_level_events: usize,
@@ -398,24 +398,24 @@ pub struct M11BlockStructuralAdoptionReceipt {
 
 impl M11BlockStructuralAdoptionReceipt {
     #[must_use]
-    pub const fn green(self) -> M11RecursiveGreenStructuralSpliceReceipt {
-        self.green
+    pub const fn green(&self) -> &M11RecursiveGreenStructuralSpliceReceipt {
+        &self.green
     }
 
-    /// Exact base and target Green event intervals selected by the writer's
-    /// authenticated restart/convergence splice.
+    /// Exact changed Green leaf segments selected by the writer's
+    /// authenticated restart/convergence splice and spanning repairs.
     #[must_use]
-    pub const fn green_splice_selection(self) -> M11RecursiveGreenStructuralSpliceSelection {
+    pub const fn green_splice_selection(&self) -> &M11RecursiveGreenStructuralSpliceSelection {
         self.green.selection()
     }
 
     #[must_use]
-    pub const fn high_level_events(self) -> usize {
+    pub const fn high_level_events(&self) -> usize {
         self.high_level_events
     }
 
     #[must_use]
-    pub const fn fragment_source_bytes_read(self) -> u64 {
+    pub const fn fragment_source_bytes_read(&self) -> u64 {
         self.fragment_source_bytes_read
     }
 }
@@ -1545,6 +1545,153 @@ impl M11BlockWriter {
             event_cut: receipt.events,
             green_boundary: Some(build.capture_structural_boundary()?),
         })
+    }
+
+    /// Checks one ordinary suffix boundary without consuming fragment, Green,
+    /// checkpoint, or lineage authority. A `false` result means the caller may
+    /// continue the definitive parse and try a later authenticated checkpoint.
+    pub(crate) fn probe_converged_fragment(
+        &self,
+        parser: M11DirectBlockRestart,
+        target_restart: &M11BlockRestartCheckpoint,
+        old_convergence: &M11BlockRestartCheckpoint,
+        runtime: &DocumentRuntime,
+        base: &M11RecursiveGreenRoot,
+        prefix: Option<&ExactUnchangedPrefixWitness>,
+        suffix: Option<&ExactUnchangedSuffixWitness>,
+    ) -> Result<bool, M11BlockRestartError> {
+        let fresh = self.capture_restart_checkpoint(parser)?;
+        let provenance = self
+            .restart_provenance
+            .as_ref()
+            .ok_or(M11BlockRestartError::Pairing(
+                "writer is not an active local restart fragment",
+            ))?;
+        if provenance.base_source != base.source()
+            || provenance.base_maximum_frame_id != base.maximum_frame_id()
+            || old_convergence.source != base.source()
+            || fresh.source != self.source
+            || fresh.source
+                != runtime
+                    .current_source_version()
+                    .ok_or(M11BlockRestartError::Pairing(
+                        "target source is not installed",
+                    ))?
+        {
+            return Err(M11BlockRestartError::Pairing(
+                "convergence probe crossed source or checkpoint authority",
+            ));
+        }
+        if provenance.base_event_cut >= old_convergence.event_cut
+            || provenance.target_accepted_start.bytes() >= fresh.accepted_physical.bytes()
+            || !fresh
+                .parser
+                .is_future_compatible_with(&old_convergence.parser)
+            || !same_open_path(&fresh.open, &old_convergence.open)
+            || !same_staged_role(fresh.staged, old_convergence.staged)
+            || fresh.parser.last_line_length() != old_convergence.parser.last_line_length()
+        {
+            return Ok(false);
+        }
+        if target_restart.source != fresh.source
+            || target_restart.green_boundary.is_some()
+            || target_restart.event_cut != provenance.base_event_cut
+            || target_restart.accepted_physical != provenance.target_accepted_start
+            || target_restart.logical != provenance.target_logical_start
+            || target_restart.restart_join != self.restart_join
+            || !same_staged_role(target_restart.staged, provenance.start_staged)
+            || !boundary_matches_open(&provenance.start_boundary, &target_restart.open)
+        {
+            return Err(M11BlockRestartError::Pairing(
+                "target restart checkpoint was not captured at this fragment start",
+            ));
+        }
+
+        let start_physical = provenance.start_boundary.physical_metric();
+        let start_logical = provenance.start_boundary.logical_metric();
+        if provenance.start_boundary.source() != base.source()
+            || provenance.start_boundary.event_cut() != provenance.base_event_cut
+            || start_physical.bytes() != provenance.target_accepted_start.bytes()
+            || start_physical.utf16() != provenance.target_accepted_start.utf16()
+            || start_logical.bytes() != provenance.target_logical_start.bytes()
+            || start_logical.utf16() != provenance.target_logical_start.utf16()
+            || provenance.start_boundary.open_path().len() != provenance.external_open_depth
+            || !boundary_matches_open(&provenance.start_boundary, &self.open)
+        {
+            return Err(M11BlockRestartError::Pairing(
+                "joined restart no longer matches its Green boundary",
+            ));
+        }
+
+        let end_boundary =
+            old_convergence
+                .green_boundary
+                .as_ref()
+                .ok_or(M11BlockRestartError::Pairing(
+                    "base convergence checkpoint lacks committed Green authority",
+                ))?;
+        if !boundary_matches_open(end_boundary, &old_convergence.open)
+            || end_boundary.event_cut() != old_convergence.event_cut
+            || end_boundary.physical_metric().bytes() != old_convergence.accepted_physical.bytes()
+            || end_boundary.physical_metric().utf16() != old_convergence.accepted_physical.utf16()
+            || end_boundary.logical_metric().bytes() != old_convergence.logical.bytes()
+            || end_boundary.logical_metric().utf16() != old_convergence.logical.utf16()
+        {
+            return Err(M11BlockRestartError::Pairing(
+                "base convergence checkpoint differs from its Green boundary",
+            ));
+        }
+
+        let start_byte = usize::try_from(provenance.target_accepted_start.bytes())
+            .map_err(|_| M11BlockRestartError::Pairing("restart byte cut fits usize"))?;
+        let start_utf16 = usize::try_from(provenance.target_accepted_start.utf16())
+            .map_err(|_| M11BlockRestartError::Pairing("restart UTF-16 cut fits usize"))?;
+        let old_end_byte = usize::try_from(old_convergence.accepted_physical.bytes())
+            .map_err(|_| M11BlockRestartError::Pairing("base end byte cut fits usize"))?;
+        let old_end_utf16 = usize::try_from(old_convergence.accepted_physical.utf16())
+            .map_err(|_| M11BlockRestartError::Pairing("base end UTF-16 cut fits usize"))?;
+        let fresh_end_byte = usize::try_from(fresh.accepted_physical.bytes())
+            .map_err(|_| M11BlockRestartError::Pairing("target end byte cut fits usize"))?;
+        let fresh_end_utf16 = usize::try_from(fresh.accepted_physical.utf16())
+            .map_err(|_| M11BlockRestartError::Pairing("target end UTF-16 cut fits usize"))?;
+        let suffix_matches = match suffix {
+            Some(suffix) => {
+                suffix.base() == base.source()
+                    && suffix.target() == fresh.source
+                    && suffix.base_byte_start() == old_end_byte
+                    && suffix.base_utf16_start() == old_end_utf16
+                    && suffix.target_byte_start() == fresh_end_byte
+                    && suffix.target_utf16_start() == fresh_end_utf16
+            }
+            None => {
+                old_end_byte == base.source().byte_len()
+                    && old_end_utf16 == base.source().utf16_len()
+                    && fresh_end_byte == fresh.source.byte_len()
+                    && fresh_end_utf16 == fresh.source.utf16_len()
+            }
+        };
+        let prefix_matches = match prefix {
+            Some(prefix) => {
+                prefix.base() == base.source()
+                    && prefix.target() == fresh.source
+                    && prefix.byte_end() == start_byte
+                    && prefix.utf16_end() == start_utf16
+            }
+            None => start_byte == 0 && start_utf16 == 0,
+        };
+        if !prefix_matches || !suffix_matches {
+            return Err(M11BlockRestartError::Pairing(
+                "prefix/suffix lineage differs from restart convergence cuts",
+            ));
+        }
+
+        match plan_open_row_exit_repairs(&fresh.open, &old_convergence.open) {
+            Ok(_) => Ok(true),
+            Err(M11BlockRestartError::Pairing(
+                "ordinary spanning Exit state requires clean fallback",
+            )) => Ok(false),
+            Err(error) => Err(error),
+        }
     }
 
     /// Authenticates parser convergence, adopts the bounded target fragment,

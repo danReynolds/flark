@@ -58,10 +58,11 @@ use crate::recursive_green::{
     plan_persistent_m11_recursive_green_semantic_splice,
     validate_imported_m11_recursive_green_node, M11RecursiveGreenError,
     M11RecursiveGreenHostReplay, M11RecursiveGreenHostReplayPoll, M11RecursiveGreenHostSpliceClaim,
-    M11RecursiveGreenHostSpliceWork, M11RecursiveGreenPoint, M11RecursiveGreenPointQueryOutcome,
-    M11RecursiveGreenRowOrdinalWindow, M11RecursiveGreenRowQueryLimits,
-    M11RecursiveGreenRowQueryOutcome, PersistentM11RecursiveGreenRoleDescriptor,
-    PersistentM11RecursiveGreenRootClaim, PERSISTENT_RECURSIVE_GREEN_ROLE_DESCRIPTOR_BYTES,
+    M11RecursiveGreenHostSpliceSegmentClaim, M11RecursiveGreenHostSpliceWork,
+    M11RecursiveGreenPoint, M11RecursiveGreenPointQueryOutcome, M11RecursiveGreenRowOrdinalWindow,
+    M11RecursiveGreenRowQueryLimits, M11RecursiveGreenRowQueryOutcome,
+    PersistentM11RecursiveGreenRoleDescriptor, PersistentM11RecursiveGreenRootClaim,
+    PERSISTENT_RECURSIVE_GREEN_ROLE_DESCRIPTOR_BYTES,
 };
 use crate::reference_root::{
     ReferenceRoleDigestValidator, ReferenceRoleValidationPoll, ReferenceRootError,
@@ -107,18 +108,18 @@ const SNAPSHOT_EXACT_BASE_SPLICE_SOURCE_FACTS_OP: u8 = 2;
 const SNAPSHOT_EXACT_BASE_SPLICE_BLOCKS_OP: u8 = 3;
 const SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_OP: u8 = 4;
 const SNAPSHOT_EXACT_BASE_OPERATION_VERSION: u8 = 1;
+const SNAPSHOT_EXACT_BASE_RECURSIVE_GREEN_OPERATION_VERSION: u8 = 2;
 const SNAPSHOT_EXACT_BASE_REUSE_REFERENCES_BYTES: usize = 72;
 const SNAPSHOT_EXACT_BASE_SPLICE_SOURCE_FACTS_BYTES: usize = 320;
 const SNAPSHOT_EXACT_BASE_SPLICE_BLOCKS_BYTES: usize =
     8 + 8 + (8 * 8) + (4 * 56) + (4 * PERSISTENT_BLOCK_ROLE_DESCRIPTOR_BYTES);
-const SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_BYTES: usize =
-    8 + 8 + (8 * 8) + (2 * 56) + (2 * PERSISTENT_RECURSIVE_GREEN_ROLE_DESCRIPTOR_BYTES);
+const SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_FIXED_BYTES: usize =
+    8 + 8 + 8 + (2 * 56) + (2 * PERSISTENT_RECURSIVE_GREEN_ROLE_DESCRIPTOR_BYTES);
+const SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_SEGMENT_BYTES: usize = 8 * 8;
 const SNAPSHOT_EXACT_BASE_OPERATION_TABLE_BYTES: usize =
     SNAPSHOT_EXACT_BASE_REUSE_REFERENCES_BYTES + SNAPSHOT_EXACT_BASE_SPLICE_SOURCE_FACTS_BYTES;
 const SNAPSHOT_EXACT_BASE_BLOCK_OPERATION_TABLE_BYTES: usize =
     SNAPSHOT_EXACT_BASE_OPERATION_TABLE_BYTES + SNAPSHOT_EXACT_BASE_SPLICE_BLOCKS_BYTES;
-const SNAPSHOT_EXACT_BASE_RECURSIVE_GREEN_OPERATION_TABLE_BYTES: usize =
-    SNAPSHOT_EXACT_BASE_OPERATION_TABLE_BYTES + SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_BYTES;
 const SNAPSHOT_EXACT_BASE_BASE_AUTHORITY_BYTES: usize = 64;
 const SNAPSHOT_EXACT_BASE_BEGIN_BYTES: usize = CANDIDATE_HEADER_BYTES
     + 12
@@ -128,13 +129,10 @@ const SNAPSHOT_EXACT_BASE_BLOCK_BEGIN_BYTES: usize = CANDIDATE_HEADER_BYTES
     + 12
     + SNAPSHOT_EXACT_BASE_BASE_AUTHORITY_BYTES
     + SNAPSHOT_EXACT_BASE_BLOCK_OPERATION_TABLE_BYTES;
-const SNAPSHOT_EXACT_BASE_RECURSIVE_GREEN_BEGIN_BYTES: usize = CANDIDATE_HEADER_BYTES
-    + 12
-    + SNAPSHOT_EXACT_BASE_BASE_AUTHORITY_BYTES
-    + SNAPSHOT_EXACT_BASE_RECURSIVE_GREEN_OPERATION_TABLE_BYTES;
 const SNAPSHOT_SOURCE_FACTS_REPLACEMENT_HEADER_BYTES: usize = 16;
 const SNAPSHOT_BLOCK_REPLACEMENT_HEADER_BYTES: usize = 16;
 const SNAPSHOT_RECURSIVE_GREEN_REPLACEMENT_HEADER_BYTES: usize = 16;
+pub(crate) const M11_MAXIMUM_RECURSIVE_GREEN_SPLICE_SEGMENTS: usize = 64;
 const SNAPSHOT_SOURCE_FACTS_OPERATION_INDEX: u8 = 1;
 const SNAPSHOT_BLOCK_OPERATION_INDEX: u8 = 2;
 const SNAPSHOT_RECURSIVE_GREEN_OPERATION_INDEX: u8 = 2;
@@ -401,10 +399,13 @@ enum ExactBaseStructuralRanges {
         base: std::ops::Range<u64>,
         target: std::ops::Range<u64>,
     },
-    RecursiveGreen {
-        base: std::ops::Range<u64>,
-        target: std::ops::Range<u64>,
-    },
+    RecursiveGreen(Box<[ExactBaseRecursiveGreenSegmentRanges]>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ExactBaseRecursiveGreenSegmentRanges {
+    base: std::ops::Range<u64>,
+    target: std::ops::Range<u64>,
 }
 
 struct ExactBaseBlockSpliceEncodeState {
@@ -424,6 +425,7 @@ struct ExactBaseRecursiveGreenSpliceEncodeState {
     target_green_metadata: RoleMetadata,
     target_root: Option<ArenaId>,
     virtual_ordinal: u64,
+    replacement_segment: usize,
     next_replacement_page: u64,
 }
 
@@ -578,17 +580,38 @@ impl<'a> CandidateSnapshotEncoder<'a> {
         base_green_event_range: std::ops::Range<u64>,
         target_green_event_range: std::ops::Range<u64>,
     ) -> Result<Self, CandidateHostError> {
+        Self::new_exact_base_delta_with_recursive_green_splices(
+            arena,
+            base,
+            target,
+            base_source_facts_page_range,
+            target_source_facts_page_range,
+            &[(base_green_event_range, target_green_event_range)],
+        )
+    }
+
+    /// Exact-base transaction carrying multiple disjoint recursive-Green leaf
+    /// replacements. The ranges remain semantic authority; complete RGL1
+    /// leaves are selected independently before transport.
+    pub(crate) fn new_exact_base_delta_with_recursive_green_splices(
+        arena: &'a PageArena,
+        base: &'a PublishedManifest,
+        target: &'a PublishedManifest,
+        base_source_facts_page_range: std::ops::Range<u64>,
+        target_source_facts_page_range: std::ops::Range<u64>,
+        green_event_ranges: &[(std::ops::Range<u64>, std::ops::Range<u64>)],
+    ) -> Result<Self, CandidateHostError> {
         Ok(Self {
             arena,
-            state: CandidateSnapshotEncoderState::new_exact_base_delta_with_recursive_green_splice(
-                arena,
-                base,
-                target,
-                base_source_facts_page_range,
-                target_source_facts_page_range,
-                base_green_event_range,
-                target_green_event_range,
-            )?,
+            state:
+                CandidateSnapshotEncoderState::new_exact_base_delta_with_recursive_green_splices(
+                    arena,
+                    base,
+                    target,
+                    base_source_facts_page_range,
+                    target_source_facts_page_range,
+                    green_event_ranges,
+                )?,
             _publication_borrow: PhantomData,
         })
     }
@@ -708,16 +731,43 @@ impl CandidateSnapshotEncoderState {
         base_green_event_range: std::ops::Range<u64>,
         target_green_event_range: std::ops::Range<u64>,
     ) -> Result<Self, CandidateHostError> {
+        Self::new_exact_base_delta_with_recursive_green_splices(
+            arena,
+            base,
+            target,
+            base_source_facts_page_range,
+            target_source_facts_page_range,
+            &[(base_green_event_range, target_green_event_range)],
+        )
+    }
+
+    pub(crate) fn new_exact_base_delta_with_recursive_green_splices(
+        arena: &PageArena,
+        base: &PublishedManifest,
+        target: &PublishedManifest,
+        base_source_facts_page_range: std::ops::Range<u64>,
+        target_source_facts_page_range: std::ops::Range<u64>,
+        green_event_ranges: &[(std::ops::Range<u64>, std::ops::Range<u64>)],
+    ) -> Result<Self, CandidateHostError> {
+        let mut segments = Vec::new();
+        segments
+            .try_reserve_exact(green_event_ranges.len())
+            .map_err(|_| CandidateHostError::AllocationFailed)?;
+        segments.extend(
+            green_event_ranges
+                .iter()
+                .cloned()
+                .map(|(base, target)| ExactBaseRecursiveGreenSegmentRanges { base, target }),
+        );
         Self::new_exact_base_delta_inner(
             arena,
             base,
             target,
             base_source_facts_page_range,
             target_source_facts_page_range,
-            Some(ExactBaseStructuralRanges::RecursiveGreen {
-                base: base_green_event_range,
-                target: target_green_event_range,
-            }),
+            Some(ExactBaseStructuralRanges::RecursiveGreen(
+                segments.into_boxed_slice(),
+            )),
         )
     }
 
@@ -843,10 +893,7 @@ impl CandidateSnapshotEncoderState {
                     },
                 ))
             }
-            Some(ExactBaseStructuralRanges::RecursiveGreen {
-                base: base_event_range,
-                target: target_event_range,
-            }) => {
+            Some(ExactBaseStructuralRanges::RecursiveGreen(segments)) => {
                 let base_green = persistent_recursive_green_manifest_role(
                     arena,
                     &base_descriptor,
@@ -857,33 +904,92 @@ impl CandidateSnapshotEncoderState {
                     &target_descriptor,
                     target_authority,
                 )?;
-                let base_plan = plan_persistent_m11_recursive_green_semantic_splice(
-                    arena,
-                    base_green.root,
-                    base_green.descriptor,
-                    base_event_range.clone(),
-                )?;
-                let target_plan = plan_persistent_m11_recursive_green_semantic_splice(
-                    arena,
-                    target_green.root,
-                    target_green.descriptor,
-                    target_event_range.clone(),
-                )?;
-                if base_event_range.start != target_event_range.start
-                    || base_plan.storage_page_range.start != target_plan.storage_page_range.start
+                if segments.is_empty()
+                    || segments.len() > M11_MAXIMUM_RECURSIVE_GREEN_SPLICE_SEGMENTS
                 {
                     return Err(CandidateHostError::InvalidFrame(
-                        "recursive Green splice ranges do not share one semantic boundary",
+                        "recursive Green splice omitted its segments",
                     ));
                 }
+                let mut claims = Vec::new();
+                claims
+                    .try_reserve_exact(segments.len())
+                    .map_err(|_| CandidateHostError::AllocationFailed)?;
+                let mut previous_base_event_end = 0_u64;
+                let mut previous_target_event_end = 0_u64;
+                let mut previous_base_storage_end = 0_u64;
+                let mut previous_target_storage_end = 0_u64;
+                for (index, segment) in segments.iter().enumerate() {
+                    let base_plan = plan_persistent_m11_recursive_green_semantic_splice(
+                        arena,
+                        base_green.root,
+                        base_green.descriptor,
+                        segment.base.clone(),
+                    )?;
+                    let target_plan = plan_persistent_m11_recursive_green_semantic_splice(
+                        arena,
+                        target_green.root,
+                        target_green.descriptor,
+                        segment.target.clone(),
+                    )?;
+                    let base_event_gap = segment
+                        .base
+                        .start
+                        .checked_sub(previous_base_event_end)
+                        .ok_or(CandidateHostError::InvalidFrame(
+                            "recursive Green base segments overlap",
+                        ))?;
+                    let target_event_gap = segment
+                        .target
+                        .start
+                        .checked_sub(previous_target_event_end)
+                        .ok_or(CandidateHostError::InvalidFrame(
+                            "recursive Green target segments overlap",
+                        ))?;
+                    let base_storage_gap = base_plan
+                        .storage_page_range
+                        .start
+                        .checked_sub(previous_base_storage_end)
+                        .ok_or(CandidateHostError::InvalidFrame(
+                            "recursive Green base storage segments overlap",
+                        ))?;
+                    let target_storage_gap = target_plan
+                        .storage_page_range
+                        .start
+                        .checked_sub(previous_target_storage_end)
+                        .ok_or(CandidateHostError::InvalidFrame(
+                            "recursive Green target storage segments overlap",
+                        ))?;
+                    if segment.base.start >= segment.base.end
+                        || segment.target.start >= segment.target.end
+                        || base_event_gap != target_event_gap
+                        || base_storage_gap != target_storage_gap
+                        || (index == 0
+                            && (segment.base.start != segment.target.start
+                                || base_plan.storage_page_range.start
+                                    != target_plan.storage_page_range.start))
+                    {
+                        return Err(CandidateHostError::InvalidFrame(
+                            "recursive Green splice segments changed an unchanged gap",
+                        ));
+                    }
+                    previous_base_event_end = segment.base.end;
+                    previous_target_event_end = segment.target.end;
+                    previous_base_storage_end = base_plan.storage_page_range.end;
+                    previous_target_storage_end = target_plan.storage_page_range.end;
+                    claims.push(M11RecursiveGreenHostSpliceSegmentClaim {
+                        base_event_range: segment.base.clone(),
+                        target_event_range: segment.target.clone(),
+                        base_storage_range: base_plan.storage_page_range,
+                        target_storage_range: target_plan.storage_page_range,
+                    });
+                }
                 let green_index = role_index(CandidateRole::Green);
+                let next_replacement_page = claims[0].target_storage_range.start;
                 Some(ExactBaseStructuralSpliceEncodeState::RecursiveGreen(
                     ExactBaseRecursiveGreenSpliceEncodeState {
                         claim: M11RecursiveGreenHostSpliceClaim {
-                            base_event_range,
-                            target_event_range,
-                            base_storage_range: base_plan.storage_page_range,
-                            target_storage_range: target_plan.storage_page_range.clone(),
+                            segments: claims.into_boxed_slice(),
                             base_descriptor: base_green.descriptor,
                             target_descriptor: target_green.descriptor,
                         },
@@ -891,7 +997,8 @@ impl CandidateSnapshotEncoderState {
                         target_green_metadata: target_descriptor.metadata[green_index],
                         target_root: target_green.root,
                         virtual_ordinal: SNAPSHOT_ABSENT_VIRTUAL_ORDINAL,
-                        next_replacement_page: target_plan.storage_page_range.start,
+                        replacement_segment: 0,
+                        next_replacement_page,
                     },
                 ))
             }
@@ -1061,28 +1168,50 @@ impl CandidateSnapshotEncoderState {
                             ))?;
                     Some((payload, encode_block_replacement_frame(ordinal, payload)?))
                 }
-                Some(ExactBaseStructuralSpliceEncodeState::RecursiveGreen(green))
-                    if green.next_replacement_page < green.claim.target_storage_range.end =>
-                {
-                    let ordinal = green.next_replacement_page;
-                    let payload = persistent_m11_recursive_green_storage_page_at(
-                        arena,
-                        green.target_root,
-                        ordinal,
-                    )?
-                    .ok_or(CandidateHostError::InvalidFrame(
-                        "target recursive Green replacement page disappeared",
-                    ))?;
-                    green.next_replacement_page =
-                        ordinal
-                            .checked_add(1)
-                            .ok_or(CandidateHostError::InvalidFrame(
-                                "recursive Green replacement page ordinal overflow",
-                            ))?;
-                    Some((
-                        payload,
-                        encode_recursive_green_replacement_frame(ordinal, payload)?,
-                    ))
+                Some(ExactBaseStructuralSpliceEncodeState::RecursiveGreen(green)) => {
+                    while green.replacement_segment < green.claim.segments().len()
+                        && green.next_replacement_page
+                            >= green.claim.segments()[green.replacement_segment]
+                                .target_storage_range
+                                .end
+                    {
+                        green.replacement_segment += 1;
+                        if let Some(segment) = green.claim.segments().get(green.replacement_segment)
+                        {
+                            green.next_replacement_page = segment.target_storage_range.start;
+                        }
+                    }
+                    match green.claim.segments().get(green.replacement_segment) {
+                        Some(segment) => {
+                            if green.next_replacement_page >= segment.target_storage_range.end {
+                                return Err(CandidateHostError::InvalidFrame(
+                                    "recursive Green replacement cursor escaped its segment",
+                                ));
+                            }
+                            let ordinal = green.next_replacement_page;
+                            let payload = persistent_m11_recursive_green_storage_page_at(
+                                arena,
+                                green.target_root,
+                                ordinal,
+                            )?
+                            .ok_or(
+                                CandidateHostError::InvalidFrame(
+                                    "target recursive Green replacement page disappeared",
+                                ),
+                            )?;
+                            green.next_replacement_page =
+                                ordinal
+                                    .checked_add(1)
+                                    .ok_or(CandidateHostError::InvalidFrame(
+                                        "recursive Green replacement page ordinal overflow",
+                                    ))?;
+                            Some((
+                                payload,
+                                encode_recursive_green_replacement_frame(ordinal, payload)?,
+                            ))
+                        }
+                        None => None,
+                    }
                 }
                 _ => None,
             };
@@ -1152,7 +1281,7 @@ impl CandidateSnapshotEncoderState {
                         block.next_replacement_page != block.claim.target_storage_range.end
                     }
                     ExactBaseStructuralSpliceEncodeState::RecursiveGreen(green) => {
-                        green.next_replacement_page != green.claim.target_storage_range.end
+                        green.replacement_segment != green.claim.segments().len()
                     }
                 })
         {
@@ -1890,9 +2019,62 @@ struct ExactBaseRecursiveGreenSpliceHostState {
     target_root: Option<ArenaId>,
     target_green_metadata: RoleMetadata,
     target_descriptor: PersistentM11RecursiveGreenRoleDescriptor,
+    replacement_ranges: Box<[std::ops::Range<u64>]>,
+    replacement_segment: usize,
     next_replacement_page: u64,
-    replacement_page_end: u64,
     work: Option<M11RecursiveGreenHostSpliceWork>,
+}
+
+impl ExactBaseRecursiveGreenSpliceHostState {
+    fn has_current_replacement_page(&self) -> Result<bool, CandidateHostError> {
+        let Some(range) = self.replacement_ranges.get(self.replacement_segment) else {
+            return Ok(false);
+        };
+        if self.next_replacement_page < range.start || self.next_replacement_page > range.end {
+            return Err(CandidateHostError::InvalidFrame(
+                "recursive Green replacement cursor escaped its range",
+            ));
+        }
+        Ok(self.next_replacement_page < range.end)
+    }
+
+    fn finish_current_replacement_segment(&mut self) -> Result<bool, CandidateHostError> {
+        let range = self
+            .replacement_ranges
+            .get(self.replacement_segment)
+            .ok_or(CandidateHostError::InvalidFrame(
+                "recursive Green replacement finished twice",
+            ))?;
+        if self.next_replacement_page != range.end {
+            return Err(CandidateHostError::InvalidFrame(
+                "recursive Green replacement segment is incomplete",
+            ));
+        }
+        self.replacement_segment =
+            self.replacement_segment
+                .checked_add(1)
+                .ok_or(CandidateHostError::InvalidFrame(
+                    "recursive Green replacement segment overflow",
+                ))?;
+        while self
+            .replacement_ranges
+            .get(self.replacement_segment)
+            .is_some_and(std::ops::Range::is_empty)
+        {
+            self.replacement_segment =
+                self.replacement_segment
+                    .checked_add(1)
+                    .ok_or(CandidateHostError::InvalidFrame(
+                        "recursive Green replacement segment overflow",
+                    ))?;
+        }
+        if let Some(next) = self.replacement_ranges.get(self.replacement_segment) {
+            self.next_replacement_page = next.start;
+            Ok(false)
+        } else {
+            Ok(true)
+        }
+    }
 }
 
 enum HostOfferPhase {
@@ -2321,17 +2503,43 @@ impl CandidateHostStore {
             (
                 Some(DecodedExactBaseStructuralSplice::RecursiveGreen(green)),
                 Some(ExactBaseStructuralReplay::RecursiveGreen(replay)),
-            ) => Some(ExactBaseStructuralSpliceHostState::RecursiveGreen(
-                ExactBaseRecursiveGreenSpliceHostState {
-                    replay,
-                    target_root: None,
-                    target_green_metadata: green.target_green_metadata,
-                    target_descriptor: green.claim.target_descriptor,
-                    next_replacement_page: green.claim.target_storage_range.start,
-                    replacement_page_end: green.claim.target_storage_range.end,
-                    work: None,
-                },
-            )),
+            ) => {
+                if green.claim.segments().is_empty() {
+                    return Err(CandidateHostError::InvalidFrame(
+                        "recursive Green replay omitted its first segment",
+                    ));
+                }
+                let mut replacement_ranges = Vec::new();
+                replacement_ranges
+                    .try_reserve_exact(green.claim.segments().len())
+                    .map_err(|_| CandidateHostError::AllocationFailed)?;
+                replacement_ranges.extend(
+                    green
+                        .claim
+                        .segments()
+                        .iter()
+                        .map(|segment| segment.target_storage_range.clone()),
+                );
+                let replacement_segment = replacement_ranges
+                    .iter()
+                    .position(|range| !range.is_empty())
+                    .unwrap_or(replacement_ranges.len());
+                let next_replacement_page = replacement_ranges
+                    .get(replacement_segment)
+                    .map_or(0, |range| range.start);
+                Some(ExactBaseStructuralSpliceHostState::RecursiveGreen(
+                    ExactBaseRecursiveGreenSpliceHostState {
+                        replay,
+                        target_root: None,
+                        target_green_metadata: green.target_green_metadata,
+                        target_descriptor: green.claim.target_descriptor,
+                        replacement_ranges: replacement_ranges.into_boxed_slice(),
+                        replacement_segment,
+                        next_replacement_page,
+                        work: None,
+                    },
+                ))
+            }
             (None, None) => None,
             _ => {
                 let build = session.suspend()?;
@@ -2696,7 +2904,13 @@ impl CandidateHostStore {
                 ))
             }
         };
-        if green.next_replacement_page >= green.replacement_page_end {
+        let replacement_range = green
+            .replacement_ranges
+            .get(green.replacement_segment)
+            .ok_or(CandidateHostError::InvalidFrame(
+                "recursive Green replacement segment is complete",
+            ))?;
+        if green.next_replacement_page >= replacement_range.end {
             return Err(CandidateHostError::InvalidFrame(
                 "too many recursive Green replacement pages",
             ));
@@ -3025,7 +3239,7 @@ impl CandidateHostStore {
                                 ))
                             }
                         };
-                        if green.next_replacement_page < green.replacement_page_end {
+                        if green.has_current_replacement_page()? {
                             return Ok(CandidateHostReplayPoll {
                                 transitions,
                                 ready_for_replacement_page: true,
@@ -3057,8 +3271,11 @@ impl CandidateHostStore {
                         let poll = green.replay.poll_replacement(&mut session)?;
                         transitions += 1;
                         if poll == M11RecursiveGreenHostReplayPoll::Complete {
+                            if !green.has_current_replacement_page()? {
+                                green.finish_current_replacement_segment()?;
+                            }
                             active.phase = HostOfferPhase::ReceivingRecursiveGreenReplacementPages;
-                            if green.next_replacement_page < green.replacement_page_end {
+                            if green.has_current_replacement_page()? {
                                 return Ok(CandidateHostReplayPoll {
                                     transitions,
                                     ready_for_replacement_page: true,
@@ -3144,28 +3361,30 @@ impl CandidateHostStore {
                     | HostOfferPhase::Sealing(_) => return Err(CandidateHostError::Busy),
                 }
             }
+            let ready_for_replacement_page = match active.phase {
+                HostOfferPhase::ReceivingReplacementPages => {
+                    exact.next_replacement_page < exact.replacement_page_end
+                }
+                HostOfferPhase::ReceivingBlockReplacementPages => {
+                    matches!(
+                        exact.structural_splice.as_ref(),
+                        Some(ExactBaseStructuralSpliceHostState::Blocks(block))
+                            if block.next_replacement_page < block.replacement_page_end
+                    )
+                }
+                HostOfferPhase::ReceivingRecursiveGreenReplacementPages => {
+                    match exact.structural_splice.as_ref() {
+                        Some(ExactBaseStructuralSpliceHostState::RecursiveGreen(green)) => {
+                            green.has_current_replacement_page()?
+                        }
+                        _ => false,
+                    }
+                }
+                _ => false,
+            };
             Ok(CandidateHostReplayPoll {
                 transitions,
-                ready_for_replacement_page: match active.phase {
-                    HostOfferPhase::ReceivingReplacementPages => {
-                        exact.next_replacement_page < exact.replacement_page_end
-                    }
-                    HostOfferPhase::ReceivingBlockReplacementPages => {
-                        matches!(
-                            exact.structural_splice.as_ref(),
-                            Some(ExactBaseStructuralSpliceHostState::Blocks(block))
-                                if block.next_replacement_page < block.replacement_page_end
-                        )
-                    }
-                    HostOfferPhase::ReceivingRecursiveGreenReplacementPages => {
-                        matches!(
-                            exact.structural_splice.as_ref(),
-                            Some(ExactBaseStructuralSpliceHostState::RecursiveGreen(green))
-                                if green.next_replacement_page < green.replacement_page_end
-                        )
-                    }
-                    _ => false,
-                },
+                ready_for_replacement_page,
                 ready_for_nodes: matches!(active.phase, HostOfferPhase::Receiving),
             })
         })();
@@ -4372,11 +4591,38 @@ fn encode_exact_base_delta_begin(
                 SNAPSHOT_EXACT_BASE_BLOCK_OPERATION_TABLE_BYTES,
                 SNAPSHOT_EXACT_BASE_BLOCK_BEGIN_BYTES,
             ),
-            Some(ExactBaseStructuralSpliceEncodeState::RecursiveGreen(_)) => (
-                SNAPSHOT_EXACT_BASE_BLOCK_OPERATION_COUNT,
-                SNAPSHOT_EXACT_BASE_RECURSIVE_GREEN_OPERATION_TABLE_BYTES,
-                SNAPSHOT_EXACT_BASE_RECURSIVE_GREEN_BEGIN_BYTES,
-            ),
+            Some(ExactBaseStructuralSpliceEncodeState::RecursiveGreen(green)) => {
+                let segment_bytes = green
+                    .claim
+                    .segments()
+                    .len()
+                    .checked_mul(SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_SEGMENT_BYTES)
+                    .ok_or(CandidateHostError::InvalidFrame(
+                        "recursive Green segment table overflow",
+                    ))?;
+                let operation_bytes = SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_FIXED_BYTES
+                    .checked_add(segment_bytes)
+                    .ok_or(CandidateHostError::InvalidFrame(
+                        "recursive Green operation size overflow",
+                    ))?;
+                let table_bytes = SNAPSHOT_EXACT_BASE_OPERATION_TABLE_BYTES
+                    .checked_add(operation_bytes)
+                    .ok_or(CandidateHostError::InvalidFrame(
+                        "recursive Green operation table overflow",
+                    ))?;
+                let begin_bytes = CANDIDATE_HEADER_BYTES
+                    .checked_add(12)
+                    .and_then(|bytes| bytes.checked_add(SNAPSHOT_EXACT_BASE_BASE_AUTHORITY_BYTES))
+                    .and_then(|bytes| bytes.checked_add(table_bytes))
+                    .ok_or(CandidateHostError::InvalidFrame(
+                        "recursive Green Begin size overflow",
+                    ))?;
+                (
+                    SNAPSHOT_EXACT_BASE_BLOCK_OPERATION_COUNT,
+                    table_bytes,
+                    begin_bytes,
+                )
+            }
             None => (
                 SNAPSHOT_EXACT_BASE_OPERATION_COUNT,
                 SNAPSHOT_EXACT_BASE_OPERATION_TABLE_BYTES,
@@ -4490,29 +4736,50 @@ fn encode_exact_base_delta_begin(
                 }
             }
             ExactBaseStructuralSpliceEncodeState::RecursiveGreen(green) => {
+                let segment_count = u32::try_from(green.claim.segments().len()).map_err(|_| {
+                    CandidateHostError::InvalidFrame("recursive Green segment count overflow")
+                })?;
+                let operation_bytes = SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_FIXED_BYTES
+                    .checked_add(
+                        green
+                            .claim
+                            .segments()
+                            .len()
+                            .checked_mul(SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_SEGMENT_BYTES)
+                            .ok_or(CandidateHostError::InvalidFrame(
+                                "recursive Green segment table overflow",
+                            ))?,
+                    )
+                    .ok_or(CandidateHostError::InvalidFrame(
+                        "recursive Green operation size overflow",
+                    ))?;
                 output.extend_from_slice(&[
                     SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_OP,
-                    SNAPSHOT_EXACT_BASE_OPERATION_VERSION,
+                    SNAPSHOT_EXACT_BASE_RECURSIVE_GREEN_OPERATION_VERSION,
                     0,
                     0,
                 ]);
                 output.extend_from_slice(
-                    &u32::try_from(SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_BYTES)
+                    &u32::try_from(operation_bytes)
                         .expect("exact-base recursive Green op fits u32")
                         .to_le_bytes(),
                 );
                 output.extend_from_slice(&green.virtual_ordinal.to_le_bytes());
-                for value in [
-                    green.claim.base_event_range.start,
-                    green.claim.base_event_range.end,
-                    green.claim.target_event_range.start,
-                    green.claim.target_event_range.end,
-                    green.claim.base_storage_range.start,
-                    green.claim.base_storage_range.end,
-                    green.claim.target_storage_range.start,
-                    green.claim.target_storage_range.end,
-                ] {
-                    output.extend_from_slice(&value.to_le_bytes());
+                output.extend_from_slice(&segment_count.to_le_bytes());
+                output.extend_from_slice(&0_u32.to_le_bytes());
+                for segment in green.claim.segments() {
+                    for value in [
+                        segment.base_event_range.start,
+                        segment.base_event_range.end,
+                        segment.target_event_range.start,
+                        segment.target_event_range.end,
+                        segment.base_storage_range.start,
+                        segment.base_storage_range.end,
+                        segment.target_storage_range.start,
+                        segment.target_storage_range.end,
+                    ] {
+                        output.extend_from_slice(&value.to_le_bytes());
+                    }
                 }
                 push_role_metadata(&mut output, green.base_green_metadata);
                 push_role_metadata(&mut output, green.target_green_metadata);
@@ -4524,7 +4791,11 @@ fn encode_exact_base_delta_begin(
             }
         }
     }
-    debug_assert_eq!(output.len(), begin_bytes);
+    if output.len() != begin_bytes || output.len() > M11_MAXIMUM_SNAPSHOT_FRAME_BYTES {
+        return Err(CandidateHostError::InvalidFrame(
+            "exact-base Begin exceeds its frame envelope",
+        ));
+    }
     Ok(output)
 }
 
@@ -4532,6 +4803,7 @@ fn decode_exact_base_delta_begin(
     frame: &[u8],
 ) -> Result<DecodedExactBaseDeltaBegin, CandidateHostError> {
     if frame.len() < SNAPSHOT_EXACT_BASE_BEGIN_BYTES
+        || frame.len() > M11_MAXIMUM_SNAPSHOT_FRAME_BYTES
         || read_u32(frame, 84)? != SNAPSHOT_EXACT_BASE_PROGRAM_SCHEMA
         || frame[152..160] != [0; 8]
     {
@@ -4560,8 +4832,14 @@ fn decode_exact_base_delta_begin(
         }
         SNAPSHOT_EXACT_BASE_BLOCK_OPERATION_COUNT
             if operation_table_bytes
-                == SNAPSHOT_EXACT_BASE_RECURSIVE_GREEN_OPERATION_TABLE_BYTES
-                && frame.len() == SNAPSHOT_EXACT_BASE_RECURSIVE_GREEN_BEGIN_BYTES =>
+                >= SNAPSHOT_EXACT_BASE_OPERATION_TABLE_BYTES
+                    + SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_FIXED_BYTES
+                    + SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_SEGMENT_BYTES
+                && frame.len()
+                    == CANDIDATE_HEADER_BYTES
+                        + 12
+                        + SNAPSHOT_EXACT_BASE_BASE_AUTHORITY_BYTES
+                        + operation_table_bytes =>
         {
             Some(ExactBaseStructuralOperationKind::RecursiveGreen)
         }
@@ -4781,29 +5059,63 @@ fn decode_exact_base_delta_begin(
             if frame[green_offset..green_offset + 4]
                 != [
                     SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_OP,
-                    SNAPSHOT_EXACT_BASE_OPERATION_VERSION,
+                    SNAPSHOT_EXACT_BASE_RECURSIVE_GREEN_OPERATION_VERSION,
                     0,
                     0,
                 ]
-                || read_u32(frame, green_offset + 4)? as usize
-                    != SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_BYTES
             {
                 return Err(CandidateHostError::InvalidFrame(
                     "invalid exact-base recursive Green operation",
                 ));
             }
+            let operation_bytes = read_u32(frame, green_offset + 4)? as usize;
+            let segment_count = read_u32(frame, green_offset + 16)? as usize;
+            let segment_bytes = segment_count
+                .checked_mul(SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_SEGMENT_BYTES)
+                .ok_or(CandidateHostError::InvalidFrame(
+                    "recursive Green segment table overflow",
+                ))?;
+            let expected_operation_bytes = SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_FIXED_BYTES
+                .checked_add(segment_bytes)
+                .ok_or(CandidateHostError::InvalidFrame(
+                    "recursive Green operation size overflow",
+                ))?;
+            if segment_count == 0
+                || segment_count > M11_MAXIMUM_RECURSIVE_GREEN_SPLICE_SEGMENTS
+                || read_u32(frame, green_offset + 20)? != 0
+                || operation_bytes != expected_operation_bytes
+                || green_offset.checked_add(operation_bytes) != Some(frame.len())
+            {
+                return Err(CandidateHostError::InvalidFrame(
+                    "invalid exact-base recursive Green segment table",
+                ));
+            }
             let virtual_ordinal = read_u64(frame, green_offset + 8)?;
-            let base_event_range =
-                read_u64(frame, green_offset + 16)?..read_u64(frame, green_offset + 24)?;
-            let target_event_range =
-                read_u64(frame, green_offset + 32)?..read_u64(frame, green_offset + 40)?;
-            let base_storage_range =
-                read_u64(frame, green_offset + 48)?..read_u64(frame, green_offset + 56)?;
-            let target_storage_range =
-                read_u64(frame, green_offset + 64)?..read_u64(frame, green_offset + 72)?;
-            let base_green_metadata = read_role_metadata(frame, green_offset + 80)?;
-            let target_green_metadata = read_role_metadata(frame, green_offset + 136)?;
-            let descriptors_offset = green_offset + 192;
+            let mut segments = Vec::new();
+            segments
+                .try_reserve_exact(segment_count)
+                .map_err(|_| CandidateHostError::AllocationFailed)?;
+            let mut segment_offset = green_offset + 24;
+            for _ in 0..segment_count {
+                segments.push(M11RecursiveGreenHostSpliceSegmentClaim {
+                    base_event_range: read_u64(frame, segment_offset)?
+                        ..read_u64(frame, segment_offset + 8)?,
+                    target_event_range: read_u64(frame, segment_offset + 16)?
+                        ..read_u64(frame, segment_offset + 24)?,
+                    base_storage_range: read_u64(frame, segment_offset + 32)?
+                        ..read_u64(frame, segment_offset + 40)?,
+                    target_storage_range: read_u64(frame, segment_offset + 48)?
+                        ..read_u64(frame, segment_offset + 56)?,
+                });
+                segment_offset = segment_offset
+                    .checked_add(SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_SEGMENT_BYTES)
+                    .ok_or(CandidateHostError::InvalidFrame(
+                        "recursive Green segment offset overflow",
+                    ))?;
+            }
+            let base_green_metadata = read_role_metadata(frame, segment_offset)?;
+            let target_green_metadata = read_role_metadata(frame, segment_offset + 56)?;
+            let descriptors_offset = segment_offset + 112;
             let base_descriptor = decode_persistent_m11_recursive_green_role_descriptor(
                 &frame[descriptors_offset
                     ..descriptors_offset + PERSISTENT_RECURSIVE_GREEN_ROLE_DESCRIPTOR_BYTES],
@@ -4831,10 +5143,7 @@ fn decode_exact_base_delta_begin(
                 DecodedExactBaseRecursiveGreenSplice {
                     virtual_ordinal,
                     claim: M11RecursiveGreenHostSpliceClaim {
-                        base_event_range,
-                        target_event_range,
-                        base_storage_range,
-                        target_storage_range,
+                        segments: segments.into_boxed_slice(),
                         base_descriptor,
                         target_descriptor,
                     },
@@ -6912,7 +7221,12 @@ mod tests {
             )
             .expect("recursive Green exact-base encoder");
         let begin = encoder.begin_frame().expect("recursive Green Begin");
-        assert_eq!(begin.len(), SNAPSHOT_EXACT_BASE_RECURSIVE_GREEN_BEGIN_BYTES);
+        assert_eq!(
+            begin.len(),
+            SNAPSHOT_EXACT_BASE_BEGIN_BYTES
+                + SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_FIXED_BYTES
+                + SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_SEGMENT_BYTES
+        );
         let mut source_facts_pages = Vec::new();
         let mut green_pages = Vec::new();
         let mut nodes = Vec::new();

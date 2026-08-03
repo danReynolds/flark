@@ -20,7 +20,8 @@ use flark_engine::parser_internal::{
     M11RecursiveGreenFrameId, M11RecursiveGreenLocation, M11RecursiveGreenPoint,
     M11RecursiveGreenRowEditCapability, M11RecursiveGreenRowQueryLimits,
     M11RecursiveGreenRowQueryOutcome, M11ReferenceResolver, M11RetainedCandidatePublication,
-    M11SnapshotFrame, M11SnapshotFrameKind, M11_MAX_ROLE_RECORDS, M11_MAX_SNAPSHOT_FRAME_BYTES,
+    M11SnapshotFrame, M11SnapshotFrameKind, M11_MAX_RECURSIVE_GREEN_SPLICE_SEGMENTS,
+    M11_MAX_ROLE_RECORDS, M11_MAX_SNAPSHOT_FRAME_BYTES,
 };
 use flark_engine::{
     CertifiedSource, DocumentRuntime, DocumentRuntimeError, IncrementalSourceFactsPlan,
@@ -189,6 +190,14 @@ enum ExactStructuralPath {
     LegacyBlocks,
     RecursiveGreen,
     RecursiveGreenWholeRole,
+}
+
+const fn recursive_green_publication_path(segment_count: usize) -> ExactStructuralPath {
+    if segment_count > 0 && segment_count <= M11_MAX_RECURSIVE_GREEN_SPLICE_SEGMENTS {
+        ExactStructuralPath::RecursiveGreen
+    } else {
+        ExactStructuralPath::RecursiveGreenWholeRole
+    }
 }
 
 struct ParsingExactCandidate {
@@ -6032,15 +6041,47 @@ impl CandidateEndpoint {
                                 }
                             };
                             let base_ack = base.ack;
-                            let recursive_green_selection = match structural_path {
-                                ExactStructuralPath::LegacyBlocks => None,
+                            let (structural_path, recursive_green_selection) = match structural_path
+                            {
+                                ExactStructuralPath::LegacyBlocks => {
+                                    (ExactStructuralPath::LegacyBlocks, None)
+                                }
                                 ExactStructuralPath::RecursiveGreen => {
                                     match self
                                         .recursive_green
                                         .ready_update_for(base_ack, witness.target())
                                     {
                                         Some(update) => {
-                                            Some(update.recursive_green_splice_selection())
+                                            let delivery_path = recursive_green_publication_path(
+                                                update
+                                                    .recursive_green_splice_selection()
+                                                    .segments()
+                                                    .len(),
+                                            );
+                                            if delivery_path
+                                                == ExactStructuralPath::RecursiveGreenWholeRole
+                                            {
+                                                (delivery_path, None)
+                                            } else {
+                                                let selection = match update
+                                                    .try_clone_recursive_green_splice_selection()
+                                                {
+                                                    Ok(selection) => selection,
+                                                    Err(error) => {
+                                                        self.cleanup = Some(
+                                                            CandidateCleanup::ExactPublications {
+                                                                target: publication,
+                                                                target_begun: false,
+                                                                target_complete: false,
+                                                                base: base.publication,
+                                                                base_begun: false,
+                                                            },
+                                                        );
+                                                        return Err(error.into());
+                                                    }
+                                                };
+                                                (delivery_path, Some(selection))
+                                            }
                                         }
                                         None => {
                                             self.cleanup =
@@ -6055,7 +6096,9 @@ impl CandidateEndpoint {
                                         }
                                     }
                                 }
-                                ExactStructuralPath::RecursiveGreenWholeRole => None,
+                                ExactStructuralPath::RecursiveGreenWholeRole => {
+                                    (ExactStructuralPath::RecursiveGreenWholeRole, None)
+                                }
                             };
                             let stream_result = match (
                                 structural_path,

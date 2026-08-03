@@ -911,6 +911,26 @@ fn large_block_quote_edit_restarts_inside_the_open_container_and_reuses_distant_
         "an edit halfway through one large quote must not reparse the whole container: {work:?}",
     );
     assert!(work.green_tree_nodes_rebuilt() < 512, "work={work:?}");
+    let selected_segments = update.recursive_green_splice_selection().segments();
+    assert_eq!(
+        selected_segments.len(),
+        2,
+        "the primary local splice and the far repaired Paragraph Exit must both be published",
+    );
+    let primary_base = selected_segments[0].base_event_range();
+    let primary_target = selected_segments[0].target_event_range();
+    let far_base = selected_segments[1].base_event_range();
+    let far_target = selected_segments[1].target_event_range();
+    assert!(primary_base.end <= far_base.start);
+    assert_eq!(
+        far_base.end - far_base.start,
+        far_target.end - far_target.start
+    );
+    assert_eq!(
+        far_base.start - primary_base.end,
+        far_target.start - primary_target.end,
+        "the unchanged event gap must carry the primary splice delta into target coordinates",
+    );
     let mut superseded = update.take_base().expect("block-quote base");
     let mut target = update.take_target().expect("block-quote target");
     assert_eq!(
