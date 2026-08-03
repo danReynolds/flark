@@ -80,14 +80,17 @@ const String v3EngineLabIndentedCodeDisplay =
     "final message = '**literal Markdown**';\n"
     '  print(message);\n';
 const String v3EngineLabBlockQuoteSource =
-    '> Parser-certified quote text stays marker-free.\n'
+    '> **Parser-certified strong text\n'
+    '> stays live across physical lines**, with _emphasis_ and `code`.\n'
     '> Canonical quote prefixes remain in exact source.\n';
 const String v3EngineLabBlockQuoteDisplay =
-    'Parser-certified quote text stays marker-free.\n'
+    'Parser-certified strong text\n'
+    'stays live across physical lines, with emphasis and code.\n'
     'Canonical quote prefixes remain in exact source.\n';
 const String v3EngineLabBlockQuoteScope =
     'Checkpoint scope: one depth-one, single-paragraph block quote. '
-    'Inline styles inside quotes are not yet composed.';
+    'Strong, emphasis, and code styles use parser-certified projected '
+    'coordinates; links, images, and references intentionally fail closed.';
 const String v3EngineLabBulletListFirstSource = '  - α😀 first item\r\n';
 const String v3EngineLabBulletListFirstDisplay = 'α😀 first item\n';
 const String v3EngineLabBulletListSecondSource =
@@ -607,7 +610,7 @@ class _V3EngineLabPageState extends State<V3EngineLabPage> {
       } else if (seed == V3EngineLabSeed.blockQuote) {
         islandStart = 0;
         islandText = v3EngineLabBlockQuoteSource;
-        caretUtf16 = v3EngineLabBlockQuoteSource.indexOf('quote text') + 2;
+        caretUtf16 = v3EngineLabBlockQuoteSource.indexOf('strong text') + 2;
       } else if (seed == V3EngineLabSeed.bulletList) {
         islandStart = 0;
         islandText = v3EngineLabBulletListSource;
@@ -1137,6 +1140,16 @@ class _V3EngineLabPageState extends State<V3EngineLabPage> {
                   final blockQuote =
                       paint.blockStyleLease?.kind ==
                       FlarkV3FlutterBlockStyleKind.blockQuote;
+                  final blockQuoteInline = switch (paint.documentQuery) {
+                    FlarkV3RecursiveGreenPointQuery(
+                      projectedInlineFacts: FlarkV3ProjectedInlineFacts(
+                        disposition: FlarkV3ProjectedInlineFactsDisposition
+                            .authoritative,
+                      ),
+                    ) =>
+                      true,
+                    _ => false,
+                  };
                   final tightListItem =
                       paint.blockStyleLease?.kind ==
                       FlarkV3FlutterBlockStyleKind.tightListItem;
@@ -1168,6 +1181,8 @@ class _V3EngineLabPageState extends State<V3EngineLabPage> {
                           ? 'Parser-certified atomic marker-free thematic break active'
                           : indentedCode
                           ? 'Parser-certified marker-free indented code active'
+                          : blockQuote && blockQuoteInline
+                          ? 'Parser-certified marker-free block quote + inline styles active'
                           : blockQuote
                           ? 'Parser-certified marker-free block quote active'
                           : orderedListItem
@@ -1938,8 +1953,9 @@ class _MilestoneBanner extends StatelessWidget {
               'indented-code seed hides the parser-certified four-column '
               'prefix while keeping deeper indentation and literal body text. '
               'The block-quote seed hides parser-certified quote prefixes and '
-              'paints a quote rail; inline styles inside that projection are '
-              'not composed yet. The bullet-list seed hides parser-certified '
+              'paints a quote rail; parser-certified strong, emphasis, and '
+              'inline-code styles compose through its projected coordinates. '
+              'The bullet-list seed hides parser-certified '
               'item prefixes, paints a semantic gutter, and keeps selected-item '
               'editing on the same input client. The ordered-list seed paints '
               'the exact parser-authored marker outside marker-free item '
@@ -2203,8 +2219,9 @@ class _CheckpointCCard extends StatelessWidget {
           ? 'This fixture hides parser-certified quote prefixes, paints one '
                 'quote rail, and maps Enter to canonical `> ` continuation '
                 'without replacing the input client. It proves one depth-one '
-                'single-Paragraph quote; nested/multi-child quotes and inline '
-                'style composition inside the quote remain pending.'
+                'single-Paragraph quote with parser-certified strong, emphasis, '
+                'and inline-code composition across physical lines; nested and '
+                'multi-child quotes remain pending.'
           : bulletList
           ? 'This fixture selects one item from a parser-certified depth-one '
                 'tight bullet list. The exact source marker stays document-owned '

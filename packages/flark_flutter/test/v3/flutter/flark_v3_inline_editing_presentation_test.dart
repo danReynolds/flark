@@ -10,6 +10,148 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+    'projected quote inline styles compose through disjoint physical lines',
+    () {
+      const source = '> **first\n> second** and `code`\n';
+      const projectedText = '**first\nsecond** and `code`\n';
+      final document = FlarkV3SourceDocument.fromString(source);
+      final version = FlarkV3SourceVersion.fromDocument(
+        documentSession: FlarkV3DocumentSessionId(41, 42, 43, 44),
+        document: document,
+      );
+      final physicalSource = FlarkV3SourceSpan(
+        startUtf8: 0,
+        endUtf8: document.utf8Length,
+        startUtf16: 0,
+        endUtf16: document.utf16Length,
+      );
+      final encodedFacts = Uint8List.fromList([
+        ..._record(
+          kind: 2,
+          start: 0,
+          length: 16,
+          contentStart: 2,
+          contentLength: 12,
+        ),
+        ..._record(
+          kind: 3,
+          start: 21,
+          length: 6,
+          contentStart: 22,
+          contentLength: 4,
+        ),
+      ]);
+      final facts = FlarkV3ProjectedInlineFactsDecoder.decode(
+        sourceDocument: document,
+        expectedSource: version,
+        factSource: version,
+        expectedProfilePartition: 3,
+        profilePartition: 3,
+        expectedPhysicalSource: physicalSource,
+        factPhysicalSource: physicalSource,
+        expectedProjectedUtf8Length: projectedText.length,
+        expectedProjectedUtf16Length: projectedText.length,
+        projectedText: projectedText,
+        disposition: FlarkV3ProjectedInlineFactsDisposition.authoritative,
+        factCount: 2,
+        encodedFacts: encodedFacts,
+      );
+      final projectedInline =
+          FlarkV3ProjectedInlineProjection.fromValidatedFacts(
+            projectedText: projectedText,
+            facts: facts,
+          );
+      final quoteProjection = FlarkV3SourceProjection.fromSource(
+        sourceStartUtf16: 0,
+        sourceText: source,
+        pieces: const [
+          FlarkV3SourceProjectionPiece.hide(
+            sourceStartUtf16: 0,
+            sourceEndUtf16: 2,
+          ),
+          FlarkV3SourceProjectionPiece.copy(
+            sourceStartUtf16: 2,
+            sourceEndUtf16: 10,
+          ),
+          FlarkV3SourceProjectionPiece.hide(
+            sourceStartUtf16: 10,
+            sourceEndUtf16: 12,
+          ),
+          FlarkV3SourceProjectionPiece.copy(
+            sourceStartUtf16: 12,
+            sourceEndUtf16: 32,
+          ),
+        ],
+        certifiedSourceVersion: version,
+      );
+      final lease =
+          FlarkV3ProjectedInputLease.fromSourceProjectionWithProjectedInline(
+            quoteProjection,
+            projectedInline,
+            editPolicy: FlarkV3BlockQuoteEditPolicy(),
+          );
+
+      expect(lease.displayText, 'first\nsecond and code\n');
+      expect(lease.sourceToDisplayOffset(0), 0);
+      expect(lease.sourceToDisplayOffset(4), 0);
+      expect(lease.sourceToDisplayOffset(10), 6);
+      expect(lease.sourceToDisplayOffset(12), 6);
+      expect(lease.sourceToDisplayOffset(20), 12);
+      expect(lease.sourceToDisplayOffset(26), 17);
+
+      final span = lease.buildTextSpan(
+        baseStyle: const TextStyle(fontSize: 14),
+        composing: TextRange.empty,
+      );
+      final runs = span.children!.cast<TextSpan>().toList();
+      expect(runs.map((run) => run.text).join(), lease.displayText);
+      expect(
+        runs
+            .where((run) => run.text!.contains('first'))
+            .single
+            .style!
+            .fontWeight,
+        FontWeight.w700,
+      );
+      expect(
+        runs
+            .where((run) => run.text!.contains('second'))
+            .single
+            .style!
+            .fontWeight,
+        FontWeight.w700,
+      );
+      expect(
+        runs.where((run) => run.text == 'code').single.style!.fontFamily,
+        'monospace',
+      );
+
+      final edit = lease.applyDisplayEdit(
+        displayStartUtf16: 8,
+        displayEndUtf16: 8,
+        replacement: 'X',
+        nextDisplayValue: const TextEditingValue(
+          text: 'first\nseXcond and code\n',
+          selection: TextSelection.collapsed(offset: 9),
+        ),
+        preferredSourceSelection: const TextSelection.collapsed(offset: 14),
+        preferredSourceComposing: TextRange.empty,
+      );
+      expect(edit.sourceStartUtf16, 14);
+      expect(edit.sourceEndUtf16, 14);
+      expect(
+        source.replaceRange(
+          edit.sourceStartUtf16,
+          edit.sourceEndUtf16,
+          edit.sourceReplacement,
+        ),
+        '> **first\n> seXcond** and `code`\n',
+      );
+      expect(edit.nextLease.displayText, 'first\nseXcond and code\n');
+    },
+  );
+
   testWidgets(
     'certified inline styles hide markers and preserve EditableText state',
     (tester) async {

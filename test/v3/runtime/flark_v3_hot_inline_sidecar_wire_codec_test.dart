@@ -100,9 +100,9 @@ void main() {
     });
 
     test(
-      'authoritative Begin accepts only exact inline and block quote widths',
+      'authoritative Begin accepts only exact inline and projection widths',
       () {
-        for (final descriptorBytes in const [160, 168, 280]) {
+        for (final descriptorBytes in const [160, 168, 280, 328]) {
           final decoded =
               _roundTrip(
                     FlarkV3ParserInlineSidecarBegin(

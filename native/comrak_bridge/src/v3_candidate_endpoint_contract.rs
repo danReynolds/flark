@@ -26,6 +26,7 @@ pub(crate) enum CandidateEndpointError {
     IndentedCodeProjection(M11IndentedCodeProjectionError),
     BlockQuoteProjectionJob(M11BlockQuoteProjectionJobError),
     BlockQuoteProjection(M11BlockQuoteProjectionError),
+    ProjectedInlineProjectionJob(M11ProjectedInlineProjectionJobError),
     BulletListLocal(M11BulletListLocalDeltaError),
     ParserPage(M11ParserPageError),
     Publication(M11PublicationError),
@@ -63,6 +64,7 @@ impl fmt::Display for CandidateEndpointError {
             Self::IndentedCodeProjection(error) => error.fmt(formatter),
             Self::BlockQuoteProjectionJob(error) => error.fmt(formatter),
             Self::BlockQuoteProjection(error) => error.fmt(formatter),
+            Self::ProjectedInlineProjectionJob(error) => error.fmt(formatter),
             Self::BulletListLocal(error) => write!(formatter, "{error:?}"),
             Self::ParserPage(error) => error.fmt(formatter),
             Self::Publication(error) => error.fmt(formatter),
@@ -171,6 +173,12 @@ impl From<M11BlockQuoteProjectionJobError> for CandidateEndpointError {
 impl From<M11BlockQuoteProjectionError> for CandidateEndpointError {
     fn from(error: M11BlockQuoteProjectionError) -> Self {
         Self::BlockQuoteProjection(error)
+    }
+}
+
+impl From<M11ProjectedInlineProjectionJobError> for CandidateEndpointError {
+    fn from(error: M11ProjectedInlineProjectionJobError) -> Self {
+        Self::ProjectedInlineProjectionJob(error)
     }
 }
 

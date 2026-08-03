@@ -7,6 +7,105 @@ import 'support/flark_v3_managed_runtime_test_platform.dart';
 
 void main() {
   testWidgets(
+    'recursive Green quote keeps projected inline styles live across lines',
+    (tester) async {
+      const initialQuote = '> **first\n> second** and `code`\n';
+      const initialSource = 'before\n\n$initialQuote\n*tail*';
+      final quoteStart = initialSource.indexOf(initialQuote);
+      final harness = await _ManagedBlockQuoteHarness.mount(
+        tester,
+        source: initialSource,
+        caretUtf16: quoteStart + '> **fi'.length,
+      );
+
+      final initialQuery = await harness.waitForBlockQuote(
+        tester,
+        expectedDisplay: 'first\nsecond and code\n',
+        requireProjectedInline: true,
+      );
+      expect(
+        initialQuery.projectedInlineFacts?.disposition,
+        FlarkV3ProjectedInlineFactsDisposition.authoritative,
+      );
+      expect(initialQuery.inlineFacts, isNull);
+      expect(harness.binding.controller.hasProjectedInlinePresentation, isTrue);
+      _expectProjectedInlineStyles(harness);
+
+      harness.editableState.requestKeyboard();
+      await tester.pump();
+      final editableState = harness.editableState;
+      final initialSetClientCount = _setClientCalls(tester).length;
+      final clientId =
+          (_setClientCalls(tester).last.arguments as List<dynamic>).first
+              as int;
+      final observedEditableValues = <String>[];
+      void observeEditableValue() => observedEditableValues.add(
+        harness.binding.controller.editingController.text,
+      );
+      harness.binding.controller.editingController.addListener(
+        observeEditableValue,
+      );
+      addTearDown(
+        () => harness.binding.controller.editingController.removeListener(
+          observeEditableValue,
+        ),
+      );
+
+      (editableState as DeltaTextInputClient).updateEditingValueWithDeltas([
+        const TextEditingDeltaInsertion(
+          oldText: 'first\nsecond and code\n',
+          textInserted: 'X',
+          insertionOffset: 2,
+          selection: TextSelection.collapsed(offset: 3),
+          composing: TextRange.empty,
+        ),
+      ]);
+
+      const editedQuote = '> **fiXrst\n> second** and `code`\n';
+      const editedSource = 'before\n\n$editedQuote\n*tail*';
+      expect(harness.runtime.exportMarkdown(), editedSource);
+      expect(
+        harness.binding.controller.editingController.text,
+        'fiXrst\nsecond and code\n',
+      );
+      _expectSameInputClient(
+        tester,
+        harness,
+        editableState: editableState,
+        setClientCount: initialSetClientCount,
+        clientId: clientId,
+      );
+      _expectProjectedInlineStyles(harness, strongFirstText: 'fiXrst');
+
+      final recertified = await harness.waitForBlockQuote(
+        tester,
+        expectedDisplay: 'fiXrst\nsecond and code\n',
+        requireProjectedInline: true,
+      );
+      expect(
+        recertified.projectedInlineFacts?.disposition,
+        FlarkV3ProjectedInlineFactsDisposition.authoritative,
+      );
+      expect(recertified.sourceRevision, harness.runtime.sourceRevision);
+      expect(observedEditableValues, isNotEmpty);
+      for (final value in observedEditableValues) {
+        expect(value, isNot(contains('>')));
+        expect(value, isNot(contains('*')));
+        expect(value, isNot(contains('`')));
+      }
+      _expectSameInputClient(
+        tester,
+        harness,
+        editableState: editableState,
+        setClientCount: initialSetClientCount,
+        clientId: clientId,
+      );
+      _expectProjectedInlineStyles(harness, strongFirstText: 'fiXrst');
+    },
+    timeout: const Timeout(Duration(seconds: 60)),
+  );
+
+  testWidgets(
     'recursive Green multiline block quote stays marker-free through Enter on one input client',
     (tester) async {
       const initialQuote = '> alpha\n> beta\nlazy\n';
@@ -153,6 +252,37 @@ void main() {
   );
 }
 
+void _expectProjectedInlineStyles(
+  _ManagedBlockQuoteHarness harness, {
+  String strongFirstText = 'first',
+}) {
+  final span =
+      (harness.binding.controller.editingController
+              as FlarkV3InlineTextEditingController)
+          .buildTextSpan(
+            context: harness.editableKey.currentContext!,
+            style: const TextStyle(),
+            withComposing: false,
+          );
+  final runs = span.children!.cast<TextSpan>().toList();
+  expect(
+    runs
+        .where((run) => run.text!.contains(strongFirstText))
+        .single
+        .style!
+        .fontWeight,
+    FontWeight.w700,
+  );
+  expect(
+    runs.where((run) => run.text!.contains('second')).single.style!.fontWeight,
+    FontWeight.w700,
+  );
+  expect(
+    runs.where((run) => run.text == 'code').single.style!.fontFamily,
+    'monospace',
+  );
+}
+
 final class _ManagedBlockQuoteHarness {
   _ManagedBlockQuoteHarness._({
     required this.runtime,
@@ -239,6 +369,7 @@ final class _ManagedBlockQuoteHarness {
   Future<FlarkV3RecursiveGreenPointQuery> waitForBlockQuote(
     WidgetTester tester, {
     required String expectedDisplay,
+    bool requireProjectedInline = false,
   }) async {
     final stopwatch = Stopwatch()..start();
     while (stopwatch.elapsed < const Duration(seconds: 10)) {
@@ -263,6 +394,10 @@ final class _ManagedBlockQuoteHarness {
               ) &&
           query.paragraphSource != null &&
           query.blockQuoteProjection != null &&
+          (!requireProjectedInline ||
+              (query.projectedInlineFacts?.disposition ==
+                      FlarkV3ProjectedInlineFactsDisposition.authoritative &&
+                  query.inlineFacts == null)) &&
           binding.controller.editingController.text == expectedDisplay &&
           binding.controller.paintState.mode ==
               FlarkV3FlutterPaintMode.exactStructural &&

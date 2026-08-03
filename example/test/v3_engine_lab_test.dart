@@ -122,19 +122,27 @@ void main() {
 
   test('block-quote fixture is marker-free without overstating scope', () {
     expect(v3EngineLabBlockQuoteSource, startsWith('> '));
+    expect(v3EngineLabBlockQuoteSource, contains('**'));
+    expect(v3EngineLabBlockQuoteSource, contains('_emphasis_'));
+    expect(v3EngineLabBlockQuoteSource, contains('`code`'));
     expect(v3EngineLabBlockQuoteSource, contains('\n> Canonical'));
     expect(v3EngineLabBlockQuoteDisplay, isNot(contains('> ')));
+    expect(v3EngineLabBlockQuoteDisplay, isNot(contains('**')));
+    expect(v3EngineLabBlockQuoteDisplay, isNot(contains('_emphasis_')));
+    expect(v3EngineLabBlockQuoteDisplay, isNot(contains('`code`')));
     expect(
       v3EngineLabBlockQuoteDisplay,
-      'Parser-certified quote text stays marker-free.\n'
+      'Parser-certified strong text\n'
+      'stays live across physical lines, with emphasis and code.\n'
       'Canonical quote prefixes remain in exact source.\n',
     );
     expect(v3EngineLabBlockQuoteScope, contains('depth-one'));
     expect(v3EngineLabBlockQuoteScope, contains('single-paragraph'));
     expect(
       v3EngineLabBlockQuoteScope,
-      contains('Inline styles inside quotes are not yet composed'),
+      contains('parser-certified projected coordinates'),
     );
+    expect(v3EngineLabBlockQuoteScope, contains('fail closed'));
   });
 
   test(

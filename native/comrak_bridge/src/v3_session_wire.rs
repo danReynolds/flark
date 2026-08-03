@@ -398,6 +398,10 @@ pub enum InlineRefinementTarget {
     /// owner query. The established sidecar schema remains unchanged.
     RecursiveGreenParagraph,
     BlockQuoteProjection,
+    /// Marker-free inline facts derived from one certified block-quote
+    /// paragraph. Coordinates are relative to the logical projected quote
+    /// stream, never to the disjoint physical source spelling.
+    BlockQuoteInline,
 }
 
 /// One late inline demand fenced to an exact installed structural base.
@@ -1711,6 +1715,7 @@ fn read_inline_refinement(
         4 => InlineRefinementTarget::OrderedListItemProjection,
         5 => InlineRefinementTarget::RecursiveGreenParagraph,
         6 => InlineRefinementTarget::BlockQuoteProjection,
+        7 => InlineRefinementTarget::BlockQuoteInline,
         value => return Err(unknown_variant_u32(value)),
     };
     if refinement_generation == 0
@@ -3063,8 +3068,21 @@ mod tests {
             })
         ));
 
+        let mut block_quote_inline = payload.clone();
+        block_quote_inline[target_start..].copy_from_slice(&7_u32.to_le_bytes());
+        let block_quote_inline_frame = frame(Opcode::ParserRefineInline, 78, &block_quote_inline);
+        let block_quote_inline = decode_command(&block_quote_inline_frame, Some(binding()))
+            .expect("valid projected block-quote inline refinement");
+        assert!(matches!(
+            block_quote_inline.command,
+            Command::RefineInline(InlineRefinementCommand {
+                target: InlineRefinementTarget::BlockQuoteInline,
+                ..
+            })
+        ));
+
         let mut invalid_target = payload.clone();
-        invalid_target[target_start..].copy_from_slice(&7_u32.to_le_bytes());
+        invalid_target[target_start..].copy_from_slice(&8_u32.to_le_bytes());
         assert_eq!(
             decode_command(
                 &frame(Opcode::ParserRefineInline, 72, &invalid_target),

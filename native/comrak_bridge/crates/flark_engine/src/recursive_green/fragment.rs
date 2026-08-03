@@ -315,9 +315,7 @@ impl M11RecursiveGreenTerminalFragmentCursor {
         let index = self.ready_start;
         let expected = self
             .ready_base_offset
-            .checked_add(
-                u64::try_from(index).map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
-            )
+            .checked_add(u64::try_from(index).map_err(|_| M11RecursiveGreenError::CounterOverflow)?)
             .ok_or(M11RecursiveGreenError::CounterOverflow)?;
         if expected != relative_offset {
             return Err(M11RecursiveGreenError::InvalidState);
@@ -341,9 +339,7 @@ impl M11RecursiveGreenTerminalFragmentCursor {
             .ok_or(M11RecursiveGreenError::CounterOverflow)?;
         let offset = self
             .ready_base_offset
-            .checked_add(
-                u64::try_from(last).map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
-            )
+            .checked_add(u64::try_from(last).map_err(|_| M11RecursiveGreenError::CounterOverflow)?)
             .ok_or(M11RecursiveGreenError::CounterOverflow)?;
         let contribution = *self
             .ready_raw_contributions

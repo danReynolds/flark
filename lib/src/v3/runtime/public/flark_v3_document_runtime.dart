@@ -820,12 +820,9 @@ final class FlarkV3DocumentRuntime {
         query: decoded,
       ),
       FlarkV3RecursiveGreenPointQuery() =>
-        _inlineFactsCache.resolveRecursiveGreen(
-          authority: exact.ack,
-          query: _joinInstalledRecursiveGreenPresentation(
-            query: decoded,
-            presentation: exact,
-          ),
+        _resolveInstalledRecursiveGreenPresentation(
+          query: decoded,
+          presentation: exact,
         ),
       _ => decoded,
     };
@@ -857,8 +854,11 @@ final class FlarkV3DocumentRuntime {
         final needsInline = switch (query) {
           FlarkV3DocumentStructuralQuery(:final inlineFacts) =>
             inlineFacts == null,
-          FlarkV3RecursiveGreenPointQuery(:final inlineFacts) =>
-            inlineFacts == null,
+          FlarkV3RecursiveGreenPointQuery(
+            :final inlineFacts,
+            :final projectedInlineFacts,
+          ) =>
+            inlineFacts == null && projectedInlineFacts == null,
           _ => false,
         };
         if (!needsInline) {
@@ -1403,6 +1403,10 @@ final class FlarkV3DocumentRuntime {
         maximumEncodedBytes: FlarkV3InlineSidecarQuery.maximumQueryBytes,
       ),
     );
+    final expectsProjectedInline =
+        ownsBlockQuote &&
+        query.blockQuoteProjection != null &&
+        !_recursiveGreenBlockQuoteHasContiguousInlineSource(query);
     try {
       return switch (hostResult) {
         FlarkV3HostRejected<FlarkV3InlineSidecarQueryOutcome>() => query,
@@ -1420,22 +1424,75 @@ final class FlarkV3DocumentRuntime {
                   binding: binding,
                   outcome: value,
                 )
-              : FlarkV3DocumentQueryDecoder.joinRecursiveGreenBlockQuoteProjection(
-                  sourceDocument: _document.source,
-                  expectedSource: presentation.sourceVersion,
-                  expectedProfilePartition:
-                      FlarkV3DocumentRuntimePlatformAttachment
-                          ._publicationAuthority
-                          .syntaxProfile
-                          .value,
-                  query: query,
-                  binding: binding,
-                  outcome: value,
-                ),
+              : switch (value) {
+                  FlarkV3InlineSidecarQueryAuthoritative(
+                    payloadKind: FlarkV3InlineSidecarPayloadKind
+                        .blockQuoteInline,
+                  ) =>
+                    FlarkV3DocumentQueryDecoder.joinRecursiveGreenBlockQuoteInline(
+                      sourceDocument: _document.source,
+                      expectedSource: presentation.sourceVersion,
+                      expectedProfilePartition:
+                          FlarkV3DocumentRuntimePlatformAttachment
+                              ._publicationAuthority
+                              .syntaxProfile
+                              .value,
+                      query: query,
+                      binding: binding,
+                      outcome: value,
+                    ),
+                  FlarkV3InlineSidecarQueryUnsupported()
+                      when expectsProjectedInline =>
+                    FlarkV3DocumentQueryDecoder.joinRecursiveGreenBlockQuoteInline(
+                      sourceDocument: _document.source,
+                      expectedSource: presentation.sourceVersion,
+                      expectedProfilePartition:
+                          FlarkV3DocumentRuntimePlatformAttachment
+                              ._publicationAuthority
+                              .syntaxProfile
+                              .value,
+                      query: query,
+                      binding: binding,
+                      outcome: value,
+                    ),
+                  _ =>
+                    FlarkV3DocumentQueryDecoder.joinRecursiveGreenBlockQuoteProjection(
+                      sourceDocument: _document.source,
+                      expectedSource: presentation.sourceVersion,
+                      expectedProfilePartition:
+                          FlarkV3DocumentRuntimePlatformAttachment
+                              ._publicationAuthority
+                              .syntaxProfile
+                              .value,
+                      query: query,
+                      binding: binding,
+                      outcome: value,
+                    ),
+                },
       };
     } on FlarkV3InlineFactsDecodeException catch (error) {
       throw FlarkV3DocumentQueryException(error.message);
     }
+  }
+
+  FlarkV3RecursiveGreenPointQuery _resolveInstalledRecursiveGreenPresentation({
+    required FlarkV3RecursiveGreenPointQuery query,
+    required FlarkV3ExactStructuralPresentation presentation,
+  }) {
+    // The singleton projected-inline sidecar is decoded against the quote
+    // certificate retained by the prior stage, so resolve before and after
+    // observing the currently installed sidecar.
+    final cached = _inlineFactsCache.resolveRecursiveGreen(
+      authority: presentation.ack,
+      query: query,
+    );
+    return _inlineFactsCache.resolveRecursiveGreen(
+      authority: presentation.ack,
+      query: _joinInstalledRecursiveGreenPresentation(
+        query: cached,
+        presentation: presentation,
+      ),
+    );
   }
 
   bool _bindingMatchesRecursiveGreenFrame(
@@ -1507,6 +1564,12 @@ final class FlarkV3DocumentRuntime {
             _recursiveGreenBlockQuoteHasContiguousInlineSource(query))) {
       target = FlarkV3InlineRefinementTarget.recursiveGreenParagraph;
       demandOwnerFrameId = query.owner.frameId;
+    } else if (canRequestBlockQuoteProjection &&
+        query.blockQuoteProjection != null &&
+        query.projectedInlineFacts == null &&
+        !_recursiveGreenBlockQuoteHasContiguousInlineSource(query)) {
+      target = FlarkV3InlineRefinementTarget.blockQuoteInline;
+      demandOwnerFrameId = blockQuoteAncestor.frameId;
     } else {
       return FlarkV3LeafProjectionDemandDisposition.notApplicable;
     }

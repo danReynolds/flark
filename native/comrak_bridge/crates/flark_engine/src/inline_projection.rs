@@ -66,10 +66,19 @@ pub(crate) const PERSISTENT_INLINE_PROJECTION_ROLE_SCHEMA: u32 = 5;
 const PERSISTENT_INLINE_PROJECTION_DESCRIPTOR_MAGIC: [u8; 4] = *b"IPB5";
 const PERSISTENT_INLINE_PROJECTION_DESCRIPTOR_VERSION: u32 = 1;
 pub(crate) const PERSISTENT_INLINE_PROJECTION_ROLE_DESCRIPTOR_BYTES: usize = 280;
+pub(crate) const PERSISTENT_PROJECTED_INLINE_PROJECTION_DESCRIPTOR_BYTES: usize =
+    48 + PERSISTENT_INLINE_PROJECTION_ROLE_DESCRIPTOR_BYTES;
+const PERSISTENT_PROJECTED_INLINE_PROJECTION_MAGIC: [u8; 4] = *b"PIP1";
+const PERSISTENT_PROJECTED_INLINE_PROJECTION_SCHEMA: u32 = 1;
 type M11InlineProjectionTransportBundleParts = (
     Option<ArenaId>,
     Option<ArenaId>,
     [u8; PERSISTENT_INLINE_PROJECTION_ROLE_DESCRIPTOR_BYTES],
+);
+type M11ProjectedInlineProjectionTransportBundleParts = (
+    Option<ArenaId>,
+    Option<ArenaId>,
+    [u8; PERSISTENT_PROJECTED_INLINE_PROJECTION_DESCRIPTOR_BYTES],
 );
 
 /// Maximum facts in one parser-defined logical Projection page.
@@ -707,6 +716,37 @@ pub(crate) struct PersistentM11InlineProjectionDescriptor {
     link_value_encoded_bytes: u32,
     link_value_checksum: [u8; 32],
     link_value_ordered_commitment256: [u8; 32],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct PersistentM11ProjectedInlineProjectionDescriptor {
+    inner: PersistentM11InlineProjectionDescriptor,
+    projected_utf8_length: u32,
+    projected_utf16_length: u32,
+    source_projection_commitment256: [u8; 32],
+    ordered_commitment256: [u8; 32],
+}
+
+impl PersistentM11ProjectedInlineProjectionDescriptor {
+    pub(crate) const fn inner(self) -> PersistentM11InlineProjectionDescriptor {
+        self.inner
+    }
+
+    pub(crate) const fn projected_utf8_length(self) -> u32 {
+        self.projected_utf8_length
+    }
+
+    pub(crate) const fn projected_utf16_length(self) -> u32 {
+        self.projected_utf16_length
+    }
+
+    pub(crate) const fn source_projection_commitment256(self) -> [u8; 32] {
+        self.source_projection_commitment256
+    }
+
+    pub(crate) const fn ordered_commitment256(self) -> [u8; 32] {
+        self.ordered_commitment256
+    }
 }
 
 impl PersistentM11InlineProjectionDescriptor {
@@ -1485,6 +1525,141 @@ pub struct M11InlineProjectionRoot {
     inner: M11ParserPageRoot,
     link_values: M11ParserPageRoot,
     descriptor: M11InlineProjectionDescriptor,
+}
+
+/// Inline facts whose coordinates are relative to a parser-certified logical
+/// projection rather than the physically contiguous source range that owns
+/// their persistent pages.
+///
+/// The inner root intentionally remains private. This prevents projected
+/// coordinates from being consumed through the ordinary source-contiguous
+/// inline API while still reusing the proven IFP2/ILV1 storage lifecycle.
+#[must_use = "projected inline roots require transfer or explicit fuelled release"]
+pub struct M11ProjectedInlineProjectionRoot {
+    inner: M11InlineProjectionRoot,
+    projected_utf8_length: u32,
+    projected_utf16_length: u32,
+    structural_commitment256: [u8; 32],
+    ordered_commitment256: [u8; 32],
+}
+
+impl fmt::Debug for M11ProjectedInlineProjectionRoot {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("M11ProjectedInlineProjectionRoot")
+            .field("descriptor", self.inner.descriptor())
+            .field("projected_utf8_length", &self.projected_utf8_length)
+            .field("projected_utf16_length", &self.projected_utf16_length)
+            .field("structural_commitment256", &self.structural_commitment256)
+            .finish_non_exhaustive()
+    }
+}
+
+impl M11ProjectedInlineProjectionRoot {
+    /// Wraps an original-runtime inline root after the parser has explicitly
+    /// checked every fact against the logical projected coordinate domain.
+    pub fn new(
+        inner: M11InlineProjectionRoot,
+        projected_utf8_length: u32,
+        projected_utf16_length: u32,
+        maximum_fact_end: u32,
+        structural_commitment256: [u8; 32],
+    ) -> Result<Self, M11InlineProjectionError> {
+        let descriptor = inner.descriptor();
+        let physical_length = descriptor
+            .source_range()
+            .end
+            .checked_sub(descriptor.source_range().start)
+            .ok_or(M11InlineProjectionError::CoordinateOverflow)?;
+        if projected_utf8_length == 0
+            || projected_utf16_length == 0
+            || projected_utf8_length > physical_length
+            || maximum_fact_end > projected_utf8_length
+            || descriptor.link_value_entry_count() != 0
+            || descriptor.link_value_encoded_bytes() != 0
+            || descriptor.link_value_storage_page_count() != 0
+            || structural_commitment256 == [0; 32]
+        {
+            return Err(M11InlineProjectionError::Malformed(
+                "projected inline authority is internally inconsistent",
+            ));
+        }
+        Ok(Self {
+            ordered_commitment256: projected_inline_ordered_commitment(
+                descriptor.source(),
+                descriptor.parser_profile(),
+                descriptor.source_range(),
+                projected_utf8_length,
+                projected_utf16_length,
+                structural_commitment256,
+                descriptor.ordered_commitment256(),
+            ),
+            inner,
+            projected_utf8_length,
+            projected_utf16_length,
+            structural_commitment256,
+        })
+    }
+
+    #[must_use]
+    pub const fn descriptor(&self) -> &M11InlineProjectionDescriptor {
+        self.inner.descriptor()
+    }
+
+    #[must_use]
+    pub const fn projected_utf8_length(&self) -> u32 {
+        self.projected_utf8_length
+    }
+
+    #[must_use]
+    pub const fn projected_utf16_length(&self) -> u32 {
+        self.projected_utf16_length
+    }
+
+    #[must_use]
+    pub const fn structural_commitment256(&self) -> [u8; 32] {
+        self.structural_commitment256
+    }
+
+    #[must_use]
+    pub const fn ordered_commitment256(&self) -> [u8; 32] {
+        self.ordered_commitment256
+    }
+
+    pub(crate) fn transport_bundle_parts(
+        &self,
+        runtime: &DocumentRuntime,
+        expected_source: SourceVersion,
+        expected_profile: ParserProfileId,
+    ) -> Result<M11ProjectedInlineProjectionTransportBundleParts, M11InlineProjectionError> {
+        let (fact_root, link_value_root, inner) =
+            self.inner
+                .transport_bundle_parts(runtime, expected_source, expected_profile)?;
+        let mut descriptor = [0_u8; PERSISTENT_PROJECTED_INLINE_PROJECTION_DESCRIPTOR_BYTES];
+        descriptor[..4].copy_from_slice(&PERSISTENT_PROJECTED_INLINE_PROJECTION_MAGIC);
+        descriptor[4..8]
+            .copy_from_slice(&PERSISTENT_PROJECTED_INLINE_PROJECTION_SCHEMA.to_le_bytes());
+        descriptor[8..12].copy_from_slice(&self.projected_utf8_length.to_le_bytes());
+        descriptor[12..16].copy_from_slice(&self.projected_utf16_length.to_le_bytes());
+        descriptor[16..48].copy_from_slice(&self.structural_commitment256);
+        descriptor[48..].copy_from_slice(&inner);
+        Ok((fact_root, link_value_root, descriptor))
+    }
+
+    pub fn begin_release(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+    ) -> Result<(), M11InlineProjectionError> {
+        self.inner.begin_release(runtime)
+    }
+
+    pub fn poll_release(
+        &self,
+        runtime: &mut DocumentRuntime,
+        fuel: usize,
+    ) -> Result<M11ParserPageReclaimPoll, M11InlineProjectionError> {
+        self.inner.poll_release(runtime, fuel)
+    }
 }
 
 impl fmt::Debug for M11InlineProjectionRoot {
@@ -2380,6 +2555,86 @@ pub(crate) fn decode_persistent_inline_projection_descriptor(
     })
 }
 
+pub(crate) fn decode_persistent_projected_inline_projection_descriptor(
+    bytes: &[u8],
+    expected_source: SourceVersion,
+    expected_profile: ParserProfileId,
+) -> Result<PersistentM11ProjectedInlineProjectionDescriptor, M11InlineProjectionError> {
+    if bytes.len() != PERSISTENT_PROJECTED_INLINE_PROJECTION_DESCRIPTOR_BYTES
+        || bytes[..4] != PERSISTENT_PROJECTED_INLINE_PROJECTION_MAGIC
+        || read_u32(bytes, 4)? != PERSISTENT_PROJECTED_INLINE_PROJECTION_SCHEMA
+    {
+        return Err(M11InlineProjectionError::Malformed(
+            "projected inline descriptor header is invalid",
+        ));
+    }
+    let projected_utf8_length = read_u32(bytes, 8)?;
+    let projected_utf16_length = read_u32(bytes, 12)?;
+    let source_projection_commitment256: [u8; 32] = bytes[16..48]
+        .try_into()
+        .expect("fixed projected source commitment");
+    let inner = decode_persistent_inline_projection_descriptor(
+        &bytes[48..],
+        expected_source,
+        expected_profile,
+    )?;
+    let physical_length = inner
+        .source_end
+        .checked_sub(inner.source_start)
+        .ok_or(M11InlineProjectionError::CoordinateOverflow)?;
+    if projected_utf8_length == 0
+        || projected_utf16_length == 0
+        || projected_utf8_length > physical_length
+        || source_projection_commitment256 == [0; 32]
+        || inner.link_value_entry_count != 0
+        || inner.link_value_encoded_bytes != 0
+        || inner.link_value_storage_page_count != 0
+    {
+        return Err(M11InlineProjectionError::Malformed(
+            "projected inline descriptor dimensions are invalid",
+        ));
+    }
+    let ordered_commitment256 = projected_inline_ordered_commitment(
+        inner.source,
+        inner.parser_profile,
+        &(inner.source_start..inner.source_end),
+        projected_utf8_length,
+        projected_utf16_length,
+        source_projection_commitment256,
+        inner.ordered_commitment256,
+    );
+    Ok(PersistentM11ProjectedInlineProjectionDescriptor {
+        inner,
+        projected_utf8_length,
+        projected_utf16_length,
+        source_projection_commitment256,
+        ordered_commitment256,
+    })
+}
+
+fn projected_inline_ordered_commitment(
+    source: SourceVersion,
+    parser_profile: ParserProfileId,
+    physical_range: &Range<u32>,
+    projected_utf8_length: u32,
+    projected_utf16_length: u32,
+    source_projection_commitment256: [u8; 32],
+    inline_commitment256: [u8; 32],
+) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"flark.projected-inline-projection.v1\0");
+    hasher.update(&source.root().get().to_le_bytes());
+    hasher.update(&source.revision().get().to_le_bytes());
+    hasher.update(&parser_profile.get().to_le_bytes());
+    hasher.update(&physical_range.start.to_le_bytes());
+    hasher.update(&physical_range.end.to_le_bytes());
+    hasher.update(&projected_utf8_length.to_le_bytes());
+    hasher.update(&projected_utf16_length.to_le_bytes());
+    hasher.update(&source_projection_commitment256);
+    hasher.update(&inline_commitment256);
+    *hasher.finalize().as_bytes()
+}
+
 pub(crate) fn validate_persistent_inline_projection_role(
     arena: &PageArena,
     fact_root: Option<ArenaId>,
@@ -2627,6 +2882,7 @@ pub(crate) struct PersistentM11InlineProjectionHostCursor<'arena> {
     arena: &'arena PageArena,
     root: Option<ArenaId>,
     descriptor: PersistentM11InlineProjectionDescriptor,
+    coordinate_limit: u32,
     previous_page_anchor: u32,
     last_fact_start: Option<u32>,
     next_page: u64,
@@ -2642,10 +2898,32 @@ impl<'arena> PersistentM11InlineProjectionHostCursor<'arena> {
         root: Option<ArenaId>,
         descriptor: PersistentM11InlineProjectionDescriptor,
     ) -> Self {
+        let coordinate_limit = descriptor
+            .source_end
+            .saturating_sub(descriptor.source_start);
+        Self::new_with_coordinate_limit(arena, root, descriptor, coordinate_limit)
+    }
+
+    pub(crate) fn new_projected(
+        arena: &'arena PageArena,
+        root: Option<ArenaId>,
+        descriptor: PersistentM11InlineProjectionDescriptor,
+        projected_utf8_length: u32,
+    ) -> Self {
+        Self::new_with_coordinate_limit(arena, root, descriptor, projected_utf8_length)
+    }
+
+    fn new_with_coordinate_limit(
+        arena: &'arena PageArena,
+        root: Option<ArenaId>,
+        descriptor: PersistentM11InlineProjectionDescriptor,
+        coordinate_limit: u32,
+    ) -> Self {
         Self {
             arena,
             root,
             descriptor,
+            coordinate_limit,
             previous_page_anchor: 0,
             last_fact_start: None,
             next_page: 0,
@@ -2696,16 +2974,11 @@ impl<'arena> PersistentM11InlineProjectionHostCursor<'arena> {
             .tree_nodes_visited
             .checked_add(inspection.node_headers_decoded)
             .ok_or(M11InlineProjectionError::CoordinateOverflow)?;
-        let source_len = self
-            .descriptor
-            .source_end
-            .checked_sub(self.descriptor.source_start)
-            .ok_or(M11InlineProjectionError::CoordinateOverflow)?;
         let decoded = validate_logical_page(
             record.as_bytes(),
             self.previous_page_anchor,
             self.last_fact_start,
-            source_len,
+            self.coordinate_limit,
         )?;
         self.previous_page_anchor = decoded.anchor;
         self.last_fact_start = Some(decoded.last_fact_start);
@@ -2751,6 +3024,7 @@ pub(crate) struct PersistentM11InlineProjectionHostValidator {
     fact_root: Option<ArenaId>,
     link_value_root: Option<ArenaId>,
     descriptor: PersistentM11InlineProjectionDescriptor,
+    coordinate_limit: u32,
     hasher: blake3::Hasher,
     previous_page_anchor: u32,
     last_fact_start: Option<u32>,
@@ -2769,6 +3043,50 @@ impl PersistentM11InlineProjectionHostValidator {
         link_value_root: Option<ArenaId>,
         descriptor: PersistentM11InlineProjectionDescriptor,
     ) -> Result<Self, M11InlineProjectionError> {
+        let coordinate_limit = descriptor
+            .source_end
+            .saturating_sub(descriptor.source_start);
+        Self::new_with_coordinate_limit(
+            arena,
+            fact_root,
+            link_value_root,
+            descriptor,
+            coordinate_limit,
+        )
+    }
+
+    pub(crate) fn new_projected(
+        arena: &PageArena,
+        fact_root: Option<ArenaId>,
+        link_value_root: Option<ArenaId>,
+        descriptor: PersistentM11InlineProjectionDescriptor,
+        projected_utf8_length: u32,
+    ) -> Result<Self, M11InlineProjectionError> {
+        Self::new_with_coordinate_limit(
+            arena,
+            fact_root,
+            link_value_root,
+            descriptor,
+            projected_utf8_length,
+        )
+    }
+
+    fn new_with_coordinate_limit(
+        arena: &PageArena,
+        fact_root: Option<ArenaId>,
+        link_value_root: Option<ArenaId>,
+        descriptor: PersistentM11InlineProjectionDescriptor,
+        coordinate_limit: u32,
+    ) -> Result<Self, M11InlineProjectionError> {
+        let physical_length = descriptor
+            .source_end
+            .checked_sub(descriptor.source_start)
+            .ok_or(M11InlineProjectionError::CoordinateOverflow)?;
+        if coordinate_limit > physical_length {
+            return Err(M11InlineProjectionError::Malformed(
+                "inline host coordinate limit exceeds physical authority",
+            ));
+        }
         validate_imported_m11_parser_page_root(arena, fact_root, descriptor.page_claim())?;
         validate_imported_m11_parser_page_root(
             arena,
@@ -2801,6 +3119,7 @@ impl PersistentM11InlineProjectionHostValidator {
             fact_root,
             link_value_root,
             descriptor,
+            coordinate_limit,
             hasher: begin_commitment(
                 descriptor.source,
                 descriptor.parser_profile,
@@ -2832,11 +3151,6 @@ impl PersistentM11InlineProjectionHostValidator {
             });
         }
 
-        let source_len = self
-            .descriptor
-            .source_end
-            .checked_sub(self.descriptor.source_start)
-            .ok_or(M11InlineProjectionError::CoordinateOverflow)?;
         let mut transitions = 0;
         while transitions < fuel {
             if self.observed_pages < self.descriptor.logical_page_count {
@@ -2850,7 +3164,7 @@ impl PersistentM11InlineProjectionHostValidator {
                     record.as_bytes(),
                     self.previous_page_anchor,
                     self.last_fact_start,
-                    source_len,
+                    self.coordinate_limit,
                 )?;
                 for fact_index in 0..decoded.fact_count {
                     let fact = decode_fact(record.as_bytes(), fact_index, decoded.anchor)?;

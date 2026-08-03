@@ -570,7 +570,9 @@ void _refreshInlineIsland({
           when _isRecursiveGreenBlockQuoteParagraph(recursiveQuery):
         final certificate = recursiveQuery.blockQuoteProjection;
         FlarkV3LeafProjectionDemandDisposition? demand;
-        if (recursiveQuery.inlineFacts == null && shouldRequestInline()) {
+        if (recursiveQuery.projectedInlineFacts == null &&
+            recursiveQuery.inlineFacts == null &&
+            shouldRequestInline()) {
           demand = ensureActiveProjectionAtUtf16(
             position,
             affinity: switch (selection.affinity) {
@@ -627,11 +629,44 @@ void _refreshInlineIsland({
             'Recursive block-quote certificate has incompatible geometry.',
           );
         }
+        final projectedInlineFacts = recursiveQuery.projectedInlineFacts;
+        final refinementTerminal = switch (demand) {
+          FlarkV3LeafProjectionDemandDisposition.notApplicable ||
+          FlarkV3LeafProjectionDemandDisposition.retryLimitReached => true,
+          _ => false,
+        };
+        if (projectedInlineFacts == null &&
+            recursiveQuery.inlineFacts == null &&
+            !refinementTerminal &&
+            controller.hasProjectedInlinePresentation &&
+            controller.inputIslandGlobalStartUtf16 == blockSource.startUtf16 &&
+            controller.inputIslandGlobalEndUtf16 == blockSource.endUtf16 &&
+            controller.editingController.text != sourceProjection.displayText) {
+          // A local edit has already updated the exact source/display map and
+          // marker-free value mechanically. Keep that projection stable while
+          // the new projected-coordinate facts are in flight; adopting only
+          // the outer quote projection here would flash inline markers.
+          controller.markProjectedInputLeaseProvisional();
+          return;
+        }
         var inputLease = FlarkV3ProjectedInputLease.fromSourceProjection(
           sourceProjection,
           editPolicy: FlarkV3BlockQuoteEditPolicy(),
         );
-        if (recursiveQuery.inlineFacts != null) {
+        if (projectedInlineFacts?.disposition ==
+            FlarkV3ProjectedInlineFactsDisposition.authoritative) {
+          final projectedInline =
+              FlarkV3ProjectedInlineProjection.fromValidatedFacts(
+                projectedText: sourceProjection.displayText,
+                facts: projectedInlineFacts!,
+              );
+          inputLease =
+              FlarkV3ProjectedInputLease.fromSourceProjectionWithProjectedInline(
+                sourceProjection,
+                projectedInline,
+                editPolicy: FlarkV3BlockQuoteEditPolicy(),
+              );
+        } else if (recursiveQuery.inlineFacts != null) {
           final inlinePresentation =
               FlarkV3InlineIslandPresentation.resolveRecursiveGreenParagraph(
                 sourceDocument: source,

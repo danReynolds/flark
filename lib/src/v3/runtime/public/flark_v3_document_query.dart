@@ -1044,6 +1044,7 @@ final class FlarkV3RecursiveGreenPointQuery extends FlarkV3DocumentQueryResult {
     this.inlineSource,
     this.inlineFacts,
     this.blockQuoteProjection,
+    this.projectedInlineFacts,
   }) : ancestry = List<FlarkV3RecursiveGreenAncestor>.unmodifiable(ancestry);
 
   final int structureRevision;
@@ -1082,6 +1083,10 @@ final class FlarkV3RecursiveGreenPointQuery extends FlarkV3DocumentQueryResult {
   /// from structural projection to inline parsing.
   final FlarkV3BlockQuoteProjectionCertificate? blockQuoteProjection;
 
+  /// Inline facts whose coordinates are relative to [blockQuoteProjection]'s
+  /// marker-free display text rather than to physical document source.
+  final FlarkV3ProjectedInlineFacts? projectedInlineFacts;
+
   FlarkV3RecursiveGreenAncestor get owner => ancestry[ownerIndex];
 
   /// Adds independently certified presentation inputs without changing the
@@ -1095,6 +1100,7 @@ final class FlarkV3RecursiveGreenPointQuery extends FlarkV3DocumentQueryResult {
     FlarkV3SourceSpan? inlineSource,
     FlarkV3InlineFacts? inlineFacts,
     FlarkV3BlockQuoteProjectionCertificate? blockQuoteProjection,
+    FlarkV3ProjectedInlineFacts? projectedInlineFacts,
   }) => FlarkV3RecursiveGreenPointQuery._(
     sourceRevision: sourceRevision,
     structureRevision: structureRevision,
@@ -1113,6 +1119,7 @@ final class FlarkV3RecursiveGreenPointQuery extends FlarkV3DocumentQueryResult {
     inlineSource: inlineSource ?? this.inlineSource,
     inlineFacts: inlineFacts ?? this.inlineFacts,
     blockQuoteProjection: blockQuoteProjection ?? this.blockQuoteProjection,
+    projectedInlineFacts: projectedInlineFacts ?? this.projectedInlineFacts,
   );
 
   /// Whether this atom can back a direct source/display editing projection.
@@ -1481,6 +1488,107 @@ final class FlarkV3DocumentQueryDecoder {
       paragraphSource: blockSource,
       blockQuoteProjection: certificate,
     );
+  }
+
+  /// Joins inline facts parsed in an installed block-quote projection's
+  /// marker-free coordinate space.
+  ///
+  /// The physical binding remains owned by the authenticated BlockQuote
+  /// frame. Projected metrics and text come only from the independently
+  /// decoded quote certificate already attached to [query].
+  static FlarkV3RecursiveGreenPointQuery joinRecursiveGreenBlockQuoteInline({
+    required FlarkV3SourceDocument sourceDocument,
+    required FlarkV3SourceVersion expectedSource,
+    required int expectedProfilePartition,
+    required FlarkV3RecursiveGreenPointQuery query,
+    required FlarkV3HotInlineSidecarBinding binding,
+    required FlarkV3InlineSidecarQueryOutcome outcome,
+  }) {
+    final blockQuote = _nearestBlockQuoteAncestor(query);
+    final certificate = query.blockQuoteProjection;
+    if (query.sourceRevision != expectedSource.revision ||
+        query.structureRevision != expectedSource.revision ||
+        query.owner.kind != FlarkV3RecursiveGreenKind.paragraph ||
+        blockQuote == null ||
+        certificate == null ||
+        certificate.sourceVersion != expectedSource ||
+        !_bindingMatchesRecursiveGreenFrame(
+          binding.blockOrdinal,
+          blockQuote.frameId,
+        ) ||
+        binding.parserProfile.value != expectedProfilePartition) {
+      throw const FlarkV3DocumentQueryException(
+        'The projected block-quote inline sidecar has incompatible authority.',
+      );
+    }
+    final blockSource = FlarkV3SourceSpan(
+      startUtf8: binding.physicalStartUtf8,
+      endUtf8: binding.physicalEndUtf8,
+      startUtf16: binding.physicalStartUtf16,
+      endUtf16: binding.physicalEndUtf16,
+    );
+    if (binding.visibleStartUtf8 != binding.physicalStartUtf8 ||
+        binding.visibleEndUtf8 != binding.physicalEndUtf8 ||
+        binding.visibleStartUtf16 != binding.physicalStartUtf16 ||
+        binding.visibleEndUtf16 != binding.physicalEndUtf16 ||
+        !_sameSpan(blockSource, certificate.source) ||
+        !_containsSpan(blockSource, query.source)) {
+      throw const FlarkV3DocumentQueryException(
+        'The projected block-quote inline sidecar has invalid geometry.',
+      );
+    }
+
+    final projectedText = certificate.toSourceProjection().displayText;
+    try {
+      final FlarkV3ProjectedInlineFacts? facts = switch (outcome) {
+        FlarkV3InlineSidecarQueryAuthoritative(
+          payloadKind: FlarkV3InlineSidecarPayloadKind.blockQuoteInline,
+          :final factCount,
+          :final encodedFacts,
+        ) =>
+          FlarkV3ProjectedInlineFactsDecoder.decode(
+            sourceDocument: sourceDocument,
+            expectedSource: expectedSource,
+            factSource: expectedSource,
+            expectedProfilePartition: expectedProfilePartition,
+            profilePartition: binding.parserProfile.value,
+            expectedPhysicalSource: certificate.source,
+            factPhysicalSource: blockSource,
+            expectedProjectedUtf8Length: certificate.projectedUtf8Length,
+            expectedProjectedUtf16Length: certificate.projectedUtf16Length,
+            projectedText: projectedText,
+            disposition: FlarkV3ProjectedInlineFactsDisposition.authoritative,
+            factCount: factCount,
+            encodedFacts: encodedFacts,
+          ),
+        FlarkV3InlineSidecarQueryAuthoritative() =>
+          throw const FlarkV3DocumentQueryException(
+            'The projected block-quote inline sidecar has a non-inline '
+            'payload kind.',
+          ),
+        FlarkV3InlineSidecarQueryUnsupported() =>
+          FlarkV3ProjectedInlineFactsDecoder.decode(
+            sourceDocument: sourceDocument,
+            expectedSource: expectedSource,
+            factSource: expectedSource,
+            expectedProfilePartition: expectedProfilePartition,
+            profilePartition: binding.parserProfile.value,
+            expectedPhysicalSource: certificate.source,
+            factPhysicalSource: blockSource,
+            expectedProjectedUtf8Length: certificate.projectedUtf8Length,
+            expectedProjectedUtf16Length: certificate.projectedUtf16Length,
+            projectedText: projectedText,
+            disposition: FlarkV3ProjectedInlineFactsDisposition.unsupported,
+            factCount: 0,
+            encodedFacts: Uint8List(0),
+          ),
+        FlarkV3InlineSidecarQueryUnavailable() => null,
+      };
+      if (facts == null) return query;
+      return query.withPresentationCertificates(projectedInlineFacts: facts);
+    } on FlarkV3ProjectedInlineFactsDecodeException catch (error) {
+      throw FlarkV3DocumentQueryException(error.message);
+    }
   }
 
   static FlarkV3BlockQuoteProjectionCertificate

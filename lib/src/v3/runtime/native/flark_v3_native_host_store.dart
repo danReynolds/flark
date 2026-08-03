@@ -7,7 +7,7 @@ import '../../host/host.dart';
 import '../../source/source.dart';
 import '../flark_v3_parser_transport.dart';
 
-const int flarkV3NativeHostAbiVersion = 0x00030006;
+const int flarkV3NativeHostAbiVersion = 0x00030007;
 const int flarkV3NativeHostMaximumQueryBytes = 64 * 1024;
 const int flarkV3NativeHostInlineSidecarMaximumQueryBytes = 128 * 1024;
 const int flarkV3NativeHostViewportMaximumQueryBytes = 256 * 1024;

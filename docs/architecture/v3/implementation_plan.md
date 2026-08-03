@@ -49,8 +49,7 @@ freshness, parity, ownership, and checkpoint evidence.
 Checkpoint C is not passed. Edits to or restart
 through definitions, definition-bearing BOF, unsupported or unanchored regions,
 over-cap or lost-convergence crops, authenticated restart/convergence for quote
-or indented-code edits, broader quote/list shapes and block grammar, inline
-emphasis/code composition inside projected quotes, virtualized multi-block
+or indented-code edits, broader quote/list shapes and block grammar, virtualized multi-block
 materialization, 100 MiB scale closure, user decisions, the Linux AOT CI
 receipt, floor-device evidence, and production hardening remain.
 
@@ -363,6 +362,26 @@ edit before later reference definitions. These are functional and ownership
 receipts, not a new performance measurement, general definition editing, or a
 complete reference-link interaction claim.
 
+### Projected BlockQuote inline evidence addendum
+
+The admitted depth-one single-Paragraph BlockQuote now has one additional
+separately demanded authority lane. Target tag 7 returns parser-certified
+strong, emphasis, and inline-code facts in the quote's projected coordinates;
+Dart geometrically composes them through the existing disjoint physical-line
+projection and never reparses the projected text. One strong span deliberately
+crosses two marked physical lines.
+
+The focused endpoint fixture passes on the normal 2 MiB Rust test stack. The
+public Dart decoder/cache, native managed Flutter, and real Chrome Worker/Wasm
+managed checkpoint are green. During recertification, Flutter retains the
+mechanically updated marker-free lease until exact projected facts arrive, so
+no observer sees quote, strong, or code markers and the `EditableTextState` and
+platform input client remain stable.
+
+This addendum supersedes the table's earlier pending quote-inline-composition
+wording. It does not admit nested or multi-child quotes or authenticate local
+restart/convergence for edits inside the quote.
+
 ### CommonMark coverage and recursive-container gate
 
 The pinned CommonMark 0.31.2 corpus contains 652 examples. The executable
@@ -485,8 +504,11 @@ built; it no longer defines the order of new work:
    exact-clean structure, separately demanded schema-4 path/physical-line
    projection, native/Chrome parity and lifecycle, and marker-free managed
    Flutter rail/Enter/recertification. Nested or multi-child quotes remain
-   typed unsupported; inline emphasis/code composition inside the quote and
-   authenticated restart/convergence for quote edits remain pending.
+   typed unsupported. A separately demanded target-7 projected-coordinate
+   lane now composes strong, emphasis, and inline-code facts across disjoint
+   physical quote lines while preserving marker-free pixels during
+   recertification. Authenticated restart/convergence for quote edits remains
+   pending.
    The first top-level depth-one tight BulletList vertical is also complete
    through exact-clean structured role variant 9, the established separately
    demanded viewport-schema-5 selected-item projection, and marker-free managed

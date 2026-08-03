@@ -243,6 +243,7 @@ pub struct M11BlockQuoteProjectionJob {
     page: Vec<BlockQuoteLineV1>,
     build: Option<M11BlockQuoteProjectionBuild>,
     root: Option<M11BlockQuoteProjectionRoot>,
+    projected_inline_lines: Option<Vec<BlockQuoteLineV1>>,
     phase: ProjectionJobPhase,
     scan_complete: bool,
     next_absolute_byte: u32,
@@ -327,6 +328,20 @@ impl M11BlockQuoteProjectionJob {
             },
             ProjectionJobShape::BlockQuote,
         )
+    }
+
+    /// Starts the same certified quote projection while retaining its bounded
+    /// line map and exact source authority for a subsequent marker-free inline
+    /// transduction. Ordinary quote jobs keep the prior constant-page memory
+    /// behavior.
+    pub fn new_for_recursive_green_projected_inline(
+        runtime: &DocumentRuntime,
+        fence: M11RecursiveGreenBlockQuoteProjectionFence,
+        binding: M11ParserBinding,
+    ) -> Result<Self, M11BlockQuoteProjectionJobError> {
+        let mut job = Self::new_for_recursive_green(runtime, fence, binding)?;
+        job.projected_inline_lines = Some(Vec::new());
+        Ok(job)
     }
 
     fn from_authority(
@@ -506,6 +521,7 @@ impl M11BlockQuoteProjectionJob {
             page,
             build: Some(build),
             root: None,
+            projected_inline_lines: None,
             phase: ProjectionJobPhase::DiscoverLine,
             scan_complete: false,
             next_absolute_byte: fenced.block_source.start,
@@ -683,6 +699,9 @@ impl M11BlockQuoteProjectionJob {
             .ok_or(M11BlockQuoteProjectionJobError::InvalidState)?
             .finish()?;
         let record = self.record_line(physical, segmented)?;
+        if let Some(lines) = self.projected_inline_lines.as_mut() {
+            lines.push(record);
+        }
         self.page.push(record);
         self.next_absolute_byte = physical.identity().end_byte();
 
@@ -1135,7 +1154,9 @@ impl M11BlockQuoteProjectionJob {
                         .as_ref()
                         .ok_or(M11BlockQuoteProjectionJobError::InvalidState)?,
                 )?;
-                drop(self.authority.take());
+                if self.projected_inline_lines.is_none() {
+                    drop(self.authority.take());
+                }
                 self.phase = ProjectionJobPhase::Complete;
             }
             M11BlockQuoteProjectionBuildStatus::NeedsPage
@@ -1178,8 +1199,30 @@ impl M11BlockQuoteProjectionJob {
             return None;
         }
         let root = self.root.take()?;
+        drop(self.authority.take());
+        drop(self.projected_inline_lines.take());
         self.phase = ProjectionJobPhase::Transferred;
         Some(root)
+    }
+
+    /// Transfers the certified structural root, original physical authority,
+    /// and bounded line map needed by the projected-inline composite job.
+    #[must_use]
+    pub fn take_projected_inline_parts(
+        &mut self,
+    ) -> Option<(
+        M11BlockQuoteProjectionRoot,
+        M11ParserSourceRangeAuthority,
+        Vec<BlockQuoteLineV1>,
+    )> {
+        if self.phase != ProjectionJobPhase::Complete {
+            return None;
+        }
+        let root = self.root.take()?;
+        let authority = self.authority.take()?;
+        let lines = self.projected_inline_lines.take()?;
+        self.phase = ProjectionJobPhase::Transferred;
+        Some((root, authority, lines))
     }
 
     /// Begins explicit cleanup of any source scan or persistent build/root.
@@ -1203,6 +1246,7 @@ impl M11BlockQuoteProjectionJob {
         }
         let _ = self.line_scanner.take();
         self.page.clear();
+        drop(self.projected_inline_lines.take());
         if let Some(build) = self.build.as_mut() {
             if !self.build_cancel_started {
                 build.begin_cancel(runtime)?;

@@ -86,6 +86,40 @@ Wasm memory growth detached a pre-call JavaScript `DataView`. Structural range
 and ordinal-window queries now reacquire `memoryData` after the Wasm call before
 decoding receipts.
 
+## Projected BlockQuote inline checkpoint
+
+The first depth-one, single-Paragraph BlockQuote now composes inline authority
+without asking Dart or Flutter to parse its projected text. A separately
+demanded target-7 endpoint job derives strong, emphasis, and inline-code facts
+in parser-owned projected coordinates, then the Dart presentation layer
+geometrically composes those facts through the quote's disjoint physical-line
+projection. The fixture deliberately carries one strong span across two marked
+physical lines.
+
+The product checkpoint proves:
+
+- exact canonical quote source, including every `> `, emphasis delimiter, and
+  code delimiter;
+- marker-free displayed text with parser-certified styles across physical
+  lines;
+- one stable `EditableTextState` and platform input client through edit and
+  recertification;
+- no observer-visible quote, `**`, or backtick marker flash while the new
+  projected facts are pending;
+- native and real Chrome Worker/Wasm target-7 parity; and
+- fail-closed behavior for unsupported projected constructs.
+
+The focused native endpoint fixture passes on the normal 2 MiB Rust test stack.
+That gate also exposed and removed a debug-stack-amplifying return-by-value
+wrapper around the 91,856-byte inline projection state. The state object's size
+remains a follow-up native/Wasm stack-hygiene item: a later cleanup should make
+it a small handle over heap-backed or phase-specific state, without reopening
+this protocol or presentation architecture.
+
+This closes inline composition for the admitted quote slice. Nested and
+multi-child BlockQuotes, authenticated local restart/convergence inside quotes,
+and broader CommonMark container coverage remain open.
+
 ## Maintainability boundary
 
 Before `1f0d414`, `v3_candidate_endpoint.rs` was 22,908 lines. Roughly half was

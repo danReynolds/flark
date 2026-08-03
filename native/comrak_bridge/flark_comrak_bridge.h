@@ -358,7 +358,7 @@ void flark_v3_endpoint_emergency_finalize(void* token);
  * succeeded, and only then release the token. Reattach the finalizer if
  * reclamation cannot be proven.
  */
-#define FLARK_V3_HOST_NATIVE_ABI_VERSION UINT32_C(0x00030006)
+#define FLARK_V3_HOST_NATIVE_ABI_VERSION UINT32_C(0x00030007)
 #define FLARK_V3_HOST_MAXIMUM_FRAME_BYTES UINT32_C(5140)
 #define FLARK_V3_HOST_MAXIMUM_PACKET_BYTES UINT32_C(71724)
 #define FLARK_V3_HOST_MAXIMUM_QUERY_BYTES UINT32_C(65536)

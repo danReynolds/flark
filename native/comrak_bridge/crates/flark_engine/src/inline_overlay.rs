@@ -41,12 +41,15 @@ use crate::indented_code_projection::{
     PERSISTENT_INDENTED_CODE_PROJECTION_DESCRIPTOR_BYTES,
 };
 use crate::inline_projection::{
-    decode_persistent_inline_projection_descriptor, validate_persistent_inline_projection_role,
-    M11InlineProjectionDescriptor, M11InlineProjectionError, M11InlineProjectionRoot,
+    decode_persistent_inline_projection_descriptor,
+    decode_persistent_projected_inline_projection_descriptor,
+    validate_persistent_inline_projection_role, M11InlineProjectionDescriptor,
+    M11InlineProjectionError, M11InlineProjectionRoot, M11ProjectedInlineProjectionRoot,
     PersistentM11InlineProjectionDescriptor, PersistentM11InlineProjectionHostCursor,
     PersistentM11InlineProjectionHostValidationPoll, PersistentM11InlineProjectionHostValidator,
-    M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES, M11_INLINE_LINK_VALUES_MAX_ENTRIES,
-    PERSISTENT_INLINE_PROJECTION_ROLE_DESCRIPTOR_BYTES,
+    PersistentM11ProjectedInlineProjectionDescriptor, M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES,
+    M11_INLINE_LINK_VALUES_MAX_ENTRIES, PERSISTENT_INLINE_PROJECTION_ROLE_DESCRIPTOR_BYTES,
+    PERSISTENT_PROJECTED_INLINE_PROJECTION_DESCRIPTOR_BYTES,
 };
 use crate::parser_pages::{
     is_m11_parser_page_node_payload, validate_imported_m11_parser_page_node,
@@ -331,6 +334,7 @@ pub(crate) enum M11InlineOverlayDisposition {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum M11InlineOverlayProjectionKind {
     Inline,
+    ProjectedInline,
     IndentedCode,
     BlockQuote,
     /// A tight bullet list reuses the proven persistent line-prefix record
@@ -359,6 +363,7 @@ pub(crate) struct M11InlineOverlayOrderedItem {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PersistentM11LeafProjectionDescriptor {
     Inline(PersistentM11InlineProjectionDescriptor),
+    ProjectedInline(PersistentM11ProjectedInlineProjectionDescriptor),
     IndentedCode(PersistentM11IndentedCodeProjectionDescriptor),
     BlockQuote(PersistentM11BlockQuoteProjectionDescriptor),
     BulletList(PersistentM11BlockQuoteProjectionDescriptor),
@@ -369,6 +374,7 @@ impl PersistentM11LeafProjectionDescriptor {
     const fn projection_kind(self) -> M11InlineOverlayProjectionKind {
         match self {
             Self::Inline(_) => M11InlineOverlayProjectionKind::Inline,
+            Self::ProjectedInline(_) => M11InlineOverlayProjectionKind::ProjectedInline,
             Self::IndentedCode(_) => M11InlineOverlayProjectionKind::IndentedCode,
             Self::BlockQuote(_) => M11InlineOverlayProjectionKind::BlockQuote,
             Self::BulletList(_) => M11InlineOverlayProjectionKind::BulletList,
@@ -379,6 +385,7 @@ impl PersistentM11LeafProjectionDescriptor {
     const fn logical_page_count(self) -> u64 {
         match self {
             Self::Inline(descriptor) => descriptor.logical_page_count(),
+            Self::ProjectedInline(descriptor) => descriptor.inner().logical_page_count(),
             Self::IndentedCode(descriptor) => descriptor.logical_page_count(),
             Self::BlockQuote(descriptor) => descriptor.logical_page_count(),
             Self::BulletList(descriptor) => descriptor.logical_page_count(),
@@ -419,6 +426,42 @@ impl M11InlineOverlayEnvelope {
                 link_value_entry_count: projection.link_value_entry_count(),
                 link_value_encoded_bytes: projection.link_value_encoded_bytes(),
                 link_value_storage_page_count: projection.link_value_storage_page_count(),
+            },
+        })
+    }
+
+    pub(crate) fn from_projected_inline_projection(
+        binding: M11InlineOverlayBinding,
+        projection: &M11ProjectedInlineProjectionRoot,
+    ) -> Result<Self, M11InlineOverlayError> {
+        let descriptor = projection.descriptor();
+        if !matches!(binding.owner, M11InlineOverlayOwner::RecursiveGreenFrame(_))
+            || descriptor.source() != binding.base.source
+            || descriptor.parser_profile() != binding.base.parser_profile
+            || descriptor.source_range() != &binding.physical_range
+            || descriptor.source_range() != &binding.visible_range
+            || projection.projected_utf8_length()
+                > binding
+                    .visible_range
+                    .end
+                    .saturating_sub(binding.visible_range.start)
+        {
+            return Err(M11InlineOverlayError::ProjectionMismatch);
+        }
+        Ok(Self {
+            binding,
+            disposition: M11InlineOverlayDisposition::Authoritative {
+                projection_kind: M11InlineOverlayProjectionKind::ProjectedInline,
+                selected_item_ordinal: None,
+                selected_item_line_ending: None,
+                ordered_item: None,
+                logical_page_count: descriptor.logical_page_count(),
+                fact_count: descriptor.fact_count(),
+                storage_page_count: descriptor.storage_page_count(),
+                ordered_commitment256: projection.ordered_commitment256(),
+                link_value_entry_count: 0,
+                link_value_encoded_bytes: 0,
+                link_value_storage_page_count: 0,
             },
         })
     }
@@ -703,6 +746,52 @@ impl M11InlineOverlayEnvelope {
         Ok(())
     }
 
+    pub(crate) fn validate_persistent_projected_inline_projection(
+        &self,
+        descriptor: PersistentM11ProjectedInlineProjectionDescriptor,
+    ) -> Result<(), M11InlineOverlayError> {
+        let M11InlineOverlayDisposition::Authoritative {
+            projection_kind,
+            selected_item_ordinal,
+            selected_item_line_ending,
+            ordered_item,
+            logical_page_count,
+            fact_count,
+            storage_page_count,
+            ordered_commitment256,
+            link_value_entry_count,
+            link_value_encoded_bytes,
+            link_value_storage_page_count,
+        } = self.disposition
+        else {
+            return Err(M11InlineOverlayError::ProjectionMismatch);
+        };
+        let inner = descriptor.inner();
+        if projection_kind != M11InlineOverlayProjectionKind::ProjectedInline
+            || selected_item_ordinal.is_some()
+            || selected_item_line_ending.is_some()
+            || ordered_item.is_some()
+            || !matches!(
+                self.binding.owner,
+                M11InlineOverlayOwner::RecursiveGreenFrame(_)
+            )
+            || inner.source() != self.binding.base.source
+            || inner.parser_profile() != self.binding.base.parser_profile
+            || inner.source_range() != self.binding.physical_range
+            || inner.source_range() != self.binding.visible_range
+            || inner.logical_page_count() != logical_page_count
+            || inner.fact_count() != fact_count
+            || inner.storage_page_count() != storage_page_count
+            || descriptor.ordered_commitment256() != ordered_commitment256
+            || link_value_entry_count != 0
+            || link_value_encoded_bytes != 0
+            || link_value_storage_page_count != 0
+        {
+            return Err(M11InlineOverlayError::ProjectionMismatch);
+        }
+        Ok(())
+    }
+
     pub(crate) fn validate_persistent_indented_code_projection(
         &self,
         descriptor: PersistentM11IndentedCodeProjectionDescriptor,
@@ -915,7 +1004,9 @@ impl M11InlineOverlayEnvelope {
         ) {
             match self.disposition {
                 M11InlineOverlayDisposition::Authoritative {
-                    projection_kind: M11InlineOverlayProjectionKind::BlockQuote,
+                    projection_kind:
+                        M11InlineOverlayProjectionKind::BlockQuote
+                        | M11InlineOverlayProjectionKind::ProjectedInline,
                     ..
                 } => INLINE_OVERLAY_SCHEMA_RECURSIVE_GREEN_TYPED,
                 M11InlineOverlayDisposition::Authoritative {
@@ -925,7 +1016,9 @@ impl M11InlineOverlayEnvelope {
                 | M11InlineOverlayDisposition::Unsupported { .. } => {
                     INLINE_OVERLAY_SCHEMA_RECURSIVE_GREEN_INLINE
                 }
-                _ => unreachable!("recursive Green owner requires inline or block-quote payload"),
+                _ => unreachable!(
+                    "recursive Green owner requires inline, projected-inline, or block-quote payload"
+                ),
             }
         } else {
             match self.disposition {
@@ -947,6 +1040,10 @@ impl M11InlineOverlayEnvelope {
                     ..
                 }
                 | M11InlineOverlayDisposition::Unsupported { .. } => INLINE_OVERLAY_SCHEMA_INLINE,
+                M11InlineOverlayDisposition::Authoritative {
+                    projection_kind: M11InlineOverlayProjectionKind::ProjectedInline,
+                    ..
+                } => unreachable!("projected inline requires a recursive Green owner"),
             }
         };
         output[4..8].copy_from_slice(&schema.to_le_bytes());
@@ -974,6 +1071,10 @@ impl M11InlineOverlayEnvelope {
                     selected_item_ordinal: _,
                     ..
                 } => 3_u32,
+                M11InlineOverlayDisposition::Authoritative {
+                    projection_kind: M11InlineOverlayProjectionKind::ProjectedInline,
+                    ..
+                } => 11_u32,
                 M11InlineOverlayDisposition::Authoritative {
                     projection_kind: M11InlineOverlayProjectionKind::BulletList,
                     selected_item_line_ending,
@@ -1100,6 +1201,9 @@ impl M11InlineOverlayEnvelope {
             (INLINE_OVERLAY_SCHEMA_RECURSIVE_GREEN_TYPED, 3) => {
                 (M11InlineOverlayProjectionKind::BlockQuote, None)
             }
+            (INLINE_OVERLAY_SCHEMA_RECURSIVE_GREEN_TYPED, 11) => {
+                (M11InlineOverlayProjectionKind::ProjectedInline, None)
+            }
             (INLINE_OVERLAY_SCHEMA_TYPED, 2) => {
                 (M11InlineOverlayProjectionKind::IndentedCode, None)
             }
@@ -1219,17 +1323,23 @@ impl M11InlineOverlayEnvelope {
                 if (logical_page_count == 0) != (fact_count == 0 && storage_page_count == 0)
                     || logical_page_count > 0
                         && (fact_count < logical_page_count || storage_page_count == 0)
-                    || projection_kind != M11InlineOverlayProjectionKind::Inline
-                        && (link_value_entry_count != 0
-                            || link_value_encoded_bytes != 0
-                            || link_value_storage_page_count != 0)
-                    || projection_kind == M11InlineOverlayProjectionKind::Inline
-                        && !valid_inline_link_value_summary(
-                            link_value_entry_count,
-                            link_value_encoded_bytes,
-                            link_value_storage_page_count,
-                            fact_count,
-                        )
+                    || !matches!(
+                        projection_kind,
+                        M11InlineOverlayProjectionKind::Inline
+                            | M11InlineOverlayProjectionKind::ProjectedInline
+                    ) && (link_value_entry_count != 0
+                        || link_value_encoded_bytes != 0
+                        || link_value_storage_page_count != 0)
+                    || matches!(
+                        projection_kind,
+                        M11InlineOverlayProjectionKind::Inline
+                            | M11InlineOverlayProjectionKind::ProjectedInline
+                    ) && !valid_inline_link_value_summary(
+                        link_value_entry_count,
+                        link_value_encoded_bytes,
+                        link_value_storage_page_count,
+                        fact_count,
+                    )
                 {
                     return Err(M11InlineOverlayError::MalformedEnvelope);
                 }
@@ -1441,6 +1551,9 @@ fn decode_overlay_begin(
                 M11InlineOverlayProjectionKind::Inline => {
                     PERSISTENT_INLINE_PROJECTION_ROLE_DESCRIPTOR_BYTES
                 }
+                M11InlineOverlayProjectionKind::ProjectedInline => {
+                    PERSISTENT_PROJECTED_INLINE_PROJECTION_DESCRIPTOR_BYTES
+                }
                 M11InlineOverlayProjectionKind::IndentedCode => {
                     PERSISTENT_INDENTED_CODE_PROJECTION_DESCRIPTOR_BYTES
                 }
@@ -1469,6 +1582,15 @@ fn decode_overlay_begin(
                     )?;
                     envelope.validate_persistent_projection(descriptor)?;
                     PersistentM11LeafProjectionDescriptor::Inline(descriptor)
+                }
+                M11InlineOverlayProjectionKind::ProjectedInline => {
+                    let descriptor = decode_persistent_projected_inline_projection_descriptor(
+                        &descriptor_bytes,
+                        expected.base.source,
+                        expected.base.parser_profile,
+                    )?;
+                    envelope.validate_persistent_projected_inline_projection(descriptor)?;
+                    PersistentM11LeafProjectionDescriptor::ProjectedInline(descriptor)
                 }
                 M11InlineOverlayProjectionKind::IndentedCode => {
                     let descriptor = decode_persistent_indented_code_projection_descriptor(
@@ -1570,6 +1692,45 @@ impl M11InlineOverlaySnapshotEncoder {
             binding.base.parser_profile,
         )?;
         envelope.validate_persistent_projection(persistent)?;
+        let arena = runtime.producer_arena();
+        let roots: Vec<_> = [fact_root, link_value_root].into_iter().flatten().collect();
+        Ok(Self {
+            runtime_identity: runtime.producer_identity(),
+            source: binding.base.source,
+            closure: ArenaClosureSnapshotEncoder::new_bundle(
+                arena,
+                &roots,
+                encode_inline_projection_bundle(fact_root, link_value_root),
+            )?,
+            begin: encode_overlay_begin(&envelope, Some(&descriptor)),
+        })
+    }
+
+    pub(crate) fn authoritative_projected_inline(
+        runtime: &DocumentRuntime,
+        binding: M11InlineOverlayBinding,
+        projection: &M11ProjectedInlineProjectionRoot,
+    ) -> Result<Self, M11InlineOverlayTransportError> {
+        let envelope = M11InlineOverlayEnvelope::from_projected_inline_projection(
+            binding.clone(),
+            projection,
+        )?;
+        let (fact_root, link_value_root, descriptor) = projection.transport_bundle_parts(
+            runtime,
+            binding.base.source,
+            binding.base.parser_profile,
+        )?;
+        if link_value_root.is_some() {
+            return Err(M11InlineOverlayTransportError::InvalidProgram(
+                "projected-inline producer carried forbidden link values",
+            ));
+        }
+        let persistent = decode_persistent_projected_inline_projection_descriptor(
+            &descriptor,
+            binding.base.source,
+            binding.base.parser_profile,
+        )?;
+        envelope.validate_persistent_projected_inline_projection(persistent)?;
         let arena = runtime.producer_arena();
         let roots: Vec<_> = [fact_root, link_value_root].into_iter().flatten().collect();
         Ok(Self {
@@ -1805,6 +1966,7 @@ enum ActiveOverlayPhase {
 
 enum PersistentM11LeafProjectionHostValidator {
     Inline(Box<PersistentM11InlineProjectionHostValidator>),
+    ProjectedInline(Box<PersistentM11InlineProjectionHostValidator>),
     IndentedCode(Box<PersistentM11IndentedCodeProjectionHostValidator>),
     BlockQuote(Box<PersistentM11BlockQuoteProjectionHostValidator>),
     BulletList(Box<PersistentM11BlockQuoteProjectionHostValidator>),
@@ -1847,6 +2009,18 @@ impl ImportedInlineOverlay {
                         &self.arena,
                         fact_root,
                         descriptor,
+                    ),
+                )
+            }
+            PersistentM11LeafProjectionDescriptor::ProjectedInline(descriptor) => {
+                let (fact_root, _) = decode_inline_projection_bundle(&self.arena, root)
+                    .expect("installed projected-inline bundle was validated before sealing");
+                PersistentM11LeafProjectionHostCursor::ProjectedInline(
+                    PersistentM11InlineProjectionHostCursor::new_projected(
+                        &self.arena,
+                        fact_root,
+                        descriptor.inner(),
+                        descriptor.projected_utf8_length(),
                     ),
                 )
             }
@@ -1895,6 +2069,7 @@ impl ImportedInlineOverlay {
 #[allow(clippy::large_enum_variant)]
 enum PersistentM11LeafProjectionHostCursor<'arena> {
     Inline(PersistentM11InlineProjectionHostCursor<'arena>),
+    ProjectedInline(PersistentM11InlineProjectionHostCursor<'arena>),
     IndentedCode(PersistentM11IndentedCodeProjectionHostCursor<'arena>),
     BlockQuote(PersistentM11BlockQuoteProjectionHostCursor<'arena>),
     BulletList(PersistentM11BlockQuoteProjectionHostCursor<'arena>),
@@ -1960,6 +2135,11 @@ pub(crate) enum M11InlineOverlayHostMatch<'host> {
         cursor: PersistentM11InlineProjectionHostCursor<'host>,
         link_value_arena: &'host PageArena,
         link_value_root: Option<crate::ArenaId>,
+    },
+    ProjectedInlineAuthoritative {
+        envelope: &'host M11InlineOverlayEnvelope,
+        descriptor: PersistentM11ProjectedInlineProjectionDescriptor,
+        cursor: PersistentM11InlineProjectionHostCursor<'host>,
     },
     IndentedCodeAuthoritative {
         envelope: &'host M11InlineOverlayEnvelope,
@@ -2058,7 +2238,10 @@ impl M11InlineOverlayHostStore {
         let authoritative = active.descriptor.is_some();
         let inline_authoritative = matches!(
             active.descriptor,
-            Some(PersistentM11LeafProjectionDescriptor::Inline(_))
+            Some(
+                PersistentM11LeafProjectionDescriptor::Inline(_)
+                    | PersistentM11LeafProjectionDescriptor::ProjectedInline(_)
+            )
         );
         let envelope = active.envelope.clone();
         let result = active.receiver.offer_node(
@@ -2246,6 +2429,29 @@ impl M11InlineOverlayHostStore {
                                 )?,
                             ))
                         }
+                        PersistentM11LeafProjectionDescriptor::ProjectedInline(descriptor) => {
+                            let (fact_root, link_value_root) =
+                                decode_inline_projection_bundle(&active.arena, root)?;
+                            let decoded = decode_persistent_projected_inline_projection_descriptor(
+                                descriptor_bytes,
+                                active.envelope.binding.base.source,
+                                active.envelope.binding.base.parser_profile,
+                            )?;
+                            if decoded != descriptor {
+                                return Err(M11InlineOverlayTransportError::InvalidProgram(
+                                    "projected-inline descriptor changed before validation",
+                                ));
+                            }
+                            PersistentM11LeafProjectionHostValidator::ProjectedInline(Box::new(
+                                PersistentM11InlineProjectionHostValidator::new_projected(
+                                    &active.arena,
+                                    fact_root,
+                                    link_value_root,
+                                    descriptor.inner(),
+                                    descriptor.projected_utf8_length(),
+                                )?,
+                            ))
+                        }
                         PersistentM11LeafProjectionDescriptor::IndentedCode(descriptor) => {
                             validate_persistent_indented_code_projection_root(
                                 &active.arena,
@@ -2331,6 +2537,13 @@ impl M11InlineOverlayHostStore {
             ActiveOverlayPhase::Validating(validator) => {
                 let (transitions, complete) = match validator {
                     PersistentM11LeafProjectionHostValidator::Inline(validator) => {
+                        let PersistentM11InlineProjectionHostValidationPoll {
+                            transitions,
+                            complete,
+                        } = validator.poll(&active.arena, fuel)?;
+                        (transitions, complete)
+                    }
+                    PersistentM11LeafProjectionHostValidator::ProjectedInline(validator) => {
                         let PersistentM11InlineProjectionHostValidationPoll {
                             transitions,
                             complete,
@@ -2451,6 +2664,25 @@ impl M11InlineOverlayHostStore {
                             cursor,
                             link_value_arena: &owner.arena,
                             link_value_root,
+                        }
+                    }
+                    (
+                        PersistentM11LeafProjectionDescriptor::ProjectedInline(descriptor),
+                        PersistentM11LeafProjectionHostCursor::ProjectedInline(cursor),
+                    ) => {
+                        let (_, link_value_root) = decode_inline_projection_bundle(
+                            &owner.arena,
+                            owner.root.as_ref().map(CommittedArenaRoot::id),
+                        )?;
+                        if link_value_root.is_some() {
+                            return Err(M11InlineOverlayTransportError::InvalidProgram(
+                                "projected-inline payload carries forbidden link values",
+                            ));
+                        }
+                        M11InlineOverlayHostMatch::ProjectedInlineAuthoritative {
+                            envelope,
+                            descriptor,
+                            cursor,
                         }
                     }
                     (

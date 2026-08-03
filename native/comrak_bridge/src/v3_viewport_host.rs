@@ -1118,6 +1118,10 @@ fn plan_public_payload(
             )
         })?;
     match query {
+        M11HostInlineSidecarQuery::ProjectedInline { .. } => Err(HostStoreError::new(
+            HostRejectReason::InternalFault,
+            "projected-inline sidecars require the direct query lane",
+        )),
         M11HostInlineSidecarQuery::Authoritative {
             descriptor,
             link_values,

@@ -284,6 +284,7 @@ final class FlarkV3HotInlineSidecarEnvelopeMetrics {
       case FlarkV3HotInlineSidecarAuthoritative():
         if (ipr2DescriptorBytes != ipr2FixedDescriptorBytes &&
             ipr2DescriptorBytes != inlineBundleDescriptorBytes &&
+            ipr2DescriptorBytes != projectedInlineBundleDescriptorBytes &&
             ipr2DescriptorBytes != blockQuoteDescriptorBytes) {
           throw ArgumentError(
             'An authoritative sidecar requires one supported fixed '
@@ -302,6 +303,7 @@ final class FlarkV3HotInlineSidecarEnvelopeMetrics {
   static const int hio1EnvelopeBytes = 256;
   static const int ipr2FixedDescriptorBytes = 160;
   static const int inlineBundleDescriptorBytes = 280;
+  static const int projectedInlineBundleDescriptorBytes = 328;
   static const int blockQuoteDescriptorBytes = 168;
 
   final int hio1EncodedBytes;
@@ -554,6 +556,7 @@ enum FlarkV3InlineSidecarPayloadKind {
   indentedCode(2, 20),
   blockQuote(3, 20),
   bulletList(4, 28),
+  blockQuoteInline(5, 20),
   orderedListItem(6, 48);
 
   const FlarkV3InlineSidecarPayloadKind(this.wireValue, this.recordBytes);

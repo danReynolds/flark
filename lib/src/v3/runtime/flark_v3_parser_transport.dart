@@ -237,6 +237,10 @@ enum FlarkV3InlineRefinementTarget {
 
   /// Requests the parser-certified block-quote projection at the source point.
   blockQuoteProjection,
+
+  /// Requests inline facts in the marker-free coordinate space certified by
+  /// an already-installed block-quote projection.
+  blockQuoteInline,
 }
 
 /// Requests parser-certified inline facts for the structural leaf at one

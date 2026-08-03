@@ -33,6 +33,7 @@ mod inline_projection_job;
 #[allow(dead_code)] // Staged storage foundation for M11InlineProjectionJob.
 mod inline_radix;
 mod persistent_recursive_green_session;
+mod projected_inline_projection_job;
 mod publication;
 mod recursive_green_block_quote_projection;
 mod recursive_green_paragraph_inline;
@@ -109,6 +110,12 @@ pub use persistent_recursive_green_session::{
     M11PersistentRecursiveGreenBuildStatus, M11PersistentRecursiveGreenCleanBuild,
     M11PersistentRecursiveGreenCleanPlan, M11PersistentRecursiveGreenSession,
     M11PersistentRecursiveGreenSessionError, M11PersistentRecursiveGreenUpdate,
+};
+pub use projected_inline_projection_job::{
+    M11ProjectedInlineProjectionJob, M11ProjectedInlineProjectionJobError,
+    M11ProjectedInlineProjectionJobPoll, M11ProjectedInlineProjectionJobPollStatus,
+    M11ProjectedInlineProjectionJobReleasePoll, M11ProjectedInlineProjectionOutput,
+    M11_PROJECTED_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
 };
 pub use publication::{
     resolve_m11_published_block_quote_leaf_fence, resolve_m11_published_bullet_list_item_fences,

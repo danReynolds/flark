@@ -43,6 +43,7 @@ use crate::v3_publication_wire::{
     BLOCK_QUOTE_PROJECTION_DESCRIPTOR_BYTES, HOT_INLINE_SIDECAR_SCHEMA,
     MAXIMUM_PACKET_AGGREGATE_FRAME_BYTES, MAXIMUM_PACKET_ENCODED_BYTES, MAXIMUM_PACKET_FRAME_COUNT,
     PACKET_FRAME_DESCRIPTOR_BYTES, PACKET_HEADER_BYTES,
+    PROJECTED_INLINE_PROJECTION_DESCRIPTOR_BYTES,
 };
 
 #[path = "v3_viewport_host.rs"]
@@ -321,6 +322,7 @@ pub enum HostInlineSidecarPayloadKind {
     IndentedCode = 2,
     BlockQuote = 3,
     BulletList = 4,
+    ProjectedInline = 5,
     OrderedListItem = 6,
 }
 
@@ -1639,6 +1641,117 @@ impl NativeCandidateHost {
                         .map_err(|_| HostStoreError::invalid("sidecar query bytes overflowed"))?,
                     tree_nodes_visited: u32::try_from(tree_nodes_visited)
                         .map_err(|_| HostStoreError::invalid("sidecar query receipt overflowed"))?,
+                })
+            }
+            Some(M11HostInlineSidecarQuery::ProjectedInline {
+                descriptor,
+                mut cursor,
+            }) => {
+                let expected_fact_count = match installed.begin.envelope.disposition {
+                    HotInlineSidecarDisposition::Authoritative {
+                        fact_count,
+                        link_value_entry_count: 0,
+                        link_value_encoded_bytes: 0,
+                        link_value_storage_page_count: 0,
+                        ..
+                    } => usize::try_from(fact_count).map_err(|_| {
+                        HostStoreError::invalid("projected-inline fact count exceeds this target")
+                    })?,
+                    _ => {
+                        return Err(HostStoreError::new(
+                            HostRejectReason::InternalFault,
+                            "projected-inline engine and wire dispositions disagree",
+                        ));
+                    }
+                };
+                let inline = descriptor.inline();
+                let binding = installed.begin.binding;
+                if inline.source_start() != binding.physical_start_utf8
+                    || inline.source_end() != binding.physical_end_utf8
+                    || descriptor.projected_utf8_length()
+                        > binding
+                            .physical_end_utf8
+                            .saturating_sub(binding.physical_start_utf8)
+                    || inline.link_value_entry_count() != 0
+                    || inline.link_value_encoded_bytes() != 0
+                    || inline.link_value_storage_page_count() != 0
+                {
+                    return Err(HostStoreError::new(
+                        HostRejectReason::InternalFault,
+                        "projected-inline descriptor disagrees with its physical authority",
+                    ));
+                }
+                let expected_bytes = expected_fact_count
+                    .checked_mul(M11_INLINE_FACT_RECORD_BYTES)
+                    .ok_or_else(|| {
+                        HostStoreError::invalid("projected-inline fact bytes overflowed")
+                    })?;
+                if expected_bytes > output.len()
+                    || expected_bytes > self.config.maximum_query_bytes as usize
+                    || expected_bytes > HOST_INLINE_SIDECAR_MAXIMUM_QUERY_BYTES as usize
+                {
+                    return Err(HostStoreError::new(
+                        HostRejectReason::QueryBoundExceeded,
+                        "projected-inline query output is too small",
+                    ));
+                }
+                let mut fact_count = 0_usize;
+                loop {
+                    match cursor.poll().map_err(map_engine_error)? {
+                        M11HostInlineProjectionCursorPoll::Fact(fact) => {
+                            let start = fact_count
+                                .checked_mul(M11_INLINE_FACT_RECORD_BYTES)
+                                .ok_or_else(|| {
+                                    HostStoreError::invalid(
+                                        "projected-inline fact offset overflowed",
+                                    )
+                                })?;
+                            let end = start.checked_add(M11_INLINE_FACT_RECORD_BYTES).ok_or_else(
+                                || {
+                                    HostStoreError::invalid(
+                                        "projected-inline fact offset overflowed",
+                                    )
+                                },
+                            )?;
+                            encode_inline_projection_fact_record(
+                                fact,
+                                output.get_mut(start..end).ok_or_else(|| {
+                                    HostStoreError::new(
+                                        HostRejectReason::QueryBoundExceeded,
+                                        "projected-inline query output is too small",
+                                    )
+                                })?,
+                            )?;
+                            fact_count += 1;
+                        }
+                        M11HostInlineProjectionCursorPoll::Complete => break,
+                    }
+                }
+                let tree_nodes_visited =
+                    cursor.tree_nodes_visited().checked_add(1).ok_or_else(|| {
+                        HostStoreError::invalid("projected-inline query receipt overflowed")
+                    })?;
+                if fact_count != expected_fact_count
+                    || tree_nodes_visited > inline.maximum_tree_nodes_visited()
+                {
+                    return Err(HostStoreError::new(
+                        HostRejectReason::InternalFault,
+                        "projected-inline query disagrees with its authenticated descriptor",
+                    ));
+                }
+                Ok(HostInlineSidecarQueryOutcome::Authoritative {
+                    payload_kind: HostInlineSidecarPayloadKind::ProjectedInline,
+                    fact_count: u32::try_from(fact_count).map_err(|_| {
+                        HostStoreError::invalid("projected-inline fact count overflowed")
+                    })?,
+                    value_entry_count: 0,
+                    value_encoded_bytes: 0,
+                    encoded_bytes: u32::try_from(expected_bytes).map_err(|_| {
+                        HostStoreError::invalid("projected-inline query bytes overflowed")
+                    })?,
+                    tree_nodes_visited: u32::try_from(tree_nodes_visited).map_err(|_| {
+                        HostStoreError::invalid("projected-inline query receipt overflowed")
+                    })?,
                 })
             }
             Some(M11HostInlineSidecarQuery::IndentedCode {
@@ -3291,6 +3404,9 @@ impl NativeCandidateHost {
             inline_maximum_open_depth,
             inline_maximum_tree_nodes_visited,
         ) = match (inline_query.as_ref(), installed_sidecar) {
+            (Some(M11HostInlineSidecarQuery::ProjectedInline { .. }), Some(_installed_sidecar)) => {
+                (0, 0, 0, 0)
+            }
             (
                 Some(M11HostInlineSidecarQuery::Authoritative { descriptor, .. }),
                 Some(installed_sidecar),
@@ -3639,6 +3755,15 @@ impl NativeCandidateHost {
                 ));
             }
         };
+        if matches!(
+            inline_query,
+            Some(M11HostInlineSidecarQuery::ProjectedInline { .. })
+        ) {
+            // Projected coordinates need a dedicated nested-projection
+            // viewport schema. Keep this checkpoint on the direct sidecar
+            // query lane instead of reinterpreting them as physical offsets.
+            inline_query = None;
+        }
         let leaf_projection_payload_kind = match inline_query.as_ref() {
             Some(M11HostInlineSidecarQuery::BlockQuote { .. }) => {
                 M11_LEAF_PROJECTION_PAYLOAD_BLOCK_QUOTE
@@ -3661,6 +3786,9 @@ impl NativeCandidateHost {
                 M11HostInlineSidecarQuery::Authoritative { .. }
                 | M11HostInlineSidecarQuery::Unsupported { .. },
             ) => M11_LEAF_PROJECTION_PAYLOAD_INLINE,
+            Some(M11HostInlineSidecarQuery::ProjectedInline { .. }) => {
+                unreachable!("projected-inline query was removed before physical viewport encoding")
+            }
             None => 0,
         };
         let has_leaf_projection = leaf_projection_payload_kind != 0;
@@ -4271,6 +4399,12 @@ impl NativeCandidateHost {
                         ));
                     }
                     tree_nodes_visited
+                }
+                M11HostInlineSidecarQuery::ProjectedInline { .. } => {
+                    return Err(HostStoreError::new(
+                        HostRejectReason::InternalFault,
+                        "projected-inline query reached physical viewport encoding",
+                    ));
                 }
                 M11HostInlineSidecarQuery::Unsupported { .. } => {
                     if inline_output.len() != M11_INLINE_META_RECORD_BYTES {
@@ -6085,6 +6219,7 @@ impl NativeCandidateHost {
             HotInlineSidecarDisposition::Authoritative { .. } => matches!(
                 begin.envelope.ipr2_descriptor_bytes,
                 crate::v3_publication_wire::IPR3_DESCRIPTOR_BYTES
+                    | PROJECTED_INLINE_PROJECTION_DESCRIPTOR_BYTES
                     | crate::v3_publication_wire::INDENTED_CODE_PROJECTION_DESCRIPTOR_BYTES
                     | BLOCK_QUOTE_PROJECTION_DESCRIPTOR_BYTES
             ),
@@ -9741,6 +9876,21 @@ mod tests {
                 link_value_encoded_bytes,
                 ordered_commitment256,
             },
+            M11HotInlineSidecarDisposition::ProjectedInlineAuthoritative {
+                logical_page_count,
+                fact_count,
+                storage_page_count,
+                ordered_commitment256,
+                ..
+            } => HotInlineSidecarDisposition::Authoritative {
+                logical_page_count,
+                fact_count,
+                storage_page_count,
+                link_value_entry_count: 0,
+                link_value_storage_page_count: 0,
+                link_value_encoded_bytes: 0,
+                ordered_commitment256,
+            },
             M11HotInlineSidecarDisposition::IndentedCodeAuthoritative {
                 logical_page_count,
                 line_count,
@@ -12221,6 +12371,9 @@ mod tests {
                     0,
                     1,
                 ),
+                M11HostInlineSidecarQuery::ProjectedInline { .. } => {
+                    panic!("projected-inline sidecars use the direct query lane")
+                }
                 M11HostInlineSidecarQuery::IndentedCode { descriptor, .. } => (
                     usize::try_from(descriptor.line_count()).expect("indented-code lines")
                         * M11_INDENTED_CODE_LINE_RECORD_BYTES,

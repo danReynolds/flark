@@ -4317,6 +4317,109 @@ fn block_quote_request_reaches_typed_sidecar_and_reclaims_with_unit_fuel() {
 }
 
 #[test]
+fn block_quote_inline_projects_strong_and_code_into_marker_free_coordinates() {
+    const SOURCE: &str = "> **first\n> second** and `code`\n";
+    const FACT_RECORD_BYTES: usize = 20;
+    let profile = SourceFactsScanProfile::new(8).expect("test profile");
+    let parser_profile = ParserProfileId::new(1).expect("parser profile");
+    let binding = SessionBinding {
+        document_session: [722, 723, 724, 725],
+        source_session_identity: 726,
+        worker_generation: 1,
+    };
+    let mut runtime =
+        DocumentRuntime::new(SOURCE, standard_document_runtime_config()).expect("runtime");
+    let (certified, completion) =
+        complete_clean_source_facts(&mut runtime, profile, parser_profile, 1, 0);
+    let mut endpoint = CandidateEndpoint::new();
+    endpoint
+        .start(certified, binding, completion)
+        .expect("start projected-inline candidate");
+    let mut host = NativeCandidateHost::new(HostConfig {
+        document_session: binding.document_session,
+        grammar_revision: GRAMMAR_REVISION,
+        syntax_profile: 1,
+        authority_mask: AUTHORITY_MASK_ALL_ROLES,
+        maximum_query_bytes: 64 * 1024,
+    })
+    .expect("independent host");
+    host.observe_source_version(source_version_for(binding, completion))
+        .expect("host observes source");
+    let delivery =
+        deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
+    drain_candidate_cleanup(&mut endpoint, &mut runtime);
+
+    let point = SOURCE.find("second").expect("second quote line") + 1;
+    endpoint
+        .request_hot_inline(
+            &mut runtime,
+            InlineRefinementCommand {
+                binding,
+                refinement_generation: 1,
+                source_version: delivery.ack.source_version,
+                base_ack: delivery.ack,
+                byte_offset: u32::try_from(point).expect("bounded point"),
+                utf16_offset: u32::try_from(SOURCE[..point].encode_utf16().count())
+                    .expect("bounded UTF-16 point"),
+                affinity: InlinePointAffinity::After,
+                target: InlineRefinementTarget::BlockQuoteInline,
+            },
+        )
+        .expect("request marker-free block-quote inline authority");
+    let (begin, ack) = deliver_hot_inline_sidecar_to_independent_host_with_unit_fuel(
+        &mut endpoint,
+        &mut runtime,
+        &mut host,
+        100_000,
+    );
+    assert!(matches!(
+        begin.envelope.disposition,
+        HotInlineSidecarDisposition::Authoritative {
+            fact_count: 2,
+            link_value_entry_count: 0,
+            link_value_encoded_bytes: 0,
+            link_value_storage_page_count: 0,
+            ..
+        }
+    ));
+    assert_eq!(ack.disposition, InlineSidecarAckDisposition::Authoritative);
+
+    let mut encoded = [0_u8; 2 * FACT_RECORD_BYTES];
+    assert!(matches!(
+        host.query_inline_sidecar(begin.binding, &mut encoded)
+            .expect("query projected-inline sidecar"),
+        HostInlineSidecarQueryOutcome::Authoritative {
+            payload_kind: HostInlineSidecarPayloadKind::ProjectedInline,
+            fact_count: 2,
+            value_entry_count: 0,
+            value_encoded_bytes: 0,
+            encoded_bytes: 40,
+            ..
+        }
+    ));
+
+    let decode = |record: &[u8]| {
+        (
+            record[0],
+            u32::from_le_bytes(record[4..8].try_into().expect("fact start")),
+            u32::from_le_bytes(record[8..12].try_into().expect("fact length")),
+            u32::from_le_bytes(record[12..16].try_into().expect("content start")),
+            u32::from_le_bytes(record[16..20].try_into().expect("content length")),
+        )
+    };
+    assert_eq!(
+        decode(&encoded[..FACT_RECORD_BYTES]),
+        (M11InlineProjectionKind::Strong as u8, 0, 16, 2, 12)
+    );
+    assert_eq!(
+        decode(&encoded[FACT_RECORD_BYTES..]),
+        (M11InlineProjectionKind::Code as u8, 21, 6, 22, 4)
+    );
+
+    close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
+}
+
+#[test]
 fn block_quote_with_sibling_blocks_retains_its_closing_terminator() {
     const SOURCE: &str = "before\n\n> alpha\n> beta\nlazy\n\n*tail*";
     let point = SOURCE.find("alpha").expect("quote content") + 2;

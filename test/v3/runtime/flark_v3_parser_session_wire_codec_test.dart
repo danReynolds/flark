@@ -884,7 +884,7 @@ void main() {
           byteOffset: 9,
           utf16Offset: 8,
           affinity: FlarkV3InlinePointAffinity.after,
-          target: FlarkV3InlineRefinementTarget.blockQuoteProjection,
+          target: FlarkV3InlineRefinementTarget.blockQuoteInline,
         ),
         binding: _binding,
         correlationId: 43,
@@ -902,10 +902,8 @@ void main() {
       expect(command.byteOffset, 9);
       expect(command.utf16Offset, 8);
       expect(command.affinity, FlarkV3InlinePointAffinity.after);
-      expect(
-        command.target,
-        FlarkV3InlineRefinementTarget.blockQuoteProjection,
-      );
+      expect(command.target, FlarkV3InlineRefinementTarget.blockQuoteInline);
+      expect(command.target.index, 7, reason: 'the target tag is append-only');
 
       final zeroGeneration = Uint8List.fromList(bytes);
       ByteData.sublistView(

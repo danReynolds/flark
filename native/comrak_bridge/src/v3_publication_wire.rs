@@ -37,6 +37,7 @@ pub const HIO1_ENVELOPE_BYTES: u32 = 256;
 ///
 /// The constant name is retained as a legacy wire/API label.
 pub const IPR3_DESCRIPTOR_BYTES: u32 = 280;
+pub const PROJECTED_INLINE_PROJECTION_DESCRIPTOR_BYTES: u32 = 328;
 pub const INDENTED_CODE_PROJECTION_DESCRIPTOR_BYTES: u32 = 160;
 pub const BLOCK_QUOTE_PROJECTION_DESCRIPTOR_BYTES: u32 = 168;
 /// Little-endian bytes are the ASCII tag `FPK3` at the raw host ABI seam.
@@ -3359,6 +3360,7 @@ fn validate_hot_inline_sidecar_envelope(
             if !matches!(
                 envelope.ipr2_descriptor_bytes,
                 IPR3_DESCRIPTOR_BYTES
+                    | PROJECTED_INLINE_PROJECTION_DESCRIPTOR_BYTES
                     | INDENTED_CODE_PROJECTION_DESCRIPTOR_BYTES
                     | BLOCK_QUOTE_PROJECTION_DESCRIPTOR_BYTES
             ) || (logical_page_count == 0) != (fact_count == 0 && storage_page_count == 0)

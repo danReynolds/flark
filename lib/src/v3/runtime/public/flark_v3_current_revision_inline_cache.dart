@@ -54,12 +54,17 @@ final class FlarkV3CurrentRevisionInlineCache {
         _RecursiveGreenLeafKey,
         FlarkV3BlockQuoteProjectionCertificate
       >();
+  final LinkedHashMap<_RecursiveGreenLeafKey, FlarkV3ProjectedInlineFacts>
+  _recursiveProjectedInlineEntries =
+      LinkedHashMap<_RecursiveGreenLeafKey, FlarkV3ProjectedInlineFacts>();
   FlarkV3StructuralAck? _authority;
   int _retainedFactRecords = 0;
 
   int get entryCount => _entries.length;
   int get retainedFactRecords => _retainedFactRecords;
   int get recursiveBlockQuoteEntryCount => _recursiveBlockQuoteEntries.length;
+  int get recursiveProjectedInlineEntryCount =>
+      _recursiveProjectedInlineEntries.length;
 
   /// Joins cached facts to one freshly decoded exact structural query.
   ///
@@ -142,6 +147,7 @@ final class FlarkV3CurrentRevisionInlineCache {
     final freshParagraphSource = query.paragraphSource;
     final freshFacts = query.inlineFacts;
     final freshInlineSource = query.inlineSource;
+    final freshProjectedFacts = query.projectedInlineFacts;
 
     _RecursiveGreenLeafKey? projectionKey;
     if (freshProjection != null &&
@@ -149,6 +155,8 @@ final class FlarkV3CurrentRevisionInlineCache {
       projectionKey = _RecursiveGreenLeafKey(
         ownerFrameId: query.owner.frameId,
         physicalSource: freshProjection.source,
+        projectedUtf8Length: freshProjection.projectedUtf8Length,
+        projectedUtf16Length: freshProjection.projectedUtf16Length,
       );
     }
 
@@ -163,18 +171,55 @@ final class FlarkV3CurrentRevisionInlineCache {
           query: query,
           authority: authority,
         )) {
-      factsKey = _RecursiveGreenLeafKey(
+      final queryProjection = query.blockQuoteProjection;
+      factsKey =
+          queryProjection != null &&
+              _sameSpan(queryProjection.source, freshParagraphSource)
+          ? _RecursiveGreenLeafKey(
+              ownerFrameId: query.owner.frameId,
+              physicalSource: freshParagraphSource,
+              projectedUtf8Length: queryProjection.projectedUtf8Length,
+              projectedUtf16Length: queryProjection.projectedUtf16Length,
+            )
+          : _findRecursiveGreenKey(
+              query,
+              exactPhysicalSource: freshParagraphSource,
+            );
+    }
+
+    _RecursiveGreenLeafKey? projectedFactsKey;
+    if (freshProjectedFacts != null &&
+        _recursiveProjectedFactsBindQuery(
+          freshProjectedFacts,
+          query: query,
+          authority: authority,
+          projection: freshProjection,
+        )) {
+      projectedFactsKey = _RecursiveGreenLeafKey(
         ownerFrameId: query.owner.frameId,
-        physicalSource: freshParagraphSource,
+        physicalSource: freshProjectedFacts.physicalSource,
+        projectedUtf8Length: freshProjectedFacts.projectedUtf8Length,
+        projectedUtf16Length: freshProjectedFacts.projectedUtf16Length,
       );
     }
 
-    if (projectionKey != null &&
-        factsKey != null &&
-        projectionKey != factsKey) {
+    final freshKeys = <_RecursiveGreenLeafKey>{
+      ?projectionKey,
+      ?factsKey,
+      ?projectedFactsKey,
+    };
+    if (freshKeys.length > 1) {
       return query;
     }
-    var key = projectionKey ?? factsKey ?? _findRecursiveGreenKey(query);
+    final hasFreshPresentation =
+        freshProjection != null ||
+        freshFacts != null ||
+        freshProjectedFacts != null;
+    final key =
+        projectionKey ??
+        factsKey ??
+        projectedFactsKey ??
+        (hasFreshPresentation ? null : _findRecursiveGreenKey(query));
     if (key == null) return query;
 
     if (projectionKey != null) {
@@ -183,9 +228,14 @@ final class FlarkV3CurrentRevisionInlineCache {
     if (factsKey != null) {
       _remember(key, freshFacts!);
     }
+    if (projectedFactsKey != null) {
+      _rememberRecursiveProjectedInline(key, freshProjectedFacts!);
+    }
 
     final projection = freshProjection ?? _touchRecursiveBlockQuote(key);
     final facts = freshFacts ?? _touchFacts(key);
+    final projectedFacts =
+        freshProjectedFacts ?? _touchRecursiveProjectedInline(key);
     if (projection != null &&
         !_recursiveProjectionBindsKey(projection, query, authority, key)) {
       _recursiveBlockQuoteEntries.remove(key);
@@ -197,13 +247,28 @@ final class FlarkV3CurrentRevisionInlineCache {
       if (removed != null) _retainedFactRecords -= removed.facts.length;
       return query;
     }
+    if (projectedFacts != null &&
+        !_recursiveProjectedFactsBindKey(
+          projectedFacts,
+          query,
+          authority,
+          key,
+          projection,
+        )) {
+      final removed = _recursiveProjectedInlineEntries.remove(key);
+      if (removed != null) {
+        _retainedFactRecords -= removed.facts.length;
+      }
+      return query;
+    }
     if (projection == null && facts == null) return query;
 
     return query.withPresentationCertificates(
-      paragraphSource: key.physicalSource,
+      paragraphSource: freshParagraphSource ?? key.physicalSource,
       inlineSource: facts?.source,
       inlineFacts: facts,
       blockQuoteProjection: projection,
+      projectedInlineFacts: projection == null ? null : projectedFacts,
     );
   }
 
@@ -213,6 +278,7 @@ final class FlarkV3CurrentRevisionInlineCache {
     _entries.clear();
     _tightListEntries.clear();
     _recursiveBlockQuoteEntries.clear();
+    _recursiveProjectedInlineEntries.clear();
     _retainedFactRecords = 0;
   }
 
@@ -221,6 +287,7 @@ final class FlarkV3CurrentRevisionInlineCache {
     _entries.clear();
     _tightListEntries.clear();
     _recursiveBlockQuoteEntries.clear();
+    _recursiveProjectedInlineEntries.clear();
     _retainedFactRecords = 0;
     _authority = authority;
   }
@@ -292,11 +359,43 @@ final class FlarkV3CurrentRevisionInlineCache {
     if (factRecords > maximumFactRecords) return;
     _entries[key] = facts;
     _retainedFactRecords += factRecords;
-    while (_entries.length > maximumEntries ||
+    _enforceFactBounds(preferProjectedEviction: true);
+  }
+
+  void _rememberRecursiveProjectedInline(
+    _RecursiveGreenLeafKey key,
+    FlarkV3ProjectedInlineFacts facts,
+  ) {
+    final previous = _recursiveProjectedInlineEntries.remove(key);
+    if (previous != null) _retainedFactRecords -= previous.facts.length;
+    final factRecords = facts.facts.length;
+    if (factRecords > maximumFactRecords) return;
+    _recursiveProjectedInlineEntries[key] = facts;
+    _retainedFactRecords += factRecords;
+    _enforceFactBounds(preferProjectedEviction: false);
+  }
+
+  void _enforceFactBounds({required bool preferProjectedEviction}) {
+    while (_entries.length + _recursiveProjectedInlineEntries.length >
+            maximumEntries ||
         _retainedFactRecords > maximumFactRecords) {
-      final oldestKey = _entries.keys.first;
-      final evicted = _entries.remove(oldestKey)!;
-      _retainedFactRecords -= evicted.facts.length;
+      if (preferProjectedEviction &&
+          _recursiveProjectedInlineEntries.isNotEmpty) {
+        final evicted = _recursiveProjectedInlineEntries.remove(
+          _recursiveProjectedInlineEntries.keys.first,
+        )!;
+        _retainedFactRecords -= evicted.facts.length;
+      } else if (_entries.isNotEmpty) {
+        final evicted = _entries.remove(_entries.keys.first)!;
+        _retainedFactRecords -= evicted.facts.length;
+      } else if (_recursiveProjectedInlineEntries.isNotEmpty) {
+        final evicted = _recursiveProjectedInlineEntries.remove(
+          _recursiveProjectedInlineEntries.keys.first,
+        )!;
+        _retainedFactRecords -= evicted.facts.length;
+      } else {
+        break;
+      }
     }
   }
 
@@ -344,19 +443,31 @@ final class FlarkV3CurrentRevisionInlineCache {
     return projection;
   }
 
-  _RecursiveGreenLeafKey? _findRecursiveGreenKey(
-    FlarkV3RecursiveGreenPointQuery query,
+  FlarkV3ProjectedInlineFacts? _touchRecursiveProjectedInline(
+    _RecursiveGreenLeafKey key,
   ) {
+    final facts = _recursiveProjectedInlineEntries.remove(key);
+    if (facts != null) _recursiveProjectedInlineEntries[key] = facts;
+    return facts;
+  }
+
+  _RecursiveGreenLeafKey? _findRecursiveGreenKey(
+    FlarkV3RecursiveGreenPointQuery query, {
+    FlarkV3SourceSpan? exactPhysicalSource,
+  }) {
+    bool matches(_RecursiveGreenLeafKey key) =>
+        key.ownerFrameId == query.owner.frameId &&
+        _containsSpan(key.physicalSource, query.source) &&
+        (exactPhysicalSource == null ||
+            _sameSpan(key.physicalSource, exactPhysicalSource));
     for (final key in _recursiveBlockQuoteEntries.keys) {
-      if (key.ownerFrameId == query.owner.frameId &&
-          _containsSpan(key.physicalSource, query.source)) {
-        return key;
-      }
+      if (matches(key)) return key;
+    }
+    for (final key in _recursiveProjectedInlineEntries.keys) {
+      if (matches(key)) return key;
     }
     for (final candidate in _entries.keys) {
-      if (candidate is _RecursiveGreenLeafKey &&
-          candidate.ownerFrameId == query.owner.frameId &&
-          _containsSpan(candidate.physicalSource, query.source)) {
+      if (candidate is _RecursiveGreenLeafKey && matches(candidate)) {
         return candidate;
       }
     }
@@ -472,8 +583,45 @@ bool _recursiveFactsBindKey(
     facts.sourceVersion == authority.sourceVersion &&
     facts.profilePartition == authority.syntaxProfile.value &&
     _containsSpan(key.physicalSource, query.source) &&
+    (query.paragraphSource == null ||
+        _sameSpan(query.paragraphSource!, key.physicalSource)) &&
     _containsSpan(key.physicalSource, facts.source) &&
     facts.source.startUtf8 < facts.source.endUtf8;
+
+bool _recursiveProjectedFactsBindQuery(
+  FlarkV3ProjectedInlineFacts facts, {
+  required FlarkV3RecursiveGreenPointQuery query,
+  required FlarkV3StructuralAck authority,
+  required FlarkV3BlockQuoteProjectionCertificate? projection,
+}) =>
+    facts.sourceVersion == authority.sourceVersion &&
+    facts.profilePartition == authority.syntaxProfile.value &&
+    facts.physicalSource.startUtf8 < facts.physicalSource.endUtf8 &&
+    _containsSpan(facts.physicalSource, query.source) &&
+    (query.paragraphSource == null ||
+        _sameSpan(query.paragraphSource!, facts.physicalSource)) &&
+    (projection == null ||
+        _sameSpan(projection.source, facts.physicalSource) &&
+            projection.projectedUtf8Length == facts.projectedUtf8Length &&
+            projection.projectedUtf16Length == facts.projectedUtf16Length);
+
+bool _recursiveProjectedFactsBindKey(
+  FlarkV3ProjectedInlineFacts facts,
+  FlarkV3RecursiveGreenPointQuery query,
+  FlarkV3StructuralAck authority,
+  _RecursiveGreenLeafKey key,
+  FlarkV3BlockQuoteProjectionCertificate? projection,
+) =>
+    key.ownerFrameId == query.owner.frameId &&
+    _sameSpan(key.physicalSource, facts.physicalSource) &&
+    key.projectedUtf8Length == facts.projectedUtf8Length &&
+    key.projectedUtf16Length == facts.projectedUtf16Length &&
+    _recursiveProjectedFactsBindQuery(
+      facts,
+      query: query,
+      authority: authority,
+      projection: projection,
+    );
 
 sealed class _InlineCacheKey {
   const _InlineCacheKey();
@@ -503,19 +651,30 @@ final class _RecursiveGreenLeafKey extends _InlineCacheKey {
   const _RecursiveGreenLeafKey({
     required this.ownerFrameId,
     required this.physicalSource,
+    required this.projectedUtf8Length,
+    required this.projectedUtf16Length,
   }) : super();
 
   final BigInt ownerFrameId;
   final FlarkV3SourceSpan physicalSource;
+  final int projectedUtf8Length;
+  final int projectedUtf16Length;
 
   @override
   bool operator ==(Object other) =>
       other is _RecursiveGreenLeafKey &&
       other.ownerFrameId == ownerFrameId &&
-      _sameSpan(other.physicalSource, physicalSource);
+      _sameSpan(other.physicalSource, physicalSource) &&
+      other.projectedUtf8Length == projectedUtf8Length &&
+      other.projectedUtf16Length == projectedUtf16Length;
 
   @override
-  int get hashCode => Object.hash(ownerFrameId, _spanHash(physicalSource));
+  int get hashCode => Object.hash(
+    ownerFrameId,
+    _spanHash(physicalSource),
+    projectedUtf8Length,
+    projectedUtf16Length,
+  );
 }
 
 bool _sameSpan(FlarkV3SourceSpan left, FlarkV3SourceSpan right) =>

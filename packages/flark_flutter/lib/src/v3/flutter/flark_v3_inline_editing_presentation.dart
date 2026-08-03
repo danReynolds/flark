@@ -254,6 +254,49 @@ final class FlarkV3ProjectedInputLease {
     );
   }
 
+  /// Composes inline facts expressed in marker-free container coordinates
+  /// through the container's independently certified physical source map.
+  ///
+  /// Block-quote prefixes remain owned by [sourceProjection]. Inline markers
+  /// and styles remain owned by [projectedInline]. This join is purely
+  /// geometric: it does not inspect either source string for Markdown.
+  factory FlarkV3ProjectedInputLease.fromSourceProjectionWithProjectedInline(
+    FlarkV3SourceProjection sourceProjection,
+    FlarkV3ProjectedInlineProjection projectedInline, {
+    FlarkV3SourceProjectionEditPolicy editPolicy =
+        const FlarkV3SourceBackedProjectionEditPolicy(),
+  }) {
+    if (sourceProjection.displayText != projectedInline.projectedText) {
+      throw StateError(
+        'Projected inline authority does not match its container projection.',
+      );
+    }
+    final pieces = _composeProjectedInlinePieces(
+      sourceProjection,
+      projectedInline,
+    );
+    final mergedProjection = FlarkV3SourceProjection.fromSource(
+      sourceStartUtf16: sourceProjection.sourceStartUtf16,
+      sourceText: sourceProjection.sourceText,
+      pieces: [for (final piece in pieces) piece.sourcePiece],
+      certifiedSourceVersion: sourceProjection.certifiedSourceVersion,
+      maximumSourceUtf16: sourceProjection.maximumSourceUtf16,
+      maximumDisplayUtf16: sourceProjection.maximumDisplayUtf16,
+    );
+    if (mergedProjection.displayText != projectedInline.displayText) {
+      throw StateError(
+        'Projected inline composition diverged from its certified display.',
+      );
+    }
+    return FlarkV3ProjectedInputLease._(
+      sourceProjection: mergedProjection,
+      pieces: pieces,
+      delimiterTopology: null,
+      editPolicy: editPolicy,
+      continuationAnchor: null,
+    );
+  }
+
   final FlarkV3SourceProjection _sourceProjection;
   final List<_ProjectedPiece> _pieces;
   final FlarkV3InlineDelimiterTopology? _delimiterTopology;
@@ -1105,6 +1148,121 @@ List<_ProjectedPiece> _projectedPiecesFromInlineProjection(
       projection.sourceLengthUtf16 != 0 && output.isEmpty) {
     throw StateError(
       'Inline presentation does not exhaust its authoritative projection.',
+    );
+  }
+  return _normalizePieces(output);
+}
+
+List<_ProjectedPiece> _composeProjectedInlinePieces(
+  FlarkV3SourceProjection outer,
+  FlarkV3ProjectedInlineProjection inner,
+) {
+  final output = <_ProjectedPiece>[];
+  var projectedCursor = 0;
+  var innerPieceIndex = 0;
+  var runIndex = 0;
+
+  List<FlarkV3InlineFactKind> stylesFor(int start, int end) {
+    while (runIndex < inner.runs.length &&
+        inner.runs[runIndex].projectedEndUtf16 <= start) {
+      runIndex += 1;
+    }
+    if (runIndex >= inner.runs.length) {
+      throw StateError(
+        'Visible projected-inline piece lacks a certified display run.',
+      );
+    }
+    final run = inner.runs[runIndex];
+    if (run.projectedStartUtf16 > start || run.projectedEndUtf16 < end) {
+      throw StateError(
+        'Projected-inline runs disagree with exhaustive projection pieces.',
+      );
+    }
+    return run.semanticStyles;
+  }
+
+  for (final outerPiece in outer.pieces) {
+    if (outerPiece.isHidden) {
+      output.add(
+        _ProjectedPiece.fromSourcePiece(
+          outerPiece,
+          const <FlarkV3InlineFactKind>[],
+          null,
+        ),
+      );
+      continue;
+    }
+    if (!outerPiece.isCopied) {
+      throw StateError(
+        'Projected-inline composition requires source-backed container text.',
+      );
+    }
+
+    final outerProjectedStart = projectedCursor;
+    final outerProjectedEnd =
+        outerProjectedStart + outerPiece.displayLengthUtf16;
+    while (projectedCursor < outerProjectedEnd) {
+      while (innerPieceIndex < inner.pieces.length &&
+          inner.pieces[innerPieceIndex].projectedEndUtf16 <= projectedCursor) {
+        innerPieceIndex += 1;
+      }
+      if (innerPieceIndex >= inner.pieces.length) {
+        throw StateError(
+          'Projected-inline pieces do not exhaust their container projection.',
+        );
+      }
+      final innerPiece = inner.pieces[innerPieceIndex];
+      if (innerPiece.projectedStartUtf16 > projectedCursor) {
+        throw StateError(
+          'Projected-inline pieces leave a gap in container coordinates.',
+        );
+      }
+      final projectedEnd = innerPiece.projectedEndUtf16 < outerProjectedEnd
+          ? innerPiece.projectedEndUtf16
+          : outerProjectedEnd;
+      final physicalStart =
+          outerPiece.sourceStartUtf16 + (projectedCursor - outerProjectedStart);
+      final physicalEnd =
+          outerPiece.sourceStartUtf16 + (projectedEnd - outerProjectedStart);
+      late final FlarkV3SourceProjectionPiece composedSourcePiece;
+      switch (innerPiece.kind) {
+        case FlarkV3ProjectedInlineProjectionPieceKind.copy:
+          composedSourcePiece = FlarkV3SourceProjectionPiece.copy(
+            sourceStartUtf16: physicalStart,
+            sourceEndUtf16: physicalEnd,
+          );
+        case FlarkV3ProjectedInlineProjectionPieceKind.hide:
+          composedSourcePiece = FlarkV3SourceProjectionPiece.hide(
+            sourceStartUtf16: physicalStart,
+            sourceEndUtf16: physicalEnd,
+          );
+        case FlarkV3ProjectedInlineProjectionPieceKind.replace:
+          if (projectedCursor != innerPiece.projectedStartUtf16 ||
+              projectedEnd != innerPiece.projectedEndUtf16) {
+            throw StateError(
+              'A projected-inline replacement crosses a hidden container gap.',
+            );
+          }
+          composedSourcePiece = FlarkV3SourceProjectionPiece.replace(
+            sourceStartUtf16: physicalStart,
+            sourceEndUtf16: physicalEnd,
+            displayText: innerPiece.displayText,
+          );
+      }
+      final styles =
+          innerPiece.kind == FlarkV3ProjectedInlineProjectionPieceKind.hide
+          ? const <FlarkV3InlineFactKind>[]
+          : stylesFor(projectedCursor, projectedEnd);
+      output.add(
+        _ProjectedPiece.fromSourcePiece(composedSourcePiece, styles, null),
+      );
+      projectedCursor = projectedEnd;
+    }
+  }
+
+  if (projectedCursor != inner.projectedLengthUtf16) {
+    throw StateError(
+      'Container projection does not exhaust projected-inline coordinates.',
     );
   }
   return _normalizePieces(output);

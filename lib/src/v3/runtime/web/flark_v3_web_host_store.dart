@@ -5,7 +5,7 @@ import '../../source/source.dart';
 import '../flark_v3_parser_transport.dart';
 import 'flark_v3_wasm_module.dart';
 
-const int _hostAbiVersion = 0x00030006;
+const int _hostAbiVersion = 0x00030007;
 const int _statusOk = 0;
 const int _maximumQueryBytes = 64 * 1024;
 const int _inlineSidecarMaximumQueryBytes = 128 * 1024;

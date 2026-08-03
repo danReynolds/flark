@@ -20,6 +20,7 @@ fn encode_legacy_block_target_metadata(target: InlineRefinementTarget) -> Box<[u
         InlineRefinementTarget::OrderedListItemInline => 3,
         InlineRefinementTarget::OrderedListItemProjection => 4,
         InlineRefinementTarget::BlockQuoteProjection => 5,
+        InlineRefinementTarget::BlockQuoteInline => 6,
         InlineRefinementTarget::Automatic | InlineRefinementTarget::RecursiveGreenParagraph => 0,
     };
     let mut encoded = [0_u8; 12];
@@ -140,6 +141,11 @@ impl CandidateEndpoint {
                             runtime, binding, root,
                         )
                     }
+                    HotInlineProjectionRoot::ProjectedInline(root) => {
+                        M11HotInlineSidecarSnapshotEncoder::authoritative_projected_inline(
+                            runtime, binding, root,
+                        )
+                    }
                     HotInlineProjectionRoot::BulletList(root) => {
                         M11HotInlineSidecarSnapshotEncoder::authoritative_bullet_list(
                             runtime, binding, root,
@@ -195,6 +201,9 @@ impl CandidateEndpoint {
                     ),
                     HotInlineUnsupported::Parser(record) => {
                         (HOT_INLINE_UNSUPPORTED_PARSER, record.into_encoded())
+                    }
+                    HotInlineUnsupported::ProjectedInline { reason, metadata } => {
+                        (reason, metadata)
                     }
                     HotInlineUnsupported::LegacyBlockTarget { target } => (
                         HOT_INLINE_UNSUPPORTED_LEGACY_BLOCK_TARGET,

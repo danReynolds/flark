@@ -39,7 +39,10 @@ use crate::inline_overlay::{
     M11InlineOverlaySnapshotEncoder, M11InlineOverlayTransportError,
     M11_INLINE_OVERLAY_ENVELOPE_BYTES,
 };
-use crate::inline_projection::PERSISTENT_INLINE_PROJECTION_ROLE_DESCRIPTOR_BYTES;
+use crate::inline_projection::{
+    PERSISTENT_INLINE_PROJECTION_ROLE_DESCRIPTOR_BYTES,
+    PERSISTENT_PROJECTED_INLINE_PROJECTION_DESCRIPTOR_BYTES,
+};
 use crate::m11_host::M11_CANDIDATE_ARENA_MAX_SLOTS;
 use crate::recursive_green::plan_persistent_m11_recursive_green_semantic_splice;
 use crate::reference_root::{
@@ -85,9 +88,9 @@ pub use crate::inline_projection::{
     M11InlineProjectionCheckpointQueryPoll, M11InlineProjectionCursor,
     M11InlineProjectionCursorPoll, M11InlineProjectionDescriptor, M11InlineProjectionError,
     M11InlineProjectionFact, M11InlineProjectionKind, M11InlineProjectionRoot,
-    M11_INLINE_CHARACTER_REFERENCE_SOURCE_MAX_BYTES, M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES,
-    M11_INLINE_LINK_VALUES_MAX_ENTRIES, M11_INLINE_PROJECTION_FACTS_PER_PAGE_MAX,
-    M11_INLINE_PROJECTION_FLAG_AUTOLINK_URI_WWW,
+    M11ProjectedInlineProjectionRoot, M11_INLINE_CHARACTER_REFERENCE_SOURCE_MAX_BYTES,
+    M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES, M11_INLINE_LINK_VALUES_MAX_ENTRIES,
+    M11_INLINE_PROJECTION_FACTS_PER_PAGE_MAX, M11_INLINE_PROJECTION_FLAG_AUTOLINK_URI_WWW,
     M11_INLINE_PROJECTION_FLAG_CODE_NORMALIZE_LINE_ENDINGS,
     M11_INLINE_PROJECTION_FLAG_CODE_TRIM_ONE_SPACE,
 };
@@ -3545,6 +3548,15 @@ pub enum M11HotInlineSidecarDisposition {
         link_value_encoded_bytes: u32,
         ordered_commitment256: [u8; 32],
     },
+    ProjectedInlineAuthoritative {
+        projected_utf8_length: u32,
+        projected_utf16_length: u32,
+        source_projection_commitment256: [u8; 32],
+        logical_page_count: u64,
+        fact_count: u64,
+        storage_page_count: u64,
+        ordered_commitment256: [u8; 32],
+    },
     IndentedCodeAuthoritative {
         logical_page_count: u64,
         line_count: u64,
@@ -3706,6 +3718,46 @@ impl M11HotInlineSidecarSnapshotEncoder {
             u32::try_from(PERSISTENT_INLINE_PROJECTION_ROLE_DESCRIPTOR_BYTES).expect("IPR3 fits"),
         );
         let inner = M11InlineOverlaySnapshotEncoder::authoritative(runtime, binding.0, projection)?;
+        Ok(Self { inner, descriptor })
+    }
+
+    pub fn authoritative_projected_inline(
+        runtime: &DocumentRuntime,
+        binding: M11HotInlineSidecarBinding,
+        projection: &M11ProjectedInlineProjectionRoot,
+    ) -> Result<Self, M11PublicationError> {
+        let envelope = M11InlineOverlayEnvelope::from_projected_inline_projection(
+            binding.0.clone(),
+            projection,
+        )
+        .map_err(M11InlineOverlayTransportError::from)?;
+        let transferred_node_count = projection
+            .descriptor()
+            .storage_page_count()
+            .checked_add(projection.descriptor().link_value_storage_page_count())
+            .and_then(|nodes| nodes.checked_add(1))
+            .and_then(|nodes| u32::try_from(nodes).ok())
+            .ok_or(M11PublicationError(ErrorInner::Invalid(
+                "projected-inline node count exceeds transport width",
+            )))?;
+        let mut descriptor = sidecar_descriptor(
+            &envelope,
+            transferred_node_count,
+            u32::try_from(PERSISTENT_PROJECTED_INLINE_PROJECTION_DESCRIPTOR_BYTES)
+                .expect("projected-inline descriptor fits"),
+        );
+        descriptor.disposition = M11HotInlineSidecarDisposition::ProjectedInlineAuthoritative {
+            projected_utf8_length: projection.projected_utf8_length(),
+            projected_utf16_length: projection.projected_utf16_length(),
+            source_projection_commitment256: projection.structural_commitment256(),
+            logical_page_count: projection.descriptor().logical_page_count(),
+            fact_count: projection.descriptor().fact_count(),
+            storage_page_count: projection.descriptor().storage_page_count(),
+            ordered_commitment256: projection.ordered_commitment256(),
+        };
+        let inner = M11InlineOverlaySnapshotEncoder::authoritative_projected_inline(
+            runtime, binding.0, projection,
+        )?;
         Ok(Self { inner, descriptor })
     }
 
@@ -3965,6 +4017,30 @@ fn sidecar_descriptor(
             link_value_entry_count,
             link_value_storage_page_count,
             link_value_encoded_bytes,
+            ordered_commitment256,
+        },
+        M11InlineOverlayDisposition::Authoritative {
+            projection_kind: M11InlineOverlayProjectionKind::ProjectedInline,
+            logical_page_count,
+            fact_count,
+            storage_page_count,
+            ordered_commitment256,
+            ..
+        } => M11HotInlineSidecarDisposition::ProjectedInlineAuthoritative {
+            projected_utf8_length: envelope
+                .binding()
+                .visible_range()
+                .end
+                .saturating_sub(envelope.binding().visible_range().start),
+            projected_utf16_length: envelope
+                .binding()
+                .visible_range_utf16()
+                .end
+                .saturating_sub(envelope.binding().visible_range_utf16().start),
+            source_projection_commitment256: [0; 32],
+            logical_page_count,
+            fact_count,
+            storage_page_count,
             ordered_commitment256,
         },
         M11InlineOverlayDisposition::Authoritative {

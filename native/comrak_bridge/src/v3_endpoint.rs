@@ -3719,6 +3719,7 @@ mod tests {
                 crate::v3_session_wire::InlineRefinementTarget::OrderedListItemProjection => 4,
                 crate::v3_session_wire::InlineRefinementTarget::RecursiveGreenParagraph => 5,
                 crate::v3_session_wire::InlineRefinementTarget::BlockQuoteProjection => 6,
+                crate::v3_session_wire::InlineRefinementTarget::BlockQuoteInline => 7,
             },
         );
         frame(Opcode::ParserRefineInline, correlation_id, &payload)

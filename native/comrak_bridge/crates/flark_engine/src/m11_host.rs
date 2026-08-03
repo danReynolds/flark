@@ -46,8 +46,8 @@ use crate::recursive_green::{
     M11RecursiveGreenPoint, M11RecursiveGreenPointBudgetExceeded,
     M11RecursiveGreenPointQueryOutcome, M11RecursiveGreenRenderableRow,
     M11RecursiveGreenRowBudgetExceeded, M11RecursiveGreenRowEditCapability,
-    M11RecursiveGreenRowOrdinalWindow,
-    M11RecursiveGreenRowPathFrame, M11RecursiveGreenRowQueryLimit, M11RecursiveGreenRowQueryLimits,
+    M11RecursiveGreenRowOrdinalWindow, M11RecursiveGreenRowPathFrame,
+    M11RecursiveGreenRowQueryLimit, M11RecursiveGreenRowQueryLimits,
     M11RecursiveGreenRowQueryOutcome, M11RecursiveGreenRowWindow,
 };
 use crate::source::{SourceBoundaryAffinity, SourceVersion};
@@ -1666,6 +1666,15 @@ pub struct M11HostInlineSidecarDescriptor {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct M11HostProjectedInlineSidecarDescriptor {
+    inner: M11HostInlineSidecarDescriptor,
+    projected_utf8_length: u32,
+    projected_utf16_length: u32,
+    source_projection_commitment256: [u8; 32],
+    ordered_commitment256: [u8; 32],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct M11HostIndentedCodeSidecarDescriptor {
     physical_start: u32,
     physical_end: u32,
@@ -2145,6 +2154,45 @@ impl M11HostInlineSidecarDescriptor {
     }
 }
 
+impl M11HostProjectedInlineSidecarDescriptor {
+    fn from_projection(
+        descriptor: crate::inline_projection::PersistentM11ProjectedInlineProjectionDescriptor,
+    ) -> Result<Self, M11HostError> {
+        Ok(Self {
+            inner: M11HostInlineSidecarDescriptor::from_projection(descriptor.inner())?,
+            projected_utf8_length: descriptor.projected_utf8_length(),
+            projected_utf16_length: descriptor.projected_utf16_length(),
+            source_projection_commitment256: descriptor.source_projection_commitment256(),
+            ordered_commitment256: descriptor.ordered_commitment256(),
+        })
+    }
+
+    #[must_use]
+    pub const fn inline(self) -> M11HostInlineSidecarDescriptor {
+        self.inner
+    }
+
+    #[must_use]
+    pub const fn projected_utf8_length(self) -> u32 {
+        self.projected_utf8_length
+    }
+
+    #[must_use]
+    pub const fn projected_utf16_length(self) -> u32 {
+        self.projected_utf16_length
+    }
+
+    #[must_use]
+    pub const fn source_projection_commitment256(self) -> [u8; 32] {
+        self.source_projection_commitment256
+    }
+
+    #[must_use]
+    pub const fn ordered_commitment256(self) -> [u8; 32] {
+        self.ordered_commitment256
+    }
+}
+
 // The authoritative query intentionally owns its cursor inline. This is a
 // live-render query surface, so boxing would impose an allocation per query
 // and would change the public cursor-bearing variant solely to optimize the
@@ -2155,6 +2203,10 @@ pub enum M11HostInlineSidecarQuery<'host> {
         descriptor: M11HostInlineSidecarDescriptor,
         cursor: M11HostInlineProjectionCursor<'host>,
         link_values: M11HostInlineLinkValues<'host>,
+    },
+    ProjectedInline {
+        descriptor: M11HostProjectedInlineSidecarDescriptor,
+        cursor: M11HostInlineProjectionCursor<'host>,
     },
     IndentedCode {
         descriptor: M11HostIndentedCodeSidecarDescriptor,
@@ -2280,6 +2332,14 @@ impl M11HostInlineSidecar {
                     root: link_value_root,
                     descriptor,
                 },
+            }),
+            Some(M11InlineOverlayHostMatch::ProjectedInlineAuthoritative {
+                descriptor,
+                cursor,
+                ..
+            }) => Some(M11HostInlineSidecarQuery::ProjectedInline {
+                descriptor: M11HostProjectedInlineSidecarDescriptor::from_projection(descriptor)?,
+                cursor: M11HostInlineProjectionCursor { inner: cursor },
             }),
             Some(M11InlineOverlayHostMatch::IndentedCodeAuthoritative {
                 descriptor,

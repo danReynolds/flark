@@ -38,7 +38,7 @@ use crate::v3_publication_wire::{
 };
 use crate::v3_wire::Status;
 
-pub const FLARK_V3_HOST_NATIVE_ABI_VERSION: u32 = 0x0003_0006;
+pub const FLARK_V3_HOST_NATIVE_ABI_VERSION: u32 = 0x0003_0007;
 pub const FLARK_V3_HOST_MAXIMUM_FRAME_BYTES: u32 = M11_HOST_MAXIMUM_FRAME_BYTES as u32;
 pub const FLARK_V3_HOST_MAXIMUM_PACKET_BYTES: u32 = MAXIMUM_PACKET_ENCODED_BYTES as u32;
 pub const FLARK_V3_HOST_MAXIMUM_QUERY_BYTES: u32 = 64 * 1024;
@@ -2939,7 +2939,7 @@ mod tests {
 
     #[test]
     fn ffi_layout_matches_declared_header_contract() {
-        assert_eq!(FLARK_V3_HOST_NATIVE_ABI_VERSION, 0x0003_0006);
+        assert_eq!(FLARK_V3_HOST_NATIVE_ABI_VERSION, 0x0003_0007);
         assert_eq!(size_of::<FlarkV3HostConfig>(), 56);
         assert_eq!(size_of::<FlarkV3HostOfferBegin>(), 144);
         assert_eq!(size_of::<FlarkV3HostStructuralAck>(), 124);
@@ -2985,7 +2985,7 @@ mod tests {
         assert_eq!(MAXIMUM_RESIDENT_HOSTS, 2_048);
         assert_eq!(FLARK_V3_HOST_MAXIMUM_PACKET_BYTES, 71_724);
         let header = include_str!("../flark_comrak_bridge.h");
-        assert!(header.contains("FLARK_V3_HOST_NATIVE_ABI_VERSION UINT32_C(0x00030006)"));
+        assert!(header.contains("FLARK_V3_HOST_NATIVE_ABI_VERSION UINT32_C(0x00030007)"));
         assert!(header.contains("flark_v3_host_begin_references_delta"));
         assert!(header.contains("flark_v3_host_begin_exact_base_delta"));
         assert!(header.contains("flark_v3_host_begin_inline_sidecar_offer"));

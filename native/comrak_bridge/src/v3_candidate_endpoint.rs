@@ -16,11 +16,11 @@ use flark_engine::parser_internal::{
     M11HotInlineSidecarSnapshotPoll, M11IndentedCodeProjectionError, M11IndentedCodeProjectionRoot,
     M11InlineProjectionError, M11InlineProjectionRoot, M11MarkedLineProjectionKind,
     M11OwnedSnapshotPoll, M11OwnedSnapshotStream, M11ParserPageError,
-    M11ParserSourceRangeAuthority, M11PublicationError, M11RecursiveGreenFrameId,
-    M11RecursiveGreenLocation, M11RecursiveGreenPoint, M11RecursiveGreenRowEditCapability,
-    M11RecursiveGreenRowQueryLimits, M11RecursiveGreenRowQueryOutcome, M11ReferenceResolver,
-    M11RetainedCandidatePublication, M11SnapshotFrame, M11SnapshotFrameKind, M11_MAX_ROLE_RECORDS,
-    M11_MAX_SNAPSHOT_FRAME_BYTES,
+    M11ParserSourceRangeAuthority, M11ProjectedInlineProjectionRoot, M11PublicationError,
+    M11RecursiveGreenFrameId, M11RecursiveGreenLocation, M11RecursiveGreenPoint,
+    M11RecursiveGreenRowEditCapability, M11RecursiveGreenRowQueryLimits,
+    M11RecursiveGreenRowQueryOutcome, M11ReferenceResolver, M11RetainedCandidatePublication,
+    M11SnapshotFrame, M11SnapshotFrameKind, M11_MAX_ROLE_RECORDS, M11_MAX_SNAPSHOT_FRAME_BYTES,
 };
 use flark_engine::{
     CertifiedSource, DocumentRuntime, DocumentRuntimeError, IncrementalSourceFactsPlan,
@@ -59,6 +59,8 @@ use flark_parser::{
     M11PersistentRecursiveGreenBuildStatus, M11PersistentRecursiveGreenCleanBuild,
     M11PersistentRecursiveGreenCleanPlan, M11PersistentRecursiveGreenSession,
     M11PersistentRecursiveGreenSessionError, M11PersistentRecursiveGreenUpdate,
+    M11ProjectedInlineProjectionJob, M11ProjectedInlineProjectionJobError,
+    M11ProjectedInlineProjectionJobPollStatus, M11ProjectedInlineProjectionOutput,
     M11PublishedBlockQuoteLeafFence, M11PublishedBulletListItemInlineFenceOutcome,
     M11PublishedBulletListItemProjectionFence, M11PublishedBulletListLeafFence,
     M11PublishedIndentedCodeLeafFence, M11PublishedInlineLeafFence,
@@ -68,7 +70,9 @@ use flark_parser::{
     M11_BLOCK_QUOTE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
     M11_BULLET_LIST_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
     M11_INDENTED_CODE_PROJECTION_JOB_MAX_POLL_TRANSITIONS, M11_INLINE_META_RECORD_BYTES,
-    M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS, M11_SEGMENTED_TOP_LEVEL_CROP_MAX_BYTES,
+    M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
+    M11_PROJECTED_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
+    M11_SEGMENTED_TOP_LEVEL_CROP_MAX_BYTES,
 };
 
 use crate::v3_publication_wire::{
@@ -643,6 +647,39 @@ fn resolved_recursive_green_block_quote_projection(
     })
 }
 
+fn resolved_recursive_green_block_quote_inline(
+    session: &M11PersistentRecursiveGreenSession,
+    runtime: &DocumentRuntime,
+    command: InlineRefinementCommand,
+    byte_offset: usize,
+    utf16_offset: usize,
+    affinity: SourceBoundaryAffinity,
+) -> Result<ResolvedHotInlineDemand, CandidateEndpointError> {
+    let resolved = resolved_recursive_green_block_quote_projection(
+        session,
+        runtime,
+        command,
+        byte_offset,
+        utf16_offset,
+        affinity,
+    )?;
+    let ResolvedHotInlineDemand::PreparedBlockQuoteLeaf {
+        command,
+        identity,
+        parser_profile,
+        fence,
+    } = resolved
+    else {
+        return Err(CandidateEndpointError::InvalidState);
+    };
+    Ok(ResolvedHotInlineDemand::PreparedBlockQuoteInline {
+        command,
+        identity,
+        parser_profile,
+        fence,
+    })
+}
+
 fn resolved_recursive_green_automatic(
     session: &M11PersistentRecursiveGreenSession,
     runtime: &DocumentRuntime,
@@ -911,6 +948,12 @@ enum ResolvedHotInlineDemand {
         parser_profile: flark_engine::ParserProfileId,
         fence: M11RecursiveGreenBlockQuoteProjectionFence,
     },
+    PreparedBlockQuoteInline {
+        command: InlineRefinementCommand,
+        identity: HotInlineLeafIdentity,
+        parser_profile: flark_engine::ParserProfileId,
+        fence: M11RecursiveGreenBlockQuoteProjectionFence,
+    },
     BulletListLeaf {
         command: InlineRefinementCommand,
         identity: HotInlineLeafIdentity,
@@ -940,6 +983,7 @@ impl ResolvedHotInlineDemand {
             Self::IndentedCodeLeaf { identity, .. } => *identity,
             Self::BlockQuoteLeaf { identity, .. } => *identity,
             Self::PreparedBlockQuoteLeaf { identity, .. } => *identity,
+            Self::PreparedBlockQuoteInline { identity, .. } => *identity,
             Self::BulletListLeaf { identity, .. } => *identity,
             Self::BulletListItem { identity, .. } => *identity,
             Self::OrderedListItem { identity, .. } => *identity,
@@ -954,6 +998,7 @@ impl ResolvedHotInlineDemand {
             Self::IndentedCodeLeaf { command, .. } => *command,
             Self::BlockQuoteLeaf { command, .. } => *command,
             Self::PreparedBlockQuoteLeaf { command, .. } => *command,
+            Self::PreparedBlockQuoteInline { command, .. } => *command,
             Self::BulletListLeaf { command, .. } => *command,
             Self::BulletListItem { command, .. } => *command,
             Self::OrderedListItem { command, .. } => *command,
@@ -966,6 +1011,7 @@ enum RunningHotInlineJob {
     Inline(Box<M11InlineProjectionJob>),
     IndentedCode(Box<M11IndentedCodeProjectionJob>),
     BlockQuote(Box<M11BlockQuoteProjectionJob>),
+    ProjectedInline(Box<M11ProjectedInlineProjectionJob>),
     BulletList(Box<M11BulletListProjectionJob>),
     BulletListItem(Box<M11BulletListItemProjectionJob>),
 }
@@ -976,6 +1022,7 @@ impl RunningHotInlineJob {
             Self::Inline(_) => M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
             Self::IndentedCode(_) => M11_INDENTED_CODE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
             Self::BlockQuote(_) => M11_BLOCK_QUOTE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
+            Self::ProjectedInline(_) => M11_PROJECTED_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
             Self::BulletList(_) => M11_BULLET_LIST_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
             Self::BulletListItem(_) => M11_BULLET_LIST_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
         }
@@ -989,6 +1036,7 @@ impl RunningHotInlineJob {
             Self::Inline(job) => job.begin_abort(runtime)?,
             Self::IndentedCode(job) => job.begin_cancel(runtime)?,
             Self::BlockQuote(job) => job.begin_cancel(runtime)?,
+            Self::ProjectedInline(job) => job.begin_cancel(runtime)?,
             Self::BulletList(job) => job.begin_cancel(runtime)?,
             Self::BulletListItem(job) => job.begin_cancel(runtime)?,
         }
@@ -1010,6 +1058,10 @@ impl RunningHotInlineJob {
                 Ok((poll.transitions(), poll.complete()))
             }
             Self::BlockQuote(job) => {
+                let poll = job.poll_cancel(runtime, fuel)?;
+                Ok((poll.transitions(), poll.complete()))
+            }
+            Self::ProjectedInline(job) => {
                 let poll = job.poll_cancel(runtime, fuel)?;
                 Ok((poll.transitions(), poll.complete()))
             }
@@ -1038,6 +1090,7 @@ pub(crate) enum HotInlineProjectionRoot {
     Inline(M11InlineProjectionRoot),
     IndentedCode(M11IndentedCodeProjectionRoot),
     BlockQuote(M11BlockQuoteProjectionRoot),
+    ProjectedInline(M11ProjectedInlineProjectionRoot),
     BulletList(M11BlockQuoteProjectionRoot),
     BulletListItem {
         root: M11BlockQuoteProjectionRoot,
@@ -1063,6 +1116,7 @@ impl HotInlineProjectionRoot {
             Self::Inline(root) => root.begin_release(runtime)?,
             Self::IndentedCode(root) => root.begin_release(runtime)?,
             Self::BlockQuote(root) => root.begin_release(runtime)?,
+            Self::ProjectedInline(root) => root.begin_release(runtime)?,
             Self::BulletList(root) => root.begin_release(runtime)?,
             Self::BulletListItem { root, .. } => root.begin_release(runtime)?,
             Self::OrderedListItem { root, .. } => root.begin_release(runtime)?,
@@ -1079,6 +1133,7 @@ impl HotInlineProjectionRoot {
             Self::Inline(root) => root.poll_release(runtime, fuel)?,
             Self::IndentedCode(root) => root.poll_release(runtime, fuel)?,
             Self::BlockQuote(root) => root.poll_release(runtime, fuel)?,
+            Self::ProjectedInline(root) => root.poll_release(runtime, fuel)?,
             Self::BulletList(root) => root.poll_release(runtime, fuel)?,
             Self::BulletListItem { root, .. } => root.poll_release(runtime, fuel)?,
             Self::OrderedListItem { root, .. } => root.poll_release(runtime, fuel)?,
@@ -1365,6 +1420,7 @@ pub(crate) enum HotInlineReadyPublication {
 pub(crate) enum HotInlineUnsupported {
     NotInlineLeaf { kind: M11BlockSequenceEntryKind },
     Parser(M11InlineProjectionUnsupportedRecord),
+    ProjectedInline { reason: u32, metadata: Box<[u8]> },
     LegacyBlockTarget { target: InlineRefinementTarget },
 }
 
@@ -2844,6 +2900,23 @@ impl CandidateEndpoint {
         };
         let point = M11BlockSequencePoint::new(byte_offset, utf16_offset, affinity);
         let resolved = match command.target {
+            InlineRefinementTarget::BlockQuoteInline
+                if self
+                    .recursive_green
+                    .has_installed_session_for(command.base_ack) =>
+            {
+                resolved_recursive_green_block_quote_inline(
+                    self.recursive_green.installed_session(command.base_ack)?,
+                    runtime,
+                    command,
+                    byte_offset,
+                    utf16_offset,
+                    affinity,
+                )?
+            }
+            InlineRefinementTarget::BlockQuoteInline => {
+                return Err(CandidateEndpointError::InvalidAuthority);
+            }
             InlineRefinementTarget::BlockQuoteProjection
                 if self
                     .recursive_green
@@ -3628,6 +3701,68 @@ impl CandidateEndpoint {
                                 HotInlineReadyPublication::Authoritative(Box::new(
                                     HotInlineProjectionRoot::BlockQuote(root),
                                 )),
+                            )
+                        }
+                        RunningHotInlineJob::ProjectedInline(job) => {
+                            let polled = match job.poll(runtime, poll_fuel) {
+                                Ok(polled) => polled,
+                                Err(error) => {
+                                    self.hot_inline = Some(HotInlineState::Running(running));
+                                    return Err(error.into());
+                                }
+                            };
+                            if polled.status() == M11ProjectedInlineProjectionJobPollStatus::Pending
+                            {
+                                transitions = checked_add(transitions, polled.transitions())?;
+                                if transitions > fuel {
+                                    self.hot_inline = Some(HotInlineState::Running(running));
+                                    return Err(CandidateEndpointError::InvalidState);
+                                }
+                                self.hot_inline = Some(HotInlineState::Running(running));
+                                return Ok(transitions);
+                            }
+                            let output = job
+                                .take_output()
+                                .ok_or(CandidateEndpointError::InvalidState)?;
+                            let publication = match output {
+                                M11ProjectedInlineProjectionOutput::Authoritative(root) => {
+                                    let descriptor = root.descriptor();
+                                    let source = descriptor.source();
+                                    if source.revision().get()
+                                        != u64::from(running.command.source_version.revision)
+                                        || split_u64(source.root().get())
+                                            != running.command.base_ack.source_root
+                                        || descriptor.source_range() != &running.inline_source
+                                        || descriptor.parser_profile() != running.parser_profile
+                                        || running.parser_profile.get()
+                                            != u64::from(running.command.base_ack.syntax_profile)
+                                    {
+                                        self.hot_inline = Some(HotInlineState::Releasing {
+                                            root: Box::new(
+                                                HotInlineProjectionRoot::ProjectedInline(root),
+                                            ),
+                                            authority: None,
+                                            begun: false,
+                                            replacement: None,
+                                        });
+                                        return Err(CandidateEndpointError::InvalidAuthority);
+                                    }
+                                    HotInlineReadyPublication::Authoritative(Box::new(
+                                        HotInlineProjectionRoot::ProjectedInline(root),
+                                    ))
+                                }
+                                M11ProjectedInlineProjectionOutput::Unsupported {
+                                    reason,
+                                    metadata,
+                                } => HotInlineReadyPublication::Unsupported(
+                                    HotInlineUnsupported::ProjectedInline { reason, metadata },
+                                ),
+                            };
+                            (
+                                polled.transitions(),
+                                running.parser_profile,
+                                None,
+                                publication,
                             )
                         }
                         RunningHotInlineJob::BulletList(job) => {
@@ -7781,6 +7916,7 @@ fn list_item_projection_matches_target(
         InlineRefinementTarget::Automatic
         | InlineRefinementTarget::RecursiveGreenParagraph
         | InlineRefinementTarget::BlockQuoteProjection
+        | InlineRefinementTarget::BlockQuoteInline
         | InlineRefinementTarget::BulletListItemInline
         | InlineRefinementTarget::OrderedListItemInline => false,
     }
@@ -7918,6 +8054,28 @@ fn start_resolved_hot_inline(
                 job: RunningHotInlineJob::BlockQuote(Box::new(job)),
             })))
         }
+        ResolvedHotInlineDemand::PreparedBlockQuoteInline {
+            command,
+            identity,
+            parser_profile,
+            fence,
+        } => {
+            let inline_source = identity.inline_source_range();
+            let inline_source_utf16 = identity.inline_source_utf16_range();
+            let job = M11ProjectedInlineProjectionJob::new(
+                runtime,
+                fence,
+                M11ParserBinding::current(parser_profile),
+            )?;
+            Ok(HotInlineState::Running(Box::new(RunningHotInline {
+                command,
+                identity,
+                inline_source,
+                inline_source_utf16,
+                parser_profile,
+                job: RunningHotInlineJob::ProjectedInline(Box::new(job)),
+            })))
+        }
         ResolvedHotInlineDemand::BulletListLeaf {
             command,
             identity,
@@ -8026,6 +8184,21 @@ fn hot_inline_envelope_from_descriptor(
             link_value_entry_count,
             link_value_encoded_bytes,
             link_value_storage_page_count,
+            ordered_commitment256,
+        },
+        M11HotInlineSidecarDisposition::ProjectedInlineAuthoritative {
+            logical_page_count,
+            fact_count,
+            storage_page_count,
+            ordered_commitment256,
+            ..
+        } => HotInlineSidecarDisposition::Authoritative {
+            logical_page_count,
+            fact_count,
+            storage_page_count,
+            link_value_entry_count: 0,
+            link_value_encoded_bytes: 0,
+            link_value_storage_page_count: 0,
             ordered_commitment256,
         },
         M11HotInlineSidecarDisposition::IndentedCodeAuthoritative {

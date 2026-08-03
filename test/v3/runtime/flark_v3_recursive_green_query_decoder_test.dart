@@ -363,6 +363,224 @@ void main() {
     expect(cache.recursiveBlockQuoteEntryCount, 0);
     expect(cache.entryCount, 0);
   });
+
+  test(
+    'projected quote inline facts rendezvous under exact projected metrics',
+    () {
+      const source = '- a\n  > **first\n  > second** and `code`\n- d\n';
+      final document = FlarkV3SourceDocument.fromString(source);
+      final version = FlarkV3SourceVersion.fromDocument(
+        documentSession: FlarkV3DocumentSessionId(0x323, 2, 3, 4),
+        document: document,
+      );
+      final point = source.indexOf('first');
+      final encoded = _schema9(point);
+      final green =
+          FlarkV3DocumentQueryDecoder.decodePointViewport(
+                sourceDocument: document,
+                expectedSource: version,
+                expectedProfilePartition: 1,
+                viewport: FlarkV3HostStructuralViewport.owned(
+                  sourceVersion: version,
+                  range: FlarkV3MetricRange(
+                    start: FlarkV3SourceMetric(bytes: point, utf16: point),
+                    end: FlarkV3SourceMetric(
+                      bytes: point + 1,
+                      utf16: point + 1,
+                    ),
+                  ),
+                  encoded: encoded,
+                  receipt: FlarkV3HostViewportReceipt(
+                    encodedBytes: encoded.length,
+                    leafCount: 1,
+                    openDepth: 5,
+                    treeNodesVisited: 2,
+                    summaryNodesSkipped: 1,
+                  ),
+                ),
+              )
+              as FlarkV3RecursiveGreenPointQuery;
+      final quoteStart = source.indexOf('  > ');
+      final firstEnd = source.indexOf('\n', quoteStart) + 1;
+      final quoteEnd = source.indexOf('\n', firstEnd) + 1;
+      final quoteRecords = Uint8List(
+        2 * FlarkV3BlockQuoteProjectionDecoder.recordBytes,
+      );
+      final quoteData = ByteData.sublistView(quoteRecords);
+      void quoteRecord(int offset, int start, int physical, int content) {
+        quoteData
+          ..setUint32(offset, start, Endian.little)
+          ..setUint32(offset + 4, physical, Endian.little)
+          ..setUint32(offset + 8, 4, Endian.little)
+          ..setUint32(offset + 12, content, Endian.little)
+          ..setUint32(
+            offset + 16,
+            FlarkV3BlockQuoteProjectionDecoder.markedFlag,
+            Endian.little,
+          );
+      }
+
+      quoteRecord(0, 0, firstEnd - quoteStart, firstEnd - quoteStart - 5);
+      quoteRecord(
+        FlarkV3BlockQuoteProjectionDecoder.recordBytes,
+        firstEnd - quoteStart,
+        quoteEnd - firstEnd,
+        quoteEnd - firstEnd - 5,
+      );
+      FlarkV3HotInlineSidecarBinding quoteBinding({int profile = 1}) =>
+          FlarkV3HotInlineSidecarBinding(
+            parserProfile: FlarkV3SyntaxProfileId(profile),
+            refinementGeneration: FlarkV3ProtocolU64.fromU32(1),
+            blockOrdinal: FlarkV3ProtocolU64(lowWord: 4, highWord: 0x80000000),
+            physicalStartUtf8: quoteStart,
+            physicalEndUtf8: quoteEnd,
+            visibleStartUtf8: quoteStart,
+            visibleEndUtf8: quoteEnd,
+            physicalStartUtf16: quoteStart,
+            physicalEndUtf16: quoteEnd,
+            visibleStartUtf16: quoteStart,
+            visibleEndUtf16: quoteEnd,
+          );
+      final joinedQuote =
+          FlarkV3DocumentQueryDecoder.joinRecursiveGreenBlockQuoteProjection(
+            sourceDocument: document,
+            expectedSource: version,
+            expectedProfilePartition: 1,
+            query: green,
+            binding: quoteBinding(),
+            outcome: FlarkV3InlineSidecarQueryAuthoritative(
+              payloadKind: FlarkV3InlineSidecarPayloadKind.blockQuote,
+              factCount: 2,
+              valueEntryCount: 0,
+              treeNodesVisited: 3,
+              encodedFacts: quoteRecords,
+              encodedValues: Uint8List(0),
+            ),
+          );
+      expect(
+        joinedQuote.blockQuoteProjection!.toSourceProjection().displayText,
+        '**first\nsecond** and `code`\n',
+      );
+
+      final cache = FlarkV3CurrentRevisionInlineCache(
+        maximumEntries: 4,
+        maximumFactRecords: 8,
+      );
+      final authority = _ack(version, generation: 1);
+      final quoteStage = cache.resolveRecursiveGreen(
+        authority: authority,
+        query: joinedQuote,
+      );
+      final joinedInline =
+          FlarkV3DocumentQueryDecoder.joinRecursiveGreenBlockQuoteInline(
+            sourceDocument: document,
+            expectedSource: version,
+            expectedProfilePartition: 1,
+            query: quoteStage,
+            binding: quoteBinding(),
+            outcome: FlarkV3InlineSidecarQueryAuthoritative(
+              payloadKind: FlarkV3InlineSidecarPayloadKind.blockQuoteInline,
+              factCount: 2,
+              valueEntryCount: 0,
+              treeNodesVisited: 4,
+              encodedFacts: _projectedInlineFacts(),
+              encodedValues: Uint8List(0),
+            ),
+          );
+      expect(joinedInline.projectedInlineFacts?.facts, hasLength(2));
+      expect(joinedInline.inlineFacts, isNull);
+
+      final combined = cache.resolveRecursiveGreen(
+        authority: authority,
+        query: joinedInline,
+      );
+      expect(
+        combined.blockQuoteProjection,
+        same(joinedQuote.blockQuoteProjection),
+      );
+      expect(
+        combined.projectedInlineFacts,
+        same(joinedInline.projectedInlineFacts),
+      );
+      expect(cache.recursiveProjectedInlineEntryCount, 1);
+      expect(cache.retainedFactRecords, 2);
+
+      final moved = cache.resolveRecursiveGreen(
+        authority: authority,
+        query: green,
+      );
+      expect(
+        moved.blockQuoteProjection,
+        same(joinedQuote.blockQuoteProjection),
+      );
+      expect(
+        moved.projectedInlineFacts,
+        same(joinedInline.projectedInlineFacts),
+      );
+      final differentMetricsRecords = Uint8List.fromList(quoteRecords);
+      ByteData.sublistView(differentMetricsRecords)
+        ..setUint32(
+          FlarkV3BlockQuoteProjectionDecoder.recordBytes + 8,
+          0,
+          Endian.little,
+        )
+        ..setUint32(
+          FlarkV3BlockQuoteProjectionDecoder.recordBytes + 12,
+          quoteEnd - firstEnd - 1,
+          Endian.little,
+        )
+        ..setUint32(
+          FlarkV3BlockQuoteProjectionDecoder.recordBytes + 16,
+          FlarkV3BlockQuoteProjectionDecoder.lazyContinuationFlag,
+          Endian.little,
+        );
+      final differentMetricsQuote =
+          FlarkV3DocumentQueryDecoder.joinRecursiveGreenBlockQuoteProjection(
+            sourceDocument: document,
+            expectedSource: version,
+            expectedProfilePartition: 1,
+            query: green,
+            binding: quoteBinding(),
+            outcome: FlarkV3InlineSidecarQueryAuthoritative(
+              payloadKind: FlarkV3InlineSidecarPayloadKind.blockQuote,
+              factCount: 2,
+              valueEntryCount: 0,
+              treeNodesVisited: 3,
+              encodedFacts: differentMetricsRecords,
+              encodedValues: Uint8List(0),
+            ),
+          );
+      final metricMismatch = cache.resolveRecursiveGreen(
+        authority: authority,
+        query: differentMetricsQuote,
+      );
+      expect(
+        metricMismatch.projectedInlineFacts,
+        isNull,
+        reason:
+            'the same frame/range cannot borrow different projected metrics',
+      );
+      expect(
+        () => FlarkV3DocumentQueryDecoder.joinRecursiveGreenBlockQuoteInline(
+          sourceDocument: document,
+          expectedSource: version,
+          expectedProfilePartition: 1,
+          query: quoteStage,
+          binding: quoteBinding(profile: 2),
+          outcome: const FlarkV3InlineSidecarQueryUnavailable(),
+        ),
+        throwsA(isA<FlarkV3DocumentQueryException>()),
+      );
+
+      final replaced = cache.resolveRecursiveGreen(
+        authority: _ack(version, generation: 2),
+        query: green,
+      );
+      expect(replaced.blockQuoteProjection, isNull);
+      expect(replaced.projectedInlineFacts, isNull);
+      expect(cache.recursiveProjectedInlineEntryCount, 0);
+    },
+  );
 }
 
 FlarkV3StructuralAck _ack(
@@ -405,6 +623,32 @@ Uint8List _inlineFacts() {
 
   record(0, kind: 2, start: 0, length: 5, contentStart: 2, contentLength: 1);
   record(20, kind: 1, start: 10, length: 3, contentStart: 11, contentLength: 1);
+  return bytes;
+}
+
+Uint8List _projectedInlineFacts() {
+  final bytes = Uint8List(40);
+  final data = ByteData.sublistView(bytes);
+  void record(
+    int offset, {
+    required int kind,
+    required int start,
+    required int length,
+    required int contentStart,
+    required int contentLength,
+  }) {
+    data
+      ..setUint8(offset, kind)
+      ..setUint8(offset + 1, 0)
+      ..setUint16(offset + 2, 0, Endian.little)
+      ..setUint32(offset + 4, start, Endian.little)
+      ..setUint32(offset + 8, length, Endian.little)
+      ..setUint32(offset + 12, contentStart, Endian.little)
+      ..setUint32(offset + 16, contentLength, Endian.little);
+  }
+
+  record(0, kind: 2, start: 0, length: 16, contentStart: 2, contentLength: 12);
+  record(20, kind: 3, start: 21, length: 6, contentStart: 22, contentLength: 4);
   return bytes;
 }
 

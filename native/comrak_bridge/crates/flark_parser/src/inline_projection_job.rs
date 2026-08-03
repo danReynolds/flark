@@ -619,6 +619,7 @@ pub struct M11InlineProjectionJob {
     leaf_direct_syntax_index: u32,
     emphasis_visited: u32,
     emitted_facts: u64,
+    projected_fact_capture: Option<Vec<M11InlineProjectionFact>>,
     last_order_key: Option<(u32, u32)>,
     initial_lexical_source_bytes_read: u64,
 }
@@ -694,7 +695,7 @@ impl M11InlineProjectionJob {
         if block_fence.visible_source() != Some(source_range.clone()) {
             return Err(M11InlineProjectionJobError::BlockFenceRangeMismatch);
         }
-        Self::new_from_exact_authority(runtime, authority, binding, reference_resolver)
+        Self::new_from_exact_authority(runtime, authority, binding, reference_resolver, false)
     }
 
     /// Starts lazy inline derivation over one Paragraph or ATX Heading content
@@ -716,7 +717,7 @@ impl M11InlineProjectionJob {
         if actual_range != expected_range {
             return Err(M11InlineProjectionJobError::BlockFenceRangeMismatch);
         }
-        Self::new_from_exact_authority(runtime, authority, binding, None)
+        Self::new_from_exact_authority(runtime, authority, binding, None, false)
     }
 
     /// Starts inline derivation from one Paragraph selected directly from the
@@ -796,7 +797,7 @@ impl M11InlineProjectionJob {
         if actual_range != expected_range {
             return Err(M11InlineProjectionJobError::BlockFenceRangeMismatch);
         }
-        Self::new_from_exact_authority(runtime, authority, binding, reference_resolver)
+        Self::new_from_exact_authority(runtime, authority, binding, reference_resolver, false)
     }
 
     /// Starts one retained inline leaf with a definitive, root-bound
@@ -816,7 +817,7 @@ impl M11InlineProjectionJob {
         if actual_range != expected_range {
             return Err(M11InlineProjectionJobError::BlockFenceRangeMismatch);
         }
-        Self::new_from_exact_authority(runtime, authority, binding, Some(reference_resolver))
+        Self::new_from_exact_authority(runtime, authority, binding, Some(reference_resolver), false)
     }
 
     /// Starts lazy inline derivation from one leaf authority selected by a
@@ -839,7 +840,7 @@ impl M11InlineProjectionJob {
         if actual_range != expected_range {
             return Err(M11InlineProjectionJobError::BlockFenceRangeMismatch);
         }
-        Self::new_from_exact_authority(runtime, authority, binding, None)
+        Self::new_from_exact_authority(runtime, authority, binding, None, false)
     }
 
     /// Resolver-aware range-leaf counterpart used by viewport batches.
@@ -857,7 +858,20 @@ impl M11InlineProjectionJob {
         if actual_range != expected_range {
             return Err(M11InlineProjectionJobError::BlockFenceRangeMismatch);
         }
-        Self::new_from_exact_authority(runtime, authority, binding, Some(reference_resolver))
+        Self::new_from_exact_authority(runtime, authority, binding, Some(reference_resolver), false)
+    }
+
+    /// Starts the parser over a private, exact logical projection source.
+    ///
+    /// This is intentionally resolver-free. The caller must reject any
+    /// link/reference fact before rebuilding captured facts under the owning
+    /// physical source authority.
+    pub fn new_for_exact_projected_source(
+        runtime: &DocumentRuntime,
+        authority: M11ParserSourceRangeAuthority,
+        binding: M11ParserBinding,
+    ) -> Result<Self, M11InlineProjectionJobError> {
+        Self::new_from_exact_authority(runtime, authority, binding, None, true)
     }
 
     fn new_from_exact_authority(
@@ -865,6 +879,7 @@ impl M11InlineProjectionJob {
         authority: M11ParserSourceRangeAuthority,
         binding: M11ParserBinding,
         reference_resolver: Option<M11ReferenceResolver>,
+        capture_projected_facts: bool,
     ) -> Result<Self, M11InlineProjectionJobError> {
         authority
             .validate(runtime)
@@ -928,6 +943,7 @@ impl M11InlineProjectionJob {
             leaf_direct_syntax_index: 0,
             emphasis_visited: 0,
             emitted_facts: 0,
+            projected_fact_capture: capture_projected_facts.then(Vec::new),
             last_order_key: None,
             initial_lexical_source_bytes_read: 0,
         })
@@ -1714,6 +1730,9 @@ impl M11InlineProjectionJob {
         } else {
             projection.offer_page(&[fact])?;
         }
+        if let Some(captured) = self.projected_fact_capture.as_mut() {
+            captured.push(fact);
+        }
         self.emitted_facts = self
             .emitted_facts
             .checked_add(1)
@@ -2073,6 +2092,20 @@ impl M11InlineProjectionJob {
         let output = self.output.take()?;
         self.phase = ProjectionJobPhase::Transferred;
         Some(output)
+    }
+
+    /// Transfers facts captured by [`Self::new_for_exact_projected_source`].
+    /// The authoritative/unsupported publication must still be transferred
+    /// separately so its scratch-runtime storage can be reclaimed correctly.
+    #[must_use]
+    pub fn take_projected_facts(&mut self) -> Option<Vec<M11InlineProjectionFact>> {
+        if !matches!(
+            self.phase,
+            ProjectionJobPhase::Complete | ProjectionJobPhase::Transferred
+        ) {
+            return None;
+        }
+        self.projected_fact_capture.take()
     }
 
     pub fn begin_abort(

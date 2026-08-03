@@ -11,6 +11,15 @@
 /// {@canonicalFor flark_v3_source_document.FlarkV3SourceTransaction}
 library;
 
+export 'src/v3/editor/flark_v3_inline_projection.dart'
+    show FlarkV3InlineMarkerPolicy;
+export 'src/v3/editor/flark_v3_projected_inline_projection.dart'
+    show
+        FlarkV3ProjectedInlineDisplayRun,
+        FlarkV3ProjectedInlineProjection,
+        FlarkV3ProjectedInlineProjectionException,
+        FlarkV3ProjectedInlineProjectionPiece,
+        FlarkV3ProjectedInlineProjectionPieceKind;
 export 'src/v3/runtime/public/flark_v3_document_query.dart'
     show
         FlarkV3AtxHeadingFacts,
@@ -120,7 +129,12 @@ export 'src/v3/runtime/public/flark_v3_inline_facts.dart'
         FlarkV3InlineImageAnnotation,
         FlarkV3InlineLinkAnnotation,
         FlarkV3InlineLinkKind,
-        FlarkV3InlineLinkTargetRecipe;
+        FlarkV3InlineLinkTargetRecipe,
+        FlarkV3ProjectedInlineFact,
+        FlarkV3ProjectedInlineFacts,
+        FlarkV3ProjectedInlineFactsDecodeException,
+        FlarkV3ProjectedInlineFactsDisposition,
+        FlarkV3ProjectedInlineSpan;
 export 'src/v3/runtime/public/flark_v3_runtime_assets.dart'
     show FlarkV3WebRuntimeAssets;
 export 'src/v3/runtime/public/flark_v3_visible_block_set.dart'

@@ -1440,3 +1440,30 @@ append-only unless correcting a factual error.
   - `flutter test --tags benchmark test/v2/performance --dart-define=FLARK_BENCHMARK_ENFORCE_BUDGETS=true --reporter compact`: passed with 8 tests.
   - `flutter analyze lib test`: passed.
   - `flutter test test --exclude-tags benchmark --reporter compact`: passed with 545 tests.
+
+### V3 Projected BlockQuote Inline Checkpoint — 2026-08-02
+
+- Added parser-owned projected-coordinate inline facts for the admitted
+  depth-one single-Paragraph BlockQuote. Target tag 7 composes strong,
+  emphasis, and inline-code facts through disjoint physical quote lines without
+  a Dart or Flutter Markdown classifier.
+- Kept canonical quote and inline markers in exact source while the managed
+  Flutter projection remains marker-free. Pending recertification retains the
+  mechanically updated marker-free lease, preventing marker flash without
+  granting provisional semantic authority.
+- Removed a debug-stack-amplifying return-by-value wrapper around the 91,856-byte
+  inline projection state. The exact native fixture now passes on the normal
+  2 MiB test stack; shrinking that state to a heap-backed or phase-specific
+  handle remains follow-up stack hygiene.
+- Rebuilt the host and mirrored Worker/Wasm artifacts at ABI `0x30007`.
+- Verification:
+  - focused native endpoint projected-inline fixture: passed 1/1 on the normal
+    test stack;
+  - focused native target-7 session-wire fixture: passed 1/1;
+  - Dart projected-facts/query/session/sidecar batch: passed 30/30;
+  - native Flutter presentation plus managed BlockQuote batch: passed 16/16;
+  - real Chrome Worker/Wasm managed BlockQuote checkpoint: passed 2/2;
+  - Wasm freshness and package asset contract batch: passed 14/14;
+  - example engine-lab tests: passed 12/12;
+  - focused Dart and Flutter analysis: clean; and
+  - `cargo fmt --check` plus `git diff --check`: clean.

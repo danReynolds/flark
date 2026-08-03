@@ -565,6 +565,330 @@ final class FlarkV3InlineFactsDecoder {
   }
 }
 
+/// One UTF-8/UTF-16 span in parser-certified projected text.
+///
+/// These coordinates are relative to a marker-free container projection and
+/// are deliberately not [FlarkV3SourceSpan]s. They cannot be used as physical
+/// document offsets until a consumer composes them through the container's
+/// independently certified source projection.
+final class FlarkV3ProjectedInlineSpan {
+  const FlarkV3ProjectedInlineSpan({
+    required this.startUtf8,
+    required this.endUtf8,
+    required this.startUtf16,
+    required this.endUtf16,
+  }) : assert(startUtf8 >= 0),
+       assert(endUtf8 >= startUtf8),
+       assert(startUtf16 >= 0),
+       assert(endUtf16 >= startUtf16);
+
+  final int startUtf8;
+  final int endUtf8;
+  final int startUtf16;
+  final int endUtf16;
+
+  int get lengthUtf8 => endUtf8 - startUtf8;
+  int get lengthUtf16 => endUtf16 - startUtf16;
+  bool get isCollapsed => startUtf8 == endUtf8;
+}
+
+/// One parser-authored inline fact in projected-container coordinates.
+final class FlarkV3ProjectedInlineFact {
+  const FlarkV3ProjectedInlineFact._({
+    required this.kind,
+    required this.source,
+    required this.content,
+    required this.opener,
+    required this.closer,
+    required this.characterReferenceValue,
+    required this.normalizesCodeLineEndings,
+    required this.trimsOneCodeEdgeSpace,
+  });
+
+  final FlarkV3InlineFactKind kind;
+  final FlarkV3ProjectedInlineSpan source;
+  final FlarkV3ProjectedInlineSpan content;
+  final FlarkV3ProjectedInlineSpan opener;
+  final FlarkV3ProjectedInlineSpan closer;
+  final String? characterReferenceValue;
+  final bool normalizesCodeLineEndings;
+  final bool trimsOneCodeEdgeSpace;
+}
+
+/// Completeness of one projected-coordinate inline result.
+enum FlarkV3ProjectedInlineFactsDisposition { authoritative, unsupported }
+
+/// Exact projected-inline authority for one physical container.
+///
+/// [physicalSource] binds this value to the quote certificate that supplied
+/// the marker-free coordinate space. Every fact range is relative to
+/// [projectedSource], never to [physicalSource].
+final class FlarkV3ProjectedInlineFacts {
+  const FlarkV3ProjectedInlineFacts._({
+    required this.sourceVersion,
+    required this.profilePartition,
+    required this.physicalSource,
+    required this.projectedSource,
+    required this.disposition,
+    required this.facts,
+  });
+
+  final FlarkV3SourceVersion sourceVersion;
+  int get sourceRevision => sourceVersion.revision;
+  final int profilePartition;
+  final FlarkV3SourceSpan physicalSource;
+  final FlarkV3ProjectedInlineSpan projectedSource;
+  final FlarkV3ProjectedInlineFactsDisposition disposition;
+  final List<FlarkV3ProjectedInlineFact> facts;
+
+  int get projectedUtf8Length => projectedSource.endUtf8;
+  int get projectedUtf16Length => projectedSource.endUtf16;
+}
+
+/// A corrupt or authority-incompatible projected-inline result.
+final class FlarkV3ProjectedInlineFactsDecodeException implements Exception {
+  const FlarkV3ProjectedInlineFactsDecodeException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'FlarkV3ProjectedInlineFactsDecodeException($message)';
+}
+
+/// Decoder for the existing 20-byte inline record schema in projected space.
+///
+/// The record grammar is shared with [FlarkV3InlineFactsDecoder], but its
+/// offsets are interpreted against [projectedText]. Direct/reference
+/// link-value records are rejected in this first lane because their companion
+/// cuts do not yet have a projected-coordinate contract; native must publish
+/// the whole result as unsupported instead of exposing partial semantics.
+final class FlarkV3ProjectedInlineFactsDecoder {
+  const FlarkV3ProjectedInlineFactsDecoder._();
+
+  static const int recordBytes = FlarkV3InlineFactsDecoder.recordBytes;
+  static const int maximumProjectedBytes =
+      FlarkV3InlineFacts.maximumWholeLeafSourceBytes;
+  static const int maximumFactCount =
+      FlarkV3InlineFactsDecoder.maximumFactCount;
+
+  static FlarkV3ProjectedInlineFacts decode({
+    required FlarkV3SourceDocument sourceDocument,
+    required FlarkV3SourceVersion expectedSource,
+    required FlarkV3SourceVersion factSource,
+    required int expectedProfilePartition,
+    required int profilePartition,
+    required FlarkV3SourceSpan expectedPhysicalSource,
+    required FlarkV3SourceSpan factPhysicalSource,
+    required int expectedProjectedUtf8Length,
+    required int expectedProjectedUtf16Length,
+    required String projectedText,
+    required FlarkV3ProjectedInlineFactsDisposition disposition,
+    required int factCount,
+    required Uint8List encodedFacts,
+  }) {
+    if (!sourceDocument.hasCertifiedFacts ||
+        sourceDocument.revision != expectedSource.revision ||
+        sourceDocument.utf8Length != expectedSource.metric.bytes ||
+        sourceDocument.utf16Length != expectedSource.metric.utf16 ||
+        sourceDocument.contentHash128 != expectedSource.contentHash ||
+        factSource != expectedSource) {
+      throw const FlarkV3ProjectedInlineFactsDecodeException(
+        'Projected inline facts do not match exact source authority.',
+      );
+    }
+    if (!_sameSpan(expectedPhysicalSource, factPhysicalSource) ||
+        factPhysicalSource.startUtf8 < 0 ||
+        factPhysicalSource.endUtf8 <= factPhysicalSource.startUtf8 ||
+        factPhysicalSource.endUtf8 > factSource.metric.bytes ||
+        factPhysicalSource.startUtf16 < 0 ||
+        factPhysicalSource.endUtf16 <= factPhysicalSource.startUtf16 ||
+        factPhysicalSource.endUtf16 > factSource.metric.utf16) {
+      throw const FlarkV3ProjectedInlineFactsDecodeException(
+        'Projected inline facts do not match their physical container.',
+      );
+    }
+    try {
+      if (sourceDocument.utf8ToUtf16(factPhysicalSource.startUtf8) !=
+              factPhysicalSource.startUtf16 ||
+          sourceDocument.utf8ToUtf16(factPhysicalSource.endUtf8) !=
+              factPhysicalSource.endUtf16) {
+        throw const FlarkV3ProjectedInlineFactsDecodeException(
+          'Projected inline container coordinates are not exact.',
+        );
+      }
+    } on FlarkV3ProjectedInlineFactsDecodeException {
+      rethrow;
+    } on Object {
+      throw const FlarkV3ProjectedInlineFactsDecodeException(
+        'Projected inline container is not on exact UTF-8 boundaries.',
+      );
+    }
+    _requireProjectedU32(
+      expectedProfilePartition,
+      'expected profile partition',
+    );
+    _requireProjectedU32(profilePartition, 'profile partition');
+    if (profilePartition != expectedProfilePartition) {
+      throw const FlarkV3ProjectedInlineFactsDecodeException(
+        'Projected inline facts do not match the parser profile.',
+      );
+    }
+    if (expectedProjectedUtf8Length <= 0 ||
+        expectedProjectedUtf8Length > maximumProjectedBytes ||
+        expectedProjectedUtf16Length <= 0 ||
+        expectedProjectedUtf16Length > maximumProjectedBytes) {
+      throw const FlarkV3ProjectedInlineFactsDecodeException(
+        'Projected inline metrics exceed the bounded lane.',
+      );
+    }
+    final mapper = _ProjectedUtf8SpanMapper(
+      projectedText,
+      expectedUtf8Length: expectedProjectedUtf8Length,
+      expectedUtf16Length: expectedProjectedUtf16Length,
+    );
+    if (factCount < 0 || factCount > maximumFactCount) {
+      throw const FlarkV3ProjectedInlineFactsDecodeException(
+        'Projected inline fact count exceeds the bounded schema.',
+      );
+    }
+    if (encodedFacts.lengthInBytes != factCount * recordBytes) {
+      throw const FlarkV3ProjectedInlineFactsDecodeException(
+        'Projected inline fact count does not match its record bytes.',
+      );
+    }
+    if (disposition == FlarkV3ProjectedInlineFactsDisposition.unsupported &&
+        factCount != 0) {
+      throw const FlarkV3ProjectedInlineFactsDecodeException(
+        'An unsupported projected leaf cannot expose partial facts.',
+      );
+    }
+
+    try {
+      final data = ByteData.sublistView(encodedFacts);
+      final records = <_InlineRecord>[
+        for (var index = 0; index < factCount; index += 1)
+          _decodeRecord(
+            data,
+            index * recordBytes,
+            leafBytes: expectedProjectedUtf8Length,
+          ),
+      ];
+      _validatePreorderNesting(records);
+      if (records.any((record) => _hasLinkValueCompanion(record.kind))) {
+        throw const FlarkV3ProjectedInlineFactsDecodeException(
+          'Projected link/image facts require an unsupported value companion.',
+        );
+      }
+
+      final facts = <FlarkV3ProjectedInlineFact>[];
+      for (final record in records) {
+        final source = mapper.span(record.start, record.end, 'fact source');
+        final content = mapper.span(
+          record.contentStart,
+          record.contentEnd,
+          'fact content',
+        );
+        facts.add(
+          FlarkV3ProjectedInlineFact._(
+            kind: record.kind,
+            source: source,
+            content: content,
+            opener: mapper.span(
+              record.start,
+              record.contentStart,
+              'fact opener',
+            ),
+            closer: mapper.span(record.contentEnd, record.end, 'fact closer'),
+            characterReferenceValue: record.characterReferenceValue,
+            normalizesCodeLineEndings:
+                record.kind == FlarkV3InlineFactKind.code &&
+                (record.flags & _codeNormalizeLineEndings) != 0,
+            trimsOneCodeEdgeSpace:
+                record.kind == FlarkV3InlineFactKind.code &&
+                (record.flags & _codeTrimOneEdgeSpace) != 0,
+          ),
+        );
+      }
+      return FlarkV3ProjectedInlineFacts._(
+        sourceVersion: factSource,
+        profilePartition: profilePartition,
+        physicalSource: factPhysicalSource,
+        projectedSource: FlarkV3ProjectedInlineSpan(
+          startUtf8: 0,
+          endUtf8: expectedProjectedUtf8Length,
+          startUtf16: 0,
+          endUtf16: expectedProjectedUtf16Length,
+        ),
+        disposition: disposition,
+        facts: List.unmodifiable(facts),
+      );
+    } on FlarkV3ProjectedInlineFactsDecodeException {
+      rethrow;
+    } on FlarkV3InlineFactsDecodeException catch (error) {
+      throw FlarkV3ProjectedInlineFactsDecodeException(error.message);
+    }
+  }
+}
+
+void _requireProjectedU32(int value, String name) {
+  if (value < 0 || value > _u32Maximum) {
+    throw FlarkV3ProjectedInlineFactsDecodeException('$name is outside u32.');
+  }
+}
+
+final class _ProjectedUtf8SpanMapper {
+  _ProjectedUtf8SpanMapper(
+    String text, {
+    required int expectedUtf8Length,
+    required int expectedUtf16Length,
+  }) : _utf8Length = expectedUtf8Length {
+    var utf8Offset = 0;
+    var utf16Offset = 0;
+    _boundaries[0] = 0;
+    for (final scalar in text.runes) {
+      utf8Offset += switch (scalar) {
+        <= 0x7F => 1,
+        <= 0x7FF => 2,
+        <= 0xFFFF => 3,
+        _ => 4,
+      };
+      utf16Offset += scalar <= 0xFFFF ? 1 : 2;
+      _boundaries[utf8Offset] = utf16Offset;
+    }
+    if (utf8Offset != expectedUtf8Length ||
+        utf16Offset != expectedUtf16Length ||
+        text.length != expectedUtf16Length) {
+      throw const FlarkV3ProjectedInlineFactsDecodeException(
+        'Projected text disagrees with parser-certified metrics.',
+      );
+    }
+  }
+
+  final int _utf8Length;
+  final Map<int, int> _boundaries = <int, int>{};
+
+  FlarkV3ProjectedInlineSpan span(int startUtf8, int endUtf8, String name) {
+    if (startUtf8 < 0 || endUtf8 < startUtf8 || endUtf8 > _utf8Length) {
+      throw FlarkV3ProjectedInlineFactsDecodeException(
+        '$name is outside projected text.',
+      );
+    }
+    final startUtf16 = _boundaries[startUtf8];
+    final endUtf16 = _boundaries[endUtf8];
+    if (startUtf16 == null || endUtf16 == null) {
+      throw FlarkV3ProjectedInlineFactsDecodeException(
+        '$name is not on projected UTF-8 scalar boundaries.',
+      );
+    }
+    return FlarkV3ProjectedInlineSpan(
+      startUtf8: startUtf8,
+      endUtf8: endUtf8,
+      startUtf16: startUtf16,
+      endUtf16: endUtf16,
+    );
+  }
+}
+
 List<_InlineRecord> _uriCharacterReferenceChildren(
   List<_InlineRecord> records, {
   required int parentIndex,

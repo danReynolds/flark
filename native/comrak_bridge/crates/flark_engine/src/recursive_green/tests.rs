@@ -938,7 +938,10 @@ fn point_zipper_tree_node_fuel_is_exact_and_returns_no_partial_location() {
         .expect("unbounded point query")
         .expect("point location");
     let exact_limit = baseline.receipt().node_headers_decoded();
-    assert!(exact_limit > 1, "fixture must require multiple node headers");
+    assert!(
+        exact_limit > 1,
+        "fixture must require multiple node headers"
+    );
 
     let exact = super::query::locate_point_in_arena_bounded(
         runtime.producer_arena(),
@@ -967,12 +970,10 @@ fn point_zipper_tree_node_fuel_is_exact_and_returns_no_partial_location() {
         super::M11RecursiveGreenPointQueryOutcome::BudgetExceeded(exceeded) => exceeded,
         other => panic!("one-short budget must return only budget evidence: {other:?}"),
     };
-    assert_eq!(
-        exceeded.receipt().node_headers_decoded(),
-        exact_limit - 1
-    );
+    assert_eq!(exceeded.receipt().node_headers_decoded(), exact_limit - 1);
 
-    root.begin_release(&mut runtime).expect("release point root");
+    root.begin_release(&mut runtime)
+        .expect("release point root");
     while !root
         .poll_release(&mut runtime, 64)
         .expect("poll point root release")
