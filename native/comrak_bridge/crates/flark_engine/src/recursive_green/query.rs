@@ -2951,6 +2951,29 @@ fn validate_fenced_close_semantic(
     Ok((literal_start, logical_end))
 }
 
+fn validate_cached_fenced_close_semantic(bytes: &[u8]) -> Result<(), M11RecursiveGreenError> {
+    if bytes.len() != 33 || !matches!(bytes[0], 0 | 1) {
+        return Err(M11RecursiveGreenError::Corrupt(
+            "fenced-code cached semantic facts are invalid",
+        ));
+    }
+    let read_metric = |offset: usize| {
+        u64::from_le_bytes(
+            bytes[offset..offset + 8]
+                .try_into()
+                .expect("validated cached fenced-code semantic width"),
+        )
+    };
+    let info_end = (read_metric(1), read_metric(9));
+    let literal_start = (read_metric(17), read_metric(25));
+    if info_end.0 > literal_start.0 || info_end.1 > literal_start.1 {
+        return Err(M11RecursiveGreenError::Corrupt(
+            "fenced-code cached semantic bounds are reversed",
+        ));
+    }
+    Ok(())
+}
+
 fn point_zipper_row_editable(
     arena: &crate::storage::PageArena,
     tree: MeasuredSequenceRef<'_, RecursiveGreenSpec>,
@@ -2960,6 +2983,16 @@ fn point_zipper_row_editable(
 ) -> Result<PointZipperRowEditable, M11RecursiveGreenError> {
     let cached = if let Some(close) = boundary.close.as_ref() {
         match (boundary.final_kind.get(), close.tag().get()) {
+            (7, 4) if close.as_bytes().len() == 57 => {
+                let cached =
+                    close
+                        .cached_row_editable(33)?
+                        .ok_or(M11RecursiveGreenError::Corrupt(
+                            "fenced-code cached semantic geometry has invalid width",
+                        ))?;
+                validate_cached_fenced_close_semantic(cached.0)?;
+                Some(cached)
+            }
             (7, 4) if close.as_bytes().len() == 25 => {
                 let cached =
                     close

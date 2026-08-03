@@ -5,6 +5,7 @@ import 'package:flark/flark_adapter.dart';
 
 import 'flark_v3_inline_editing_presentation.dart';
 import 'flark_v3_list_item_editing.dart';
+import 'flark_v3_recursive_green_authority.dart';
 
 abstract interface class FlarkV3FrameScheduler {
   void schedule(VoidCallback callback);
@@ -579,11 +580,52 @@ final class FlarkV3FlutterLiveController extends ChangeNotifier {
     }
     _recursiveGreenRowAck = structuralAck;
     _recursiveGreenRow = row;
+    _paintAtomicBlockLease = null;
     _paintBlockStyleLease = switch (row.presentationKind) {
       FlarkV3RecursiveGreenRowPresentationKind.fencedCode =>
         const FlarkV3FlutterBlockStyleLease.fencedCode(),
       _ => null,
     };
+    _schedulePresentationFrame();
+  }
+
+  /// Installs one exact non-editable recursive-Green atomic row for paint and
+  /// whole-atom editing commands.
+  ///
+  /// The first admitted family is ThematicBreak. Its parser-owned physical
+  /// range stays outside the collapsed input island while the stable input
+  /// client remains positioned at one exact atom boundary.
+  void adoptRecursiveGreenAtomicAuthority({
+    required FlarkV3StructuralAck structuralAck,
+    required FlarkV3RecursiveGreenRenderableRow row,
+  }) {
+    if (_disposed) return;
+    final presentation = documentSession.presentationState;
+    final query = _managedDocumentQuery;
+    if (presentation is! FlarkV3ExactStructuralPresentation ||
+        presentation.ack != structuralAck ||
+        _managedDocumentQueryAck != structuralAck ||
+        query is! FlarkV3RecursiveGreenPointQuery ||
+        !flarkV3MatchesTopLevelThematicBreakAuthority(query, row) ||
+        !_recursiveGreenThematicBreakRowAuthorizesInputIsland(row)) {
+      throw StateError(
+        'Recursive-Green atomic authority does not match the active editor.',
+      );
+    }
+    if (_recursiveGreenRowAck == structuralAck &&
+        _sameRecursiveGreenRow(_recursiveGreenRow, row) &&
+        _paintAtomicBlockLease ==
+            FlarkV3FlutterAtomicBlockLease.thematicBreak(
+              source: row.presentationPhysicalSource,
+            )) {
+      return;
+    }
+    _recursiveGreenRowAck = structuralAck;
+    _recursiveGreenRow = row;
+    _paintBlockStyleLease = null;
+    _paintAtomicBlockLease = FlarkV3FlutterAtomicBlockLease.thematicBreak(
+      source: row.presentationPhysicalSource,
+    );
     _schedulePresentationFrame();
   }
 
@@ -636,9 +678,12 @@ final class FlarkV3FlutterLiveController extends ChangeNotifier {
 
   void _reconcilePaintLeases(FlarkV3DocumentQueryResult? query) {
     if (query is FlarkV3RecursiveGreenPointQuery) {
-      _paintAtomicBlockLease = null;
       if (_managedDocumentQueryAck != _recursiveGreenRowAck ||
-          !_recursiveGreenQueryMatchesRow(query, _recursiveGreenRow)) {
+          !(_recursiveGreenQueryMatchesRow(query, _recursiveGreenRow) ||
+              flarkV3MatchesTopLevelThematicBreakAuthority(
+                query,
+                _recursiveGreenRow,
+              ))) {
         _recursiveGreenRowAck = null;
         _recursiveGreenRow = null;
       }
@@ -655,6 +700,14 @@ final class FlarkV3FlutterLiveController extends ChangeNotifier {
                       ancestor.kind == FlarkV3RecursiveGreenKind.blockQuote,
                 ) =>
           const FlarkV3FlutterBlockStyleLease.blockQuote(),
+        _ => null,
+      };
+      _paintAtomicBlockLease = switch (_recursiveGreenRow) {
+        final FlarkV3RecursiveGreenRenderableRow row
+            when flarkV3MatchesTopLevelThematicBreakAuthority(query, row) =>
+          FlarkV3FlutterAtomicBlockLease.thematicBreak(
+            source: row.presentationPhysicalSource,
+          ),
         _ => null,
       };
       return;
@@ -761,6 +814,30 @@ final class FlarkV3FlutterLiveController extends ChangeNotifier {
         lease.certifiedSourceVersion == sourceVersion &&
         lease.sourceStartUtf16 == editableSource.startUtf16 &&
         lease.sourceEndUtf16 == editableSource.endUtf16;
+  }
+
+  bool _recursiveGreenThematicBreakRowAuthorizesCurrentInput(
+    FlarkV3RecursiveGreenPointQuery query,
+    FlarkV3StructuralAck structuralAck,
+  ) {
+    final row = _recursiveGreenRow;
+    return row != null &&
+        _recursiveGreenRowAck == structuralAck &&
+        flarkV3MatchesTopLevelThematicBreakAuthority(query, row) &&
+        _recursiveGreenThematicBreakRowAuthorizesInputIsland(row) &&
+        _paintAtomicBlockLease ==
+            FlarkV3FlutterAtomicBlockLease.thematicBreak(
+              source: row.presentationPhysicalSource,
+            );
+  }
+
+  bool _recursiveGreenThematicBreakRowAuthorizesInputIsland(
+    FlarkV3RecursiveGreenRenderableRow row,
+  ) {
+    final source = row.presentationPhysicalSource;
+    return _inputIslandGlobalStartUtf16 == inputIslandGlobalEndUtf16 &&
+        (_inputIslandGlobalStartUtf16 == source.startUtf16 ||
+            _inputIslandGlobalStartUtf16 == source.endUtf16);
   }
 
   /// Live authority guard. This becomes false synchronously on source advance
@@ -2470,6 +2547,10 @@ final class FlarkV3FlutterLiveController extends ChangeNotifier {
                   query,
                   exact.ack,
                 ) ||
+                _recursiveGreenThematicBreakRowAuthorizesCurrentInput(
+                  query,
+                  exact.ack,
+                ) ||
                 _recursiveGreenFencedRowAuthorizesCurrentInput(
                   query,
                   exact.ack,
@@ -2534,6 +2615,19 @@ final class FlarkV3FlutterLiveController extends ChangeNotifier {
     if (position == _managedDocumentQueryPositionUtf16 &&
         selection.affinity == _managedDocumentQueryAffinity) {
       return true;
+    }
+    if (query is FlarkV3RecursiveGreenPointQuery) {
+      final row = _recursiveGreenRow;
+      if (row != null &&
+          _recursiveGreenRowAck == _managedDocumentQueryAck &&
+          flarkV3MatchesTopLevelThematicBreakAuthority(query, row)) {
+        final atom = row.presentationPhysicalSource;
+        return position == atom.startUtf16 &&
+                selection.affinity == TextAffinity.downstream ||
+            position == atom.endUtf16 &&
+                selection.affinity == TextAffinity.upstream;
+      }
+      return false;
     }
     if (query is! FlarkV3DocumentStructuralQuery) return false;
     if (query.structure case FlarkV3DocumentStructure(

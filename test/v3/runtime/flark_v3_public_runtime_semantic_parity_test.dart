@@ -1,8 +1,6 @@
 import 'package:flark/flark_adapter.dart'
     show
         FlarkV3DocumentRuntimeAdapter,
-        FlarkV3DocumentRuntimeAdapterLease,
-        FlarkV3InlineDemandDisposition,
         FlarkV3InlineFactKind,
         FlarkV3InlineFactsDisposition,
         FlarkV3InlineMarkerPolicy,
@@ -32,13 +30,8 @@ typedef _SemanticFixture = ({
   String markdown,
   int initialRevision,
   int queryPositionUtf16,
-  FlarkV3DocumentStructureKind kind,
-  FlarkV3DocumentUnknownReason? unknownReason,
   _ExpectedSpan source,
-  _ExpectedSpan visibleSource,
   _ExpectedSpan projectedSource,
-  int referenceDefinitionCount,
-  int projectionRunCount,
 });
 
 const _fixtures = <_SemanticFixture>[
@@ -47,26 +40,16 @@ const _fixtures = <_SemanticFixture>[
     markdown: '',
     initialRevision: 0,
     queryPositionUtf16: 0,
-    kind: FlarkV3DocumentStructureKind.empty,
-    unknownReason: null,
     source: (startUtf8: 0, endUtf8: 0, startUtf16: 0, endUtf16: 0),
-    visibleSource: (startUtf8: 0, endUtf8: 0, startUtf16: 0, endUtf16: 0),
     projectedSource: (startUtf8: 0, endUtf8: 0, startUtf16: 0, endUtf16: 0),
-    referenceDefinitionCount: 0,
-    projectionRunCount: 0,
   ),
   (
     name: 'paragraph after a leading reference definition',
     markdown: '[x]: /target\nCafé 😀 [x]\n',
     initialRevision: 1,
     queryPositionUtf16: 13,
-    kind: FlarkV3DocumentStructureKind.paragraph,
-    unknownReason: null,
     source: (startUtf8: 0, endUtf8: 28, startUtf16: 0, endUtf16: 25),
-    visibleSource: (startUtf8: 13, endUtf8: 28, startUtf16: 13, endUtf16: 25),
     projectedSource: (startUtf8: 13, endUtf8: 28, startUtf16: 13, endUtf16: 25),
-    referenceDefinitionCount: 1,
-    projectionRunCount: 1,
   ),
 ];
 
@@ -89,12 +72,72 @@ void main() {
           expect(runtime.exportMarkdown(), fixture.markdown);
 
           final result = runtime.queryAtUtf16(fixture.queryPositionUtf16);
-          expect(result, isA<FlarkV3DocumentStructuralQuery>());
-          _expectStructure(
-            result as FlarkV3DocumentStructuralQuery,
-            fixture,
-            revision: fixture.initialRevision,
-          );
+          if (fixture.markdown.isEmpty) {
+            expect(result, isA<FlarkV3DocumentSourceGapQuery>());
+            final gap = result as FlarkV3DocumentSourceGapQuery;
+            expect(gap.sourceRevision, 0);
+            expect(gap.structureRevision, 0);
+            expect(gap.reason, FlarkV3DocumentQueryGapReason.unavailableFacts);
+            _expectSpan(gap.range, fixture.source);
+
+            final range = runtime.queryBlockRange(0, 0);
+            expect(range, isA<FlarkV3DocumentSourceGapBlockRange>());
+            final empty = range as FlarkV3DocumentSourceGapBlockRange;
+            expect(empty.sourceRevision, 0);
+            expect(empty.structureRevision, 0);
+            expect(
+              empty.reason,
+              FlarkV3DocumentQueryGapReason.undecodableClosure,
+            );
+            _expectSpan(empty.requestedSource, fixture.source);
+          } else {
+            expect(result, isA<FlarkV3RecursiveGreenPointQuery>());
+            final point = result as FlarkV3RecursiveGreenPointQuery;
+            expect(point.sourceRevision, fixture.initialRevision);
+            expect(point.structureRevision, fixture.initialRevision);
+            expect(point.owner.kind, FlarkV3RecursiveGreenKind.paragraph);
+            expect(point.ancestry.map((frame) => frame.kind), const [
+              FlarkV3RecursiveGreenKind.document,
+              FlarkV3RecursiveGreenKind.paragraph,
+            ]);
+            expect(point.inlineFacts, isNull);
+
+            final range = runtime.queryBlockRange(
+              point.pointUtf16,
+              point.pointUtf16 + 1,
+            );
+            expect(range, isA<FlarkV3RecursiveGreenRowRange>());
+            final rows = range as FlarkV3RecursiveGreenRowRange;
+            expect(rows.sourceRevision, fixture.initialRevision);
+            expect(rows.structureRevision, fixture.initialRevision);
+            expect(rows.selectedRow, isNotNull);
+            final row = rows.selectedRow!;
+            expect(row.frameId, point.owner.frameId);
+            expect(row.kind, FlarkV3RecursiveGreenKind.paragraph);
+            expect(row.selected, isTrue);
+            expect(row.inlineCapable, isTrue);
+            expect(
+              row.presentationKind,
+              FlarkV3RecursiveGreenRowPresentationKind.inline,
+            );
+            expect(
+              row.editCapability,
+              FlarkV3RecursiveGreenRowEditCapability.contiguous,
+            );
+            _expectSpan(row.physicalSource, fixture.source);
+            expect(row.editableSource, isNotNull);
+            _expectSpan(row.editableSource!, (
+              startUtf8: fixture.projectedSource.startUtf8,
+              endUtf8: fixture.projectedSource.endUtf8 - 1,
+              startUtf16: fixture.projectedSource.startUtf16,
+              endUtf16: fixture.projectedSource.endUtf16 - 1,
+            ));
+            expect(row.path.map((frame) => frame.kind), const [
+              FlarkV3RecursiveGreenKind.document,
+              FlarkV3RecursiveGreenKind.paragraph,
+            ]);
+            expect(runtime.readSourceRange(0, 13), '[x]: /target\n');
+          }
 
           final firstClose = runtime.close();
           final repeatedClose = runtime.close();
@@ -127,14 +170,6 @@ void main() {
         final cleanRuntime = await openFlarkV3PublicRuntimeForTest(
           target,
         ).timeout(_openTimeout);
-        final liveLease = FlarkV3DocumentRuntimeAdapter.borrow(
-          liveRuntime,
-          leafProjectionDemandOwner: true,
-        );
-        final cleanLease = FlarkV3DocumentRuntimeAdapter.borrow(
-          cleanRuntime,
-          leafProjectionDemandOwner: true,
-        );
         var liveClosed = false;
         var cleanClosed = false;
         try {
@@ -170,144 +205,109 @@ void main() {
             revision: 2,
           );
 
-          Future<FlarkV3DocumentStructuralQuery> demandTerminalItem(
-            FlarkV3DocumentRuntime runtime,
-            FlarkV3DocumentRuntimeAdapterLease lease, {
-            required int revision,
-          }) async {
-            final initialQuery = lease.queryAtUtf16(target.length);
-            expect(initialQuery, isA<FlarkV3DocumentStructuralQuery>());
-            final structural = initialQuery as FlarkV3DocumentStructuralQuery;
-            expect(
-              structural.structure.kind,
-              FlarkV3DocumentStructureKind.bulletList,
-            );
-            expect(structural.bulletListProjection, isNull);
-            final beforePresentation =
-                runtime.status.leafProjectionPresentationGeneration;
-            final beforeOutcome =
-                runtime.status.leafProjectionAttemptOutcomeGeneration;
-            final settled = _awaitStatus(
-              runtime,
-              (status) =>
-                  status.leafProjectionPresentationGeneration >
-                      beforePresentation ||
-                  status.leafProjectionAttemptOutcomeGeneration >
-                      beforeOutcome ||
-                  status.state == FlarkV3DocumentRuntimeState.faulted,
-            );
-            expect(
-              lease.ensureLeafProjectionAtUtf16(
-                target.length,
-                structuralQuery: structural,
-              ),
-              FlarkV3LeafProjectionDemandDisposition.scheduled,
-            );
-            final settledStatus = await settled;
-            expect(settledStatus.state, FlarkV3DocumentRuntimeState.open);
-            expect(
-              settledStatus.leafProjectionPresentationGeneration,
-              beforePresentation + 1,
-            );
-            expect(
-              settledStatus.leafProjectionAttemptOutcomeGeneration,
-              beforeOutcome + 1,
-            );
-            final refined = lease.queryAtUtf16(target.length);
-            expect(refined, isA<FlarkV3DocumentStructuralQuery>());
-            final result = refined as FlarkV3DocumentStructuralQuery;
-            expect(result.sourceRevision, revision);
-            expect(result.structureRevision, revision);
-            expect(result.bulletListProjection, isNotNull);
-            return result;
-          }
-
-          void expectTerminalList(
-            FlarkV3DocumentStructuralQuery result, {
+          FlarkV3RecursiveGreenRenderableRow exactTerminalItem(
+            FlarkV3DocumentRuntime runtime, {
             required int revision,
           }) {
-            expect(result.sourceRevision, revision);
+            final query = runtime.queryAtUtf16(target.length);
+            expect(query, isA<FlarkV3RecursiveGreenPointQuery>());
+            final point = query as FlarkV3RecursiveGreenPointQuery;
+            expect(point.sourceRevision, revision);
+            expect(point.structureRevision, revision);
             expect(
-              result.structure.kind,
-              FlarkV3DocumentStructureKind.bulletList,
+              point.owner.kind,
+              FlarkV3RecursiveGreenKind.terminalEmptyItem,
             );
-            _expectSpan(result.structure.source, (
-              startUtf8: 15,
-              endUtf8: 31,
-              startUtf16: 13,
-              endUtf16: 26,
-            ));
-            _expectSpan(result.structure.visibleSource, (
-              startUtf8: 15,
-              endUtf8: 15,
-              startUtf16: 13,
-              endUtf16: 13,
-            ));
-            final facts = result.structure.bulletList!;
-            expect(facts.marker, FlarkV3BulletListMarker.hyphen);
-            expect(facts.tight, isTrue);
-            expect(facts.itemCount, 2);
-            expect(facts.paragraphCount, 1);
-            expect(facts.terminalEmptyRelativeStartUtf8, 12);
-            expect(facts.projectedUtf8Length, 8);
-            expect(facts.projectedUtf16Length, 5);
-            expect(result.projection.runCount, 2);
+            expect(point.inlineFacts, isNull);
 
-            final payload = result.bulletListProjection!;
-            expect(payload.selectedItemOrdinal, 1);
-            expect(payload.coversWholeList, isFalse);
-            expect(payload.records, hasLength(1));
-            expect(payload.selectedItem.isEmpty, isTrue);
-            expect(payload.toSourceProjection().displayText, '');
-            expect(payload.toSelectedItemSourceProjection().displayText, '');
-            expect(payload.editingInputs.activeHiddenSourcePrefix, '  - ');
-            expect(payload.editingInputs.activeRemovableSourcePrefix, '  - ');
-            expect(
-              payload.editingInputs.activeRemovableSourcePrefixOffsetUtf16,
-              0,
+            final range = runtime.queryBlockRange(
+              target.length - 1,
+              target.length,
             );
-            expect(payload.editingInputs.continuationSourcePrefix, '  - ');
-            expect(payload.editingInputs.canonicalLineEnding, '\r\n');
-            expect(payload.editingInputs.emptyEnterExits, isTrue);
-            expect(payload.editingInputs.backspaceAtStartRemovesPrefix, isTrue);
-            expect(payload.pointPath.nodes, hasLength(2));
+            expect(range, isA<FlarkV3RecursiveGreenRowRange>());
+            final rows = range as FlarkV3RecursiveGreenRowRange;
+            expect(rows.sourceRevision, revision);
+            expect(rows.structureRevision, revision);
+            expect(rows.selectedRow, isNotNull);
+            final row = rows.selectedRow!;
+            expect(row.frameId, point.owner.frameId);
             expect(
-              payload.pointPath.root.kind,
-              FlarkV3DocumentPointPathNodeKind.list,
+              point.ancestry.map((frame) => frame.kind),
+              row.path.map((frame) => frame.kind),
             );
-            expect(
-              payload.pointPath.selectedLeaf.kind,
-              FlarkV3DocumentPointPathNodeKind.listItem,
-            );
+            return row;
           }
 
-          final live = await demandTerminalItem(
-            liveRuntime,
-            liveLease,
-            revision: 2,
-          );
-          final clean = await demandTerminalItem(
-            cleanRuntime,
-            cleanLease,
-            revision: 1,
-          );
-          expectTerminalList(live, revision: 2);
-          expectTerminalList(clean, revision: 1);
+          void expectTerminalList(FlarkV3RecursiveGreenRenderableRow row) {
+            expect(row.kind, FlarkV3RecursiveGreenKind.terminalEmptyItem);
+            expect(row.selected, isTrue);
+            expect(row.inlineCapable, isFalse);
+            expect(
+              row.presentationKind,
+              FlarkV3RecursiveGreenRowPresentationKind.inline,
+            );
+            expect(
+              row.editCapability,
+              FlarkV3RecursiveGreenRowEditCapability.contiguous,
+            );
+            expect(row.editableSource, isNotNull);
+            _expectSpan(row.editableSource!, (
+              startUtf8: 31,
+              endUtf8: 31,
+              startUtf16: 26,
+              endUtf16: 26,
+            ));
+            _expectSpan(row.presentationPhysicalSource, (
+              startUtf8: 27,
+              endUtf8: 31,
+              startUtf16: 22,
+              endUtf16: 26,
+            ));
+            expect(row.path.map((frame) => frame.kind), const [
+              FlarkV3RecursiveGreenKind.document,
+              FlarkV3RecursiveGreenKind.list,
+              FlarkV3RecursiveGreenKind.item,
+              FlarkV3RecursiveGreenKind.terminalEmptyItem,
+            ]);
+            final list =
+                row.path
+                        .singleWhere(
+                          (frame) =>
+                              frame.kind == FlarkV3RecursiveGreenKind.list,
+                        )
+                        .fact!
+                    as FlarkV3RecursiveGreenListPathFact;
+            expect(list.style, FlarkV3RecursiveGreenListStyle.bullet);
+            expect(list.bulletMarker, FlarkV3BulletListMarker.hyphen);
+            expect(list.tight, isTrue);
+            expect(list.start, 1);
+            final item =
+                row.path
+                        .singleWhere(
+                          (frame) =>
+                              frame.kind == FlarkV3RecursiveGreenKind.item,
+                        )
+                        .fact!
+                    as FlarkV3RecursiveGreenItemPathFact;
+            expect(item.markerOffset, 2);
+            expect(item.padding, 2);
+          }
+
+          final live = exactTerminalItem(liveRuntime, revision: 2);
+          final clean = exactTerminalItem(cleanRuntime, revision: 1);
+          expectTerminalList(live);
+          expectTerminalList(clean);
           expect(
-            live.bulletListProjection!.toSourceProjection().displayText,
-            clean.bulletListProjection!.toSourceProjection().displayText,
+            live.path.map((frame) => frame.kind),
+            clean.path.map((frame) => frame.kind),
           );
           expect(liveRuntime.exportMarkdown(), cleanRuntime.exportMarkdown());
 
-          liveLease.release();
-          cleanLease.release();
           await liveRuntime.close().timeout(_closeTimeout);
           liveClosed = true;
           await cleanRuntime.close().timeout(_closeTimeout);
           cleanClosed = true;
         } finally {
-          liveLease.release();
-          cleanLease.release();
           if (!liveClosed) await liveRuntime.close().timeout(_closeTimeout);
           if (!cleanClosed) await cleanRuntime.close().timeout(_closeTimeout);
         }
@@ -316,7 +316,119 @@ void main() {
     );
 
     test(
-      'unsupported list families remain literal and never mint list authority',
+      'nested list topology and tightness recertify across a structural edit',
+      () async {
+        const initial = '* foo\n  * bar\n\n  baz\n';
+        const edited = '* foo\n  * bar\n\n  * βaz\n';
+        final runtime = await openFlarkV3PublicRuntimeForTest(
+          initial,
+        ).timeout(_openTimeout);
+        var closed = false;
+        try {
+          _expectCurrentStatus(
+            await _awaitCurrent(runtime, revision: 1),
+            revision: 1,
+          );
+
+          FlarkV3RecursiveGreenRenderableRow exactRowAt(int pointUtf16) {
+            final point = runtime.queryAtUtf16(pointUtf16);
+            expect(point, isA<FlarkV3RecursiveGreenPointQuery>());
+            final green = point as FlarkV3RecursiveGreenPointQuery;
+            expect(green.sourceRevision, runtime.sourceRevision);
+            expect(green.structureRevision, runtime.sourceRevision);
+
+            final range = runtime.queryBlockRange(pointUtf16, pointUtf16 + 1);
+            expect(range, isA<FlarkV3RecursiveGreenRowRange>());
+            final rows = range as FlarkV3RecursiveGreenRowRange;
+            expect(rows.sourceRevision, runtime.sourceRevision);
+            expect(rows.structureRevision, runtime.sourceRevision);
+            expect(rows.selectedRow, isNotNull);
+            final row = rows.selectedRow!;
+            expect(
+              green.ancestry.map((frame) => frame.kind),
+              row.path.map((frame) => frame.kind),
+            );
+            return row;
+          }
+
+          void expectNestedParagraph(
+            FlarkV3RecursiveGreenRenderableRow row, {
+            required List<bool> listTightness,
+          }) {
+            expect(row.kind, FlarkV3RecursiveGreenKind.paragraph);
+            expect(
+              row.editCapability,
+              FlarkV3RecursiveGreenRowEditCapability.contiguous,
+            );
+            expect(row.path.map((frame) => frame.kind), const [
+              FlarkV3RecursiveGreenKind.document,
+              FlarkV3RecursiveGreenKind.list,
+              FlarkV3RecursiveGreenKind.item,
+              FlarkV3RecursiveGreenKind.list,
+              FlarkV3RecursiveGreenKind.item,
+              FlarkV3RecursiveGreenKind.paragraph,
+            ]);
+            expect(
+              row.path
+                  .where(
+                    (frame) => frame.kind == FlarkV3RecursiveGreenKind.list,
+                  )
+                  .map(
+                    (frame) =>
+                        (frame.fact as FlarkV3RecursiveGreenListPathFact).tight,
+                  ),
+              listTightness,
+            );
+          }
+
+          expectNestedParagraph(
+            exactRowAt(initial.indexOf('bar') + 1),
+            listTightness: const [false, true],
+          );
+          final lazy = exactRowAt(initial.indexOf('baz') + 1);
+          expect(lazy.path.map((frame) => frame.kind), const [
+            FlarkV3RecursiveGreenKind.document,
+            FlarkV3RecursiveGreenKind.list,
+            FlarkV3RecursiveGreenKind.item,
+            FlarkV3RecursiveGreenKind.paragraph,
+          ]);
+
+          final editStart = initial.indexOf('baz');
+          final receipt = runtime.apply(
+            FlarkV3SourceTransaction.single(
+              baseRevision: 1,
+              operation: FlarkV3SourceEdit(
+                startUtf16: editStart,
+                endUtf16: editStart + 3,
+                replacement: '* βaz',
+              ),
+            ),
+          );
+          expect(receipt.changed, isTrue);
+          expect(receipt.sourceRevision, 2);
+          expect(runtime.exportMarkdown(), edited);
+          _expectCurrentStatus(
+            await _awaitCurrent(runtime, revision: 2),
+            revision: 2,
+          );
+
+          expectNestedParagraph(
+            exactRowAt(edited.indexOf('β') + 1),
+            listTightness: const [true, false],
+          );
+          expect(runtime.exportMarkdown(), edited);
+
+          await runtime.close().timeout(_closeTimeout);
+          closed = true;
+        } finally {
+          if (!closed) await runtime.close().timeout(_closeTimeout);
+        }
+      },
+      timeout: const Timeout(Duration(minutes: 1)),
+    );
+
+    test(
+      'expanded list topology stays exact while task syntax remains literal',
       () async {
         const fixtures = <String, String>{
           'loose': '- first\n\n- second\n',
@@ -334,17 +446,93 @@ void main() {
               await _awaitCurrent(runtime, revision: 1),
               revision: 1,
             );
-            final query = runtime.queryAtUtf16(2);
-            expect(query, isA<FlarkV3DocumentSourceGapQuery>(), reason: name);
-            final gap = query as FlarkV3DocumentSourceGapQuery;
-            expect(gap.sourceRevision, 1, reason: name);
-            expect(gap.structureRevision, 1, reason: name);
+            final pointUtf16 = switch (name) {
+              'loose' => markdown.indexOf('second') + 1,
+              'nested' => markdown.indexOf('nested') + 1,
+              'multi-block item' => markdown.indexOf('second') + 1,
+              _ => markdown.indexOf('[x]') + 1,
+            };
+            final query = runtime.queryAtUtf16(pointUtf16);
+            expect(query, isA<FlarkV3RecursiveGreenPointQuery>(), reason: name);
+            final point = query as FlarkV3RecursiveGreenPointQuery;
+            expect(point.sourceRevision, 1, reason: name);
+            expect(point.structureRevision, 1, reason: name);
             expect(
-              gap.reason,
-              FlarkV3DocumentQueryGapReason.undecodableClosure,
+              point.owner.kind,
+              FlarkV3RecursiveGreenKind.paragraph,
               reason: name,
             );
-            _expectSpan(gap.range, _asciiSpan(0, markdown.length));
+            expect(
+              point.inlineFacts,
+              isNull,
+              reason: '$name has no undemanded inline authority',
+            );
+
+            final range = runtime.queryBlockRange(pointUtf16, pointUtf16 + 1);
+            expect(range, isA<FlarkV3RecursiveGreenRowRange>(), reason: name);
+            final rows = range as FlarkV3RecursiveGreenRowRange;
+            expect(rows.sourceRevision, 1, reason: name);
+            expect(rows.structureRevision, 1, reason: name);
+            expect(rows.selectedRow, isNotNull, reason: name);
+            final row = rows.selectedRow!;
+            expect(row.frameId, point.owner.frameId, reason: name);
+            expect(row.kind, FlarkV3RecursiveGreenKind.paragraph, reason: name);
+            expect(row.selected, isTrue, reason: name);
+            expect(
+              row.editCapability,
+              FlarkV3RecursiveGreenRowEditCapability.contiguous,
+              reason: name,
+            );
+            expect(row.path.map((frame) => frame.kind), switch (name) {
+              'nested' => const [
+                FlarkV3RecursiveGreenKind.document,
+                FlarkV3RecursiveGreenKind.list,
+                FlarkV3RecursiveGreenKind.item,
+                FlarkV3RecursiveGreenKind.list,
+                FlarkV3RecursiveGreenKind.item,
+                FlarkV3RecursiveGreenKind.paragraph,
+              ],
+              _ => const [
+                FlarkV3RecursiveGreenKind.document,
+                FlarkV3RecursiveGreenKind.list,
+                FlarkV3RecursiveGreenKind.item,
+                FlarkV3RecursiveGreenKind.paragraph,
+              ],
+            }, reason: name);
+            final expectedTightness = switch (name) {
+              'loose' || 'multi-block item' => const [false],
+              'nested' => const [true, true],
+              _ => const [true],
+            };
+            expect(
+              row.path
+                  .where(
+                    (frame) => frame.kind == FlarkV3RecursiveGreenKind.list,
+                  )
+                  .map(
+                    (frame) =>
+                        (frame.fact as FlarkV3RecursiveGreenListPathFact).tight,
+                  ),
+              expectedTightness,
+              reason: name,
+            );
+            final editableSource = row.editableSource;
+            expect(editableSource, isNotNull, reason: name);
+            expect(
+              runtime.readSourceRange(
+                editableSource!.startUtf16,
+                editableSource.endUtf16,
+              ),
+              switch (name) {
+                'loose' => 'second',
+                'nested' => 'nested',
+                'multi-block item' => 'second',
+                _ => '[x] task',
+              },
+              reason: name == 'task'
+                  ? 'task-list extension syntax must remain literal content'
+                  : name,
+            );
             expect(runtime.exportMarkdown(), markdown, reason: name);
             expect(
               runtime.readSourceRange(0, markdown.length),
@@ -362,7 +550,7 @@ void main() {
     );
 
     test(
-      'block quote demands one schema-4 path and projects marker-free source',
+      'block quote joins recursive row and marker-free sidecar authority',
       () async {
         const markdown = '\uFEFF   > α😀\r\n> β\rlazy😀\u0000';
         const projectedMarkdown = 'α😀\r\nβ\rlazy😀\u0000';
@@ -384,40 +572,58 @@ void main() {
           expect(runtime.sourceLengthUtf16, source.endUtf16);
 
           final initialQuery = lease.queryAtUtf16(6);
-          expect(initialQuery, isA<FlarkV3DocumentStructuralQuery>());
-          final initial = initialQuery as FlarkV3DocumentStructuralQuery;
+          expect(initialQuery, isA<FlarkV3RecursiveGreenPointQuery>());
+          final initial = initialQuery as FlarkV3RecursiveGreenPointQuery;
           expect(initial.sourceRevision, 1);
           expect(initial.structureRevision, 1);
-          expect(
-            initial.structure.kind,
-            FlarkV3DocumentStructureKind.blockQuote,
-          );
-          expect(initial.structure.referenceDefinitionCount, 0);
-          _expectSpan(initial.structure.source, source);
-          _expectSpan(initial.structure.visibleSource, _asciiSpan(0, 0));
-          expect(
-            initial.projection.kind,
-            FlarkV3DocumentStructureKind.blockQuote,
-          );
-          _expectSpan(initial.projection.source, source);
-          _expectSpan(initial.projection.projectedSource, _asciiSpan(0, 0));
-          expect(initial.projection.runCount, 3);
+          expect(initial.owner.kind, FlarkV3RecursiveGreenKind.paragraph);
+          expect(initial.ancestry.map((ancestor) => ancestor.kind), const [
+            FlarkV3RecursiveGreenKind.document,
+            FlarkV3RecursiveGreenKind.blockQuote,
+            FlarkV3RecursiveGreenKind.paragraph,
+          ]);
           expect(initial.inlineFacts, isNull);
-          expect(initial.indentedCodeProjection, isNull);
-          expect(
-            initial.pointPath,
-            isNull,
-            reason: 'canonical structure must precede the demanded path',
-          );
           expect(initial.blockQuoteProjection, isNull);
+          expect(initial.projectedInlineFacts, isNull);
 
-          final facts = initial.structure.blockQuote;
-          expect(facts, isNotNull);
-          expect(facts!.lineCount, 3);
-          expect(facts.childFirstLine, 0);
-          expect(facts.childLineCount, 3);
-          expect(facts.projectedUtf8Length, 20);
-          expect(facts.projectedUtf16Length, 14);
+          final rowRange = runtime.queryBlockRange(6, 7);
+          expect(rowRange, isA<FlarkV3RecursiveGreenRowRange>());
+          final rows = rowRange as FlarkV3RecursiveGreenRowRange;
+          expect(rows.sourceRevision, 1);
+          expect(rows.structureRevision, 1);
+          expect(rows.selectedRow, isNotNull);
+          final row = rows.selectedRow!;
+          expect(row.frameId, initial.owner.frameId);
+          expect(row.kind, FlarkV3RecursiveGreenKind.paragraph);
+          expect(row.selected, isTrue);
+          expect(row.inlineCapable, isFalse);
+          expect(
+            row.presentationKind,
+            FlarkV3RecursiveGreenRowPresentationKind.inline,
+          );
+          expect(
+            row.editCapability,
+            FlarkV3RecursiveGreenRowEditCapability.unavailable,
+          );
+          expect(row.editableSource, isNull);
+          _expectSpan(row.physicalSource, (
+            startUtf8: 8,
+            endUtf8: 30,
+            startUtf16: 6,
+            endUtf16: 22,
+          ));
+          expect(
+            row.path.map((frame) => frame.kind),
+            initial.ancestry.map((frame) => frame.kind),
+          );
+          _expectSpan(
+            row.path
+                .singleWhere(
+                  (frame) => frame.kind == FlarkV3RecursiveGreenKind.blockQuote,
+                )
+                .physicalSource,
+            (startUtf8: 3, endUtf8: 30, startUtf16: 1, endUtf16: 22),
+          );
 
           final beforePresentation =
               runtime.status.leafProjectionPresentationGeneration;
@@ -432,11 +638,11 @@ void main() {
                 status.state == FlarkV3DocumentRuntimeState.faulted,
           );
           expect(
-            lease.ensureLeafProjectionAtUtf16(6, structuralQuery: initial),
+            lease.ensureActiveProjectionAtUtf16(6, query: initial),
             FlarkV3LeafProjectionDemandDisposition.scheduled,
           );
           expect(
-            lease.ensureLeafProjectionAtUtf16(6, structuralQuery: initial),
+            lease.ensureActiveProjectionAtUtf16(6, query: initial),
             FlarkV3LeafProjectionDemandDisposition.coalesced,
           );
           final settledStatus = await settled;
@@ -451,54 +657,25 @@ void main() {
           );
 
           final refinedQuery = lease.queryAtUtf16(6);
-          expect(refinedQuery, isA<FlarkV3DocumentStructuralQuery>());
-          final refined = refinedQuery as FlarkV3DocumentStructuralQuery;
-          expect(
-            refined.structure.kind,
-            FlarkV3DocumentStructureKind.blockQuote,
-          );
-          final pointPath = refined.pointPath;
+          expect(refinedQuery, isA<FlarkV3RecursiveGreenPointQuery>());
+          final refined = refinedQuery as FlarkV3RecursiveGreenPointQuery;
+          expect(refined.owner.frameId, initial.owner.frameId);
           final payload = refined.blockQuoteProjection;
-          expect(
-            pointPath,
-            isNotNull,
-            reason: 'schema 4 must retain exact outer-to-inner ancestry',
-          );
           expect(
             payload,
             isNotNull,
-            reason: 'schema 4 must carry the demanded quote-line recipe',
+            reason: 'the sidecar must carry the demanded quote-line recipe',
           );
-          expect(payload!.pointPath, same(pointPath));
-          expect(payload.facts, same(refined.structure.blockQuote));
+          expect(refined.paragraphSource, isNotNull);
+          _expectSpan(refined.paragraphSource!, source);
+          expect(refined.inlineFacts, isNull);
+          expect(refined.projectedInlineFacts, isNull);
+          expect(payload!.projectedUtf8Length, 20);
+          expect(payload.projectedUtf16Length, 14);
           expect(payload.sourceRevision, 1);
           expect(payload.sourceVersion.metric.bytes, source.endUtf8);
           expect(payload.sourceVersion.metric.utf16, source.endUtf16);
           _expectSpan(payload.source, source);
-
-          final ancestor = pointPath!.blockQuoteAncestor;
-          expect(ancestor.kind, FlarkV3DocumentPointPathNodeKind.blockQuote);
-          expect(ancestor.depth, 0);
-          expect(ancestor.parentIndex, isNull);
-          expect(ancestor.isNoncontiguous, isFalse);
-          expect(ancestor.isSelected, isFalse);
-          _expectSpan(ancestor.source, source);
-          expect(ancestor.firstRun, 0);
-          expect(ancestor.runCount, 3);
-          expect(ancestor.projectedUtf8Length, 20);
-          expect(ancestor.projectedUtf16Length, 14);
-
-          final selected = pointPath.selectedLeaf;
-          expect(selected.kind, FlarkV3DocumentPointPathNodeKind.paragraph);
-          expect(selected.depth, 1);
-          expect(selected.parentIndex, 0);
-          expect(selected.isNoncontiguous, isTrue);
-          expect(selected.isSelected, isTrue);
-          _expectSpan(selected.source, source);
-          expect(selected.firstRun, 0);
-          expect(selected.runCount, 3);
-          expect(selected.projectedUtf8Length, 20);
-          expect(selected.projectedUtf16Length, 14);
 
           expect(payload.records, hasLength(3));
           _expectBlockQuoteRecord(
@@ -586,9 +763,61 @@ void main() {
             ),
             13,
           );
+
+          final beforeProjectedPresentation =
+              runtime.status.leafProjectionPresentationGeneration;
+          final beforeProjectedOutcome =
+              runtime.status.leafProjectionAttemptOutcomeGeneration;
+          final projectedSettled = _awaitStatus(
+            runtime,
+            (status) =>
+                status.leafProjectionPresentationGeneration >
+                    beforeProjectedPresentation ||
+                status.leafProjectionAttemptOutcomeGeneration >
+                    beforeProjectedOutcome ||
+                status.state == FlarkV3DocumentRuntimeState.faulted,
+          );
+          expect(
+            lease.ensureActiveProjectionAtUtf16(6, query: refined),
+            FlarkV3LeafProjectionDemandDisposition.scheduled,
+          );
+          expect(
+            lease.ensureActiveProjectionAtUtf16(6, query: refined),
+            FlarkV3LeafProjectionDemandDisposition.coalesced,
+          );
+          final projectedStatus = await projectedSettled;
+          expect(projectedStatus.state, FlarkV3DocumentRuntimeState.open);
+          expect(
+            projectedStatus.leafProjectionAttemptOutcomeGeneration,
+            beforeProjectedOutcome + 1,
+          );
+          expect(
+            projectedStatus.leafProjectionPresentationGeneration,
+            beforeProjectedPresentation + 1,
+          );
+
+          final projectedQuery = lease.queryAtUtf16(6);
+          expect(projectedQuery, isA<FlarkV3RecursiveGreenPointQuery>());
+          final projected = projectedQuery as FlarkV3RecursiveGreenPointQuery;
+          expect(projected.owner.frameId, initial.owner.frameId);
+          expect(projected.blockQuoteProjection, isNotNull);
+          expect(projected.inlineFacts, isNull);
+          final projectedInline = projected.projectedInlineFacts;
+          expect(projectedInline, isNotNull);
+          expect(
+            projectedInline!.disposition,
+            FlarkV3ProjectedInlineFactsDisposition.authoritative,
+          );
+          expect(projectedInline.sourceRevision, 1);
+          _expectSpan(projectedInline.physicalSource, source);
+          expect(projectedInline.projectedSource.startUtf8, 0);
+          expect(projectedInline.projectedSource.endUtf8, 20);
+          expect(projectedInline.projectedSource.startUtf16, 0);
+          expect(projectedInline.projectedSource.endUtf16, 14);
+          expect(projectedInline.facts, isEmpty);
           expect(runtime.exportMarkdown(), markdown);
           expect(
-            lease.ensureLeafProjectionAtUtf16(6, structuralQuery: refined),
+            lease.ensureActiveProjectionAtUtf16(6, query: projected),
             FlarkV3LeafProjectionDemandDisposition.notApplicable,
           );
 
@@ -622,7 +851,7 @@ void main() {
           );
           expect(runtime.exportMarkdown(), markdown);
           expect(runtime.sourceLengthUtf16, markdown.length);
-          _expectThematicBreak(runtime.queryAtUtf16(4), revision: 1);
+          _expectThematicBreak(runtime, runtime.queryAtUtf16(4), revision: 1);
 
           await runtime.close().timeout(_closeTimeout);
           closed = true;
@@ -648,12 +877,11 @@ void main() {
             await _awaitCurrent(runtime, revision: 1),
             revision: 1,
           );
-          _expectExactLiteralPoint(
+          _expectRecursiveGreenParagraphRow(
             runtime,
             positionUtf16: 2,
             affinity: FlarkV3DocumentQueryAffinity.downstream,
             revision: 1,
-            kind: FlarkV3DocumentStructureKind.paragraph,
             source: _asciiSpan(0, initialParagraph.length),
           );
 
@@ -674,7 +902,7 @@ void main() {
             await _awaitCurrent(runtime, revision: 2),
             revision: 2,
           );
-          _expectThematicBreak(runtime.queryAtUtf16(4), revision: 2);
+          _expectThematicBreak(runtime, runtime.queryAtUtf16(4), revision: 2);
 
           final paragraphReceipt = runtime.apply(
             FlarkV3SourceTransaction.single(
@@ -693,12 +921,11 @@ void main() {
             await _awaitCurrent(runtime, revision: 3),
             revision: 3,
           );
-          _expectExactLiteralPoint(
+          _expectRecursiveGreenParagraphRow(
             runtime,
             positionUtf16: 2,
             affinity: FlarkV3DocumentQueryAffinity.downstream,
             revision: 3,
-            kind: FlarkV3DocumentStructureKind.paragraph,
             source: _asciiSpan(0, finalParagraph.length),
           );
 
@@ -1198,9 +1425,14 @@ void main() {
           }
         }
         final initial = source.toString();
+        final headingStart = initial.indexOf('## mixed');
+        final headingEnd = initial.indexOf('\n', headingStart) + 1;
         final headingEdit = initial.indexOf('heading');
+        final fenceStart = initial.indexOf('```dart');
+        final fenceBodyStart = initial.indexOf('\n', fenceStart) + 1;
         final fenceEdit = initial.indexOf('value = 1') + 'value = '.length;
         final closingFence = initial.indexOf('\n```\n\n', fenceEdit) + 1;
+        final closedFenceEnd = closingFence + 4;
         final lastParagraph = initial.lastIndexOf('Paragraph 4095');
         expect(headingEdit, greaterThan(0));
         expect(fenceEdit, greaterThan(headingEdit));
@@ -1220,11 +1452,73 @@ void main() {
             revision: 1,
           );
 
-          final initialHeading = runtime.queryAtUtf16(headingEdit + 1);
-          expect(initialHeading, isA<FlarkV3DocumentStructuralQuery>());
+          (FlarkV3RecursiveGreenPointQuery, FlarkV3RecursiveGreenRenderableRow)
+          exactRowAt({
+            required int pointUtf16,
+            required int revision,
+            required FlarkV3RecursiveGreenKind kind,
+          }) {
+            final query = runtime.queryAtUtf16(pointUtf16);
+            expect(query, isA<FlarkV3RecursiveGreenPointQuery>());
+            final point = query as FlarkV3RecursiveGreenPointQuery;
+            expect(point.sourceRevision, revision);
+            expect(point.structureRevision, revision);
+            expect(point.owner.kind, kind);
+            expect(point.inlineFacts, isNull);
+            final range = runtime.queryBlockRange(
+              point.source.startUtf16,
+              point.source.endUtf16,
+            );
+            expect(range, isA<FlarkV3RecursiveGreenRowRange>());
+            final rows = range as FlarkV3RecursiveGreenRowRange;
+            expect(rows.sourceRevision, revision);
+            expect(rows.structureRevision, revision);
+            expect(rows.selectedRow, isNotNull);
+            final row = rows.selectedRow!;
+            expect(row.frameId, point.owner.frameId);
+            expect(row.kind, kind);
+            expect(row.selected, isTrue);
+            expect(
+              point.ancestry.map((frame) => frame.kind),
+              row.path.map((frame) => frame.kind),
+            );
+            expect(
+              row.path.indexWhere((frame) => frame.isRowOwner),
+              point.ownerIndex,
+            );
+            expect(
+              point.source.startUtf16,
+              greaterThanOrEqualTo(row.physicalSource.startUtf16),
+            );
+            expect(
+              point.source.endUtf16,
+              lessThanOrEqualTo(row.physicalSource.endUtf16),
+            );
+            return (point, row);
+          }
+
+          final (_, initialHeading) = exactRowAt(
+            pointUtf16: headingEdit + 1,
+            revision: 1,
+            kind: FlarkV3RecursiveGreenKind.heading,
+          );
+          _expectSpan(
+            initialHeading.physicalSource,
+            _asciiSpan(headingStart, headingEnd),
+          );
+          expect(initialHeading.editableSource, isNotNull);
+          _expectSpan(
+            initialHeading.editableSource!,
+            _asciiSpan(headingStart + 3, headingEnd - 1),
+          );
+          final initialHeadingFact = initialHeading.path.last.fact;
           expect(
-            (initialHeading as FlarkV3DocumentStructuralQuery).structure.kind,
-            FlarkV3DocumentStructureKind.heading,
+            initialHeadingFact,
+            isA<FlarkV3RecursiveGreenHeadingPathFact>(),
+          );
+          expect(
+            (initialHeadingFact! as FlarkV3RecursiveGreenHeadingPathFact).level,
+            2,
           );
 
           final headingApplyClock = Stopwatch()..start();
@@ -1250,11 +1544,19 @@ void main() {
             revision: 2,
           );
           headingCurrentClock.stop();
-          final editedHeading = runtime.queryAtUtf16(headingEdit + 1);
-          expect(editedHeading, isA<FlarkV3DocumentStructuralQuery>());
-          expect(
-            (editedHeading as FlarkV3DocumentStructuralQuery).structure.kind,
-            FlarkV3DocumentStructureKind.heading,
+          final (_, editedHeading) = exactRowAt(
+            pointUtf16: headingEdit + 1,
+            revision: 2,
+            kind: FlarkV3RecursiveGreenKind.heading,
+          );
+          _expectSpan(
+            editedHeading.physicalSource,
+            _asciiSpan(headingStart, headingEnd),
+          );
+          expect(editedHeading.editableSource, isNotNull);
+          _expectSpan(
+            editedHeading.editableSource!,
+            _asciiSpan(headingStart + 3, headingEnd - 1),
           );
           expect(
             runtime.readSourceRange(
@@ -1287,11 +1589,23 @@ void main() {
             revision: 3,
           );
           fenceCurrentClock.stop();
-          final editedFence = runtime.queryAtUtf16(fenceEdit);
-          expect(editedFence, isA<FlarkV3DocumentStructuralQuery>());
+          final (_, editedFence) = exactRowAt(
+            pointUtf16: fenceEdit,
+            revision: 3,
+            kind: FlarkV3RecursiveGreenKind.fencedCode,
+          );
+          _expectSpan(
+            editedFence.physicalSource,
+            _asciiSpan(fenceStart, closedFenceEnd),
+          );
+          expect(editedFence.editableSource, isNotNull);
+          _expectSpan(
+            editedFence.editableSource!,
+            _asciiSpan(fenceBodyStart, closingFence),
+          );
           expect(
-            (editedFence as FlarkV3DocumentStructuralQuery).structure.kind,
-            FlarkV3DocumentStructureKind.fencedCode,
+            editedFence.path.last.fact,
+            isA<FlarkV3RecursiveGreenCodePathFact>(),
           );
           expect(runtime.readSourceRange(fenceEdit, fenceEdit + 1), '2');
 
@@ -1301,11 +1615,14 @@ void main() {
             fenceEdit,
             lastParagraph + 4,
           ]) {
-            final query = runtime.queryAtUtf16(point);
-            expect(
-              query,
-              isA<FlarkV3DocumentStructuralQuery>(),
-              reason: 'every retained or replaced block must remain queryable',
+            exactRowAt(
+              pointUtf16: point,
+              revision: 3,
+              kind: point == headingEdit + 1
+                  ? FlarkV3RecursiveGreenKind.heading
+                  : point == fenceEdit
+                  ? FlarkV3RecursiveGreenKind.fencedCode
+                  : FlarkV3RecursiveGreenKind.paragraph,
             );
           }
           expect(
@@ -1336,14 +1653,27 @@ void main() {
             ),
             revision: 4,
           );
-          final unclosedFence = runtime.queryAtUtf16(fenceEdit);
-          expect(unclosedFence, isA<FlarkV3DocumentStructuralQuery>());
-          final unclosed = (unclosedFence as FlarkV3DocumentStructuralQuery)
-              .structure
-              .fencedCode;
-          expect(unclosed, isNotNull);
-          expect(unclosed!.closed, isFalse);
-          expect(unclosed.closingMarker, isNull);
+          final (unclosedPoint, unclosedFence) = exactRowAt(
+            pointUtf16: fenceEdit,
+            revision: 4,
+            kind: FlarkV3RecursiveGreenKind.fencedCode,
+          );
+          expect(unclosedFence.editableSource, isNotNull);
+          _expectSpan(
+            unclosedFence.physicalSource,
+            _asciiSpan(fenceStart, runtime.sourceLengthUtf16),
+          );
+          _expectSpan(
+            unclosedFence.editableSource!,
+            _asciiSpan(fenceBodyStart, runtime.sourceLengthUtf16),
+          );
+          final (swallowedSuffix, swallowedRow) = exactRowAt(
+            pointUtf16: lastParagraph + 4,
+            revision: 4,
+            kind: FlarkV3RecursiveGreenKind.fencedCode,
+          );
+          expect(swallowedSuffix.owner.frameId, unclosedPoint.owner.frameId);
+          expect(swallowedRow.frameId, unclosedFence.frameId);
           expect(
             runtime.exportMarkdown(),
             initial
@@ -1393,19 +1723,15 @@ void main() {
           );
           expect(runtime.exportMarkdown(), initial);
 
-          Future<FlarkV3DocumentStructuralQuery> demandInline({
+          Future<FlarkV3RecursiveGreenPointQuery> demandInline({
             required int revision,
           }) async {
-            final structural = lease.queryAtUtf16(3);
-            expect(structural, isA<FlarkV3DocumentStructuralQuery>());
-            final paragraph = structural as FlarkV3DocumentStructuralQuery;
-            expect(
-              paragraph.structure.kind,
-              FlarkV3DocumentStructureKind.paragraph,
-            );
+            final query = lease.queryAtUtf16(3);
+            expect(query, isA<FlarkV3RecursiveGreenPointQuery>());
+            final paragraph = query as FlarkV3RecursiveGreenPointQuery;
+            expect(paragraph.owner.kind, FlarkV3RecursiveGreenKind.paragraph);
             expect(paragraph.sourceRevision, revision);
             expect(paragraph.structureRevision, revision);
-            _expectSpan(paragraph.structure.source, _asciiSpan(0, 7));
             expect(paragraph.inlineFacts, isNull);
 
             final beforePresentation =
@@ -1419,8 +1745,8 @@ void main() {
                   status.state == FlarkV3DocumentRuntimeState.faulted,
             );
             expect(
-              lease.ensureInlineAtUtf16(3, structuralQuery: paragraph),
-              FlarkV3InlineDemandDisposition.scheduled,
+              lease.ensureActiveProjectionAtUtf16(3, query: paragraph),
+              FlarkV3LeafProjectionDemandDisposition.scheduled,
             );
             final settledStatus = await settled;
             expect(settledStatus.state, FlarkV3DocumentRuntimeState.open);
@@ -1434,25 +1760,30 @@ void main() {
             );
 
             final refined = lease.queryAtUtf16(3);
-            expect(refined, isA<FlarkV3DocumentStructuralQuery>());
-            final result = refined as FlarkV3DocumentStructuralQuery;
+            expect(refined, isA<FlarkV3RecursiveGreenPointQuery>());
+            final result = refined as FlarkV3RecursiveGreenPointQuery;
             expect(result.sourceRevision, revision);
             expect(result.structureRevision, revision);
+            expect(result.owner.frameId, paragraph.owner.frameId);
+            expect(result.paragraphSource, isNotNull);
+            expect(result.inlineSource, isNotNull);
             expect(result.inlineFacts, isNotNull);
             return result;
           }
 
           void expectCertifiedFacts(
-            FlarkV3DocumentStructuralQuery result, {
+            FlarkV3RecursiveGreenPointQuery result, {
             required int revision,
           }) {
+            _expectSpan(result.paragraphSource!, _asciiSpan(0, 7));
+            _expectSpan(result.inlineSource!, _asciiSpan(0, 6));
             final inline = result.inlineFacts!;
             expect(inline.sourceRevision, revision);
             expect(
               inline.disposition,
               FlarkV3InlineFactsDisposition.authoritative,
             );
-            _expectSpan(inline.source, _asciiSpan(0, 7));
+            _expectSpan(inline.source, _asciiSpan(0, 6));
             expect(inline.facts.map((fact) => fact.kind), [
               FlarkV3InlineFactKind.strong,
               FlarkV3InlineFactKind.escapedPunctuation,
@@ -1500,7 +1831,7 @@ void main() {
             revision: 2,
           );
           expect(
-            (lease.queryAtUtf16(3) as FlarkV3DocumentStructuralQuery)
+            (lease.queryAtUtf16(3) as FlarkV3RecursiveGreenPointQuery)
                 .inlineFacts,
             isNull,
             reason:
@@ -1556,16 +1887,13 @@ void main() {
           expect(exactSource.revision, 1);
           expect(exactSource.toString(), initial);
 
-          Future<FlarkV3DocumentStructuralQuery> demandInline({
+          Future<FlarkV3RecursiveGreenPointQuery> demandInline({
             required int revision,
           }) async {
-            final structural = lease.queryAtUtf16(1);
-            expect(structural, isA<FlarkV3DocumentStructuralQuery>());
-            final paragraph = structural as FlarkV3DocumentStructuralQuery;
-            expect(
-              paragraph.structure.kind,
-              FlarkV3DocumentStructureKind.paragraph,
-            );
+            final query = lease.queryAtUtf16(1);
+            expect(query, isA<FlarkV3RecursiveGreenPointQuery>());
+            final paragraph = query as FlarkV3RecursiveGreenPointQuery;
+            expect(paragraph.owner.kind, FlarkV3RecursiveGreenKind.paragraph);
             expect(paragraph.sourceRevision, revision);
             expect(paragraph.structureRevision, revision);
             expect(paragraph.inlineFacts, isNull);
@@ -1581,8 +1909,8 @@ void main() {
                   status.state == FlarkV3DocumentRuntimeState.faulted,
             );
             expect(
-              lease.ensureInlineAtUtf16(1, structuralQuery: paragraph),
-              FlarkV3InlineDemandDisposition.scheduled,
+              lease.ensureActiveProjectionAtUtf16(1, query: paragraph),
+              FlarkV3LeafProjectionDemandDisposition.scheduled,
             );
             final settledStatus = await settled;
             expect(settledStatus.state, FlarkV3DocumentRuntimeState.open);
@@ -1596,27 +1924,32 @@ void main() {
             );
 
             final refined = lease.queryAtUtf16(1);
-            expect(refined, isA<FlarkV3DocumentStructuralQuery>());
-            final result = refined as FlarkV3DocumentStructuralQuery;
+            expect(refined, isA<FlarkV3RecursiveGreenPointQuery>());
+            final result = refined as FlarkV3RecursiveGreenPointQuery;
             expect(result.sourceRevision, revision);
             expect(result.structureRevision, revision);
+            expect(result.owner.frameId, paragraph.owner.frameId);
+            expect(result.paragraphSource, isNotNull);
+            expect(result.inlineSource, isNotNull);
             expect(result.inlineFacts, isNotNull);
             return result;
           }
 
           void expectCertified(
-            FlarkV3DocumentStructuralQuery result, {
+            FlarkV3RecursiveGreenPointQuery result, {
             required int revision,
             required bool backslashMarker,
             required String source,
           }) {
+            _expectSpan(result.paragraphSource!, _asciiSpan(0, source.length));
+            _expectSpan(result.inlineSource!, _asciiSpan(0, source.length - 1));
             final inline = result.inlineFacts!;
             expect(inline.sourceRevision, revision);
             expect(
               inline.disposition,
               FlarkV3InlineFactsDisposition.authoritative,
             );
-            _expectSpan(inline.source, _asciiSpan(0, source.length));
+            _expectSpan(inline.source, _asciiSpan(0, source.length - 1));
             expect(inline.facts.map((fact) => fact.kind), [
               FlarkV3InlineFactKind.emphasis,
               FlarkV3InlineFactKind.hardLineBreak,
@@ -1649,10 +1982,16 @@ void main() {
               facts: inline,
               markerPolicy: FlarkV3InlineMarkerPolicy.hideCertifiedMarkers,
             );
-            expect(projection.sourceText, source);
-            expect(projection.sourceProjection.sourceText, source);
-            expect(projection.displayText, 'a\nb\n');
-            expect(projection.sourceProjection.displayText, 'a\nb\n');
+            expect(
+              projection.sourceText,
+              source.substring(0, source.length - 1),
+            );
+            expect(
+              projection.sourceProjection.sourceText,
+              source.substring(0, source.length - 1),
+            );
+            expect(projection.displayText, 'a\nb');
+            expect(projection.sourceProjection.displayText, 'a\nb');
             final replacementPieces = projection.sourceProjection.pieces.where(
               (piece) => piece.kind == FlarkV3SourceProjectionPieceKind.replace,
             );
@@ -1669,8 +2008,8 @@ void main() {
           );
           final beforeCacheHit = runtime.status.inlinePresentationGeneration;
           expect(
-            lease.ensureInlineAtUtf16(1, structuralQuery: revisionOne),
-            FlarkV3InlineDemandDisposition.notApplicable,
+            lease.ensureActiveProjectionAtUtf16(1, query: revisionOne),
+            FlarkV3LeafProjectionDemandDisposition.notApplicable,
           );
           expect(
             runtime.status.inlinePresentationGeneration,
@@ -1707,7 +2046,7 @@ void main() {
             revision: 2,
           );
           expect(
-            (lease.queryAtUtf16(1) as FlarkV3DocumentStructuralQuery)
+            (lease.queryAtUtf16(1) as FlarkV3RecursiveGreenPointQuery)
                 .inlineFacts,
             isNull,
             reason:
@@ -1766,16 +2105,13 @@ void main() {
             revision: 1,
           );
 
-          Future<FlarkV3DocumentStructuralQuery> demandInline({
+          Future<FlarkV3RecursiveGreenPointQuery> demandInline({
             required int revision,
           }) async {
-            final structural = lease.queryAtUtf16(2);
-            expect(structural, isA<FlarkV3DocumentStructuralQuery>());
-            final paragraph = structural as FlarkV3DocumentStructuralQuery;
-            expect(
-              paragraph.structure.kind,
-              FlarkV3DocumentStructureKind.paragraph,
-            );
+            final query = lease.queryAtUtf16(2);
+            expect(query, isA<FlarkV3RecursiveGreenPointQuery>());
+            final paragraph = query as FlarkV3RecursiveGreenPointQuery;
+            expect(paragraph.owner.kind, FlarkV3RecursiveGreenKind.paragraph);
             expect(paragraph.sourceRevision, revision);
             expect(paragraph.structureRevision, revision);
             expect(paragraph.inlineFacts, isNull);
@@ -1791,8 +2127,8 @@ void main() {
                   status.state == FlarkV3DocumentRuntimeState.faulted,
             );
             expect(
-              lease.ensureInlineAtUtf16(2, structuralQuery: paragraph),
-              FlarkV3InlineDemandDisposition.scheduled,
+              lease.ensureActiveProjectionAtUtf16(2, query: paragraph),
+              FlarkV3LeafProjectionDemandDisposition.scheduled,
             );
             final settledStatus = await settled;
             expect(settledStatus.state, FlarkV3DocumentRuntimeState.open);
@@ -1806,27 +2142,32 @@ void main() {
             );
 
             final refined = lease.queryAtUtf16(2);
-            expect(refined, isA<FlarkV3DocumentStructuralQuery>());
-            final result = refined as FlarkV3DocumentStructuralQuery;
+            expect(refined, isA<FlarkV3RecursiveGreenPointQuery>());
+            final result = refined as FlarkV3RecursiveGreenPointQuery;
             expect(result.sourceRevision, revision);
             expect(result.structureRevision, revision);
+            expect(result.owner.frameId, paragraph.owner.frameId);
+            expect(result.paragraphSource, isNotNull);
+            expect(result.inlineSource, isNotNull);
             expect(result.inlineFacts, isNotNull);
             return result;
           }
 
           void expectCertified(
-            FlarkV3DocumentStructuralQuery result, {
+            FlarkV3RecursiveGreenPointQuery result, {
             required int revision,
             required String source,
             required String firstValue,
           }) {
+            _expectSpan(result.paragraphSource!, _asciiSpan(0, source.length));
+            _expectSpan(result.inlineSource!, _asciiSpan(0, source.length - 1));
             final inline = result.inlineFacts!;
             expect(inline.sourceRevision, revision);
             expect(
               inline.disposition,
               FlarkV3InlineFactsDisposition.authoritative,
             );
-            _expectSpan(inline.source, _asciiSpan(0, source.length));
+            _expectSpan(inline.source, _asciiSpan(0, source.length - 1));
             expect(inline.facts.map((fact) => fact.kind), [
               FlarkV3InlineFactKind.emphasis,
               FlarkV3InlineFactKind.characterReference,
@@ -1856,15 +2197,18 @@ void main() {
               expectedSource: inline.sourceVersion,
               facts: inline,
             );
-            expect(visible.displayText, source);
+            expect(visible.displayText, source.substring(0, source.length - 1));
             final markerFree = FlarkV3InlineProjection.fromValidatedFacts(
               sourceDocument: exactSource,
               expectedSource: inline.sourceVersion,
               facts: inline,
               markerPolicy: FlarkV3InlineMarkerPolicy.hideCertifiedMarkers,
             );
-            expect(markerFree.sourceText, source);
-            expect(markerFree.displayText, '$firstValue ≧\u{338}\n');
+            expect(
+              markerFree.sourceText,
+              source.substring(0, source.length - 1),
+            );
+            expect(markerFree.displayText, '$firstValue ≧\u{338}');
             expect(
               markerFree.sourceProjection.pieces.where(
                 (piece) =>
@@ -1905,7 +2249,7 @@ void main() {
             revision: 2,
           );
           expect(
-            (lease.queryAtUtf16(2) as FlarkV3DocumentStructuralQuery)
+            (lease.queryAtUtf16(2) as FlarkV3RecursiveGreenPointQuery)
                 .inlineFacts,
             isNull,
             reason:
@@ -1954,14 +2298,12 @@ void main() {
           final middleEnd = markdown.lastIndexOf('\n\n') + 1;
           final middlePoint = markdown.indexOf('bold') + 1;
 
-          final structural = lease.queryAtUtf16(middlePoint);
-          expect(structural, isA<FlarkV3DocumentStructuralQuery>());
-          final middle = structural as FlarkV3DocumentStructuralQuery;
-          expect(middle.structure.kind, FlarkV3DocumentStructureKind.paragraph);
-          _expectSpan(
-            middle.projection.projectedSource,
-            _asciiSpan(middleStart, middleEnd),
-          );
+          final query = lease.queryAtUtf16(middlePoint);
+          expect(query, isA<FlarkV3RecursiveGreenPointQuery>());
+          final middle = query as FlarkV3RecursiveGreenPointQuery;
+          expect(middle.owner.kind, FlarkV3RecursiveGreenKind.paragraph);
+          expect(middle.sourceRevision, 1);
+          expect(middle.structureRevision, 1);
           expect(
             middle.inlineFacts,
             isNull,
@@ -1978,8 +2320,8 @@ void main() {
                 status.state == FlarkV3DocumentRuntimeState.faulted,
           );
           expect(
-            lease.ensureInlineAtUtf16(middlePoint, structuralQuery: middle),
-            FlarkV3InlineDemandDisposition.scheduled,
+            lease.ensureActiveProjectionAtUtf16(middlePoint, query: middle),
+            FlarkV3LeafProjectionDemandDisposition.scheduled,
           );
           final committedStatus = await committed;
           expect(committedStatus.state, FlarkV3DocumentRuntimeState.open);
@@ -1989,9 +2331,20 @@ void main() {
           );
 
           final refined = lease.queryAtUtf16(middlePoint);
-          expect(refined, isA<FlarkV3DocumentStructuralQuery>());
-          final inline =
-              (refined as FlarkV3DocumentStructuralQuery).inlineFacts;
+          expect(refined, isA<FlarkV3RecursiveGreenPointQuery>());
+          final refinedMiddle = refined as FlarkV3RecursiveGreenPointQuery;
+          expect(refinedMiddle.owner.frameId, middle.owner.frameId);
+          expect(refinedMiddle.paragraphSource, isNotNull);
+          expect(refinedMiddle.inlineSource, isNotNull);
+          _expectSpan(
+            refinedMiddle.paragraphSource!,
+            _asciiSpan(middleStart, middleEnd),
+          );
+          _expectSpan(
+            refinedMiddle.inlineSource!,
+            _asciiSpan(middleStart, middleEnd - 1),
+          );
+          final inline = refinedMiddle.inlineFacts;
           expect(inline, isNotNull);
           expect(
             inline!.disposition,
@@ -2002,7 +2355,7 @@ void main() {
             FlarkV3InlineFactKind.emphasis,
             FlarkV3InlineFactKind.code,
           ]);
-          _expectSpan(inline.source, _asciiSpan(middleStart, middleEnd));
+          _expectSpan(inline.source, _asciiSpan(middleStart, middleEnd - 1));
 
           final strong = inline.facts[0];
           _expectSpan(
@@ -2020,22 +2373,25 @@ void main() {
             _asciiSpan(codeStart, codeStart + '`code`'.length),
           );
 
-          final first = lease.queryAtUtf16(1);
-          final tail = lease.queryAtUtf16(markdown.length - 2);
+          final first =
+              lease.queryAtUtf16(1) as FlarkV3RecursiveGreenPointQuery;
+          final tail =
+              lease.queryAtUtf16(markdown.length - 2)
+                  as FlarkV3RecursiveGreenPointQuery;
           expect(
-            (first as FlarkV3DocumentStructuralQuery).inlineFacts,
+            first.inlineFacts,
             isNull,
             reason: 'a selected-leaf sidecar cannot attach to its neighbor',
           );
           expect(
-            (tail as FlarkV3DocumentStructuralQuery).inlineFacts,
+            tail.inlineFacts,
             isNull,
             reason: 'equal query authority is still block-identity scoped',
           );
 
-          Future<FlarkV3DocumentStructuralQuery> demandLeaf(
+          Future<FlarkV3RecursiveGreenPointQuery> demandLeaf(
             int positionUtf16,
-            FlarkV3DocumentStructuralQuery structural,
+            FlarkV3RecursiveGreenPointQuery point,
           ) async {
             final before = runtime.status.inlinePresentationGeneration;
             final settled = _awaitStatus(
@@ -2045,17 +2401,17 @@ void main() {
                   status.state == FlarkV3DocumentRuntimeState.faulted,
             );
             expect(
-              lease.ensureInlineAtUtf16(
-                positionUtf16,
-                structuralQuery: structural,
-              ),
-              FlarkV3InlineDemandDisposition.scheduled,
+              lease.ensureActiveProjectionAtUtf16(positionUtf16, query: point),
+              FlarkV3LeafProjectionDemandDisposition.scheduled,
             );
             final status = await settled;
             expect(status.state, FlarkV3DocumentRuntimeState.open);
             final refined = lease.queryAtUtf16(positionUtf16);
-            expect(refined, isA<FlarkV3DocumentStructuralQuery>());
-            final result = refined as FlarkV3DocumentStructuralQuery;
+            expect(refined, isA<FlarkV3RecursiveGreenPointQuery>());
+            final result = refined as FlarkV3RecursiveGreenPointQuery;
+            expect(result.owner.frameId, point.owner.frameId);
+            expect(result.paragraphSource, isNotNull);
+            expect(result.inlineSource, isNotNull);
             expect(result.inlineFacts, isNotNull);
             return result;
           }
@@ -2066,7 +2422,15 @@ void main() {
             FlarkV3InlineFactKind.code,
           );
           final retainedMiddle =
-              lease.queryAtUtf16(middlePoint) as FlarkV3DocumentStructuralQuery;
+              lease.queryAtUtf16(middlePoint)
+                  as FlarkV3RecursiveGreenPointQuery;
+          expect(
+            retainedMiddle.inlineFacts,
+            isNotNull,
+            reason:
+                'decoded current-ACK facts survive after the singleton host '
+                'sidecar moves',
+          );
           expect(
             retainedMiddle.inlineFacts!.facts.map((fact) => fact.kind),
             [
@@ -2085,7 +2449,7 @@ void main() {
           );
           expect(
             (lease.queryAtUtf16(markdown.length - 2)
-                    as FlarkV3DocumentStructuralQuery)
+                    as FlarkV3RecursiveGreenPointQuery)
                 .inlineFacts!
                 .facts
                 .single
@@ -2093,14 +2457,15 @@ void main() {
             FlarkV3InlineFactKind.code,
           );
           final cachedMiddle =
-              lease.queryAtUtf16(middlePoint) as FlarkV3DocumentStructuralQuery;
+              lease.queryAtUtf16(middlePoint)
+                  as FlarkV3RecursiveGreenPointQuery;
           final afterThreeDemands = runtime.status.inlinePresentationGeneration;
           expect(
-            lease.ensureInlineAtUtf16(
+            lease.ensureActiveProjectionAtUtf16(
               middlePoint,
-              structuralQuery: cachedMiddle,
+              query: cachedMiddle,
             ),
-            FlarkV3InlineDemandDisposition.notApplicable,
+            FlarkV3LeafProjectionDemandDisposition.notApplicable,
             reason: 'a cache hit must not move the host singleton again',
           );
           await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -2126,7 +2491,7 @@ void main() {
             revision: 2,
           );
           expect(
-            (lease.queryAtUtf16(middlePoint) as FlarkV3DocumentStructuralQuery)
+            (lease.queryAtUtf16(middlePoint) as FlarkV3RecursiveGreenPointQuery)
                 .inlineFacts,
             isNull,
             reason:
@@ -2165,9 +2530,9 @@ void main() {
             revision: 1,
           );
 
-          Future<FlarkV3DocumentStructuralQuery> demandInline(
+          Future<FlarkV3RecursiveGreenPointQuery> demandInline(
             int positionUtf16,
-            FlarkV3DocumentStructuralQuery structural,
+            FlarkV3RecursiveGreenPointQuery structural,
           ) async {
             final beforePresentation =
                 runtime.status.inlinePresentationGeneration;
@@ -2180,11 +2545,11 @@ void main() {
                   status.state == FlarkV3DocumentRuntimeState.faulted,
             );
             expect(
-              lease.ensureInlineAtUtf16(
+              lease.ensureActiveProjectionAtUtf16(
                 positionUtf16,
-                structuralQuery: structural,
+                query: structural,
               ),
-              FlarkV3InlineDemandDisposition.scheduled,
+              FlarkV3LeafProjectionDemandDisposition.scheduled,
             );
             final settledStatus = await settled;
             expect(settledStatus.state, FlarkV3DocumentRuntimeState.open);
@@ -2197,23 +2562,23 @@ void main() {
               beforeOutcome + 1,
             );
             final refined = lease.queryAtUtf16(positionUtf16);
-            expect(refined, isA<FlarkV3DocumentStructuralQuery>());
-            final result = refined as FlarkV3DocumentStructuralQuery;
+            expect(refined, isA<FlarkV3RecursiveGreenPointQuery>());
+            final result = refined as FlarkV3RecursiveGreenPointQuery;
             expect(result.inlineFacts, isNotNull);
             return result;
           }
 
           final initialPosition = initial.indexOf('live') + 1;
           final initialQuery = lease.queryAtUtf16(initialPosition);
-          expect(initialQuery, isA<FlarkV3DocumentStructuralQuery>());
-          final initialHeading = initialQuery as FlarkV3DocumentStructuralQuery;
+          expect(initialQuery, isA<FlarkV3RecursiveGreenPointQuery>());
+          final initialHeading =
+              initialQuery as FlarkV3RecursiveGreenPointQuery;
           _expectAtxHeading(
+            runtime,
             initialHeading,
             revision: 1,
             source: (startUtf8: 0, endUtf8: 34, startUtf16: 0, endUtf16: 31),
             content: (startUtf8: 3, endUtf8: 28, startUtf16: 3, endUtf16: 25),
-            opening: _asciiSpan(0, 2),
-            closing: (startUtf8: 29, endUtf8: 32, startUtf16: 26, endUtf16: 29),
           );
           expect(initialHeading.inlineFacts, isNull);
 
@@ -2281,15 +2646,14 @@ void main() {
 
           final editedPosition = edited.indexOf('live') + 1;
           final editedQuery = lease.queryAtUtf16(editedPosition);
-          expect(editedQuery, isA<FlarkV3DocumentStructuralQuery>());
-          final editedHeading = editedQuery as FlarkV3DocumentStructuralQuery;
+          expect(editedQuery, isA<FlarkV3RecursiveGreenPointQuery>());
+          final editedHeading = editedQuery as FlarkV3RecursiveGreenPointQuery;
           _expectAtxHeading(
+            runtime,
             editedHeading,
             revision: 2,
             source: (startUtf8: 0, endUtf8: 35, startUtf16: 0, endUtf16: 32),
             content: (startUtf8: 3, endUtf8: 29, startUtf16: 3, endUtf16: 26),
-            opening: _asciiSpan(0, 2),
-            closing: (startUtf8: 30, endUtf8: 33, startUtf16: 27, endUtf16: 30),
           );
           expect(
             editedHeading.inlineFacts,
@@ -2368,9 +2732,9 @@ void main() {
             revision: 1,
           );
 
-          Future<FlarkV3DocumentStructuralQuery> demandInline(
+          Future<FlarkV3RecursiveGreenPointQuery> demandInline(
             int positionUtf16,
-            FlarkV3DocumentStructuralQuery structural,
+            FlarkV3RecursiveGreenPointQuery structural,
           ) async {
             final beforePresentation =
                 runtime.status.inlinePresentationGeneration;
@@ -2383,11 +2747,11 @@ void main() {
                   status.state == FlarkV3DocumentRuntimeState.faulted,
             );
             expect(
-              lease.ensureInlineAtUtf16(
+              lease.ensureActiveProjectionAtUtf16(
                 positionUtf16,
-                structuralQuery: structural,
+                query: structural,
               ),
-              FlarkV3InlineDemandDisposition.scheduled,
+              FlarkV3LeafProjectionDemandDisposition.scheduled,
             );
             final settledStatus = await settled;
             expect(settledStatus.state, FlarkV3DocumentRuntimeState.open);
@@ -2400,36 +2764,19 @@ void main() {
               beforeOutcome + 1,
             );
             return lease.queryAtUtf16(positionUtf16)
-                as FlarkV3DocumentStructuralQuery;
+                as FlarkV3RecursiveGreenPointQuery;
           }
 
           final initialPosition = initial.indexOf('live') + 1;
           final initialQuery =
               lease.queryAtUtf16(initialPosition)
-                  as FlarkV3DocumentStructuralQuery;
+                  as FlarkV3RecursiveGreenPointQuery;
           _expectSetextHeading(
+            runtime,
             initialQuery,
             revision: 1,
             source: (startUtf8: 0, endUtf8: 32, startUtf16: 0, endUtf16: 29),
             content: (startUtf8: 0, endUtf8: 25, startUtf16: 0, endUtf16: 22),
-            contentLineEnding: (
-              startUtf8: 25,
-              endUtf8: 27,
-              startUtf16: 22,
-              endUtf16: 24,
-            ),
-            underline: (
-              startUtf8: 27,
-              endUtf8: 30,
-              startUtf16: 24,
-              endUtf16: 27,
-            ),
-            underlineLineEnding: (
-              startUtf8: 30,
-              endUtf8: 32,
-              startUtf16: 27,
-              endUtf16: 29,
-            ),
           );
           final initialRefined = await demandInline(
             initialPosition,
@@ -2466,30 +2813,13 @@ void main() {
           final editedPosition = edited.indexOf('live') + 1;
           final editedQuery =
               lease.queryAtUtf16(editedPosition)
-                  as FlarkV3DocumentStructuralQuery;
+                  as FlarkV3RecursiveGreenPointQuery;
           _expectSetextHeading(
+            runtime,
             editedQuery,
             revision: 2,
             source: (startUtf8: 0, endUtf8: 33, startUtf16: 0, endUtf16: 30),
             content: (startUtf8: 0, endUtf8: 26, startUtf16: 0, endUtf16: 23),
-            contentLineEnding: (
-              startUtf8: 26,
-              endUtf8: 28,
-              startUtf16: 23,
-              endUtf16: 25,
-            ),
-            underline: (
-              startUtf8: 28,
-              endUtf8: 31,
-              startUtf16: 25,
-              endUtf16: 28,
-            ),
-            underlineLineEnding: (
-              startUtf8: 31,
-              endUtf8: 33,
-              startUtf16: 28,
-              endUtf16: 30,
-            ),
           );
           expect(
             editedQuery.inlineFacts,
@@ -2538,22 +2868,23 @@ void main() {
             revision: 1,
           );
           final structural = lease.queryAtUtf16(markdown.length ~/ 2);
-          expect(structural, isA<FlarkV3DocumentStructuralQuery>());
-          final paragraph = structural as FlarkV3DocumentStructuralQuery;
-          expect(
-            paragraph.structure.kind,
-            FlarkV3DocumentStructureKind.paragraph,
-          );
+          expect(structural, isA<FlarkV3RecursiveGreenPointQuery>());
+          final paragraph = structural as FlarkV3RecursiveGreenPointQuery;
+          expect(paragraph.owner.kind, FlarkV3RecursiveGreenKind.paragraph);
           expect(paragraph.inlineFacts, isNull);
+          final row = _selectedRecursiveGreenRow(runtime, paragraph);
+          expect(row.kind, FlarkV3RecursiveGreenKind.paragraph);
+          _expectSpan(row.physicalSource, _asciiSpan(0, markdown.length));
+          _expectSpan(row.editableSource!, _asciiSpan(0, markdown.length));
           final beforePresentation =
               runtime.status.inlinePresentationGeneration;
           final beforeOutcome = runtime.status.inlineAttemptOutcomeGeneration;
           expect(
-            lease.ensureInlineAtUtf16(
+            lease.ensureActiveProjectionAtUtf16(
               markdown.length ~/ 2,
-              structuralQuery: paragraph,
+              query: paragraph,
             ),
-            FlarkV3InlineDemandDisposition.notApplicable,
+            FlarkV3LeafProjectionDemandDisposition.notApplicable,
           );
           await Future<void>.delayed(const Duration(milliseconds: 10));
           expect(
@@ -2598,22 +2929,14 @@ void main() {
           );
           final position = tailStart + 3;
           final structural = lease.queryAtUtf16(position);
-          expect(structural, isA<FlarkV3DocumentStructuralQuery>());
-          final paragraph = structural as FlarkV3DocumentStructuralQuery;
-          expect(
-            paragraph.structure.kind,
-            FlarkV3DocumentStructureKind.paragraph,
-          );
-          expect(
-            paragraph.structure.source.endUtf8 -
-                paragraph.structure.source.startUtf8,
-            greaterThan(8 * 1024),
-            reason:
-                'the physical leaf deliberately includes the large '
-                'definition prefix',
-          );
+          expect(structural, isA<FlarkV3RecursiveGreenPointQuery>());
+          final paragraph = structural as FlarkV3RecursiveGreenPointQuery;
+          expect(paragraph.owner.kind, FlarkV3RecursiveGreenKind.paragraph);
+          final row = _selectedRecursiveGreenRow(runtime, paragraph);
+          expect(row.kind, FlarkV3RecursiveGreenKind.paragraph);
+          _expectSpan(row.physicalSource, _asciiSpan(0, markdown.length));
           _expectSpan(
-            paragraph.projection.projectedSource,
+            row.editableSource!,
             _asciiSpan(tailStart, markdown.length),
           );
           expect(paragraph.inlineFacts, isNull);
@@ -2629,8 +2952,8 @@ void main() {
                 status.state == FlarkV3DocumentRuntimeState.faulted,
           );
           expect(
-            lease.ensureInlineAtUtf16(position, structuralQuery: paragraph),
-            FlarkV3InlineDemandDisposition.scheduled,
+            lease.ensureActiveProjectionAtUtf16(position, query: paragraph),
+            FlarkV3LeafProjectionDemandDisposition.scheduled,
             reason:
                 'inline eligibility is bounded by the projected Paragraph, '
                 'not its definition-bearing physical leaf',
@@ -2647,9 +2970,9 @@ void main() {
           );
 
           final refined = lease.queryAtUtf16(position);
-          expect(refined, isA<FlarkV3DocumentStructuralQuery>());
+          expect(refined, isA<FlarkV3RecursiveGreenPointQuery>());
           final inline =
-              (refined as FlarkV3DocumentStructuralQuery).inlineFacts;
+              (refined as FlarkV3RecursiveGreenPointQuery).inlineFacts;
           expect(inline, isNotNull);
           expect(
             inline!.disposition,
@@ -2714,19 +3037,16 @@ void main() {
           );
           final baseFirst =
               runtime.queryAtUtf16(tailStart + 1)
-                  as FlarkV3DocumentStructuralQuery;
-          expect(
-            baseFirst.structure.kind,
-            FlarkV3DocumentStructureKind.paragraph,
-          );
-          expect(baseFirst.structure.referenceDefinitionCount, referenceCount);
+                  as FlarkV3RecursiveGreenPointQuery;
+          expect(baseFirst.owner.kind, FlarkV3RecursiveGreenKind.paragraph);
+          final baseFirstRow = _selectedRecursiveGreenRow(runtime, baseFirst);
           _expectSpan(
-            baseFirst.structure.source,
+            baseFirstRow.physicalSource,
             _asciiSpan(0, paragraphRanges.first.end),
           );
           _expectSpan(
-            baseFirst.structure.visibleSource,
-            _asciiSpan(tailStart, paragraphRanges.first.end),
+            baseFirstRow.editableSource!,
+            _asciiSpan(tailStart, paragraphRanges.first.end - 1),
           );
 
           final firstEdit = runtime.apply(
@@ -2757,19 +3077,21 @@ void main() {
 
           final edited =
               runtime.queryAtUtf16(editStart + 1)
-                  as FlarkV3DocumentStructuralQuery;
-          expect(edited.structure.referenceDefinitionCount, 0);
+                  as FlarkV3RecursiveGreenPointQuery;
+          expect(edited.owner.kind, FlarkV3RecursiveGreenKind.paragraph);
+          final editedRow = _selectedRecursiveGreenRow(runtime, edited);
           _expectSpan(
-            edited.structure.source,
+            editedRow.physicalSource,
             _asciiSpan(editedRange.start, editedRange.end + coordinateDelta),
           );
 
           final lastBase = paragraphRanges.last;
           final last =
               runtime.queryAtUtf16(lastBase.start + coordinateDelta + 1)
-                  as FlarkV3DocumentStructuralQuery;
+                  as FlarkV3RecursiveGreenPointQuery;
+          final lastRow = _selectedRecursiveGreenRow(runtime, last);
           _expectSpan(
-            last.structure.source,
+            lastRow.physicalSource,
             _asciiSpan(
               lastBase.start + coordinateDelta,
               lastBase.end + coordinateDelta,
@@ -2804,10 +3126,10 @@ void main() {
           );
           expect(
             (runtime.queryAtUtf16(secondEditStart)
-                    as FlarkV3DocumentStructuralQuery)
-                .structure
+                    as FlarkV3RecursiveGreenPointQuery)
+                .owner
                 .kind,
-            FlarkV3DocumentStructureKind.paragraph,
+            FlarkV3RecursiveGreenKind.paragraph,
           );
 
           await runtime.close().timeout(_closeTimeout);
@@ -2873,45 +3195,34 @@ void main() {
           final current = await _awaitCurrent(runtime, revision: 2);
           _expectCurrentStatus(current, revision: 2);
           final result = runtime.queryAtUtf16(6);
-          expect(result, isA<FlarkV3DocumentStructuralQuery>());
-          final structure = result as FlarkV3DocumentStructuralQuery;
-          expect(structure.sourceRevision, 2);
-          expect(structure.structureRevision, 2);
+          expect(result, isA<FlarkV3RecursiveGreenPointQuery>());
+          final point = result as FlarkV3RecursiveGreenPointQuery;
+          expect(point.sourceRevision, 2);
+          expect(point.structureRevision, 2);
+          expect(point.owner.kind, FlarkV3RecursiveGreenKind.paragraph);
+          expect(point.inlineFacts, isNull);
+          final row = _selectedRecursiveGreenRow(runtime, point);
+          expect(row.kind, FlarkV3RecursiveGreenKind.paragraph);
           expect(
-            structure.structure.kind,
-            FlarkV3DocumentStructureKind.paragraph,
+            row.presentationKind,
+            FlarkV3RecursiveGreenRowPresentationKind.inline,
           );
-          expect(structure.structure.unknownReason, isNull);
-          expect(structure.structure.referenceDefinitionCount, 0);
-          _expectSpan(structure.structure.source, (
-            startUtf8: 0,
-            endUtf8: 10,
-            startUtf16: 0,
-            endUtf16: 10,
-          ));
-          _expectSpan(structure.structure.visibleSource, (
-            startUtf8: 0,
-            endUtf8: 10,
-            startUtf16: 0,
-            endUtf16: 10,
-          ));
           expect(
-            structure.projection.kind,
-            FlarkV3DocumentStructureKind.paragraph,
+            row.editCapability,
+            FlarkV3RecursiveGreenRowEditCapability.contiguous,
           );
-          _expectSpan(structure.projection.source, (
+          _expectSpan(row.physicalSource, (
             startUtf8: 0,
             endUtf8: 10,
             startUtf16: 0,
             endUtf16: 10,
           ));
-          _expectSpan(structure.projection.projectedSource, (
+          _expectSpan(row.editableSource!, (
             startUtf8: 0,
             endUtf8: 10,
             startUtf16: 0,
             endUtf16: 10,
           ));
-          expect(structure.projection.runCount, 1);
 
           await runtime.close().timeout(_closeTimeout);
           closed = true;
@@ -2950,7 +3261,12 @@ void main() {
             await _awaitCurrent(runtime, revision: 1),
             revision: 1,
           );
-          _expectFence(runtime.queryAtUtf16(11), revision: 1, bodyEndUtf8: 14);
+          _expectFence(
+            runtime,
+            runtime.queryAtUtf16(11),
+            revision: 1,
+            bodyEndUtf8: 14,
+          );
 
           final receipt = runtime.apply(
             FlarkV3SourceTransaction.single(
@@ -2973,7 +3289,12 @@ void main() {
             await _awaitCurrent(runtime, revision: 2),
             revision: 2,
           );
-          _expectFence(runtime.queryAtUtf16(12), revision: 2, bodyEndUtf8: 26);
+          _expectFence(
+            runtime,
+            runtime.queryAtUtf16(12),
+            revision: 2,
+            bodyEndUtf8: 26,
+          );
 
           final unclosedReceipt = runtime.apply(
             FlarkV3SourceTransaction.single(
@@ -2993,6 +3314,7 @@ void main() {
             revision: 3,
           );
           _expectFence(
+            runtime,
             runtime.queryAtUtf16(12),
             revision: 3,
             bodyEndUtf8: 26,
@@ -3011,148 +3333,237 @@ void main() {
 }
 
 void _expectFence(
+  FlarkV3DocumentRuntime runtime,
   FlarkV3DocumentQueryResult query, {
   required int revision,
   required int bodyEndUtf8,
   bool closed = true,
 }) {
-  expect(query, isA<FlarkV3DocumentStructuralQuery>());
-  final result = query as FlarkV3DocumentStructuralQuery;
+  expect(query, isA<FlarkV3RecursiveGreenPointQuery>());
+  final result = query as FlarkV3RecursiveGreenPointQuery;
   expect(result.sourceRevision, revision);
   expect(result.structureRevision, revision);
-  expect(
-    result.structure.kind,
-    FlarkV3DocumentStructureKind.fencedCode,
-    reason:
-        'source=${result.structure.source.startUtf8}..'
-        '${result.structure.source.endUtf8} '
-        'unknown=${result.structure.unknownReason}',
-  );
-  expect(result.projection.kind, FlarkV3DocumentStructureKind.fencedCode);
+  expect(result.owner.kind, FlarkV3RecursiveGreenKind.fencedCode);
+  expect(result.ancestry.map((frame) => frame.kind), const [
+    FlarkV3RecursiveGreenKind.document,
+    FlarkV3RecursiveGreenKind.fencedCode,
+  ]);
+  expect(result.isIdentityEditableContent, isTrue);
   expect(result.inlineFacts, isNull);
-  final fence = result.structure.fencedCode!;
+
+  final range = runtime.queryBlockRange(
+    result.pointUtf16,
+    result.pointUtf16 + 1,
+  );
+  expect(range, isA<FlarkV3RecursiveGreenRowRange>());
+  final rows = range as FlarkV3RecursiveGreenRowRange;
+  expect(rows.sourceRevision, revision);
+  expect(rows.structureRevision, revision);
+  expect(rows.selectedRow, isNotNull);
+  final row = rows.selectedRow!;
+  expect(row.frameId, result.owner.frameId);
+  expect(row.kind, FlarkV3RecursiveGreenKind.fencedCode);
+  expect(row.literal, isTrue);
+  expect(
+    row.presentationKind,
+    FlarkV3RecursiveGreenRowPresentationKind.fencedCode,
+  );
+  expect(row.editCapability, FlarkV3RecursiveGreenRowEditCapability.contiguous);
+  expect(row.editableSource, isNotNull);
+
+  final owner = row.path.singleWhere((frame) => frame.isRowOwner);
+  expect(owner.frameId, row.frameId);
+  expect(owner.fact, isA<FlarkV3RecursiveGreenCodePathFact>());
+  final fence = owner.fact! as FlarkV3RecursiveGreenCodePathFact;
   expect(fence.marker, FlarkV3CodeFenceMarker.backtick);
-  expect(fence.openingIndent, 0);
-  expect(fence.closed, closed);
-  _expectSpan(fence.openingMarker, _asciiSpan(3, 6));
-  _expectSpan(fence.rawInfoSource, _asciiSpan(6, 10));
-  expect(fence.bodySource.startUtf8, 11);
-  expect(fence.bodySource.endUtf8, bodyEndUtf8);
-  if (closed) {
-    expect(fence.closingMarker!.startUtf8, bodyEndUtf8);
-    expect(fence.closingMarker!.endUtf8, bodyEndUtf8 + 3);
-  } else {
-    expect(fence.closingMarker, isNull);
-    expect(result.structure.source.endUtf8, bodyEndUtf8);
-  }
-  _expectSpan(result.projection.projectedSource, (
+  expect(fence.fenceOffsetColumns, 0);
+  expect(fence.minimumClosingLength, BigInt.from(3));
+
+  final bodyEndUtf16 = bodyEndUtf8 - 1;
+  _expectSpan(row.editableSource!, (
     startUtf8: 11,
     endUtf8: bodyEndUtf8,
     startUtf16: 11,
-    endUtf16: bodyEndUtf8 - 1,
+    endUtf16: bodyEndUtf16,
+  ));
+  _expectSpan(row.physicalSource, (
+    startUtf8: 3,
+    endUtf8: closed ? bodyEndUtf8 + 4 : bodyEndUtf8,
+    startUtf16: 3,
+    endUtf16: closed ? bodyEndUtf16 + 4 : bodyEndUtf16,
   ));
 }
 
 void _expectThematicBreak(
+  FlarkV3DocumentRuntime runtime,
   FlarkV3DocumentQueryResult query, {
   required int revision,
 }) {
-  expect(query, isA<FlarkV3DocumentStructuralQuery>());
-  final result = query as FlarkV3DocumentStructuralQuery;
+  expect(query, isA<FlarkV3RecursiveGreenPointQuery>());
+  final result = query as FlarkV3RecursiveGreenPointQuery;
   expect(result.sourceRevision, revision);
   expect(result.structureRevision, revision);
-  expect(result.structure.kind, FlarkV3DocumentStructureKind.thematicBreak);
-  expect(result.structure.unknownReason, isNull);
-  expect(result.structure.referenceDefinitionCount, 0);
-  expect(result.structure.heading, isNull);
-  expect(result.structure.fencedCode, isNull);
-  expect(result.structure.inlineContentSource, isNull);
-  expect(result.structure.canCarryInlineFacts, isFalse);
-  _expectSpan(result.structure.source, _asciiSpan(0, 10));
-  _expectSpan(result.structure.visibleSource, _asciiSpan(0, 0));
-
-  final thematicBreak = result.structure.thematicBreak;
-  expect(thematicBreak, isNotNull);
-  expect(thematicBreak!.marker, FlarkV3ThematicBreakMarker.asterisk);
-  expect(thematicBreak.markerCount, 3);
-  expect(thematicBreak.openingIndent, 2);
-  expect(thematicBreak.hasBofBom, isFalse);
-  _expectSpan(thematicBreak.markerEnvelope, _asciiSpan(2, 7));
-  _expectSpan(thematicBreak.lineEnding, _asciiSpan(8, 10));
-
-  expect(result.projection.kind, FlarkV3DocumentStructureKind.thematicBreak);
-  _expectSpan(result.projection.source, _asciiSpan(0, 10));
-  _expectSpan(result.projection.projectedSource, _asciiSpan(0, 0));
-  expect(result.projection.runCount, 0);
+  expect(result.owner.kind, FlarkV3RecursiveGreenKind.thematicBreak);
+  expect(result.ancestry.map((frame) => frame.kind), const [
+    FlarkV3RecursiveGreenKind.document,
+    FlarkV3RecursiveGreenKind.thematicBreak,
+  ]);
+  expect(result.paragraphSource, isNull);
+  expect(result.inlineSource, isNull);
   expect(
     result.inlineFacts,
     isNull,
     reason: 'an atomic marker-free block cannot carry inline facts',
   );
+  expect(result.blockQuoteProjection, isNull);
+  expect(result.projectedInlineFacts, isNull);
+
+  final range = runtime.queryBlockRange(
+    result.pointUtf16,
+    result.pointUtf16 + 1,
+  );
+  expect(range, isA<FlarkV3RecursiveGreenRowRange>());
+  final rows = range as FlarkV3RecursiveGreenRowRange;
+  expect(rows.sourceRevision, revision);
+  expect(rows.structureRevision, revision);
+  expect(rows.selectedRow, isNotNull);
+  final row = rows.selectedRow!;
+  expect(row.frameId, result.owner.frameId);
+  expect(row.kind, FlarkV3RecursiveGreenKind.thematicBreak);
+  expect(row.selected, isTrue);
+  expect(row.inlineCapable, isFalse);
+  expect(
+    row.presentationKind,
+    FlarkV3RecursiveGreenRowPresentationKind.thematicBreak,
+  );
+  expect(
+    row.editCapability,
+    FlarkV3RecursiveGreenRowEditCapability.contiguous,
+    reason: 'an atomic marker-free row exposes only a collapsed edit boundary',
+  );
+  expect(row.editableSource, isNotNull);
+  _expectSpan(row.editableSource!, _asciiSpan(0, 0));
+  _expectSpan(row.physicalSource, _asciiSpan(0, 10));
+  _expectSpan(row.presentationPhysicalSource, _asciiSpan(0, 10));
+  expect(row.path.map((frame) => frame.kind), const [
+    FlarkV3RecursiveGreenKind.thematicBreak,
+  ]);
+  expect(row.path.last.isRowOwner, isTrue);
+}
+
+void _expectRecursiveGreenParagraphRow(
+  FlarkV3DocumentRuntime runtime, {
+  required int positionUtf16,
+  required FlarkV3DocumentQueryAffinity affinity,
+  required int revision,
+  required _ExpectedSpan source,
+}) {
+  final query = runtime.queryAtUtf16(positionUtf16, affinity: affinity);
+  expect(query, isA<FlarkV3RecursiveGreenPointQuery>());
+  final point = query as FlarkV3RecursiveGreenPointQuery;
+  expect(point.sourceRevision, revision);
+  expect(point.structureRevision, revision);
+  expect(point.owner.kind, FlarkV3RecursiveGreenKind.paragraph);
+  expect(point.ancestry.map((frame) => frame.kind), const [
+    FlarkV3RecursiveGreenKind.document,
+    FlarkV3RecursiveGreenKind.paragraph,
+  ]);
+  expect(point.inlineFacts, isNull);
+
+  final range = runtime.queryBlockRange(point.pointUtf16, point.pointUtf16 + 1);
+  expect(range, isA<FlarkV3RecursiveGreenRowRange>());
+  final rows = range as FlarkV3RecursiveGreenRowRange;
+  expect(rows.sourceRevision, revision);
+  expect(rows.structureRevision, revision);
+  expect(rows.selectedRow, isNotNull);
+  final row = rows.selectedRow!;
+  expect(row.frameId, point.owner.frameId);
+  expect(row.kind, FlarkV3RecursiveGreenKind.paragraph);
+  expect(row.selected, isTrue);
+  expect(row.inlineCapable, isTrue);
+  expect(row.presentationKind, FlarkV3RecursiveGreenRowPresentationKind.inline);
+  expect(row.editCapability, FlarkV3RecursiveGreenRowEditCapability.contiguous);
+  _expectSpan(row.physicalSource, source);
+  expect(row.editableSource, isNotNull);
+  _expectSpan(row.editableSource!, (
+    startUtf8: source.startUtf8,
+    endUtf8: source.endUtf8 - 1,
+    startUtf16: source.startUtf16,
+    endUtf16: source.endUtf16 - 1,
+  ));
+  expect(row.path.map((frame) => frame.kind), const [
+    FlarkV3RecursiveGreenKind.document,
+    FlarkV3RecursiveGreenKind.paragraph,
+  ]);
 }
 
 void _expectAtxHeading(
-  FlarkV3DocumentStructuralQuery result, {
+  FlarkV3DocumentRuntime runtime,
+  FlarkV3RecursiveGreenPointQuery result, {
   required int revision,
   required _ExpectedSpan source,
   required _ExpectedSpan content,
-  required _ExpectedSpan opening,
-  required _ExpectedSpan closing,
 }) {
   expect(result.sourceRevision, revision);
   expect(result.structureRevision, revision);
-  expect(result.structure.kind, FlarkV3DocumentStructureKind.heading);
-  expect(result.structure.unknownReason, isNull);
-  expect(result.structure.referenceDefinitionCount, 0);
-  expect(result.structure.canCarryInlineFacts, isTrue);
-  _expectSpan(result.structure.source, source);
-  _expectSpan(result.structure.visibleSource, content);
-  _expectSpan(result.structure.inlineContentSource!, content);
-
-  final heading = result.structure.heading! as FlarkV3AtxHeadingFacts;
+  expect(result.owner.kind, FlarkV3RecursiveGreenKind.heading);
+  expect(result.ancestry.map((frame) => frame.kind), const [
+    FlarkV3RecursiveGreenKind.document,
+    FlarkV3RecursiveGreenKind.heading,
+  ]);
+  final row = _selectedRecursiveGreenRow(runtime, result);
+  expect(row.kind, FlarkV3RecursiveGreenKind.heading);
+  expect(row.presentationKind, FlarkV3RecursiveGreenRowPresentationKind.inline);
+  expect(row.editCapability, FlarkV3RecursiveGreenRowEditCapability.contiguous);
+  _expectSpan(row.physicalSource, source);
+  _expectSpan(row.editableSource!, content);
+  final owner = row.path.singleWhere((frame) => frame.isRowOwner);
+  expect(owner.fact, isA<FlarkV3RecursiveGreenHeadingPathFact>());
+  final heading = owner.fact! as FlarkV3RecursiveGreenHeadingPathFact;
   expect(heading.level, 2);
-  expect(heading.hasClosingMarker, isTrue);
-  _expectSpan(heading.openingMarker, opening);
-  _expectSpan(heading.contentSource, content);
-  _expectSpan(heading.closingMarker!, closing);
-
-  expect(result.projection.kind, FlarkV3DocumentStructureKind.heading);
-  _expectSpan(result.projection.source, source);
-  _expectSpan(result.projection.projectedSource, content);
-  expect(result.projection.runCount, 1);
+  expect(heading.style, FlarkV3RecursiveGreenHeadingStyle.atx);
 }
 
 void _expectSetextHeading(
-  FlarkV3DocumentStructuralQuery result, {
+  FlarkV3DocumentRuntime runtime,
+  FlarkV3RecursiveGreenPointQuery result, {
   required int revision,
   required _ExpectedSpan source,
   required _ExpectedSpan content,
-  required _ExpectedSpan contentLineEnding,
-  required _ExpectedSpan underline,
-  required _ExpectedSpan underlineLineEnding,
 }) {
   expect(result.sourceRevision, revision);
   expect(result.structureRevision, revision);
-  expect(result.structure.kind, FlarkV3DocumentStructureKind.heading);
-  expect(result.structure.unknownReason, isNull);
-  expect(result.structure.referenceDefinitionCount, 0);
-  expect(result.structure.canCarryInlineFacts, isTrue);
-  _expectSpan(result.structure.source, source);
-  _expectSpan(result.structure.visibleSource, content);
-  _expectSpan(result.structure.inlineContentSource!, content);
-
-  final heading = result.structure.heading! as FlarkV3SetextHeadingFacts;
+  expect(result.owner.kind, FlarkV3RecursiveGreenKind.heading);
+  expect(result.ancestry.map((frame) => frame.kind), const [
+    FlarkV3RecursiveGreenKind.document,
+    FlarkV3RecursiveGreenKind.heading,
+  ]);
+  final row = _selectedRecursiveGreenRow(runtime, result);
+  expect(row.kind, FlarkV3RecursiveGreenKind.heading);
+  expect(row.presentationKind, FlarkV3RecursiveGreenRowPresentationKind.inline);
+  expect(row.editCapability, FlarkV3RecursiveGreenRowEditCapability.contiguous);
+  _expectSpan(row.physicalSource, source);
+  _expectSpan(row.editableSource!, content);
+  final owner = row.path.singleWhere((frame) => frame.isRowOwner);
+  expect(owner.fact, isA<FlarkV3RecursiveGreenHeadingPathFact>());
+  final heading = owner.fact! as FlarkV3RecursiveGreenHeadingPathFact;
   expect(heading.level, 2);
-  expect(heading.openingIndent, 0);
-  _expectSpan(heading.contentSource, content);
-  _expectSpan(heading.contentLineEnding, contentLineEnding);
-  _expectSpan(heading.underlineMarker, underline);
-  _expectSpan(heading.underlineLineEnding, underlineLineEnding);
+  expect(heading.style, FlarkV3RecursiveGreenHeadingStyle.setext);
+}
 
-  expect(result.projection.kind, FlarkV3DocumentStructureKind.heading);
-  _expectSpan(result.projection.source, source);
-  _expectSpan(result.projection.projectedSource, content);
-  expect(result.projection.runCount, 1);
+FlarkV3RecursiveGreenRenderableRow _selectedRecursiveGreenRow(
+  FlarkV3DocumentRuntime runtime,
+  FlarkV3RecursiveGreenPointQuery query,
+) {
+  final range = runtime.queryBlockRange(query.pointUtf16, query.pointUtf16 + 1);
+  expect(range, isA<FlarkV3RecursiveGreenRowRange>());
+  final rows = range as FlarkV3RecursiveGreenRowRange;
+  expect(rows.sourceRevision, query.sourceRevision);
+  expect(rows.structureRevision, query.structureRevision);
+  expect(rows.selectedRow, isNotNull);
+  final row = rows.selectedRow!;
+  expect(row.frameId, query.owner.frameId);
+  return row;
 }
 
 Future<FlarkV3DocumentRuntimeStatus> _awaitCurrent(
@@ -3211,33 +3622,6 @@ void _expectClosedStatus(
   expect(status.structureCurrent, isTrue);
 }
 
-void _expectStructure(
-  FlarkV3DocumentStructuralQuery result,
-  _SemanticFixture fixture, {
-  required int revision,
-}) {
-  expect(result.sourceRevision, revision);
-  expect(result.structureRevision, revision);
-  expect(result.structure.kind, fixture.kind);
-  expect(result.structure.unknownReason, fixture.unknownReason);
-  expect(
-    result.structure.referenceDefinitionCount,
-    fixture.referenceDefinitionCount,
-  );
-  _expectSpan(result.structure.source, fixture.source);
-  _expectSpan(result.structure.visibleSource, fixture.visibleSource);
-
-  expect(result.projection.kind, fixture.kind);
-  _expectSpan(result.projection.source, fixture.source);
-  _expectSpan(result.projection.projectedSource, fixture.projectedSource);
-  expect(result.projection.runCount, fixture.projectionRunCount);
-  expect(
-    result.inlineFacts,
-    isNull,
-    reason: 'canonical publication must remain structure-only',
-  );
-}
-
 void _expectExactLiteralPoint(
   FlarkV3DocumentRuntime runtime, {
   required int positionUtf16,
@@ -3249,24 +3633,78 @@ void _expectExactLiteralPoint(
   FlarkV3DocumentUnknownReason? unknownReason,
 }) {
   final query = runtime.queryAtUtf16(positionUtf16, affinity: affinity);
-  expect(query, isA<FlarkV3DocumentStructuralQuery>());
-  final result = query as FlarkV3DocumentStructuralQuery;
-  expect(result.sourceRevision, revision);
-  expect(result.structureRevision, revision);
-  expect(result.structure.kind, kind);
-  expect(result.structure.unknownReason, unknownReason);
-  expect(result.structure.referenceDefinitionCount, 0);
-  _expectSpan(result.structure.source, source);
-  _expectSpan(result.structure.visibleSource, visibleSource ?? source);
-  expect(result.projection.kind, kind);
-  _expectSpan(result.projection.source, source);
-  _expectSpan(result.projection.projectedSource, source);
-  expect(result.projection.runCount, 1);
-  expect(
-    result.inlineFacts,
-    isNull,
-    reason: 'canonical publication must remain structure-only',
+  expect(query, isA<FlarkV3RecursiveGreenPointQuery>());
+  final point = query as FlarkV3RecursiveGreenPointQuery;
+  expect(point.sourceRevision, revision);
+  expect(point.structureRevision, revision);
+  expect(point.inlineFacts, isNull);
+
+  if (kind == FlarkV3DocumentStructureKind.unknown) {
+    expect(unknownReason, FlarkV3DocumentUnknownReason.blankBoundary);
+    expect(point.owner.kind, FlarkV3RecursiveGreenKind.document);
+    expect(point.coveragePart, FlarkV3RecursiveGreenCoveragePart.gap);
+    expect(point.logicalAtom.kind, FlarkV3RecursiveGreenLogicalAtomKind.none);
+    expect(point.ancestry.map((frame) => frame.kind), const [
+      FlarkV3RecursiveGreenKind.document,
+    ]);
+    _expectSpan(point.source, source);
+    expect(visibleSource, isNotNull);
+    expect(visibleSource!.startUtf8, visibleSource.endUtf8);
+    expect(visibleSource.startUtf16, visibleSource.endUtf16);
+    return;
+  }
+
+  expect(kind, FlarkV3DocumentStructureKind.paragraph);
+  expect(unknownReason, isNull);
+  expect(point.owner.kind, FlarkV3RecursiveGreenKind.paragraph);
+  expect(point.ancestry.map((frame) => frame.kind), const [
+    FlarkV3RecursiveGreenKind.document,
+    FlarkV3RecursiveGreenKind.paragraph,
+  ]);
+  expect(point.source.startUtf8, greaterThanOrEqualTo(source.startUtf8));
+  expect(point.source.endUtf8, lessThanOrEqualTo(source.endUtf8));
+  expect(point.source.startUtf16, greaterThanOrEqualTo(source.startUtf16));
+  expect(point.source.endUtf16, lessThanOrEqualTo(source.endUtf16));
+
+  final range = runtime.queryBlockRange(
+    point.source.startUtf16,
+    point.source.endUtf16,
   );
+  expect(range, isA<FlarkV3RecursiveGreenRowRange>());
+  final rows = range as FlarkV3RecursiveGreenRowRange;
+  expect(rows.sourceRevision, revision);
+  expect(rows.structureRevision, revision);
+  expect(rows.selectedRow, isNotNull);
+  final row = rows.selectedRow!;
+  expect(row.frameId, point.owner.frameId);
+  expect(row.kind, FlarkV3RecursiveGreenKind.paragraph);
+  expect(row.selected, isTrue);
+  expect(row.inlineCapable, isTrue);
+  expect(row.literal, isFalse);
+  expect(row.presentationKind, FlarkV3RecursiveGreenRowPresentationKind.inline);
+  expect(row.editCapability, FlarkV3RecursiveGreenRowEditCapability.contiguous);
+  _expectSpan(row.physicalSource, source);
+  expect(row.editableSource, isNotNull);
+  final physicalText = runtime.readSourceRange(
+    source.startUtf16,
+    source.endUtf16,
+  );
+  final terminalLineEnding = physicalText.endsWith('\r\n')
+      ? 2
+      : physicalText.endsWith('\n') || physicalText.endsWith('\r')
+      ? 1
+      : 0;
+  _expectSpan(row.editableSource!, (
+    startUtf8: source.startUtf8,
+    endUtf8: source.endUtf8 - terminalLineEnding,
+    startUtf16: source.startUtf16,
+    endUtf16: source.endUtf16 - terminalLineEnding,
+  ));
+  expect(row.path.map((frame) => frame.kind), const [
+    FlarkV3RecursiveGreenKind.document,
+    FlarkV3RecursiveGreenKind.paragraph,
+  ]);
+  expect(row.path.last.isRowOwner, isTrue);
 }
 
 _ExpectedSpan _asciiSpan(int start, int end) =>

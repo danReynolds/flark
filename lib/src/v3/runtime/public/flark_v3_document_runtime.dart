@@ -1546,6 +1546,17 @@ final class FlarkV3DocumentRuntime {
       return FlarkV3LeafProjectionDemandDisposition.notApplicable;
     }
     final blockQuoteAncestor = _nearestRecursiveGreenBlockQuoteAncestor(query);
+    if (blockQuoteAncestor == null) {
+      final row = _recursiveGreenInlineRowForDemand(query);
+      final editable = row?.editableSource;
+      if (editable == null ||
+          editable.endUtf8 - editable.startUtf8 >
+              FlarkV3InlineFacts.maximumWholeLeafSourceBytes ||
+          editable.endUtf16 - editable.startUtf16 >
+              FlarkV3InlineFacts.maximumWholeLeafSourceBytes) {
+        return FlarkV3LeafProjectionDemandDisposition.notApplicable;
+      }
+    }
     final canRequestBlockQuoteProjection =
         blockQuoteAncestor != null &&
         _recursiveGreenCanRequestBlockQuoteProjection(
@@ -1607,6 +1618,37 @@ final class FlarkV3DocumentRuntime {
     _leafProjectionDemandAttempts += 1;
     _leafProjectionDemandLastRequestedOutcomeGeneration = outcomeGeneration;
     return FlarkV3LeafProjectionDemandDisposition.scheduled;
+  }
+
+  FlarkV3RecursiveGreenRenderableRow? _recursiveGreenInlineRowForDemand(
+    FlarkV3RecursiveGreenPointQuery query,
+  ) {
+    final range = queryBlockRange(
+      query.source.startUtf16,
+      query.source.endUtf16,
+      budget: const FlarkV3DocumentBlockRangeBudget(maximumBlockCount: 1),
+    );
+    if (range is! FlarkV3RecursiveGreenRowRange ||
+        range.sourceRevision != query.sourceRevision ||
+        range.structureRevision != query.structureRevision) {
+      return null;
+    }
+    final row = range.selectedRow;
+    final editable = row?.editableSource;
+    if (row == null ||
+        editable == null ||
+        !row.selected ||
+        !row.inlineCapable ||
+        row.presentationKind !=
+            FlarkV3RecursiveGreenRowPresentationKind.inline ||
+        row.editCapability !=
+            FlarkV3RecursiveGreenRowEditCapability.contiguous ||
+        row.frameId != query.owner.frameId ||
+        row.kind != query.owner.kind ||
+        !_containsSourceSpan(row.physicalSource, query.source)) {
+      return null;
+    }
+    return row;
   }
 
   bool _recursiveGreenCanRequestBlockQuoteProjection(
@@ -2669,6 +2711,12 @@ bool _sameSourceSpan(FlarkV3SourceSpan left, FlarkV3SourceSpan right) =>
     left.endUtf8 == right.endUtf8 &&
     left.startUtf16 == right.startUtf16 &&
     left.endUtf16 == right.endUtf16;
+
+bool _containsSourceSpan(FlarkV3SourceSpan outer, FlarkV3SourceSpan inner) =>
+    outer.startUtf8 <= inner.startUtf8 &&
+    inner.endUtf8 <= outer.endUtf8 &&
+    outer.startUtf16 <= inner.startUtf16 &&
+    inner.endUtf16 <= outer.endUtf16;
 
 FlarkV3DocumentPendingReason _pendingReason(
   FlarkV3StablePendingReason reason,

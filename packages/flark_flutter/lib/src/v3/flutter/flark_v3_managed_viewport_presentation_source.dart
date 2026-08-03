@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'flark_v3_flutter_live_controller.dart';
+import 'flark_v3_recursive_green_authority.dart';
 import 'flark_v3_virtualized_live_surface.dart';
 import 'flark_v3_visible_block_coordinator.dart';
 
@@ -1152,6 +1153,21 @@ final class FlarkV3ManagedViewportPresentationSource extends ChangeNotifier
     final row = active?.recursiveGreenRow;
     final ack = active?.recursiveGreenStructuralAck;
     final query = _liveController.paintState.documentQuery;
+    if (row != null &&
+        ack != null &&
+        query is FlarkV3RecursiveGreenPointQuery &&
+        flarkV3MatchesTopLevelThematicBreakAuthority(query, row)) {
+      final atom = row.presentationPhysicalSource;
+      final islandStart = _liveController.inputIslandGlobalStartUtf16;
+      if (islandStart == _liveController.inputIslandGlobalEndUtf16 &&
+          (islandStart == atom.startUtf16 || islandStart == atom.endUtf16)) {
+        _liveController.adoptRecursiveGreenAtomicAuthority(
+          structuralAck: ack,
+          row: row,
+        );
+      }
+      return;
+    }
     final editableSource = row?.editableSource;
     if (row == null ||
         editableSource == null ||

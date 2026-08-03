@@ -2001,11 +2001,32 @@ impl M11PersistentRecursiveGreenSession {
                 checkpoint.parser_physical().bytes() as usize <= base_edit.start
                     && checkpoint.accepted_physical().bytes() as usize <= base_edit.start
             });
-            let restart_index = restart_boundary.checked_sub(1).ok_or(
+            let mut restart_index = restart_boundary.checked_sub(1).ok_or(
                 M11PersistentRecursiveGreenSessionError::InvalidState(
                     "sparse recursive-Green index has no restart before the edit",
                 ),
             )?;
+            // A clean EOF capture for an unterminated final line is a valid
+            // base checkpoint, but an append extends that same physical line.
+            // Walk back until the parser cut remains a line boundary in the
+            // exact target source instead of parsing the appended suffix as a
+            // synthetic next line.
+            while !target_lease
+                .is_physical_line_start(
+                    self.checkpoints[restart_index].parser_physical().bytes() as usize
+                )
+                .map_err(|_| {
+                    M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "recursive-Green restart cut is not a target source boundary",
+                    )
+                })?
+            {
+                restart_index = restart_index.checked_sub(1).ok_or(
+                    M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "sparse recursive-Green index has no target line-boundary restart",
+                    ),
+                )?;
+            }
             let convergence_search_start = restart_index + 1;
             let convergence_offset =
                 self.checkpoints[convergence_search_start..].partition_point(|checkpoint| {

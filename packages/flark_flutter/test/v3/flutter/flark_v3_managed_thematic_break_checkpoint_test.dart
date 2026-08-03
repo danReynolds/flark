@@ -22,30 +22,42 @@ void main() {
         affinity: TextAffinity.upstream,
       );
 
-      final query = await harness.waitForThematicBreak(
+      final selection = await harness.waitForThematicBreak(
         tester,
         expectedBoundaryUtf16: atomStart,
         expectedBoundaryAffinity: TextAffinity.downstream,
       );
-      final structure = query.structure;
-      final facts = structure.thematicBreak!;
-      expect(facts.marker, FlarkV3ThematicBreakMarker.asterisk);
-      expect(facts.markerCount, 3);
-      expect(facts.openingIndent, 2);
-      expect(facts.hasBofBom, isFalse);
-      expect(harness.sourceText(structure.source), atom);
-      expect(harness.sourceText(facts.markerEnvelope), '* \t* *');
-      expect(harness.sourceText(facts.lineEnding), '\r\n');
-      expect(structure.visibleSource.startUtf16, atomStart);
-      expect(structure.visibleSource.endUtf16, atomStart);
-      expect(query.projection.projectedSource.startUtf16, atomStart);
-      expect(query.projection.projectedSource.endUtf16, atomStart);
-      expect(query.projection.runCount, 0);
+      final query = selection.query;
+      final row = selection.row;
+      expect(selection.range.sourceRevision, query.sourceRevision);
+      expect(selection.range.structureRevision, query.structureRevision);
+      expect(selection.range.selectedRow, same(row));
+      expect(query.owner.kind, FlarkV3RecursiveGreenKind.thematicBreak);
+      expect(row.kind, FlarkV3RecursiveGreenKind.thematicBreak);
+      expect(
+        row.presentationKind,
+        FlarkV3RecursiveGreenRowPresentationKind.thematicBreak,
+      );
+      expect(row.selected, isTrue);
+      expect(row.inlineCapable, isFalse);
+      expect(row.literal, isTrue);
+      expect(
+        row.editCapability,
+        FlarkV3RecursiveGreenRowEditCapability.contiguous,
+      );
+      expect(row.editableSource, isNotNull);
+      expect(row.editableSource!.startUtf8, row.physicalSource.startUtf8);
+      expect(row.editableSource!.endUtf8, row.physicalSource.startUtf8);
+      expect(row.editableSource!.startUtf16, row.physicalSource.startUtf16);
+      expect(row.editableSource!.endUtf16, row.physicalSource.startUtf16);
+      expect(harness.sourceText(row.presentationPhysicalSource), atom);
       expect(harness.runtime.exportMarkdown(), source);
       expect(harness.binding.controller.editingController.text, isEmpty);
       expect(
         harness.binding.controller.paintState.atomicBlockLease,
-        FlarkV3FlutterAtomicBlockLease.thematicBreak(source: structure.source),
+        FlarkV3FlutterAtomicBlockLease.thematicBreak(
+          source: row.presentationPhysicalSource,
+        ),
       );
       expect(find.byKey(const Key('flark-v3-thematic-break')), findsOneWidget);
       expect(find.bySemanticsLabel('Thematic break'), findsOneWidget);
@@ -284,7 +296,7 @@ final class _ManagedThematicBreakHarness {
   String sourceText(FlarkV3SourceSpan span) =>
       runtime.readSourceRange(span.startUtf16, span.endUtf16);
 
-  Future<FlarkV3DocumentStructuralQuery> waitForThematicBreak(
+  Future<_RecursiveGreenSelection> waitForThematicBreak(
     WidgetTester tester, {
     int? expectedBoundaryUtf16,
     TextAffinity? expectedBoundaryAffinity,
@@ -298,12 +310,37 @@ final class _ManagedThematicBreakHarness {
     while (stopwatch.elapsed < const Duration(seconds: 10)) {
       await _pumpRuntime(tester);
       final query = binding.controller.paintState.documentQuery;
+      final selection = query is FlarkV3RecursiveGreenPointQuery
+          ? _selectedRecursiveGreenRow(query)
+          : null;
+      final row = selection?.row;
       if (runtime.status.structureCurrent &&
-          query is FlarkV3DocumentStructuralQuery &&
-          query.structure.kind == FlarkV3DocumentStructureKind.thematicBreak &&
+          query is FlarkV3RecursiveGreenPointQuery &&
+          query.structureRevision == runtime.sourceRevision &&
+          query.owner.kind == FlarkV3RecursiveGreenKind.thematicBreak &&
+          selection != null &&
+          row != null &&
+          row.kind == FlarkV3RecursiveGreenKind.thematicBreak &&
+          row.presentationKind ==
+              FlarkV3RecursiveGreenRowPresentationKind.thematicBreak &&
+          row.selected &&
+          !row.inlineCapable &&
+          row.literal &&
+          row.editCapability ==
+              FlarkV3RecursiveGreenRowEditCapability.contiguous &&
+          row.editableSource != null &&
+          row.editableSource!.startUtf8 == row.physicalSource.startUtf8 &&
+          row.editableSource!.endUtf8 == row.physicalSource.startUtf8 &&
+          row.editableSource!.startUtf16 == row.physicalSource.startUtf16 &&
+          row.editableSource!.endUtf16 == row.physicalSource.startUtf16 &&
+          query.inlineFacts == null &&
+          _rowMatchesPointQuery(query, row) &&
           binding.controller.paintState.mode ==
               FlarkV3FlutterPaintMode.exactStructural &&
-          binding.controller.paintState.atomicBlockLease != null &&
+          binding.controller.paintState.atomicBlockLease ==
+              FlarkV3FlutterAtomicBlockLease.thematicBreak(
+                source: row.presentationPhysicalSource,
+              ) &&
           binding.controller.editingController.text.isEmpty &&
           (expectedBoundaryUtf16 == null ||
               (binding.controller.inputIslandGlobalStartUtf16 ==
@@ -320,7 +357,7 @@ final class _ManagedThematicBreakHarness {
                         offset: 0,
                         affinity: expectedBoundaryAffinity,
                       )))) {
-        return query;
+        return selection;
       }
     }
     throw TestFailure(
@@ -338,7 +375,7 @@ final class _ManagedThematicBreakHarness {
     );
   }
 
-  Future<FlarkV3DocumentStructuralQuery> waitForParagraph(
+  Future<_RecursiveGreenSelection> waitForParagraph(
     WidgetTester tester, {
     required String expectedSource,
   }) async {
@@ -346,14 +383,27 @@ final class _ManagedThematicBreakHarness {
     while (stopwatch.elapsed < const Duration(seconds: 10)) {
       await _pumpRuntime(tester);
       final query = binding.controller.paintState.documentQuery;
+      final selection = query is FlarkV3RecursiveGreenPointQuery
+          ? _selectedRecursiveGreenRow(query)
+          : null;
+      final row = selection?.row;
       if (runtime.status.structureCurrent &&
           runtime.exportMarkdown() == expectedSource &&
-          query is FlarkV3DocumentStructuralQuery &&
-          query.structure.kind == FlarkV3DocumentStructureKind.paragraph &&
+          query is FlarkV3RecursiveGreenPointQuery &&
+          query.structureRevision == runtime.sourceRevision &&
+          query.owner.kind == FlarkV3RecursiveGreenKind.paragraph &&
+          selection != null &&
+          row != null &&
+          row.kind == FlarkV3RecursiveGreenKind.paragraph &&
+          row.selected &&
+          row.editCapability ==
+              FlarkV3RecursiveGreenRowEditCapability.contiguous &&
+          row.editableSource != null &&
+          _rowMatchesPointQuery(query, row) &&
           binding.controller.paintState.mode ==
               FlarkV3FlutterPaintMode.exactStructural &&
           binding.controller.paintState.atomicBlockLease == null) {
-        return query;
+        return selection;
       }
     }
     throw TestFailure(
@@ -380,7 +430,74 @@ final class _ManagedThematicBreakHarness {
     frameScheduler.flushAll();
     await tester.pump();
   }
+
+  _RecursiveGreenSelection? _selectedRecursiveGreenRow(
+    FlarkV3RecursiveGreenPointQuery query,
+  ) {
+    final range = runtime.queryBlockRange(
+      query.source.startUtf16,
+      query.source.endUtf16,
+    );
+    if (range is! FlarkV3RecursiveGreenRowRange ||
+        range.sourceRevision != query.sourceRevision ||
+        range.structureRevision != query.structureRevision) {
+      return null;
+    }
+    final row = range.selectedRow;
+    if (row == null) return null;
+    return _RecursiveGreenSelection(query: query, range: range, row: row);
+  }
 }
+
+final class _RecursiveGreenSelection {
+  const _RecursiveGreenSelection({
+    required this.query,
+    required this.range,
+    required this.row,
+  });
+
+  final FlarkV3RecursiveGreenPointQuery query;
+  final FlarkV3RecursiveGreenRowRange range;
+  final FlarkV3RecursiveGreenRenderableRow row;
+}
+
+bool _rowMatchesPointQuery(
+  FlarkV3RecursiveGreenPointQuery query,
+  FlarkV3RecursiveGreenRenderableRow row,
+) {
+  if (query.owner.frameId != row.frameId ||
+      query.owner.kind != row.kind ||
+      !_sourceSpanContains(row.presentationPhysicalSource, query.source)) {
+    return false;
+  }
+  if (row.kind == FlarkV3RecursiveGreenKind.thematicBreak) {
+    if (row.path.length != 1) return false;
+    final rowOwner = row.path.single;
+    return query.ownerIndex == 1 &&
+        query.ancestry.length == 2 &&
+        query.ancestry.first.kind == FlarkV3RecursiveGreenKind.document &&
+        rowOwner.frameId == query.owner.frameId &&
+        rowOwner.kind == query.owner.kind &&
+        rowOwner.isRowOwner;
+  }
+  if (query.ancestry.length != row.path.length) return false;
+  for (var index = 0; index < row.path.length; index += 1) {
+    final queryFrame = query.ancestry[index];
+    final rowFrame = row.path[index];
+    if (queryFrame.frameId != rowFrame.frameId ||
+        queryFrame.kind != rowFrame.kind ||
+        rowFrame.isRowOwner != (index == query.ownerIndex)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool _sourceSpanContains(FlarkV3SourceSpan outer, FlarkV3SourceSpan inner) =>
+    outer.startUtf8 <= inner.startUtf8 &&
+    inner.endUtf8 <= outer.endUtf8 &&
+    outer.startUtf16 <= inner.startUtf16 &&
+    inner.endUtf16 <= outer.endUtf16;
 
 final class _ManualFrameScheduler implements FlarkV3FrameScheduler {
   final List<VoidCallback> _callbacks = <VoidCallback>[];

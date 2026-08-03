@@ -1502,5 +1502,53 @@ append-only unless correcting a factual error.
 
 This completes the hardest recursive-container architecture gate. It is not a
 652-example CommonMark coverage claim; examples 321 and 325 remain classified
-as unclaimed until the proven grammar control is promoted into the production
-runtime and the ledger is updated against that path.
+as unclaimed until product-facing semantic support and the official ledger are
+reconciled explicitly.
+
+### V3 Production Grammar Promotion — 2026-08-03
+
+- Confirmed that the research controller had already been mechanically
+  promoted through the production refillable source, fuelled direct controller,
+  reference rendezvous, recursive-Green writer, endpoint, and independent host;
+  corrected the stale plan that still described this as future copying work.
+- Added the production corpus receipt: all 652 CommonMark 0.31.2 fixtures are
+  structurally admitted with zero unsupported or invalid outcomes. Kept its
+  semantic receipt separate at 384 exact HTML replays, 262 typed missing
+  capabilities, and six known divergences; the official Dart ledger remains
+  unchanged.
+- Repaired fenced-code close facts so the 33-byte grammar semantic prefix and
+  24-byte cached `RGEO` row trailer coexist within the 64-byte cap. Retained
+  compatibility with the prior 25-byte cached and 49-byte legacy schemas, and
+  taught semantic replay that the terminal-empty Item row emits no independent
+  HTML. Updated the public fenced-code live-edit receipt to require the generic
+  recursive-Green row/path authority rather than the superseded flat query.
+- Added a public-runtime CM325 structural edit that verifies recursive ancestry
+  and outer/inner List tightness before and after the edit on native and real
+  Chrome Worker/Wasm.
+- Migrated the complete 24-case public semantic-parity suite from the legacy
+  flat structural projection to recursive-Green point, selected-row, path, and
+  sidecar facts. The direct cutover exposed and fixed ordinary Paragraph and
+  Heading inline-cache rejoin, bounded over-8-KiB inline preflight, and EOF
+  restart selection when an old EOF is no longer a physical line start in the
+  target revision.
+- Cut the top-level thematic-break managed Flutter atom over to the same
+  recursive authority. It retains an empty marker-free input island, exact
+  canonical source, affinity, semantic divider paint, whole-atom Backspace and
+  Delete, and the same input client across edit/undo. Nested atoms fail closed
+  pending container chrome, and active IME composition defers atomic adoption.
+- Focused verification:
+  - production CommonMark controller/Green/semantic gate: passed 5/5, including
+    the pinned 652 / 384 / 262 / 6 receipts;
+  - public semantic-parity suite: passed 24/24 native and 24/24 real Chrome
+    Worker/Wasm;
+  - managed Flutter thematic-break checkpoint: passed 2/2;
+  - inline-cache and recursive-query decoder cluster: passed 8/8;
+  - persistent recursive session: passed 11 active tests with two deliberately
+    ignored stress lanes;
+  - rebuilt-Wasm freshness: passed 2/2; and
+  - rebuilt asset identity:
+    `f053ecb3c204bd79-08ab34d99ae1f363-bba3dc0f34f51964`.
+
+This closes grammar promotion and the public recursive-authority cutover, not
+CommonMark product coverage or launch readiness. Generalized
+restart/convergence and atomic incremental publication are the next wave.

@@ -822,10 +822,8 @@ impl SemanticRenderer<'_> {
             }
             7 => {
                 let block = &self.blocks[ordinal];
-                let close = required_fact(block, 4, true).map_err(RenderFailure::Invalid)?;
-                let info_end = read_u64(close, 1).map_err(RenderFailure::Invalid)?;
-                let literal_start = read_u64(close, 17).map_err(RenderFailure::Invalid)?;
-                let logical_end = read_u64(close, 33).map_err(RenderFailure::Invalid)?;
+                let (info_end, literal_start, logical_end) =
+                    fenced_code_logical_bounds(block).map_err(RenderFailure::Invalid)?;
                 let info = logical_slice(&block.logical, 0, info_end)
                     .map_err(RenderFailure::Invalid)?
                     .to_owned();
@@ -848,6 +846,10 @@ impl SemanticRenderer<'_> {
                 self.lf();
                 Ok(())
             }
+            // Marker-only list items carry one presentation row so the live
+            // editor has a real caret target. It contributes no CommonMark
+            // semantic output; the containing Item still emits `<li></li>`.
+            14 => Ok(()),
             other => Err(RenderFailure::Invalid(format!(
                 "recursive Green carries unknown block kind {other}"
             ))),
@@ -925,6 +927,24 @@ impl SemanticRenderer<'_> {
             self.output.push('\n');
         }
     }
+}
+
+fn fenced_code_logical_bounds(block: &GreenBlock) -> Result<(u64, u64, u64), String> {
+    let close = required_fact(block, 4, true)?;
+    let info_end = read_u64(close, 1)?;
+    let literal_start = read_u64(close, 17)?;
+    let logical_end = match close.len() {
+        // Legacy semantic-only fenced close facts.
+        49 => read_u64(close, 33)?,
+        // Current semantic prefix followed by the versioned RGEO trailer.
+        57 if close.get(33..37) == Some(&b"RGEO"[..]) => u64::try_from(block.logical.len())
+            .map_err(|_| "fenced-code logical length exceeds u64".to_owned())?,
+        _ => return Err("fenced-code close facts have an unsupported schema".to_owned()),
+    };
+    if info_end > literal_start || literal_start > logical_end {
+        return Err("fenced-code logical bounds are reversed".to_owned());
+    }
+    Ok((info_end, literal_start, logical_end))
 }
 
 fn project_paragraph_inline(

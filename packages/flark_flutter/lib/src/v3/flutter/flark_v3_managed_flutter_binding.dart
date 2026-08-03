@@ -9,6 +9,7 @@ import 'flark_v3_indented_code_editing.dart';
 import 'flark_v3_inline_editing_presentation.dart';
 import 'flark_v3_list_item_editing.dart';
 import 'flark_v3_managed_viewport_presentation_source.dart';
+import 'flark_v3_recursive_green_authority.dart';
 import 'flark_v3_visible_block_coordinator.dart';
 
 /// Presentation attachment for a Dart-owned managed v3 document runtime.
@@ -848,6 +849,55 @@ void _refreshInlineIsland({
         );
         controller.adoptLiteralSourcePaint();
         controller.adoptRecursiveGreenRowAuthority(
+          structuralAck: rowRange.structuralAck,
+          row: row,
+        );
+      case final FlarkV3RecursiveGreenPointQuery recursiveQuery
+          when recursiveQuery.owner.kind ==
+              FlarkV3RecursiveGreenKind.thematicBreak:
+        final rowRange = queryRecursiveGreenRow?.call(recursiveQuery);
+        final row = rowRange is FlarkV3RecursiveGreenRowRange
+            ? rowRange.selectedRow
+            : null;
+        if (rowRange is! FlarkV3RecursiveGreenRowRange ||
+            row == null ||
+            rowRange.sourceRevision != recursiveQuery.sourceRevision ||
+            rowRange.structureRevision != recursiveQuery.structureRevision ||
+            !flarkV3MatchesTopLevelThematicBreakAuthority(
+              recursiveQuery,
+              row,
+            )) {
+          _handoffToExactRangeIfNeeded(
+            controller,
+            recursiveQuery.source,
+            controller.globalEditingState,
+          );
+          controller.adoptLiteralSourcePaint();
+          return;
+        }
+        final composing = controller.globalEditingState.composing;
+        if (composing.isValid && !composing.isCollapsed) {
+          // Parser recertification must never collapse or replace an active
+          // platform composition. Atomic authority can be adopted after the
+          // composition commits and the refresh loop runs again.
+          controller.adoptLiteralSourcePaint();
+          return;
+        }
+        final activeEditingState = _editingStateAtThematicBreakBoundary(
+          row.presentationPhysicalSource,
+          controller.globalEditingState,
+        );
+        final activeIsland = _collapsedSourceSpanAt(
+          source,
+          activeEditingState.selection.extentOffset,
+        );
+        _handoffToExactRangeIfNeeded(
+          controller,
+          activeIsland,
+          activeEditingState,
+        );
+        controller.adoptLiteralSourcePaint();
+        controller.adoptRecursiveGreenAtomicAuthority(
           structuralAck: rowRange.structuralAck,
           row: row,
         );

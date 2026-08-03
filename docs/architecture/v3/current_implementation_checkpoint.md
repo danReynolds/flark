@@ -158,9 +158,68 @@ the 256-node receipt.
 
 This validates the serialized-Green container architecture and completes the
 hardest-container gate. It does **not** convert examples 321 or 325 into official
-v3 CommonMark coverage: they remain ledger-unclassified until the 652-exact
-grammar control is promoted into the production runtime and the ledger points
-at that runtime evidence.
+v3 CommonMark coverage: they remain ledger-unclassified until the product-facing
+semantic gaps and official ledger are reconciled explicitly.
+
+## Production grammar-promotion checkpoint
+
+The research line/finish controller is no longer merely a future donor. Its
+mechanically promoted snapshot now drives the production refillable source,
+fuelled direct controller, reference rendezvous, recursive-Green writer,
+candidate endpoint, and independent host. The mutable proof tree, per-line
+owned source strings, test renderer, and proof materializer remain outside the
+production path.
+
+The corpus gate separates two receipts that must not be conflated:
+
+- structural grammar admission is 652/652, with zero unsupported or invalid
+  production outcomes; and
+- semantic HTML replay is 384 exact, 262 typed missing capabilities, and six
+  known divergences.
+
+The semantic gate exposed a representation regression rather than forty new
+grammar failures: cached fenced-row geometry had displaced the fence's semantic
+cuts, and the ledger renderer did not recognize the terminal-empty Item row.
+Fenced close facts now retain a 33-byte grammar-owned semantic prefix followed
+by the existing 24-byte `RGEO` trailer (57 bytes total, below the 64-byte cap),
+while the query path remains compatible with the prior cached and legacy
+schemas. The full production corpus receipt returned to its pinned baseline.
+The public fenced-code live-edit gate now asserts the recursive-Green row,
+editable span, physical ownership, and code path facts instead of requiring the
+superseded flat structural query type.
+
+A new public-runtime CM325 gate now performs the topology-changing edit on both
+native and real Chrome Worker/Wasm. Dart observes the path change from a lazy
+outer-item Paragraph to a second nested-list Item and the exact List facts
+changing from outer-loose/inner-tight to outer-tight/inner-loose.
+
+The public semantic-parity suite no longer asks the endpoint for the superseded
+flat structural projection. All 24 cases now consume recursive-Green point,
+row, path, and separately demanded sidecar facts directly, and pass on both the
+native endpoint and rebuilt real Chrome Worker/Wasm. This cutover exposed and
+fixed three production gaps rather than hiding them behind a compatibility
+projection:
+
+- ordinary Paragraph and Heading inline sidecars now rejoin through the
+  current-revision cache by exact ACK, owner frame, and geometry;
+- an over-8-KiB inline demand is rejected during the bounded recursive-row
+  preflight instead of being scheduled and failing later; and
+- an EOF checkpoint is reusable only when its parser position remains a
+  physical line start in the target revision, preserving contiguous geometry
+  when text is appended to the final Paragraph.
+
+The first marker-free product atom also consumes this authority directly. A
+top-level `Document -> ThematicBreak` path collapses to an empty active input
+island, paints the divider, preserves affinity and exact canonical source, and
+deletes atomically with Backspace or Delete. Nested thematic breaks deliberately
+remain literal until container chrome can compose them, and active IME
+composition suppresses the atomic handoff. The managed Flutter checkpoint is
+green 2/2 without changing the `EditableTextState` or platform input client.
+
+This closes grammar promotion and the public recursive-authority cutover. It
+does **not** close the official Dart CommonMark ledger, broader product grammar,
+or launch readiness. General restart/convergence and atomic incremental
+publication remain the next architectural wave.
 
 ## Maintainability boundary
 

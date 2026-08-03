@@ -2843,9 +2843,22 @@ impl M11BlockWriter {
                         "FencedCode logical boundaries are out of order",
                     ));
                 }
+                // The frame summary already authenticates the terminal logical
+                // metric, so retain only the two internal cuts here. This keeps
+                // the grammar-owned fence recipe plus the 24-byte cached-row
+                // trailer inside the fixed 64-byte close-facts envelope.
+                let mut semantic = [0_u8; 33];
+                semantic[0] = u8::from(facts.closed());
+                let mut cursor = 1;
+                for metric in [info_end, literal_start] {
+                    semantic[cursor..cursor + 8].copy_from_slice(&metric.bytes().to_le_bytes());
+                    cursor += 8;
+                    semantic[cursor..cursor + 8].copy_from_slice(&metric.utf16().to_le_bytes());
+                    cursor += 8;
+                }
                 Ok(Some(close_facts_with_cached_row(
                     FACT_CODE,
-                    &[u8::from(facts.closed())],
+                    &semantic,
                     cached_row.ok_or(M11BlockWriterError::InvalidCommand(
                         "FencedCode close lost cached row geometry",
                     ))?,

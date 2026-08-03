@@ -138,9 +138,11 @@ final class FlarkV3CurrentRevisionInlineCache {
     required FlarkV3RecursiveGreenPointQuery query,
   }) {
     _adoptAuthority(authority);
-    if (!_recursiveQueryBindsAuthority(query, authority) ||
-        !_isBlockQuoteParagraph(query)) {
+    if (!_recursiveQueryBindsAuthority(query, authority)) {
       return query;
+    }
+    if (!_isBlockQuoteParagraph(query)) {
+      return _resolveRecursiveGreenInline(authority: authority, query: query);
     }
 
     final freshProjection = query.blockQuoteProjection;
@@ -269,6 +271,65 @@ final class FlarkV3CurrentRevisionInlineCache {
       inlineFacts: facts,
       blockQuoteProjection: projection,
       projectedInlineFacts: projection == null ? null : projectedFacts,
+    );
+  }
+
+  FlarkV3RecursiveGreenPointQuery _resolveRecursiveGreenInline({
+    required FlarkV3StructuralAck authority,
+    required FlarkV3RecursiveGreenPointQuery query,
+  }) {
+    if (!(query.owner.kind?.isInlineBearing ?? false) ||
+        query.blockQuoteProjection != null ||
+        query.projectedInlineFacts != null) {
+      return query;
+    }
+
+    final freshParagraphSource = query.paragraphSource;
+    final freshInlineSource = query.inlineSource;
+    final freshFacts = query.inlineFacts;
+    _RecursiveGreenLeafKey? key;
+    if (freshParagraphSource != null ||
+        freshInlineSource != null ||
+        freshFacts != null) {
+      if (freshParagraphSource == null ||
+          freshInlineSource == null ||
+          freshFacts == null ||
+          !_recursiveFactsBindQuery(
+            freshFacts,
+            paragraphSource: freshParagraphSource,
+            inlineSource: freshInlineSource,
+            query: query,
+            authority: authority,
+          )) {
+        return query;
+      }
+      key = _RecursiveGreenLeafKey(
+        ownerFrameId: query.owner.frameId,
+        physicalSource: freshParagraphSource,
+        projectedUtf8Length:
+            freshInlineSource.endUtf8 - freshInlineSource.startUtf8,
+        projectedUtf16Length:
+            freshInlineSource.endUtf16 - freshInlineSource.startUtf16,
+      );
+      _remember(key, freshFacts);
+      return query;
+    }
+
+    key = _findRecursiveGreenKey(query);
+    if (key == null) return query;
+    final facts = _touchFacts(key);
+    if (facts == null ||
+        !_recursiveFactsBindKey(facts, query, authority, key)) {
+      if (facts != null) {
+        _entries.remove(key);
+        _retainedFactRecords -= facts.facts.length;
+      }
+      return query;
+    }
+    return query.withPresentationCertificates(
+      paragraphSource: key.physicalSource,
+      inlineSource: facts.source,
+      inlineFacts: facts,
     );
   }
 

@@ -1,10 +1,10 @@
 //! Private exact-parser boundary for the Flark worker.
 //!
-//! The grammar implementation is intentionally absent until the proven donor
-//! controller can be promoted without copying the research crate or creating
-//! a second Paragraph classifier. This crate already owns the production
-//! source-line contract and the bounded `flark_engine` adapter that controller
-//! will consume.
+//! The production block grammar is a mechanically promoted donor snapshot
+//! driven through Flark-owned refillable source lines, fuelled control,
+//! reference rendezvous, and recursive-Green writing. The older narrow clean
+//! slices remain staged product contracts; they are not a second Markdown
+//! classifier.
 
 #![forbid(unsafe_code)]
 

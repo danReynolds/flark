@@ -411,8 +411,8 @@ digest. Independent host replay observes the exact ancestry and the List close
 facts flipping from outer-loose/inner-tight to outer-tight/inner-loose. The
 clean CM321 schema-9/schema-11/inline/viewport gate remains green on the normal
 Rust stack. These are architecture receipts; examples 321 and 325 remain
-ledger-unclassified until the promoted production grammar drives their
-official claims.
+ledger-unclassified until the product-facing semantic gaps and official ledger
+are reconciled explicitly.
 
 The narrow `M11CleanLeaf::{BlockQuote,BulletList,OrderedList}` variants remain
 valid staged product slices, but they are not the full-container storage model.
@@ -423,18 +423,17 @@ summaries. A feature-specific nested-list/quote variant, document-wide block
 directory, absolute-rank repair, substring parser, or second Markdown
 classifier fails this gate even if its fixture renders correctly.
 
-The existing `tool/parser_research/comrak_value_block_core` is the grammar
-promotion source, not a discarded experiment: its current release suite is
-green 183/183 and its scorecard remains 652/652 exact for CommonMark 0.31.2.
-That suite also includes the full 1,322-fixture block-projection and every-line
-restart lanes, direct recursive commands, refillable 10 MiB source lines, and
-fuelled deep-container scheduling. Its Flark-owned line/finish control machine
-and donor-proven transition ordering should be moved behind the current
-refillable source and fuelled writer boundary after the container probe. Its
-mutable vector tree, per-line `String` ownership, test renderer, and proof
-materializer must not move with it. This separates the already-proven grammar
-algorithm from the production resource, persistence, and publication work and
-avoids rebuilding CommonMark feature by feature in `M11CleanLeaf`.
+The grammar promotion is now materially complete. A mechanically promoted
+snapshot of `tool/parser_research/comrak_value_block_core` drives production
+refillable source lines, the fuelled direct controller, reference rendezvous,
+recursive-Green writer, candidate endpoint, and independent host. Its mutable
+vector tree, per-line `String` ownership, test renderer, and proof materializer
+did not move with it. The production corpus gate admits all 652 CommonMark
+0.31.2 fixtures with zero unsupported or invalid outcomes. A separate semantic
+receipt is deliberately narrower: 384 exact HTML replays, 262 typed missing
+product capabilities, and six known divergences. Neither number changes the
+official Dart ledger's 60 positive, 19 fail-closed, two GFM-divergent, and 571
+unclassified claims.
 
 ## 4. Immediate execution order
 
@@ -450,11 +449,16 @@ The current shortest path to decisive product evidence is:
    321 into generic serialized green, keep 325 as the nested/loose discriminator,
    and prove fuel invariance, exact source ownership, and local mutation in a
    large surrounding document.
-4. **In progress — promote the proven grammar control.** Move the 652-exact
-   value-block line/finish machine onto the current refillable source, fuelled
-   worker, and candidate-writer APIs without its vector tree, copied source
-   strings, or test renderer.
-5. **Join incrementality and publication.** Prove exact restart/convergence,
+4. **Completed — promote the proven grammar control.** The 652-exact
+   value-block line/finish machine now runs on the production refillable source,
+   fuelled worker, recursive-Green writer, candidate endpoint, and independent
+   host without its vector tree, copied source strings, or test renderer. A
+   native and real Chrome Worker/Wasm CM325 edit proves the public runtime sees
+   the same ancestry and loose/tight List facts. The complete 24-case public
+   semantic-parity suite now consumes recursive-Green point/row/path and sidecar
+   authority directly on native and real Chrome; no flat compatibility
+   projection remains in that suite.
+5. **In progress — join incrementality and publication.** Prove exact restart/convergence,
    changed-prefix plus retained-suffix composition, atomic multi-root adoption,
    cancellation, and reclamation through the production native and Wasm host.
 6. **Close product grammar breadth.** Drive the official ledger from the real

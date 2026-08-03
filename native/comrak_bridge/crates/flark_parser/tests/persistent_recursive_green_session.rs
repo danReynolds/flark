@@ -121,6 +121,94 @@ fn clean_session_retains_green_and_reference_authority_for_late_queries() {
 }
 
 #[test]
+fn eof_paragraph_append_retains_contiguous_editable_geometry() {
+    const BASE: &str = "alpha";
+    const TARGET: &str = "alpha beta";
+
+    let mut runtime =
+        DocumentRuntime::new(BASE, DocumentRuntimeConfig::default()).expect("base runtime");
+    let session = build_session(&mut runtime);
+    let base = session.source();
+    runtime
+        .apply_edit(base, BASE.len()..BASE.len(), " beta")
+        .expect("append to EOF paragraph");
+    let target_lease = runtime.snapshot_current_source().expect("target lease");
+    let mut adoption = session
+        .begin_local_adoption(&runtime, target_lease, BASE.len()..BASE.len())
+        .unwrap_or_else(|failure| panic!("EOF append adoption start: {}", failure.error()));
+    loop {
+        match adoption
+            .poll(&mut runtime, 64)
+            .expect("poll EOF append")
+            .status()
+        {
+            M11PersistentRecursiveGreenAdoptionStatus::Pending => {}
+            M11PersistentRecursiveGreenAdoptionStatus::Complete => break,
+            M11PersistentRecursiveGreenAdoptionStatus::CleanFallbackRequired => {
+                panic!("EOF paragraph append required clean fallback")
+            }
+            M11PersistentRecursiveGreenAdoptionStatus::Cancelled => {
+                panic!("EOF paragraph append was cancelled")
+            }
+        }
+    }
+    let mut update = adoption.take_update().expect("EOF append update");
+    let mut superseded = update.take_base().expect("superseded base");
+    let mut target = update.take_target().expect("target session");
+    let window = target
+        .query_renderable_rows(
+            &runtime,
+            M11RecursiveGreenPoint::new(0, 0, SourceBoundaryAffinity::After),
+            TARGET.len() as u64,
+            M11RecursiveGreenRowQueryLimits::new(1, 8, 512, 16, 512).expect("EOF row limits"),
+        )
+        .expect("incremental EOF row query");
+    let row = window
+        .rows()
+        .first()
+        .expect("incremental EOF paragraph row");
+    assert_eq!(row.kind().get(), 5);
+    assert_eq!(
+        row.edit_capability(),
+        M11RecursiveGreenRowEditCapability::Contiguous
+    );
+    assert_eq!(row.editable_range(), Some(0..TARGET.len() as u64));
+
+    let mut clean_runtime =
+        DocumentRuntime::new(TARGET, DocumentRuntimeConfig::default()).expect("clean runtime");
+    let mut clean = build_session(&mut clean_runtime);
+    let clean_window = clean
+        .query_renderable_rows(
+            &clean_runtime,
+            M11RecursiveGreenPoint::new(0, 0, SourceBoundaryAffinity::After),
+            TARGET.len() as u64,
+            M11RecursiveGreenRowQueryLimits::new(1, 8, 512, 16, 512).expect("clean EOF row limits"),
+        )
+        .expect("clean EOF row query");
+    let clean_row = clean_window
+        .rows()
+        .first()
+        .expect("clean EOF paragraph row");
+    assert_eq!(
+        clean_row.edit_capability(),
+        M11RecursiveGreenRowEditCapability::Contiguous
+    );
+    assert_eq!(clean_row.editable_range(), Some(0..TARGET.len() as u64));
+
+    release_session(&mut runtime, &mut superseded);
+    release_session(&mut runtime, &mut target);
+    runtime.begin_close().expect("begin runtime close");
+    while !runtime.poll_close(64).expect("poll runtime close").complete {}
+    release_session(&mut clean_runtime, &mut clean);
+    clean_runtime.begin_close().expect("begin clean close");
+    while !clean_runtime
+        .poll_close(64)
+        .expect("poll clean close")
+        .complete
+    {}
+}
+
+#[test]
 fn terminal_empty_list_items_emit_one_editable_row_without_duplicating_nonempty_items() {
     for (source, item_start, list_style, marker) in [
         ("- alpha\n-   ", 8_usize, 1_u8, b'-'),
