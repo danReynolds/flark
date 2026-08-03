@@ -819,10 +819,14 @@ final class FlarkV3DocumentRuntime {
         authority: exact.ack,
         query: decoded,
       ),
-      FlarkV3RecursiveGreenPointQuery() => _joinInstalledRecursiveGreenInline(
-        query: decoded,
-        presentation: exact,
-      ),
+      FlarkV3RecursiveGreenPointQuery() =>
+        _inlineFactsCache.resolveRecursiveGreen(
+          authority: exact.ack,
+          query: _joinInstalledRecursiveGreenPresentation(
+            query: decoded,
+            presentation: exact,
+          ),
+        ),
       _ => decoded,
     };
   }
@@ -884,7 +888,7 @@ final class FlarkV3DocumentRuntime {
             query: query,
           ),
           FlarkV3RecursiveGreenPointQuery() => _inlineDemandDisposition(
-            _ensureRecursiveGreenInlineForQuery(
+            _ensureRecursiveGreenPresentationForQuery(
               positionUtf16,
               owner: owner,
               affinity: affinity,
@@ -1362,7 +1366,7 @@ final class FlarkV3DocumentRuntime {
     }
   }
 
-  FlarkV3RecursiveGreenPointQuery _joinInstalledRecursiveGreenInline({
+  FlarkV3RecursiveGreenPointQuery _joinInstalledRecursiveGreenPresentation({
     required FlarkV3RecursiveGreenPointQuery query,
     required FlarkV3ExactStructuralPresentation presentation,
   }) {
@@ -1374,10 +1378,6 @@ final class FlarkV3DocumentRuntime {
         ack.baseAck != presentation.ack ||
         ack.refinementGeneration != binding.refinementGeneration ||
         ack.blockOrdinal != binding.blockOrdinal ||
-        !_bindingMatchesRecursiveGreenFrame(
-          binding.blockOrdinal,
-          query.owner.frameId,
-        ) ||
         binding.parserProfile != presentation.ack.syntaxProfile ||
         query.source.startUtf8 < binding.physicalStartUtf8 ||
         query.source.endUtf8 > binding.physicalEndUtf8 ||
@@ -1385,6 +1385,18 @@ final class FlarkV3DocumentRuntime {
         query.source.endUtf16 > binding.physicalEndUtf16) {
       return query;
     }
+    final ownsParagraph = _bindingMatchesRecursiveGreenFrame(
+      binding.blockOrdinal,
+      query.owner.frameId,
+    );
+    final blockQuoteAncestor = _nearestRecursiveGreenBlockQuoteAncestor(query);
+    final ownsBlockQuote =
+        blockQuoteAncestor != null &&
+        _bindingMatchesRecursiveGreenFrame(
+          binding.blockOrdinal,
+          blockQuoteAncestor.frameId,
+        );
+    if (!ownsParagraph && !ownsBlockQuote) return query;
     final hostResult = _document.queryInlineSidecar(
       FlarkV3InlineSidecarQuery(
         binding: binding,
@@ -1395,17 +1407,31 @@ final class FlarkV3DocumentRuntime {
       return switch (hostResult) {
         FlarkV3HostRejected<FlarkV3InlineSidecarQueryOutcome>() => query,
         FlarkV3HostAccepted<FlarkV3InlineSidecarQueryOutcome>(:final value) =>
-          FlarkV3DocumentQueryDecoder.joinRecursiveGreenInline(
-            sourceDocument: _document.source,
-            expectedSource: presentation.sourceVersion,
-            expectedProfilePartition: FlarkV3DocumentRuntimePlatformAttachment
-                ._publicationAuthority
-                .syntaxProfile
-                .value,
-            query: query,
-            binding: binding,
-            outcome: value,
-          ),
+          ownsParagraph
+              ? FlarkV3DocumentQueryDecoder.joinRecursiveGreenInline(
+                  sourceDocument: _document.source,
+                  expectedSource: presentation.sourceVersion,
+                  expectedProfilePartition:
+                      FlarkV3DocumentRuntimePlatformAttachment
+                          ._publicationAuthority
+                          .syntaxProfile
+                          .value,
+                  query: query,
+                  binding: binding,
+                  outcome: value,
+                )
+              : FlarkV3DocumentQueryDecoder.joinRecursiveGreenBlockQuoteProjection(
+                  sourceDocument: _document.source,
+                  expectedSource: presentation.sourceVersion,
+                  expectedProfilePartition:
+                      FlarkV3DocumentRuntimePlatformAttachment
+                          ._publicationAuthority
+                          .syntaxProfile
+                          .value,
+                  query: query,
+                  binding: binding,
+                  outcome: value,
+                ),
       };
     } on FlarkV3InlineFactsDecodeException catch (error) {
       throw FlarkV3DocumentQueryException(error.message);
@@ -1423,7 +1449,20 @@ final class FlarkV3DocumentRuntime {
     return encoded == (tag | frameId);
   }
 
-  FlarkV3LeafProjectionDemandDisposition _ensureRecursiveGreenInlineForQuery(
+  FlarkV3RecursiveGreenAncestor? _nearestRecursiveGreenBlockQuoteAncestor(
+    FlarkV3RecursiveGreenPointQuery query,
+  ) {
+    for (var index = query.ownerIndex - 1; index >= 0; index -= 1) {
+      final ancestor = query.ancestry[index];
+      if (ancestor.kind == FlarkV3RecursiveGreenKind.blockQuote) {
+        return ancestor;
+      }
+    }
+    return null;
+  }
+
+  FlarkV3LeafProjectionDemandDisposition
+  _ensureRecursiveGreenPresentationForQuery(
     int positionUtf16, {
     required Object owner,
     required FlarkV3DocumentQueryAffinity affinity,
@@ -1444,10 +1483,31 @@ final class FlarkV3DocumentRuntime {
         query.affinity != affinity) {
       return FlarkV3LeafProjectionDemandDisposition.stale;
     }
-    if (query.inlineFacts != null ||
-        !(query.owner.kind?.isInlineBearing ?? false) ||
+    if (!(query.owner.kind?.isInlineBearing ?? false) ||
         query.source.endUtf8 > presentation.sourceVersion.metric.bytes ||
         query.source.endUtf16 > presentation.sourceVersion.metric.utf16) {
+      return FlarkV3LeafProjectionDemandDisposition.notApplicable;
+    }
+    final blockQuoteAncestor = _nearestRecursiveGreenBlockQuoteAncestor(query);
+    final canRequestBlockQuoteProjection =
+        blockQuoteAncestor != null &&
+        _recursiveGreenCanRequestBlockQuoteProjection(
+          query,
+          blockQuoteAncestor,
+        );
+    late final FlarkV3InlineRefinementTarget target;
+    late final BigInt demandOwnerFrameId;
+    if (query.owner.kind == FlarkV3RecursiveGreenKind.paragraph &&
+        canRequestBlockQuoteProjection &&
+        query.blockQuoteProjection == null) {
+      target = FlarkV3InlineRefinementTarget.blockQuoteProjection;
+      demandOwnerFrameId = blockQuoteAncestor.frameId;
+    } else if (query.inlineFacts == null &&
+        (!canRequestBlockQuoteProjection ||
+            _recursiveGreenBlockQuoteHasContiguousInlineSource(query))) {
+      target = FlarkV3InlineRefinementTarget.recursiveGreenParagraph;
+      demandOwnerFrameId = query.owner.frameId;
+    } else {
       return FlarkV3LeafProjectionDemandDisposition.notApplicable;
     }
     final requestAffinity = switch (affinity) {
@@ -1456,9 +1516,10 @@ final class FlarkV3DocumentRuntime {
       FlarkV3DocumentQueryAffinity.downstream =>
         FlarkV3InlinePointAffinity.after,
     };
-    final demand = _FlarkV3RecursiveGreenInlineDemandKey(
+    final demand = _FlarkV3RecursiveGreenProjectionDemandKey(
       structuralAck: presentation.ack,
-      ownerFrameId: query.owner.frameId,
+      ownerFrameId: demandOwnerFrameId,
+      target: target,
     );
     if (demand != _lastLeafProjectionDemand) {
       _lastLeafProjectionDemand = demand;
@@ -1477,12 +1538,39 @@ final class FlarkV3DocumentRuntime {
     _executor.requestInlineRefinement(
       utf16Offset: positionUtf16,
       affinity: requestAffinity,
-      target: FlarkV3InlineRefinementTarget.recursiveGreenParagraph,
+      target: target,
     );
     _resetViewportPresentationDemandTracking();
     _leafProjectionDemandAttempts += 1;
     _leafProjectionDemandLastRequestedOutcomeGeneration = outcomeGeneration;
     return FlarkV3LeafProjectionDemandDisposition.scheduled;
+  }
+
+  bool _recursiveGreenCanRequestBlockQuoteProjection(
+    FlarkV3RecursiveGreenPointQuery query,
+    FlarkV3RecursiveGreenAncestor blockQuote,
+  ) =>
+      query.ownerIndex == 2 &&
+      query.ancestry.length == 3 &&
+      query.ancestry[0].kind == FlarkV3RecursiveGreenKind.document &&
+      query.ancestry[1].kind == FlarkV3RecursiveGreenKind.blockQuote &&
+      query.ancestry[1].frameId == blockQuote.frameId &&
+      query.ancestry[2].kind == FlarkV3RecursiveGreenKind.paragraph;
+
+  bool _recursiveGreenBlockQuoteHasContiguousInlineSource(
+    FlarkV3RecursiveGreenPointQuery query,
+  ) {
+    final projection = query.blockQuoteProjection;
+    if (projection == null || projection.records.isEmpty) return false;
+    // A leading quote marker precedes the Paragraph's contiguous inline
+    // source. Any later hidden marker splits that source into physical
+    // islands and therefore requires the projected-inline lane instead.
+    return projection.records
+        .skip(1)
+        .every(
+          (record) =>
+              record.hiddenPrefix.startUtf8 == record.hiddenPrefix.endUtf8,
+        );
   }
 
   FlarkV3LeafProjectionDemandDisposition _ensureLeafProjectionForQuery(
@@ -2408,23 +2496,26 @@ FlarkV3InlineDemandDisposition _inlineDemandDisposition(
     FlarkV3InlineDemandDisposition.retryLimitReached,
 };
 
-final class _FlarkV3RecursiveGreenInlineDemandKey {
-  const _FlarkV3RecursiveGreenInlineDemandKey({
+final class _FlarkV3RecursiveGreenProjectionDemandKey {
+  const _FlarkV3RecursiveGreenProjectionDemandKey({
     required this.structuralAck,
     required this.ownerFrameId,
+    required this.target,
   });
 
   final FlarkV3StructuralAck structuralAck;
   final BigInt ownerFrameId;
+  final FlarkV3InlineRefinementTarget target;
 
   @override
   bool operator ==(Object other) =>
-      other is _FlarkV3RecursiveGreenInlineDemandKey &&
+      other is _FlarkV3RecursiveGreenProjectionDemandKey &&
       other.structuralAck == structuralAck &&
-      other.ownerFrameId == ownerFrameId;
+      other.ownerFrameId == ownerFrameId &&
+      other.target == target;
 
   @override
-  int get hashCode => Object.hash(structuralAck, ownerFrameId);
+  int get hashCode => Object.hash(structuralAck, ownerFrameId, target);
 }
 
 final class _FlarkV3LeafProjectionDemandKey {
@@ -2791,7 +2882,7 @@ final class FlarkV3DocumentRuntimeAdapterLease {
           inlineOnly: false,
         ),
       FlarkV3RecursiveGreenPointQuery() =>
-        _runtime._ensureRecursiveGreenInlineForQuery(
+        _runtime._ensureRecursiveGreenPresentationForQuery(
           positionUtf16,
           owner: owner,
           affinity: affinity,

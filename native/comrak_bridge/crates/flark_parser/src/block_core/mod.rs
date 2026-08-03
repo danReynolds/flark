@@ -48,3 +48,4 @@ pub use writer::{
     M11BlockTerminalConvergenceCheckpoint, M11BlockWriter, M11BlockWriterError,
     M11BlockWriterOfferStatus, M11BlockWriterPoll, M11BlockWriterPollStatus,
 };
+pub(crate) use writer::{KIND_BLOCK_QUOTE, KIND_DOCUMENT, KIND_PARAGRAPH};

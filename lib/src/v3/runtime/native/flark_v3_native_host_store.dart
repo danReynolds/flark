@@ -7,7 +7,7 @@ import '../../host/host.dart';
 import '../../source/source.dart';
 import '../flark_v3_parser_transport.dart';
 
-const int flarkV3NativeHostAbiVersion = 0x00030005;
+const int flarkV3NativeHostAbiVersion = 0x00030006;
 const int flarkV3NativeHostMaximumQueryBytes = 64 * 1024;
 const int flarkV3NativeHostInlineSidecarMaximumQueryBytes = 128 * 1024;
 const int flarkV3NativeHostViewportMaximumQueryBytes = 256 * 1024;
@@ -117,7 +117,7 @@ final class FlarkV3NativeHostStore
           sizeOf<_NativeHostInlineSidecarAck>() != 212 ||
           sizeOf<_NativeHostInlineSidecarPollReceipt>() != 240 ||
           sizeOf<_NativeHostInlineSidecarQuery>() != 80 ||
-          sizeOf<_NativeHostInlineSidecarQueryReceipt>() != 32 ||
+          sizeOf<_NativeHostInlineSidecarQueryReceipt>() != 36 ||
           sizeOf<_NativeHostViewportPresentationBegin>() !=
               flarkV3NativeHostViewportPresentationBeginBytes ||
           sizeOf<_NativeHostViewportPresentationCommitRequest>() !=
@@ -1444,11 +1444,16 @@ FlarkV3InlineSidecarQueryOutcome _decodeInlineSidecarQueryOutcome({
       detail: 'native host exceeded the sidecar query copy bound',
     );
   }
-  final factBytes =
-      native.factCount *
-      FlarkV3InlineSidecarQueryAuthoritative.inlineFactRecordBytes;
+  final payloadKind = FlarkV3InlineSidecarPayloadKind.tryFromWireValue(
+    native.payloadKind,
+  );
+  final factBytes = native.factCount * (payloadKind?.recordBytes ?? 0);
   if (native.outcome == 1 &&
-      factBytes + native.valueEncodedBytes != native.encodedBytes) {
+      (payloadKind == null ||
+          factBytes + native.valueEncodedBytes != native.encodedBytes ||
+          (payloadKind != FlarkV3InlineSidecarPayloadKind.inline &&
+              (native.valueEntryCount != 0 ||
+                  native.valueEncodedBytes != 0)))) {
     throw const FlarkV3NativeHostException(
       operation: 'queryInlineSidecarReceipt',
       status: 0x0111,
@@ -1463,9 +1468,11 @@ FlarkV3InlineSidecarQueryOutcome _decodeInlineSidecarQueryOutcome({
             native.factCount == 0 &&
             native.treeNodesVisited == 0 &&
             native.valueEntryCount == 0 &&
-            native.valueEncodedBytes == 0 =>
+            native.valueEncodedBytes == 0 &&
+            native.payloadKind == 0 =>
       const FlarkV3InlineSidecarQueryUnavailable(),
     1 when native.reason == 0 => FlarkV3InlineSidecarQueryAuthoritative(
+      payloadKind: payloadKind!,
       factCount: native.factCount,
       valueEntryCount: native.valueEntryCount,
       treeNodesVisited: native.treeNodesVisited,
@@ -1477,7 +1484,8 @@ FlarkV3InlineSidecarQueryOutcome _decodeInlineSidecarQueryOutcome({
             native.factCount == 0 &&
             native.treeNodesVisited == 0 &&
             native.valueEntryCount == 0 &&
-            native.valueEncodedBytes == 0 =>
+            native.valueEncodedBytes == 0 &&
+            native.payloadKind == 0 =>
       FlarkV3InlineSidecarQueryUnsupported(
         reason: native.reason,
         metadata: encoded,
@@ -2697,6 +2705,9 @@ final class _NativeHostInlineSidecarQueryReceipt extends Struct {
 
   @Uint32()
   external int valueEncodedBytes;
+
+  @Uint32()
+  external int payloadKind;
 }
 
 final class _NativeHostViewportPresentationMetricRange extends Struct {

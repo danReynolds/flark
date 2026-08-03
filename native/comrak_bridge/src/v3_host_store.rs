@@ -299,6 +299,7 @@ pub enum InlineSidecarHostPollOutcome {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HostInlineSidecarQueryOutcome {
     Authoritative {
+        payload_kind: HostInlineSidecarPayloadKind,
         fact_count: u32,
         value_entry_count: u32,
         value_encoded_bytes: u32,
@@ -310,6 +311,23 @@ pub enum HostInlineSidecarQueryOutcome {
         metadata_bytes: u32,
     },
     Unavailable,
+}
+
+/// Stable record format returned by a direct sidecar query.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HostInlineSidecarPayloadKind {
+    Inline = 1,
+    IndentedCode = 2,
+    BlockQuote = 3,
+    BulletList = 4,
+    OrderedListItem = 6,
+}
+
+impl HostInlineSidecarPayloadKind {
+    pub const fn wire(self) -> u32 {
+        self as u32
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1612,6 +1630,7 @@ impl NativeCandidateHost {
                     ));
                 }
                 Ok(HostInlineSidecarQueryOutcome::Authoritative {
+                    payload_kind: HostInlineSidecarPayloadKind::Inline,
                     fact_count: u32::try_from(fact_count)
                         .map_err(|_| HostStoreError::invalid("sidecar fact count overflowed"))?,
                     value_entry_count: value_receipt.entry_count,
@@ -1731,6 +1750,7 @@ impl NativeCandidateHost {
                     ));
                 }
                 Ok(HostInlineSidecarQueryOutcome::Authoritative {
+                    payload_kind: HostInlineSidecarPayloadKind::IndentedCode,
                     fact_count: u32::try_from(line_count).map_err(|_| {
                         HostStoreError::invalid("indented-code sidecar line count overflowed")
                     })?,
@@ -7776,6 +7796,10 @@ fn query_marked_line_sidecar(
         ));
     }
     Ok(HostInlineSidecarQueryOutcome::Authoritative {
+        payload_kind: match kind {
+            HostMarkedLinePayloadKind::BlockQuote => HostInlineSidecarPayloadKind::BlockQuote,
+            HostMarkedLinePayloadKind::BulletList => HostInlineSidecarPayloadKind::BulletList,
+        },
         fact_count: u32::try_from(record_count)
             .map_err(|_| HostStoreError::invalid("marked-line record count overflowed"))?,
         value_entry_count: 0,
@@ -7859,6 +7883,7 @@ fn query_ordered_list_item_sidecar(
         marker_value,
     )?;
     Ok(HostInlineSidecarQueryOutcome::Authoritative {
+        payload_kind: HostInlineSidecarPayloadKind::OrderedListItem,
         fact_count: 1,
         value_entry_count: 0,
         value_encoded_bytes: 0,
@@ -12352,6 +12377,7 @@ mod tests {
             host.query_inline_sidecar(authoritative.binding, &mut typed)
                 .expect("typed authoritative sidecar query"),
             HostInlineSidecarQueryOutcome::Authoritative {
+                payload_kind: HostInlineSidecarPayloadKind::Inline,
                 fact_count: 1,
                 encoded_bytes,
                 ..
@@ -12650,6 +12676,7 @@ mod tests {
             host.query_inline_sidecar(compact.binding, &mut raw_payload)
                 .expect("compact ordered-item sidecar query"),
             HostInlineSidecarQueryOutcome::Authoritative {
+                payload_kind: HostInlineSidecarPayloadKind::OrderedListItem,
                 fact_count: 1,
                 encoded_bytes,
                 tree_nodes_visited,

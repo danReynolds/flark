@@ -647,6 +647,14 @@ final class FlarkV3FlutterLiveController extends ChangeNotifier {
           presentationKind: FlarkV3RecursiveGreenRowPresentationKind.fencedCode,
         ) =>
           const FlarkV3FlutterBlockStyleLease.fencedCode(),
+        _
+            when query.ancestry
+                .take(query.ownerIndex)
+                .any(
+                  (ancestor) =>
+                      ancestor.kind == FlarkV3RecursiveGreenKind.blockQuote,
+                ) =>
+          const FlarkV3FlutterBlockStyleLease.blockQuote(),
         _ => null,
       };
       return;

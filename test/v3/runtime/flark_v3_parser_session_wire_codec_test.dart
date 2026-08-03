@@ -884,7 +884,7 @@ void main() {
           byteOffset: 9,
           utf16Offset: 8,
           affinity: FlarkV3InlinePointAffinity.after,
-          target: FlarkV3InlineRefinementTarget.bulletListItemProjection,
+          target: FlarkV3InlineRefinementTarget.blockQuoteProjection,
         ),
         binding: _binding,
         correlationId: 43,
@@ -904,7 +904,7 @@ void main() {
       expect(command.affinity, FlarkV3InlinePointAffinity.after);
       expect(
         command.target,
-        FlarkV3InlineRefinementTarget.bulletListItemProjection,
+        FlarkV3InlineRefinementTarget.blockQuoteProjection,
       );
 
       final zeroGeneration = Uint8List.fromList(bytes);
@@ -1441,7 +1441,7 @@ final _freshOpenGolden = Uint8List.fromList([
   0x33,
   0x01,
   0x00,
-  0x00,
+  0x01,
   0x00,
   0x00,
   0x02,

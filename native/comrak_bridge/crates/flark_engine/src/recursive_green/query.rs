@@ -296,6 +296,88 @@ impl M11RecursiveGreenFrameFence {
     }
 }
 
+/// Move-only authority for one physically disjoint, parser-projected frame.
+///
+/// Unlike [`M11RecursiveGreenFrameFence`], this fence does not claim a
+/// contiguous inline range. The projected metrics are independently folded
+/// from authenticated Green coverage, while the authority covers the exact
+/// physical container envelope consumed by later projection work.
+#[must_use = "recursive-green projected-frame fences must be consumed by parser work or deliberately dropped"]
+pub struct M11RecursiveGreenProjectedFrameFence {
+    source: SourceVersion,
+    frame: M11RecursiveGreenFrameId,
+    kind: M11RecursiveGreenKind,
+    block_source: Range<u64>,
+    block_source_utf16: Range<u64>,
+    line_count: u64,
+    projected_source: M11RecursiveGreenSourceMetric,
+    receipt: M11RecursiveGreenQueryReceipt,
+    authority: M11ParserSourceRangeAuthority,
+}
+
+impl std::fmt::Debug for M11RecursiveGreenProjectedFrameFence {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("M11RecursiveGreenProjectedFrameFence")
+            .field("source", &self.source)
+            .field("frame", &self.frame)
+            .field("kind", &self.kind)
+            .field("block_source", &self.block_source)
+            .field("block_source_utf16", &self.block_source_utf16)
+            .field("line_count", &self.line_count)
+            .field("projected_source", &self.projected_source)
+            .field("receipt", &self.receipt)
+            .finish_non_exhaustive()
+    }
+}
+
+impl M11RecursiveGreenProjectedFrameFence {
+    #[must_use]
+    pub const fn source(&self) -> SourceVersion {
+        self.source
+    }
+
+    #[must_use]
+    pub const fn frame(&self) -> M11RecursiveGreenFrameId {
+        self.frame
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> M11RecursiveGreenKind {
+        self.kind
+    }
+
+    #[must_use]
+    pub fn block_source_range(&self) -> Range<u64> {
+        self.block_source.clone()
+    }
+
+    #[must_use]
+    pub fn block_source_utf16_range(&self) -> Range<u64> {
+        self.block_source_utf16.clone()
+    }
+
+    #[must_use]
+    pub const fn line_count(&self) -> u64 {
+        self.line_count
+    }
+
+    #[must_use]
+    pub const fn projected_source_metric(&self) -> M11RecursiveGreenSourceMetric {
+        self.projected_source
+    }
+
+    #[must_use]
+    pub const fn receipt(&self) -> M11RecursiveGreenQueryReceipt {
+        self.receipt
+    }
+
+    #[doc(hidden)]
+    pub fn into_projected_authority(self) -> (M11ParserSourceRangeAuthority, Range<u64>) {
+        (self.authority, self.block_source)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct M11RecursiveGreenLocation {
     byte_range: Range<u64>,
@@ -1527,6 +1609,309 @@ impl M11RecursiveGreenRoot {
             inline_source,
             inline_source_utf16,
             receipt: window.receipt(),
+            authority,
+        }))
+    }
+
+    /// Selects one top-level projected container with exactly one direct
+    /// child, and independently folds its source projection from authenticated
+    /// Green coverage.
+    ///
+    /// This is intentionally stricter than a general ancestor query. The
+    /// exact final path must be `root -> container -> child` (the point may
+    /// land on container-owned marker coverage and therefore omit the child
+    /// from its point ancestry), and the complete container event interval
+    /// must close exactly one child of `expected_child_kind`. Callers provide
+    /// semantic kinds, never source ranges or projected metrics.
+    pub fn locate_single_child_projected_container_fence(
+        &self,
+        runtime: &DocumentRuntime,
+        point: M11RecursiveGreenPoint,
+        expected_root_kind: M11RecursiveGreenKind,
+        expected_container_kind: M11RecursiveGreenKind,
+        expected_child_kind: M11RecursiveGreenKind,
+        limits: M11RecursiveGreenRowQueryLimits,
+        maximum_source_bytes: u64,
+    ) -> Result<Option<M11RecursiveGreenProjectedFrameFence>, M11RecursiveGreenFrameQueryError>
+    {
+        self.ensure_runtime(runtime)?;
+        if limits.maximum_rows != 1 || maximum_source_bytes == 0 {
+            return Err(M11RecursiveGreenError::InvalidState.into());
+        }
+        if point.byte_offset > self.source().byte_len()
+            || point.utf16_offset > self.source().utf16_len()
+            || self
+                .lease()?
+                .utf16_offset_for_byte(point.byte_offset)
+                .map_err(M11RecursiveGreenError::from)?
+                != point.utf16_offset
+        {
+            return Err(M11RecursiveGreenError::InvalidPoint.into());
+        }
+        if self.summary.physical_bytes == 0 {
+            return Ok(None);
+        }
+
+        let tree = self
+            .tree
+            .as_ref()
+            .ok_or(M11RecursiveGreenError::InvalidState)?;
+        let tree = tree.as_ref();
+        let arena = runtime.producer_arena();
+        let mut work = PointZipperWork::default();
+        let Some(location) =
+            locate_point_in_arena_zipper_prepared(arena, tree, self.summary, point, &mut work)?
+        else {
+            return Ok(None);
+        };
+        if let Some(bound) =
+            frame_bound_for_row_query_work(&work, limits, location.zipper_open.len())
+        {
+            return Err(M11RecursiveGreenFrameQueryError::BoundExceeded(bound));
+        }
+        let root_leaf_count = tree
+            .summary(arena, &mut work.inspection)?
+            .ok_or(M11RecursiveGreenError::Corrupt(
+                "projected-container query lost its root measure",
+            ))?
+            .leaves();
+
+        // Only top-level single-child containers are admitted by this first
+        // projection authority. Marker-owned point coverage may stop at the
+        // container; content-owned coverage includes its child.
+        if !(location.zipper_open.len() == 2 || location.zipper_open.len() == 3) {
+            return Ok(None);
+        }
+        let root_open = location.zipper_open[0];
+        let container_open = location.zipper_open[1];
+        let root_boundary =
+            point_zipper_frame_boundary(arena, tree, root_leaf_count, root_open, &mut work)?;
+        let container_boundary =
+            point_zipper_frame_boundary(arena, tree, root_leaf_count, container_open, &mut work)?;
+        if root_boundary.final_kind != expected_root_kind
+            || container_boundary.final_kind != expected_container_kind
+        {
+            return Ok(None);
+        }
+        if let Some(child_open) = location.zipper_open.get(2).copied() {
+            let child_boundary =
+                point_zipper_frame_boundary(arena, tree, root_leaf_count, child_open, &mut work)?;
+            if child_boundary.final_kind != expected_child_kind {
+                return Ok(None);
+            }
+        }
+
+        // The UTF-8 BOM is root-owned nonlogical Gap coverage rather than part of the
+        // BlockQuote frame, while the marked-line projector deliberately owns
+        // complete physical lines (and validates the BOM as hidden prefix).
+        // Admit only the exact parser-authenticated BOF geometry; arbitrary
+        // hidden top-level source such as a reference definition must never be
+        // widened into this container.
+        let enter_leaf_events = work.decode_leaf_events(arena, container_open.enter_leaf)?;
+        let include_bof_hidden_prefix = container_open.byte_start == 3
+            && container_open.utf16_start == 1
+            && container_open
+                .enter_event_index
+                .checked_sub(1)
+                .is_some_and(|index| {
+                    matches!(
+                            enter_leaf_events.get(index),
+                        Some(PackedGreenEvent::Coverage {
+                            physical,
+                            part: M11RecursiveGreenCoveragePart::Gap,
+                            atom: M11RecursiveGreenLogicalAtom::None,
+                            ..
+                        })
+                            if physical.bytes() == 3
+                                && physical.utf16() == 1
+                    )
+                });
+        let fenced_byte_start = if include_bof_hidden_prefix {
+            0
+        } else {
+            container_open.byte_start
+        };
+        let fenced_utf16_start = if include_bof_hidden_prefix {
+            0
+        } else {
+            container_open.utf16_start
+        };
+
+        let block_bytes = container_boundary
+            .byte_end
+            .checked_sub(container_open.byte_start)
+            .ok_or(M11RecursiveGreenError::Corrupt(
+                "projected container ends before its Enter",
+            ))?;
+        let block_utf16 = container_boundary
+            .utf16_end
+            .checked_sub(container_open.utf16_start)
+            .ok_or(M11RecursiveGreenError::Corrupt(
+                "projected container UTF-16 ends before its Enter",
+            ))?;
+        let fenced_bytes = container_boundary
+            .byte_end
+            .checked_sub(fenced_byte_start)
+            .ok_or(M11RecursiveGreenError::Corrupt(
+                "projected container fence starts after its Exit",
+            ))?;
+        if block_bytes == 0 || fenced_bytes > maximum_source_bytes {
+            return if fenced_bytes > maximum_source_bytes {
+                Err(M11RecursiveGreenFrameQueryError::BoundExceeded(
+                    M11RecursiveGreenFrameQueryBound::InlineSourceBytes,
+                ))
+            } else {
+                Ok(None)
+            };
+        }
+
+        let mut relative_depth = 0_usize;
+        let mut direct_child = None;
+        let mut direct_children = 0_u32;
+        let mut observed_physical_bytes = 0_u64;
+        let mut observed_physical_utf16 = 0_u64;
+        let mut projected_bytes = 0_u64;
+        let mut projected_utf16 = 0_u64;
+        let mut completed_lines = 0_u64;
+        let mut projected_since_line_ending = false;
+
+        for leaf_ordinal in container_open.enter_leaf_ordinal..=container_boundary.exit_leaf_ordinal
+        {
+            let leaf = tree
+                .locate_leaf_with_prefix(arena, leaf_ordinal, &mut work.inspection)?
+                .ok_or(M11RecursiveGreenError::Corrupt(
+                    "projected-container traversal lost a Green leaf",
+                ))?;
+            let events = work.decode_leaf_events(arena, leaf.id)?;
+            let first = if leaf_ordinal == container_open.enter_leaf_ordinal {
+                container_open.enter_event_index + 1
+            } else {
+                0
+            };
+            let last = if leaf_ordinal == container_boundary.exit_leaf_ordinal {
+                container_boundary.exit_event_index
+            } else {
+                events.len()
+            };
+            for event in events.into_iter().take(last).skip(first) {
+                match event {
+                    PackedGreenEvent::Enter { frame, .. } => {
+                        if relative_depth == 0 {
+                            direct_children = direct_children
+                                .checked_add(1)
+                                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+                            direct_child = Some(frame);
+                        }
+                        relative_depth = relative_depth
+                            .checked_add(1)
+                            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+                    }
+                    PackedGreenEvent::Exit {
+                        frame, final_kind, ..
+                    } => {
+                        relative_depth = relative_depth.checked_sub(1).ok_or(
+                            M11RecursiveGreenError::Corrupt(
+                                "projected-container child depth underflowed",
+                            ),
+                        )?;
+                        if relative_depth == 0
+                            && (direct_child != Some(frame) || final_kind != expected_child_kind)
+                        {
+                            return Ok(None);
+                        }
+                    }
+                    PackedGreenEvent::Coverage {
+                        physical,
+                        part,
+                        atom,
+                        ..
+                    } => {
+                        observed_physical_bytes = observed_physical_bytes
+                            .checked_add(physical.bytes())
+                            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+                        observed_physical_utf16 = observed_physical_utf16
+                            .checked_add(physical.utf16())
+                            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+                        let retained_closing_terminator = part
+                            == M11RecursiveGreenCoveragePart::Terminal
+                            && atom == M11RecursiveGreenLogicalAtom::None;
+                        if retained_closing_terminator
+                            || !matches!(
+                                atom,
+                                M11RecursiveGreenLogicalAtom::None
+                                    | M11RecursiveGreenLogicalAtom::HiddenUpstream
+                            )
+                        {
+                            projected_bytes = projected_bytes
+                                .checked_add(physical.bytes())
+                                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+                            projected_utf16 = projected_utf16
+                                .checked_add(physical.utf16())
+                                .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+                            if matches!(
+                                atom,
+                                M11RecursiveGreenLogicalAtom::LfToLf
+                                    | M11RecursiveGreenLogicalAtom::CrLfToLf
+                                    | M11RecursiveGreenLogicalAtom::LoneCrToLf
+                            ) || retained_closing_terminator
+                            {
+                                completed_lines = completed_lines
+                                    .checked_add(1)
+                                    .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+                                projected_since_line_ending = false;
+                            } else {
+                                projected_since_line_ending = true;
+                            }
+                        }
+                    }
+                    PackedGreenEvent::Property(_) | PackedGreenEvent::RetypeOpen { .. } => {}
+                }
+            }
+            if let Some(bound) =
+                frame_bound_for_row_query_work(&work, limits, location.zipper_open.len())
+            {
+                return Err(M11RecursiveGreenFrameQueryError::BoundExceeded(bound));
+            }
+        }
+        if relative_depth != 0
+            || direct_children != 1
+            || observed_physical_bytes != block_bytes
+            || observed_physical_utf16 != block_utf16
+        {
+            return Err(M11RecursiveGreenError::Corrupt(
+                "projected-container fold disagrees with its authenticated frame envelope",
+            )
+            .into());
+        }
+        let line_count = completed_lines
+            .checked_add(u64::from(projected_since_line_ending))
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        if line_count == 0 || projected_bytes == 0 || projected_utf16 == 0 {
+            return Ok(None);
+        }
+
+        let block_start = usize::try_from(fenced_byte_start)
+            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+        let block_end = usize::try_from(container_boundary.byte_end)
+            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+        let authority = M11ParserSourceRangeAuthority::new(
+            runtime,
+            self.lease()?.duplicate(),
+            block_start..block_end,
+        )?;
+        let receipt = work.finish_receipt(location.zipper_open.len())?;
+        Ok(Some(M11RecursiveGreenProjectedFrameFence {
+            source: self.source(),
+            frame: container_open.frame,
+            kind: container_boundary.final_kind,
+            block_source: fenced_byte_start..container_boundary.byte_end,
+            block_source_utf16: fenced_utf16_start..container_boundary.utf16_end,
+            line_count,
+            projected_source: M11RecursiveGreenSourceMetric::from_validated(
+                projected_bytes,
+                projected_utf16,
+            ),
+            receipt,
             authority,
         }))
     }
@@ -2874,6 +3259,28 @@ fn query_work_exceeded_limit(
         Some(M11RecursiveGreenRowQueryLimit::OpenDepth)
     } else {
         None
+    }
+}
+
+fn frame_bound_for_row_query_work(
+    pending: &PointZipperWork,
+    limits: M11RecursiveGreenRowQueryLimits,
+    open_depth: usize,
+) -> Option<M11RecursiveGreenFrameQueryBound> {
+    match query_work_exceeded_limit(pending, limits, open_depth) {
+        Some(M11RecursiveGreenRowQueryLimit::StoragePages) => {
+            Some(M11RecursiveGreenFrameQueryBound::StoragePagesVisited)
+        }
+        Some(M11RecursiveGreenRowQueryLimit::EventsScanned) => {
+            Some(M11RecursiveGreenFrameQueryBound::EventsScanned)
+        }
+        Some(M11RecursiveGreenRowQueryLimit::TreeNodes) => {
+            Some(M11RecursiveGreenFrameQueryBound::TreeNodesVisited)
+        }
+        Some(M11RecursiveGreenRowQueryLimit::OpenDepth) => {
+            Some(M11RecursiveGreenFrameQueryBound::OpenDepth)
+        }
+        None => None,
     }
 }
 

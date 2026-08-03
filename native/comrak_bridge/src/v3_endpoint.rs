@@ -1126,7 +1126,8 @@ impl Endpoint {
         if let Err(error) = self.candidate.request_hot_inline(runtime, command) {
             let unavailable_reason = match &error {
                 CandidateEndpointError::Derive(_)
-                | CandidateEndpointError::RecursiveGreenParagraph(_) => {
+                | CandidateEndpointError::RecursiveGreenParagraph(_)
+                | CandidateEndpointError::InlineRefinementUnavailable => {
                     Some(INLINE_REFINEMENT_UNAVAILABLE_LATE_QUERY)
                 }
                 CandidateEndpointError::Busy => Some(INLINE_REFINEMENT_UNAVAILABLE_RETRYABLE_BUSY),
@@ -3691,6 +3692,36 @@ mod tests {
             push_u32(&mut payload, value);
         }
         frame(Opcode::ParserPresentViewport, correlation_id, &payload)
+    }
+
+    fn inline_refinement_frame(command: InlineRefinementCommand, correlation_id: u32) -> Vec<u8> {
+        let mut payload = Vec::new();
+        push_common(&mut payload, 0, command.binding);
+        push_u32(&mut payload, command.refinement_generation);
+        push_publication_source(&mut payload, command.source_version);
+        push_structural_ack(&mut payload, command.base_ack);
+        push_u32(&mut payload, command.byte_offset);
+        push_u32(&mut payload, command.utf16_offset);
+        push_u32(
+            &mut payload,
+            match command.affinity {
+                crate::v3_session_wire::InlinePointAffinity::Before => 0,
+                crate::v3_session_wire::InlinePointAffinity::After => 1,
+            },
+        );
+        push_u32(
+            &mut payload,
+            match command.target {
+                crate::v3_session_wire::InlineRefinementTarget::Automatic => 0,
+                crate::v3_session_wire::InlineRefinementTarget::BulletListItemInline => 1,
+                crate::v3_session_wire::InlineRefinementTarget::BulletListItemProjection => 2,
+                crate::v3_session_wire::InlineRefinementTarget::OrderedListItemInline => 3,
+                crate::v3_session_wire::InlineRefinementTarget::OrderedListItemProjection => 4,
+                crate::v3_session_wire::InlineRefinementTarget::RecursiveGreenParagraph => 5,
+                crate::v3_session_wire::InlineRefinementTarget::BlockQuoteProjection => 6,
+            },
+        );
+        frame(Opcode::ParserRefineInline, correlation_id, &payload)
     }
 
     fn drain_frame(binding: SessionBinding, drain_id: u32, transitions: u32) -> Vec<u8> {
@@ -7493,6 +7524,80 @@ mod tests {
             Err(EndpointError::EventIdentityExhausted)
         ));
         assert_eq!(endpoint.status().lifecycle, EndpointLifecycle::Faulted);
+    }
+
+    #[test]
+    fn nested_block_quote_projection_emits_unavailable_without_faulting() {
+        const SOURCE: &str = "> > nested quote\n";
+        let binding = binding(29);
+        let mut endpoint = Endpoint::fresh(config(4));
+        open(&mut endpoint, binding, OpenMode::Fresh);
+        seed_ascii_pages_and_certify(&mut endpoint, binding, SOURCE);
+
+        let source_version = publication_source_version(&endpoint, binding);
+        let mut host = NativeCandidateHost::new(HostConfig {
+            document_session: binding.document_session,
+            grammar_revision: crate::FLARK_V3_GRAMMAR_REVISION,
+            syntax_profile: 1,
+            authority_mask: 0x1f,
+            maximum_query_bytes: 64 * 1024,
+        })
+        .expect("independent host");
+        host.observe_source_version(source_version)
+            .expect("host exact source");
+        let delivery = deliver_current_candidate(&mut endpoint, binding, &mut host);
+
+        let point = SOURCE.find("nested").expect("nested quote content") + 1;
+        let command = InlineRefinementCommand {
+            binding,
+            refinement_generation: 1,
+            source_version,
+            base_ack: delivery.ack,
+            byte_offset: u32::try_from(point).expect("bounded byte point"),
+            utf16_offset: u32::try_from(SOURCE[..point].encode_utf16().count())
+                .expect("bounded UTF-16 point"),
+            affinity: crate::v3_session_wire::InlinePointAffinity::After,
+            target: crate::v3_session_wire::InlineRefinementTarget::BlockQuoteProjection,
+        };
+        let receipt = endpoint
+            .dispatch(&inline_refinement_frame(command, 901))
+            .expect("unsupported nested quote remains a valid late query");
+        assert_eq!(
+            receipt.action,
+            EndpointCommandAction::InlineRefinementAccepted
+        );
+        let outstanding = endpoint
+            .outstanding_status()
+            .expect("unsupported shape emits a terminal refinement event");
+        assert_eq!(
+            outstanding.kind,
+            EndpointEventKind::InlineRefinementUnavailable
+        );
+        assert!(matches!(
+            endpoint
+                .outstanding
+                .as_ref()
+                .and_then(OutstandingEvent::session_body),
+            Some(EventBody::InlineRefinementUnavailable(
+                InlineRefinementUnavailableEvent {
+                    refinement_generation: 1,
+                    reason_code: INLINE_REFINEMENT_UNAVAILABLE_LATE_QUERY,
+                }
+            ))
+        ));
+        assert_eq!(endpoint.status().lifecycle, EndpointLifecycle::Open);
+        assert!(!endpoint.status().failure_emitted);
+
+        endpoint
+            .dispatch(&receipt_frame(
+                binding,
+                outstanding.event_id,
+                EventDisposition::Accepted,
+                None,
+            ))
+            .expect("acknowledge unavailable event");
+        close_host_to_zero(&mut host);
+        close_to_removable(&mut endpoint, binding);
     }
 
     #[test]

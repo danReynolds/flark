@@ -567,6 +567,106 @@ void _refreshInlineIsland({
     controller.adoptManagedDocumentQuery(result);
     switch (result) {
       case final FlarkV3RecursiveGreenPointQuery recursiveQuery
+          when _isRecursiveGreenBlockQuoteParagraph(recursiveQuery):
+        final certificate = recursiveQuery.blockQuoteProjection;
+        FlarkV3LeafProjectionDemandDisposition? demand;
+        if (recursiveQuery.inlineFacts == null && shouldRequestInline()) {
+          demand = ensureActiveProjectionAtUtf16(
+            position,
+            affinity: switch (selection.affinity) {
+              TextAffinity.upstream => FlarkV3DocumentQueryAffinity.upstream,
+              TextAffinity.downstream =>
+                FlarkV3DocumentQueryAffinity.downstream,
+            },
+            query: recursiveQuery,
+          );
+        }
+        if (certificate == null) {
+          final terminalWithoutProjection = switch (demand) {
+            FlarkV3LeafProjectionDemandDisposition.notApplicable ||
+            FlarkV3LeafProjectionDemandDisposition.retryLimitReached => true,
+            _ => false,
+          };
+          if (terminalWithoutProjection) {
+            controller.adoptLiteralSourcePaint();
+          } else {
+            controller.markProjectedInputLeaseProvisional();
+          }
+          return;
+        }
+
+        final blockSource = certificate.source;
+        final paragraphSource = recursiveQuery.paragraphSource;
+        if (paragraphSource == null ||
+            !_sameSourceSpan(paragraphSource, blockSource) ||
+            !_sourceSpanContainsSpan(blockSource, recursiveQuery.source) ||
+            !_sourceSpanContainsEditingState(
+              blockSource,
+              controller.globalEditingState,
+            )) {
+          throw const FormatException(
+            'Recursive block-quote projection does not bind the active edit.',
+          );
+        }
+        if (blockSource.endUtf16 - blockSource.startUtf16 >
+            controller.maximumInputIslandUtf16) {
+          controller.adoptLiteralSourcePaint();
+          return;
+        }
+        final sourceProjection = certificate.toSourceProjection(
+          maximumSourceUtf16: controller.maximumInputIslandUtf16,
+          maximumDisplayUtf16: controller.maximumInputIslandUtf16,
+        );
+        if (certificate.sourceVersion != document.sourceVersion ||
+            sourceProjection.sourceStartUtf16 != blockSource.startUtf16 ||
+            sourceProjection.sourceEndUtf16 != blockSource.endUtf16 ||
+            sourceProjection.displayLengthUtf16 !=
+                certificate.projectedUtf16Length ||
+            certificate.records.isEmpty) {
+          throw const FormatException(
+            'Recursive block-quote certificate has incompatible geometry.',
+          );
+        }
+        var inputLease = FlarkV3ProjectedInputLease.fromSourceProjection(
+          sourceProjection,
+          editPolicy: FlarkV3BlockQuoteEditPolicy(),
+        );
+        if (recursiveQuery.inlineFacts != null) {
+          final inlinePresentation =
+              FlarkV3InlineIslandPresentation.resolveRecursiveGreenParagraph(
+                sourceDocument: source,
+                expectedSource: document.sourceVersion,
+                recursiveQuery: recursiveQuery,
+              );
+          if (inlinePresentation
+              case final FlarkV3AuthoritativeInlineIslandPresentation
+                  authoritative) {
+            inputLease =
+                FlarkV3ProjectedInputLease.fromSourceProjectionWithAuthoritativeInline(
+                  sourceProjection,
+                  authoritative,
+                  editPolicy: FlarkV3BlockQuoteEditPolicy(),
+                );
+          }
+        }
+        final activeEditingState = _editingStateWithExtentInside(
+          blockSource,
+          controller.globalEditingState,
+        );
+        if (controller.inputIslandGlobalStartUtf16 == blockSource.startUtf16 &&
+            controller.inputIslandGlobalEndUtf16 == blockSource.endUtf16) {
+          controller.adoptProjectedInputLease(inputLease);
+        } else {
+          // Install the bounded island and its marker-free representation as
+          // one observable controller transition. A literal intermediate
+          // value would expose quote markers to listeners and could paint a
+          // single-frame flash.
+          controller.handoffProjectedInputIslandToExactRange(
+            inputLease: inputLease,
+            nextGlobalEditingState: activeEditingState,
+          );
+        }
+      case final FlarkV3RecursiveGreenPointQuery recursiveQuery
           when recursiveQuery.owner.kind?.isInlineBearing ?? false:
         FlarkV3LeafProjectionDemandDisposition? demand;
         if (recursiveQuery.inlineFacts == null && shouldRequestInline()) {
@@ -1452,6 +1552,16 @@ bool _recursiveGreenTerminalEmptyRowMatchesQuery(
   }
   return true;
 }
+
+bool _isRecursiveGreenBlockQuoteParagraph(
+  FlarkV3RecursiveGreenPointQuery query,
+) =>
+    query.owner.kind == FlarkV3RecursiveGreenKind.paragraph &&
+    query.ownerIndex == 2 &&
+    query.ancestry.length == 3 &&
+    query.ancestry[0].kind == FlarkV3RecursiveGreenKind.document &&
+    query.ancestry[1].kind == FlarkV3RecursiveGreenKind.blockQuote &&
+    query.ancestry[2].kind == FlarkV3RecursiveGreenKind.paragraph;
 
 void _handoffTerminalEmptyItemIfNeeded(
   FlarkV3FlutterLiveController controller,

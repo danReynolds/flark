@@ -358,7 +358,7 @@ void flark_v3_endpoint_emergency_finalize(void* token);
  * succeeded, and only then release the token. Reattach the finalizer if
  * reclamation cannot be proven.
  */
-#define FLARK_V3_HOST_NATIVE_ABI_VERSION UINT32_C(0x00030005)
+#define FLARK_V3_HOST_NATIVE_ABI_VERSION UINT32_C(0x00030006)
 #define FLARK_V3_HOST_MAXIMUM_FRAME_BYTES UINT32_C(5140)
 #define FLARK_V3_HOST_MAXIMUM_PACKET_BYTES UINT32_C(71724)
 #define FLARK_V3_HOST_MAXIMUM_QUERY_BYTES UINT32_C(65536)
@@ -424,6 +424,11 @@ void flark_v3_endpoint_emergency_finalize(void* token);
 #define FLARK_V3_HOST_INLINE_SIDECAR_QUERY_UNAVAILABLE UINT32_C(0)
 #define FLARK_V3_HOST_INLINE_SIDECAR_QUERY_AUTHORITATIVE UINT32_C(1)
 #define FLARK_V3_HOST_INLINE_SIDECAR_QUERY_UNSUPPORTED UINT32_C(2)
+#define FLARK_V3_HOST_INLINE_SIDECAR_PAYLOAD_INLINE UINT32_C(1)
+#define FLARK_V3_HOST_INLINE_SIDECAR_PAYLOAD_INDENTED_CODE UINT32_C(2)
+#define FLARK_V3_HOST_INLINE_SIDECAR_PAYLOAD_BLOCK_QUOTE UINT32_C(3)
+#define FLARK_V3_HOST_INLINE_SIDECAR_PAYLOAD_BULLET_LIST UINT32_C(4)
+#define FLARK_V3_HOST_INLINE_SIDECAR_PAYLOAD_ORDERED_LIST_ITEM UINT32_C(6)
 
 #define FLARK_V3_HOST_VIEWPORT_PRESENTATION_OUTCOME_PENDING UINT32_C(0)
 #define FLARK_V3_HOST_VIEWPORT_PRESENTATION_OUTCOME_PACKET_CREDIT UINT32_C(1)
@@ -618,6 +623,7 @@ typedef struct FlarkV3HostInlineSidecarQueryReceipt {
   uint32_t tree_nodes_visited;
   uint32_t value_entry_count;
   uint32_t value_encoded_bytes;
+  uint32_t payload_kind;
 } FlarkV3HostInlineSidecarQueryReceipt;
 
 typedef struct FlarkV3HostViewportPresentationMetricRange {
@@ -884,8 +890,10 @@ static_assert(sizeof(FlarkV3HostInlineSidecarPollReceipt) == 240,
               "FlarkV3HostInlineSidecarPollReceipt ABI drift");
 static_assert(sizeof(FlarkV3HostInlineSidecarQuery) == 80,
               "FlarkV3HostInlineSidecarQuery ABI drift");
-static_assert(sizeof(FlarkV3HostInlineSidecarQueryReceipt) == 32,
+static_assert(sizeof(FlarkV3HostInlineSidecarQueryReceipt) == 36,
               "FlarkV3HostInlineSidecarQueryReceipt ABI drift");
+static_assert(offsetof(FlarkV3HostInlineSidecarQueryReceipt, payload_kind) == 32,
+              "FlarkV3HostInlineSidecarQueryReceipt payload kind drift");
 static_assert(sizeof(FlarkV3HostViewportPresentationMetricRange) == 16,
               "FlarkV3HostViewportPresentationMetricRange ABI drift");
 static_assert(sizeof(FlarkV3HostViewportPresentationVisitStart) == 16,
@@ -1022,8 +1030,10 @@ _Static_assert(sizeof(FlarkV3HostInlineSidecarPollReceipt) == 240,
                "FlarkV3HostInlineSidecarPollReceipt ABI drift");
 _Static_assert(sizeof(FlarkV3HostInlineSidecarQuery) == 80,
                "FlarkV3HostInlineSidecarQuery ABI drift");
-_Static_assert(sizeof(FlarkV3HostInlineSidecarQueryReceipt) == 32,
+_Static_assert(sizeof(FlarkV3HostInlineSidecarQueryReceipt) == 36,
                "FlarkV3HostInlineSidecarQueryReceipt ABI drift");
+_Static_assert(offsetof(FlarkV3HostInlineSidecarQueryReceipt, payload_kind) == 32,
+               "FlarkV3HostInlineSidecarQueryReceipt payload kind drift");
 _Static_assert(sizeof(FlarkV3HostViewportPresentationMetricRange) == 16,
                "FlarkV3HostViewportPresentationMetricRange ABI drift");
 _Static_assert(sizeof(FlarkV3HostViewportPresentationVisitStart) == 16,

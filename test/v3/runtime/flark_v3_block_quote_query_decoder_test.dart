@@ -83,6 +83,31 @@ void main() {
     expect(projection.displayText, projected);
   });
 
+  test('decodes a path-independent recursive quote certificate', () {
+    const source = '> a\nlazy';
+    final authority = _authority(source);
+    final certificate = FlarkV3BlockQuoteProjectionDecoder.decodeCertificate(
+      sourceDocument: authority.document,
+      expectedSource: authority.version,
+      source: FlarkV3SourceSpan(
+        startUtf8: 0,
+        endUtf8: authority.document.utf8Length,
+        startUtf16: 0,
+        endUtf16: authority.document.utf16Length,
+      ),
+      encodedRecords: _quoteRecords(const <_QuoteLine>[
+        _QuoteLine(start: 0, physical: 4, hidden: 2, content: 1, flags: 1),
+        _QuoteLine(start: 4, physical: 4, hidden: 0, content: 4, flags: 2),
+      ]),
+    );
+
+    expect(certificate.sourceVersion, authority.version);
+    expect(certificate.records, hasLength(2));
+    expect(certificate.projectedUtf8Length, 6);
+    expect(certificate.projectedUtf16Length, 6);
+    expect(certificate.toSourceProjection().displayText, 'a\nlazy');
+  });
+
   test('schema 4 rejects corrupt path, line, and aggregate geometry', () {
     const source = '   > α\r\n> beta\nlazy';
     const projected = 'α\r\nbeta\nlazy';
@@ -401,6 +426,24 @@ final class _PointPathNode {
   final int? runCount;
   final int? projectedUtf8;
   final int? projectedUtf16;
+}
+
+Uint8List _quoteRecords(List<_QuoteLine> records) {
+  final bytes = Uint8List(
+    records.length * FlarkV3BlockQuoteProjectionDecoder.recordBytes,
+  );
+  final data = ByteData.sublistView(bytes);
+  for (var index = 0; index < records.length; index += 1) {
+    final record = records[index];
+    final offset = index * FlarkV3BlockQuoteProjectionDecoder.recordBytes;
+    data
+      ..setUint32(offset, record.start, Endian.little)
+      ..setUint32(offset + 4, record.physical, Endian.little)
+      ..setUint32(offset + 8, record.hidden, Endian.little)
+      ..setUint32(offset + 12, record.content, Endian.little)
+      ..setUint32(offset + 16, record.flags, Endian.little);
+  }
+  return bytes;
 }
 
 _Authority _authority(String source) {

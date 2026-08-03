@@ -7,7 +7,7 @@ import 'support/flark_v3_managed_runtime_test_platform.dart';
 
 void main() {
   testWidgets(
-    'real block quote hides prefixes, preserves one client, and continues Enter',
+    'recursive Green multiline block quote stays marker-free through Enter on one input client',
     (tester) async {
       const initialQuote = '> alpha\n> beta\nlazy\n';
       const initialSource = 'before\n\n$initialQuote\n*tail*';
@@ -22,26 +22,25 @@ void main() {
         tester,
         expectedDisplay: 'alpha\nbeta\nlazy\n',
       );
-      final facts = initialQuery.structure.blockQuote!;
       final payload = initialQuery.blockQuoteProjection!;
-      expect(facts.lineCount, 3);
-      expect(facts.childFirstLine, 0);
-      expect(facts.childLineCount, 3);
+      expect(initialQuery.owner.kind, FlarkV3RecursiveGreenKind.paragraph);
+      expect(initialQuery.ancestry.map((ancestor) => ancestor.kind), const [
+        FlarkV3RecursiveGreenKind.document,
+        FlarkV3RecursiveGreenKind.blockQuote,
+        FlarkV3RecursiveGreenKind.paragraph,
+      ]);
       expect(payload.records, hasLength(3));
-      expect(payload.pointPath.nodes, hasLength(2));
-      expect(
-        payload.pointPath.blockQuoteAncestor.kind,
-        FlarkV3DocumentPointPathNodeKind.blockQuote,
-      );
-      expect(
-        payload.pointPath.selectedLeaf.kind,
-        FlarkV3DocumentPointPathNodeKind.paragraph,
-      );
       expect(harness.sourceText(payload.records[0].hiddenPrefix), '> ');
       expect(harness.sourceText(payload.records[1].hiddenPrefix), '> ');
       expect(payload.records[2].isLazyContinuation, isTrue);
       expect(harness.sourceText(payload.records[2].hiddenPrefix), isEmpty);
-      expect(harness.sourceText(initialQuery.structure.source), initialQuote);
+      expect(harness.sourceText(payload.source), initialQuote);
+      expect(
+        initialQuery.paragraphSource?.startUtf16,
+        payload.source.startUtf16,
+      );
+      expect(initialQuery.paragraphSource?.endUtf16, payload.source.endUtf16);
+      expect(initialQuery.inlineFacts, isNull);
       expect(harness.runtime.exportMarkdown(), initialSource);
       expect(
         harness.binding.controller.inputIslandGlobalStartUtf16,
@@ -65,6 +64,18 @@ void main() {
           (_setClientCalls(tester).last.arguments as List<dynamic>).first
               as int;
       final initialRevision = harness.runtime.sourceRevision;
+      final observedEditableValues = <String>[];
+      void observeEditableValue() => observedEditableValues.add(
+        harness.binding.controller.editingController.text,
+      );
+      harness.binding.controller.editingController.addListener(
+        observeEditableValue,
+      );
+      addTearDown(
+        () => harness.binding.controller.editingController.removeListener(
+          observeEditableValue,
+        ),
+      );
 
       (editableState as DeltaTextInputClient).updateEditingValueWithDeltas([
         const TextEditingDeltaInsertion(
@@ -107,7 +118,6 @@ void main() {
         tester,
         expectedDisplay: 'al\npha\nbeta\nlazy\n',
       );
-      expect(recertified.structure.blockQuote!.lineCount, 4);
       expect(recertified.blockQuoteProjection!.records, hasLength(4));
       expect(
         recertified.blockQuoteProjection!.records.last.isLazyContinuation,
@@ -122,6 +132,14 @@ void main() {
       expect(harness.runtime.status.sourceCurrent, isTrue);
       expect(harness.runtime.status.structureCurrent, isTrue);
       expect(harness.runtime.exportMarkdown(), editedSource);
+      expect(observedEditableValues, isNotEmpty);
+      for (final value in observedEditableValues) {
+        expect(
+          value,
+          isNot(contains('>')),
+          reason: 'no observable input value may expose quote markers',
+        );
+      }
       _expectSameInputClient(
         tester,
         harness,
@@ -218,7 +236,7 @@ final class _ManagedBlockQuoteHarness {
   String sourceText(FlarkV3SourceSpan span) =>
       runtime.readSourceRange(span.startUtf16, span.endUtf16);
 
-  Future<FlarkV3DocumentStructuralQuery> waitForBlockQuote(
+  Future<FlarkV3RecursiveGreenPointQuery> waitForBlockQuote(
     WidgetTester tester, {
     required String expectedDisplay,
   }) async {
@@ -233,12 +251,17 @@ final class _ManagedBlockQuoteHarness {
       final query = binding.controller.paintState.documentQuery;
       if (status.sourceCurrent &&
           status.structureCurrent &&
-          query is FlarkV3DocumentStructuralQuery &&
+          query is FlarkV3RecursiveGreenPointQuery &&
           query.sourceRevision == status.sourceRevision &&
           query.structureRevision == status.sourceRevision &&
-          query.structure.kind == FlarkV3DocumentStructureKind.blockQuote &&
-          query.structure.blockQuote != null &&
-          query.pointPath != null &&
+          query.owner.kind == FlarkV3RecursiveGreenKind.paragraph &&
+          query.ancestry
+              .take(query.ownerIndex)
+              .any(
+                (ancestor) =>
+                    ancestor.kind == FlarkV3RecursiveGreenKind.blockQuote,
+              ) &&
+          query.paragraphSource != null &&
           query.blockQuoteProjection != null &&
           binding.controller.editingController.text == expectedDisplay &&
           binding.controller.paintState.mode ==
@@ -263,8 +286,8 @@ final class _ManagedBlockQuoteHarness {
       'paint=${binding.controller.paintState.mode.name}, '
       'style=${binding.controller.paintState.blockStyleLease?.kind.name}, '
       'query=${query.runtimeType}, '
-      'queryKind=${query is FlarkV3DocumentStructuralQuery ? query.structure.kind.name : '-'}, '
-      'payload=${query is FlarkV3DocumentStructuralQuery ? query.blockQuoteProjection != null : false}, '
+      'queryOwner=${query is FlarkV3RecursiveGreenPointQuery ? query.owner.kind?.name : '-'}, '
+      'payload=${query is FlarkV3RecursiveGreenPointQuery ? query.blockQuoteProjection != null : false}, '
       'island=${binding.controller.inputIslandGlobalStartUtf16}..'
       '${binding.controller.inputIslandGlobalEndUtf16}, '
       'text=${binding.controller.editingController.text}.',

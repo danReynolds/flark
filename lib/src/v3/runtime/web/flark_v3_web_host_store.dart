@@ -5,7 +5,7 @@ import '../../source/source.dart';
 import '../flark_v3_parser_transport.dart';
 import 'flark_v3_wasm_module.dart';
 
-const int _hostAbiVersion = 0x00030005;
+const int _hostAbiVersion = 0x00030006;
 const int _statusOk = 0;
 const int _maximumQueryBytes = 64 * 1024;
 const int _inlineSidecarMaximumQueryBytes = 128 * 1024;
@@ -1179,7 +1179,7 @@ final class _WebHostScratch {
   static const int _structuralOrdinalWindowQueryBytes = 92;
   static const int _structuralOrdinalWindowReceiptBytes = 132;
   static const int _inlineSidecarQueryBytes = 80;
-  static const int _inlineSidecarQueryReceiptBytes = 32;
+  static const int _inlineSidecarQueryReceiptBytes = 36;
   static const int _viewportPresentationBeginBytes = 348;
   static const int _viewportPresentationCommitBytes = 56;
   static const int _viewportPresentationAckBytes = 296;
@@ -1201,6 +1201,8 @@ final class _WebHostScratch {
       (_structuralOrdinalWindowQueryBytes + 7) & ~7;
   static const int _structuralOrdinalWindowReceiptPaddedBytes =
       (_structuralOrdinalWindowReceiptBytes + 7) & ~7;
+  static const int _inlineSidecarQueryReceiptPaddedBytes =
+      (_inlineSidecarQueryReceiptBytes + 7) & ~7;
   static const int _viewportPresentationBeginPaddedBytes =
       (_viewportPresentationBeginBytes + 7) & ~7;
   static const int _viewportPresentationPollReceiptPaddedBytes =
@@ -1243,7 +1245,7 @@ final class _WebHostScratch {
   static const int _inlineSidecarQueryReceiptOffset =
       _inlineSidecarQueryOffset + _inlineSidecarQueryBytes;
   static const int _viewportPresentationBeginOffset =
-      _inlineSidecarQueryReceiptOffset + _inlineSidecarQueryReceiptBytes;
+      _inlineSidecarQueryReceiptOffset + _inlineSidecarQueryReceiptPaddedBytes;
   static const int _viewportPresentationCommitOffset =
       _viewportPresentationBeginOffset + _viewportPresentationBeginPaddedBytes;
   static const int _viewportPresentationAckOffset =
@@ -1912,9 +1914,16 @@ FlarkV3InlineSidecarQueryOutcome _decodeInlineSidecarQueryOutcome({
   final treeNodesVisited = _u32(memory, receiptOffset + 20);
   final valueEntryCount = _u32(memory, receiptOffset + 24);
   final valueEncodedBytes = _u32(memory, receiptOffset + 28);
-  final factBytes =
-      factCount * FlarkV3InlineSidecarQueryAuthoritative.inlineFactRecordBytes;
-  if (outcome == 1 && factBytes + valueEncodedBytes != encodedBytes) {
+  final payloadKindWire = _u32(memory, receiptOffset + 32);
+  final payloadKind = FlarkV3InlineSidecarPayloadKind.tryFromWireValue(
+    payloadKindWire,
+  );
+  final factBytes = factCount * (payloadKind?.recordBytes ?? 0);
+  if (outcome == 1 &&
+      (payloadKind == null ||
+          factBytes + valueEncodedBytes != encodedBytes ||
+          (payloadKind != FlarkV3InlineSidecarPayloadKind.inline &&
+              (valueEntryCount != 0 || valueEncodedBytes != 0)))) {
     throw const FlarkV3WebHostException(
       operation: 'queryInlineSidecarReceipt',
       status: 0x0111,
@@ -1929,9 +1938,11 @@ FlarkV3InlineSidecarQueryOutcome _decodeInlineSidecarQueryOutcome({
             factCount == 0 &&
             treeNodesVisited == 0 &&
             valueEntryCount == 0 &&
-            valueEncodedBytes == 0 =>
+            valueEncodedBytes == 0 &&
+            payloadKindWire == 0 =>
       const FlarkV3InlineSidecarQueryUnavailable(),
     1 when reason == 0 => FlarkV3InlineSidecarQueryAuthoritative(
+      payloadKind: payloadKind!,
       factCount: factCount,
       valueEntryCount: valueEntryCount,
       treeNodesVisited: treeNodesVisited,
@@ -1943,7 +1954,8 @@ FlarkV3InlineSidecarQueryOutcome _decodeInlineSidecarQueryOutcome({
             factCount == 0 &&
             treeNodesVisited == 0 &&
             valueEntryCount == 0 &&
-            valueEncodedBytes == 0 =>
+            valueEncodedBytes == 0 &&
+            payloadKindWire == 0 =>
       FlarkV3InlineSidecarQueryUnsupported(reason: reason, metadata: encoded),
     _ => throw FlarkV3WebHostException(
       operation: 'queryInlineSidecarReceipt',

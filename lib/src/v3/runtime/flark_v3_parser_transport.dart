@@ -234,6 +234,9 @@ enum FlarkV3InlineRefinementTarget {
   /// Experimental production-path checkpoint backed by the recursive-Green
   /// Paragraph owner fence. It deliberately reuses the normal sidecar output.
   recursiveGreenParagraph,
+
+  /// Requests the parser-certified block-quote projection at the source point.
+  blockQuoteProjection,
 }
 
 /// Requests parser-certified inline facts for the structural leaf at one

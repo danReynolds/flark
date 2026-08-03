@@ -31,15 +31,19 @@ final class FlarkV3BlockQuoteLineProjectionRecord {
       kind == FlarkV3BlockQuoteLineProjectionKind.lazyContinuation;
 }
 
-/// Exact source-backed projection for one selected quote Paragraph path.
-final class FlarkV3BlockQuoteProjectionPayload {
-  const FlarkV3BlockQuoteProjectionPayload._({
+/// Path-independent parser certificate for one physical quote Paragraph.
+///
+/// This owns only the exact source-to-display marker map. Recursive-Green
+/// consumers can therefore retain and compose it without manufacturing the
+/// legacy flat viewport's two-node point path.
+final class FlarkV3BlockQuoteProjectionCertificate {
+  const FlarkV3BlockQuoteProjectionCertificate._({
     required this.sourceVersion,
     required this.source,
-    required this.facts,
-    required this.pointPath,
     required this.records,
     required this.projectionPieces,
+    required this.projectedUtf8Length,
+    required this.projectedUtf16Length,
     required String sourceText,
   }) : _sourceText = sourceText;
 
@@ -47,10 +51,10 @@ final class FlarkV3BlockQuoteProjectionPayload {
   int get sourceRevision => sourceVersion.revision;
 
   final FlarkV3SourceSpan source;
-  final FlarkV3BlockQuoteFacts facts;
-  final FlarkV3DocumentPointPath pointPath;
   final List<FlarkV3BlockQuoteLineProjectionRecord> records;
   final List<FlarkV3SourceProjectionPiece> projectionPieces;
+  final int projectedUtf8Length;
+  final int projectedUtf16Length;
 
   final String _sourceText;
 
@@ -69,6 +73,41 @@ final class FlarkV3BlockQuoteProjectionPayload {
       maximumDisplayUtf16: maximumDisplayUtf16,
     );
   }
+}
+
+/// Exact source-backed projection for one selected legacy quote Paragraph
+/// path.
+///
+/// [certificate] is the reusable marker map. [facts] and [pointPath] retain
+/// the legacy flat-viewport evidence without coupling recursive-Green queries
+/// to that shape.
+final class FlarkV3BlockQuoteProjectionPayload {
+  const FlarkV3BlockQuoteProjectionPayload._({
+    required this.certificate,
+    required this.facts,
+    required this.pointPath,
+  });
+
+  final FlarkV3BlockQuoteProjectionCertificate certificate;
+  final FlarkV3BlockQuoteFacts facts;
+  final FlarkV3DocumentPointPath pointPath;
+
+  FlarkV3SourceVersion get sourceVersion => certificate.sourceVersion;
+  int get sourceRevision => certificate.sourceRevision;
+  FlarkV3SourceSpan get source => certificate.source;
+  List<FlarkV3BlockQuoteLineProjectionRecord> get records =>
+      certificate.records;
+  List<FlarkV3SourceProjectionPiece> get projectionPieces =>
+      certificate.projectionPieces;
+
+  FlarkV3SourceProjection toSourceProjection({
+    int maximumSourceUtf16 = FlarkV3SourceProjection.defaultMaximumSourceUtf16,
+    int maximumDisplayUtf16 =
+        FlarkV3SourceProjection.defaultMaximumDisplayUtf16,
+  }) => certificate.toSourceProjection(
+    maximumSourceUtf16: maximumSourceUtf16,
+    maximumDisplayUtf16: maximumDisplayUtf16,
+  );
 }
 
 /// A corrupt or source-incompatible block-quote projection payload.
@@ -94,12 +133,11 @@ final class FlarkV3BlockQuoteProjectionDecoder {
   static const int lazyContinuationFlag = 1 << 1;
   static const int _flagMask = markedFlag | lazyContinuationFlag;
 
-  static FlarkV3BlockQuoteProjectionPayload decode({
+  /// Decodes only the exact marker map, independent of any legacy point path.
+  static FlarkV3BlockQuoteProjectionCertificate decodeCertificate({
     required FlarkV3SourceDocument sourceDocument,
     required FlarkV3SourceVersion expectedSource,
     required FlarkV3SourceSpan source,
-    required FlarkV3BlockQuoteFacts facts,
-    required FlarkV3DocumentPointPath pointPath,
     required Uint8List encodedRecords,
   }) {
     if (!sourceDocument.hasCertifiedFacts) {
@@ -110,18 +148,15 @@ final class FlarkV3BlockQuoteProjectionDecoder {
     _validateSourceAuthority(sourceDocument, expectedSource);
     final mapper = _Utf8SpanMapper(sourceDocument);
     _validateBlockSource(source, sourceDocument, mapper);
-    _validatePointPath(source, facts, pointPath);
     if (encodedRecords.lengthInBytes % recordBytes != 0) {
       throw const FlarkV3BlockQuoteProjectionDecodeException(
         'Quote projection is not a whole number of canonical records.',
       );
     }
     final recordCount = encodedRecords.lengthInBytes ~/ recordBytes;
-    if (recordCount == 0 ||
-        recordCount != facts.lineCount ||
-        recordCount != pointPath.root.runCount) {
+    if (recordCount == 0) {
       throw const FlarkV3BlockQuoteProjectionDecodeException(
-        'Quote-line count does not match the structural path summary.',
+        'Quote projection omitted its physical-line records.',
       );
     }
 
@@ -274,24 +309,56 @@ final class FlarkV3BlockQuoteProjectionDecoder {
       relativeCursor = relativeLineEnd;
     }
 
+    if (relativeCursor != blockLengthUtf8) {
+      throw const FlarkV3BlockQuoteProjectionDecodeException(
+        'Quote-line records do not tile their exact physical source.',
+      );
+    }
+    return FlarkV3BlockQuoteProjectionCertificate._(
+      sourceVersion: expectedSource,
+      source: source,
+      records: List.unmodifiable(records),
+      projectionPieces: List.unmodifiable(pieces),
+      projectedUtf8Length: projectedUtf8Length,
+      projectedUtf16Length: projectedUtf16Length,
+      sourceText: sourceDocument.readRange(source.startUtf16, source.endUtf16),
+    );
+  }
+
+  static FlarkV3BlockQuoteProjectionPayload decode({
+    required FlarkV3SourceDocument sourceDocument,
+    required FlarkV3SourceVersion expectedSource,
+    required FlarkV3SourceSpan source,
+    required FlarkV3BlockQuoteFacts facts,
+    required FlarkV3DocumentPointPath pointPath,
+    required Uint8List encodedRecords,
+  }) {
+    final certificate = decodeCertificate(
+      sourceDocument: sourceDocument,
+      expectedSource: expectedSource,
+      source: source,
+      encodedRecords: encodedRecords,
+    );
+    _validatePointPath(source, facts, pointPath);
+    if (certificate.records.length != facts.lineCount ||
+        certificate.records.length != pointPath.root.runCount) {
+      throw const FlarkV3BlockQuoteProjectionDecodeException(
+        'Quote-line count does not match the structural path summary.',
+      );
+    }
     final selectedLeaf = pointPath.selectedLeaf;
-    if (relativeCursor != blockLengthUtf8 ||
-        projectedUtf8Length != facts.projectedUtf8Length ||
-        projectedUtf16Length != facts.projectedUtf16Length ||
-        projectedUtf8Length != selectedLeaf.projectedUtf8Length ||
-        projectedUtf16Length != selectedLeaf.projectedUtf16Length) {
+    if (certificate.projectedUtf8Length != facts.projectedUtf8Length ||
+        certificate.projectedUtf16Length != facts.projectedUtf16Length ||
+        certificate.projectedUtf8Length != selectedLeaf.projectedUtf8Length ||
+        certificate.projectedUtf16Length != selectedLeaf.projectedUtf16Length) {
       throw const FlarkV3BlockQuoteProjectionDecodeException(
         'Quote-line records disagree with structural projection aggregates.',
       );
     }
     return FlarkV3BlockQuoteProjectionPayload._(
-      sourceVersion: expectedSource,
-      source: source,
+      certificate: certificate,
       facts: facts,
       pointPath: pointPath,
-      records: List.unmodifiable(records),
-      projectionPieces: List.unmodifiable(pieces),
-      sourceText: sourceDocument.readRange(source.startUtf16, source.endUtf16),
     );
   }
 }

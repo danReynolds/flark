@@ -1156,7 +1156,7 @@ const _: () = {
     assert!(offset_of!(FlarkV3HostInlineSidecarQuery, binding) == 8);
     assert!(offset_of!(FlarkV3HostInlineSidecarQuery, maximum_encoded_bytes) == 64);
     assert!(offset_of!(FlarkV3HostInlineSidecarQuery, reserved) == 68);
-    assert!(std::mem::size_of::<FlarkV3HostInlineSidecarQueryReceipt>() == 32);
+    assert!(std::mem::size_of::<FlarkV3HostInlineSidecarQueryReceipt>() == 36);
     assert!(offset_of!(FlarkV3HostInlineSidecarQueryReceipt, rejection_reason) == 0);
     assert!(offset_of!(FlarkV3HostInlineSidecarQueryReceipt, outcome) == 4);
     assert!(offset_of!(FlarkV3HostInlineSidecarQueryReceipt, reason) == 8);
@@ -1165,6 +1165,7 @@ const _: () = {
     assert!(offset_of!(FlarkV3HostInlineSidecarQueryReceipt, tree_nodes_visited) == 20);
     assert!(offset_of!(FlarkV3HostInlineSidecarQueryReceipt, value_entry_count) == 24);
     assert!(offset_of!(FlarkV3HostInlineSidecarQueryReceipt, value_encoded_bytes) == 28);
+    assert!(offset_of!(FlarkV3HostInlineSidecarQueryReceipt, payload_kind) == 32);
     assert!(std::mem::size_of::<FlarkV3HostViewportPresentationMetricRange>() == 16);
     assert!(std::mem::size_of::<FlarkV3HostViewportPresentationVisitStart>() == 16);
     assert!(std::mem::size_of::<FlarkV3HostViewportPresentationBinding>() == 72);

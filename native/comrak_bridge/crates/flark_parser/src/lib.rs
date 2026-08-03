@@ -34,6 +34,7 @@ mod inline_projection_job;
 mod inline_radix;
 mod persistent_recursive_green_session;
 mod publication;
+mod recursive_green_block_quote_projection;
 mod recursive_green_paragraph_inline;
 mod reference_cook;
 mod reference_label;
@@ -139,6 +140,10 @@ pub use publication::{
     M11_INLINE_META_RECORD_BYTES, M11_INLINE_PAGE_HEADER_BYTES, M11_INLINE_PAGE_MAGIC,
     M11_INLINE_SCHEMA, M11_ORDINARY_CHECKPOINT_MERGE_RECORDS_PER_TRANSITION,
     M11_PROJECTION_RECORD_BYTES, M11_SEGMENTED_TOP_LEVEL_CROP_MAX_BYTES,
+};
+pub use recursive_green_block_quote_projection::{
+    resolve_m11_recursive_green_block_quote_projection_fence,
+    M11RecursiveGreenBlockQuoteProjectionFence, M11RecursiveGreenBlockQuoteProjectionPreparation,
 };
 pub use recursive_green_paragraph_inline::{
     prepare_m11_recursive_green_inline_leaf, prepare_m11_recursive_green_paragraph_inline,

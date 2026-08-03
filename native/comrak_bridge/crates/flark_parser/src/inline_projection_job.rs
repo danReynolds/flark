@@ -21,9 +21,7 @@ use flark_engine::parser_internal::{
 };
 use flark_engine::{DocumentRuntime, ParserProfileId, SourceVersion};
 
-use crate::block_core::{
-    M11RecursiveGreenInlineLeafFence, M11RecursiveGreenParagraphFence,
-};
+use crate::block_core::{M11RecursiveGreenInlineLeafFence, M11RecursiveGreenParagraphFence};
 use crate::exact_clean::{
     M11CleanDocumentKind, M11CleanDocumentResult, M11ParserBinding, M11_GRAMMAR_REVISION,
 };
@@ -732,11 +730,7 @@ impl M11InlineProjectionJob {
         fence: M11RecursiveGreenParagraphFence,
         binding: M11ParserBinding,
     ) -> Result<Self, M11InlineProjectionJobError> {
-        Self::new_for_recursive_green_inline_leaf(
-            runtime,
-            fence.into_inline_leaf(),
-            binding,
-        )
+        Self::new_for_recursive_green_inline_leaf(runtime, fence.into_inline_leaf(), binding)
     }
 
     /// Starts one recursive-Green Paragraph with the definitive reference

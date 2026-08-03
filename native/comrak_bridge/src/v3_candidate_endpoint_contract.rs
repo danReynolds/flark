@@ -5,6 +5,7 @@ use super::*;
 #[derive(Debug)]
 pub(crate) enum CandidateEndpointError {
     Busy,
+    InlineRefinementUnavailable,
     InvalidState,
     InvalidAuthority,
     MetricOverflow,
@@ -39,6 +40,9 @@ impl fmt::Display for CandidateEndpointError {
         formatter.write_str("Flark v3 candidate endpoint failure: ")?;
         match self {
             Self::Busy => formatter.write_str("busy"),
+            Self::InlineRefinementUnavailable => {
+                formatter.write_str("inline refinement is unavailable for this shape")
+            }
             Self::InvalidState => formatter.write_str("invalid state"),
             Self::InvalidAuthority => formatter.write_str("invalid authority"),
             Self::MetricOverflow => formatter.write_str("metric overflow"),

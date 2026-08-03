@@ -38,11 +38,11 @@ use super::{
     TerminatorResolution,
 };
 
-const KIND_DOCUMENT: u16 = 1;
-const KIND_BLOCK_QUOTE: u16 = 2;
+pub(crate) const KIND_DOCUMENT: u16 = 1;
+pub(crate) const KIND_BLOCK_QUOTE: u16 = 2;
 const KIND_LIST: u16 = 3;
 const KIND_ITEM: u16 = 4;
-pub(super) const KIND_PARAGRAPH: u16 = 5;
+pub(crate) const KIND_PARAGRAPH: u16 = 5;
 const KIND_INDENTED_CODE: u16 = 6;
 const KIND_FENCED_CODE: u16 = 7;
 const KIND_HTML_BLOCK: u16 = 8;

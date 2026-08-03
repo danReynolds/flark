@@ -14,6 +14,7 @@ use flark_engine::parser_internal::{
     M11RecursiveGreenStoragePageIdentity, M11RecursiveGreenStructuralSpliceSelection,
     M11ReferenceJournal, M11ReferenceJournalAdoptionStatus, M11ReferenceJournalError,
     M11ReferenceJournalRoot, M11ReferenceJournalStatus, M11ReferenceJournalUnchangedPrefixAdoption,
+    BLOCK_QUOTE_WINDOW_MAX_BYTES,
 };
 use flark_engine::{
     DocumentRuntime, DocumentRuntimeError, ExactUnchangedPrefixWitness,
@@ -28,6 +29,10 @@ use crate::block_core::{
     M11DirectBlockController, M11DirectBlockControllerError, M11DirectBlockError,
     M11DirectBlockPollStatus, M11DirectSourceLineAdmission, M11ReferenceRendezvous,
     M11ReferenceRendezvousError, M11ReferenceRendezvousStatus, SourceMetric,
+};
+use crate::recursive_green_block_quote_projection::{
+    resolve_m11_recursive_green_block_quote_projection_fence,
+    M11RecursiveGreenBlockQuoteProjectionPreparation,
 };
 use crate::recursive_green_paragraph_inline::{
     M11RecursiveGreenInlineLeafPreparation, M11RecursiveGreenParagraphInlinePreparation,
@@ -2300,6 +2305,59 @@ impl M11PersistentRecursiveGreenSession {
                 fence,
             ),
         )
+    }
+
+    /// Authenticates one top-level single-Paragraph block quote for exact
+    /// marker projection. Unlike inline-leaf preparation, this authority spans
+    /// the physically disjoint container and carries Green-derived metrics.
+    pub fn prepare_block_quote_projection(
+        &self,
+        runtime: &DocumentRuntime,
+        point: M11RecursiveGreenPoint,
+    ) -> Result<
+        Option<M11RecursiveGreenBlockQuoteProjectionPreparation>,
+        M11PersistentRecursiveGreenSessionError,
+    > {
+        if runtime.current_source_version() != Some(self.source) || self.release_begun {
+            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "recursive-Green session is not the current live source",
+            ));
+        }
+        let limits = M11RecursiveGreenRowQueryLimits::new(1, 25, 3_200, 64, 512).ok_or(
+            M11PersistentRecursiveGreenSessionError::InvalidState(
+                "recursive-Green block-quote query limits must be nonzero",
+            ),
+        )?;
+        let fence = match resolve_m11_recursive_green_block_quote_projection_fence(
+            runtime,
+            self.green
+                .as_ref()
+                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "recursive-Green session omitted its structural root",
+                ))?,
+            point,
+            limits,
+            u64::try_from(BLOCK_QUOTE_WINDOW_MAX_BYTES).map_err(|_| {
+                M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "block-quote window cap exceeds recursive-Green metrics",
+                )
+            })?,
+        ) {
+            Ok(Some(fence)) => fence,
+            Ok(None) | Err(M11RecursiveGreenFrameQueryError::BoundExceeded(_)) => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        let block_source = to_u32_range(fence.block_source_range())?;
+        let block_source_utf16 = to_u32_range(fence.block_source_utf16_range())?;
+        let query_receipt = fence.receipt();
+        Ok(Some(
+            M11RecursiveGreenBlockQuoteProjectionPreparation::from_persistent_session(
+                block_source,
+                block_source_utf16,
+                query_receipt,
+                fence,
+            ),
+        ))
     }
 
     pub fn begin_release(

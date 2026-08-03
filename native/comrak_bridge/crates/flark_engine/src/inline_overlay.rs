@@ -59,6 +59,7 @@ const INLINE_OVERLAY_SCHEMA_INLINE: u32 = 1;
 const INLINE_OVERLAY_SCHEMA_TYPED: u32 = 2;
 const INLINE_OVERLAY_SCHEMA_ORDERED_ITEM: u32 = 3;
 const INLINE_OVERLAY_SCHEMA_RECURSIVE_GREEN_INLINE: u32 = 4;
+const INLINE_OVERLAY_SCHEMA_RECURSIVE_GREEN_TYPED: u32 = 5;
 const INLINE_OVERLAY_OWNER_ID_LIMIT: u64 = 1_u64 << 63;
 const INLINE_OVERLAY_COMMITMENT_DOMAIN: &[u8] = b"flark.inline-overlay-envelope.v1\0";
 const INLINE_OVERLAY_BODY_BYTES: usize = 224;
@@ -912,14 +913,20 @@ impl M11InlineOverlayEnvelope {
             self.binding.owner,
             M11InlineOverlayOwner::RecursiveGreenFrame(_)
         ) {
-            debug_assert!(matches!(
-                self.disposition,
+            match self.disposition {
+                M11InlineOverlayDisposition::Authoritative {
+                    projection_kind: M11InlineOverlayProjectionKind::BlockQuote,
+                    ..
+                } => INLINE_OVERLAY_SCHEMA_RECURSIVE_GREEN_TYPED,
                 M11InlineOverlayDisposition::Authoritative {
                     projection_kind: M11InlineOverlayProjectionKind::Inline,
                     ..
-                } | M11InlineOverlayDisposition::Unsupported { .. }
-            ));
-            INLINE_OVERLAY_SCHEMA_RECURSIVE_GREEN_INLINE
+                }
+                | M11InlineOverlayDisposition::Unsupported { .. } => {
+                    INLINE_OVERLAY_SCHEMA_RECURSIVE_GREEN_INLINE
+                }
+                _ => unreachable!("recursive Green owner requires inline or block-quote payload"),
+            }
         } else {
             match self.disposition {
                 M11InlineOverlayDisposition::Authoritative {
@@ -952,7 +959,9 @@ impl M11InlineOverlayEnvelope {
         output[64..68].copy_from_slice(&candidate.syntax_profile.to_le_bytes());
         if matches!(
             schema,
-            INLINE_OVERLAY_SCHEMA_TYPED | INLINE_OVERLAY_SCHEMA_ORDERED_ITEM
+            INLINE_OVERLAY_SCHEMA_TYPED
+                | INLINE_OVERLAY_SCHEMA_ORDERED_ITEM
+                | INLINE_OVERLAY_SCHEMA_RECURSIVE_GREEN_TYPED
         ) {
             let discriminator = match self.disposition {
                 M11InlineOverlayDisposition::Authoritative {
@@ -1075,13 +1084,21 @@ impl M11InlineOverlayEnvelope {
             expected.owner,
             M11InlineOverlayOwner::RecursiveGreenFrame(_)
         );
-        if (schema == INLINE_OVERLAY_SCHEMA_RECURSIVE_GREEN_INLINE) != expected_green_owner {
+        if matches!(
+            schema,
+            INLINE_OVERLAY_SCHEMA_RECURSIVE_GREEN_INLINE
+                | INLINE_OVERLAY_SCHEMA_RECURSIVE_GREEN_TYPED
+        ) != expected_green_owner
+        {
             return Err(M11InlineOverlayError::BindingMismatch);
         }
         let (projection_kind, selected_item_line_ending) = match (schema, read_u32(bytes, 68)?) {
             (INLINE_OVERLAY_SCHEMA_INLINE, 0) => (M11InlineOverlayProjectionKind::Inline, None),
             (INLINE_OVERLAY_SCHEMA_RECURSIVE_GREEN_INLINE, 0) => {
                 (M11InlineOverlayProjectionKind::Inline, None)
+            }
+            (INLINE_OVERLAY_SCHEMA_RECURSIVE_GREEN_TYPED, 3) => {
+                (M11InlineOverlayProjectionKind::BlockQuote, None)
             }
             (INLINE_OVERLAY_SCHEMA_TYPED, 2) => {
                 (M11InlineOverlayProjectionKind::IndentedCode, None)

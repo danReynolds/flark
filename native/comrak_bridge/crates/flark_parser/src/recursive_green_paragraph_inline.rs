@@ -18,8 +18,8 @@ use crate::block_core::{
     resolve_m11_recursive_green_inline_leaf_fence, M11BlockWriter, M11BlockWriterError,
     M11BlockWriterOfferStatus, M11BlockWriterPollStatus, M11DirectBlockController,
     M11DirectBlockControllerError, M11DirectBlockError, M11DirectBlockPollStatus,
-    M11DirectBlockUnsupported, M11RecursiveGreenInlineLeafFence,
-    M11RecursiveGreenInlineLeafKind, M11RecursiveGreenParagraphFence,
+    M11DirectBlockUnsupported, M11RecursiveGreenInlineLeafFence, M11RecursiveGreenInlineLeafKind,
+    M11RecursiveGreenParagraphFence,
 };
 use crate::{
     M11ExactController, M11SourceLinePollStatus, M11SourceLineSource, SnapshotLinePoll,
@@ -205,8 +205,10 @@ impl M11RecursiveGreenInlineLeafPreparation {
 
     fn into_paragraph(
         self,
-    ) -> Result<M11RecursiveGreenParagraphInlinePreparation, M11RecursiveGreenParagraphPreparationError>
-    {
+    ) -> Result<
+        M11RecursiveGreenParagraphInlinePreparation,
+        M11RecursiveGreenParagraphPreparationError,
+    > {
         let fence = self
             .fence
             .into_paragraph()
@@ -284,8 +286,7 @@ impl M11RecursiveGreenParagraphInlinePreparation {
 pub fn prepare_m11_recursive_green_inline_leaf(
     runtime: &mut DocumentRuntime,
     point: M11RecursiveGreenPoint,
-) -> Result<M11RecursiveGreenInlineLeafPreparation, M11RecursiveGreenParagraphPreparationError>
-{
+) -> Result<M11RecursiveGreenInlineLeafPreparation, M11RecursiveGreenParagraphPreparationError> {
     let source = runtime.current_source_version().ok_or(
         M11RecursiveGreenParagraphPreparationError::InvalidState(
             "recursive-Green Paragraph bridge requires an open source",

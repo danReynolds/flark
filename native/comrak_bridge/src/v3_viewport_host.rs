@@ -6,27 +6,26 @@
 //! member of the bounded installed page.
 
 use flark_engine::m11_host::{
-    M11_HOST_MAXIMUM_FRAME_BYTES, M11_HOST_MAXIMUM_PROGRAM_CHILDREN, M11CandidateHost,
-    M11HostFrameKind, M11HostInlineLinkValues, M11HostInlineProjectionCursorPoll,
+    M11CandidateHost, M11HostFrameKind, M11HostInlineLinkValues, M11HostInlineProjectionCursorPoll,
     M11HostInlineSidecar, M11HostInlineSidecarBase, M11HostInlineSidecarBinding,
     M11HostInlineSidecarDescriptor, M11HostInlineSidecarOwner, M11HostInlineSidecarQuery,
-    M11HostLimits,
+    M11HostLimits, M11_HOST_MAXIMUM_FRAME_BYTES, M11_HOST_MAXIMUM_PROGRAM_CHILDREN,
 };
 use flark_parser::{M11_INLINE_FACT_RECORD_BYTES, M11_INLINE_META_RECORD_BYTES};
 
 use super::*;
 use crate::v3_publication_wire::{
-    HotInlineSidecarDisposition, HotInlineSidecarOwner, IPR3_DESCRIPTOR_BYTES,
-    MAXIMUM_PACKET_AGGREGATE_FRAME_BYTES, MAXIMUM_PACKET_ENCODED_BYTES, MAXIMUM_PACKET_FRAME_COUNT,
-    PACKET_FRAME_DESCRIPTOR_BYTES, PACKET_HEADER_BYTES, ProtocolDigestDomain,
-    VIEWPORT_PRESENTATION_PARENT_FRAME_BYTES, ViewportPresentationAck, ViewportPresentationBegin,
-    ViewportPresentationCommitRequest, ViewportPresentationDirectoryEntry,
-    ViewportPresentationFrameKind, ViewportPresentationTransportDigest,
     decode_viewport_presentation_child_frame, decode_viewport_presentation_directory,
     decode_viewport_presentation_end_frame, decode_viewport_presentation_parent_frame,
     encode_viewport_presentation_parent_frame_into, protocol_digest128_from_blake3,
     viewport_presentation_aggregate_envelope_digest256,
-    viewport_presentation_root_stream_digest256,
+    viewport_presentation_root_stream_digest256, HotInlineSidecarDisposition,
+    HotInlineSidecarOwner, ProtocolDigestDomain, ViewportPresentationAck,
+    ViewportPresentationBegin, ViewportPresentationCommitRequest,
+    ViewportPresentationDirectoryEntry, ViewportPresentationFrameKind,
+    ViewportPresentationTransportDigest, IPR3_DESCRIPTOR_BYTES,
+    MAXIMUM_PACKET_AGGREGATE_FRAME_BYTES, MAXIMUM_PACKET_ENCODED_BYTES, MAXIMUM_PACKET_FRAME_COUNT,
+    PACKET_FRAME_DESCRIPTOR_BYTES, PACKET_HEADER_BYTES, VIEWPORT_PRESENTATION_PARENT_FRAME_BYTES,
 };
 
 pub(crate) const HOST_VIEWPORT_PRESENTATION_SCHEMA: u32 = 10;
@@ -127,6 +126,17 @@ impl PublicPayloadKind {
             Self::BulletList => M11_LEAF_PROJECTION_PAYLOAD_BULLET_LIST,
             Self::OrderedListItem => M11_LEAF_PROJECTION_PAYLOAD_ORDERED_LIST_ITEM,
             Self::Unsupported => u8::MAX,
+        }
+    }
+
+    const fn direct_sidecar_kind(self) -> Option<HostInlineSidecarPayloadKind> {
+        match self {
+            Self::Inline => Some(HostInlineSidecarPayloadKind::Inline),
+            Self::IndentedCode => Some(HostInlineSidecarPayloadKind::IndentedCode),
+            Self::BlockQuote => Some(HostInlineSidecarPayloadKind::BlockQuote),
+            Self::BulletList => Some(HostInlineSidecarPayloadKind::BulletList),
+            Self::OrderedListItem => Some(HostInlineSidecarPayloadKind::OrderedListItem),
+            Self::Unsupported => None,
         }
     }
 }
@@ -1392,12 +1402,14 @@ fn encode_public_payload(
         };
     match outcome {
         HostInlineSidecarQueryOutcome::Authoritative {
+            payload_kind,
             fact_count,
             value_entry_count,
             value_encoded_bytes,
             encoded_bytes,
             ..
         } if plan.kind != PublicPayloadKind::Unsupported
+            && Some(payload_kind) == plan.kind.direct_sidecar_kind()
             && fact_count == plan.record_count
             && fact_count == expected_fact_count
             && value_entry_count == expected_value_entry_count
@@ -1497,6 +1509,7 @@ fn encode_inline_payload(
         ));
     }
     Ok(HostInlineSidecarQueryOutcome::Authoritative {
+        payload_kind: HostInlineSidecarPayloadKind::Inline,
         fact_count: expected_fact_count,
         value_entry_count: value_receipt.entry_count,
         value_encoded_bytes: descriptor.link_value_encoded_bytes(),
@@ -1593,6 +1606,7 @@ fn encode_indented_code_payload(
         ));
     }
     Ok(HostInlineSidecarQueryOutcome::Authoritative {
+        payload_kind: HostInlineSidecarPayloadKind::IndentedCode,
         fact_count: line_count as u32,
         value_entry_count: 0,
         value_encoded_bytes: 0,
@@ -2127,10 +2141,12 @@ mod tests {
 
     #[test]
     fn viewport_dense_page_admission_honors_the_standard_64k_query_ceiling() {
-        assert!(
-            validate_public_page_bound_values(&[dense_entry(1_359)], 64 * 1024, 4 * 1024 * 1024,)
-                .is_ok()
-        );
+        assert!(validate_public_page_bound_values(
+            &[dense_entry(1_359)],
+            64 * 1024,
+            4 * 1024 * 1024,
+        )
+        .is_ok());
         assert_eq!(
             validate_public_page_bound_values(&[dense_entry(1_360)], 64 * 1024, 4 * 1024 * 1024)
                 .expect_err("one record beyond the exact 64KiB page must fail")
@@ -2145,14 +2161,12 @@ mod tests {
             + HOST_VIEWPORT_PRESENTATION_DIRECTORY_ENTRY_BYTES
             + M11_INLINE_FACT_RECORD_BYTES
             + 49;
-        assert!(
-            validate_public_page_bound_values(
-                &[direct_link_entry()],
-                exact_bytes as u32,
-                4 * 1024 * 1024,
-            )
-            .is_ok()
-        );
+        assert!(validate_public_page_bound_values(
+            &[direct_link_entry()],
+            exact_bytes as u32,
+            4 * 1024 * 1024,
+        )
+        .is_ok());
         assert_eq!(
             validate_public_page_bound_values(
                 &[direct_link_entry()],

@@ -548,9 +548,31 @@ sealed class FlarkV3InlineSidecarQueryOutcome {
   const FlarkV3InlineSidecarQueryOutcome();
 }
 
+/// Stable record format carried by an authoritative direct-sidecar query.
+enum FlarkV3InlineSidecarPayloadKind {
+  inline(1, 20),
+  indentedCode(2, 20),
+  blockQuote(3, 20),
+  bulletList(4, 28),
+  orderedListItem(6, 48);
+
+  const FlarkV3InlineSidecarPayloadKind(this.wireValue, this.recordBytes);
+
+  final int wireValue;
+  final int recordBytes;
+
+  static FlarkV3InlineSidecarPayloadKind? tryFromWireValue(int wireValue) {
+    for (final kind in values) {
+      if (kind.wireValue == wireValue) return kind;
+    }
+    return null;
+  }
+}
+
 final class FlarkV3InlineSidecarQueryAuthoritative
     extends FlarkV3InlineSidecarQueryOutcome {
   FlarkV3InlineSidecarQueryAuthoritative({
+    required this.payloadKind,
     required this.factCount,
     required this.valueEntryCount,
     required this.treeNodesVisited,
@@ -560,10 +582,14 @@ final class FlarkV3InlineSidecarQueryAuthoritative
     _checkU32(factCount, 'factCount');
     _checkU32(valueEntryCount, 'valueEntryCount');
     _checkU32(treeNodesVisited, 'treeNodesVisited');
-    if (encodedFacts.length != factCount * inlineFactRecordBytes) {
+    if (encodedFacts.length != factCount * payloadKind.recordBytes) {
       throw ArgumentError(
         'Authoritative sidecar bytes do not match the fact count.',
       );
+    }
+    if (payloadKind != FlarkV3InlineSidecarPayloadKind.inline &&
+        (valueEntryCount != 0 || encodedValues.isNotEmpty)) {
+      throw ArgumentError('Only inline sidecars may carry a value lane.');
     }
     if (valueEntryCount == 0) {
       if (encodedValues.isNotEmpty) {
@@ -589,6 +615,7 @@ final class FlarkV3InlineSidecarQueryAuthoritative
   static const int inlineValueSchema = 1;
   static const int maximumInlineValueBytes = 64 * 1024;
 
+  final FlarkV3InlineSidecarPayloadKind payloadKind;
   final int factCount;
   final int valueEntryCount;
   final int treeNodesVisited;

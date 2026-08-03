@@ -114,6 +114,7 @@ export 'src/v3/runtime/public/flark_v3_block_quote_projection.dart'
     show
         FlarkV3BlockQuoteLineProjectionKind,
         FlarkV3BlockQuoteLineProjectionRecord,
+        FlarkV3BlockQuoteProjectionCertificate,
         FlarkV3BlockQuoteProjectionPayload;
 export 'src/v3/runtime/public/flark_v3_bullet_list_projection.dart'
     show

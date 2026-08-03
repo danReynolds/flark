@@ -64,7 +64,7 @@ use flark_parser::{
     M11PublishedIndentedCodeLeafFence, M11PublishedInlineLeafFence,
     M11PublishedInlineLeafFenceResolution, M11PublishedInlineRangeError,
     M11PublishedOrderedListItemInlineFenceOutcome, M11PublishedOrderedListItemProjectionFence,
-    M11RecursiveGreenParagraphPreparationError,
+    M11RecursiveGreenBlockQuoteProjectionFence, M11RecursiveGreenParagraphPreparationError,
     M11_BLOCK_QUOTE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
     M11_BULLET_LIST_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
     M11_INDENTED_CODE_PROJECTION_JOB_MAX_POLL_TRANSITIONS, M11_INLINE_META_RECORD_BYTES,
@@ -602,6 +602,47 @@ fn resolved_recursive_green_inline_leaf(
     })
 }
 
+fn resolved_recursive_green_block_quote_projection(
+    session: &M11PersistentRecursiveGreenSession,
+    runtime: &DocumentRuntime,
+    command: InlineRefinementCommand,
+    byte_offset: usize,
+    utf16_offset: usize,
+    affinity: SourceBoundaryAffinity,
+) -> Result<ResolvedHotInlineDemand, CandidateEndpointError> {
+    let parser_profile =
+        flark_engine::ParserProfileId::new(u64::from(command.base_ack.syntax_profile))
+            .ok_or(CandidateEndpointError::MetricOverflow)?;
+    let prepared = session
+        .prepare_block_quote_projection(
+            runtime,
+            M11RecursiveGreenPoint::new(byte_offset, utf16_offset, affinity),
+        )?
+        .ok_or(CandidateEndpointError::InlineRefinementUnavailable)?;
+    let block_source = prepared.block_source_range();
+    let block_source_utf16 = prepared.block_source_utf16_range();
+    let frame = prepared.frame();
+    let fence = prepared.into_fence();
+    let identity = HotInlineLeafIdentity {
+        kind: M11BlockSequenceEntryKind::Structured,
+        byte_start: block_source.start,
+        byte_end: block_source.end,
+        utf16_start: block_source_utf16.start,
+        utf16_end: block_source_utf16.end,
+        inline_byte_start: block_source.start,
+        inline_byte_end: block_source.end,
+        inline_utf16_start: block_source_utf16.start,
+        inline_utf16_end: block_source_utf16.end,
+        owner: HotInlineLeafOwner::RecursiveGreenFrame(frame),
+    };
+    Ok(ResolvedHotInlineDemand::PreparedBlockQuoteLeaf {
+        command,
+        identity,
+        parser_profile,
+        fence,
+    })
+}
+
 fn resolved_recursive_green_automatic(
     session: &M11PersistentRecursiveGreenSession,
     runtime: &DocumentRuntime,
@@ -864,6 +905,12 @@ enum ResolvedHotInlineDemand {
         parser_profile: flark_engine::ParserProfileId,
         fence: M11PublishedBlockQuoteLeafFence,
     },
+    PreparedBlockQuoteLeaf {
+        command: InlineRefinementCommand,
+        identity: HotInlineLeafIdentity,
+        parser_profile: flark_engine::ParserProfileId,
+        fence: M11RecursiveGreenBlockQuoteProjectionFence,
+    },
     BulletListLeaf {
         command: InlineRefinementCommand,
         identity: HotInlineLeafIdentity,
@@ -892,6 +939,7 @@ impl ResolvedHotInlineDemand {
             Self::PreparedInlineLeaf { identity, .. } => *identity,
             Self::IndentedCodeLeaf { identity, .. } => *identity,
             Self::BlockQuoteLeaf { identity, .. } => *identity,
+            Self::PreparedBlockQuoteLeaf { identity, .. } => *identity,
             Self::BulletListLeaf { identity, .. } => *identity,
             Self::BulletListItem { identity, .. } => *identity,
             Self::OrderedListItem { identity, .. } => *identity,
@@ -905,6 +953,7 @@ impl ResolvedHotInlineDemand {
             Self::PreparedInlineLeaf { command, .. } => *command,
             Self::IndentedCodeLeaf { command, .. } => *command,
             Self::BlockQuoteLeaf { command, .. } => *command,
+            Self::PreparedBlockQuoteLeaf { command, .. } => *command,
             Self::BulletListLeaf { command, .. } => *command,
             Self::BulletListItem { command, .. } => *command,
             Self::OrderedListItem { command, .. } => *command,
@@ -2795,6 +2844,35 @@ impl CandidateEndpoint {
         };
         let point = M11BlockSequencePoint::new(byte_offset, utf16_offset, affinity);
         let resolved = match command.target {
+            InlineRefinementTarget::BlockQuoteProjection
+                if self
+                    .recursive_green
+                    .has_installed_session_for(command.base_ack) =>
+            {
+                resolved_recursive_green_block_quote_projection(
+                    self.recursive_green.installed_session(command.base_ack)?,
+                    runtime,
+                    command,
+                    byte_offset,
+                    utf16_offset,
+                    affinity,
+                )?
+            }
+            InlineRefinementTarget::BlockQuoteProjection => {
+                let fence = resolve_m11_published_block_quote_leaf_fence(
+                    runtime,
+                    &retained.publication,
+                    point,
+                )?;
+                let identity = HotInlineLeafIdentity::block_quote_leaf(&fence);
+                let parser_profile = fence.binding().syntax_profile();
+                ResolvedHotInlineDemand::BlockQuoteLeaf {
+                    command,
+                    identity,
+                    parser_profile,
+                    fence,
+                }
+            }
             InlineRefinementTarget::RecursiveGreenParagraph => {
                 resolved_recursive_green_inline_leaf(
                     self.recursive_green.installed_session(command.base_ack)?,
@@ -7702,6 +7780,7 @@ fn list_item_projection_matches_target(
         }
         InlineRefinementTarget::Automatic
         | InlineRefinementTarget::RecursiveGreenParagraph
+        | InlineRefinementTarget::BlockQuoteProjection
         | InlineRefinementTarget::BulletListItemInline
         | InlineRefinementTarget::OrderedListItemInline => false,
     }
@@ -7808,6 +7887,28 @@ fn start_resolved_hot_inline(
             let inline_source = identity.inline_source_range();
             let inline_source_utf16 = identity.inline_source_utf16_range();
             let job = M11BlockQuoteProjectionJob::new(runtime, fence)?;
+            Ok(HotInlineState::Running(Box::new(RunningHotInline {
+                command,
+                identity,
+                inline_source,
+                inline_source_utf16,
+                parser_profile,
+                job: RunningHotInlineJob::BlockQuote(Box::new(job)),
+            })))
+        }
+        ResolvedHotInlineDemand::PreparedBlockQuoteLeaf {
+            command,
+            identity,
+            parser_profile,
+            fence,
+        } => {
+            let inline_source = identity.inline_source_range();
+            let inline_source_utf16 = identity.inline_source_utf16_range();
+            let job = M11BlockQuoteProjectionJob::new_for_recursive_green(
+                runtime,
+                fence,
+                M11ParserBinding::current(parser_profile),
+            )?;
             Ok(HotInlineState::Running(Box::new(RunningHotInline {
                 command,
                 identity,

@@ -565,6 +565,7 @@ final class _LifecycleStore
     FlarkV3InlineSidecarQuery query,
   ) => FlarkV3HostAccepted(
     FlarkV3InlineSidecarQueryAuthoritative(
+      payloadKind: FlarkV3InlineSidecarPayloadKind.inline,
       factCount: 1,
       valueEntryCount: 0,
       treeNodesVisited: 1,

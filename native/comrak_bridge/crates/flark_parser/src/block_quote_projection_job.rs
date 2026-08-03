@@ -23,6 +23,7 @@ use crate::publication::{
     M11PublishedBlockQuoteLeafFence, M11PublishedBulletListLeafFence,
     PublishedBlockQuoteProjectionAuthority, PublishedBulletListProjectionAuthority,
 };
+use crate::recursive_green_block_quote_projection::M11RecursiveGreenBlockQuoteProjectionFence;
 use crate::segmented_lexical::{SegmentedLineFacts, SegmentedLineScanner, SegmentedListMarker};
 use crate::source_adapter::{
     SnapshotLineRetainedPoll, SnapshotLineScanner, SnapshotLineSource, SourceAdapterError,
@@ -278,6 +279,54 @@ impl M11BlockQuoteProjectionJob {
         fence: M11PublishedBlockQuoteLeafFence,
     ) -> Result<Self, M11BlockQuoteProjectionJobError> {
         Self::from_authority(runtime, fence.into_projection_authority())
+    }
+
+    /// Starts exact projection work from independently authenticated
+    /// recursive-Green container authority.
+    ///
+    /// Green supplies the expected single-Paragraph shape and projected
+    /// metrics. The existing marked-line scanner still derives every line
+    /// record from source and rejects any disagreement before publication.
+    pub fn new_for_recursive_green(
+        runtime: &DocumentRuntime,
+        fence: M11RecursiveGreenBlockQuoteProjectionFence,
+        binding: M11ParserBinding,
+    ) -> Result<Self, M11BlockQuoteProjectionJobError> {
+        let source = fence.source();
+        let block_source_u64 = fence.block_source_range();
+        let block_source_utf16_u64 = fence.block_source_utf16_range();
+        let line_count = u32::try_from(fence.line_count())
+            .map_err(|_| M11BlockQuoteProjectionJobError::CoordinateOverflow)?;
+        let projected_utf8_length = u32::try_from(fence.projected_utf8_length())
+            .map_err(|_| M11BlockQuoteProjectionJobError::CoordinateOverflow)?;
+        let projected_utf16_length = u32::try_from(fence.projected_utf16_length())
+            .map_err(|_| M11BlockQuoteProjectionJobError::CoordinateOverflow)?;
+        let (authority, authority_range) = fence.into_source_authority();
+        if authority_range != block_source_u64 {
+            return Err(M11BlockQuoteProjectionJobError::BlockFenceRangeMismatch);
+        }
+        let block_source = u32::try_from(block_source_u64.start)
+            .map_err(|_| M11BlockQuoteProjectionJobError::CoordinateOverflow)?
+            ..u32::try_from(block_source_u64.end)
+                .map_err(|_| M11BlockQuoteProjectionJobError::CoordinateOverflow)?;
+        let block_source_utf16 = u32::try_from(block_source_utf16_u64.start)
+            .map_err(|_| M11BlockQuoteProjectionJobError::CoordinateOverflow)?
+            ..u32::try_from(block_source_utf16_u64.end)
+                .map_err(|_| M11BlockQuoteProjectionJobError::CoordinateOverflow)?;
+        Self::from_marked_line_authority(
+            runtime,
+            PublishedMarkedLineProjectionAuthority {
+                source,
+                block_source,
+                block_source_utf16,
+                binding,
+                line_count,
+                projected_utf8_length,
+                projected_utf16_length,
+                authority,
+            },
+            ProjectionJobShape::BlockQuote,
+        )
     }
 
     fn from_authority(

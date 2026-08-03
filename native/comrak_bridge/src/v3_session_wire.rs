@@ -397,6 +397,7 @@ pub enum InlineRefinementTarget {
     /// Experimental bounded bridge through the recursive-Green Paragraph
     /// owner query. The established sidecar schema remains unchanged.
     RecursiveGreenParagraph,
+    BlockQuoteProjection,
 }
 
 /// One late inline demand fenced to an exact installed structural base.
@@ -1709,6 +1710,7 @@ fn read_inline_refinement(
         3 => InlineRefinementTarget::OrderedListItemInline,
         4 => InlineRefinementTarget::OrderedListItemProjection,
         5 => InlineRefinementTarget::RecursiveGreenParagraph,
+        6 => InlineRefinementTarget::BlockQuoteProjection,
         value => return Err(unknown_variant_u32(value)),
     };
     if refinement_generation == 0
@@ -3032,8 +3034,37 @@ mod tests {
             })
         ));
 
+        let mut recursive_green_paragraph = payload.clone();
+        recursive_green_paragraph[target_start..].copy_from_slice(&5_u32.to_le_bytes());
+        let recursive_green_paragraph_frame =
+            frame(Opcode::ParserRefineInline, 76, &recursive_green_paragraph);
+        let recursive_green_paragraph =
+            decode_command(&recursive_green_paragraph_frame, Some(binding()))
+                .expect("valid recursive-Green paragraph refinement");
+        assert!(matches!(
+            recursive_green_paragraph.command,
+            Command::RefineInline(InlineRefinementCommand {
+                target: InlineRefinementTarget::RecursiveGreenParagraph,
+                ..
+            })
+        ));
+
+        let mut block_quote_projection = payload.clone();
+        block_quote_projection[target_start..].copy_from_slice(&6_u32.to_le_bytes());
+        let block_quote_projection_frame =
+            frame(Opcode::ParserRefineInline, 77, &block_quote_projection);
+        let block_quote_projection = decode_command(&block_quote_projection_frame, Some(binding()))
+            .expect("valid block-quote projection");
+        assert!(matches!(
+            block_quote_projection.command,
+            Command::RefineInline(InlineRefinementCommand {
+                target: InlineRefinementTarget::BlockQuoteProjection,
+                ..
+            })
+        ));
+
         let mut invalid_target = payload.clone();
-        invalid_target[target_start..].copy_from_slice(&5_u32.to_le_bytes());
+        invalid_target[target_start..].copy_from_slice(&7_u32.to_le_bytes());
         assert_eq!(
             decode_command(
                 &frame(Opcode::ParserRefineInline, 72, &invalid_target),

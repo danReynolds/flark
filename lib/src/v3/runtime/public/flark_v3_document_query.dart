@@ -1043,6 +1043,7 @@ final class FlarkV3RecursiveGreenPointQuery extends FlarkV3DocumentQueryResult {
     this.paragraphSource,
     this.inlineSource,
     this.inlineFacts,
+    this.blockQuoteProjection,
   }) : ancestry = List<FlarkV3RecursiveGreenAncestor>.unmodifiable(ancestry);
 
   final int structureRevision;
@@ -1074,7 +1075,45 @@ final class FlarkV3RecursiveGreenPointQuery extends FlarkV3DocumentQueryResult {
   /// Parser-certified whole-leaf inline result for [inlineSource].
   final FlarkV3InlineFacts? inlineFacts;
 
+  /// Exact parser-certified quote marker map for [paragraphSource].
+  ///
+  /// This certificate is independent of the legacy flat viewport point path.
+  /// It may coexist with [inlineFacts] after the singleton sidecar advances
+  /// from structural projection to inline parsing.
+  final FlarkV3BlockQuoteProjectionCertificate? blockQuoteProjection;
+
   FlarkV3RecursiveGreenAncestor get owner => ancestry[ownerIndex];
+
+  /// Adds independently certified presentation inputs without changing the
+  /// recursive-Green structural authority.
+  ///
+  /// Callers must validate the shared source revision, owner frame, and exact
+  /// source ranges before attaching cached values. Omitted values preserve the
+  /// corresponding existing certificate.
+  FlarkV3RecursiveGreenPointQuery withPresentationCertificates({
+    FlarkV3SourceSpan? paragraphSource,
+    FlarkV3SourceSpan? inlineSource,
+    FlarkV3InlineFacts? inlineFacts,
+    FlarkV3BlockQuoteProjectionCertificate? blockQuoteProjection,
+  }) => FlarkV3RecursiveGreenPointQuery._(
+    sourceRevision: sourceRevision,
+    structureRevision: structureRevision,
+    source: source,
+    pointUtf8: pointUtf8,
+    pointUtf16: pointUtf16,
+    affinity: affinity,
+    logicalUtf8Length: logicalUtf8Length,
+    logicalUtf16Length: logicalUtf16Length,
+    coveragePart: coveragePart,
+    logicalAtom: logicalAtom,
+    ownerIndex: ownerIndex,
+    ancestry: ancestry,
+    work: work,
+    paragraphSource: paragraphSource ?? this.paragraphSource,
+    inlineSource: inlineSource ?? this.inlineSource,
+    inlineFacts: inlineFacts ?? this.inlineFacts,
+    blockQuoteProjection: blockQuoteProjection ?? this.blockQuoteProjection,
+  );
 
   /// Whether this atom can back a direct source/display editing projection.
   bool get isIdentityEditableContent =>
@@ -1241,6 +1280,18 @@ final class FlarkV3DocumentQueryDecoder {
     return encoded == (tag | frameId);
   }
 
+  static FlarkV3RecursiveGreenAncestor? _nearestBlockQuoteAncestor(
+    FlarkV3RecursiveGreenPointQuery query,
+  ) {
+    for (var index = query.ownerIndex - 1; index >= 0; index -= 1) {
+      final ancestor = query.ancestry[index];
+      if (ancestor.kind == FlarkV3RecursiveGreenKind.blockQuote) {
+        return ancestor;
+      }
+    }
+    return null;
+  }
+
   /// Joins one installed recursive-Green inline-leaf sidecar to its exact point.
   ///
   /// The binding supplies both physical leaf and contiguous inline
@@ -1299,6 +1350,7 @@ final class FlarkV3DocumentQueryDecoder {
 
     final FlarkV3InlineFacts? facts = switch (outcome) {
       FlarkV3InlineSidecarQueryAuthoritative(
+        payloadKind: FlarkV3InlineSidecarPayloadKind.inline,
         :final factCount,
         :final encodedFacts,
         :final encodedValues,
@@ -1323,6 +1375,10 @@ final class FlarkV3DocumentQueryDecoder {
                   encodedBytes: encodedValues,
                 ),
         ),
+      FlarkV3InlineSidecarQueryAuthoritative() =>
+        throw const FlarkV3DocumentQueryException(
+          'The recursive-Green inline sidecar has a non-inline payload kind.',
+        ),
       FlarkV3InlineSidecarQueryUnsupported() =>
         FlarkV3InlineFactsDecoder.decode(
           sourceDocument: sourceDocument,
@@ -1339,24 +1395,111 @@ final class FlarkV3DocumentQueryDecoder {
       FlarkV3InlineSidecarQueryUnavailable() => null,
     };
     if (facts == null) return query;
-    return FlarkV3RecursiveGreenPointQuery._(
-      sourceRevision: query.sourceRevision,
-      structureRevision: query.structureRevision,
-      source: query.source,
-      pointUtf8: query.pointUtf8,
-      pointUtf16: query.pointUtf16,
-      affinity: query.affinity,
-      logicalUtf8Length: query.logicalUtf8Length,
-      logicalUtf16Length: query.logicalUtf16Length,
-      coveragePart: query.coveragePart,
-      logicalAtom: query.logicalAtom,
-      ownerIndex: query.ownerIndex,
-      ancestry: query.ancestry,
-      work: query.work,
+    return query.withPresentationCertificates(
       paragraphSource: paragraphSource,
       inlineSource: inlineSource,
       inlineFacts: facts,
     );
+  }
+
+  /// Joins one installed recursive-Green BlockQuote marker map to its selected
+  /// Paragraph point.
+  ///
+  /// The sidecar is owned by the authenticated BlockQuote ancestor rather than
+  /// the Paragraph leaf. Its binding covers the exact physical quote source;
+  /// Dart only validates that authority and decodes the parser-authored line
+  /// records into a source-to-display certificate.
+  static FlarkV3RecursiveGreenPointQuery
+  joinRecursiveGreenBlockQuoteProjection({
+    required FlarkV3SourceDocument sourceDocument,
+    required FlarkV3SourceVersion expectedSource,
+    required int expectedProfilePartition,
+    required FlarkV3RecursiveGreenPointQuery query,
+    required FlarkV3HotInlineSidecarBinding binding,
+    required FlarkV3InlineSidecarQueryOutcome outcome,
+  }) {
+    final blockQuote = _nearestBlockQuoteAncestor(query);
+    if (query.sourceRevision != expectedSource.revision ||
+        query.structureRevision != expectedSource.revision ||
+        query.owner.kind != FlarkV3RecursiveGreenKind.paragraph ||
+        blockQuote == null ||
+        !_bindingMatchesRecursiveGreenFrame(
+          binding.blockOrdinal,
+          blockQuote.frameId,
+        ) ||
+        binding.parserProfile.value != expectedProfilePartition) {
+      throw const FlarkV3DocumentQueryException(
+        'The recursive-Green block-quote sidecar has incompatible authority.',
+      );
+    }
+    final blockSource = FlarkV3SourceSpan(
+      startUtf8: binding.physicalStartUtf8,
+      endUtf8: binding.physicalEndUtf8,
+      startUtf16: binding.physicalStartUtf16,
+      endUtf16: binding.physicalEndUtf16,
+    );
+    final sourceBytes = expectedSource.metric.bytes;
+    final sourceUtf16 = expectedSource.metric.utf16;
+    if (binding.visibleStartUtf8 != binding.physicalStartUtf8 ||
+        binding.visibleEndUtf8 != binding.physicalEndUtf8 ||
+        binding.visibleStartUtf16 != binding.physicalStartUtf16 ||
+        binding.visibleEndUtf16 != binding.physicalEndUtf16 ||
+        !_containsSpan(blockSource, query.source) ||
+        blockSource.endUtf8 > sourceBytes ||
+        blockSource.endUtf16 > sourceUtf16 ||
+        sourceDocument.utf8ToUtf16(blockSource.startUtf8) !=
+            blockSource.startUtf16 ||
+        sourceDocument.utf8ToUtf16(blockSource.endUtf8) !=
+            blockSource.endUtf16) {
+      throw const FlarkV3DocumentQueryException(
+        'The recursive-Green block-quote sidecar has invalid source geometry.',
+      );
+    }
+
+    final FlarkV3BlockQuoteProjectionCertificate? certificate =
+        switch (outcome) {
+          FlarkV3InlineSidecarQueryAuthoritative(
+            payloadKind: FlarkV3InlineSidecarPayloadKind.blockQuote,
+            :final encodedFacts,
+          ) =>
+            _decodeRecursiveGreenBlockQuoteCertificate(
+              sourceDocument: sourceDocument,
+              expectedSource: expectedSource,
+              blockSource: blockSource,
+              encodedRecords: encodedFacts,
+            ),
+          FlarkV3InlineSidecarQueryAuthoritative() =>
+            throw const FlarkV3DocumentQueryException(
+              'The recursive-Green block-quote sidecar has a non-quote '
+              'payload kind.',
+            ),
+          FlarkV3InlineSidecarQueryUnsupported() ||
+          FlarkV3InlineSidecarQueryUnavailable() => null,
+        };
+    if (certificate == null) return query;
+    return query.withPresentationCertificates(
+      paragraphSource: blockSource,
+      blockQuoteProjection: certificate,
+    );
+  }
+
+  static FlarkV3BlockQuoteProjectionCertificate
+  _decodeRecursiveGreenBlockQuoteCertificate({
+    required FlarkV3SourceDocument sourceDocument,
+    required FlarkV3SourceVersion expectedSource,
+    required FlarkV3SourceSpan blockSource,
+    required Uint8List encodedRecords,
+  }) {
+    try {
+      return FlarkV3BlockQuoteProjectionDecoder.decodeCertificate(
+        sourceDocument: sourceDocument,
+        expectedSource: expectedSource,
+        source: blockSource,
+        encodedRecords: encodedRecords,
+      );
+    } on FlarkV3BlockQuoteProjectionDecodeException catch (error) {
+      throw FlarkV3DocumentQueryException(error.message);
+    }
   }
 
   /// Decodes either the legacy flat viewport or recursive-Green schema 9.

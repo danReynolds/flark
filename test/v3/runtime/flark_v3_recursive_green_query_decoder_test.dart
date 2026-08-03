@@ -4,6 +4,9 @@ import 'dart:typed_data';
 import 'package:flark/src/v3/editor/flark_v3_inline_island_presentation.dart';
 import 'package:flark/src/v3/editor/flark_v3_inline_projection.dart';
 import 'package:flark/src/v3/host/host.dart';
+import 'package:flark/src/v3/runtime/flark_v3_parser_transport.dart';
+import 'package:flark/src/v3/runtime/public/flark_v3_block_quote_projection.dart';
+import 'package:flark/src/v3/runtime/public/flark_v3_current_revision_inline_cache.dart';
 import 'package:flark/src/v3/runtime/public/flark_v3_document_query.dart';
 import 'package:flark/src/v3/runtime/public/flark_v3_inline_facts.dart';
 import 'package:flark/src/v3/source/source.dart';
@@ -77,6 +80,7 @@ void main() {
         );
     final binding = bindingForFrame(5);
     final outcome = FlarkV3InlineSidecarQueryAuthoritative(
+      payloadKind: FlarkV3InlineSidecarPayloadKind.inline,
       factCount: 2,
       valueEntryCount: 0,
       treeNodesVisited: 3,
@@ -143,7 +147,240 @@ void main() {
     );
     expect(document.toString(), source);
   });
+
+  test('recursive quote projection survives singleton sidecar replacement', () {
+    const source = '- a\n  > **b** and _e_\n  ```\n  c\n  ```\n- d\n';
+    final document = FlarkV3SourceDocument.fromString(source);
+    final version = FlarkV3SourceVersion.fromDocument(
+      documentSession: FlarkV3DocumentSessionId(0x322, 2, 3, 4),
+      document: document,
+    );
+    final point = source.indexOf('b');
+    FlarkV3RecursiveGreenPointQuery decodeGreen({int ownerFrame = 5}) =>
+        FlarkV3DocumentQueryDecoder.decodePointViewport(
+              sourceDocument: document,
+              expectedSource: version,
+              expectedProfilePartition: 1,
+              viewport: FlarkV3HostStructuralViewport.owned(
+                sourceVersion: version,
+                range: FlarkV3MetricRange(
+                  start: FlarkV3SourceMetric(bytes: point, utf16: point),
+                  end: FlarkV3SourceMetric(bytes: point + 1, utf16: point + 1),
+                ),
+                encoded: _schema9(point, ownerFrame: ownerFrame),
+                receipt: FlarkV3HostViewportReceipt(
+                  encodedBytes: 192,
+                  leafCount: 1,
+                  openDepth: 5,
+                  treeNodesVisited: 2,
+                  summaryNodesSkipped: 1,
+                ),
+              ),
+            )
+            as FlarkV3RecursiveGreenPointQuery;
+
+    final green = decodeGreen();
+    final paragraphStart = source.indexOf('  > ');
+    final paragraphEnd = source.indexOf('\n', paragraphStart) + 1;
+    final inlineStart = source.indexOf('**b**');
+    final inlineEnd = paragraphEnd - 1;
+    final paragraphSource = FlarkV3SourceSpan(
+      startUtf8: paragraphStart,
+      endUtf8: paragraphEnd,
+      startUtf16: paragraphStart,
+      endUtf16: paragraphEnd,
+    );
+    final quoteRecords = Uint8List(
+      FlarkV3BlockQuoteProjectionDecoder.recordBytes,
+    );
+    ByteData.sublistView(quoteRecords)
+      ..setUint32(0, 0, Endian.little)
+      ..setUint32(4, paragraphEnd - paragraphStart, Endian.little)
+      ..setUint32(8, 4, Endian.little)
+      ..setUint32(12, paragraphEnd - paragraphStart - 5, Endian.little)
+      ..setUint32(
+        16,
+        FlarkV3BlockQuoteProjectionDecoder.markedFlag,
+        Endian.little,
+      );
+    FlarkV3HotInlineSidecarBinding quoteBinding({int ownerFrame = 4}) =>
+        FlarkV3HotInlineSidecarBinding(
+          parserProfile: FlarkV3SyntaxProfileId(1),
+          refinementGeneration: FlarkV3ProtocolU64.fromU32(1),
+          blockOrdinal: FlarkV3ProtocolU64(
+            lowWord: ownerFrame,
+            highWord: 0x80000000,
+          ),
+          physicalStartUtf8: paragraphStart,
+          physicalEndUtf8: paragraphEnd,
+          visibleStartUtf8: paragraphStart,
+          visibleEndUtf8: paragraphEnd,
+          physicalStartUtf16: paragraphStart,
+          physicalEndUtf16: paragraphEnd,
+          visibleStartUtf16: paragraphStart,
+          visibleEndUtf16: paragraphEnd,
+        );
+    final quoteOutcome = FlarkV3InlineSidecarQueryAuthoritative(
+      payloadKind: FlarkV3InlineSidecarPayloadKind.blockQuote,
+      factCount: 1,
+      valueEntryCount: 0,
+      treeNodesVisited: 2,
+      encodedFacts: quoteRecords,
+      encodedValues: Uint8List(0),
+    );
+    final joinedQuote =
+        FlarkV3DocumentQueryDecoder.joinRecursiveGreenBlockQuoteProjection(
+          sourceDocument: document,
+          expectedSource: version,
+          expectedProfilePartition: 1,
+          query: green,
+          binding: quoteBinding(),
+          outcome: quoteOutcome,
+        );
+    final projection = joinedQuote.blockQuoteProjection!;
+    expect(joinedQuote.paragraphSource?.startUtf8, paragraphSource.startUtf8);
+    expect(joinedQuote.paragraphSource?.endUtf8, paragraphSource.endUtf8);
+    expect(joinedQuote.paragraphSource?.startUtf16, paragraphSource.startUtf16);
+    expect(joinedQuote.paragraphSource?.endUtf16, paragraphSource.endUtf16);
+    expect(projection.toSourceProjection().displayText, '**b** and _e_\n');
+    expect(
+      () => FlarkV3DocumentQueryDecoder.joinRecursiveGreenBlockQuoteProjection(
+        sourceDocument: document,
+        expectedSource: version,
+        expectedProfilePartition: 1,
+        query: green,
+        binding: quoteBinding(ownerFrame: 3),
+        outcome: quoteOutcome,
+      ),
+      throwsA(isA<FlarkV3DocumentQueryException>()),
+      reason: 'the quote payload is owned by its exact ancestor frame',
+    );
+    expect(
+      () => FlarkV3DocumentQueryDecoder.joinRecursiveGreenBlockQuoteProjection(
+        sourceDocument: document,
+        expectedSource: version,
+        expectedProfilePartition: 1,
+        query: green,
+        binding: quoteBinding(),
+        outcome: FlarkV3InlineSidecarQueryAuthoritative(
+          payloadKind: FlarkV3InlineSidecarPayloadKind.inline,
+          factCount: 2,
+          valueEntryCount: 0,
+          treeNodesVisited: 3,
+          encodedFacts: _inlineFacts(),
+          encodedValues: Uint8List(0),
+        ),
+      ),
+      throwsA(isA<FlarkV3DocumentQueryException>()),
+      reason: 'typed payload lanes cannot be confused at the Dart boundary',
+    );
+    final authority = _ack(version, generation: 1);
+    final cache = FlarkV3CurrentRevisionInlineCache(
+      maximumEntries: 4,
+      maximumFactRecords: 8,
+    );
+
+    final projectionStage = cache.resolveRecursiveGreen(
+      authority: authority,
+      query: joinedQuote,
+    );
+    expect(projectionStage.blockQuoteProjection, same(projection));
+    expect(cache.recursiveBlockQuoteEntryCount, 1);
+
+    FlarkV3HotInlineSidecarBinding bindingFrom(int physicalStart) =>
+        FlarkV3HotInlineSidecarBinding(
+          parserProfile: FlarkV3SyntaxProfileId(1),
+          refinementGeneration: FlarkV3ProtocolU64.fromU32(2),
+          blockOrdinal: FlarkV3ProtocolU64(lowWord: 5, highWord: 0x80000000),
+          physicalStartUtf8: physicalStart,
+          physicalEndUtf8: paragraphEnd,
+          visibleStartUtf8: inlineStart,
+          visibleEndUtf8: inlineEnd,
+          physicalStartUtf16: physicalStart,
+          physicalEndUtf16: paragraphEnd,
+          visibleStartUtf16: inlineStart,
+          visibleEndUtf16: inlineEnd,
+        );
+    final inlineOutcome = FlarkV3InlineSidecarQueryAuthoritative(
+      payloadKind: FlarkV3InlineSidecarPayloadKind.inline,
+      factCount: 2,
+      valueEntryCount: 0,
+      treeNodesVisited: 3,
+      encodedFacts: _inlineFacts(),
+      encodedValues: Uint8List(0),
+    );
+    FlarkV3RecursiveGreenPointQuery joinInline(int physicalStart) =>
+        FlarkV3DocumentQueryDecoder.joinRecursiveGreenInline(
+          sourceDocument: document,
+          expectedSource: version,
+          expectedProfilePartition: 1,
+          query: green,
+          binding: bindingFrom(physicalStart),
+          outcome: inlineOutcome,
+        );
+
+    final mismatchedRange = cache.resolveRecursiveGreen(
+      authority: authority,
+      query: joinInline(paragraphStart + 2),
+    );
+    expect(
+      mismatchedRange.blockQuoteProjection,
+      isNull,
+      reason: 'the same owner frame cannot join a different physical range',
+    );
+
+    final inlineStage = joinInline(paragraphStart);
+    expect(inlineStage.blockQuoteProjection, isNull);
+
+    final combined = cache.resolveRecursiveGreen(
+      authority: authority,
+      query: inlineStage,
+    );
+    expect(combined.blockQuoteProjection, same(projection));
+    expect(combined.inlineFacts, same(inlineStage.inlineFacts));
+    expect(combined.paragraphSource, same(inlineStage.paragraphSource));
+
+    final afterSidecarMoved = cache.resolveRecursiveGreen(
+      authority: authority,
+      query: green,
+    );
+    expect(afterSidecarMoved.blockQuoteProjection, same(projection));
+    expect(afterSidecarMoved.inlineFacts, same(inlineStage.inlineFacts));
+
+    final neighboringOwner = cache.resolveRecursiveGreen(
+      authority: authority,
+      query: decodeGreen(ownerFrame: 6),
+    );
+    expect(neighboringOwner.blockQuoteProjection, isNull);
+    expect(neighboringOwner.inlineFacts, isNull);
+
+    final afterAckReplacement = cache.resolveRecursiveGreen(
+      authority: _ack(version, generation: 2),
+      query: green,
+    );
+    expect(afterAckReplacement.blockQuoteProjection, isNull);
+    expect(afterAckReplacement.inlineFacts, isNull);
+    expect(cache.recursiveBlockQuoteEntryCount, 0);
+    expect(cache.entryCount, 0);
+  });
 }
+
+FlarkV3StructuralAck _ack(
+  FlarkV3SourceVersion sourceVersion, {
+  required int generation,
+}) => FlarkV3StructuralAck(
+  publicationSession: FlarkV3PublicationSessionId(generation, 20, 30, 40),
+  hostRevision: FlarkV3HostRevisionId(generation),
+  sourceVersion: sourceVersion,
+  sourceRoot: FlarkV3SourceRootId(generation, 1),
+  parseGeneration: generation,
+  grammarRevision: flarkV3CurrentGrammarRevision,
+  syntaxProfile: FlarkV3SyntaxProfileId(1),
+  authorityMask: FlarkV3StructuralAuthorityMask.complete,
+  recordCount: 1,
+  sequenceDigest: FlarkV3ProtocolDigest128(generation, 2, 3, 4),
+  manifestDigest: FlarkV3ProtocolDigest128(generation, 5, 6, 7),
+);
 
 Uint8List _inlineFacts() {
   final bytes = Uint8List(40);
@@ -171,7 +408,7 @@ Uint8List _inlineFacts() {
   return bytes;
 }
 
-Uint8List _schema9(int point) {
+Uint8List _schema9(int point, {int ownerFrame = 5}) {
   const header = 112;
   const record = 16;
   const kinds = [1, 3, 4, 2, 5];
@@ -210,7 +447,11 @@ Uint8List _schema9(int point) {
   for (var index = 0; index < kinds.length; index += 1) {
     final offset = header + index * record;
     data
-      ..setUint32(offset, index + 1, Endian.little)
+      ..setUint32(
+        offset,
+        index == kinds.length - 1 ? ownerFrame : index + 1,
+        Endian.little,
+      )
       ..setUint32(offset + 4, 0, Endian.little)
       ..setUint16(offset + 8, kinds[index], Endian.little)
       ..setUint16(offset + 10, index == kinds.length - 1 ? 1 : 0, Endian.little)

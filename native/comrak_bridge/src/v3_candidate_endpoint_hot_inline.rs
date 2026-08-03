@@ -19,6 +19,7 @@ fn encode_legacy_block_target_metadata(target: InlineRefinementTarget) -> Box<[u
         InlineRefinementTarget::BulletListItemProjection => 2,
         InlineRefinementTarget::OrderedListItemInline => 3,
         InlineRefinementTarget::OrderedListItemProjection => 4,
+        InlineRefinementTarget::BlockQuoteProjection => 5,
         InlineRefinementTarget::Automatic | InlineRefinementTarget::RecursiveGreenParagraph => 0,
     };
     let mut encoded = [0_u8; 12];

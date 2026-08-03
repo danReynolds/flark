@@ -4,10 +4,11 @@ use super::*;
 use crate::v3_endpoint::standard_document_runtime_config;
 use crate::v3_host_store::{
     HostBlockRangeBudget, HostBlockRangeOutcome, HostBlockRangeQuery, HostConfig,
-    HostInlineSidecarQueryOutcome, HostMetricAffinity, HostMetricRange, HostPointQuery,
-    HostPollOutcome as NativeHostPollOutcome, HostQueryBudget, HostSourceGapReason,
-    HostSourceMetric, HostStructuralOrdinalWindowBudget, HostStructuralOrdinalWindowOutcome,
-    HostStructuralOrdinalWindowQuery, HostStructuralQueryOutcome,
+    HostInlineSidecarPayloadKind, HostInlineSidecarQueryOutcome, HostMetricAffinity,
+    HostMetricRange, HostPointQuery, HostPollOutcome as NativeHostPollOutcome, HostQueryBudget,
+    HostSourceGapReason, HostSourceMetric, HostStructuralOrdinalWindowBudget,
+    HostStructuralOrdinalWindowOutcome, HostStructuralOrdinalWindowQuery,
+    HostStructuralQueryOutcome,
     HostViewportPresentationPollOutcome as NativeViewportPresentationPollOutcome, HostWorkGrant,
     InlineSidecarHostPollOutcome as NativeInlineSidecarHostPollOutcome, NativeCandidateHost,
     HOST_M11_VIEWPORT_BYTES, HOST_RECURSIVE_GREEN_ANCESTOR_RECORD_BYTES,
@@ -2500,8 +2501,8 @@ fn source_root_wire_lanes_are_high_word_then_low_word() {
 #[test]
 fn selected_list_item_target_requires_its_exact_projection_kind_and_metadata() {
     use InlineRefinementTarget::{
-        Automatic, BulletListItemInline, BulletListItemProjection, OrderedListItemInline,
-        OrderedListItemProjection,
+        Automatic, BlockQuoteProjection, BulletListItemInline, BulletListItemProjection,
+        OrderedListItemInline, OrderedListItemProjection,
     };
     use M11MarkedLineProjectionKind::{BulletList, OrderedList};
 
@@ -2521,6 +2522,7 @@ fn selected_list_item_target_requires_its_exact_projection_kind_and_metadata() {
         (OrderedListItemProjection, BulletList, true),
         (OrderedListItemProjection, OrderedList, false),
         (Automatic, OrderedList, true),
+        (BlockQuoteProjection, BulletList, false),
         (BulletListItemInline, BulletList, false),
         (OrderedListItemInline, OrderedList, true),
     ] {
@@ -4142,29 +4144,29 @@ fn indented_code_stays_structural_and_inline_sidecar_fails_closed() {
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
 
-#[test]
-fn block_quote_request_reaches_typed_sidecar_and_reclaims_with_unit_fuel() {
-    const SOURCE: &str = "\u{feff}   > α😀\r\n> β\rlazy😀\0";
+fn assert_block_quote_request_reaches_typed_sidecar(
+    source: &str,
+    session_seed: u32,
+    point: usize,
+    expected_physical_start: u32,
+    expected_physical_end: u32,
+    expected_records: &[[u32; 5]],
+) {
     const LINE_RECORD_BYTES: usize = 20;
-    const VIEWPORT_HEADER_BYTES: usize = 32;
-    const GREEN_RECORD_BYTES: usize = 80;
-    const PROJECTION_RECORD_BYTES: usize = 56;
-    const POINT_PATH_NODE_BYTES: usize = 40;
-    const POINT_PATH_BYTES: usize = 2 * POINT_PATH_NODE_BYTES;
-    const VIEWPORT_BYTES: usize = VIEWPORT_HEADER_BYTES
-        + GREEN_RECORD_BYTES
-        + PROJECTION_RECORD_BYTES
-        + POINT_PATH_BYTES
-        + 3 * LINE_RECORD_BYTES;
     let profile = SourceFactsScanProfile::new(8).expect("test profile");
     let parser_profile = ParserProfileId::new(1).expect("parser profile");
     let binding = SessionBinding {
-        document_session: [716, 717, 718, 719],
-        source_session_identity: 720,
+        document_session: [
+            session_seed,
+            session_seed + 1,
+            session_seed + 2,
+            session_seed + 3,
+        ],
+        source_session_identity: session_seed + 4,
         worker_generation: 1,
     };
     let mut runtime =
-        DocumentRuntime::new(SOURCE, standard_document_runtime_config()).expect("runtime");
+        DocumentRuntime::new(source, standard_document_runtime_config()).expect("runtime");
     let (certified, completion) =
         complete_clean_source_facts(&mut runtime, profile, parser_profile, 1, 0);
     let mut endpoint = CandidateEndpoint::new();
@@ -4185,79 +4187,19 @@ fn block_quote_request_reaches_typed_sidecar_and_reclaims_with_unit_fuel() {
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
 
+    let point_utf16 = source[..point].encode_utf16().count();
     let command = |generation: u32| InlineRefinementCommand {
         binding,
         refinement_generation: generation,
         source_version: delivery.ack.source_version,
         base_ack: delivery.ack,
-        byte_offset: 0,
-        utf16_offset: 0,
+        // The active point is source-backed quote content. Marker-owned
+        // coverage intentionally does not impersonate its Paragraph child.
+        byte_offset: u32::try_from(point).expect("bounded point"),
+        utf16_offset: u32::try_from(point_utf16).expect("bounded point"),
         affinity: InlinePointAffinity::After,
-        target: InlineRefinementTarget::Automatic,
+        target: InlineRefinementTarget::BlockQuoteProjection,
     };
-
-    if endpoint
-        .recursive_green
-        .has_installed_session_for(delivery.ack)
-    {
-        let point = SOURCE.find('α').expect("quoted inline point");
-        let point_utf16 = SOURCE[..point].encode_utf16().count();
-        let (owner_kind, range, ancestry) =
-            recursive_green_query_shape(&host, delivery.ack.source_version, point, point_utf16);
-        assert_eq!(owner_kind, 5);
-        assert_eq!(ancestry.first(), Some(&1));
-        assert!(ancestry.contains(&2));
-        assert_eq!(ancestry.last(), Some(&5));
-        let owner_frame =
-            recursive_green_owner_frame(&host, delivery.ack.source_version, point, point_utf16);
-        let green_command = |generation: u32| InlineRefinementCommand {
-            byte_offset: u32::try_from(point).expect("quoted byte point"),
-            utf16_offset: u32::try_from(point_utf16).expect("quoted UTF-16 point"),
-            ..command(generation)
-        };
-
-        endpoint
-            .request_hot_inline(&mut runtime, green_command(1))
-            .expect("request cancellable Green quote Paragraph");
-        endpoint.cancel_hot_inline();
-        while endpoint.hot_inline_has_poll_work() {
-            assert!(
-                endpoint
-                    .poll_hot_inline(&mut runtime, 1)
-                    .expect("reclaim cancelled Green quote Paragraph")
-                    <= 1
-            );
-        }
-
-        endpoint
-            .request_hot_inline(&mut runtime, green_command(2))
-            .expect("request Green quote Paragraph");
-        let (begin, ack) = deliver_hot_inline_sidecar_to_independent_host_with_unit_fuel(
-            &mut endpoint,
-            &mut runtime,
-            &mut host,
-            80_000,
-        );
-        assert_eq!(
-            begin.binding.owner(),
-            Some(HotInlineSidecarOwner::RecursiveGreenFrame(owner_frame))
-        );
-        let point = u32::try_from(point).expect("quoted byte point");
-        assert!(begin.binding.physical_start_utf8 <= point);
-        assert!(point < begin.binding.physical_end_utf8);
-        assert!(begin.binding.physical_start_utf8 >= range[0]);
-        assert!(begin.binding.physical_end_utf8 >= range[1]);
-        assert!(matches!(
-            begin.envelope.disposition,
-            HotInlineSidecarDisposition::Unsupported {
-                reason: HOT_INLINE_UNSUPPORTED_NOT_INLINE_LEAF,
-                ..
-            }
-        ));
-        assert_eq!(ack.disposition, InlineSidecarAckDisposition::Unsupported);
-        close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
-        return;
-    }
 
     endpoint
         .request_hot_inline(&mut runtime, command(1))
@@ -4282,16 +4224,40 @@ fn block_quote_request_reaches_typed_sidecar_and_reclaims_with_unit_fuel() {
         &mut host,
         80_000,
     );
-    let source_utf16 = u32::try_from(SOURCE.encode_utf16().count()).expect("bounded source");
+    let expected_physical_start_utf16 = u32::try_from(
+        source[..usize::try_from(expected_physical_start).expect("bounded start")]
+            .encode_utf16()
+            .count(),
+    )
+    .expect("bounded source start");
+    let expected_physical_end_utf16 = u32::try_from(
+        source[..usize::try_from(expected_physical_end).expect("bounded end")]
+            .encode_utf16()
+            .count(),
+    )
+    .expect("bounded source end");
     assert_eq!(begin.binding.refinement_generation, 2);
-    assert_eq!(begin.binding.physical_start_utf8, 0);
-    assert_eq!(begin.binding.physical_end_utf8, SOURCE.len() as u32);
-    assert_eq!(begin.binding.visible_start_utf8, 0);
-    assert_eq!(begin.binding.visible_end_utf8, SOURCE.len() as u32);
-    assert_eq!(begin.binding.physical_start_utf16, 0);
-    assert_eq!(begin.binding.physical_end_utf16, source_utf16);
-    assert_eq!(begin.binding.visible_start_utf16, 0);
-    assert_eq!(begin.binding.visible_end_utf16, source_utf16);
+    assert_eq!(begin.binding.physical_start_utf8, expected_physical_start);
+    assert_eq!(begin.binding.physical_end_utf8, expected_physical_end);
+    assert_eq!(begin.binding.visible_start_utf8, expected_physical_start);
+    assert_eq!(begin.binding.visible_end_utf8, expected_physical_end);
+    assert_eq!(
+        begin.binding.physical_start_utf16,
+        expected_physical_start_utf16
+    );
+    assert_eq!(
+        begin.binding.physical_end_utf16,
+        expected_physical_end_utf16
+    );
+    assert_eq!(
+        begin.binding.visible_start_utf16,
+        expected_physical_start_utf16
+    );
+    assert_eq!(begin.binding.visible_end_utf16, expected_physical_end_utf16);
+    assert!(matches!(
+        begin.binding.owner(),
+        Some(HotInlineSidecarOwner::RecursiveGreenFrame(_))
+    ));
     assert!(matches!(
         begin.envelope.disposition,
         HotInlineSidecarDisposition::Authoritative {
@@ -4306,13 +4272,14 @@ fn block_quote_request_reaches_typed_sidecar_and_reclaims_with_unit_fuel() {
         begin.envelope.transferred_node_count
     );
 
-    let mut encoded_lines = [0_u8; 3 * LINE_RECORD_BYTES];
+    let mut encoded_lines = vec![0_u8; expected_records.len() * LINE_RECORD_BYTES];
     let query = host
         .query_inline_sidecar(begin.binding, &mut encoded_lines)
         .expect("query typed block-quote sidecar");
     assert!(matches!(
         query,
         HostInlineSidecarQueryOutcome::Authoritative {
+            payload_kind: HostInlineSidecarPayloadKind::BlockQuote,
             fact_count: 3,
             encoded_bytes: 60,
             ..
@@ -4331,95 +4298,36 @@ fn block_quote_request_reaches_typed_sidecar_and_reclaims_with_unit_fuel() {
             })
         })
         .collect::<Vec<_>>();
-    assert_eq!(
-        observed,
-        vec![[0, 16, 8, 6, 1], [16, 5, 2, 2, 1], [21, 9, 0, 9, 2]]
-    );
-
-    let mut viewport = [0xa5_u8; VIEWPORT_BYTES];
-    let outcome = host
-        .query_structural(
-            HostPointQuery {
-                source_version: delivery.ack.source_version,
-                position: HostSourceMetric { bytes: 8, utf16: 6 },
-                affinity: HostMetricAffinity::Downstream,
-                budget: HostQueryBudget {
-                    maximum_encoded_bytes: VIEWPORT_BYTES as u32,
-                    maximum_open_depth: 2,
-                    maximum_leaf_count: 4,
-                    maximum_tree_nodes_visited: 256,
-                },
-            },
-            &mut viewport,
-        )
-        .expect("joined block-quote viewport");
-    let HostStructuralQueryOutcome::Viewport { range, receipt, .. } = outcome else {
-        panic!("block quote and sidecar must author one schema-4 viewport: {outcome:?}");
-    };
-    assert_eq!(range.start, HostSourceMetric { bytes: 0, utf16: 0 });
-    assert_eq!(
-        range.end,
-        HostSourceMetric {
-            bytes: SOURCE.len() as u32,
-            utf16: source_utf16,
-        }
-    );
-    assert_eq!(receipt.encoded_bytes, VIEWPORT_BYTES as u32);
-    assert_eq!(u32::from_le_bytes(viewport[8..12].try_into().unwrap()), 4);
-    assert_eq!(
-        u32::from_le_bytes(viewport[12..16].try_into().unwrap()),
-        GREEN_RECORD_BYTES as u32
-    );
-    assert_eq!(
-        u32::from_le_bytes(viewport[16..20].try_into().unwrap()),
-        PROJECTION_RECORD_BYTES as u32
-    );
-    assert_eq!(u16::from_le_bytes(viewport[20..22].try_into().unwrap()), 2);
-    assert_eq!(viewport[22], 3);
-    assert_eq!(viewport[23], 0);
-    assert_eq!(
-        u32::from_le_bytes(viewport[24..28].try_into().unwrap()),
-        POINT_PATH_BYTES as u32
-    );
-    assert_eq!(
-        u32::from_le_bytes(viewport[28..32].try_into().unwrap()),
-        (3 * LINE_RECORD_BYTES) as u32
-    );
-
-    let green = &viewport[VIEWPORT_HEADER_BYTES..VIEWPORT_HEADER_BYTES + GREEN_RECORD_BYTES];
-    let projection_start = VIEWPORT_HEADER_BYTES + GREEN_RECORD_BYTES;
-    let projection = &viewport[projection_start..projection_start + PROJECTION_RECORD_BYTES];
-    assert_eq!(green[12], 8);
-    assert_eq!(projection[12], 8);
-    assert_eq!(u32::from_le_bytes(green[56..60].try_into().unwrap()), 3);
-    assert_eq!(u32::from_le_bytes(green[60..64].try_into().unwrap()), 0);
-    assert_eq!(u32::from_le_bytes(green[64..68].try_into().unwrap()), 3);
-    assert_eq!(u32::from_le_bytes(green[68..72].try_into().unwrap()), 20);
-    assert_eq!(u32::from_le_bytes(green[72..76].try_into().unwrap()), 14);
-
-    let path_start = projection_start + PROJECTION_RECORD_BYTES;
-    let ancestor = &viewport[path_start..path_start + POINT_PATH_NODE_BYTES];
-    let selected = &viewport[path_start + POINT_PATH_NODE_BYTES..path_start + POINT_PATH_BYTES];
-    assert_eq!(ancestor[0], 1);
-    assert_eq!(ancestor[1], 0);
-    assert_eq!(u16::from_le_bytes(ancestor[2..4].try_into().unwrap()), 0);
-    assert_eq!(
-        u32::from_le_bytes(ancestor[4..8].try_into().unwrap()),
-        u32::MAX
-    );
-    assert_eq!(u32::from_le_bytes(ancestor[28..32].try_into().unwrap()), 3);
-    assert_eq!(u32::from_le_bytes(ancestor[32..36].try_into().unwrap()), 20);
-    assert_eq!(u32::from_le_bytes(ancestor[36..40].try_into().unwrap()), 14);
-    assert_eq!(selected[0], 2);
-    assert_eq!(selected[1], 3);
-    assert_eq!(u16::from_le_bytes(selected[2..4].try_into().unwrap()), 1);
-    assert_eq!(u32::from_le_bytes(selected[4..8].try_into().unwrap()), 0);
-    assert_eq!(u32::from_le_bytes(selected[28..32].try_into().unwrap()), 3);
-
-    let payload = &viewport[path_start + POINT_PATH_BYTES..];
-    assert_eq!(payload, encoded_lines);
+    assert_eq!(observed, expected_records);
 
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
+}
+
+#[test]
+fn block_quote_request_reaches_typed_sidecar_and_reclaims_with_unit_fuel() {
+    const SOURCE: &str = "\u{feff}   > α😀\r\n> β\rlazy😀\0";
+    assert_block_quote_request_reaches_typed_sidecar(
+        SOURCE,
+        716,
+        8,
+        0,
+        u32::try_from(SOURCE.len()).expect("bounded source"),
+        &[[0, 16, 8, 6, 1], [16, 5, 2, 2, 1], [21, 9, 0, 9, 2]],
+    );
+}
+
+#[test]
+fn block_quote_with_sibling_blocks_retains_its_closing_terminator() {
+    const SOURCE: &str = "before\n\n> alpha\n> beta\nlazy\n\n*tail*";
+    let point = SOURCE.find("alpha").expect("quote content") + 2;
+    assert_block_quote_request_reaches_typed_sidecar(
+        SOURCE,
+        721,
+        point,
+        8,
+        28,
+        &[[0, 8, 2, 5, 1], [8, 7, 2, 4, 1], [15, 5, 0, 4, 2]],
+    );
 }
 
 #[test]

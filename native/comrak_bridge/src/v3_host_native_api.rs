@@ -38,7 +38,7 @@ use crate::v3_publication_wire::{
 };
 use crate::v3_wire::Status;
 
-pub const FLARK_V3_HOST_NATIVE_ABI_VERSION: u32 = 0x0003_0005;
+pub const FLARK_V3_HOST_NATIVE_ABI_VERSION: u32 = 0x0003_0006;
 pub const FLARK_V3_HOST_MAXIMUM_FRAME_BYTES: u32 = M11_HOST_MAXIMUM_FRAME_BYTES as u32;
 pub const FLARK_V3_HOST_MAXIMUM_PACKET_BYTES: u32 = MAXIMUM_PACKET_ENCODED_BYTES as u32;
 pub const FLARK_V3_HOST_MAXIMUM_QUERY_BYTES: u32 = 64 * 1024;
@@ -443,6 +443,8 @@ pub struct FlarkV3HostInlineSidecarQueryReceipt {
     pub tree_nodes_visited: u32,
     pub value_entry_count: u32,
     pub value_encoded_bytes: u32,
+    /// Stable `HostInlineSidecarPayloadKind` wire value; zero otherwise.
+    pub payload_kind: u32,
 }
 
 #[repr(C)]
@@ -2361,6 +2363,7 @@ fn inline_sidecar_query_receipt(
 ) -> FlarkV3HostInlineSidecarQueryReceipt {
     match outcome {
         HostInlineSidecarQueryOutcome::Authoritative {
+            payload_kind,
             fact_count,
             value_entry_count,
             value_encoded_bytes,
@@ -2373,6 +2376,7 @@ fn inline_sidecar_query_receipt(
             tree_nodes_visited,
             value_entry_count,
             value_encoded_bytes,
+            payload_kind: payload_kind.wire(),
             ..FlarkV3HostInlineSidecarQueryReceipt::default()
         },
         HostInlineSidecarQueryOutcome::Unsupported {
@@ -2741,7 +2745,8 @@ const _: () = {
     assert!(size_of::<FlarkV3HostInlineSidecarAck>() == 212);
     assert!(size_of::<FlarkV3HostInlineSidecarPollReceipt>() == 240);
     assert!(size_of::<FlarkV3HostInlineSidecarQuery>() == 80);
-    assert!(size_of::<FlarkV3HostInlineSidecarQueryReceipt>() == 32);
+    assert!(size_of::<FlarkV3HostInlineSidecarQueryReceipt>() == 36);
+    assert!(offset_of!(FlarkV3HostInlineSidecarQueryReceipt, payload_kind) == 32);
     assert!(size_of::<FlarkV3HostViewportPresentationMetricRange>() == 16);
     assert!(size_of::<FlarkV3HostViewportPresentationVisitStart>() == 16);
     assert!(size_of::<FlarkV3HostViewportPresentationBinding>() == 72);
@@ -2934,7 +2939,7 @@ mod tests {
 
     #[test]
     fn ffi_layout_matches_declared_header_contract() {
-        assert_eq!(FLARK_V3_HOST_NATIVE_ABI_VERSION, 0x0003_0005);
+        assert_eq!(FLARK_V3_HOST_NATIVE_ABI_VERSION, 0x0003_0006);
         assert_eq!(size_of::<FlarkV3HostConfig>(), 56);
         assert_eq!(size_of::<FlarkV3HostOfferBegin>(), 144);
         assert_eq!(size_of::<FlarkV3HostStructuralAck>(), 124);
@@ -2944,7 +2949,7 @@ mod tests {
         assert_eq!(size_of::<FlarkV3HostInlineSidecarAck>(), 212);
         assert_eq!(size_of::<FlarkV3HostInlineSidecarPollReceipt>(), 240);
         assert_eq!(size_of::<FlarkV3HostInlineSidecarQuery>(), 80);
-        assert_eq!(size_of::<FlarkV3HostInlineSidecarQueryReceipt>(), 32);
+        assert_eq!(size_of::<FlarkV3HostInlineSidecarQueryReceipt>(), 36);
         assert_eq!(
             size_of::<FlarkV3HostViewportPresentationBegin>(),
             FLARK_V3_HOST_VIEWPORT_PRESENTATION_BEGIN_BYTES as usize
@@ -2980,7 +2985,7 @@ mod tests {
         assert_eq!(MAXIMUM_RESIDENT_HOSTS, 2_048);
         assert_eq!(FLARK_V3_HOST_MAXIMUM_PACKET_BYTES, 71_724);
         let header = include_str!("../flark_comrak_bridge.h");
-        assert!(header.contains("FLARK_V3_HOST_NATIVE_ABI_VERSION UINT32_C(0x00030005)"));
+        assert!(header.contains("FLARK_V3_HOST_NATIVE_ABI_VERSION UINT32_C(0x00030006)"));
         assert!(header.contains("flark_v3_host_begin_references_delta"));
         assert!(header.contains("flark_v3_host_begin_exact_base_delta"));
         assert!(header.contains("flark_v3_host_begin_inline_sidecar_offer"));
