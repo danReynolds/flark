@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "commonmarkVersion": "0.31.2",
+  "gfmVersion": "0.29",
+  "cases": [
+    { "source": "commonmark", "example": 232, "mechanism": "lazy block-quote continuation" },
+    { "source": "commonmark", "example": 242, "mechanism": "blank line ends block quote" },
+    { "source": "commonmark", "example": 250, "mechanism": "nested block quotes with lazy continuation" },
+    { "source": "commonmark", "example": 259, "mechanism": "nested quote-list containers and blank continuation" },
+    { "source": "commonmark", "example": 294, "mechanism": "deep nested list indentation" },
+    { "source": "commonmark", "example": 300, "mechanism": "list item containing ATX and setext headings" },
+    { "source": "commonmark", "example": 308, "mechanism": "HTML block separates adjacent lists" },
+    { "source": "commonmark", "example": 329, "mechanism": "code-span delimiter run matching" },
+    { "source": "commonmark", "example": 341, "mechanism": "code-span precedence over emphasis" },
+    { "source": "commonmark", "example": 411, "mechanism": "nested emphasis and strong emphasis" },
+    { "source": "commonmark", "example": 430, "mechanism": "delimiter rule-of-three interaction" },
+    { "source": "commonmark", "example": 447, "mechanism": "unconsumed delimiter suffix" },
+    { "source": "commonmark", "example": 153, "mechanism": "multiline HTML block close condition" },
+    { "source": "commonmark", "example": 175, "mechanism": "HTML block inside list containers" },
+    { "source": "commonmark", "example": 188, "mechanism": "blank-line-terminated HTML block" },
+    { "source": "commonmark", "example": 192, "mechanism": "forward link reference dependency" },
+    { "source": "commonmark", "example": 205, "mechanism": "case-insensitive reference label" },
+    { "source": "commonmark", "example": 212, "mechanism": "reference-like text inside fence is inert" },
+    { "source": "commonmark", "example": 218, "mechanism": "definition in later container resolves earlier use" },
+    { "source": "commonmark", "example": 482, "mechanism": "inline link destination and title" },
+    { "source": "commonmark", "example": 521, "mechanism": "link brackets take precedence over emphasis" },
+    { "source": "commonmark", "example": 540, "mechanism": "Unicode reference-label normalization" },
+    { "source": "commonmark", "example": 549, "mechanism": "escaped bracket in reference label" },
+    { "source": "gfm", "example": 198, "mechanism": "table activation and rows" },
+    { "source": "gfm", "example": 200, "mechanism": "escaped and code-span pipes in table cells" },
+    { "source": "gfm", "example": 201, "mechanism": "block quote interrupts table body" },
+    { "source": "gfm", "example": 203, "mechanism": "invalid table delimiter remains paragraph" },
+    { "source": "gfm", "example": 491, "mechanism": "strikethrough delimiter" },
+    { "source": "gfm", "example": 621, "mechanism": "www autolink extension" },
+    { "source": "gfm", "example": 624, "mechanism": "autolink balanced-parenthesis trimming" }
+  ],
+  "customCases": [
+    {
+      "id": "task-list-nested",
+      "mechanism": "task marker inside nested quote and list containers",
+      "markdown": "> - [x] done\n>   - [ ] child\n"
+    },
+    {
+      "id": "reference-retarget",
+      "mechanism": "editing a duplicate winning definition invalidates dependent links",
+      "markdown": "[x]: https://first.example/value\n\nA [reference][x].\n\n[x]: https://second.example/value\n"
+    },
+    {
+      "id": "long-html-comment",
+      "mechanism": "long-lived raw block state and localized body edit",
+      "generator": "<!--\\n + 1MiB payload + \\n-->\\nafter\\n"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+[package]
+name = "generated_scanner_gate"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dev-dependencies]
+comrak = { path = "../comrak_inline_fragment_gate/vendor/comrak", default-features = false }
+
+[workspace]

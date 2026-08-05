@@ -1,0 +1,21 @@
+[package]
+name = "flark-pulldown-inline-gate"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[dependencies]
+flark-reference-label-service = { path = "../reference_label_service" }
+unicode_categories = "0.1.1"
+
+[dev-dependencies]
+flark-comrak-value-block-core = { path = "../comrak_value_block_core" }
+pulldown-cmark = "=0.13.4"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"

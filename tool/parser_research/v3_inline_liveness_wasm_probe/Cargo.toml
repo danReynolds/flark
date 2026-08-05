@@ -1,0 +1,19 @@
+[package]
+name = "flark-v3-inline-liveness-wasm-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+flark-v3-runtime-slice = { path = "../v3_runtime_slice", features = ["inline-liveness-probe"] }
+
+[profile.release]
+debug = false
+lto = "thin"
+opt-level = 3
+panic = "abort"
+
+[workspace]

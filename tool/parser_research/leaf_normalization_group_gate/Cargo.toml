@@ -1,0 +1,11 @@
+[package]
+name = "flark-leaf-normalization-group-gate"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["rlib"]
+
+[lints.rust]
+unsafe_code = "forbid"

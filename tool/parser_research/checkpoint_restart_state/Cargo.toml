@@ -1,0 +1,16 @@
+[package]
+name = "checkpoint_restart_state"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "checkpoint_restart_receipts"
+path = "src/bin/receipts.rs"
+
+[profile.release]
+debug = true
+

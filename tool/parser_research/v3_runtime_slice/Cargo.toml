@@ -1,0 +1,46 @@
+[package]
+name = "flark-v3-runtime-slice"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT"
+
+[dependencies]
+crop = { git = "https://github.com/noib3/crop", rev = "d0234ce772eb34c7a3878d4ed57dc864da291cfb", features = ["utf16-metric"] }
+flark-comrak-inline-fragment-gate = { path = "../comrak_inline_fragment_gate", optional = true }
+flark-comrak-value-block-core = { path = "../comrak_value_block_core", optional = true }
+flark-oversized-block-line-gate = { path = "../oversized_block_line_gate", optional = true }
+flark-reference-label-service = { path = "../reference_label_service" }
+flark-reference-value-service = { path = "../reference_value_service" }
+
+[dev-dependencies]
+flark-oversized-block-line-gate = { path = "../oversized_block_line_gate" }
+
+[features]
+default = []
+exact-parser = [
+    "dep:flark-comrak-inline-fragment-gate",
+    "dep:flark-comrak-value-block-core",
+    "dep:flark-oversized-block-line-gate",
+]
+inline-liveness-probe = ["exact-parser"]
+host-mirror-probe = ["exact-parser"]
+host-publication-staging-probe = ["exact-parser"]
+
+[[bin]]
+name = "inline_leaf_shape_bench"
+path = "src/bin/inline_leaf_shape_bench.rs"
+required-features = ["inline-liveness-probe"]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+
+[profile.release]
+debug = true
+lto = "thin"
+
+[workspace]

@@ -1,0 +1,11 @@
+[package]
+name = "comrak_in_place_block_challenger"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+comrak = { path = "../comrak_inline_fragment_gate/vendor/comrak", default-features = false }
+proc-macro2 = { version = "1", features = ["span-locations"] }
+syn = { version = "2", features = ["full"] }
+

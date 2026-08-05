@@ -1,0 +1,18 @@
+[package]
+name = "flark-reference-label-service"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT"
+
+[dependencies]
+caseless = "0.2"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+
+[workspace]

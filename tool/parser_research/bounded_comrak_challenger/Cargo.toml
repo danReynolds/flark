@@ -1,0 +1,13 @@
+[package]
+name = "flark-bounded-comrak-challenger"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+comrak = { version = "0.54.0", default-features = false }
+flark-comrak-derived-core-probe = { path = "../comrak_derived_core" }
+
+[profile.release]
+debug = true
+

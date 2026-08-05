@@ -1,0 +1,24 @@
+[package]
+name = "flark-source-backend-bakeoff"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[dependencies]
+crop = { version = "=0.4.3", features = ["utf16-metric"] }
+flark-integrated-parser-slice = { path = "../integrated_parser_slice", optional = true }
+
+[features]
+default = []
+custom = ["dep:flark-integrated-parser-slice"]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+
+[profile.release]
+debug = true

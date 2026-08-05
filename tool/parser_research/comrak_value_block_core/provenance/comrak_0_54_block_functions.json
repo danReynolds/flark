@@ -1,0 +1,450 @@
+{
+  "schema_version": 1,
+  "donor": {
+    "repository": "https://github.com/kivikakk/comrak",
+    "version": "0.54.0",
+    "commit": "172c2ee7d2c5c262a28be3e407aadf705daea2b7"
+  },
+  "functions": [
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "new",
+      "upstream_sha256": "bde671d6c498280f4079dcf7ff74410291877de5ce0e03fdabe3a11931b8919f",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::new",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "parse",
+      "upstream_sha256": "ef4fb2a364a29102fb88bb2792f00ff165e71fcafe6d1da7230ad99ea8a017f8",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::parse",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "process_line",
+      "upstream_sha256": "b379046fac8fb1ae0a99756fcf7b76739d29d5507c50cb19607536948c2ce7cb",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::process_line",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "check_open_blocks",
+      "upstream_sha256": "ebb484814eb60faa52b346b00816ff0c4f10e32486d06c5c9b39617f046ab173",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::step_line_transition",
+      "status": "implemented",
+      "note": "CheckOpen phase; shared by atomic and fuelled drivers"
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "check_open_blocks_inner",
+      "upstream_sha256": "56a94e2aa098285fa01d545a64e0a263521c38e6bf9db9db7e8217921d34380d",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::step_line_transition",
+      "status": "implemented",
+      "note": "CheckOpen phase; shared by atomic and fuelled drivers"
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "find_first_nonspace",
+      "upstream_sha256": "386d3f760d297a262e345d8f96ef22c1646575f716f9b45ec2476f8892973f31",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::find_first_nonspace",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "parse_block_quote_prefix",
+      "upstream_sha256": "f31ccbc51f53a362ebcb777018fe37a92d74573b48d1c6b07d5da76ac0a35bc7",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::parse_block_quote_prefix",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "is_greentext",
+      "upstream_sha256": "e7f90735957f250bcf1a7b23c31531d9480923c0685ed02d334a795067c8515d",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::is_greentext",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "parse_node_item_prefix",
+      "upstream_sha256": "310d7b758b1ad73c78bced29376fe6e666f7c68d14bc8e6e29c36a847bcb65ca",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::parse_node_item_prefix",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "parse_code_block_prefix",
+      "upstream_sha256": "4783d03785ebfa50e39d0c61f21d9ef1b9f8043c47757a08e7f3b35d86da897e",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::parse_code_block_prefix",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "parse_html_block_prefix",
+      "upstream_sha256": "78649ddfce449b9f4e9df82aaa7fed76cfff2881dad3aadb3c7cafc4e278de0f",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::parse_html_block_prefix",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "fix_zero_end_columns",
+      "upstream_sha256": "2009f1a25ed0e3431aa5227010229b38aab20d81cf91ec6e457d5fc49a2a6adc",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::fix_zero_end_columns",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "open_new_blocks",
+      "upstream_sha256": "09c89f2aca39c0f39c62c5324f7999899c982853dc3e5fc7672f44cfce627751",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::step_line_transition",
+      "status": "implemented",
+      "note": "OpenNew phase; shared by atomic and fuelled drivers"
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "handle_blockquote",
+      "upstream_sha256": "1b06eb2e109f66d5c0038a22719406c345f434ef29d692c2ab11e4eba21b8da4",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::handle_blockquote",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "detect_blockquote",
+      "upstream_sha256": "4689e166be8beee1c06509282e12167b0a72c11c9ae731a638254468cb090fc8",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::detect_blockquote",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "handle_atx_heading",
+      "upstream_sha256": "30f2c10d62917035ccb8b3508328ba9933fad1a227a1379b78a7231f1beafffc",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::handle_atx_heading",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "detect_atx_heading",
+      "upstream_sha256": "c7a27d217af8317613858fdf28d26a000b327c43e5b1d445d03ae613b77eca28",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::detect_atx_heading",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "handle_code_fence",
+      "upstream_sha256": "2f9ff002f1cbbe42a9ae87f64ae20f51d8e15b605b6741e9b737b38dc8b9c942",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::handle_code_fence",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "detect_code_fence",
+      "upstream_sha256": "c18041822f6a161164dfaf7164412a2e2b4cbe7369594c7fcc76f74ddcd3ac84",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::detect_code_fence",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "handle_html_block",
+      "upstream_sha256": "744c039054fd81d64e3c1ce29ace49dfe6b3d62269d6c9cc0b64a69866ae9538",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::handle_html_block",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "detect_html_block",
+      "upstream_sha256": "bb4527117091d6fc512197d6e7a6102d9fe98776a248dcc559277a580666ef14",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::detect_html_block",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "handle_setext_heading",
+      "upstream_sha256": "beede046878cd1d9f06c645b63ff59eafbaeec54a667eb382556a90c0dcc5404",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::handle_setext_heading",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "detect_setext_heading",
+      "upstream_sha256": "2d0f9dd76a535f6715a8dcf35b0f0fb0f977b8abcbca311363d83a8a6262e43e",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::detect_setext_heading",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "handle_thematic_break",
+      "upstream_sha256": "0d62a01bfcd6109390ca68931aa5a4911050019a9edc3ee2ebbb1844de8fc23a",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::handle_thematic_break",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "detect_thematic_break",
+      "upstream_sha256": "5d00b89bfdadb18f74d32ac210ede02b2585209af550d06032532478163cce7a",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::detect_thematic_break",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "scan_thematic_break_inner",
+      "upstream_sha256": "d87db9b16f8c4ed062273347ecf15a181517b0dac52c287ae91b57dfa5672ff8",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::scan_thematic_break_inner",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "handle_list",
+      "upstream_sha256": "44d276fd20d8cb0c0b1e22bfc374d445f68b50afb61cbefa295e02272fac0aa1",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::handle_list",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "detect_list",
+      "upstream_sha256": "2cfe34864dead0fb43a70281be524dd6f7459e236e064e2993dddaeaacd824da",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::detect_list",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "handle_code_block",
+      "upstream_sha256": "7a7905cf51d08a01eceab2ef3cc6879e76d291b401e35519ea63847dfc7ef0cb",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::handle_code_block",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "detect_code_block",
+      "upstream_sha256": "cee74891d5a109a321f59b2de9f5bc924c73d3584bb3db714621d4e8df0905c7",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::detect_code_block",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "handle_table",
+      "upstream_sha256": "14ba5e7faf1b71f5749c43c5aa29525cb36245784df7cdb520e698c4fc4368c3",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::handle_table",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "detect_table",
+      "upstream_sha256": "ce1044b862d94f4add4224a4297824c5b23d0105230d4d494b6a40515088bd59",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::detect_table",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "advance_offset",
+      "upstream_sha256": "a97abbe97d1d8e172bcd6c69f483aabd488451de0e5d0fc2f02ce0c437f43217",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::advance_offset",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "add_child",
+      "upstream_sha256": "b69f5b099dc618ade1955c22fb6341a9e22a1e14c12df0e6aae11ec150b790ae",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::add_child",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "add_text_to_container",
+      "upstream_sha256": "4583f9b348fb9fc818502acde726fba4a72f168f0ad46bc62abd382eef1b6669",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::step_line_transition",
+      "status": "implemented",
+      "note": "PrepareText through DispatchText phases; shared by atomic and fuelled drivers"
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "add_line",
+      "upstream_sha256": "d0243239f49ea1e629f6c2b26190407fb2361b9d42a898492689dc5e7da62309",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::add_line",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "finalize_document",
+      "upstream_sha256": "78e34b146ee0dc4643f1059c8379504056adadd72ad6939b6303508b4036b80b",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::finalize_document",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "propagate_list_sourcepos",
+      "upstream_sha256": "d388caf8dd4e89e24d5a8b093abcae83a3b01a5dc2991ce5e2f1427c88223e85",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::step_finish_transition",
+      "status": "implemented",
+      "note": "Propagate phase; shared by atomic and fuelled drivers"
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "finalize",
+      "upstream_sha256": "ad51c62b164e3b380f41ac222ad5992fbeaa85b1827472cd8f26b853d1976cba",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::finalize",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "resolve_reference_link_definitions",
+      "upstream_sha256": "140a67986d7ab395d091d05819c7f47292204a2e0e1000094d7c3f95793e4891",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::resolve_reference_link_definitions",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "finalize_borrowed",
+      "upstream_sha256": "16bead28f6156ee513741ea9accdb084da0ee133ce676dc576f0feb49d6cca1f",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::finalize_borrowed",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "determine_list_tight",
+      "upstream_sha256": "56a725018039b0e07b16efa30b3f924b0416f7818199620b8a6c2b24bec42261",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::determine_list_tight",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "parse_reference_inline",
+      "upstream_sha256": "73ce3c6ce6e786198ced70572f7c966e4f750db458caecbdf942c2efc2ea0dc6",
+      "local_correspondent": "src/parser.rs::ValueBlockParser::parse_reference_inline",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "parse_list_marker",
+      "upstream_sha256": "9537509d7430abd0770c17584d01b02a50e62d481c82362f2b27cc3a1c7915c7",
+      "local_correspondent": "src/parser.rs::parse_list_marker",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "lists_match",
+      "upstream_sha256": "644b41c8d44420232c40c36afeea9f1c0374c042b1434ec58b09bdeda2ce5f15",
+      "local_correspondent": "src/parser.rs::lists_match",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/mod.rs",
+      "upstream_name": "byte_matches",
+      "upstream_sha256": "1c1c68b68e1c3c60e9a7ddd52e6c295180b99429b77c64cf75821369f547c458",
+      "local_correspondent": "src/parser.rs::byte_matches",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/table.rs",
+      "upstream_name": "try_opening_block",
+      "upstream_sha256": "4f049a61cdc03530f09094c7dbf6dbc233e488ac5cf1793ba35a5f157c456ae4",
+      "local_correspondent": "src/table.rs::try_opening_block",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/table.rs",
+      "upstream_name": "try_opening_header",
+      "upstream_sha256": "85b0e6713271b9f01cffb47b39f5439fda0252f9ef063089120d6161774742e3",
+      "local_correspondent": "src/table.rs::try_opening_header",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/table.rs",
+      "upstream_name": "try_opening_row",
+      "upstream_sha256": "e26b22f9c46cebf7ade48ded63ab4ebaf0150d9beefd2d9658ff7caf30919cbc",
+      "local_correspondent": "src/table.rs::try_opening_row",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/table.rs",
+      "upstream_name": "row",
+      "upstream_sha256": "1d009d6d4ad1e0e06c7cbb7d7d44dc7de758d1b6ec28bea406bff3989bb5dbf6",
+      "local_correspondent": "src/table.rs::row",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/table.rs",
+      "upstream_name": "try_inserting_table_header_paragraph",
+      "upstream_sha256": "6783847a622145a0a32aad3fd72cbbacd198735fdc67e60b1cbb46f313814f86",
+      "local_correspondent": "src/table.rs::try_inserting_table_header_paragraph",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/table.rs",
+      "upstream_name": "unescape_pipes",
+      "upstream_sha256": "fb34467c1772314092ddf023769662e365a481abd642e5cc5f7005c1188ea6ce",
+      "local_correspondent": "src/table.rs::unescape_pipes",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/table.rs",
+      "upstream_name": "adjust_table_counters",
+      "upstream_sha256": "5746d8a4d1cd0665cc8ceb8f2082b67cc869d87204169f70e9dc8c1fe2f774f1",
+      "local_correspondent": "src/table.rs::adjust_table_counters",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/table.rs",
+      "upstream_name": "get_num_autocompleted_cells",
+      "upstream_sha256": "1bc96ed27b161197fc773b868c0bb9cc43c43adb18e1bc30a60e0d8106009060",
+      "local_correspondent": "src/table.rs::get_num_autocompleted_cells",
+      "status": "implemented",
+      "note": ""
+    },
+    {
+      "upstream_path": "src/parser/table.rs",
+      "upstream_name": "matches",
+      "upstream_sha256": "7b1e3672045acc333bb77d3637b266eeeef4a88a6a5b9f21df822eea0c4abfb6",
+      "local_correspondent": "src/table.rs::matches",
+      "status": "implemented",
+      "note": ""
+    }
+  ]
+}

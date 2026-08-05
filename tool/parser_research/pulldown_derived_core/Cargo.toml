@@ -1,0 +1,19 @@
+[package]
+name = "flark-pulldown-derived-core"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[dependencies]
+
+[dev-dependencies]
+pulldown-cmark = { version = "=0.13.4", default-features = false }
+
+[[bin]]
+name = "pulldown_derived_receipt"
+path = "src/bin/receipt.rs"
+
+[profile.release]
+debug = true
+

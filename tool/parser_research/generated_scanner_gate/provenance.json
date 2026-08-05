@@ -1,0 +1,37 @@
+{
+  "chop_trailing_hashes": {
+    "correspondent_sha256": "6d16de94137be93fa8b9c69dbf1e44f4650a278f28a5bc22a18824a64b05f92e",
+    "donor_close_separator_bytes": [
+      9,
+      32
+    ],
+    "donor_dependencies_sha256": "5e17108c8800dcaab08b98c3aea4e10bb248f81284c3f6254653863c19c6690d",
+    "donor_function_sha256": "11c2b9583a9dd381dad3d40d44da24f8a339eff8480f3897e45dd39c88071f9c",
+    "donor_trim_bytes": [
+      9,
+      10,
+      13,
+      32
+    ],
+    "maintenance_class": "flark-owned-handwritten-forward-correspondent",
+    "selected_function": "strings::chop_trailing_hashes"
+  },
+  "comrak": "0.54.0",
+  "cursor_storable_scanner_sha256": "54bfedd5e449aadfdabeade40499dbf90b4bae2822fb7930b1a9f35dfea07efe",
+  "fence_cursor_storable_scanner_sha256": "298b0ab55e13a75a9d127ef17549760399d548156a78408a3774eb99f9ca6a3c",
+  "fence_selected_function": "open_code_fence",
+  "fence_selected_rules": [
+    "[`]{3,} / [^`\\r\\n\\xff]*[\\r\\n\\xff]",
+    "[~]{3,} / [^\\r\\n\\xff]*[\\r\\n\\xff]"
+  ],
+  "fixed_scanners_sha256": "5e6b6419d1568f5a6de8df6cd38cb4b6f6bfac0513e8549586c766e8c5dc55f0",
+  "fused_atx_line_scanner": {
+    "maintenance_class": "flark-owned-source-generic-one-pass-orchestrator",
+    "orchestrator_sha256": "1f387c46f83512a5a5f8276ec24f7de3bb5e9ee5a856ebb6f4a56809f0b08bac"
+  },
+  "generator": "re2c 4.3.1",
+  "scanner_source_sha256": "91507602a7634291b9d980347beee58056e0d717af0ddb0e9d2a23a214c3b7ce",
+  "selected_function": "atx_heading_start",
+  "selected_rule": "[#]{1,6} ([ \\t]+|[\\r\\n\\xff])",
+  "storable_scanner_sha256": "5c97825ebe81a2281749cabd921d8c6a9de61bc7b1b54061dca7693b45445c74"
+}

@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-07-14",
+  "profile": {
+    "name": "flark-commonmark-gfm-v1-trial",
+    "coreConflictPolicy": "commonmark-0.31.2-wins",
+    "extensions": [
+      "table",
+      "strikethrough",
+      "autolink",
+      "tagfilter",
+      "tasklist"
+    ],
+    "input": {
+      "encoding": "utf-8",
+      "lineEndings": "lf-after-public-ingress-normalization",
+      "ranges": "half-open-utf8-byte-scalar-boundaries"
+    }
+  },
+  "sources": {
+    "commonmark": {
+      "version": "0.31.2",
+      "gitCommit": "9103e341a973013013bb1a80e13567007c5cef6f",
+      "specSha256": "257c41ad946f7a1414a499aca402a1aa8fdac3678532266611348c1cf54f4b80",
+      "enabledExamples": 652
+    },
+    "gfm": {
+      "version": "0.29",
+      "gitCommit": "499789b49373bfa045d0e7547e5ee63444c77bca",
+      "specSha256": "7d8e5814befec287ac116786d81ff14e0adc9b13295b4494649e995408fd871c",
+      "mainEnabledExamples": 670,
+      "enabledExtensionExamplesInMain": 22,
+      "extensionsSpecSha256": "a2a45e98be9fca95f564f927265a0f63beea6cae5369d1cf4bde44caa51b2a3a",
+      "extensionsSpecExamples": 30,
+      "flarkRelevantExtensionsSpecExamples": 27
+    }
+  },
+  "repositoryAudit": {
+    "commonmarkFixtureMatchesPinnedSource": true,
+    "gfmFixtureMatchesPinnedSource": false,
+    "gfmFixtureDifferingExpectedHtmlExamples": [398, 426, 434, 435, 436, 473, 474, 475, 477],
+    "existingV2UpstreamContractComparesExpectedHtml": false,
+    "gfmMainTaskListExamplesDisabledByGenericRunner": 2,
+    "extensionsSpecTaskListExamples": 3
+  },
+  "trialResult": {
+    "status": "stop",
+    "selectedAuthority": "comrak-0.54-extracted-fork",
+    "foundationExamplesPassed": 61,
+    "foundationExamplesTotal": 61,
+    "commonMarkExamplesPassed": 338,
+    "commonMarkExamplesTotal": 652,
+    "emphasisExamplesPassed": 120,
+    "emphasisExamplesTotal": 132,
+    "stressExamplesPassed": 8,
+    "stressExamplesTotal": 30,
+    "ownedLibraryLinesAtDecision": 2709,
+    "resultDocument": "OWNED_PARSER_TRIAL_RESULTS.md"
+  },
+  "milestones": [
+    {
+      "id": "foundation",
+      "status": "passed",
+      "completeCommonMarkSections": [
+        "Blank lines",
+        "Paragraphs",
+        "Textual content",
+        "Soft line breaks",
+        "ATX headings",
+        "Fenced code blocks"
+      ],
+      "exampleCount": 61
+    },
+    {
+      "id": "architecture-stress",
+      "status": "failed-stop-gate",
+      "coverage": "exact-example-and-rule-manifest-required",
+      "mechanisms": [
+        "nested-containers",
+        "delayed-block-classification",
+        "inline-delimiter-stack",
+        "reference-dependency-index",
+        "table-and-task-extensions",
+        "long-lived-raw-block-state",
+        "budgeted-continuation",
+        "persistent-local-delta"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,3309 @@
+From a775bec7685b369cffcf1dc15dd23026bb709d25 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Mon, 13 Jul 2026 14:25:14 -0400
+Subject: [PATCH] Prototype incremental checkpoints and persistent suffix reuse
+
+---
+ src/parser/inlines.rs |   21 +
+ src/parser/mod.rs     | 3171 ++++++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 3177 insertions(+), 15 deletions(-)
+
+diff --git a/src/parser/inlines.rs b/src/parser/inlines.rs
+index 1343fe9..63a4366 100644
+--- a/src/parser/inlines.rs
++++ b/src/parser/inlines.rs
+@@ -2,6 +2,8 @@ mod cjk;
+ 
+ use std::borrow::Cow;
+ use std::cell::Cell;
++#[cfg(test)]
++use std::cell::RefCell;
+ use std::convert::TryFrom;
+ use std::str;
+ use std::{mem, ptr};
+@@ -2266,6 +2268,8 @@ pub struct RefMap {
+     pub map: FxHashMap<String, ResolvedReference>,
+     pub(crate) max_ref_size: usize,
+     ref_size: Cell<usize>,
++    #[cfg(test)]
++    dependency_lookups: RefCell<Vec<String>>,
+ }
+ 
+ impl RefMap {
+@@ -2274,10 +2278,14 @@ impl RefMap {
+             map: FxHashMap::default(),
+             max_ref_size: usize::MAX,
+             ref_size: Cell::new(0),
++            #[cfg(test)]
++            dependency_lookups: RefCell::new(Vec::new()),
+         }
+     }
+ 
+     fn lookup(&self, lab: &str) -> Option<&ResolvedReference> {
++        #[cfg(test)]
++        self.dependency_lookups.borrow_mut().push(lab.to_string());
+         match self.map.get(lab) {
+             Some(entry) => {
+                 let size = entry.url.len() + entry.title.len();
+@@ -2292,6 +2300,19 @@ impl RefMap {
+             None => None,
+         }
+     }
++
++    #[cfg(test)]
++    pub(crate) fn begin_dependency_capture(&self) {
++        self.dependency_lookups.borrow_mut().clear();
++    }
++
++    #[cfg(test)]
++    pub(crate) fn take_dependencies(&self) -> Vec<String> {
++        let mut dependencies = std::mem::take(&mut *self.dependency_lookups.borrow_mut());
++        dependencies.sort_unstable();
++        dependencies.dedup();
++        dependencies
++    }
+ }
+ 
+ pub struct FootnoteDefs<'a> {
+diff --git a/src/parser/mod.rs b/src/parser/mod.rs
+index 167b843..8a64408 100644
+--- a/src/parser/mod.rs
++++ b/src/parser/mod.rs
+@@ -86,6 +86,16 @@ pub struct Parser<'a, 'o, 'c> {
+     curline_end_col: usize,
+     last_line_length: usize,
+     total_size: usize,
++    #[cfg(test)]
++    reference_occurrences: Vec<ReferenceOccurrenceProbe>,
++}
++
++#[cfg(test)]
++#[derive(Clone, Debug)]
++struct ReferenceOccurrenceProbe {
++    sourcepos: Sourcepos,
++    label: String,
++    reference: ResolvedReference,
+ }
+ 
+ /// A reference link's resolved details.
+@@ -130,6 +140,8 @@ where
+             curline_end_col: 0,
+             last_line_length: 0,
+             total_size: 0,
++            #[cfg(test)]
++            reference_occurrences: Vec::new(),
+         }
+     }
+ 
+@@ -1169,7 +1181,8 @@ where
+ 
+         let has_content = {
+             let mut ast = container.data_mut();
+-            self.resolve_reference_link_definitions(&mut ast.content)
++            let sourcepos = ast.sourcepos;
++            self.resolve_reference_link_definitions(&mut ast.content, sourcepos)
+         };
+         if has_content {
+             container.data_mut().value = NodeValue::Heading(NodeHeading {
+@@ -1897,7 +1910,11 @@ where
+         self.finalize_borrowed(node, &mut node.data_mut())
+     }
+ 
+-    fn resolve_reference_link_definitions(&mut self, content: &mut String) -> bool {
++    fn resolve_reference_link_definitions(
++        &mut self,
++        content: &mut String,
++        _sourcepos: Sourcepos,
++    ) -> bool {
+         let mut pos = 0;
+         let mut rrs = vec![];
+ 
+@@ -1905,13 +1922,19 @@ where
+         while pos < content.len() && bytes[pos] == b'[' {
+             if let Some((offset, rr)) = self.parse_reference_inline(&content[pos..]) {
+                 pos += offset;
+-                rrs.extend(rr);
++                rrs.push(rr);
+             } else {
+                 break;
+             }
+         }
+ 
+         for (lab, rr) in rrs {
++            #[cfg(test)]
++            self.reference_occurrences.push(ReferenceOccurrenceProbe {
++                sourcepos: _sourcepos,
++                label: lab.clone(),
++                reference: rr.clone(),
++            });
+             self.refmap.map.entry(lab).or_insert(rr);
+         }
+ 
+@@ -1955,7 +1978,7 @@ where
+                 self.fix_zero_end_columns(node);
+             }
+             NodeValue::Paragraph => {
+-                let has_content = self.resolve_reference_link_definitions(content);
++                let has_content = self.resolve_reference_link_definitions(content, ast.sourcepos);
+                 if !has_content {
+                     node.detach();
+                 }
+@@ -2487,7 +2510,7 @@ where
+     fn parse_reference_inline(
+         &self,
+         content: &str,
+-    ) -> Option<(usize, Option<(String, ResolvedReference)>)> {
++    ) -> Option<(usize, (String, ResolvedReference))> {
+         let mut scanner = inlines::Scanner::new();
+ 
+         let mut lab: String = match scanner.link_label(content) {
+@@ -2540,17 +2563,20 @@ where
+         }
+ 
+         lab = strings::normalize_label(&lab, Case::Fold);
+-        let mut rr = None;
+-        if !lab.is_empty() && !self.refmap.map.contains_key(&lab) {
+-            rr = Some((
+-                lab,
+-                ResolvedReference {
+-                    url: strings::clean_url(&url).into(),
+-                    title: strings::clean_title(title).into(),
+-                },
+-            ));
++        if lab.is_empty() {
++            None
++        } else {
++            Some((
++                scanner.pos,
++                (
++                    lab,
++                    ResolvedReference {
++                        url: strings::clean_url(&url).into(),
++                        title: strings::clean_title(title).into(),
++                    },
++                ),
++            ))
+         }
+-        Some((scanner.pos, rr))
+     }
+ }
+ 
+@@ -2748,3 +2774,3118 @@ impl Spx {
+         unreachable!();
+     }
+ }
++
++#[cfg(test)]
++mod incremental_checkpoint_probe {
++    use std::collections::{BTreeMap, HashMap, HashSet};
++    use std::fmt::Write as _;
++    use std::hash::{DefaultHasher, Hash, Hasher};
++    use std::ops::Range;
++    use std::sync::Arc;
++    use std::time::Instant;
++
++    use crate::arena_tree::NodeEdge;
++
++    use super::*;
++
++    #[derive(Clone, Debug)]
++    struct Receipt {
++        offset: usize,
++        state: u64,
++    }
++
++    struct Edit {
++        name: &'static str,
++        markdown: String,
++        old_range: Range<usize>,
++        new_end: usize,
++    }
++
++    #[derive(Clone, Debug, PartialEq, Eq)]
++    struct OwnedBlockNode {
++        kind: String,
++        content: String,
++        range: Range<usize>,
++        children: Vec<OwnedBlockNode>,
++    }
++
++    #[derive(Debug)]
++    struct SyntaxChunk {
++        id: u64,
++        order_key: u128,
++        source_len: usize,
++        nodes: Vec<OwnedBlockNode>,
++        definitions: Vec<DefinitionOccurrence>,
++    }
++
++    #[derive(Clone, Debug, PartialEq, Eq)]
++    struct DefinitionValue {
++        url: String,
++        title: String,
++    }
++
++    #[derive(Clone, Debug, PartialEq, Eq)]
++    struct DefinitionOccurrence {
++        label: String,
++        value: DefinitionValue,
++    }
++
++    #[derive(Clone)]
++    struct IncrementalBlockDocument {
++        text: ByteRope,
++        chunks: SyntaxTree,
++        references: ReferenceIndex,
++        next_id: u64,
++    }
++
++    #[derive(Clone, Default)]
++    struct ReferenceIndex {
++        by_label: HashMap<String, BTreeMap<(u128, usize), DefinitionValue>>,
++    }
++
++    #[derive(Debug, Default)]
++    struct ReferenceIndexDelta {
++        presence_changed: Vec<String>,
++        value_changed: Vec<String>,
++    }
++
++    #[derive(Clone, Default)]
++    struct ByteRope {
++        root: Option<Arc<ByteRopeNode>>,
++    }
++
++    #[derive(Debug)]
++    enum ByteRopeNode {
++        Leaf {
++            source: Arc<str>,
++            start: usize,
++            len: usize,
++            newlines: usize,
++            hash32: u32,
++            hash_power32: u32,
++        },
++        Branch {
++            left: Arc<ByteRopeNode>,
++            right: Arc<ByteRopeNode>,
++            len: usize,
++            newlines: usize,
++            hash32: u32,
++            hash_power32: u32,
++            height: usize,
++        },
++    }
++
++    #[derive(Clone, Default)]
++    struct SyntaxTree {
++        root: Option<Arc<SyntaxTreeNode>>,
++    }
++
++    #[derive(Debug)]
++    enum SyntaxTreeNode {
++        Leaf(Arc<SyntaxChunk>),
++        Branch {
++            left: Arc<SyntaxTreeNode>,
++            right: Arc<SyntaxTreeNode>,
++            source_len: usize,
++            chunk_count: usize,
++            height: usize,
++        },
++    }
++
++    #[derive(Debug)]
++    struct SpliceReceipt {
++        restart: usize,
++        convergence: usize,
++        reparsed_bytes: usize,
++        replaced_chunks: usize,
++        inserted_chunks: usize,
++        reused_chunks: usize,
++        parser_us: u128,
++        splice_us: u128,
++        delta_bytes: usize,
++        reference_delta: ReferenceIndexDelta,
++    }
++
++    struct RevisionedParserHandle {
++        revision: u64,
++        document: IncrementalBlockDocument,
++    }
++
++    struct ParserEditRequest<'a> {
++        base_revision: u64,
++        before_hash32: u32,
++        start_utf8: usize,
++        end_utf8: usize,
++        replacement: &'a str,
++    }
++
++    #[derive(Debug, PartialEq, Eq)]
++    enum ParserApplyError {
++        Revision { expected: u64, actual: u64 },
++        Hash { expected: u32, actual: u32 },
++        Range,
++        Utf8Boundary,
++    }
++
++    #[derive(Debug)]
++    struct RevisionedParserDelta {
++        base_revision: u64,
++        revision: u64,
++        before_hash32: u32,
++        after_hash32: u32,
++        splice: SpliceReceipt,
++    }
++
++    #[derive(Debug)]
++    struct InlineLeafSnapshot {
++        range: Range<usize>,
++        dependencies: Vec<String>,
++        signature: String,
++    }
++
++    struct InlineDocumentSnapshot {
++        leaves: Vec<InlineLeafSnapshot>,
++        signature: String,
++    }
++
++    #[derive(Clone)]
++    struct ContinuationCheckpoint {
++        offset: usize,
++        line_number: usize,
++        last_line_length: usize,
++        open_spine: Vec<Ast>,
++    }
++
++    #[derive(Clone, Copy, Debug)]
++    struct ItemTightnessSummary {
++        loose_if_nonlast: bool,
++        loose_if_last: bool,
++    }
++
++    #[derive(Clone, Copy, Debug, Default)]
++    struct ListTightnessAggregate {
++        len: usize,
++        loose_before_last: bool,
++        last: Option<ItemTightnessSummary>,
++    }
++
++    impl ListTightnessAggregate {
++        fn item(item: ItemTightnessSummary) -> Self {
++            Self {
++                len: 1,
++                loose_before_last: false,
++                last: Some(item),
++            }
++        }
++
++        fn combine(self, right: Self) -> Self {
++            if self.len == 0 {
++                return right;
++            }
++            if right.len == 0 {
++                return self;
++            }
++            Self {
++                len: self.len + right.len,
++                loose_before_last: self.loose_before_last
++                    || self.last.unwrap().loose_if_nonlast
++                    || right.loose_before_last,
++                last: right.last,
++            }
++        }
++
++        fn tight(self) -> bool {
++            !self.loose_before_last && !self.last.is_some_and(|last| last.loose_if_last)
++        }
++    }
++
++    impl ReferenceIndex {
++        fn from_tree(tree: &SyntaxTree) -> Self {
++            let mut index = Self::default();
++            tree.for_each_chunk(|chunk| index.insert_chunk(chunk));
++            index
++        }
++
++        fn winner(&self, label: &str) -> Option<&DefinitionValue> {
++            self.by_label
++                .get(label)
++                .and_then(|occurrences| occurrences.first_key_value())
++                .map(|(_, value)| value)
++        }
++
++        fn winner_map(&self) -> HashMap<String, DefinitionValue> {
++            self.by_label
++                .iter()
++                .filter_map(|(label, occurrences)| {
++                    occurrences
++                        .first_key_value()
++                        .map(|(_, value)| (label.clone(), value.clone()))
++                })
++                .collect()
++        }
++
++        fn apply(
++            &mut self,
++            removed: &[Arc<SyntaxChunk>],
++            inserted: &[Arc<SyntaxChunk>],
++        ) -> ReferenceIndexDelta {
++            let labels: HashSet<_> = removed
++                .iter()
++                .chain(inserted)
++                .flat_map(|chunk| {
++                    chunk
++                        .definitions
++                        .iter()
++                        .map(|definition| definition.label.clone())
++                })
++                .collect();
++            let before: HashMap<_, _> = labels
++                .iter()
++                .map(|label| (label.clone(), self.winner(label).cloned()))
++                .collect();
++            for chunk in removed {
++                self.remove_chunk(chunk);
++            }
++            for chunk in inserted {
++                self.insert_chunk(chunk);
++            }
++
++            let mut delta = ReferenceIndexDelta::default();
++            for label in labels {
++                let old = before.get(&label).cloned().flatten();
++                let new = self.winner(&label).cloned();
++                if old.is_some() != new.is_some() {
++                    delta.presence_changed.push(label);
++                } else if old != new {
++                    delta.value_changed.push(label);
++                }
++            }
++            delta.presence_changed.sort_unstable();
++            delta.value_changed.sort_unstable();
++            delta
++        }
++
++        fn insert_chunk(&mut self, chunk: &Arc<SyntaxChunk>) {
++            for (ordinal, definition) in chunk.definitions.iter().enumerate() {
++                self.by_label
++                    .entry(definition.label.clone())
++                    .or_default()
++                    .insert((chunk.order_key, ordinal), definition.value.clone());
++            }
++        }
++
++        fn remove_chunk(&mut self, chunk: &Arc<SyntaxChunk>) {
++            let mut empty = Vec::new();
++            for (ordinal, definition) in chunk.definitions.iter().enumerate() {
++                let occurrences = self
++                    .by_label
++                    .get_mut(&definition.label)
++                    .expect("removed definition must be indexed");
++                assert!(occurrences.remove(&(chunk.order_key, ordinal)).is_some());
++                if occurrences.is_empty() {
++                    empty.push(definition.label.clone());
++                }
++            }
++            for label in empty {
++                self.by_label.remove(&label);
++            }
++        }
++    }
++
++    impl ByteRopeNode {
++        fn len(&self) -> usize {
++            match self {
++                Self::Leaf { len, .. } | Self::Branch { len, .. } => *len,
++            }
++        }
++
++        fn newlines(&self) -> usize {
++            match self {
++                Self::Leaf { newlines, .. } | Self::Branch { newlines, .. } => *newlines,
++            }
++        }
++
++        fn hash32(&self) -> u32 {
++            match self {
++                Self::Leaf { hash32, .. } | Self::Branch { hash32, .. } => *hash32,
++            }
++        }
++
++        fn hash_power32(&self) -> u32 {
++            match self {
++                Self::Leaf { hash_power32, .. } | Self::Branch { hash_power32, .. } => {
++                    *hash_power32
++                }
++            }
++        }
++
++        fn height(&self) -> usize {
++            match self {
++                Self::Leaf { .. } => 1,
++                Self::Branch { height, .. } => *height,
++            }
++        }
++    }
++
++    impl ByteRope {
++        const CHUNK_SIZE: usize = 4096;
++
++        fn from_str(text: &str) -> Self {
++            if text.is_empty() {
++                return Self::default();
++            }
++            let source: Arc<str> = Arc::from(text);
++            let mut leaves = Vec::new();
++            let mut start = 0;
++            while start < source.len() {
++                let mut end = (start + Self::CHUNK_SIZE).min(source.len());
++                while end > start && !source.is_char_boundary(end) {
++                    end -= 1;
++                }
++                assert!(end > start);
++                leaves.push(byte_rope_leaf(source.clone(), start, end - start));
++                start = end;
++            }
++            fn build(nodes: &[Arc<ByteRopeNode>]) -> Option<Arc<ByteRopeNode>> {
++                match nodes.len() {
++                    0 => None,
++                    1 => Some(nodes[0].clone()),
++                    len => {
++                        let middle = len / 2;
++                        Some(byte_rope_branch(
++                            build(&nodes[..middle]).unwrap(),
++                            build(&nodes[middle..]).unwrap(),
++                        ))
++                    }
++                }
++            }
++            Self {
++                root: build(&leaves),
++            }
++        }
++
++        fn len(&self) -> usize {
++            self.root.as_deref().map_or(0, ByteRopeNode::len)
++        }
++
++        fn newlines(&self) -> usize {
++            self.root.as_deref().map_or(0, ByteRopeNode::newlines)
++        }
++
++        fn hash32(&self) -> u32 {
++            self.root.as_deref().map_or(0, ByteRopeNode::hash32)
++        }
++
++        fn is_char_boundary(&self, offset: usize) -> bool {
++            if offset == 0 || offset == self.len() {
++                return true;
++            }
++            if offset > self.len() {
++                return false;
++            }
++            fn visit(node: &Arc<ByteRopeNode>, offset: usize) -> bool {
++                match node.as_ref() {
++                    ByteRopeNode::Leaf {
++                        source, start, len, ..
++                    } => offset <= *len && source.is_char_boundary(start + offset),
++                    ByteRopeNode::Branch { left, right, .. } => {
++                        if offset < left.len() {
++                            visit(left, offset)
++                        } else if offset == left.len() {
++                            true
++                        } else {
++                            visit(right, offset - left.len())
++                        }
++                    }
++                }
++            }
++            visit(self.root.as_ref().unwrap(), offset)
++        }
++
++        fn replace(&self, start: usize, end: usize, replacement: &str) -> Self {
++            assert!(start <= end && end <= self.len());
++            assert!(self.is_char_boundary(start));
++            assert!(self.is_char_boundary(end));
++            let (prefix, rest) = split_byte_rope(self.root.clone(), start);
++            let (_, suffix) = split_byte_rope(rest, end - start);
++            Self {
++                root: concat_byte_rope(
++                    concat_byte_rope(prefix, Self::from_str(replacement).root),
++                    suffix,
++                ),
++            }
++        }
++
++        fn slice(&self, start: usize, end: usize) -> String {
++            assert!(start <= end && end <= self.len());
++            fn write(node: &Arc<ByteRopeNode>, start: usize, end: usize, output: &mut String) {
++                if start >= end {
++                    return;
++                }
++                match node.as_ref() {
++                    ByteRopeNode::Leaf {
++                        source,
++                        start: source_start,
++                        ..
++                    } => output.push_str(&source[source_start + start..source_start + end]),
++                    ByteRopeNode::Branch { left, right, .. } => {
++                        if start < left.len() {
++                            write(left, start, end.min(left.len()), output);
++                        }
++                        if end > left.len() {
++                            write(
++                                right,
++                                start.saturating_sub(left.len()),
++                                end - left.len(),
++                                output,
++                            );
++                        }
++                    }
++                }
++            }
++            let mut output = String::with_capacity(end - start);
++            if let Some(root) = &self.root {
++                write(root, start, end, &mut output);
++            }
++            output
++        }
++
++        fn line_from(&self, offset: usize) -> (usize, String) {
++            assert!(offset < self.len());
++            let end = next_newline(&self.root, 0, offset).map_or(self.len(), |newline| newline + 1);
++            (end, self.slice(offset, end))
++        }
++
++        fn newlines_before(&self, offset: usize) -> usize {
++            assert!(offset <= self.len());
++            fn count(node: &Arc<ByteRopeNode>, offset: usize) -> usize {
++                if offset == 0 {
++                    return 0;
++                }
++                if offset == node.len() {
++                    return node.newlines();
++                }
++                match node.as_ref() {
++                    ByteRopeNode::Leaf { source, start, .. } => source.as_bytes()
++                        [*start..*start + offset]
++                        .iter()
++                        .filter(|byte| **byte == b'\n')
++                        .count(),
++                    ByteRopeNode::Branch { left, right, .. } => {
++                        if offset <= left.len() {
++                            count(left, offset)
++                        } else {
++                            left.newlines() + count(right, offset - left.len())
++                        }
++                    }
++                }
++            }
++            self.root.as_ref().map_or(0, |root| count(root, offset))
++        }
++
++        fn previous_line_length(&self, offset: usize) -> usize {
++            if offset == 0 {
++                return 0;
++            }
++            let end = if self.slice(offset - 1, offset) == "\n" {
++                offset - 1
++            } else {
++                offset
++            };
++            let start = previous_newline(&self.root, 0, end).map_or(0, |newline| newline + 1);
++            let mut len = end - start;
++            if len > 0 && self.slice(end - 1, end) == "\r" {
++                len -= 1;
++            }
++            len
++        }
++
++        fn materialize(&self) -> String {
++            self.slice(0, self.len())
++        }
++    }
++
++    fn byte_rope_leaf(source: Arc<str>, start: usize, len: usize) -> Arc<ByteRopeNode> {
++        let bytes = &source.as_bytes()[start..start + len];
++        let mut hash = 0u32;
++        let mut power = 1u32;
++        for byte in bytes {
++            hash = hash
++                .wrapping_mul(0x0010_0193)
++                .wrapping_add(*byte as u32 + 1);
++            power = power.wrapping_mul(0x0010_0193);
++        }
++        let newlines = bytes.iter().filter(|byte| **byte == b'\n').count();
++        Arc::new(ByteRopeNode::Leaf {
++            source,
++            start,
++            len,
++            newlines,
++            hash32: hash,
++            hash_power32: power,
++        })
++    }
++
++    fn byte_rope_branch(left: Arc<ByteRopeNode>, right: Arc<ByteRopeNode>) -> Arc<ByteRopeNode> {
++        Arc::new(ByteRopeNode::Branch {
++            len: left.len() + right.len(),
++            newlines: left.newlines() + right.newlines(),
++            hash32: left
++                .hash32()
++                .wrapping_mul(right.hash_power32())
++                .wrapping_add(right.hash32()),
++            hash_power32: left.hash_power32().wrapping_mul(right.hash_power32()),
++            height: left.height().max(right.height()) + 1,
++            left,
++            right,
++        })
++    }
++
++    fn split_byte_rope(
++        node: Option<Arc<ByteRopeNode>>,
++        offset: usize,
++    ) -> (Option<Arc<ByteRopeNode>>, Option<Arc<ByteRopeNode>>) {
++        let Some(node) = node else {
++            assert_eq!(offset, 0);
++            return (None, None);
++        };
++        assert!(offset <= node.len());
++        if offset == 0 {
++            return (None, Some(node));
++        }
++        if offset == node.len() {
++            return (Some(node), None);
++        }
++        match node.as_ref() {
++            ByteRopeNode::Leaf {
++                source, start, len, ..
++            } => (
++                Some(byte_rope_leaf(source.clone(), *start, offset)),
++                Some(byte_rope_leaf(source.clone(), start + offset, len - offset)),
++            ),
++            ByteRopeNode::Branch { left, right, .. } => {
++                if offset < left.len() {
++                    let (prefix, rest) = split_byte_rope(Some(left.clone()), offset);
++                    (prefix, concat_byte_rope(rest, Some(right.clone())))
++                } else if offset == left.len() {
++                    (Some(left.clone()), Some(right.clone()))
++                } else {
++                    let (rest, suffix) = split_byte_rope(Some(right.clone()), offset - left.len());
++                    (concat_byte_rope(Some(left.clone()), rest), suffix)
++                }
++            }
++        }
++    }
++
++    fn concat_byte_rope(
++        left: Option<Arc<ByteRopeNode>>,
++        right: Option<Arc<ByteRopeNode>>,
++    ) -> Option<Arc<ByteRopeNode>> {
++        let (left, right) = match (left, right) {
++            (None, right) => return right,
++            (left, None) => return left,
++            (Some(left), Some(right)) => (left, right),
++        };
++        if left.height() > right.height() + 1 {
++            let ByteRopeNode::Branch {
++                left: outer_left,
++                right: inner_left,
++                ..
++            } = left.as_ref()
++            else {
++                unreachable!()
++            };
++            return Some(balance_byte_rope(byte_rope_branch(
++                outer_left.clone(),
++                concat_byte_rope(Some(inner_left.clone()), Some(right)).unwrap(),
++            )));
++        }
++        if right.height() > left.height() + 1 {
++            let ByteRopeNode::Branch {
++                left: inner_right,
++                right: outer_right,
++                ..
++            } = right.as_ref()
++            else {
++                unreachable!()
++            };
++            return Some(balance_byte_rope(byte_rope_branch(
++                concat_byte_rope(Some(left), Some(inner_right.clone())).unwrap(),
++                outer_right.clone(),
++            )));
++        }
++        Some(byte_rope_branch(left, right))
++    }
++
++    fn balance_byte_rope(node: Arc<ByteRopeNode>) -> Arc<ByteRopeNode> {
++        let ByteRopeNode::Branch { left, right, .. } = node.as_ref() else {
++            return node;
++        };
++        let balance = left.height() as isize - right.height() as isize;
++        if balance > 1 {
++            let ByteRopeNode::Branch {
++                left: left_left,
++                right: left_right,
++                ..
++            } = left.as_ref()
++            else {
++                unreachable!()
++            };
++            if left_left.height() < left_right.height() {
++                let ByteRopeNode::Branch {
++                    left: pivot_left,
++                    right: pivot_right,
++                    ..
++                } = left_right.as_ref()
++                else {
++                    unreachable!()
++                };
++                return byte_rope_branch(
++                    byte_rope_branch(left_left.clone(), pivot_left.clone()),
++                    byte_rope_branch(pivot_right.clone(), right.clone()),
++                );
++            }
++            return byte_rope_branch(
++                left_left.clone(),
++                byte_rope_branch(left_right.clone(), right.clone()),
++            );
++        }
++        if balance < -1 {
++            let ByteRopeNode::Branch {
++                left: right_left,
++                right: right_right,
++                ..
++            } = right.as_ref()
++            else {
++                unreachable!()
++            };
++            if right_right.height() < right_left.height() {
++                let ByteRopeNode::Branch {
++                    left: pivot_left,
++                    right: pivot_right,
++                    ..
++                } = right_left.as_ref()
++                else {
++                    unreachable!()
++                };
++                return byte_rope_branch(
++                    byte_rope_branch(left.clone(), pivot_left.clone()),
++                    byte_rope_branch(pivot_right.clone(), right_right.clone()),
++                );
++            }
++            return byte_rope_branch(
++                byte_rope_branch(left.clone(), right_left.clone()),
++                right_right.clone(),
++            );
++        }
++        node
++    }
++
++    fn next_newline(node: &Option<Arc<ByteRopeNode>>, base: usize, offset: usize) -> Option<usize> {
++        let node = node.as_ref()?;
++        if node.newlines() == 0 || base + node.len() <= offset {
++            return None;
++        }
++        match node.as_ref() {
++            ByteRopeNode::Leaf {
++                source, start, len, ..
++            } => {
++                let local_start = offset.saturating_sub(base).min(*len);
++                source.as_bytes()[start + local_start..start + len]
++                    .iter()
++                    .position(|byte| *byte == b'\n')
++                    .map(|relative| base + local_start + relative)
++            }
++            ByteRopeNode::Branch { left, right, .. } => {
++                next_newline(&Some(left.clone()), base, offset)
++                    .or_else(|| next_newline(&Some(right.clone()), base + left.len(), offset))
++            }
++        }
++    }
++
++    fn previous_newline(
++        node: &Option<Arc<ByteRopeNode>>,
++        base: usize,
++        offset: usize,
++    ) -> Option<usize> {
++        let node = node.as_ref()?;
++        if node.newlines() == 0 || base >= offset {
++            return None;
++        }
++        match node.as_ref() {
++            ByteRopeNode::Leaf {
++                source, start, len, ..
++            } => {
++                let local_end = offset.saturating_sub(base).min(*len);
++                source.as_bytes()[*start..start + local_end]
++                    .iter()
++                    .rposition(|byte| *byte == b'\n')
++                    .map(|relative| base + relative)
++            }
++            ByteRopeNode::Branch { left, right, .. } => {
++                previous_newline(&Some(right.clone()), base + left.len(), offset)
++                    .or_else(|| previous_newline(&Some(left.clone()), base, offset))
++            }
++        }
++    }
++
++    #[test]
++    fn paused_comrak_block_parser_resumes_exactly() {
++        let original = large_document(1_000_000);
++        let middle = original.matches("## Section ").count() / 2;
++        let cases = [
++            edit(
++                &original,
++                "paragraph_character",
++                &format!("Paragraph {middle} has"),
++                &format!("Paragraph {middle} now has"),
++            ),
++            edit(
++                &original,
++                "inline_delimiter",
++                &format!("unique words {middle}"),
++                &format!("unique **words** {middle}"),
++            ),
++            edit(
++                &original,
++                "remove_middle_fence_close",
++                &format!("code line {middle}\n```\n"),
++                &format!("code line {middle}\n   \n"),
++            ),
++            edit(
++                &original,
++                "change_list_indentation",
++                &format!("  - nested item {middle}"),
++                &format!("    - nested item {middle}"),
++            ),
++            edit(
++                &original,
++                "open_html_comment_near_start",
++                "<!-- bounded comment -->",
++                "<!-- unbounded comment",
++            ),
++            edit(
++                &original,
++                "change_global_reference",
++                "[shared]: https://example.com/old",
++                "[shared]: https://example.com/new",
++            ),
++        ];
++        let options = flark_options();
++        let old_receipts = receipts(&original, &options);
++
++        for case in cases {
++            let restart = conservative_restart(&old_receipts, case.old_range.start);
++            let (convergence, local_us) = work_until_convergence(
++                &original,
++                &case.markdown,
++                restart,
++                &old_receipts,
++                &case.old_range,
++                case.new_end,
++                &options,
++            );
++
++            let arena = Arena::new();
++            let resumed_started = Instant::now();
++            let resumed = resumed_to_end(&arena, &original, &case.markdown, restart, &options);
++            let resumed_us = resumed_started.elapsed().as_micros();
++
++            let full_arena = Arena::new();
++            let full_started = Instant::now();
++            let full = parse_document(&full_arena, &case.markdown, &options);
++            let full_us = full_started.elapsed().as_micros();
++
++            assert_eq!(
++                tree_signature(resumed),
++                tree_signature(full),
++                "{}",
++                case.name
++            );
++            println!(
++                "comrak_checkpoint case={} restart={} convergence_bytes={} local_us={} resumed_to_end_us={} full_us={}",
++                case.name,
++                restart,
++                convergence.unwrap_or(case.markdown.len() - case.new_end),
++                local_us,
++                resumed_us,
++                full_us,
++            );
++        }
++    }
++
++    #[test]
++    fn comrak_safe_checkpoint_convergence_is_usually_local() {
++        let original = large_document(200_000);
++        let options = flark_options();
++        let old_receipts = receipts(&original, &options);
++        let mut seed = 0x5eed_cafe_d15c_0a11u64;
++        let mut convergence = Vec::new();
++        let mut restart_distance = Vec::new();
++        let mut elapsed = Vec::new();
++
++        for iteration in 0..250 {
++            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
++            let start = 32 + seed as usize % (original.len() - 64);
++            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
++            let (old_end, replacement) = match iteration % 5 {
++                0 => (start, "x"),
++                1 => (start + 1, ""),
++                2 => (start + 1, "*"),
++                3 => (start, "\n"),
++                _ => (start + 1, if seed & 1 == 0 { "`" } else { "<" }),
++            };
++            let case = edit_range(&original, "randomized", start..old_end, replacement);
++            let restart = conservative_restart(&old_receipts, start);
++            let (distance, local_us) = work_until_convergence(
++                &original,
++                &case.markdown,
++                restart,
++                &old_receipts,
++                &case.old_range,
++                case.new_end,
++                &options,
++            );
++            let distance = distance.unwrap_or(case.markdown.len() - case.new_end);
++            elapsed.push(local_us as usize);
++            convergence.push(distance);
++            restart_distance.push(start - restart);
++        }
++
++        convergence.sort_unstable();
++        restart_distance.sort_unstable();
++        elapsed.sort_unstable();
++        println!(
++            "comrak_checkpoint_randomized cases={} convergence_p50={} convergence_p95={} convergence_p99={} convergence_max={} restart_p95={} local_us_p50={} local_us_p95={} local_us_max={}",
++            convergence.len(),
++            percentile(&convergence, 50),
++            percentile(&convergence, 95),
++            percentile(&convergence, 99),
++            convergence.last().copied().unwrap_or(0),
++            percentile(&restart_distance, 95),
++            percentile(&elapsed, 50),
++            percentile(&elapsed, 95),
++            elapsed.last().copied().unwrap_or(0),
++        );
++    }
++
++    #[test]
++    fn checkpoint_chunks_splice_an_exact_structural_suffix() {
++        let original = large_document(1_000_000);
++        let middle = original.matches("## Section ").count() / 2;
++        let cases = [
++            edit(
++                &original,
++                "paragraph_character",
++                &format!("Paragraph {middle} has"),
++                &format!("Paragraph {middle} now has"),
++            ),
++            edit(
++                &original,
++                "inline_delimiter",
++                &format!("unique words {middle}"),
++                &format!("unique **words** {middle}"),
++            ),
++            edit(
++                &original,
++                "remove_middle_fence_close",
++                &format!("code line {middle}\n```\n"),
++                &format!("code line {middle}\n   \n"),
++            ),
++            edit(
++                &original,
++                "open_html_comment_near_start",
++                "<!-- bounded comment -->",
++                "<!-- unbounded comment",
++            ),
++            edit(
++                &original,
++                "change_global_reference",
++                "[shared]: https://example.com/old",
++                "[shared]: https://example.com/new",
++            ),
++        ];
++        let options = flark_options();
++
++        for case in cases {
++            let mut document = IncrementalBlockDocument::new(original.clone(), &options);
++            let replacement = &case.markdown[case.old_range.start..case.new_end];
++            let receipt = document.apply_edit(case.old_range.clone(), replacement, &options);
++            assert_eq!(document.text.materialize(), case.markdown, "{}", case.name);
++            println!(
++                "comrak_suffix_splice case={} restart={} convergence={} reparsed_bytes={} replaced_chunks={} inserted_chunks={} reused_chunks={} parser_us={} splice_us={} delta_bytes={} reference_presence_changes={:?} reference_value_changes={:?}",
++                case.name,
++                receipt.restart,
++                receipt.convergence,
++                receipt.reparsed_bytes,
++                receipt.replaced_chunks,
++                receipt.inserted_chunks,
++                receipt.reused_chunks,
++                receipt.parser_us,
++                receipt.splice_us,
++                receipt.delta_bytes,
++                receipt.reference_delta.presence_changed,
++                receipt.reference_delta.value_changed,
++            );
++        }
++    }
++
++    #[test]
++    fn checkpoint_chunks_remain_exact_across_sequential_edits() {
++        run_sequential_checkpoint_edits(200_000, 500, "smoke");
++    }
++
++    #[test]
++    #[ignore = "release-mode million-byte differential soak"]
++    fn checkpoint_chunks_remain_exact_across_ten_thousand_large_document_edits() {
++        run_sequential_checkpoint_edits(1_000_000, 10_000, "soak");
++    }
++
++    fn run_sequential_checkpoint_edits(target_bytes: usize, iterations: usize, label: &str) {
++        let options = flark_options();
++        let mut document = IncrementalBlockDocument::new(large_document(target_bytes), &options);
++        let mut seed = 0xd1ff_e2e5_5eed_u64;
++        let mut reparsed = Vec::new();
++        let mut parser_us = Vec::new();
++        let mut replaced = Vec::new();
++        let mut splice_us = Vec::new();
++        let mut delta_bytes = Vec::new();
++
++        for iteration in 0..iterations {
++            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
++            let start = 32 + seed as usize % (document.text.len() - 64);
++            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
++            let (old_end, replacement) = match iteration % 6 {
++                0 => (start, "x"),
++                1 => (start + 1, ""),
++                2 => (start + 1, "*"),
++                3 => (start, "\n"),
++                4 => (start + 1, if seed & 1 == 0 { "`" } else { "<" }),
++                _ => (start, " "),
++            };
++            let receipt = document.apply_edit(start..old_end, replacement, &options);
++            reparsed.push(receipt.reparsed_bytes);
++            parser_us.push(receipt.parser_us as usize);
++            replaced.push(receipt.replaced_chunks);
++            splice_us.push(receipt.splice_us as usize);
++            delta_bytes.push(receipt.delta_bytes);
++        }
++
++        reparsed.sort_unstable();
++        parser_us.sort_unstable();
++        replaced.sort_unstable();
++        splice_us.sort_unstable();
++        delta_bytes.sort_unstable();
++        println!(
++            "comrak_suffix_splice_sequential label={} document_bytes={} cases={} reparsed_p50={} reparsed_p95={} reparsed_p99={} reparsed_max={} parser_us_p50={} parser_us_p95={} parser_us_max={} splice_us_p50={} splice_us_p95={} splice_us_max={} delta_bytes_p50={} delta_bytes_p95={} delta_bytes_max={} replaced_chunks_p95={}",
++            label,
++            document.text.len(),
++            reparsed.len(),
++            percentile(&reparsed, 50),
++            percentile(&reparsed, 95),
++            percentile(&reparsed, 99),
++            reparsed.last().copied().unwrap_or(0),
++            percentile(&parser_us, 50),
++            percentile(&parser_us, 95),
++            parser_us.last().copied().unwrap_or(0),
++            percentile(&splice_us, 50),
++            percentile(&splice_us, 95),
++            splice_us.last().copied().unwrap_or(0),
++            percentile(&delta_bytes, 50),
++            percentile(&delta_bytes, 95),
++            delta_bytes.last().copied().unwrap_or(0),
++            percentile(&replaced, 95),
++        );
++    }
++
++    #[test]
++    fn adversarial_fence_html_list_table_and_reference_transitions_stay_exact() {
++        let options = flark_options();
++        let mut source = String::from(
++            "<!-- bounded comment -->\n\n\
++             Intro with **bold** and [duplicate][dup].\n\n\
++             - adversarial item 0\n\
++             - adversarial item 1\n\
++             - adversarial item 2\n\n\
++             ```rust\n\
++             fence payload\n\
++             ```\n\
++             After fence.\n\n\
++             <script>\n\
++             const marker = 'html payload';\n\
++             </script>\n\n\
++             | left | right |\n\
++             | --- | --- |\n\
++             | cell | value |\n\n\
++             paragraph sentinel with literal token\n\n",
++        );
++        while source.len() < 50_000 {
++            let index = source.len();
++            writeln!(
++                source,
++                "ordinary {index} with *inline*, [duplicate][dup], and unicode 😀\n"
++            )
++            .unwrap();
++        }
++        source.push_str(
++            "[dup]: https://first.example/a\n\
++             [dup]: https://second.example/b\n",
++        );
++        let mut document = IncrementalBlockDocument::new(source, &options);
++        let mut edits = 0;
++
++        for _cycle in 0..10 {
++            for (before, after) in [
++                ("<!-- bounded comment -->", "<!-- unbounded comment"),
++                ("<!-- unbounded comment", "<!-- bounded comment -->"),
++                ("fence payload\n```\nAfter", "fence payload\n   \nAfter"),
++                ("fence payload\n   \nAfter", "fence payload\n```\nAfter"),
++                ("</script>\n\n| left", "not closed\n\n| left"),
++                ("not closed\n\n| left", "</script>\n\n| left"),
++                ("- adversarial item 1", "  - adversarial item 1"),
++                ("  - adversarial item 1", "- adversarial item 1"),
++                ("| --- | --- |", "| -- | --- |"),
++                ("| -- | --- |", "| --- | --- |"),
++                (
++                    "https://first.example/a",
++                    "https://first.example/long-value",
++                ),
++                (
++                    "https://first.example/long-value",
++                    "https://first.example/a",
++                ),
++                ("literal token", "**literal token**"),
++                ("**literal token**", "literal token"),
++                ("paragraph sentinel", "paragraph\nsentinel"),
++                ("paragraph\nsentinel", "paragraph sentinel"),
++            ] {
++                apply_named_replacement(&mut document, before, after, &options);
++                edits += 1;
++                assert_inline_snapshot_matches_full(&document.text.materialize(), &options);
++            }
++
++            let current = document.text.materialize();
++            let first = "[dup]: https://first.example/a\n";
++            let first_start = current.rfind(first).unwrap();
++            document.apply_edit(first_start..first_start + first.len(), "", &options);
++            edits += 1;
++            assert_inline_snapshot_matches_full(&document.text.materialize(), &options);
++
++            let current = document.text.materialize();
++            let second_start = current.rfind("[dup]: https://second.example/b").unwrap();
++            document.apply_edit(second_start..second_start, first, &options);
++            edits += 1;
++            assert_inline_snapshot_matches_full(&document.text.materialize(), &options);
++        }
++        assert_eq!(edits, 180);
++        println!("comrak_adversarial_transitions edits={edits} exact=true");
++    }
++
++    fn apply_named_replacement(
++        document: &mut IncrementalBlockDocument,
++        before: &str,
++        after: &str,
++        options: &Options,
++    ) {
++        let current = document.text.materialize();
++        let start = current
++            .find(before)
++            .unwrap_or_else(|| panic!("missing {before:?}"));
++        document.apply_edit(start..start + before.len(), after, options);
++    }
++
++    fn assert_inline_snapshot_matches_full(text: &str, options: &Options) {
++        let incremental = inline_document_snapshot(text, options);
++        let arena = Arena::new();
++        let full = parse_document(&arena, text, options);
++        assert_eq!(incremental.signature, tree_signature(full));
++    }
++
++    #[test]
++    fn revisioned_parser_handle_rejects_stale_or_divergent_edits() {
++        let options = flark_options();
++        let original = large_document(1_000_000);
++        let mut handle = RevisionedParserHandle::new(original.clone(), &options);
++        let start = original.find("unique words").unwrap();
++        let before_hash32 = handle.content_hash32();
++        let delta = handle
++            .apply(
++                ParserEditRequest {
++                    base_revision: 0,
++                    before_hash32,
++                    start_utf8: start,
++                    end_utf8: start + "unique".len(),
++                    replacement: "exact",
++                },
++                &options,
++            )
++            .unwrap();
++
++        assert_eq!(delta.base_revision, 0);
++        assert_eq!(delta.revision, 1);
++        assert_eq!(delta.before_hash32, before_hash32);
++        assert_eq!(delta.after_hash32, handle.content_hash32());
++        assert!(delta.splice.reparsed_bytes < 128);
++        assert!(delta.splice.delta_bytes < 256);
++        let materialized = handle.document.text.materialize();
++        assert_eq!(
++            handle.document.text.newlines(),
++            materialized.bytes().filter(|byte| *byte == b'\n').count(),
++        );
++        assert_eq!(
++            handle.content_hash32(),
++            ByteRope::from_str(&materialized).hash32(),
++        );
++
++        assert_eq!(
++            handle
++                .apply(
++                    ParserEditRequest {
++                        base_revision: 0,
++                        before_hash32,
++                        start_utf8: start,
++                        end_utf8: start,
++                        replacement: "stale",
++                    },
++                    &options,
++                )
++                .unwrap_err(),
++            ParserApplyError::Revision {
++                expected: 1,
++                actual: 0,
++            },
++        );
++        assert_eq!(
++            handle
++                .apply(
++                    ParserEditRequest {
++                        base_revision: 1,
++                        before_hash32: 0,
++                        start_utf8: start,
++                        end_utf8: start,
++                        replacement: "divergent",
++                    },
++                    &options,
++                )
++                .unwrap_err(),
++            ParserApplyError::Hash {
++                expected: handle.content_hash32(),
++                actual: 0,
++            },
++        );
++    }
++
++    #[test]
++    fn inline_leaves_are_exact_and_reference_dependencies_bound_invalidation() {
++        let options = flark_options();
++        let without_toggle = concat!(
++            "[resolved]: https://example.com/old\n\n",
++            "A [full][resolved] reference.\n\n",
++            "A [resolved] shortcut and [resolved][].\n\n",
++            "An ![image][resolved] and [missing][].\n\n",
++            "A [nested [resolved]][toggle] candidate.\n\n",
++            "A [toggle] shortcut.\n",
++        );
++        let with_toggle = format!("{without_toggle}\n[toggle]: https://example.com/toggle\n",);
++        let before = inline_document_snapshot(without_toggle, &options);
++        let after = inline_document_snapshot(&with_toggle, &options);
++
++        assert_eq!(before.leaves.len(), after.leaves.len());
++        let mut changed = 0;
++        for (old, new) in before.leaves.iter().zip(&after.leaves) {
++            assert_eq!(old.range, new.range);
++            if old.signature != new.signature {
++                changed += 1;
++                assert!(
++                    old.dependencies.iter().any(|label| label == "toggle")
++                        || new.dependencies.iter().any(|label| label == "toggle"),
++                    "changed leaf {:?} did not declare toggle: old={:?} new={:?}",
++                    old.range,
++                    old.dependencies,
++                    new.dependencies,
++                );
++            }
++        }
++        assert!(changed >= 2);
++
++        let changed_url =
++            with_toggle.replace("https://example.com/toggle", "https://example.com/second");
++        let changed_url = inline_document_snapshot(&changed_url, &options);
++        for (old, new) in after.leaves.iter().zip(&changed_url.leaves) {
++            if old.signature != new.signature {
++                assert!(old.dependencies.iter().any(|label| label == "toggle"));
++            }
++        }
++    }
++
++    #[test]
++    fn persistent_reference_index_preserves_first_definition_wins() {
++        let options = flark_options();
++        let source = concat!(
++            "[x]: https://first.example/value\n\n",
++            "A [reference][x].\n\n",
++            "[x]: https://second.example/value\n",
++        );
++        let mut handle = RevisionedParserHandle::new(source.to_string(), &options);
++        let mut initial_definitions = Vec::new();
++        handle.document.chunks.for_each_chunk(|chunk| {
++            for definition in &chunk.definitions {
++                initial_definitions.push((chunk.id, chunk.order_key, definition.clone()));
++            }
++        });
++        assert_eq!(initial_definitions.len(), 2, "{initial_definitions:?}");
++        assert_eq!(
++            handle.document.references.winner("x").unwrap().url,
++            "https://first.example/value",
++        );
++
++        let first_url = source.find("https://first.example/value").unwrap();
++        let delta = handle
++            .apply(
++                ParserEditRequest {
++                    base_revision: 0,
++                    before_hash32: handle.content_hash32(),
++                    start_utf8: first_url,
++                    end_utf8: first_url + "https://first.example/value".len(),
++                    replacement: "https://changed.example/value",
++                },
++                &options,
++            )
++            .unwrap();
++        assert!(delta.splice.reference_delta.presence_changed.is_empty());
++        assert_eq!(delta.splice.reference_delta.value_changed, ["x"]);
++        assert_eq!(
++            handle.document.references.winner("x").unwrap().url,
++            "https://changed.example/value",
++        );
++
++        let current = handle.document.text.materialize();
++        let first_definition_end = current.find("\n\n").unwrap() + 1;
++        let delta = handle
++            .apply(
++                ParserEditRequest {
++                    base_revision: 1,
++                    before_hash32: handle.content_hash32(),
++                    start_utf8: 0,
++                    end_utf8: first_definition_end,
++                    replacement: "",
++                },
++                &options,
++            )
++            .unwrap();
++        assert!(delta.splice.reference_delta.presence_changed.is_empty());
++        assert_eq!(delta.splice.reference_delta.value_changed, ["x"]);
++        assert_eq!(
++            handle.document.references.winner("x").unwrap().url,
++            "https://second.example/value",
++        );
++
++        let current = handle.document.text.materialize();
++        let second_start = current.find("[x]: https://second.example/value").unwrap();
++        let delta = handle
++            .apply(
++                ParserEditRequest {
++                    base_revision: 2,
++                    before_hash32: handle.content_hash32(),
++                    start_utf8: second_start,
++                    end_utf8: current.len(),
++                    replacement: "",
++                },
++                &options,
++            )
++            .unwrap();
++        assert_eq!(delta.splice.reference_delta.presence_changed, ["x"]);
++        assert!(delta.splice.reference_delta.value_changed.is_empty());
++        assert!(handle.document.references.winner("x").is_none());
++    }
++
++    #[test]
++    fn in_container_list_checkpoint_restores_exact_continuation_state() {
++        let options = flark_options();
++        let original = giant_list(1_000_000);
++        let item_count = original.matches("- item ").count();
++        let target = format!("- item {} with", item_count / 2);
++        let edit_start = original.find(&target).unwrap() + target.len() - "with".len();
++        let checkpoint_offset = original[..edit_start].rfind('\n').unwrap() + 1;
++        let checkpoint = continuation_checkpoint(&original, checkpoint_offset, &options);
++        assert_eq!(checkpoint.offset, checkpoint_offset);
++        assert!(checkpoint.open_spine.len() >= 3);
++
++        let edited = edit_range(
++            &original,
++            "giant_list_local",
++            edit_start..edit_start + "with".len(),
++            "now with",
++        );
++        let full_states = continuation_states(&edited.markdown, checkpoint_offset, &options);
++        let arena = Arena::new();
++        let mut resumed =
++            restore_continuation_checkpoint(&arena, &checkpoint, &options, edited.markdown.len());
++        let mut offset = checkpoint_offset;
++        let mut first_convergence = None;
++        let old_states = continuation_states(&original, checkpoint_offset, &options);
++        let byte_delta = edited.markdown.len() as isize - original.len() as isize;
++        while offset < edited.markdown.len() {
++            let line_end = edited.markdown[offset..]
++                .find('\n')
++                .map_or(edited.markdown.len(), |relative| offset + relative + 1);
++            resumed.process_line(&edited.markdown[offset..line_end]);
++            offset = line_end;
++            assert_eq!(
++                continuation_state(&resumed),
++                full_states[&offset],
++                "restored parser diverged at byte {offset}",
++            );
++            if offset >= edited.new_end {
++                let mapped = offset as isize - byte_delta;
++                if mapped >= edited.old_range.end as isize
++                    && old_states.get(&(mapped as usize)) == Some(&continuation_state(&resumed))
++                {
++                    first_convergence = Some((offset, mapped as usize));
++                    break;
++                }
++            }
++        }
++        let (new_convergence, old_convergence) =
++            first_convergence.expect("giant list state should converge locally");
++        let convergence = new_convergence - edited.new_end;
++        assert!(convergence < 128, "convergence={convergence}");
++
++        // A state match is useful only if the old suffix can actually be retained.
++        // The checkpoint carries the previously-open item, so replace from that
++        // item through the item immediately before the converged current item.
++        let original_line_starts = line_starts_for(&original);
++        let edited_line_starts = line_starts_for(&edited.markdown);
++        let replacement_start = checkpoint
++            .open_spine
++            .iter()
++            .rev()
++            .find(|ast| matches!(ast.value, NodeValue::Item(..)))
++            .map(|ast| {
++                sourcepos_byte_range(ast.sourcepos, original.len(), 0, &original_line_starts).start
++            })
++            .expect("checkpoint must contain an open list item");
++        let current_item = ancestor_matching(resumed.current, |value| {
++            matches!(value, NodeValue::Item(..))
++        })
++        .expect("resumed parser must be inside the converged list item");
++        let current_list = current_item.parent().expect("item must have a list parent");
++        assert!(matches!(current_list.data().value, NodeValue::List(..)));
++        let suffix_start_new =
++            node_byte_range(current_item, edited.markdown.len(), 0, &edited_line_starts).start;
++        let suffix_start_old = suffix_start_new
++            .checked_add_signed(-byte_delta)
++            .expect("converged suffix must map into the old document");
++        assert!(suffix_start_old < old_convergence);
++
++        let replacement_items: Vec<_> = current_list
++            .children()
++            .take_while(|item| !item.same_node(current_item))
++            .map(|item| owned_block_node(item, edited.markdown.len(), 0, &edited_line_starts, 0))
++            .collect();
++        assert!(!replacement_items.is_empty());
++
++        let old_items = full_list_items(&original, &options);
++        let mut spliced_items: Vec<_> = old_items
++            .iter()
++            .take_while(|item| item.range.start < replacement_start)
++            .cloned()
++            .collect();
++        spliced_items.extend(replacement_items.iter().cloned());
++        let reused_suffix: Vec<_> = old_items
++            .iter()
++            .skip_while(|item| item.range.start < suffix_start_old)
++            .map(|item| shifted_node(item, byte_delta as usize))
++            .collect();
++        assert!(!reused_suffix.is_empty());
++        spliced_items.extend(reused_suffix.iter().cloned());
++        assert_eq!(
++            spliced_items,
++            full_list_items(&edited.markdown, &options),
++            "checkpoint replacement plus reused suffix must equal a clean full list parse",
++        );
++        println!(
++            "comrak_in_container_list checkpoint={} open_depth={} convergence_bytes={} replacement_items={} reused_suffix_items={}",
++            checkpoint_offset,
++            checkpoint.open_spine.len(),
++            convergence,
++            replacement_items.len(),
++            reused_suffix.len(),
++        );
++    }
++
++    fn ancestor_matching<'a>(
++        mut node: Node<'a>,
++        predicate: impl Fn(&NodeValue) -> bool,
++    ) -> Option<Node<'a>> {
++        loop {
++            if predicate(&node.data().value) {
++                return Some(node);
++            }
++            node = node.parent()?;
++        }
++    }
++
++    fn line_starts_for(text: &str) -> Vec<usize> {
++        let mut starts = vec![0];
++        starts.extend(
++            text.bytes()
++                .enumerate()
++                .filter_map(|(index, byte)| (byte == b'\n').then_some(index + 1)),
++        );
++        starts
++    }
++
++    fn full_list_items(text: &str, options: &Options) -> Vec<OwnedBlockNode> {
++        let line_starts = line_starts_for(text);
++        let arena = Arena::new();
++        let mut parser = new_parser(&arena, options, text.len());
++        feed(&mut parser, text, 0, text.len(), |_, _| {});
++        finish_blocks_only(&mut parser);
++        let list = parser
++            .root
++            .children()
++            .find(|node| matches!(node.data().value, NodeValue::List(..)))
++            .expect("fixture must contain a top-level list");
++        list.children()
++            .map(|item| owned_block_node(item, text.len(), 0, &line_starts, 0))
++            .collect()
++    }
++
++    #[test]
++    fn raw_block_checkpoint_discards_accumulated_payload_and_converges_locally() {
++        let options = flark_options();
++        let original = giant_fenced_code(1_000_000);
++        let line_count = original.matches("payload ").count();
++        let target = format!("payload {}", line_count / 2);
++        let edit_start = original.find(&target).unwrap();
++        let checkpoint_offset = original[..edit_start].rfind('\n').unwrap() + 1;
++        let checkpoint = raw_continuation_checkpoint(&original, checkpoint_offset, &options);
++        let retained_content_bytes: usize = checkpoint
++            .open_spine
++            .iter()
++            .map(|ast| ast.content.len())
++            .sum();
++        assert!(
++            retained_content_bytes < 64,
++            "retained={retained_content_bytes}"
++        );
++
++        let edited = edit_range(
++            &original,
++            "giant_fence_local",
++            edit_start..edit_start + "payload".len(),
++            "changed-payload",
++        );
++        let old_states = continuation_grammar_states(&original, checkpoint_offset, &options);
++        let new_states = continuation_grammar_states(&edited.markdown, checkpoint_offset, &options);
++        let arena = Arena::new();
++        let mut resumed =
++            restore_continuation_checkpoint(&arena, &checkpoint, &options, edited.markdown.len());
++        let line_end = edited.markdown[checkpoint_offset..]
++            .find('\n')
++            .map_or(edited.markdown.len(), |relative| {
++                checkpoint_offset + relative + 1
++            });
++        resumed.process_line(&edited.markdown[checkpoint_offset..line_end]);
++        assert_eq!(continuation_grammar_state(&resumed), new_states[&line_end],);
++        let byte_delta = edited.markdown.len() as isize - original.len() as isize;
++        let mapped_old_end = line_end.checked_add_signed(-byte_delta).unwrap();
++        assert_eq!(
++            continuation_grammar_state(&resumed),
++            old_states[&mapped_old_end],
++            "fenced-code grammar should converge after the changed line",
++        );
++
++        // Accumulated literal bytes are output, not continuation state. Keep them
++        // in the persistent payload rope and splice only the edited literal span.
++        let old_literal = first_code_literal(&original, &options);
++        let new_literal = first_code_literal(&edited.markdown, &options);
++        let opener_end = original.find('\n').unwrap() + 1;
++        let literal_edit_start = edit_start - opener_end;
++        let literal = ByteRope::from_str(&old_literal).replace(
++            literal_edit_start,
++            literal_edit_start + "payload".len(),
++            "changed-payload",
++        );
++        assert_eq!(literal.materialize(), new_literal);
++        assert_eq!(literal.len(), new_literal.len());
++        println!(
++            "comrak_raw_checkpoint checkpoint={} retained_state_bytes={} convergence_bytes={} persistent_literal_bytes={}",
++            checkpoint_offset,
++            retained_content_bytes,
++            line_end - edited.new_end,
++            literal.len(),
++        );
++    }
++
++    fn giant_fenced_code(target_bytes: usize) -> String {
++        let mut output = String::from("```rust\n");
++        let mut index = 0;
++        while output.len() < target_bytes {
++            writeln!(
++                output,
++                "payload {index} contains literal *markdown* and <html> text"
++            )
++            .unwrap();
++            index += 1;
++        }
++        output.push_str("```\n");
++        output
++    }
++
++    fn first_code_literal(text: &str, options: &Options) -> String {
++        let arena = Arena::new();
++        let root = parse_document(&arena, text, options);
++        root.children()
++            .find_map(|node| match &node.data().value {
++                NodeValue::CodeBlock(code) => Some(code.literal.clone()),
++                _ => None,
++            })
++            .expect("fixture must contain a code block")
++    }
++
++    #[test]
++    fn persistent_list_tightness_summary_matches_comrak() {
++        let options = flark_options();
++        let fixtures = [
++            "- one\n- two\n- three\n",
++            "- one\n\n- two\n- three\n",
++            "- one\n\n  second paragraph\n- two\n",
++            "- one\n  - nested one\n\n  - nested two\n- two\n",
++            "- one\n- two\n\n",
++        ];
++        for markdown in fixtures {
++            assert_list_tightness_summary(markdown, &options);
++        }
++
++        let mut generated = String::new();
++        for index in 0..4_000 {
++            writeln!(generated, "- item {index}").unwrap();
++            if index % 97 == 0 {
++                generated.push_str("\n  second paragraph\n");
++            }
++            if index % 211 == 0 {
++                generated.push('\n');
++            }
++        }
++        let (item_count, aggregate) = assert_list_tightness_summary(&generated, &options);
++        assert_eq!(item_count, 4_000);
++        assert!(!aggregate.tight());
++        println!(
++            "comrak_list_tightness items={} aggregate_bytes={} tight={}",
++            item_count,
++            std::mem::size_of::<ListTightnessAggregate>(),
++            aggregate.tight(),
++        );
++    }
++
++    fn assert_list_tightness_summary(
++        text: &str,
++        options: &Options,
++    ) -> (usize, ListTightnessAggregate) {
++        let arena = Arena::new();
++        let root = parse_document(&arena, text, options);
++        let list = root
++            .children()
++            .find(|node| matches!(node.data().value, NodeValue::List(..)))
++            .expect("fixture must contain a top-level list");
++        let expected = match &list.data().value {
++            NodeValue::List(list) => list.tight,
++            _ => unreachable!(),
++        };
++        let mut aggregate = ListTightnessAggregate::default();
++        let mut count = 0;
++        for item in list.children() {
++            assert!(matches!(item.data().value, NodeValue::Item(..)));
++            let loose_if_nonlast = item.data().last_line_blank
++                || item.children().any(|child| child.ends_with_blank_line());
++            let loose_if_last = item
++                .children()
++                .filter(|child| child.next_sibling().is_some())
++                .any(|child| child.ends_with_blank_line());
++            aggregate = aggregate.combine(ListTightnessAggregate::item(ItemTightnessSummary {
++                loose_if_nonlast,
++                loose_if_last,
++            }));
++            count += 1;
++        }
++        assert_eq!(aggregate.tight(), expected, "fixture={text:?}");
++        (count, aggregate)
++    }
++
++    #[test]
++    fn in_container_table_checkpoint_reuses_row_suffix_exactly() {
++        let options = flark_options();
++        let original = giant_table(1_000_000);
++        let row_count = original.matches("| row ").count();
++        let target = format!("| row {} | value {} |", row_count / 2, row_count / 2);
++        let target_start = original.find(&target).unwrap();
++        let edit_start = target_start + target.find("value").unwrap();
++        let checkpoint_offset = target_start;
++        let checkpoint = continuation_checkpoint(&original, checkpoint_offset, &options);
++        assert!(
++            checkpoint
++                .open_spine
++                .iter()
++                .any(|ast| matches!(ast.value, NodeValue::Table(..))),
++        );
++
++        let edited = edit_range(
++            &original,
++            "giant_table_local",
++            edit_start..edit_start + "value".len(),
++            "**value**",
++        );
++        let new_states = continuation_states(&edited.markdown, checkpoint_offset, &options);
++        let old_states = continuation_states(&original, checkpoint_offset, &options);
++        let byte_delta = edited.markdown.len() as isize - original.len() as isize;
++        let arena = Arena::new();
++        let mut resumed =
++            restore_continuation_checkpoint(&arena, &checkpoint, &options, edited.markdown.len());
++        let mut offset = checkpoint_offset;
++        // Parse the changed row and one unchanged row. The latter is the first
++        // row eligible for suffix reuse.
++        for _ in 0..2 {
++            let line_end = edited.markdown[offset..]
++                .find('\n')
++                .map_or(edited.markdown.len(), |relative| offset + relative + 1);
++            resumed.process_line(&edited.markdown[offset..line_end]);
++            offset = line_end;
++            assert_eq!(continuation_state(&resumed), new_states[&offset]);
++        }
++        let old_offset = offset.checked_add_signed(-byte_delta).unwrap();
++        assert_eq!(
++            continuation_state(&resumed),
++            old_states[&old_offset],
++            "table continuation grammar should converge after one suffix row",
++        );
++
++        let edited_line_starts = line_starts_for(&edited.markdown);
++        let current_row = ancestor_matching(resumed.current, |value| {
++            matches!(value, NodeValue::TableRow(..))
++        })
++        .expect("resumed parser must be inside a table row");
++        let table = current_row.parent().expect("row must have a table parent");
++        assert!(matches!(table.data().value, NodeValue::Table(..)));
++        let suffix_start_new =
++            node_byte_range(current_row, edited.markdown.len(), 0, &edited_line_starts).start;
++        let suffix_start_old = suffix_start_new.checked_add_signed(-byte_delta).unwrap();
++        let replacement_rows: Vec<_> = table
++            .children()
++            .filter(|row| {
++                let start =
++                    node_byte_range(*row, edited.markdown.len(), 0, &edited_line_starts).start;
++                start >= checkpoint_offset && !row.same_node(current_row)
++            })
++            .map(|row| owned_block_node(row, edited.markdown.len(), 0, &edited_line_starts, 0))
++            .collect();
++        assert_eq!(replacement_rows.len(), 1);
++
++        let old_rows = full_table_rows(&original, &options);
++        let mut spliced_rows: Vec<_> = old_rows
++            .iter()
++            .take_while(|row| row.range.start < checkpoint_offset)
++            .cloned()
++            .collect();
++        spliced_rows.extend(replacement_rows);
++        let reused_suffix: Vec<_> = old_rows
++            .iter()
++            .skip_while(|row| row.range.start < suffix_start_old)
++            .map(|row| shifted_node(row, byte_delta as usize))
++            .collect();
++        spliced_rows.extend(reused_suffix.iter().cloned());
++        assert_eq!(spliced_rows, full_table_rows(&edited.markdown, &options));
++        println!(
++            "comrak_in_container_table checkpoint={} convergence_bytes={} reused_suffix_rows={}",
++            checkpoint_offset,
++            offset - edited.new_end,
++            reused_suffix.len(),
++        );
++    }
++
++    fn giant_table(target_bytes: usize) -> String {
++        let mut output = String::from("| left | right |\n| --- | --- |\n");
++        let mut index = 0;
++        while output.len() < target_bytes {
++            writeln!(output, "| row {index} | value {index} |").unwrap();
++            index += 1;
++        }
++        output
++    }
++
++    fn full_table_rows(text: &str, options: &Options) -> Vec<OwnedBlockNode> {
++        let line_starts = line_starts_for(text);
++        let arena = Arena::new();
++        let mut parser = new_parser(&arena, options, text.len());
++        feed(&mut parser, text, 0, text.len(), |_, _| {});
++        finish_blocks_only(&mut parser);
++        let table = parser
++            .root
++            .children()
++            .find(|node| matches!(node.data().value, NodeValue::Table(..)))
++            .expect("fixture must contain a top-level table");
++        table
++            .children()
++            .map(|row| owned_block_node(row, text.len(), 0, &line_starts, 0))
++            .collect()
++    }
++
++    fn giant_list(target_bytes: usize) -> String {
++        let mut output = String::new();
++        let mut index = 0;
++        while output.len() < target_bytes {
++            writeln!(
++                output,
++                "- item {index} with **bold** text and [ref][shared]"
++            )
++            .unwrap();
++            index += 1;
++        }
++        output.push_str("\n[shared]: https://example.com\n");
++        output
++    }
++
++    fn continuation_checkpoint(
++        text: &str,
++        offset: usize,
++        options: &Options,
++    ) -> ContinuationCheckpoint {
++        continuation_checkpoint_with(text, offset, options, |_| {})
++    }
++
++    fn raw_continuation_checkpoint(
++        text: &str,
++        offset: usize,
++        options: &Options,
++    ) -> ContinuationCheckpoint {
++        continuation_checkpoint_with(text, offset, options, |ast| match &ast.value {
++            NodeValue::CodeBlock(code) if code.fenced => {
++                let opener_end = ast
++                    .content
++                    .bytes()
++                    .position(|byte| byte == b'\n')
++                    .map_or(ast.content.len(), |index| index + 1);
++                ast.content.truncate(opener_end);
++                ast.line_offsets.truncate(1);
++            }
++            NodeValue::HtmlBlock(..) => {
++                ast.content.clear();
++                ast.line_offsets.clear();
++            }
++            _ => {}
++        })
++    }
++
++    fn continuation_checkpoint_with(
++        text: &str,
++        offset: usize,
++        options: &Options,
++        mut compact: impl FnMut(&mut Ast),
++    ) -> ContinuationCheckpoint {
++        let arena = Arena::new();
++        let mut parser = new_parser(&arena, options, text.len());
++        feed(&mut parser, text, 0, offset, |_, _| {});
++        let mut spine = Vec::new();
++        let mut node = parser.current;
++        loop {
++            let mut ast = node.data().clone();
++            compact(&mut ast);
++            spine.push(ast);
++            if node.same_node(parser.root) {
++                break;
++            }
++            node = node.parent().unwrap();
++        }
++        spine.reverse();
++        ContinuationCheckpoint {
++            offset,
++            line_number: parser.line_number,
++            last_line_length: parser.last_line_length,
++            open_spine: spine,
++        }
++    }
++
++    fn restore_continuation_checkpoint<'a, 'o, 'c>(
++        arena: &'a Arena<'a>,
++        checkpoint: &ContinuationCheckpoint,
++        options: &'o Options<'c>,
++        total_size: usize,
++    ) -> Parser<'a, 'o, 'c>
++    where
++        'c: 'o,
++    {
++        let mut parser = new_parser(arena, options, total_size);
++        parser.line_number = checkpoint.line_number;
++        parser.last_line_length = checkpoint.last_line_length;
++        let mut parent = parser.root;
++        for ast in checkpoint.open_spine.iter().skip(1) {
++            let node = arena.alloc(ast.clone().into());
++            parent.append(node);
++            parent = node;
++        }
++        parser.current = parent;
++        parser
++    }
++
++    fn continuation_states(text: &str, start: usize, options: &Options) -> HashMap<usize, u64> {
++        let arena = Arena::new();
++        let mut parser = new_parser(&arena, options, text.len());
++        let mut output = HashMap::new();
++        let mut offset = 0;
++        while offset < text.len() {
++            let line_end = text[offset..]
++                .find('\n')
++                .map_or(text.len(), |relative| offset + relative + 1);
++            parser.process_line(&text[offset..line_end]);
++            offset = line_end;
++            if offset >= start {
++                output.insert(offset, continuation_state(&parser));
++            }
++        }
++        output
++    }
++
++    fn continuation_state(parser: &Parser<'_, '_, '_>) -> u64 {
++        let mut spine = Vec::new();
++        let mut node = parser.current;
++        loop {
++            spine.push(node);
++            if node.same_node(parser.root) {
++                break;
++            }
++            node = node.parent().unwrap();
++        }
++        spine.reverse();
++        let mut hasher = DefaultHasher::new();
++        for node in spine {
++            let ast = node.data();
++            std::mem::discriminant(&ast.value).hash(&mut hasher);
++            format!("{:?}", ast.value).hash(&mut hasher);
++            ast.content.hash(&mut hasher);
++            ast.open.hash(&mut hasher);
++            ast.last_line_blank.hash(&mut hasher);
++        }
++        hasher.finish()
++    }
++
++    fn continuation_grammar_states(
++        text: &str,
++        start: usize,
++        options: &Options,
++    ) -> HashMap<usize, u64> {
++        let arena = Arena::new();
++        let mut parser = new_parser(&arena, options, text.len());
++        let mut output = HashMap::new();
++        let mut offset = 0;
++        while offset < text.len() {
++            let line_end = text[offset..]
++                .find('\n')
++                .map_or(text.len(), |relative| offset + relative + 1);
++            parser.process_line(&text[offset..line_end]);
++            offset = line_end;
++            if offset >= start {
++                output.insert(offset, continuation_grammar_state(&parser));
++            }
++        }
++        output
++    }
++
++    fn continuation_grammar_state(parser: &Parser<'_, '_, '_>) -> u64 {
++        let mut spine = Vec::new();
++        let mut node = parser.current;
++        loop {
++            spine.push(node);
++            if node.same_node(parser.root) {
++                break;
++            }
++            node = node.parent().unwrap();
++        }
++        spine.reverse();
++        let mut hasher = DefaultHasher::new();
++        for node in spine {
++            let ast = node.data();
++            std::mem::discriminant(&ast.value).hash(&mut hasher);
++            format!("{:?}", ast.value).hash(&mut hasher);
++            if !matches!(
++                ast.value,
++                NodeValue::CodeBlock(..) | NodeValue::HtmlBlock(..)
++            ) {
++                ast.content.hash(&mut hasher);
++            }
++            ast.open.hash(&mut hasher);
++            ast.last_line_blank.hash(&mut hasher);
++        }
++        hasher.finish()
++    }
++
++    #[test]
++    fn parser_leaf_cache_matches_clean_full_comrak_tree() {
++        let options = flark_options();
++        let markdown = large_document(1_000_000);
++        let snapshot = inline_document_snapshot(&markdown, &options);
++        let arena = Arena::new();
++        let full = parse_document(&arena, &markdown, &options);
++        let full_signature = tree_signature(full);
++        if snapshot.signature != full_signature {
++            let mismatch = snapshot
++                .signature
++                .bytes()
++                .zip(full_signature.bytes())
++                .position(|(left, right)| left != right)
++                .unwrap_or(snapshot.signature.len().min(full_signature.len()));
++            let start = mismatch.saturating_sub(120);
++            let incremental_end = (mismatch + 240).min(snapshot.signature.len());
++            let full_end = (mismatch + 240).min(full_signature.len());
++            panic!(
++                "leaf/full mismatch at {mismatch}:\nleaf={:?}\nfull={:?}",
++                &snapshot.signature[start..incremental_end],
++                &full_signature[start..full_end],
++            );
++        }
++        assert!(snapshot.leaves.len() > 10_000);
++    }
++
++    #[test]
++    fn stock_global_reference_budget_breaks_dependency_locality() {
++        let options = flark_options();
++        let mut body = String::new();
++        for index in 0..12_000 {
++            if index % 2 == 0 {
++                writeln!(body, "A {index}: [alpha][a]\n").unwrap();
++            } else {
++                writeln!(body, "B {index}: [beta][b]\n").unwrap();
++            }
++        }
++        let old = format!("{body}[a]: https://a.example/short\n[b]: https://b.example/value\n",);
++        let new = format!(
++            "{body}[a]: https://a.example/{}\n[b]: https://b.example/value\n",
++            "very-long-reference-value-".repeat(8),
++        );
++        let old = inline_document_snapshot(&old, &options);
++        let new = inline_document_snapshot(&new, &options);
++        assert_eq!(old.leaves.len(), new.leaves.len());
++
++        let unrelated = old.leaves.iter().zip(&new.leaves).find(|(before, after)| {
++            before.signature != after.signature
++                && !before.dependencies.iter().any(|label| label == "a")
++                && !after.dependencies.iter().any(|label| label == "a")
++        });
++        let Some((before, after)) = unrelated else {
++            panic!("expected the global clone budget to perturb a b-only leaf");
++        };
++        assert!(before.dependencies.iter().any(|label| label == "b"));
++        assert!(after.dependencies.iter().any(|label| label == "b"));
++        println!(
++            "comrak_reference_budget nonlocal_changed_range={:?} dependencies={:?}",
++            before.range, before.dependencies,
++        );
++
++        let old_unbounded = inline_document_snapshot_with_limit(
++            &format!("{body}[a]: https://a.example/short\n[b]: https://b.example/value\n",),
++            &options,
++            usize::MAX,
++        );
++        let new_unbounded = inline_document_snapshot_with_limit(
++            &format!(
++                "{body}[a]: https://a.example/{}\n[b]: https://b.example/value\n",
++                "very-long-reference-value-".repeat(8),
++            ),
++            &options,
++            usize::MAX,
++        );
++        assert!(
++            old_unbounded
++                .leaves
++                .iter()
++                .zip(&new_unbounded.leaves)
++                .filter(|(before, after)| before.signature != after.signature)
++                .all(|(before, after)| {
++                    before.dependencies.iter().any(|label| label == "a")
++                        || after.dependencies.iter().any(|label| label == "a")
++                }),
++        );
++    }
++
++    fn inline_document_snapshot(text: &str, options: &Options) -> InlineDocumentSnapshot {
++        inline_document_snapshot_with_limit(text, options, text.len().min(100000))
++    }
++
++    fn inline_document_snapshot_with_limit(
++        text: &str,
++        options: &Options,
++        reference_budget: usize,
++    ) -> InlineDocumentSnapshot {
++        let arena = Arena::new();
++        let mut parser = new_parser(&arena, options, text.len());
++        feed(&mut parser, text, 0, text.len(), |_, _| {});
++        finish_blocks_only(&mut parser);
++        parser.refmap.max_ref_size = reference_budget;
++        let line_starts = {
++            let mut starts = vec![0];
++            for (offset, byte) in text.bytes().enumerate() {
++                if byte == b'\n' {
++                    starts.push(offset + 1);
++                }
++            }
++            starts
++        };
++        let inline_nodes: Vec<_> = parser
++            .root
++            .descendants()
++            .filter(|node| node.data().value.contains_inlines())
++            .collect();
++        let mut leaves = Vec::with_capacity(inline_nodes.len());
++        for node in inline_nodes {
++            let range = node_byte_range(node, text.len(), 0, &line_starts);
++            parser.refmap.begin_dependency_capture();
++            parser.parse_inlines(node);
++            parser.postprocess_text_nodes(node);
++            leaves.push(InlineLeafSnapshot {
++                range,
++                dependencies: parser.refmap.take_dependencies(),
++                signature: tree_signature(node),
++            });
++        }
++        InlineDocumentSnapshot {
++            leaves,
++            signature: tree_signature(parser.root),
++        }
++    }
++
++    impl RevisionedParserHandle {
++        fn new(text: String, options: &Options) -> Self {
++            Self {
++                revision: 0,
++                document: IncrementalBlockDocument::new(text, options),
++            }
++        }
++
++        fn content_hash32(&self) -> u32 {
++            self.document.text.hash32()
++        }
++
++        fn apply(
++            &mut self,
++            request: ParserEditRequest<'_>,
++            options: &Options,
++        ) -> Result<RevisionedParserDelta, ParserApplyError> {
++            if request.base_revision != self.revision {
++                return Err(ParserApplyError::Revision {
++                    expected: self.revision,
++                    actual: request.base_revision,
++                });
++            }
++            let before_hash32 = self.content_hash32();
++            if request.before_hash32 != before_hash32 {
++                return Err(ParserApplyError::Hash {
++                    expected: before_hash32,
++                    actual: request.before_hash32,
++                });
++            }
++            if request.start_utf8 > request.end_utf8 || request.end_utf8 > self.document.text.len()
++            {
++                return Err(ParserApplyError::Range);
++            }
++            if !self.document.text.is_char_boundary(request.start_utf8)
++                || !self.document.text.is_char_boundary(request.end_utf8)
++            {
++                return Err(ParserApplyError::Utf8Boundary);
++            }
++            let splice = self.document.apply_edit(
++                request.start_utf8..request.end_utf8,
++                request.replacement,
++                options,
++            );
++            let base_revision = self.revision;
++            self.revision += 1;
++            Ok(RevisionedParserDelta {
++                base_revision,
++                revision: self.revision,
++                before_hash32,
++                after_hash32: self.content_hash32(),
++                splice,
++            })
++        }
++    }
++
++    impl SyntaxTreeNode {
++        fn source_len(&self) -> usize {
++            match self {
++                Self::Leaf(chunk) => chunk.source_len,
++                Self::Branch { source_len, .. } => *source_len,
++            }
++        }
++
++        fn chunk_count(&self) -> usize {
++            match self {
++                Self::Leaf(_) => 1,
++                Self::Branch { chunk_count, .. } => *chunk_count,
++            }
++        }
++
++        fn height(&self) -> usize {
++            match self {
++                Self::Leaf(_) => 1,
++                Self::Branch { height, .. } => *height,
++            }
++        }
++    }
++
++    impl SyntaxTree {
++        fn from_chunks(chunks: Vec<Arc<SyntaxChunk>>) -> Self {
++            fn build(chunks: &[Arc<SyntaxChunk>]) -> Option<Arc<SyntaxTreeNode>> {
++                match chunks.len() {
++                    0 => None,
++                    1 => Some(Arc::new(SyntaxTreeNode::Leaf(chunks[0].clone()))),
++                    len => {
++                        let middle = len / 2;
++                        Some(branch(
++                            build(&chunks[..middle]).unwrap(),
++                            build(&chunks[middle..]).unwrap(),
++                        ))
++                    }
++                }
++            }
++            Self {
++                root: build(&chunks),
++            }
++        }
++
++        fn source_len(&self) -> usize {
++            self.root.as_deref().map_or(0, SyntaxTreeNode::source_len)
++        }
++
++        fn chunk_count(&self) -> usize {
++            self.root.as_deref().map_or(0, SyntaxTreeNode::chunk_count)
++        }
++
++        fn chunk_at(&self, index: usize) -> Arc<SyntaxChunk> {
++            assert!(index < self.chunk_count());
++            let mut node = self.root.as_ref().unwrap().clone();
++            let mut remaining = index;
++            loop {
++                match node.as_ref() {
++                    SyntaxTreeNode::Leaf(chunk) => return chunk.clone(),
++                    SyntaxTreeNode::Branch { left, right, .. } => {
++                        if remaining < left.chunk_count() {
++                            node = left.clone();
++                        } else {
++                            remaining -= left.chunk_count();
++                            node = right.clone();
++                        }
++                    }
++                }
++            }
++        }
++
++        fn locate(&self, offset: usize) -> (usize, usize) {
++            assert!(offset <= self.source_len());
++            assert!(self.chunk_count() > 0);
++            let mut node = self.root.as_ref().unwrap().clone();
++            let mut remaining = offset;
++            let mut index = 0;
++            let mut start = 0;
++            loop {
++                match node.as_ref() {
++                    SyntaxTreeNode::Leaf(chunk) => {
++                        return (index, start.min(self.source_len() - chunk.source_len));
++                    }
++                    SyntaxTreeNode::Branch { left, right, .. } => {
++                        if remaining < left.source_len()
++                            || (remaining == left.source_len() && right.source_len() == 0)
++                        {
++                            node = left.clone();
++                        } else {
++                            remaining -= left.source_len();
++                            start += left.source_len();
++                            index += left.chunk_count();
++                            node = right.clone();
++                        }
++                    }
++                }
++            }
++        }
++
++        fn index_at_boundary(&self, offset: usize) -> Option<usize> {
++            if offset == 0 {
++                return Some(0);
++            }
++            if offset == self.source_len() {
++                return Some(self.chunk_count());
++            }
++            fn visit(node: &Arc<SyntaxTreeNode>, offset: usize) -> Option<usize> {
++                match node.as_ref() {
++                    SyntaxTreeNode::Leaf(_) => None,
++                    SyntaxTreeNode::Branch { left, right, .. } => {
++                        if offset == left.source_len() {
++                            Some(left.chunk_count())
++                        } else if offset < left.source_len() {
++                            visit(left, offset)
++                        } else {
++                            visit(right, offset - left.source_len())
++                                .map(|index| left.chunk_count() + index)
++                        }
++                    }
++                }
++            }
++            visit(self.root.as_ref()?, offset)
++        }
++
++        fn replace(&self, start: usize, end: usize, inserted: SyntaxTree) -> SyntaxTree {
++            assert!(start <= end);
++            assert!(end <= self.chunk_count());
++            let (prefix, rest) = split_tree(self.root.clone(), start);
++            let (_, suffix) = split_tree(rest, end - start);
++            SyntaxTree {
++                root: concat_tree(concat_tree(prefix, inserted.root), suffix),
++            }
++        }
++
++        fn for_each_chunk(&self, mut visitor: impl FnMut(&Arc<SyntaxChunk>)) {
++            fn walk(
++                node: &Option<Arc<SyntaxTreeNode>>,
++                visitor: &mut impl FnMut(&Arc<SyntaxChunk>),
++            ) {
++                let Some(node) = node else { return };
++                match node.as_ref() {
++                    SyntaxTreeNode::Leaf(chunk) => visitor(chunk),
++                    SyntaxTreeNode::Branch { left, right, .. } => {
++                        walk(&Some(left.clone()), visitor);
++                        walk(&Some(right.clone()), visitor);
++                    }
++                }
++            }
++            walk(&self.root, &mut visitor);
++        }
++
++        fn chunks_in_range(&self, start: usize, end: usize) -> Vec<Arc<SyntaxChunk>> {
++            assert!(start <= end && end <= self.chunk_count());
++            fn collect(
++                node: &Arc<SyntaxTreeNode>,
++                node_start: usize,
++                start: usize,
++                end: usize,
++                output: &mut Vec<Arc<SyntaxChunk>>,
++            ) {
++                let node_end = node_start + node.chunk_count();
++                if end <= node_start || start >= node_end {
++                    return;
++                }
++                match node.as_ref() {
++                    SyntaxTreeNode::Leaf(chunk) => output.push(chunk.clone()),
++                    SyntaxTreeNode::Branch { left, right, .. } => {
++                        collect(left, node_start, start, end, output);
++                        collect(right, node_start + left.chunk_count(), start, end, output);
++                    }
++                }
++            }
++            let mut output = Vec::with_capacity(end - start);
++            if let Some(root) = &self.root {
++                collect(root, 0, start, end, &mut output);
++            }
++            output
++        }
++    }
++
++    fn branch(left: Arc<SyntaxTreeNode>, right: Arc<SyntaxTreeNode>) -> Arc<SyntaxTreeNode> {
++        Arc::new(SyntaxTreeNode::Branch {
++            source_len: left.source_len() + right.source_len(),
++            chunk_count: left.chunk_count() + right.chunk_count(),
++            height: left.height().max(right.height()) + 1,
++            left,
++            right,
++        })
++    }
++
++    fn split_tree(
++        node: Option<Arc<SyntaxTreeNode>>,
++        index: usize,
++    ) -> (Option<Arc<SyntaxTreeNode>>, Option<Arc<SyntaxTreeNode>>) {
++        let Some(node) = node else {
++            assert_eq!(index, 0);
++            return (None, None);
++        };
++        assert!(index <= node.chunk_count());
++        if index == 0 {
++            return (None, Some(node));
++        }
++        if index == node.chunk_count() {
++            return (Some(node), None);
++        }
++        match node.as_ref() {
++            SyntaxTreeNode::Leaf(_) => unreachable!(),
++            SyntaxTreeNode::Branch { left, right, .. } => {
++                if index < left.chunk_count() {
++                    let (prefix, rest) = split_tree(Some(left.clone()), index);
++                    (prefix, concat_tree(rest, Some(right.clone())))
++                } else if index == left.chunk_count() {
++                    (Some(left.clone()), Some(right.clone()))
++                } else {
++                    let (rest, suffix) =
++                        split_tree(Some(right.clone()), index - left.chunk_count());
++                    (concat_tree(Some(left.clone()), rest), suffix)
++                }
++            }
++        }
++    }
++
++    fn concat_tree(
++        left: Option<Arc<SyntaxTreeNode>>,
++        right: Option<Arc<SyntaxTreeNode>>,
++    ) -> Option<Arc<SyntaxTreeNode>> {
++        let (left, right) = match (left, right) {
++            (None, right) => return right,
++            (left, None) => return left,
++            (Some(left), Some(right)) => (left, right),
++        };
++        if left.height() > right.height() + 1 {
++            let SyntaxTreeNode::Branch {
++                left: outer_left,
++                right: inner_left,
++                ..
++            } = left.as_ref()
++            else {
++                unreachable!()
++            };
++            return Some(balance_tree(branch(
++                outer_left.clone(),
++                concat_tree(Some(inner_left.clone()), Some(right)).unwrap(),
++            )));
++        }
++        if right.height() > left.height() + 1 {
++            let SyntaxTreeNode::Branch {
++                left: inner_right,
++                right: outer_right,
++                ..
++            } = right.as_ref()
++            else {
++                unreachable!()
++            };
++            return Some(balance_tree(branch(
++                concat_tree(Some(left), Some(inner_right.clone())).unwrap(),
++                outer_right.clone(),
++            )));
++        }
++        Some(branch(left, right))
++    }
++
++    fn balance_tree(node: Arc<SyntaxTreeNode>) -> Arc<SyntaxTreeNode> {
++        let SyntaxTreeNode::Branch { left, right, .. } = node.as_ref() else {
++            return node;
++        };
++        let balance = left.height() as isize - right.height() as isize;
++        if balance > 1 {
++            let SyntaxTreeNode::Branch {
++                left: left_left,
++                right: left_right,
++                ..
++            } = left.as_ref()
++            else {
++                unreachable!()
++            };
++            if left_left.height() < left_right.height() {
++                let SyntaxTreeNode::Branch {
++                    left: pivot_left,
++                    right: pivot_right,
++                    ..
++                } = left_right.as_ref()
++                else {
++                    unreachable!()
++                };
++                return branch(
++                    branch(left_left.clone(), pivot_left.clone()),
++                    branch(pivot_right.clone(), right.clone()),
++                );
++            }
++            return branch(left_left.clone(), branch(left_right.clone(), right.clone()));
++        }
++        if balance < -1 {
++            let SyntaxTreeNode::Branch {
++                left: right_left,
++                right: right_right,
++                ..
++            } = right.as_ref()
++            else {
++                unreachable!()
++            };
++            if right_right.height() < right_left.height() {
++                let SyntaxTreeNode::Branch {
++                    left: pivot_left,
++                    right: pivot_right,
++                    ..
++                } = right_left.as_ref()
++                else {
++                    unreachable!()
++                };
++                return branch(
++                    branch(left.clone(), pivot_left.clone()),
++                    branch(pivot_right.clone(), right_right.clone()),
++                );
++            }
++            return branch(
++                branch(left.clone(), right_left.clone()),
++                right_right.clone(),
++            );
++        }
++        node
++    }
++
++    impl IncrementalBlockDocument {
++        fn new(text: String, options: &Options) -> Self {
++            let (chunks, next_id) = full_block_chunks(&text, options, 1);
++            let chunks = assign_initial_order_keys(chunks);
++            let chunks = SyntaxTree::from_chunks(chunks);
++            let references = ReferenceIndex::from_tree(&chunks);
++            Self {
++                text: ByteRope::from_str(&text),
++                chunks,
++                references,
++                next_id,
++            }
++        }
++
++        fn apply_edit(
++            &mut self,
++            old_range: Range<usize>,
++            replacement: &str,
++            options: &Options,
++        ) -> SpliceReceipt {
++            assert!(old_range.start <= old_range.end);
++            assert!(old_range.end <= self.text.len());
++            assert!(self.text.is_char_boundary(old_range.start));
++            assert!(self.text.is_char_boundary(old_range.end));
++
++            let old_chunk_count = self.chunks.chunk_count();
++            let (start_index, restart) = self.chunks.locate(old_range.start);
++
++            let edited = self
++                .text
++                .replace(old_range.start, old_range.end, replacement);
++            let new_end = old_range.start + replacement.len();
++            let byte_delta = edited.len() as isize - self.text.len() as isize;
++
++            let arena = Arena::new();
++            let mut parser = new_parser(&arena, options, edited.len());
++            let line_base = edited.newlines_before(restart);
++            parser.line_number = line_base;
++            parser.last_line_length = edited.previous_line_length(restart);
++            let mut new_boundaries = vec![restart];
++            let mut line_starts = vec![restart];
++            let mut offset = restart;
++            let mut convergence = None;
++            let parser_started = Instant::now();
++
++            while offset < edited.len() {
++                let (line_end, line) = edited.line_from(offset);
++                parser.process_line(&line);
++                offset = line_end;
++                if line.ends_with('\n') && line_starts.last().copied() != Some(offset) {
++                    line_starts.push(offset);
++                }
++                if is_safe(&parser) {
++                    if new_boundaries.last().copied() != Some(offset) {
++                        new_boundaries.push(offset);
++                    }
++                    if offset >= new_end {
++                        let mapped = offset as isize - byte_delta;
++                        if mapped >= old_range.end as isize
++                            && self.chunks.index_at_boundary(mapped as usize).is_some()
++                        {
++                            convergence = Some((offset, mapped as usize));
++                            break;
++                        }
++                    }
++                }
++            }
++
++            let (new_convergence, old_convergence) = convergence.unwrap_or_else(|| {
++                if new_boundaries.last().copied() != Some(edited.len()) {
++                    new_boundaries.push(edited.len());
++                }
++                (edited.len(), self.text.len())
++            });
++            if convergence.is_none() {
++                finish_blocks_only(&mut parser);
++            } else {
++                parser.propagate_list_sourcepos(parser.root);
++            }
++            let parser_us = parser_started.elapsed().as_micros();
++            let reference_occurrences = parser.reference_occurrences.clone();
++
++            let splice_started = Instant::now();
++            let old_end_index = self
++                .chunks
++                .index_at_boundary(old_convergence)
++                .expect("convergence must be an old chunk boundary");
++            let (inserted, next_id) = chunks_from_parsed_root(
++                parser.root,
++                new_convergence,
++                line_base,
++                &line_starts,
++                &new_boundaries,
++                &reference_occurrences,
++                self.next_id,
++            );
++            let lower_order_key = if start_index == 0 {
++                0
++            } else {
++                self.chunks.chunk_at(start_index - 1).order_key
++            };
++            let upper_order_key = if old_end_index == old_chunk_count {
++                u128::MAX
++            } else {
++                self.chunks.chunk_at(old_end_index).order_key
++            };
++            let inserted = assign_order_keys_between(inserted, lower_order_key, upper_order_key);
++            assert_eq!(
++                inserted.iter().map(|chunk| chunk.source_len).sum::<usize>(),
++                new_convergence - restart,
++            );
++
++            let removed = self.chunks.chunks_in_range(start_index, old_end_index);
++            let reference_delta = self.references.apply(&removed, &inserted);
++            let chunks = self.chunks.replace(
++                start_index,
++                old_end_index,
++                SyntaxTree::from_chunks(inserted.clone()),
++            );
++            assert_eq!(chunks.source_len(), edited.len());
++            let splice_us = splice_started.elapsed().as_micros();
++            let delta_bytes = 40 + inserted.iter().map(chunk_wire_size).sum::<usize>();
++
++            let edited_string = edited.materialize();
++            let (oracle_chunks, _) = full_block_chunks(&edited_string, options, 1);
++            let oracle_chunks = SyntaxTree::from_chunks(assign_initial_order_keys(oracle_chunks));
++            assert_eq!(
++                flatten_nodes(&chunks),
++                flatten_nodes(&oracle_chunks),
++                "incremental block tree diverged for edit {:?} -> {:?}",
++                old_range,
++                replacement,
++            );
++            assert_eq!(
++                self.references.winner_map(),
++                ReferenceIndex::from_tree(&oracle_chunks).winner_map(),
++                "incremental reference index diverged for edit {:?} -> {:?}",
++                old_range,
++                replacement,
++            );
++
++            let replaced_chunks = old_end_index - start_index;
++            let reused_chunks = start_index + old_chunk_count - old_end_index;
++            self.text = edited;
++            self.chunks = chunks;
++            self.next_id = next_id;
++
++            SpliceReceipt {
++                restart,
++                convergence: new_convergence,
++                reparsed_bytes: new_convergence - restart,
++                replaced_chunks,
++                inserted_chunks: inserted.len(),
++                reused_chunks,
++                parser_us,
++                splice_us,
++                delta_bytes,
++                reference_delta,
++            }
++        }
++    }
++
++    fn full_block_chunks(
++        text: &str,
++        options: &Options,
++        first_id: u64,
++    ) -> (Vec<Arc<SyntaxChunk>>, u64) {
++        let arena = Arena::new();
++        let mut parser = new_parser(&arena, options, text.len());
++        let mut boundaries = vec![0];
++        let mut line_starts = vec![0];
++        let mut offset = 0;
++        while offset < text.len() {
++            let line_end = text[offset..]
++                .find('\n')
++                .map_or(text.len(), |relative| offset + relative + 1);
++            parser.process_line(&text[offset..line_end]);
++            offset = line_end;
++            if text.as_bytes().get(offset.saturating_sub(1)) == Some(&b'\n')
++                && line_starts.last().copied() != Some(offset)
++            {
++                line_starts.push(offset);
++            }
++            if is_safe(&parser) && boundaries.last().copied() != Some(offset) {
++                boundaries.push(offset);
++            }
++        }
++        finish_blocks_only(&mut parser);
++        if boundaries.last().copied() != Some(text.len()) {
++            boundaries.push(text.len());
++        }
++        let reference_occurrences = parser.reference_occurrences.clone();
++        chunks_from_parsed_root(
++            parser.root,
++            text.len(),
++            0,
++            &line_starts,
++            &boundaries,
++            &reference_occurrences,
++            first_id,
++        )
++    }
++
++    fn chunks_from_parsed_root(
++        root: Node<'_>,
++        document_end: usize,
++        line_base: usize,
++        line_starts: &[usize],
++        boundaries: &[usize],
++        reference_occurrences: &[ReferenceOccurrenceProbe],
++        mut next_id: u64,
++    ) -> (Vec<Arc<SyntaxChunk>>, u64) {
++        if boundaries.len() == 1 {
++            assert!(root.first_child().is_none());
++            assert!(reference_occurrences.is_empty());
++            return (Vec::new(), next_id);
++        }
++        assert!(boundaries.len() >= 2);
++        let block_nodes: Vec<_> = root.children().collect();
++        let block_ranges: Vec<_> = block_nodes
++            .iter()
++            .map(|node| node_byte_range(*node, document_end, line_base, line_starts))
++            .collect();
++        let mut block_index = 0;
++        let definition_ranges: Vec<_> = reference_occurrences
++            .iter()
++            .map(|occurrence| {
++                sourcepos_byte_range(occurrence.sourcepos, document_end, line_base, line_starts)
++            })
++            .collect();
++        let mut definition_index = 0;
++        let mut chunks = Vec::with_capacity(boundaries.len() - 1);
++
++        for window in boundaries.windows(2) {
++            let chunk_start = window[0];
++            let chunk_end = window[1];
++            let mut nodes = Vec::new();
++            while block_index < block_nodes.len() && block_ranges[block_index].end <= chunk_end {
++                assert!(
++                    block_ranges[block_index].start >= chunk_start,
++                    "block {:?} crosses safe chunk {:?}",
++                    block_ranges[block_index],
++                    chunk_start..chunk_end,
++                );
++                nodes.push(owned_block_node(
++                    block_nodes[block_index],
++                    document_end,
++                    line_base,
++                    line_starts,
++                    chunk_start,
++                ));
++                block_index += 1;
++            }
++            let mut definitions = Vec::new();
++            while definition_index < reference_occurrences.len()
++                && definition_ranges[definition_index].end <= chunk_end
++            {
++                assert!(definition_ranges[definition_index].start >= chunk_start);
++                let occurrence = &reference_occurrences[definition_index];
++                definitions.push(DefinitionOccurrence {
++                    label: occurrence.label.clone(),
++                    value: DefinitionValue {
++                        url: occurrence.reference.url.clone(),
++                        title: occurrence.reference.title.clone(),
++                    },
++                });
++                definition_index += 1;
++            }
++            chunks.push(Arc::new(SyntaxChunk {
++                id: next_id,
++                order_key: 0,
++                source_len: chunk_end - chunk_start,
++                nodes,
++                definitions,
++            }));
++            next_id += 1;
++        }
++        assert_eq!(block_index, block_nodes.len());
++        assert_eq!(definition_index, reference_occurrences.len());
++        (chunks, next_id)
++    }
++
++    fn finish_blocks_only(parser: &mut Parser<'_, '_, '_>) {
++        while !parser.current.same_node(parser.root) {
++            parser.current = parser.finalize(parser.current).unwrap();
++        }
++        parser.finalize(parser.root);
++        parser.refmap.max_ref_size = parser.total_size.min(100000);
++        parser.propagate_list_sourcepos(parser.root);
++    }
++
++    fn node_byte_range(
++        node: Node<'_>,
++        document_end: usize,
++        line_base: usize,
++        line_starts: &[usize],
++    ) -> Range<usize> {
++        sourcepos_byte_range(node.data().sourcepos, document_end, line_base, line_starts)
++    }
++
++    fn sourcepos_byte_range(
++        sourcepos: Sourcepos,
++        document_end: usize,
++        line_base: usize,
++        line_starts: &[usize],
++    ) -> Range<usize> {
++        let start = line_starts
++            .get(sourcepos.start.line.saturating_sub(line_base + 1))
++            .copied()
++            .unwrap_or(document_end)
++            .saturating_add(sourcepos.start.column.saturating_sub(1))
++            .min(document_end);
++        let end = line_starts
++            .get(sourcepos.end.line.saturating_sub(line_base + 1))
++            .copied()
++            .unwrap_or(document_end)
++            .saturating_add(sourcepos.end.column)
++            .min(document_end)
++            .max(start);
++        start..end
++    }
++
++    fn owned_block_node(
++        node: Node<'_>,
++        document_end: usize,
++        line_base: usize,
++        line_starts: &[usize],
++        base: usize,
++    ) -> OwnedBlockNode {
++        let data = node.data();
++        let absolute = node_byte_range(node, document_end, line_base, line_starts);
++        let kind = format!("{:?}", data.value);
++        let content = data.content.clone();
++        drop(data);
++        OwnedBlockNode {
++            kind,
++            content,
++            range: absolute.start - base..absolute.end - base,
++            children: node
++                .children()
++                .map(|child| owned_block_node(child, document_end, line_base, line_starts, base))
++                .collect(),
++        }
++    }
++
++    fn flatten_nodes(chunks: &SyntaxTree) -> Vec<OwnedBlockNode> {
++        let mut output = Vec::new();
++        let mut base = 0;
++        chunks.for_each_chunk(|chunk| {
++            output.extend(chunk.nodes.iter().map(|node| shifted_node(node, base)));
++            base += chunk.source_len;
++        });
++        output
++    }
++
++    fn shifted_node(node: &OwnedBlockNode, delta: usize) -> OwnedBlockNode {
++        OwnedBlockNode {
++            kind: node.kind.clone(),
++            content: node.content.clone(),
++            range: node.range.start + delta..node.range.end + delta,
++            children: node
++                .children
++                .iter()
++                .map(|child| shifted_node(child, delta))
++                .collect(),
++        }
++    }
++
++    fn assign_initial_order_keys(chunks: Vec<Arc<SyntaxChunk>>) -> Vec<Arc<SyntaxChunk>> {
++        chunks
++            .into_iter()
++            .enumerate()
++            .map(|(index, chunk)| clone_chunk_with_order_key(&chunk, ((index as u128) + 1) << 64))
++            .collect()
++    }
++
++    fn assign_order_keys_between(
++        chunks: Vec<Arc<SyntaxChunk>>,
++        lower: u128,
++        upper: u128,
++    ) -> Vec<Arc<SyntaxChunk>> {
++        if chunks.is_empty() {
++            return chunks;
++        }
++        let step = (upper - lower) / ((chunks.len() as u128) + 1);
++        assert!(step > 0, "order-key gap exhausted");
++        chunks
++            .into_iter()
++            .enumerate()
++            .map(|(index, chunk)| {
++                clone_chunk_with_order_key(&chunk, lower + step * ((index as u128) + 1))
++            })
++            .collect()
++    }
++
++    fn clone_chunk_with_order_key(chunk: &Arc<SyntaxChunk>, order_key: u128) -> Arc<SyntaxChunk> {
++        Arc::new(SyntaxChunk {
++            id: chunk.id,
++            order_key,
++            source_len: chunk.source_len,
++            nodes: chunk.nodes.clone(),
++            definitions: chunk.definitions.clone(),
++        })
++    }
++
++    fn chunk_wire_size(chunk: &Arc<SyntaxChunk>) -> usize {
++        32 + varint_size(chunk.id as usize)
++            + varint_size(chunk.source_len)
++            + chunk.nodes.iter().map(node_wire_size).sum::<usize>()
++            + chunk
++                .definitions
++                .iter()
++                .map(|definition| {
++                    varint_size(definition.label.len())
++                        + definition.label.len()
++                        + varint_size(definition.value.url.len())
++                        + definition.value.url.len()
++                        + varint_size(definition.value.title.len())
++                        + definition.value.title.len()
++                })
++                .sum::<usize>()
++    }
++
++    fn node_wire_size(node: &OwnedBlockNode) -> usize {
++        1 + varint_size(node.range.start)
++            + varint_size(node.range.end - node.range.start)
++            + varint_size(node.kind.len())
++            + node.kind.len()
++            + varint_size(node.content.len())
++            + node.content.len()
++            + node.children.iter().map(node_wire_size).sum::<usize>()
++    }
++
++    fn varint_size(mut value: usize) -> usize {
++        let mut bytes = 1;
++        while value >= 0x80 {
++            value >>= 7;
++            bytes += 1;
++        }
++        bytes
++    }
++
++    fn resumed_to_end<'a>(
++        arena: &'a Arena<'a>,
++        original: &str,
++        edited: &str,
++        restart: usize,
++        options: &Options,
++    ) -> Node<'a> {
++        let mut parser = new_parser(arena, options, edited.len());
++        feed(&mut parser, original, 0, restart, |_, _| {});
++        feed(&mut parser, edited, restart, edited.len(), |_, _| {});
++        finish(&mut parser)
++    }
++
++    fn work_until_convergence(
++        original: &str,
++        edited: &str,
++        restart: usize,
++        old_receipts: &[Receipt],
++        old_range: &Range<usize>,
++        new_end: usize,
++        options: &Options,
++    ) -> (Option<usize>, u128) {
++        let arena = Arena::new();
++        let mut parser = new_parser(&arena, options, edited.len());
++        feed(&mut parser, original, 0, restart, |_, _| {});
++        let old_by_offset: HashMap<_, _> = old_receipts
++            .iter()
++            .map(|receipt| (receipt.offset, receipt.state))
++            .collect();
++        let delta = edited.len() as isize - original.len() as isize;
++        let started = Instant::now();
++        let mut offset = restart;
++        while offset < edited.len() {
++            let line_end = edited[offset..]
++                .find('\n')
++                .map_or(edited.len(), |relative| offset + relative + 1);
++            parser.process_line(&edited[offset..line_end]);
++            offset = line_end;
++            if offset < new_end || !is_safe(&parser) {
++                continue;
++            }
++            let mapped = offset as isize - delta;
++            if mapped < old_range.end as isize {
++                continue;
++            }
++            let old_offset = mapped as usize;
++            let state_matches = old_by_offset.get(&old_offset) == Some(&state(&parser));
++            let suffix_matches = original.get(old_offset..) == edited.get(offset..);
++            if state_matches && suffix_matches {
++                return (Some(offset - new_end), started.elapsed().as_micros());
++            }
++        }
++        (None, started.elapsed().as_micros())
++    }
++
++    fn receipts(text: &str, options: &Options) -> Vec<Receipt> {
++        let arena = Arena::new();
++        let mut parser = new_parser(&arena, options, text.len());
++        let mut output = vec![Receipt {
++            offset: 0,
++            state: state(&parser),
++        }];
++        feed(&mut parser, text, 0, text.len(), |parser, offset| {
++            if is_safe(parser) {
++                output.push(Receipt {
++                    offset,
++                    state: state(parser),
++                });
++            }
++        });
++        output
++    }
++
++    fn new_parser<'a, 'o, 'c>(
++        arena: &'a Arena<'a>,
++        options: &'o Options<'c>,
++        total_size: usize,
++    ) -> Parser<'a, 'o, 'c>
++    where
++        'c: 'o,
++    {
++        let root = arena.alloc(
++            Ast {
++                value: NodeValue::Document,
++                content: String::new(),
++                sourcepos: (1, 1, 1, 1).into(),
++                open: true,
++                last_line_blank: false,
++                table_visited: false,
++                line_offsets: Vec::new(),
++            }
++            .into(),
++        );
++        let mut parser = Parser::new(arena, root, options);
++        parser.total_size = total_size;
++        parser
++    }
++
++    fn feed<'a, 'o, 'c>(
++        parser: &mut Parser<'a, 'o, 'c>,
++        text: &str,
++        start: usize,
++        end: usize,
++        mut after_line: impl FnMut(&Parser<'a, 'o, 'c>, usize),
++    ) {
++        let mut offset = start;
++        while offset < end {
++            let line_end = text[offset..end]
++                .find('\n')
++                .map_or(end, |relative| offset + relative + 1);
++            parser.process_line(&text[offset..line_end]);
++            offset = line_end;
++            after_line(parser, offset);
++        }
++    }
++
++    fn finish<'a>(parser: &mut Parser<'a, '_, '_>) -> Node<'a> {
++        parser.finalize_document();
++        parser.postprocess_text_nodes(parser.root);
++        parser.root
++    }
++
++    fn is_safe(parser: &Parser<'_, '_, '_>) -> bool {
++        parser.current.same_node(parser.root) && !parser.root.last_child_is_open()
++    }
++
++    fn state(parser: &Parser<'_, '_, '_>) -> u64 {
++        let mut labels: Vec<_> = parser.refmap.map.keys().collect();
++        labels.sort_unstable();
++        let mut hasher = DefaultHasher::new();
++        labels.hash(&mut hasher);
++        hasher.finish()
++    }
++
++    fn tree_signature(root: Node<'_>) -> String {
++        let mut output = String::new();
++        for edge in root.traverse() {
++            match edge {
++                NodeEdge::Start(node) => {
++                    let data = node.data();
++                    write!(
++                        output,
++                        "S{:?}@{:?}#{};",
++                        data.value, data.sourcepos, data.content
++                    )
++                    .unwrap();
++                }
++                NodeEdge::End(_) => output.push_str("E;"),
++            }
++        }
++        output
++    }
++
++    fn conservative_restart(receipts: &[Receipt], edit_start: usize) -> usize {
++        let containing = receipts.partition_point(|receipt| receipt.offset <= edit_start);
++        receipts[containing.saturating_sub(1)].offset
++    }
++
++    fn edit(original: &str, name: &'static str, needle: &str, replacement: &str) -> Edit {
++        let start = original
++            .find(needle)
++            .unwrap_or_else(|| panic!("missing edit needle: {needle:?}"));
++        edit_range(original, name, start..start + needle.len(), replacement)
++    }
++
++    fn edit_range(
++        original: &str,
++        name: &'static str,
++        old_range: Range<usize>,
++        replacement: &str,
++    ) -> Edit {
++        let mut markdown = String::with_capacity(original.len() + replacement.len());
++        markdown.push_str(&original[..old_range.start]);
++        markdown.push_str(replacement);
++        markdown.push_str(&original[old_range.end..]);
++        let new_end = old_range.start + replacement.len();
++        Edit {
++            name,
++            markdown,
++            old_range,
++            new_end,
++        }
++    }
++
++    fn percentile(values: &[usize], percentile: usize) -> usize {
++        values[(values.len().saturating_sub(1) * percentile) / 100]
++    }
++
++    fn flark_options<'c>() -> Options<'c> {
++        let mut options = Options::default();
++        options.extension.table = true;
++        options.extension.strikethrough = true;
++        options.extension.tasklist = true;
++        options.extension.autolink = true;
++        options.extension.tagfilter = true;
++        options
++    }
++
++    fn large_document(target_bytes: usize) -> String {
++        let mut output = String::from("<!-- bounded comment -->\n\n");
++        let mut index = 0;
++        while output.len() < target_bytes - 64 {
++            writeln!(output, "## Section {index}\n").unwrap();
++            writeln!(
++                output,
++                "Paragraph {index} has unique words {index}, **bold**, and [shared][shared].\n"
++            )
++            .unwrap();
++            writeln!(output, "- item {index}\n  - nested item {index}\n").unwrap();
++            writeln!(output, "```rust\ncode line {index}\n```\n").unwrap();
++            index += 1;
++        }
++        output.push_str("[shared]: https://example.com/old\n");
++        output
++    }
++}

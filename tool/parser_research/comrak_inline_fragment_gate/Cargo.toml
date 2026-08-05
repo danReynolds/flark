@@ -1,0 +1,33 @@
+[package]
+name = "flark-comrak-inline-fragment-gate"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+comrak = { path = "vendor/comrak", default-features = false }
+libc = "0.2"
+
+[features]
+research-large-inline = ["comrak/flark-inline-research"]
+research-owned-text = ["comrak/flark-inline-owned-text"]
+
+[dev-dependencies]
+comrak-pristine = { package = "comrak", version = "=0.54.0", default-features = false }
+serde_json = "1"
+
+[profile.release]
+debug = true
+lto = "thin"
+
+[workspace]
+members = ["wasm_probe"]
+resolver = "3"
+
+[[bin]]
+name = "inline_fragment_bench"
+path = "src/bin/inline_fragment_bench.rs"
+
+[[bin]]
+name = "inline_document_bench"
+path = "src/bin/inline_document_bench.rs"

@@ -1,0 +1,16 @@
+[package]
+name = "flark-packed-inline-state"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[dependencies]
+
+[[bin]]
+name = "packed_inline_stress"
+path = "src/bin/stress.rs"
+
+[profile.release]
+debug = true
+

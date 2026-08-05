@@ -1,0 +1,12 @@
+[package]
+name = "flark-generated-scanner-v3-harness"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dev-dependencies]
+comrak = { path = "../comrak_inline_fragment_gate/vendor/comrak", default-features = false }
+flark-v3-runtime-slice = { path = "../v3_runtime_slice", features = ["exact-parser"] }
+generated_scanner_gate = { path = "../generated_scanner_gate" }
+
+[workspace]

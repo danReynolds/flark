@@ -1,0 +1,29 @@
+[package]
+name = "flark-reference-value-service"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "BSD-2-Clause"
+build = "build.rs"
+
+[dependencies]
+phf = "0.13"
+
+[build-dependencies]
+# This table is part of the selected Markdown profile, not an ambient latest
+# dependency. The parity suite checks it against the pinned Comrak donor.
+entities = "=1.0.1"
+phf_codegen = "0.13"
+
+[dev-dependencies]
+comrak = { path = "../comrak_inline_fragment_gate/vendor/comrak", default-features = false }
+entities = "=1.0.1"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+
+[workspace]

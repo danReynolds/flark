@@ -1,0 +1,28 @@
+[package]
+name = "flark-integrated-parser-slice"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[dependencies]
+crop = { git = "https://github.com/noib3/crop", rev = "d0234ce772eb34c7a3878d4ed57dc864da291cfb", features = ["utf16-metric"], optional = true }
+unicase = "2.8.1"
+unicode_categories = "0.1.1"
+
+[features]
+default = []
+crop-research = ["dep:crop"]
+
+[dev-dependencies]
+pulldown-cmark = "=0.13.4"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+
+[profile.release]
+debug = true

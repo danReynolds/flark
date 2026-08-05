@@ -1,0 +1,23 @@
+[package]
+name = "euler-structure-challenger"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "receipt"
+path = "src/bin/receipt.rs"
+
+[profile.release]
+debug = true
+
+[dev-dependencies]
+comrak = { version = "=0.54.0", default-features = false }
+flark-engine = { path = "../../../native/comrak_bridge/crates/flark_engine" }
+flark-parser = { path = "../../../native/comrak_bridge/crates/flark_parser" }
+
+[patch.crates-io]
+comrak = { path = "../../../native/comrak_bridge/crates/flark_parser/vendor/comrak" }

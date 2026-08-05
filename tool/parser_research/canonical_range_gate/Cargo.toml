@@ -1,0 +1,21 @@
+[package]
+name = "flark-canonical-range-gate"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "BSD-2-Clause"
+
+[dependencies]
+comrak = { path = "../comrak_inline_fragment_gate/vendor/comrak", default-features = false }
+flark-comrak-value-block-core = { path = "../comrak_value_block_core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+
+[workspace]

@@ -1,0 +1,13 @@
+[package]
+name = "flark-relative-output-reuse-gate"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[dependencies]
+flark-integrated-parser-slice = { path = "../integrated_parser_slice", features = ["crop-research"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+

@@ -1,0 +1,12 @@
+[package]
+name = "flark-restart-composer-gate"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[lints.rust]
+unsafe_code = "forbid"
+

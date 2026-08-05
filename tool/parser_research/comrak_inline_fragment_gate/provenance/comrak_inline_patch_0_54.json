@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "donor": {
+    "crate": "comrak",
+    "version": "0.54.0",
+    "commit": "172c2ee7d2c5c262a28be3e407aadf705daea2b7"
+  },
+  "patch": {
+    "path": "patches/comrak-inline-fragment-0.54.0.patch",
+    "sha256": "d2ecc9445386f4dd614705eae0c3a4a802d8f485a1a09270e39cc3bac95f3fac",
+    "files": [
+      {
+        "path": "Cargo.toml",
+        "additions": 2,
+        "deletions": 0,
+        "pristine_sha256": "bda9fff4ffb8e4a130ccea7dd22fe2ed4025d9bb5b41e1e703d1223dccaff5ac",
+        "patched_sha256": "2bb7099b4e5f2142cf331331f6d0f4e979d0b29ec87be9691ac1b0d1f26ee4d6"
+      },
+      {
+        "path": "Cargo.toml.orig",
+        "additions": 2,
+        "deletions": 0,
+        "pristine_sha256": "16b04f84b27b95ecd55fb079b8ce4a08155461c72fac90ca140d455bd7325ab2",
+        "patched_sha256": "4b475986c70e361d63769dc179add2caf9ecf1a35b18904041994fbaf147cd40"
+      },
+      {
+        "path": "src/lib.rs",
+        "additions": 1,
+        "deletions": 1,
+        "pristine_sha256": "21c215b459fc74b1a3bb2b69764bdc5cbacee4896b365636569320604cf90390",
+        "patched_sha256": "79694c8097f96dc2b8fcf5b52fd9ea5595432a4709b1238947315f8d553396af"
+      },
+      {
+        "path": "src/parser/inline_fragment.rs",
+        "additions": 926,
+        "deletions": 0,
+        "pristine_sha256": null,
+        "patched_sha256": "8de815e552b240847bc5e77807963a705d405a3eda97898ffee94d8818baa7d6"
+      },
+      {
+        "path": "src/parser/inlines.rs",
+        "additions": 200,
+        "deletions": 9,
+        "pristine_sha256": "ecd6d57786ae01ae68304df493a7ad98075d105629a67c49ace162f83b3c5715",
+        "patched_sha256": "2f419765662e42dcba97677a9f7114abf6b9f527820060fd9cdac38348564997"
+      },
+      {
+        "path": "src/parser/mod.rs",
+        "additions": 1,
+        "deletions": 0,
+        "pristine_sha256": "f7ef61dd11359505dbb953cea53e85687d71a5bbece51f2e9db19a79e60f3af6",
+        "patched_sha256": "25c386159a1f34b29dd1d50250a1e93e8e327d288968ba474068b5b50b97624c"
+      }
+    ],
+    "total_additions": 1132,
+    "total_deletions": 10
+  },
+  "sensitive_functions": [
+    {
+      "upstream_path": "src/parser/inlines.rs",
+      "upstream_name": "new",
+      "pristine_sha256": "4db63487c14dc691a565f8a5ec4e92453bbff6fa302a667b5ddeba727bc996f1",
+      "patched_sha256": "e759957a7c76a0634b9529a228466d2f88cc89e86e23d58ec01989e4656ab53b"
+    },
+    {
+      "upstream_path": "src/parser/inlines.rs",
+      "upstream_name": "handle_newline",
+      "pristine_sha256": "81856a11a654dadc66290f14b6d91dccc7d5aae7c9439499d8f0ab72f3e50afc",
+      "patched_sha256": "1a0aeaebf9671b637a45db449beefcc037317193b3362019901c0e3ab769b7bd"
+    },
+    {
+      "upstream_path": "src/parser/inlines.rs",
+      "upstream_name": "handle_backticks",
+      "pristine_sha256": "43d53232f877bf14d8889a3c8615af69f66b18c1d0c2a942c5f6f5095d044d92",
+      "patched_sha256": "ef4c1582de208c8ba51558e81b8a1a7c41eeaf6b66bc56a576de840d5d23383e"
+    },
+    {
+      "upstream_path": "src/parser/inlines.rs",
+      "upstream_name": "handle_backslash",
+      "pristine_sha256": "8099b635ed0587ddda9304dc709632727ee454d9424c762194102210c1dac634",
+      "patched_sha256": "17ea1a70122e1091eb3dbbb633b2163fb84c389036d939c5ee111af89ee3d712"
+    },
+    {
+      "upstream_path": "src/parser/inlines.rs",
+      "upstream_name": "handle_entity",
+      "pristine_sha256": "5115516801b5210f46dd6b62c7ed888e72e9bdc8980af430eda6cff0684b1d7c",
+      "patched_sha256": "082efd2c5c4a30c81702a92a19a005d72916e3d81fb450d018ac7c7162984c32"
+    },
+    {
+      "upstream_path": "src/parser/inlines.rs",
+      "upstream_name": "handle_pointy_brace",
+      "pristine_sha256": "f5769580d8fab9f68ad86dbdcb8c7615111d7f1726ee6afbdb8952e367e7839b",
+      "patched_sha256": "f0e4da9fd4fe85389702f5c0c2bed8afed8ca463a6b081e9d2be95b1d89364a3"
+    },
+    {
+      "upstream_path": "src/parser/inlines.rs",
+      "upstream_name": "handle_delim",
+      "pristine_sha256": "656e4cb2482e31585396876cd1bf402853038551a33f39b2bbd7a82dccce93b8",
+      "patched_sha256": "491a259bd6a882d345a026a9d09f66e49c2191e5d3b0239eb625d79ed4315cf9"
+    },
+    {
+      "upstream_path": "src/parser/inlines.rs",
+      "upstream_name": "push_delimiter",
+      "pristine_sha256": "b2462b5ee84659fc19d2397510335a85219f0348394d5cfe2c603ae8ade04ce3",
+      "patched_sha256": "9cbed4823f6f7a0933484428ee26031fc711705a3a917c5d4edac17c22ab55ba"
+    },
+    {
+      "upstream_path": "src/parser/inlines.rs",
+      "upstream_name": "insert_emph",
+      "pristine_sha256": "ea90478e004aa8d5fee6cdb92f8f0081ac7d38d68907620deba9f773f9d507dc",
+      "patched_sha256": "cb091defce5432f71207aa34959204a94efdb2ec34723522be619334c914b16a"
+    },
+    {
+      "upstream_path": "src/parser/inlines.rs",
+      "upstream_name": "push_bracket",
+      "pristine_sha256": "4346f2a11f4dcafb98884447374e96dfafd365874fa5d06c5084b260c5f8b08e",
+      "patched_sha256": "792cd2c268972336b4eaefa754bc93da7f1224b8ef0d9567424e1eb353158ccd"
+    },
+    {
+      "upstream_path": "src/parser/inlines.rs",
+      "upstream_name": "handle_close_bracket",
+      "pristine_sha256": "bf589dc3407adbdddcf1302428a11afe8596c291f11575ec1f3e66d13bf39db3",
+      "patched_sha256": "50e29a03faddf573ac8aa1bfc1d9fc3ff37f451e72cb229f5b856ef97d9652c4"
+    },
+    {
+      "upstream_path": "src/parser/inlines.rs",
+      "upstream_name": "close_bracket_match",
+      "pristine_sha256": "942e5a950336bf6c70f86a2674538294009e2b06cb6f97efa58655137417b8fd",
+      "patched_sha256": "888c82f5958cf313c6789f918a78e5ed5eed55783c8253c2268691de0120b6df"
+    }
+  ]
+}

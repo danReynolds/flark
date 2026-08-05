@@ -1,0 +1,13 @@
+[package]
+name = "flark-parser-research"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+comrak = { version = "0.50", default-features = false }
+markdown = "1.0.0"
+pulldown-cmark = { version = "0.13.4", default-features = false, features = ["html"] }

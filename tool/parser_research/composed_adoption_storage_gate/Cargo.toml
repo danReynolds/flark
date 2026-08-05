@@ -1,0 +1,23 @@
+[package]
+name = "flark-composed-adoption-storage-gate"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT"
+
+[dependencies]
+flark-restart-composer-gate = { path = "../restart_composer_gate" }
+flark-v3-runtime-slice = { path = "../v3_runtime_slice" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+
+[profile.release]
+debug = true
+lto = "thin"
+
+[workspace]

@@ -1,0 +1,18 @@
+[package]
+name = "flark-lazy-inline-fact-cache-gate"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[dependencies]
+flark-comrak-inline-fragment-gate = { path = "../comrak_inline_fragment_gate" }
+flark-relative-output-reuse-gate = { path = "../relative_output_reuse_gate" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[profile.release]
+debug = true
+lto = "thin"
+
