@@ -141,14 +141,15 @@ No build commitment until these run. Each is bounded and decisive.
 
 | # | Gate | Cost | Decides |
 | --- | --- | --- | --- |
-| G1 | IME device matrix on v2 (existing 9-row protocol) | 1 day | Baseline for "IME correct"; unblocks v2 Phase 4; acceptance suite for any v4 input prototype |
-| G2 | Jank harness on real phones — sustained typing at 5 KB/25 KB/100 KB/1 MB, p99 frame + dropped frames | 3 days | Whether the §2 contract is reachable at all, and where v2 actually breaks |
-| G3 | In-frame sync spike — drive the existing endpoint from a frame callback with a budget | 3 days | §4.1. Cheap because the FFI is already synchronous |
-| G4 | Input-surface UX suite (see §7) against an editable-based prototype | 2 weeks | The largest work item in the plan |
-| G5 | Reference cold-open fix — indexed winner lookup, re-measure 100k-reference | 1 week | Whether "minimal open time" survives adversarial documents |
-| G6 | Inline contiguity design pass | 3 days | Whether full conformance is reachable on this representation |
+| G1 | IME device matrix, run against v2 as a *reference implementation* | 1 day | What Flutter's own text input handles correctly today — the behavioural baseline the new input surface must match, and the acceptance suite for G4 |
+| G2 | Jank harness on real phones — sustained typing at 5 KB/25 KB/100 KB/1 MB, p99 frame + dropped frames, against the engine | 3 days | Whether the §2 contract is reachable at all. **The program has zero floor-device data of any kind** |
+| G3 | In-frame sync spike — drive the existing endpoint from a frame callback with a budget | 3 days | §4.1, the core new claim. Cheap because the FFI is already synchronous and fuel-bounded |
+| G4 | Input-surface UX suite (see §7) against an editable-based prototype | 2 weeks | The largest work item in the plan, and the lowest-confidence area |
+| G5 | Reference cold-open fix — indexed winner lookup, re-measure 100k-reference (currently 71 s on Chrome) | 1 week | Whether "minimal open time" survives adversarial documents |
+| G6 | Inline contiguity design pass | 3 days | *How* to reach the §8 D2 commitment on this representation, not whether to |
 
-G1, G2 and G5 are worth running **whichever architecture wins** — no-regret.
+G2, G3 and G5 exercise the kept engine directly and are the critical path. G1
+runs against v2 purely to extract behaviour, since v2 has no other role.
 
 ## 7. The input-surface acceptance suite
 
@@ -168,24 +169,57 @@ paste) that write directly to its controller, bypassing source authority. This
 was observed at runtime. Using an editable means owning that intercept surface
 permanently.
 
-## 8. Open decisions
+## 8. Decisions (resolved 2026-08-05)
 
-**D1 — v2 while we build.** Recommendation: **fix it**. Enforce never-guess,
-land Phase 2/4, repair the block-range regression this branch introduced. A few
-weeks. Rationale: shipping something correct preserves the feedback loop that a
-multi-year rebuild otherwise loses. Alternative is to freeze v2 and accept a
-known-wrong shipped editor.
+**D1 — v2 while we build: RESOLVED. Nothing.** v2 is pre-launch. There are no
+users, no feedback loop to protect and no migration burden, so the case for
+keeping it correct in parallel does not exist. **v2 is a harvest source and a
+reference implementation, not a product.** No Phase 2/4 work, no never-guess
+retrofit, no regression repair except where it blocks harvesting.
 
-**D2 — conformance commitment.** Do we promise 100% CommonMark + GFM, or a
-stated subset? The tail is inline raw HTML (37 examples, unimplemented) and the
-inline-leaf contiguity limit (22 examples, architectural). Decide deliberately
-in this RFC; do not discover it later.
+**D2 — conformance: RESOLVED. 100% CommonMark + GFM, long-tail, not urgent.**
+Committed as the destination. Not a gate on anything else; the two architectural
+items (inline raw HTML, inline-leaf contiguity) are scheduled work, not open
+questions. G6 designs the contiguity fix rather than deciding whether to attempt
+it.
 
-**D3 — what survives from v3.** Proposed: **keep** the parser core, source rope,
-packed green representation, reference index, conformance corpus, fuel/abort
-machinery. **Retire** the endpoint protocol, publication path, independent host
-store, wire codecs, and the `EditableText` island adapter. Confirm before the
-retired surface accrues more work.
+**D3 — what survives: RESOLVED by fit, not lineage.** Nothing is kept because
+of where it came from. Each component is judged only against §1. Applying that
+test:
+
+*Keep — because nothing better exists.* The Rust parser core, source rope,
+packed green representation, reference occurrence index, and the fuel/abort
+machinery. This is not sentiment: an **exact, incremental CommonMark engine does
+not exist anywhere else**. Every alternative is either non-incremental (comrak,
+pulldown, markdown-rs) or non-conformant (`@lezer/markdown`, tree-sitter). This
+engine is 481/652 byte-exact with the hardest case — global reference-definition
+resolution — already solved, which is precisely the case the JS reference
+implementation abandoned. Rebuilding it would take years and land in the same
+place.
+
+*Delete — because it exists only to cross a boundary we are removing.* The
+endpoint protocol, wire codecs, publication path, independent host store, and
+the candidate/session machinery. Roughly 30k of the ~137k production Rust lines
+are boundary infrastructure. **Removing the isolate slims the Rust as well as
+the Dart**, and makes the remaining engine materially more reviewable — which
+directly addresses RFC 023's own reopen condition about core size.
+
+*Delete — because it is disproven.* The `EditableText` island adapter and every
+use of `SelectionArea` (§3.4).
+
+*Delete — because it is the bug source.* v2's projection prediction, its
+reconciliation machinery, and all 35 Dart-side Markdown scanners.
+
+*Harvest as knowledge, not code.* v2's command semantics, IME device protocol,
+golden-test corpus and conformance fixtures. The behaviour is valuable; the
+implementations sit on a whole-document model that does not fit §4.
+
+*Build fresh.* The virtualized view, model-range selection, input surface, and
+the lean synchronous FFI that replaces the wire protocol.
+
+Net: this is **v3's engine with a new integration layer** — not v3 continued,
+not v2 evolved, and not a from-scratch rewrite, because only one of the three
+existing assets survives the fit test on its merits.
 
 ## 9. Stop conditions
 
@@ -197,8 +231,12 @@ case §4.1 reverts and the wire protocol comes back.
 
 ## 10. Next steps
 
-1. Decide D1, D2, D3.
-2. Run G1 and G2 (no-regret, ~4 days).
-3. Run G3 (~3 days) — the core new claim.
-4. Run G5 and G6 in parallel with G4.
-5. Rewrite §4 with measured answers; promote this RFC to SELECTED or revise.
+1. ~~Decide D1, D2, D3.~~ Resolved 2026-08-05 (§8).
+2. **G2 and G3 first** — they exercise the kept engine and test the core new
+   claim. ~6 days.
+3. G1 in parallel (needs hands on devices), producing the G4 acceptance suite.
+4. G5 and G6 alongside G4.
+5. Rewrite §4 with measured answers; promote to SELECTED or revise.
+
+Because v2 is pre-launch (§8 D1), there is no parallel maintenance track and no
+migration plan. The only deliverable is the destination.
