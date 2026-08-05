@@ -56,10 +56,33 @@ every pump (max 1.62 ms) and left the source intact.
    1 MB did not finish. This is direct evidence for RFC 024 §8 D3's plan to
    replace the endpoint protocol with a lean direct FFI: the isolate's protocol
    is not just unnecessary in-process, it is the dominant cost.
-2. **The 32 KB paste did not converge.** 100,000 pumps, still `exact=false`.
-   Source stayed intact, so this is not corruption — but it is either a
-   non-convergence defect or a harness cap. **Must be diagnosed before G3 is
-   called passed.**
+2. **The 32 KB paste did not converge — and the failure mode is a silent
+   stall, not slow progress.** Diagnosed 2026-08-05.
+
+   The receipt reads `frames=100000 exhausted=1 maxframe=1616us p99frame=0us`.
+   Only **one** pump of a hundred thousand ever exhausted its budget, and the
+   99th percentile pump took **zero microseconds**. So 99% of those pumps did
+   no work at all.
+
+   `pump()` (`g3_inframe_engine.dart:563`) advances the scheduler and the
+   endpoint, and breaks out the moment neither reports progress. The outer
+   probe loop then re-enters, finds nothing to do again, and spins. Meanwhile
+   `document.failure` is never set — the engine reports no error.
+
+   So after the paste the engine goes **quiescent while `isExactCurrent` is
+   still false**: it believes it has no work left, but the document is not
+   reparsed. The source is byte-intact (`source_intact=true`), so nothing is
+   corrupted; it simply stops converging and says nothing.
+
+   That is the same class of defect the earlier defect review found twice
+   already — a terminal or stalled state that is never surfaced to the caller.
+   It is very likely the engine took a fail-closed path that requires a fresh
+   command the harness never issues, rather than an engine-internal hang.
+
+   **Next diagnostic step:** log the endpoint's state and last publication
+   outcome at the moment it goes quiescent, and check whether a clean-rebuild
+   command is expected but unscheduled. Until then G3 is *not* passed — the
+   in-frame pump is proven for ordinary edits, unproven for large pastes.
 3. **Cold open at 1 KB takes 13 frames / 75 ms**, with a 7.2 ms max frame. Fine
    at this size, but it is 13 frames for a trivial document — consistent with
    per-round-trip overhead dominating.
