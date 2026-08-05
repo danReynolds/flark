@@ -1,0 +1,366 @@
+Resolving dependencies...
+Downloading packages...
+  code_assets 1.0.0 (1.2.1 available)
+! flark 0.1.1 from path .. (overridden in ./pubspec_overrides.yaml)
+! flark_flutter 0.1.1 from path ../packages/flark_flutter (overridden in ./pubspec_overrides.yaml)
+  hooks 1.0.3 (2.1.0 available)
+  matcher 0.12.19 (0.12.20 available)
+  meta 1.18.0 (1.19.0 available)
+  record_use 0.6.0 (1.0.0 available)
+  test_api 0.7.11 (0.7.13 available)
+  vector_math 2.2.0 (2.4.2 available)
+Got dependencies!
+7 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+Launching lib/g2_jank_harness.dart on macOS in profile mode...
+All plugins found for macos are Swift Packages, but your project still has CocoaPods integration. To remove CocoaPods integration, complete the following steps:
+  * In the macos/ directory run "pod deintegrate"
+  * Also in the macos/ directory, delete the Podfile
+  * Remove the include to "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig" in your macos/Flutter/Flutter-Debug.xcconfig
+  * Remove the include to "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig" in your macos/Flutter/Flutter-Release.xcconfig
+
+Removing CocoaPods integration will improve the project's build time.
+Building macOS application...                                   
+warning: Code asset "package:flark/src/v2/native/native_comrak_ffi.dart" has different framework names for different architectures. Picking "flark_comrak_bridge.framework" and ignoring "flark_comrak_bridge1.framework". This is likely an issue in the package providing the asset. Please report this to the package maintainers and ensure the "build.dart" hook produces consistent filenames.
+Project /Users/dan/.codex/worktrees/flark-parser-prototypes/example built and packaged successfully.
+✓ Built build/macos/Build/Products/Profile/Flark Markdown.app (81.9MB)
+2026-08-05 14:22:33.382 Flark Markdown[31081:127187161] Running with merged UI and platform thread. Experimental.
+Failed to foreground app; open returned 1
+
+Flutter run key commands.
+h List all available interactive commands.
+c Clear the screen
+q Quit (terminate the application on the device).
+
+A Dart VM Service on macOS is available at: http://127.0.0.1:49183/T9xJXOyNzAA=/
+The Flutter DevTools debugger and profiler on macOS is available at: http://127.0.0.1:49183/T9xJXOyNzAA=/devtools/?uri=ws://127.0.0.1:49183/T9xJXOyNzAA=/ws
+flutter: g2| harness start  configurations=8 cps=10 warmup=2s measured=15s
+flutter: g2| process warm-up (discarded)…
+flutter: g2| plain/5KB open=1265.4ms paint=1455.1ms structure=1368.5ms
+flutter: g2| dense/5KB open=56.0ms paint=timeoutms structure=214.2ms
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: faulted, parserFailure: 4, hostRejection: closed).
+flutter: g2| dense/5KB done frames=12 keystrokes=17 mode=editable-delta
+flutter: g2| dense/25KB open=167.8ms paint=1750.4ms structure=538.8ms
+[ERROR:flutter/runtime/dart_vm_initializer.cc(40)] Unhandled Exception: FlarkV3NativeHostException(queryStructuralRangeReceipt, status=0x0111: native host returned an out-of-authority range receipt)
+#0      _decodeBlockRangeQueryOutcome (package:flark/src/v3/runtime/native/flark_v3_native_host_store.dart:1868)
+#1      FlarkV3NativeHostStore.queryStructuralRange (package:flark/src/v3/runtime/native/flark_v3_native_host_store.dart:758)
+#2      FlarkV3HostController.queryBlockRange (package:flark/src/v3/host/flark_v3_host_controller.dart:681)
+#3      FlarkDocumentSession.queryBlockRange (package:flark/src/v3/session/flark_document_session.dart:486)
+#4      FlarkV3DocumentRuntime._queryBlockRange (package:flark/src/v3/runtime/public/flark_v3_document_runtime.dart:1220)
+#5      FlarkV3DocumentRuntime.queryBlockRange (package:flark/src/v3/runtime/public/flark_v3_document_runtime.dart:964)
+#6      FlarkV3ManagedViewportPresentationSource._queryStructuralWindowAtSourcePoint (package:flark_flutter/src/v3/flutter/flark_v3_managed_viewport_presentation_source.dart:374)
+#7      FlarkV3ManagedViewportPresentationSource._locateSourcePointWindow (package:flark_flutter/src/v3/flutter/flark_v3_managed_viewport_presentation_source.dart:323)
+#8      FlarkV3ManagedViewportPresentationSource._requestAuthorityWindow (package:flark_flutter/src/v3/flutter/flark_v3_managed_viewport_presentation_source.dart:301)
+#9      FlarkV3ManagedViewportPresentationSource.handleRuntimeProgress (package:flark_flutter/src/v3/flutter/flark_v3_managed_viewport_presentation_source.dart:156)
+#10     new FlarkV3ManagedFlutterBinding.attach.<anonymous closure> (package:flark_flutter/src/v3/flutter/flark_v3_managed_flutter_binding.dart:112)
+#11     _RootZone.runUnaryGuarded (dart:async/zone.dart:891)
+#12     _BufferingStreamSubscription._sendData (dart:async/stream_impl.dart:381)
+#13     _DelayedData.perform (dart:async/stream_impl.dart:573)
+#14     _PendingEvents.handleNext (dart:async/stream_impl.dart:678)
+#15     _PendingEvents.schedule.<anonymous closure> (dart:async/stream_impl.dart:649)
+#16     _microtaskLoop (dart:async/schedule_microtask.dart:40)
+#17     _startMicrotaskLoop (dart:async/schedule_microtask.dart:49)
+
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+flutter: g2| keystroke rejected: Bad state: The Flark v3 document runtime is not writable (state: closed, parserFailure: null, hostRejection: null).
+Application finished.
