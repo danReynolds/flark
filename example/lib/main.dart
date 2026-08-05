@@ -2558,11 +2558,73 @@ class _CommandCluster extends StatelessWidget {
               enabled: canMutate,
               onPressed: () => onCommand(_ToolbarCommand.table),
             ),
+            // --- G1 device-test affordance. See
+            // docs/testing/ime_device_matrix_runbook.md, Appendix A. ---
+            const _ClusterDivider(),
+            _CommandButton(
+              buttonKey: const ValueKey('flark-example-command-show-source'),
+              tooltip: 'Show source',
+              icon: Icons.data_object,
+              onPressed: () => _showSourceSheet(context, controller),
+            ),
           ],
         );
       },
     );
   }
+}
+
+/// G1 device-test affordance: shows the exact Markdown source behind the live
+/// editor, with whitespace made visible, plus a raw-source copy button.
+Future<void> _showSourceSheet(
+  BuildContext context,
+  FlarkFlutterController controller,
+) {
+  final source = controller.markdown;
+  final visible = source.isEmpty
+      ? '(empty document)'
+      : source.replaceAll(' ', '·').replaceAll('\n', '⏎\n');
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (sheetContext) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Exact source · ${source.length} chars '
+              '(· = space, ⏎ = newline)',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 320),
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  visible,
+                  style: const TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: () =>
+                  Clipboard.setData(ClipboardData(text: source)),
+              icon: const Icon(Icons.copy_rounded),
+              label: const Text('Copy raw source'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _ClusterDivider extends StatelessWidget {

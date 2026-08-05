@@ -1,5 +1,24 @@
 # IME device-test protocol
 
+> **Do not execute this file. Execute
+> [`ime_device_matrix_runbook.md`](ime_device_matrix_runbook.md) instead**, and
+> record into [`ime_device_matrix_recording_sheet.md`](ime_device_matrix_recording_sheet.md).
+>
+> This file remains the record of *why* these scenarios exist and what each one
+> is defending. It is not executable as written: it has no row→scenario
+> applicability map (the "S1–S9 … CJK rows: S3–S5" line is inconsistent with the
+> scenarios it lists), it defines S11 for macOS/Android only while the
+> architecture position makes "S11 across rows 1–8" the reopen trigger, it
+> delegates S11 to a 1,720-line test file, and its check (b) ("copy the markdown
+> out, or read the autosave") cannot be performed — the example app has no
+> source view, no export and no autosave, and select-all + copy yields projected
+> text rather than source. The runbook resolves each of those; see its §0.3.
+>
+> RFC 024 §6 now makes this pass gate G1, and §7 adds acceptance cases this
+> protocol does not cover (cross-block drag-selection, anchors scrolling out of
+> view, select-all/copy fidelity, touch handles, and IME composition while a
+> selection exists elsewhere during scroll). Those are Part B of the runbook.
+
 Manual pass for real-keyboard behavior the simulated suite
 (`packages/flark_flutter/test/v2/flutter/flark_ime_input_test.dart`) cannot
 vouch for. It also gates
