@@ -59,7 +59,7 @@
 // EditableText value adoption -> scheduled frame). See [_TypingDriver.mode].
 
 import 'dart:async';
-import 'dart:io' show exit;
+import 'dart:io' show Directory, File, exit;
 import 'dart:math' as math;
 
 
@@ -411,6 +411,10 @@ class G2Result {
   G2DurationStats? build;
   G2DurationStats? raster;
   G2DurationStats? total;
+
+  /// Frames the harness itself drove during the typing window. Distinct from
+  /// [frames], which counts FrameTiming samples the engine reported back.
+  int framesRun = 0;
   int frames = 0;
 }
 
@@ -812,7 +816,7 @@ class _G2JankHarnessPageState extends State<G2JankHarnessPage> {
     return completer.future;
   }
 
-  Future<void> _teardownConfiguration() async {
+  Future<void> _teardownConfiguration({bool recordClose = true}) async {
     final subscription = _statusSubscription;
     _statusSubscription = null;
     if (subscription != null) await subscription.cancel();
@@ -837,7 +841,9 @@ class _G2JankHarnessPageState extends State<G2JankHarnessPage> {
       } catch (error) {
         _print('g2| close failed/timed out: $error');
       }
-      if (_results.isNotEmpty && _results.last.closeMs == null) {
+      if (recordClose &&
+          _results.isNotEmpty &&
+          _results.last.closeMs == null) {
         _results.last.closeMs = _nowMs() - closeStart;
       }
     }
