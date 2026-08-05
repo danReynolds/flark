@@ -1631,7 +1631,9 @@ impl Endpoint {
                 }
                 match receipt.disposition {
                     EventDisposition::Accepted => {
-                        self.candidate.accept_credit(credit, outstanding.event_id)?;
+                        let runtime = self.runtime.as_ref().ok_or(EndpointError::Candidate)?;
+                        self.candidate
+                            .accept_credit(runtime, credit, outstanding.event_id)?;
                     }
                     EventDisposition::Stale | EventDisposition::Rejected => {
                         self.candidate.cancel()?;

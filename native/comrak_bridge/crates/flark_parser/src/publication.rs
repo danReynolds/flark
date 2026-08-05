@@ -2207,13 +2207,24 @@ impl M11ParserCandidate {
     ///
     /// The engine authenticates and compares the compact canonical role
     /// identities. No reference records are traversed or exposed here.
-    pub fn clean_recursive_green_references_match_exact_base(
+    pub fn recursive_green_references_match_exact_base(
         runtime: &DocumentRuntime,
         session: &M11PersistentRecursiveGreenSession,
         base: &M11RetainedCandidatePublication,
     ) -> Result<bool, M11CandidateDerivationError> {
         let references = session.current_reference_root(runtime)?;
         Ok(base.has_same_canonical_references(runtime, references)?)
+    }
+
+    /// Backward-compatible spelling for the definitive clean fallback. Local
+    /// recursive-Green updates use the generic predicate above because their
+    /// target References may either retain or replace the exact base.
+    pub fn clean_recursive_green_references_match_exact_base(
+        runtime: &DocumentRuntime,
+        session: &M11PersistentRecursiveGreenSession,
+        base: &M11RetainedCandidatePublication,
+    ) -> Result<bool, M11CandidateDerivationError> {
+        Self::recursive_green_references_match_exact_base(runtime, session, base)
     }
 
     /// Derives a clean recursive-Green target whose independently parsed
@@ -2274,6 +2285,47 @@ impl M11ParserCandidate {
                 projection: vec![projection],
             },
             references: M11CandidateReferencePlan::ExactBase,
+        })
+    }
+
+    /// Derives an exact structural target whose parser-owned References root
+    /// differs from the retained base and must therefore be published as
+    /// ordinary target closure content.
+    ///
+    /// The completed update still supplies the sparse recursive-Green
+    /// selection and keeps both structural sessions live. Unlike the reuse
+    /// constructor, this candidate retains the target session's canonical
+    /// References journal and must be driven through the ordinary writer
+    /// poll path.
+    pub fn derive_with_recursive_green_replacing_references(
+        certified: PersistentCertifiedSource,
+        update: &M11PersistentRecursiveGreenUpdate,
+    ) -> Result<Self, M11CandidateDerivationError> {
+        let exact = update.exact_publication()?;
+        let source = certified.source();
+        let syntax_profile = u32::try_from(certified.parser_profile().get())
+            .map_err(|_| M11CandidateDerivationError::ParserProfileOverflow)?;
+        if exact.target_session().source() != source
+            || exact.target_session().syntax_profile() != syntax_profile
+            || exact.base_session().source() == source
+            || exact.base_session().syntax_profile() != syntax_profile
+        {
+            return Err(M11CandidateDerivationError::RecursiveGreenPublicationMismatch);
+        }
+        let _ = exact.recursive_green_splice_selection();
+        let source_facts_profile = certified.source_facts_profile();
+        let projection = encode_recursive_green_projection(source)?;
+        let (_lease, certified_profile, certified_source_facts_profile) = certified.into_parts();
+        debug_assert_eq!(certified_profile.get(), u64::from(syntax_profile));
+        debug_assert_eq!(certified_source_facts_profile, source_facts_profile);
+        Ok(Self {
+            source,
+            syntax_profile,
+            source_facts_profile,
+            roles: M11CandidateRolePlan::RecursiveGreen {
+                projection: vec![projection],
+            },
+            references: M11CandidateReferencePlan::PersistentSession,
         })
     }
 

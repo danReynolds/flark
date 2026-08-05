@@ -697,6 +697,7 @@ pub(super) fn begin_exact_candidate_build_from_terminal(
         witness,
         next_restart,
         structural_path: ExactStructuralPath::LegacyBlocks,
+        reference_transport: ExactReferenceTransport::Reuse,
     })
 }
 

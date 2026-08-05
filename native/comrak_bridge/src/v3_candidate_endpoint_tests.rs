@@ -78,6 +78,7 @@ fn streaming_for_runtime(
     let stream = Box::new(publication)
         .into_snapshot_stream(runtime)
         .expect("test snapshot stream");
+    let reuses_exact_base_references = stream.reuses_exact_base_references();
     let record_count =
         u32::try_from(descriptor.canonical_record_count).expect("bounded test record count");
     StreamingCandidate {
@@ -131,6 +132,7 @@ fn streaming_for_runtime(
         next_restart: None,
         superseded_exact_base: None,
         exact_base_recovery: None,
+        reuses_exact_base_references,
     }
 }
 
@@ -640,7 +642,7 @@ fn deliver_endpoint_to_independent_host_with_fuel(
                 host.begin_offer(begin)
                     .expect("independent host begins offer");
                 endpoint
-                    .accept_credit(credit, event_id)
+                    .accept_credit(runtime, credit, event_id)
                     .expect("producer accepts Begin credit");
                 offer = Some(begin);
             }
@@ -678,7 +680,7 @@ fn deliver_endpoint_to_independent_host_with_fuel(
                 host.admit_packet(packet)
                     .expect("independent host admits packet");
                 endpoint
-                    .accept_credit(credit, event_id)
+                    .accept_credit(runtime, credit, event_id)
                     .expect("producer accepts packet event credit");
                 let (credited_offer_id, next_frame_ordinal) = loop {
                     match host
@@ -715,7 +717,7 @@ fn deliver_endpoint_to_independent_host_with_fuel(
                 host.request_commit(commit)
                     .expect("independent host accepts commit");
                 endpoint
-                    .accept_credit(credit, event_id)
+                    .accept_credit(runtime, credit, event_id)
                     .expect("producer accepts commit event credit");
                 let outcome = loop {
                     match host
@@ -755,7 +757,7 @@ fn deliver_endpoint_to_independent_host_with_fuel(
                 host.acknowledge_delivery(ack)
                     .expect("independent host accepts delivery");
                 endpoint
-                    .accept_credit(credit, event_id)
+                    .accept_credit(runtime, credit, event_id)
                     .expect("producer accepts delivery credit");
                 return ExactDelivery {
                     offer: offer.expect("producer emitted Begin"),
@@ -7277,7 +7279,7 @@ fn exact_base_survives_mid_stream_cancel_and_replacement_converges() {
                         saw_begin = true;
                         fixture
                             .endpoint
-                            .accept_credit(credit, event_id)
+                            .accept_credit(&fixture.runtime, credit, event_id)
                             .expect("accept target Begin credit");
                     }
                     CandidateEventBody::Packet { encoded } => {
@@ -7300,7 +7302,7 @@ fn exact_base_survives_mid_stream_cancel_and_replacement_converges() {
                         ));
                         fixture
                             .endpoint
-                            .accept_credit(credit, event_id)
+                            .accept_credit(&fixture.runtime, credit, event_id)
                             .expect("accept target Packet credit");
                         assert!(fixture
                             .endpoint
@@ -9347,8 +9349,8 @@ fn ordinary_crop_blank_boundary_uses_bounded_recursive_green_local_adoption() {
 }
 
 #[test]
-fn leading_crop_new_definition_falls_back_with_fresh_references() {
-    const BASE_SOURCE: &str = "[base]: /base\n!x]: /new\nvisible\n";
+fn leading_crop_new_definition_stays_exact_with_fresh_references() {
+    const BASE_SOURCE: &str = "[base]: /base\n!x]: /new\nsee [x]\n";
 
     let profile = SourceFactsScanProfile::new(2).expect("dense test profile");
     let parser_profile = ParserProfileId::new(1).expect("parser profile");
@@ -9413,22 +9415,22 @@ fn leading_crop_new_definition_falls_back_with_fresh_references() {
     let target_delivery =
         deliver_endpoint_to_independent_host_with_unit_fuel(&mut endpoint, &mut runtime, &mut host);
 
-    assert_eq!(target_delivery.offer.mode, PublicationMode::FullSnapshot);
-    assert_eq!(target_delivery.offer.base_ack, None);
-    assert_eq!(
-        target_delivery.offer.transferred_record_count,
-        target_delivery.offer.target_record_count
+    assert_eq!(target_delivery.offer.mode, PublicationMode::ExactBaseDelta);
+    assert_eq!(target_delivery.offer.base_ack, Some(base_delivery.ack));
+    assert!(
+        target_delivery.offer.transferred_record_count < target_delivery.offer.target_record_count,
+        "the exact delta must retain authenticated roles outside References"
     );
     assert!(target_delivery
         .packet_frames
         .iter()
         .flatten()
-        .all(|(kind, _)| *kind != CandidateSnapshotFrameKind::SourceFactsReplacementPage));
+        .any(|(kind, _)| *kind == CandidateSnapshotFrameKind::SourceFactsReplacementPage));
     assert_eq!(
         host.role_record_count(flark_engine::m11_host::M11HostRole::References)
             .expect("fresh target References"),
         2,
-        "fallback must rebuild References from the definitive target parse"
+        "the exact delta must install References from the definitive target parse"
     );
     let retained = endpoint.retained.as_ref().expect("retained target base");
     let CandidateRestartAuthority::Leading(restart) =
@@ -9440,12 +9442,66 @@ fn leading_crop_new_definition_falls_back_with_fresh_references() {
     assert_eq!(
         restart.definition_count(),
         2,
-        "fallback must install fresh target checkpoint semantics"
+        "the exact delta must install fresh target checkpoint semantics"
     );
     drain_candidate_cleanup(&mut endpoint, &mut runtime);
     assert!(endpoint
         .has_exact_base_for(&runtime, target_version)
         .expect("next target exact base"));
+
+    let link_start = BASE_SOURCE.rfind("[x]").expect("target reference link");
+    endpoint
+        .request_hot_inline(
+            &mut runtime,
+            InlineRefinementCommand {
+                binding,
+                refinement_generation: 1,
+                source_version: target_delivery.ack.source_version,
+                base_ack: target_delivery.ack,
+                byte_offset: u32::try_from(link_start + 1).expect("bounded link byte"),
+                utf16_offset: u32::try_from(link_start + 1).expect("ASCII link UTF-16"),
+                affinity: InlinePointAffinity::After,
+                target: InlineRefinementTarget::Automatic,
+            },
+        )
+        .expect("request target reference inline authority");
+    assert!(matches!(
+        endpoint.hot_inline,
+        Some(HotInlineState::AwaitingReferenceResolver(_))
+    ));
+    let (begin, ack) = deliver_hot_inline_sidecar_to_independent_host_with_unit_fuel(
+        &mut endpoint,
+        &mut runtime,
+        &mut host,
+        41_000,
+    );
+    assert!(matches!(
+        begin.envelope.disposition,
+        HotInlineSidecarDisposition::Authoritative { fact_count: 1, .. }
+    ));
+    assert_eq!(ack.disposition, InlineSidecarAckDisposition::Authoritative);
+
+    let mut encoded = [0_u8; 128];
+    let HostInlineSidecarQueryOutcome::Authoritative {
+        fact_count,
+        value_entry_count,
+        encoded_bytes,
+        ..
+    } = host
+        .query_inline_sidecar(begin.binding, &mut encoded)
+        .expect("query target reference sidecar")
+    else {
+        panic!("the newly defined target reference must resolve authoritatively")
+    };
+    assert_eq!(fact_count, 1);
+    assert_eq!(value_entry_count, 1);
+    let values = &encoded[M11_INLINE_FACT_RECORD_BYTES..encoded_bytes as usize];
+    let entry = &values[16..];
+    assert_eq!(
+        u32::from_le_bytes(entry[8..12].try_into().unwrap()),
+        u32::try_from(BASE_SOURCE.find("/new").expect("target destination")).unwrap()
+    );
+    assert_eq!(&entry[32..36], b"/new");
 
     close_exact_pair_to_zero(&mut endpoint, &mut runtime, &mut host);
 }
@@ -10249,7 +10305,7 @@ fn one_acknowledged_base_survives_rejection_replaces_without_a_chain_and_closes(
                 match body {
                     CandidateEventBody::Begin(_) => fixture
                         .endpoint
-                        .accept_credit(credit, event_id)
+                        .accept_credit(&fixture.runtime, credit, event_id)
                         .expect("accept rejected target Begin credit"),
                     CandidateEventBody::Packet { encoded } => {
                         let packet = decode_publication_packet(&encoded)
@@ -10258,7 +10314,7 @@ fn one_acknowledged_base_survives_rejection_replaces_without_a_chain_and_closes(
                         let offer_id = packet.offer_id;
                         fixture
                             .endpoint
-                            .accept_credit(credit, event_id)
+                            .accept_credit(&fixture.runtime, credit, event_id)
                             .expect("accept rejected target Packet credit");
                         assert!(fixture
                             .endpoint
@@ -10581,6 +10637,7 @@ fn packet_credit_requires_exact_frame_range_and_host_cursor() {
 
     assert!(matches!(
         endpoint.accept_credit(
+            &runtime,
             CandidateCredit::Packet {
                 first_frame_ordinal: 4,
                 frame_count: 2,
@@ -10592,6 +10649,7 @@ fn packet_credit_requires_exact_frame_range_and_host_cursor() {
     ));
     endpoint
         .accept_credit(
+            &runtime,
             CandidateCredit::Packet {
                 first_frame_ordinal: 4,
                 frame_count: 3,

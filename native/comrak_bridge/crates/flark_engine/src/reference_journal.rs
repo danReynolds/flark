@@ -15,16 +15,20 @@ use crate::candidate_manifest::{
 };
 use crate::document::{DocumentRuntime, DocumentRuntimeError};
 use crate::reference_root::{
-    AuthoritativeReferenceFact, AuthoritativeReferenceFactStart, ReferenceBuildPoll,
-    ReferenceRootBuilder, ReferenceRootError, ReferenceRootLimits, ReferenceSourceRange,
-    ReferenceSubtreeRoot, ReferenceWinnerIndex, ReferenceWinnerIndexJournal,
-    ReferenceWinnerIndexReclaimer, StreamedReferenceValueKind,
+    AuthoritativeReferenceFact, AuthoritativeReferenceFactStart, DetachedReferenceOccurrence,
+    PersistentBytesCopyCursor, ReferenceBuildPoll, ReferenceOccurrenceCursor,
+    ReferenceOccurrenceCursorPoll, ReferenceRootBuilder, ReferenceRootError, ReferenceRootLimits,
+    ReferenceRootView, ReferenceSourceRange, ReferenceSubtreeRoot, ReferenceWinnerIndex,
+    ReferenceWinnerIndexJournal, ReferenceWinnerIndexReclaimer, StreamedReferenceValueKind,
+    BLOB_CHUNK_BYTES,
 };
 use crate::storage::{
     ArenaBuildOwner, ArenaBuildSession, ArenaError, CandidateBuild, CandidateSeal,
     CommittedArenaRoot,
 };
-use crate::{CandidateGeneration, ExactUnchangedPrefixWitness, SourceVersion};
+use crate::{
+    CandidateGeneration, ExactUnchangedPrefixWitness, ExactUnchangedSuffixWitness, SourceVersion,
+};
 
 const JOURNAL_ANCHOR: [u8; 4] = [0xe0, 1, 0, 0];
 
@@ -822,6 +826,738 @@ impl M11ReferenceJournalReclaimPoll {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum M11ReferenceJournalRangeReplacementPhase {
+    RetainingBase,
+    OpeningBase,
+    ReplayingPrefix,
+    AcceptingReplacement,
+    ReplayingSuffix,
+    Finishing,
+    Complete,
+    Cancelled,
+    Failed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum M11ReferenceJournalRangeReplacementStatus {
+    Pending,
+    NeedsReplacementInput,
+    Complete,
+    Cancelled,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct M11ReferenceJournalRangeReplacementPoll {
+    status: M11ReferenceJournalRangeReplacementStatus,
+    transitions: usize,
+}
+
+impl M11ReferenceJournalRangeReplacementPoll {
+    #[must_use]
+    pub const fn status(self) -> M11ReferenceJournalRangeReplacementStatus {
+        self.status
+    }
+
+    #[must_use]
+    pub const fn transitions(self) -> usize {
+        self.transitions
+    }
+}
+
+#[derive(Clone, Copy)]
+struct M11ReferenceJournalSuffixTranslation {
+    base_byte_start: u64,
+    base_utf16_start: u64,
+    target_byte_start: u64,
+    target_utf16_start: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum M11ReferenceReplayOccurrencePhase {
+    Label,
+    BeginJournal,
+    Destination,
+    Title,
+    DrainJournal,
+    Complete,
+}
+
+struct M11ReferenceReplayOccurrence {
+    source: M11ReferenceJournalRange,
+    label_source: M11ReferenceJournalRange,
+    destination_source: M11ReferenceJournalRange,
+    title_source: Option<M11ReferenceJournalRange>,
+    normalized_label_cursor: PersistentBytesCopyCursor,
+    normalized_label: Vec<u8>,
+    cooked_destination: PersistentBytesCopyCursor,
+    cooked_title: Option<PersistentBytesCopyCursor>,
+    phase: M11ReferenceReplayOccurrencePhase,
+}
+
+impl M11ReferenceReplayOccurrence {
+    fn new(
+        occurrence: DetachedReferenceOccurrence,
+        translation: Option<M11ReferenceJournalSuffixTranslation>,
+    ) -> Result<Self, M11ReferenceJournalError> {
+        let DetachedReferenceOccurrence {
+            ordinal: _,
+            source,
+            label_source,
+            destination_source,
+            title_source,
+            normalized_label,
+            cooked_destination,
+            cooked_title,
+        } = occurrence;
+        let translate = |range: ReferenceSourceRange| match translation {
+            Some(translation) => translate_reference_range(range, translation),
+            None => Ok(M11ReferenceJournalRange::new(range.bytes, range.utf16)),
+        };
+        let mut normalized_label_bytes = Vec::new();
+        let label_len = usize::try_from(normalized_label.len())
+            .map_err(|_| M11ReferenceJournalError(ErrorInner::InvalidState))?;
+        normalized_label_bytes
+            .try_reserve_exact(label_len)
+            .map_err(|_| {
+                M11ReferenceJournalError(ErrorInner::Arena(ArenaError::AllocationFailed))
+            })?;
+        Ok(Self {
+            source: translate(source)?,
+            label_source: translate(label_source)?,
+            destination_source: translate(destination_source)?,
+            title_source: title_source.map(translate).transpose()?,
+            normalized_label_cursor: normalized_label,
+            normalized_label: normalized_label_bytes,
+            cooked_destination,
+            cooked_title,
+            phase: M11ReferenceReplayOccurrencePhase::Label,
+        })
+    }
+
+    fn poll_one(
+        &mut self,
+        journal: &mut M11ReferenceJournal,
+        runtime: &mut DocumentRuntime,
+    ) -> Result<(), M11ReferenceJournalError> {
+        match self.phase {
+            M11ReferenceReplayOccurrencePhase::Label => {
+                if self.normalized_label_cursor.complete() {
+                    self.phase = M11ReferenceReplayOccurrencePhase::BeginJournal;
+                    return Ok(());
+                }
+                let mut chunk = [0_u8; BLOB_CHUNK_BYTES];
+                let polled = self.normalized_label_cursor.poll_copy(
+                    runtime.producer_arena(),
+                    &mut chunk,
+                    1,
+                )?;
+                self.normalized_label
+                    .extend_from_slice(&chunk[..polled.written]);
+            }
+            M11ReferenceReplayOccurrencePhase::BeginJournal => {
+                if !journal.is_idle() {
+                    let _ = journal.poll(runtime, 1)?;
+                    return Ok(());
+                }
+                let destination_len = usize::try_from(self.cooked_destination.len())
+                    .map_err(|_| M11ReferenceJournalError(ErrorInner::InvalidState))?;
+                let title_len = self
+                    .cooked_title
+                    .as_ref()
+                    .map(PersistentBytesCopyCursor::len)
+                    .map(usize::try_from)
+                    .transpose()
+                    .map_err(|_| M11ReferenceJournalError(ErrorInner::InvalidState))?;
+                journal.begin_occurrence_stream(
+                    runtime,
+                    M11ReferenceJournalOccurrenceStart::new(
+                        self.source.clone(),
+                        self.label_source.clone(),
+                        self.destination_source.clone(),
+                        self.title_source.clone(),
+                        std::mem::take(&mut self.normalized_label).into_boxed_slice(),
+                        destination_len,
+                        title_len,
+                    ),
+                )?;
+                self.phase = M11ReferenceReplayOccurrencePhase::Destination;
+            }
+            M11ReferenceReplayOccurrencePhase::Destination => {
+                if self.cooked_destination.complete() {
+                    self.phase = if self.cooked_title.is_some() {
+                        M11ReferenceReplayOccurrencePhase::Title
+                    } else {
+                        M11ReferenceReplayOccurrencePhase::DrainJournal
+                    };
+                    return Ok(());
+                }
+                replay_value_chunk(
+                    &mut self.cooked_destination,
+                    M11ReferenceJournalValueKind::Destination,
+                    journal,
+                    runtime,
+                )?;
+            }
+            M11ReferenceReplayOccurrencePhase::Title => {
+                let title = self
+                    .cooked_title
+                    .as_mut()
+                    .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?;
+                if title.complete() {
+                    self.phase = M11ReferenceReplayOccurrencePhase::DrainJournal;
+                    return Ok(());
+                }
+                replay_value_chunk(title, M11ReferenceJournalValueKind::Title, journal, runtime)?;
+            }
+            M11ReferenceReplayOccurrencePhase::DrainJournal => {
+                if journal.is_idle() {
+                    self.phase = M11ReferenceReplayOccurrencePhase::Complete;
+                } else {
+                    let _ = journal.poll(runtime, 1)?;
+                }
+            }
+            M11ReferenceReplayOccurrencePhase::Complete => {}
+        }
+        Ok(())
+    }
+}
+
+fn replay_value_chunk(
+    value: &mut PersistentBytesCopyCursor,
+    kind: M11ReferenceJournalValueKind,
+    journal: &mut M11ReferenceJournal,
+    runtime: &mut DocumentRuntime,
+) -> Result<(), M11ReferenceJournalError> {
+    let capacity = journal.stream_capacity(kind)?;
+    if capacity == 0 {
+        let _ = journal.poll(runtime, 1)?;
+        return Ok(());
+    }
+    let mut chunk = [0_u8; BLOB_CHUNK_BYTES];
+    let permitted = capacity.min(chunk.len());
+    let polled = value.poll_copy(runtime.producer_arena(), &mut chunk[..permitted], 1)?;
+    if polled.written != 0 {
+        let consumed = journal.offer_stream_bytes(kind, &chunk[..polled.written])?;
+        if consumed != polled.written {
+            return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
+        }
+    }
+    Ok(())
+}
+
+fn translate_reference_coordinate(
+    value: u64,
+    base_start: u64,
+    target_start: u64,
+) -> Result<u64, M11ReferenceJournalError> {
+    if value < base_start {
+        return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
+    }
+    let relative = value - base_start;
+    target_start
+        .checked_add(relative)
+        .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))
+}
+
+fn translate_reference_range(
+    range: ReferenceSourceRange,
+    translation: M11ReferenceJournalSuffixTranslation,
+) -> Result<M11ReferenceJournalRange, M11ReferenceJournalError> {
+    Ok(M11ReferenceJournalRange::new(
+        translate_reference_coordinate(
+            range.bytes.start,
+            translation.base_byte_start,
+            translation.target_byte_start,
+        )?
+            ..translate_reference_coordinate(
+                range.bytes.end,
+                translation.base_byte_start,
+                translation.target_byte_start,
+            )?,
+        translate_reference_coordinate(
+            range.utf16.start,
+            translation.base_utf16_start,
+            translation.target_utf16_start,
+        )?
+            ..translate_reference_coordinate(
+                range.utf16.end,
+                translation.base_utf16_start,
+                translation.target_utf16_start,
+            )?,
+    ))
+}
+
+/// Fuelled replacement of one parser-owned source crop in a committed
+/// References journal.
+///
+/// The actor retains the immutable base root, copies the exact unchanged
+/// prefix into a fresh target journal, temporarily lends that journal to the
+/// parser for replacement occurrences, then translates and copies the exact
+/// unchanged suffix. The canonical root and first-winner index are rebuilt by
+/// the ordinary journal; no second recognition or normalization path exists.
+#[must_use = "reference range replacement requires root transfer or explicit cancellation"]
+pub struct M11ReferenceJournalRangeReplacement {
+    runtime_identity: StrongIdentity,
+    base_source: SourceVersion,
+    target: SourceVersion,
+    base_authority: CandidateAuthority,
+    base_count: u64,
+    prefix_byte_end: u64,
+    prefix_utf16_end: u64,
+    phase: M11ReferenceJournalRangeReplacementPhase,
+    base_retain_seal: Option<CandidateSeal>,
+    base_root: Option<CommittedArenaRoot>,
+    cursor: Option<ReferenceOccurrenceCursor>,
+    buffered_base: Option<DetachedReferenceOccurrence>,
+    active_replay: Option<M11ReferenceReplayOccurrence>,
+    suffix: Option<M11ReferenceJournalSuffixTranslation>,
+    journal: Option<M11ReferenceJournal>,
+    output: Option<M11ReferenceJournalRoot>,
+    cancel_output: Option<M11ReferenceJournalRoot>,
+    journal_cancel_complete: bool,
+    output_release_complete: bool,
+}
+
+impl M11ReferenceJournalRangeReplacement {
+    pub fn poll(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+        fuel: usize,
+    ) -> Result<M11ReferenceJournalRangeReplacementPoll, M11ReferenceJournalError> {
+        self.ensure_target(runtime)?;
+        if fuel == 0 {
+            return Err(M11ReferenceJournalError(ErrorInner::ZeroFuel));
+        }
+        let mut transitions = 0;
+        while transitions < fuel
+            && !matches!(
+                self.phase,
+                M11ReferenceJournalRangeReplacementPhase::AcceptingReplacement
+                    | M11ReferenceJournalRangeReplacementPhase::Complete
+                    | M11ReferenceJournalRangeReplacementPhase::Cancelled
+            )
+        {
+            self.poll_one(runtime)?;
+            transitions += 1;
+        }
+        Ok(M11ReferenceJournalRangeReplacementPoll {
+            status: match self.phase {
+                M11ReferenceJournalRangeReplacementPhase::AcceptingReplacement => {
+                    M11ReferenceJournalRangeReplacementStatus::NeedsReplacementInput
+                }
+                M11ReferenceJournalRangeReplacementPhase::Complete => {
+                    M11ReferenceJournalRangeReplacementStatus::Complete
+                }
+                M11ReferenceJournalRangeReplacementPhase::Cancelled => {
+                    M11ReferenceJournalRangeReplacementStatus::Cancelled
+                }
+                _ => M11ReferenceJournalRangeReplacementStatus::Pending,
+            },
+            transitions,
+        })
+    }
+
+    /// Borrows the fresh target journal while the parser owns the replacement
+    /// crop. The existing reference rendezvous may use its normal streaming
+    /// API; this actor performs no recognition or cooking of replacement
+    /// occurrences.
+    pub fn replacement_journal_mut(
+        &mut self,
+    ) -> Result<&mut M11ReferenceJournal, M11ReferenceJournalError> {
+        if self.phase != M11ReferenceJournalRangeReplacementPhase::AcceptingReplacement {
+            return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
+        }
+        self.journal
+            .as_mut()
+            .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))
+    }
+
+    /// Closes parser input and selects the exact unchanged base suffix.
+    /// `None` is valid only for a replacement reaching EOF in both revisions.
+    pub fn finish_replacement(
+        &mut self,
+        runtime: &DocumentRuntime,
+        suffix: Option<ExactUnchangedSuffixWitness>,
+    ) -> Result<(), M11ReferenceJournalError> {
+        self.ensure_target(runtime)?;
+        if self.phase != M11ReferenceJournalRangeReplacementPhase::AcceptingReplacement
+            || !self
+                .journal
+                .as_ref()
+                .is_some_and(M11ReferenceJournal::is_idle)
+        {
+            return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
+        }
+        let translation = if let Some(suffix) = suffix {
+            let suffix = runtime.take_exact_unchanged_suffix_witness(suffix)?;
+            if suffix.base() != self.base_source
+                || suffix.target() != self.target
+                || suffix.base_byte_start() < self.prefix_byte_end as usize
+                || suffix.base_utf16_start() < self.prefix_utf16_end as usize
+                || suffix.target_byte_start() < self.prefix_byte_end as usize
+                || suffix.target_utf16_start() < self.prefix_utf16_end as usize
+            {
+                return Err(M11ReferenceJournalError(
+                    ErrorInner::SourceAuthorityMismatch,
+                ));
+            }
+            M11ReferenceJournalSuffixTranslation {
+                base_byte_start: u64::try_from(suffix.base_byte_start())
+                    .map_err(|_| M11ReferenceJournalError(ErrorInner::InvalidState))?,
+                base_utf16_start: u64::try_from(suffix.base_utf16_start())
+                    .map_err(|_| M11ReferenceJournalError(ErrorInner::InvalidState))?,
+                target_byte_start: u64::try_from(suffix.target_byte_start())
+                    .map_err(|_| M11ReferenceJournalError(ErrorInner::InvalidState))?,
+                target_utf16_start: u64::try_from(suffix.target_utf16_start())
+                    .map_err(|_| M11ReferenceJournalError(ErrorInner::InvalidState))?,
+            }
+        } else {
+            M11ReferenceJournalSuffixTranslation {
+                base_byte_start: u64::try_from(self.base_source.byte_len())
+                    .map_err(|_| M11ReferenceJournalError(ErrorInner::InvalidState))?,
+                base_utf16_start: u64::try_from(self.base_source.utf16_len())
+                    .map_err(|_| M11ReferenceJournalError(ErrorInner::InvalidState))?,
+                target_byte_start: u64::try_from(self.target.byte_len())
+                    .map_err(|_| M11ReferenceJournalError(ErrorInner::InvalidState))?,
+                target_utf16_start: u64::try_from(self.target.utf16_len())
+                    .map_err(|_| M11ReferenceJournalError(ErrorInner::InvalidState))?,
+            }
+        };
+        if translation.base_byte_start < self.prefix_byte_end
+            || translation.base_utf16_start < self.prefix_utf16_end
+        {
+            return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
+        }
+        let journal = self
+            .journal
+            .as_ref()
+            .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?;
+        if journal.last_source_byte_end > translation.target_byte_start
+            || journal.last_source_utf16_end > translation.target_utf16_start
+        {
+            return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
+        }
+        self.suffix = Some(translation);
+        self.phase = M11ReferenceJournalRangeReplacementPhase::ReplayingSuffix;
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn take_root(&mut self) -> Option<M11ReferenceJournalRoot> {
+        (self.phase == M11ReferenceJournalRangeReplacementPhase::Complete)
+            .then(|| self.output.take())
+            .flatten()
+    }
+
+    pub fn begin_cancel(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+    ) -> Result<(), M11ReferenceJournalError> {
+        if runtime.producer_identity() != self.runtime_identity {
+            return Err(M11ReferenceJournalError(ErrorInner::WrongRuntime));
+        }
+        if self.phase == M11ReferenceJournalRangeReplacementPhase::Cancelled {
+            return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
+        }
+        if let Some(mut output) = self.output.take() {
+            output.begin_release(runtime)?;
+            self.cancel_output = Some(output);
+            self.output_release_complete = false;
+        }
+        if let Some(seal) = self.base_retain_seal.take() {
+            runtime.producer_arena_mut().abort_seal(seal)?;
+        }
+        if let Some(root) = self.base_root.take() {
+            match runtime.producer_arena_mut().release_committed_root(root) {
+                Ok(()) => {}
+                Err(failure) => {
+                    self.base_root = Some(failure.root);
+                    return Err(failure.error.into());
+                }
+            }
+        }
+        self.journal
+            .as_mut()
+            .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?
+            .begin_cancel(runtime)?;
+        self.journal_cancel_complete = false;
+        self.cursor = None;
+        self.buffered_base = None;
+        self.active_replay = None;
+        self.phase = M11ReferenceJournalRangeReplacementPhase::Cancelled;
+        Ok(())
+    }
+
+    pub fn poll_cancel(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+        fuel: usize,
+    ) -> Result<M11ReferenceJournalReclaimPoll, M11ReferenceJournalError> {
+        if runtime.producer_identity() != self.runtime_identity {
+            return Err(M11ReferenceJournalError(ErrorInner::WrongRuntime));
+        }
+        if self.phase != M11ReferenceJournalRangeReplacementPhase::Cancelled || fuel == 0 {
+            return Err(M11ReferenceJournalError(if fuel == 0 {
+                ErrorInner::ZeroFuel
+            } else {
+                ErrorInner::InvalidState
+            }));
+        }
+        let mut transitions = 0;
+        if !self.journal_cancel_complete {
+            let polled = self
+                .journal
+                .as_mut()
+                .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?
+                .poll_cancel(runtime, fuel)?;
+            transitions += polled.transitions();
+            self.journal_cancel_complete = polled.complete();
+        }
+        if transitions < fuel && !self.output_release_complete {
+            let polled = self
+                .cancel_output
+                .as_mut()
+                .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?
+                .poll_release(runtime, fuel - transitions)?;
+            transitions += polled.transitions();
+            self.output_release_complete = polled.complete();
+            if self.output_release_complete {
+                self.cancel_output = None;
+            }
+        }
+        if transitions < fuel {
+            let polled = runtime
+                .producer_arena_mut()
+                .poll_reclaim(fuel - transitions);
+            transitions += polled.transitions;
+        }
+        let metrics = runtime.arena_metrics();
+        Ok(M11ReferenceJournalReclaimPoll {
+            transitions,
+            complete: self.journal_cancel_complete
+                && self.output_release_complete
+                && self.base_retain_seal.is_none()
+                && self.base_root.is_none()
+                && metrics.pending_build_aborts == 0
+                && metrics.pending_reclaims == 0,
+        })
+    }
+
+    fn poll_one(&mut self, runtime: &mut DocumentRuntime) -> Result<(), M11ReferenceJournalError> {
+        let result = (|| match self.phase {
+            M11ReferenceJournalRangeReplacementPhase::RetainingBase => {
+                let polled = runtime.producer_arena_mut().poll_seal(
+                    self.base_retain_seal
+                        .as_mut()
+                        .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?,
+                    1,
+                )?;
+                if let Some(root) = polled.root {
+                    self.base_retain_seal = None;
+                    self.base_root = Some(root);
+                    self.phase = M11ReferenceJournalRangeReplacementPhase::OpeningBase;
+                }
+                Ok(())
+            }
+            M11ReferenceJournalRangeReplacementPhase::OpeningBase => {
+                let root = self
+                    .base_root
+                    .as_ref()
+                    .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?;
+                let view = ReferenceRootView::open(
+                    runtime.producer_arena(),
+                    self.base_authority,
+                    root.id(),
+                )?;
+                if view.count() != self.base_count {
+                    return self.fail(M11ReferenceJournalError(ErrorInner::InvalidState));
+                }
+                self.cursor = Some(view.occurrences());
+                self.phase = M11ReferenceJournalRangeReplacementPhase::ReplayingPrefix;
+                Ok(())
+            }
+            M11ReferenceJournalRangeReplacementPhase::ReplayingPrefix => {
+                self.poll_prefix_one(runtime)
+            }
+            M11ReferenceJournalRangeReplacementPhase::ReplayingSuffix => {
+                self.poll_suffix_one(runtime)
+            }
+            M11ReferenceJournalRangeReplacementPhase::Finishing => {
+                let journal = self
+                    .journal
+                    .as_mut()
+                    .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?;
+                let polled = journal.poll(runtime, 1)?;
+                if polled.status() == M11ReferenceJournalStatus::Complete {
+                    let output = journal
+                        .take_root()
+                        .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?;
+                    // Install the move-only target authority before releasing
+                    // the replay retain so even an arena queue failure leaves
+                    // cancellation with every owner reachable.
+                    self.output = Some(output);
+                    if let Some(root) = self.base_root.take() {
+                        match runtime.producer_arena_mut().release_committed_root(root) {
+                            Ok(()) => {}
+                            Err(failure) => {
+                                self.base_root = Some(failure.root);
+                                return self.fail(failure.error.into());
+                            }
+                        }
+                    }
+                    self.cursor = None;
+                    self.phase = M11ReferenceJournalRangeReplacementPhase::Complete;
+                }
+                Ok(())
+            }
+            M11ReferenceJournalRangeReplacementPhase::AcceptingReplacement
+            | M11ReferenceJournalRangeReplacementPhase::Complete
+            | M11ReferenceJournalRangeReplacementPhase::Cancelled => Ok(()),
+            M11ReferenceJournalRangeReplacementPhase::Failed => {
+                Err(M11ReferenceJournalError(ErrorInner::InvalidState))
+            }
+        })();
+        if let Err(error) = result {
+            self.phase = M11ReferenceJournalRangeReplacementPhase::Failed;
+            Err(error)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn poll_prefix_one(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+    ) -> Result<(), M11ReferenceJournalError> {
+        if self.poll_active_replay(runtime)? {
+            return Ok(());
+        }
+        if let Some(occurrence) = self.buffered_base.take() {
+            let in_prefix = occurrence.source.bytes.end <= self.prefix_byte_end
+                && occurrence.source.utf16.end <= self.prefix_utf16_end;
+            if in_prefix {
+                self.active_replay = Some(M11ReferenceReplayOccurrence::new(occurrence, None)?);
+            } else {
+                self.buffered_base = Some(occurrence);
+                self.phase = M11ReferenceJournalRangeReplacementPhase::AcceptingReplacement;
+            }
+            return Ok(());
+        }
+        match self
+            .cursor
+            .as_mut()
+            .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?
+            .poll_next(runtime.producer_arena(), 1)?
+        {
+            ReferenceOccurrenceCursorPoll::Pending { .. } => {}
+            ReferenceOccurrenceCursorPoll::Occurrence { occurrence, .. } => {
+                self.buffered_base = Some(occurrence)
+            }
+            ReferenceOccurrenceCursorPoll::Complete { .. } => {
+                self.phase = M11ReferenceJournalRangeReplacementPhase::AcceptingReplacement
+            }
+        }
+        Ok(())
+    }
+
+    fn poll_suffix_one(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+    ) -> Result<(), M11ReferenceJournalError> {
+        if self.poll_active_replay(runtime)? {
+            return Ok(());
+        }
+        let suffix = self
+            .suffix
+            .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?;
+        if let Some(occurrence) = self.buffered_base.take() {
+            if occurrence.source.bytes.start >= suffix.base_byte_start
+                && occurrence.source.utf16.start >= suffix.base_utf16_start
+            {
+                self.active_replay =
+                    Some(M11ReferenceReplayOccurrence::new(occurrence, Some(suffix))?);
+            }
+            return Ok(());
+        }
+        match self
+            .cursor
+            .as_mut()
+            .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?
+            .poll_next(runtime.producer_arena(), 1)?
+        {
+            ReferenceOccurrenceCursorPoll::Pending { .. } => {}
+            ReferenceOccurrenceCursorPoll::Occurrence { occurrence, .. } => {
+                self.buffered_base = Some(occurrence)
+            }
+            ReferenceOccurrenceCursorPoll::Complete { .. } => {
+                let journal = self
+                    .journal
+                    .as_mut()
+                    .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?;
+                if !journal.is_idle() {
+                    let _ = journal.poll(runtime, 1)?;
+                } else {
+                    journal.finish_input(runtime)?;
+                    self.phase = M11ReferenceJournalRangeReplacementPhase::Finishing;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns true when this transition belonged to an active replay.
+    fn poll_active_replay(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+    ) -> Result<bool, M11ReferenceJournalError> {
+        let Some(active) = self.active_replay.as_mut() else {
+            return Ok(false);
+        };
+        active.poll_one(
+            self.journal
+                .as_mut()
+                .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?,
+            runtime,
+        )?;
+        if active.phase == M11ReferenceReplayOccurrencePhase::Complete {
+            self.active_replay = None;
+        }
+        Ok(true)
+    }
+
+    fn ensure_target(&self, runtime: &DocumentRuntime) -> Result<(), M11ReferenceJournalError> {
+        if runtime.producer_identity() != self.runtime_identity {
+            return Err(M11ReferenceJournalError(ErrorInner::WrongRuntime));
+        }
+        if runtime.current_source_version() != Some(self.target) {
+            return Err(M11ReferenceJournalError(
+                ErrorInner::SourceAuthorityMismatch,
+            ));
+        }
+        Ok(())
+    }
+
+    fn fail<T>(&mut self, error: M11ReferenceJournalError) -> Result<T, M11ReferenceJournalError> {
+        self.phase = M11ReferenceJournalRangeReplacementPhase::Failed;
+        Err(error)
+    }
+}
+
+impl Drop for M11ReferenceJournalRangeReplacement {
+    fn drop(&mut self) {
+        if !std::thread::panicking() {
+            assert!(
+                self.base_retain_seal.is_none()
+                    && self.base_root.is_none()
+                    && self.output.is_none()
+                    && self.cancel_output.is_none(),
+                "reference range replacement requires root transfer or fuelled cancellation"
+            );
+        }
+    }
+}
+
 /// Committed canonical occurrence root plus its exact first-winner authority.
 #[must_use = "reference roots require explicit release or publication transfer"]
 pub struct M11ReferenceJournalRoot {
@@ -928,6 +1664,102 @@ impl M11ReferenceJournalRoot {
                 .id(),
         )?;
         Ok((owner, self.metadata))
+    }
+
+    /// Begins a parser-owned range replacement in the current target source.
+    /// The supplied prefix boundary is the parser restart cut. A nonzero cut
+    /// requires a move-only exact-prefix witness at identical byte and UTF-16
+    /// coordinates; BOF requires no witness.
+    #[doc(hidden)]
+    pub fn begin_range_replacement(
+        &self,
+        runtime: &mut DocumentRuntime,
+        base_prefix_byte_end: usize,
+        base_prefix_utf16_end: usize,
+        prefix: Option<ExactUnchangedPrefixWitness>,
+    ) -> Result<M11ReferenceJournalRangeReplacement, M11ReferenceJournalError> {
+        self.ensure_live(runtime)?;
+        let target = runtime
+            .current_source_version()
+            .ok_or(M11ReferenceJournalError(
+                ErrorInner::SourceAuthorityMismatch,
+            ))?;
+        if target == self.source
+            || base_prefix_byte_end > self.source.byte_len()
+            || base_prefix_utf16_end > self.source.utf16_len()
+        {
+            return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
+        }
+        if base_prefix_byte_end == 0 && base_prefix_utf16_end == 0 {
+            if prefix.is_some() {
+                return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
+            }
+        } else {
+            let prefix = runtime.take_exact_unchanged_prefix_witness(prefix.ok_or(
+                M11ReferenceJournalError(ErrorInner::SourceAuthorityMismatch),
+            )?)?;
+            if prefix.base() != self.source
+                || prefix.target() != target
+                || prefix.byte_end() != base_prefix_byte_end
+                || prefix.utf16_end() != base_prefix_utf16_end
+            {
+                return Err(M11ReferenceJournalError(
+                    ErrorInner::SourceAuthorityMismatch,
+                ));
+            }
+        }
+        let prefix_byte_end = u64::try_from(base_prefix_byte_end)
+            .map_err(|_| M11ReferenceJournalError(ErrorInner::InvalidState))?;
+        let prefix_utf16_end = u64::try_from(base_prefix_utf16_end)
+            .map_err(|_| M11ReferenceJournalError(ErrorInner::InvalidState))?;
+
+        let root_id = self
+            .root
+            .as_ref()
+            .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?
+            .id();
+        let (build, retained) = {
+            let mut session = runtime.producer_arena_mut().begin_build()?;
+            let retained = session.retain(root_id)?;
+            (session.suspend()?, retained)
+        };
+        let seal = match runtime.producer_arena_mut().begin_seal(build, retained) {
+            Ok(seal) => seal,
+            Err(failure) => {
+                let _ = failure.root;
+                runtime.producer_arena_mut().abort_build(failure.build)?;
+                return Err(failure.error.into());
+            }
+        };
+        let journal = match M11ReferenceJournal::new(runtime, target, self.authority.syntax_profile)
+        {
+            Ok(journal) => journal,
+            Err(error) => {
+                runtime.producer_arena_mut().abort_seal(seal)?;
+                return Err(error);
+            }
+        };
+        Ok(M11ReferenceJournalRangeReplacement {
+            runtime_identity: self.runtime_identity,
+            base_source: self.source,
+            target,
+            base_authority: self.authority,
+            base_count: self.metadata.record_count,
+            prefix_byte_end,
+            prefix_utf16_end,
+            phase: M11ReferenceJournalRangeReplacementPhase::RetainingBase,
+            base_retain_seal: Some(seal),
+            base_root: None,
+            cursor: None,
+            buffered_base: None,
+            active_replay: None,
+            suffix: None,
+            journal: Some(journal),
+            output: None,
+            cancel_output: None,
+            journal_cancel_complete: false,
+            output_release_complete: true,
+        })
     }
 
     pub fn begin_release(
@@ -1354,6 +2186,260 @@ mod tests {
             }
             assert_eq!(polled.status(), M11ReferenceJournalStatus::Pending);
         }
+    }
+
+    fn finish_journal(
+        journal: &mut M11ReferenceJournal,
+        runtime: &mut DocumentRuntime,
+    ) -> M11ReferenceJournalRoot {
+        journal.finish_input(runtime).expect("finish input");
+        loop {
+            let polled = journal.poll(runtime, 64).expect("finish journal");
+            if polled.status() == M11ReferenceJournalStatus::Complete {
+                return journal.take_root().expect("journal root");
+            }
+            assert_eq!(polled.status(), M11ReferenceJournalStatus::Pending);
+        }
+    }
+
+    fn release_root(runtime: &mut DocumentRuntime, root: &mut M11ReferenceJournalRoot) {
+        root.begin_release(runtime).expect("begin root release");
+        while !root
+            .poll_release(runtime, 64)
+            .expect("poll root release")
+            .complete()
+        {}
+    }
+
+    fn offer_ascii_occurrence(
+        journal: &mut M11ReferenceJournal,
+        runtime: &mut DocumentRuntime,
+        source: Range<u64>,
+        label_source: Range<u64>,
+        destination_source: Range<u64>,
+        label: &[u8],
+        destination: &[u8],
+    ) {
+        journal
+            .offer_occurrence(
+                runtime,
+                M11ReferenceJournalOccurrence::new(
+                    M11ReferenceJournalRange::new(source.clone(), source),
+                    M11ReferenceJournalRange::new(label_source.clone(), label_source),
+                    M11ReferenceJournalRange::new(destination_source.clone(), destination_source),
+                    None,
+                    label,
+                    destination,
+                    None,
+                ),
+            )
+            .expect("offer occurrence");
+        settle_input(journal, runtime);
+    }
+
+    #[test]
+    fn range_replacement_streams_shifted_suffix_and_matches_clean_target() {
+        let large_tail = "x".repeat(BLOB_CHUNK_BYTES * 2 + 17);
+        let base_text = format!("[a]: /old\n[b]: /{large_tail}\n");
+        let first_end = "[a]: /old".len();
+        let second_start = first_end + 1;
+        let second_end = base_text.len() - 1;
+        let second_destination_start = second_start + "[b]: ".len();
+        let second_destination = &base_text.as_bytes()[second_destination_start..second_end];
+
+        let mut runtime =
+            DocumentRuntime::new(&base_text, DocumentRuntimeConfig::default()).expect("runtime");
+        let base_source = runtime.current_source_version().expect("base source");
+        let mut base_journal =
+            M11ReferenceJournal::new(&mut runtime, base_source, 1).expect("base journal");
+        offer_ascii_occurrence(
+            &mut base_journal,
+            &mut runtime,
+            0..first_end as u64,
+            1..2,
+            5..first_end as u64,
+            b"a",
+            b"/old",
+        );
+        offer_ascii_occurrence(
+            &mut base_journal,
+            &mut runtime,
+            second_start as u64..second_end as u64,
+            (second_start + 1) as u64..(second_start + 2) as u64,
+            second_destination_start as u64..second_end as u64,
+            b"b",
+            second_destination,
+        );
+        let mut base_root = finish_journal(&mut base_journal, &mut runtime);
+
+        runtime
+            .apply_edit(base_source, 5..first_end, "/new-target")
+            .expect("edit first definition");
+        let suffix = runtime
+            .mint_exact_unchanged_suffix_witness(base_source, second_start, second_start)
+            .expect("exact second-definition suffix");
+        let target_source = runtime.current_source_version().expect("target source");
+        let target_text = format!("[a]: /new-target\n[b]: /{large_tail}\n");
+        assert_eq!(target_source.byte_len(), target_text.len());
+
+        let mut replacement = base_root
+            .begin_range_replacement(&mut runtime, 0, 0, None)
+            .expect("begin range replacement");
+        loop {
+            let polled = replacement
+                .poll(&mut runtime, 64)
+                .expect("replay base prefix");
+            if polled.status() == M11ReferenceJournalRangeReplacementStatus::NeedsReplacementInput {
+                break;
+            }
+            assert_eq!(
+                polled.status(),
+                M11ReferenceJournalRangeReplacementStatus::Pending
+            );
+        }
+        let target_first_end = "[a]: /new-target".len();
+        offer_ascii_occurrence(
+            replacement
+                .replacement_journal_mut()
+                .expect("replacement journal"),
+            &mut runtime,
+            0..target_first_end as u64,
+            1..2,
+            5..target_first_end as u64,
+            b"a",
+            b"/new-target",
+        );
+        replacement
+            .finish_replacement(&runtime, Some(suffix))
+            .expect("finish replacement input");
+        loop {
+            let polled = replacement
+                .poll(&mut runtime, 64)
+                .expect("finish range replacement");
+            if polled.status() == M11ReferenceJournalRangeReplacementStatus::Complete {
+                break;
+            }
+            assert_eq!(
+                polled.status(),
+                M11ReferenceJournalRangeReplacementStatus::Pending
+            );
+        }
+        let mut target_root = replacement.take_root().expect("replacement root");
+
+        let mut clean_runtime =
+            DocumentRuntime::new(&target_text, DocumentRuntimeConfig::default())
+                .expect("clean runtime");
+        let clean_source = clean_runtime
+            .current_source_version()
+            .expect("clean source");
+        let mut clean_journal =
+            M11ReferenceJournal::new(&mut clean_runtime, clean_source, 1).expect("clean journal");
+        let target_second_start = target_first_end + 1;
+        let target_second_end = target_text.len() - 1;
+        let target_second_destination_start = target_second_start + "[b]: ".len();
+        offer_ascii_occurrence(
+            &mut clean_journal,
+            &mut clean_runtime,
+            0..target_first_end as u64,
+            1..2,
+            5..target_first_end as u64,
+            b"a",
+            b"/new-target",
+        );
+        offer_ascii_occurrence(
+            &mut clean_journal,
+            &mut clean_runtime,
+            target_second_start as u64..target_second_end as u64,
+            (target_second_start + 1) as u64..(target_second_start + 2) as u64,
+            target_second_destination_start as u64..target_second_end as u64,
+            b"b",
+            target_text.as_bytes()[target_second_destination_start..target_second_end].as_ref(),
+        );
+        let mut clean_root = finish_journal(&mut clean_journal, &mut clean_runtime);
+
+        assert_eq!(target_root.metadata, clean_root.metadata);
+        assert_eq!(target_root.occurrence_count(), 2);
+        assert_eq!(target_root.winner_ordinal(&runtime, b"a").unwrap(), Some(0));
+        assert_eq!(target_root.winner_ordinal(&runtime, b"b").unwrap(), Some(1));
+        let target_view = ReferenceRootView::open(
+            runtime.producer_arena(),
+            target_root.authority,
+            target_root.root.as_ref().expect("target storage").id(),
+        )
+        .expect("target view");
+        let replayed = target_view
+            .occurrence(1)
+            .expect("replayed suffix lookup")
+            .expect("replayed suffix occurrence");
+        assert!(replayed
+            .cooked_destination
+            .equals(second_destination)
+            .expect("replayed destination"));
+        assert_eq!(
+            replayed.destination_source.bytes,
+            target_second_destination_start as u64..target_second_end as u64
+        );
+
+        release_root(&mut runtime, &mut base_root);
+        release_root(&mut runtime, &mut target_root);
+        release_root(&mut clean_runtime, &mut clean_root);
+        runtime.begin_close().expect("begin runtime close");
+        while !runtime.poll_close(64).expect("poll runtime close").complete {}
+        clean_runtime.begin_close().expect("begin clean close");
+        while !clean_runtime
+            .poll_close(64)
+            .expect("poll clean close")
+            .complete
+        {}
+    }
+
+    #[test]
+    fn range_replacement_cancels_during_streamed_prefix_replay() {
+        let destination = format!("/{}", "z".repeat(BLOB_CHUNK_BYTES * 2 + 9));
+        let source_text = format!("[a]: {destination}\nvisible");
+        let definition_end = source_text.find('\n').expect("definition end");
+        let mut runtime =
+            DocumentRuntime::new(&source_text, DocumentRuntimeConfig::default()).expect("runtime");
+        let base_source = runtime.current_source_version().expect("base source");
+        let mut journal = M11ReferenceJournal::new(&mut runtime, base_source, 1).expect("journal");
+        offer_ascii_occurrence(
+            &mut journal,
+            &mut runtime,
+            0..definition_end as u64,
+            1..2,
+            5..definition_end as u64,
+            b"a",
+            destination.as_bytes(),
+        );
+        let mut base_root = finish_journal(&mut journal, &mut runtime);
+
+        runtime
+            .apply_edit(base_source, source_text.len()..source_text.len(), "!")
+            .expect("append target edit");
+        let prefix = runtime
+            .mint_exact_unchanged_prefix_witness(base_source, definition_end, definition_end)
+            .expect("definition prefix");
+        let mut replacement = base_root
+            .begin_range_replacement(&mut runtime, definition_end, definition_end, Some(prefix))
+            .expect("begin replacement");
+        for _ in 0..8 {
+            let polled = replacement.poll(&mut runtime, 1).expect("prefix replay");
+            if polled.status() == M11ReferenceJournalRangeReplacementStatus::NeedsReplacementInput {
+                break;
+            }
+        }
+        replacement
+            .begin_cancel(&mut runtime)
+            .expect("begin cancellation");
+        while !replacement
+            .poll_cancel(&mut runtime, 64)
+            .expect("poll cancellation")
+            .complete()
+        {}
+
+        release_root(&mut runtime, &mut base_root);
+        runtime.begin_close().expect("begin runtime close");
+        while !runtime.poll_close(64).expect("poll runtime close").complete {}
     }
 
     #[test]

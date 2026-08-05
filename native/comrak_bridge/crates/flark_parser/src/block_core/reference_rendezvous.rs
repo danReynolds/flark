@@ -11,26 +11,27 @@ use std::ops::Range;
 use flark_block_core_donor as donor;
 use flark_block_core_donor::DirectReferencePrefixSource;
 use flark_engine::parser_internal::{
-    M11RecursiveGreenBuildStatus, M11RecursiveGreenError, M11RecursiveGreenFrameId,
-    M11RecursiveGreenLogicalPosition, M11RecursiveGreenLogicalRange,
-    M11RecursiveGreenStructuralBoundary, M11RecursiveGreenTerminalFragmentBarrierStatus,
-    M11RecursiveGreenTerminalFragmentBinding, M11RecursiveGreenTerminalFragmentCursor,
+    M11RecursiveGreenBuildStatus, M11RecursiveGreenFrameId, M11RecursiveGreenLogicalPosition,
+    M11RecursiveGreenLogicalRange, M11RecursiveGreenStructuralBoundary,
+    M11RecursiveGreenTerminalFragmentBarrierStatus,
     M11RecursiveGreenTerminalFragmentCursorStatus, M11RecursiveGreenTerminalFragmentDisposition,
-    M11RecursiveGreenTerminalFragmentIdentity, M11RecursiveGreenTerminalFragmentRewrite,
-    M11RecursiveGreenTerminalFragmentRewritePoll, M11RecursiveGreenTerminalFragmentRewriteWork,
     M11ReferenceJournal, M11ReferenceJournalError, M11ReferenceJournalOccurrenceStart,
     M11ReferenceJournalRange, M11ReferenceJournalValueKind,
 };
 use flark_engine::DocumentRuntime;
 
 use super::controller::M11DirectLeadingReferenceRemainderContinuation;
-use super::writer::M11ReferenceStagedTerminator;
+use super::writer::{
+    M11ReferenceOutputBinding, M11ReferenceOutputCursor, M11ReferenceOutputIdentity,
+    M11ReferenceOutputRewrite, M11ReferenceOutputRewritePoll, M11ReferenceOutputRewriteWork,
+    M11ReferenceStagedTerminator,
+};
 use super::{M11BlockWriter, M11BlockWriterError, M11DirectBlockController, M11DirectBlockError};
 use crate::reference_value::{
     ReferenceValueBodyCleaner, ReferenceValueCleanerError, ReferenceValueCleanerStatus,
 };
 
-type Identity = M11RecursiveGreenTerminalFragmentIdentity;
+type Identity = M11ReferenceOutputIdentity;
 type Work = donor::DirectReferencePrefixWork<Identity>;
 type OutputAck = donor::DirectReferencePrefixOutputAck<Identity>;
 type TerminalOutput = donor::DirectReferencePrefixTerminalOutput<Identity>;
@@ -69,7 +70,6 @@ impl M11LeadingReferenceRemainder {
 pub enum M11ReferenceRendezvousError {
     Controller(M11DirectBlockError),
     Writer(M11BlockWriterError),
-    Green(M11RecursiveGreenError),
     Journal(M11ReferenceJournalError),
     Cleaner(&'static str),
     InvalidState(&'static str),
@@ -82,7 +82,6 @@ impl fmt::Display for M11ReferenceRendezvousError {
         match self {
             Self::Controller(error) => write!(formatter, "{error:?}"),
             Self::Writer(error) => error.fmt(formatter),
-            Self::Green(error) => error.fmt(formatter),
             Self::Journal(error) => error.fmt(formatter),
             Self::Cleaner(message) => formatter.write_str(message),
             Self::InvalidState(message) => formatter.write_str(message),
@@ -103,12 +102,6 @@ impl From<M11DirectBlockError> for M11ReferenceRendezvousError {
 impl From<M11BlockWriterError> for M11ReferenceRendezvousError {
     fn from(error: M11BlockWriterError) -> Self {
         Self::Writer(error)
-    }
-}
-
-impl From<M11RecursiveGreenError> for M11ReferenceRendezvousError {
-    fn from(error: M11RecursiveGreenError) -> Self {
-        Self::Green(error)
     }
 }
 
@@ -655,15 +648,15 @@ pub struct M11ReferenceRendezvous {
     frame: M11RecursiveGreenFrameId,
     staged: Option<M11ReferenceStagedTerminator>,
     phase: Phase,
-    binding: Option<M11RecursiveGreenTerminalFragmentBinding>,
+    binding: Option<M11ReferenceOutputBinding>,
     identity: Option<Identity>,
-    scan: Option<M11RecursiveGreenTerminalFragmentCursor>,
-    range_replay: Option<M11RecursiveGreenTerminalFragmentCursor>,
+    scan: Option<M11ReferenceOutputCursor>,
+    range_replay: Option<M11ReferenceOutputCursor>,
     work: Option<Work>,
     active: Option<ActiveOccurrence>,
     terminal: Option<TerminalOutput>,
-    terminal_replay: Option<M11RecursiveGreenTerminalFragmentCursor>,
-    rewrite: Option<M11RecursiveGreenTerminalFragmentRewriteWork>,
+    terminal_replay: Option<M11ReferenceOutputCursor>,
+    rewrite: Option<M11ReferenceOutputRewriteWork>,
     remainder_boundary: Option<M11RecursiveGreenStructuralBoundary>,
     remainder: Option<M11LeadingReferenceRemainder>,
 }
@@ -681,9 +674,7 @@ impl M11ReferenceRendezvous {
                 "parser and writer disagree about the staged Paragraph terminator",
             ));
         }
-        let build = writer.reference_green_build_mut()?;
-        let fragment = build.mint_terminal_fragment(frame)?;
-        build.begin_terminal_fragment_barrier(fragment)?;
+        writer.begin_reference_output_fragment(frame)?;
         Ok(Self {
             request,
             frame,
@@ -778,14 +769,13 @@ impl M11ReferenceRendezvous {
         writer: &mut M11BlockWriter,
         runtime: &mut DocumentRuntime,
     ) -> Result<(), M11ReferenceRendezvousError> {
-        let build = writer.reference_green_build_mut()?;
-        let poll = build.poll_terminal_fragment_barrier(runtime, 1)?;
-        if poll.status() != M11RecursiveGreenTerminalFragmentBarrierStatus::Ready {
+        let status = writer.poll_reference_output_barrier(runtime, 1)?;
+        if status != M11RecursiveGreenTerminalFragmentBarrierStatus::Ready {
             return Ok(());
         }
-        let binding = build.take_terminal_fragment_binding()?;
+        let binding = writer.take_reference_output_binding()?;
         let identity = binding.identity();
-        let scan = build.open_terminal_fragment_cursor(&binding)?;
+        let scan = writer.open_reference_output_cursor(&binding)?;
         let work = controller.begin_reference_prefix_work(self.request, identity)?;
         self.binding = Some(binding);
         self.identity = Some(identity);
@@ -807,9 +797,7 @@ impl M11ReferenceRendezvous {
                 "reference scan cursor disappeared",
             ))?;
         if scan.ready_chunk().is_empty() && !scan.is_final() {
-            let _ = writer
-                .reference_green_build_mut()?
-                .poll_terminal_fragment_cursor_chunk(runtime, scan, 1)?;
+            let _ = writer.poll_reference_output_cursor(runtime, scan, 1, true)?;
         }
         let identity = self
             .identity
@@ -1160,13 +1148,13 @@ impl M11ReferenceRendezvous {
                     .ok_or(M11ReferenceRendezvousError::InvalidState(
                         "reference segment lost its fragment binding",
                     ))?;
-            let build = writer.reference_green_build_mut()?;
-            let range = build.bind_terminal_fragment_logical_range(binding, clipped.green()?)?;
+            let range =
+                writer.bind_reference_output_logical_range(binding, clipped.green()?)?;
             if let Some(replay) = self.range_replay.as_mut() {
-                build.retarget_terminal_fragment_range_replay_forward(binding, replay, range)?;
+                writer.retarget_reference_output_range_replay_forward(binding, replay, range)?;
             } else {
                 self.range_replay =
-                    Some(build.open_terminal_fragment_range_replay(binding, range)?);
+                    Some(writer.open_reference_output_range_replay(binding, range)?);
             }
             self.active
                 .as_mut()
@@ -1183,13 +1171,12 @@ impl M11ReferenceRendezvous {
                 .ok_or(M11ReferenceRendezvousError::InvalidState(
                     "reference forward replay disappeared",
                 ))?;
-        let build = writer.reference_green_build_mut()?;
         let polled = if matches!(kind, SegmentKind::Destination | SegmentKind::Title) {
-            build.poll_terminal_fragment_cursor(runtime, replay, 1)?
+            writer.poll_reference_output_cursor(runtime, replay, 1, false)?
         } else {
-            build.poll_terminal_fragment_cursor_chunk(runtime, replay, 1)?
+            writer.poll_reference_output_cursor(runtime, replay, 1, true)?
         };
-        match polled.status() {
+        match polled {
             M11RecursiveGreenTerminalFragmentCursorStatus::Pending => Ok(()),
             M11RecursiveGreenTerminalFragmentCursorStatus::ByteReady => {
                 if let Some(cook) = self
@@ -1201,13 +1188,12 @@ impl M11ReferenceRendezvous {
                     .value_cook
                     .as_mut()
                 {
-                    let ready =
-                        replay
-                            .ready_byte()
-                            .ok_or(M11ReferenceRendezvousError::InvalidState(
-                                "reference value replay reported no ready byte",
-                            ))?;
-                    let byte = replay.read_byte(ready.relative_offset())?;
+                    let (relative_offset, _) = replay.ready_byte().ok_or(
+                        M11ReferenceRendezvousError::InvalidState(
+                            "reference value replay reported no ready byte",
+                        ),
+                    )?;
+                    let byte = replay.read_byte(relative_offset)?;
                     cook.offer_source_byte(byte)?;
                 } else {
                     let ready = replay.ready_chunk().len();
@@ -1222,14 +1208,11 @@ impl M11ReferenceRendezvous {
             }
             M11RecursiveGreenTerminalFragmentCursorStatus::Complete => {
                 let completed = replay.take_completed_range()?;
-                let physical =
-                    completed
-                        .physical_range()
-                        .ok_or(M11ReferenceRendezvousError::InvalidState(
-                            "nonempty reference segment has no physical envelope",
-                        ))?;
-                let bytes = physical.byte_range();
-                let utf16 = physical.utf16_range();
+                let (bytes, utf16) = completed.physical_range().ok_or(
+                    M11ReferenceRendezvousError::InvalidState(
+                        "nonempty reference segment has no physical envelope",
+                    ),
+                )?;
                 let active =
                     self.active
                         .as_mut()
@@ -1412,11 +1395,10 @@ impl M11ReferenceRendezvous {
                 ))?;
             self.rewrite = Some(
                 writer
-                    .reference_green_build_mut()?
-                    .begin_terminal_fragment_rewrite(
+                    .begin_reference_output_rewrite(
                         runtime,
                         binding,
-                        M11RecursiveGreenTerminalFragmentRewrite::Unchanged,
+                        M11ReferenceOutputRewrite::Unchanged,
                     )?,
             );
             self.phase = Phase::Rewrite;
@@ -1445,9 +1427,9 @@ impl M11ReferenceRendezvous {
         // The final structural rewrite performs one independent linear prefix
         // validation, never one replay per occurrence.
         self.range_replay = None;
-        let build = writer.reference_green_build_mut()?;
-        let range = build.bind_terminal_fragment_logical_range(binding, span.green()?)?;
-        self.terminal_replay = Some(build.open_terminal_fragment_range_replay(binding, range)?);
+        let range = writer.bind_reference_output_logical_range(binding, span.green()?)?;
+        self.terminal_replay =
+            Some(writer.open_reference_output_range_replay(binding, range)?);
         self.phase = Phase::TerminalRange;
         Ok(())
     }
@@ -1463,11 +1445,7 @@ impl M11ReferenceRendezvous {
                 .ok_or(M11ReferenceRendezvousError::InvalidState(
                     "terminal range replay disappeared",
                 ))?;
-        match writer
-            .reference_green_build_mut()?
-            .poll_terminal_fragment_cursor_chunk(runtime, replay, 1)?
-            .status()
-        {
+        match writer.poll_reference_output_cursor(runtime, replay, 1, true)? {
             M11RecursiveGreenTerminalFragmentCursorStatus::Pending => Ok(()),
             M11RecursiveGreenTerminalFragmentCursorStatus::ByteReady => {
                 let ready = replay.ready_chunk().len();
@@ -1501,11 +1479,11 @@ impl M11ReferenceRendezvous {
                         && self.request.context()
                             == donor::DirectReferencePrefixContext::SetextCandidate
                 {
-                    M11RecursiveGreenTerminalFragmentRewrite::RetainVisibleSuffix {
+                    M11ReferenceOutputRewrite::RetainVisibleSuffix {
                         removed_prefix: range,
                     }
                 } else {
-                    M11RecursiveGreenTerminalFragmentRewrite::RemoveWrapper {
+                    M11ReferenceOutputRewrite::RemoveWrapper {
                         whole_fragment: range,
                     }
                 };
@@ -1517,8 +1495,7 @@ impl M11ReferenceRendezvous {
                         ))?;
                 self.rewrite = Some(
                     writer
-                        .reference_green_build_mut()?
-                        .begin_terminal_fragment_rewrite(runtime, binding, rewrite)?,
+                        .begin_reference_output_rewrite(runtime, binding, rewrite)?,
                 );
                 self.phase = Phase::Rewrite;
                 Ok(())
@@ -1537,10 +1514,8 @@ impl M11ReferenceRendezvous {
             .ok_or(M11ReferenceRendezvousError::InvalidState(
                 "reference rewrite work disappeared",
             ))?;
-        let poll = writer
-            .reference_green_build_mut()?
-            .poll_terminal_fragment_rewrite(runtime, rewrite, 1)?;
-        let M11RecursiveGreenTerminalFragmentRewritePoll::Complete { mut authority, .. } = poll
+        let poll = writer.poll_reference_output_rewrite(runtime, rewrite, 1)?;
+        let M11ReferenceOutputRewritePoll::Complete(mut authority) = poll
         else {
             return Ok(());
         };
@@ -1571,19 +1546,8 @@ impl M11ReferenceRendezvous {
                 "reference rewrite disposition disagrees with parser chronology",
             ));
         }
+        let visible_remainder = authority.visible_remainder_physical();
         self.remainder_boundary = authority.take_visible_remainder_boundary();
-        let visible_remainder = self
-            .remainder_boundary
-            .as_ref()
-            .map(|boundary| {
-                let physical = boundary.physical_metric();
-                super::SourceMetric::new(physical.bytes(), physical.utf16()).ok_or(
-                    M11ReferenceRendezvousError::InvalidState(
-                        "visible reference remainder has valid physical geometry",
-                    ),
-                )
-            })
-            .transpose()?;
         let gap = writer.complete_reference_fragment(
             self.frame,
             remove,
@@ -1591,7 +1555,7 @@ impl M11ReferenceRendezvous {
             visible_remainder,
         )?;
         if let Some(gap) = gap {
-            writer.reference_green_build_mut()?.offer_event(gap)?;
+            writer.offer_reference_output_event(gap)?;
             self.phase = Phase::Gap;
         } else {
             self.phase = Phase::Commit;
@@ -1604,8 +1568,8 @@ impl M11ReferenceRendezvous {
         writer: &mut M11BlockWriter,
         runtime: &mut DocumentRuntime,
     ) -> Result<(), M11ReferenceRendezvousError> {
-        let poll = writer.reference_green_build_mut()?.poll(runtime, 1)?;
-        if poll.status() == M11RecursiveGreenBuildStatus::NeedsInput {
+        let status = writer.poll_reference_output(runtime, 1)?;
+        if status == M11RecursiveGreenBuildStatus::NeedsInput {
             self.phase = Phase::Commit;
         }
         Ok(())
@@ -1649,12 +1613,14 @@ impl M11ReferenceRendezvous {
             ));
         }
         if disposition == donor::DirectReferencePrefixDisposition::VisibleRemainder {
-            let green =
-                self.remainder_boundary
-                    .take()
-                    .ok_or(M11ReferenceRendezvousError::InvalidState(
-                        "visible reference remainder lost its Green cut",
-                    ))?;
+            let Some(green) = self.remainder_boundary.take() else {
+                // A local high-level fragment has an exact physical suffix
+                // cut, but cannot mint a Green structural boundary before the
+                // enclosing convergence splice.  The rewrite is complete;
+                // only the optional retrospective checkpoint is omitted.
+                self.phase = Phase::Complete;
+                return Ok(());
+            };
             let Some(mut parser) = controller.capture_leading_reference_remainder_continuation()?
             else {
                 // A visible remainder may be recognized while a later line is
@@ -1689,7 +1655,7 @@ impl M11ReferenceRendezvous {
     ) -> Result<M11RecursiveGreenLogicalPosition, M11ReferenceRendezvousError> {
         self.scan
             .as_ref()
-            .map(M11RecursiveGreenTerminalFragmentCursor::logical_position)
+            .map(M11ReferenceOutputCursor::logical_position)
             .ok_or(M11ReferenceRendezvousError::InvalidState(
                 "reference fragment lost its scan cursor",
             ))
@@ -1698,7 +1664,7 @@ impl M11ReferenceRendezvous {
 
 struct ProjectedReferenceSource<'a> {
     identity: Identity,
-    cursor: &'a mut M11RecursiveGreenTerminalFragmentCursor,
+    cursor: &'a mut M11ReferenceOutputCursor,
     virtual_lf: bool,
     virtual_raw: u8,
 }
@@ -1729,7 +1695,7 @@ fn clip_to_fragment(
 
 impl donor::DirectReferencePrefixSource for ProjectedReferenceSource<'_> {
     type Identity = Identity;
-    type Error = M11RecursiveGreenError;
+    type Error = M11BlockWriterError;
 
     fn identity(&self) -> Self::Identity {
         self.identity
@@ -1753,12 +1719,12 @@ impl donor::DirectReferencePrefixSource for ProjectedReferenceSource<'_> {
 
     fn read_byte(&mut self, relative_offset: usize) -> Result<u8, Self::Error> {
         let physical = usize::try_from(self.cursor.available_len())
-            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+            .map_err(|_| M11BlockWriterError::CounterOverflow)?;
         if self.cursor.is_final() && self.virtual_lf && relative_offset == physical {
             return Ok(b'\n');
         }
         self.cursor.read_byte(
-            u64::try_from(relative_offset).map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+            u64::try_from(relative_offset).map_err(|_| M11BlockWriterError::CounterOverflow)?,
         )
     }
 
@@ -1775,7 +1741,7 @@ impl donor::DirectReferencePrefixSource for ProjectedReferenceSource<'_> {
 }
 
 fn map_donor_poll_error(
-    error: donor::DirectReferencePrefixPollError<M11RecursiveGreenError>,
+    error: donor::DirectReferencePrefixPollError<M11BlockWriterError>,
 ) -> M11ReferenceRendezvousError {
     match error {
         donor::DirectReferencePrefixPollError::Source(error) => error.into(),

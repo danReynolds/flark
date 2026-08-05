@@ -13,8 +13,9 @@ use flark_engine::parser_internal::{
     M11RecursiveGreenRowQueryLimits, M11RecursiveGreenRowQueryOutcome, M11RecursiveGreenRowWindow,
     M11RecursiveGreenStoragePageIdentity, M11RecursiveGreenStructuralSpliceSelection,
     M11ReferenceJournal, M11ReferenceJournalAdoptionStatus, M11ReferenceJournalError,
-    M11ReferenceJournalRoot, M11ReferenceJournalStatus, M11ReferenceJournalUnchangedPrefixAdoption,
-    BLOCK_QUOTE_WINDOW_MAX_BYTES,
+    M11ReferenceJournalRangeReplacement, M11ReferenceJournalRangeReplacementStatus,
+    M11ReferenceJournalRoot, M11ReferenceJournalStatus,
+    M11ReferenceJournalUnchangedPrefixAdoption, BLOCK_QUOTE_WINDOW_MAX_BYTES,
 };
 use flark_engine::{
     DocumentRuntime, DocumentRuntimeError, ExactUnchangedPrefixWitness,
@@ -1163,8 +1164,26 @@ fn replicate_base_checkpoint_range(
     Ok(replicas)
 }
 
-/// Fuelled same-island restart/convergence adoption. Any reference work in
-/// the replacement crop fails closed to a clean composite build.
+/// Proves that one parser checkpoint cannot split a committed reference
+/// occurrence. A cut at or beyond the final occurrence is trivially safe. An
+/// earlier cut is safe only when no Paragraph is open: reference occurrences
+/// are recognized from Paragraph prefixes and are committed before that
+/// Paragraph leaves the open parser path.
+fn checkpoint_proves_reference_occurrence_cut(
+    checkpoint: &M11BlockRestartCheckpoint,
+    references: &M11ReferenceJournalRoot,
+) -> bool {
+    let cut = checkpoint.parser_physical();
+    (cut.bytes() >= references.last_source_byte_end()
+        && cut.utf16() >= references.last_source_utf16_end())
+        || !checkpoint
+            .open_kinds()
+            .any(|kind| matches!(kind, BlockKind::Paragraph))
+}
+
+/// Fuelled same-island restart/convergence adoption. Parser-authenticated
+/// reference work is journalled into the same atomic target revision as its
+/// recursive-Green replacement.
 #[must_use = "recursive-Green adoption requires update transfer or cancellation"]
 pub struct M11PersistentRecursiveGreenAdoption {
     base: Option<M11PersistentRecursiveGreenSession>,
@@ -1185,6 +1204,14 @@ pub struct M11PersistentRecursiveGreenAdoption {
     document_start: bool,
     green_suffix: Option<ExactUnchangedSuffixWitness>,
     reference_prefix: Option<ExactUnchangedPrefixWitness>,
+    reference_range_prefix: Option<ExactUnchangedPrefixWitness>,
+    reference_range_base_start: SourceMetric,
+    reference_range_pending: bool,
+    reference_range_ready: bool,
+    pending_reference_rendezvous: bool,
+    reference_rendezvous: Option<M11ReferenceRendezvous>,
+    reference_replacement: Option<M11ReferenceJournalRangeReplacement>,
+    reference_replacement_finishing: bool,
     reference_adoption: Option<M11ReferenceJournalUnchangedPrefixAdoption>,
     target_green: Option<M11RecursiveGreenRoot>,
     adopted_checkpoints: Option<AdoptedCheckpointSet>,
@@ -1261,63 +1288,179 @@ impl M11PersistentRecursiveGreenAdoption {
             }
             search.transitions += 1;
         }
+        if self.reference_range_pending {
+            if self.reference_replacement.is_some() {
+                return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "reference range replacement was started twice",
+                ));
+            }
+            let prefix = self.reference_range_prefix.take();
+            let start = self.reference_range_base_start;
+            let replacement = {
+                let base = self.base.as_ref().ok_or(
+                    M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "recursive-Green adoption omitted its base session",
+                    ),
+                )?;
+                base.references
+                    .as_ref()
+                    .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "recursive-Green base omitted its reference root",
+                    ))?
+                    .begin_range_replacement(
+                        runtime,
+                        start.bytes() as usize,
+                        start.utf16() as usize,
+                        prefix,
+                    )?
+            };
+            self.reference_replacement = Some(replacement);
+            self.reference_range_pending = false;
+            return Ok(());
+        }
+        if self.reference_replacement.is_some()
+            && !self.reference_range_ready
+            && !self.reference_replacement_finishing
+        {
+            let poll = self
+                .reference_replacement
+                .as_mut()
+                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "reference replacement actor disappeared",
+                ))?
+                .poll(runtime, 1)?;
+            self.record_reference_transitions(poll.transitions())?;
+            match poll.status() {
+                M11ReferenceJournalRangeReplacementStatus::Pending => {}
+                M11ReferenceJournalRangeReplacementStatus::NeedsReplacementInput => {
+                    self.reference_range_ready = true;
+                }
+                M11ReferenceJournalRangeReplacementStatus::Complete
+                | M11ReferenceJournalRangeReplacementStatus::Cancelled => {
+                    return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "reference replacement completed before parser input",
+                    ));
+                }
+            }
+            return Ok(());
+        }
+        if self.pending_reference_rendezvous {
+            if !self.reference_range_ready || self.reference_rendezvous.is_some() {
+                return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "reference rendezvous began without a ready replacement journal",
+                ));
+            }
+            let rendezvous = {
+                let controller = self.controller.as_mut().ok_or(
+                    M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "recursive-Green crop controller is missing",
+                    ),
+                )?;
+                let writer = self.writer.as_mut().ok_or(
+                    M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "recursive-Green crop writer is missing",
+                    ),
+                )?;
+                match M11ReferenceRendezvous::begin(controller, writer) {
+                    Ok(rendezvous) => rendezvous,
+                    Err(M11ReferenceRendezvousError::Writer(
+                        M11BlockWriterError::ReferenceParagraphPredatesRestart,
+                    )) => {
+                        // The active range actor still owns every retained and
+                        // replacement References resource. Leave it reachable
+                        // for the ordinary fallback cancellation path.
+                        self.phase = AdoptionPhase::CleanFallbackRequired;
+                        return Ok(());
+                    }
+                    Err(error) => return Err(error.into()),
+                }
+            };
+            self.reference_rendezvous = Some(rendezvous);
+            self.pending_reference_rendezvous = false;
+            return Ok(());
+        }
+        if let Some(mut rendezvous) = self.reference_rendezvous.take() {
+            let poll = {
+                let controller = self.controller.as_mut().ok_or(
+                    M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "recursive-Green crop controller is missing",
+                    ),
+                )?;
+                let writer = self.writer.as_mut().ok_or(
+                    M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "recursive-Green crop writer is missing",
+                    ),
+                )?;
+                let journal = self
+                    .reference_replacement
+                    .as_mut()
+                    .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "reference rendezvous omitted its range replacement actor",
+                    ))?
+                    .replacement_journal_mut()?;
+                rendezvous.poll(controller, writer, journal, runtime, 1)?
+            };
+            self.record_reference_transitions(poll.transitions)?;
+            if poll.status != M11ReferenceRendezvousStatus::Complete {
+                self.reference_rendezvous = Some(rendezvous);
+            } else {
+                // A remainder checkpoint is an optimization inside this
+                // bounded crop. The authenticated convergence checkpoint
+                // remains the target session's durable restart authority.
+                drop(rendezvous.take_leading_reference_remainder());
+            }
+            return Ok(());
+        }
+        if self.reference_replacement_finishing {
+            let poll = self
+                .reference_replacement
+                .as_mut()
+                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "finishing reference replacement actor disappeared",
+                ))?
+                .poll(runtime, 1)?;
+            self.record_reference_transitions(poll.transitions())?;
+            match poll.status() {
+                M11ReferenceJournalRangeReplacementStatus::Pending => {}
+                M11ReferenceJournalRangeReplacementStatus::Complete => {
+                    let references = self
+                        .reference_replacement
+                        .as_mut()
+                        .and_then(M11ReferenceJournalRangeReplacement::take_root)
+                        .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                            "completed reference replacement omitted its root",
+                        ))?;
+                    self.reference_replacement = None;
+                    self.reference_replacement_finishing = false;
+                    self.finish_target_with_references(references)?;
+                }
+                M11ReferenceJournalRangeReplacementStatus::NeedsReplacementInput
+                | M11ReferenceJournalRangeReplacementStatus::Cancelled => {
+                    return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "reference replacement did not finish after convergence",
+                    ));
+                }
+            }
+            return Ok(());
+        }
         if let Some(adoption) = self.reference_adoption.as_mut() {
             let poll = adoption.poll(runtime, 1)?;
-            self.work.reference_rebind_transitions = self
-                .work
-                .reference_rebind_transitions
-                .checked_add(poll.transitions())
-                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
-                    "reference adoption work overflow",
-                ))?;
-            if poll.status() == M11ReferenceJournalAdoptionStatus::Complete {
-                let references = adoption.take_root().ok_or(
+            let transitions = poll.transitions();
+            let complete = poll.status() == M11ReferenceJournalAdoptionStatus::Complete;
+            let _ = adoption;
+            self.record_reference_transitions(transitions)?;
+            if complete {
+                let references = self
+                    .reference_adoption
+                    .as_mut()
+                    .and_then(M11ReferenceJournalUnchangedPrefixAdoption::take_root)
+                    .ok_or(
                     M11PersistentRecursiveGreenSessionError::InvalidState(
                         "completed reference adoption omitted its root",
                     ),
                 )?;
                 self.reference_adoption = None;
-                let base = self.base.take().ok_or(
-                    M11PersistentRecursiveGreenSessionError::InvalidState(
-                        "recursive-Green adoption omitted its base session",
-                    ),
-                )?;
-                let (checkpoints, terminal_convergence) = match self
-                    .adopted_checkpoints
-                    .take()
-                    .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
-                        "recursive-Green adoption omitted target checkpoint authority",
-                    ))? {
-                    AdoptedCheckpointSet::Ordinary(rebased) => {
-                        (rebased.checkpoints, Some(rebased.terminal))
-                    }
-                    AdoptedCheckpointSet::Terminal {
-                        checkpoints,
-                        terminal,
-                    } => (checkpoints, Some(terminal)),
-                };
-                let target = M11PersistentRecursiveGreenSession {
-                    source: self.target,
-                    syntax_profile: base.syntax_profile,
-                    green: self.target_green.take(),
-                    references: Some(references),
-                    checkpoints,
-                    terminal_convergence,
-                    release_begun: false,
-                    green_release_complete: false,
-                    references_release_complete: false,
-                };
-                self.output = Some(M11PersistentRecursiveGreenUpdate {
-                    base: Some(base),
-                    target: Some(target),
-                    work: self.work,
-                    recursive_green_splice: self.recursive_green_splice.take().ok_or(
-                        M11PersistentRecursiveGreenSessionError::InvalidState(
-                            "recursive-Green update omitted its exact event selection",
-                        ),
-                    )?,
-                });
-                self.phase = AdoptionPhase::Complete;
+                self.finish_target_with_references(references)?;
             }
             return Ok(());
         }
@@ -1404,7 +1547,11 @@ impl M11PersistentRecursiveGreenAdoption {
                         M11DirectBlockPollStatus::Pending => {}
                         M11DirectBlockPollStatus::CommandReady => self.offer_pending_command()?,
                         M11DirectBlockPollStatus::ExternalWorkReady => {
-                            self.phase = AdoptionPhase::CleanFallbackRequired;
+                            if self.reference_replacement.is_none() {
+                                self.reference_range_pending = true;
+                                self.reference_range_ready = false;
+                            }
+                            self.pending_reference_rendezvous = true;
                         }
                         M11DirectBlockPollStatus::Complete => {
                             let end = self.current_line_end.take().ok_or(
@@ -1507,7 +1654,11 @@ impl M11PersistentRecursiveGreenAdoption {
                         }
                     }
                     M11DirectBlockPollStatus::ExternalWorkReady => {
-                        self.phase = AdoptionPhase::CleanFallbackRequired;
+                        if self.reference_replacement.is_none() {
+                            self.reference_range_pending = true;
+                            self.reference_range_ready = false;
+                        }
+                        self.pending_reference_rendezvous = true;
                     }
                     M11DirectBlockPollStatus::Complete => {
                         return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -1687,7 +1838,51 @@ impl M11PersistentRecursiveGreenAdoption {
                 self.adopted_checkpoints = Some(checkpoints);
                 self.controller = None;
                 self.record_structural_work(receipt)?;
-                let reference_adoption = {
+                if let Some(replacement) = self.reference_replacement.as_mut() {
+                    let base = self.base.as_ref().ok_or(
+                        M11PersistentRecursiveGreenSessionError::InvalidState(
+                            "recursive-Green adoption omitted its base session",
+                        ),
+                    )?;
+                    let convergence = match selection.convergence {
+                        AdoptionConvergence::Ordinary { checkpoint_index } => base
+                            .checkpoints
+                            .get(checkpoint_index)
+                            .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                                "reference convergence checkpoint escaped the base",
+                            ))?
+                            .parser_physical(),
+                        AdoptionConvergence::Terminal => SourceMetric::new(
+                            base.source.byte_len() as u64,
+                            base.source.utf16_len() as u64,
+                        )
+                        .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                            "reference terminal source metric is invalid",
+                        ))?,
+                    };
+                    let suffix = if convergence.bytes() as usize == base.source.byte_len()
+                        && convergence.utf16() as usize == base.source.utf16_len()
+                    {
+                        None
+                    } else {
+                        let suffix = runtime.mint_exact_unchanged_suffix_witness(
+                            base.source,
+                            convergence.bytes() as usize,
+                            convergence.utf16() as usize,
+                        )?;
+                        if suffix.target_byte_start() != self.target_parser_end {
+                            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                                "reference suffix differs from parser convergence",
+                            ));
+                        }
+                        Some(suffix)
+                    };
+                    replacement.finish_replacement(runtime, suffix)?;
+                    self.reference_range_ready = false;
+                    self.reference_replacement_finishing = true;
+                } else {
+                    self.reference_range_prefix = None;
+                    let reference_adoption = {
                     let base = self.base.as_ref().ok_or(
                         M11PersistentRecursiveGreenSessionError::InvalidState(
                             "recursive-Green adoption omitted its base session",
@@ -1704,8 +1899,9 @@ impl M11PersistentRecursiveGreenAdoption {
                         reference_prefix,
                         ZeroReferenceOccurrenceProof(()),
                     )?
-                };
-                self.reference_adoption = Some(reference_adoption);
+                    };
+                    self.reference_adoption = Some(reference_adoption);
+                }
                 self.phase = AdoptionPhase::AdoptReferences;
             }
             AdoptionPhase::AdoptReferences => {
@@ -1750,6 +1946,21 @@ impl M11PersistentRecursiveGreenAdoption {
                 "ordinary convergence checkpoint index escaped the base",
             ),
         )?;
+        if self.reference_replacement.is_some()
+            && !checkpoint_proves_reference_occurrence_cut(
+                old_convergence,
+                base.references.as_ref().ok_or(
+                    M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "recursive-Green base omitted its reference root",
+                    ),
+                )?,
+            )
+        {
+            // A range-replacement suffix can replay only occurrences beginning
+            // at or after the selected cut. Keep parsing until a later
+            // checkpoint proves that no occurrence crosses that cut.
+            return Ok(false);
+        }
         let green_base =
             base.green
                 .as_ref()
@@ -1930,6 +2141,68 @@ impl M11PersistentRecursiveGreenAdoption {
             ))
     }
 
+    fn record_reference_transitions(
+        &mut self,
+        transitions: usize,
+    ) -> Result<(), M11PersistentRecursiveGreenSessionError> {
+        self.work.reference_rebind_transitions = self
+            .work
+            .reference_rebind_transitions
+            .checked_add(transitions)
+            .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "reference update work overflow",
+            ))?;
+        Ok(())
+    }
+
+    fn finish_target_with_references(
+        &mut self,
+        references: M11ReferenceJournalRoot,
+    ) -> Result<(), M11PersistentRecursiveGreenSessionError> {
+        let base = self.base.take().ok_or(
+            M11PersistentRecursiveGreenSessionError::InvalidState(
+                "recursive-Green adoption omitted its base session",
+            ),
+        )?;
+        let (checkpoints, terminal_convergence) = match self
+            .adopted_checkpoints
+            .take()
+            .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "recursive-Green adoption omitted target checkpoint authority",
+            ))? {
+            AdoptedCheckpointSet::Ordinary(rebased) => {
+                (rebased.checkpoints, Some(rebased.terminal))
+            }
+            AdoptedCheckpointSet::Terminal {
+                checkpoints,
+                terminal,
+            } => (checkpoints, Some(terminal)),
+        };
+        let target = M11PersistentRecursiveGreenSession {
+            source: self.target,
+            syntax_profile: base.syntax_profile,
+            green: self.target_green.take(),
+            references: Some(references),
+            checkpoints,
+            terminal_convergence,
+            release_begun: false,
+            green_release_complete: false,
+            references_release_complete: false,
+        };
+        self.output = Some(M11PersistentRecursiveGreenUpdate {
+            base: Some(base),
+            target: Some(target),
+            work: self.work,
+            recursive_green_splice: self.recursive_green_splice.take().ok_or(
+                M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "recursive-Green update omitted its exact event selection",
+                ),
+            )?,
+        });
+        self.phase = AdoptionPhase::Complete;
+        Ok(())
+    }
+
     fn record_structural_work(
         &mut self,
         receipt: M11BlockStructuralAdoptionReceipt,
@@ -1995,7 +2268,10 @@ impl M11PersistentRecursiveGreenAdoption {
             } else {
                 self.cancel_green_complete = true;
             }
-            if let Some(references) = self.reference_adoption.as_mut() {
+            if let Some(references) = self.reference_replacement.as_mut() {
+                references.begin_cancel(runtime)?;
+                self.cancel_references_complete = false;
+            } else if let Some(references) = self.reference_adoption.as_mut() {
                 references.begin_cancel(runtime)?;
                 self.cancel_references_complete = false;
             } else {
@@ -2012,6 +2288,12 @@ impl M11PersistentRecursiveGreenAdoption {
         self.green_prefix = None;
         self.green_suffix = None;
         self.reference_prefix = None;
+        self.reference_range_prefix = None;
+        self.reference_range_pending = false;
+        self.reference_range_ready = false;
+        self.pending_reference_rendezvous = false;
+        self.reference_rendezvous = None;
+        self.reference_replacement_finishing = false;
         self.later_convergence_search = None;
         self.adopted_checkpoints = None;
         self.cancelling = true;
@@ -2056,16 +2338,24 @@ impl M11PersistentRecursiveGreenAdoption {
             return Ok(self.cancel_green_complete && self.cancel_references_complete);
         }
         if !self.cancel_references_complete {
-            self.cancel_references_complete = self
-                .reference_adoption
-                .as_mut()
-                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
-                    "recursive-Green adoption cancellation lost its reference actor",
-                ))?
-                .poll_cancel(runtime, fuel)?
-                .complete();
-            if self.cancel_references_complete {
-                self.reference_adoption = None;
+            if let Some(replacement) = self.reference_replacement.as_mut() {
+                self.cancel_references_complete =
+                    replacement.poll_cancel(runtime, fuel)?.complete();
+                if self.cancel_references_complete {
+                    self.reference_replacement = None;
+                }
+            } else {
+                self.cancel_references_complete = self
+                    .reference_adoption
+                    .as_mut()
+                    .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "recursive-Green adoption cancellation lost its reference actor",
+                    ))?
+                    .poll_cancel(runtime, fuel)?
+                    .complete();
+                if self.cancel_references_complete {
+                    self.reference_adoption = None;
+                }
             }
         }
         Ok(self.cancel_green_complete && self.cancel_references_complete)
@@ -2274,7 +2564,8 @@ impl M11PersistentRecursiveGreenSession {
 
     /// Starts one source-authenticated local restart/convergence transaction.
     /// The base session is returned intact when no sparse checkpoint pair can
-    /// prove the edit, or when reference coverage intersects the edit.
+    /// prove the edit. Reference coverage is updated through the same bounded,
+    /// failure-atomic adoption transaction.
     pub fn begin_local_adoption(
         self,
         runtime: &DocumentRuntime,
@@ -2298,13 +2589,8 @@ impl M11PersistentRecursiveGreenSession {
                     "recursive-Green session omitted its reference authority",
                 ),
             )?;
-            if references.occurrence_count() != 0
-                && base_edit.start <= references.last_source_byte_end() as usize
-            {
-                return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
-                    "edit intersects or precedes committed reference coverage",
-                ));
-            }
+            let reference_range_required = references.occurrence_count() != 0
+                && base_edit.start <= references.last_source_byte_end() as usize;
 
             let restart_boundary = self.checkpoints.partition_point(|checkpoint| {
                 checkpoint.parser_physical().bytes() as usize <= base_edit.start
@@ -2320,19 +2606,21 @@ impl M11PersistentRecursiveGreenSession {
             // Walk back until the parser cut remains a line boundary in the
             // exact target source instead of parsing the appended suffix as a
             // synthetic next line.
-            while !target_lease
-                .is_physical_line_start(
-                    self.checkpoints[restart_index].parser_physical().bytes() as usize
-                )
-                .map_err(|_| {
-                    M11PersistentRecursiveGreenSessionError::InvalidState(
-                        "recursive-Green restart cut is not a target source boundary",
-                    )
-                })?
-            {
+            while {
+                let checkpoint = &self.checkpoints[restart_index];
+                let target_line_start = target_lease
+                    .is_physical_line_start(checkpoint.parser_physical().bytes() as usize)
+                    .map_err(|_| {
+                        M11PersistentRecursiveGreenSessionError::InvalidState(
+                            "recursive-Green restart cut is not a target source boundary",
+                        )
+                    })?;
+                !target_line_start
+                    || !checkpoint_proves_reference_occurrence_cut(checkpoint, references)
+            } {
                 restart_index = restart_index.checked_sub(1).ok_or(
                     M11PersistentRecursiveGreenSessionError::InvalidState(
-                        "sparse recursive-Green index has no target line-boundary restart",
+                        "sparse recursive-Green index has no reference-safe target restart",
                     ),
                 )?;
             }
@@ -2424,6 +2712,16 @@ impl M11PersistentRecursiveGreenSession {
                     parser_restart.utf16() as usize,
                 )?)
             };
+            let reference_range_prefix = if document_start {
+                None
+            } else {
+                Some(runtime.mint_exact_unchanged_prefix_witness(
+                    self.source,
+                    parser_restart.bytes() as usize,
+                    parser_restart.utf16() as usize,
+                )?)
+            };
+            let reference_range_base_start = parser_restart;
             let green_prefix = if document_start {
                 None
             } else {
@@ -2457,7 +2755,9 @@ impl M11PersistentRecursiveGreenSession {
                     )?
                     .target_byte_start()
             };
-            let reference_prefix = if references.occurrence_count() == 0 {
+            let reference_prefix = if references.occurrence_count() == 0
+                || reference_range_required
+            {
                 None
             } else {
                 Some(runtime.mint_exact_unchanged_prefix_witness(
@@ -2521,6 +2821,14 @@ impl M11PersistentRecursiveGreenSession {
                 document_start,
                 green_suffix,
                 reference_prefix,
+                reference_range_prefix,
+                reference_range_base_start,
+                reference_range_pending: reference_range_required,
+                reference_range_ready: false,
+                pending_reference_rendezvous: false,
+                reference_rendezvous: None,
+                reference_replacement: None,
+                reference_replacement_finishing: false,
                 reference_adoption: None,
                 target_green: None,
                 adopted_checkpoints: None,
@@ -2789,6 +3097,340 @@ mod tests {
                 return build.take_session().expect("persistent session");
             }
         }
+    }
+
+    fn finish_local_adoption(
+        runtime: &mut DocumentRuntime,
+        session: M11PersistentRecursiveGreenSession,
+        base_edit: Range<usize>,
+    ) -> M11PersistentRecursiveGreenUpdate {
+        let target = runtime.snapshot_current_source().expect("target lease");
+        let mut adoption = session
+            .begin_local_adoption(runtime, target, base_edit)
+            .unwrap_or_else(|failure| panic!("local adoption start: {}", failure.error()));
+        loop {
+            match adoption
+                .poll(runtime, 64)
+                .expect("poll local adoption")
+                .status()
+            {
+                M11PersistentRecursiveGreenAdoptionStatus::Pending => {}
+                M11PersistentRecursiveGreenAdoptionStatus::Complete => {
+                    return adoption.take_update().expect("completed local update");
+                }
+                M11PersistentRecursiveGreenAdoptionStatus::CleanFallbackRequired => {
+                    panic!("reference mutation required clean fallback")
+                }
+                M11PersistentRecursiveGreenAdoptionStatus::Cancelled => {
+                    panic!("reference mutation was cancelled")
+                }
+            }
+        }
+    }
+
+    fn winner(
+        runtime: &DocumentRuntime,
+        session: &M11PersistentRecursiveGreenSession,
+        label: &[u8],
+    ) -> Option<u64> {
+        session
+            .references
+            .as_ref()
+            .expect("session reference root")
+            .winner_ordinal(runtime, label)
+            .expect("reference winner query")
+    }
+
+    fn close_runtime(runtime: &mut DocumentRuntime) {
+        runtime.begin_close().expect("begin runtime close");
+        while !runtime.poll_close(64).expect("poll runtime close").complete {}
+    }
+
+    fn release_session(
+        runtime: &mut DocumentRuntime,
+        session: &mut M11PersistentRecursiveGreenSession,
+    ) {
+        session.begin_release(runtime).expect("begin session release");
+        while !session.poll_release(runtime, 64).expect("poll session release") {}
+    }
+
+    #[test]
+    fn dynamic_reference_replacement_keeps_the_prefix_before_a_remainder_restart() {
+        const BASE: &str = "[base]: /base\n!x]: /new\nsee [x]\n";
+        let edit_start = BASE.find("!x]").expect("new definition marker");
+
+        let mut runtime = DocumentRuntime::new(BASE, DocumentRuntimeConfig::default())
+            .expect("prefix-boundary runtime");
+        let session = build_session(&mut runtime);
+        let base_source = session.source();
+        runtime
+            .apply_edit(base_source, edit_start..edit_start + 1, "[")
+            .expect("activate second definition");
+        let mut update = finish_local_adoption(
+            &mut runtime,
+            session,
+            edit_start..edit_start + 1,
+        );
+        let mut base = update.take_base().expect("superseded prefix base");
+        let mut target = update.take_target().expect("prefix-safe target");
+
+        assert_eq!(target.reference_occurrence_count(), 2);
+        assert_eq!(winner(&runtime, &target, b"base"), Some(0));
+        assert_eq!(winner(&runtime, &target, b"x"), Some(1));
+
+        release_session(&mut runtime, &mut base);
+        release_session(&mut runtime, &mut target);
+        close_runtime(&mut runtime);
+    }
+
+    #[test]
+    fn local_replacement_advances_past_a_multiline_reference_occurrence() {
+        let destination = "a".repeat(CHECKPOINT_STRIDE_BYTES as usize + 256);
+        let base = format!("before\n\n[x]: /{destination}\n  \"title\"\n\nafter [x]\n");
+        let definition_start = base.find("[x]:").expect("definition start");
+        let title_start = base.find("  \"title\"").expect("title start");
+
+        let mut runtime = DocumentRuntime::new(&base, DocumentRuntimeConfig::default())
+            .expect("multiline reference runtime");
+        let session = build_session(&mut runtime);
+        let references = session.references.as_ref().expect("base reference root");
+        assert!(session.checkpoints.iter().any(|checkpoint| {
+            let cut = checkpoint.parser_physical().bytes() as usize;
+            definition_start < cut
+                && cut <= title_start
+                && !checkpoint_proves_reference_occurrence_cut(checkpoint, references)
+        }));
+
+        let base_source = session.source();
+        runtime
+            .apply_edit(base_source, 0..1, "B")
+            .expect("edit before multiline definition");
+        let mut update = finish_local_adoption(&mut runtime, session, 0..1);
+        let mut superseded = update.take_base().expect("superseded multiline base");
+        let mut target = update.take_target().expect("multiline-safe target");
+
+        assert_eq!(target.reference_occurrence_count(), 1);
+        assert_eq!(winner(&runtime, &target, b"x"), Some(0));
+
+        release_session(&mut runtime, &mut superseded);
+        release_session(&mut runtime, &mut target);
+        close_runtime(&mut runtime);
+    }
+
+    #[test]
+    fn reference_paragraph_before_restart_requests_and_drains_clean_fallback() {
+        let whitespace = " ".repeat(CHECKPOINT_STRIDE_BYTES as usize + 256);
+        let base = format!("[x]:{whitespace}\n!u\n\nafter\n");
+        let edit_start = base.find("!u").expect("destination marker");
+
+        let mut runtime = DocumentRuntime::new(&base, DocumentRuntimeConfig::default())
+            .expect("predating Paragraph runtime");
+        let session = build_session(&mut runtime);
+        assert_eq!(session.reference_occurrence_count(), 0);
+        let base_source = session.source();
+        runtime
+            .apply_edit(base_source, edit_start..edit_start + 1, "/")
+            .expect("activate multiline definition");
+        let target = runtime.snapshot_current_source().expect("target lease");
+        let mut adoption = session
+            .begin_local_adoption(&runtime, target, edit_start..edit_start + 1)
+            .unwrap_or_else(|failure| panic!("local adoption start: {}", failure.error()));
+
+        loop {
+            match adoption.poll(&mut runtime, 64).expect("poll fallback").status() {
+                M11PersistentRecursiveGreenAdoptionStatus::Pending => {}
+                M11PersistentRecursiveGreenAdoptionStatus::CleanFallbackRequired => break,
+                status => panic!("expected clean fallback, got {status:?}"),
+            }
+        }
+        adoption.begin_cancel(&mut runtime).expect("begin fallback cancellation");
+        while !adoption
+            .poll_cancel(&mut runtime, 64)
+            .expect("poll fallback cancellation")
+        {}
+        let mut base = adoption
+            .take_base_after_cancel()
+            .expect("fallback preserves exact base");
+        assert_eq!(base.reference_occurrence_count(), 0);
+        release_session(&mut runtime, &mut base);
+        close_runtime(&mut runtime);
+    }
+
+    #[test]
+    fn local_definition_rename_rebuilds_first_winners_and_replays_suffix() {
+        const BASE: &str = "[a]: /first\n[a]: /second\n\nbody [a] [b]\n";
+        const TARGET: &str = "[b]: /first\n[a]: /second\n\nbody [a] [b]\n";
+
+        let mut runtime = DocumentRuntime::new(BASE, DocumentRuntimeConfig::default())
+            .expect("reference rename runtime");
+        let session = build_session(&mut runtime);
+        let base_source = session.source();
+        runtime
+            .apply_edit(base_source, 1..2, "b")
+            .expect("rename first definition");
+        let mut update = finish_local_adoption(&mut runtime, session, 1..2);
+        let mut base = update.take_base().expect("superseded base");
+        let mut target = update.take_target().expect("incremental target");
+
+        assert_eq!(target.reference_occurrence_count(), 2);
+        assert_eq!(winner(&runtime, &target, b"b"), Some(0));
+        assert_eq!(winner(&runtime, &target, b"a"), Some(1));
+
+        let mut clean_runtime = DocumentRuntime::new(TARGET, DocumentRuntimeConfig::default())
+            .expect("clean reference rename runtime");
+        let mut clean = build_session(&mut clean_runtime);
+        assert_eq!(target.reference_occurrence_count(), clean.reference_occurrence_count());
+        assert_eq!(winner(&runtime, &target, b"a"), winner(&clean_runtime, &clean, b"a"));
+        assert_eq!(winner(&runtime, &target, b"b"), winner(&clean_runtime, &clean, b"b"));
+
+        base.begin_release(&mut runtime).expect("release base");
+        while !base.poll_release(&mut runtime, 64).expect("poll base release") {}
+        target.begin_release(&mut runtime).expect("release target");
+        while !target
+            .poll_release(&mut runtime, 64)
+            .expect("poll target release")
+        {}
+        clean.begin_release(&mut clean_runtime).expect("release clean");
+        while !clean
+            .poll_release(&mut clean_runtime, 64)
+            .expect("poll clean release")
+        {}
+        close_runtime(&mut runtime);
+        close_runtime(&mut clean_runtime);
+    }
+
+    #[test]
+    fn local_definition_deletion_promotes_later_duplicate() {
+        const BASE: &str = "[a]: /first\n\n[a]: /second\n\nbody [a]\n";
+        const TARGET: &str = "ordinary text\n\n[a]: /second\n\nbody [a]\n";
+        const FIRST_DEFINITION_END: usize = "[a]: /first".len();
+
+        let mut runtime = DocumentRuntime::new(BASE, DocumentRuntimeConfig::default())
+            .expect("reference deletion runtime");
+        let session = build_session(&mut runtime);
+        let base_source = session.source();
+        runtime
+            .apply_edit(base_source, 0..FIRST_DEFINITION_END, "ordinary text")
+            .expect("remove first definition");
+        let mut update = finish_local_adoption(
+            &mut runtime,
+            session,
+            0..FIRST_DEFINITION_END,
+        );
+        let mut base = update.take_base().expect("superseded base");
+        let mut target = update.take_target().expect("incremental target");
+
+        assert_eq!(target.reference_occurrence_count(), 1);
+        assert_eq!(winner(&runtime, &target, b"a"), Some(0));
+
+        let mut clean_runtime = DocumentRuntime::new(TARGET, DocumentRuntimeConfig::default())
+            .expect("clean reference deletion runtime");
+        let mut clean = build_session(&mut clean_runtime);
+        assert_eq!(target.reference_occurrence_count(), clean.reference_occurrence_count());
+        assert_eq!(winner(&runtime, &target, b"a"), winner(&clean_runtime, &clean, b"a"));
+
+        base.begin_release(&mut runtime).expect("release base");
+        while !base.poll_release(&mut runtime, 64).expect("poll base release") {}
+        target.begin_release(&mut runtime).expect("release target");
+        while !target
+            .poll_release(&mut runtime, 64)
+            .expect("poll target release")
+        {}
+        clean.begin_release(&mut clean_runtime).expect("release clean");
+        while !clean
+            .poll_release(&mut clean_runtime, 64)
+            .expect("poll clean release")
+        {}
+        close_runtime(&mut runtime);
+        close_runtime(&mut clean_runtime);
+    }
+
+    #[test]
+    fn local_consumer_edit_replays_a_later_definition_without_parsing_to_it() {
+        let prefix = (0..384)
+            .map(|index| format!("prefix paragraph {index:04}\n\n"))
+            .collect::<String>();
+        let suffix = (0..384)
+            .map(|index| format!("suffix paragraph {index:04}\n\n"))
+            .collect::<String>();
+        let base = format!("{prefix}body [a]\n\n{suffix}[a]: /winner\n");
+        let consumer = base.find("body [a]").expect("consumer Paragraph");
+        let edit = consumer + "body [".len()..consumer + "body [a".len();
+
+        let mut runtime = DocumentRuntime::new(&base, DocumentRuntimeConfig::default())
+            .expect("later-definition runtime");
+        let session = build_session(&mut runtime);
+        let base_source = session.source();
+        runtime
+            .apply_edit(base_source, edit.clone(), "b")
+            .expect("edit reference consumer");
+        let mut update = finish_local_adoption(&mut runtime, session, edit);
+
+        assert!(
+            update.work().source_bytes_read() < suffix.len(),
+            "the local parser should converge before the distant definition"
+        );
+        let mut base_session = update.take_base().expect("superseded base");
+        let mut target = update.take_target().expect("incremental target");
+        assert_eq!(target.reference_occurrence_count(), 1);
+        assert_eq!(winner(&runtime, &target, b"a"), Some(0));
+        assert_eq!(winner(&runtime, &target, b"b"), None);
+
+        base_session
+            .begin_release(&mut runtime)
+            .expect("release base");
+        while !base_session
+            .poll_release(&mut runtime, 64)
+            .expect("poll base release")
+        {}
+        target.begin_release(&mut runtime).expect("release target");
+        while !target
+            .poll_release(&mut runtime, 64)
+            .expect("poll target release")
+        {}
+        close_runtime(&mut runtime);
+    }
+
+    #[test]
+    fn local_paragraph_to_definition_starts_reference_replacement_on_demand() {
+        const BASE: &str = "xa]: /new\n\nbody [a]\n";
+        const TARGET: &str = "[a]: /new\n\nbody [a]\n";
+
+        let mut runtime = DocumentRuntime::new(BASE, DocumentRuntimeConfig::default())
+            .expect("new-definition runtime");
+        let session = build_session(&mut runtime);
+        assert_eq!(session.reference_occurrence_count(), 0);
+        let base_source = session.source();
+        runtime
+            .apply_edit(base_source, 0..1, "[")
+            .expect("promote Paragraph to definition");
+        let mut update = finish_local_adoption(&mut runtime, session, 0..1);
+        let mut base = update.take_base().expect("superseded base");
+        let mut target = update.take_target().expect("incremental target");
+
+        assert_eq!(target.reference_occurrence_count(), 1);
+        assert_eq!(winner(&runtime, &target, b"a"), Some(0));
+
+        let mut clean_runtime = DocumentRuntime::new(TARGET, DocumentRuntimeConfig::default())
+            .expect("clean new-definition runtime");
+        let mut clean = build_session(&mut clean_runtime);
+        assert_eq!(target.reference_occurrence_count(), clean.reference_occurrence_count());
+        assert_eq!(winner(&runtime, &target, b"a"), winner(&clean_runtime, &clean, b"a"));
+
+        base.begin_release(&mut runtime).expect("release base");
+        while !base.poll_release(&mut runtime, 64).expect("poll base release") {}
+        target.begin_release(&mut runtime).expect("release target");
+        while !target
+            .poll_release(&mut runtime, 64)
+            .expect("poll target release")
+        {}
+        clean.begin_release(&mut clean_runtime).expect("release clean");
+        while !clean
+            .poll_release(&mut clean_runtime, 64)
+            .expect("poll clean release")
+        {}
+        close_runtime(&mut runtime);
+        close_runtime(&mut clean_runtime);
     }
 
     #[test]

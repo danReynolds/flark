@@ -168,6 +168,7 @@ enum ActiveCandidate {
         witness: Box<PersistentSourceFactsDeltaWitness>,
         next_restart: CandidateRestartAuthority,
         structural_path: ExactStructuralPath,
+        reference_transport: ExactReferenceTransport,
     },
     Streaming(Box<StreamingCandidate>),
 }
@@ -190,6 +191,12 @@ enum ExactStructuralPath {
     LegacyBlocks,
     RecursiveGreen,
     RecursiveGreenWholeRole,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ExactReferenceTransport {
+    Reuse,
+    Replace,
 }
 
 const fn recursive_green_publication_path(segment_count: usize) -> ExactStructuralPath {
@@ -525,6 +532,7 @@ struct StreamingCandidate {
     next_restart: Option<CandidateRestartAuthority>,
     superseded_exact_base: Option<Box<M11RetainedCandidatePublication>>,
     exact_base_recovery: Option<ExactBaseRecovery>,
+    reuses_exact_base_references: bool,
 }
 
 struct StreamingHotInlineSidecar {
@@ -4731,13 +4739,45 @@ impl CandidateEndpoint {
             )));
             return Ok(true);
         }
+        let reference_transport = {
+            let update = self
+                .recursive_green
+                .ready_update_for(base_ack, target_source)
+                .ok_or(CandidateEndpointError::InvalidAuthority)?;
+            match M11ParserCandidate::recursive_green_references_match_exact_base(
+                runtime,
+                update.target_session(),
+                &base.publication,
+            ) {
+                Ok(true) => ExactReferenceTransport::Reuse,
+                Ok(false) => ExactReferenceTransport::Replace,
+                Err(error) => {
+                    self.recursive_green.request_cancel_pending()?;
+                    self.cleanup = Some(CandidateCleanup::RetainedPublication {
+                        publication: base.publication,
+                        begun: false,
+                    });
+                    return Err(error.into());
+                }
+            }
+        };
         let update = self
             .recursive_green
             .ready_update_for(base_ack, target_source)
             .ok_or(CandidateEndpointError::InvalidAuthority)?;
-        let candidate = match M11ParserCandidate::derive_with_recursive_green_reusing_references(
-            certified, update,
-        ) {
+        let candidate_result = match reference_transport {
+            ExactReferenceTransport::Reuse => {
+                M11ParserCandidate::derive_with_recursive_green_reusing_references(
+                    certified, update,
+                )
+            }
+            ExactReferenceTransport::Replace => {
+                M11ParserCandidate::derive_with_recursive_green_replacing_references(
+                    certified, update,
+                )
+            }
+        };
+        let candidate = match candidate_result {
             Ok(candidate) => candidate,
             Err(error) => {
                 self.recursive_green.request_cancel_pending()?;
@@ -4758,14 +4798,25 @@ impl CandidateEndpoint {
             .recursive_green
             .ready_update_for(base_ack, target_source)
             .ok_or(CandidateEndpointError::InvalidAuthority)?;
-        let writer = match candidate.into_writer_with_recursive_green_reusing_references(
-            runtime,
-            document_bytes(context.binding.document_session),
-            publication,
-            u64::from(context.parse_generation),
-            update,
-            &base.publication,
-        ) {
+        let writer_result = match reference_transport {
+            ExactReferenceTransport::Reuse => candidate
+                .into_writer_with_recursive_green_reusing_references(
+                    runtime,
+                    document_bytes(context.binding.document_session),
+                    publication,
+                    u64::from(context.parse_generation),
+                    update,
+                    &base.publication,
+                ),
+            ExactReferenceTransport::Replace => candidate.into_writer_with_recursive_green(
+                runtime,
+                document_bytes(context.binding.document_session),
+                publication,
+                u64::from(context.parse_generation),
+                update.target_session(),
+            ),
+        };
+        let writer = match writer_result {
             Ok(writer) => writer,
             Err(error) => {
                 self.recursive_green.request_cancel_pending()?;
@@ -4783,6 +4834,7 @@ impl CandidateEndpoint {
             witness,
             next_restart,
             structural_path: ExactStructuralPath::RecursiveGreen,
+            reference_transport,
         });
         Ok(true)
     }
@@ -5106,6 +5158,8 @@ impl CandidateEndpoint {
                                     return Err(error.into());
                                 }
                             };
+                            let reuses_exact_base_references =
+                                stream.reuses_exact_base_references();
                             let offer = match offer_begin(context, descriptor) {
                                 Ok(offer) => offer,
                                 Err(error) => {
@@ -5136,6 +5190,7 @@ impl CandidateEndpoint {
                                     next_restart,
                                     superseded_exact_base: None,
                                     exact_base_recovery: None,
+                                    reuses_exact_base_references,
                                 })));
                         }
                     }
@@ -5598,6 +5653,7 @@ impl CandidateEndpoint {
                                         next_restart,
                                         structural_path:
                                             ExactStructuralPath::RecursiveGreenWholeRole,
+                                        reference_transport: ExactReferenceTransport::Reuse,
                                     });
                                     continue;
                                 }
@@ -5729,6 +5785,7 @@ impl CandidateEndpoint {
                                     witness,
                                     next_restart,
                                     structural_path: ExactStructuralPath::LegacyBlocks,
+                                    reference_transport: ExactReferenceTransport::Reuse,
                                 });
                                 continue;
                             }
@@ -5875,6 +5932,8 @@ impl CandidateEndpoint {
                                     return Err(error.into());
                                 }
                             };
+                            let reuses_exact_base_references =
+                                stream.reuses_exact_base_references();
                             let base_restart = match base.restart.take() {
                                 Some(restart) => restart,
                                 None => {
@@ -5926,6 +5985,7 @@ impl CandidateEndpoint {
                                         ack: base.ack,
                                         restart: base_restart,
                                     }),
+                                    reuses_exact_base_references,
                                 })));
                         }
                     }
@@ -5937,6 +5997,7 @@ impl CandidateEndpoint {
                     witness,
                     next_restart,
                     structural_path,
+                    reference_transport,
                 } => {
                     if structural_path == ExactStructuralPath::LegacyBlocks
                         && self.recursive_green.owns_recursive_base_authority(base.ack)
@@ -5948,14 +6009,21 @@ impl CandidateEndpoint {
                             witness,
                             next_restart,
                             structural_path,
+                            reference_transport,
                         });
                         return Err(CandidateEndpointError::InvalidState);
                     }
-                    let polled = match writer.poll_reusing_references(
-                        runtime,
-                        fuel - transitions,
-                        &base.publication,
-                    ) {
+                    let poll_result = match reference_transport {
+                        ExactReferenceTransport::Reuse => writer.poll_reusing_references(
+                            runtime,
+                            fuel - transitions,
+                            &base.publication,
+                        ),
+                        ExactReferenceTransport::Replace => {
+                            writer.poll(runtime, fuel - transitions)
+                        }
+                    };
+                    let polled = match poll_result {
                         Ok(polled) => polled,
                         Err(error) => {
                             self.active = Some(ActiveCandidate::BuildingExact {
@@ -5965,6 +6033,7 @@ impl CandidateEndpoint {
                                 witness,
                                 next_restart,
                                 structural_path,
+                                reference_transport,
                             });
                             return Err(error.into());
                         }
@@ -5983,6 +6052,7 @@ impl CandidateEndpoint {
                                         witness,
                                         next_restart,
                                         structural_path,
+                                        reference_transport,
                                     });
                                     return Err(CandidateEndpointError::InvalidState);
                                 }
@@ -5994,6 +6064,7 @@ impl CandidateEndpoint {
                                 witness,
                                 next_restart,
                                 structural_path,
+                                reference_transport,
                             });
                             return Ok(CandidatePoll::Pending { transitions });
                         }
@@ -6103,8 +6174,13 @@ impl CandidateEndpoint {
                             let stream_result = match (
                                 structural_path,
                                 recursive_green_selection,
+                                reference_transport,
                             ) {
-                                (ExactStructuralPath::RecursiveGreen, Some(selection)) => {
+                                (
+                                    ExactStructuralPath::RecursiveGreen,
+                                    Some(selection),
+                                    ExactReferenceTransport::Reuse,
+                                ) => {
                                     publication
                                         .into_exact_base_snapshot_stream_selecting_recursive_green_splice(
                                             runtime,
@@ -6113,13 +6189,32 @@ impl CandidateEndpoint {
                                             selection,
                                         )
                                 }
-                                (ExactStructuralPath::LegacyBlocks, None) => publication
+                                (
+                                    ExactStructuralPath::RecursiveGreen,
+                                    Some(selection),
+                                    ExactReferenceTransport::Replace,
+                                ) => publication
+                                    .into_exact_base_snapshot_stream_selecting_recursive_green_splice_replacing_references(
+                                        runtime,
+                                        base.publication,
+                                        witness,
+                                        selection,
+                                    ),
+                                (
+                                    ExactStructuralPath::LegacyBlocks,
+                                    None,
+                                    ExactReferenceTransport::Reuse,
+                                ) => publication
                                     .into_exact_base_snapshot_stream_selecting_block_splice(
                                         runtime,
                                         base.publication,
                                         witness,
                                     ),
-                                (ExactStructuralPath::RecursiveGreenWholeRole, None) => publication
+                                (
+                                    ExactStructuralPath::RecursiveGreenWholeRole,
+                                    None,
+                                    ExactReferenceTransport::Reuse,
+                                ) => publication
                                     .into_exact_base_snapshot_stream(
                                         runtime,
                                         base.publication,
@@ -6152,6 +6247,8 @@ impl CandidateEndpoint {
                                     return Err(error.into());
                                 }
                             };
+                            let reuses_exact_base_references =
+                                stream.reuses_exact_base_references();
                             let transferred_record_count =
                                 stream.transferred_canonical_record_count();
                             let offer = match offer_begin_exact(
@@ -6197,6 +6294,7 @@ impl CandidateEndpoint {
                                         ack: base_ack,
                                         restart: base_restart,
                                     }),
+                                    reuses_exact_base_references,
                                 })));
                         }
                     }
@@ -6237,6 +6335,7 @@ impl CandidateEndpoint {
 
     pub(crate) fn accept_credit(
         &mut self,
+        runtime: &DocumentRuntime,
         credit: CandidateCredit,
         event_id: u32,
     ) -> Result<(), CandidateEndpointError> {
@@ -6272,7 +6371,7 @@ impl CandidateEndpoint {
                 }
             }
             (StreamPhase::AwaitDeliveryReceipt, CandidateCredit::Delivery) => {
-                self.finish_delivery()?;
+                self.finish_delivery(runtime)?;
                 return Ok(());
             }
             _ => return Err(CandidateEndpointError::InvalidState),
@@ -6870,6 +6969,7 @@ impl CandidateEndpoint {
                 witness,
                 next_restart,
                 structural_path,
+                reference_transport,
             } => {
                 if self.cleanup.is_some() {
                     self.active = Some(ActiveCandidate::BuildingExact {
@@ -6879,6 +6979,7 @@ impl CandidateEndpoint {
                         witness,
                         next_restart,
                         structural_path,
+                        reference_transport,
                     });
                     return Err(CandidateEndpointError::Busy);
                 }
@@ -7634,7 +7735,7 @@ impl CandidateEndpoint {
         }))
     }
 
-    fn finish_delivery(&mut self) -> Result<(), CandidateEndpointError> {
+    fn finish_delivery(&mut self, runtime: &DocumentRuntime) -> Result<(), CandidateEndpointError> {
         let Some(ActiveCandidate::Streaming(mut streaming)) = self.active.take() else {
             return Err(CandidateEndpointError::InvalidState);
         };
@@ -7667,17 +7768,21 @@ impl CandidateEndpoint {
             .take()
             .ok_or(CandidateEndpointError::InvalidState)?;
         let mut publication = Box::new(publication);
-        // A FullSnapshot fallback may still carry `superseded_exact_base`
-        // solely so delivery can fuel-close the old publication. Only the
-        // ExactBaseDelta stream setup authenticated equal canonical References
-        // roots, so only that mode may transfer the winner-index handle.
-        if streaming.offer.mode == PublicationMode::ExactBaseDelta {
+        // ExactBaseDelta now has two authenticated reference transports.
+        // Only tag-1 reuse may transfer the base winner-index handle; tag-5
+        // replacement installs and indexes the target's independent root.
+        if streaming.reuses_exact_base_references {
+            if streaming.offer.mode != PublicationMode::ExactBaseDelta {
+                streaming.sealed_publication = Some(*publication);
+                self.active = Some(ActiveCandidate::Streaming(streaming));
+                return Err(CandidateEndpointError::InvalidState);
+            }
             let Some(base) = streaming.superseded_exact_base.as_mut() else {
                 streaming.sealed_publication = Some(*publication);
                 self.active = Some(ActiveCandidate::Streaming(streaming));
                 return Err(CandidateEndpointError::InvalidState);
             };
-            if let Err(error) = publication.adopt_exact_base_reference_resolver(base) {
+            if let Err(error) = publication.adopt_exact_base_reference_resolver(runtime, base) {
                 streaming.sealed_publication = Some(*publication);
                 self.active = Some(ActiveCandidate::Streaming(streaming));
                 return Err(error.into());

@@ -1726,6 +1726,89 @@ pub(crate) struct ReferenceRootView<'a> {
     _not_sync: PhantomData<Cell<()>>,
 }
 
+/// Detached source-order traversal of one committed References root.
+///
+/// Occurrence pages point toward their older siblings, so reaching the first
+/// occurrence requires one bounded descent over the page spine. The cursor
+/// retains only page identities and subsequently visits every fact exactly
+/// once; unlike repeated ordinal lookup, replay is linear in pages + facts.
+pub(crate) struct ReferenceOccurrenceCursor {
+    authority: ReferenceAuthority,
+    count: u64,
+    next_page: Option<ArenaId>,
+    expected_page_end: u64,
+    pages: Vec<ArenaId>,
+    page: Option<ReferenceOccurrenceCursorPage>,
+    next_ordinal: u64,
+    descending: bool,
+}
+
+struct ReferenceOccurrenceCursorPage {
+    id: ArenaId,
+    next_fact: usize,
+    count: usize,
+    first_fact: usize,
+}
+
+pub(crate) enum ReferenceOccurrenceCursorPoll {
+    Pending {
+        transitions: usize,
+    },
+    Occurrence {
+        transitions: usize,
+        occurrence: DetachedReferenceOccurrence,
+    },
+    Complete {
+        transitions: usize,
+    },
+}
+
+/// One occurrence detached from the arena borrow that produced it. Cooked
+/// values remain represented by bounded copy cursors rather than contiguous
+/// allocations.
+pub(crate) struct DetachedReferenceOccurrence {
+    pub(crate) ordinal: u64,
+    pub(crate) source: ReferenceSourceRange,
+    pub(crate) label_source: ReferenceSourceRange,
+    pub(crate) destination_source: ReferenceSourceRange,
+    pub(crate) title_source: Option<ReferenceSourceRange>,
+    pub(crate) normalized_label: PersistentBytesCopyCursor,
+    pub(crate) cooked_destination: PersistentBytesCopyCursor,
+    pub(crate) cooked_title: Option<PersistentBytesCopyCursor>,
+}
+
+/// Arena-borrow-free, forward-only value copier. Blob pages are first
+/// descended in bounded steps and then copied oldest-to-newest. This avoids
+/// both value-sized materialization and the quadratic re-seeking of repeated
+/// [`PersistentBytesView::read`] calls.
+pub(crate) struct PersistentBytesCopyCursor {
+    authority: ReferenceAuthority,
+    len: u64,
+    copied: u64,
+    storage: PersistentBytesCopyStorage,
+}
+
+enum PersistentBytesCopyStorage {
+    Inline {
+        fact: ArenaId,
+        start: usize,
+    },
+    Blob {
+        kind: BlobKind,
+        next: Option<ArenaId>,
+        expected_end: u64,
+        pages: Vec<ArenaId>,
+        current: Option<(ArenaId, usize)>,
+        descending: bool,
+    },
+}
+
+pub(crate) struct PersistentBytesCopyPoll {
+    pub(crate) transitions: usize,
+    pub(crate) written: usize,
+    pub(crate) complete: bool,
+}
+
 impl<'a> ReferenceRootView<'a> {
     pub(crate) fn open(
         arena: &'a PageArena,
@@ -1756,6 +1839,19 @@ impl<'a> ReferenceRootView<'a> {
 
     pub(crate) fn count(&self) -> u64 {
         self.count
+    }
+
+    pub(crate) fn occurrences(&self) -> ReferenceOccurrenceCursor {
+        ReferenceOccurrenceCursor {
+            authority: self.authority,
+            count: self.count,
+            next_page: self.page_root,
+            expected_page_end: self.count,
+            pages: Vec::new(),
+            page: None,
+            next_ordinal: 0,
+            descending: true,
+        }
     }
 
     pub(crate) fn occurrence(
@@ -1835,6 +1931,101 @@ impl<'a> ReferenceRootView<'a> {
         winner
             .map(|(id, _)| decode_fact(self.arena, id, self.authority))
             .transpose()
+    }
+}
+
+impl ReferenceOccurrenceCursor {
+    pub(crate) fn poll_next(
+        &mut self,
+        arena: &PageArena,
+        fuel: usize,
+    ) -> Result<ReferenceOccurrenceCursorPoll, ReferenceRootError> {
+        if fuel == 0 {
+            return Err(ReferenceRootError::ZeroFuel);
+        }
+        let mut transitions = 0;
+        while transitions < fuel {
+            if self.descending {
+                if let Some(page_id) = self.next_page {
+                    let descriptor = decode_page(arena, page_id, self.authority)?;
+                    let page_end = descriptor
+                        .start
+                        .checked_add(u64::from(descriptor.count))
+                        .ok_or(ReferenceRootError::Corrupt("page ordinal overflow"))?;
+                    if page_end != self.expected_page_end {
+                        return Err(ReferenceRootError::Corrupt(
+                            "occurrence pages are not contiguous",
+                        ));
+                    }
+                    self.pages
+                        .try_reserve(1)
+                        .map_err(|_| ReferenceRootError::Arena(ArenaError::AllocationFailed))?;
+                    self.pages.push(page_id);
+                    self.expected_page_end = descriptor.start;
+                    self.next_page = descriptor.previous;
+                    transitions += 1;
+                    continue;
+                }
+                if self.expected_page_end != 0 {
+                    return Err(ReferenceRootError::Corrupt(
+                        "occurrence page chain is incomplete",
+                    ));
+                }
+                self.descending = false;
+                transitions += 1;
+                continue;
+            }
+
+            if let Some(page) = self.page.as_mut() {
+                if page.next_fact < page.count {
+                    let fact_id = arena.child_at(page.id, page.first_fact + page.next_fact)?;
+                    let occurrence = decode_fact(arena, fact_id, self.authority)?;
+                    if occurrence.ordinal != self.next_ordinal {
+                        return Err(ReferenceRootError::Corrupt(
+                            "occurrence ordinal changed during replay",
+                        ));
+                    }
+                    page.next_fact += 1;
+                    self.next_ordinal = self
+                        .next_ordinal
+                        .checked_add(1)
+                        .ok_or(ReferenceRootError::OccurrenceLimit)?;
+                    transitions += 1;
+                    return Ok(ReferenceOccurrenceCursorPoll::Occurrence {
+                        transitions,
+                        occurrence: occurrence.detach(),
+                    });
+                }
+                self.page = None;
+                transitions += 1;
+                continue;
+            }
+
+            if let Some(page_id) = self.pages.pop() {
+                let descriptor = decode_page(arena, page_id, self.authority)?;
+                if descriptor.start != self.next_ordinal {
+                    return Err(ReferenceRootError::Corrupt(
+                        "occurrence page order changed during replay",
+                    ));
+                }
+                self.page = Some(ReferenceOccurrenceCursorPage {
+                    id: page_id,
+                    next_fact: 0,
+                    count: usize::from(descriptor.count),
+                    first_fact: usize::from(descriptor.has_previous),
+                });
+                transitions += 1;
+                continue;
+            }
+
+            if self.next_ordinal != self.count {
+                return Err(ReferenceRootError::Corrupt(
+                    "occurrence replay ended before the root count",
+                ));
+            }
+            return Ok(ReferenceOccurrenceCursorPoll::Complete { transitions });
+        }
+        Ok(ReferenceOccurrenceCursorPoll::Pending { transitions })
     }
 }
 
@@ -3045,9 +3236,46 @@ enum PersistentBytesStorage {
     Blob { kind: BlobKind, root: ArenaId },
 }
 
+impl ReferenceOccurrenceView<'_> {
+    fn detach(self) -> DetachedReferenceOccurrence {
+        DetachedReferenceOccurrence {
+            ordinal: self.ordinal,
+            source: self.source,
+            label_source: self.label_source,
+            destination_source: self.destination_source,
+            title_source: self.title_source,
+            normalized_label: self.normalized_label.into_copy_cursor(),
+            cooked_destination: self.cooked_destination.into_copy_cursor(),
+            cooked_title: self.cooked_title.map(PersistentBytesView::into_copy_cursor),
+        }
+    }
+}
+
 impl PersistentBytesView<'_> {
     pub(crate) fn len(&self) -> u64 {
         self.len
+    }
+
+    fn into_copy_cursor(self) -> PersistentBytesCopyCursor {
+        let storage = match self.storage {
+            PersistentBytesStorage::Inline { fact, start } => {
+                PersistentBytesCopyStorage::Inline { fact, start }
+            }
+            PersistentBytesStorage::Blob { kind, root } => PersistentBytesCopyStorage::Blob {
+                kind,
+                next: Some(root),
+                expected_end: self.len,
+                pages: Vec::new(),
+                current: None,
+                descending: true,
+            },
+        };
+        PersistentBytesCopyCursor {
+            authority: self.authority,
+            len: self.len,
+            copied: 0,
+            storage,
+        }
     }
 
     pub(crate) fn read(&self, offset: u64, output: &mut [u8]) -> Result<usize, ReferenceRootError> {
@@ -3164,6 +3392,142 @@ impl PersistentBytesView<'_> {
         payload
             .get(start..end)
             .ok_or(ReferenceRootError::Corrupt("inline value range changed"))
+    }
+}
+
+impl PersistentBytesCopyCursor {
+    pub(crate) fn len(&self) -> u64 {
+        self.len
+    }
+
+    pub(crate) fn complete(&self) -> bool {
+        self.copied == self.len
+    }
+
+    pub(crate) fn poll_copy(
+        &mut self,
+        arena: &PageArena,
+        output: &mut [u8],
+        fuel: usize,
+    ) -> Result<PersistentBytesCopyPoll, ReferenceRootError> {
+        if fuel == 0 {
+            return Err(ReferenceRootError::ZeroFuel);
+        }
+        if self.complete() {
+            return Ok(PersistentBytesCopyPoll {
+                transitions: 0,
+                written: 0,
+                complete: true,
+            });
+        }
+
+        let mut transitions = 0;
+        let mut written = 0;
+        while transitions < fuel && self.copied < self.len {
+            match &mut self.storage {
+                PersistentBytesCopyStorage::Inline { fact, start } => {
+                    if output.len() == written {
+                        break;
+                    }
+                    let payload = arena.payload(*fact)?;
+                    decode_header(payload, INLINE_FACT_TAG, self.authority)?;
+                    let copied = usize::try_from(self.copied)
+                        .map_err(|_| ReferenceRootError::Corrupt("inline copy offset overflow"))?;
+                    let remaining = usize::try_from(self.len - self.copied)
+                        .map_err(|_| ReferenceRootError::Corrupt("inline copy length overflow"))?;
+                    let take = remaining.min(output.len() - written);
+                    let value_start = start
+                        .checked_add(copied)
+                        .ok_or(ReferenceRootError::Corrupt("inline copy range overflow"))?;
+                    let value_end = value_start
+                        .checked_add(take)
+                        .ok_or(ReferenceRootError::Corrupt("inline copy range overflow"))?;
+                    let source = payload
+                        .get(value_start..value_end)
+                        .ok_or(ReferenceRootError::Corrupt("inline copy range changed"))?;
+                    output[written..written + take].copy_from_slice(source);
+                    self.copied += take as u64;
+                    written += take;
+                    transitions += 1;
+                }
+                PersistentBytesCopyStorage::Blob {
+                    kind,
+                    next,
+                    expected_end,
+                    pages,
+                    current,
+                    descending,
+                } => {
+                    if *descending {
+                        let page_id =
+                            next.ok_or(ReferenceRootError::Corrupt("blob copy chain ended early"))?;
+                        let descriptor = decode_blob(arena, page_id, self.authority, *kind)?;
+                        let end = descriptor
+                            .chunk_start
+                            .checked_add(u64::from(descriptor.chunk_len))
+                            .ok_or(ReferenceRootError::Corrupt("blob chunk overflow"))?;
+                        if descriptor.total_len != self.len || end != *expected_end {
+                            return Err(ReferenceRootError::Corrupt(
+                                "blob copy chunks are not contiguous",
+                            ));
+                        }
+                        pages
+                            .try_reserve(1)
+                            .map_err(|_| ReferenceRootError::Arena(ArenaError::AllocationFailed))?;
+                        pages.push(page_id);
+                        *expected_end = descriptor.chunk_start;
+                        *next = descriptor.previous;
+                        if descriptor.chunk_start == 0 {
+                            *descending = false;
+                        }
+                        transitions += 1;
+                        continue;
+                    }
+
+                    if output.len() == written {
+                        break;
+                    }
+                    if current.is_none() {
+                        let page_id = pages.pop().ok_or(ReferenceRootError::Corrupt(
+                            "blob copy page stack ended early",
+                        ))?;
+                        *current = Some((page_id, 0));
+                    }
+                    let (page_id, page_offset) = current.as_mut().ok_or(
+                        ReferenceRootError::Corrupt("blob copy lost its current page"),
+                    )?;
+                    let descriptor = decode_blob(arena, *page_id, self.authority, *kind)?;
+                    let chunk_len = usize::from(descriptor.chunk_len);
+                    if *page_offset > chunk_len {
+                        return Err(ReferenceRootError::Corrupt(
+                            "blob copy page offset escaped its chunk",
+                        ));
+                    }
+                    let take = (chunk_len - *page_offset).min(output.len() - written);
+                    let payload = arena.payload(*page_id)?;
+                    let chunk_start = NODE_HEADER_BYTES + BLOB_METADATA_BYTES + *page_offset;
+                    let chunk_end = chunk_start
+                        .checked_add(take)
+                        .ok_or(ReferenceRootError::Corrupt("blob copy range overflow"))?;
+                    let source = payload
+                        .get(chunk_start..chunk_end)
+                        .ok_or(ReferenceRootError::Corrupt("blob copy range changed"))?;
+                    output[written..written + take].copy_from_slice(source);
+                    self.copied += take as u64;
+                    written += take;
+                    *page_offset += take;
+                    if *page_offset == chunk_len {
+                        *current = None;
+                    }
+                    transitions += 1;
+                }
+            }
+        }
+        Ok(PersistentBytesCopyPoll {
+            transitions,
+            written,
+            complete: self.complete(),
+        })
     }
 }
 

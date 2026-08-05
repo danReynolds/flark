@@ -1551,6 +1551,12 @@ pub struct M11CandidateDescriptor {
     pub maximum_snapshot_encoded_bytes: u64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum M11ExactBaseReferencesTransport {
+    Reuse,
+    Replace,
+}
+
 impl M11CandidatePublication {
     /// Attaches the parser-selected block splice that constructed this exact
     /// target publication.
@@ -1673,7 +1679,14 @@ impl M11CandidatePublication {
         base: Box<M11RetainedCandidatePublication>,
         witness: Box<PersistentSourceFactsDeltaWitness>,
     ) -> Result<M11OwnedSnapshotStream, M11ExactBaseSnapshotStreamStartFailure> {
-        self.into_exact_base_snapshot_stream_inner(runtime, base, witness, false, None)
+        self.into_exact_base_snapshot_stream_inner(
+            runtime,
+            base,
+            witness,
+            M11ExactBaseReferencesTransport::Reuse,
+            false,
+            None,
+        )
     }
 
     /// Selects the parser-attached local block splice when one exists and
@@ -1688,7 +1701,14 @@ impl M11CandidatePublication {
         base: Box<M11RetainedCandidatePublication>,
         witness: Box<PersistentSourceFactsDeltaWitness>,
     ) -> Result<M11OwnedSnapshotStream, M11ExactBaseSnapshotStreamStartFailure> {
-        self.into_exact_base_snapshot_stream_inner(runtime, base, witness, true, None)
+        self.into_exact_base_snapshot_stream_inner(
+            runtime,
+            base,
+            witness,
+            M11ExactBaseReferencesTransport::Reuse,
+            true,
+            None,
+        )
     }
 
     /// Selects one parser-authenticated recursive-Green event splice for an
@@ -1705,7 +1725,37 @@ impl M11CandidatePublication {
         witness: Box<PersistentSourceFactsDeltaWitness>,
         selection: M11RecursiveGreenStructuralSpliceSelection,
     ) -> Result<M11OwnedSnapshotStream, M11ExactBaseSnapshotStreamStartFailure> {
-        self.into_exact_base_snapshot_stream_inner(runtime, base, witness, false, Some(selection))
+        self.into_exact_base_snapshot_stream_inner(
+            runtime,
+            base,
+            witness,
+            M11ExactBaseReferencesTransport::Reuse,
+            false,
+            Some(selection),
+        )
+    }
+
+    /// Selects parser-authenticated sparse recursive-Green segments while
+    /// transferring the target's complete canonical References role.
+    ///
+    /// The retained base remains authoritative for SourceFacts and Green
+    /// replay only. References are ordinary closure nodes and are
+    /// independently revalidated by the host before the target can seal.
+    pub fn into_exact_base_snapshot_stream_selecting_recursive_green_splice_replacing_references(
+        self: Box<Self>,
+        runtime: &mut DocumentRuntime,
+        base: Box<M11RetainedCandidatePublication>,
+        witness: Box<PersistentSourceFactsDeltaWitness>,
+        selection: M11RecursiveGreenStructuralSpliceSelection,
+    ) -> Result<M11OwnedSnapshotStream, M11ExactBaseSnapshotStreamStartFailure> {
+        self.into_exact_base_snapshot_stream_inner(
+            runtime,
+            base,
+            witness,
+            M11ExactBaseReferencesTransport::Replace,
+            false,
+            Some(selection),
+        )
     }
 
     fn into_exact_base_snapshot_stream_inner(
@@ -1713,11 +1763,15 @@ impl M11CandidatePublication {
         runtime: &mut DocumentRuntime,
         base: Box<M11RetainedCandidatePublication>,
         witness: Box<PersistentSourceFactsDeltaWitness>,
+        references_transport: M11ExactBaseReferencesTransport,
         select_block_splice: bool,
         recursive_green_selection: Option<M11RecursiveGreenStructuralSpliceSelection>,
     ) -> Result<M11OwnedSnapshotStream, M11ExactBaseSnapshotStreamStartFailure> {
         let setup = (|| {
-            if select_block_splice && recursive_green_selection.is_some() {
+            if (select_block_splice && recursive_green_selection.is_some())
+                || (references_transport == M11ExactBaseReferencesTransport::Replace
+                    && (select_block_splice || recursive_green_selection.is_none()))
+            {
                 return Err(M11PublicationError::invalid_state());
             }
             validate_runtime(self.runtime_identity, runtime)?;
@@ -1730,19 +1784,21 @@ impl M11CandidatePublication {
                 target_publication,
                 &witness,
             )?;
-            if let Some(winner) = base.reference_winner.as_ref() {
-                let target_descriptor = decode_manifest_descriptor(
-                    runtime.producer_arena(),
-                    target_publication.root_id(),
-                    target_publication.authority(),
-                )?;
-                let target_reference_root = persistent_reference_manifest_root(
-                    runtime.producer_arena(),
-                    &target_descriptor,
-                    target_publication.authority(),
-                )?;
-                if winner.root != target_reference_root {
-                    return Err(M11PublicationError::invalid_state());
+            if references_transport == M11ExactBaseReferencesTransport::Reuse {
+                if let Some(winner) = base.reference_winner.as_ref() {
+                    let target_descriptor = decode_manifest_descriptor(
+                        runtime.producer_arena(),
+                        target_publication.root_id(),
+                        target_publication.authority(),
+                    )?;
+                    let target_reference_root = persistent_reference_manifest_root(
+                        runtime.producer_arena(),
+                        &target_descriptor,
+                        target_publication.authority(),
+                    )?;
+                    if winner.root != target_reference_root {
+                        return Err(M11PublicationError::invalid_state());
+                    }
                 }
             }
             let block_selection = select_block_splice
@@ -1760,6 +1816,7 @@ impl M11CandidatePublication {
                     target_publication,
                     witness.target_page_range(),
                     &selection,
+                    references_transport,
                 )?;
                 let mut green_event_ranges = Vec::new();
                 green_event_ranges
@@ -1769,15 +1826,30 @@ impl M11CandidatePublication {
                     green_event_ranges
                         .push((segment.base_event_range(), segment.target_event_range()));
                 }
-                let state = CandidateSnapshotEncoderState::
-                    new_exact_base_delta_with_recursive_green_splices(
-                        runtime.producer_arena(),
-                        base_publication,
-                        target_publication,
-                        witness.base_page_range().clone(),
-                        witness.target_page_range().clone(),
-                        &green_event_ranges,
-                    )?;
+                let state = match references_transport {
+                    M11ExactBaseReferencesTransport::Reuse => {
+                        CandidateSnapshotEncoderState::
+                            new_exact_base_delta_with_recursive_green_splices(
+                                runtime.producer_arena(),
+                                base_publication,
+                                target_publication,
+                                witness.base_page_range().clone(),
+                                witness.target_page_range().clone(),
+                                &green_event_ranges,
+                            )?
+                    }
+                    M11ExactBaseReferencesTransport::Replace => {
+                        CandidateSnapshotEncoderState::
+                            new_exact_base_delta_with_recursive_green_splices_replacing_references(
+                                runtime.producer_arena(),
+                                base_publication,
+                                target_publication,
+                                witness.base_page_range().clone(),
+                                witness.target_page_range().clone(),
+                                &green_event_ranges,
+                            )?
+                    }
+                };
                 (state, transferred)
             } else if let Some(selection) = block_selection {
                 let transferred = exact_base_transferred_record_count_with_block_splice(
@@ -2543,18 +2615,42 @@ impl M11RetainedCandidatePublication {
     #[doc(hidden)]
     pub fn adopt_exact_base_reference_resolver(
         &mut self,
+        runtime: &DocumentRuntime,
         base: &mut Self,
     ) -> Result<(), M11PublicationError> {
+        validate_runtime(self.runtime_identity, runtime)?;
+        validate_runtime(base.runtime_identity, runtime)?;
         if self.runtime_identity != base.runtime_identity || self.reference_winner.is_some() {
             return Err(M11PublicationError::invalid_state());
         }
-        if base.reference_winner.is_none() {
+        let Some(winner) = base.reference_winner.as_ref() else {
             return Ok(());
+        };
+        let target_publication = self.publication()?;
+        let base_publication = base.publication()?;
+        let target_descriptor = decode_manifest_descriptor(
+            runtime.producer_arena(),
+            target_publication.root_id(),
+            target_publication.authority(),
+        )?;
+        let base_descriptor = decode_manifest_descriptor(
+            runtime.producer_arena(),
+            base_publication.root_id(),
+            base_publication.authority(),
+        )?;
+        let target_root = persistent_reference_manifest_root(
+            runtime.producer_arena(),
+            &target_descriptor,
+            target_publication.authority(),
+        )?;
+        let base_root = persistent_reference_manifest_root(
+            runtime.producer_arena(),
+            &base_descriptor,
+            base_publication.authority(),
+        )?;
+        if target_root != base_root || winner.root != base_root {
+            return Err(M11PublicationError::invalid_state());
         }
-        // The only producer of this base/target pair is exact-stream setup,
-        // which authenticated equal canonical References roots before moving
-        // the handle into the stream. Terminal detachment moved that same
-        // handle into `base`; neither publication can change while sealed.
         self.reference_winner = base.reference_winner.take();
         Ok(())
     }
@@ -3065,6 +3161,7 @@ fn exact_base_transferred_record_count_with_recursive_green_splice(
     target: &PublishedManifest,
     target_page_range: &Range<u64>,
     selection: &M11RecursiveGreenStructuralSpliceSelection,
+    references_transport: M11ExactBaseReferencesTransport,
 ) -> Result<u64, M11PublicationError> {
     let descriptor = decode_manifest_descriptor(arena, target.root_id(), target.authority())?;
     let source_facts = descriptor.metadata[role_index(CandidateRole::SourceFacts)];
@@ -3107,6 +3204,14 @@ fn exact_base_transferred_record_count_with_recursive_green_splice(
     }
     (target_page_range.end - target_page_range.start)
         .checked_add(structural_pages)
+        .and_then(|total| {
+            total.checked_add(match references_transport {
+                M11ExactBaseReferencesTransport::Reuse => 0,
+                M11ExactBaseReferencesTransport::Replace => {
+                    descriptor.metadata[role_index(CandidateRole::References)].record_count
+                }
+            })
+        })
         .and_then(|total| {
             total.checked_add(
                 descriptor.metadata[role_index(CandidateRole::Projection)].record_count,
@@ -4204,6 +4309,14 @@ impl M11OwnedSnapshotStream {
     #[must_use]
     pub const fn transferred_canonical_record_count(&self) -> u64 {
         self.transferred_canonical_record_count
+    }
+
+    /// Whether this exact-base stream virtualizes the installed References
+    /// root. Replacement streams return `false`; full streams also return
+    /// `false` because they have no exact-base References operation.
+    #[must_use]
+    pub fn reuses_exact_base_references(&self) -> bool {
+        self.state.exact_base_reuses_references()
     }
 
     pub fn descriptor(
@@ -5349,7 +5462,7 @@ mod persistent_projection_adoption_tests {
             .expect("target resolver state")
             .is_none());
         delivered
-            .adopt_exact_base_reference_resolver(&mut superseded)
+            .adopt_exact_base_reference_resolver(&runtime, &mut superseded)
             .expect("move ready resolver into delivered target");
         assert_eq!(ready_reference_index_ptr(&delivered), ready_index);
         assert!(superseded.reference_winner.is_none());
@@ -5391,6 +5504,96 @@ mod persistent_projection_adoption_tests {
             baseline_reserved_external_payload_bytes,
             "the delivered owner releases the one transferred reservation"
         );
+        runtime.begin_close().expect("begin runtime close");
+        while !runtime
+            .poll_close(256)
+            .expect("poll runtime close")
+            .complete
+        {}
+        assert_eq!(runtime.arena_metrics().resident_nodes, 0);
+    }
+
+    #[test]
+    fn reference_index_adoption_rejects_a_changed_canonical_root() {
+        let mut runtime = runtime_with_source("abcde\nordinary target text");
+        let source = runtime.current_source_version().expect("current source");
+        let parser_profile = ParserProfileId::new(1).expect("parser profile");
+        let scan_profile = SourceFactsScanProfile::new(32).expect("scan profile");
+        install_source_facts(&mut runtime, scan_profile, parser_profile);
+        let mut base =
+            retained_reference_base(&mut runtime, source, scan_profile, [0xc1; 16], [0xc2; 16]);
+        loop {
+            if base
+                .poll_reference_resolver(&mut runtime, 1)
+                .expect("build base resolver")
+                .ready()
+            {
+                break;
+            }
+        }
+        let base_index = ready_reference_index_ptr(&base);
+
+        let mut target_build = M11CandidateBuild::new_with_persistent_source_facts(
+            &mut runtime,
+            [0xc1; 16],
+            [0xc3; 16],
+            source,
+            2,
+            1,
+            scan_profile,
+            M11RoleRecords::persistent(
+                Box::<[u8]>::from(&b"target-green"[..]),
+                Box::<[u8]>::from(&b"target-projection"[..]),
+            )
+            .expect("target roles"),
+        )
+        .expect("changed-References target");
+        target_build
+            .offer_reference(
+                &mut runtime,
+                M11ReferenceRecord::new(
+                    M11ReferenceRange::new(6..11, 6..11),
+                    M11ReferenceRange::new(6..7, 6..7),
+                    M11ReferenceRange::new(8..10, 8..10),
+                    None,
+                    Box::<[u8]>::from(&b"b"[..]),
+                    Box::<[u8]>::from(&b"np"[..]),
+                    None,
+                ),
+            )
+            .expect("changed target reference");
+        while !target_build.references_idle() {
+            assert!(matches!(
+                target_build
+                    .poll(&mut runtime, 64)
+                    .expect("drain changed target reference"),
+                M11CandidateBuildPoll::Pending { .. }
+            ));
+        }
+        target_build
+            .finish_references(&mut runtime)
+            .expect("finish changed target references");
+        while matches!(
+            target_build
+                .poll(&mut runtime, 256)
+                .expect("publish changed target"),
+            M11CandidateBuildPoll::Pending { .. }
+        ) {}
+        let mut target = retain_publication(
+            &runtime,
+            target_build
+                .into_publication()
+                .expect("changed target publication"),
+        );
+
+        assert!(target
+            .adopt_exact_base_reference_resolver(&runtime, &mut base)
+            .is_err());
+        assert_eq!(ready_reference_index_ptr(&base), base_index);
+        assert!(target.reference_winner.is_none());
+
+        close_retained(&mut runtime, &mut target);
+        close_retained(&mut runtime, &mut base);
         runtime.begin_close().expect("begin runtime close");
         while !runtime
             .poll_close(256)

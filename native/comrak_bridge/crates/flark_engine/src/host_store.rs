@@ -7,9 +7,11 @@
 //! payload bytes and stream-local child ordinals, never source `ArenaId`s. The
 //! independent host preserves DAG sharing in its own arena, recomputes
 //! transport and canonical role digests, and swaps the root only after complete
-//! validation. An exact-base References delta uses the same program: virtual
-//! ordinal zero denotes only the already-validated canonical References root,
-//! while the target role wrapper and manifest are still transferred fresh.
+//! validation. An exact-base References delta uses the same program: when the
+//! target reuses References, virtual ordinal zero denotes only the
+//! already-validated canonical root. An exact-base target may instead replace
+//! the complete References role through the ordinary closure transport while
+//! SourceFacts and structural roles still use their sparse replay operations.
 
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -91,8 +93,8 @@ const SNAPSHOT_END_TAG: u8 = 0xe2;
 const SNAPSHOT_REFERENCES_DELTA_BEGIN_TAG: u8 = 0xe3;
 /// Begins the typed exact-base program. Unlike the legacy References-only
 /// optimization, this program authenticates the complete installed authority,
-/// reuses References, and splices persistent SourceFacts v2 pages before any
-/// ordinary target node may be admitted.
+/// either reuses or replaces References, and splices persistent SourceFacts v2
+/// pages before any ordinary target node may be admitted.
 const SNAPSHOT_EXACT_BASE_DELTA_BEGIN_TAG: u8 = 0xe4;
 /// Carries one canonical SFL2 replacement page for the SourceFacts splice op.
 const SNAPSHOT_SOURCE_FACTS_REPLACEMENT_TAG: u8 = 0xe5;
@@ -107,6 +109,7 @@ const SNAPSHOT_EXACT_BASE_REUSE_REFERENCES_OP: u8 = 1;
 const SNAPSHOT_EXACT_BASE_SPLICE_SOURCE_FACTS_OP: u8 = 2;
 const SNAPSHOT_EXACT_BASE_SPLICE_BLOCKS_OP: u8 = 3;
 const SNAPSHOT_EXACT_BASE_SPLICE_RECURSIVE_GREEN_OP: u8 = 4;
+const SNAPSHOT_EXACT_BASE_REPLACE_REFERENCES_OP: u8 = 5;
 const SNAPSHOT_EXACT_BASE_OPERATION_VERSION: u8 = 1;
 const SNAPSHOT_EXACT_BASE_RECURSIVE_GREEN_OPERATION_VERSION: u8 = 2;
 const SNAPSHOT_EXACT_BASE_REUSE_REFERENCES_BYTES: usize = 72;
@@ -376,7 +379,7 @@ pub(crate) struct ArenaClosureSnapshotEncoder {
 
 struct ExactBaseDeltaEncodeState {
     base_authority: CandidateAuthority,
-    reused_references: RoleMetadata,
+    references: ExactBaseReferencesDisposition,
     base_source_facts: RoleMetadata,
     target_source_facts: RoleMetadata,
     target_source_facts_descriptor: [u8; PERSISTENT_SOURCE_FACTS_ROLE_DESCRIPTOR_BYTES],
@@ -387,6 +390,37 @@ struct ExactBaseDeltaEncodeState {
     structural_splice: Option<ExactBaseStructuralSpliceEncodeState>,
     replay_barrier_issued: bool,
     replay_resumed: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ExactBaseReferencesDisposition {
+    Reuse(RoleMetadata),
+    Replace(RoleMetadata),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ExactBaseReferencesMode {
+    Reuse,
+    Replace,
+}
+
+impl ExactBaseReferencesDisposition {
+    const fn metadata(self) -> RoleMetadata {
+        match self {
+            Self::Reuse(metadata) | Self::Replace(metadata) => metadata,
+        }
+    }
+
+    const fn reused_virtual_root_count(self) -> usize {
+        match self {
+            Self::Reuse(_) => 1,
+            Self::Replace(_) => 0,
+        }
+    }
+
+    const fn reuses(self) -> bool {
+        matches!(self, Self::Reuse(_))
+    }
 }
 
 enum ExactBaseStructuralSpliceEncodeState {
@@ -616,6 +650,31 @@ impl<'a> CandidateSnapshotEncoder<'a> {
         })
     }
 
+    /// Exact-base recursive-Green splice that transfers the target's complete
+    /// References closure instead of virtualizing the installed base root.
+    pub(crate) fn new_exact_base_delta_with_recursive_green_splices_replacing_references(
+        arena: &'a PageArena,
+        base: &'a PublishedManifest,
+        target: &'a PublishedManifest,
+        base_source_facts_page_range: std::ops::Range<u64>,
+        target_source_facts_page_range: std::ops::Range<u64>,
+        green_event_ranges: &[(std::ops::Range<u64>, std::ops::Range<u64>)],
+    ) -> Result<Self, CandidateHostError> {
+        Ok(Self {
+            arena,
+            state: CandidateSnapshotEncoderState::
+                new_exact_base_delta_with_recursive_green_splices_replacing_references(
+                    arena,
+                    base,
+                    target,
+                    base_source_facts_page_range,
+                    target_source_facts_page_range,
+                    green_event_ranges,
+                )?,
+            _publication_borrow: PhantomData,
+        })
+    }
+
     fn from_root(
         arena: &'a PageArena,
         authority: CandidateAuthority,
@@ -696,6 +755,7 @@ impl CandidateSnapshotEncoderState {
             target,
             base_page_range,
             target_page_range,
+            ExactBaseReferencesMode::Reuse,
             None,
         )
     }
@@ -715,6 +775,7 @@ impl CandidateSnapshotEncoderState {
             target,
             base_page_range,
             target_page_range,
+            ExactBaseReferencesMode::Reuse,
             Some(ExactBaseStructuralRanges::Blocks {
                 base: base_block_entry_range,
                 target: target_block_entry_range,
@@ -765,6 +826,38 @@ impl CandidateSnapshotEncoderState {
             target,
             base_source_facts_page_range,
             target_source_facts_page_range,
+            ExactBaseReferencesMode::Reuse,
+            Some(ExactBaseStructuralRanges::RecursiveGreen(
+                segments.into_boxed_slice(),
+            )),
+        )
+    }
+
+    pub(crate) fn new_exact_base_delta_with_recursive_green_splices_replacing_references(
+        arena: &PageArena,
+        base: &PublishedManifest,
+        target: &PublishedManifest,
+        base_source_facts_page_range: std::ops::Range<u64>,
+        target_source_facts_page_range: std::ops::Range<u64>,
+        green_event_ranges: &[(std::ops::Range<u64>, std::ops::Range<u64>)],
+    ) -> Result<Self, CandidateHostError> {
+        let mut segments = Vec::new();
+        segments
+            .try_reserve_exact(green_event_ranges.len())
+            .map_err(|_| CandidateHostError::AllocationFailed)?;
+        segments.extend(
+            green_event_ranges
+                .iter()
+                .cloned()
+                .map(|(base, target)| ExactBaseRecursiveGreenSegmentRanges { base, target }),
+        );
+        Self::new_exact_base_delta_inner(
+            arena,
+            base,
+            target,
+            base_source_facts_page_range,
+            target_source_facts_page_range,
+            ExactBaseReferencesMode::Replace,
             Some(ExactBaseStructuralRanges::RecursiveGreen(
                 segments.into_boxed_slice(),
             )),
@@ -777,6 +870,7 @@ impl CandidateSnapshotEncoderState {
         target: &PublishedManifest,
         base_page_range: std::ops::Range<u64>,
         target_page_range: std::ops::Range<u64>,
+        references_mode: ExactBaseReferencesMode,
         structural_ranges: Option<ExactBaseStructuralRanges>,
     ) -> Result<Self, CandidateHostError> {
         let base_authority = base.authority();
@@ -801,12 +895,20 @@ impl CandidateSnapshotEncoderState {
         let target_references_wrapper = target_descriptor.children[references_index];
         let base_references_root = arena.child_at(base_references_wrapper, 0)?;
         let target_references_root = arena.child_at(target_references_wrapper, 0)?;
-        let reused_references = base_descriptor.metadata[references_index];
-        if target_references_root != base_references_root
-            || target_descriptor.metadata[references_index] != reused_references
-        {
-            return Err(CandidateHostError::BaseMismatch);
-        }
+        let references = match references_mode {
+            ExactBaseReferencesMode::Reuse => {
+                let metadata = base_descriptor.metadata[references_index];
+                if target_references_root != base_references_root
+                    || target_descriptor.metadata[references_index] != metadata
+                {
+                    return Err(CandidateHostError::BaseMismatch);
+                }
+                ExactBaseReferencesDisposition::Reuse(metadata)
+            }
+            ExactBaseReferencesMode::Replace => ExactBaseReferencesDisposition::Replace(
+                target_descriptor.metadata[references_index],
+            ),
+        };
 
         let base_source_facts =
             persistent_source_facts_manifest_role(arena, &base_descriptor, base_authority)?;
@@ -1007,9 +1109,15 @@ impl CandidateSnapshotEncoderState {
 
         let mut virtual_roots = Vec::new();
         virtual_roots
-            .try_reserve_exact(2 + usize::from(structural_splice.is_some()))
+            .try_reserve_exact(
+                references.reused_virtual_root_count()
+                    + 1
+                    + usize::from(structural_splice.is_some()),
+            )
             .map_err(|_| CandidateHostError::AllocationFailed)?;
-        virtual_roots.push(base_references_root);
+        if references.reuses() {
+            virtual_roots.push(base_references_root);
+        }
         if let Some(root) = target_source_facts.root {
             virtual_roots.push(root);
         }
@@ -1045,7 +1153,7 @@ impl CandidateSnapshotEncoderState {
             &virtual_roots,
             Some(ExactBaseDeltaEncodeState {
                 base_authority,
-                reused_references,
+                references,
                 base_source_facts: base_source_facts.metadata,
                 target_source_facts: target_source_facts.metadata,
                 target_source_facts_descriptor,
@@ -1289,6 +1397,12 @@ impl CandidateSnapshotEncoderState {
         }
         delta.replay_resumed = true;
         Ok(())
+    }
+
+    pub(crate) fn exact_base_reuses_references(&self) -> bool {
+        self.exact_base_delta
+            .as_ref()
+            .is_some_and(|delta| delta.references.reuses())
     }
 }
 
@@ -1969,6 +2083,7 @@ struct ReusedReferences {
 }
 
 struct ExactBaseDeltaHostState {
+    references: ExactBaseReferencesHostDisposition,
     replay: PersistentSourceFactsHostReplay,
     target_source_facts_root: Option<ArenaId>,
     target_source_facts_present: bool,
@@ -1979,6 +2094,12 @@ struct ExactBaseDeltaHostState {
     virtual_root_count: usize,
     replay_work: Option<PersistentSourceFactsHostReplayWork>,
     structural_splice: Option<ExactBaseStructuralSpliceHostState>,
+}
+
+#[derive(Clone, Copy)]
+enum ExactBaseReferencesHostDisposition {
+    Reuse(ReusedReferences),
+    Replace(RoleMetadata),
 }
 
 enum ExactBaseStructuralSpliceHostState {
@@ -2279,16 +2400,28 @@ impl CandidateHostStore {
 
         let descriptor =
             decode_manifest_descriptor(&self.arena, installed.root.id(), installed.authority)?;
-        let references_index = role_index(CandidateRole::References);
-        let references_wrapper = descriptor.children[references_index];
-        let references_root = self.arena.child_at(references_wrapper, 0)?;
-        let reused_references = ReusedReferences {
-            canonical_root: references_root,
-            metadata: descriptor.metadata[references_index],
+        let references = match begin.references {
+            ExactBaseReferencesDisposition::Reuse(metadata) => {
+                let references_index = role_index(CandidateRole::References);
+                let references_wrapper = descriptor.children[references_index];
+                let canonical_root = self.arena.child_at(references_wrapper, 0)?;
+                let reused = ReusedReferences {
+                    canonical_root,
+                    metadata: descriptor.metadata[references_index],
+                };
+                if metadata != reused.metadata {
+                    return Err(CandidateHostError::BaseMismatch);
+                }
+                ExactBaseReferencesHostDisposition::Reuse(reused)
+            }
+            ExactBaseReferencesDisposition::Replace(metadata) => {
+                ExactBaseReferencesHostDisposition::Replace(metadata)
+            }
         };
-        if begin.reused_references != reused_references.metadata {
-            return Err(CandidateHostError::BaseMismatch);
-        }
+        let references_virtual_root_count = match references {
+            ExactBaseReferencesHostDisposition::Reuse(_) => 1,
+            ExactBaseReferencesHostDisposition::Replace(_) => 0,
+        };
 
         let base_source_facts =
             persistent_source_facts_manifest_role(&self.arena, &descriptor, installed.authority)?;
@@ -2395,10 +2528,13 @@ impl CandidateHostStore {
             }
             None => false,
         };
-        let expected_virtual_root_count =
-            1 + usize::from(target_source_facts_present) + usize::from(structural_target_present);
+        let expected_virtual_root_count = references_virtual_root_count
+            + usize::from(target_source_facts_present)
+            + usize::from(structural_target_present);
+        let expected_source_facts_virtual_ordinal = u64::try_from(references_virtual_root_count)
+            .map_err(|_| CandidateHostError::InvalidFrame("virtual ordinal overflow"))?;
         let expected_structural_virtual_ordinal =
-            u64::try_from(1 + usize::from(target_source_facts_present))
+            u64::try_from(references_virtual_root_count + usize::from(target_source_facts_present))
                 .map_err(|_| CandidateHostError::InvalidFrame("virtual ordinal overflow"))?;
         let structural_virtual_ordinal_valid = match begin.structural_splice.as_ref() {
             Some(DecodedExactBaseStructuralSplice::Blocks(block)) => {
@@ -2414,7 +2550,8 @@ impl CandidateHostStore {
             None => true,
         };
         if begin.virtual_root_count != expected_virtual_root_count
-            || (target_source_facts_present && begin.source_facts_virtual_ordinal != 1)
+            || (target_source_facts_present
+                && begin.source_facts_virtual_ordinal != expected_source_facts_virtual_ordinal)
             || (!target_source_facts_present
                 && begin.source_facts_virtual_ordinal != SNAPSHOT_ABSENT_VIRTUAL_ORDINAL)
             || !structural_virtual_ordinal_valid
@@ -2442,7 +2579,12 @@ impl CandidateHostStore {
 
         let mut session = self.arena.begin_build()?;
         let setup = (|| -> Result<_, CandidateHostError> {
-            let references_owner = session.retain(references_root)?;
+            let references_owner = match references {
+                ExactBaseReferencesHostDisposition::Reuse(reused) => {
+                    Some(session.retain(reused.canonical_root)?)
+                }
+                ExactBaseReferencesHostDisposition::Replace(_) => None,
+            };
             let base_source_facts_owner = match base_source_facts_root {
                 Some(root) => Some(session.retain(root)?),
                 None => None,
@@ -2479,8 +2621,10 @@ impl CandidateHostStore {
                 return Err(error);
             }
         };
-        nodes.push(references_owner);
-        incoming_edges.push(0);
+        if let Some(references_owner) = references_owner {
+            nodes.push(references_owner);
+            incoming_edges.push(0);
+        }
         let mut digest = snapshot_hasher();
         digest.update(frame);
         let structural_splice = match (begin.structural_splice, structural_replay) {
@@ -2553,8 +2697,9 @@ impl CandidateHostStore {
         self.active = Some(ActiveOffer {
             authority,
             program: SnapshotProgram::ExactBaseDelta,
-            reused_references: Some(reused_references),
+            reused_references: None,
             exact_base_delta: Some(ExactBaseDeltaHostState {
+                references,
                 replay,
                 target_source_facts_root: None,
                 target_source_facts_present,
@@ -2569,7 +2714,8 @@ impl CandidateHostStore {
             build: Some(build),
             nodes,
             incoming_edges,
-            node_count: 1,
+            node_count: u64::try_from(references_virtual_root_count)
+                .map_err(|_| CandidateHostError::InvalidFrame("node count overflow"))?,
             payload_bytes: 0,
             wire_bytes,
             digest,
@@ -3679,19 +3825,6 @@ impl CandidateHostStore {
                         descriptor.metadata[role_index(CandidateRole::References)];
                     let references_validator = if active.program == SnapshotProgram::ExactBaseDelta
                     {
-                        let reused =
-                            active
-                                .reused_references
-                                .ok_or(CandidateHostError::InvalidFrame(
-                                    "exact-base program lost References authority",
-                                ))?;
-                        if references_root != reused.canonical_root
-                            || references_metadata != reused.metadata
-                        {
-                            return Err(CandidateHostError::InvalidFrame(
-                                "target References wrapper changed its exact base",
-                            ));
-                        }
                         let exact = active.exact_base_delta.as_ref().ok_or(
                             CandidateHostError::InvalidFrame(
                                 "exact-base host lost its replay program",
@@ -3766,7 +3899,31 @@ impl CandidateHostStore {
                                 }
                             }
                         }
-                        None
+                        match exact.references {
+                            ExactBaseReferencesHostDisposition::Reuse(reused) => {
+                                if references_root != reused.canonical_root
+                                    || references_metadata != reused.metadata
+                                {
+                                    return Err(CandidateHostError::InvalidFrame(
+                                        "target References wrapper changed its exact base",
+                                    ));
+                                }
+                                None
+                            }
+                            ExactBaseReferencesHostDisposition::Replace(expected_metadata) => {
+                                if references_metadata != expected_metadata {
+                                    return Err(CandidateHostError::InvalidFrame(
+                                        "target References metadata changed its replacement claim",
+                                    ));
+                                }
+                                Some(Box::new(ReferenceRoleDigestValidator::new(
+                                    &self.arena,
+                                    active.authority,
+                                    references_root,
+                                    references_metadata,
+                                )?))
+                            }
+                        }
                     } else if let Some(reused) = active.reused_references {
                         if active.program != SnapshotProgram::ExactBaseReferences
                             || references_root != reused.canonical_root
@@ -4522,7 +4679,7 @@ struct DecodedExactBaseDeltaBegin {
     authority: CandidateAuthority,
     base_authority: CandidateAuthority,
     virtual_root_count: usize,
-    reused_references: RoleMetadata,
+    references: ExactBaseReferencesDisposition,
     source_facts_virtual_ordinal: u64,
     base_page_range: std::ops::Range<u64>,
     target_page_range: std::ops::Range<u64>,
@@ -4573,14 +4730,18 @@ fn encode_exact_base_delta_begin(
                     green.target_root.is_some()
                 }
             });
-    let virtual_root_count = 1_u16
+    let references_virtual_root_count = u16::try_from(delta.references.reused_virtual_root_count())
+        .map_err(|_| {
+            CandidateHostError::InvalidFrame("exact-base References virtual-root count overflow")
+        })?;
+    let virtual_root_count = references_virtual_root_count
         .checked_add(u16::from(delta.target_source_facts_root.is_some()))
         .and_then(|count| count.checked_add(u16::from(structural_virtual_root_present)))
         .ok_or(CandidateHostError::InvalidFrame(
             "exact-base virtual-root count overflow",
         ))?;
     let source_facts_virtual_ordinal = if delta.target_source_facts_root.is_some() {
-        1
+        u64::from(references_virtual_root_count)
     } else {
         SNAPSHOT_ABSENT_VIRTUAL_ORDINAL
     };
@@ -4653,8 +4814,15 @@ fn encode_exact_base_delta_begin(
     output.extend_from_slice(&delta.base_authority.source_utf16.to_le_bytes());
     output.extend_from_slice(&[0; 8]);
 
+    let (references_operation, references_virtual_ordinal) = match delta.references {
+        ExactBaseReferencesDisposition::Reuse(_) => (SNAPSHOT_EXACT_BASE_REUSE_REFERENCES_OP, 0),
+        ExactBaseReferencesDisposition::Replace(_) => (
+            SNAPSHOT_EXACT_BASE_REPLACE_REFERENCES_OP,
+            SNAPSHOT_ABSENT_VIRTUAL_ORDINAL,
+        ),
+    };
     output.extend_from_slice(&[
-        SNAPSHOT_EXACT_BASE_REUSE_REFERENCES_OP,
+        references_operation,
         SNAPSHOT_EXACT_BASE_OPERATION_VERSION,
         0,
         0,
@@ -4664,8 +4832,8 @@ fn encode_exact_base_delta_begin(
             .expect("exact-base References op fits u32")
             .to_le_bytes(),
     );
-    output.extend_from_slice(&0_u64.to_le_bytes());
-    push_role_metadata(&mut output, delta.reused_references);
+    output.extend_from_slice(&references_virtual_ordinal.to_le_bytes());
+    push_role_metadata(&mut output, delta.references.metadata());
 
     output.extend_from_slice(&[
         SNAPSHOT_EXACT_BASE_SPLICE_SOURCE_FACTS_OP,
@@ -4883,26 +5051,32 @@ fn decode_exact_base_delta_begin(
         ));
     }
 
-    if frame[160..164]
-        != [
-            SNAPSHOT_EXACT_BASE_REUSE_REFERENCES_OP,
-            SNAPSHOT_EXACT_BASE_OPERATION_VERSION,
-            0,
-            0,
-        ]
+    if frame[161..164] != [SNAPSHOT_EXACT_BASE_OPERATION_VERSION, 0, 0]
         || read_u32(frame, 164)? as usize != SNAPSHOT_EXACT_BASE_REUSE_REFERENCES_BYTES
-        || read_u64(frame, 168)? != 0
     {
         return Err(CandidateHostError::InvalidFrame(
             "invalid exact-base References operation",
         ));
     }
-    let reused_references = read_role_metadata(frame, 176)?;
-    if reused_references.role != CandidateRole::References {
+    let references_metadata = read_role_metadata(frame, 176)?;
+    if references_metadata.role != CandidateRole::References {
         return Err(CandidateHostError::InvalidFrame(
             "exact-base References metadata changed role",
         ));
     }
+    let references = match (frame[160], read_u64(frame, 168)?) {
+        (SNAPSHOT_EXACT_BASE_REUSE_REFERENCES_OP, 0) => {
+            ExactBaseReferencesDisposition::Reuse(references_metadata)
+        }
+        (SNAPSHOT_EXACT_BASE_REPLACE_REFERENCES_OP, SNAPSHOT_ABSENT_VIRTUAL_ORDINAL) => {
+            ExactBaseReferencesDisposition::Replace(references_metadata)
+        }
+        _ => {
+            return Err(CandidateHostError::InvalidFrame(
+                "invalid exact-base References operation",
+            ))
+        }
+    };
 
     if frame[232..236]
         != [
@@ -5158,7 +5332,7 @@ fn decode_exact_base_delta_begin(
         authority,
         base_authority,
         virtual_root_count,
-        reused_references,
+        references,
         source_facts_virtual_ordinal,
         base_page_range,
         target_page_range,
@@ -6753,6 +6927,7 @@ mod tests {
         source: SourceVersion,
         spacing: usize,
         base: Option<&PublishedManifest>,
+        replace_references: bool,
     ) -> PublishedManifest {
         let runtime_identity = runtime.producer_identity();
         let reference_limits = ReferenceRootLimits {
@@ -6767,8 +6942,8 @@ mod tests {
         let parser_profile = ParserProfileId::new(1).expect("parser profile");
         let scan_profile = SourceFactsScanProfile::new(spacing).expect("scan profile");
         let arena = runtime.producer_arena_mut();
-        let mut assembler = match base {
-            Some(base) => CandidateManifestAssembler::new_with_persistent_source_facts_and_recursive_green_reusing_references(
+        let mut assembler = match (base, replace_references) {
+            (Some(base), false) => CandidateManifestAssembler::new_with_persistent_source_facts_and_recursive_green_reusing_references(
                 arena,
                 persistent,
                 green,
@@ -6782,7 +6957,7 @@ mod tests {
                 base,
             )
             .expect("target persistent recursive Green candidate"),
-            None => CandidateManifestAssembler::new_with_persistent_source_facts_and_recursive_green(
+            (None, false) | (_, true) => CandidateManifestAssembler::new_with_persistent_source_facts_and_recursive_green(
                 arena,
                 persistent,
                 green,
@@ -6796,10 +6971,36 @@ mod tests {
             )
             .expect("base persistent recursive Green candidate"),
         };
-        if base.is_none() {
+        if replace_references {
+            assembler
+                .offer_reference(
+                    arena,
+                    AuthoritativeReferenceFact {
+                        authority,
+                        source: range(0, 10),
+                        label_source: range(0, 2),
+                        destination_source: range(4, 9),
+                        title_source: None,
+                        normalized_label: Box::from(&b"added"[..]),
+                        cooked_destination: Box::from(&b"/target"[..]),
+                        cooked_title: None,
+                        _not_sync: PhantomData,
+                    },
+                )
+                .expect("replacement reference");
+            while !assembler.references_idle() {
+                assert!(matches!(
+                    assembler
+                        .poll(arena, 31)
+                        .expect("replacement reference poll"),
+                    ManifestPoll::Pending { .. }
+                ));
+            }
+        }
+        if base.is_none() || replace_references {
             assembler
                 .finish_references(arena)
-                .expect("finish empty References");
+                .expect("finish References");
         }
         finish_assembler(arena, assembler)
     }
@@ -6819,9 +7020,13 @@ mod tests {
         target_source_facts_page_range: Range<u64>,
         base_green_event_range: Range<u64>,
         target_green_event_range: Range<u64>,
+        replaces_references: bool,
     }
 
-    fn build_persistent_green_exact_pair(items: usize) -> PersistentGreenExactPair {
+    fn build_persistent_green_exact_pair(
+        items: usize,
+        replaces_references: bool,
+    ) -> PersistentGreenExactPair {
         let mut runtime =
             DocumentRuntime::new(&"x".repeat(items), DocumentRuntimeConfig::default())
                 .expect("runtime");
@@ -6846,6 +7051,7 @@ mod tests {
             source,
             spacing,
             None,
+            false,
         );
 
         let changed_item = items / 2;
@@ -6871,6 +7077,7 @@ mod tests {
             target_source,
             spacing,
             Some(&base),
+            replaces_references,
         );
 
         let base_root = base_source_facts.tree_root_id_for_test();
@@ -6937,6 +7144,7 @@ mod tests {
             target_source_facts_page_range: common_prefix..target_count - common_suffix,
             base_green_event_range: event_start..event_start + 3,
             target_green_event_range: event_start..event_start + 3,
+            replaces_references,
         }
     }
 
@@ -7209,7 +7417,21 @@ mod tests {
     }
 
     fn collect_green_exact_delta_stream(pair: &PersistentGreenExactPair) -> GreenExactDeltaFrames {
-        let mut encoder =
+        let ranges = [(
+            pair.base_green_event_range.clone(),
+            pair.target_green_event_range.clone(),
+        )];
+        let mut encoder = if pair.replaces_references {
+            CandidateSnapshotEncoder::
+                new_exact_base_delta_with_recursive_green_splices_replacing_references(
+                    pair.runtime.producer_arena(),
+                    &pair.base,
+                    &pair.target,
+                    pair.base_source_facts_page_range.clone(),
+                    pair.target_source_facts_page_range.clone(),
+                    &ranges,
+                )
+        } else {
             CandidateSnapshotEncoder::new_exact_base_delta_with_recursive_green_splice(
                 pair.runtime.producer_arena(),
                 &pair.base,
@@ -7219,7 +7441,8 @@ mod tests {
                 pair.base_green_event_range.clone(),
                 pair.target_green_event_range.clone(),
             )
-            .expect("recursive Green exact-base encoder");
+        }
+        .expect("recursive Green exact-base encoder");
         let begin = encoder.begin_frame().expect("recursive Green Begin");
         assert_eq!(
             begin.len(),
@@ -8277,7 +8500,7 @@ mod tests {
     }
 
     fn run_green_delta_scale(items: usize, challenge_claim: bool) -> GreenDeltaScaleReceipt {
-        let pair = build_persistent_green_exact_pair(items);
+        let pair = build_persistent_green_exact_pair(items, false);
         let (base_begin, base_nodes, base_end) =
             collect_stream(pair.runtime.producer_arena(), &pair.base);
         let frames = collect_green_exact_delta_stream(&pair);
@@ -8414,6 +8637,140 @@ mod tests {
             large.work.branches_allocated()
                 < usize::from(large.work.maximum_atomic_height()) * 8 + 32
         );
+    }
+
+    #[test]
+    fn exact_base_recursive_green_splice_replaces_and_validates_references() {
+        let pair = build_persistent_green_exact_pair(128, true);
+        let (base_begin, base_nodes, base_end) =
+            collect_stream(pair.runtime.producer_arena(), &pair.base);
+        let frames = collect_green_exact_delta_stream(&pair);
+        let decoded = decode_exact_base_delta_begin(&frames.begin).expect("replacement Begin");
+        let ExactBaseReferencesDisposition::Replace(references_metadata) = decoded.references
+        else {
+            panic!("replacement stream encoded References reuse");
+        };
+        assert_eq!(references_metadata.record_count, 1);
+        assert_eq!(decoded.virtual_root_count, 2);
+        assert_eq!(decoded.source_facts_virtual_ordinal, 0);
+        let Some(DecodedExactBaseStructuralSplice::RecursiveGreen(green)) =
+            decoded.structural_splice
+        else {
+            panic!("replacement stream omitted recursive Green splice");
+        };
+        assert_eq!(green.virtual_ordinal, 1);
+
+        let reference_blob_index = frames
+            .nodes
+            .iter()
+            .position(|frame| {
+                let ordinal = read_u64(frame, 4).expect("replacement node ordinal");
+                let node = decode_node_frame(frame, ordinal).expect("replacement node");
+                crate::reference_root::is_canonical_reference_node_payload(node.payload)
+            })
+            .expect("replacement stream carries a canonical References node");
+
+        let target_authority = pair.target.authority();
+        let target_descriptor = decode_manifest_descriptor(
+            pair.runtime.producer_arena(),
+            pair.target.root_id(),
+            target_authority,
+        )
+        .expect("target replacement manifest");
+        assert_eq!(
+            target_descriptor.metadata[role_index(CandidateRole::References)],
+            references_metadata
+        );
+        let expected_manifest_digest = manifest_digest256(target_authority, &target_descriptor);
+
+        let mut host = CandidateHostStore::new(
+            pair.document,
+            pair.source,
+            1,
+            CandidateHostLimits::default(),
+        )
+        .expect("replacement host");
+        let base = install_stream(&mut host, &base_begin, &base_nodes, &base_end);
+        host.observe_source_version(pair.target_source)
+            .expect("observe replacement target");
+
+        let mut wrong_ordinal = frames.begin.to_vec();
+        wrong_ordinal[168..176].copy_from_slice(&0_u64.to_le_bytes());
+        assert!(matches!(
+            host.begin_exact_base_delta(base, &wrong_ordinal),
+            Err(CandidateHostError::InvalidFrame(
+                "invalid exact-base References operation"
+            ))
+        ));
+        assert_eq!(host.installed_snapshot(), Some(base));
+
+        let mut corrupted_nodes = frames.nodes.clone();
+        let corrupted_blob = &mut corrupted_nodes[reference_blob_index];
+        let last = corrupted_blob.len() - 1;
+        corrupted_blob[last] ^= 0x01;
+        let mut corrupted_end = frames.end.to_vec();
+        let mut digest = snapshot_hasher();
+        digest.update(&frames.begin);
+        for frame in &frames.source_facts_pages {
+            digest.update(frame);
+        }
+        for frame in &frames.green_pages {
+            digest.update(frame);
+        }
+        for frame in &corrupted_nodes {
+            digest.update(frame);
+        }
+        corrupted_end[28..].copy_from_slice(digest.finalize().as_bytes());
+
+        host.begin_exact_base_delta(base, &frames.begin)
+            .expect("begin corrupted References replacement");
+        drive_green_exact_replay_to_nodes(&mut host, &frames);
+        for node in &corrupted_nodes {
+            host.offer_node(node)
+                .expect("offer corrupted target closure");
+        }
+        host.finish_snapshot(&corrupted_end)
+            .expect("finish transport-authenticated corrupted closure");
+        let validation_error = loop {
+            match host.poll_install(1) {
+                Ok(poll) => assert!(poll.installed.is_none()),
+                Err(error) => break error,
+            }
+        };
+        assert!(matches!(validation_error, CandidateHostError::Reference(_)));
+        while !host.poll_reclaim(31).expect("reclaim corrupt replacement") {}
+        assert_eq!(host.installed_snapshot(), Some(base));
+
+        host.begin_exact_base_delta(base, &frames.begin)
+            .expect("begin valid References replacement");
+        drive_green_exact_replay_to_nodes(&mut host, &frames);
+        for node in &frames.nodes {
+            host.offer_node(node)
+                .expect("offer valid replacement closure");
+        }
+        host.finish_snapshot(&frames.end)
+            .expect("finish valid replacement closure");
+        let target = loop {
+            let poll = host
+                .poll_install(31)
+                .expect("install References replacement");
+            if let Some(target) = poll.installed {
+                break target;
+            }
+        };
+        assert_eq!(
+            host.installed_manifest_digest256(target)
+                .expect("installed replacement digest"),
+            expected_manifest_digest
+        );
+        assert_eq!(
+            host.role_record_count(target, CandidateRole::References)
+                .expect("installed replacement References"),
+            1
+        );
+
+        close_host(&mut host);
+        release_persistent_green_exact_pair(pair);
     }
 
     #[test]
