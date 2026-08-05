@@ -6195,9 +6195,11 @@ impl ValueBlockParser {
     /// Prove that a truncated source window is sufficient for the *existing*
     /// donor stage about to run. This is an input-availability gate, not a
     /// block classifier: the stage still executes its original handler and
-    /// owns the result. At the quiescent root boundary, a non-special first
-    /// nonspace byte makes every `CommonMark` opener reject without consulting
-    /// the omitted suffix.
+    /// owns the result. Every opener stage reads only `open.container`, the
+    /// line prefix up to `first_nonspace`, and that byte; none of them consult
+    /// `self.current`. So a non-special first nonspace byte makes every
+    /// `CommonMark` opener reject without consulting the omitted suffix, at any
+    /// undecorated open-block boundary — not only at the document root.
     fn ensure_segmented_controller_stage_exact(
         &self,
         transition: &LineTransition,
@@ -6215,10 +6217,16 @@ impl ValueBlockParser {
         if open.stage == OpenNewStage::Start {
             return Ok(());
         }
-        let root = self.tree.root;
-        if open.container != root
-            || open.last_matched_container != root
-            || self.current != root
+        // `Document` is the quiescent root boundary; `Paragraph` is the open
+        // leaf a continuation line lands in. Any other container either owns a
+        // matched prefix this pass has already re-entered (`Start` above) or
+        // needs suffix-dependent continuation rules of its own.
+        let container_is_open_leaf_or_root = matches!(
+            self.tree.node(open.container).kind,
+            BlockKind::Document | BlockKind::Paragraph
+        );
+        if open.container != open.last_matched_container
+            || !container_is_open_leaf_or_root
             || self.indent >= CODE_INDENT
             || self.blank
         {
@@ -6244,6 +6252,17 @@ impl ValueBlockParser {
             b'>' | b'#' | b'`' | b'~' | b'<' | b'-' | b'_' | b'*' | b'+' | b'0'
                 ..=b'9' | b'\r' | b'\n'
         ) {
+            return Err(ParseError::DirectUnsupported(
+                DirectUnsupported::SegmentedLine,
+            ));
+        }
+        // An open `Paragraph` container additionally arms the Setext underline
+        // (`=`; `-` is already excluded above) and — once the staged GFM table
+        // opener stops being a stub — the delimiter row (`|`, `:`; `-` again).
+        // Both scan to end of line, which the truncated window cannot supply.
+        if matches!(self.tree.node(open.container).kind, BlockKind::Paragraph)
+            && matches!(first, b'=' | b'|' | b':')
+        {
             return Err(ParseError::DirectUnsupported(
                 DirectUnsupported::SegmentedLine,
             ));
