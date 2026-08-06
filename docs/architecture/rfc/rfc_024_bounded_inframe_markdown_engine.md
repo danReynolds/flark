@@ -90,12 +90,15 @@ with a work budget. Two outcomes from one code path:
 
 - **completes within budget** → adopt in the same frame. Zero staleness window.
 - **exhausts budget** → returns resumable state; continue next frame, and
-  paint last-certified structure meanwhile.
+  meanwhile paint per §4.4 — certified structure where it is certified for
+  *this* revision, source-faithful neutral presentation everywhere else.
 
 No isolate, no Worker, no wire protocol, no publication handshake, no
 independent host store. Cold open spreads across frames, viewport first.
 
-This is CodeMirror's scheduling model with an exact parser underneath. RFC 023's
+This is CodeMirror's scheduling model with a single authoritative parser
+underneath — one intended to converge to full CommonMark/GFM conformance, which
+it has not yet reached (§6.1). RFC 023's
 fuel machinery, built for the Worker's benefit, is precisely what makes the
 Worker unnecessary.
 
@@ -115,12 +118,48 @@ logical at pan-start so the anchor block may scroll away and be destroyed.
 Hit-testing is restricted to the visible window. Commands resolve through a
 type registry, so select-all and copy work across blocks that were never built.
 
-### 4.4 Degradation is cosmetic
+### 4.4 Current-revision certification, not "mapped forward"
 
-Above budget, the pre-parse window shows **last-certified structure mapped
-forward** — never a guess, never a block type the last authoritative parse did
-not produce. CodeMirror's fallback is invisible (uncoloured text); ours must be
-too. This is a tested invariant, not a principle.
+*Revised 2026-08-06 after external review. The previous formulation — "show
+last-certified structure mapped forward" — was **wrong**, and the counterexample
+is simple:*
+
+```
+*hello*     →  user deletes the closing *  →  *hello
+```
+
+*Mapping the emphasis node forward preserves its geometry, but the node is no
+longer valid. The editor would keep hiding the opening marker and styling
+`hello` as emphasis — directly contradicting what the parser will say. An
+untouched source range does **not** prove semantic validity under a new
+revision. The same propagates further through reference definitions, fenced
+code, lazy continuations, HTML blocks, delimiter runs and link destinations.*
+
+The correct model:
+
+> **Current source text is visible immediately. Semantic formatting and syntax
+> hiding are applied only to structures certified for the current source
+> revision. Uncertified ranges use a source-faithful neutral presentation until
+> certified.**
+
+The engine must therefore distinguish four states, not two:
+
+1. structure **proven reusable** for the new revision;
+2. structure **invalidated** by the edit;
+3. structure whose **dependencies have not yet been re-evaluated**;
+4. **newly certified** structure.
+
+For a node to retain semantic rendering, the engine must prove it remains valid
+under the new revision — not merely that its bytes were untouched.
+
+This means raw syntax may briefly appear in an invalidated region. That is
+**correct behaviour**, and strictly preferable to hiding literal source or
+painting a block type the parser will reject. Given measured one-to-two-pump
+convergence it should be rare and short-lived.
+
+**Product metric:** *uncertified visible character-frames per edit* — it
+captures both how often and how visibly we degrade, which parser duration alone
+does not.
 
 ## 5. Confidence, honestly
 
@@ -278,15 +317,61 @@ current, with no error (G3 paste); a terminal fault visible only as the word
 forever. Separately, status `0x0111` has stood for at least four unrelated
 faults, which is why each needed its own investigation.
 
-This is a missing invariant, not four bugs:
+This is a missing invariant, not four bugs. *Strengthened 2026-08-06 after
+external review — "no silent stops" is necessary but not mechanically
+checkable:*
 
-> **The engine must always be able to say that it has stopped, and why.**
-> Every terminal or quiescent state carries a discriminated reason that reaches
-> the embedder. No path may leave a caller unable to distinguish "working",
-> "finished", and "dead".
+> **Every pump either completes, advances a monotonic progress token, or
+> returns a typed reason identifying what external condition is required for
+> further progress.** A repeated state with an unchanged progress token
+> automatically becomes an explicit fault.
 
-Fixing it four times is not the plan. It is a design requirement of the new
-integration layer, and a discriminated status code replaces `0x0111`.
+That version is enforceable by the runtime itself rather than by discipline.
+Recovery may discard derived parser state and rebuild from the same Rust-owned
+source using the same grammar, and may use neutral source-faithful rendering
+meanwhile. Recovery must **never** discard source edits, stop silently, or leave
+the editor unable to accept further input.
+
+A discriminated status code replaces `0x0111`.
+
+**Consequence:** the known 32 KB paste that goes quiescent without converging
+violates this invariant directly. It is an **M0 blocker**, not backlog.
+
+## 6.3 Bounded synchronous execution — not just bounded parsing
+
+*Added 2026-08-06 after external review. Fuel-bounding the parser loop is not
+the same as bounding the frame.* The following are all reachable from the
+interactive path and none was bounded by the original design: applying a large
+insertion to the rope; rope rebalancing; reference-index updates; allocation and
+tree reclamation; viewport-query result construction; UTF conversion; large
+result destruction; and any parser loop that accidentally fails to consume fuel.
+
+> **No operation reachable from the interactive frame path may perform
+> document-proportional non-yielding work.**
+
+A large paste therefore uses the *same* parser and the *same* source state,
+admitted and processed resumably across several pumps. That is not a second
+implementation and must not become one.
+
+**The 4 ms budget is a share, not the allowance.** Parser work, bounded queries,
+shaping, layout and paint all draw on the same 8 ms frame. The scheduler should
+consume the frame's *remaining* parser allowance rather than assuming 4 ms is
+always available.
+
+## 6.4 Bounded queries — narrowed, and batched
+
+*Narrowed 2026-08-06.* "Nothing document-sized in Dart" is too absolute:
+select-all, copy and export are document-sized by definition, and we measure the
+1.1 MB copy case deliberately.
+
+> **No document-sized materialization or transfer occurs on the latency-critical
+> edit, parse, viewport-query, layout or paint path.** Explicit bulk operations
+> use separate measured APIs and may stream.
+
+Queries must also be **batched**. Thousands of individually-bounded FFI calls
+are still fatal to frame time. Every viewport request carries caps on blocks,
+source bytes, render runs, mapping entries and total result bytes, and the API
+targets a small fixed number of native calls per frame.
 
 ## 7. The input-surface acceptance suite
 

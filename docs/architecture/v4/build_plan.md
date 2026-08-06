@@ -22,9 +22,31 @@ G4's Variant B, which already passes the §7 suite over plain strings).
 
 ## Sequence
 
-### M0 · Walking skeleton
-*The smallest thing that proves the whole stack end to end.* One document, one
-own-painted surface, real engine, typing works.
+### M0 · Architectural proof
+*Revised 2026-08-06 after external review. This was "walking skeleton"; the
+reviewer was right that several things deferred to M3/M4 can **change the
+design**, and so must come first. M0 is correspondingly bigger — plan
+weeks, not days.*
+
+Added to M0 by that review:
+
+- **The whole-reparse challenge** (see M2 — it must happen *before* grammar
+  work, not after).
+- **Current-revision certification** (RFC 024 §4.4) — the correctness model,
+  not a rendering detail.
+- **Progress-token liveness** (RFC 024 §6.2) and **32 KB paste convergence**,
+  which is a blocker rather than backlog because it violates the invariant
+  outright.
+- **End-to-end frame timing**, not parser timing alone.
+- **A physical Android and iOS input vertical slice** — composition, autocorrect,
+  soft-keyboard backspace across a block boundary, selection replacement,
+  composition during scroll, input-window movement, hardware keyboard.
+- **First floor-phone typing measurement.** Deferring all device evidence to M4
+  repeats this program's original mistake: M4 should *certify* the envelope, not
+  provide the first evidence the design works on its target hardware.
+
+Then the original skeleton: one document, one own-painted surface, real engine,
+typing works.
 
 - Lean synchronous FFI: apply-edit and bounded queries with **no wire protocol**.
   G3 measured the current one at 62 poll round-trips and 2.9 MB encoded per
@@ -52,13 +74,40 @@ frame timings at 5 KB / 25 KB / 100 KB on desktop.
 Extend *incremental* coverage: block quotes, nested and loose lists, tables —
 all currently fail closed.
 
-**Open question to settle first, because it may shrink this milestone a lot:**
-exact whole-file CommonMark parses at ~275 MiB/s, which is ~0.25 ms for a 71 KB
-document. If v4's fail-closed path is a full reparse and bounded queries have
-removed the Dart marshal, **failing closed may simply be fast enough at real
-document sizes** — making incremental coverage a large-document optimisation
-rather than a correctness requirement. Measure this before building it. It could
-turn M2 from months into weeks.
+**The whole-reparse challenge — reframed 2026-08-06, and moved into M0.**
+
+My original framing ("does the incremental parser earn its place at all?") had a
+real flaw the reviewer caught: it invites an open-ended re-litigation that could
+end in a size threshold, a runtime strategy switch, or a fallback — i.e. **two
+implementations of Markdown semantics, which is precisely the disease v2 died
+of.** The corrected framing:
+
+> **v4 ships exactly one parsing strategy.** The incumbent is the incremental
+> engine, because it already demonstrates bounded edit work, resumability,
+> incremental reference resolution and acceptable pump latency. Challenge it
+> **once**, with a **disposable** measurement on a throwaway branch, before
+> expanding the grammar. **Delete the loser.** No parser abstraction, no runtime
+> selection, no size thresholds, no fallback, no second conformance suite.
+
+The comparison must measure the **whole chain**, not parse throughput: apply the
+edit → parse the complete source → build native tree and reference state →
+determine what changed for the viewport → answer the bounded render queries →
+allocations and retained memory → Flutter layout and paint. Across realistic
+prose, Markdown-dense text, giant paragraphs, reference-definition changes,
+sustained typing, streaming append, large paste, and 1 MB — **on the floor
+device**.
+
+Whole-reparse replaces the incremental engine only if it wins **decisively on
+all three axes**: performance margin (comfortably within its share of the frame,
+not merely under 8 ms in isolation), conformance velocity (substantially easier
+route to full CommonMark/GFM), and complexity deletion (enough incremental
+machinery disappears to materially reduce maintenance). If it merely *matches*
+at 24–71 KB while preserving the same tree, invalidation, reference, scheduling
+and query machinery, it has **not** won — close the question and commit.
+
+*Note on my earlier "may be weeks rather than months": withdrawn. It was not
+supported by evidence, and long-tail Markdown grammar and recovery behaviour is
+exactly where incremental parsers accumulate complexity.*
 
 **Done when:** the conformance ledger reflects reality (no structural-admission
 vs incremental-coverage conflation), and real documents never visibly degrade.
@@ -108,6 +157,49 @@ Multi-source edit provenance (dropped — the strategic case for it did not
 survive validation); the engine as a separately-shipped artifact; streaming
 ingest; structural diff; collaborative editing. All remain *affordable* under
 this architecture. None is a reason to build anything now.
+
+## Two design gaps that must close before M1 (external review, 2026-08-06)
+
+**1. The bounded IME input window is unspecified and load-bearing.** RFC 024
+claims both "Dart never materialises the document" and "one document-level
+`DeltaTextInputClient`". Those are only compatible if the platform sees a
+*bounded window*, not the document — and that design is currently implicit.
+G4's Variant B did build one (the blocks the selection touches, `\n\n`
+separator, a two-character invisible prefix so backspace at offset 0 is
+reportable, capped at 2048 UTF-16 units) but it is prototype-grade and
+undocumented. It must specify: what source range the platform value represents;
+how source offsets map to platform offsets; how the window moves; whether it may
+move during active composition; how backspace and delete cross window and block
+boundaries; how autocorrect replacements outside the immediate word apply; what
+happens when a document selection exceeds the window; and how the connection
+resynchronises without corrupting composition.
+
+**2. `Position(block, offset)` is underspecified in both halves.**
+
+*`block`* must not be a parser node. Editing a fence, list boundary or block
+quote can replace block structure while the user's position should remain
+meaningful. **Canonical selection should be stable source anchors plus
+affinity**, with parser blocks and layout blocks as derived views.
+
+*`offset`* must not be an untyped integer. The implementation crosses source
+byte offsets in Rust, UTF-16 code units in Flutter input, grapheme boundaries
+for deletion and caret movement, shaped glyph clusters for hit testing, and
+visual positions with bidi affinity. **Use distinct types with explicit
+conversions** — the classic catastrophic editor bug in this area is a valid
+integer used in the wrong coordinate space.
+
+## The workload envelope, not a scalar
+
+"1 MB" does not define a workload. A megabyte can be ordinary prose, one giant
+paragraph, tens of thousands of tiny blocks, a huge table, delimiter-dense
+Markdown, many global references, or a very large open fence. The contract
+should eventually name: source size, block count, maximum block and line length,
+syntax density, maximum interactive edit size, viewport size and text scale, and
+a memory ceiling.
+
+Accordingly: **1 MB is an internal architecture target now, and becomes a public
+guarantee only after named-device verification**, with a stated degradation
+contract beyond the verified envelope.
 
 ## Is the path clear?
 
