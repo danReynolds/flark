@@ -38,12 +38,44 @@ Added to M0 by that review:
   which is a blocker rather than backlog because it violates the invariant
   outright.
 - **End-to-end frame timing**, not parser timing alone.
-- **A physical Android and iOS input vertical slice** — composition, autocorrect,
-  soft-keyboard backspace across a block boundary, selection replacement,
-  composition during scroll, input-window movement, hardware keyboard.
-- **First floor-phone typing measurement.** Deferring all device evidence to M4
-  repeats this program's original mistake: M4 should *certify* the envelope, not
-  provide the first evidence the design works on its target hardware.
+- ~~A physical Android and iOS input vertical slice~~ and ~~first floor-phone
+  typing measurement~~ — **deferred by decision, 2026-08-06: no devices are
+  available to this program yet.** Recorded as a *known accepted risk*, not an
+  oversight. The external reviewer specifically argued these belong in M0
+  because they can change the scheduling and input architecture; we are
+  proceeding without them anyway. See the substitute strategy below.
+
+#### Substitute for device evidence, and what it does and does not buy
+
+We cannot measure the constant. We *can* measure the shape, and the shape is
+what the architecture is actually claiming.
+
+1. **Verify boundedness, not latency.** "Work per edit is independent of
+   document size" is a device-independent property. If it holds, a slower device
+   changes a constant factor; if it fails, no device saves us. This is the
+   claim M0 must actually prove, and it is fully testable here.
+2. **Run the harness on efficiency cores** via `taskpolicy -b`, which schedules
+   at background QoS onto the M1 Pro's 2 E-cores rather than its 8 P-cores. Not
+   a phone, but a real and substantial derate rather than a simulated one.
+3. **Use Chrome/Wasm as a second, slower substrate.** Already measured
+   materially slower than native on the same fixture (71 s vs 29.7 s on the
+   100k-reference case), so it exercises the design under genuine pressure.
+4. **Design to a tighter budget than the contract.** Hold ~4 ms on P-cores
+   rather than the 8 ms frame target, banking headroom for the eventual derate.
+5. **iOS Simulator for *functional* IME only** — composition and autocorrect
+   behaviour, never timing. Swipe typing, predictive bars and dictation remain
+   untestable.
+
+**What this explicitly does not buy:** any number that can be published, thermal
+behaviour, memory pressure, or the right to call the 1 MB contract verified.
+
+**Trigger to revisit:** the first device that becomes available. Until then the
+1 MB figure is an internal architecture target only, and no public performance
+claim may be made from Mac measurements.
+
+**Emulators and simulators are excluded from performance work entirely** — both
+run on this Mac's CPU and would report Mac-like frame times, which is worse than
+having no data because it looks like evidence.
 
 Then the original skeleton: one document, one own-painted surface, real engine,
 typing works.
