@@ -75,10 +75,57 @@ four coincidences — it is a missing invariant. **RFC 024 should state it
 explicitly: the engine must always be able to say that it has stopped, and
 why.**
 
+## D-A bisected: the engine is innocent
+
+Ran 2026-08-06, `example/lib/g2_dense_bisect.dart`, which drives
+`FlarkV3DocumentRuntime` **directly — pure Dart, no Flutter layer** — over the
+same constructs and sizes, opening, applying one edit, and waiting for
+structure-current.
+
+```
+bisect heading/x1        bytes=    22 :: OK  5ms
+bisect bold/x1           bytes=    42 :: OK  5ms
+bisect link/x1           bytes=    60 :: OK  6ms
+bisect bullet-list/x1    bytes=    39 :: OK  5ms
+bisect ordered-list/x1   bytes=    42 :: OK  5ms
+bisect all-inline/x1     bytes=   101 :: OK  6ms
+bisect paragraph/5KB     bytes=  5128 :: OK 12ms
+bisect heading/5KB       bytes=  5134 :: OK 21ms
+bisect bold/5KB          bytes=  5146 :: OK 12ms
+bisect link/5KB          bytes=  5144 :: OK  9ms
+bisect bullet-list/5KB   bytes=  5123 :: OK 33ms
+bisect ordered-list/5KB  bytes=  5146 :: OK 33ms
+bisect all-inline/5KB    bytes=  5148 :: OK 10ms
+bisect mixture/1KB       bytes=  1387 :: OK  8ms
+bisect mixture/5KB       bytes=  5554 :: OK 13ms
+bisect mixture/10KB      bytes= 10647 :: OK 20ms
+bisect mixture/25KB      bytes= 25926 :: OK 32ms
+```
+
+**22 of 22 pass.** Every construct the dense fixture uses, alone and mixed,
+at every size G2 failed on — including the full mixture at 25 KB in 32 ms.
+
+So **D-A is not a parser defect.** `parserFailure: 4` was the state the runtime
+*ended up in*, not where the fault began. The only difference between this
+probe and the G2 run is the Flutter integration layer — the managed binding and
+the viewport presentation source.
+
+That collapses D-A and D-B into **one defect in the Flutter viewport layer**:
+it issues queries the host rejects as out-of-authority, which then faults the
+runtime. D-B caught it uncaught and fatal; D-A is the same wound reported one
+step downstream.
+
+**This is the most useful thing G2 has produced.** It clears the component
+RFC 024 keeps and convicts the component RFC 024 deletes. The engine handles
+realistic Markdown at 25 KB in 32 ms; the integration layer built around the
+`EditableText` island cannot survive being driven.
+
 ## Next
 
-1. Diagnose D-A — what is `parserFailure: 4` on dense 5 KB? Smallest
-   reproducing fixture.
+1. ~~Diagnose D-A~~ — done: not the engine (above). Remaining work is to find
+   why `FlarkV3ManagedViewportPresentationSource` requests a window the host
+   considers out of authority. Worth only enough effort to confirm the rebuild
+   is the right fix rather than a patch.
 2. Diagnose D-B — why does a routine viewport progress query produce an
    out-of-authority receipt, and why is it uncaught?
 3. Give 0x0111 a discriminant. Four faults sharing one opaque code is why each
