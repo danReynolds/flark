@@ -142,8 +142,20 @@ data.**
 every construct at every size the integration layer died on (§6.1). In-frame
 scheduling moves **up**, from medium to high-medium, on measured evidence.
 The existing integration layer moves **down to disqualified**: it is not merely
-suboptimal, it demonstrably cannot be driven. The input-surface question is
-**unchanged and still the single largest open risk** — no gate has touched it.
+suboptimal, it demonstrably cannot be driven.
+
+**The input-surface question is now DECIDED (§6.1.1): own-painted.** It moves
+from *low* to *high* for everything the suite covers — selection, clipboard,
+block split/merge, undo routing, cross-block replacement, and composition with a
+live selection during scroll, all passing against a virtualized list with
+unbuilt blocks asserted.
+
+What remains **low** is narrower and now precisely named: real-device IME
+(Gboard, CJK, swipe, predictive bars) — B's largest exposure since B owns the
+whole connection; **touch selection handles and the magnifier, which neither
+variant built and which §7 requires**; accessibility semantics, built by
+neither; and cold open on pathological documents. Floor-device behaviour is
+still entirely unmeasured — G2 has never produced a frame timing.
 
 ## 6. Gates
 
