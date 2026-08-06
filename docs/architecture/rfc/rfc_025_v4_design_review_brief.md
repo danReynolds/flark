@@ -6,12 +6,42 @@ context on this project. Consolidates RFC 022 (grammar monopoly), RFC 023
 account of what was tried, what was measured, what was decided, and what we are
 least sure about.
 
-**Status:** design decided, build not started. 2026-08-06.
+**Status:** design decided, build not started. **Round 1 of external review
+complete — amendments accepted and folded in below.** 2026-08-06.
 
 **How to review this:** §7 lists our open questions ranked by how much damage a
-wrong answer does. Question 1 could invalidate our main technical asset — we
-would rather hear that from you now than discover it in six months. Everything
-in §3–§5 is measured unless explicitly marked otherwise.
+wrong answer does. Everything in §3–§5 is measured unless explicitly marked
+otherwise.
+
+### Round 1 review outcome (accepted in full)
+
+Four material corrections, all adopted. Recorded here so a second reviewer sees
+what has already been challenged.
+
+1. **"Stale but never wrong" was not a correctness model.** We said we would
+   show "last-certified structure mapped forward". Counterexample: `*hello*`,
+   delete the closing `*`. Mapping the emphasis node forward keeps hiding the
+   opening marker and styling the text — contradicting what the parser is about
+   to say. *An untouched source range does not prove semantic validity under a
+   new revision.* Replaced with current-revision certification (§5.4).
+2. **Our Q1 framing could have recreated the v2 failure.** Asking "does the
+   incremental parser earn its place at all?" invites an open-ended
+   re-litigation whose natural endings — a size threshold, a runtime strategy
+   switch, a fallback — all mean **two implementations of Markdown semantics**,
+   which is exactly what killed v2. Reframed in §7 with the burden of proof
+   corrected.
+3. **Fuel-bounding the parser is not bounding the frame.** Rope insertion,
+   rebalancing, reference-index updates, allocation and reclamation, query
+   construction, UTF conversion and result destruction were all unbounded on the
+   interactive path.
+4. **Deferring all floor-device evidence to the last milestone repeats this
+   program's original mistake.** Device measurement and a physical Android/iOS
+   input slice moved into M0.
+
+Also accepted: "exact parser" language qualified until conformance is actually
+reached; our "M2 may be weeks rather than months" estimate withdrawn as
+unsupported; "nothing document-sized in Dart" narrowed to the latency-critical
+path, with queries required to be *batched* under explicit caps.
 
 ---
 
@@ -43,7 +73,13 @@ The guarantee is deliberately narrower than "never stale", because exact
 Markdown has non-local effects — typing ` ``` ` can reinterpret the rest of the
 document, so no exact parser can bound worst-case work:
 
-> **The foreground never blocks. Structure may be briefly stale — never wrong.**
+> **The foreground never blocks. Current source text is always visible.
+> Semantic formatting is applied only where certified for the current revision;
+> everything else renders source-faithfully until it is.**
+
+*(Round 1 revision. The earlier wording — "structure may be briefly stale, never
+wrong" — was too weak: mapping old structure forward does not make it true. See
+§5.4.)*
 
 ---
 
@@ -245,11 +281,27 @@ This also matches the field: **zero of four Flutter editors use `EditableText`**
 - **No silent stops.** Every terminal or quiescent state carries a discriminated
   reason that reaches the embedder. Four instances of this class have already
   been found; it is a design requirement, not a bug to fix a fifth time.
-- **Cosmetic degradation.** Above budget, show last-certified structure mapped
-  forward — never a guess, never a block type the last authoritative parse did
-  not produce. CodeMirror's above-budget fallback is invisible (uncoloured
-  text); ours must be too. v2's is loud and layout-shifting, and that — not
-  throughput — is the real gap against CodeMirror at scale.
+- **Current-revision certification** *(revised in round 1; this replaced
+  "last-certified structure mapped forward", which was unsound — see the
+  `*hello*` counterexample at the top)*. Semantic formatting and syntax hiding
+  apply only to structure certified for the **current** revision. The engine
+  distinguishes proven-reusable, invalidated, dependencies-not-yet-evaluated,
+  and newly-certified. Uncertified ranges render source-faithfully — raw syntax
+  may briefly appear, which is correct and strictly better than painting a
+  structure the parser will reject. Measured one-to-two-pump convergence should
+  keep it rare and brief. Proposed metric: *uncertified visible character-frames
+  per edit*.
+- **Bounded synchronous execution, not merely bounded parsing.** No operation
+  reachable from the interactive frame path may perform document-proportional
+  non-yielding work — including rope insertion and rebalancing, reference-index
+  updates, allocation and reclamation, query construction, UTF conversion and
+  result destruction. A large paste uses the *same* parser and source state,
+  admitted resumably across pumps. The 4 ms budget is a *share* of the 8 ms
+  frame, not the allowance.
+- **Batched bounded queries.** Thousands of individually-bounded FFI calls still
+  destroy frame time. Every viewport request carries caps on blocks, source
+  bytes, render runs, mapping entries and total result bytes, targeting a small
+  fixed number of native calls per frame.
 
 ---
 
@@ -278,26 +330,51 @@ giant-unstable-tail-block streaming case, editability during a stream, and
 
 ## 7. Open questions — please attack these
 
-### Q1. Does the incremental parser earn its place at all? *(highest damage if we are wrong)*
+### Q0. Can current-revision certification actually deliver the guarantee? *(highest correctness risk)*
 
-Third-party benchmarks put exact whole-file CommonMark parsing at ~275 MiB/s.
-Our own corpora top out at 24–71 KB p99. That multiplies to **~0.25 ms for a
-full exact reparse of the largest realistic document** — and ~3.6 ms even at our
-1 MB ceiling, inside an 8 ms frame budget.
+Round 1 replaced "stale but never wrong" with: semantic rendering only where
+certified for the current revision, source-faithful neutral presentation
+elsewhere. That needs a formal reuse/invalidation/fallback model distinguishing
+structure proven reusable, structure invalidated, structure whose dependencies
+are not yet re-evaluated, and newly certified structure.
 
-If that holds in our stack, **the incremental engine — the hard, differentiated
-part — is an optimisation for documents nobody writes**, and the correct design
-might be: exact whole-file reparse per keystroke, bounded queries to avoid the
-marshal, own-painted surface.
+*What we want from you:* is that model sufficient? What does it cost visually in
+practice — how often, and how visibly, does a real editing session show raw
+syntax? We propose measuring **uncertified visible character-frames per edit**.
+Is there a better metric?
 
-Counter-evidence we have: our own v2 measured ~6 ms of "parse" for 25 KB dense,
-~65× off the 275 MiB/s figure — but that number includes FFI marshal and result
-mapping, so it is not a pure-parse measurement. **We do not currently know our
-pure parse cost.** It is the first task of the grammar milestone.
+### Q1. Is there decisive evidence to replace the incremental engine — not "does it earn its place"?
 
-*What we want from you:* is this the right way to size the decision? Is there a
-reason incrementality matters that we are not seeing — memory, GC pressure,
-tail latency under sustained typing, battery?
+**v4 ships exactly one parsing strategy.** The incumbent is the incremental
+engine, because it already demonstrates bounded edit work (11 µs, ~63 bytes
+reparsed at 1 MB), resumability, incremental reference resolution, and one-pump
+convergence for 113 of 120 edits. Whole-reparse is a *plausible simplification
+based on extrapolated throughput*, not a proven replacement.
+
+So it gets **one disposable challenge** on a throwaway branch, before grammar
+work — no parser abstraction, no runtime selection, no size threshold, no
+fallback, no second conformance suite. **The loser is deleted.**
+
+The comparison measures the whole chain on the floor device: apply edit → parse
+complete source → build tree and reference state → determine viewport changes →
+answer bounded queries → allocations and retained memory → layout and paint.
+Across prose, dense Markdown, giant paragraphs, reference-definition changes,
+sustained typing, streaming append, large paste, and 1 MB.
+
+Whole-reparse replaces the engine only if it wins **decisively on all three**:
+performance margin within its share of the frame; substantially easier route to
+full conformance; and enough machinery deleted to materially cut maintenance.
+Merely matching at 24–71 KB while keeping the same tree, invalidation,
+reference, scheduling and query machinery is **not** winning.
+
+*Context:* third-party benchmarks put exact whole-file parsing at ~275 MiB/s
+(~0.25 ms at 71 KB, ~3.6 ms at 1 MB). But our own v2 measured ~6 ms of "parse"
+for 25 KB dense — ~65× off — and that figure includes FFI marshal and result
+mapping. **We do not currently know our own pure parse cost.**
+
+*What we want from you:* are those three win conditions the right ones, and is
+the disposable-challenge structure sufficient to stop this becoming two
+architectures?
 
 ### Q2. Is "no isolate" right, or are we trading robustness for simplicity?
 
@@ -310,6 +387,26 @@ purpose-built copy-on-write structure to make off-thread parsing clean.
 *Are we right that in-process is simpler and sufficient, or is a single
 unbounded-latency edge case (a pathological 1 MB paste) going to force the
 isolate back and cost us the simplification anyway?*
+
+### Q2b. What exact text and coordinate model connects source to the platform IME?
+
+We claim both "Dart never materialises the document" and "one document-level
+`DeltaTextInputClient`". Those are only compatible if the platform sees a
+**bounded window**. Our prototype built one (blocks the selection touches,
+`\n\n` separator, a two-character invisible prefix so backspace at offset 0 is
+reportable, capped at 2048 UTF-16 units) but it is prototype-grade and
+unspecified.
+
+Separately, `Position(block, offset)` is underspecified in both halves: `block`
+must not be a parser node (editing a fence can replace block structure while the
+user's position stays meaningful — we now propose stable source anchors plus
+affinity), and `offset` must not be an untyped integer across source bytes,
+UTF-16 code units, grapheme boundaries, glyph clusters and visual/bidi
+positions.
+
+*What we want from you:* what breaks first in a bounded input window — window
+movement during composition, autocorrect outside the immediate word, selection
+larger than the window, resynchronisation after connection loss?
 
 ### Q3. Own-painted text is a six-year project at `super_editor`. Are we underestimating it?
 
