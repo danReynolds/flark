@@ -1,8 +1,8 @@
 # RFC 024: Bounded in-frame live Markdown engine
 
-**Status:** DRAFT — design proposed; G3 partially run, G2 blocked-then-bisected,
-G1 instruments ready, **G4 not started and the input-surface question therefore
-still OPEN**. Last updated 2026-08-06. See §6.1 for what the gates have
+**Status:** DRAFT — design proposed; G4 DECIDED (own-painted), G3 partially run, G2 blocked-then-bisected,
+G1 instruments ready. Input surface resolved 2026-08-06; see §6.1.1. Remaining
+open risk is real-device IME, touch handles and the magnifier (G1). See §6.1 for what the gates have
 returned so far.
 **Supersedes:** the integration strategy of
 [RFC 023](rfc_023_incremental_live_markdown_engine.md). RFC 023's *engine*
@@ -199,6 +199,63 @@ layer cannot survive being driven at 5 KB.
 
 **Still unmeasured: everything about a real device.** G2 has never produced a
 frame timing, so the §2 contract remains unverified on any hardware.
+
+## 6.1.1 G4 — input surface: DECIDED. Own-painted (Variant B).
+
+Both variants were built over one shared model-range selection layer and faced
+the identical acceptance suite. **50/50 tests pass; both clear all eight §7
+cases**, including case 8 (composition with a live cross-block selection during
+scroll) which this RFC predicted would break. Verified independently by re-run.
+
+**Variant B wins, and A's entire justification fails on measurement.**
+
+*A's premise was "Flutter gives IME, autocorrect, accessibility and platform
+text services for free". It does not.*
+
+- **The Actions map is the same size.** Programmatic diff of the two maps:
+  `only in B: []`. **Zero intents come free to A.**
+- **Pointer selection is hand-written in both** (`rendererIgnoresPointer: true`).
+- **Accessibility is one block out of 400** under virtualization — i.e. nothing.
+- **The toolbar and magnifier are lost to A specifically**, because their
+  handlers are direct calls on `EditableTextState` with no Intent in the path.
+  B can use the same public widgets (`AdaptiveTextSelectionToolbar`,
+  `TextMagnifier`) with its own commands. *The things A sacrifices are things B
+  keeps.*
+
+*Two intents cannot be intercepted at all.* `ReplaceTextIntent` and
+`UpdateSelectionIntent` reach the controller regardless of the Actions override
+(proven by test, both directions). **Variant A therefore cannot guarantee the
+source-authority invariant** — there are writes that bypass it and no way to
+stop them. That is the disqualifier: it is precisely the silent-correctness-bug
+class of §6.2, unfixable by construction.
+
+*B closes a hole A cannot, and it is not a corner case.* Soft-keyboard backspace
+at block start. A hands the platform one block with the caret at buffer offset
+0, so the deletion is **unreportable** — the IME has nothing to send. On a phone
+that is the only backspace there is. A's own route out of it ends at
+`DeltaTextInputClient`, i.e. at B's machinery. Proven differentially against
+both variants in one file.
+
+*The structural argument.* A's editable **cannot live inside the virtualized
+list** — mutation-proved, failing with `hasAnyClients == false`. It must be a
+hand-positioned overlay, which for variable block heights means owning a
+full-document layout oracle that answers "where is block N" for blocks never
+built. That is strictly more machinery than B needs.
+
+*Cost:* B is ~217 lines more. Select-all + copy over 1.1 MB / 34,000 blocks:
+**A 43.7 ms, B 19.9 ms** — B is also faster, because A pays to marshal through
+the editable.
+
+**Decision: own-painted text, one document-level `DeltaTextInputClient`, painted
+caret and selection, own hit-testing.** This matches what `super_editor` and
+`appflowy_editor` both do, and the earlier peer research found that *zero* of
+four Flutter editors use `EditableText`.
+
+**Contingent on G1.** The suite drives a faithful but simulated IME. Real Gboard,
+CJK composition, swipe-typing and predictive bars are B's largest exposure
+because B owns the whole connection. Touch handles and the magnifier are built by
+*neither* variant and are §7 criteria — half the target platforms remain
+untested on the single most user-visible interaction.
 
 ## 6.2 Required invariant: no silent stops
 
