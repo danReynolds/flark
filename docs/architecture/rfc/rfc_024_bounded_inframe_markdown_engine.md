@@ -1,6 +1,9 @@
 # RFC 024: Bounded in-frame live Markdown engine
 
-**Status:** DRAFT — design proposed, gates not yet run, 2026-08-05.
+**Status:** DRAFT — design proposed; G3 partially run, G2 blocked-then-bisected,
+G1 instruments ready, **G4 not started and the input-surface question therefore
+still OPEN**. Last updated 2026-08-06. See §6.1 for what the gates have
+returned so far.
 **Supersedes:** the integration strategy of
 [RFC 023](rfc_023_incremental_live_markdown_engine.md). RFC 023's *engine*
 selection stands and its falsification record carries forward; what this RFC
@@ -135,6 +138,13 @@ IME; the editing surface (split/merge, clipboard, undo, commands); cold open on
 pathological documents; **and all floor-device behaviour, where we have zero
 data.**
 
+*Revised 2026-08-06 after the gates.* The engine moves **up** — it survived
+every construct at every size the integration layer died on (§6.1). In-frame
+scheduling moves **up**, from medium to high-medium, on measured evidence.
+The existing integration layer moves **down to disqualified**: it is not merely
+suboptimal, it demonstrably cannot be driven. The input-surface question is
+**unchanged and still the single largest open risk** — no gate has touched it.
+
 ## 6. Gates
 
 No build commitment until these run. Each is bounded and decisive.
@@ -150,6 +160,64 @@ No build commitment until these run. Each is bounded and decisive.
 
 G2, G3 and G5 exercise the kept engine directly and are the critical path. G1
 runs against v2 purely to extract behaviour, since v2 has no other role.
+
+## 6.1 Gate results to date (2026-08-06)
+
+Full detail in `docs/architecture/v4/`.
+
+**G3 — in-frame sync pump: the core claim HOLDS at 1 KB; not passed overall.**
+With a 4 ms budget, **113 of 120 single-character edits reach exact structure in
+one pump**, none needs more than two, and sustained typing gives p99 3.53 ms /
+max 3.73 ms — inside an 8 ms frame. Fuel-abort held budget on a 32 KB paste with
+source byte-intact. **Budgeting is load-bearing, not decoration:** unbudgeted,
+p99 is 18.8 ms and max 23.8 ms, which drops frames. The budget converts the tail
+into a second frame instead of a dropped one.
+
+Two things it exposed. The wire protocol costs **62 poll round-trips per
+keystroke and 2.9 MB encoded for a 1 KB document** — measured support for §8 D3's
+lean direct FFI, and the reason 100 KB and 1 MB could not be reached. And the
+32 KB paste **never converged**: 100,000 pumps, `exact=false`, source intact, no
+error ever surfaced. G3 does not pass until that is understood.
+
+**G2 — jank harness: BLOCKED, and the blockage is the finding.** Zero of eight
+configurations produced a frame timing. Markdown-dense 5 KB reached structure,
+never painted, then faulted (`parserFailure: 4`); dense 25 KB threw an *uncaught*
+out-of-authority range receipt from the routine viewport progress path and killed
+the app.
+
+**Then the bisect cleared the engine.** Driving `FlarkV3DocumentRuntime`
+directly — pure Dart, no Flutter — over every construct the dense fixture uses,
+alone and mixed: **22 of 22 pass**, including the full mixture at 25 KB in 32 ms.
+So the fault is not the parser. It is one defect in the Flutter viewport layer,
+which requests windows the host rejects as out-of-authority and thereby faults
+the runtime.
+
+**That result is the strongest evidence this RFC has:** it clears the component
+§8 D3 keeps and convicts the component §8 D3 deletes. The engine handles
+realistic Markdown at 25 KB in 32 ms; the `EditableText`-island integration
+layer cannot survive being driven at 5 KB.
+
+**Still unmeasured: everything about a real device.** G2 has never produced a
+frame timing, so the §2 contract remains unverified on any hardware.
+
+## 6.2 Required invariant: no silent stops
+
+Four distinct silent-stop states have now been observed: a runtime that faults
+with no reason surfaced (G2 D-A); an engine that goes quiescent while still not
+current, with no error (G3 paste); a terminal fault visible only as the word
+"closed" in a diagnostic tile; and a surface parked in `awaitingActivePresentation`
+forever. Separately, status `0x0111` has stood for at least four unrelated
+faults, which is why each needed its own investigation.
+
+This is a missing invariant, not four bugs:
+
+> **The engine must always be able to say that it has stopped, and why.**
+> Every terminal or quiescent state carries a discriminated reason that reaches
+> the embedder. No path may leave a caller unable to distinguish "working",
+> "finished", and "dead".
+
+Fixing it four times is not the plan. It is a design requirement of the new
+integration layer, and a discriminated status code replaces `0x0111`.
 
 ## 7. The input-surface acceptance suite
 
