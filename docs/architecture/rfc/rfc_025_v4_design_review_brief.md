@@ -1,5 +1,11 @@
 # RFC 025: v4 design review brief
 
+> **Historical review record.** The review has now produced an accepted
+> architecture: [RFC 026](rfc_026_flark_v4_product_architecture.md). The
+> [v4 build plan](../v4/build_plan.md) is the current execution contract. This
+> brief remains useful for its measurements and challenges; its open-decision,
+> package-boundary, platform-scope, and milestone language is non-normative.
+
 **Purpose:** external review. Written for a principal engineer with no prior
 context on this project. Consolidates RFC 022 (grammar monopoly), RFC 023
 (incremental engine) and RFC 024 (the current design) into one self-contained

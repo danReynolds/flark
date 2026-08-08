@@ -1,5 +1,12 @@
 # RFC 024: Bounded in-frame live Markdown engine
 
+> **Historical design record.** [RFC 026](rfc_026_flark_v4_product_architecture.md)
+> records the selected v4 product/package architecture, and the
+> [v4 build plan](../v4/build_plan.md) is the current execution contract. This
+> RFC remains the evidence and design rationale behind that decision; where its
+> package boundary, platform scope, status, or milestone language conflicts
+> with those documents, RFC 026 and the build plan control.
+
 **Status:** DRAFT — design proposed; G4 DECIDED (own-painted), G3 partially run, G2 blocked-then-bisected,
 G1 instruments ready. Input surface resolved 2026-08-06; see §6.1.1. Remaining
 open risk is real-device IME, touch handles and the magnifier (G1). See §6.1 for what the gates have
