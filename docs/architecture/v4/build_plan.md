@@ -8,6 +8,279 @@ Rust engine, then builds the Flutter product `flark` on top. The first proof and
 all initial performance work run on the available Mac. Android and iOS claims
 wait for physical devices; Windows follows later.
 
+## 2026-08-09 execution update
+
+The v4 implementation is a new path. Legacy v3 packages remain read-only
+reference material; they are not renamed, repaired, imported, or used as a
+migration scaffold by v4. The mechanical rename sequence later in this
+document is therefore superseded. The active path now exists directly under
+its final product identities:
+
+- Rust `flark-runtime` owns a serialized document actor on a Rust-sized native
+  stack and retains `flark-parser` plus `flark-engine`.
+- Rust `flark-abi` implements open/chunked admission, bounded pump, one-edit
+  admission, UTF-8/UTF-16 conversion, source reads, and first-page semantic or
+  pending-neutral viewport queries.
+- Dart `packages/flark_core` owns the native session from one persistent worker
+  isolate and exposes revisioned open/edit/pump/query/source APIs with no
+  Flutter dependency.
+- Flutter `packages/flark` is a direct custom `RenderBox` surface using delta
+  text input, a bounded 16 Ki UTF-16 active input window, optimistic local
+  source/caret/selection painting, and certified-row reconciliation.
+- `packages/flark/example` builds and launches as a macOS application.
+
+This is an end-to-end vertical slice, not the complete product boundary. ABI
+continuation and bounded close are now implemented through Rust, C, and Dart;
+the custom Flutter surface pages forward and backward without a scroll widget.
+The full GFM/live-projection behavior matrix and claim-eligible multi-shape,
+multi-size performance receipts remain open.
+
+Focused vertical-slice checks pass for the Rust runtime, fixed ABI, Dart actor,
+UTF-8/UTF-16 edits, Flutter custom surface, and optimistic one-frame state
+update. A release-mode ordinary-prose development curve (not a claim-eligible
+performance receipt) initially measured exact 1/2/5/10 MiB sources. Pending
+source was queryable in 4.6-6.0 ms, warmed edit admission remained 2.9-3.8 ms,
+and local edit recertification was 17.9-26.1 ms. Full initial certification was
+linear at roughly 2.8 seconds/MiB and the first certified 4 KiB viewport query
+was roughly 34-36 ms.
+
+A targeted sample then found that every parser work unit moved an enormous
+inline state enum, with `memmove` dominating the native actor. Boxing the large
+state variants removed that accidental copy. Product-style cooperative pump
+measurements after the fix certified 1 MiB in 551.029 ms with a 1.014 ms
+maximum pump turn, and 10 MiB in 4959.602 ms with a 2.608 ms maximum pump turn.
+The 10 MiB local edit was admitted in 3.691 ms and recertified in 5.335 ms; its
+maximum pump turn was 3.183 ms. An edit submitted immediately after opening a
+10 MiB source committed revision 2 in 4.194 ms, while initial certification was
+still pending, and the updated neutral viewport returned in 0.128 ms.
+
+A 200-sample release-mode profile showed that the old 256-row certified query
+was overfetching linearly. The product page is now 32 rows: on the 1 MiB
+ordinary-prose fixture, full-range certified queries measured 8.927 ms p50,
+9.834 ms p99, and 11.787 ms maximum on this Mac. A profile-mode macOS product
+run then applied 120 rapid optimistic insertions to a 1 MiB document with no
+pending edits or faults: input-to-frame measured 8.233 ms p50, 8.948 ms p99,
+and 9.224 ms maximum; build measured 1.148 ms p99/3.870 ms maximum and raster
+1.178 ms p99/3.142 ms maximum. This is a development receipt, not the full
+provenance-bearing M4/M6 certification artifact.
+
+That run also closed two real burst-input failures rather than masking them.
+`SMALL_EDIT` retirement saturation now returns contract-valid backpressure,
+bounded pumps reclaim source/parser state, and Dart retries without changing
+the rejected revision. Semantic recertification is scheduled once after a
+32 ms input-idle window instead of restarting after every key; exact source,
+caret, and selection still paint optimistically on the input frame. A headless
+120-edit 1 MiB burst measured native edit acknowledgement at 0.043 ms p50,
+0.143 ms p99, and 3.185 ms maximum.
+
+The direct Flutter controller now fails closed immediately on every optimistic
+edit: it updates the bounded source projection and UTF-16 row positions on the
+input turn, drops stale semantic kinds to neutral, and disables paging until a
+current certified viewport is installed. A focused structural edit regression
+proves that removing a heading marker never paints the old heading semantics,
+keeps the distant source exact at its shifted position, and restores certified
+rows after bounded parser work. The single post-change 1 MiB macOS profile
+regression completed 120 rapid edits with zero pending edits: input-to-frame
+was 8.290 ms p50, 9.703 ms p99, and 10.117 ms maximum; build was 1.890 ms p99
+and 8.241 ms maximum; raster was 1.375 ms p99 and 4.273 ms maximum.
+
+The next range-certification checkpoint is now implemented end to end. Rust
+publishes only authenticated current-revision prefix/suffix ranges plus explicit
+pending gaps. ABI 4.1 introduced those ordered ranges independently of row
+ordinals, followed by exact current source. `flark_core` decodes that bounded
+partition, and the Flutter controller reuses a cached row's presentation only
+when its edit-mapped range is wholly inside a certified current range. The
+edited structural row remains neutral while an unchanged row in the same
+viewport can regain styling before whole-document convergence. Retained parser
+trees are never queried as current source, and no stale row identity crosses
+the ABI.
+
+Focused Rust runtime, fixed-ABI, Dart actor, and Flutter structural regressions
+cover the mixed path. This is not completion of the live-edit matrix: suffix
+certification is withheld until parser convergence proves it, and the bounded
+Flutter cache is not yet a complete virtualized multi-block layout. The next
+execution order is the selected GFM/live-edit matrix, then dense, giant-line,
+and multi-MiB Mac profile shapes. Clean-build throughput receives more work
+only if those product receipts identify it. No mobile claim advances without
+physical Android and iOS hardware.
+
+The post-checkpoint 1 MiB macOS profile completed the same 120-edit burst with
+zero pending edits or faults. Input-to-frame was 8.389 ms p50, 9.160 ms p99,
+and 10.200 ms maximum; build was 1.395 ms p99/9.878 ms maximum and raster was
+1.389 ms p99/5.504 ms maximum. This preserves the under-16-ms development
+curve on this Mac; it remains a local receipt rather than device certification.
+
+The first selected GFM/live-edit behavior slice is also implemented through the
+product path. Parser-authored ATX/Setext heading level and style now cross
+`flark-runtime` and fixed ABI 4.2 into typed `flark_core` row metadata; Flutter
+uses the level for distinct H1-H6 presentation. At the projected content start,
+Backspace uses the certified parser-owned source/editable ranges to remove the
+whole ATX prefix atomically and demote the heading to a paragraph, without a
+Dart Markdown scanner. Focused Rust runtime, ABI layout/native, Dart boundary,
+and Flutter interaction regressions pass. This advances the behavior matrix but
+does not create a new performance claim.
+
+The next behavior slice carries parser-authored bullet/ordered marker facts,
+literal ordered values, nesting/offset data, exact marker-prefix byte and
+UTF-16 ranges, and the top-level continuation and List-start boundary facts
+through `flark-runtime`, fixed ABI 4.3, and typed `flark_core` models. Flutter
+projects passive list markers without scanning Markdown, preserves exact source
+markers while active, continues bullet and incrementing ordered items on Enter,
+demotes items on Backspace, and exits a terminal empty item on Enter. Explicit
+prefix ends and a corrected empty-item caret cut preserve the case where the
+parser's zero-width row follows a terminal line ending.
+
+This slice exposed a consequential CommonMark rule: deleting a later item's
+marker can leave its text as a lazy continuation of the preceding item. The
+parser-owned List-start fact now selects direct prefix removal only for the
+opening item and inserts the required blank-line boundary for later-item
+demotion. Focused Rust runtime, C/manifest ABI, Dart FFI/boundary, Flutter
+analysis, list interaction, and adjacent heading regressions pass. This is a
+functional behavior checkpoint, not a new throughput or frame-time claim.
+
+The block-structure tranche is implemented through fixed ABI 4.4. Parser-owned
+block-quote prefix geometry, nesting depth, and a bounded simple-continuation
+fact now reach typed `flark_core` and Flutter rows. Flutter projects passive
+quotes, preserves exact source while active, and only performs Enter/Backspace
+continuation for the certified single-line form. Nested or multi-line quote
+shapes remain exact-source and interaction-neutral until the runtime publishes
+a general segment map; Dart does not reconstruct one by scanning Markdown.
+
+Fenced and indented code-block style, fence character/length/offset/closure,
+and thematic-break facts cross the same boundary. Certified code-body cuts are
+editable, passive code remains monospace, and passive thematic breaks render as
+rules while active rows preserve source. Focused Rust runtime/ABI, Dart
+boundary, Flutter analysis/interaction, and adjacent heading/list regressions
+pass. This is another functional checkpoint, not a new scale or frame-time
+claim.
+
+The first inline-projection tranche is implemented through fixed ABI 4.5.
+`flark-runtime` reuses the selected Rust inline grammar to publish complete
+source/content byte and UTF-16 geometry for emphasis, strong, simple code
+spans, strikethrough, URI/email autolinks, and direct links. `flark_core`
+decodes that typed geometry without Flutter, and the Flutter surface hides
+only parser-owned marker cuts, paints styled text runs, and maps hit positions
+back to exact source offsets. Activating a row restores its unmodified Markdown
+source and markers.
+
+The slice fails closed by row. Character-reference, escape, hard-break,
+transforming code, image, and reference-link shapes remain exact-source and
+interaction-neutral; an output buffer that cannot hold a complete row fact set
+also receives no partial set. Inline derivation is currently bounded and runs
+on the native document actor during viewport queries. It has not yet earned a
+performance claim or a final caching strategy. Focused runtime, ABI/header,
+Dart boundary, Flutter analysis, and passive/active projection regressions pass;
+no legacy v3 product path was revived.
+
+The second inline-projection tranche is implemented through fixed ABI 4.6. The
+single inline record is now 80 bytes and carries parser-authored backslash
+escape and hard-break cuts, one- or two-scalar character-reference
+replacements, code-span trimming and physical-line-ending replacement, plus
+direct/reference link and image label geometry. Reference uses resolve through
+the completed live reference-winner index; viewport queries do not rebuild or
+scan a document-wide definition table. The same bounded 64-fact/8-KiB-leaf
+fail-closed limits remain in force.
+
+`flark_core` exposes these as typed facts without a Flutter dependency. The
+Flutter surface applies non-identity replacement runs with explicit
+source-endpoint hit mapping, hides only parser-owned syntax, styles resolved
+links, uses textual alt-label fallback for images, and restores exact Markdown
+when the row becomes active. Link activation and media loading remain M6
+behavior; neither belongs in the parser or Dart core.
+
+Focused Rust runtime/parser/ABI, C contract, Dart boundary, and Flutter
+passive/active projection tests pass. Two profile-mode Mac development runs
+then applied 120 rapid edits to a starting 1-MiB dense-inline fixture. Both
+finished with zero pending edits: input-to-frame was 8.574/8.582 ms p99 and
+8.601/8.635 ms maximum. Build p99 was 2.390/1.495 ms; the first run had one
+26.243 ms build outlier and the repeat's maximum was 12.726 ms. Raster p99 was
+0.901/1.470 ms and both maxima were below 4.5 ms. This validates the direction
+as a local development checkpoint, but the isolated over-budget build frame
+means it is not a "never jank" certification receipt. Query-time inline
+derivation is still uncached; caching is justified only if the remaining
+dense, giant-line, and multi-MiB product shapes identify it as material.
+
+The first editor-transaction tranche is now implemented on that same direct
+path. `flark-abi` advertises reversible history for small edits and retains
+inverse source only in a byte-budgeted native store. Replay is revision- and
+logical-state-checked, consumes its input token, and returns the opposite token
+for redo/undo when retention succeeds. Explicit release, typed evicted/stale
+outcomes, bounded eviction tombstones, and resumable close reclamation are
+wired. `flark_core` exposes only opaque one-shot tokens and source-length /
+revision receipts; Dart does not retain deleted document text.
+
+Flutter now supports an exact-source selection window across visible rows,
+neutralizes selected projected rows so selection geometry cannot guess through
+non-identity runs, replaces the selected source optimistically, and restores
+source-anchored before/after selections through undo and redo. Mac `undo:` and
+`redo:` selectors route to the same transaction path. Focused native, Dart,
+Flutter, ordinary typing, projected-prefix, and cross-row replace/undo/redo
+checks pass.
+
+The next transaction tranche now fills the frozen staged-bulk seam. Edits over
+the 4-KiB synchronous envelope begin a native transaction, append replacement
+input in at most 64-KiB chunks, validate and capture any retainable inverse in
+bounded commit work units, and change source authority/revision exactly once.
+Abort leaves source unchanged; close reclaims detached live transactions.
+`flark_core` selects small versus bulk without exposing native handles, and
+bulk undo/redo retains inverse source only in Rust under the same history
+budget.
+
+Flutter accepts an exact 32-KiB platform delta without retaining that complete
+replacement in its input or visible caches: both remain at most 16 Ki UTF-16
+code units, while the worker stages the full replacement. Focused direct-core
+checks prove exact 32-KiB paste plus native undo/redo and an 8-KiB delete/undo;
+the Flutter transaction check proves the same source lengths, revisions,
+selection restoration, and bounded windows through paste, undo, redo, delete,
+and undo.
+
+This is deliberately not the completed editor-history or release-performance
+claim. Source selection is still limited to the current 16-KiB visible/input
+window, so deletion beyond that selection window is not yet admitted as one
+gesture. Input-isolate transfer optimization also remains open. The focused
+functional receipt removes the silent 32-KiB failure on this path, but no new
+scale or frame-time claim follows until the Mac product benchmark exercises it.
+
+The focused Mac product profile now has a selectable exact 32-KiB paste/reset
+workload over the 1-MiB ordinary fixture. Its first run exposed a Flutter-side
+virtualization defect: while parser certification was pending, the transient
+surface laid out all 643-1,287 physical lines in its bounded 16-KiB cache and
+spent roughly 30-35 ms building those frames. The surface now paints a
+caret-centered maximum of 32 neutral rows and at most 2 Ki UTF-16 code units of
+the active input while retaining the separate 16-KiB platform/source windows.
+Focused transaction checks still prove bounded exact paste, undo, redo, and
+large deletion behavior.
+
+After that fix, a profile run with two warmups and ten measured paste/reset
+cycles recorded 0.156 ms input handling p50/0.466 ms maximum, 1.106 ms measured
+input-frame build p50/1.342 ms maximum, 2.917 ms build maximum across all 27
+frames, and 3.761 ms raster maximum. Every cycle returned to the base byte and
+UTF-16 lengths with zero pending edits or faults. The Flutter driver explicitly
+failed to foreground the macOS app, however, and wall-clock input-to-frame
+samples alternated between roughly 7-8 ms and 50-51 ms. Those wall samples are
+therefore rejected as a jank claim rather than explained away. A foreground
+run is still required before the 32-KiB product gate can pass.
+
+The next focused behavior tranche is now implemented. Rapid single-grapheme
+insertions coalesce across a one-second idle window into one undo/redo unit;
+newline and explicit edit commands break the group. Backward and forward delete
+use Dart's `characters` policy and remove one extended grapheme,
+including emoji ZWJ sequences. Mac `copy:`, `cut:`, and `paste:` selectors now
+route through the exact bounded source selection; paste retains the existing
+bulk-capable transaction path. Simulated composing-range updates remain live
+source edits but coalesce into one history unit, and semantic refresh defers
+while a composing range is active. The grouped replay exposed and closed an ABI
+contract defect: `HISTORY_REPLAY` retirement pressure is now a contract-valid
+`BACKPRESSURE` result, so Dart performs bounded maintenance and retries instead
+of receiving a fabricated internal fault. Focused core and Flutter checks cover
+three adjacent undo/redo insertions, rapid typing, grapheme deletion, exact
+clipboard commands, composition preservation, and composition undo/redo.
+
+This is simulated composition evidence on this Mac, not live dead-key,
+autocorrect, dictation, or third-party IME certification. Those live input
+paths, selections beyond the bounded window, and complete command/navigation
+behavior remain open.
+
 ## 1. Destination and current state
 
 The destination is fixed:
@@ -44,11 +317,16 @@ legacy deletion, and directory moves remain separate reviewable checkpoints.
   complete versioned matrix covering incomplete syntax, marker transitions,
   selection, edit histories, and certification states through the final path.
 - Incremental/locality engine: selected and retained.
-- Current-revision range certification: incomplete; whole-document pending is
-  still used.
-- 32 KiB paste: can silently fail to converge and is a release blocker.
-- Custom surface: selected, but not yet proven through the final direct engine
-  path.
+- Current-revision range certification: implemented for authenticated
+  incremental prefix/suffix regions with explicit pending gaps; the complete
+  behavior matrix remains open.
+- 32 KiB paste: exact and reversible on the direct core/Flutter transaction
+  checks; product-path frame timing and device coverage remain release gates.
+- Custom surface: the direct path now proves bounded ordinary input plus one
+  exact cross-row replace/undo/redo transaction slice and bounded 32-KiB bulk
+  paste plus 8-KiB delete/undo; explicit clipboard commands, IME, selections
+  beyond the 16-KiB window, complete virtualization, and scale certification
+  remain open.
 
 Fixture admission, GFM semantic conformance, incremental edit coverage, and
 live-projection/product behavior are separate ledgers. A total in one ledger
@@ -306,7 +584,7 @@ Work:
   transactions whose commit alone changes revision/source authority.
 - [ ] Return opaque reversible transaction tokens backed by a bounded Rust
   history-payload store; implement exact token replay and typed eviction.
-- [ ] Implement true requested-range current-revision certification. Pending
+- [x] Implement true requested-range current-revision certification. Pending
   ranges return exact neutral source, not mapped-forward semantics.
 - [ ] Fix the 32 KiB paste stall and make every quiescent/terminal outcome
   discriminated and observable.

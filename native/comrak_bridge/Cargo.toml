@@ -5,7 +5,13 @@ edition = "2021"
 publish = false
 
 [workspace]
-members = [".", "crates/flark_engine", "crates/flark_parser"]
+members = [
+    ".",
+    "crates/flark_abi",
+    "crates/flark_engine",
+    "crates/flark_parser",
+    "crates/flark_runtime",
+]
 exclude = ["crates/flark_parser/vendor/comrak"]
 resolver = "2"
 

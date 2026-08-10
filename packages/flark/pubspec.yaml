@@ -1,0 +1,23 @@
+name: flark
+description: Flutter's high-performance live Markdown editor, powered by flark_core.
+version: 0.1.0-dev.1
+publish_to: none
+
+environment:
+  sdk: ^3.10.4
+  flutter: '>=3.38.0'
+
+dependencies:
+  characters: ^1.4.1
+  flark_core:
+    path: ../flark_core
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  lints: ^6.0.0
+
+flutter:
+  uses-material-design: false

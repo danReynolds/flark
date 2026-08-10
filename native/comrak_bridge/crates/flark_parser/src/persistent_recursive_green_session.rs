@@ -5,7 +5,14 @@
 //! opened.  The resulting roots remain owned by the session, so hot-inline
 //! queries never rebuild or discard document structure.
 
-use std::{fmt, ops::Range};
+use std::{
+    collections::BTreeMap,
+    fmt,
+    ops::{Index, Range},
+};
+
+#[cfg(test)]
+use std::{collections::btree_map, slice};
 
 use flark_engine::parser_internal::{
     M11RecursiveGreenError, M11RecursiveGreenFrameQueryError, M11RecursiveGreenFrameQueryLimits,
@@ -14,8 +21,8 @@ use flark_engine::parser_internal::{
     M11RecursiveGreenStoragePageIdentity, M11RecursiveGreenStructuralSpliceSelection,
     M11ReferenceJournal, M11ReferenceJournalAdoptionStatus, M11ReferenceJournalError,
     M11ReferenceJournalRangeReplacement, M11ReferenceJournalRangeReplacementStatus,
-    M11ReferenceJournalRoot, M11ReferenceJournalStatus,
-    M11ReferenceJournalUnchangedPrefixAdoption, BLOCK_QUOTE_WINDOW_MAX_BYTES,
+    M11ReferenceJournalRoot, M11ReferenceJournalStatus, M11ReferenceJournalUnchangedPrefixAdoption,
+    M11ReferenceResolver, BLOCK_QUOTE_WINDOW_MAX_BYTES,
 };
 use flark_engine::{
     DocumentRuntime, DocumentRuntimeError, ExactUnchangedPrefixWitness,
@@ -24,8 +31,9 @@ use flark_engine::{
 
 use crate::block_core::{
     resolve_m11_recursive_green_inline_leaf_row_fence, resolve_m11_recursive_green_paragraph_fence,
-    BlockCommand, BlockKind, M11BlockRestartCheckpoint, M11BlockRestartError,
-    M11BlockStructuralAdoptionReceipt, M11BlockTerminalConvergenceCheckpoint, M11BlockWriter,
+    BlockCommand, BlockKind, M11BlockCheckpointRebase, M11BlockOrdinaryCheckpointAdoption,
+    M11BlockRestartCheckpoint, M11BlockRestartError, M11BlockStructuralAdoptionReceipt,
+    M11BlockTerminalCheckpointAdoption, M11BlockTerminalConvergenceCheckpoint, M11BlockWriter,
     M11BlockWriterError, M11BlockWriterOfferStatus, M11BlockWriterPollStatus,
     M11DirectBlockController, M11DirectBlockControllerError, M11DirectBlockError,
     M11DirectBlockPollStatus, M11DirectSourceLineAdmission, M11ReferenceRendezvous,
@@ -48,7 +56,12 @@ const SOURCE_WORK_QUANTUM: usize = flark_engine::SOURCE_CURSOR_WINDOW_BYTES;
 const CHECKPOINT_STRIDE_BYTES: u64 = 4 * 1024;
 const LATER_CONVERGENCE_MAX_BYTES: usize = 64 * 1024;
 const LATER_CONVERGENCE_MAX_PHYSICAL_LINES: u64 = 512;
-const LATER_CONVERGENCE_MAX_TRANSITIONS: usize = 4_096;
+// A semantic split can require the parser to reach the terminal checkpoint
+// even while remaining inside the independent 64 KiB / 512-line locality
+// envelope. Count enough actor quanta for that bounded tail, including line
+// scanning, block commands, and reference rendezvous work.
+const LATER_CONVERGENCE_MAX_TRANSITIONS: usize = 16_384;
+const CHECKPOINT_PAGE_CAPACITY: usize = 64;
 
 #[derive(Debug)]
 pub enum M11PersistentRecursiveGreenSessionError {
@@ -347,26 +360,51 @@ impl M11PersistentRecursiveGreenCleanBuild {
             let poll = rendezvous.poll(controller, writer, journal, runtime, 1)?;
             if poll.status != M11ReferenceRendezvousStatus::Complete {
                 self.rendezvous = Some(rendezvous);
-            } else if let Some(remainder) = rendezvous.take_leading_reference_remainder() {
-                let (parser, green) = remainder.into_parts();
-                let checkpoint =
-                    writer.capture_leading_reference_remainder_checkpoint(parser, green)?;
-                let insertion = self.checkpoints.partition_point(|existing| {
-                    existing.parser_physical().bytes() < checkpoint.parser_physical().bytes()
-                });
-                if self.checkpoints.get(insertion).is_some_and(|existing| {
-                    existing.parser_physical() == checkpoint.parser_physical()
-                }) {
-                    return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
-                        "leading-reference remainder duplicated a restart cut",
-                    ));
+            } else {
+                if let Some(invalidation_start) = rendezvous.take_checkpoint_invalidation_start() {
+                    self.checkpoints.retain(|checkpoint| {
+                        let accepted = checkpoint.accepted_physical();
+                        let parser = checkpoint.parser_physical();
+                        let before_start = accepted.bytes() < invalidation_start.bytes()
+                            && accepted.utf16() < invalidation_start.utf16()
+                            && parser.bytes() < invalidation_start.bytes()
+                            && parser.utf16() < invalidation_start.utf16();
+                        let closed_at_start = accepted.bytes() <= invalidation_start.bytes()
+                            && accepted.utf16() <= invalidation_start.utf16()
+                            && parser.bytes() <= invalidation_start.bytes()
+                            && parser.utf16() <= invalidation_start.utf16()
+                            && !checkpoint
+                                .open_kinds()
+                                .any(|kind| matches!(kind, BlockKind::Paragraph));
+                        // The rewrite starts after this closed structural
+                        // boundary, so a BOF/parent-only checkpoint at the
+                        // same physical cut remains valid. Any checkpoint in
+                        // the rewritten Paragraph carries stale Green/logical
+                        // authority and must be discarded.
+                        before_start || closed_at_start
+                    });
                 }
-                self.checkpoints.try_reserve(1).map_err(|_| {
-                    M11PersistentRecursiveGreenSessionError::InvalidState(
-                        "leading-reference restart allocation failed",
-                    )
-                })?;
-                self.checkpoints.insert(insertion, checkpoint);
+                if let Some(remainder) = rendezvous.take_leading_reference_remainder() {
+                    let (parser, green) = remainder.into_parts();
+                    let checkpoint =
+                        writer.capture_leading_reference_remainder_checkpoint(parser, green)?;
+                    let insertion = self.checkpoints.partition_point(|existing| {
+                        existing.parser_physical().bytes() < checkpoint.parser_physical().bytes()
+                    });
+                    if self.checkpoints.get(insertion).is_some_and(|existing| {
+                        existing.parser_physical() == checkpoint.parser_physical()
+                    }) {
+                        return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                            "leading-reference remainder duplicated a restart cut",
+                        ));
+                    }
+                    self.checkpoints.try_reserve(1).map_err(|_| {
+                        M11PersistentRecursiveGreenSessionError::InvalidState(
+                            "leading-reference restart allocation failed",
+                        )
+                    })?;
+                    self.checkpoints.insert(insertion, checkpoint);
+                }
             }
             return Ok(());
         }
@@ -569,7 +607,9 @@ impl M11PersistentRecursiveGreenCleanBuild {
                         syntax_profile: self.syntax_profile,
                         green: self.green.take(),
                         references: self.references.take(),
-                        checkpoints: std::mem::take(&mut self.checkpoints),
+                        checkpoints: M11CheckpointStore::from_contiguous(std::mem::take(
+                            &mut self.checkpoints,
+                        )),
                         terminal_convergence: self.terminal_convergence.take(),
                         release_begun: false,
                         green_release_complete: false,
@@ -849,6 +889,190 @@ impl M11PersistentRecursiveGreenCleanBuild {
     }
 }
 
+enum M11CheckpointStore {
+    Contiguous(Vec<M11BlockRestartCheckpoint>),
+    Paged {
+        pages: BTreeMap<usize, Box<[M11BlockRestartCheckpoint]>>,
+        len: usize,
+    },
+}
+
+impl M11CheckpointStore {
+    fn from_contiguous(checkpoints: Vec<M11BlockRestartCheckpoint>) -> Self {
+        Self::Contiguous(checkpoints)
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            Self::Contiguous(checkpoints) => checkpoints.len(),
+            Self::Paged { len, .. } => *len,
+        }
+    }
+
+    fn get(&self, index: usize) -> Option<&M11BlockRestartCheckpoint> {
+        match self {
+            Self::Contiguous(checkpoints) => checkpoints.get(index),
+            Self::Paged { pages, len } => {
+                if index >= *len {
+                    return None;
+                }
+                let (start, page) = pages.range(..=index).next_back()?;
+                page.get(index - *start)
+            }
+        }
+    }
+
+    fn partition_point<P>(&self, mut predicate: P) -> usize
+    where
+        P: FnMut(&M11BlockRestartCheckpoint) -> bool,
+    {
+        let mut left = 0;
+        let mut right = self.len();
+        while left < right {
+            let middle = left + (right - left) / 2;
+            if predicate(
+                self.get(middle)
+                    .expect("checkpoint partition index remains in bounds"),
+            ) {
+                left = middle + 1;
+            } else {
+                right = middle;
+            }
+        }
+        left
+    }
+
+    fn partition_point_from<P>(&self, start: usize, mut predicate: P) -> usize
+    where
+        P: FnMut(&M11BlockRestartCheckpoint) -> bool,
+    {
+        let mut left = start.min(self.len());
+        let mut right = self.len();
+        while left < right {
+            let middle = left + (right - left) / 2;
+            if predicate(
+                self.get(middle)
+                    .expect("checkpoint partition index remains in bounds"),
+            ) {
+                left = middle + 1;
+            } else {
+                right = middle;
+            }
+        }
+        left - start.min(self.len())
+    }
+
+    #[cfg(test)]
+    fn iter(&self) -> M11CheckpointStoreIter<'_> {
+        match self {
+            Self::Contiguous(checkpoints) => M11CheckpointStoreIter::Contiguous(checkpoints.iter()),
+            Self::Paged { pages, .. } => M11CheckpointStoreIter::Paged {
+                pages: pages.values(),
+                current: None,
+            },
+        }
+    }
+}
+
+impl Index<usize> for M11CheckpointStore {
+    type Output = M11BlockRestartCheckpoint;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        self.get(index)
+            .expect("checkpoint index remains inside persistent store")
+    }
+}
+
+#[cfg(test)]
+enum M11CheckpointStoreIter<'a> {
+    Contiguous(slice::Iter<'a, M11BlockRestartCheckpoint>),
+    Paged {
+        pages: btree_map::Values<'a, usize, Box<[M11BlockRestartCheckpoint]>>,
+        current: Option<slice::Iter<'a, M11BlockRestartCheckpoint>>,
+    },
+}
+
+#[cfg(test)]
+impl<'a> Iterator for M11CheckpointStoreIter<'a> {
+    type Item = &'a M11BlockRestartCheckpoint;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Contiguous(checkpoints) => checkpoints.next(),
+            Self::Paged { pages, current } => loop {
+                if let Some(checkpoint) = current.as_mut().and_then(Iterator::next) {
+                    return Some(checkpoint);
+                }
+                *current = Some(pages.next()?.iter());
+            },
+        }
+    }
+}
+
+struct M11PagedCheckpointBuilder {
+    pages: BTreeMap<usize, Box<[M11BlockRestartCheckpoint]>>,
+    tail: Vec<M11BlockRestartCheckpoint>,
+    len: usize,
+}
+
+impl M11PagedCheckpointBuilder {
+    fn new() -> Self {
+        Self {
+            pages: BTreeMap::new(),
+            tail: Vec::new(),
+            len: 0,
+        }
+    }
+
+    fn last(&self) -> Option<&M11BlockRestartCheckpoint> {
+        self.tail.last().or_else(|| {
+            self.pages
+                .last_key_value()
+                .and_then(|(_, page)| page.last())
+        })
+    }
+
+    fn push(&mut self, checkpoint: M11BlockRestartCheckpoint) -> Result<(), M11BlockWriterError> {
+        if self.tail.is_empty() {
+            self.tail
+                .try_reserve_exact(CHECKPOINT_PAGE_CAPACITY)
+                .map_err(|_| M11BlockWriterError::Allocation)?;
+        }
+        self.tail.push(checkpoint);
+        self.len = self
+            .len
+            .checked_add(1)
+            .ok_or(M11BlockWriterError::Allocation)?;
+        if self.tail.len() == CHECKPOINT_PAGE_CAPACITY {
+            self.flush_tail()?;
+        }
+        Ok(())
+    }
+
+    fn flush_tail(&mut self) -> Result<(), M11BlockWriterError> {
+        if self.tail.is_empty() {
+            return Ok(());
+        }
+        let start = self
+            .len
+            .checked_sub(self.tail.len())
+            .ok_or(M11BlockWriterError::Allocation)?;
+        let page = std::mem::take(&mut self.tail).into_boxed_slice();
+        if self.pages.insert(start, page).is_some() {
+            return Err(M11BlockWriterError::Allocation);
+        }
+        Ok(())
+    }
+
+    fn finish(mut self) -> Result<M11CheckpointStore, M11BlockWriterError> {
+        self.flush_tail()?;
+        Ok(M11CheckpointStore::Paged {
+            pages: self.pages,
+            len: self.len,
+        })
+    }
+}
+
 /// Persistent structural and reference authority for one exact source.
 #[must_use = "persistent recursive-Green sessions require explicit release"]
 pub struct M11PersistentRecursiveGreenSession {
@@ -856,7 +1080,7 @@ pub struct M11PersistentRecursiveGreenSession {
     syntax_profile: u32,
     green: Option<M11RecursiveGreenRoot>,
     references: Option<M11ReferenceJournalRoot>,
-    checkpoints: Vec<M11BlockRestartCheckpoint>,
+    checkpoints: M11CheckpointStore,
     terminal_convergence: Option<M11BlockTerminalConvergenceCheckpoint>,
     release_begun: bool,
     green_release_complete: bool,
@@ -916,10 +1140,70 @@ pub enum M11PersistentRecursiveGreenAdoptionStatus {
     Cancelled,
 }
 
+/// Which parser-authenticated unchanged side of an in-flight adoption can
+/// answer current-revision structural row queries.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum M11PersistentRecursiveGreenProjectionRegionKind {
+    Prefix,
+    Suffix,
+}
+
+/// Exact base-to-target coordinate map for one parser-authenticated unchanged
+/// range. The range contains structural facts that can be projected into the
+/// target revision while the edited middle remains pending.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct M11PersistentRecursiveGreenProjectionRegion {
+    kind: M11PersistentRecursiveGreenProjectionRegionKind,
+    base_start_byte: usize,
+    base_end_byte: usize,
+    base_start_utf16: usize,
+    base_end_utf16: usize,
+    target_start_byte: usize,
+    target_end_byte: usize,
+    target_start_utf16: usize,
+    target_end_utf16: usize,
+}
+
+impl M11PersistentRecursiveGreenProjectionRegion {
+    #[must_use]
+    pub const fn kind(self) -> M11PersistentRecursiveGreenProjectionRegionKind {
+        self.kind
+    }
+
+    #[must_use]
+    pub const fn base_byte_range(self) -> Range<usize> {
+        self.base_start_byte..self.base_end_byte
+    }
+
+    #[must_use]
+    pub const fn base_utf16_range(self) -> Range<usize> {
+        self.base_start_utf16..self.base_end_utf16
+    }
+
+    #[must_use]
+    pub const fn target_byte_range(self) -> Range<usize> {
+        self.target_start_byte..self.target_end_byte
+    }
+
+    #[must_use]
+    pub const fn target_utf16_range(self) -> Range<usize> {
+        self.target_start_utf16..self.target_end_utf16
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct M11PersistentRecursiveGreenLiveProjection {
+    prefix: Option<M11PersistentRecursiveGreenProjectionRegion>,
+    suffix: Option<M11PersistentRecursiveGreenProjectionRegion>,
+    suffix_ready: bool,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct M11PersistentRecursiveGreenAdoptionPoll {
     status: M11PersistentRecursiveGreenAdoptionStatus,
     transitions: usize,
+    checkpoint_records_processed: usize,
+    maximum_checkpoint_records_per_transition: usize,
 }
 
 impl M11PersistentRecursiveGreenAdoptionPoll {
@@ -932,6 +1216,16 @@ impl M11PersistentRecursiveGreenAdoptionPoll {
     pub const fn transitions(self) -> usize {
         self.transitions
     }
+
+    #[must_use]
+    pub const fn checkpoint_records_processed(self) -> usize {
+        self.checkpoint_records_processed
+    }
+
+    #[must_use]
+    pub const fn maximum_checkpoint_records_per_transition(self) -> usize {
+        self.maximum_checkpoint_records_per_transition
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -940,6 +1234,8 @@ pub struct M11PersistentRecursiveGreenAdoptionWork {
     high_level_events: usize,
     green_tree_nodes_rebuilt: usize,
     reference_rebind_transitions: usize,
+    checkpoint_records_processed: usize,
+    maximum_checkpoint_records_per_transition: usize,
 }
 
 impl M11PersistentRecursiveGreenAdoptionWork {
@@ -961,6 +1257,16 @@ impl M11PersistentRecursiveGreenAdoptionWork {
     #[must_use]
     pub const fn reference_rebind_transitions(self) -> usize {
         self.reference_rebind_transitions
+    }
+
+    #[must_use]
+    pub const fn checkpoint_records_processed(self) -> usize {
+        self.checkpoint_records_processed
+    }
+
+    #[must_use]
+    pub const fn maximum_checkpoint_records_per_transition(self) -> usize {
+        self.maximum_checkpoint_records_per_transition
     }
 }
 
@@ -1100,6 +1406,7 @@ enum AdoptionPhase {
     BeginTerminalFinish,
     FinishTerminal,
     AdoptGreen,
+    RebaseCheckpoints,
     AdoptReferences,
     Complete,
     CleanFallbackRequired,
@@ -1126,59 +1433,202 @@ struct LaterConvergenceSearch {
     transitions: usize,
 }
 
-struct RebasedOrdinaryCheckpointSet {
-    checkpoints: Vec<M11BlockRestartCheckpoint>,
+struct AdoptedCheckpointSet {
+    checkpoints: M11CheckpointStore,
     terminal: M11BlockTerminalConvergenceCheckpoint,
 }
 
-enum AdoptedCheckpointSet {
-    Ordinary(RebasedOrdinaryCheckpointSet),
-    Terminal {
-        checkpoints: Vec<M11BlockRestartCheckpoint>,
-        terminal: M11BlockTerminalConvergenceCheckpoint,
-    },
+struct M11CheckpointAdoption {
+    rebase: M11BlockCheckpointRebase,
+    output: M11PagedCheckpointBuilder,
+    prefix_cursor: usize,
+    prefix_end: usize,
+    target_restart: Option<M11BlockRestartCheckpoint>,
+    target_convergence: Option<M11BlockRestartCheckpoint>,
+    suffix_cursor: usize,
+    suffix_end: usize,
+    terminal: Option<M11BlockTerminalConvergenceCheckpoint>,
+    rebase_terminal: bool,
+    complete: bool,
 }
 
-fn replicate_base_checkpoint_range(
-    base: &M11PersistentRecursiveGreenSession,
-    range: Range<usize>,
-    transaction_id: u64,
-) -> Result<Vec<M11BlockRestartCheckpoint>, M11BlockRestartError> {
-    let checkpoints = base
-        .checkpoints
-        .get(range)
-        .ok_or(M11BlockRestartError::Pairing(
-            "retained checkpoint range escaped the base session",
-        ))?;
-    let mut replicas = Vec::new();
-    replicas
-        .try_reserve_exact(checkpoints.len())
-        .map_err(|_| M11BlockWriterError::Allocation)?;
-    for checkpoint in checkpoints {
-        replicas.push(
-            checkpoint
-                .replicate_for_transaction(transaction_id)?
-                .into_checkpoint(transaction_id)?,
-        );
+impl M11CheckpointAdoption {
+    fn ordinary(
+        adoption: M11BlockOrdinaryCheckpointAdoption,
+        restart_index: usize,
+        checkpoint_index: usize,
+        base_checkpoint_count: usize,
+    ) -> Result<Self, M11BlockRestartError> {
+        let suffix_cursor =
+            checkpoint_index
+                .checked_add(1)
+                .ok_or(M11BlockRestartError::Pairing(
+                    "ordinary checkpoint suffix index overflow",
+                ))?;
+        if restart_index > checkpoint_index || suffix_cursor > base_checkpoint_count {
+            return Err(M11BlockRestartError::Pairing(
+                "ordinary checkpoint ranges escaped the base session",
+            ));
+        }
+        Ok(Self {
+            rebase: adoption.rebase,
+            output: M11PagedCheckpointBuilder::new(),
+            prefix_cursor: 0,
+            prefix_end: restart_index,
+            target_restart: Some(adoption.target_restart),
+            target_convergence: Some(adoption.target_convergence),
+            suffix_cursor,
+            suffix_end: base_checkpoint_count,
+            terminal: Some(adoption.retained_terminal),
+            rebase_terminal: true,
+            complete: false,
+        })
     }
-    Ok(replicas)
+
+    fn terminal(
+        adoption: M11BlockTerminalCheckpointAdoption,
+        restart_index: usize,
+        base_checkpoint_count: usize,
+    ) -> Result<Self, M11BlockRestartError> {
+        if restart_index > base_checkpoint_count {
+            return Err(M11BlockRestartError::Pairing(
+                "terminal checkpoint prefix escaped the base session",
+            ));
+        }
+        Ok(Self {
+            rebase: adoption.rebase,
+            output: M11PagedCheckpointBuilder::new(),
+            prefix_cursor: 0,
+            prefix_end: restart_index,
+            target_restart: Some(adoption.target_restart),
+            target_convergence: None,
+            suffix_cursor: base_checkpoint_count,
+            suffix_end: base_checkpoint_count,
+            terminal: Some(adoption.target_terminal),
+            rebase_terminal: false,
+            complete: false,
+        })
+    }
+
+    /// Performs exactly one checkpoint-record unit. Empty ranges are skipped
+    /// inside the transition, but cloning, rebasing, validation, and paged
+    /// storage insertion never cover more than one retained/synthetic record.
+    fn poll_one(
+        &mut self,
+        base: &M11CheckpointStore,
+        transaction_id: u64,
+    ) -> Result<(), M11BlockRestartError> {
+        if self.complete {
+            return Err(M11BlockRestartError::Pairing(
+                "completed checkpoint adoption cannot resume",
+            ));
+        }
+        if self.prefix_cursor < self.prefix_end {
+            let mut checkpoint = base
+                .get(self.prefix_cursor)
+                .ok_or(M11BlockRestartError::Pairing(
+                    "retained prefix checkpoint escaped the base session",
+                ))?
+                .replicate_for_transaction(transaction_id)?
+                .into_checkpoint(transaction_id)?;
+            self.rebase.rebase_prefix(&mut checkpoint)?;
+            self.push(checkpoint)?;
+            self.prefix_cursor += 1;
+            return Ok(());
+        }
+        if let Some(checkpoint) = self.target_restart.take() {
+            self.push(checkpoint)?;
+            return Ok(());
+        }
+        if let Some(checkpoint) = self.target_convergence.take() {
+            self.push(checkpoint)?;
+            return Ok(());
+        }
+        if self.suffix_cursor < self.suffix_end {
+            let mut checkpoint = base
+                .get(self.suffix_cursor)
+                .ok_or(M11BlockRestartError::Pairing(
+                    "retained suffix checkpoint escaped the base session",
+                ))?
+                .replicate_for_transaction(transaction_id)?
+                .into_checkpoint(transaction_id)?;
+            self.rebase.rebase_suffix(&mut checkpoint)?;
+            self.push(checkpoint)?;
+            self.suffix_cursor += 1;
+            return Ok(());
+        }
+        let mut terminal = self.terminal.take().ok_or(M11BlockRestartError::Pairing(
+            "checkpoint adoption omitted terminal authority",
+        ))?;
+        if self.rebase_terminal {
+            self.rebase.rebase_terminal(&mut terminal)?;
+        }
+        self.rebase.validate_terminal(&terminal)?;
+        self.terminal = Some(terminal);
+        self.complete = true;
+        Ok(())
+    }
+
+    fn push(&mut self, checkpoint: M11BlockRestartCheckpoint) -> Result<(), M11BlockRestartError> {
+        self.rebase.validate_next(self.output.last(), &checkpoint)?;
+        self.output.push(checkpoint)?;
+        Ok(())
+    }
+
+    fn is_complete(&self) -> bool {
+        self.complete
+    }
+
+    fn into_adopted(mut self) -> Result<AdoptedCheckpointSet, M11BlockRestartError> {
+        if !self.complete {
+            return Err(M11BlockRestartError::Pairing(
+                "checkpoint adoption completed before its terminal authority",
+            ));
+        }
+        let terminal = self.terminal.take().ok_or(M11BlockRestartError::Pairing(
+            "checkpoint adoption lost terminal authority",
+        ))?;
+        Ok(AdoptedCheckpointSet {
+            checkpoints: self.output.finish()?,
+            terminal,
+        })
+    }
 }
 
 /// Proves that one parser checkpoint cannot split a committed reference
-/// occurrence. A cut at or beyond the final occurrence is trivially safe. An
-/// earlier cut is safe only when no Paragraph is open: reference occurrences
-/// are recognized from Paragraph prefixes and are committed before that
-/// Paragraph leaves the open parser path.
+/// occurrence. A cut strictly after the final occurrence is trivially safe.
+/// A cut exactly at its end can still be a leading-reference remainder whose
+/// parser continuation has committed that no more definitions follow. That
+/// cut, and every earlier cut, is safe only when no Paragraph is open.
 fn checkpoint_proves_reference_occurrence_cut(
     checkpoint: &M11BlockRestartCheckpoint,
     references: &M11ReferenceJournalRoot,
 ) -> bool {
     let cut = checkpoint.parser_physical();
-    (cut.bytes() >= references.last_source_byte_end()
-        && cut.utf16() >= references.last_source_utf16_end())
+    (cut.bytes() > references.last_source_byte_end()
+        && cut.utf16() > references.last_source_utf16_end())
         || !checkpoint
             .open_kinds()
             .any(|kind| matches!(kind, BlockKind::Paragraph))
+}
+
+/// A leading-reference remainder at the exact final occurrence end is not a
+/// globally safe convergence cut while its Paragraph remains open: an edit at
+/// that cut can extend the reference prefix. It is nevertheless a safe restart
+/// for an edit strictly later, because the unchanged bytes between the cut and
+/// edit preserve the decision that ended the reference prefix.
+fn checkpoint_proves_reference_restart_cut(
+    checkpoint: &M11BlockRestartCheckpoint,
+    references: &M11ReferenceJournalRoot,
+    edit_start: usize,
+) -> bool {
+    if checkpoint_proves_reference_occurrence_cut(checkpoint, references) {
+        return true;
+    }
+    let cut = checkpoint.parser_physical();
+    cut.bytes() == references.last_source_byte_end()
+        && cut.utf16() == references.last_source_utf16_end()
+        && edit_start > cut.bytes() as usize
 }
 
 /// Fuelled same-island restart/convergence adoption. Parser-authenticated
@@ -1203,6 +1653,7 @@ pub struct M11PersistentRecursiveGreenAdoption {
     green_prefix: Option<ExactUnchangedPrefixWitness>,
     document_start: bool,
     green_suffix: Option<ExactUnchangedSuffixWitness>,
+    live_projection: M11PersistentRecursiveGreenLiveProjection,
     reference_prefix: Option<ExactUnchangedPrefixWitness>,
     reference_range_prefix: Option<ExactUnchangedPrefixWitness>,
     reference_range_base_start: SourceMetric,
@@ -1214,6 +1665,7 @@ pub struct M11PersistentRecursiveGreenAdoption {
     reference_replacement_finishing: bool,
     reference_adoption: Option<M11ReferenceJournalUnchangedPrefixAdoption>,
     target_green: Option<M11RecursiveGreenRoot>,
+    checkpoint_adoption: Option<M11CheckpointAdoption>,
     adopted_checkpoints: Option<AdoptedCheckpointSet>,
     recursive_green_splice: Option<M11RecursiveGreenStructuralSpliceSelection>,
     output: Option<M11PersistentRecursiveGreenUpdate>,
@@ -1222,6 +1674,25 @@ pub struct M11PersistentRecursiveGreenAdoption {
     cancel_target: Option<M11PersistentRecursiveGreenSession>,
     cancel_green_complete: bool,
     cancel_references_complete: bool,
+}
+
+impl M11PersistentRecursiveGreenAdoption {
+    /// Returns at most one exact prefix and one exact suffix in source order.
+    /// Missing regions are intentionally pending; callers may never infer a
+    /// certified range from the edit coordinates alone.
+    #[must_use]
+    pub const fn live_projection_regions(
+        &self,
+    ) -> [Option<M11PersistentRecursiveGreenProjectionRegion>; 2] {
+        [
+            self.live_projection.prefix,
+            if self.live_projection.suffix_ready {
+                self.live_projection.suffix
+            } else {
+                None
+            },
+        ]
+    }
 }
 
 impl fmt::Debug for M11PersistentRecursiveGreenSession {
@@ -1255,6 +1726,8 @@ impl M11PersistentRecursiveGreenAdoption {
                 "recursive-Green adoption target is not current",
             ));
         }
+        let checkpoint_start = self.work.checkpoint_records_processed;
+        let mut maximum_checkpoint_records_per_transition = 0;
         let mut transitions = 0;
         while transitions < fuel
             && !matches!(
@@ -1262,9 +1735,35 @@ impl M11PersistentRecursiveGreenAdoption {
                 AdoptionPhase::Complete | AdoptionPhase::CleanFallbackRequired
             )
         {
+            let transition_checkpoint_start = self.work.checkpoint_records_processed;
             self.poll_one(runtime)?;
+            let transition_checkpoint_records = self
+                .work
+                .checkpoint_records_processed
+                .checked_sub(transition_checkpoint_start)
+                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "checkpoint transition work regressed",
+                ))?;
+            if transition_checkpoint_records > 1 {
+                return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "checkpoint transition exceeded one-record fuel",
+                ));
+            }
+            maximum_checkpoint_records_per_transition =
+                maximum_checkpoint_records_per_transition.max(transition_checkpoint_records);
+            self.work.maximum_checkpoint_records_per_transition = self
+                .work
+                .maximum_checkpoint_records_per_transition
+                .max(transition_checkpoint_records);
             transitions += 1;
         }
+        let checkpoint_records_processed = self
+            .work
+            .checkpoint_records_processed
+            .checked_sub(checkpoint_start)
+            .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "checkpoint poll work regressed",
+            ))?;
         Ok(M11PersistentRecursiveGreenAdoptionPoll {
             status: match self.phase {
                 AdoptionPhase::Complete => M11PersistentRecursiveGreenAdoptionStatus::Complete,
@@ -1274,6 +1773,8 @@ impl M11PersistentRecursiveGreenAdoption {
                 _ => M11PersistentRecursiveGreenAdoptionStatus::Pending,
             },
             transitions,
+            checkpoint_records_processed,
+            maximum_checkpoint_records_per_transition,
         })
     }
 
@@ -1454,11 +1955,9 @@ impl M11PersistentRecursiveGreenAdoption {
                     .reference_adoption
                     .as_mut()
                     .and_then(M11ReferenceJournalUnchangedPrefixAdoption::take_root)
-                    .ok_or(
-                    M11PersistentRecursiveGreenSessionError::InvalidState(
+                    .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
                         "completed reference adoption omitted its root",
-                    ),
-                )?;
+                    ))?;
                 self.reference_adoption = None;
                 self.finish_target_with_references(references)?;
             }
@@ -1615,6 +2114,7 @@ impl M11PersistentRecursiveGreenAdoption {
             AdoptionPhase::ProbeOrdinaryConvergence => {
                 if self.probe_ordinary_convergence(runtime)? {
                     self.later_convergence_search = None;
+                    self.live_projection.suffix_ready = true;
                     self.phase = AdoptionPhase::AdoptGreen;
                 } else {
                     self.advance_ordinary_convergence(runtime)?;
@@ -1696,7 +2196,6 @@ impl M11PersistentRecursiveGreenAdoption {
                     ));
                 }
                 let green_suffix = self.green_suffix.take();
-                let reference_prefix = self.reference_prefix.take();
                 let parser =
                     if matches!(selection.convergence, AdoptionConvergence::Ordinary { .. }) {
                         Some(self.controller_mut()?.capture_restart()?)
@@ -1714,6 +2213,7 @@ impl M11PersistentRecursiveGreenAdoption {
                             "recursive-Green base omitted its structural root",
                         ),
                     )?;
+                    let base_checkpoint_count = base.checkpoints.len();
                     match selection.convergence {
                         AdoptionConvergence::Ordinary { checkpoint_index } => {
                             let old_convergence = base
@@ -1724,16 +2224,6 @@ impl M11PersistentRecursiveGreenAdoption {
                                 ))?
                                 .replicate_for_transaction(selection.transaction_id)?
                                 .into_checkpoint(selection.transaction_id)?;
-                            let retained_prefix = replicate_base_checkpoint_range(
-                                base,
-                                0..selection.restart_index,
-                                selection.transaction_id,
-                            )?;
-                            let retained_suffix = replicate_base_checkpoint_range(
-                                base,
-                                checkpoint_index + 1..base.checkpoints.len(),
-                                selection.transaction_id,
-                            )?;
                             let retained_terminal = base
                                 .terminal_convergence
                                 .as_ref()
@@ -1755,21 +2245,19 @@ impl M11PersistentRecursiveGreenAdoption {
                                     green_base,
                                     green_prefix,
                                     green_suffix,
-                                    retained_prefix,
-                                    retained_suffix,
                                     retained_terminal,
                                 )
-                                .map(|(green, receipt, checkpoints, terminal)| {
-                                    (
+                                .and_then(|(green, receipt, checkpoint_adoption)| {
+                                    Ok((
                                         green,
                                         receipt,
-                                        AdoptedCheckpointSet::Ordinary(
-                                            RebasedOrdinaryCheckpointSet {
-                                                checkpoints,
-                                                terminal,
-                                            },
-                                        ),
-                                    )
+                                        M11CheckpointAdoption::ordinary(
+                                            checkpoint_adoption,
+                                            selection.restart_index,
+                                            checkpoint_index,
+                                            base_checkpoint_count,
+                                        )?,
+                                    ))
                                 })
                         }
                         AdoptionConvergence::Terminal => {
@@ -1781,11 +2269,6 @@ impl M11PersistentRecursiveGreenAdoption {
                                 ))?
                                 .replicate_for_transaction(selection.transaction_id)?
                                 .into_checkpoint(selection.transaction_id)?;
-                            let retained_prefix = replicate_base_checkpoint_range(
-                                base,
-                                0..selection.restart_index,
-                                selection.transaction_id,
-                            )?;
                             writer
                                 .adopt_converged_terminal_fragment(
                                     terminal_close.ok_or(
@@ -1798,22 +2281,22 @@ impl M11PersistentRecursiveGreenAdoption {
                                     runtime,
                                     green_base,
                                     green_prefix,
-                                    retained_prefix,
                                 )
-                                .map(|(green, receipt, checkpoints, terminal)| {
-                                    (
+                                .and_then(|(green, receipt, checkpoint_adoption)| {
+                                    Ok((
                                         green,
                                         receipt,
-                                        AdoptedCheckpointSet::Terminal {
-                                            checkpoints,
-                                            terminal,
-                                        },
-                                    )
+                                        M11CheckpointAdoption::terminal(
+                                            checkpoint_adoption,
+                                            selection.restart_index,
+                                            base_checkpoint_count,
+                                        )?,
+                                    ))
                                 })
                         }
                     }
                 };
-                let (green, receipt, checkpoints) = match adoption_result {
+                let (green, receipt, checkpoint_adoption) = match adoption_result {
                     Ok(result) => result,
                     Err(
                         M11BlockRestartError::Pairing(
@@ -1835,74 +2318,42 @@ impl M11PersistentRecursiveGreenAdoption {
                 // Install move-only Green authority before any later fallible
                 // work so cancellation always has a root it can release.
                 self.target_green = Some(green);
-                self.adopted_checkpoints = Some(checkpoints);
+                self.checkpoint_adoption = Some(checkpoint_adoption);
                 self.controller = None;
                 self.record_structural_work(receipt)?;
-                if let Some(replacement) = self.reference_replacement.as_mut() {
+                self.phase = AdoptionPhase::RebaseCheckpoints;
+            }
+            AdoptionPhase::RebaseCheckpoints => {
+                let transaction_id = self.checkpoint_selection.transaction_id;
+                {
                     let base = self.base.as_ref().ok_or(
                         M11PersistentRecursiveGreenSessionError::InvalidState(
-                            "recursive-Green adoption omitted its base session",
+                            "recursive-Green checkpoint adoption omitted its base session",
                         ),
                     )?;
-                    let convergence = match selection.convergence {
-                        AdoptionConvergence::Ordinary { checkpoint_index } => base
-                            .checkpoints
-                            .get(checkpoint_index)
-                            .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
-                                "reference convergence checkpoint escaped the base",
-                            ))?
-                            .parser_physical(),
-                        AdoptionConvergence::Terminal => SourceMetric::new(
-                            base.source.byte_len() as u64,
-                            base.source.utf16_len() as u64,
-                        )
+                    self.checkpoint_adoption
+                        .as_mut()
                         .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
-                            "reference terminal source metric is invalid",
-                        ))?,
-                    };
-                    let suffix = if convergence.bytes() as usize == base.source.byte_len()
-                        && convergence.utf16() as usize == base.source.utf16_len()
-                    {
-                        None
-                    } else {
-                        let suffix = runtime.mint_exact_unchanged_suffix_witness(
-                            base.source,
-                            convergence.bytes() as usize,
-                            convergence.utf16() as usize,
-                        )?;
-                        if suffix.target_byte_start() != self.target_parser_end {
-                            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
-                                "reference suffix differs from parser convergence",
-                            ));
-                        }
-                        Some(suffix)
-                    };
-                    replacement.finish_replacement(runtime, suffix)?;
-                    self.reference_range_ready = false;
-                    self.reference_replacement_finishing = true;
-                } else {
-                    self.reference_range_prefix = None;
-                    let reference_adoption = {
-                    let base = self.base.as_ref().ok_or(
-                        M11PersistentRecursiveGreenSessionError::InvalidState(
-                            "recursive-Green adoption omitted its base session",
-                        ),
-                    )?;
-                    let references = base.references.as_ref().ok_or(
-                        M11PersistentRecursiveGreenSessionError::InvalidState(
-                            "recursive-Green base omitted its reference root",
-                        ),
-                    )?;
-                    begin_reference_adoption(
-                        references,
-                        runtime,
-                        reference_prefix,
-                        ZeroReferenceOccurrenceProof(()),
-                    )?
-                    };
-                    self.reference_adoption = Some(reference_adoption);
+                            "recursive-Green checkpoint adoption actor is missing",
+                        ))?
+                        .poll_one(&base.checkpoints, transaction_id)?;
                 }
-                self.phase = AdoptionPhase::AdoptReferences;
+                self.record_checkpoint_record()?;
+                if self
+                    .checkpoint_adoption
+                    .as_ref()
+                    .is_some_and(M11CheckpointAdoption::is_complete)
+                {
+                    let checkpoints = self
+                        .checkpoint_adoption
+                        .take()
+                        .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                            "completed checkpoint adoption actor disappeared",
+                        ))?
+                        .into_adopted()?;
+                    self.adopted_checkpoints = Some(checkpoints);
+                    self.begin_reference_finish(runtime)?;
+                }
             }
             AdoptionPhase::AdoptReferences => {
                 return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -2070,12 +2521,28 @@ impl M11PersistentRecursiveGreenAdoption {
                 green_convergence.utf16() as usize,
             )?)
         };
+        let live_suffix =
+            green_suffix
+                .as_ref()
+                .map(|suffix| M11PersistentRecursiveGreenProjectionRegion {
+                    kind: M11PersistentRecursiveGreenProjectionRegionKind::Suffix,
+                    base_start_byte: suffix.base_byte_start(),
+                    base_end_byte: base.source.byte_len(),
+                    base_start_utf16: suffix.base_utf16_start(),
+                    base_end_utf16: base.source.utf16_len(),
+                    target_start_byte: suffix.target_byte_start(),
+                    target_end_byte: self.target.byte_len(),
+                    target_start_utf16: suffix.target_utf16_start(),
+                    target_end_utf16: self.target.utf16_len(),
+                });
 
         self.checkpoint_selection.convergence = AdoptionConvergence::Ordinary {
             checkpoint_index: next_index,
         };
         self.target_parser_end = target_parser_end;
         self.green_suffix = green_suffix;
+        self.live_projection.suffix = live_suffix;
+        self.live_projection.suffix_ready = false;
         self.phase = AdoptionPhase::ParseFragment;
         Ok(())
     }
@@ -2104,6 +2571,8 @@ impl M11PersistentRecursiveGreenAdoption {
         self.checkpoint_selection.convergence = AdoptionConvergence::Terminal;
         self.target_parser_end = self.target.byte_len();
         self.green_suffix = None;
+        self.live_projection.suffix = None;
+        self.live_projection.suffix_ready = false;
         self.phase = AdoptionPhase::ParseFragment;
         Ok(())
     }
@@ -2155,29 +2624,118 @@ impl M11PersistentRecursiveGreenAdoption {
         Ok(())
     }
 
+    fn record_checkpoint_record(&mut self) -> Result<(), M11PersistentRecursiveGreenSessionError> {
+        self.work.checkpoint_records_processed = self
+            .work
+            .checkpoint_records_processed
+            .checked_add(1)
+            .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "checkpoint adoption work overflow",
+            ))?;
+        Ok(())
+    }
+
+    fn begin_reference_finish(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+    ) -> Result<(), M11PersistentRecursiveGreenSessionError> {
+        let selection = self.checkpoint_selection;
+        if self.reference_replacement.is_some() {
+            let (base_source, convergence) = {
+                let base = self.base.as_ref().ok_or(
+                    M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "recursive-Green adoption omitted its base session",
+                    ),
+                )?;
+                let convergence = match selection.convergence {
+                    AdoptionConvergence::Ordinary { checkpoint_index } => base
+                        .checkpoints
+                        .get(checkpoint_index)
+                        .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                            "reference convergence checkpoint escaped the base",
+                        ))?
+                        .parser_physical(),
+                    AdoptionConvergence::Terminal => SourceMetric::new(
+                        base.source.byte_len() as u64,
+                        base.source.utf16_len() as u64,
+                    )
+                    .ok_or(
+                        M11PersistentRecursiveGreenSessionError::InvalidState(
+                            "reference terminal source metric is invalid",
+                        ),
+                    )?,
+                };
+                (base.source, convergence)
+            };
+            let suffix = if convergence.bytes() as usize == base_source.byte_len()
+                && convergence.utf16() as usize == base_source.utf16_len()
+            {
+                None
+            } else {
+                let suffix = runtime.mint_exact_unchanged_suffix_witness(
+                    base_source,
+                    convergence.bytes() as usize,
+                    convergence.utf16() as usize,
+                )?;
+                if suffix.target_byte_start() != self.target_parser_end {
+                    return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "reference suffix differs from parser convergence",
+                    ));
+                }
+                Some(suffix)
+            };
+            self.reference_replacement
+                .as_mut()
+                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "reference replacement actor disappeared before finish",
+                ))?
+                .finish_replacement(runtime, suffix)?;
+            self.reference_range_ready = false;
+            self.reference_replacement_finishing = true;
+        } else {
+            self.reference_range_prefix = None;
+            let reference_prefix = self.reference_prefix.take();
+            let reference_adoption = {
+                let base = self.base.as_ref().ok_or(
+                    M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "recursive-Green adoption omitted its base session",
+                    ),
+                )?;
+                let references = base.references.as_ref().ok_or(
+                    M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "recursive-Green base omitted its reference root",
+                    ),
+                )?;
+                begin_reference_adoption(
+                    references,
+                    runtime,
+                    reference_prefix,
+                    ZeroReferenceOccurrenceProof(()),
+                )?
+            };
+            self.reference_adoption = Some(reference_adoption);
+        }
+        self.phase = AdoptionPhase::AdoptReferences;
+        Ok(())
+    }
+
     fn finish_target_with_references(
         &mut self,
         references: M11ReferenceJournalRoot,
     ) -> Result<(), M11PersistentRecursiveGreenSessionError> {
-        let base = self.base.take().ok_or(
+        let base =
+            self.base
+                .take()
+                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "recursive-Green adoption omitted its base session",
+                ))?;
+        let adopted = self.adopted_checkpoints.take().ok_or(
             M11PersistentRecursiveGreenSessionError::InvalidState(
-                "recursive-Green adoption omitted its base session",
+                "recursive-Green adoption omitted target checkpoint authority",
             ),
         )?;
-        let (checkpoints, terminal_convergence) = match self
-            .adopted_checkpoints
-            .take()
-            .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
-                "recursive-Green adoption omitted target checkpoint authority",
-            ))? {
-            AdoptedCheckpointSet::Ordinary(rebased) => {
-                (rebased.checkpoints, Some(rebased.terminal))
-            }
-            AdoptedCheckpointSet::Terminal {
-                checkpoints,
-                terminal,
-            } => (checkpoints, Some(terminal)),
-        };
+        let checkpoints = adopted.checkpoints;
+        let terminal_convergence = Some(adopted.terminal);
         let target = M11PersistentRecursiveGreenSession {
             source: self.target,
             syntax_profile: base.syntax_profile,
@@ -2295,6 +2853,7 @@ impl M11PersistentRecursiveGreenAdoption {
         self.reference_rendezvous = None;
         self.reference_replacement_finishing = false;
         self.later_convergence_search = None;
+        self.checkpoint_adoption = None;
         self.adopted_checkpoints = None;
         self.cancelling = true;
         Ok(())
@@ -2504,11 +3063,38 @@ impl M11PersistentRecursiveGreenSession {
             .map_or(0, M11ReferenceJournalRoot::occurrence_count)
     }
 
+    /// Returns a cheap resolver over the current session-owned reference
+    /// winners. The session remains the arena-page owner for the resolver's
+    /// entire use.
+    pub fn reference_resolver(
+        &self,
+        runtime: &DocumentRuntime,
+    ) -> Result<M11ReferenceResolver, M11PersistentRecursiveGreenSessionError> {
+        let root = self.current_reference_root(runtime)?;
+        Ok(M11ReferenceResolver::from_live_reference_journal(
+            runtime, root,
+        )?)
+    }
+
+    /// Whether an edit starts before the base's first authenticated reference
+    /// occurrence. A local structural crop may converge before that distant
+    /// occurrence, but it cannot certify the absolute coordinates of the
+    /// untouched reference suffix. The endpoint must use the definitive clean
+    /// parser/Green path for this shape.
+    #[must_use]
+    pub fn base_edit_precedes_reference_coverage(&self, base_edit: &Range<usize>) -> bool {
+        self.references.as_ref().is_some_and(|references| {
+            references.occurrence_count() != 0
+                && u64::try_from(base_edit.start)
+                    .is_ok_and(|start| start < references.first_source_byte_start())
+        })
+    }
+
     #[cfg(test)]
     fn checkpoint_storage_receipt_for_diagnostics(&self) -> CheckpointStorageReceipt {
         let mut retained_open_frames = 0_usize;
         let mut maximum_open_depth = 0_usize;
-        for checkpoint in &self.checkpoints {
+        for checkpoint in self.checkpoints.iter() {
             let depth = checkpoint.open_kinds().len();
             retained_open_frames = retained_open_frames.saturating_add(depth);
             maximum_open_depth = maximum_open_depth.max(depth);
@@ -2616,7 +3202,11 @@ impl M11PersistentRecursiveGreenSession {
                         )
                     })?;
                 !target_line_start
-                    || !checkpoint_proves_reference_occurrence_cut(checkpoint, references)
+                    || !checkpoint_proves_reference_restart_cut(
+                        checkpoint,
+                        references,
+                        base_edit.start,
+                    )
             } {
                 restart_index = restart_index.checked_sub(1).ok_or(
                     M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -2626,10 +3216,11 @@ impl M11PersistentRecursiveGreenSession {
             }
             let convergence_search_start = restart_index + 1;
             let convergence_offset =
-                self.checkpoints[convergence_search_start..].partition_point(|checkpoint| {
-                    (checkpoint.parser_physical().bytes() as usize) < base_edit.end
-                        || (checkpoint.accepted_physical().bytes() as usize) < base_edit.end
-                });
+                self.checkpoints
+                    .partition_point_from(convergence_search_start, |checkpoint| {
+                        (checkpoint.parser_physical().bytes() as usize) < base_edit.end
+                            || (checkpoint.accepted_physical().bytes() as usize) < base_edit.end
+                    });
             let convergence_index = convergence_search_start
                 .checked_add(convergence_offset)
                 .filter(|index| *index < self.checkpoints.len());
@@ -2742,6 +3333,35 @@ impl M11PersistentRecursiveGreenSession {
                     green_convergence.utf16() as usize,
                 )?)
             };
+            let live_projection = M11PersistentRecursiveGreenLiveProjection {
+                prefix: green_prefix.as_ref().map(|prefix| {
+                    M11PersistentRecursiveGreenProjectionRegion {
+                        kind: M11PersistentRecursiveGreenProjectionRegionKind::Prefix,
+                        base_start_byte: 0,
+                        base_end_byte: prefix.byte_end(),
+                        base_start_utf16: 0,
+                        base_end_utf16: prefix.utf16_end(),
+                        target_start_byte: 0,
+                        target_end_byte: prefix.byte_end(),
+                        target_start_utf16: 0,
+                        target_end_utf16: prefix.utf16_end(),
+                    }
+                }),
+                suffix: green_suffix.as_ref().map(|suffix| {
+                    M11PersistentRecursiveGreenProjectionRegion {
+                        kind: M11PersistentRecursiveGreenProjectionRegionKind::Suffix,
+                        base_start_byte: suffix.base_byte_start(),
+                        base_end_byte: self.source.byte_len(),
+                        base_start_utf16: suffix.base_utf16_start(),
+                        base_end_utf16: self.source.utf16_len(),
+                        target_start_byte: suffix.target_byte_start(),
+                        target_end_byte: target.byte_len(),
+                        target_start_utf16: suffix.target_utf16_start(),
+                        target_end_utf16: target.utf16_len(),
+                    }
+                }),
+                suffix_ready: false,
+            };
             let target_parser_end = if parser_convergence.bytes() as usize == self.source.byte_len()
                 && parser_convergence.utf16() as usize == self.source.utf16_len()
             {
@@ -2755,8 +3375,7 @@ impl M11PersistentRecursiveGreenSession {
                     )?
                     .target_byte_start()
             };
-            let reference_prefix = if references.occurrence_count() == 0
-                || reference_range_required
+            let reference_prefix = if references.occurrence_count() == 0 || reference_range_required
             {
                 None
             } else {
@@ -2820,6 +3439,7 @@ impl M11PersistentRecursiveGreenSession {
                 green_prefix,
                 document_start,
                 green_suffix,
+                live_projection,
                 reference_prefix,
                 reference_range_prefix,
                 reference_range_base_start,
@@ -2831,6 +3451,7 @@ impl M11PersistentRecursiveGreenSession {
                 reference_replacement_finishing: false,
                 reference_adoption: None,
                 target_green: None,
+                checkpoint_adoption: None,
                 adopted_checkpoints: None,
                 recursive_green_splice: None,
                 output: None,
@@ -3150,8 +3771,13 @@ mod tests {
         runtime: &mut DocumentRuntime,
         session: &mut M11PersistentRecursiveGreenSession,
     ) {
-        session.begin_release(runtime).expect("begin session release");
-        while !session.poll_release(runtime, 64).expect("poll session release") {}
+        session
+            .begin_release(runtime)
+            .expect("begin session release");
+        while !session
+            .poll_release(runtime, 64)
+            .expect("poll session release")
+        {}
     }
 
     #[test]
@@ -3162,15 +3788,33 @@ mod tests {
         let mut runtime = DocumentRuntime::new(BASE, DocumentRuntimeConfig::default())
             .expect("prefix-boundary runtime");
         let session = build_session(&mut runtime);
+        let references = session.references.as_ref().expect("base reference root");
+        let remainder = session
+            .checkpoints
+            .iter()
+            .find(|checkpoint| {
+                let cut = checkpoint.parser_physical();
+                cut.bytes() == references.last_source_byte_end()
+                    && cut.utf16() == references.last_source_utf16_end()
+                    && checkpoint
+                        .open_kinds()
+                        .any(|kind| matches!(kind, BlockKind::Paragraph))
+            })
+            .expect("leading-reference remainder checkpoint");
+        assert_eq!(remainder.parser_physical().bytes() as usize, edit_start);
+        assert!(!checkpoint_proves_reference_restart_cut(
+            remainder, references, edit_start,
+        ));
+        assert!(checkpoint_proves_reference_restart_cut(
+            remainder,
+            references,
+            edit_start + 1,
+        ));
         let base_source = session.source();
         runtime
             .apply_edit(base_source, edit_start..edit_start + 1, "[")
             .expect("activate second definition");
-        let mut update = finish_local_adoption(
-            &mut runtime,
-            session,
-            edit_start..edit_start + 1,
-        );
+        let mut update = finish_local_adoption(&mut runtime, session, edit_start..edit_start + 1);
         let mut base = update.take_base().expect("superseded prefix base");
         let mut target = update.take_target().expect("prefix-safe target");
 
@@ -3184,9 +3828,9 @@ mod tests {
     }
 
     #[test]
-    fn local_replacement_advances_past_a_multiline_reference_occurrence() {
-        let destination = "a".repeat(CHECKPOINT_STRIDE_BYTES as usize + 256);
-        let base = format!("before\n\n[x]: /{destination}\n  \"title\"\n\nafter [x]\n");
+    fn reference_rewrite_prunes_checkpoints_inside_a_multiline_occurrence() {
+        let destination_gap = " ".repeat(CHECKPOINT_STRIDE_BYTES as usize * 2 + 256);
+        let base = format!("before\n\n[x]:{destination_gap}/a\n  \"title\"\n\nafter [x]\n");
         let definition_start = base.find("[x]:").expect("definition start");
         let title_start = base.find("  \"title\"").expect("title start");
 
@@ -3194,12 +3838,12 @@ mod tests {
             .expect("multiline reference runtime");
         let session = build_session(&mut runtime);
         let references = session.references.as_ref().expect("base reference root");
-        assert!(session.checkpoints.iter().any(|checkpoint| {
+        assert!(session.checkpoints.iter().all(|checkpoint| {
             let cut = checkpoint.parser_physical().bytes() as usize;
-            definition_start < cut
+            !(definition_start < cut
                 && cut <= title_start
-                && !checkpoint_proves_reference_occurrence_cut(checkpoint, references)
-        }));
+                && !checkpoint_proves_reference_occurrence_cut(checkpoint, references))
+        }), "a reference rewrite must not retain stale Green authority inside its multiline occurrence");
 
         let base_source = session.source();
         runtime
@@ -3219,9 +3863,9 @@ mod tests {
 
     #[test]
     fn reference_paragraph_before_restart_requests_and_drains_clean_fallback() {
-        let whitespace = " ".repeat(CHECKPOINT_STRIDE_BYTES as usize + 256);
-        let base = format!("[x]:{whitespace}\n!u\n\nafter\n");
-        let edit_start = base.find("!u").expect("destination marker");
+        let whitespace = " ".repeat(CHECKPOINT_STRIDE_BYTES as usize * 2 + 256);
+        let base = format!("[x]:{whitespace}\n<u\n\nafter\n");
+        let edit_start = base.find("<u").expect("destination marker");
 
         let mut runtime = DocumentRuntime::new(&base, DocumentRuntimeConfig::default())
             .expect("predating Paragraph runtime");
@@ -3237,13 +3881,19 @@ mod tests {
             .unwrap_or_else(|failure| panic!("local adoption start: {}", failure.error()));
 
         loop {
-            match adoption.poll(&mut runtime, 64).expect("poll fallback").status() {
+            match adoption
+                .poll(&mut runtime, 64)
+                .expect("poll fallback")
+                .status()
+            {
                 M11PersistentRecursiveGreenAdoptionStatus::Pending => {}
                 M11PersistentRecursiveGreenAdoptionStatus::CleanFallbackRequired => break,
                 status => panic!("expected clean fallback, got {status:?}"),
             }
         }
-        adoption.begin_cancel(&mut runtime).expect("begin fallback cancellation");
+        adoption
+            .begin_cancel(&mut runtime)
+            .expect("begin fallback cancellation");
         while !adoption
             .poll_cancel(&mut runtime, 64)
             .expect("poll fallback cancellation")
@@ -3279,18 +3929,32 @@ mod tests {
         let mut clean_runtime = DocumentRuntime::new(TARGET, DocumentRuntimeConfig::default())
             .expect("clean reference rename runtime");
         let mut clean = build_session(&mut clean_runtime);
-        assert_eq!(target.reference_occurrence_count(), clean.reference_occurrence_count());
-        assert_eq!(winner(&runtime, &target, b"a"), winner(&clean_runtime, &clean, b"a"));
-        assert_eq!(winner(&runtime, &target, b"b"), winner(&clean_runtime, &clean, b"b"));
+        assert_eq!(
+            target.reference_occurrence_count(),
+            clean.reference_occurrence_count()
+        );
+        assert_eq!(
+            winner(&runtime, &target, b"a"),
+            winner(&clean_runtime, &clean, b"a")
+        );
+        assert_eq!(
+            winner(&runtime, &target, b"b"),
+            winner(&clean_runtime, &clean, b"b")
+        );
 
         base.begin_release(&mut runtime).expect("release base");
-        while !base.poll_release(&mut runtime, 64).expect("poll base release") {}
+        while !base
+            .poll_release(&mut runtime, 64)
+            .expect("poll base release")
+        {}
         target.begin_release(&mut runtime).expect("release target");
         while !target
             .poll_release(&mut runtime, 64)
             .expect("poll target release")
         {}
-        clean.begin_release(&mut clean_runtime).expect("release clean");
+        clean
+            .begin_release(&mut clean_runtime)
+            .expect("release clean");
         while !clean
             .poll_release(&mut clean_runtime, 64)
             .expect("poll clean release")
@@ -3312,11 +3976,7 @@ mod tests {
         runtime
             .apply_edit(base_source, 0..FIRST_DEFINITION_END, "ordinary text")
             .expect("remove first definition");
-        let mut update = finish_local_adoption(
-            &mut runtime,
-            session,
-            0..FIRST_DEFINITION_END,
-        );
+        let mut update = finish_local_adoption(&mut runtime, session, 0..FIRST_DEFINITION_END);
         let mut base = update.take_base().expect("superseded base");
         let mut target = update.take_target().expect("incremental target");
 
@@ -3326,17 +3986,28 @@ mod tests {
         let mut clean_runtime = DocumentRuntime::new(TARGET, DocumentRuntimeConfig::default())
             .expect("clean reference deletion runtime");
         let mut clean = build_session(&mut clean_runtime);
-        assert_eq!(target.reference_occurrence_count(), clean.reference_occurrence_count());
-        assert_eq!(winner(&runtime, &target, b"a"), winner(&clean_runtime, &clean, b"a"));
+        assert_eq!(
+            target.reference_occurrence_count(),
+            clean.reference_occurrence_count()
+        );
+        assert_eq!(
+            winner(&runtime, &target, b"a"),
+            winner(&clean_runtime, &clean, b"a")
+        );
 
         base.begin_release(&mut runtime).expect("release base");
-        while !base.poll_release(&mut runtime, 64).expect("poll base release") {}
+        while !base
+            .poll_release(&mut runtime, 64)
+            .expect("poll base release")
+        {}
         target.begin_release(&mut runtime).expect("release target");
         while !target
             .poll_release(&mut runtime, 64)
             .expect("poll target release")
         {}
-        clean.begin_release(&mut clean_runtime).expect("release clean");
+        clean
+            .begin_release(&mut clean_runtime)
+            .expect("release clean");
         while !clean
             .poll_release(&mut clean_runtime, 64)
             .expect("poll clean release")
@@ -3414,23 +4085,120 @@ mod tests {
         let mut clean_runtime = DocumentRuntime::new(TARGET, DocumentRuntimeConfig::default())
             .expect("clean new-definition runtime");
         let mut clean = build_session(&mut clean_runtime);
-        assert_eq!(target.reference_occurrence_count(), clean.reference_occurrence_count());
-        assert_eq!(winner(&runtime, &target, b"a"), winner(&clean_runtime, &clean, b"a"));
+        assert_eq!(
+            target.reference_occurrence_count(),
+            clean.reference_occurrence_count()
+        );
+        assert_eq!(
+            winner(&runtime, &target, b"a"),
+            winner(&clean_runtime, &clean, b"a")
+        );
 
         base.begin_release(&mut runtime).expect("release base");
-        while !base.poll_release(&mut runtime, 64).expect("poll base release") {}
+        while !base
+            .poll_release(&mut runtime, 64)
+            .expect("poll base release")
+        {}
         target.begin_release(&mut runtime).expect("release target");
         while !target
             .poll_release(&mut runtime, 64)
             .expect("poll target release")
         {}
-        clean.begin_release(&mut clean_runtime).expect("release clean");
+        clean
+            .begin_release(&mut clean_runtime)
+            .expect("release clean");
         while !clean
             .poll_release(&mut clean_runtime, 64)
             .expect("poll clean release")
         {}
         close_runtime(&mut runtime);
         close_runtime(&mut clean_runtime);
+    }
+
+    fn checkpoint_rebase_work_for_lines(
+        lines: usize,
+    ) -> (usize, M11PersistentRecursiveGreenAdoptionWork) {
+        use std::fmt::Write as _;
+
+        let mut source = String::new();
+        let mut edit = 0..0;
+        for ordinal in 0..lines {
+            let line_start = source.len();
+            writeln!(
+                &mut source,
+                "paragraph {ordinal:05} has an editable word and enough padding to exercise sparse checkpoints.\n"
+            )
+            .expect("checkpoint fixture write");
+            if ordinal == lines / 2 {
+                let offset = source[line_start..]
+                    .find("editable")
+                    .expect("editable word");
+                edit = line_start + offset..line_start + offset + "editable".len();
+            }
+        }
+
+        let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
+            .expect("checkpoint-rebase runtime");
+        let session = build_session(&mut runtime);
+        let base_checkpoint_count = session.checkpoint_count();
+        let base_source = session.source();
+        runtime
+            .apply_edit(base_source, edit.clone(), "EDITABLE")
+            .expect("checkpoint-rebase edit");
+        let target = runtime.snapshot_current_source().expect("target lease");
+        let mut adoption = session
+            .begin_local_adoption(&runtime, target, edit)
+            .unwrap_or_else(|failure| panic!("local adoption start: {}", failure.error()));
+        let mut checkpoint_records_processed = 0;
+        let mut maximum_checkpoint_records_per_transition = 0;
+        loop {
+            let poll = adoption
+                .poll(&mut runtime, 11)
+                .expect("poll checkpoint-rebase adoption");
+            assert!(poll.checkpoint_records_processed() <= poll.transitions());
+            assert!(poll.maximum_checkpoint_records_per_transition() <= 1);
+            checkpoint_records_processed += poll.checkpoint_records_processed();
+            maximum_checkpoint_records_per_transition = maximum_checkpoint_records_per_transition
+                .max(poll.maximum_checkpoint_records_per_transition());
+            match poll.status() {
+                M11PersistentRecursiveGreenAdoptionStatus::Pending => {}
+                M11PersistentRecursiveGreenAdoptionStatus::Complete => break,
+                status => panic!("checkpoint-rebase adoption failed: {status:?}"),
+            }
+        }
+
+        let mut update = adoption.take_update().expect("checkpoint-rebase update");
+        let work = update.work();
+        assert_eq!(
+            work.checkpoint_records_processed(),
+            checkpoint_records_processed
+        );
+        assert_eq!(
+            work.maximum_checkpoint_records_per_transition(),
+            maximum_checkpoint_records_per_transition
+        );
+        let mut base = update.take_base().expect("checkpoint-rebase base");
+        let mut target = update.take_target().expect("checkpoint-rebase target");
+        assert_eq!(
+            work.checkpoint_records_processed(),
+            target.checkpoint_count() + 1,
+            "every target checkpoint plus terminal authority is one explicit work record",
+        );
+        release_session(&mut runtime, &mut base);
+        release_session(&mut runtime, &mut target);
+        close_runtime(&mut runtime);
+        (base_checkpoint_count, work)
+    }
+
+    #[test]
+    fn checkpoint_rebase_work_per_transition_is_independent_of_document_checkpoint_count() {
+        let (small_checkpoints, small) = checkpoint_rebase_work_for_lines(512);
+        let (medium_checkpoints, medium) = checkpoint_rebase_work_for_lines(8_192);
+
+        assert!(medium_checkpoints > small_checkpoints * 8);
+        assert!(medium.checkpoint_records_processed() > small.checkpoint_records_processed() * 8);
+        assert_eq!(small.maximum_checkpoint_records_per_transition(), 1);
+        assert_eq!(medium.maximum_checkpoint_records_per_transition(), 1);
     }
 
     #[test]

@@ -1,0 +1,14 @@
+name: flark_core
+description: Headless Dart API for the bounded Flark Markdown runtime.
+version: 0.1.0-dev.1
+publish_to: none
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  ffi: ^2.1.4
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.26.3

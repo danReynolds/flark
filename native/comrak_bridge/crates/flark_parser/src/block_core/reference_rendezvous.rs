@@ -13,10 +13,9 @@ use flark_block_core_donor::DirectReferencePrefixSource;
 use flark_engine::parser_internal::{
     M11RecursiveGreenBuildStatus, M11RecursiveGreenFrameId, M11RecursiveGreenLogicalPosition,
     M11RecursiveGreenLogicalRange, M11RecursiveGreenStructuralBoundary,
-    M11RecursiveGreenTerminalFragmentBarrierStatus,
-    M11RecursiveGreenTerminalFragmentCursorStatus, M11RecursiveGreenTerminalFragmentDisposition,
-    M11ReferenceJournal, M11ReferenceJournalError, M11ReferenceJournalOccurrenceStart,
-    M11ReferenceJournalRange, M11ReferenceJournalValueKind,
+    M11RecursiveGreenTerminalFragmentBarrierStatus, M11RecursiveGreenTerminalFragmentCursorStatus,
+    M11RecursiveGreenTerminalFragmentDisposition, M11ReferenceJournal, M11ReferenceJournalError,
+    M11ReferenceJournalOccurrenceStart, M11ReferenceJournalRange, M11ReferenceJournalValueKind,
 };
 use flark_engine::DocumentRuntime;
 
@@ -657,6 +656,7 @@ pub struct M11ReferenceRendezvous {
     terminal: Option<TerminalOutput>,
     terminal_replay: Option<M11ReferenceOutputCursor>,
     rewrite: Option<M11ReferenceOutputRewriteWork>,
+    checkpoint_invalidation_start: Option<super::SourceMetric>,
     remainder_boundary: Option<M11RecursiveGreenStructuralBoundary>,
     remainder: Option<M11LeadingReferenceRemainder>,
 }
@@ -689,9 +689,14 @@ impl M11ReferenceRendezvous {
             terminal: None,
             terminal_replay: None,
             rewrite: None,
+            checkpoint_invalidation_start: None,
             remainder_boundary: None,
             remainder: None,
         })
+    }
+
+    pub(crate) fn take_checkpoint_invalidation_start(&mut self) -> Option<super::SourceMetric> {
+        self.checkpoint_invalidation_start.take()
     }
 
     pub(crate) fn take_leading_reference_remainder(
@@ -1148,8 +1153,7 @@ impl M11ReferenceRendezvous {
                     .ok_or(M11ReferenceRendezvousError::InvalidState(
                         "reference segment lost its fragment binding",
                     ))?;
-            let range =
-                writer.bind_reference_output_logical_range(binding, clipped.green()?)?;
+            let range = writer.bind_reference_output_logical_range(binding, clipped.green()?)?;
             if let Some(replay) = self.range_replay.as_mut() {
                 writer.retarget_reference_output_range_replay_forward(binding, replay, range)?;
             } else {
@@ -1188,11 +1192,12 @@ impl M11ReferenceRendezvous {
                     .value_cook
                     .as_mut()
                 {
-                    let (relative_offset, _) = replay.ready_byte().ok_or(
-                        M11ReferenceRendezvousError::InvalidState(
-                            "reference value replay reported no ready byte",
-                        ),
-                    )?;
+                    let (relative_offset, _) =
+                        replay
+                            .ready_byte()
+                            .ok_or(M11ReferenceRendezvousError::InvalidState(
+                                "reference value replay reported no ready byte",
+                            ))?;
                     let byte = replay.read_byte(relative_offset)?;
                     cook.offer_source_byte(byte)?;
                 } else {
@@ -1208,11 +1213,12 @@ impl M11ReferenceRendezvous {
             }
             M11RecursiveGreenTerminalFragmentCursorStatus::Complete => {
                 let completed = replay.take_completed_range()?;
-                let (bytes, utf16) = completed.physical_range().ok_or(
-                    M11ReferenceRendezvousError::InvalidState(
-                        "nonempty reference segment has no physical envelope",
-                    ),
-                )?;
+                let (bytes, utf16) =
+                    completed
+                        .physical_range()
+                        .ok_or(M11ReferenceRendezvousError::InvalidState(
+                            "nonempty reference segment has no physical envelope",
+                        ))?;
                 let active =
                     self.active
                         .as_mut()
@@ -1393,14 +1399,11 @@ impl M11ReferenceRendezvous {
                 .ok_or(M11ReferenceRendezvousError::InvalidState(
                     "unchanged reference terminal lost its binding",
                 ))?;
-            self.rewrite = Some(
-                writer
-                    .begin_reference_output_rewrite(
-                        runtime,
-                        binding,
-                        M11ReferenceOutputRewrite::Unchanged,
-                    )?,
-            );
+            self.rewrite = Some(writer.begin_reference_output_rewrite(
+                runtime,
+                binding,
+                M11ReferenceOutputRewrite::Unchanged,
+            )?);
             self.phase = Phase::Rewrite;
             return Ok(());
         }
@@ -1428,8 +1431,7 @@ impl M11ReferenceRendezvous {
         // validation, never one replay per occurrence.
         self.range_replay = None;
         let range = writer.bind_reference_output_logical_range(binding, span.green()?)?;
-        self.terminal_replay =
-            Some(writer.open_reference_output_range_replay(binding, range)?);
+        self.terminal_replay = Some(writer.open_reference_output_range_replay(binding, range)?);
         self.phase = Phase::TerminalRange;
         Ok(())
     }
@@ -1465,6 +1467,27 @@ impl M11ReferenceRendezvous {
                         "completed terminal range disappeared",
                     ))?
                     .take_completed_range()?;
+                let (physical_bytes, physical_utf16) =
+                    range
+                        .physical_range()
+                        .ok_or(M11ReferenceRendezvousError::InvalidState(
+                            "completed reference rewrite range has no physical envelope",
+                        ))?;
+                let checkpoint_invalidation_start =
+                    super::SourceMetric::new(physical_bytes.start, physical_utf16.start).ok_or(
+                        M11ReferenceRendezvousError::InvalidState(
+                            "reference rewrite begins at a valid source metric",
+                        ),
+                    )?;
+                if self
+                    .checkpoint_invalidation_start
+                    .replace(checkpoint_invalidation_start)
+                    .is_some()
+                {
+                    return Err(M11ReferenceRendezvousError::InvalidState(
+                        "reference rewrite replaced two checkpoint ranges",
+                    ));
+                }
                 let terminal = self
                     .terminal
                     .as_ref()
@@ -1493,10 +1516,8 @@ impl M11ReferenceRendezvous {
                         .ok_or(M11ReferenceRendezvousError::InvalidState(
                             "terminal rewrite lost its fragment binding",
                         ))?;
-                self.rewrite = Some(
-                    writer
-                        .begin_reference_output_rewrite(runtime, binding, rewrite)?,
-                );
+                self.rewrite =
+                    Some(writer.begin_reference_output_rewrite(runtime, binding, rewrite)?);
                 self.phase = Phase::Rewrite;
                 Ok(())
             }
@@ -1515,8 +1536,7 @@ impl M11ReferenceRendezvous {
                 "reference rewrite work disappeared",
             ))?;
         let poll = writer.poll_reference_output_rewrite(runtime, rewrite, 1)?;
-        let M11ReferenceOutputRewritePoll::Complete(mut authority) = poll
-        else {
+        let M11ReferenceOutputRewritePoll::Complete(mut authority) = poll else {
             return Ok(());
         };
         if authority.frame() != self.frame {

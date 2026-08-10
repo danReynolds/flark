@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "spec": "GFM 0.29-gfm",
+    "url": "https://github.github.com/gfm/",
+    "note": "These are the two official task-list examples omitted by the imported 670-case JSON corpus."
+  },
+  "cases": [
+    {
+      "id": "GFM-279",
+      "example": 279,
+      "section": "Task list items (extension)",
+      "markdown": "- [ ] foo\n- [x] bar\n",
+      "html": "<ul>\n<li><input disabled=\"\" type=\"checkbox\"> foo</li>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> bar</li>\n</ul>\n"
+    },
+    {
+      "id": "GFM-280",
+      "example": 280,
+      "section": "Task list items (extension)",
+      "markdown": "- [x] foo\n  - [ ] bar\n  - [x] baz\n- [ ] bim\n",
+      "html": "<ul>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> foo\n<ul>\n<li><input disabled=\"\" type=\"checkbox\"> bar</li>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> baz</li>\n</ul>\n</li>\n<li><input disabled=\"\" type=\"checkbox\"> bim</li>\n</ul>\n"
+    }
+  ]
+}

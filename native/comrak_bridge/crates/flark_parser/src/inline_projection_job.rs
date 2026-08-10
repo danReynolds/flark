@@ -758,7 +758,22 @@ impl M11InlineProjectionJob {
         binding: M11ParserBinding,
     ) -> Result<Self, M11InlineProjectionJobError> {
         Self::new_for_recursive_green_inline_leaf_with_optional_reference_resolver(
-            runtime, fence, binding, None,
+            runtime, fence, binding, None, false,
+        )
+    }
+
+    /// Starts one recursive-Green inline-bearing leaf and retains the emitted
+    /// typed facts for a bounded viewport consumer. The ordinary persistent
+    /// Projection root is still built and authenticated; callers must finish
+    /// the job and then explicitly abort it after taking the captured facts so
+    /// all transient parser storage is reclaimed.
+    pub fn new_for_recursive_green_inline_leaf_with_fact_capture(
+        runtime: &DocumentRuntime,
+        fence: M11RecursiveGreenInlineLeafFence,
+        binding: M11ParserBinding,
+    ) -> Result<Self, M11InlineProjectionJobError> {
+        Self::new_for_recursive_green_inline_leaf_with_optional_reference_resolver(
+            runtime, fence, binding, None, true,
         )
     }
 
@@ -775,6 +790,24 @@ impl M11InlineProjectionJob {
             fence,
             binding,
             Some(reference_resolver),
+            false,
+        )
+    }
+
+    /// Starts one recursive-Green inline leaf with both definitive reference
+    /// winners and bounded typed-fact capture for a viewport consumer.
+    pub fn new_for_recursive_green_inline_leaf_with_reference_resolver_and_fact_capture(
+        runtime: &DocumentRuntime,
+        fence: M11RecursiveGreenInlineLeafFence,
+        binding: M11ParserBinding,
+        reference_resolver: M11ReferenceResolver,
+    ) -> Result<Self, M11InlineProjectionJobError> {
+        Self::new_for_recursive_green_inline_leaf_with_optional_reference_resolver(
+            runtime,
+            fence,
+            binding,
+            Some(reference_resolver),
+            true,
         )
     }
 
@@ -783,6 +816,7 @@ impl M11InlineProjectionJob {
         fence: M11RecursiveGreenInlineLeafFence,
         binding: M11ParserBinding,
         reference_resolver: Option<M11ReferenceResolver>,
+        capture_projected_facts: bool,
     ) -> Result<Self, M11InlineProjectionJobError> {
         let (authority, expected_range) = fence.into_inline_authority();
         let expected_range = u32::try_from(expected_range.start)
@@ -797,7 +831,13 @@ impl M11InlineProjectionJob {
         if actual_range != expected_range {
             return Err(M11InlineProjectionJobError::BlockFenceRangeMismatch);
         }
-        Self::new_from_exact_authority(runtime, authority, binding, reference_resolver, false)
+        Self::new_from_exact_authority(
+            runtime,
+            authority,
+            binding,
+            reference_resolver,
+            capture_projected_facts,
+        )
     }
 
     /// Starts one retained inline leaf with a definitive, root-bound

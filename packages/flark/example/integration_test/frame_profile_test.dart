@@ -1,0 +1,225 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:ui' show FrameTiming;
+
+import 'package:flark/flark.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
+
+void main() {
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('profile-mode optimistic input and frame receipt', (
+    tester,
+  ) async {
+    const configuredLibrary = String.fromEnvironment('FLARK_V4_LIBRARY_PATH');
+    const fixtureShape = String.fromEnvironment(
+      'FLARK_PROFILE_SHAPE',
+      defaultValue: 'ordinary',
+    );
+    const workload = String.fromEnvironment(
+      'FLARK_PROFILE_WORKLOAD',
+      defaultValue: 'typing',
+    );
+    const startDelayMs = int.fromEnvironment(
+      'FLARK_PROFILE_START_DELAY_MS',
+      defaultValue: 0,
+    );
+    final libraryPath = configuredLibrary.isNotEmpty
+        ? configuredLibrary
+        : File(
+            '../../../native/comrak_bridge/target/release/libflark_abi.dylib',
+          ).absolute.path;
+    final controller = await FlarkEditorController.open(
+      _fixture(1024 * 1024, shape: fixtureShape),
+      libraryPath: libraryPath,
+    );
+    await controller.continueParsing();
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: SizedBox.expand(
+          child: FlarkEditor(controller: controller, autofocus: true),
+        ),
+      ),
+    );
+    await tester.pump();
+    if (startDelayMs > 0) {
+      await Future<void>.delayed(Duration(milliseconds: startDelayMs));
+    }
+
+    final frameTimings = <FrameTiming>[];
+    void recordTimings(List<FrameTiming> timings) =>
+        frameTimings.addAll(timings);
+    binding.addTimingsCallback(recordTimings);
+    final inputToFrameMicros = <int>[];
+    final inputHandlingMicros = <int>[];
+    final inputFrameBuildMicros = <int>[];
+    final settleMicros = <int>[];
+    switch (workload) {
+      case 'typing':
+        for (var index = 0; index < 120; index += 1) {
+          final before = controller.inputValue;
+          final offset = before.selection.extentOffset;
+          final watch = Stopwatch()..start();
+          final inputWatch = Stopwatch()..start();
+          controller.applyDeltas([
+            TextEditingDeltaInsertion(
+              oldText: before.text,
+              textInserted: index.isEven ? 'x' : 'y',
+              insertionOffset: offset,
+              selection: TextSelection.collapsed(offset: offset + 1),
+              composing: TextRange.empty,
+            ),
+          ]);
+          inputWatch.stop();
+          inputHandlingMicros.add(inputWatch.elapsedMicroseconds);
+          await tester.pump();
+          watch.stop();
+          inputToFrameMicros.add(watch.elapsedMicroseconds);
+        }
+      case 'paste-32kib':
+        final baseBytes = controller.sourceByteLength;
+        final baseUtf16 = controller.sourceUtf16Length;
+        final paste = List.filled(32 * 1024, 'p').join();
+        for (var index = 0; index < 12; index += 1) {
+          final measured = index >= 2;
+          final before = controller.inputValue;
+          final offset = before.selection.extentOffset;
+          final settleWatch = Stopwatch()..start();
+          final frameWatch = Stopwatch()..start();
+          final inputWatch = Stopwatch()..start();
+          controller.applyDeltas([
+            TextEditingDeltaInsertion(
+              oldText: before.text,
+              textInserted: paste,
+              insertionOffset: offset,
+              selection: TextSelection.collapsed(offset: offset + paste.length),
+              composing: TextRange.empty,
+            ),
+          ]);
+          inputWatch.stop();
+          if (measured) {
+            inputHandlingMicros.add(inputWatch.elapsedMicroseconds);
+          }
+          final timingStart = frameTimings.length;
+          await tester.pump();
+          frameWatch.stop();
+          if (measured) {
+            inputToFrameMicros.add(frameWatch.elapsedMicroseconds);
+          }
+          expect(
+            controller.inputValue.text.length,
+            lessThanOrEqualTo(16 * 1024),
+          );
+          expect(controller.visibleSource.length, lessThanOrEqualTo(16 * 1024));
+          await _waitForPending(controller);
+          settleWatch.stop();
+          if (measured) {
+            settleMicros.add(settleWatch.elapsedMicroseconds);
+            await _captureInputFrameBuild(
+              frameTimings,
+              timingStart,
+              inputFrameBuildMicros,
+            );
+          }
+          expect(controller.sourceByteLength, baseBytes + paste.length);
+          expect(controller.sourceUtf16Length, baseUtf16 + paste.length);
+          expect(await controller.undo(), isTrue);
+          await _waitForPending(controller);
+          await tester.pump();
+          expect(controller.sourceByteLength, baseBytes);
+          expect(controller.sourceUtf16Length, baseUtf16);
+        }
+      default:
+        throw ArgumentError.value(
+          workload,
+          'FLARK_PROFILE_WORKLOAD',
+          'unsupported workload',
+        );
+    }
+
+    await _waitForPending(controller);
+    await tester.pump();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    binding.removeTimingsCallback(recordTimings);
+
+    final buildMicros = frameTimings
+        .map((timing) => timing.buildDuration.inMicroseconds)
+        .toList();
+    final rasterMicros = frameTimings
+        .map((timing) => timing.rasterDuration.inMicroseconds)
+        .toList();
+    stdout.writeln(
+      'FLARK_PROFILE_RECEIPT ${jsonEncode({'fixtureShape': fixtureShape, 'workload': workload, 'sourceBytes': controller.sourceByteLength, 'inputSamples': inputToFrameMicros.length, 'inputHandlingRawMs': inputHandlingMicros.map((value) => value / 1000).toList(), 'inputHandlingP50Ms': _percentile(inputHandlingMicros, 50) / 1000, 'inputHandlingP99Ms': _percentile(inputHandlingMicros, 99) / 1000, 'inputHandlingMaxMs': _maximum(inputHandlingMicros) / 1000, 'inputToFrameRawMs': inputToFrameMicros.map((value) => value / 1000).toList(), 'inputToFrameP50Ms': _percentile(inputToFrameMicros, 50) / 1000, 'inputToFrameP99Ms': _percentile(inputToFrameMicros, 99) / 1000, 'inputToFrameMaxMs': _maximum(inputToFrameMicros) / 1000, 'inputFrameBuildRawMs': inputFrameBuildMicros.map((value) => value / 1000).toList(), 'inputFrameBuildP50Ms': _percentile(inputFrameBuildMicros, 50) / 1000, 'inputFrameBuildP99Ms': _percentile(inputFrameBuildMicros, 99) / 1000, 'inputFrameBuildMaxMs': _maximum(inputFrameBuildMicros) / 1000, 'settleRawMs': settleMicros.map((value) => value / 1000).toList(), 'settleP50Ms': _percentile(settleMicros, 50) / 1000, 'settleP99Ms': _percentile(settleMicros, 99) / 1000, 'settleMaxMs': _maximum(settleMicros) / 1000, 'frameSamples': frameTimings.length, 'buildP99Ms': _percentile(buildMicros, 99) / 1000, 'buildMaxMs': _maximum(buildMicros) / 1000, 'rasterP99Ms': _percentile(rasterMicros, 99) / 1000, 'rasterMaxMs': _maximum(rasterMicros) / 1000, 'pendingEdits': controller.pendingEdits})}',
+    );
+
+    expect(controller.pendingEdits, 0);
+    expect(controller.lastError, isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await controller.close();
+  });
+}
+
+Future<void> _waitForPending(FlarkEditorController controller) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 15));
+  while (controller.pendingEdits != 0 && DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(const Duration(milliseconds: 2));
+  }
+  expect(controller.pendingEdits, 0);
+  expect(controller.lastError, isNull);
+}
+
+Future<void> _captureInputFrameBuild(
+  List<FrameTiming> timings,
+  int start,
+  List<int> output,
+) async {
+  final deadline = DateTime.now().add(const Duration(milliseconds: 100));
+  while (timings.length == start && DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+  }
+  if (timings.length > start) {
+    output.add(timings[start].buildDuration.inMicroseconds);
+  }
+}
+
+int _percentile(List<int> values, int percentile) {
+  if (values.isEmpty) return 0;
+  final sorted = [...values]..sort();
+  final index = ((sorted.length * percentile + 99) ~/ 100 - 1).clamp(
+    0,
+    sorted.length - 1,
+  );
+  return sorted[index];
+}
+
+int _maximum(List<int> values) =>
+    values.fold(0, (maximum, value) => value > maximum ? value : maximum);
+
+String _fixture(int targetBytes, {required String shape}) {
+  final (prefix, block) = switch (shape) {
+    'ordinary' => (
+      '',
+      '## Section\n\nA quick paragraph with **bold text**.\n\n',
+    ),
+    'dense-inline' => (
+      '[id]: /target\n\n',
+      '## Section\n\n\\* &ngE; *em* **strong** ~~strike~~ ` a ` '
+          '[direct](https://a.test) [ref][id] ![alt](image.png) '
+          '<https://b.test>  \nnext\n\n',
+    ),
+    _ => throw ArgumentError.value(shape, 'shape', 'unsupported fixture shape'),
+  };
+  final buffer = StringBuffer(prefix);
+  final remainingBytes = targetBytes - prefix.length;
+  final fullBlocks = remainingBytes ~/ block.length;
+  final remainder = remainingBytes % block.length;
+  for (var index = 0; index < fullBlocks; index += 1) {
+    buffer.write(block);
+  }
+  buffer.write(block.substring(0, remainder));
+  return buffer.toString();
+}

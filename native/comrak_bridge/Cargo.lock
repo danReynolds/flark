@@ -171,6 +171,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9844ddc3a6e533d62bba727eb6c28b5d360921d5175e9ff0f1e621a5c590a4d5"
 
 [[package]]
+name = "flark-abi"
+version = "0.0.0"
+dependencies = [
+ "flark-runtime",
+ "serde_json",
+]
+
+[[package]]
 name = "flark-block-core-donor"
 version = "0.0.0"
 dependencies = [
@@ -207,6 +215,14 @@ name = "flark-reference-label-service"
 version = "0.0.0"
 dependencies = [
  "caseless",
+]
+
+[[package]]
+name = "flark-runtime"
+version = "0.0.0"
+dependencies = [
+ "flark-engine",
+ "flark-parser",
 ]
 
 [[package]]

@@ -77,8 +77,12 @@ fi
 # The workspace covers the legacy ABI, v3 endpoint/registry, persistent engine,
 # exact parser, self-contained publication, and independent host. Selecting
 # only the root package would silently omit the two production v3 crates.
+# The vendored Comrak package is a dependency/source oracle whose upstream-only
+# dev dependencies are intentionally not retained, so it is compiled as a
+# dependency but excluded as a workspace test and Clippy target.
 run cargo fmt --all --manifest-path native/comrak_bridge/Cargo.toml -- --check
 run cargo test --workspace --all-targets --locked \
+  --exclude comrak \
   --manifest-path native/comrak_bridge/Cargo.toml
 # The 10 MiB joined producer/transport/independent-host replacement receipt is
 # deliberately ignored in ordinary Rust test discovery, so select it exactly.
@@ -93,6 +97,7 @@ run cargo test --release --locked \
 # several intentionally describe move-only parser state machines where boxing
 # would add hot-path allocation or source-break a capability handoff.
 run cargo clippy --workspace --all-targets --locked \
+  --exclude comrak \
   --manifest-path native/comrak_bridge/Cargo.toml -- \
   -D warnings \
   -A clippy::large_enum_variant \

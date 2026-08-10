@@ -67,7 +67,10 @@ fn observe(source: &str) -> Observed {
             .collect(),
     };
     session.begin_release(&mut runtime).expect("begin release");
-    while !session.poll_release(&mut runtime, 64).expect("poll release") {}
+    while !session
+        .poll_release(&mut runtime, 64)
+        .expect("poll release")
+    {}
     runtime.begin_close().expect("begin close");
     while !runtime.poll_close(64).expect("close poll").complete {}
     observed
@@ -98,7 +101,10 @@ fn assert_over_window_matches_under_window(prefix: &str, tail: usize) {
         under.rows,
     );
     for (index, (over_row, under_row)) in over.rows.iter().zip(under.rows.iter()).enumerate() {
-        assert_eq!(over_row.0, under_row.0, "{prefix:?}+{tail}: row {index} kind");
+        assert_eq!(
+            over_row.0, under_row.0,
+            "{prefix:?}+{tail}: row {index} kind"
+        );
         let last = index + 1 == over.rows.len();
         match (&over_row.1, &under_row.1) {
             (Some(over_range), Some(under_range)) => {

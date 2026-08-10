@@ -2405,9 +2405,10 @@ impl M11ResolvedReference {
     }
 }
 
-/// Cloneable, root-bound lookup capability minted only by a retained exact
-/// publication after the winner index has completed. The capability owns no
-/// arena pages; its caller must keep the associated publication alive.
+/// Cloneable, root-bound lookup capability minted from live exact reference
+/// authority after the winner index has completed. The capability owns no
+/// arena pages; its caller must keep the associated publication or journal
+/// root alive.
 #[derive(Clone)]
 pub struct M11ReferenceResolver {
     runtime_identity: StrongIdentity,
@@ -2427,6 +2428,22 @@ impl fmt::Debug for M11ReferenceResolver {
 }
 
 impl M11ReferenceResolver {
+    /// Mints a cheap resolver from the parser's already-complete live
+    /// reference journal. No document-sized winner-index rebuild occurs.
+    #[doc(hidden)]
+    pub fn from_live_reference_journal(
+        runtime: &DocumentRuntime,
+        journal: &M11ReferenceJournalRoot,
+    ) -> Result<Self, M11ReferenceJournalError> {
+        let (runtime_identity, authority, root, index) = journal.resolver_parts(runtime)?;
+        Ok(Self {
+            runtime_identity,
+            authority,
+            root,
+            index: Arc::new(index),
+        })
+    }
+
     /// Resolves one already-normalized exact label. Oversized cooked values
     /// return `ValueTooLarge` before allocation so a hostile definition cannot
     /// escape the caller's bounded sidecar envelope or masquerade as missing.

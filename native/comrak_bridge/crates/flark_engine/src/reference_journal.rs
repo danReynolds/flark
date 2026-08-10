@@ -291,6 +291,8 @@ pub struct M11ReferenceJournal {
     seal: Option<CandidateSeal>,
     sealed_root: Option<CommittedArenaRoot>,
     output: Option<M11ReferenceJournalRoot>,
+    first_source_byte_start: u64,
+    first_source_utf16_start: u64,
     last_source_byte_end: u64,
     last_source_utf16_end: u64,
 }
@@ -352,6 +354,8 @@ impl M11ReferenceJournal {
             seal: None,
             sealed_root: None,
             output: None,
+            first_source_byte_start: 0,
+            first_source_utf16_start: 0,
             last_source_byte_end: 0,
             last_source_utf16_end: 0,
         })
@@ -366,6 +370,8 @@ impl M11ReferenceJournal {
         if self.phase != JournalPhase::Accepting {
             return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
         }
+        let first_source_byte_start = occurrence.source.bytes.start;
+        let first_source_utf16_start = occurrence.source.utf16.start;
         let last_source_byte_end = occurrence.source.bytes.end;
         let last_source_utf16_end = occurrence.source.utf16.end;
         let range = |range: M11ReferenceJournalRange| ReferenceSourceRange {
@@ -391,6 +397,10 @@ impl M11ReferenceJournal {
                 empty_reserve(),
             )?;
         self.phase = JournalPhase::Building;
+        if self.last_source_byte_end == 0 && self.last_source_utf16_end == 0 {
+            self.first_source_byte_start = first_source_byte_start;
+            self.first_source_utf16_start = first_source_utf16_start;
+        }
         self.last_source_byte_end = last_source_byte_end;
         self.last_source_utf16_end = last_source_utf16_end;
         Ok(())
@@ -405,6 +415,8 @@ impl M11ReferenceJournal {
         if self.phase != JournalPhase::Accepting {
             return Err(M11ReferenceJournalError(ErrorInner::InvalidState));
         }
+        let first_source_byte_start = occurrence.source.bytes.start;
+        let first_source_utf16_start = occurrence.source.utf16.start;
         let last_source_byte_end = occurrence.source.bytes.end;
         let last_source_utf16_end = occurrence.source.utf16.end;
         let range = |range: M11ReferenceJournalRange| ReferenceSourceRange {
@@ -430,6 +442,10 @@ impl M11ReferenceJournal {
                 empty_reserve(),
             )?;
         self.phase = JournalPhase::Streaming;
+        if self.last_source_byte_end == 0 && self.last_source_utf16_end == 0 {
+            self.first_source_byte_start = first_source_byte_start;
+            self.first_source_utf16_start = first_source_utf16_start;
+        }
         self.last_source_byte_end = last_source_byte_end;
         self.last_source_utf16_end = last_source_utf16_end;
         Ok(())
@@ -685,6 +701,8 @@ impl M11ReferenceJournal {
                 winner: Some(winner),
                 winner_reclaimer: None,
                 released: false,
+                first_source_byte_start: self.first_source_byte_start,
+                first_source_utf16_start: self.first_source_utf16_start,
                 last_source_byte_end: self.last_source_byte_end,
                 last_source_utf16_end: self.last_source_utf16_end,
             });
@@ -1569,6 +1587,8 @@ pub struct M11ReferenceJournalRoot {
     winner: Option<ReferenceWinnerIndex>,
     winner_reclaimer: Option<ReferenceWinnerIndexReclaimer>,
     released: bool,
+    first_source_byte_start: u64,
+    first_source_utf16_start: u64,
     last_source_byte_end: u64,
     last_source_utf16_end: u64,
 }
@@ -1592,6 +1612,20 @@ impl M11ReferenceJournalRoot {
     #[must_use]
     pub const fn occurrence_count(&self) -> u64 {
         self.metadata.record_count
+    }
+
+    /// Start of the first parser-authenticated reference occurrence.
+    ///
+    /// Zero is also the valid start of a leading definition; callers must use
+    /// [`Self::occurrence_count`] to distinguish that case from an empty root.
+    #[must_use]
+    pub const fn first_source_byte_start(&self) -> u64 {
+        self.first_source_byte_start
+    }
+
+    #[must_use]
+    pub const fn first_source_utf16_start(&self) -> u64 {
+        self.first_source_utf16_start
     }
 
     /// Returns the complete canonical role identity to engine-owned
@@ -1642,6 +1676,34 @@ impl M11ReferenceJournalRoot {
             )
             .map(|winner| winner.map(|occurrence| occurrence.ordinal))
             .map_err(Into::into)
+    }
+
+    /// Clones the immutable first-winner acceleration needed by one
+    /// parser-side reference resolver while this journal root remains live.
+    pub(crate) fn resolver_parts(
+        &self,
+        runtime: &DocumentRuntime,
+    ) -> Result<
+        (
+            StrongIdentity,
+            CandidateAuthority,
+            crate::ArenaId,
+            ReferenceWinnerIndex,
+        ),
+        M11ReferenceJournalError,
+    > {
+        self.ensure_live(runtime)?;
+        let root = self
+            .root
+            .as_ref()
+            .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?
+            .id();
+        let winner = self
+            .winner
+            .as_ref()
+            .ok_or(M11ReferenceJournalError(ErrorInner::InvalidState))?
+            .rebind_root(root);
+        Ok((self.runtime_identity, self.authority, root, winner))
     }
 
     pub(crate) fn retain_for_publication(
@@ -1923,6 +1985,8 @@ impl M11ReferenceJournalRoot {
             target,
             authority,
             metadata: self.metadata,
+            first_source_byte_start: self.first_source_byte_start,
+            first_source_utf16_start: self.first_source_utf16_start,
             last_source_byte_end: self.last_source_byte_end,
             last_source_utf16_end: self.last_source_utf16_end,
             phase: M11ReferenceJournalAdoptionPhase::Sealing,
@@ -1975,6 +2039,8 @@ pub struct M11ReferenceJournalUnchangedPrefixAdoption {
     target: SourceVersion,
     authority: CandidateAuthority,
     metadata: RoleMetadata,
+    first_source_byte_start: u64,
+    first_source_utf16_start: u64,
     last_source_byte_end: u64,
     last_source_utf16_end: u64,
     phase: M11ReferenceJournalAdoptionPhase,
@@ -2039,6 +2105,8 @@ impl M11ReferenceJournalUnchangedPrefixAdoption {
                         winner: Some(winner),
                         winner_reclaimer: None,
                         released: false,
+                        first_source_byte_start: self.first_source_byte_start,
+                        first_source_utf16_start: self.first_source_utf16_start,
                         last_source_byte_end: self.last_source_byte_end,
                         last_source_utf16_end: self.last_source_utf16_end,
                     });

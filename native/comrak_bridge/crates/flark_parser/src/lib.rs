@@ -108,7 +108,8 @@ pub use persistent_recursive_green_session::{
     M11PersistentRecursiveGreenAdoptionStartFailure, M11PersistentRecursiveGreenAdoptionStatus,
     M11PersistentRecursiveGreenAdoptionWork, M11PersistentRecursiveGreenBuildPoll,
     M11PersistentRecursiveGreenBuildStatus, M11PersistentRecursiveGreenCleanBuild,
-    M11PersistentRecursiveGreenCleanPlan, M11PersistentRecursiveGreenSession,
+    M11PersistentRecursiveGreenCleanPlan, M11PersistentRecursiveGreenProjectionRegion,
+    M11PersistentRecursiveGreenProjectionRegionKind, M11PersistentRecursiveGreenSession,
     M11PersistentRecursiveGreenSessionError, M11PersistentRecursiveGreenUpdate,
 };
 pub use projected_inline_projection_job::{

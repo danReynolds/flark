@@ -47,20 +47,20 @@ use super::{
 
 pub(crate) const KIND_DOCUMENT: u16 = 1;
 pub(crate) const KIND_BLOCK_QUOTE: u16 = 2;
-const KIND_LIST: u16 = 3;
-const KIND_ITEM: u16 = 4;
+pub(super) const KIND_LIST: u16 = 3;
+pub(super) const KIND_ITEM: u16 = 4;
 pub(crate) const KIND_PARAGRAPH: u16 = 5;
-const KIND_INDENTED_CODE: u16 = 6;
-const KIND_FENCED_CODE: u16 = 7;
+pub(super) const KIND_INDENTED_CODE: u16 = 6;
+pub(super) const KIND_FENCED_CODE: u16 = 7;
 const KIND_HTML_BLOCK: u16 = 8;
 pub(super) const KIND_HEADING: u16 = 12;
-const KIND_THEMATIC_BREAK: u16 = 13;
-const KIND_EMPTY_ITEM_ROW: u16 = 14;
+pub(super) const KIND_THEMATIC_BREAK: u16 = 13;
+pub(super) const KIND_EMPTY_ITEM_ROW: u16 = 14;
 
-const FACT_LIST: u16 = 1;
-const FACT_ITEM: u16 = 2;
-const FACT_HEADING: u16 = 3;
-const FACT_CODE: u16 = 4;
+pub(super) const FACT_LIST: u16 = 1;
+pub(super) const FACT_ITEM: u16 = 2;
+pub(super) const FACT_HEADING: u16 = 3;
+pub(super) const FACT_CODE: u16 = 4;
 const FACT_HTML: u16 = 5;
 const FACT_ROW_EDITABLE: u16 = 6;
 
@@ -140,9 +140,9 @@ impl fmt::Display for M11BlockWriterError {
             Self::CounterOverflow => formatter.write_str("block-writer counter overflow"),
             Self::Allocation => formatter.write_str("block-writer allocation failed"),
             Self::Poisoned => formatter.write_str("block writer is poisoned"),
-            Self::ReferenceParagraphPredatesRestart => formatter.write_str(
-                "reference Paragraph predates the incremental writer restart",
-            ),
+            Self::ReferenceParagraphPredatesRestart => {
+                formatter.write_str("reference Paragraph predates the incremental writer restart")
+            }
             Self::Source(error) => error.fmt(formatter),
             Self::Engine(error) => error.fmt(formatter),
         }
@@ -555,12 +555,8 @@ pub(super) struct M11FragmentReferenceCursor {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum M11FragmentReferenceRewriteMode {
     Unchanged,
-    Remove {
-        cut: SourceMetric,
-    },
-    Retain {
-        cut: SourceMetric,
-    },
+    Remove { cut: SourceMetric },
+    Retain { cut: SourceMetric },
 }
 
 #[derive(Debug)]
@@ -628,21 +624,20 @@ impl M11ReferenceOutputCursor {
                         "fragment reference cursor read is not sequential",
                     ));
                 }
-                let byte = *cursor.ready_bytes.get(index).ok_or(
-                    M11BlockWriterError::InvalidCommand(
-                        "fragment reference cursor has no ready byte",
-                    ),
-                )?;
+                let byte =
+                    *cursor
+                        .ready_bytes
+                        .get(index)
+                        .ok_or(M11BlockWriterError::InvalidCommand(
+                            "fragment reference cursor has no ready byte",
+                        ))?;
                 consume_fragment_ready_prefix(cursor, 1)?;
                 Ok(byte)
             }
         }
     }
 
-    pub(super) fn consume_ready_prefix(
-        &mut self,
-        len: usize,
-    ) -> Result<(), M11BlockWriterError> {
+    pub(super) fn consume_ready_prefix(&mut self, len: usize) -> Result<(), M11BlockWriterError> {
         match self {
             Self::Document(cursor) => Ok(cursor.consume_ready_prefix(len)?),
             Self::Fragment(cursor) => consume_fragment_ready_prefix(cursor, len),
@@ -682,17 +677,16 @@ impl M11ReferenceOutputCursor {
                         "fragment reference range replay is incomplete",
                     ));
                 }
-                let mut range = cursor.range_authority.take().ok_or(
-                    M11BlockWriterError::InvalidCommand(
-                        "fragment reference cursor has no range authority",
-                    ),
-                )?;
-                range.physical = cursor.yielded_physical.map(|(start, end)| {
-                    (
-                        start.bytes()..end.bytes(),
-                        start.utf16()..end.utf16(),
-                    )
-                });
+                let mut range =
+                    cursor
+                        .range_authority
+                        .take()
+                        .ok_or(M11BlockWriterError::InvalidCommand(
+                            "fragment reference cursor has no range authority",
+                        ))?;
+                range.physical = cursor
+                    .yielded_physical
+                    .map(|(start, end)| (start.bytes()..end.bytes(), start.utf16()..end.utf16()));
                 range.replay_validated = true;
                 Ok(M11ReferenceOutputRange::Fragment(range))
             }
@@ -718,11 +712,13 @@ fn consume_fragment_ready_prefix(
         .ready_base_offset
         .checked_add(u64::try_from(last).map_err(|_| M11BlockWriterError::CounterOverflow)?)
         .ok_or(M11BlockWriterError::CounterOverflow)?;
-    let contribution = *cursor.ready_raw_contributions.get(last).ok_or(
-        M11BlockWriterError::InvalidCommand(
-            "fragment reference cursor lost its raw contribution",
-        ),
-    )?;
+    let contribution =
+        *cursor
+            .ready_raw_contributions
+            .get(last)
+            .ok_or(M11BlockWriterError::InvalidCommand(
+                "fragment reference cursor lost its raw contribution",
+            ))?;
     cursor.last_raw_contribution = Some((offset, contribution));
     cursor.ready_start = cursor
         .ready_start
@@ -814,8 +810,8 @@ impl M11FragmentReferenceCursor {
         self.expected_yield_utf16 = Some(utf16);
         self.range_authority = Some(range);
         self.yielded_bytes = 0;
-        self.yielded_physical = empty_at_cursor
-            .then_some((self.physical_position, self.physical_position));
+        self.yielded_physical =
+            empty_at_cursor.then_some((self.physical_position, self.physical_position));
         self.last_raw_contribution = None;
         self.ready_base_offset = 0;
         self.complete = empty_at_cursor;
@@ -827,9 +823,12 @@ fn validate_fragment_reference_binding(
     fragment: &M11BlockFragmentOutput,
     binding: &M11FragmentReferenceBinding,
 ) -> Result<(), M11BlockWriterError> {
-    let state = fragment.reference.as_ref().ok_or(
-        M11BlockWriterError::InvalidCommand("fragment reference projection is not active"),
-    )?;
+    let state = fragment
+        .reference
+        .as_ref()
+        .ok_or(M11BlockWriterError::InvalidCommand(
+            "fragment reference projection is not active",
+        ))?;
     if state.phase != M11FragmentReferencePhase::Frozen
         || state.binding.generation != binding.generation
         || state.binding.frame != binding.frame
@@ -851,9 +850,12 @@ fn poll_fragment_reference_cursor(
     if fuel == 0 {
         return Err(M11BlockWriterError::ZeroFuel);
     }
-    let state = fragment.reference.as_ref().ok_or(
-        M11BlockWriterError::InvalidCommand("fragment reference projection is not active"),
-    )?;
+    let state = fragment
+        .reference
+        .as_ref()
+        .ok_or(M11BlockWriterError::InvalidCommand(
+            "fragment reference projection is not active",
+        ))?;
     if state.binding.generation != cursor.binding.generation
         || state.phase != M11FragmentReferencePhase::Frozen
         || cursor.binding.events_end != fragment.events.len()
@@ -870,8 +872,7 @@ fn poll_fragment_reference_cursor(
     }
 
     let maximum_steps = if chunked {
-        fuel
-            .checked_mul(flark_engine::SOURCE_CURSOR_WINDOW_BYTES)
+        fuel.checked_mul(flark_engine::SOURCE_CURSOR_WINDOW_BYTES)
             .ok_or(M11BlockWriterError::CounterOverflow)?
     } else {
         fuel
@@ -911,13 +912,10 @@ fn step_fragment_reference_cursor(
                     return Ok(());
                 }
                 let scalar_start = cursor.physical_position;
-                let (raw, raw_utf16) = read_fragment_scalar(
-                    fragment,
-                    scalar_start.bytes(),
-                    end.bytes(),
-                )?;
-                let raw_bytes = u64::try_from(raw.len())
-                    .map_err(|_| M11BlockWriterError::CounterOverflow)?;
+                let (raw, raw_utf16) =
+                    read_fragment_scalar(fragment, scalar_start.bytes(), end.bytes())?;
+                let raw_bytes =
+                    u64::try_from(raw.len()).map_err(|_| M11BlockWriterError::CounterOverflow)?;
                 let scalar_end = scalar_start
                     .checked_add(
                         SourceMetric::new(raw_bytes, u64::from(raw_utf16))
@@ -995,9 +993,13 @@ fn step_fragment_reference_cursor(
         cursor.complete = true;
         return Ok(());
     }
-    let event = *fragment.events.get(cursor.next_event).ok_or(
-        M11BlockWriterError::InvalidCommand("fragment reference event journal ended early"),
-    )?;
+    let event =
+        *fragment
+            .events
+            .get(cursor.next_event)
+            .ok_or(M11BlockWriterError::InvalidCommand(
+                "fragment reference event journal ended early",
+            ))?;
     cursor.next_event = cursor
         .next_event
         .checked_add(1)
@@ -1009,8 +1011,10 @@ fn step_fragment_reference_cursor(
         ..
     } = event
     else {
-        if matches!(event, M11RecursiveGreenEvent::Enter { .. } | M11RecursiveGreenEvent::Exit { .. })
-        {
+        if matches!(
+            event,
+            M11RecursiveGreenEvent::Enter { .. } | M11RecursiveGreenEvent::Exit { .. }
+        ) {
             return Err(M11BlockWriterError::InvalidCommand(
                 "local reference Paragraph contains a nested structural event",
             ));
@@ -1029,8 +1033,9 @@ fn step_fragment_reference_cursor(
         ));
     }
     let targets_paragraph = match logical {
-        M11RecursiveGreenLogicalAction::None
-        | M11RecursiveGreenLogicalAction::HiddenUpstream => false,
+        M11RecursiveGreenLogicalAction::None | M11RecursiveGreenLogicalAction::HiddenUpstream => {
+            false
+        }
         M11RecursiveGreenLogicalAction::PartialTab {
             target_owner_depth, ..
         } => target_owner_depth == 0,
@@ -1102,8 +1107,9 @@ fn step_fragment_reference_cursor(
                 physical: (start, end),
             }
         }
-        M11RecursiveGreenLogicalAction::None
-        | M11RecursiveGreenLogicalAction::HiddenUpstream => unreachable!(),
+        M11RecursiveGreenLogicalAction::None | M11RecursiveGreenLogicalAction::HiddenUpstream => {
+            unreachable!()
+        }
     });
     Ok(())
 }
@@ -1116,8 +1122,8 @@ fn emit_fragment_projected_scalar(
     physical_start: SourceMetric,
     physical_end: SourceMetric,
 ) -> Result<(), M11BlockWriterError> {
-    let projected_len = u64::try_from(projected.len())
-        .map_err(|_| M11BlockWriterError::CounterOverflow)?;
+    let projected_len =
+        u64::try_from(projected.len()).map_err(|_| M11BlockWriterError::CounterOverflow)?;
     let logical_start = cursor.logical_bytes;
     let logical_end = logical_start
         .checked_add(projected_len)
@@ -1240,9 +1246,7 @@ fn begin_fragment_reference_rewrite(
 ) -> Result<M11FragmentReferenceRewriteWork, M11BlockWriterError> {
     validate_fragment_reference_binding(fragment, &binding)?;
     let (mode, visible_remainder) = match rewrite {
-        M11ReferenceOutputRewrite::Unchanged => {
-            (M11FragmentReferenceRewriteMode::Unchanged, None)
-        }
+        M11ReferenceOutputRewrite::Unchanged => (M11FragmentReferenceRewriteMode::Unchanged, None),
         M11ReferenceOutputRewrite::RemoveWrapper {
             whole_fragment: M11ReferenceOutputRange::Fragment(range),
         } => {
@@ -1253,10 +1257,7 @@ fn begin_fragment_reference_rewrite(
             removed_prefix: M11ReferenceOutputRange::Fragment(range),
         } => {
             let cut = validate_fragment_rewrite_range(&binding, &range, false)?;
-            (
-                M11FragmentReferenceRewriteMode::Retain { cut },
-                Some(cut),
-            )
+            (M11FragmentReferenceRewriteMode::Retain { cut }, Some(cut))
         }
         _ => {
             return Err(M11BlockWriterError::InvalidCommand(
@@ -1293,11 +1294,13 @@ fn validate_fragment_rewrite_range(
 ) -> Result<SourceMetric, M11BlockWriterError> {
     let logical_bytes = range.logical.byte_range();
     let logical_utf16 = range.logical.utf16_range();
-    let (physical_bytes, physical_utf16) = range.physical.clone().ok_or(
-        M11BlockWriterError::InvalidCommand(
-            "fragment reference rewrite range has no physical envelope",
-        ),
-    )?;
+    let (physical_bytes, physical_utf16) =
+        range
+            .physical
+            .clone()
+            .ok_or(M11BlockWriterError::InvalidCommand(
+                "fragment reference rewrite range has no physical envelope",
+            ))?;
     if range.generation != binding.generation
         || !range.replay_validated
         || logical_bytes.start != 0
@@ -1333,9 +1336,12 @@ fn poll_fragment_reference_rewrite(
     if fuel == 0 {
         return Err(M11BlockWriterError::ZeroFuel);
     }
-    let state = fragment.reference.as_ref().ok_or(
-        M11BlockWriterError::InvalidCommand("fragment reference rewrite is not active"),
-    )?;
+    let state = fragment
+        .reference
+        .as_ref()
+        .ok_or(M11BlockWriterError::InvalidCommand(
+            "fragment reference rewrite is not active",
+        ))?;
     if state.phase != M11FragmentReferencePhase::Rewriting
         || state.binding.generation != work.binding.generation
         || work.binding.events_end != fragment.events.len()
@@ -1390,9 +1396,13 @@ fn transform_fragment_reference_event(
     fragment: &M11BlockFragmentOutput,
     work: &mut M11FragmentReferenceRewriteWork,
 ) -> Result<(), M11BlockWriterError> {
-    let event = *fragment.events.get(work.next_event).ok_or(
-        M11BlockWriterError::InvalidCommand("fragment reference rewrite event disappeared"),
-    )?;
+    let event =
+        *fragment
+            .events
+            .get(work.next_event)
+            .ok_or(M11BlockWriterError::InvalidCommand(
+                "fragment reference rewrite event disappeared",
+            ))?;
     let ordinal = work.next_event;
     work.next_event = work
         .next_event
@@ -1544,8 +1554,9 @@ fn fragment_logical_targets_paragraph(
     logical: M11RecursiveGreenLogicalAction,
 ) -> bool {
     match logical {
-        M11RecursiveGreenLogicalAction::None
-        | M11RecursiveGreenLogicalAction::HiddenUpstream => false,
+        M11RecursiveGreenLogicalAction::None | M11RecursiveGreenLogicalAction::HiddenUpstream => {
+            false
+        }
         M11RecursiveGreenLogicalAction::PartialTab {
             target_owner_depth, ..
         } => target_owner_depth == 0,
@@ -1626,6 +1637,114 @@ pub struct M11BlockStructuralAdoptionReceipt {
     green: M11RecursiveGreenStructuralSpliceReceipt,
     high_level_events: usize,
     fragment_source_bytes_read: u64,
+}
+
+/// Opaque coordinate authority used by the persistent-session checkpoint
+/// actor after an atomic Green splice.  Replaying checkpoint replicas is
+/// deliberately separate from the splice: callers can fuel one retained
+/// checkpoint at a time instead of hiding document-sized work in adoption.
+pub(crate) struct M11BlockCheckpointRebase {
+    target_source: SourceVersion,
+    splice: M11RecursiveGreenStructuralSpliceRebase,
+    target_frame_floor: u64,
+    suffix: Option<M11BlockCheckpointSuffixRebase>,
+}
+
+struct M11BlockCheckpointSuffixRebase {
+    base_physical_end: SourceMetric,
+    target_physical_end: SourceMetric,
+    base_logical_end: SourceMetric,
+    target_logical_end: SourceMetric,
+    base_convergence_line_ordinal: u64,
+    target_convergence_line_ordinal: u64,
+}
+
+pub(crate) struct M11BlockOrdinaryCheckpointAdoption {
+    pub(crate) rebase: M11BlockCheckpointRebase,
+    pub(crate) target_restart: M11BlockRestartCheckpoint,
+    pub(crate) target_convergence: M11BlockRestartCheckpoint,
+    pub(crate) retained_terminal: M11BlockTerminalConvergenceCheckpoint,
+}
+
+pub(crate) struct M11BlockTerminalCheckpointAdoption {
+    pub(crate) rebase: M11BlockCheckpointRebase,
+    pub(crate) target_restart: M11BlockRestartCheckpoint,
+    pub(crate) target_terminal: M11BlockTerminalConvergenceCheckpoint,
+}
+
+impl M11BlockCheckpointRebase {
+    pub(crate) fn rebase_prefix(
+        &self,
+        checkpoint: &mut M11BlockRestartCheckpoint,
+    ) -> Result<(), M11BlockRestartError> {
+        rebase_retained_prefix_checkpoint(checkpoint, &self.splice, self.target_frame_floor)
+    }
+
+    pub(crate) fn rebase_suffix(
+        &self,
+        checkpoint: &mut M11BlockRestartCheckpoint,
+    ) -> Result<(), M11BlockRestartError> {
+        let suffix = self.suffix.as_ref().ok_or(M11BlockRestartError::Pairing(
+            "terminal checkpoint adoption has no unchanged suffix",
+        ))?;
+        rebase_retained_suffix_checkpoint(
+            checkpoint,
+            &self.splice,
+            suffix.base_physical_end,
+            suffix.target_physical_end,
+            suffix.base_logical_end,
+            suffix.target_logical_end,
+            suffix.base_convergence_line_ordinal,
+            suffix.target_convergence_line_ordinal,
+            self.target_frame_floor,
+        )
+    }
+
+    pub(crate) fn rebase_terminal(
+        &self,
+        checkpoint: &mut M11BlockTerminalConvergenceCheckpoint,
+    ) -> Result<(), M11BlockRestartError> {
+        rebase_retained_terminal_checkpoint(checkpoint, &self.splice, self.target_frame_floor)
+    }
+
+    pub(crate) fn validate_next(
+        &self,
+        previous: Option<&M11BlockRestartCheckpoint>,
+        checkpoint: &M11BlockRestartCheckpoint,
+    ) -> Result<(), M11BlockRestartError> {
+        if checkpoint.source != self.target_source
+            || checkpoint.green_boundary.is_none()
+            || previous.is_some_and(|previous| {
+                previous.parser_physical.bytes() > checkpoint.parser_physical.bytes()
+                    || previous.parser_physical.utf16() > checkpoint.parser_physical.utf16()
+                    || previous.accepted_physical.bytes() > checkpoint.accepted_physical.bytes()
+                    || previous.accepted_physical.utf16() > checkpoint.accepted_physical.utf16()
+            })
+        {
+            return Err(M11BlockRestartError::Pairing(
+                "rebased checkpoint set is not ordered target authority",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn validate_terminal(
+        &self,
+        checkpoint: &M11BlockTerminalConvergenceCheckpoint,
+    ) -> Result<(), M11BlockRestartError> {
+        if checkpoint.source != self.target_source
+            || checkpoint.green_boundary.is_none()
+            || checkpoint.accepted_physical.bytes()
+                != u64::try_from(checkpoint.source.byte_len()).unwrap_or(u64::MAX)
+            || checkpoint.accepted_physical.utf16()
+                != u64::try_from(checkpoint.source.utf16_len()).unwrap_or(u64::MAX)
+        {
+            return Err(M11BlockRestartError::Pairing(
+                "rebased checkpoint set is not ordered target authority",
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl M11BlockStructuralAdoptionReceipt {
@@ -2443,12 +2562,12 @@ impl M11BlockWriter {
                 Ok(build.begin_terminal_fragment_barrier(fragment)?)
             }
             WriterOutput::Fragment(fragment) => {
-                let provenance = self
-                    .restart_provenance
-                    .as_ref()
-                    .ok_or(M11BlockWriterError::InvalidCommand(
-                        "fragment reference finalization lost restart provenance",
-                    ))?;
+                let provenance =
+                    self.restart_provenance
+                        .as_ref()
+                        .ok_or(M11BlockWriterError::InvalidCommand(
+                            "fragment reference finalization lost restart provenance",
+                        ))?;
                 if frame.get() <= provenance.base_maximum_frame_id {
                     return Err(M11BlockWriterError::ReferenceParagraphPredatesRestart);
                 }
@@ -2485,13 +2604,11 @@ impl M11BlockWriter {
                         _ => {}
                     }
                 }
-                let (enter_event, physical_before) = local_enter
-                    .ok_or(M11BlockWriterError::ReferenceParagraphPredatesRestart)?;
-                let physical_end = SourceMetric::new(
-                    fragment.receipt.source_bytes,
-                    fragment.receipt.source_utf16,
-                )
-                .ok_or(M11BlockWriterError::CounterOverflow)?;
+                let (enter_event, physical_before) =
+                    local_enter.ok_or(M11BlockWriterError::ReferenceParagraphPredatesRestart)?;
+                let physical_end =
+                    SourceMetric::new(fragment.receipt.source_bytes, fragment.receipt.source_utf16)
+                        .ok_or(M11BlockWriterError::CounterOverflow)?;
                 if physical != physical_end {
                     return Err(M11BlockWriterError::InvalidCommand(
                         "fragment event journal and physical receipt differ",
@@ -2531,18 +2648,20 @@ impl M11BlockWriter {
         fuel: usize,
     ) -> Result<M11RecursiveGreenTerminalFragmentBarrierStatus, M11BlockWriterError> {
         match &mut self.output {
-            WriterOutput::Document(build) => {
-                Ok(build.poll_terminal_fragment_barrier(runtime, fuel)?.status())
-            }
+            WriterOutput::Document(build) => Ok(build
+                .poll_terminal_fragment_barrier(runtime, fuel)?
+                .status()),
             WriterOutput::Fragment(fragment) => {
                 if fuel == 0 {
                     return Err(M11BlockWriterError::ZeroFuel);
                 }
-                let state = fragment.reference.as_mut().ok_or(
-                    M11BlockWriterError::InvalidCommand(
-                        "fragment reference barrier is not active",
-                    ),
-                )?;
+                let state =
+                    fragment
+                        .reference
+                        .as_mut()
+                        .ok_or(M11BlockWriterError::InvalidCommand(
+                            "fragment reference barrier is not active",
+                        ))?;
                 match state.phase {
                     M11FragmentReferencePhase::Barrier => {
                         state.phase = M11FragmentReferencePhase::Frozen;
@@ -2551,11 +2670,11 @@ impl M11BlockWriter {
                     M11FragmentReferencePhase::Frozen => {
                         Ok(M11RecursiveGreenTerminalFragmentBarrierStatus::Ready)
                     }
-                    M11FragmentReferencePhase::Rewriting => Err(
-                        M11BlockWriterError::InvalidCommand(
+                    M11FragmentReferencePhase::Rewriting => {
+                        Err(M11BlockWriterError::InvalidCommand(
                             "fragment reference barrier is already rewriting",
-                        ),
-                    ),
+                        ))
+                    }
                 }
             }
         }
@@ -2569,11 +2688,13 @@ impl M11BlockWriter {
                 build.take_terminal_fragment_binding()?,
             )),
             WriterOutput::Fragment(fragment) => {
-                let state = fragment.reference.as_ref().ok_or(
-                    M11BlockWriterError::InvalidCommand(
-                        "fragment reference binding is not active",
-                    ),
-                )?;
+                let state =
+                    fragment
+                        .reference
+                        .as_ref()
+                        .ok_or(M11BlockWriterError::InvalidCommand(
+                            "fragment reference binding is not active",
+                        ))?;
                 if state.phase != M11FragmentReferencePhase::Frozen {
                     return Err(M11BlockWriterError::InvalidCommand(
                         "fragment reference binding is not frozen",
@@ -2678,8 +2799,7 @@ impl M11BlockWriter {
                 M11ReferenceOutputBinding::Document(binding),
                 M11ReferenceOutputCursor::Document(cursor),
                 M11ReferenceOutputRange::Document(range),
-            ) => Ok(build
-                .retarget_terminal_fragment_range_replay_forward(binding, cursor, range)?),
+            ) => Ok(build.retarget_terminal_fragment_range_replay_forward(binding, cursor, range)?),
             (
                 WriterOutput::Fragment(fragment),
                 M11ReferenceOutputBinding::Fragment(binding),
@@ -2786,39 +2906,36 @@ impl M11BlockWriter {
         fuel: usize,
     ) -> Result<M11ReferenceOutputRewritePoll, M11BlockWriterError> {
         match (&mut self.output, work) {
-            (
-                WriterOutput::Document(build),
-                M11ReferenceOutputRewriteWork::Document(work),
-            ) => match build.poll_terminal_fragment_rewrite(runtime, work, fuel)? {
-                M11RecursiveGreenTerminalFragmentRewritePoll::Pending { .. } => {
-                    Ok(M11ReferenceOutputRewritePoll::Pending)
+            (WriterOutput::Document(build), M11ReferenceOutputRewriteWork::Document(work)) => {
+                match build.poll_terminal_fragment_rewrite(runtime, work, fuel)? {
+                    M11RecursiveGreenTerminalFragmentRewritePoll::Pending { .. } => {
+                        Ok(M11ReferenceOutputRewritePoll::Pending)
+                    }
+                    M11RecursiveGreenTerminalFragmentRewritePoll::Complete {
+                        mut authority,
+                        ..
+                    } => {
+                        let visible_remainder_boundary =
+                            authority.take_visible_remainder_boundary();
+                        let visible_remainder_physical =
+                            visible_remainder_boundary.as_ref().and_then(|boundary| {
+                                let metric = boundary.physical_metric();
+                                SourceMetric::new(metric.bytes(), metric.utf16())
+                            });
+                        Ok(M11ReferenceOutputRewritePoll::Complete(
+                            M11ReferenceOutputRewriteAuthority {
+                                frame: authority.frame(),
+                                disposition: authority.disposition(),
+                                visible_remainder_boundary,
+                                visible_remainder_physical,
+                            },
+                        ))
+                    }
                 }
-                M11RecursiveGreenTerminalFragmentRewritePoll::Complete {
-                    mut authority,
-                    ..
-                } => {
-                    let visible_remainder_boundary =
-                        authority.take_visible_remainder_boundary();
-                    let visible_remainder_physical = visible_remainder_boundary
-                        .as_ref()
-                        .and_then(|boundary| {
-                            let metric = boundary.physical_metric();
-                            SourceMetric::new(metric.bytes(), metric.utf16())
-                        });
-                    Ok(M11ReferenceOutputRewritePoll::Complete(
-                        M11ReferenceOutputRewriteAuthority {
-                            frame: authority.frame(),
-                            disposition: authority.disposition(),
-                            visible_remainder_boundary,
-                            visible_remainder_physical,
-                        },
-                    ))
-                }
-            },
-            (
-                WriterOutput::Fragment(fragment),
-                M11ReferenceOutputRewriteWork::Fragment(work),
-            ) => poll_fragment_reference_rewrite(fragment, work, fuel),
+            }
+            (WriterOutput::Fragment(fragment), M11ReferenceOutputRewriteWork::Fragment(work)) => {
+                poll_fragment_reference_rewrite(fragment, work, fuel)
+            }
             _ => Err(M11BlockWriterError::InvalidCommand(
                 "reference rewrite work crossed its writer output",
             )),
@@ -3335,7 +3452,7 @@ impl M11BlockWriter {
     /// taken from the move-only Green boundaries joined into the restart and
     /// convergence checkpoints. Crossed roots, parser transactions, or open
     /// paths fail closed before storage mutation begins.
-    pub fn adopt_converged_fragment(
+    pub(crate) fn adopt_converged_fragment(
         mut self,
         parser: M11DirectBlockRestart,
         mut target_restart: M11BlockRestartCheckpoint,
@@ -3344,15 +3461,12 @@ impl M11BlockWriter {
         base: &M11RecursiveGreenRoot,
         prefix: Option<ExactUnchangedPrefixWitness>,
         suffix: Option<ExactUnchangedSuffixWitness>,
-        mut retained_prefix: Vec<M11BlockRestartCheckpoint>,
-        mut retained_suffix: Vec<M11BlockRestartCheckpoint>,
-        mut retained_terminal: M11BlockTerminalConvergenceCheckpoint,
+        retained_terminal: M11BlockTerminalConvergenceCheckpoint,
     ) -> Result<
         (
             M11RecursiveGreenRoot,
             M11BlockStructuralAdoptionReceipt,
-            Vec<M11BlockRestartCheckpoint>,
-            M11BlockTerminalConvergenceCheckpoint,
+            M11BlockOrdinaryCheckpointAdoption,
         ),
         M11BlockRestartError,
     > {
@@ -3541,48 +3655,6 @@ impl M11BlockWriter {
                 "target Green frame identity space is exhausted",
             ));
         };
-        let rebased =
-            (|| {
-                for checkpoint in &mut retained_prefix {
-                    rebase_retained_prefix_checkpoint(checkpoint, &rebase, target_frame_floor)?;
-                }
-                for checkpoint in &mut retained_suffix {
-                    rebase_retained_suffix_checkpoint(
-                        checkpoint,
-                        &rebase,
-                        old_convergence.accepted_physical,
-                        fresh.accepted_physical,
-                        old_convergence.logical,
-                        fresh.logical,
-                        base_convergence_line_ordinal,
-                        target_convergence_line_ordinal,
-                        target_frame_floor,
-                    )?;
-                }
-                rebase_retained_terminal_checkpoint(
-                    &mut retained_terminal,
-                    &rebase,
-                    target_frame_floor,
-                )?;
-                let additional = 2_usize.checked_add(retained_suffix.len()).ok_or(
-                    M11BlockRestartError::Pairing("rebased checkpoint count overflow"),
-                )?;
-                retained_prefix
-                    .try_reserve(additional)
-                    .map_err(|_| M11BlockWriterError::Allocation)?;
-                retained_prefix.push(target_restart);
-                retained_prefix.push(fresh);
-                retained_prefix.append(&mut retained_suffix);
-                validate_rebased_checkpoint_set(&retained_prefix, &retained_terminal)?;
-                Ok::<_, M11BlockRestartError>((retained_prefix, retained_terminal))
-            })();
-        let (checkpoints, terminal) = match rebased {
-            Ok(rebased) => rebased,
-            Err(error) => {
-                root.begin_release(runtime)?;
-                return Err(error);
-            }
-        };
         Ok((
             root,
             M11BlockStructuralAdoptionReceipt {
@@ -3590,8 +3662,24 @@ impl M11BlockWriter {
                 high_level_events,
                 fragment_source_bytes_read,
             },
-            checkpoints,
-            terminal,
+            M11BlockOrdinaryCheckpointAdoption {
+                rebase: M11BlockCheckpointRebase {
+                    target_source: fresh.source,
+                    splice: rebase,
+                    target_frame_floor,
+                    suffix: Some(M11BlockCheckpointSuffixRebase {
+                        base_physical_end: old_convergence.accepted_physical,
+                        target_physical_end: fresh.accepted_physical,
+                        base_logical_end: old_convergence.logical,
+                        target_logical_end: fresh.logical,
+                        base_convergence_line_ordinal,
+                        target_convergence_line_ordinal,
+                    }),
+                },
+                target_restart,
+                target_convergence: fresh,
+                retained_terminal,
+            },
         ))
     }
 
@@ -3603,7 +3691,7 @@ impl M11BlockWriter {
     /// gives EOF edits the same prefix-sharing structural splice as ordinary
     /// restart/convergence edits without pretending a still-open final child
     /// has the base frame identity.
-    pub fn adopt_converged_terminal_fragment(
+    pub(crate) fn adopt_converged_terminal_fragment(
         mut self,
         terminal_close: BlockCommand,
         mut target_restart: M11BlockRestartCheckpoint,
@@ -3611,13 +3699,11 @@ impl M11BlockWriter {
         runtime: &mut DocumentRuntime,
         base: &M11RecursiveGreenRoot,
         prefix: Option<ExactUnchangedPrefixWitness>,
-        mut retained_prefix: Vec<M11BlockRestartCheckpoint>,
     ) -> Result<
         (
             M11RecursiveGreenRoot,
             M11BlockStructuralAdoptionReceipt,
-            Vec<M11BlockRestartCheckpoint>,
-            M11BlockTerminalConvergenceCheckpoint,
+            M11BlockTerminalCheckpointAdoption,
         ),
         M11BlockRestartError,
     > {
@@ -3815,24 +3901,6 @@ impl M11BlockWriter {
                 "target Green frame identity space is exhausted",
             ));
         };
-        let rebased = (|| {
-            for checkpoint in &mut retained_prefix {
-                rebase_retained_prefix_checkpoint(checkpoint, &rebase, target_frame_floor)?;
-            }
-            retained_prefix
-                .try_reserve(1)
-                .map_err(|_| M11BlockWriterError::Allocation)?;
-            retained_prefix.push(target_restart);
-            validate_rebased_checkpoint_set(&retained_prefix, &target_terminal)?;
-            Ok::<_, M11BlockRestartError>(retained_prefix)
-        })();
-        let checkpoints = match rebased {
-            Ok(checkpoints) => checkpoints,
-            Err(error) => {
-                root.begin_release(runtime)?;
-                return Err(error);
-            }
-        };
         Ok((
             root,
             M11BlockStructuralAdoptionReceipt {
@@ -3840,8 +3908,16 @@ impl M11BlockWriter {
                 high_level_events,
                 fragment_source_bytes_read,
             },
-            checkpoints,
-            target_terminal,
+            M11BlockTerminalCheckpointAdoption {
+                rebase: M11BlockCheckpointRebase {
+                    target_source,
+                    splice: rebase,
+                    target_frame_floor,
+                    suffix: None,
+                },
+                target_restart,
+                target_terminal,
+            },
         ))
     }
 
@@ -4890,33 +4966,6 @@ fn validate_terminal_boundary(
     {
         return Err(M11BlockRestartError::Pairing(
             "retained terminal checkpoint differs from its Green boundary",
-        ));
-    }
-    Ok(())
-}
-
-fn validate_rebased_checkpoint_set(
-    checkpoints: &[M11BlockRestartCheckpoint],
-    terminal: &M11BlockTerminalConvergenceCheckpoint,
-) -> Result<(), M11BlockRestartError> {
-    if checkpoints.is_empty()
-        || checkpoints.iter().any(|checkpoint| {
-            checkpoint.source != terminal.source || checkpoint.green_boundary.is_none()
-        })
-        || checkpoints.windows(2).any(|pair| {
-            pair[0].parser_physical.bytes() > pair[1].parser_physical.bytes()
-                || pair[0].parser_physical.utf16() > pair[1].parser_physical.utf16()
-                || pair[0].accepted_physical.bytes() > pair[1].accepted_physical.bytes()
-                || pair[0].accepted_physical.utf16() > pair[1].accepted_physical.utf16()
-        })
-        || terminal.green_boundary.is_none()
-        || terminal.accepted_physical.bytes()
-            != u64::try_from(terminal.source.byte_len()).unwrap_or(u64::MAX)
-        || terminal.accepted_physical.utf16()
-            != u64::try_from(terminal.source.utf16_len()).unwrap_or(u64::MAX)
-    {
-        return Err(M11BlockRestartError::Pairing(
-            "rebased checkpoint set is not ordered target authority",
         ));
     }
     Ok(())

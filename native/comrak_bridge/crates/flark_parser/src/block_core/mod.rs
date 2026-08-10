@@ -34,18 +34,22 @@ pub use controller::{
     M11_DIRECT_BLOCK_MAX_LEXICAL_SLACK, M11_DIRECT_BLOCK_MAX_RETAINED_SOURCE_BYTES,
 };
 pub use paragraph_fence::{
-    resolve_m11_recursive_green_inline_leaf_fence,
+    m11_recursive_green_row_presentation, resolve_m11_recursive_green_inline_leaf_fence,
     resolve_m11_recursive_green_inline_leaf_row_fence, resolve_m11_recursive_green_paragraph_fence,
-    M11RecursiveGreenInlineLeafFence, M11RecursiveGreenInlineLeafKind,
-    M11RecursiveGreenParagraphFence,
+    M11RecursiveGreenCodeBlockStyle, M11RecursiveGreenInlineLeafFence,
+    M11RecursiveGreenInlineLeafKind, M11RecursiveGreenListMarker, M11RecursiveGreenParagraphFence,
+    M11RecursiveGreenRowPresentation,
 };
 pub use reference_rendezvous::{
     M11ReferenceRendezvous, M11ReferenceRendezvousError, M11ReferenceRendezvousPoll,
     M11ReferenceRendezvousStatus,
+};
+pub(crate) use writer::{
+    M11BlockCheckpointRebase, M11BlockOrdinaryCheckpointAdoption,
+    M11BlockTerminalCheckpointAdoption, KIND_BLOCK_QUOTE, KIND_DOCUMENT, KIND_PARAGRAPH,
 };
 pub use writer::{
     M11BlockRestartCheckpoint, M11BlockRestartError, M11BlockStructuralAdoptionReceipt,
     M11BlockTerminalConvergenceCheckpoint, M11BlockWriter, M11BlockWriterError,
     M11BlockWriterOfferStatus, M11BlockWriterPoll, M11BlockWriterPollStatus,
 };
-pub(crate) use writer::{KIND_BLOCK_QUOTE, KIND_DOCUMENT, KIND_PARAGRAPH};

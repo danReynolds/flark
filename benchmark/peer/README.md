@@ -11,6 +11,68 @@ post-edit viewport pump costs.
 - `benchmark/peer_supereditor/` — super_editor (git; fresh caches may need a
   one-line Flutter compatibility patch, below)
 
+## Quill macOS profile runner
+
+`lib/competitor_profile_harness.dart` is the real macOS profile-mode Quill
+runner for `m0-mac-competitor-profile-v1`. It generates the frozen
+`ordinary-prose` recipe at exact UTF-8 byte lengths, loads it into an unmodified
+Quill editor in a 600 by 600 logical-pixel viewport, and writes raw
+machine-readable process results plus the final plain-text export.
+
+Measured character and delete edits are native macOS `NSEvent` key events sent
+to Flutter's focused text-input responder. For paste, the harness loads the
+exact 32,768-byte payload into `NSPasteboard.general`. Flutter's
+`FlutterTextInputPlugin` does not advertise AppKit's `paste:` action, so the
+harness delivers that pasteboard string through `insertText` on the active
+platform `NSTextInputClient`, then restores the prior clipboard after Quill
+accepts the edit. No measured edit mutates `QuillController` directly.
+
+Each paste warmup and measured sample starts from the same frozen fixture. The
+harness proves the canonical pre-paste and one-paste byte/hash states, selects
+the exact pasted source range, sends a native platform backspace outside the
+measured interval, waits for its accepting/raster frame, and proves the fixture
+was restored before the next sample. Quill's single owned terminal newline is
+classified explicitly; it is never generally trimmed. All 22 warmup/measured
+transitions retain unique paste/reset sequences and comparable
+request/ingress/accept/build/raster/callback timestamps, so a receipt cannot
+hide an all-pastes-then-resets execution order.
+
+The full Quill-only process matrix is:
+
+```bash
+cd benchmark/peer
+dart run tool/run_quill_profile.dart
+```
+
+It builds one profile artifact, records its file-tree hash and the resolved
+`pubspec.lock`, and launches 117 fresh processes: 30 cold opens per 1/5/10 MiB
+tier, three 10 Hz typing runs per tier, and start/middle/end local-edit and
+32 KiB-paste runs per tier. Each process preserves raw frame samples, memory,
+machine/display state, source hashes, a bounded fidelity diff, stdout/stderr,
+and a full final export under ignored `artifacts/`. Every export name contains
+an invocation-unique process ID, and export creation refuses to overwrite an
+existing artifact.
+
+For wiring validation only, use the deliberately non-claim smoke matrix:
+
+```bash
+dart run tool/run_quill_profile.dart --smoke
+```
+
+Process and Quill-aggregate receipts report completion-envelope eligibility
+separately from performance-claim eligibility. A completed Quill envelope may
+be useful cohort input, but neither local output claims cohort eligibility. The
+Quill runner does not capture a VM timeline/longest synchronous span, and the
+protocol's competitor boundary still requires the separately pinned two-peer
+aggregate receipt. Input-to-raster samples fail closed unless the selected
+`FrameTiming.buildStart` is strictly later than model acceptance; a raster that
+only finishes after acceptance is not attributed to that edit. Quill also
+appends a required terminal newline to plain text; results record this as
+`peer-appended-terminal-newline` instead of trimming it. The operator must also
+enforce the protocol's five-minute idle periods and exclusive-host rule; the
+runner records host state but cannot prove or enforce the absence of unrelated
+work.
+
 Methodology (identical to Flark's): N line-paragraph blocks in a 600px viewport,
 one-character insert near the document start, 40 timed `pump()`s, median/p95.
 Debug test-VM timings — pessimistic vs profile/release, but the **ratios** and

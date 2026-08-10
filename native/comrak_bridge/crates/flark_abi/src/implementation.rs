@@ -1,0 +1,2556 @@
+use std::collections::{BTreeMap, BTreeSet};
+use std::mem::size_of;
+use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::ptr;
+use std::slice;
+use std::str;
+use std::sync::{Mutex, OnceLock};
+
+use flark_runtime::{
+    CertificationState, ContinuationHandle, CoordinateKind, DocumentActor, DocumentActorError,
+    DocumentBulletMarker, DocumentCodeBlockStyle, DocumentFenceCharacter, DocumentHeadingStyle,
+    DocumentInlineFact, DocumentInlineFactKind, DocumentListDelimiter, DocumentListMarker,
+    DocumentLiveViewportSpan, DocumentSessionError, DocumentSessionPhase,
+    DocumentViewportRowEditCapability, DocumentViewportRowPresentation, HistoryDisposition,
+    HistoryToken, OperationCode, OperationResult, Outcome as RuntimeOutcome, ProgressState,
+    ProgressToken, ResultPageReceipt, ResultRecordKind, Revision, SessionHandle, SnapshotId,
+    SourceRange as RuntimeSourceRange, StatusCode, TransactionHandle, MAX_BULK_CHUNK_BYTES,
+    MAX_QUERY_ITEMS, MAX_RESULT_BYTES, MAX_SMALL_EDIT_BYTES, MAX_SOURCE_CHUNK_BYTES,
+    MAX_TRANSACTION_EDITS,
+};
+
+use crate::{
+    AbiInfo, BulkBeginRequest, CertificationRangeRecord, CloseRequest, ContinuationRequest,
+    CoordinateRequest, CreateRequest, EditDescriptor, HistoryRequest, InlineFactRecord,
+    NegotiateRequest, Outcome, PumpRequest, QueryRequest, ResultPageHeader, SessionRef,
+    SmallEditRequest, SourceRange, SourceReadRequest, StageRequest, TransactionRequest,
+    ViewportRowRecord, WorkBudget, ABI_MAJOR, ABI_MINOR, INLINE_FACT_AUTOLINK_EMAIL,
+    INLINE_FACT_AUTOLINK_URI, INLINE_FACT_BACKSLASH_ESCAPE, INLINE_FACT_CODE,
+    INLINE_FACT_DIRECT_IMAGE, INLINE_FACT_DIRECT_LINK, INLINE_FACT_EMPHASIS,
+    INLINE_FACT_HARD_LINE_BREAK, INLINE_FACT_REFERENCE_IMAGE, INLINE_FACT_REFERENCE_LINK,
+    INLINE_FACT_REPLACEMENT, INLINE_FACT_STRIKETHROUGH, INLINE_FACT_STRONG,
+    VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_SHIFT, VIEWPORT_ROW_BLOCK_QUOTE_PRESENTATION,
+    VIEWPORT_ROW_BLOCK_QUOTE_SIMPLE_CONTINUATION, VIEWPORT_ROW_CODE_CLOSED,
+    VIEWPORT_ROW_CODE_FENCED, VIEWPORT_ROW_CODE_FENCE_OFFSET_SHIFT, VIEWPORT_ROW_CODE_PRESENTATION,
+    VIEWPORT_ROW_CODE_TILDE, VIEWPORT_ROW_FLAG_CONTIGUOUS_EDIT, VIEWPORT_ROW_FLAG_EDIT_UNAVAILABLE,
+    VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE, VIEWPORT_ROW_FLAG_PROJECTED_RESERVED,
+    VIEWPORT_ROW_HEADING_LEVEL_MASK, VIEWPORT_ROW_HEADING_SETEXT, VIEWPORT_ROW_LIST_ASTERISK,
+    VIEWPORT_ROW_LIST_DEPTH_SHIFT, VIEWPORT_ROW_LIST_HYPHEN, VIEWPORT_ROW_LIST_MARKER_OFFSET_SHIFT,
+    VIEWPORT_ROW_LIST_ORDERED_PARENTHESIS, VIEWPORT_ROW_LIST_ORDERED_PERIOD,
+    VIEWPORT_ROW_LIST_PLUS, VIEWPORT_ROW_LIST_SIMPLE_CONTINUATION, VIEWPORT_ROW_LIST_STARTS_LIST,
+    VIEWPORT_ROW_THEMATIC_BREAK_PRESENTATION,
+};
+
+const IMPLEMENTED_CAPABILITIES: u64 = (1 << 0)
+    | (1 << 1)
+    | (1 << 2)
+    | (1 << 3)
+    | (1 << 4)
+    | (1 << 5)
+    | (1 << 7)
+    | (1 << 8)
+    | (1 << 12)
+    | (1 << 13)
+    | (1 << 14);
+
+struct Registry {
+    next_handle: u64,
+    sessions: BTreeMap<u64, StoredSession>,
+    transactions: BTreeMap<u64, StoredBulkTransaction>,
+    continuations: BTreeMap<u64, StoredContinuation>,
+    histories: BTreeMap<u64, StoredHistory>,
+}
+
+impl Default for Registry {
+    fn default() -> Self {
+        Self {
+            next_handle: 1,
+            sessions: BTreeMap::new(),
+            transactions: BTreeMap::new(),
+            continuations: BTreeMap::new(),
+            histories: BTreeMap::new(),
+        }
+    }
+}
+
+impl Registry {
+    fn allocate_handle(&mut self) -> Result<u64, StatusCode> {
+        let handle = self.next_handle;
+        self.next_handle = self
+            .next_handle
+            .checked_add(1)
+            .ok_or(StatusCode::ResourceLimitExceeded)?;
+        Ok(handle)
+    }
+}
+
+struct StoredSession {
+    owner: u64,
+    state: StoredSessionState,
+    transactions: BTreeSet<u64>,
+    max_document_bytes: u64,
+    progress_token: u64,
+    continuations: BTreeSet<u64>,
+    history_budget_bytes: u64,
+    history_used_bytes: u64,
+    history_head: u64,
+    history_tail: u64,
+    history_state: u64,
+    next_history_state: u64,
+    evicted_history_tokens: BTreeSet<u64>,
+    close_token: u64,
+    close_complete: bool,
+}
+
+enum StoredSessionState {
+    Creating {
+        transaction: u64,
+        expected_bytes: usize,
+        bytes: Vec<u8>,
+    },
+    Open(DocumentActor),
+}
+
+enum BulkHistoryCapture {
+    Capturing(Vec<u8>),
+    Disabled,
+    OverBudget,
+}
+
+struct StoredBulkTransaction {
+    session: u64,
+    owner: u64,
+    expected_revision: u64,
+    start_byte: u64,
+    end_byte: u64,
+    expected_bytes: usize,
+    replacement: Vec<u8>,
+    validated_bytes: usize,
+    inverse_next_byte: u64,
+    history: BulkHistoryCapture,
+    progress_token: u64,
+}
+
+#[derive(Clone, Copy)]
+struct StoredContinuation {
+    session: u64,
+    owner: u64,
+    revision: u64,
+    snapshot: u64,
+    requested_start: u64,
+    requested_end: u64,
+    next_start: u64,
+    query_kind: u32,
+}
+
+const HISTORY_TOKEN_OVERHEAD_BYTES: u64 = 64;
+const MAX_EVICTED_HISTORY_TOMBSTONES: usize = 4096;
+
+#[derive(Clone)]
+struct StoredHistory {
+    session: u64,
+    owner: u64,
+    applies_state: u64,
+    target_state: u64,
+    start_byte: u64,
+    end_byte: u64,
+    replacement: Vec<u8>,
+    retained_bytes: u64,
+    previous: u64,
+    next: u64,
+}
+
+fn record_evicted_history_token(entry: &mut StoredSession, token: u64) {
+    let maximum = usize::try_from(entry.history_budget_bytes / HISTORY_TOKEN_OVERHEAD_BYTES)
+        .unwrap_or(MAX_EVICTED_HISTORY_TOMBSTONES)
+        .min(MAX_EVICTED_HISTORY_TOMBSTONES);
+    if maximum == 0 {
+        return;
+    }
+    entry.evicted_history_tokens.insert(token);
+    while entry.evicted_history_tokens.len() > maximum {
+        let Some(oldest) = entry.evicted_history_tokens.first().copied() else {
+            break;
+        };
+        entry.evicted_history_tokens.remove(&oldest);
+    }
+}
+
+static REGISTRY: OnceLock<Mutex<Registry>> = OnceLock::new();
+
+fn registry() -> &'static Mutex<Registry> {
+    REGISTRY.get_or_init(|| Mutex::new(Registry::default()))
+}
+
+fn runtime_error(operation: OperationCode, status: StatusCode) -> RuntimeOutcome {
+    RuntimeOutcome {
+        operation,
+        status,
+        progress: match status {
+            StatusCode::Backpressure => ProgressState::Backpressured,
+            StatusCode::ProgressStalled
+            | StatusCode::PanicContained
+            | StatusCode::InternalFault
+            | StatusCode::ParserFault
+            | StatusCode::AllocationFailure => ProgressState::Fault,
+            _ => ProgressState::None,
+        },
+        required_payload_bytes: 0,
+        written_payload_bytes: 0,
+        result: OperationResult::None,
+    }
+}
+
+fn map_document_error(error: &DocumentSessionError) -> StatusCode {
+    match error {
+        DocumentSessionError::ZeroWorkBudget => StatusCode::InvalidArgument,
+        DocumentSessionError::Busy => StatusCode::SessionBusy,
+        DocumentSessionError::NotReady => StatusCode::NotReadySourceGap,
+        DocumentSessionError::Faulted
+        | DocumentSessionError::Parser(_)
+        | DocumentSessionError::Inline(_) => StatusCode::ParserFault,
+        DocumentSessionError::StaleRevision { .. } => StatusCode::StaleRevision,
+        DocumentSessionError::RangeOutOfBounds | DocumentSessionError::Source(_) => {
+            StatusCode::RangeOutOfBounds
+        }
+        DocumentSessionError::QueryBudgetExceeded => StatusCode::QueryLimitExceeded,
+        error if error.is_backpressure() => StatusCode::Backpressure,
+        DocumentSessionError::Engine(_) => StatusCode::InternalFault,
+    }
+}
+
+fn map_actor_error(error: &DocumentActorError) -> StatusCode {
+    match error {
+        DocumentActorError::Session(error) => map_document_error(error),
+        DocumentActorError::Spawn(_) => StatusCode::ResourceLimitExceeded,
+        DocumentActorError::Closed => StatusCode::InternalFault,
+    }
+}
+
+fn emit<F>(operation: OperationCode, outcome: *mut Outcome, call: F) -> u32
+where
+    F: FnOnce() -> Result<RuntimeOutcome, StatusCode>,
+{
+    if outcome.is_null() {
+        return StatusCode::InvalidArgument as u32;
+    }
+    let runtime = match catch_unwind(AssertUnwindSafe(call)) {
+        Ok(Ok(value)) => value,
+        Ok(Err(status)) => runtime_error(operation, status),
+        Err(_) => runtime_error(operation, StatusCode::PanicContained),
+    };
+    let encoded = Outcome::from_runtime(runtime).unwrap_or_else(|| {
+        Outcome::from_runtime(runtime_error(operation, StatusCode::InternalFault))
+            .expect("internal fault outcome is contract valid")
+    });
+    unsafe {
+        ptr::write_unaligned(outcome, encoded);
+    }
+    encoded.status
+}
+
+unsafe fn read_record<T: Copy>(value: *const T, expected_size: u32) -> Result<T, StatusCode> {
+    if value.is_null() {
+        return Err(StatusCode::InvalidArgument);
+    }
+    let record = unsafe { ptr::read_unaligned(value) };
+    let struct_size = unsafe { ptr::read_unaligned(value.cast::<u32>()) };
+    if struct_size != expected_size {
+        return Err(StatusCode::InvalidArgument);
+    }
+    Ok(record)
+}
+
+unsafe fn borrowed_bytes<'a>(input: *const u8, len: u64) -> Result<&'a [u8], StatusCode> {
+    let len = usize::try_from(len).map_err(|_| StatusCode::InvalidArgument)?;
+    if len == 0 {
+        return Ok(&[]);
+    }
+    if input.is_null() {
+        return Err(StatusCode::InvalidArgument);
+    }
+    Ok(unsafe { slice::from_raw_parts(input, len) })
+}
+
+fn valid_budget(budget: WorkBudget, page: bool) -> bool {
+    budget.max_work_units != 0
+        && budget.max_result_items <= MAX_QUERY_ITEMS
+        && budget.max_result_bytes <= MAX_RESULT_BYTES
+        && (!page || (budget.max_result_items != 0 && budget.max_result_bytes != 0))
+}
+
+fn owned_session_entry<'a>(
+    registry: &'a mut Registry,
+    session: SessionRef,
+) -> Result<&'a mut StoredSession, StatusCode> {
+    if session.session == 0 || session.owner_token == 0 {
+        return Err(StatusCode::InvalidHandle);
+    }
+    let entry = registry
+        .sessions
+        .get_mut(&session.session)
+        .ok_or(StatusCode::InvalidHandle)?;
+    if entry.owner != session.owner_token {
+        return Err(StatusCode::OwnerMismatch);
+    }
+    Ok(entry)
+}
+
+fn session_entry<'a>(
+    registry: &'a mut Registry,
+    session: SessionRef,
+) -> Result<&'a mut StoredSession, StatusCode> {
+    let entry = owned_session_entry(registry, session)?;
+    if entry.close_token != 0 {
+        return Err(StatusCode::SessionClosing);
+    }
+    Ok(entry)
+}
+
+fn detach_history(registry: &mut Registry, token: u64) -> Option<StoredHistory> {
+    let history = registry.histories.remove(&token)?;
+    if history.previous != 0 {
+        if let Some(previous) = registry.histories.get_mut(&history.previous) {
+            previous.next = history.next;
+        }
+    }
+    if history.next != 0 {
+        if let Some(next) = registry.histories.get_mut(&history.next) {
+            next.previous = history.previous;
+        }
+    }
+    if let Some(entry) = registry.sessions.get_mut(&history.session) {
+        if entry.history_head == token {
+            entry.history_head = history.next;
+        }
+        if entry.history_tail == token {
+            entry.history_tail = history.previous;
+        }
+        entry.history_used_bytes = entry
+            .history_used_bytes
+            .saturating_sub(history.retained_bytes);
+    }
+    Some(history)
+}
+
+fn retain_history(
+    registry: &mut Registry,
+    session: SessionRef,
+    applies_state: u64,
+    target_state: u64,
+    start_byte: u64,
+    end_byte: u64,
+    replacement: Vec<u8>,
+) -> Result<(HistoryToken, HistoryDisposition), StatusCode> {
+    let retained_bytes = HISTORY_TOKEN_OVERHEAD_BYTES
+        .checked_add(replacement.len() as u64)
+        .ok_or(StatusCode::ResourceLimitExceeded)?;
+    let history_budget_bytes = session_entry(registry, session)?.history_budget_bytes;
+    if history_budget_bytes == 0 {
+        return Ok((HistoryToken::NONE, HistoryDisposition::Disabled));
+    }
+    if retained_bytes > history_budget_bytes {
+        return Ok((HistoryToken::NONE, HistoryDisposition::OverBudget));
+    }
+
+    loop {
+        let entry = session_entry(registry, session)?;
+        if entry
+            .history_used_bytes
+            .checked_add(retained_bytes)
+            .is_some_and(|used| used <= history_budget_bytes)
+        {
+            break;
+        }
+        let oldest = entry.history_head;
+        if oldest == 0 {
+            return Err(StatusCode::InternalFault);
+        }
+        let evicted = detach_history(registry, oldest).ok_or(StatusCode::InternalFault)?;
+        if evicted.session != session.session || evicted.owner != session.owner_token {
+            return Err(StatusCode::InternalFault);
+        }
+        record_evicted_history_token(session_entry(registry, session)?, oldest);
+    }
+
+    let token = registry.allocate_handle()?;
+    let previous = session_entry(registry, session)?.history_tail;
+    if previous != 0 {
+        registry
+            .histories
+            .get_mut(&previous)
+            .ok_or(StatusCode::InternalFault)?
+            .next = token;
+    }
+    registry.histories.insert(
+        token,
+        StoredHistory {
+            session: session.session,
+            owner: session.owner_token,
+            applies_state,
+            target_state,
+            start_byte,
+            end_byte,
+            replacement,
+            retained_bytes,
+            previous,
+            next: 0,
+        },
+    );
+    let entry = session_entry(registry, session)?;
+    if entry.history_head == 0 {
+        entry.history_head = token;
+    }
+    entry.history_tail = token;
+    entry.history_used_bytes = entry
+        .history_used_bytes
+        .checked_add(retained_bytes)
+        .ok_or(StatusCode::ResourceLimitExceeded)?;
+    Ok((HistoryToken(token), HistoryDisposition::Retained))
+}
+
+fn history_for_request(
+    registry: &mut Registry,
+    session: SessionRef,
+    token: u64,
+) -> Result<StoredHistory, StatusCode> {
+    let entry = session_entry(registry, session)?;
+    if entry.evicted_history_tokens.contains(&token) {
+        return Err(StatusCode::HistoryTokenEvicted);
+    }
+    let history = registry
+        .histories
+        .get(&token)
+        .cloned()
+        .ok_or(StatusCode::HistoryTokenStale)?;
+    if history.owner != session.owner_token {
+        return Err(StatusCode::OwnerMismatch);
+    }
+    if history.session != session.session {
+        return Err(StatusCode::HistoryTokenStale);
+    }
+    Ok(history)
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_negotiate(
+    request: *const NegotiateRequest,
+    info: *mut AbiInfo,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::Negotiate, outcome, || {
+        let request = unsafe { read_record(request, size_of::<NegotiateRequest>() as u32)? };
+        if info.is_null()
+            || request.requested_major != ABI_MAJOR
+            || request.requested_minor > ABI_MINOR
+            || request.required_capability_bits & !IMPLEMENTED_CAPABILITIES != 0
+        {
+            return Err(if request.requested_major != ABI_MAJOR {
+                StatusCode::UnsupportedAbiVersion
+            } else {
+                StatusCode::UnsupportedCapability
+            });
+        }
+        let value = AbiInfo {
+            struct_size: size_of::<AbiInfo>() as u32,
+            abi_major: ABI_MAJOR,
+            abi_minor: ABI_MINOR,
+            capability_bits: IMPLEMENTED_CAPABILITIES,
+            max_small_edit_bytes: MAX_SMALL_EDIT_BYTES,
+            max_bulk_chunk_bytes: MAX_BULK_CHUNK_BYTES,
+            max_source_chunk_bytes: MAX_SOURCE_CHUNK_BYTES,
+            max_result_bytes: MAX_RESULT_BYTES,
+            max_query_items: MAX_QUERY_ITEMS,
+            max_transaction_edits: MAX_TRANSACTION_EDITS,
+            reserved: [0; 3],
+        };
+        unsafe {
+            ptr::write_unaligned(info, value);
+        }
+        Ok(RuntimeOutcome {
+            operation: OperationCode::Negotiate,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::None,
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_create_begin(
+    request: *const CreateRequest,
+    input: *const u8,
+    input_len: u64,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::CreateBegin, outcome, || {
+        let request = unsafe { read_record(request, size_of::<CreateRequest>() as u32)? };
+        let input = unsafe { borrowed_bytes(input, input_len)? };
+        if request.owner_token == 0
+            || input.len() > MAX_SOURCE_CHUNK_BYTES as usize
+            || input.len() as u64 > request.expected_total_bytes
+            || request.config.struct_size != size_of::<crate::SessionConfig>() as u32
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let expected_bytes = usize::try_from(request.expected_total_bytes)
+            .map_err(|_| StatusCode::ResourceLimitExceeded)?;
+        if request.config.max_document_bytes != 0
+            && request.expected_total_bytes > request.config.max_document_bytes
+        {
+            return Err(StatusCode::ResourceLimitExceeded);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        let session = registry.allocate_handle()?;
+        let transaction = registry.allocate_handle()?;
+        let mut bytes = Vec::new();
+        bytes
+            .try_reserve_exact(expected_bytes)
+            .map_err(|_| StatusCode::AllocationFailure)?;
+        bytes.extend_from_slice(input);
+        registry.sessions.insert(
+            session,
+            StoredSession {
+                owner: request.owner_token,
+                state: StoredSessionState::Creating {
+                    transaction,
+                    expected_bytes,
+                    bytes,
+                },
+                transactions: BTreeSet::new(),
+                max_document_bytes: request.config.max_document_bytes,
+                progress_token: 0,
+                continuations: BTreeSet::new(),
+                history_budget_bytes: request.config.history_budget_bytes,
+                history_used_bytes: 0,
+                history_head: 0,
+                history_tail: 0,
+                history_state: 1,
+                next_history_state: 2,
+                evicted_history_tokens: BTreeSet::new(),
+                close_token: 0,
+                close_complete: false,
+            },
+        );
+        Ok(RuntimeOutcome {
+            operation: OperationCode::CreateBegin,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::SessionCreated {
+                session: SessionHandle(session),
+                transaction: TransactionHandle(transaction),
+            },
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_create_append(
+    request: *const StageRequest,
+    input: *const u8,
+    input_len: u64,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::CreateAppend, outcome, || {
+        let request = unsafe { read_record(request, size_of::<StageRequest>() as u32)? };
+        let input = unsafe { borrowed_bytes(input, input_len)? };
+        if input.len() > MAX_SOURCE_CHUNK_BYTES as usize || request.chunk_len != input_len {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        let entry = session_entry(&mut registry, request.session)?;
+        let StoredSessionState::Creating {
+            transaction,
+            expected_bytes,
+            bytes,
+        } = &mut entry.state
+        else {
+            return Err(StatusCode::TransactionAlreadyCommitted);
+        };
+        if *transaction != request.transaction
+            || request.chunk_offset != bytes.len() as u64
+            || bytes.len().saturating_add(input.len()) > *expected_bytes
+        {
+            return Err(StatusCode::TransactionConflict);
+        }
+        bytes.extend_from_slice(input);
+        Ok(RuntimeOutcome {
+            operation: OperationCode::CreateAppend,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::TransactionStaged {
+                transaction: TransactionHandle(*transaction),
+            },
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_create_commit(
+    request: *const TransactionRequest,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::CreateCommit, outcome, || {
+        let request = unsafe { read_record(request, size_of::<TransactionRequest>() as u32)? };
+        if !valid_budget(request.budget, false)
+            || request.expected_revision != 0
+            || request.progress_token != 0
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        let entry = session_entry(&mut registry, request.session)?;
+        let state = std::mem::replace(
+            &mut entry.state,
+            StoredSessionState::Creating {
+                transaction: 0,
+                expected_bytes: 0,
+                bytes: Vec::new(),
+            },
+        );
+        let StoredSessionState::Creating {
+            transaction,
+            expected_bytes,
+            bytes,
+        } = state
+        else {
+            entry.state = state;
+            return Err(StatusCode::TransactionAlreadyCommitted);
+        };
+        if transaction != request.transaction || bytes.len() != expected_bytes {
+            entry.state = StoredSessionState::Creating {
+                transaction,
+                expected_bytes,
+                bytes,
+            };
+            return Err(StatusCode::TransactionIncomplete);
+        }
+        let source = match str::from_utf8(&bytes) {
+            Ok(source) => source,
+            Err(_) => {
+                entry.state = StoredSessionState::Creating {
+                    transaction,
+                    expected_bytes,
+                    bytes,
+                };
+                return Err(StatusCode::InvalidUtf8);
+            }
+        };
+        let document =
+            DocumentActor::begin(source.to_owned()).map_err(|error| map_actor_error(&error))?;
+        let receipt = document
+            .pump(usize::try_from(request.budget.max_work_units).unwrap_or(usize::MAX))
+            .map_err(|error| map_actor_error(&error))?;
+        let ready = receipt.phase == DocumentSessionPhase::Ready;
+        entry.state = StoredSessionState::Open(document);
+        entry.progress_token = 1;
+        Ok(if ready {
+            RuntimeOutcome {
+                operation: OperationCode::CreateCommit,
+                status: StatusCode::Ok,
+                progress: ProgressState::Complete,
+                required_payload_bytes: 0,
+                written_payload_bytes: 0,
+                result: OperationResult::RevisionCreated {
+                    session: SessionHandle(request.session.session),
+                    revision: Revision(1),
+                },
+            }
+        } else {
+            RuntimeOutcome {
+                operation: OperationCode::CreateCommit,
+                status: StatusCode::BudgetExhausted,
+                progress: ProgressState::BudgetExhausted,
+                required_payload_bytes: 0,
+                written_payload_bytes: 0,
+                result: OperationResult::Progress {
+                    revision: Revision(1),
+                    token: ProgressToken(entry.progress_token),
+                },
+            }
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_pump(request: *const PumpRequest, outcome: *mut Outcome) -> u32 {
+    emit(OperationCode::Pump, outcome, || {
+        let request = unsafe { read_record(request, size_of::<PumpRequest>() as u32)? };
+        if !valid_budget(request.budget, false) {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        let entry = session_entry(&mut registry, request.session)?;
+        if entry.progress_token == 0 {
+            if request.progress_token != 0 {
+                return Err(StatusCode::StaleProgressToken);
+            }
+            entry.progress_token = 1;
+        } else if request.progress_token != entry.progress_token {
+            return Err(StatusCode::StaleProgressToken);
+        }
+        let StoredSessionState::Open(document) = &mut entry.state else {
+            return Err(StatusCode::SessionBusy);
+        };
+        let inspection = document
+            .inspect()
+            .map_err(|error| map_actor_error(&error))?;
+        if request.expected_revision != inspection.revision {
+            return Err(StatusCode::StaleRevision);
+        }
+        let receipt = document
+            .pump(usize::try_from(request.budget.max_work_units).unwrap_or(usize::MAX))
+            .map_err(|error| map_actor_error(&error))?;
+        let revision = receipt.revision;
+        let ready = receipt.phase == DocumentSessionPhase::Ready;
+        if !ready {
+            entry.progress_token = entry
+                .progress_token
+                .checked_add(1)
+                .ok_or(StatusCode::ResourceLimitExceeded)?;
+        }
+        Ok(RuntimeOutcome {
+            operation: OperationCode::Pump,
+            status: if ready {
+                StatusCode::Ok
+            } else {
+                StatusCode::BudgetExhausted
+            },
+            progress: if ready {
+                ProgressState::Complete
+            } else {
+                ProgressState::BudgetExhausted
+            },
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::Progress {
+                revision: Revision(revision),
+                token: ProgressToken(entry.progress_token),
+            },
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_small_edit(
+    request: *const SmallEditRequest,
+    edits: *const EditDescriptor,
+    edit_count: u32,
+    replacement_bytes: *const u8,
+    replacement_bytes_len: u64,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::SmallEdit, outcome, || {
+        let request = unsafe { read_record(request, size_of::<SmallEditRequest>() as u32)? };
+        if !valid_budget(request.budget, false)
+            || request.flags != 0
+            || request.edit_count != edit_count
+            || request.replacement_bytes_len != replacement_bytes_len
+            || edit_count != 1
+            || edits.is_null()
+            || request.reserved_u32 != 0
+            || request.reserved != [0; 2]
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let replacement = unsafe { borrowed_bytes(replacement_bytes, replacement_bytes_len)? };
+        let replacement = str::from_utf8(replacement).map_err(|_| StatusCode::InvalidUtf8)?;
+        let edit = unsafe { ptr::read_unaligned(edits) };
+        let deleted = edit.end_byte.saturating_sub(edit.start_byte);
+        let aggregate = size_of::<EditDescriptor>() as u64 + replacement_bytes_len + deleted;
+        if edit.start_byte > edit.end_byte
+            || edit.replacement_offset != 0
+            || edit.replacement_len != replacement_bytes_len
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        if aggregate > u64::from(MAX_SMALL_EDIT_BYTES) {
+            return Err(StatusCode::EditTooLarge);
+        }
+        let start = usize::try_from(edit.start_byte).map_err(|_| StatusCode::RangeOutOfBounds)?;
+        let end = usize::try_from(edit.end_byte).map_err(|_| StatusCode::RangeOutOfBounds)?;
+        let replay_end = edit
+            .start_byte
+            .checked_add(replacement_bytes_len)
+            .ok_or(StatusCode::ResourceLimitExceeded)?;
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        let (receipt, inverse, applies_state, target_state) = {
+            let entry = session_entry(&mut registry, request.session)?;
+            let StoredSessionState::Open(document) = &mut entry.state else {
+                return Err(StatusCode::SessionBusy);
+            };
+            let target_state = entry.history_state;
+            let applies_state = entry.next_history_state;
+            let next_history_state = applies_state
+                .checked_add(1)
+                .ok_or(StatusCode::ResourceLimitExceeded)?;
+            let inverse = document
+                .source_bytes(start..end)
+                .map_err(|error| map_actor_error(&error))?;
+            let receipt = document
+                .apply_edit(
+                    request.expected_revision,
+                    start..end,
+                    replacement.to_owned(),
+                )
+                .map_err(|error| map_actor_error(&error))?;
+            entry.history_state = applies_state;
+            entry.next_history_state = next_history_state;
+            entry.progress_token = 0;
+            entry.continuations.clear();
+            (receipt, inverse, applies_state, target_state)
+        };
+        registry
+            .continuations
+            .retain(|_, continuation| continuation.session != request.session.session);
+        let (history_token, history) = retain_history(
+            &mut registry,
+            request.session,
+            applies_state,
+            target_state,
+            edit.start_byte,
+            replay_end,
+            inverse,
+        )
+        .unwrap_or((HistoryToken::NONE, HistoryDisposition::OverBudget));
+        Ok(RuntimeOutcome {
+            operation: OperationCode::SmallEdit,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::RevisionCommitted {
+                revision: Revision(receipt.revision),
+                history_token,
+                history,
+            },
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_bulk_begin(
+    request: *const BulkBeginRequest,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::BulkBegin, outcome, || {
+        let request = unsafe { read_record(request, size_of::<BulkBeginRequest>() as u32)? };
+        if request.flags != 0
+            || request.expected_revision == 0
+            || request.range.start_byte > request.range.end_byte
+            || request.reserved != [0; 2]
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let expected_bytes = usize::try_from(request.expected_total_bytes)
+            .map_err(|_| StatusCode::ResourceLimitExceeded)?;
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        let (history_budget_bytes, deleted_bytes) = {
+            let entry = session_entry(&mut registry, request.session)?;
+            let StoredSessionState::Open(document) = &entry.state else {
+                return Err(StatusCode::SessionBusy);
+            };
+            let inspection = document
+                .inspect()
+                .map_err(|error| map_actor_error(&error))?;
+            if inspection.revision != request.expected_revision {
+                return Err(StatusCode::StaleRevision);
+            }
+            if request.range.end_byte > inspection.source_byte_len as u64 {
+                return Err(StatusCode::RangeOutOfBounds);
+            }
+            let next_source_bytes = (inspection.source_byte_len as u64)
+                .checked_sub(request.range.end_byte - request.range.start_byte)
+                .and_then(|bytes| bytes.checked_add(request.expected_total_bytes))
+                .ok_or(StatusCode::ResourceLimitExceeded)?;
+            if entry.max_document_bytes != 0 && next_source_bytes > entry.max_document_bytes {
+                return Err(StatusCode::ResourceLimitExceeded);
+            }
+            // Bounds were checked above, so a failed conversion identifies a
+            // non-scalar UTF-8 cut rather than an out-of-document position.
+            document
+                .utf16_offset_for_byte(request.range.start_byte as usize)
+                .map_err(|_| StatusCode::RangeNotScalarBoundary)?;
+            document
+                .utf16_offset_for_byte(request.range.end_byte as usize)
+                .map_err(|_| StatusCode::RangeNotScalarBoundary)?;
+            (
+                entry.history_budget_bytes,
+                request.range.end_byte - request.range.start_byte,
+            )
+        };
+
+        let mut replacement = Vec::new();
+        replacement
+            .try_reserve_exact(expected_bytes)
+            .map_err(|_| StatusCode::AllocationFailure)?;
+        let retained_bytes = HISTORY_TOKEN_OVERHEAD_BYTES
+            .checked_add(deleted_bytes)
+            .ok_or(StatusCode::ResourceLimitExceeded)?;
+        let history = if history_budget_bytes == 0 {
+            BulkHistoryCapture::Disabled
+        } else if retained_bytes > history_budget_bytes {
+            BulkHistoryCapture::OverBudget
+        } else {
+            let deleted_bytes =
+                usize::try_from(deleted_bytes).map_err(|_| StatusCode::ResourceLimitExceeded)?;
+            let mut inverse = Vec::new();
+            if inverse.try_reserve_exact(deleted_bytes).is_err() {
+                // Undo retention is best-effort and must never reject source.
+                BulkHistoryCapture::OverBudget
+            } else {
+                BulkHistoryCapture::Capturing(inverse)
+            }
+        };
+        let transaction = registry.allocate_handle()?;
+        registry.transactions.insert(
+            transaction,
+            StoredBulkTransaction {
+                session: request.session.session,
+                owner: request.session.owner_token,
+                expected_revision: request.expected_revision,
+                start_byte: request.range.start_byte,
+                end_byte: request.range.end_byte,
+                expected_bytes,
+                replacement,
+                validated_bytes: 0,
+                inverse_next_byte: request.range.start_byte,
+                history,
+                progress_token: 0,
+            },
+        );
+        session_entry(&mut registry, request.session)?
+            .transactions
+            .insert(transaction);
+        Ok(RuntimeOutcome {
+            operation: OperationCode::BulkBegin,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::TransactionStaged {
+                transaction: TransactionHandle(transaction),
+            },
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_bulk_append(
+    request: *const StageRequest,
+    input: *const u8,
+    input_len: u64,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::BulkAppend, outcome, || {
+        let request = unsafe { read_record(request, size_of::<StageRequest>() as u32)? };
+        let input = unsafe { borrowed_bytes(input, input_len)? };
+        if request.flags != 0
+            || request.transaction == 0
+            || request.chunk_len != input_len
+            || input.is_empty()
+            || input.len() > MAX_BULK_CHUNK_BYTES as usize
+            || request.reserved != [0; 2]
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        session_entry(&mut registry, request.session)?;
+        let transaction = registry
+            .transactions
+            .get_mut(&request.transaction)
+            .ok_or(StatusCode::InvalidHandle)?;
+        if transaction.session != request.session.session
+            || transaction.owner != request.session.owner_token
+            || request.chunk_offset != transaction.replacement.len() as u64
+            || transaction.replacement.len().saturating_add(input.len())
+                > transaction.expected_bytes
+        {
+            return Err(StatusCode::TransactionConflict);
+        }
+        transaction.replacement.extend_from_slice(input);
+        Ok(RuntimeOutcome {
+            operation: OperationCode::BulkAppend,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::TransactionStaged {
+                transaction: TransactionHandle(request.transaction),
+            },
+        })
+    })
+}
+
+fn next_utf8_validation_end(bytes: &[u8], cursor: usize) -> usize {
+    let tentative = cursor
+        .saturating_add(MAX_BULK_CHUNK_BYTES as usize)
+        .min(bytes.len());
+    if tentative == bytes.len() {
+        return tentative;
+    }
+    let mut end = tentative;
+    while end > cursor && bytes[end] & 0xc0 == 0x80 {
+        end -= 1;
+    }
+    if end == cursor {
+        tentative
+    } else {
+        end
+    }
+}
+
+fn pending_bulk_commit(
+    registry: &mut Registry,
+    handle: u64,
+    mut transaction: StoredBulkTransaction,
+) -> Result<RuntimeOutcome, StatusCode> {
+    let token = match registry.allocate_handle() {
+        Ok(token) => token,
+        Err(error) => {
+            registry.transactions.insert(handle, transaction);
+            return Err(error);
+        }
+    };
+    transaction.progress_token = token;
+    let revision = transaction.expected_revision;
+    registry.transactions.insert(handle, transaction);
+    Ok(RuntimeOutcome {
+        operation: OperationCode::BulkCommit,
+        status: StatusCode::BudgetExhausted,
+        progress: ProgressState::BudgetExhausted,
+        required_payload_bytes: 0,
+        written_payload_bytes: 0,
+        result: OperationResult::Progress {
+            revision: Revision(revision),
+            token: ProgressToken(token),
+        },
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_bulk_commit(
+    request: *const TransactionRequest,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::BulkCommit, outcome, || {
+        let request = unsafe { read_record(request, size_of::<TransactionRequest>() as u32)? };
+        if !valid_budget(request.budget, false)
+            || request.flags != 0
+            || request.transaction == 0
+            || request.expected_revision == 0
+            || request.reserved != [0; 1]
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        let inspection = {
+            let entry = session_entry(&mut registry, request.session)?;
+            let StoredSessionState::Open(document) = &entry.state else {
+                return Err(StatusCode::SessionBusy);
+            };
+            document
+                .inspect()
+                .map_err(|error| map_actor_error(&error))?
+        };
+        let transaction = registry
+            .transactions
+            .get(&request.transaction)
+            .ok_or(StatusCode::InvalidHandle)?;
+        if transaction.session != request.session.session
+            || transaction.owner != request.session.owner_token
+            || transaction.expected_revision != request.expected_revision
+        {
+            return Err(StatusCode::TransactionConflict);
+        }
+        if inspection.revision != request.expected_revision {
+            return Err(StatusCode::StaleRevision);
+        }
+        if transaction.replacement.len() != transaction.expected_bytes {
+            return Err(StatusCode::TransactionIncomplete);
+        }
+        if (transaction.progress_token == 0 && request.progress_token != 0)
+            || (transaction.progress_token != 0
+                && request.progress_token != transaction.progress_token)
+        {
+            return Err(StatusCode::StaleProgressToken);
+        }
+
+        let mut transaction = registry
+            .transactions
+            .remove(&request.transaction)
+            .ok_or(StatusCode::InternalFault)?;
+        let mut remaining = usize::try_from(request.budget.max_work_units).unwrap_or(usize::MAX);
+        while remaining != 0 && transaction.validated_bytes < transaction.replacement.len() {
+            let end =
+                next_utf8_validation_end(&transaction.replacement, transaction.validated_bytes);
+            if str::from_utf8(&transaction.replacement[transaction.validated_bytes..end]).is_err() {
+                registry
+                    .transactions
+                    .insert(request.transaction, transaction);
+                return Err(StatusCode::InvalidUtf8);
+            }
+            transaction.validated_bytes = end;
+            remaining -= 1;
+        }
+        while remaining != 0 && transaction.inverse_next_byte < transaction.end_byte {
+            let BulkHistoryCapture::Capturing(inverse) = &mut transaction.history else {
+                transaction.inverse_next_byte = transaction.end_byte;
+                break;
+            };
+            let chunk_end = transaction
+                .inverse_next_byte
+                .saturating_add(u64::from(MAX_BULK_CHUNK_BYTES))
+                .min(transaction.end_byte);
+            let bytes = {
+                let entry = session_entry(&mut registry, request.session)?;
+                let StoredSessionState::Open(document) = &entry.state else {
+                    registry
+                        .transactions
+                        .insert(request.transaction, transaction);
+                    return Err(StatusCode::SessionBusy);
+                };
+                match document
+                    .source_bytes(transaction.inverse_next_byte as usize..chunk_end as usize)
+                {
+                    Ok(bytes) => bytes,
+                    Err(error) => {
+                        let status = map_actor_error(&error);
+                        registry
+                            .transactions
+                            .insert(request.transaction, transaction);
+                        return Err(status);
+                    }
+                }
+            };
+            inverse.extend_from_slice(&bytes);
+            transaction.inverse_next_byte = chunk_end;
+            remaining -= 1;
+        }
+        if transaction.validated_bytes != transaction.replacement.len()
+            || transaction.inverse_next_byte != transaction.end_byte
+            || remaining == 0
+        {
+            return pending_bulk_commit(&mut registry, request.transaction, transaction);
+        }
+
+        let replacement_len = transaction.replacement.len() as u64;
+        let replacement = unsafe {
+            // Every byte was validated in bounded chunks above.
+            String::from_utf8_unchecked(std::mem::take(&mut transaction.replacement))
+        };
+        let history = std::mem::replace(&mut transaction.history, BulkHistoryCapture::OverBudget);
+        let replay_end = transaction
+            .start_byte
+            .checked_add(replacement_len)
+            .ok_or(StatusCode::ResourceLimitExceeded)?;
+        let (receipt, applies_state, target_state) = {
+            let entry = session_entry(&mut registry, request.session)?;
+            let StoredSessionState::Open(document) = &mut entry.state else {
+                return Err(StatusCode::SessionBusy);
+            };
+            let target_state = entry.history_state;
+            let applies_state = entry.next_history_state;
+            let next_history_state = applies_state
+                .checked_add(1)
+                .ok_or(StatusCode::ResourceLimitExceeded)?;
+            let receipt = document
+                .apply_edit(
+                    request.expected_revision,
+                    transaction.start_byte as usize..transaction.end_byte as usize,
+                    replacement,
+                )
+                .map_err(|error| map_actor_error(&error))?;
+            entry.history_state = applies_state;
+            entry.next_history_state = next_history_state;
+            entry.progress_token = 0;
+            entry.continuations.clear();
+            entry.transactions.remove(&request.transaction);
+            (receipt, applies_state, target_state)
+        };
+        registry
+            .continuations
+            .retain(|_, continuation| continuation.session != request.session.session);
+        let (history_token, disposition) = match history {
+            BulkHistoryCapture::Capturing(inverse) => retain_history(
+                &mut registry,
+                request.session,
+                applies_state,
+                target_state,
+                transaction.start_byte,
+                replay_end,
+                inverse,
+            )
+            .unwrap_or((HistoryToken::NONE, HistoryDisposition::OverBudget)),
+            BulkHistoryCapture::Disabled => (HistoryToken::NONE, HistoryDisposition::Disabled),
+            BulkHistoryCapture::OverBudget => (HistoryToken::NONE, HistoryDisposition::OverBudget),
+        };
+        Ok(RuntimeOutcome {
+            operation: OperationCode::BulkCommit,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::RevisionCommitted {
+                revision: Revision(receipt.revision),
+                history_token,
+                history: disposition,
+            },
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_bulk_abort(
+    request: *const TransactionRequest,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::BulkAbort, outcome, || {
+        let request = unsafe { read_record(request, size_of::<TransactionRequest>() as u32)? };
+        if !valid_budget(request.budget, false)
+            || request.flags != 0
+            || request.transaction == 0
+            || request.expected_revision == 0
+            || request.progress_token != 0
+            || request.reserved != [0; 1]
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        session_entry(&mut registry, request.session)?;
+        let transaction = registry
+            .transactions
+            .get(&request.transaction)
+            .ok_or(StatusCode::InvalidHandle)?;
+        if transaction.session != request.session.session
+            || transaction.owner != request.session.owner_token
+            || transaction.expected_revision != request.expected_revision
+        {
+            return Err(StatusCode::TransactionConflict);
+        }
+        registry.transactions.remove(&request.transaction);
+        session_entry(&mut registry, request.session)?
+            .transactions
+            .remove(&request.transaction);
+        Ok(RuntimeOutcome {
+            operation: OperationCode::BulkAbort,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::None,
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_history_replay(
+    request: *const HistoryRequest,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::HistoryReplay, outcome, || {
+        let request = unsafe { read_record(request, size_of::<HistoryRequest>() as u32)? };
+        if !valid_budget(request.budget, false)
+            || request.flags != 0
+            || request.expected_revision == 0
+            || request.history_token == 0
+            || request.progress_token != 0
+            || request.reserved != [0; 1]
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        let history = history_for_request(&mut registry, request.session, request.history_token)?;
+        if session_entry(&mut registry, request.session)?.history_state != history.applies_state {
+            return Err(StatusCode::HistoryTokenStale);
+        }
+        let replay_end = history
+            .start_byte
+            .checked_add(history.replacement.len() as u64)
+            .ok_or(StatusCode::ResourceLimitExceeded)?;
+        let start =
+            usize::try_from(history.start_byte).map_err(|_| StatusCode::RangeOutOfBounds)?;
+        let end = usize::try_from(history.end_byte).map_err(|_| StatusCode::RangeOutOfBounds)?;
+        let replacement = str::from_utf8(&history.replacement)
+            .map_err(|_| StatusCode::InternalFault)?
+            .to_owned();
+        let (receipt, inverse) = {
+            let entry = session_entry(&mut registry, request.session)?;
+            let StoredSessionState::Open(document) = &mut entry.state else {
+                return Err(StatusCode::SessionBusy);
+            };
+            let inspection = document
+                .inspect()
+                .map_err(|error| map_actor_error(&error))?;
+            if inspection.revision != request.expected_revision {
+                return Err(StatusCode::StaleRevision);
+            }
+            let inverse = document
+                .source_bytes(start..end)
+                .map_err(|error| map_actor_error(&error))?;
+            let receipt = document
+                .apply_edit(request.expected_revision, start..end, replacement)
+                .map_err(|error| map_actor_error(&error))?;
+            entry.history_state = history.target_state;
+            entry.progress_token = 0;
+            entry.continuations.clear();
+            (receipt, inverse)
+        };
+        registry
+            .continuations
+            .retain(|_, continuation| continuation.session != request.session.session);
+        let _ = detach_history(&mut registry, request.history_token);
+        let (history_token, history) = retain_history(
+            &mut registry,
+            request.session,
+            history.target_state,
+            history.applies_state,
+            history.start_byte,
+            replay_end,
+            inverse,
+        )
+        .unwrap_or((HistoryToken::NONE, HistoryDisposition::OverBudget));
+        Ok(RuntimeOutcome {
+            operation: OperationCode::HistoryReplay,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::RevisionCommitted {
+                revision: Revision(receipt.revision),
+                history_token,
+                history,
+            },
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_history_release(
+    request: *const HistoryRequest,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::HistoryRelease, outcome, || {
+        let request = unsafe { read_record(request, size_of::<HistoryRequest>() as u32)? };
+        if !valid_budget(request.budget, false)
+            || request.flags != 0
+            || request.expected_revision == 0
+            || request.history_token == 0
+            || request.progress_token != 0
+            || request.reserved != [0; 1]
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        let entry = owned_session_entry(&mut registry, request.session)?;
+        if entry.evicted_history_tokens.remove(&request.history_token) {
+            return Err(StatusCode::HistoryTokenEvicted);
+        }
+        {
+            let history = registry
+                .histories
+                .get(&request.history_token)
+                .ok_or(StatusCode::HistoryTokenStale)?;
+            if history.owner != request.session.owner_token {
+                return Err(StatusCode::OwnerMismatch);
+            }
+            if history.session != request.session.session {
+                return Err(StatusCode::HistoryTokenStale);
+            }
+        }
+        let entry = owned_session_entry(&mut registry, request.session)?;
+        let StoredSessionState::Open(document) = &entry.state else {
+            return Err(StatusCode::SessionBusy);
+        };
+        let inspection = document
+            .inspect()
+            .map_err(|error| map_actor_error(&error))?;
+        if inspection.revision != request.expected_revision {
+            return Err(StatusCode::StaleRevision);
+        }
+        detach_history(&mut registry, request.history_token)
+            .ok_or(StatusCode::HistoryTokenStale)?;
+        Ok(RuntimeOutcome {
+            operation: OperationCode::HistoryRelease,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::None,
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_coordinate_convert(
+    request: *const CoordinateRequest,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::CoordinateConvert, outcome, || {
+        let request = unsafe { read_record(request, size_of::<CoordinateRequest>() as u32)? };
+        if !valid_budget(request.budget, false)
+            || request.snapshot != 0
+            || request.progress_token != 0
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let from = match request.from_kind {
+            1 => CoordinateKind::SourceByte,
+            2 => CoordinateKind::Utf16CodeUnit,
+            _ => return Err(StatusCode::InvalidArgument),
+        };
+        let to = match request.to_kind {
+            1 => CoordinateKind::SourceByte,
+            2 => CoordinateKind::Utf16CodeUnit,
+            _ => return Err(StatusCode::InvalidArgument),
+        };
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        let entry = session_entry(&mut registry, request.session)?;
+        let StoredSessionState::Open(document) = &mut entry.state else {
+            return Err(StatusCode::SessionBusy);
+        };
+        let inspection = document
+            .inspect()
+            .map_err(|error| map_actor_error(&error))?;
+        if request.revision != inspection.revision {
+            return Err(StatusCode::StaleRevision);
+        }
+        let position =
+            usize::try_from(request.position).map_err(|_| StatusCode::CoordinateOutOfRange)?;
+        let converted = match (from, to) {
+            (CoordinateKind::SourceByte, CoordinateKind::Utf16CodeUnit) => document
+                .utf16_offset_for_byte(position)
+                .map_err(|_| StatusCode::CoordinateOutOfRange)?,
+            (CoordinateKind::Utf16CodeUnit, CoordinateKind::SourceByte) => document
+                .byte_offset_for_utf16(position)
+                .map_err(|_| StatusCode::CoordinateOutOfRange)?,
+            (CoordinateKind::SourceByte, CoordinateKind::SourceByte)
+                if position <= inspection.source_byte_len =>
+            {
+                position
+            }
+            (CoordinateKind::Utf16CodeUnit, CoordinateKind::Utf16CodeUnit)
+                if position <= inspection.source_utf16_len =>
+            {
+                position
+            }
+            _ => return Err(StatusCode::CoordinateOutOfRange),
+        };
+        Ok(RuntimeOutcome {
+            operation: OperationCode::CoordinateConvert,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::ConvertedPosition {
+                revision: Revision(request.revision),
+                coordinate: to,
+                position: converted as u64,
+            },
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_source_read(
+    request: *const SourceReadRequest,
+    output: *mut u8,
+    output_capacity: u64,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::SourceRead, outcome, || {
+        let request = unsafe { read_record(request, size_of::<SourceReadRequest>() as u32)? };
+        let length = request
+            .range
+            .end_byte
+            .saturating_sub(request.range.start_byte);
+        if request.range.start_byte > request.range.end_byte
+            || length > u64::from(MAX_SOURCE_CHUNK_BYTES)
+        {
+            return Err(StatusCode::RangeOutOfBounds);
+        }
+        let required = size_of::<ResultPageHeader>() as u64 + length;
+        if output.is_null() || output_capacity < required {
+            return Ok(RuntimeOutcome {
+                operation: OperationCode::SourceRead,
+                status: StatusCode::BufferTooSmall,
+                progress: ProgressState::None,
+                required_payload_bytes: length,
+                written_payload_bytes: 0,
+                result: OperationResult::None,
+            });
+        }
+        let start =
+            usize::try_from(request.range.start_byte).map_err(|_| StatusCode::RangeOutOfBounds)?;
+        let end =
+            usize::try_from(request.range.end_byte).map_err(|_| StatusCode::RangeOutOfBounds)?;
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        let entry = session_entry(&mut registry, request.session)?;
+        let StoredSessionState::Open(document) = &mut entry.state else {
+            return Err(StatusCode::SessionBusy);
+        };
+        let inspection = document
+            .inspect()
+            .map_err(|error| map_actor_error(&error))?;
+        if request.revision != inspection.revision {
+            return Err(StatusCode::StaleRevision);
+        }
+        let bytes = document
+            .source_bytes(start..end)
+            .map_err(|error| map_actor_error(&error))?;
+        let page = ResultPageReceipt {
+            record_kind: ResultRecordKind::SourceBytes,
+            certification: CertificationState::NotApplicable,
+            revision: Revision(request.revision),
+            snapshot: SnapshotId::NOT_APPLICABLE,
+            requested_range: RuntimeSourceRange {
+                start_byte: request.range.start_byte,
+                end_byte: request.range.end_byte,
+            },
+            covered_range: RuntimeSourceRange {
+                start_byte: request.range.start_byte,
+                end_byte: request.range.end_byte,
+            },
+            item_count: 0,
+            payload_bytes: bytes.len() as u32,
+            continuation: ContinuationHandle::NONE,
+        };
+        write_page(output, page, |payload| payload.copy_from_slice(&bytes))?;
+        Ok(RuntimeOutcome {
+            operation: OperationCode::SourceRead,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: bytes.len() as u64,
+            result: OperationResult::Page(page),
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_query_viewport(
+    request: *const QueryRequest,
+    output: *mut u8,
+    output_capacity: u64,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::QueryViewport, outcome, || {
+        let request = unsafe { read_record(request, size_of::<QueryRequest>() as u32)? };
+        if !valid_budget(request.budget, true)
+            || request.continuation != 0
+            || request.range.start_byte > request.range.end_byte
+            || !matches!(request.query_kind, 1 | 2 | 3)
+            || request.reserved != [0; 1]
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        query_page(
+            OperationCode::QueryViewport,
+            &mut registry,
+            request.session,
+            request.revision,
+            if request.snapshot == 0 {
+                request.revision
+            } else {
+                request.snapshot
+            },
+            request.range.start_byte,
+            request.range.end_byte,
+            request.range.start_byte,
+            request.query_kind,
+            request.budget,
+            None,
+            output,
+            output_capacity,
+        )
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_continuation_next(
+    request: *const ContinuationRequest,
+    output: *mut u8,
+    output_capacity: u64,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::ContinuationNext, outcome, || {
+        let request = unsafe { read_record(request, size_of::<ContinuationRequest>() as u32)? };
+        if !valid_budget(request.budget, true)
+            || request.flags != 0
+            || request.revision == 0
+            || request.snapshot == 0
+            || request.continuation == 0
+            || request.reserved != [0; 1]
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        session_entry(&mut registry, request.session)?;
+        let continuation = registry
+            .continuations
+            .get(&request.continuation)
+            .copied()
+            .ok_or(StatusCode::StaleContinuation)?;
+        if continuation.owner != request.session.owner_token {
+            return Err(StatusCode::OwnerMismatch);
+        }
+        if continuation.session != request.session.session
+            || continuation.revision != request.revision
+            || continuation.snapshot != request.snapshot
+        {
+            return Err(StatusCode::StaleContinuation);
+        }
+        query_page(
+            OperationCode::ContinuationNext,
+            &mut registry,
+            request.session,
+            request.revision,
+            request.snapshot,
+            continuation.requested_start,
+            continuation.requested_end,
+            continuation.next_start,
+            continuation.query_kind,
+            request.budget,
+            Some(request.continuation),
+            output,
+            output_capacity,
+        )
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_continuation_release(
+    request: *const ContinuationRequest,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::ContinuationRelease, outcome, || {
+        let request = unsafe { read_record(request, size_of::<ContinuationRequest>() as u32)? };
+        if !valid_budget(request.budget, false)
+            || request.flags != 0
+            || request.revision == 0
+            || request.snapshot == 0
+            || request.continuation == 0
+            || request.reserved != [0; 1]
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        session_entry(&mut registry, request.session)?;
+        let continuation = registry
+            .continuations
+            .get(&request.continuation)
+            .copied()
+            .ok_or(StatusCode::StaleContinuation)?;
+        if continuation.owner != request.session.owner_token {
+            return Err(StatusCode::OwnerMismatch);
+        }
+        if continuation.session != request.session.session
+            || continuation.revision != request.revision
+            || continuation.snapshot != request.snapshot
+        {
+            return Err(StatusCode::StaleContinuation);
+        }
+        registry.continuations.remove(&request.continuation);
+        let entry = owned_session_entry(&mut registry, request.session)?;
+        entry.continuations.remove(&request.continuation);
+        Ok(RuntimeOutcome {
+            operation: OperationCode::ContinuationRelease,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::None,
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_close_begin(request: *const CloseRequest, outcome: *mut Outcome) -> u32 {
+    emit(OperationCode::CloseBegin, outcome, || {
+        let request = unsafe { read_record(request, size_of::<CloseRequest>() as u32)? };
+        if !valid_budget(request.budget, false)
+            || request.flags != 0
+            || request.progress_token != 0
+            || request.reserved != [0; 1]
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        let close_token = registry.allocate_handle()?;
+        {
+            let entry = owned_session_entry(&mut registry, request.session)?;
+            if entry.close_token != 0 {
+                return Err(StatusCode::SessionClosing);
+            }
+            match &mut entry.state {
+                StoredSessionState::Creating { .. } => {}
+                StoredSessionState::Open(document) => document
+                    .begin_close()
+                    .map_err(|error| map_actor_error(&error))?,
+            }
+            entry.close_token = close_token;
+            entry.close_complete = false;
+        }
+        let complete = pump_session_close(
+            &mut registry,
+            request.session,
+            usize::try_from(request.budget.max_work_units).unwrap_or(usize::MAX),
+        )?;
+        Ok(RuntimeOutcome {
+            operation: OperationCode::CloseBegin,
+            status: if complete {
+                StatusCode::Ok
+            } else {
+                StatusCode::BudgetExhausted
+            },
+            progress: if complete {
+                ProgressState::Complete
+            } else {
+                ProgressState::BudgetExhausted
+            },
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::CloseProgress {
+                token: ProgressToken(close_token),
+            },
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_close_pump(request: *const CloseRequest, outcome: *mut Outcome) -> u32 {
+    emit(OperationCode::ClosePump, outcome, || {
+        let request = unsafe { read_record(request, size_of::<CloseRequest>() as u32)? };
+        if !valid_budget(request.budget, false)
+            || request.flags != 0
+            || request.progress_token == 0
+            || request.reserved != [0; 1]
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        {
+            let entry = owned_session_entry(&mut registry, request.session)?;
+            if entry.close_token == 0 || entry.close_token != request.progress_token {
+                return Err(StatusCode::StaleProgressToken);
+            }
+        }
+        let complete = pump_session_close(
+            &mut registry,
+            request.session,
+            usize::try_from(request.budget.max_work_units).unwrap_or(usize::MAX),
+        )?;
+        let next_token = registry.allocate_handle()?;
+        owned_session_entry(&mut registry, request.session)?.close_token = next_token;
+        Ok(RuntimeOutcome {
+            operation: OperationCode::ClosePump,
+            status: if complete {
+                StatusCode::Ok
+            } else {
+                StatusCode::BudgetExhausted
+            },
+            progress: if complete {
+                ProgressState::Complete
+            } else {
+                ProgressState::BudgetExhausted
+            },
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::CloseProgress {
+                token: ProgressToken(next_token),
+            },
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_close_finish(
+    request: *const CloseRequest,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::CloseFinish, outcome, || {
+        let request = unsafe { read_record(request, size_of::<CloseRequest>() as u32)? };
+        if !valid_budget(request.budget, false)
+            || request.flags != 0
+            || request.progress_token == 0
+            || request.reserved != [0; 1]
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        let complete = {
+            let entry = owned_session_entry(&mut registry, request.session)?;
+            if entry.close_token == 0 || entry.close_token != request.progress_token {
+                return Err(StatusCode::StaleProgressToken);
+            }
+            entry.close_complete
+                && entry.transactions.is_empty()
+                && entry.continuations.is_empty()
+                && entry.history_head == 0
+                && entry.evicted_history_tokens.is_empty()
+        };
+        if !complete {
+            return Ok(RuntimeOutcome {
+                operation: OperationCode::CloseFinish,
+                status: StatusCode::CloseIncomplete,
+                progress: ProgressState::None,
+                required_payload_bytes: 0,
+                written_payload_bytes: 0,
+                result: OperationResult::CloseProgress {
+                    token: ProgressToken(request.progress_token),
+                },
+            });
+        }
+        let removed = registry.sessions.remove(&request.session.session);
+        if removed.is_none() {
+            return Err(StatusCode::InvalidHandle);
+        }
+        Ok(RuntimeOutcome {
+            operation: OperationCode::CloseFinish,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::None,
+        })
+    })
+}
+
+fn pump_session_close(
+    registry: &mut Registry,
+    session: SessionRef,
+    max_work_units: usize,
+) -> Result<bool, StatusCode> {
+    let mut remaining = max_work_units;
+    while remaining != 0 {
+        let transaction = owned_session_entry(registry, session)?
+            .transactions
+            .first()
+            .copied();
+        if let Some(transaction) = transaction {
+            registry.transactions.remove(&transaction);
+            owned_session_entry(registry, session)?
+                .transactions
+                .remove(&transaction);
+            remaining -= 1;
+            continue;
+        }
+
+        let continuation = owned_session_entry(registry, session)?
+            .continuations
+            .first()
+            .copied();
+        if let Some(continuation) = continuation {
+            registry.continuations.remove(&continuation);
+            owned_session_entry(registry, session)?
+                .continuations
+                .remove(&continuation);
+            remaining -= 1;
+            continue;
+        }
+
+        let history = owned_session_entry(registry, session)?.history_head;
+        if history != 0 {
+            detach_history(registry, history).ok_or(StatusCode::InternalFault)?;
+            remaining -= 1;
+            continue;
+        }
+
+        let evicted_history = owned_session_entry(registry, session)?
+            .evicted_history_tokens
+            .first()
+            .copied();
+        if let Some(history) = evicted_history {
+            owned_session_entry(registry, session)?
+                .evicted_history_tokens
+                .remove(&history);
+            remaining -= 1;
+            continue;
+        }
+
+        let entry = owned_session_entry(registry, session)?;
+        match &mut entry.state {
+            StoredSessionState::Creating { bytes, .. } => {
+                *bytes = Vec::new();
+                entry.close_complete = true;
+            }
+            StoredSessionState::Open(document) => {
+                let receipt = document
+                    .pump_close(remaining)
+                    .map_err(|error| map_actor_error(&error))?;
+                entry.close_complete = receipt.complete;
+            }
+        }
+        break;
+    }
+    let entry = owned_session_entry(registry, session)?;
+    Ok(entry.close_complete
+        && entry.transactions.is_empty()
+        && entry.continuations.is_empty()
+        && entry.history_head == 0
+        && entry.evicted_history_tokens.is_empty())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn query_page(
+    operation: OperationCode,
+    registry: &mut Registry,
+    session: SessionRef,
+    revision: u64,
+    snapshot: u64,
+    requested_start: u64,
+    requested_end: u64,
+    page_start: u64,
+    query_kind: u32,
+    budget: WorkBudget,
+    prior_continuation: Option<u64>,
+    output: *mut u8,
+    output_capacity: u64,
+) -> Result<RuntimeOutcome, StatusCode> {
+    if output.is_null() || output_capacity < size_of::<ResultPageHeader>() as u64 {
+        return Ok(RuntimeOutcome {
+            operation,
+            status: StatusCode::BufferTooSmall,
+            progress: ProgressState::None,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::None,
+        });
+    }
+    let continuation_candidate = registry.allocate_handle()?;
+    let owner = session.owner_token;
+    let (page, status, payload) = {
+        let entry = session_entry(registry, session)?;
+        let StoredSessionState::Open(document) = &mut entry.state else {
+            return Err(StatusCode::SessionBusy);
+        };
+        let inspection = document
+            .inspect()
+            .map_err(|error| map_actor_error(&error))?;
+        if revision != inspection.revision {
+            return Err(if operation == OperationCode::ContinuationNext {
+                StatusCode::StaleContinuation
+            } else {
+                StatusCode::StaleRevision
+            });
+        }
+        if snapshot != revision {
+            return Err(StatusCode::StaleSnapshot);
+        }
+        if requested_start > page_start
+            || page_start > requested_end
+            || requested_end > inspection.source_byte_len as u64
+        {
+            return Err(StatusCode::RangeOutOfBounds);
+        }
+        let payload_capacity = usize::try_from(
+            output_capacity
+                .saturating_sub(size_of::<ResultPageHeader>() as u64)
+                .min(u64::from(budget.max_result_bytes)),
+        )
+        .unwrap_or(usize::MAX);
+
+        if query_kind == 3 {
+            let maximum_spans = budget.max_result_items.min(MAX_QUERY_ITEMS).min(3);
+            if maximum_spans == 0 {
+                return Ok(RuntimeOutcome {
+                    operation,
+                    status: StatusCode::BufferTooSmall,
+                    progress: ProgressState::None,
+                    required_payload_bytes: size_of::<CertificationRangeRecord>() as u64,
+                    written_payload_bytes: 0,
+                    result: OperationResult::None,
+                });
+            }
+            let start = usize::try_from(page_start).map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let end = usize::try_from(requested_end).map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let viewport = document
+                .query_live_viewport(revision, start..end, maximum_spans)
+                .map_err(|error| map_actor_error(&error))?;
+            if !viewport.complete {
+                return Err(StatusCode::InternalFault);
+            }
+            let records = viewport
+                .spans
+                .iter()
+                .map(certification_range_record)
+                .collect::<Vec<_>>();
+            let covered_start = usize::try_from(viewport.covered_range.start)
+                .map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let covered_end = usize::try_from(viewport.covered_range.end)
+                .map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let source = document
+                .source_bytes(covered_start..covered_end)
+                .map_err(|error| map_actor_error(&error))?;
+            let required_payload_bytes = records
+                .len()
+                .saturating_mul(size_of::<CertificationRangeRecord>())
+                .saturating_add(source.len());
+            if required_payload_bytes > payload_capacity {
+                return Ok(RuntimeOutcome {
+                    operation,
+                    status: StatusCode::BufferTooSmall,
+                    progress: ProgressState::None,
+                    required_payload_bytes: required_payload_bytes as u64,
+                    written_payload_bytes: 0,
+                    result: OperationResult::None,
+                });
+            }
+            let certification = if viewport.is_fully_certified() {
+                CertificationState::CurrentCertified
+            } else if records.iter().any(|record| {
+                record.certification_state == CertificationState::CurrentCertified as u32
+            }) {
+                CertificationState::MixedCurrent
+            } else {
+                CertificationState::PendingNeutral
+            };
+            let page = ResultPageReceipt {
+                record_kind: ResultRecordKind::SourceAndSemantic,
+                certification,
+                revision: Revision(revision),
+                snapshot: SnapshotId(snapshot),
+                requested_range: RuntimeSourceRange {
+                    start_byte: requested_start,
+                    end_byte: requested_end,
+                },
+                covered_range: RuntimeSourceRange {
+                    start_byte: viewport.covered_range.start,
+                    end_byte: viewport.covered_range.end,
+                },
+                item_count: records.len() as u32,
+                payload_bytes: required_payload_bytes as u32,
+                continuation: ContinuationHandle::NONE,
+            };
+            (
+                page,
+                if certification == CertificationState::CurrentCertified {
+                    StatusCode::Ok
+                } else {
+                    StatusCode::NotCertified
+                },
+                QueryPayload::CertificationRanges { records, source },
+            )
+        } else if inspection.phase != DocumentSessionPhase::Ready || query_kind == 1 {
+            let maximum = payload_capacity
+                .min(MAX_SOURCE_CHUNK_BYTES as usize)
+                .min(budget.max_result_bytes as usize);
+            let start = usize::try_from(page_start).map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let requested_end_usize =
+                usize::try_from(requested_end).map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let end = start.saturating_add(maximum).min(requested_end_usize);
+            let bytes = document
+                .source_bytes(start..end)
+                .map_err(|error| map_actor_error(&error))?;
+            let has_more = end < requested_end_usize;
+            let page = ResultPageReceipt {
+                record_kind: ResultRecordKind::SourceBytes,
+                certification: if query_kind == 1 {
+                    CertificationState::NotApplicable
+                } else {
+                    CertificationState::PendingNeutral
+                },
+                revision: Revision(revision),
+                snapshot: SnapshotId(snapshot),
+                requested_range: RuntimeSourceRange {
+                    start_byte: requested_start,
+                    end_byte: requested_end,
+                },
+                covered_range: RuntimeSourceRange {
+                    start_byte: page_start,
+                    end_byte: end as u64,
+                },
+                item_count: 0,
+                payload_bytes: bytes.len() as u32,
+                continuation: if query_kind == 1 && has_more {
+                    ContinuationHandle(continuation_candidate)
+                } else {
+                    ContinuationHandle::NONE
+                },
+            };
+            (
+                page,
+                if query_kind == 1 {
+                    if has_more {
+                        StatusCode::ResultCapReached
+                    } else {
+                        StatusCode::Ok
+                    }
+                } else {
+                    StatusCode::NotCertified
+                },
+                QueryPayload::Source(bytes),
+            )
+        } else {
+            let maximum_rows_by_bytes = payload_capacity / size_of::<ViewportRowRecord>();
+            let maximum_rows = maximum_rows_by_bytes
+                .min(budget.max_result_items as usize)
+                .min(MAX_QUERY_ITEMS as usize);
+            if maximum_rows == 0 {
+                return Ok(RuntimeOutcome {
+                    operation,
+                    status: StatusCode::BufferTooSmall,
+                    progress: ProgressState::None,
+                    required_payload_bytes: size_of::<ViewportRowRecord>() as u64,
+                    written_payload_bytes: 0,
+                    result: OperationResult::None,
+                });
+            }
+            let start = usize::try_from(page_start).map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let end = usize::try_from(requested_end).map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let viewport = document
+                .query_viewport(revision, start..end, maximum_rows as u32)
+                .map_err(|error| map_actor_error(&error))?;
+            let row_payload_bytes = viewport.rows.len() * size_of::<ViewportRowRecord>();
+            let mut remaining_inline_records =
+                payload_capacity.saturating_sub(row_payload_bytes) / size_of::<InlineFactRecord>();
+            let mut records = Vec::with_capacity(viewport.rows.len());
+            let mut inline_facts = Vec::new();
+            for row in &viewport.rows {
+                let (inline_authoritative, inline_fact_count) = match &row.inline_facts {
+                    Some(facts) if facts.len() <= remaining_inline_records => {
+                        remaining_inline_records -= facts.len();
+                        inline_facts.extend(facts.iter().map(inline_fact_record));
+                        (
+                            true,
+                            u32::try_from(facts.len()).map_err(|_| StatusCode::InternalFault)?,
+                        )
+                    }
+                    _ => (false, 0),
+                };
+                records.push(viewport_record(
+                    row,
+                    inline_authoritative,
+                    inline_fact_count,
+                ));
+            }
+            let has_more = !viewport.complete && !records.is_empty();
+            let covered_end = if has_more {
+                viewport
+                    .rows
+                    .last()
+                    .map_or(page_start, |row| row.source_range.end)
+                    .min(requested_end)
+            } else {
+                requested_end
+            };
+            let page = ResultPageReceipt {
+                record_kind: ResultRecordKind::SemanticFacts,
+                certification: CertificationState::CurrentCertified,
+                revision: Revision(revision),
+                snapshot: SnapshotId(snapshot),
+                requested_range: RuntimeSourceRange {
+                    start_byte: requested_start,
+                    end_byte: requested_end,
+                },
+                covered_range: RuntimeSourceRange {
+                    start_byte: page_start,
+                    end_byte: covered_end,
+                },
+                item_count: records.len() as u32,
+                payload_bytes: (row_payload_bytes
+                    + inline_facts.len() * size_of::<InlineFactRecord>())
+                    as u32,
+                continuation: if has_more {
+                    ContinuationHandle(continuation_candidate)
+                } else {
+                    ContinuationHandle::NONE
+                },
+            };
+            (
+                page,
+                if has_more {
+                    StatusCode::ResultCapReached
+                } else {
+                    StatusCode::Ok
+                },
+                QueryPayload::Rows {
+                    rows: records,
+                    inline_facts,
+                },
+            )
+        }
+    };
+
+    write_page(output, page, |output| match &payload {
+        QueryPayload::Source(bytes) => output.copy_from_slice(bytes),
+        QueryPayload::Rows { rows, inline_facts } => {
+            let row_bytes = rows.len() * size_of::<ViewportRowRecord>();
+            let (row_output, inline_output) = output.split_at_mut(row_bytes);
+            write_row_records(row_output, rows);
+            write_inline_fact_records(inline_output, inline_facts);
+        }
+        QueryPayload::CertificationRanges { records, source } => {
+            let record_bytes = records.len() * size_of::<CertificationRangeRecord>();
+            let (record_output, source_output) = output.split_at_mut(record_bytes);
+            write_certification_range_records(record_output, records);
+            source_output.copy_from_slice(source);
+        }
+    })?;
+
+    if let Some(prior) = prior_continuation {
+        registry.continuations.remove(&prior);
+        let entry = owned_session_entry(registry, session)?;
+        entry.continuations.remove(&prior);
+    }
+    if page.continuation.0 != 0 {
+        registry.continuations.insert(
+            page.continuation.0,
+            StoredContinuation {
+                session: session.session,
+                owner,
+                revision,
+                snapshot,
+                requested_start,
+                requested_end,
+                next_start: page.covered_range.end_byte,
+                query_kind,
+            },
+        );
+        let entry = owned_session_entry(registry, session)?;
+        entry.continuations.insert(page.continuation.0);
+    }
+    Ok(RuntimeOutcome {
+        operation,
+        status,
+        progress: if status == StatusCode::ResultCapReached {
+            ProgressState::ResultCapReached
+        } else {
+            ProgressState::Complete
+        },
+        required_payload_bytes: 0,
+        written_payload_bytes: page.payload_bytes as u64,
+        result: OperationResult::Page(page),
+    })
+}
+
+enum QueryPayload {
+    Source(Vec<u8>),
+    Rows {
+        rows: Vec<ViewportRowRecord>,
+        inline_facts: Vec<InlineFactRecord>,
+    },
+    CertificationRanges {
+        records: Vec<CertificationRangeRecord>,
+        source: Vec<u8>,
+    },
+}
+
+fn certification_range_record(span: &DocumentLiveViewportSpan) -> CertificationRangeRecord {
+    let (certification_state, source_range, source_utf16_range) = match span {
+        DocumentLiveViewportSpan::Pending {
+            source_range,
+            source_utf16_range,
+        } => (
+            CertificationState::PendingNeutral,
+            source_range,
+            source_utf16_range,
+        ),
+        DocumentLiveViewportSpan::CertifiedUnchanged {
+            source_range,
+            source_utf16_range,
+        } => (
+            CertificationState::CurrentCertified,
+            source_range,
+            source_utf16_range,
+        ),
+    };
+    CertificationRangeRecord {
+        certification_state: certification_state as u32,
+        reserved: 0,
+        source_range: SourceRange {
+            start_byte: source_range.start,
+            end_byte: source_range.end,
+        },
+        source_utf16_range: SourceRange {
+            start_byte: source_utf16_range.start,
+            end_byte: source_utf16_range.end,
+        },
+    }
+}
+
+fn viewport_record(
+    row: &flark_runtime::DocumentViewportRow,
+    inline_authoritative: bool,
+    inline_fact_count: u32,
+) -> ViewportRowRecord {
+    let (editable_start_byte, editable_end_byte) = row
+        .editable_range
+        .as_ref()
+        .map_or((u64::MAX, u64::MAX), |range| (range.start, range.end));
+    let (editable_start_utf16, editable_end_utf16) = row
+        .editable_utf16_range
+        .as_ref()
+        .map_or((u64::MAX, u64::MAX), |range| (range.start, range.end));
+    let mut flags = match row.edit_capability {
+        DocumentViewportRowEditCapability::Contiguous => VIEWPORT_ROW_FLAG_CONTIGUOUS_EDIT,
+        DocumentViewportRowEditCapability::ProjectedReserved => {
+            VIEWPORT_ROW_FLAG_PROJECTED_RESERVED
+        }
+        DocumentViewportRowEditCapability::Unavailable => VIEWPORT_ROW_FLAG_EDIT_UNAVAILABLE,
+    };
+    if inline_authoritative {
+        flags |= VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE;
+    }
+    let (
+        presentation_prefix_start_byte,
+        presentation_prefix_end_byte,
+        presentation_prefix_start_utf16,
+        presentation_prefix_end_utf16,
+        semantic_variant,
+        semantic_value,
+    ) = match row.presentation {
+        DocumentViewportRowPresentation::Plain => (u64::MAX, u64::MAX, u64::MAX, u64::MAX, 0, 0),
+        DocumentViewportRowPresentation::Heading { level, style } => (
+            u64::MAX,
+            u64::MAX,
+            u64::MAX,
+            u64::MAX,
+            u32::from(level) & VIEWPORT_ROW_HEADING_LEVEL_MASK
+                | if style == DocumentHeadingStyle::Setext {
+                    VIEWPORT_ROW_HEADING_SETEXT
+                } else {
+                    0
+                },
+            0,
+        ),
+        DocumentViewportRowPresentation::ListItem {
+            marker,
+            prefix_start_byte,
+            prefix_end_byte,
+            prefix_start_utf16,
+            prefix_end_utf16,
+            nesting_depth,
+            marker_offset,
+            simple_continuation,
+            starts_list,
+        } => {
+            let (marker_variant, marker_value) = match marker {
+                DocumentListMarker::Bullet(marker) => (
+                    match marker {
+                        DocumentBulletMarker::Hyphen => VIEWPORT_ROW_LIST_HYPHEN,
+                        DocumentBulletMarker::Plus => VIEWPORT_ROW_LIST_PLUS,
+                        DocumentBulletMarker::Asterisk => VIEWPORT_ROW_LIST_ASTERISK,
+                    },
+                    0,
+                ),
+                DocumentListMarker::Ordered { value, delimiter } => (
+                    match delimiter {
+                        DocumentListDelimiter::Period => VIEWPORT_ROW_LIST_ORDERED_PERIOD,
+                        DocumentListDelimiter::Parenthesis => VIEWPORT_ROW_LIST_ORDERED_PARENTHESIS,
+                    },
+                    value,
+                ),
+            };
+            (
+                prefix_start_byte,
+                prefix_end_byte,
+                prefix_start_utf16,
+                prefix_end_utf16,
+                marker_variant
+                    | u32::from(nesting_depth) << VIEWPORT_ROW_LIST_DEPTH_SHIFT
+                    | u32::from(marker_offset) << VIEWPORT_ROW_LIST_MARKER_OFFSET_SHIFT
+                    | if simple_continuation {
+                        VIEWPORT_ROW_LIST_SIMPLE_CONTINUATION
+                    } else {
+                        0
+                    }
+                    | if starts_list {
+                        VIEWPORT_ROW_LIST_STARTS_LIST
+                    } else {
+                        0
+                    },
+                marker_value,
+            )
+        }
+        DocumentViewportRowPresentation::BlockQuote {
+            prefix_start_byte,
+            prefix_end_byte,
+            prefix_start_utf16,
+            prefix_end_utf16,
+            nesting_depth,
+            simple_continuation,
+        } => (
+            prefix_start_byte,
+            prefix_end_byte,
+            prefix_start_utf16,
+            prefix_end_utf16,
+            VIEWPORT_ROW_BLOCK_QUOTE_PRESENTATION
+                | u32::from(nesting_depth) << VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_SHIFT
+                | if simple_continuation {
+                    VIEWPORT_ROW_BLOCK_QUOTE_SIMPLE_CONTINUATION
+                } else {
+                    0
+                },
+            0,
+        ),
+        DocumentViewportRowPresentation::CodeBlock { style } => {
+            let (semantic_variant, semantic_value) = match style {
+                DocumentCodeBlockStyle::Indented => (VIEWPORT_ROW_CODE_PRESENTATION, 0),
+                DocumentCodeBlockStyle::Fenced {
+                    fence,
+                    minimum_closing_length,
+                    fence_offset,
+                    closed,
+                } => (
+                    VIEWPORT_ROW_CODE_PRESENTATION
+                        | VIEWPORT_ROW_CODE_FENCED
+                        | if fence == DocumentFenceCharacter::Tilde {
+                            VIEWPORT_ROW_CODE_TILDE
+                        } else {
+                            0
+                        }
+                        | if closed { VIEWPORT_ROW_CODE_CLOSED } else { 0 }
+                        | u32::from(fence_offset) << VIEWPORT_ROW_CODE_FENCE_OFFSET_SHIFT,
+                    minimum_closing_length,
+                ),
+            };
+            (
+                u64::MAX,
+                u64::MAX,
+                u64::MAX,
+                u64::MAX,
+                semantic_variant,
+                semantic_value,
+            )
+        }
+        DocumentViewportRowPresentation::ThematicBreak => (
+            u64::MAX,
+            u64::MAX,
+            u64::MAX,
+            u64::MAX,
+            VIEWPORT_ROW_THEMATIC_BREAK_PRESENTATION,
+            0,
+        ),
+    };
+    ViewportRowRecord {
+        ordinal: row.ordinal,
+        kind: u32::from(row.kind),
+        flags,
+        source_start_byte: row.source_range.start,
+        source_end_byte: row.source_range.end,
+        source_start_utf16: row.source_utf16_range.start,
+        source_end_utf16: row.source_utf16_range.end,
+        editable_start_byte,
+        editable_end_byte,
+        editable_start_utf16,
+        editable_end_utf16,
+        presentation_prefix_start_byte,
+        presentation_prefix_end_byte,
+        presentation_prefix_start_utf16,
+        presentation_prefix_end_utf16,
+        path_depth: row.path_depth,
+        semantic_variant,
+        semantic_value,
+        inline_fact_count,
+    }
+}
+
+fn inline_fact_record(fact: &DocumentInlineFact) -> InlineFactRecord {
+    InlineFactRecord {
+        kind: match fact.kind {
+            DocumentInlineFactKind::Emphasis => INLINE_FACT_EMPHASIS,
+            DocumentInlineFactKind::Strong => INLINE_FACT_STRONG,
+            DocumentInlineFactKind::Code => INLINE_FACT_CODE,
+            DocumentInlineFactKind::Strikethrough => INLINE_FACT_STRIKETHROUGH,
+            DocumentInlineFactKind::AutolinkUri => INLINE_FACT_AUTOLINK_URI,
+            DocumentInlineFactKind::AutolinkEmail => INLINE_FACT_AUTOLINK_EMAIL,
+            DocumentInlineFactKind::BackslashEscape => INLINE_FACT_BACKSLASH_ESCAPE,
+            DocumentInlineFactKind::HardLineBreak => INLINE_FACT_HARD_LINE_BREAK,
+            DocumentInlineFactKind::Replacement => INLINE_FACT_REPLACEMENT,
+            DocumentInlineFactKind::DirectLink => INLINE_FACT_DIRECT_LINK,
+            DocumentInlineFactKind::DirectImage => INLINE_FACT_DIRECT_IMAGE,
+            DocumentInlineFactKind::ReferenceLink => INLINE_FACT_REFERENCE_LINK,
+            DocumentInlineFactKind::ReferenceImage => INLINE_FACT_REFERENCE_IMAGE,
+        },
+        flags: u32::from(fact.flags),
+        source_start_byte: fact.source_range.start,
+        source_end_byte: fact.source_range.end,
+        source_start_utf16: fact.source_utf16_range.start,
+        source_end_utf16: fact.source_utf16_range.end,
+        content_start_byte: fact.content_range.start,
+        content_end_byte: fact.content_range.end,
+        content_start_utf16: fact.content_utf16_range.start,
+        content_end_utf16: fact.content_utf16_range.end,
+        replacement_first: fact.replacement.map_or(0, |value| u32::from(value.first)),
+        replacement_second: fact
+            .replacement
+            .and_then(|value| value.second)
+            .map_or(0, u32::from),
+    }
+}
+
+fn write_page<F>(
+    output: *mut u8,
+    receipt: ResultPageReceipt,
+    payload_writer: F,
+) -> Result<(), StatusCode>
+where
+    F: FnOnce(&mut [u8]),
+{
+    let header = ResultPageHeader::from_runtime(receipt).ok_or(StatusCode::InternalFault)?;
+    unsafe {
+        ptr::write_unaligned(output.cast::<ResultPageHeader>(), header);
+        let payload = slice::from_raw_parts_mut(
+            output.add(size_of::<ResultPageHeader>()),
+            receipt.payload_bytes as usize,
+        );
+        payload_writer(payload);
+    }
+    Ok(())
+}
+
+fn write_row_records(output: &mut [u8], rows: &[ViewportRowRecord]) {
+    debug_assert_eq!(output.len(), rows.len() * size_of::<ViewportRowRecord>());
+    for (index, row) in rows.iter().copied().enumerate() {
+        unsafe {
+            ptr::write_unaligned(
+                output
+                    .as_mut_ptr()
+                    .add(index * size_of::<ViewportRowRecord>())
+                    .cast::<ViewportRowRecord>(),
+                row,
+            );
+        }
+    }
+}
+
+fn write_inline_fact_records(output: &mut [u8], records: &[InlineFactRecord]) {
+    debug_assert_eq!(output.len(), records.len() * size_of::<InlineFactRecord>());
+    for (index, record) in records.iter().copied().enumerate() {
+        unsafe {
+            ptr::write_unaligned(
+                output
+                    .as_mut_ptr()
+                    .add(index * size_of::<InlineFactRecord>())
+                    .cast::<InlineFactRecord>(),
+                record,
+            );
+        }
+    }
+}
+
+fn write_certification_range_records(output: &mut [u8], records: &[CertificationRangeRecord]) {
+    debug_assert_eq!(
+        output.len(),
+        records.len() * size_of::<CertificationRangeRecord>()
+    );
+    for (index, record) in records.iter().copied().enumerate() {
+        unsafe {
+            ptr::write_unaligned(
+                output
+                    .as_mut_ptr()
+                    .add(index * size_of::<CertificationRangeRecord>())
+                    .cast::<CertificationRangeRecord>(),
+                record,
+            );
+        }
+    }
+}

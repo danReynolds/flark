@@ -1,0 +1,12 @@
+[package]
+name = "flark-runtime"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+flark-engine = { path = "../flark_engine", features = ["parser-internal"] }
+flark-parser = { path = "../flark_parser" }
