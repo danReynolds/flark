@@ -78,13 +78,18 @@ void main() {
       expect(controller.surfaceRow(first).kind, 0);
       expect(controller.surfaceRow(target).kind, 0);
 
+      // pendingEdits reaches zero at admission, before the post-edit page is
+      // installed; the mixed-partition assertions need the installed viewport
+      // for the edited revision, so wait for that page rather than the ack.
       final deadline = DateTime.now().add(const Duration(seconds: 5));
-      while (controller.pendingEdits != 0 &&
+      while ((controller.pendingEdits != 0 ||
+              controller.viewport?.revision != controller.revision) &&
           DateTime.now().isBefore(deadline)) {
         await Future<void>.delayed(const Duration(milliseconds: 2));
       }
 
       expect(controller.lastError, isNull);
+      expect(controller.viewport?.revision, controller.revision);
       expect(
         controller.viewport?.certification,
         FlarkCertification.mixedCurrent,

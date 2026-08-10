@@ -1019,6 +1019,7 @@ final class FlarkEditorController extends ChangeNotifier {
         current,
         maxRows: _viewportRowsPerPage,
       );
+      final source = await _readViewportSource(next);
       final nextIndex = _pageIndex + 1;
       if (_pageStarts.length > nextIndex) {
         _pageStarts
@@ -1028,7 +1029,7 @@ final class FlarkEditorController extends ChangeNotifier {
         _pageStarts.add(next.coveredBytes.start);
       }
       _pageIndex = nextIndex;
-      await _installViewport(next, restoreInputWindow: false);
+      _installViewport(next, source, restoreInputWindow: false);
       return true;
     } catch (error) {
       _lastError = error;
@@ -1049,8 +1050,9 @@ final class FlarkEditorController extends ChangeNotifier {
         endByte: sourceByteLength,
         maxRows: _viewportRowsPerPage,
       );
+      final source = await _readViewportSource(previous);
       _pageIndex = previousIndex;
-      await _installViewport(previous, restoreInputWindow: false);
+      _installViewport(previous, source, restoreInputWindow: false);
       return true;
     } catch (error) {
       _lastError = error;
@@ -1654,30 +1656,43 @@ final class FlarkEditorController extends ChangeNotifier {
     );
     if (expectedEditGeneration != null &&
         expectedEditGeneration != _editGeneration) {
+      await _document.releaseViewportContinuation(viewport);
+      return;
+    }
+    final source = await _readViewportSource(viewport);
+    if (expectedEditGeneration != null &&
+        expectedEditGeneration != _editGeneration) {
+      await _document.releaseViewportContinuation(viewport);
       return;
     }
     _pageStarts
       ..clear()
       ..add(0);
     _pageIndex = 0;
-    await _installViewport(
+    _installViewport(
       viewport,
+      source,
       restoreInputWindow: restoreInputWindow,
       ensureActiveInputVisible: ensureActiveInputVisible,
     );
   }
 
-  Future<void> _installViewport(
-    FlarkViewport viewport, {
-    required bool restoreInputWindow,
-    bool ensureActiveInputVisible = false,
-  }) async {
-    final source =
-        viewport.neutralSource ??
+  Future<String> _readViewportSource(FlarkViewport viewport) async {
+    return viewport.neutralSource ??
         await _document.readSourceRange(
           viewport.coveredBytes.start,
           viewport.coveredBytes.end,
         );
+  }
+
+  // Installation is synchronous so page index, rows, visible source, and
+  // certification can never be observed in a torn half-installed state.
+  void _installViewport(
+    FlarkViewport viewport,
+    String source, {
+    required bool restoreInputWindow,
+    bool ensureActiveInputVisible = false,
+  }) {
     _viewport = viewport;
     final installsFreshRows = viewport.rows.isNotEmpty;
     if (installsFreshRows) {
