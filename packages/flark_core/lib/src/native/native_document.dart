@@ -535,7 +535,9 @@ final class FlarkNativeDocument {
           : outcome.ref.primaryHandle;
       if ((disposition == FlarkNativeHistoryDisposition.retained) !=
           (historyToken != null)) {
-        throw const FlarkNativeException('bulk_commit', _internalFault);
+        // Detail 1 distinguishes this Dart-side coherence failure from a
+        // native INTERNAL_FAULT passed through with detail 0.
+        throw const FlarkNativeException('bulk_commit', _internalFault, 1);
       }
       if (historyToken != null) {
         _historyLengthDeltas[historyToken] = _HistoryLengthDelta(

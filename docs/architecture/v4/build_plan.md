@@ -401,12 +401,35 @@ fragmentation lands; a probe confirmed the visible cache pins at the cap and
 the full suite is unchanged.
 
 The paste profile gate itself remains honestly red with the surface bound
-fixed: all ten post-paste input frames measured roughly 48 ms wall while
-their build and raster spans stayed under 6 ms, one 34-second frame-quiet
-span appeared mid-run under caffeinate, and the harness's
-foreground-validity heuristic misreads the paste workload's legitimate idle
-settle phases as a quiet display. Post-paste frame scheduling, the quiet
-span, and workload-aware validity are the open paste-gate investigation.
+fixed, and its remaining blockers are now characterized from four
+instrumented runs. First, per-cycle phase timing proved the native path
+innocent: undo settles stay under 14 ms and paste settles track frame
+delivery almost exactly, so the wall cost is frame delivery, not engine
+work. The early-cycle post-paste frames follow a warm-up curve — roughly
+48-54 ms for the first cycles, decaying to a steady 7.3-9.9 ms once display
+activity sustains — which matches an adaptive-refresh display serving
+first-paint-after-idle from its low-power cadence and training back to full
+rate only under sustained activity. Trained-state paste-during-active-
+session receipts therefore sit in the same next-frame band as typing; the
+first-paint-after-idle cost is a platform characteristic the certification
+harness must either control with an engine frame-rate hint or evaluate
+against the contract's actual-display-period rule rather than the 16 ms
+constant. Second, repeated multi-second frame-quiet holes (34 s, then 56 s)
+appeared mid-run even under caffeinate with display-sleep assertions held,
+alongside inflated raster maxima: this bench is currently not a controlled
+measurement environment, and the harness's validity gate correctly refuses
+to bless those runs. Claim-eligible paste receipts are deferred to a
+controlled bench session — which pairs with the live-IME evidence that
+already requires a human at the machine.
+
+One intermittent native fault also surfaced once and is under armed watch:
+a single run's first bulk commit returned INTERNAL_FAULT and could not be
+reproduced headlessly (paste-after-full-parse with a live viewport
+continuation replays cleanly) or in two subsequent driven runs. Fault-path
+diagnostics now name every internal-fault source on the bulk and retention
+paths when they fire, and the Dart-side history-coherence failure carries a
+distinct detail code so it can no longer be confused with a native fault.
+The next occurrence will identify itself.
 
 The third tranche implements the executable core of that input-window state
 machine. The controller now maintains the contract's serialized shadow —
