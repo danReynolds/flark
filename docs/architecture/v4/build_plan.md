@@ -374,6 +374,41 @@ and resynchronization from `input_window_matrix_v1`, adapter adoption of the
 anchored selection for cross-window authority, and IME evidence beyond
 simulated composition. No new performance claim follows.
 
+The third tranche implements the executable core of that input-window state
+machine. The controller now maintains the contract's serialized shadow —
+connection epoch, window epoch, represented revision, exposed range, SHA-256
+window-text identity, and selection generation — reconciled at a single
+notification choke point so no window-rewrite site can bypass the epoch
+discipline: platform-accepted updates advance the window epoch on the active
+connection, while any host-originated change to the exposed text, range, or
+selection retires the connection and mints a strictly increasing epoch with
+the window epoch reset to one. A platform delta batch is validated completely
+before anything applies — the first delta's old-text hash against the shadow,
+each later delta's old hash against the prior delta's new hash, every range
+and selection against the simulated window, and the whole-batch small-edit
+envelope — so a bad or over-cap second delta can no longer leave the first
+applied, which the previous per-delta loop permitted. A rejected callback
+mutates nothing and resynchronizes with a typed reason
+(old-text/chain/range/envelope), re-exposing the unchanged window on a fresh
+connection.
+
+Cross-window selection authority now uses the anchored canonical selection: a
+range larger than the 16 Ki input window installs `flark_core` anchors and
+exposes only a collapsed active-extent surrogate; command-path replacement and
+deletion against the surrogate resolve the anchors at commit time and replace
+the complete exact global selection atomically as one revision, with the
+caret restored through the bounded async window fetch; user activation
+abandons the oversized selection and releases its anchors. Seven focused
+regressions drive the real engine through shadow truthfulness, chain-reject
+and stale-old-text atomicity, out-of-window rejection, host-retire and
+full-value-fallback epochs, strictly increasing resynchronization epochs, and
+the oversized-selection install/replace/undo cycle; the complete verify_v4
+gate passes. Still open: platform-connection reopen choreography in the
+widget layer, typing-at-surrogate and composition interaction with oversized
+selections, the composition-pinned and bulk-staging window states with
+deferred movement, grapheme needs-more-context expansion, and real IME
+evidence. No new performance claim follows.
+
 ## 1. Destination and current state
 
 The destination is fixed:

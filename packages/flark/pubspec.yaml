@@ -8,7 +8,8 @@ environment:
   flutter: '>=3.38.0'
 
 dependencies:
-  characters: ^1.4.1
+  # SHA-256 window-text identity for the bounded input-window contract.
+  crypto: ^3.0.6
   flark_core:
     path: ../flark_core
   flutter:

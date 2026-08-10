@@ -1,0 +1,250 @@
+import 'dart:io';
+
+import 'package:flark/flark.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  final libraryPath = Platform.environment['FLARK_V4_LIBRARY_PATH'];
+
+  Future<FlarkEditorController> open(String source) async {
+    final controller = await FlarkEditorController.open(
+      source,
+      libraryPath: libraryPath!,
+    );
+    await controller.continueParsing();
+    return controller;
+  }
+
+  Future<void> settle(FlarkEditorController controller) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 5));
+    while ((controller.pendingEdits != 0 ||
+            controller.viewport?.revision != controller.revision) &&
+        DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+    }
+    expect(controller.lastError, isNull);
+  }
+
+  TextEditingDeltaInsertion insertion(
+    TextEditingValue value,
+    int offset,
+    String text,
+  ) => TextEditingDeltaInsertion(
+    oldText: value.text,
+    textInserted: text,
+    insertionOffset: offset,
+    selection: TextSelection.collapsed(offset: offset + text.length),
+    composing: TextRange.empty,
+  );
+
+  test('an attached window carries a truthful serialized shadow', () async {
+    final controller = await open('# Flark\n\nA quick paragraph.\n');
+    addTearDown(controller.close);
+
+    expect(controller.inputWindowState, FlarkInputWindowState.synchronized);
+    final shadow = controller.inputWindowShadow;
+    expect(shadow.connectionEpoch, greaterThan(0));
+    expect(shadow.windowEpoch, greaterThanOrEqualTo(1));
+    expect(
+      shadow.windowTextSha256,
+      flarkWindowTextSha256(controller.inputValue.text),
+    );
+
+    // A valid platform batch stays on the connection and advances the
+    // window epoch and text identity.
+    final before = controller.inputWindowShadow;
+    controller.applyDeltas([insertion(controller.inputValue, 0, 'Live ')]);
+    expect(controller.inputValue.text, startsWith('Live '));
+    final after = controller.inputWindowShadow;
+    expect(after.connectionEpoch, before.connectionEpoch);
+    expect(after.windowEpoch, before.windowEpoch + 1);
+    expect(
+      after.windowTextSha256,
+      flarkWindowTextSha256(controller.inputValue.text),
+    );
+    expect(controller.resyncCount, 0);
+    await settle(controller);
+  }, skip: libraryPath == null);
+
+  test('a broken delta chain applies nothing and retires the connection',
+      () async {
+    final controller = await open('# Flark\n\nA quick paragraph.\n');
+    addTearDown(controller.close);
+    await settle(controller);
+
+    final value = controller.inputValue;
+    final revisionBefore = controller.revision;
+    final textBefore = value.text;
+    final epochBefore = controller.connectionEpoch;
+
+    final first = insertion(value, 0, 'A');
+    // The second delta lies about its old text, so the batch chain breaks.
+    final second = TextEditingDeltaInsertion(
+      oldText: textBefore,
+      textInserted: 'B',
+      insertionOffset: 0,
+      selection: const TextSelection.collapsed(offset: 1),
+      composing: TextRange.empty,
+    );
+    controller.applyDeltas([first, second]);
+
+    expect(controller.inputValue.text, textBefore);
+    expect(controller.pendingEdits, 0);
+    expect(controller.revision, revisionBefore);
+    expect(
+      controller.lastResyncReason,
+      FlarkInputResyncReason.deltaChainMismatch,
+    );
+    expect(controller.resyncCount, 1);
+    expect(controller.connectionEpoch, isNot(epochBefore));
+    expect(controller.windowEpoch, 1);
+    expect(controller.inputWindowState, FlarkInputWindowState.synchronized);
+  }, skip: libraryPath == null);
+
+  test('a stale first delta resynchronizes without mutation', () async {
+    final controller = await open('# Flark\n\nA quick paragraph.\n');
+    addTearDown(controller.close);
+    await settle(controller);
+
+    final textBefore = controller.inputValue.text;
+    final stale = TextEditingDeltaInsertion(
+      oldText: 'not the window text',
+      textInserted: 'X',
+      insertionOffset: 0,
+      selection: const TextSelection.collapsed(offset: 1),
+      composing: TextRange.empty,
+    );
+    controller.applyDeltas([stale]);
+
+    expect(controller.inputValue.text, textBefore);
+    expect(controller.pendingEdits, 0);
+    expect(controller.lastResyncReason, FlarkInputResyncReason.oldTextMismatch);
+    expect(controller.windowEpoch, 1);
+  }, skip: libraryPath == null);
+
+  test('an out-of-window range resynchronizes without mutation', () async {
+    final controller = await open('# Flark\n\nA quick paragraph.\n');
+    addTearDown(controller.close);
+    await settle(controller);
+
+    final value = controller.inputValue;
+    final bad = TextEditingDeltaDeletion(
+      oldText: value.text,
+      deletedRange: TextRange(start: 0, end: value.text.length + 4),
+      selection: const TextSelection.collapsed(offset: 0),
+      composing: TextRange.empty,
+    );
+    controller.applyDeltas([bad]);
+
+    expect(controller.inputValue.text, value.text);
+    expect(
+      controller.lastResyncReason,
+      FlarkInputResyncReason.rangeOutOfWindow,
+    );
+  }, skip: libraryPath == null);
+
+  test('host-originated exposure changes retire the connection', () async {
+    final controller = await open('# First\n\nSecond paragraph here.\n');
+    addTearDown(controller.close);
+    await settle(controller);
+
+    final epochBefore = controller.connectionEpoch;
+    controller.activateRow(controller.rows.last, 0);
+    expect(controller.connectionEpoch, isNot(epochBefore));
+    expect(controller.windowEpoch, 1);
+    expect(controller.inputWindowState, FlarkInputWindowState.synchronized);
+
+    // Platform full-value fallback stays on the new connection.
+    final connection = controller.connectionEpoch;
+    final windowEpoch = controller.windowEpoch;
+    final value = controller.inputValue;
+    controller.updateEditingValue(
+      TextEditingValue(
+        text: 'Z${value.text}',
+        selection: const TextSelection.collapsed(offset: 1),
+      ),
+    );
+    expect(controller.connectionEpoch, connection);
+    expect(controller.windowEpoch, greaterThan(windowEpoch));
+    await settle(controller);
+  }, skip: libraryPath == null);
+
+  test('resynchronizations mint strictly increasing connection epochs',
+      () async {
+    final controller = await open('# Flark\n\nBody.\n');
+    addTearDown(controller.close);
+    await settle(controller);
+
+    final epochs = <int>[controller.connectionEpoch];
+    for (var round = 0; round < 3; round += 1) {
+      controller.applyDeltas([
+        TextEditingDeltaInsertion(
+          oldText: 'wrong window text $round',
+          textInserted: 'X',
+          insertionOffset: 0,
+          selection: const TextSelection.collapsed(offset: 1),
+          composing: TextRange.empty,
+        ),
+      ]);
+      epochs.add(controller.connectionEpoch);
+    }
+    expect(controller.resyncCount, 3);
+    for (var index = 1; index < epochs.length; index += 1) {
+      expect(epochs[index], greaterThan(epochs[index - 1]));
+    }
+  }, skip: libraryPath == null);
+
+  test(
+    'an oversized selection is anchored canonically and replaced atomically',
+    () async {
+      final padding = List<String>.filled(70, 'stable').join(' ');
+      final source = List<String>.generate(
+        64,
+        (index) =>
+            'Paragraph ${index.toString().padLeft(3, '0')} $padding.\n\n',
+      ).join();
+      expect(source.length, greaterThan(20 * 1024));
+      final controller = await open(source);
+      addTearDown(controller.close);
+      await settle(controller);
+
+      final lengthBefore = controller.sourceUtf16Length;
+      const start = 10;
+      const end = 20000;
+      final generation = await controller.selectOversizedRangeUtf16(
+        start,
+        end,
+      );
+      expect(controller.hasOversizedSelection, isTrue);
+      expect(controller.canonicalSelectionGeneration, generation);
+      expect(controller.inputValue.selection.isCollapsed, isTrue);
+      expect(
+        controller.inputValue.text.length,
+        lessThanOrEqualTo(16 * 1024),
+      );
+
+      final revisionBefore = controller.revision;
+      controller.replaceSelection('X');
+      final deadline = DateTime.now().add(const Duration(seconds: 10));
+      while ((controller.revision == revisionBefore ||
+              controller.pendingEdits != 0) &&
+          DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
+      expect(controller.lastError, isNull);
+      expect(controller.hasOversizedSelection, isFalse);
+      expect(
+        controller.sourceUtf16Length,
+        lengthBefore - (end - start) + 1,
+      );
+      expect(controller.globalCaretOffset, start + 1);
+
+      final undone = await controller.undo();
+      expect(undone, isTrue);
+      expect(controller.sourceUtf16Length, lengthBefore);
+      await settle(controller);
+    },
+    skip: libraryPath == null,
+  );
+}

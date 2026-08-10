@@ -6,6 +6,8 @@ import 'package:flark_core/flark_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'input_window.dart';
+
 const _maximumVisibleBytes = 16 * 1024;
 const _maximumInputCodeUnits = 16 * 1024;
 const _maximumPaintCodeUnits = 2 * 1024;
@@ -159,6 +161,19 @@ final class FlarkEditorController extends ChangeNotifier {
   bool _certificationRevisionCurrent = false;
   bool _crossRowSelection = false;
   bool _historyReplayPending = false;
+  bool _oversizedSelection = false;
+
+  static int _connectionEpochCounter = 0;
+  FlarkInputWindowState _windowState = FlarkInputWindowState.detached;
+  FlarkInputResyncReason _lastResyncReason = FlarkInputResyncReason.none;
+  int _connectionEpoch = 0;
+  int _windowEpoch = 0;
+  int _resyncCount = 0;
+  String _windowTextSha256 = '';
+  String? _shadowText;
+  int _shadowWindowStart = 0;
+  TextSelection? _shadowSelection;
+  bool _platformMutation = false;
 
   FlarkEditorStatus get status => _status;
   FlarkViewport? get viewport => _viewport;
@@ -188,6 +203,141 @@ final class FlarkEditorController extends ChangeNotifier {
   bool get canUndo =>
       !_historyReplayPending && (_session.canUndo || _pendingEdits > 0);
   bool get canRedo => !_historyReplayPending && _session.canRedo;
+
+  FlarkInputWindowState get inputWindowState => _windowState;
+  FlarkInputResyncReason get lastResyncReason => _lastResyncReason;
+  int get connectionEpoch => _connectionEpoch;
+  int get windowEpoch => _windowEpoch;
+  int get resyncCount => _resyncCount;
+  bool get hasOversizedSelection => _oversizedSelection;
+  int get canonicalSelectionGeneration => _session.selectionGeneration;
+
+  FlarkInputWindowShadow get inputWindowShadow => FlarkInputWindowShadow(
+    connectionEpoch: _connectionEpoch,
+    windowEpoch: _windowEpoch,
+    representedRevision: _document.revision,
+    globalUtf16Start: _inputGlobalUtf16Start,
+    windowUtf16Length: _inputValue.text.length,
+    windowTextSha256: _windowTextSha256,
+    selectionGeneration: _session.selectionGeneration,
+  );
+
+  /// Reconciles the serialized platform shadow on every notification so no
+  /// window-rewrite site can bypass the connection/window epoch discipline:
+  /// a platform-accepted update advances the window epoch on the active
+  /// connection, while any host-originated change to the exposed text, range,
+  /// or selection retires the connection and starts a new one.
+  @override
+  void notifyListeners() {
+    _reconcileWindowShadow();
+    super.notifyListeners();
+  }
+
+  void _reconcileWindowShadow() {
+    if (_closed) {
+      _windowState = FlarkInputWindowState.closed;
+      return;
+    }
+    if (_status == FlarkEditorStatus.faulted) {
+      _windowState = FlarkInputWindowState.faulted;
+      return;
+    }
+    final text = _inputValue.text;
+    final selection = _inputValue.selection;
+    final textChanged = !identical(text, _shadowText) && text != _shadowText;
+    final startChanged = _inputGlobalUtf16Start != _shadowWindowStart;
+    final selectionChanged = selection != _shadowSelection;
+    if (_connectionEpoch != 0 &&
+        !textChanged &&
+        !startChanged &&
+        !selectionChanged) {
+      return;
+    }
+    if (_platformMutation && _connectionEpoch != 0 && !startChanged) {
+      _windowEpoch += 1;
+      if (textChanged) _windowTextSha256 = flarkWindowTextSha256(text);
+    } else {
+      _connectionEpoch = ++_connectionEpochCounter;
+      _windowEpoch = 1;
+      if (textChanged || _windowTextSha256.isEmpty) {
+        _windowTextSha256 = flarkWindowTextSha256(text);
+      }
+      _windowState = FlarkInputWindowState.synchronized;
+    }
+    _shadowText = text;
+    _shadowWindowStart = _inputGlobalUtf16Start;
+    _shadowSelection = selection;
+  }
+
+  /// A rejected active-connection callback mutates nothing: the connection
+  /// retires with a typed reason and the unchanged authoritative window is
+  /// re-exposed on a fresh connection epoch.
+  void _resynchronize(FlarkInputResyncReason reason) {
+    _lastResyncReason = reason;
+    _resyncCount += 1;
+    _windowState = FlarkInputWindowState.resyncRequired;
+    _connectionEpoch = ++_connectionEpochCounter;
+    _windowEpoch = 1;
+    _windowTextSha256 = flarkWindowTextSha256(_inputValue.text);
+    _shadowText = _inputValue.text;
+    _shadowWindowStart = _inputGlobalUtf16Start;
+    _shadowSelection = _inputValue.selection;
+    _windowState = FlarkInputWindowState.synchronized;
+    super.notifyListeners();
+  }
+
+  /// Validates a complete platform delta batch against the serialized shadow
+  /// before anything is applied: the first delta's old-text hash must equal
+  /// the shadow's, each later delta's old hash must equal the prior delta's
+  /// new hash, every range and selection must stay inside the simulated
+  /// window, and a multi-delta batch must fit the whole-batch small-edit
+  /// envelope. A bad or over-cap second delta therefore cannot leave the
+  /// first applied.
+  FlarkInputResyncReason _validateDeltaBatch(List<TextEditingDelta> deltas) {
+    if (deltas.isEmpty) return FlarkInputResyncReason.none;
+    if (flarkWindowTextSha256(deltas.first.oldText) != _windowTextSha256) {
+      return FlarkInputResyncReason.oldTextMismatch;
+    }
+    var value = _inputValue;
+    var runningHash = _windowTextSha256;
+    var envelopeBytes = 0;
+    var mutatingDeltas = 0;
+    for (final delta in deltas) {
+      if (flarkWindowTextSha256(delta.oldText) != runningHash) {
+        return FlarkInputResyncReason.deltaChainMismatch;
+      }
+      final mutation = _mutationFor(delta);
+      if (mutation != null) {
+        if (mutation.start < 0 ||
+            mutation.end < mutation.start ||
+            mutation.end > value.text.length) {
+          return FlarkInputResyncReason.rangeOutOfWindow;
+        }
+        mutatingDeltas += 1;
+        envelopeBytes += _smallEditDescriptorBytes;
+        envelopeBytes += utf8
+            .encode(value.text.substring(mutation.start, mutation.end))
+            .length;
+        envelopeBytes += utf8.encode(mutation.replacement).length;
+      }
+      try {
+        value = delta.apply(value);
+      } on Object {
+        return FlarkInputResyncReason.rangeOutOfWindow;
+      }
+      final selection = delta.selection;
+      if (selection.isValid &&
+          (selection.start > value.text.length ||
+              selection.end > value.text.length)) {
+        return FlarkInputResyncReason.rangeOutOfWindow;
+      }
+      runningHash = flarkWindowTextSha256(value.text);
+    }
+    if (mutatingDeltas > 1 && envelopeBytes > _maximumSmallEditBytes) {
+      return FlarkInputResyncReason.batchOverEnvelope;
+    }
+    return FlarkInputResyncReason.none;
+  }
 
   static Future<FlarkEditorController> open(
     String source, {
@@ -524,6 +674,7 @@ final class FlarkEditorController extends ChangeNotifier {
   void activateRow(FlarkViewportRow row, int globalUtf16Offset) {
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
+    _abandonOversizedSelection();
     final range = _mapViewportRange(_activationRange(row));
     final text = _sliceVisibleUtf16(range.start, range.end);
     _activateWindow(
@@ -542,6 +693,7 @@ final class FlarkEditorController extends ChangeNotifier {
   }) {
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
+    _abandonOversizedSelection();
     _activateWindow(
       text: text,
       sourceStart: globalUtf16Start,
@@ -577,9 +729,13 @@ final class FlarkEditorController extends ChangeNotifier {
     final visibleEnd = _visibleUtf16Start + _visibleSource.length;
     final start = math.min(_globalSelectionBase, globalUtf16Offset);
     final end = math.max(_globalSelectionBase, globalUtf16Offset);
-    if (start < _visibleUtf16Start ||
-        end > visibleEnd ||
-        end - start > _maximumInputCodeUnits) {
+    if (end - start > _maximumInputCodeUnits) {
+      unawaited(
+        selectOversizedRangeUtf16(_globalSelectionBase, globalUtf16Offset),
+      );
+      return;
+    }
+    if (start < _visibleUtf16Start || end > visibleEnd) {
       return;
     }
     final selection = TextSelection(
@@ -604,36 +760,46 @@ final class FlarkEditorController extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    for (final delta in deltas) {
-      final mutation = _mutationFor(delta);
-      if (mutation == null) {
-        _breakTypingHistoryGroup();
-        _inputValue = delta.apply(_inputValue);
-        _trackCompositionWithoutMutation(_inputValue.composing);
-        _updateGlobalSelection();
-        continue;
-      }
-      if (delta.oldText != _inputValue.text ||
-          !_acceptMutation(
-            mutation,
-            selection: delta.selection,
-            composing: delta.composing,
-            typingInput: delta is TextEditingDeltaInsertion,
-            fullValue:
-                _replacementLength(
-                      _inputValue.text,
-                      mutation.start,
-                      mutation.end,
-                      mutation.replacement,
-                    ) <=
-                    _maximumInputCodeUnits
-                ? delta.apply(_inputValue)
-                : null,
-          )) {
-        break;
-      }
+    final rejection = _validateDeltaBatch(deltas);
+    if (rejection != FlarkInputResyncReason.none) {
+      _resynchronize(rejection);
+      return;
     }
-    notifyListeners();
+    _platformMutation = true;
+    try {
+      for (final delta in deltas) {
+        final mutation = _mutationFor(delta);
+        if (mutation == null) {
+          _breakTypingHistoryGroup();
+          _inputValue = delta.apply(_inputValue);
+          _trackCompositionWithoutMutation(_inputValue.composing);
+          _updateGlobalSelection();
+          continue;
+        }
+        if (delta.oldText != _inputValue.text ||
+            !_acceptMutation(
+              mutation,
+              selection: delta.selection,
+              composing: delta.composing,
+              typingInput: delta is TextEditingDeltaInsertion,
+              fullValue:
+                  _replacementLength(
+                        _inputValue.text,
+                        mutation.start,
+                        mutation.end,
+                        mutation.replacement,
+                      ) <=
+                      _maximumInputCodeUnits
+                  ? delta.apply(_inputValue)
+                  : null,
+            )) {
+          break;
+        }
+      }
+      notifyListeners();
+    } finally {
+      _platformMutation = false;
+    }
   }
 
   void updateEditingValue(TextEditingValue value) {
@@ -641,6 +807,15 @@ final class FlarkEditorController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    _platformMutation = true;
+    try {
+      _updateEditingValueFromPlatform(value);
+    } finally {
+      _platformMutation = false;
+    }
+  }
+
+  void _updateEditingValueFromPlatform(TextEditingValue value) {
     if (value.text == _inputValue.text) {
       _breakTypingHistoryGroup();
       _inputValue = value;
@@ -678,6 +853,10 @@ final class FlarkEditorController extends ChangeNotifier {
   void replaceSelection(String replacement) {
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
+    if (_oversizedSelection) {
+      unawaited(_replaceOversizedSelection(replacement));
+      return;
+    }
     final selection = _inputValue.selection;
     final start = math.min(selection.baseOffset, selection.extentOffset);
     final end = math.max(selection.baseOffset, selection.extentOffset);
@@ -690,7 +869,86 @@ final class FlarkEditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Installs a canonical anchored selection larger than the bounded input
+  /// window can represent. The platform sees only a collapsed active-extent
+  /// surrogate; typing, paste, or deletion against it replaces the complete
+  /// exact global selection atomically through the anchor-resolved range.
+  Future<int> selectOversizedRangeUtf16(int base, int extent) async {
+    _breakTypingHistoryGroup();
+    _endCompositionHistoryGroup();
+    final length = sourceUtf16Length;
+    final clampedBase = base.clamp(0, length);
+    final clampedExtent = extent.clamp(0, length);
+    final generation = await _session.setSelectionUtf16(
+      clampedBase,
+      clampedExtent,
+    );
+    _oversizedSelection = true;
+    _crossRowSelection = false;
+    await _restoreHistorySelection(
+      _EditorSelectionSnapshot(
+        TextSelection.collapsed(offset: clampedExtent),
+        null,
+      ),
+    );
+    _globalSelectionBase = clampedBase;
+    _globalSelectionExtent = clampedExtent;
+    notifyListeners();
+    return generation;
+  }
+
+  /// A user activation abandons an installed oversized selection; the
+  /// canonical anchors release asynchronously.
+  void _abandonOversizedSelection() {
+    if (!_oversizedSelection) return;
+    _oversizedSelection = false;
+    unawaited(_session.clearSelection());
+  }
+
+  Future<void> _replaceOversizedSelection(String replacement) async {
+    final resolved = await _session.resolveSelection();
+    _oversizedSelection = false;
+    if (resolved == null) return;
+    await _session.clearSelection();
+    final start = math.min(resolved.base, resolved.extent);
+    final end = math.max(resolved.base, resolved.extent);
+    final caret = start + replacement.length;
+    final beforeSelection = _EditorSelectionSnapshot(
+      TextSelection(baseOffset: resolved.base, extentOffset: resolved.extent),
+      null,
+    );
+    final afterSelection = _EditorSelectionSnapshot(
+      TextSelection.collapsed(offset: caret),
+      null,
+    );
+    _globalSelectionBase = caret;
+    _globalSelectionExtent = caret;
+    _queueNativeEdit(
+      start,
+      end,
+      replacement,
+      beforeSelection: beforeSelection,
+      afterSelection: afterSelection,
+      coalesceTyping: false,
+      compositionHistoryGroup: null,
+    );
+    // The surrogate window rarely contains the post-replace caret, so the
+    // synchronous recenter cannot reach it; restore through the async path
+    // that can fetch a fresh bounded window once the edit is admitted.
+    _editTail = _editTail
+        .then((_) async {
+          await _restoreHistorySelection(afterSelection);
+          notifyListeners();
+        })
+        .catchError((Object _, StackTrace _) {});
+    notifyListeners();
+  }
+
   void deleteBackward() {
+    if (_oversizedSelection) {
+      replaceSelection('');
+      return;
+    }
     final selection = _inputValue.selection;
     if (!selection.isCollapsed) {
       replaceSelection('');
@@ -715,6 +973,10 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   void deleteForward() {
+    if (_oversizedSelection) {
+      replaceSelection('');
+      return;
+    }
     final selection = _inputValue.selection;
     if (!selection.isCollapsed) {
       replaceSelection('');
