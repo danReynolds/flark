@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:ui' show FrameTiming;
+import 'dart:ui' show FramePhase, FrameTiming;
 
 import 'package:flark/flark.dart';
 import 'package:flutter/services.dart';
@@ -146,16 +146,54 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 100));
     binding.removeTimingsCallback(recordTimings);
 
+    // Wall samples from a throttled (occluded or napping) app alternate with
+    // ~50 ms display intervals, and a sleeping display leaves multi-second
+    // holes of missing vsync. Either signature invalidates the entire run,
+    // so the receipt records it and the harness fails loudly instead of
+    // emitting rejectable numbers.
+    final throttledSamples = inputToFrameMicros
+        .where((value) => value >= 30000)
+        .length;
+    final throttledFraction = inputToFrameMicros.isEmpty
+        ? 0.0
+        : throttledSamples / inputToFrameMicros.length;
+    final displayQuietSample = _maximum(inputToFrameMicros) >= 1000000;
+    final foregroundValid = throttledFraction < 0.1 && !displayQuietSample;
+
     final buildMicros = frameTimings
         .map((timing) => timing.buildDuration.inMicroseconds)
         .toList();
     final rasterMicros = frameTimings
         .map((timing) => timing.rasterDuration.inMicroseconds)
         .toList();
+
+    // Distinguishes a quiet display (large inter-frame vsync gap) from a
+    // starved await (steady vsync while a sample stalled).
+    final vsyncStarts = frameTimings
+        .map((timing) => timing.timestampInMicroseconds(FramePhase.vsyncStart))
+        .toList();
+    final vsyncGaps = <List<num>>[];
+    for (var index = 1; index < vsyncStarts.length; index += 1) {
+      vsyncGaps.add([vsyncStarts[index] - vsyncStarts[index - 1], index]);
+    }
+    vsyncGaps.sort((a, b) => b.first.compareTo(a.first));
+    final vsyncGapTopMs = vsyncGaps
+        .take(5)
+        .map((gap) => [(gap.first as int) / 1000, gap.last])
+        .toList();
     stdout.writeln(
-      'FLARK_PROFILE_RECEIPT ${jsonEncode({'fixtureShape': fixtureShape, 'workload': workload, 'sourceBytes': controller.sourceByteLength, 'inputSamples': inputToFrameMicros.length, 'inputHandlingRawMs': inputHandlingMicros.map((value) => value / 1000).toList(), 'inputHandlingP50Ms': _percentile(inputHandlingMicros, 50) / 1000, 'inputHandlingP99Ms': _percentile(inputHandlingMicros, 99) / 1000, 'inputHandlingMaxMs': _maximum(inputHandlingMicros) / 1000, 'inputToFrameRawMs': inputToFrameMicros.map((value) => value / 1000).toList(), 'inputToFrameP50Ms': _percentile(inputToFrameMicros, 50) / 1000, 'inputToFrameP99Ms': _percentile(inputToFrameMicros, 99) / 1000, 'inputToFrameMaxMs': _maximum(inputToFrameMicros) / 1000, 'inputFrameBuildRawMs': inputFrameBuildMicros.map((value) => value / 1000).toList(), 'inputFrameBuildP50Ms': _percentile(inputFrameBuildMicros, 50) / 1000, 'inputFrameBuildP99Ms': _percentile(inputFrameBuildMicros, 99) / 1000, 'inputFrameBuildMaxMs': _maximum(inputFrameBuildMicros) / 1000, 'settleRawMs': settleMicros.map((value) => value / 1000).toList(), 'settleP50Ms': _percentile(settleMicros, 50) / 1000, 'settleP99Ms': _percentile(settleMicros, 99) / 1000, 'settleMaxMs': _maximum(settleMicros) / 1000, 'frameSamples': frameTimings.length, 'buildP99Ms': _percentile(buildMicros, 99) / 1000, 'buildMaxMs': _maximum(buildMicros) / 1000, 'rasterP99Ms': _percentile(rasterMicros, 99) / 1000, 'rasterMaxMs': _maximum(rasterMicros) / 1000, 'pendingEdits': controller.pendingEdits})}',
+      'FLARK_PROFILE_RECEIPT ${jsonEncode({'fixtureShape': fixtureShape, 'workload': workload, 'sourceBytes': controller.sourceByteLength, 'inputSamples': inputToFrameMicros.length, 'inputHandlingRawMs': inputHandlingMicros.map((value) => value / 1000).toList(), 'inputHandlingP50Ms': _percentile(inputHandlingMicros, 50) / 1000, 'inputHandlingP99Ms': _percentile(inputHandlingMicros, 99) / 1000, 'inputHandlingMaxMs': _maximum(inputHandlingMicros) / 1000, 'inputToFrameRawMs': inputToFrameMicros.map((value) => value / 1000).toList(), 'inputToFrameP50Ms': _percentile(inputToFrameMicros, 50) / 1000, 'inputToFrameP99Ms': _percentile(inputToFrameMicros, 99) / 1000, 'inputToFrameMaxMs': _maximum(inputToFrameMicros) / 1000, 'inputFrameBuildRawMs': inputFrameBuildMicros.map((value) => value / 1000).toList(), 'inputFrameBuildP50Ms': _percentile(inputFrameBuildMicros, 50) / 1000, 'inputFrameBuildP99Ms': _percentile(inputFrameBuildMicros, 99) / 1000, 'inputFrameBuildMaxMs': _maximum(inputFrameBuildMicros) / 1000, 'settleRawMs': settleMicros.map((value) => value / 1000).toList(), 'settleP50Ms': _percentile(settleMicros, 50) / 1000, 'settleP99Ms': _percentile(settleMicros, 99) / 1000, 'settleMaxMs': _maximum(settleMicros) / 1000, 'frameSamples': frameTimings.length, 'buildP99Ms': _percentile(buildMicros, 99) / 1000, 'buildMaxMs': _maximum(buildMicros) / 1000, 'rasterP99Ms': _percentile(rasterMicros, 99) / 1000, 'rasterMaxMs': _maximum(rasterMicros) / 1000, 'vsyncGapTopMs': vsyncGapTopMs, 'throttledFrameFraction': throttledFraction, 'foregroundValid': foregroundValid, 'pendingEdits': controller.pendingEdits})}',
     );
 
+    expect(
+      foregroundValid,
+      isTrue,
+      reason:
+          'wall samples show a throttled or quiet display '
+          '(${(throttledFraction * 100).toStringAsFixed(1)}% >= 30 ms, '
+          'max ${(_maximum(inputToFrameMicros) / 1000).toStringAsFixed(1)} ms); '
+          'the display was not live for the whole run, so it is not evidence',
+    );
     expect(controller.pendingEdits, 0);
     expect(controller.lastError, isNull);
     await tester.pumpWidget(const SizedBox.shrink());

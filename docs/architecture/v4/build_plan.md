@@ -374,6 +374,30 @@ and resynchronization from `input_window_matrix_v1`, adapter adoption of the
 anchored selection for cross-window authority, and IME evidence beyond
 simulated composition. No new performance claim follows.
 
+The macOS foreground harness is now fixed and verified. The example
+application fronts itself and holds a latency-critical, display-awake
+activity; `scripts/profile_v4_macos.sh` additionally wakes the display and
+wraps the drive in `caffeinate`. The frame harness instruments inter-frame
+vsync gaps and hard-fails any run whose wall samples show a throttled cadence
+or a quiet display, because diagnosis runs proved both failure modes real: a
+first run recorded a 560-second hole and a later one an 827-second hole whose
+vsync-gap instrumentation matched exactly — the display was sleeping, not the
+editor stalling. Under the fixed harness the 1 MiB ordinary typing receipt is
+clean for the first time: 120 samples, input-to-frame 8.34 ms p50, 10.07 ms
+p99, 11.15 ms maximum with zero samples at or above 16 ms on the 120 Hz
+display, build 2.09 ms p99, raster 1.39 ms p99, and a live vsync for the
+whole run. This is a development receipt on this Mac, not the M4/M6
+provenance artifact.
+
+The same fixed harness then caught a real regression the rejected runs could
+never isolate: the 32-KiB paste workload fails its bounded-surface guard —
+after the first paste into the 1 MiB fixture, `visibleSource` reached 33,583
+UTF-16 code units against the 16,384 cap
+(`frame_profile_test.dart` line 117). Typing receipts are unaffected. The
+paste-path bounded-window violation is the next debugging target; the paste
+product gate remains failed until it is fixed and a clean paste receipt
+exists.
+
 The third tranche implements the executable core of that input-window state
 machine. The controller now maintains the contract's serialized shadow —
 connection epoch, window epoch, represented revision, exposed range, SHA-256
