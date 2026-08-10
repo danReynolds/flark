@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:characters/characters.dart';
 import 'package:flark_core/flark_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -14,9 +13,6 @@ const _maximumSmallEditBytes = 4 * 1024;
 const _smallEditDescriptorBytes = 32;
 const _viewportRowsPerPage = 32;
 const _parseIdleDelay = Duration(milliseconds: 32);
-const _historyTokenEvicted = 0x0305;
-const _historyTokenStale = 0x0306;
-const _typingHistoryIdleMicros = 1000000;
 
 enum FlarkEditorStatus { opening, parsing, ready, editing, faulted, disposed }
 
@@ -119,40 +115,6 @@ final class _EditorSelectionSnapshot {
   final int? activeOrdinal;
 }
 
-final class _HistoryEntry {
-  const _HistoryEntry({
-    required this.tokens,
-    required this.beforeSelection,
-    required this.afterSelection,
-    this.typingEnd,
-    this.typingAtMicros,
-    this.typingEpoch,
-    this.compositionGroup,
-  });
-
-  final List<FlarkCoreHistoryToken> tokens;
-  final _EditorSelectionSnapshot beforeSelection;
-  final _EditorSelectionSnapshot afterSelection;
-  final int? typingEnd;
-  final int? typingAtMicros;
-  final int? typingEpoch;
-  final int? compositionGroup;
-}
-
-final class _TypingHistoryEvent {
-  const _TypingHistoryEvent({
-    required this.start,
-    required this.end,
-    required this.atMicros,
-    required this.epoch,
-  });
-
-  final int start;
-  final int end;
-  final int atMicros;
-  final int epoch;
-}
-
 /// UI-isolate state for a bounded viewport and bounded platform input window.
 ///
 /// The complete document remains in [FlarkCoreDocument]'s worker/native actor.
@@ -160,9 +122,14 @@ final class _TypingHistoryEvent {
 /// code units in the platform text input connection, so a keystroke does not
 /// copy a multi-megabyte document on Flutter's UI isolate.
 final class FlarkEditorController extends ChangeNotifier {
-  FlarkEditorController._(this._document);
+  FlarkEditorController._(this._document)
+    : _session = FlarkCoreEditorSession(_document);
 
   final FlarkCoreDocument _document;
+
+  /// Canonical selection, grapheme, and undo policy authority. The controller
+  /// is an adapter over it and holds no history stacks of its own.
+  final FlarkCoreEditorSession _session;
 
   FlarkEditorStatus _status = FlarkEditorStatus.opening;
   FlarkViewport? _viewport;
@@ -183,9 +150,6 @@ final class FlarkEditorController extends ChangeNotifier {
   Future<bool>? _pageTask;
   final List<int> _pageStarts = [0];
   final List<_OptimisticViewportEdit> _optimisticViewportEdits = [];
-  final List<_HistoryEntry> _undoStack = [];
-  final List<_HistoryEntry> _redoStack = [];
-  final Stopwatch _historyClock = Stopwatch()..start();
   int _pageIndex = 0;
   int _editGeneration = 0;
   int _pendingEdits = 0;
@@ -195,9 +159,6 @@ final class FlarkEditorController extends ChangeNotifier {
   bool _certificationRevisionCurrent = false;
   bool _crossRowSelection = false;
   bool _historyReplayPending = false;
-  int _typingHistoryEpoch = 0;
-  int _nextCompositionHistoryGroup = 0;
-  int? _activeCompositionHistoryGroup;
 
   FlarkEditorStatus get status => _status;
   FlarkViewport? get viewport => _viewport;
@@ -225,8 +186,8 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   bool get canUndo =>
-      !_historyReplayPending && (_undoStack.isNotEmpty || _pendingEdits > 0);
-  bool get canRedo => !_historyReplayPending && _redoStack.isNotEmpty;
+      !_historyReplayPending && (_session.canUndo || _pendingEdits > 0);
+  bool get canRedo => !_historyReplayPending && _session.canRedo;
 
   static Future<FlarkEditorController> open(
     String source, {
@@ -742,11 +703,13 @@ final class FlarkEditorController extends ChangeNotifier {
     }
     if (selection.extentOffset == 0) return;
     final end = selection.extentOffset;
-    final grapheme = CharacterRange.at(_inputValue.text, end);
-    if (grapheme.isEmpty && !grapheme.moveBack()) return;
-    final start = grapheme.stringBeforeLength;
+    final cluster = FlarkCoreGraphemePolicy.previousClusterRange(
+      _inputValue.text,
+      end,
+    );
+    if (cluster == null) return;
     _inputValue = _inputValue.copyWith(
-      selection: TextSelection(baseOffset: start, extentOffset: end),
+      selection: TextSelection(baseOffset: cluster.$1, extentOffset: end),
     );
     replaceSelection('');
   }
@@ -759,11 +722,13 @@ final class FlarkEditorController extends ChangeNotifier {
     }
     final start = selection.extentOffset;
     if (start == _inputValue.text.length) return;
-    final grapheme = CharacterRange.at(_inputValue.text, start);
-    if (grapheme.isEmpty && !grapheme.moveNext()) return;
-    final end = _inputValue.text.length - grapheme.stringAfterLength;
+    final cluster = FlarkCoreGraphemePolicy.nextClusterRange(
+      _inputValue.text,
+      start,
+    );
+    if (cluster == null) return;
     _inputValue = _inputValue.copyWith(
-      selection: TextSelection(baseOffset: start, extentOffset: end),
+      selection: TextSelection(baseOffset: start, extentOffset: cluster.$2),
     );
     replaceSelection('');
   }
@@ -882,83 +847,55 @@ final class FlarkEditorController extends ChangeNotifier {
     _activeOrdinal = preferredOrdinal;
     _crossRowSelection = false;
     final afterSelection = _selectionSnapshot();
-    final typingHistory = typingInput && compositionHistoryGroup == null
-        ? _typingHistoryEvent(
-            mutation,
-            globalStart: globalStart,
-            composing: composing,
-            beforeSelection: beforeSelection,
-            afterSelection: afterSelection,
-          )
-        : null;
-    if (typingHistory == null) _breakTypingHistoryGroup();
+    final coalesceTyping =
+        typingInput && compositionHistoryGroup == null && !composing.isValid;
+    if (!coalesceTyping) _breakTypingHistoryGroup();
     _queueNativeEdit(
       globalStart,
       globalEnd,
       mutation.replacement,
       beforeSelection: beforeSelection,
       afterSelection: afterSelection,
-      typingHistory: typingHistory,
+      coalesceTyping: coalesceTyping,
       compositionHistoryGroup: compositionHistoryGroup,
       recenterAfterOptimisticEdit: wasCrossRowSelection,
     );
     return true;
   }
 
-  _TypingHistoryEvent? _typingHistoryEvent(
-    _TextMutation mutation, {
-    required int globalStart,
-    required TextRange composing,
-    required _EditorSelectionSnapshot beforeSelection,
-    required _EditorSelectionSnapshot afterSelection,
-  }) {
-    final replacement = mutation.replacement;
-    if (mutation.start != mutation.end ||
-        replacement.contains('\n') ||
-        replacement.contains('\r') ||
-        replacement.characters.length != 1 ||
-        composing.isValid ||
-        !beforeSelection.selection.isCollapsed ||
-        beforeSelection.selection.extentOffset != globalStart ||
-        !afterSelection.selection.isCollapsed ||
-        afterSelection.selection.extentOffset !=
-            globalStart + replacement.length) {
-      return null;
-    }
-    return _TypingHistoryEvent(
-      start: globalStart,
-      end: globalStart + replacement.length,
-      atMicros: _historyClock.elapsedMicroseconds,
-      epoch: _typingHistoryEpoch,
-    );
-  }
+  FlarkCoreSelectionSnapshot _coreSnapshot(_EditorSelectionSnapshot snapshot) =>
+      FlarkCoreSelectionSnapshot(
+        base: snapshot.selection.baseOffset,
+        extent: snapshot.selection.extentOffset,
+        adapterState: snapshot,
+      );
 
-  void _breakTypingHistoryGroup() {
-    _typingHistoryEpoch += 1;
-  }
+  _EditorSelectionSnapshot _adapterSnapshot(
+    FlarkCoreSelectionSnapshot snapshot,
+  ) => switch (snapshot.adapterState) {
+    final _EditorSelectionSnapshot adapter => adapter,
+    _ => _EditorSelectionSnapshot(
+      TextSelection(
+        baseOffset: snapshot.base,
+        extentOffset: snapshot.extent,
+      ),
+      null,
+    ),
+  };
 
-  int? _compositionGroupForMutation(TextRange composing) {
-    final wasActive = _activeCompositionHistoryGroup != null;
-    if (!wasActive && !composing.isValid) return null;
-    final group =
-        _activeCompositionHistoryGroup ?? ++_nextCompositionHistoryGroup;
-    _activeCompositionHistoryGroup = composing.isValid ? group : null;
-    return group;
-  }
+  void _breakTypingHistoryGroup() => _session.breakTypingGroup();
+
+  int? _compositionGroupForMutation(TextRange composing) =>
+      _session.compositionGroupForMutation(composingActive: composing.isValid);
 
   void _trackCompositionWithoutMutation(TextRange composing) {
-    final wasActive = _activeCompositionHistoryGroup != null;
-    if (composing.isValid) {
-      _activeCompositionHistoryGroup ??= ++_nextCompositionHistoryGroup;
-      return;
-    }
-    _activeCompositionHistoryGroup = null;
-    if (wasActive) _scheduleParsingAfterInput();
+    final compositionEnded = _session.trackCompositionWithoutMutation(
+      composingActive: composing.isValid,
+    );
+    if (compositionEnded) _scheduleParsingAfterInput();
   }
 
-  void _endCompositionHistoryGroup() {
-    _activeCompositionHistoryGroup = null;
-  }
+  void _endCompositionHistoryGroup() => _session.endCompositionGroup();
 
   ({int start, String text}) _boundedReplacementWindow(
     String source,
@@ -1337,7 +1274,7 @@ final class FlarkEditorController extends ChangeNotifier {
     String replacement, {
     required _EditorSelectionSnapshot beforeSelection,
     required _EditorSelectionSnapshot afterSelection,
-    required _TypingHistoryEvent? typingHistory,
+    required bool coalesceTyping,
     required int? compositionHistoryGroup,
     bool recenterAfterOptimisticEdit = false,
   }) {
@@ -1351,13 +1288,14 @@ final class FlarkEditorController extends ChangeNotifier {
     _pendingEdits += 1;
     _status = FlarkEditorStatus.editing;
     final operation = _editTail.then((_) async {
-      final receipt = await _document.applyEditUtf16(start, end, replacement);
-      await _recordForwardHistory(
-        receipt,
-        beforeSelection: beforeSelection,
-        afterSelection: afterSelection,
-        typingHistory: typingHistory,
-        compositionHistoryGroup: compositionHistoryGroup,
+      await _session.applyEditUtf16(
+        start,
+        end,
+        replacement,
+        beforeSelection: _coreSnapshot(beforeSelection),
+        afterSelection: _coreSnapshot(afterSelection),
+        coalesceTyping: coalesceTyping,
+        compositionGroup: compositionHistoryGroup,
       );
     });
     _editTail = operation.catchError((Object _, StackTrace _) {});
@@ -1394,63 +1332,6 @@ final class FlarkEditorController extends ChangeNotifier {
     }
   }
 
-  Future<void> _recordForwardHistory(
-    FlarkCoreEditReceipt receipt, {
-    required _EditorSelectionSnapshot beforeSelection,
-    required _EditorSelectionSnapshot afterSelection,
-    required _TypingHistoryEvent? typingHistory,
-    required int? compositionHistoryGroup,
-  }) async {
-    await _releaseHistoryEntries(_redoStack.toList(growable: false));
-    _redoStack.clear();
-    final token = receipt.historyToken;
-    if (token != null) {
-      final previous = _undoStack.isEmpty ? null : _undoStack.last;
-      if (compositionHistoryGroup != null &&
-          previous != null &&
-          previous.compositionGroup == compositionHistoryGroup) {
-        _undoStack[_undoStack.length - 1] = _HistoryEntry(
-          tokens: List.unmodifiable([...previous.tokens, token]),
-          beforeSelection: previous.beforeSelection,
-          afterSelection: afterSelection,
-          compositionGroup: compositionHistoryGroup,
-        );
-        return;
-      }
-      if (typingHistory != null &&
-          previous != null &&
-          previous.typingEnd == typingHistory.start &&
-          previous.typingAtMicros != null &&
-          typingHistory.atMicros - previous.typingAtMicros! <=
-              _typingHistoryIdleMicros &&
-          previous.typingEpoch == typingHistory.epoch) {
-        _undoStack[_undoStack.length - 1] = _HistoryEntry(
-          tokens: List.unmodifiable([...previous.tokens, token]),
-          beforeSelection: previous.beforeSelection,
-          afterSelection: afterSelection,
-          typingEnd: typingHistory.end,
-          typingAtMicros: typingHistory.atMicros,
-          typingEpoch: typingHistory.epoch,
-        );
-        return;
-      }
-      _undoStack.add(
-        _HistoryEntry(
-          tokens: [token],
-          beforeSelection: beforeSelection,
-          afterSelection: afterSelection,
-          typingEnd: typingHistory?.end,
-          typingAtMicros: typingHistory?.atMicros,
-          typingEpoch: typingHistory?.epoch,
-          compositionGroup: compositionHistoryGroup,
-        ),
-      );
-      return;
-    }
-    await _releaseHistoryEntries(_undoStack.toList(growable: false));
-    _undoStack.clear();
-  }
-
   Future<bool> undo() => _queueHistoryReplay(undoDirection: true);
 
   Future<bool> redo() => _queueHistoryReplay(undoDirection: false);
@@ -1459,8 +1340,8 @@ final class FlarkEditorController extends ChangeNotifier {
     if (_closed ||
         _status == FlarkEditorStatus.faulted ||
         _historyReplayPending ||
-        (!undoDirection && _redoStack.isEmpty) ||
-        (undoDirection && _undoStack.isEmpty && _pendingEdits == 0)) {
+        (!undoDirection && !_session.canRedo) ||
+        (undoDirection && !_session.canUndo && _pendingEdits == 0)) {
       return Future<bool>.value(false);
     }
     _historyReplayPending = true;
@@ -1474,51 +1355,18 @@ final class FlarkEditorController extends ChangeNotifier {
     notifyListeners();
 
     final operation = _editTail.then((_) async {
-      final sourceStack = undoDirection ? _undoStack : _redoStack;
-      final destinationStack = undoDirection ? _redoStack : _undoStack;
-      if (sourceStack.isEmpty) return false;
-      final entry = sourceStack.removeLast();
-      _HistoryEntry? reverseEntry;
-      try {
-        reverseEntry = await _replayHistoryEntry(entry);
-        if (reverseEntry == null) {
-          await _releaseHistoryEntries([
-            entry,
-            ...sourceStack,
-            ...destinationStack,
-          ]);
-          sourceStack.clear();
-          destinationStack.clear();
-          _optimisticViewportEdits.clear();
-          await _refreshViewport(
-            restoreInputWindow: false,
-            expectedEditGeneration: generation,
-          );
-          await _restoreHistorySelection(
-            undoDirection ? entry.afterSelection : entry.beforeSelection,
-          );
-          return false;
-        }
-      } on Object {
-        await _releaseHistoryEntries([
-          entry,
-          ...sourceStack,
-          ...destinationStack,
-        ]);
-        sourceStack.clear();
-        destinationStack.clear();
-        rethrow;
-      }
-
-      destinationStack.add(reverseEntry);
+      final outcome = undoDirection
+          ? await _session.undo()
+          : await _session.redo();
+      if (outcome == null) return false;
+      final restore = _adapterSnapshot(outcome.restoreSelection);
       _optimisticViewportEdits.clear();
       await _refreshViewport(
         restoreInputWindow: false,
         expectedEditGeneration: generation,
       );
-      await _restoreHistorySelection(
-        undoDirection ? entry.beforeSelection : entry.afterSelection,
-      );
+      await _restoreHistorySelection(restore);
+      if (outcome is FlarkCoreHistoryDropped) return false;
       _scheduleParsingAfterInput();
       notifyListeners();
       return true;
@@ -1549,67 +1397,9 @@ final class FlarkEditorController extends ChangeNotifier {
     return operation;
   }
 
-  Future<_HistoryEntry?> _replayHistoryEntry(_HistoryEntry entry) async {
-    final reverseTokens = <FlarkCoreHistoryToken>[];
-    for (final token in entry.tokens.reversed) {
-      late final FlarkCoreEditReceipt receipt;
-      try {
-        receipt = await _document.replayHistory(token);
-      } on FlarkCoreNativeException catch (error) {
-        if (error.status == _historyTokenEvicted ||
-            error.status == _historyTokenStale) {
-          await _rollbackHistoryReplay(reverseTokens);
-          return null;
-        }
-        rethrow;
-      }
-      final reverseToken = receipt.historyToken;
-      if (reverseToken == null) {
-        throw StateError(
-          'Flark could not retain the inverse of a grouped history replay',
-        );
-      }
-      reverseTokens.add(reverseToken);
-    }
-    return _HistoryEntry(
-      tokens: List.unmodifiable(reverseTokens),
-      beforeSelection: entry.beforeSelection,
-      afterSelection: entry.afterSelection,
-    );
-  }
-
-  Future<void> _rollbackHistoryReplay(
-    List<FlarkCoreHistoryToken> reverseTokens,
-  ) async {
-    for (final token in reverseTokens.reversed) {
-      final receipt = await _document.replayHistory(token);
-      final restoredToken = receipt.historyToken;
-      if (restoredToken == null) {
-        throw StateError('Flark could not roll back a grouped history replay');
-      }
-      try {
-        await _document.releaseHistory(restoredToken);
-      } on Object {
-        // The source is restored even if native retention raced eviction.
-      }
-    }
-  }
-
-  Future<void> _releaseHistoryEntries(List<_HistoryEntry> entries) async {
-    for (final entry in entries) {
-      for (final token in entry.tokens) {
-        try {
-          await _document.releaseHistory(token);
-        } on Object {
-          // Retention is bounded and may have already evicted an old token.
-        }
-      }
-    }
-  }
-
   void _scheduleParsingAfterInput() {
     if (_closed ||
-        _activeCompositionHistoryGroup != null ||
+        _session.compositionActive ||
         _status == FlarkEditorStatus.faulted) {
       return;
     }
@@ -1627,7 +1417,7 @@ final class FlarkEditorController extends ChangeNotifier {
       while (!_document.isReady && !_closed) {
         await _document.pump(workUnits: 512);
       }
-      if (_closed || _activeCompositionHistoryGroup != null) return;
+      if (_closed || _session.compositionActive) return;
       await _refreshViewport(restoreInputWindow: false);
       if (!_ensureActiveInputVisible()) _restoreInputWindow();
     } catch (error) {
@@ -2120,7 +1910,7 @@ final class FlarkEditorController extends ChangeNotifier {
       replacement,
       beforeSelection: beforeSelection,
       afterSelection: _selectionSnapshot(),
-      typingHistory: null,
+      coalesceTyping: false,
       compositionHistoryGroup: null,
     );
     notifyListeners();

@@ -117,6 +117,28 @@ final class FlarkNativeEditReceipt {
 
 enum FlarkNativeHistoryDisposition { retained, disabled, overBudget }
 
+const _coordinateUtf16 = 2;
+const _affinityUpstream = 1;
+const _affinityDownstream = 2;
+
+final class FlarkNativeSessionInspection {
+  const FlarkNativeSessionInspection({
+    required this.sessionState,
+    required this.revision,
+    required this.liveTransactions,
+    required this.liveContinuations,
+    required this.liveAnchors,
+    required this.liveHistoryTokens,
+  });
+
+  final int sessionState;
+  final int revision;
+  final int liveTransactions;
+  final int liveContinuations;
+  final int liveAnchors;
+  final int liveHistoryTokens;
+}
+
 final class _HistoryLengthDelta {
   const _HistoryLengthDelta(this.byteDelta, this.utf16Delta);
 
@@ -629,6 +651,117 @@ final class FlarkNativeDocument {
     } finally {
       calloc
         ..free(request)
+        ..free(outcome);
+    }
+  }
+
+  /// Creates a source-stable anchor at a UTF-16 scalar boundary.
+  ///
+  /// The native runtime keeps the anchor at the current revision by
+  /// transforming it eagerly through every committed edit; [downstream]
+  /// selects which splice edge the anchor follows when an edit lands exactly
+  /// on or across it.
+  int createAnchorUtf16(int utf16Position, {required bool downstream}) {
+    final request = calloc<FlarkV4AnchorRequest>();
+    final outcome = calloc<FlarkV4Outcome>();
+    try {
+      request.ref
+        ..structSize = sizeOf<FlarkV4AnchorRequest>()
+        ..coordinateKind = _coordinateUtf16
+        ..revision = _revision
+        ..snapshot = 0
+        ..anchor = 0
+        ..position = utf16Position
+        ..affinity = downstream ? _affinityDownstream : _affinityUpstream
+        ..reservedU32 = 0
+        ..progressToken = 0;
+      _fillSession(request.ref.session);
+      _fillBudget(request.ref.budget, workUnits: 1);
+      final status = _bindings.anchorCreate(request, outcome);
+      _requireStatus('anchor_create', status, outcome.ref, {_ok});
+      return outcome.ref.primaryHandle;
+    } finally {
+      calloc
+        ..free(request)
+        ..free(outcome);
+    }
+  }
+
+  /// Resolves [anchor] to a UTF-16 offset at the current revision.
+  int resolveAnchorUtf16(int anchor) {
+    final request = calloc<FlarkV4AnchorRequest>();
+    final outcome = calloc<FlarkV4Outcome>();
+    try {
+      request.ref
+        ..structSize = sizeOf<FlarkV4AnchorRequest>()
+        ..coordinateKind = _coordinateUtf16
+        ..revision = _revision
+        ..snapshot = 0
+        ..anchor = anchor
+        ..position = 0
+        ..affinity = 0
+        ..reservedU32 = 0
+        ..progressToken = 0;
+      _fillSession(request.ref.session);
+      _fillBudget(request.ref.budget, workUnits: 1);
+      final status = _bindings.anchorResolve(request, outcome);
+      _requireStatus('anchor_resolve', status, outcome.ref, {_ok});
+      return outcome.ref.detailCode;
+    } finally {
+      calloc
+        ..free(request)
+        ..free(outcome);
+    }
+  }
+
+  void releaseAnchor(int anchor) {
+    final request = calloc<FlarkV4AnchorRequest>();
+    final outcome = calloc<FlarkV4Outcome>();
+    try {
+      request.ref
+        ..structSize = sizeOf<FlarkV4AnchorRequest>()
+        ..coordinateKind = 0
+        ..revision = 0
+        ..snapshot = 0
+        ..anchor = anchor
+        ..position = 0
+        ..affinity = 0
+        ..reservedU32 = 0
+        ..progressToken = 0;
+      _fillSession(request.ref.session);
+      _fillBudget(request.ref.budget, workUnits: 1);
+      final status = _bindings.anchorRelease(request, outcome);
+      _requireStatus('anchor_release', status, outcome.ref, {_ok});
+    } finally {
+      calloc
+        ..free(request)
+        ..free(outcome);
+    }
+  }
+
+  FlarkNativeSessionInspection inspect() {
+    final request = calloc<FlarkV4InspectRequest>();
+    final inspection = calloc<FlarkV4SessionInspection>();
+    final outcome = calloc<FlarkV4Outcome>();
+    try {
+      request.ref
+        ..structSize = sizeOf<FlarkV4InspectRequest>()
+        ..flags = 0;
+      _fillSession(request.ref.session);
+      final status = _bindings.sessionInspect(request, inspection, outcome);
+      _requireStatus('session_inspect', status, outcome.ref, {_ok});
+      return FlarkNativeSessionInspection(
+        sessionState: inspection.ref.sessionState,
+        revision: inspection.ref.revision,
+        liveTransactions: inspection.ref.liveTransactions,
+        liveContinuations: inspection.ref.liveContinuations,
+        liveAnchors: inspection.ref.liveAnchors,
+        liveHistoryTokens: inspection.ref.liveHistoryTokens,
+      );
+    } finally {
+      calloc
+        ..free(request)
+        ..free(inspection)
         ..free(outcome);
     }
   }

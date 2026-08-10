@@ -522,6 +522,113 @@ final class FlarkV4InlineFactRecord extends Struct {
   external int replacementSecond;
 }
 
+final class FlarkV4AnchorRequest extends Struct {
+  @Uint32()
+  external int structSize;
+
+  @Uint32()
+  external int coordinateKind;
+
+  external FlarkV4SessionRef session;
+
+  @Uint64()
+  external int revision;
+
+  @Uint64()
+  external int snapshot;
+
+  @Uint64()
+  external int anchor;
+
+  @Uint64()
+  external int position;
+
+  @Uint32()
+  external int affinity;
+
+  @Uint32()
+  external int reservedU32;
+
+  @Uint64()
+  external int progressToken;
+
+  external FlarkV4WorkBudget budget;
+}
+
+final class FlarkV4CancelRequest extends Struct {
+  @Uint32()
+  external int structSize;
+
+  @Uint32()
+  external int flags;
+
+  external FlarkV4SessionRef session;
+
+  @Uint64()
+  external int progressToken;
+
+  @Array(4)
+  external Array<Uint64> reserved;
+}
+
+final class FlarkV4OwnerTransferRequest extends Struct {
+  @Uint32()
+  external int structSize;
+
+  @Uint32()
+  external int flags;
+
+  external FlarkV4SessionRef session;
+
+  @Uint64()
+  external int newOwnerToken;
+
+  @Array(4)
+  external Array<Uint64> reserved;
+}
+
+final class FlarkV4InspectRequest extends Struct {
+  @Uint32()
+  external int structSize;
+
+  @Uint32()
+  external int flags;
+
+  external FlarkV4SessionRef session;
+
+  @Array(5)
+  external Array<Uint64> reserved;
+}
+
+final class FlarkV4SessionInspection extends Struct {
+  @Uint32()
+  external int structSize;
+
+  @Uint32()
+  external int sessionState;
+
+  @Uint64()
+  external int session;
+
+  @Uint64()
+  external int revision;
+
+  @Uint32()
+  external int liveTransactions;
+
+  @Uint32()
+  external int liveContinuations;
+
+  @Uint32()
+  external int liveAnchors;
+
+  @Uint32()
+  external int liveHistoryTokens;
+
+  @Array(3)
+  external Array<Uint64> reserved;
+}
+
 typedef _CreateBeginNative =
     Uint32 Function(
       Pointer<FlarkV4CreateRequest>,
@@ -680,6 +787,37 @@ typedef _CloseNative =
 typedef CloseDart =
     int Function(Pointer<FlarkV4CloseRequest>, Pointer<FlarkV4Outcome>);
 
+typedef _AnchorNative =
+    Uint32 Function(Pointer<FlarkV4AnchorRequest>, Pointer<FlarkV4Outcome>);
+typedef AnchorDart =
+    int Function(Pointer<FlarkV4AnchorRequest>, Pointer<FlarkV4Outcome>);
+
+typedef _CancelNative =
+    Uint32 Function(Pointer<FlarkV4CancelRequest>, Pointer<FlarkV4Outcome>);
+typedef CancelDart =
+    int Function(Pointer<FlarkV4CancelRequest>, Pointer<FlarkV4Outcome>);
+
+typedef _OwnerTransferNative =
+    Uint32 Function(
+      Pointer<FlarkV4OwnerTransferRequest>,
+      Pointer<FlarkV4Outcome>,
+    );
+typedef OwnerTransferDart =
+    int Function(Pointer<FlarkV4OwnerTransferRequest>, Pointer<FlarkV4Outcome>);
+
+typedef _SessionInspectNative =
+    Uint32 Function(
+      Pointer<FlarkV4InspectRequest>,
+      Pointer<FlarkV4SessionInspection>,
+      Pointer<FlarkV4Outcome>,
+    );
+typedef SessionInspectDart =
+    int Function(
+      Pointer<FlarkV4InspectRequest>,
+      Pointer<FlarkV4SessionInspection>,
+      Pointer<FlarkV4Outcome>,
+    );
+
 final class FlarkV4Bindings {
   FlarkV4Bindings(DynamicLibrary library)
     : createBegin = library.lookupFunction<_CreateBeginNative, CreateBeginDart>(
@@ -744,7 +882,34 @@ final class FlarkV4Bindings {
       ),
       closeFinish = library.lookupFunction<_CloseNative, CloseDart>(
         'flark_v4_close_finish',
-      );
+      ),
+      createAbort = library
+          .lookupFunction<_CreateCommitNative, CreateCommitDart>(
+            'flark_v4_create_abort',
+          ),
+      anchorCreate = library.lookupFunction<_AnchorNative, AnchorDart>(
+        'flark_v4_anchor_create',
+      ),
+      anchorTransform = library.lookupFunction<_AnchorNative, AnchorDart>(
+        'flark_v4_anchor_transform',
+      ),
+      anchorResolve = library.lookupFunction<_AnchorNative, AnchorDart>(
+        'flark_v4_anchor_resolve',
+      ),
+      anchorRelease = library.lookupFunction<_AnchorNative, AnchorDart>(
+        'flark_v4_anchor_release',
+      ),
+      cancel = library.lookupFunction<_CancelNative, CancelDart>(
+        'flark_v4_cancel',
+      ),
+      sessionTransferOwner = library
+          .lookupFunction<_OwnerTransferNative, OwnerTransferDart>(
+            'flark_v4_session_transfer_owner',
+          ),
+      sessionInspect = library
+          .lookupFunction<_SessionInspectNative, SessionInspectDart>(
+            'flark_v4_session_inspect',
+          );
 
   final CreateBeginDart createBegin;
   final CreateAppendDart createAppend;
@@ -765,4 +930,12 @@ final class FlarkV4Bindings {
   final CloseDart closeBegin;
   final CloseDart closePump;
   final CloseDart closeFinish;
+  final CreateCommitDart createAbort;
+  final AnchorDart anchorCreate;
+  final AnchorDart anchorTransform;
+  final AnchorDart anchorResolve;
+  final AnchorDart anchorRelease;
+  final CancelDart cancel;
+  final OwnerTransferDart sessionTransferOwner;
+  final SessionInspectDart sessionInspect;
 }

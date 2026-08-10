@@ -27,5 +27,10 @@ void main() {
     expect(sizeOf<FlarkV4CloseRequest>(), 64);
     expect(sizeOf<FlarkV4CoordinateRequest>(), 96);
     expect(sizeOf<FlarkV4HistoryRequest>(), 80);
+    expect(sizeOf<FlarkV4AnchorRequest>(), 96);
+    expect(sizeOf<FlarkV4CancelRequest>(), 64);
+    expect(sizeOf<FlarkV4OwnerTransferRequest>(), 64);
+    expect(sizeOf<FlarkV4InspectRequest>(), 64);
+    expect(sizeOf<FlarkV4SessionInspection>(), 64);
   });
 }

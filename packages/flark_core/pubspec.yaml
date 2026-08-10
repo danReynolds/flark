@@ -7,6 +7,9 @@ environment:
   sdk: ^3.10.4
 
 dependencies:
+  # Pinned exactly: the text/unicode contract names characters 1.4.1 /
+  # Unicode 16.0.0 as the grapheme authority.
+  characters: 1.4.1
   ffi: ^2.1.4
 
 dev_dependencies:

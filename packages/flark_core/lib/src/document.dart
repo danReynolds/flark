@@ -15,6 +15,36 @@ final class FlarkCoreHistoryToken {
   bool _consumed = false;
 }
 
+/// An opaque handle to a native source-stable anchor.
+///
+/// The runtime keeps every anchor at the current revision, so a resolved
+/// offset is always valid for the document's current source.
+final class FlarkCoreAnchor {
+  FlarkCoreAnchor._(this._value, this._owner);
+
+  final int _value;
+  final Object _owner;
+  bool _released = false;
+}
+
+final class FlarkCoreSessionInspection {
+  const FlarkCoreSessionInspection({
+    required this.sessionState,
+    required this.revision,
+    required this.liveTransactions,
+    required this.liveContinuations,
+    required this.liveAnchors,
+    required this.liveHistoryTokens,
+  });
+
+  final int sessionState;
+  final int revision;
+  final int liveTransactions;
+  final int liveContinuations;
+  final int liveAnchors;
+  final int liveHistoryTokens;
+}
+
 final class FlarkCoreNativeException implements Exception {
   const FlarkCoreNativeException(
     this.operation,
@@ -218,6 +248,45 @@ final class FlarkCoreDocument {
     });
   }
 
+  /// Creates a source-stable anchor at a UTF-16 scalar boundary. The native
+  /// runtime transforms it through every later edit; [downstream] selects the
+  /// splice edge it follows when an edit lands exactly on or across it.
+  Future<FlarkCoreAnchor> createAnchorUtf16(
+    int utf16Position, {
+    required bool downstream,
+  }) async {
+    final result = await _request('createAnchor', {
+      'utf16': utf16Position,
+      'downstream': downstream,
+    });
+    return FlarkCoreAnchor._(result['anchor']! as int, _historyOwner);
+  }
+
+  /// Resolves [anchor] to a UTF-16 offset at the current revision.
+  Future<int> resolveAnchorUtf16(FlarkCoreAnchor anchor) async {
+    _requireOwnedAnchor(anchor);
+    final result = await _request('resolveAnchor', {'anchor': anchor._value});
+    return result['utf16']! as int;
+  }
+
+  Future<void> releaseAnchor(FlarkCoreAnchor anchor) async {
+    _requireOwnedAnchor(anchor);
+    await _request('releaseAnchor', {'anchor': anchor._value});
+    anchor._released = true;
+  }
+
+  Future<FlarkCoreSessionInspection> inspectSession() async {
+    final result = await _request('inspect', const {});
+    return FlarkCoreSessionInspection(
+      sessionState: result['sessionState']! as int,
+      revision: result['revision']! as int,
+      liveTransactions: result['liveTransactions']! as int,
+      liveContinuations: result['liveContinuations']! as int,
+      liveAnchors: result['liveAnchors']! as int,
+      liveHistoryTokens: result['liveHistoryTokens']! as int,
+    );
+  }
+
   Future<String> readSource() async {
     final result = await _request('readSource', const {});
     return result['source']! as String;
@@ -297,6 +366,15 @@ final class FlarkCoreDocument {
     }
     if (token._consumed) {
       throw StateError('Flark history token was already consumed');
+    }
+  }
+
+  void _requireOwnedAnchor(FlarkCoreAnchor anchor) {
+    if (!identical(anchor._owner, _historyOwner)) {
+      throw ArgumentError.value(anchor, 'anchor', 'belongs to another document');
+    }
+    if (anchor._released) {
+      throw StateError('Flark anchor was already released');
     }
   }
 }
@@ -388,6 +466,30 @@ Future<void> _documentWorker(List<Object?> startup) async {
               ),
             );
             reply.send(const <Object?, Object?>{});
+          case 'createAnchor':
+            reply.send({
+              'anchor': document.createAnchorUtf16(
+                arguments['utf16']! as int,
+                downstream: arguments['downstream']! as bool,
+              ),
+            });
+          case 'resolveAnchor':
+            reply.send({
+              'utf16': document.resolveAnchorUtf16(arguments['anchor']! as int),
+            });
+          case 'releaseAnchor':
+            document.releaseAnchor(arguments['anchor']! as int);
+            reply.send(const <Object?, Object?>{});
+          case 'inspect':
+            final inspection = document.inspect();
+            reply.send({
+              'sessionState': inspection.sessionState,
+              'revision': inspection.revision,
+              'liveTransactions': inspection.liveTransactions,
+              'liveContinuations': inspection.liveContinuations,
+              'liveAnchors': inspection.liveAnchors,
+              'liveHistoryTokens': inspection.liveHistoryTokens,
+            });
           case 'readSource':
             reply.send({'source': document.readSource()});
           case 'readSourceRange':

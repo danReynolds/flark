@@ -1,0 +1,261 @@
+import 'dart:io';
+
+import 'package:flark_core/flark_core.dart';
+import 'package:test/test.dart';
+
+void main() {
+  final libraryPath = Platform.environment['FLARK_V4_LIBRARY_PATH'];
+
+  group('grapheme policy', () {
+    test('deletes one extended cluster including emoji ZWJ sequences', () {
+      const family = '\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}';
+      final text = 'ab$family!';
+      final beforeBang = text.length - 1;
+      expect(
+        FlarkCoreGraphemePolicy.previousClusterRange(text, beforeBang),
+        (2, beforeBang),
+      );
+      expect(FlarkCoreGraphemePolicy.previousClusterRange(text, 2), (1, 2));
+      expect(FlarkCoreGraphemePolicy.previousClusterRange(text, 0), isNull);
+      expect(
+        FlarkCoreGraphemePolicy.nextClusterRange(text, 2),
+        (2, beforeBang),
+      );
+      expect(
+        FlarkCoreGraphemePolicy.nextClusterRange(text, text.length),
+        isNull,
+      );
+      expect(FlarkCoreGraphemePolicy.isSingleCluster(family), isTrue);
+      expect(FlarkCoreGraphemePolicy.isSingleCluster('ab'), isFalse);
+      expect(FlarkCoreGraphemePolicy.isSingleCluster(''), isFalse);
+    });
+  });
+
+  group('editor session', () {
+    late FlarkCoreDocument document;
+    late int clockMicros;
+    late FlarkCoreEditorSession session;
+
+    Future<void> open(String source) async {
+      document = await FlarkCoreDocument.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      clockMicros = 0;
+      session = FlarkCoreEditorSession(document, clockMicros: () => clockMicros);
+    }
+
+    FlarkCoreSelectionSnapshot caret(int offset) =>
+        FlarkCoreSelectionSnapshot(base: offset, extent: offset);
+
+    Future<FlarkCoreEditReceipt> type(int offset, String cluster) =>
+        session.applyEditUtf16(
+          offset,
+          offset,
+          cluster,
+          beforeSelection: caret(offset),
+          afterSelection: caret(offset + cluster.length),
+          coalesceTyping: true,
+        );
+
+    test('rapid typing coalesces into one unit and undoes atomically',
+        () async {
+      await open('base\n');
+      addTearDown(() async {
+        await session.dispose();
+        await document.dispose();
+      });
+
+      await type(0, 'a');
+      clockMicros += 400000;
+      await type(1, 'b');
+      clockMicros += 400000;
+      await type(2, 'c');
+      expect(await document.readSource(), 'abcbase\n');
+
+      final outcome = await session.undo();
+      expect(outcome, isA<FlarkCoreHistoryReplayed>());
+      expect(outcome!.restoreSelection.extent, 0);
+      expect(await document.readSource(), 'base\n');
+      expect(session.canUndo, isFalse);
+      expect(session.canRedo, isTrue);
+
+      final redone = await session.redo();
+      expect(redone, isA<FlarkCoreHistoryReplayed>());
+      expect(redone!.restoreSelection.extent, 3);
+      expect(await document.readSource(), 'abcbase\n');
+    });
+
+    test('idle gaps, epochs, and non-typing edits break coalescing', () async {
+      await open('base\n');
+      addTearDown(() async {
+        await session.dispose();
+        await document.dispose();
+      });
+
+      await type(0, 'a');
+      clockMicros += 1000001;
+      await type(1, 'b');
+      expect(await document.readSource(), 'abbase\n');
+      await session.undo();
+      expect(await document.readSource(), 'abase\n');
+      await session.undo();
+      expect(await document.readSource(), 'base\n');
+
+      await type(0, 'x');
+      session.breakTypingGroup();
+      clockMicros += 1;
+      await type(1, 'y');
+      await session.undo();
+      expect(await document.readSource(), 'xbase\n');
+
+      // A multi-cluster replacement never joins a typing run.
+      await session.applyEditUtf16(
+        0,
+        0,
+        'multi',
+        beforeSelection: caret(0),
+        afterSelection: caret(5),
+      );
+      await session.undo();
+      expect(await document.readSource(), 'xbase\n');
+    });
+
+    test('composition updates group into one unit and commit joins it',
+        () async {
+      await open('base\n');
+      addTearDown(() async {
+        await session.dispose();
+        await document.dispose();
+      });
+
+      await session.applyEditUtf16(
+        0,
+        0,
+        'k',
+        beforeSelection: caret(0),
+        afterSelection: caret(1),
+        compositionGroup: session.compositionGroupForMutation(
+          composingActive: true,
+        ),
+      );
+      await session.applyEditUtf16(
+        0,
+        1,
+        'ka',
+        beforeSelection: caret(1),
+        afterSelection: caret(2),
+        compositionGroup: session.compositionGroupForMutation(
+          composingActive: true,
+        ),
+      );
+      // The commit mutation ends composition but still joins the group.
+      await session.applyEditUtf16(
+        0,
+        2,
+        'か',
+        beforeSelection: caret(2),
+        afterSelection: caret(1),
+        compositionGroup: session.compositionGroupForMutation(
+          composingActive: false,
+        ),
+      );
+      expect(await document.readSource(), 'かbase\n');
+
+      final outcome = await session.undo();
+      expect(outcome, isA<FlarkCoreHistoryReplayed>());
+      expect(await document.readSource(), 'base\n');
+      expect(session.canUndo, isFalse);
+    });
+
+    test('tracking a composition without mutation reports its end', () async {
+      await open('base\n');
+      addTearDown(() async {
+        await session.dispose();
+        await document.dispose();
+      });
+      expect(
+        session.trackCompositionWithoutMutation(composingActive: true),
+        isFalse,
+      );
+      expect(
+        session.trackCompositionWithoutMutation(composingActive: false),
+        isTrue,
+      );
+      expect(
+        session.trackCompositionWithoutMutation(composingActive: false),
+        isFalse,
+      );
+    });
+
+    test('canonical selection anchors survive edits by affinity', () async {
+      await open('Hello world!\n');
+      addTearDown(() async {
+        await session.dispose();
+        await document.dispose();
+      });
+
+      // Range selecting "world": start 6, end 11, backwards (base 11).
+      final generation = await session.setSelectionUtf16(
+        11,
+        6,
+        adapterState: 'shadow',
+      );
+      expect(generation, session.selectionGeneration);
+
+      // Insertion before the range shifts both endpoints.
+      await document.applyEditUtf16(0, 0, '>> ');
+      var resolved = await session.resolveSelection();
+      expect((resolved!.base, resolved.extent), (14, 9));
+      expect(resolved.adapterState, 'shadow');
+      expect(resolved.revision, document.revision);
+
+      // Insertion exactly at the range start stays outside the range.
+      await document.applyEditUtf16(9, 9, '!');
+      resolved = await session.resolveSelection();
+      expect((resolved!.base, resolved.extent), (15, 10));
+
+      // Insertion exactly at the range end stays outside the range.
+      await document.applyEditUtf16(15, 15, '?');
+      resolved = await session.resolveSelection();
+      expect((resolved!.base, resolved.extent), (15, 10));
+
+      // A collapsed caret follows text typed at it.
+      await session.setSelectionUtf16(10, 10);
+      await document.applyEditUtf16(10, 10, 'zz');
+      resolved = await session.resolveSelection();
+      expect((resolved!.base, resolved.extent), (12, 12));
+      expect(resolved.isCollapsed, isTrue);
+
+      // Undo of a document-level edit transforms the anchors back.
+      final receipt = await document.applyEditUtf16(0, 3, '');
+      resolved = await session.resolveSelection();
+      expect((resolved!.base, resolved.extent), (9, 9));
+      await document.replayHistory(receipt.historyToken!);
+      resolved = await session.resolveSelection();
+      expect((resolved!.base, resolved.extent), (12, 12));
+
+      await session.clearSelection();
+      expect(await session.resolveSelection(), isNull);
+      final inspection = await document.inspectSession();
+      expect(inspection.liveAnchors, 0);
+    });
+
+    test('a disabled history budget clears undo instead of lying', () async {
+      document = await FlarkCoreDocument.open(
+        'base\n',
+        libraryPath: libraryPath!,
+        historyBudgetBytes: 0,
+      );
+      session = FlarkCoreEditorSession(document, clockMicros: () => 0);
+      addTearDown(() async {
+        await session.dispose();
+        await document.dispose();
+      });
+      final receipt = await type(0, 'a');
+      expect(receipt.historyDisposition, FlarkCoreHistoryDisposition.disabled);
+      expect(session.canUndo, isFalse);
+      expect(await session.undo(), isNull);
+    });
+  }, skip: libraryPath == null ? 'Set FLARK_V4_LIBRARY_PATH.' : false);
+}

@@ -345,6 +345,35 @@ provisional-session abort, and lifecycle inspection. The complete verify_v4
 gate passes. This is the ABI substrate for canonical `flark_core` selection;
 no Dart selection policy has moved yet and no new performance claim follows.
 
+The second tranche moves canonical editing policy into `flark_core`, where
+RFC 026 section 5 places it. The new headless `FlarkCoreEditorSession` owns
+undo/redo ordering and grouping over opaque native history tokens — typing
+coalescing inside the one-second idle window, composition grouping with
+commit-joins-group semantics, grouped replay with exact rollback, and typed
+replayed/dropped outcomes that carry the selection snapshot to restore — plus
+the grapheme policy (`characters` 1.4.1, exactly pinned) as pure bounded-
+context functions, and the anchor-backed canonical selection: collapsed
+carets follow insertions at the caret, range edges exclude them, snapshots
+are generation- and revision-stamped, and an opaque adapter payload rides
+through history restoration. Dart bindings, worker-isolate protocol, and
+typed wrappers now cover anchor create/resolve/release and session
+inspection.
+
+The Flutter controller is now an adapter over that session: its history
+stacks, replay/rollback machinery, typing/composition grouping, and direct
+`characters` use are deleted (354 lines replaced by delegation; the
+controller no longer imports a grapheme library), while it keeps the bounded
+input window, optimistic echo, and viewport mechanics that RFC 026 section 6
+assigns to the surface. Seven new headless `flark_core` regressions prove
+coalescing, epoch and idle breaks, composition grouping, composition-end
+tracking, anchor-backed selection surviving edits and replay by affinity, and
+disabled-budget honesty; the full verify_v4 gate passes with every existing
+Flutter behavior test unchanged. Still open in this milestone: the
+connection/window-epoch input state machine with hash-chained delta batches
+and resynchronization from `input_window_matrix_v1`, adapter adoption of the
+anchored selection for cross-window authority, and IME evidence beyond
+simulated composition. No new performance claim follows.
+
 ## 1. Destination and current state
 
 The destination is fixed:

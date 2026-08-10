@@ -3,11 +3,22 @@ library;
 
 export 'src/document.dart'
     show
+        FlarkCoreAnchor,
         FlarkCoreDocument,
         FlarkCoreEditReceipt,
         FlarkCoreHistoryDisposition,
         FlarkCoreHistoryToken,
-        FlarkCoreNativeException;
+        FlarkCoreNativeException,
+        FlarkCoreSessionInspection;
+export 'src/editor_session.dart'
+    show
+        FlarkCoreAffinity,
+        FlarkCoreEditorSession,
+        FlarkCoreGraphemePolicy,
+        FlarkCoreHistoryDropped,
+        FlarkCoreHistoryOutcome,
+        FlarkCoreHistoryReplayed,
+        FlarkCoreSelectionSnapshot;
 export 'src/models.dart'
     show
         FlarkCertification,
