@@ -477,9 +477,50 @@ after the run each over-budget sample is joined to that frame and labelled
 waited). The third bucket is the one that would indicate scheduling
 starvation, and it is now measured rather than assumed.
 
+That attribution then falsified the scheduling-starvation hypothesis rather
+than confirming it. On the re-measured 5 MiB giant-line cell, **zero**
+over-budget samples were editor-attributed: the editor's own build plus
+raster measured 1.3-1.8 ms on every one of them. All eleven outliers fell in
+the first eleven samples, where the vsync record shows the display
+delivering frame pairs at roughly ten hertz before ramping to full rate;
+after the ramp every sample was inside budget. The editor was never the
+cause, and no scheduler change is warranted.
+
+A second attributed run then settled what the bench actually is. That run
+served roughly ten hertz for its entire duration: 117 of 120 samples were
+over budget, every one display-attributed, with the editor's own build plus
+raster a flat 1.2-1.4 ms throughout. The preceding run, on identical code
+and fixture, ramped to full rate and measured 8.34 ms p50. The difference is
+the panel, not the editor. This hardware's adaptive refresh range bottoms
+out at ten hertz, and an unattended machine driven only by synthetic input
+never leaves that idle rate, so the display period alone can be 100 ms while
+the editor is spending barely one.
+
+Two consequences follow. First, a wall-clock input-to-frame gate is
+unsatisfiable on an idling adaptive display through no fault of the editor,
+because the evidence contract's own rule takes the minimum of 16 ms and the
+actual frame period. Claim-eligible receipts therefore require a bench whose
+served refresh rate is recorded and at least the budget rate, which an
+unattended session does not provide; every such run is correctly rejected by
+the validity gate rather than reported. Second, the receipt now carries a
+display-independent editor-attributed latency — input handling plus the
+proving frame's build and raster — together with the median served interval
+and its implied refresh rate, so the editor's own cost remains measurable
+and reportable even when the panel is idling.
+
+Two further harness corrections followed from that evidence. The classifier had
+labelled alternating samples `unexplained` purely because a burst-delivered
+frame has a small immediately-preceding gap; it now also judges the rate
+actually served over the window leading into the sample, which is the honest
+measure when a display delivers in bursts. And the typing workload had no
+warmups at all, so the display ramp landed inside the measured window: it
+now runs the twenty warmups the evidence contract already prescribes for
+sustained typing, excluded from the distribution. Neither change discards a
+sample that the editor caused.
+
 The remaining open items from the sweep are the tiny-blocks over-budget
 raster cost, the tiny-blocks hard failure at 5 MiB and above, and a
-suspected frame-scheduling starvation: `_finishParsing` pumps the worker in
+now-falsified frame-scheduling suspicion retained here only as a record: `_finishParsing` pumps the worker in
 a free-running `while (!ready) await pump()` loop. That hypothesis is not
 yet supported: each pump awaits a worker-isolate reply, which already yields
 to the event loop, so frames have an opportunity to interleave. The

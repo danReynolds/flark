@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' show FramePhase, FrameTiming;
 
 import 'package:flark/flark.dart';
@@ -68,7 +69,13 @@ void main() {
     final sampleFrameStamps = <int>[];
     switch (workload) {
       case 'typing':
-        for (var index = 0; index < 120; index += 1) {
+        // The evidence contract prescribes 20 warmups per sustained-typing
+        // run, excluded from the distribution. They also carry the adaptive
+        // display from its idle cadence to full rate, so the measured
+        // samples describe sustained typing rather than the ramp.
+        const typingWarmups = 20;
+        for (var index = 0; index < typingWarmups + 120; index += 1) {
+          final measured = index >= typingWarmups;
           final before = controller.inputValue;
           final offset = before.selection.extentOffset;
           final watch = Stopwatch()..start();
@@ -83,9 +90,10 @@ void main() {
             ),
           ]);
           inputWatch.stop();
-          inputHandlingMicros.add(inputWatch.elapsedMicroseconds);
           await tester.pump();
           watch.stop();
+          if (!measured) continue;
+          inputHandlingMicros.add(inputWatch.elapsedMicroseconds);
           inputToFrameMicros.add(watch.elapsedMicroseconds);
           sampleFrameStamps.add(
             binding.currentSystemFrameTimeStamp.inMicroseconds,
@@ -203,13 +211,46 @@ void main() {
             .compareTo(b.timestampInMicroseconds(FramePhase.vsyncStart)),
       );
     final attributions = <Map<String, Object?>>[];
+    // The editor's own per-keystroke cost: input handling plus the proving
+    // frame's build and raster. Unlike wall time this does not include
+    // waiting for the display, so it stays meaningful when an adaptive
+    // panel is serving below the frame budget.
+    final editorLatencyMicros = <int>[];
+    final servedIntervals = <int>[];
     var editorAttributedOverBudget = 0;
     var displayAttributedOverBudget = 0;
     var unexplainedOverBudget = 0;
     for (var index = 0; index < sampleFrameStamps.length; index += 1) {
+      final stamp = sampleFrameStamps[index];
+      var provingForLatency = -1;
+      for (var candidate = 0; candidate < orderedTimings.length; candidate += 1) {
+        if (orderedTimings[candidate].timestampInMicroseconds(
+              FramePhase.vsyncStart,
+            ) <=
+            stamp) {
+          provingForLatency = candidate;
+        } else {
+          break;
+        }
+      }
+      if (provingForLatency >= 0) {
+        final frame = orderedTimings[provingForLatency];
+        editorLatencyMicros.add(
+          inputHandlingMicros[index] +
+              frame.buildDuration.inMicroseconds +
+              frame.rasterDuration.inMicroseconds,
+        );
+        if (provingForLatency > 0) {
+          servedIntervals.add(
+            frame.timestampInMicroseconds(FramePhase.vsyncStart) -
+                orderedTimings[provingForLatency - 1].timestampInMicroseconds(
+                  FramePhase.vsyncStart,
+                ),
+          );
+        }
+      }
       final wall = inputToFrameMicros[index];
       if (wall < 16000) continue;
-      final stamp = sampleFrameStamps[index];
       var provingIndex = -1;
       for (var candidate = 0; candidate < orderedTimings.length; candidate += 1) {
         final vsync = orderedTimings[candidate].timestampInMicroseconds(
@@ -231,11 +272,26 @@ void main() {
           ? 0
           : proving.timestampInMicroseconds(FramePhase.vsyncStart) -
               previous.timestampInMicroseconds(FramePhase.vsyncStart);
+      // A single preceding gap misjudges a display that delivers frames in
+      // bursts: the second frame of a pair has a small gap even though the
+      // sample waited on the burst cadence. The served rate over the window
+      // leading into the sample is the honest measure.
+      final windowStart = math.max(0, provingIndex - 8);
+      final windowSpan = provingIndex > windowStart
+          ? proving!.timestampInMicroseconds(FramePhase.vsyncStart) -
+                orderedTimings[windowStart].timestampInMicroseconds(
+                  FramePhase.vsyncStart,
+                )
+          : 0;
+      final windowFrames = provingIndex - windowStart;
+      final servedIntervalMicros = windowFrames > 0
+          ? windowSpan ~/ windowFrames
+          : 0;
       final String verdict;
       if (editorMicros >= 16000) {
         verdict = 'editor';
         editorAttributedOverBudget += 1;
-      } else if (gapMicros >= wall * 0.8) {
+      } else if (gapMicros >= wall * 0.8 || servedIntervalMicros >= 16000) {
         verdict = 'display';
         displayAttributedOverBudget += 1;
       } else {
@@ -247,6 +303,7 @@ void main() {
         'wallMs': wall / 1000,
         'editorMs': editorMicros / 1000,
         'vsyncGapMs': gapMicros / 1000,
+        'servedIntervalMs': servedIntervalMicros / 1000,
         'verdict': verdict,
       });
     }
@@ -266,7 +323,7 @@ void main() {
         .map((gap) => [(gap.first as int) / 1000, gap.last])
         .toList();
     stdout.writeln(
-      'FLARK_PROFILE_RECEIPT ${jsonEncode({'fixtureShape': fixtureShape, 'workload': workload, 'sourceBytes': controller.sourceByteLength, 'inputSamples': inputToFrameMicros.length, 'inputHandlingRawMs': inputHandlingMicros.map((value) => value / 1000).toList(), 'inputHandlingP50Ms': _percentile(inputHandlingMicros, 50) / 1000, 'inputHandlingP99Ms': _percentile(inputHandlingMicros, 99) / 1000, 'inputHandlingMaxMs': _maximum(inputHandlingMicros) / 1000, 'inputToFrameRawMs': inputToFrameMicros.map((value) => value / 1000).toList(), 'inputToFrameP50Ms': _percentile(inputToFrameMicros, 50) / 1000, 'inputToFrameP99Ms': _percentile(inputToFrameMicros, 99) / 1000, 'inputToFrameMaxMs': _maximum(inputToFrameMicros) / 1000, 'inputFrameBuildRawMs': inputFrameBuildMicros.map((value) => value / 1000).toList(), 'inputFrameBuildP50Ms': _percentile(inputFrameBuildMicros, 50) / 1000, 'inputFrameBuildP99Ms': _percentile(inputFrameBuildMicros, 99) / 1000, 'inputFrameBuildMaxMs': _maximum(inputFrameBuildMicros) / 1000, 'settleRawMs': settleMicros.map((value) => value / 1000).toList(), 'settleP50Ms': _percentile(settleMicros, 50) / 1000, 'settleP99Ms': _percentile(settleMicros, 99) / 1000, 'settleMaxMs': _maximum(settleMicros) / 1000, 'undoSettleRawMs': undoSettleMicros.map((value) => value / 1000).toList(), 'undoSettleMaxMs': _maximum(undoSettleMicros) / 1000, 'frameSamples': frameTimings.length, 'buildP99Ms': _percentile(buildMicros, 99) / 1000, 'buildMaxMs': _maximum(buildMicros) / 1000, 'rasterP99Ms': _percentile(rasterMicros, 99) / 1000, 'rasterMaxMs': _maximum(rasterMicros) / 1000, 'vsyncGapTopMs': vsyncGapTopMs, 'overBudgetAttribution': attributions, 'editorAttributedOverBudget': editorAttributedOverBudget, 'displayAttributedOverBudget': displayAttributedOverBudget, 'unexplainedOverBudget': unexplainedOverBudget, 'throttledFrameFraction': throttledFraction, 'foregroundValid': foregroundValid, 'pendingEdits': controller.pendingEdits})}',
+      'FLARK_PROFILE_RECEIPT ${jsonEncode({'fixtureShape': fixtureShape, 'workload': workload, 'sourceBytes': controller.sourceByteLength, 'inputSamples': inputToFrameMicros.length, 'inputHandlingRawMs': inputHandlingMicros.map((value) => value / 1000).toList(), 'inputHandlingP50Ms': _percentile(inputHandlingMicros, 50) / 1000, 'inputHandlingP99Ms': _percentile(inputHandlingMicros, 99) / 1000, 'inputHandlingMaxMs': _maximum(inputHandlingMicros) / 1000, 'inputToFrameRawMs': inputToFrameMicros.map((value) => value / 1000).toList(), 'inputToFrameP50Ms': _percentile(inputToFrameMicros, 50) / 1000, 'inputToFrameP99Ms': _percentile(inputToFrameMicros, 99) / 1000, 'inputToFrameMaxMs': _maximum(inputToFrameMicros) / 1000, 'inputFrameBuildRawMs': inputFrameBuildMicros.map((value) => value / 1000).toList(), 'inputFrameBuildP50Ms': _percentile(inputFrameBuildMicros, 50) / 1000, 'inputFrameBuildP99Ms': _percentile(inputFrameBuildMicros, 99) / 1000, 'inputFrameBuildMaxMs': _maximum(inputFrameBuildMicros) / 1000, 'settleRawMs': settleMicros.map((value) => value / 1000).toList(), 'settleP50Ms': _percentile(settleMicros, 50) / 1000, 'settleP99Ms': _percentile(settleMicros, 99) / 1000, 'settleMaxMs': _maximum(settleMicros) / 1000, 'undoSettleRawMs': undoSettleMicros.map((value) => value / 1000).toList(), 'undoSettleMaxMs': _maximum(undoSettleMicros) / 1000, 'frameSamples': frameTimings.length, 'buildP99Ms': _percentile(buildMicros, 99) / 1000, 'buildMaxMs': _maximum(buildMicros) / 1000, 'rasterP99Ms': _percentile(rasterMicros, 99) / 1000, 'rasterMaxMs': _maximum(rasterMicros) / 1000, 'vsyncGapTopMs': vsyncGapTopMs, 'editorLatencyP50Ms': _percentile(editorLatencyMicros, 50) / 1000, 'editorLatencyP99Ms': _percentile(editorLatencyMicros, 99) / 1000, 'editorLatencyMaxMs': _maximum(editorLatencyMicros) / 1000, 'servedIntervalP50Ms': _percentile(servedIntervals, 50) / 1000, 'servedDisplayHz': servedIntervals.isEmpty ? 0 : (1000000 / _percentile(servedIntervals, 50)).round(), 'overBudgetAttribution': attributions, 'editorAttributedOverBudget': editorAttributedOverBudget, 'displayAttributedOverBudget': displayAttributedOverBudget, 'unexplainedOverBudget': unexplainedOverBudget, 'throttledFrameFraction': throttledFraction, 'foregroundValid': foregroundValid, 'pendingEdits': controller.pendingEdits})}',
     );
 
     expect(
