@@ -9,6 +9,14 @@ import 'controller.dart';
 
 const _maximumNeutralPaintRows = 32;
 
+/// One laid-out painter never holds more than this many UTF-16 units, so a
+/// giant physical line cannot force full-block layout on the frame path.
+const _fragmentUtf16Budget = 2048;
+
+/// Rows starting below the viewport bottom plus this margin are not laid
+/// out; their height is estimated until scrolling materializes them.
+const _layoutOverscanPx = 400.0;
+
 final class FlarkSurfaceHit {
   const FlarkSurfaceHit({
     required this.globalUtf16Offset,
@@ -32,6 +40,9 @@ final class _PaintedRow {
     required this.painter,
     required this.presentation,
     required this.ordinal,
+    required this.fragmentStart,
+    required this.fragmentEnd,
+    required this.leadingLength,
     this.row,
     this.neutralText,
     this.neutralUtf16Start,
@@ -42,6 +53,15 @@ final class _PaintedRow {
   final TextPainter painter;
   final FlarkSurfaceRow presentation;
   final int ordinal;
+
+  /// The half-open range of `presentation.text` this fragment lays out.
+  final int fragmentStart;
+  final int fragmentEnd;
+
+  /// Length of the leading text painted before the fragment body; nonzero
+  /// only on a row's first fragment.
+  final int leadingLength;
+
   final FlarkViewportRow? row;
   final String? neutralText;
   final int? neutralUtf16Start;
@@ -114,8 +134,24 @@ final class RenderFlarkSurface extends RenderBox {
   double _scrollOffset = 0;
   double _contentHeight = 0;
   int _laidOutPageIndex = 0;
+  int _laidOutRowCount = 0;
+  int _skippedRowCount = 0;
 
   double get scrollOffset => _scrollOffset;
+
+  /// Rows fully laid out in the last pass; below-fold rows are skipped.
+  int get debugLaidOutRowCount => _laidOutRowCount;
+
+  /// Rows whose layout was skipped as below the overscan budget.
+  int get debugSkippedRowCount => _skippedRowCount;
+
+  int get debugPaintedFragmentCount => _paintedRows.length;
+
+  /// The largest fragment any single painter holds, in UTF-16 units.
+  int get debugMaxFragmentUnits => _paintedRows.fold(
+    0,
+    (maximum, row) => math.max(maximum, row.fragmentEnd - row.fragmentStart),
+  );
 
   FlarkEditorController get controller => _controller;
   set controller(FlarkEditorController value) {
@@ -208,7 +244,13 @@ final class RenderFlarkSurface extends RenderBox {
     if (delta == 0 || !hasSize) return;
     final previous = _scrollOffset;
     _scrollOffset = (_scrollOffset + delta).clamp(0, _maximumScrollOffset);
-    if (_scrollOffset != previous) markNeedsPaint();
+    if (_scrollOffset != previous) {
+      markNeedsPaint();
+      // Scrolling toward estimated, un-laid-out rows materializes them.
+      if (_skippedRowCount > 0 && _scrollOffset > previous) {
+        markNeedsLayout();
+      }
+    }
     if (delta > 0 && _scrollOffset >= _maximumScrollOffset) {
       unawaited(_controller.nextViewportPage());
     } else if (delta < 0 && _scrollOffset <= 0) {
@@ -216,29 +258,44 @@ final class RenderFlarkSurface extends RenderBox {
     }
   }
 
+  /// Rows fully below this content-space line are not laid out this pass.
+  double get _layoutBudgetBottom =>
+      _scrollOffset + (hasSize ? size.height : 480) + _layoutOverscanPx;
+
+  /// The tallest reasonable estimate for one un-laid-out row: enough that
+  /// the scroll range never undershoots badly, cheap enough to be a guess.
+  double get _estimatedRowHeight {
+    final fontSize = _textStyle.fontSize ?? 16;
+    return fontSize * (_textStyle.height ?? 1.4);
+  }
+
   void _buildVisibleLayouts() {
     _paintedRows.clear();
+    _laidOutRowCount = 0;
+    _skippedRowCount = 0;
     final maxWidth = math.max(0.0, size.width - _padding.horizontal);
     var top = _padding.top;
     final rows = _controller.rows;
     if (rows.isNotEmpty) {
+      var skippedEstimate = 0.0;
       for (final row in rows) {
+        if (top > _layoutBudgetBottom) {
+          _skippedRowCount += 1;
+          skippedEstimate += _estimatedRowHeight + 6;
+          continue;
+        }
         final presentation = _controller.surfaceRow(row);
-        final painter = _layoutText(presentation, maxWidth);
-        final height = math.max(painter.height, painter.preferredLineHeight);
-        _paintedRows.add(
-          _PaintedRow(
-            top: top,
-            height: height,
-            painter: painter,
-            presentation: presentation,
-            ordinal: row.ordinal,
-            row: row,
-          ),
+        top = _emitFragments(
+          presentation: presentation,
+          ordinal: row.ordinal,
+          top: top,
+          maxWidth: maxWidth,
+          row: row,
         );
-        top += height + 6;
+        top += 6;
+        _laidOutRowCount += 1;
       }
-      _contentHeight = top + _padding.bottom;
+      _contentHeight = top + skippedEstimate + _padding.bottom;
       return;
     }
 
@@ -274,8 +331,14 @@ final class RenderFlarkSurface extends RenderBox {
       ranges.length,
       firstLine + _maximumNeutralPaintRows,
     );
+    var skippedEstimate = 0.0;
     for (var ordinal = firstLine; ordinal < lastLine; ordinal += 1) {
       final range = ranges[ordinal];
+      if (top > _layoutBudgetBottom) {
+        _skippedRowCount += 1;
+        skippedEstimate += _estimatedRowHeight;
+        continue;
+      }
       sourceOffset = range.start;
       final end = range.end;
       final text = source.substring(sourceOffset, end);
@@ -284,7 +347,47 @@ final class RenderFlarkSurface extends RenderBox {
         text: text,
         ordinal: ordinal,
       );
-      final painter = _layoutText(presentation, maxWidth);
+      top = _emitFragments(
+        presentation: presentation,
+        ordinal: ordinal,
+        top: top,
+        maxWidth: maxWidth,
+        neutralText: text,
+        neutralUtf16Start: _controller.visibleUtf16Start + sourceOffset,
+      );
+      _laidOutRowCount += 1;
+    }
+    _contentHeight = top + skippedEstimate + _padding.bottom;
+  }
+
+  /// Lays out one presentation as one or more bounded fragments and returns
+  /// the content-space bottom. A fragment boundary never splits a surrogate
+  /// pair, so every painter holds valid UTF-16.
+  double _emitFragments({
+    required FlarkSurfaceRow presentation,
+    required int ordinal,
+    required double top,
+    required double maxWidth,
+    FlarkViewportRow? row,
+    String? neutralText,
+    int? neutralUtf16Start,
+  }) {
+    final text = presentation.text;
+    var fragmentStart = 0;
+    var first = true;
+    while (first || fragmentStart < text.length) {
+      var fragmentEnd = math.min(text.length, fragmentStart + _fragmentUtf16Budget);
+      if (fragmentEnd < text.length) {
+        final unit = text.codeUnitAt(fragmentEnd);
+        if (unit >= 0xdc00 && unit <= 0xdfff) fragmentEnd -= 1;
+      }
+      final painter = _layoutText(
+        presentation,
+        maxWidth,
+        fragmentStart: fragmentStart,
+        fragmentEnd: fragmentEnd,
+        includeLeading: first,
+      );
       final height = math.max(painter.height, painter.preferredLineHeight);
       _paintedRows.add(
         _PaintedRow(
@@ -293,16 +396,31 @@ final class RenderFlarkSurface extends RenderBox {
           painter: painter,
           presentation: presentation,
           ordinal: ordinal,
-          neutralText: text,
-          neutralUtf16Start: _controller.visibleUtf16Start + sourceOffset,
+          fragmentStart: fragmentStart,
+          fragmentEnd: fragmentEnd,
+          leadingLength: first ? presentation.leadingText.length : 0,
+          row: row,
+          neutralText: neutralText,
+          neutralUtf16Start: neutralUtf16Start,
         ),
       );
       top += height;
+      fragmentStart = fragmentEnd;
+      first = false;
+      if (text.isEmpty) break;
     }
-    _contentHeight = top + _padding.bottom;
+    return top;
   }
 
-  TextPainter _layoutText(FlarkSurfaceRow presentation, double maxWidth) {
+  TextPainter _layoutText(
+    FlarkSurfaceRow presentation,
+    double maxWidth, {
+    int? fragmentStart,
+    int? fragmentEnd,
+    bool includeLeading = true,
+  }) {
+    final start = fragmentStart ?? 0;
+    final end = fragmentEnd ?? presentation.text.length;
     var style = switch (presentation.kind) {
       12 => _textStyle.copyWith(
         fontSize:
@@ -328,19 +446,30 @@ final class RenderFlarkSurface extends RenderBox {
       style = style.copyWith(fontStyle: FontStyle.italic, height: 1.4);
     }
     final children = <InlineSpan>[];
-    if (presentation.leadingText.isNotEmpty) {
+    if (includeLeading && presentation.leadingText.isNotEmpty) {
       children.add(TextSpan(text: presentation.leadingText));
     }
     if (presentation.runs.isNotEmpty) {
+      var cursor = 0;
       for (final run in presentation.runs) {
-        children.add(
-          TextSpan(text: run.text, style: _inlineStyle(style, run.styles)),
-        );
+        final runEnd = cursor + run.text.length;
+        final sliceStart = math.max(start, cursor);
+        final sliceEnd = math.min(end, runEnd);
+        if (sliceEnd > sliceStart) {
+          children.add(
+            TextSpan(
+              text: run.text.substring(sliceStart - cursor, sliceEnd - cursor),
+              style: _inlineStyle(style, run.styles),
+            ),
+          );
+        }
+        cursor = runEnd;
+        if (cursor >= end) break;
       }
-    } else if (presentation.text.isNotEmpty) {
-      children.add(TextSpan(text: presentation.text));
+    } else if (end > start) {
+      children.add(TextSpan(text: presentation.text.substring(start, end)));
     }
-    if (presentation.leadingText.isEmpty && presentation.text.isEmpty) {
+    if (children.isEmpty) {
       children.add(const TextSpan(text: ' '));
     }
     return TextPainter(
@@ -385,10 +514,9 @@ final class RenderFlarkSurface extends RenderBox {
         (contentOffset.dy - row.top).clamp(0, row.height),
       ),
     );
-    final local = (position.offset - row.presentation.leadingText.length).clamp(
-      0,
-      row.presentation.text.length,
-    );
+    final local = (position.offset - row.leadingLength + row.fragmentStart)
+        .clamp(row.fragmentStart, row.fragmentEnd)
+        .clamp(0, row.presentation.text.length);
     return FlarkSurfaceHit(
       globalUtf16Offset: row.presentation.sourceOffsetForTextOffset(local),
       ordinal: row.ordinal,
@@ -420,36 +548,60 @@ final class RenderFlarkSurface extends RenderBox {
       }
       final selection = row.presentation.selection;
       if (selection != null && selection.isValid && !selection.isCollapsed) {
-        final paint = Paint()..color = _selectionColor;
-        final leadingLength = row.presentation.leadingText.length;
-        final paintedSelection = TextSelection(
-          baseOffset: selection.baseOffset + leadingLength,
-          extentOffset: selection.extentOffset + leadingLength,
-          affinity: selection.affinity,
-          isDirectional: selection.isDirectional,
+        final selectionStart = math.min(
+          selection.baseOffset,
+          selection.extentOffset,
         );
-        for (final box in row.painter.getBoxesForSelection(paintedSelection)) {
-          canvas.drawRect(box.toRect().shift(origin), paint);
+        final selectionEnd = math.max(
+          selection.baseOffset,
+          selection.extentOffset,
+        );
+        final fragmentSelectionStart = math.max(
+          selectionStart,
+          row.fragmentStart,
+        );
+        final fragmentSelectionEnd = math.min(selectionEnd, row.fragmentEnd);
+        if (fragmentSelectionEnd > fragmentSelectionStart) {
+          final paint = Paint()..color = _selectionColor;
+          final paintedSelection = TextSelection(
+            baseOffset:
+                fragmentSelectionStart - row.fragmentStart + row.leadingLength,
+            extentOffset:
+                fragmentSelectionEnd - row.fragmentStart + row.leadingLength,
+            affinity: selection.affinity,
+            isDirectional: selection.isDirectional,
+          );
+          for (final box in row.painter.getBoxesForSelection(
+            paintedSelection,
+          )) {
+            canvas.drawRect(box.toRect().shift(origin), paint);
+          }
         }
       }
       row.painter.paint(canvas, origin);
       if (row.presentation.active && selection != null && selection.isValid) {
-        final caret = row.painter.getOffsetForCaret(
-          TextPosition(
-            offset:
-                selection.extentOffset + row.presentation.leadingText.length,
-          ),
-          Rect.zero,
-        );
-        canvas.drawRect(
-          Rect.fromLTWH(
-            origin.dx + caret.dx,
-            origin.dy + caret.dy,
-            1.5,
-            row.painter.preferredLineHeight,
-          ),
-          Paint()..color = _caretColor,
-        );
+        final extent = selection.extentOffset;
+        final caretInFragment =
+            (extent >= row.fragmentStart && extent < row.fragmentEnd) ||
+            (extent == row.fragmentEnd &&
+                row.fragmentEnd == row.presentation.text.length);
+        if (caretInFragment) {
+          final caret = row.painter.getOffsetForCaret(
+            TextPosition(
+              offset: extent - row.fragmentStart + row.leadingLength,
+            ),
+            Rect.zero,
+          );
+          canvas.drawRect(
+            Rect.fromLTWH(
+              origin.dx + caret.dx,
+              origin.dy + caret.dy,
+              1.5,
+              row.painter.preferredLineHeight,
+            ),
+            Paint()..color = _caretColor,
+          );
+        }
       }
     }
     canvas.restore();

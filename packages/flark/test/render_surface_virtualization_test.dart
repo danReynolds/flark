@@ -1,0 +1,111 @@
+import 'dart:io';
+
+import 'package:flark/flark.dart';
+import 'package:flark/src/render_surface.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  final libraryPath = Platform.environment['FLARK_V4_LIBRARY_PATH'];
+
+  testWidgets('a giant physical line lays out as bounded fragments', (
+    tester,
+  ) async {
+    final giant = List.filled(8 * 1024, 'p').join();
+    final controller = (await tester.runAsync(
+      () => FlarkEditorController.open(
+        '$giant\n\nAfter paragraph.\n',
+        libraryPath: libraryPath!,
+      ),
+    ))!;
+    await tester.runAsync(controller.continueParsing);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: SizedBox(
+          width: 640,
+          height: 3000,
+          child: FlarkEditor(controller: controller),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final surface = tester.renderObject<RenderFlarkSurface>(
+      find.byType(FlarkRenderSurfaceWidget),
+    );
+    expect(surface.debugMaxFragmentUnits, lessThanOrEqualTo(2048));
+
+    // The active row is separately paint-capped by the controller; the
+    // fragmentation property under test needs the giant row passive.
+    controller.activateRow(
+      controller.rows.last,
+      controller.rows.last.sourceUtf16.start,
+    );
+    await tester.pump();
+    expect(surface.debugMaxFragmentUnits, lessThanOrEqualTo(2048));
+    expect(surface.debugPaintedFragmentCount, greaterThanOrEqualTo(4));
+
+    // Deeper taps land deeper in the line: the fragment mapping preserves
+    // exact global offsets beyond one fragment budget.
+    final shallow = surface.positionForOffset(const Offset(10, 10));
+    final deep = surface.positionForOffset(const Offset(10, 2200));
+    expect(shallow, isNotNull);
+    expect(deep, isNotNull);
+    expect(deep!.globalUtf16Offset, greaterThan(shallow!.globalUtf16Offset));
+    expect(deep.globalUtf16Offset, greaterThan(2048));
+
+    // Activating deep inside the giant line places the caret without fault.
+    controller.activateRow(controller.rows.first, 5000);
+    await tester.pump();
+    expect(controller.globalCaretOffset, 5000);
+    expect(controller.lastError, isNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.runAsync(controller.close);
+  }, skip: libraryPath == null);
+
+  testWidgets('below-fold rows are estimated, not laid out, until scrolled', (
+    tester,
+  ) async {
+    final source = List<String>.generate(
+      600,
+      (index) => 'Paragraph $index.\n\n',
+    ).join();
+    final controller = (await tester.runAsync(
+      () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+    ))!;
+    await tester.runAsync(controller.continueParsing);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: SizedBox(
+          width: 640,
+          height: 240,
+          child: FlarkEditor(controller: controller),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final surface = tester.renderObject<RenderFlarkSurface>(
+      find.byType(FlarkRenderSurfaceWidget),
+    );
+    expect(surface.debugSkippedRowCount, greaterThan(0));
+    expect(
+      surface.debugLaidOutRowCount + surface.debugSkippedRowCount,
+      controller.rows.length,
+    );
+    final laidOutBefore = surface.debugLaidOutRowCount;
+
+    // Scrolling toward the estimated region materializes it.
+    surface.scrollBy(600);
+    await tester.pump();
+    expect(surface.debugLaidOutRowCount, greaterThan(laidOutBefore));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.runAsync(controller.close);
+  }, skip: libraryPath == null);
+}

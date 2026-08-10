@@ -422,6 +422,23 @@ to bless those runs. Claim-eligible paste receipts are deferred to a
 controlled bench session — which pairs with the live-IME evidence that
 already requires a human at the machine.
 
+The render surface now enforces its two remaining layout bounds. One laid-out
+painter never holds more than 2,048 UTF-16 units: a row beyond that budget is
+emitted as stacked surrogate-safe fragments with exact offset mapping, so
+selection boxes, the caret, and hit testing stay correct across fragment
+boundaries while a giant physical line can no longer force full-block layout
+on the frame path. Rows starting below the viewport plus a 400-pixel overscan
+are not laid out at all — their height is estimated until scrolling toward
+them triggers materialization — so offscreen layout is no longer built for
+the below-fold portion of a page. The active row keeps its separate
+2 Ki transient paint cap. Two focused regressions prove the fragment bound
+with deep hit-test monotonicity and caret placement inside a passive giant
+line, and below-fold skip counts with scroll-driven materialization; the
+existing 23 Flutter behavior tests are unchanged. Grapheme-cluster-perfect
+fragment boundaries (beyond surrogate safety), lazy per-fragment layout
+inside one giant row, and cross-page selection/navigation remain open in
+this milestone.
+
 One intermittent native fault also surfaced once and is under armed watch:
 a single run's first bulk commit returned INTERNAL_FAULT and could not be
 reproduced headlessly (paste-after-full-parse with a live viewport
