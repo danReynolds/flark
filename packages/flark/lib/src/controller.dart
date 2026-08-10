@@ -1244,9 +1244,10 @@ final class FlarkEditorController extends ChangeNotifier {
     if (current == null || previousIndex < 0) return false;
     try {
       await _document.releaseViewportContinuation(current);
+      final pageStart = _pageStarts[previousIndex];
       final previous = await _document.queryViewport(
-        startByte: _pageStarts[previousIndex],
-        endByte: sourceByteLength,
+        startByte: pageStart,
+        endByte: math.min(sourceByteLength, pageStart + _maximumVisibleBytes),
         maxRows: _viewportRowsPerPage,
       );
       final source = await _readViewportSource(previous);
@@ -1698,9 +1699,11 @@ final class FlarkEditorController extends ChangeNotifier {
     if (previous != null && previous.continuation != 0) {
       await _document.releaseViewportContinuation(previous);
     }
-    final requestedEnd = _document.isReady
-        ? sourceByteLength
-        : math.min(sourceByteLength, _maximumVisibleBytes);
+    // The visible cache is bounded by bytes as well as rows: one giant
+    // physical line would otherwise make a 32-row page exceed the 16 KiB
+    // window. Until giant-line fragmentation lands, the page request itself
+    // enforces the byte bound in every parse state.
+    final requestedEnd = math.min(sourceByteLength, _maximumVisibleBytes);
     final viewport = await _document.queryViewport(
       startByte: 0,
       endByte: requestedEnd,

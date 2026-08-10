@@ -389,14 +389,24 @@ display, build 2.09 ms p99, raster 1.39 ms p99, and a live vsync for the
 whole run. This is a development receipt on this Mac, not the M4/M6
 provenance artifact.
 
-The same fixed harness then caught a real regression the rejected runs could
-never isolate: the 32-KiB paste workload fails its bounded-surface guard —
-after the first paste into the 1 MiB fixture, `visibleSource` reached 33,583
-UTF-16 code units against the 16,384 cap
-(`frame_profile_test.dart` line 117). Typing receipts are unaffected. The
-paste-path bounded-window violation is the next debugging target; the paste
-product gate remains failed until it is fixed and a clean paste receipt
-exists.
+The same fixed harness then caught a real bounded-surface violation the
+rejected runs could never isolate: after a 32-KiB single-line paste into the
+1 MiB fixture, the ready-state full-range viewport refresh installed a
+32-row page containing the pasted 32,768-character physical line, so
+`visibleSource` reached 33,583 UTF-16 code units against the 16,384 cap.
+Row count bounds a page; byte length did not. Every viewport page request
+now enforces the visible-byte budget in every parse state, so a row crossing
+the requested boundary stays exact-source neutral until giant-line
+fragmentation lands; a probe confirmed the visible cache pins at the cap and
+the full suite is unchanged.
+
+The paste profile gate itself remains honestly red with the surface bound
+fixed: all ten post-paste input frames measured roughly 48 ms wall while
+their build and raster spans stayed under 6 ms, one 34-second frame-quiet
+span appeared mid-run under caffeinate, and the harness's
+foreground-validity heuristic misreads the paste workload's legitimate idle
+settle phases as a quiet display. Post-paste frame scheduling, the quiet
+span, and workload-aware validity are the open paste-gate investigation.
 
 The third tranche implements the executable core of that input-window state
 machine. The controller now maintains the contract's serialized shadow —
