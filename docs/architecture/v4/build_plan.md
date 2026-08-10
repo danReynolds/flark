@@ -281,6 +281,45 @@ autocorrect, dictation, or third-party IME certification. Those live input
 paths, selections beyond the bounded window, and complete command/navigation
 behavior remain open.
 
+A post-commit verification pass on the vertical-slice commit found its focused
+Flutter suite not green: the mixed-partition regression waited on
+`pendingEdits`, which retires at edit admission, then asserted against the
+installed viewport, which exists only after the post-admission query installs.
+A probe measured roughly six milliseconds between the two on this Mac, and the
+assertion deterministically lost that race. The controller was fail-closed the
+whole time — the installed page is revision-stamped and `semanticsCurrent`
+stays false through the window — so this was an untruthful test barrier, not
+stale paint. The gate now waits for the admitted revision's installed page and
+asserts page/document revision agreement.
+
+The same pass exposed a real torn observable in paging: both page navigations
+advanced the page index before installation awaited a bounded source read, so
+a consumer could observe the new page index with the old rows. Viewport
+installation is now synchronous — the bounded source read completes first,
+page state mutates adjacent to the swap, and the refresh path releases its
+fresh continuation when an edit supersedes it mid-flight. Five consecutive
+solo runs of the paging regression and the complete v4 gate pass.
+
+`scripts/verify_v4.sh` is now the local gate of record: it builds `flark-abi`,
+exports `FLARK_V4_LIBRARY_PATH`, and runs the Rust, Dart analyze/test, and
+Flutter analyze/test v4 suites with no pipeline masking an exit code. Without
+that variable the Dart and Flutter suites skip silently, which is how a red
+suite could previously read as green. Continuous-integration wiring for v4 is
+explicitly deferred by decision while core development remains local-first;
+the script is the gate.
+
+Two sequencing amendments are recorded. First, the bounded input-window/IME
+contract implementation must land together with the ABI surface it depends on
+that is currently declared but unimplemented — the anchor
+create/transform/resolve/release family, cancellation, create-abort, owner
+transfer, and session inspection — and with the migration of canonical
+selection, grapheme policy, and history ordering/grouping out of the Flutter
+controller into `flark_core`, where RFC 026 section 5 places them. That
+correction is part of the milestone, not later cleanup; the
+admission-versus-installation distinction above becomes a typed `flark_core`
+concern in the same move. Second, macOS foreground performance certification
+follows that milestone; the remaining order is unchanged.
+
 ## 1. Destination and current state
 
 The destination is fixed:
