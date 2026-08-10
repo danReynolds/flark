@@ -7,12 +7,15 @@
 mod implementation;
 
 pub use implementation::{
-    flark_v4_bulk_abort, flark_v4_bulk_append, flark_v4_bulk_begin, flark_v4_bulk_commit,
-    flark_v4_close_begin, flark_v4_close_finish, flark_v4_close_pump, flark_v4_continuation_next,
-    flark_v4_continuation_release, flark_v4_coordinate_convert, flark_v4_create_append,
+    flark_v4_anchor_create, flark_v4_anchor_release, flark_v4_anchor_resolve,
+    flark_v4_anchor_transform, flark_v4_bulk_abort, flark_v4_bulk_append, flark_v4_bulk_begin,
+    flark_v4_bulk_commit, flark_v4_cancel, flark_v4_close_begin, flark_v4_close_finish,
+    flark_v4_close_pump, flark_v4_continuation_next, flark_v4_continuation_release,
+    flark_v4_coordinate_convert, flark_v4_create_abort, flark_v4_create_append,
     flark_v4_create_begin, flark_v4_create_commit, flark_v4_history_release,
     flark_v4_history_replay, flark_v4_negotiate, flark_v4_pump, flark_v4_query_viewport,
-    flark_v4_small_edit, flark_v4_source_read,
+    flark_v4_session_inspect, flark_v4_session_transfer_owner, flark_v4_small_edit,
+    flark_v4_source_read,
 };
 
 pub use flark_runtime::{

@@ -6,9 +6,9 @@ use flark_runtime::{
     OwnerToken, ProgressState, ProgressToken, QueryKind, ResultPageReceipt, ResultRecordKind,
     Revision, RuntimeContract, RuntimeRequest, SessionConfig, SessionHandle, SessionRef,
     SnapshotId, SourceRange, StatusCode, TransactionHandle, WorkBudget, CAPABILITY_BITS,
-    HISTORY_DISPOSITIONS, MAX_BULK_CHUNK_BYTES, MAX_QUERY_ITEMS, MAX_RESULT_BYTES,
-    MAX_SMALL_EDIT_BYTES, MAX_SOURCE_CHUNK_BYTES, MAX_TRANSACTION_EDITS, OPERATION_CODES,
-    PARSER_PROFILES, PROGRESS_STATES, RESULT_RECORD_KINDS, STATUS_CODES,
+    HISTORY_DISPOSITIONS, MAX_BULK_CHUNK_BYTES, MAX_LIVE_ANCHORS, MAX_QUERY_ITEMS,
+    MAX_RESULT_BYTES, MAX_SMALL_EDIT_BYTES, MAX_SOURCE_CHUNK_BYTES, MAX_TRANSACTION_EDITS,
+    OPERATION_CODES, PARSER_PROFILES, PROGRESS_STATES, RESULT_RECORD_KINDS, STATUS_CODES,
 };
 
 fn assert_runtime_implementation_can_only_enter_through_the_contract<T: RuntimeContract>() {
@@ -23,6 +23,7 @@ fn contract_is_host_neutral_typed_and_bounded() {
     assert_eq!(MAX_RESULT_BYTES, 262_144);
     assert_eq!(MAX_QUERY_ITEMS, 4096);
     assert_eq!(MAX_TRANSACTION_EDITS, 64);
+    assert_eq!(MAX_LIVE_ANCHORS, 4096);
     assert_eq!(CoordinateKind::SourceByte as u32, 1);
     assert_eq!(CoordinateKind::Utf16CodeUnit as u32, 2);
     assert_ne!(Affinity::Upstream as u32, Affinity::Downstream as u32);

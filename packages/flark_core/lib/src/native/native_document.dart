@@ -300,8 +300,10 @@ final class FlarkNativeDocument {
       _fillBudget(request.ref.budget, workUnits: workUnits);
       final status = _bindings.pump(request, outcome);
       _requireStatus('pump', status, outcome.ref, {_ok, _budgetExhausted});
-      _progressToken = outcome.ref.progressToken;
       _ready = status == _ok;
+      // A completed pump's echoed token is terminal, not resumable; the next
+      // pump chain begins from zero.
+      _progressToken = _ready ? 0 : outcome.ref.progressToken;
       return _ready;
     } finally {
       calloc

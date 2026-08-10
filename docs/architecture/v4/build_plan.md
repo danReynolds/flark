@@ -320,6 +320,31 @@ admission-versus-installation distinction above becomes a typed `flark_core`
 concern in the same move. Second, macOS foreground performance certification
 follows that milestone; the remaining order is unchanged.
 
+The first tranche of that milestone is implemented: all twenty-nine header
+operations now exist. Anchors are source-stable byte positions with
+creation-time affinity, validated to scalar boundaries in either coordinate
+kind and transformed eagerly inside every committed small, bulk, and replay
+splice under a declared `MAX_LIVE_ANCHORS` cap of 4096, so anchor operations
+complete in one bounded call and close pumping drains unreleased anchors.
+Owner transfer requires an idle session and carries retained history-token
+authority to the new owner; cancellation retires exactly the current progress
+token and returns the stale-token status otherwise; session inspection
+reports state, revision, and all four live-handle counts through the fixed
+64-byte record. `STABLE_ANCHORS` and `CANCELLATION` capability bits are now
+advertised.
+
+Implementing the idle-migration rule exposed a real liveness defect: a
+completed pump retained its progress token forever, so a session that had
+ever pumped to readiness could never satisfy owner migration, and a fresh
+zero-token pump chain was rejected as stale. A terminal pump now echoes its
+final token but clears the stored one, and the Dart facade mirrors that
+terminal-token rule. Five new focused ABI regressions cover anchor stability
+through edits and replay in both coordinate kinds and affinities,
+cancellation authority, idle-only migration with history carriage,
+provisional-session abort, and lifecycle inspection. The complete verify_v4
+gate passes. This is the ABI substrate for canonical `flark_core` selection;
+no Dart selection policy has moved yet and no new performance claim follows.
+
 ## 1. Destination and current state
 
 The destination is fixed:

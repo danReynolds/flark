@@ -1,8 +1,9 @@
 # Flark v4 runtime and ABI contract, version 1
 
-**Status:** implemented direct v4 boundary. The checked-in manifest, C header,
-Rust encoder, and Dart decoder are contract-tested together; later product
-milestones still determine release readiness.
+**Status:** implemented direct v4 boundary. All twenty-nine header operations
+are implemented. The checked-in manifest, C header, Rust encoder, and Dart
+decoder are contract-tested together; later product milestones still determine
+release readiness.
 
 The machine-readable authority is
 [`test/fixtures/v4/runtime_abi_v1.json`](../../../../test/fixtures/v4/runtime_abi_v1.json).
@@ -99,8 +100,10 @@ session operation supplies the matching token. Concurrent calls return
 `SESSION_BUSY`; a different token returns `OWNER_MISMATCH`.
 `SESSION_TRANSFER_OWNER` changes the token only while the session is idle with
 no active call, transaction, or continuation. Otherwise it returns
-`MIGRATION_WHILE_ACTIVE`. Owner tokens describe serialization domains, not OS
-threads, Dart isolates, or executors.
+`MIGRATION_WHILE_ACTIVE`. Retained history tokens and live anchors survive an
+idle migration; their stored owner authority follows the session's new token.
+Owner tokens describe serialization domains, not OS threads, Dart isolates, or
+executors.
 
 ## 4. Source creation and atomic edits
 
@@ -329,6 +332,18 @@ at most one work unit; any nontrivial destruction joins the session reclamation
 queue. Anchor work may therefore span retained history without an unbounded
 synchronous walk.
 
+The current implementation keeps every anchor at the current revision by
+transforming all of a session's anchors inside each committed small, bulk, and
+history-replay splice. A position strictly inside a replaced span collapses to
+the splice edge named by the anchor's creation affinity, and an insertion
+exactly at an anchor moves it only for `DOWNSTREAM`. That eager maintenance is
+bounded by the declared `MAX_LIVE_ANCHORS` cap (4096 per session; exceeding it
+is `RESOURCE_LIMIT_EXCEEDED`, not yet surfaced in `FlarkV4AbiInfo`), so anchor
+operations complete in their first bounded call and never issue a nonzero
+resume token. Creation validates its position as a scalar boundary in the
+requested coordinate kind; unreleased anchors are drained by close pumping and
+counted by `CLOSE_FINISH`.
+
 The host-neutral `Outcome` contains a typed `OperationResult` variant. The
 manifest's `outcomeFieldRoles` maps every operation and typed variant into the
 generic fixed-width C fields; unlisted fields are zero. Session inspection has
@@ -368,7 +383,13 @@ The active progress states are:
 If a nonterminal call repeats the same token without a named external
 requirement, the runtime returns `PROGRESS_STALLED` with `FAULT`. Cancellation
 and supersession occur at pump boundaries. A cancel naming an old token returns
-`STALE_PROGRESS_TOKEN`.
+`STALE_PROGRESS_TOKEN`; a successful `CANCEL` retires exactly the current
+nonzero session progress token and echoes it with status `CANCELLED`.
+
+A terminal `COMPLETE` pump echoes its final token in the receipt but
+invalidates the stored progress: the session reads as idle for owner
+migration, and the next pump chain begins from token zero. A completed
+progress token can therefore no longer be cancelled or resumed.
 
 Previously ambiguous terminal conditions have separate codes:
 

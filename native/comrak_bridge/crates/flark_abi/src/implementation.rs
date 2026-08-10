@@ -7,23 +7,24 @@ use std::str;
 use std::sync::{Mutex, OnceLock};
 
 use flark_runtime::{
-    CertificationState, ContinuationHandle, CoordinateKind, DocumentActor, DocumentActorError,
-    DocumentBulletMarker, DocumentCodeBlockStyle, DocumentFenceCharacter, DocumentHeadingStyle,
-    DocumentInlineFact, DocumentInlineFactKind, DocumentListDelimiter, DocumentListMarker,
-    DocumentLiveViewportSpan, DocumentSessionError, DocumentSessionPhase,
+    Affinity, AnchorHandle, CertificationState, ContinuationHandle, CoordinateKind, DocumentActor,
+    DocumentActorError, DocumentBulletMarker, DocumentCodeBlockStyle, DocumentFenceCharacter,
+    DocumentHeadingStyle, DocumentInlineFact, DocumentInlineFactKind, DocumentListDelimiter,
+    DocumentListMarker, DocumentLiveViewportSpan, DocumentSessionError, DocumentSessionPhase,
     DocumentViewportRowEditCapability, DocumentViewportRowPresentation, HistoryDisposition,
     HistoryToken, OperationCode, OperationResult, Outcome as RuntimeOutcome, ProgressState,
-    ProgressToken, ResultPageReceipt, ResultRecordKind, Revision, SessionHandle, SnapshotId,
-    SourceRange as RuntimeSourceRange, StatusCode, TransactionHandle, MAX_BULK_CHUNK_BYTES,
-    MAX_QUERY_ITEMS, MAX_RESULT_BYTES, MAX_SMALL_EDIT_BYTES, MAX_SOURCE_CHUNK_BYTES,
-    MAX_TRANSACTION_EDITS,
+    ProgressToken, ResultPageReceipt, ResultRecordKind, Revision, SessionHandle,
+    SessionInspectionReceipt, SessionState, SnapshotId, SourceRange as RuntimeSourceRange,
+    StatusCode, TransactionHandle, MAX_BULK_CHUNK_BYTES, MAX_LIVE_ANCHORS, MAX_QUERY_ITEMS,
+    MAX_RESULT_BYTES, MAX_SMALL_EDIT_BYTES, MAX_SOURCE_CHUNK_BYTES, MAX_TRANSACTION_EDITS,
 };
 
 use crate::{
-    AbiInfo, BulkBeginRequest, CertificationRangeRecord, CloseRequest, ContinuationRequest,
-    CoordinateRequest, CreateRequest, EditDescriptor, HistoryRequest, InlineFactRecord,
-    NegotiateRequest, Outcome, PumpRequest, QueryRequest, ResultPageHeader, SessionRef,
-    SmallEditRequest, SourceRange, SourceReadRequest, StageRequest, TransactionRequest,
+    AbiInfo, AnchorRequest, BulkBeginRequest, CancelRequest, CertificationRangeRecord,
+    CloseRequest, ContinuationRequest, CoordinateRequest, CreateRequest, EditDescriptor,
+    HistoryRequest, InlineFactRecord, InspectRequest, NegotiateRequest, Outcome,
+    OwnerTransferRequest, PumpRequest, QueryRequest, ResultPageHeader, SessionInspection,
+    SessionRef, SmallEditRequest, SourceRange, SourceReadRequest, StageRequest, TransactionRequest,
     ViewportRowRecord, WorkBudget, ABI_MAJOR, ABI_MINOR, INLINE_FACT_AUTOLINK_EMAIL,
     INLINE_FACT_AUTOLINK_URI, INLINE_FACT_BACKSLASH_ESCAPE, INLINE_FACT_CODE,
     INLINE_FACT_DIRECT_IMAGE, INLINE_FACT_DIRECT_LINK, INLINE_FACT_EMPHASIS,
@@ -47,8 +48,10 @@ const IMPLEMENTED_CAPABILITIES: u64 = (1 << 0)
     | (1 << 3)
     | (1 << 4)
     | (1 << 5)
+    | (1 << 6)
     | (1 << 7)
     | (1 << 8)
+    | (1 << 11)
     | (1 << 12)
     | (1 << 13)
     | (1 << 14);
@@ -59,6 +62,7 @@ struct Registry {
     transactions: BTreeMap<u64, StoredBulkTransaction>,
     continuations: BTreeMap<u64, StoredContinuation>,
     histories: BTreeMap<u64, StoredHistory>,
+    anchors: BTreeMap<u64, StoredAnchor>,
 }
 
 impl Default for Registry {
@@ -69,6 +73,7 @@ impl Default for Registry {
             transactions: BTreeMap::new(),
             continuations: BTreeMap::new(),
             histories: BTreeMap::new(),
+            anchors: BTreeMap::new(),
         }
     }
 }
@@ -91,15 +96,26 @@ struct StoredSession {
     max_document_bytes: u64,
     progress_token: u64,
     continuations: BTreeSet<u64>,
+    anchors: BTreeSet<u64>,
     history_budget_bytes: u64,
     history_used_bytes: u64,
     history_head: u64,
     history_tail: u64,
     history_state: u64,
     next_history_state: u64,
+    history_token_count: u32,
     evicted_history_tokens: BTreeSet<u64>,
     close_token: u64,
     close_complete: bool,
+}
+
+/// A source-stable position. Anchors are transformed eagerly on every
+/// committed edit, so a stored offset is always a scalar boundary at the
+/// session's current revision; no per-anchor revision or edit journal exists.
+struct StoredAnchor {
+    session: u64,
+    byte_offset: u64,
+    affinity: Affinity,
 }
 
 enum StoredSessionState {
@@ -329,6 +345,7 @@ fn detach_history(registry: &mut Registry, token: u64) -> Option<StoredHistory> 
         entry.history_used_bytes = entry
             .history_used_bytes
             .saturating_sub(history.retained_bytes);
+        entry.history_token_count = entry.history_token_count.saturating_sub(1);
     }
     Some(history)
 }
@@ -406,7 +423,95 @@ fn retain_history(
         .history_used_bytes
         .checked_add(retained_bytes)
         .ok_or(StatusCode::ResourceLimitExceeded)?;
+    entry.history_token_count = entry
+        .history_token_count
+        .checked_add(1)
+        .ok_or(StatusCode::ResourceLimitExceeded)?;
     Ok((HistoryToken(token), HistoryDisposition::Retained))
+}
+
+/// Maps one anchored byte offset through a committed splice of
+/// `deleted_len` bytes replaced by `inserted_len` bytes at `start`.
+///
+/// Offsets strictly inside the deleted span collapse to the splice edge named
+/// by the anchor's affinity; an offset exactly at `start` moves with the
+/// insertion only for `Downstream`. Every input offset is a scalar boundary
+/// and every produced offset is one, because splices only occur at validated
+/// scalar boundaries.
+fn map_offset_through_edit(
+    offset: u64,
+    affinity: Affinity,
+    start: u64,
+    deleted_len: u64,
+    inserted_len: u64,
+) -> u64 {
+    let deleted_end = start.saturating_add(deleted_len);
+    if offset < start {
+        return offset;
+    }
+    if offset == start {
+        return match affinity {
+            Affinity::Upstream => start,
+            Affinity::Downstream => start.saturating_add(inserted_len),
+        };
+    }
+    if offset >= deleted_end {
+        return offset - deleted_len + inserted_len;
+    }
+    match affinity {
+        Affinity::Upstream => start,
+        Affinity::Downstream => start.saturating_add(inserted_len),
+    }
+}
+
+/// Eagerly transforms every live anchor of `session` through one committed
+/// splice, keeping all anchors at the current revision. Work is bounded by
+/// `MAX_LIVE_ANCHORS`.
+fn transform_session_anchors(
+    registry: &mut Registry,
+    session: u64,
+    start: u64,
+    deleted_len: u64,
+    inserted_len: u64,
+) {
+    for anchor in registry.anchors.values_mut() {
+        if anchor.session == session {
+            anchor.byte_offset = map_offset_through_edit(
+                anchor.byte_offset,
+                anchor.affinity,
+                start,
+                deleted_len,
+                inserted_len,
+            );
+        }
+    }
+}
+
+/// Resolves one anchor handle for a validated owned session, distinguishing a
+/// handle of another kind from an unknown or consumed one.
+fn anchor_for_request(
+    registry: &Registry,
+    session: SessionRef,
+    anchor: u64,
+) -> Result<&StoredAnchor, StatusCode> {
+    if anchor == 0 {
+        return Err(StatusCode::InvalidArgument);
+    }
+    match registry.anchors.get(&anchor) {
+        Some(stored) if stored.session == session.session => Ok(stored),
+        Some(_) => Err(StatusCode::InvalidHandle),
+        None => {
+            if registry.sessions.contains_key(&anchor)
+                || registry.transactions.contains_key(&anchor)
+                || registry.continuations.contains_key(&anchor)
+                || registry.histories.contains_key(&anchor)
+            {
+                Err(StatusCode::WrongHandleKind)
+            } else {
+                Err(StatusCode::InvalidHandle)
+            }
+        }
+    }
 }
 
 fn history_for_request(
@@ -523,12 +628,14 @@ pub extern "C" fn flark_v4_create_begin(
                 max_document_bytes: request.config.max_document_bytes,
                 progress_token: 0,
                 continuations: BTreeSet::new(),
+                anchors: BTreeSet::new(),
                 history_budget_bytes: request.config.history_budget_bytes,
                 history_used_bytes: 0,
                 history_head: 0,
                 history_tail: 0,
                 history_state: 1,
                 next_history_state: 2,
+                history_token_count: 0,
                 evicted_history_tokens: BTreeSet::new(),
                 close_token: 0,
                 close_complete: false,
@@ -679,6 +786,44 @@ pub extern "C" fn flark_v4_create_commit(
 }
 
 #[no_mangle]
+pub extern "C" fn flark_v4_create_abort(
+    request: *const TransactionRequest,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::CreateAbort, outcome, || {
+        let request = unsafe { read_record(request, size_of::<TransactionRequest>() as u32)? };
+        if !valid_budget(request.budget, false)
+            || request.flags != 0
+            || request.transaction == 0
+            || request.expected_revision != 0
+            || request.progress_token != 0
+            || request.reserved != [0; 1]
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        {
+            let entry = session_entry(&mut registry, request.session)?;
+            let StoredSessionState::Creating { transaction, .. } = &entry.state else {
+                return Err(StatusCode::TransactionAlreadyCommitted);
+            };
+            if *transaction != request.transaction {
+                return Err(StatusCode::TransactionConflict);
+            }
+        }
+        registry.sessions.remove(&request.session.session);
+        Ok(RuntimeOutcome {
+            operation: OperationCode::CreateAbort,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::None,
+        })
+    })
+}
+
+#[no_mangle]
 pub extern "C" fn flark_v4_pump(request: *const PumpRequest, outcome: *mut Outcome) -> u32 {
     emit(OperationCode::Pump, outcome, || {
         let request = unsafe { read_record(request, size_of::<PumpRequest>() as u32)? };
@@ -709,12 +854,18 @@ pub extern "C" fn flark_v4_pump(request: *const PumpRequest, outcome: *mut Outco
             .map_err(|error| map_actor_error(&error))?;
         let revision = receipt.revision;
         let ready = receipt.phase == DocumentSessionPhase::Ready;
-        if !ready {
+        // Completed progress is not active work: the receipt echoes the final
+        // token, but the stored token clears so the session reads as idle for
+        // owner migration and a later pump chain starts from zero.
+        let result_token = if ready {
+            std::mem::take(&mut entry.progress_token)
+        } else {
             entry.progress_token = entry
                 .progress_token
                 .checked_add(1)
                 .ok_or(StatusCode::ResourceLimitExceeded)?;
-        }
+            entry.progress_token
+        };
         Ok(RuntimeOutcome {
             operation: OperationCode::Pump,
             status: if ready {
@@ -731,7 +882,7 @@ pub extern "C" fn flark_v4_pump(request: *const PumpRequest, outcome: *mut Outco
             written_payload_bytes: 0,
             result: OperationResult::Progress {
                 revision: Revision(revision),
-                token: ProgressToken(entry.progress_token),
+                token: ProgressToken(result_token),
             },
         })
     })
@@ -809,6 +960,13 @@ pub extern "C" fn flark_v4_small_edit(
         registry
             .continuations
             .retain(|_, continuation| continuation.session != request.session.session);
+        transform_session_anchors(
+            &mut registry,
+            request.session.session,
+            edit.start_byte,
+            deleted,
+            replacement_bytes_len,
+        );
         let (history_token, history) = retain_history(
             &mut registry,
             request.session,
@@ -1177,6 +1335,13 @@ pub extern "C" fn flark_v4_bulk_commit(
         registry
             .continuations
             .retain(|_, continuation| continuation.session != request.session.session);
+        transform_session_anchors(
+            &mut registry,
+            request.session.session,
+            transaction.start_byte,
+            transaction.end_byte - transaction.start_byte,
+            replacement_len,
+        );
         let (history_token, disposition) = match history {
             BulkHistoryCapture::Capturing(inverse) => retain_history(
                 &mut registry,
@@ -1305,6 +1470,13 @@ pub extern "C" fn flark_v4_history_replay(
         registry
             .continuations
             .retain(|_, continuation| continuation.session != request.session.session);
+        transform_session_anchors(
+            &mut registry,
+            request.session.session,
+            history.start_byte,
+            history.end_byte - history.start_byte,
+            replay_end - history.start_byte,
+        );
         let _ = detach_history(&mut registry, request.history_token);
         let (history_token, history) = retain_history(
             &mut registry,
@@ -1452,6 +1624,269 @@ pub extern "C" fn flark_v4_coordinate_convert(
                 revision: Revision(request.revision),
                 coordinate: to,
                 position: converted as u64,
+            },
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_anchor_create(
+    request: *const AnchorRequest,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::AnchorCreate, outcome, || {
+        let request = unsafe { read_record(request, size_of::<AnchorRequest>() as u32)? };
+        if !valid_budget(request.budget, false)
+            || request.anchor != 0
+            || request.snapshot != 0
+            || request.progress_token != 0
+            || request.reserved_u32 != 0
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let coordinate = match request.coordinate_kind {
+            1 => CoordinateKind::SourceByte,
+            2 => CoordinateKind::Utf16CodeUnit,
+            _ => return Err(StatusCode::InvalidArgument),
+        };
+        let affinity = match request.affinity {
+            1 => Affinity::Upstream,
+            2 => Affinity::Downstream,
+            _ => return Err(StatusCode::InvalidArgument),
+        };
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        let (byte_offset, revision) = {
+            let entry = session_entry(&mut registry, request.session)?;
+            if entry.anchors.len() >= MAX_LIVE_ANCHORS as usize {
+                return Err(StatusCode::ResourceLimitExceeded);
+            }
+            let StoredSessionState::Open(document) = &entry.state else {
+                return Err(StatusCode::SessionBusy);
+            };
+            let inspection = document
+                .inspect()
+                .map_err(|error| map_actor_error(&error))?;
+            if request.revision != inspection.revision {
+                return Err(StatusCode::StaleRevision);
+            }
+            let position =
+                usize::try_from(request.position).map_err(|_| StatusCode::CoordinateOutOfRange)?;
+            let byte_offset = match coordinate {
+                CoordinateKind::SourceByte => {
+                    if position > inspection.source_byte_len {
+                        return Err(StatusCode::CoordinateOutOfRange);
+                    }
+                    document
+                        .utf16_offset_for_byte(position)
+                        .map_err(|_| StatusCode::RangeNotScalarBoundary)?;
+                    request.position
+                }
+                CoordinateKind::Utf16CodeUnit => {
+                    if position > inspection.source_utf16_len {
+                        return Err(StatusCode::CoordinateOutOfRange);
+                    }
+                    let byte = document
+                        .byte_offset_for_utf16(position)
+                        .map_err(|_| StatusCode::RangeNotScalarBoundary)?;
+                    byte as u64
+                }
+            };
+            (byte_offset, inspection.revision)
+        };
+        let handle = registry.allocate_handle()?;
+        registry.anchors.insert(
+            handle,
+            StoredAnchor {
+                session: request.session.session,
+                byte_offset,
+                affinity,
+            },
+        );
+        owned_session_entry(&mut registry, request.session)?
+            .anchors
+            .insert(handle);
+        Ok(RuntimeOutcome {
+            operation: OperationCode::AnchorCreate,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::Anchor {
+                anchor: AnchorHandle(handle),
+                revision: Revision(revision),
+            },
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_anchor_transform(
+    request: *const AnchorRequest,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::AnchorTransform, outcome, || {
+        let request = unsafe { read_record(request, size_of::<AnchorRequest>() as u32)? };
+        if !valid_budget(request.budget, false)
+            || request.coordinate_kind != 0
+            || request.snapshot != 0
+            || request.position != 0
+            || request.affinity != 0
+            || request.progress_token != 0
+            || request.reserved_u32 != 0
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        session_entry(&mut registry, request.session)?;
+        anchor_for_request(&registry, request.session, request.anchor)?;
+        let entry = session_entry(&mut registry, request.session)?;
+        let StoredSessionState::Open(document) = &entry.state else {
+            return Err(StatusCode::SessionBusy);
+        };
+        let inspection = document
+            .inspect()
+            .map_err(|error| map_actor_error(&error))?;
+        if request.revision != inspection.revision {
+            return Err(StatusCode::StaleRevision);
+        }
+        Ok(RuntimeOutcome {
+            operation: OperationCode::AnchorTransform,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::Anchor {
+                anchor: AnchorHandle(request.anchor),
+                revision: Revision(inspection.revision),
+            },
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_anchor_resolve(
+    request: *const AnchorRequest,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::AnchorResolve, outcome, || {
+        let request = unsafe { read_record(request, size_of::<AnchorRequest>() as u32)? };
+        if !valid_budget(request.budget, false)
+            || request.snapshot != 0
+            || request.position != 0
+            || request.affinity != 0
+            || request.progress_token != 0
+            || request.reserved_u32 != 0
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let coordinate = match request.coordinate_kind {
+            1 => CoordinateKind::SourceByte,
+            2 => CoordinateKind::Utf16CodeUnit,
+            _ => return Err(StatusCode::InvalidArgument),
+        };
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        session_entry(&mut registry, request.session)?;
+        let byte_offset =
+            anchor_for_request(&registry, request.session, request.anchor)?.byte_offset;
+        let entry = session_entry(&mut registry, request.session)?;
+        let StoredSessionState::Open(document) = &entry.state else {
+            return Err(StatusCode::SessionBusy);
+        };
+        let inspection = document
+            .inspect()
+            .map_err(|error| map_actor_error(&error))?;
+        if request.revision != inspection.revision {
+            return Err(StatusCode::StaleRevision);
+        }
+        let position = match coordinate {
+            CoordinateKind::SourceByte => byte_offset,
+            CoordinateKind::Utf16CodeUnit => {
+                let offset = usize::try_from(byte_offset).map_err(|_| StatusCode::InternalFault)?;
+                document
+                    .utf16_offset_for_byte(offset)
+                    .map_err(|_| StatusCode::InternalFault)? as u64
+            }
+        };
+        Ok(RuntimeOutcome {
+            operation: OperationCode::AnchorResolve,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::AnchorPosition {
+                anchor: AnchorHandle(request.anchor),
+                revision: Revision(inspection.revision),
+                coordinate,
+                position,
+            },
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_anchor_release(
+    request: *const AnchorRequest,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::AnchorRelease, outcome, || {
+        let request = unsafe { read_record(request, size_of::<AnchorRequest>() as u32)? };
+        if !valid_budget(request.budget, false)
+            || request.coordinate_kind != 0
+            || request.revision != 0
+            || request.snapshot != 0
+            || request.position != 0
+            || request.affinity != 0
+            || request.progress_token != 0
+            || request.reserved_u32 != 0
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        owned_session_entry(&mut registry, request.session)?;
+        anchor_for_request(&registry, request.session, request.anchor)?;
+        registry.anchors.remove(&request.anchor);
+        owned_session_entry(&mut registry, request.session)?
+            .anchors
+            .remove(&request.anchor);
+        Ok(RuntimeOutcome {
+            operation: OperationCode::AnchorRelease,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::None,
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_cancel(request: *const CancelRequest, outcome: *mut Outcome) -> u32 {
+    emit(OperationCode::Cancel, outcome, || {
+        let request = unsafe { read_record(request, size_of::<CancelRequest>() as u32)? };
+        if request.flags != 0 || request.progress_token == 0 || request.reserved != [0; 4] {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        let entry = owned_session_entry(&mut registry, request.session)?;
+        let StoredSessionState::Open(document) = &entry.state else {
+            return Err(StatusCode::SessionBusy);
+        };
+        if entry.progress_token == 0 || entry.progress_token != request.progress_token {
+            return Err(StatusCode::StaleProgressToken);
+        }
+        let inspection = document
+            .inspect()
+            .map_err(|error| map_actor_error(&error))?;
+        entry.progress_token = 0;
+        Ok(RuntimeOutcome {
+            operation: OperationCode::Cancel,
+            status: StatusCode::Cancelled,
+            progress: ProgressState::Cancelled,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::Progress {
+                revision: Revision(inspection.revision),
+                token: ProgressToken(request.progress_token),
             },
         })
     })
@@ -1793,6 +2228,7 @@ pub extern "C" fn flark_v4_close_finish(
             entry.close_complete
                 && entry.transactions.is_empty()
                 && entry.continuations.is_empty()
+                && entry.anchors.is_empty()
                 && entry.history_head == 0
                 && entry.evicted_history_tokens.is_empty()
         };
@@ -1856,6 +2292,19 @@ fn pump_session_close(
             continue;
         }
 
+        let anchor = owned_session_entry(registry, session)?
+            .anchors
+            .first()
+            .copied();
+        if let Some(anchor) = anchor {
+            registry.anchors.remove(&anchor);
+            owned_session_entry(registry, session)?
+                .anchors
+                .remove(&anchor);
+            remaining -= 1;
+            continue;
+        }
+
         let history = owned_session_entry(registry, session)?.history_head;
         if history != 0 {
             detach_history(registry, history).ok_or(StatusCode::InternalFault)?;
@@ -1894,8 +2343,109 @@ fn pump_session_close(
     Ok(entry.close_complete
         && entry.transactions.is_empty()
         && entry.continuations.is_empty()
+        && entry.anchors.is_empty()
         && entry.history_head == 0
         && entry.evicted_history_tokens.is_empty())
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_session_transfer_owner(
+    request: *const OwnerTransferRequest,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::SessionTransferOwner, outcome, || {
+        let request = unsafe { read_record(request, size_of::<OwnerTransferRequest>() as u32)? };
+        if request.flags != 0 || request.new_owner_token == 0 || request.reserved != [0; 4] {
+            return Err(StatusCode::InvalidArgument);
+        }
+        {
+            let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+            let entry = session_entry(&mut registry, request.session)?;
+            let StoredSessionState::Open(_) = &entry.state else {
+                return Err(StatusCode::SessionBusy);
+            };
+            if entry.progress_token != 0
+                || !entry.transactions.is_empty()
+                || !entry.continuations.is_empty()
+            {
+                return Err(StatusCode::MigrationWhileActive);
+            }
+            entry.owner = request.new_owner_token;
+            // Retained history tokens survive an idle owner migration, so
+            // their stored owner authority must follow the session's.
+            for history in registry.histories.values_mut() {
+                if history.session == request.session.session {
+                    history.owner = request.new_owner_token;
+                }
+            }
+        }
+        Ok(RuntimeOutcome {
+            operation: OperationCode::SessionTransferOwner,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::OwnerTransferred {
+                session: SessionHandle(request.session.session),
+            },
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_session_inspect(
+    request: *const InspectRequest,
+    inspection: *mut SessionInspection,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::SessionInspect, outcome, || {
+        let request = unsafe { read_record(request, size_of::<InspectRequest>() as u32)? };
+        if request.flags != 0 || request.reserved != [0; 5] || inspection.is_null() {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        let entry = owned_session_entry(&mut registry, request.session)?;
+        let (state, revision, live_transactions) = match &entry.state {
+            StoredSessionState::Creating { .. } => (SessionState::Creating, 0, 1),
+            StoredSessionState::Open(document) => {
+                let observed = document
+                    .inspect()
+                    .map_err(|error| map_actor_error(&error))?;
+                let state = if observed.phase == DocumentSessionPhase::Faulted {
+                    SessionState::Faulted
+                } else if entry.close_token != 0 {
+                    SessionState::Closing
+                } else {
+                    SessionState::Open
+                };
+                let transactions = u32::try_from(entry.transactions.len())
+                    .map_err(|_| StatusCode::InternalFault)?;
+                (state, observed.revision, transactions)
+            }
+        };
+        let receipt = SessionInspectionReceipt {
+            session: SessionHandle(request.session.session),
+            state,
+            revision: Revision(revision),
+            live_transactions,
+            live_continuations: u32::try_from(entry.continuations.len())
+                .map_err(|_| StatusCode::InternalFault)?,
+            live_anchors: u32::try_from(entry.anchors.len())
+                .map_err(|_| StatusCode::InternalFault)?,
+            live_history_tokens: entry.history_token_count,
+        };
+        unsafe {
+            ptr::write_unaligned(inspection, SessionInspection::from_runtime(receipt));
+        }
+        Ok(RuntimeOutcome {
+            operation: OperationCode::SessionInspect,
+            status: StatusCode::Ok,
+            progress: ProgressState::Complete,
+            required_payload_bytes: 0,
+            written_payload_bytes: 0,
+            result: OperationResult::SessionInspection(receipt),
+        })
+    })
 }
 
 #[allow(clippy::too_many_arguments)]

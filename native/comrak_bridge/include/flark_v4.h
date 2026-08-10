@@ -210,6 +210,9 @@ typedef uint64_t FlarkV4OwnerToken;
 #define FLARK_V4_MAX_RESULT_BYTES UINT32_C(262144)
 #define FLARK_V4_MAX_QUERY_ITEMS UINT32_C(4096)
 #define FLARK_V4_MAX_TRANSACTION_EDITS UINT32_C(64)
+/* Live anchors are transformed eagerly on every committed edit; this cap
+ * bounds that per-edit maintenance. Not yet surfaced in FlarkV4AbiInfo. */
+#define FLARK_V4_MAX_LIVE_ANCHORS UINT32_C(4096)
 
 typedef struct FlarkV4AbiInfo {
   uint32_t struct_size;

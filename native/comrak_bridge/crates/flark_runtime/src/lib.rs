@@ -518,6 +518,10 @@ pub const MAX_SOURCE_CHUNK_BYTES: u32 = 65_536;
 pub const MAX_RESULT_BYTES: u32 = 262_144;
 pub const MAX_QUERY_ITEMS: u32 = 4096;
 pub const MAX_TRANSACTION_EDITS: u32 = 64;
+/// Hard cap on live anchors per session. Anchors are transformed eagerly on
+/// every committed edit, so this bound is what keeps edit admission's anchor
+/// maintenance a bounded synchronous cost.
+pub const MAX_LIVE_ANCHORS: u32 = 4096;
 
 macro_rules! opaque_id {
     ($name:ident) => {
