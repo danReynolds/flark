@@ -136,6 +136,8 @@ final class RenderFlarkSurface extends RenderBox {
   int _laidOutPageIndex = 0;
   int _laidOutRowCount = 0;
   int _skippedRowCount = 0;
+  int _skippedFragmentCount = 0;
+  double _skippedFragmentEstimate = 0;
 
   double get scrollOffset => _scrollOffset;
 
@@ -146,6 +148,9 @@ final class RenderFlarkSurface extends RenderBox {
   int get debugSkippedRowCount => _skippedRowCount;
 
   int get debugPaintedFragmentCount => _paintedRows.length;
+
+  /// Fragments of a laid-out row whose layout was skipped as below-fold.
+  int get debugSkippedFragmentCount => _skippedFragmentCount;
 
   /// The largest fragment any single painter holds, in UTF-16 units.
   int get debugMaxFragmentUnits => _paintedRows.fold(
@@ -273,6 +278,8 @@ final class RenderFlarkSurface extends RenderBox {
     _paintedRows.clear();
     _laidOutRowCount = 0;
     _skippedRowCount = 0;
+    _skippedFragmentCount = 0;
+    _skippedFragmentEstimate = 0;
     final maxWidth = math.max(0.0, size.width - _padding.horizontal);
     var top = _padding.top;
     final rows = _controller.rows;
@@ -295,7 +302,8 @@ final class RenderFlarkSurface extends RenderBox {
         top += 6;
         _laidOutRowCount += 1;
       }
-      _contentHeight = top + skippedEstimate + _padding.bottom;
+      _contentHeight =
+          top + skippedEstimate + _skippedFragmentEstimate + _padding.bottom;
       return;
     }
 
@@ -357,7 +365,8 @@ final class RenderFlarkSurface extends RenderBox {
       );
       _laidOutRowCount += 1;
     }
-    _contentHeight = top + skippedEstimate + _padding.bottom;
+    _contentHeight =
+        top + skippedEstimate + _skippedFragmentEstimate + _padding.bottom;
   }
 
   /// Lays out one presentation as one or more bounded fragments and returns
@@ -376,6 +385,17 @@ final class RenderFlarkSurface extends RenderBox {
     var fragmentStart = 0;
     var first = true;
     while (first || fragmentStart < text.length) {
+      // The layout budget applies per fragment, not only per row: one giant
+      // physical line is a single row, so a row-level check alone would lay
+      // out its entire length every frame.
+      if (!first && top > _layoutBudgetBottom) {
+        final remaining = text.length - fragmentStart;
+        final skippedFragments =
+            (remaining + _fragmentUtf16Budget - 1) ~/ _fragmentUtf16Budget;
+        _skippedFragmentCount += skippedFragments;
+        _skippedFragmentEstimate += skippedFragments * _estimatedRowHeight;
+        break;
+      }
       var fragmentEnd = math.min(text.length, fragmentStart + _fragmentUtf16Budget);
       if (fragmentEnd < text.length) {
         final unit = text.codeUnitAt(fragmentEnd);

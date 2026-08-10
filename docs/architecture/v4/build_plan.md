@@ -422,6 +422,56 @@ to bless those runs. Claim-eligible paste receipts are deferred to a
 controlled bench session — which pairs with the live-IME evidence that
 already requires a human at the machine.
 
+A development sweep across three document sizes (1, 5, 10 MiB) and three
+content shapes (ordinary prose, one giant physical line, many tiny blocks)
+running the typing workload produced the first multi-shape evidence, and it
+found real defects that 1 MiB ordinary-prose measurement had hidden.
+
+The size-independence claim holds empirically: the body of the sample
+distribution measured 8.31-8.33 ms p50 in every cell that produced a
+receipt, independent of both size and shape. Ordinary prose is clean at all
+three sizes (p99 8.92-9.93 ms). That is the architectural result the bounded
+window, byte-capped visible cache, and fragmented layout were built to
+produce.
+
+Three findings came out of the hostile shapes. First, one giant physical
+line degraded typing badly: at 5 MiB every one of 120 samples measured
+50-62 ms, and at 10 MiB nineteen samples measured 48-57 ms with raster
+p99 at 21.16 ms. The cause was a defect in the fragmentation work recorded
+above: the below-fold layout budget was evaluated once per row, and a giant
+line is a single row, so its whole visible length was laid out every frame
+regardless of the viewport. The budget is now evaluated per fragment, with
+unlaid fragments counted and height-estimated exactly like skipped rows, and
+the regression suite now asserts the within-row property (a giant row
+accounts for every fragment as laid out or skipped, skips at least one, and
+materializes more when the viewport actually grows — the earlier test
+asserted a fragment count that encoded the unbounded behavior, and its
+"taller viewport" case was void because a widget test surface clamps to
+800x600 unless resized explicitly). Second, many tiny blocks at 1 MiB
+produced editor-attributed over-budget frames: p99 23.35 ms and maximum
+29.32 ms with raster p99 15.35 ms, which no display artifact explains.
+Third, many tiny blocks at 5 and 10 MiB fail outright, producing no receipt
+on either attempt — a reproducible hard failure, not a timing problem.
+
+Two process corrections are recorded with those findings. A mid-sweep claim
+that the giant-line result was environmental was premature: it rested on one
+contradicting retry, and the 5 MiB cell then reproduced the signature on
+both attempts. And a threshold that labels any sample at or above 30 ms
+"display-attributed" is not attribution — the 5 MiB giant-line cell had all
+120 samples above it from a real defect. Per-sample attribution against the
+frame stream, which the certification contract already requires in the form
+of editor-attributed misses, is the instrumentation this harness still owes.
+
+The remaining open items from the sweep are the tiny-blocks over-budget
+raster cost, the tiny-blocks hard failure at 5 MiB and above, and a
+suspected frame-scheduling starvation: `_finishParsing` pumps the worker in
+a free-running `while (!ready) await pump()` loop, which can keep the UI
+isolate's event queue saturated so frames are not scheduled promptly. That
+model fits the multi-second holes observed at 10 MiB, and RFC 026 section 6
+assigns frame scheduling and work-budget allocation to `flark`, so the fix
+is to pump a bounded amount per frame from a frame callback rather than in
+an unbounded await loop.
+
 The render surface now enforces its two remaining layout bounds. One laid-out
 painter never holds more than 2,048 UTF-16 units: a row beyond that budget is
 emitted as stacked surrogate-safe fragments with exact offset mapping, so

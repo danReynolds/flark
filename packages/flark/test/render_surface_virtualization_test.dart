@@ -44,17 +44,39 @@ void main() {
       controller.rows.last.sourceUtf16.start,
     );
     await tester.pump();
-    expect(surface.debugMaxFragmentUnits, lessThanOrEqualTo(2048));
-    expect(surface.debugPaintedFragmentCount, greaterThanOrEqualTo(4));
 
-    // Deeper taps land deeper in the line: the fragment mapping preserves
-    // exact global offsets beyond one fragment budget.
-    final shallow = surface.positionForOffset(const Offset(10, 10));
-    final deep = surface.positionForOffset(const Offset(10, 2200));
+    // Every painter stays inside the fragment budget, and the giant row is
+    // fully accounted for: whatever is not laid out is explicitly skipped.
+    expect(surface.debugMaxFragmentUnits, lessThanOrEqualTo(2048));
+    final rowUnits = controller.surfaceRow(controller.rows.first).text.length;
+    expect(rowUnits, 8192);
+    expect(
+      surface.debugPaintedFragmentCount + surface.debugSkippedFragmentCount,
+      greaterThanOrEqualTo((rowUnits / 2048).ceil()),
+    );
+
+    // The layout budget applies within a row, not only between rows: a
+    // giant line does not lay out its whole length for one visible frame.
+    expect(surface.debugSkippedFragmentCount, greaterThan(0));
+    final shortViewportFragments = surface.debugPaintedFragmentCount;
+
+    // A taller viewport materializes more of the same row. The test surface
+    // itself must grow: a SizedBox alone is clamped by the 800x600 default.
+    await tester.binding.setSurfaceSize(const Size(640, 12000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pump();
+    expect(
+      surface.debugPaintedFragmentCount,
+      greaterThan(shortViewportFragments),
+    );
+    expect(surface.debugMaxFragmentUnits, lessThanOrEqualTo(2048));
+
+    // Offsets stay monotonic and exact across fragment boundaries.
+    final shallow = surface.positionForOffset(const Offset(10, 40));
+    final deep = surface.positionForOffset(const Offset(10, 4000));
     expect(shallow, isNotNull);
     expect(deep, isNotNull);
     expect(deep!.globalUtf16Offset, greaterThan(shallow!.globalUtf16Offset));
-    expect(deep.globalUtf16Offset, greaterThan(2048));
 
     // Activating deep inside the giant line places the caret without fault.
     controller.activateRow(controller.rows.first, 5000);

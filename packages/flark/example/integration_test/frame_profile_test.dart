@@ -27,13 +27,17 @@ void main() {
       'FLARK_PROFILE_START_DELAY_MS',
       defaultValue: 0,
     );
+    const sourceBytes = int.fromEnvironment(
+      'FLARK_PROFILE_SOURCE_BYTES',
+      defaultValue: 1024 * 1024,
+    );
     final libraryPath = configuredLibrary.isNotEmpty
         ? configuredLibrary
         : File(
             '../../../native/comrak_bridge/target/release/libflark_abi.dylib',
           ).absolute.path;
     final controller = await FlarkEditorController.open(
-      _fixture(1024 * 1024, shape: fixtureShape),
+      _fixture(sourceBytes, shape: fixtureShape),
       libraryPath: libraryPath,
     );
     await controller.continueParsing();
@@ -252,6 +256,16 @@ int _maximum(List<int> values) =>
     values.fold(0, (maximum, value) => value > maximum ? value : maximum);
 
 String _fixture(int targetBytes, {required String shape}) {
+  if (shape == 'giant-line') {
+    // One physical line filling the whole target: the hostile case for
+    // bounded windows, paging, and fragment layout.
+    final buffer = StringBuffer();
+    const token = 'giantword ';
+    while (buffer.length < targetBytes - 1) {
+      buffer.write(token);
+    }
+    return '${buffer.toString().substring(0, targetBytes - 1)}\n';
+  }
   final (prefix, block) = switch (shape) {
     'ordinary' => (
       '',
@@ -263,6 +277,7 @@ String _fixture(int targetBytes, {required String shape}) {
           '[direct](https://a.test) [ref][id] ![alt](image.png) '
           '<https://b.test>  \nnext\n\n',
     ),
+    'tiny-blocks' => ('', 'x.\n\n'),
     _ => throw ArgumentError.value(shape, 'shape', 'unsupported fixture shape'),
   };
   final buffer = StringBuffer(prefix);

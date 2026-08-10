@@ -12,6 +12,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LIBRARY="$ROOT/native/comrak_bridge/target/release/libflark_abi.dylib"
 SHAPE="${FLARK_PROFILE_SHAPE:-ordinary}"
 WORKLOAD="${FLARK_PROFILE_WORKLOAD:-typing}"
+SOURCE_BYTES="${FLARK_PROFILE_SOURCE_BYTES:-1048576}"
 
 cargo build --manifest-path "$ROOT/native/comrak_bridge/Cargo.toml" \
   --package flark-abi --release
@@ -28,4 +29,5 @@ exec caffeinate -dis flutter drive \
   -d macos \
   --dart-define=FLARK_V4_LIBRARY_PATH="$LIBRARY" \
   --dart-define=FLARK_PROFILE_SHAPE="$SHAPE" \
-  --dart-define=FLARK_PROFILE_WORKLOAD="$WORKLOAD"
+  --dart-define=FLARK_PROFILE_WORKLOAD="$WORKLOAD" \
+  --dart-define=FLARK_PROFILE_SOURCE_BYTES="$SOURCE_BYTES"
