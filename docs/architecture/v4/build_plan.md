@@ -528,10 +528,49 @@ former uniform 50-62 ms wall behavior, and what remains is occasional
 rasterization cost for tall wrapped fragments rather than layout work. That
 residue is a candidate optimization, not a correctness gate.
 
+The tiny-blocks hard failure is now root-caused, and it is two defects
+stacked. The engine reports a typed `PayloadBudgetExceeded` when a document
+whose block count rather than byte count dominates exhausts the arena's live
+payload budget: five mebibytes of four-byte blocks is over a million blocks,
+and the default budget is 64 MiB, which is also exactly the memory ceiling
+the evidence contract allows for that document size. The engine is therefore
+reporting an honest capacity limit, and this content shape is a recorded
+scale limitation rather than a crash to be patched away.
+
+What was defective is everything after that report. The failed build was
+dropped without cancellation, tripping a `Drop` assertion that panicked the
+`flark-document` actor thread; the actor died silently, and every later ABI
+call degraded to an anonymous `INTERNAL_FAULT` — the observed symptom was a
+`coordinate_convert` internal fault with no mention of the real cause. That
+also violated the ABI contract's panic-containment rule, which the actor
+thread had never satisfied: `catch_unwind` guarded the ABI entrypoint, but a
+panic on the actor's own thread crossed no barrier at all.
+
+The actor now runs every job behind a panic barrier. A contained unwind
+discards the session rather than reusing state whose invariants a partial
+mutation may have broken, poisons that actor so later calls report the same
+typed fault, and runs the discarded session's destructor behind the same
+barrier so a failing destructor cannot abort the process either. `flark-abi`
+maps the contained unwind to `PANIC_CONTAINED` as the contract requires
+instead of collapsing it into an internal fault. Two regressions pin the
+behaviour: the payload budget surfaces as a typed parser error naming the
+budget, and a deliberately panicking job is contained, reported, and leaves
+an actor that still answers and drops cleanly. End to end, the shape that
+previously killed the actor now returns `PARSER_FAULT` with no panic at all.
+
+Writing those regressions surfaced a related hazard worth recording: a
+faulted `DocumentSession` cannot be dropped bare, because the runtime's own
+destructor asserts that it must be explicitly closed and fuel-drained. In
+production the actor is the only owner and now contains that, but it means
+a faulted session's reclamation runs through the contained path rather than
+the bounded close state machine, so exactly-zero-live-state after a fault is
+not yet proven. Both regressions therefore drive the actor rather than a
+bare session, which is the production ownership.
+
 The remaining open items from the sweep are the giant-line raster spike, the
-tiny-blocks over-budget raster cost, the tiny-blocks hard failure at 5 MiB
-and above, and a now-falsified frame-scheduling suspicion retained here only
-as a record: `_finishParsing` pumps the worker in
+tiny-blocks over-budget raster cost, the engine's per-block payload overhead
+for block-dense documents, and a now-falsified frame-scheduling suspicion
+retained here only as a record: `_finishParsing` pumps the worker in
 a free-running `while (!ready) await pump()` loop. That hypothesis is not
 yet supported: each pump awaits a worker-isolate reply, which already yields
 to the event loop, so frames have an opportunity to interleave. The

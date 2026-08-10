@@ -1,5 +1,6 @@
 use std::fmt;
 use std::ops::Range;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::{self, JoinHandle};
 
@@ -10,7 +11,10 @@ use crate::{
 
 const DOCUMENT_ACTOR_STACK_BYTES: usize = 16 * 1024 * 1024;
 
-type ActorJob = Box<dyn FnOnce(&mut DocumentSession) + Send + 'static>;
+/// A job runs against the session when one is live, and is told when the
+/// actor has already contained a panic so it can report that instead. It
+/// returns whether it contained a panic, which poisons the actor.
+type ActorJob = Box<dyn FnOnce(Option<&mut DocumentSession>) -> bool + Send + 'static>;
 
 enum ActorCommand {
     Run(ActorJob),
@@ -30,6 +34,10 @@ pub enum DocumentActorError {
     Spawn(std::io::Error),
     Session(DocumentSessionError),
     Closed,
+    /// A job unwound inside the document actor. The panic was contained, the
+    /// session was discarded, and every later call reports this rather than
+    /// touching state whose invariants a partial mutation may have broken.
+    Panicked,
 }
 
 impl fmt::Display for DocumentActorError {
@@ -38,6 +46,9 @@ impl fmt::Display for DocumentActorError {
             Self::Spawn(error) => write!(formatter, "could not start document actor: {error}"),
             Self::Session(error) => error.fmt(formatter),
             Self::Closed => formatter.write_str("document actor is closed"),
+            Self::Panicked => {
+                formatter.write_str("document actor contained a panic and is faulted")
+            }
         }
     }
 }
@@ -161,6 +172,17 @@ impl DocumentActor {
         self.call(move |document| document.pump_close(max_work_units))
     }
 
+    /// Test-only entry point for driving a job whose behaviour, including an
+    /// unwind, is the subject under test.
+    #[doc(hidden)]
+    pub fn call_for_test<T, F>(&self, operation: F) -> Result<T, DocumentActorError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut DocumentSession) -> Result<T, DocumentSessionError> + Send + 'static,
+    {
+        self.call(operation)
+    }
+
     fn call<T, F>(&self, operation: F) -> Result<T, DocumentActorError>
     where
         T: Send + 'static,
@@ -169,13 +191,26 @@ impl DocumentActor {
         let (reply_sender, reply_receiver) = mpsc::sync_channel(0);
         self.commands
             .send(ActorCommand::Run(Box::new(move |document| {
-                let _ = reply_sender.send(operation(document));
+                // Engine work runs behind a panic barrier here as well as at
+                // the ABI entrypoint: a panic on this thread would otherwise
+                // kill the actor silently and degrade every later call to an
+                // anonymous internal fault.
+                let (reply, panicked) = match document {
+                    None => (Err(DocumentActorError::Panicked), false),
+                    Some(document) => {
+                        match catch_unwind(AssertUnwindSafe(|| operation(document))) {
+                            Ok(result) => (result.map_err(DocumentActorError::Session), false),
+                            Err(_) => (Err(DocumentActorError::Panicked), true),
+                        }
+                    }
+                };
+                let _ = reply_sender.send(reply);
+                panicked
             })))
             .map_err(|_| DocumentActorError::Closed)?;
         reply_receiver
             .recv()
             .map_err(|_| DocumentActorError::Closed)?
-            .map_err(DocumentActorError::Session)
     }
 }
 
@@ -196,7 +231,7 @@ fn run_document_actor(
     let mut document = match DocumentSession::begin(&source) {
         Ok(document) => {
             let _ = startup.send(Ok(()));
-            document
+            Some(document)
         }
         Err(error) => {
             let _ = startup.send(Err(error));
@@ -205,8 +240,22 @@ fn run_document_actor(
     };
     while let Ok(command) = commands.recv() {
         match command {
-            ActorCommand::Run(operation) => operation(&mut document),
+            ActorCommand::Run(operation) => {
+                if operation(document.as_mut()) {
+                    // A contained panic may have left the session mid
+                    // transition, so it is discarded rather than reused, and
+                    // its destructor runs behind the same barrier.
+                    discard(document.take());
+                }
+            }
             ActorCommand::Shutdown => break,
         }
+    }
+    discard(document.take());
+}
+
+fn discard(document: Option<DocumentSession>) {
+    if let Some(document) = document {
+        let _ = catch_unwind(AssertUnwindSafe(move || drop(document)));
     }
 }

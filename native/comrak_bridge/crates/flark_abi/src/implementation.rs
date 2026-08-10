@@ -244,6 +244,9 @@ fn map_actor_error(error: &DocumentActorError) -> StatusCode {
         DocumentActorError::Session(error) => map_document_error(error),
         DocumentActorError::Spawn(_) => StatusCode::ResourceLimitExceeded,
         DocumentActorError::Closed => StatusCode::InternalFault,
+        // The contract requires a contained unwind to be reported as such
+        // rather than collapsing into an anonymous internal fault.
+        DocumentActorError::Panicked => StatusCode::PanicContained,
     }
 }
 

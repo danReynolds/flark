@@ -480,14 +480,30 @@ impl DocumentSession {
     fn advance_one(&mut self, state: ParseState) -> Result<ParseState, DocumentSessionError> {
         match state {
             ParseState::Clean(mut build) => {
-                let poll = build.poll(&mut self.runtime, 1)?;
+                // A recursive-green build asserts on drop unless its root was
+                // transferred or it was explicitly cancelled, so an error here
+                // must release the build rather than let it fall out of scope:
+                // otherwise the assertion kills the document actor thread and
+                // every later call reports an opaque internal fault instead of
+                // this typed parser error.
+                let poll = match build.poll(&mut self.runtime, 1) {
+                    Ok(poll) => poll,
+                    Err(error) => {
+                        release_failed_clean_build(&mut self.runtime, build);
+                        return Err(error.into());
+                    }
+                };
                 if poll.status() == M11PersistentRecursiveGreenBuildStatus::Complete {
-                    let session = build.take_session().ok_or(
-                        M11PersistentRecursiveGreenSessionError::InvalidState(
-                            "completed clean build omitted its session",
-                        ),
-                    )?;
-                    Ok(ParseState::Ready(Box::new(session)))
+                    match build.take_session() {
+                        Some(session) => Ok(ParseState::Ready(Box::new(session))),
+                        None => {
+                            release_failed_clean_build(&mut self.runtime, build);
+                            Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                                "completed clean build omitted its session",
+                            )
+                            .into())
+                        }
+                    }
                 } else {
                     Ok(ParseState::Clean(build))
                 }
@@ -1616,6 +1632,32 @@ fn query_adopting_live_viewport(
         spans,
         receipt: DocumentQueryReceipt::default(),
     })
+}
+
+/// Releases a clean build whose poll failed.
+///
+/// Cancellation is drained in bounded turns. If it cannot be drained the
+/// build is deliberately leaked: retaining its arena state is strictly
+/// better than the drop assertion, which would stop the document actor and
+/// erase the typed fault that caused this path.
+fn release_failed_clean_build(
+    runtime: &mut DocumentRuntime,
+    mut build: Box<M11PersistentRecursiveGreenCleanBuild>,
+) {
+    const RELEASE_FUEL_PER_TURN: usize = 256;
+    const MAX_RELEASE_TURNS: usize = 4096;
+    if build.begin_cancel(runtime).is_ok() {
+        for _ in 0..MAX_RELEASE_TURNS {
+            match build.poll_cancel(runtime, RELEASE_FUEL_PER_TURN) {
+                Ok(poll) if poll.status() == M11PersistentRecursiveGreenBuildStatus::Cancelled => {
+                    return;
+                }
+                Ok(_) => {}
+                Err(_) => break,
+            }
+        }
+    }
+    mem::forget(build);
 }
 
 fn begin_clean_build(
