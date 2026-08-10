@@ -518,9 +518,20 @@ now runs the twenty warmups the evidence contract already prescribes for
 sustained typing, excluded from the distribution. Neither change discards a
 sample that the editor caused.
 
-The remaining open items from the sweep are the tiny-blocks over-budget
-raster cost, the tiny-blocks hard failure at 5 MiB and above, and a
-now-falsified frame-scheduling suspicion retained here only as a record: `_finishParsing` pumps the worker in
+With that metric available and both runs served at full rate, the 5 MiB
+typing comparison is the clearest editor-cost evidence to date. Ordinary
+prose spends 1.333 ms p50 and 2.269 ms p99 of editor-attributed latency per
+keystroke with zero over-budget samples and a valid run. One giant physical
+line spends 2.325 ms p50 and 10.062 ms p99 with a single 49.438 ms outlier
+and raster p99 at 17.815 ms: the layout defect above accounted for the
+former uniform 50-62 ms wall behavior, and what remains is occasional
+rasterization cost for tall wrapped fragments rather than layout work. That
+residue is a candidate optimization, not a correctness gate.
+
+The remaining open items from the sweep are the giant-line raster spike, the
+tiny-blocks over-budget raster cost, the tiny-blocks hard failure at 5 MiB
+and above, and a now-falsified frame-scheduling suspicion retained here only
+as a record: `_finishParsing` pumps the worker in
 a free-running `while (!ready) await pump()` loop. That hypothesis is not
 yet supported: each pump awaits a worker-isolate reply, which already yields
 to the event loop, so frames have an opportunity to interleave. The
