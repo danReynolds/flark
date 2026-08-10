@@ -462,15 +462,33 @@ both attempts. And a threshold that labels any sample at or above 30 ms
 frame stream, which the certification contract already requires in the form
 of editor-attributed misses, is the instrumentation this harness still owes.
 
+The per-fragment budget fix is confirmed by measurement rather than argued:
+re-running the worst cell, 5 MiB giant-line, moved it from 120 of 120
+samples at 50-62 ms to 8.34 ms p50 with 106 of 120 samples inside the frame
+budget. Fourteen outliers remain in that cell and are the subject of the
+attribution work below.
+
+The harness now classifies every over-budget sample instead of thresholding
+it. Each sample records the engine vsync stamp of the frame it proved, and
+after the run each over-budget sample is joined to that frame and labelled
+`editor` (the frame's own build plus raster reached the budget),
+`display` (the vsync gap preceding it explains the wall time), or
+`unexplained` (a frame was served promptly and cheaply, yet the sample still
+waited). The third bucket is the one that would indicate scheduling
+starvation, and it is now measured rather than assumed.
+
 The remaining open items from the sweep are the tiny-blocks over-budget
 raster cost, the tiny-blocks hard failure at 5 MiB and above, and a
 suspected frame-scheduling starvation: `_finishParsing` pumps the worker in
-a free-running `while (!ready) await pump()` loop, which can keep the UI
-isolate's event queue saturated so frames are not scheduled promptly. That
-model fits the multi-second holes observed at 10 MiB, and RFC 026 section 6
-assigns frame scheduling and work-budget allocation to `flark`, so the fix
-is to pump a bounded amount per frame from a frame callback rather than in
-an unbounded await loop.
+a free-running `while (!ready) await pump()` loop. That hypothesis is not
+yet supported: each pump awaits a worker-isolate reply, which already yields
+to the event loop, so frames have an opportunity to interleave. The
+competing explanations are a single native pump turn that runs long on a
+large document and an engine-level frame-delivery stall. RFC 026 section 6
+assigns frame scheduling and work-budget allocation to `flark`, so bounded
+per-frame pumping is the likely shape of the fix, but the attribution data
+decides which mechanism is actually at fault before any scheduler change
+lands.
 
 The render surface now enforces its two remaining layout bounds. One laid-out
 painter never holds more than 2,048 UTF-16 units: a row beyond that budget is

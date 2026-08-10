@@ -63,6 +63,9 @@ void main() {
     final inputFrameBuildMicros = <int>[];
     final settleMicros = <int>[];
     final undoSettleMicros = <int>[];
+    // Engine vsync stamp of the frame each sample proved, used after the run
+    // to join samples to their FrameTiming without perturbing the cadence.
+    final sampleFrameStamps = <int>[];
     switch (workload) {
       case 'typing':
         for (var index = 0; index < 120; index += 1) {
@@ -84,6 +87,9 @@ void main() {
           await tester.pump();
           watch.stop();
           inputToFrameMicros.add(watch.elapsedMicroseconds);
+          sampleFrameStamps.add(
+            binding.currentSystemFrameTimeStamp.inMicroseconds,
+          );
         }
       case 'paste-32kib':
         final baseBytes = controller.sourceByteLength;
@@ -185,6 +191,66 @@ void main() {
         .map((timing) => timing.rasterDuration.inMicroseconds)
         .toList();
 
+    // Per-sample attribution. A threshold on wall time alone cannot tell an
+    // editor-attributed over-budget frame from a display hole, which the
+    // evidence contract requires distinguishing, so every over-budget sample
+    // is joined to the frame it proved and classified from that frame's own
+    // phases and the vsync gap preceding it.
+    final orderedTimings = [...frameTimings]
+      ..sort(
+        (a, b) => a
+            .timestampInMicroseconds(FramePhase.vsyncStart)
+            .compareTo(b.timestampInMicroseconds(FramePhase.vsyncStart)),
+      );
+    final attributions = <Map<String, Object?>>[];
+    var editorAttributedOverBudget = 0;
+    var displayAttributedOverBudget = 0;
+    var unexplainedOverBudget = 0;
+    for (var index = 0; index < sampleFrameStamps.length; index += 1) {
+      final wall = inputToFrameMicros[index];
+      if (wall < 16000) continue;
+      final stamp = sampleFrameStamps[index];
+      var provingIndex = -1;
+      for (var candidate = 0; candidate < orderedTimings.length; candidate += 1) {
+        final vsync = orderedTimings[candidate].timestampInMicroseconds(
+          FramePhase.vsyncStart,
+        );
+        if (vsync <= stamp) {
+          provingIndex = candidate;
+        } else {
+          break;
+        }
+      }
+      final proving = provingIndex >= 0 ? orderedTimings[provingIndex] : null;
+      final previous = provingIndex > 0 ? orderedTimings[provingIndex - 1] : null;
+      final editorMicros = proving == null
+          ? 0
+          : proving.buildDuration.inMicroseconds +
+              proving.rasterDuration.inMicroseconds;
+      final gapMicros = proving == null || previous == null
+          ? 0
+          : proving.timestampInMicroseconds(FramePhase.vsyncStart) -
+              previous.timestampInMicroseconds(FramePhase.vsyncStart);
+      final String verdict;
+      if (editorMicros >= 16000) {
+        verdict = 'editor';
+        editorAttributedOverBudget += 1;
+      } else if (gapMicros >= wall * 0.8) {
+        verdict = 'display';
+        displayAttributedOverBudget += 1;
+      } else {
+        verdict = 'unexplained';
+        unexplainedOverBudget += 1;
+      }
+      attributions.add({
+        'sample': index,
+        'wallMs': wall / 1000,
+        'editorMs': editorMicros / 1000,
+        'vsyncGapMs': gapMicros / 1000,
+        'verdict': verdict,
+      });
+    }
+
     // Distinguishes a quiet display (large inter-frame vsync gap) from a
     // starved await (steady vsync while a sample stalled).
     final vsyncStarts = frameTimings
@@ -200,7 +266,7 @@ void main() {
         .map((gap) => [(gap.first as int) / 1000, gap.last])
         .toList();
     stdout.writeln(
-      'FLARK_PROFILE_RECEIPT ${jsonEncode({'fixtureShape': fixtureShape, 'workload': workload, 'sourceBytes': controller.sourceByteLength, 'inputSamples': inputToFrameMicros.length, 'inputHandlingRawMs': inputHandlingMicros.map((value) => value / 1000).toList(), 'inputHandlingP50Ms': _percentile(inputHandlingMicros, 50) / 1000, 'inputHandlingP99Ms': _percentile(inputHandlingMicros, 99) / 1000, 'inputHandlingMaxMs': _maximum(inputHandlingMicros) / 1000, 'inputToFrameRawMs': inputToFrameMicros.map((value) => value / 1000).toList(), 'inputToFrameP50Ms': _percentile(inputToFrameMicros, 50) / 1000, 'inputToFrameP99Ms': _percentile(inputToFrameMicros, 99) / 1000, 'inputToFrameMaxMs': _maximum(inputToFrameMicros) / 1000, 'inputFrameBuildRawMs': inputFrameBuildMicros.map((value) => value / 1000).toList(), 'inputFrameBuildP50Ms': _percentile(inputFrameBuildMicros, 50) / 1000, 'inputFrameBuildP99Ms': _percentile(inputFrameBuildMicros, 99) / 1000, 'inputFrameBuildMaxMs': _maximum(inputFrameBuildMicros) / 1000, 'settleRawMs': settleMicros.map((value) => value / 1000).toList(), 'settleP50Ms': _percentile(settleMicros, 50) / 1000, 'settleP99Ms': _percentile(settleMicros, 99) / 1000, 'settleMaxMs': _maximum(settleMicros) / 1000, 'undoSettleRawMs': undoSettleMicros.map((value) => value / 1000).toList(), 'undoSettleMaxMs': _maximum(undoSettleMicros) / 1000, 'frameSamples': frameTimings.length, 'buildP99Ms': _percentile(buildMicros, 99) / 1000, 'buildMaxMs': _maximum(buildMicros) / 1000, 'rasterP99Ms': _percentile(rasterMicros, 99) / 1000, 'rasterMaxMs': _maximum(rasterMicros) / 1000, 'vsyncGapTopMs': vsyncGapTopMs, 'throttledFrameFraction': throttledFraction, 'foregroundValid': foregroundValid, 'pendingEdits': controller.pendingEdits})}',
+      'FLARK_PROFILE_RECEIPT ${jsonEncode({'fixtureShape': fixtureShape, 'workload': workload, 'sourceBytes': controller.sourceByteLength, 'inputSamples': inputToFrameMicros.length, 'inputHandlingRawMs': inputHandlingMicros.map((value) => value / 1000).toList(), 'inputHandlingP50Ms': _percentile(inputHandlingMicros, 50) / 1000, 'inputHandlingP99Ms': _percentile(inputHandlingMicros, 99) / 1000, 'inputHandlingMaxMs': _maximum(inputHandlingMicros) / 1000, 'inputToFrameRawMs': inputToFrameMicros.map((value) => value / 1000).toList(), 'inputToFrameP50Ms': _percentile(inputToFrameMicros, 50) / 1000, 'inputToFrameP99Ms': _percentile(inputToFrameMicros, 99) / 1000, 'inputToFrameMaxMs': _maximum(inputToFrameMicros) / 1000, 'inputFrameBuildRawMs': inputFrameBuildMicros.map((value) => value / 1000).toList(), 'inputFrameBuildP50Ms': _percentile(inputFrameBuildMicros, 50) / 1000, 'inputFrameBuildP99Ms': _percentile(inputFrameBuildMicros, 99) / 1000, 'inputFrameBuildMaxMs': _maximum(inputFrameBuildMicros) / 1000, 'settleRawMs': settleMicros.map((value) => value / 1000).toList(), 'settleP50Ms': _percentile(settleMicros, 50) / 1000, 'settleP99Ms': _percentile(settleMicros, 99) / 1000, 'settleMaxMs': _maximum(settleMicros) / 1000, 'undoSettleRawMs': undoSettleMicros.map((value) => value / 1000).toList(), 'undoSettleMaxMs': _maximum(undoSettleMicros) / 1000, 'frameSamples': frameTimings.length, 'buildP99Ms': _percentile(buildMicros, 99) / 1000, 'buildMaxMs': _maximum(buildMicros) / 1000, 'rasterP99Ms': _percentile(rasterMicros, 99) / 1000, 'rasterMaxMs': _maximum(rasterMicros) / 1000, 'vsyncGapTopMs': vsyncGapTopMs, 'overBudgetAttribution': attributions, 'editorAttributedOverBudget': editorAttributedOverBudget, 'displayAttributedOverBudget': displayAttributedOverBudget, 'unexplainedOverBudget': unexplainedOverBudget, 'throttledFrameFraction': throttledFraction, 'foregroundValid': foregroundValid, 'pendingEdits': controller.pendingEdits})}',
     );
 
     expect(
