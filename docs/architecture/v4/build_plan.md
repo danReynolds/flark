@@ -1,12 +1,48 @@
 # Flark v4 build plan
 
 **Execution contract for
-[RFC 026](../rfc/rfc_026_flark_v4_product_architecture.md).** 2026-08-08.
+[RFC 026](../rfc/rfc_026_flark_v4_product_architecture.md) as amended by
+[RFC 027](../rfc/rfc_027_continuously_rendered_markdown.md).** 2026-08-08.
 
 This plan builds a headless Dart `flark_core` over the selected incremental
 Rust engine, then builds the Flutter product `flark` on top. The first proof and
 all initial performance work run on the available Mac. Android and iOS claims
 wait for physical devices; Windows follows later.
+
+## 2026-08-11 continuously-rendered product correction
+
+The first real dogfood pass falsified the prototype's focus behavior. The
+surface currently sends every pan gesture into selection and restores exact
+Markdown whenever a row becomes active. Those are implementation facts, not
+accepted product behavior.
+
+[RFC 027](../rfc/rfc_027_continuously_rendered_markdown.md) and the normative
+[live projection v2 contract](contracts/live_projection_v2.md) now control the
+surface:
+
+- valid current Markdown remains rendered while focused and edited;
+- incomplete, composing, pending, source-only, and faulted ranges use local
+  exact-source islands instead of a whole active-row reveal;
+- source/display positions use typed legal caret stops plus affinity;
+- desktop scroll gestures never mutate selection, and mobile gesture behavior
+  is one shared Flutter policy with platform adapters only for real deltas;
+- `FlarkEditor` and `FlarkMarkdownView` are separate public widgets over one
+  internal projection, layout, and paint path; and
+- the exact Markdown input window and Rust source authority remain unchanged.
+
+`flark-live-v1` is frozen historical evidence for the passive-rendered/
+active-source prototype. It is not a launch gate. T1 materializes
+`flark-live-v2`; T2 proves continuously rendered inline editing and corrected
+gesture arbitration; T3 closes input/selection truth; T4 covers blocks,
+semantic objects, and tables; T5 performs scale, accessibility, and platform
+hardening. Full `verify_v4.sh` runs at the T2, T4, and T5 integration
+checkpoints rather than after every small implementation step.
+
+Ordinary source edits inside rendered constructs must not flash an entire raw
+row. T2 first measures the existing bounded commit/pump/query path. A new
+Rust-authored edit-presentation continuity receipt is permitted only if that
+measurement shows current projection cannot be served by the paint deadline;
+Flutter may never infer continuity by carrying old Markdown facts forward.
 
 ## 2026-08-11 conformance-profile update
 
@@ -15,8 +51,9 @@ The active semantic product profile is now unambiguous: official GFM
 `flark-gfm-0.29-v2`. The imported 670-case corpus is supplemented by the two
 official task-list examples it omitted. CommonMark 0.31.2 remains a separate
 diagnostic compatibility ledger; it cannot change a GFM pass or failure.
-Live editor projection is separately versioned as `flark-live-v1` and cannot
-be counted as semantic conformance.
+Live editor projection is separately versioned and cannot be counted as
+semantic conformance. `flark-live-v1` records the historical prototype;
+`flark-live-v2` is the active product contract.
 
 The production parser now executes the complete static GFM denominator through
 one fail-closed receipt. The selected block controller, live reference
@@ -25,8 +62,10 @@ resolver, bounded typed inline projector, and bounded typed table projector are
 8 KiB and table output is capped at 512 semantic facts per leaf; no Markdown
 recognition moved into Dart or Flutter. The runtime now carries typed table
 cells and alignment through the C ABI and `flark_core` to the passive Flutter
-surface, while an active table remains exact source Markdown. The separate
-CommonMark compatibility receipt is 652 exact, 0 missing, and 0 divergent.
+surface. At this historical checkpoint an active table remained exact source
+Markdown; RFC 027 explicitly rejects that as the final supported table UX. The
+separate CommonMark compatibility receipt is 652 exact, 0 missing, and 0
+divergent.
 
 The normative incremental ledger now applies all six type, erase, split,
 merge, paste, and incomplete-syntax histories to every GFM example: 4,032
@@ -1178,7 +1217,10 @@ Work:
   clipboard, and bounded platform input.
 - [ ] Paint only revision-matched certified structure; paint exact neutral
   source for pending ranges.
-- [ ] Hide certified syntax markers except around the active edit context.
+- [ ] Keep certified syntax markers hidden across focus and editing; expose
+  only the local exact-source states permitted by `flark-live-v2`.
+- [ ] Use one internal projection/layout/paint path for `FlarkEditor` and the
+  dedicated `FlarkMarkdownView` read-only widget.
 - [ ] Instrument the entire platform-edit-to-raster path in a profile app.
 - [ ] Add product-shaped visual fixtures and inspect live scrolling, typing,
   selection, long lines, pending-to-certified transitions, and theme variants.
@@ -1272,8 +1314,9 @@ Full conformance means semantic behavior against the pinned profile, not
   window resynchronization where macOS can exercise them.
 - [ ] Cover grapheme deletion, emoji/ZWJ, combining marks, bidi, affinity,
   long lines, text scaling, and font fallback.
-- [ ] Add link/media actions, tables/task interactions, marker reveal rules,
-  keyboard navigation, focus, shortcuts, themes, and read-only behavior.
+- [ ] Add link/media actions, tables/task interactions, continuously rendered
+  editing/local exact-island rules, keyboard navigation, focus, shortcuts,
+  themes, and shared-render-plan read-only behavior.
 - [ ] Implement semantics and accessibility with bounded viewport exposure.
 - [ ] Require visual inspection of the moving surface; widget/golden tests are
   regression evidence, not a substitute.

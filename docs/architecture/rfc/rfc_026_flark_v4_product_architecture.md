@@ -9,11 +9,18 @@ measurements and design rationale remain evidence. This RFC controls the v4
 package boundary, platform scope, and selected implementation direction. The
 [v4 build plan](../v4/build_plan.md) controls execution.
 
+**Amended by:**
+[RFC 027](rfc_027_continuously_rendered_markdown.md), which makes continuously
+rendered editing and a shared read-only render contract the v4 product target.
+
 ## 1. Product directive
 
 Build a live Markdown editor with breakthrough performance on large documents:
 
 - exact source remains the document truth;
+- certified Markdown remains rendered while it is focused and edited; syntax
+  appears only as local current-source authoring/fallback, never from focus
+  alone;
 - typing, selection, scrolling, and composition stay visually fluid;
 - expensive Markdown work is resumable and cannot monopolize a frame;
 - the screen never presents uncertified Markdown semantics as authoritative;
@@ -207,7 +214,9 @@ Dart-side Markdown scanners.
 
 `flark` owns the application-facing editor and rendering experience:
 
-- the custom own-painted editor and read-only surfaces;
+- the custom own-painted `FlarkEditor` and `FlarkMarkdownView`, consuming one
+  shared internal projection/layout/paint contract with separate interaction
+  machinery;
 - frame scheduling and allocation of the core work budget;
 - viewport and fragment virtualization;
 - text shaping, layout, paint, hit testing, and visual invalidation;
@@ -223,9 +232,14 @@ Flutter plugin metadata may bundle native artifacts where a target platform
 requires it, but raw bindings, lifecycle, and semantics remain in
 `flark_core`.
 
-The surface may decide when and how certified syntax markers are revealed near
-the caret. It may not decide whether Markdown structure is valid. Exact source
-remains visible while a range is pending certification.
+Focus, selection, and caret movement do not reveal certified syntax markers or
+switch an active row to raw source. The surface may expose current exact syntax
+only for an incomplete, composing, pending, source-gap, faulted, explicitly
+source-only, or future user-selected source range. It may not decide whether
+Markdown structure is valid. Pending fallback is limited to the smallest
+runtime-authenticated affected range available while unrelated certified
+presentation remains current. RFC 027 and `flark-live-v2` define the exact
+behavior.
 
 The custom surface is a real architectural layer, but not a third public
 package. It stays internally modular until an independent consumer justifies

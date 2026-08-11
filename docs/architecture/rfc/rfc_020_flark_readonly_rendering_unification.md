@@ -1,5 +1,10 @@
 # RFC 020: Flark Read-Only Rendering Unification
 
+> **Historical v2/v3 product record.** RFC 027 adopts only this document's
+> principle that editor and read-only widgets share one render contract while
+> retaining separate interaction machinery. None of the implementation or
+> receipts below are part of the v4 product path.
+
 **Status**: IN PROGRESS (Waves 1-4 detail-surface scope delivered)  
 **Author**: Codex (draft for Dune engineering review)  
 **Date**: 2026-03-16  
