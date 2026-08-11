@@ -1312,7 +1312,7 @@ mod tests {
 
     #[test]
     fn sparse_semantic_replay_applies_all_segments_in_one_host_build() {
-        let (work, commitment_lane) = replay_case(1_024, &[128, 896]);
+        let (work, commitment_lane) = replay_case(4_096, &[512, 3_584]);
 
         assert_eq!(work.deleted_events(), 6);
         assert_eq!(work.replacement_events(), 6);
@@ -1329,7 +1329,7 @@ mod tests {
         let descriptor = descriptor_for(base.summary, base.page_count, base.tree_height);
         let base_root = base.tree_root_id_for_test().expect("base tree root");
         let first_events = 1..4;
-        let later_events = 901..904;
+        let later_events = 1_401..1_404;
         let first_plan = plan_persistent_m11_recursive_green_semantic_splice(
             runtime.producer_arena(),
             Some(base_root),

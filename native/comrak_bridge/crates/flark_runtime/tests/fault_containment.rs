@@ -1,10 +1,7 @@
-use flark_runtime::{
-    DocumentActor, DocumentActorError, DocumentSessionError, DocumentSessionPhase,
-};
+use flark_runtime::{DocumentActor, DocumentActorError, DocumentSessionPhase};
 
-/// Source whose block count, not byte count, exhausts the engine's live
-/// payload budget. Each block is four bytes, so a few mebibytes of this shape
-/// carries over a million blocks.
+/// Source whose block count, not byte count, dominates persistent storage.
+/// Each block is four bytes, so five mebibytes carries over a million blocks.
 fn tiny_blocks(target_bytes: usize) -> String {
     let mut source = String::with_capacity(target_bytes + 4);
     while source.len() < target_bytes {
@@ -14,44 +11,46 @@ fn tiny_blocks(target_bytes: usize) -> String {
 }
 
 #[test]
-#[ignore = "full-scale 5 MiB payload-budget certification stress"]
-fn exhausting_the_payload_budget_is_a_typed_error_not_a_crash() {
-    // Driven through the actor because that is the production owner: a
-    // faulted session must never be dropped bare, and the actor is what
-    // guarantees that.
+#[ignore = "full-scale 5 MiB block-density certification stress"]
+fn five_mib_dense_document_converges_inside_the_payload_budget() {
     let actor = DocumentActor::begin(tiny_blocks(5 * 1024 * 1024)).expect("actor");
     let mut turns = 0;
-    loop {
+    let ready_metrics = loop {
         match actor.pump(512) {
             Ok(receipt) => {
                 if receipt.phase == DocumentSessionPhase::Ready {
-                    // A future engine that fits this shape inside the budget
-                    // converges instead; that is a pass, not a regression.
-                    break;
+                    break actor
+                        .call_for_test(|document| Ok(document.arena_metrics()))
+                        .expect("ready arena metrics");
                 }
             }
             Err(error) => {
-                // The budget is reported as a typed fault, not an assertion,
-                // an out-of-memory abort, or a silently dead actor.
-                match &error {
-                    DocumentActorError::Session(DocumentSessionError::Parser(_)) => {
-                        assert!(
-                            format!("{error}").contains("payload"),
-                            "expected the payload budget to be named, got {error}"
-                        );
-                    }
-                    DocumentActorError::Panicked => {}
-                    other => panic!("expected a typed parser fault, got {other:?}"),
-                }
-                // The actor still answers rather than having died with it.
-                assert!(actor.inspect().is_err() || actor.inspect().is_ok());
-                break;
+                let metrics = actor
+                    .call_for_test(|document| {
+                        document
+                            .fault_arena_metrics()
+                            .ok_or(flark_runtime::DocumentSessionError::Faulted)
+                    })
+                    .expect("faulted arena metrics");
+                panic!("5 MiB dense document must converge, got {error:?}; arena={metrics:?}");
             }
         }
         turns += 1;
         assert!(turns < 2_000_000, "convergence should terminate");
-    }
-    // Releasing a faulted document must not abort the process.
+    };
+    assert!(
+        ready_metrics.live_payload_bytes + ready_metrics.reserved_external_payload_bytes
+            <= 64 * 1024 * 1024,
+        "ready dense arena exceeded its configured budget: {ready_metrics:?}"
+    );
+    eprintln!("5 MiB dense ready arena={ready_metrics:?}");
+
+    actor.begin_close().expect("begin dense close");
+    while !actor.pump_close(256).expect("pump dense close").complete {}
+    let closed = actor.inspect().expect("inspect closed actor");
+    assert_eq!(closed.phase, DocumentSessionPhase::Closed);
+    assert_eq!(closed.source_byte_len, 0);
+    assert_eq!(closed.source_utf16_len, 0);
     drop(actor);
 }
 

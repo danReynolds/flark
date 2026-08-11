@@ -8544,7 +8544,10 @@ mod tests {
         if challenge_claim {
             let mut wrong_commitment = frames.begin.to_vec();
             let base_green_descriptor = SNAPSHOT_EXACT_BASE_BEGIN_BYTES + 192;
-            wrong_commitment[base_green_descriptor + 88] ^= 0x01;
+            // The commitment begins after canonical_event_bytes. Flipping the
+            // byte-count field only happened to make the old, wider encoding
+            // invalid; it did not test an otherwise-valid false commitment.
+            wrong_commitment[base_green_descriptor + 104] ^= 0x01;
             assert!(matches!(
                 host.begin_exact_base_delta(base, &wrong_commitment),
                 Err(CandidateHostError::BaseMismatch)

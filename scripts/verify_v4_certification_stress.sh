@@ -9,8 +9,8 @@ cargo test \
   --manifest-path "$BRIDGE/Cargo.toml" \
   -p flark-runtime \
   --test fault_containment \
-  exhausting_the_payload_budget_is_a_typed_error_not_a_crash \
-  -- --exact --ignored
+  five_mib_dense_document_converges_inside_the_payload_budget \
+  -- --exact --ignored --nocapture
 
 echo "verify_v4_certification_stress: full payload-budget stress passed."
 echo "verify_v4_certification_stress: historical M0 receipt drift remains a separate audit."

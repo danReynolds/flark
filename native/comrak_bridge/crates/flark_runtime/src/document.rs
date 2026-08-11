@@ -10,7 +10,7 @@ use flark_engine::parser_internal::{
     M11_INLINE_PROJECTION_FLAG_CODE_TRIM_ONE_SPACE,
 };
 use flark_engine::{
-    DocumentRuntime, DocumentRuntimeConfig, DocumentRuntimeError, ParserProfileId,
+    ArenaMetrics, DocumentRuntime, DocumentRuntimeConfig, DocumentRuntimeError, ParserProfileId,
     SourceBoundaryAffinity, SourceEditError, SourceSnapshotLease, SourceVersion,
 };
 use flark_parser::{
@@ -371,6 +371,7 @@ pub struct DocumentSession {
     runtime: DocumentRuntime,
     parser: ParseState,
     last_edit_work: M11PersistentRecursiveGreenAdoptionWork,
+    fault_arena_metrics: Option<ArenaMetrics>,
 }
 
 impl fmt::Debug for DocumentSession {
@@ -385,12 +386,20 @@ impl fmt::Debug for DocumentSession {
 
 impl DocumentSession {
     pub fn begin(source: &str) -> Result<Self, DocumentSessionError> {
-        let mut runtime = DocumentRuntime::new(source, DocumentRuntimeConfig::default())?;
+        Self::begin_with_config(source, DocumentRuntimeConfig::default())
+    }
+
+    fn begin_with_config(
+        source: &str,
+        config: DocumentRuntimeConfig,
+    ) -> Result<Self, DocumentSessionError> {
+        let mut runtime = DocumentRuntime::new(source, config)?;
         let parser = ParseState::Clean(Box::new(begin_clean_build(&mut runtime)?));
         Ok(Self {
             runtime,
             parser,
             last_edit_work: M11PersistentRecursiveGreenAdoptionWork::default(),
+            fault_arena_metrics: None,
         })
     }
 
@@ -414,6 +423,20 @@ impl DocumentSession {
         self.runtime
             .current_source_version()
             .map_or(0, SourceVersion::utf16_len)
+    }
+
+    /// Current persistent-arena residency for capacity evidence and fault
+    /// diagnosis. These counters are logical admitted bytes, not process RSS.
+    #[must_use]
+    pub const fn arena_metrics(&self) -> ArenaMetrics {
+        self.runtime.arena_metrics()
+    }
+
+    /// Arena residency captured before fault cleanup releases the failed
+    /// candidate. This is absent for sessions that have not faulted.
+    #[must_use]
+    pub const fn fault_arena_metrics(&self) -> Option<ArenaMetrics> {
+        self.fault_arena_metrics
     }
 
     #[must_use]
@@ -462,6 +485,9 @@ impl DocumentSession {
             match next {
                 Ok(state) => self.parser = state,
                 Err(error) => {
+                    if self.fault_arena_metrics.is_none() {
+                        self.fault_arena_metrics = Some(self.runtime.arena_metrics());
+                    }
                     self.parser = ParseState::Faulted;
                     return Err(error);
                 }
@@ -489,6 +515,7 @@ impl DocumentSession {
                 let poll = match build.poll(&mut self.runtime, 1) {
                     Ok(poll) => poll,
                     Err(error) => {
+                        self.fault_arena_metrics = Some(self.runtime.arena_metrics());
                         release_failed_clean_build(&mut self.runtime, build);
                         return Err(error.into());
                     }
@@ -1033,6 +1060,56 @@ impl DocumentSession {
         self.begin_close()?;
         while !self.pump_close(256)?.complete {}
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dense_capacity_fault_has_a_fast_bounded_reclamation_probe() {
+        const PAYLOAD_BUDGET: usize = 1024 * 1024;
+        let source = "x.\n\n".repeat(32 * 1024);
+        let config = DocumentRuntimeConfig {
+            arena_limits: flark_engine::ArenaLimits {
+                max_live_payload_bytes: PAYLOAD_BUDGET,
+                ..flark_engine::ArenaLimits::default()
+            },
+            ..DocumentRuntimeConfig::default()
+        };
+        let mut document =
+            DocumentSession::begin_with_config(&source, config).expect("begin dense probe");
+        let error = loop {
+            match document.pump(512) {
+                Ok(receipt) if receipt.phase == DocumentSessionPhase::Ready => {
+                    panic!("dense probe unexpectedly fit its reduced payload budget")
+                }
+                Ok(_) => {}
+                Err(error) => break error,
+            }
+        };
+        assert!(
+            matches!(error, DocumentSessionError::Parser(_)),
+            "expected parser capacity fault, got {error:?}"
+        );
+        let metrics = document
+            .fault_arena_metrics()
+            .expect("pre-cleanup fault metrics");
+        eprintln!("dense fast probe: {error:?}; arena={metrics:?}");
+        assert!(
+            metrics.live_payload_bytes + metrics.reserved_external_payload_bytes <= PAYLOAD_BUDGET
+        );
+        assert!(metrics.live_payload_bytes > PAYLOAD_BUDGET / 2);
+
+        document.begin_close().expect("begin faulted close");
+        while !document
+            .pump_close(256)
+            .expect("pump faulted close")
+            .complete
+        {}
+        assert_eq!(document.phase(), DocumentSessionPhase::Closed);
+        assert_eq!(document.source_byte_len(), 0);
     }
 }
 

@@ -4736,7 +4736,7 @@ impl M11BlockWriter {
                 }
                 // The frame summary already authenticates the terminal logical
                 // metric, so retain only the two internal cuts here. This keeps
-                // the grammar-owned fence recipe plus the 24-byte cached-row
+                // the grammar-owned fence recipe plus the versioned cached-row
                 // trailer inside the fixed 64-byte close-facts envelope.
                 let mut semantic = [0_u8; 33];
                 semantic[0] = u8::from(facts.closed());

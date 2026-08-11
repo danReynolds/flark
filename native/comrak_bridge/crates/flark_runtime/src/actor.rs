@@ -263,6 +263,10 @@ fn run_document_actor(
 
 fn discard(document: Option<DocumentSession>) {
     if let Some(document) = document {
-        let _ = catch_unwind(AssertUnwindSafe(move || drop(document)));
+        // Even a faulted session owns persistent source and arena roots that
+        // must be fuel-drained. Keep both close work and any destructor panic
+        // behind the actor's containment barrier: shutdown must never fall
+        // back to a bare DocumentSession drop.
+        let _ = catch_unwind(AssertUnwindSafe(move || document.close()));
     }
 }

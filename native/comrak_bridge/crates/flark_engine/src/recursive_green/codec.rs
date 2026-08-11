@@ -9,7 +9,7 @@ use crate::storage::{ArenaError, ARENA_PAGE_BYTES};
 
 const GREEN_LEAF_MAGIC: [u8; 4] = *b"RGL1";
 const GREEN_BRANCH_MAGIC: [u8; 4] = *b"RGB1";
-const GREEN_SCHEMA: u32 = 3;
+const GREEN_SCHEMA: u32 = 4;
 const COMMITMENT_LANES: usize = 4;
 const COMMITMENT_BYTES: usize = COMMITMENT_LANES * 2 * 8;
 const COMMITMENT_MODULUS: u64 = (1_u64 << 61) - 1;
@@ -19,13 +19,19 @@ const COMMITMENT_BASES: [u64; COMMITMENT_LANES] = [
     0x1c6e_f372_fe94_f82b,
     0x154f_f53a_5f1d_36f1,
 ];
-const MAX_PACKED_EVENT_BYTES: usize = 14 + 3 + M11_RECURSIVE_GREEN_CLOSE_FACTS_MAX_BYTES;
-pub(super) const GREEN_EVENTS_PER_PAGE_MAX: usize = 128;
+const MAX_PACKED_EVENT_BYTES: usize = 17 + 3 + M11_RECURSIVE_GREEN_CLOSE_FACTS_MAX_BYTES;
+// Compact common events are only 3-6 bytes. The former 128-event ceiling left
+// most of a 4 KiB leaf empty and forced the measured tree to spend nearly one
+// branch node per tiny-block leaf. Keep a finite decode bound while allowing
+// dense leaves to use their already-budgeted payload capacity.
+pub(super) const GREEN_EVENTS_PER_PAGE_MAX: usize = 512;
 pub const M11_RECURSIVE_GREEN_PROPERTY_CHUNK_MAX_BYTES: usize = 32;
 pub const M11_RECURSIVE_GREEN_CLOSE_FACTS_MAX_BYTES: usize = 64;
 const M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_MAGIC: [u8; 4] = *b"RGEO";
-const M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_VERSION: u8 = 1;
-const M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_BYTES: usize = 24;
+const M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_VERSION_V1: u8 = 1;
+const M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_VERSION: u8 = 2;
+const M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_V1_BYTES: usize = 24;
+const M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_V2_MIN_BYTES: usize = 11;
 
 #[derive(Debug)]
 pub enum M11RecursiveGreenError {
@@ -273,9 +279,22 @@ impl M11RecursiveGreenCloseFacts {
         semantic: &[u8],
         cached: M11RecursiveGreenCachedRowEditable,
     ) -> Result<Self, M11RecursiveGreenError> {
+        let coordinates = [
+            u32::try_from(cached.start.bytes())
+                .map_err(|_| M11RecursiveGreenError::InvalidEvent)?,
+            u32::try_from(cached.start.utf16())
+                .map_err(|_| M11RecursiveGreenError::InvalidEvent)?,
+            u32::try_from(cached.end.bytes()).map_err(|_| M11RecursiveGreenError::InvalidEvent)?,
+            u32::try_from(cached.end.utf16()).map_err(|_| M11RecursiveGreenError::InvalidEvent)?,
+        ];
+        let trailer_bytes = coordinates.iter().try_fold(7_usize, |bytes, coordinate| {
+            bytes
+                .checked_add(var_u64_len(u64::from(*coordinate)))
+                .ok_or(M11RecursiveGreenError::CounterOverflow)
+        })?;
         let total = semantic
             .len()
-            .checked_add(M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_BYTES)
+            .checked_add(trailer_bytes)
             .ok_or(M11RecursiveGreenError::CounterOverflow)?;
         if total > M11_RECURSIVE_GREEN_CLOSE_FACTS_MAX_BYTES {
             return Err(M11RecursiveGreenError::InvalidEvent);
@@ -283,25 +302,33 @@ impl M11RecursiveGreenCloseFacts {
         let mut bytes = [0_u8; M11_RECURSIVE_GREEN_CLOSE_FACTS_MAX_BYTES];
         bytes[..semantic.len()].copy_from_slice(semantic);
         let mut cursor = semantic.len();
-        bytes[cursor..cursor + 4].copy_from_slice(&M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_MAGIC);
-        cursor += 4;
-        bytes[cursor] = M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_VERSION;
-        cursor += 1;
-        bytes[cursor] = match cached.capability {
-            M11RecursiveGreenCachedRowEditCapability::Contiguous => 1,
-            M11RecursiveGreenCachedRowEditCapability::Unavailable => 2,
-        };
-        cursor += 3; // capability plus two reserved zero bytes
-        for metric in [cached.start, cached.end] {
-            let source_bytes =
-                u32::try_from(metric.bytes()).map_err(|_| M11RecursiveGreenError::InvalidEvent)?;
-            let source_utf16 =
-                u32::try_from(metric.utf16()).map_err(|_| M11RecursiveGreenError::InvalidEvent)?;
-            bytes[cursor..cursor + 4].copy_from_slice(&source_bytes.to_le_bytes());
-            cursor += 4;
-            bytes[cursor..cursor + 4].copy_from_slice(&source_utf16.to_le_bytes());
-            cursor += 4;
+        write_bytes(
+            &mut bytes,
+            &mut cursor,
+            &M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_MAGIC,
+        )?;
+        write_u8(
+            &mut bytes,
+            &mut cursor,
+            M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_VERSION,
+        )?;
+        write_u8(
+            &mut bytes,
+            &mut cursor,
+            match cached.capability {
+                M11RecursiveGreenCachedRowEditCapability::Contiguous => 1,
+                M11RecursiveGreenCachedRowEditCapability::Unavailable => 2,
+            },
+        )?;
+        for coordinate in coordinates {
+            write_var_u64(&mut bytes, &mut cursor, u64::from(coordinate))?;
         }
+        debug_assert_eq!(cursor + 1, total);
+        write_u8(
+            &mut bytes,
+            &mut cursor,
+            u8::try_from(trailer_bytes).map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+        )?;
         debug_assert_eq!(cursor, total);
         Self::new(tag, &bytes[..total])
     }
@@ -313,24 +340,15 @@ impl M11RecursiveGreenCloseFacts {
         semantic_bytes: usize,
     ) -> Result<Option<(&[u8], M11RecursiveGreenCachedRowEditable)>, M11RecursiveGreenError> {
         let bytes = self.as_bytes();
-        let expected = semantic_bytes
-            .checked_add(M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_BYTES)
-            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-        if bytes.len() != expected {
+        if semantic_bytes >= bytes.len() {
             return Ok(None);
         }
         let semantic_end = semantic_bytes;
         let trailer = &bytes[semantic_end..];
-        if trailer[..4] != M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_MAGIC {
-            return Ok(None);
-        }
-        if trailer[4] != M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_VERSION
-            || trailer[6] != 0
-            || trailer[7] != 0
+        if trailer.len() < 6
+            || trailer.get(..4) != Some(M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_MAGIC.as_slice())
         {
-            return Err(M11RecursiveGreenError::Corrupt(
-                "invalid cached row-editable trailer header",
-            ));
+            return Ok(None);
         }
         let capability = match trailer[5] {
             1 => M11RecursiveGreenCachedRowEditCapability::Contiguous,
@@ -341,23 +359,69 @@ impl M11RecursiveGreenCloseFacts {
                 ));
             }
         };
-        let read_metric = |offset: usize| {
-            let bytes = u64::from(u32::from_le_bytes(
-                trailer[offset..offset + 4]
-                    .try_into()
-                    .expect("validated cached row trailer width"),
-            ));
-            let utf16 = u64::from(u32::from_le_bytes(
-                trailer[offset + 4..offset + 8]
-                    .try_into()
-                    .expect("validated cached row trailer width"),
-            ));
-            M11RecursiveGreenSourceMetric::new(bytes, utf16).ok_or(M11RecursiveGreenError::Corrupt(
-                "invalid cached row-editable metric",
-            ))
+        let (start, end) = match trailer[4] {
+            M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_VERSION_V1 => {
+                if trailer.len() != M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_V1_BYTES
+                    || trailer[6] != 0
+                    || trailer[7] != 0
+                {
+                    return Err(M11RecursiveGreenError::Corrupt(
+                        "invalid cached row-editable v1 trailer",
+                    ));
+                }
+                let read_metric = |offset: usize| {
+                    let bytes = u64::from(u32::from_le_bytes(
+                        trailer[offset..offset + 4]
+                            .try_into()
+                            .expect("validated cached row trailer width"),
+                    ));
+                    let utf16 = u64::from(u32::from_le_bytes(
+                        trailer[offset + 4..offset + 8]
+                            .try_into()
+                            .expect("validated cached row trailer width"),
+                    ));
+                    M11RecursiveGreenSourceMetric::new(bytes, utf16).ok_or(
+                        M11RecursiveGreenError::Corrupt("invalid cached row-editable metric"),
+                    )
+                };
+                (read_metric(8)?, read_metric(16)?)
+            }
+            M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_VERSION => {
+                if trailer.len() < M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_V2_MIN_BYTES
+                    || usize::from(*trailer.last().expect("nonempty trailer")) != trailer.len()
+                {
+                    return Err(M11RecursiveGreenError::Corrupt(
+                        "invalid cached row-editable v2 trailer",
+                    ));
+                }
+                let mut cursor = 6;
+                let read_metric = |cursor: &mut usize| {
+                    let bytes = read_var_u64(trailer, cursor)?;
+                    let utf16 = read_var_u64(trailer, cursor)?;
+                    if bytes > u64::from(u32::MAX) || utf16 > u64::from(u32::MAX) {
+                        return Err(M11RecursiveGreenError::Corrupt(
+                            "cached row-editable metric exceeds its contract width",
+                        ));
+                    }
+                    M11RecursiveGreenSourceMetric::new(bytes, utf16).ok_or(
+                        M11RecursiveGreenError::Corrupt("invalid cached row-editable metric"),
+                    )
+                };
+                let start = read_metric(&mut cursor)?;
+                let end = read_metric(&mut cursor)?;
+                if cursor + 1 != trailer.len() {
+                    return Err(M11RecursiveGreenError::Corrupt(
+                        "cached row-editable v2 trailer has trailing bytes",
+                    ));
+                }
+                (start, end)
+            }
+            _ => {
+                return Err(M11RecursiveGreenError::Corrupt(
+                    "invalid cached row-editable trailer version",
+                ));
+            }
         };
-        let start = read_metric(8)?;
-        let end = read_metric(16)?;
         if start.bytes() > end.bytes() || start.utf16() > end.utf16() {
             return Err(M11RecursiveGreenError::Corrupt(
                 "cached row-editable bounds are reversed",
@@ -379,13 +443,34 @@ impl M11RecursiveGreenCloseFacts {
     pub fn split_cached_row_editable(
         &self,
     ) -> Result<Option<(&[u8], M11RecursiveGreenCachedRowEditable)>, M11RecursiveGreenError> {
-        let Some(semantic_bytes) = self
-            .as_bytes()
+        let bytes = self.as_bytes();
+        if let Some(trailer_bytes) = bytes.last().copied().map(usize::from) {
+            if trailer_bytes >= M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_V2_MIN_BYTES
+                && trailer_bytes <= bytes.len()
+            {
+                let semantic_bytes = bytes.len() - trailer_bytes;
+                if bytes.get(semantic_bytes..semantic_bytes + 4)
+                    == Some(M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_MAGIC.as_slice())
+                    && bytes.get(semantic_bytes + 4)
+                        == Some(&M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_VERSION)
+                {
+                    return self.cached_row_editable(semantic_bytes);
+                }
+            }
+        }
+        let Some(semantic_bytes) = bytes
             .len()
-            .checked_sub(M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_BYTES)
+            .checked_sub(M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_V1_BYTES)
         else {
             return Ok(None);
         };
+        if bytes.get(semantic_bytes..semantic_bytes + 4)
+            != Some(M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_MAGIC.as_slice())
+            || bytes.get(semantic_bytes + 4)
+                != Some(&M11_RECURSIVE_GREEN_ROW_EDITABLE_TRAILER_VERSION_V1)
+        {
+            return Ok(None);
+        }
         self.cached_row_editable(semantic_bytes)
     }
 }
@@ -1099,21 +1184,48 @@ const GREEN_BRANCH_BYTES: usize = 4 + 4 + 8 + 2 + GREEN_SUMMARY_BYTES;
 
 pub(super) fn packed_event_len(event: PackedGreenEvent) -> usize {
     match event {
-        PackedGreenEvent::Enter { .. } => 11,
-        PackedGreenEvent::Property(property) => 4 + property.as_bytes().len(),
-        PackedGreenEvent::Coverage { atom, .. } => 23 + atom_extra_len(atom),
-        PackedGreenEvent::RetypeOpen { property, .. } => {
-            12 + property.map_or(0, |property| 3 + property.as_bytes().len())
+        PackedGreenEvent::Enter { frame, kind } => {
+            1 + var_u64_len(frame.get()) + var_u64_len(u64::from(kind.get()))
         }
-        PackedGreenEvent::Exit { close, .. } => {
-            14 + close.map_or(0, |facts| 3 + facts.as_bytes().len())
+        PackedGreenEvent::Property(property) => 4 + property.as_bytes().len(),
+        PackedGreenEvent::Coverage {
+            physical,
+            owner_depth,
+            atom,
+            ..
+        } => {
+            3 + var_u64_len(physical.bytes())
+                + var_u64_len(physical.utf16())
+                + var_u64_len(u64::from(owner_depth))
+                + atom_extra_len(atom)
+        }
+        PackedGreenEvent::RetypeOpen {
+            frame,
+            kind,
+            property,
+        } => {
+            2 + var_u64_len(frame.get())
+                + var_u64_len(u64::from(kind.get()))
+                + property.map_or(0, |property| 3 + property.as_bytes().len())
+        }
+        PackedGreenEvent::Exit {
+            frame,
+            final_kind,
+            close,
+            ..
+        } => {
+            4 + var_u64_len(frame.get())
+                + var_u64_len(u64::from(final_kind.get()))
+                + close.map_or(0, |facts| 3 + facts.as_bytes().len())
         }
     }
 }
 
-const fn atom_extra_len(atom: LogicalAtom) -> usize {
+fn atom_extra_len(atom: LogicalAtom) -> usize {
     match atom {
-        LogicalAtom::TabToSpaces { .. } => 5,
+        LogicalAtom::TabToSpaces {
+            target_owner_depth, ..
+        } => 1 + var_u64_len(u64::from(target_owner_depth)),
         _ => 0,
     }
 }
@@ -1126,8 +1238,8 @@ pub(super) fn encode_packed_event(
     match event {
         PackedGreenEvent::Enter { frame, kind } => {
             write_u8(output, cursor, 1)?;
-            write_u64(output, cursor, frame.get())?;
-            write_u16(output, cursor, kind.get())?;
+            write_var_u64(output, cursor, frame.get())?;
+            write_var_u64(output, cursor, u64::from(kind.get()))?;
         }
         PackedGreenEvent::Property(property) => {
             write_u8(output, cursor, 2)?;
@@ -1141,9 +1253,9 @@ pub(super) fn encode_packed_event(
         } => {
             validate_atom(atom, physical)?;
             write_u8(output, cursor, 3)?;
-            write_u64(output, cursor, physical.bytes())?;
-            write_u64(output, cursor, physical.utf16())?;
-            write_u32(output, cursor, owner_depth)?;
+            write_var_u64(output, cursor, physical.bytes())?;
+            write_var_u64(output, cursor, physical.utf16())?;
+            write_var_u64(output, cursor, u64::from(owner_depth))?;
             write_u8(output, cursor, part as u8)?;
             encode_atom(atom, output, cursor)?;
         }
@@ -1153,8 +1265,8 @@ pub(super) fn encode_packed_event(
             property,
         } => {
             write_u8(output, cursor, 4)?;
-            write_u64(output, cursor, frame.get())?;
-            write_u16(output, cursor, kind.get())?;
+            write_var_u64(output, cursor, frame.get())?;
+            write_var_u64(output, cursor, u64::from(kind.get()))?;
             write_u8(output, cursor, u8::from(property.is_some()))?;
             if let Some(property) = property {
                 encode_property(property, output, cursor)?;
@@ -1168,8 +1280,8 @@ pub(super) fn encode_packed_event(
             child,
         } => {
             write_u8(output, cursor, 5)?;
-            write_u64(output, cursor, frame.get())?;
-            write_u16(output, cursor, final_kind.get())?;
+            write_var_u64(output, cursor, frame.get())?;
+            write_var_u64(output, cursor, u64::from(final_kind.get()))?;
             write_u8(output, cursor, u8::from(close.is_some()))?;
             if let Some(close) = close {
                 encode_close(close, output, cursor)?;
@@ -1190,13 +1302,14 @@ pub(super) fn decode_packed_event(
 ) -> Result<PackedGreenEvent, M11RecursiveGreenError> {
     match read_u8(input, cursor)? {
         1 => Ok(PackedGreenEvent::Enter {
-            frame: decode_frame(read_u64(input, cursor)?)?,
-            kind: decode_kind(read_u16(input, cursor)?)?,
+            frame: decode_frame(read_var_u64(input, cursor)?)?,
+            kind: decode_kind(read_var_u16(input, cursor)?)?,
         }),
         2 => Ok(PackedGreenEvent::Property(decode_property(input, cursor)?)),
         3 => {
-            let physical = decode_metric(read_u64(input, cursor)?, read_u64(input, cursor)?)?;
-            let owner_depth = read_u32(input, cursor)?;
+            let physical =
+                decode_metric(read_var_u64(input, cursor)?, read_var_u64(input, cursor)?)?;
+            let owner_depth = read_var_u32(input, cursor)?;
             let part = M11RecursiveGreenCoveragePart::decode(read_u8(input, cursor)?)?;
             let atom = decode_atom(input, cursor)?;
             validate_atom(atom, physical)?;
@@ -1208,8 +1321,8 @@ pub(super) fn decode_packed_event(
             })
         }
         4 => {
-            let frame = decode_frame(read_u64(input, cursor)?)?;
-            let kind = decode_kind(read_u16(input, cursor)?)?;
+            let frame = decode_frame(read_var_u64(input, cursor)?)?;
+            let kind = decode_kind(read_var_u16(input, cursor)?)?;
             let property = match read_u8(input, cursor)? {
                 0 => None,
                 1 => Some(decode_property(input, cursor)?),
@@ -1226,8 +1339,8 @@ pub(super) fn decode_packed_event(
             })
         }
         5 => {
-            let frame = decode_frame(read_u64(input, cursor)?)?;
-            let final_kind = decode_kind(read_u16(input, cursor)?)?;
+            let frame = decode_frame(read_var_u64(input, cursor)?)?;
+            let final_kind = decode_kind(read_var_u16(input, cursor)?)?;
             let close = match read_u8(input, cursor)? {
                 0 => None,
                 1 => Some(decode_close(input, cursor)?),
@@ -1329,7 +1442,7 @@ fn encode_atom(
         spaces,
     } = atom
     {
-        write_u32(output, cursor, target_owner_depth)?;
+        write_var_u64(output, cursor, u64::from(target_owner_depth))?;
         write_u8(output, cursor, spaces)?;
     }
     Ok(())
@@ -1340,7 +1453,7 @@ fn decode_atom(input: &[u8], cursor: &mut usize) -> Result<LogicalAtom, M11Recur
         0 => Ok(LogicalAtom::None),
         1 => Ok(LogicalAtom::Identity),
         2 => Ok(LogicalAtom::TabToSpaces {
-            target_owner_depth: read_u32(input, cursor)?,
+            target_owner_depth: read_var_u32(input, cursor)?,
             spaces: read_u8(input, cursor)?,
         }),
         3 => Ok(LogicalAtom::HiddenUpstream),
@@ -1757,6 +1870,31 @@ fn write_u64(
 ) -> Result<(), M11RecursiveGreenError> {
     write_bytes(output, cursor, &value.to_le_bytes())
 }
+fn var_u64_len(mut value: u64) -> usize {
+    let mut len = 1;
+    while value >= 0x80 {
+        value >>= 7;
+        len += 1;
+    }
+    len
+}
+fn write_var_u64(
+    output: &mut [u8],
+    cursor: &mut usize,
+    mut value: u64,
+) -> Result<(), M11RecursiveGreenError> {
+    loop {
+        let mut byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value != 0 {
+            byte |= 0x80;
+        }
+        write_u8(output, cursor, byte)?;
+        if value == 0 {
+            return Ok(());
+        }
+    }
+}
 fn write_i64(
     output: &mut [u8],
     cursor: &mut usize,
@@ -1785,6 +1923,37 @@ fn read_u64(input: &[u8], cursor: &mut usize) -> Result<u64, M11RecursiveGreenEr
             .try_into()
             .expect("eight bytes"),
     ))
+}
+fn read_var_u64(input: &[u8], cursor: &mut usize) -> Result<u64, M11RecursiveGreenError> {
+    let mut value = 0_u64;
+    for index in 0..10 {
+        let byte = read_u8(input, cursor)?;
+        if index == 9 && byte > 1 {
+            return Err(M11RecursiveGreenError::Corrupt(
+                "recursive-green varint overflows u64",
+            ));
+        }
+        value |= u64::from(byte & 0x7f) << (index * 7);
+        if byte & 0x80 == 0 {
+            if var_u64_len(value) != index + 1 {
+                return Err(M11RecursiveGreenError::Corrupt(
+                    "recursive-green varint is not minimally encoded",
+                ));
+            }
+            return Ok(value);
+        }
+    }
+    Err(M11RecursiveGreenError::Corrupt(
+        "recursive-green varint is unterminated",
+    ))
+}
+fn read_var_u32(input: &[u8], cursor: &mut usize) -> Result<u32, M11RecursiveGreenError> {
+    u32::try_from(read_var_u64(input, cursor)?)
+        .map_err(|_| M11RecursiveGreenError::Corrupt("recursive-green varint overflows u32"))
+}
+fn read_var_u16(input: &[u8], cursor: &mut usize) -> Result<u16, M11RecursiveGreenError> {
+    u16::try_from(read_var_u64(input, cursor)?)
+        .map_err(|_| M11RecursiveGreenError::Corrupt("recursive-green varint overflows u16"))
 }
 fn read_i64(input: &[u8], cursor: &mut usize) -> Result<i64, M11RecursiveGreenError> {
     Ok(i64::from_le_bytes(

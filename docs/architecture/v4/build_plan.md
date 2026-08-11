@@ -670,6 +670,48 @@ selections, the composition-pinned and bulk-staging window states with
 deferred movement, grapheme needs-more-context expansion, and real IME
 evidence. No new performance claim follows.
 
+## 2026-08-10 execution update
+
+The post-handoff corrective tranche closes the four concrete engine/surface
+gaps that could be resolved unattended on this Mac.
+
+- Faulted actors no longer fall back to a bare `DocumentSession` drop. The
+  contained discard path fuel-drains `close`, and a reduced-budget regression
+  proves a typed parser capacity fault followed by `Closed` with zero source
+  bytes. Pre-cleanup arena counters remain available for diagnosis.
+- Recursive-Green storage now uses canonical minimal varints for common event
+  fields, permits up to 512 compact events per already-bounded 4 KiB page, and
+  stores cached row geometry in a versioned variable-width trailer while still
+  decoding the previous fixed-width form. Local splice/replay work remains
+  page-bounded under the denser geometry.
+- The separate certification lane now requires a five-mebibyte source made of
+  four-byte blocks — more than 1.3 million blocks — to reach `Ready` within the
+  unchanged 64 MiB admitted-payload contract and then close to zero state. That
+  lane passed in debug mode in 324.98 seconds. Block density is therefore no
+  longer a recorded 4-5 MiB capacity limitation; it remains a deliberately
+  slow certification check, not part of the everyday gate.
+- Passive giant-line fragments are now normally capped at 256 UTF-16 units on
+  extended-grapheme boundaries; one indivisible cluster may exceed the cap.
+  On the exact 5 MiB giant-line development case, raster moved from 17.815 ms
+  p99 to 1.033 ms p99 (2.987 ms maximum), build measured 1.218 ms p99, and
+  editor latency measured 2.370 ms p99 with zero editor-attributed misses. The
+  panel served only 20 Hz and the foreground check failed, so this is defect-
+  resolution evidence, not a claim-eligible jank receipt.
+
+Cross-page selection, exact copy/cut, replacement, undo, grapheme-safe
+fragmentation, atomic platform delta batches, and canonical core selection are
+also complete in the active v4 path. The everyday gate remains
+`scripts/verify_v4.sh`; the large density proof remains
+`scripts/verify_v4_certification_stress.sh`.
+
+The remaining evidence boundary is intentionally narrow: pin the exact
+CommonMark/GFM/live-projection profile and execute its conformance lane; run a
+controlled foreground Mac session for claim-eligible performance and real IME;
+and keep the one unreproduced bulk `INTERNAL_FAULT` diagnostic armed until a
+reoccurrence identifies its source or the controlled session clears the
+targeted workload. Android/iOS device qualification and the eventual legacy
+identity cutover remain later milestones.
+
 ## 1. Destination and current state
 
 The destination is fixed:

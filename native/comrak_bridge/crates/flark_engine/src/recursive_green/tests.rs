@@ -19,6 +19,7 @@ use crate::{
 use super::codec::{
     decode_leaf, decode_packed_event, encode_leaf_header, encode_packed_event, packed_event_len,
     packed_event_summary, LogicalAtom, PackedGreenEvent, RecursiveGreenSummary,
+    GREEN_EVENTS_PER_PAGE_MAX,
 };
 use crate::measured_sequence::{SequenceInspectionReceipt, SequenceSpecInspection};
 
@@ -32,6 +33,47 @@ fn kind(value: u16) -> M11RecursiveGreenKind {
 
 fn metric(bytes: u64, utf16: u64) -> M11RecursiveGreenSourceMetric {
     M11RecursiveGreenSourceMetric::new(bytes, utf16).expect("valid metric")
+}
+
+#[test]
+fn dense_common_events_use_minimal_varints_and_reject_noncanonical_forms() {
+    let enter = PackedGreenEvent::Enter {
+        frame: frame(1),
+        kind: kind(1),
+    };
+    let coverage = PackedGreenEvent::Coverage {
+        physical: metric(2, 2),
+        owner_depth: 0,
+        part: M11RecursiveGreenCoveragePart::Content,
+        atom: LogicalAtom::Identity,
+    };
+    let exit = PackedGreenEvent::Exit {
+        frame: frame(1),
+        final_kind: kind(1),
+        close: None,
+        last_line_blank: false,
+        child: M11RecursiveGreenClosedChild::default(),
+    };
+    assert_eq!(packed_event_len(enter), 3);
+    assert_eq!(packed_event_len(coverage), 6);
+    assert_eq!(packed_event_len(exit), 6);
+
+    let mut page = [0_u8; ARENA_PAGE_BYTES];
+    let mut cursor = 0;
+    for event in [enter, coverage, exit] {
+        encode_packed_event(event, &mut page, &mut cursor).expect("encode dense event");
+    }
+    assert_eq!(cursor, 15);
+
+    let mut nonminimal_cursor = 0;
+    let nonminimal = [1, 0x81, 0x00, 1];
+    assert!(decode_packed_event(&nonminimal, &mut nonminimal_cursor).is_err());
+
+    let mut overflow_cursor = 0;
+    let overflow = [
+        1, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x02, 1,
+    ];
+    assert!(decode_packed_event(&overflow, &mut overflow_cursor).is_err());
 }
 
 fn offer(
@@ -1222,7 +1264,13 @@ fn cached_row_close_facts_round_trip_without_expanding_event_enums() {
         .expect("cached row trailer");
     assert!(semantic.is_empty());
     assert_eq!(decoded, cached);
-    assert_eq!(close.as_bytes().len(), 24);
+    assert!(close.as_bytes().len() < 24);
+    let (semantic, split) = close
+        .split_cached_row_editable()
+        .expect("split cached row facts")
+        .expect("split cached row trailer");
+    assert!(semantic.is_empty());
+    assert_eq!(split, cached);
 
     let oversized = M11RecursiveGreenCachedRowEditable::new(
         M11RecursiveGreenCachedRowEditCapability::Contiguous,
@@ -1331,7 +1379,7 @@ fn length_changing_edit_in_20k_item_list_path_copies_only_local_storage() {
     }
     let mut base = build.take_root().expect("large list root");
     assert_eq!(base.source_byte_len(), (ITEMS * ITEM_BYTES) as u64);
-    assert!(base.storage_page_count() > 400);
+    assert!(base.storage_page_count() > 100);
 
     let far_suffix_ordinal = base.storage_page_count() - 2;
     let mut base_leaf_inspection = SequenceInspectionReceipt::default();
@@ -1390,8 +1438,8 @@ fn length_changing_edit_in_20k_item_list_path_copies_only_local_storage() {
         base.storage_page_count() - 1,
     );
     assert_eq!(receipt.lineage_transitions(), 1);
-    assert!(receipt.boundary_events_decoded() <= 128);
-    assert!(receipt.boundary_events_reencoded() <= 128);
+    assert!(receipt.boundary_events_decoded() <= GREEN_EVENTS_PER_PAGE_MAX as u64,);
+    assert!(receipt.boundary_events_reencoded() <= GREEN_EVENTS_PER_PAGE_MAX as u64,);
     let logarithmic_bound = usize::from(base.tree_height()) * 16 + 32;
     assert!(
         receipt.tree_nodes_visited() <= logarithmic_bound,

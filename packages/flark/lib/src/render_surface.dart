@@ -9,9 +9,11 @@ import 'controller.dart';
 
 const _maximumNeutralPaintRows = 32;
 
-/// One laid-out painter never holds more than this many UTF-16 units, so a
-/// giant physical line cannot force full-block layout on the frame path.
-const _fragmentUtf16Budget = 2048;
+/// One laid-out painter normally holds at most this many UTF-16 units. Keeping
+/// the tile substantially shorter than the 2 KiB source-window cap prevents a
+/// partly visible wrapped fragment from asking the raster thread to visit
+/// thousands of offscreen glyphs. One indivisible grapheme may exceed it.
+const _fragmentUtf16Budget = 256;
 
 /// Rows starting below the viewport bottom plus this margin are not laid
 /// out; their height is estimated until scrolling materializes them.
@@ -148,6 +150,8 @@ final class RenderFlarkSurface extends RenderBox {
   int get debugSkippedRowCount => _skippedRowCount;
 
   int get debugPaintedFragmentCount => _paintedRows.length;
+
+  int get debugFragmentBudget => _fragmentUtf16Budget;
 
   /// Fragments of a laid-out row whose layout was skipped as below-fold.
   int get debugSkippedFragmentCount => _skippedFragmentCount;

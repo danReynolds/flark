@@ -2983,35 +2983,29 @@ fn point_zipper_row_editable(
 ) -> Result<PointZipperRowEditable, M11RecursiveGreenError> {
     let cached = if let Some(close) = boundary.close.as_ref() {
         match (boundary.final_kind.get(), close.tag().get()) {
-            (7, 4) if close.as_bytes().len() == 57 => {
-                let cached =
-                    close
-                        .cached_row_editable(33)?
-                        .ok_or(M11RecursiveGreenError::Corrupt(
-                            "fenced-code cached semantic geometry has invalid width",
-                        ))?;
-                validate_cached_fenced_close_semantic(cached.0)?;
-                Some(cached)
-            }
-            (7, 4) if close.as_bytes().len() == 25 => {
-                let cached =
-                    close
-                        .cached_row_editable(1)?
-                        .ok_or(M11RecursiveGreenError::Corrupt(
-                            "fenced-code cached geometry has invalid width",
-                        ))?;
-                if !matches!(cached.0, [0] | [1]) {
+            (7, 4) => {
+                if let Some(cached) = close.cached_row_editable(33)? {
+                    validate_cached_fenced_close_semantic(cached.0)?;
+                    Some(cached)
+                } else if let Some(cached) = close.cached_row_editable(1)? {
+                    if !matches!(cached.0, [0] | [1]) {
+                        return Err(M11RecursiveGreenError::Corrupt(
+                            "fenced-code cached geometry has invalid closed flag",
+                        ));
+                    }
+                    Some(cached)
+                } else if close.as_bytes().len() == 49 {
+                    None
+                } else {
                     return Err(M11RecursiveGreenError::Corrupt(
-                        "fenced-code cached geometry has invalid closed flag",
+                        "fenced-code row carried invalid close facts",
                     ));
                 }
-                Some(cached)
             }
-            (7, 4) if close.as_bytes().len() == 49 => None,
             (7, _) => {
                 return Err(M11RecursiveGreenError::Corrupt(
                     "fenced-code row carried invalid close facts",
-                ));
+                ))
             }
             (_, 6) => Some(close.cached_row_editable(0)?.ok_or(
                 M11RecursiveGreenError::Corrupt("row carried invalid cached geometry width"),

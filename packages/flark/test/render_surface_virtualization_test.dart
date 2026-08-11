@@ -35,7 +35,11 @@ void main() {
       final surface = tester.renderObject<RenderFlarkSurface>(
         find.byType(FlarkRenderSurfaceWidget),
       );
-      expect(surface.debugMaxFragmentUnits, lessThanOrEqualTo(2048));
+      expect(surface.debugFragmentBudget, 256);
+      expect(
+        surface.debugMaxFragmentUnits,
+        lessThanOrEqualTo(surface.debugFragmentBudget),
+      );
 
       // The active row is separately paint-capped by the controller; the
       // fragmentation property under test needs the giant row passive.
@@ -47,12 +51,15 @@ void main() {
 
       // Every painter stays inside the fragment budget, and the giant row is
       // fully accounted for: whatever is not laid out is explicitly skipped.
-      expect(surface.debugMaxFragmentUnits, lessThanOrEqualTo(2048));
+      expect(
+        surface.debugMaxFragmentUnits,
+        lessThanOrEqualTo(surface.debugFragmentBudget),
+      );
       final rowUnits = controller.surfaceRow(controller.rows.first).text.length;
       expect(rowUnits, 8192);
       expect(
         surface.debugPaintedFragmentCount + surface.debugSkippedFragmentCount,
-        greaterThanOrEqualTo((rowUnits / 2048).ceil()),
+        greaterThanOrEqualTo((rowUnits / surface.debugFragmentBudget).ceil()),
       );
 
       // The layout budget applies within a row, not only between rows: a
@@ -69,7 +76,10 @@ void main() {
         surface.debugPaintedFragmentCount,
         greaterThan(shortViewportFragments),
       );
-      expect(surface.debugMaxFragmentUnits, lessThanOrEqualTo(2048));
+      expect(
+        surface.debugMaxFragmentUnits,
+        lessThanOrEqualTo(surface.debugFragmentBudget),
+      );
 
       // Offsets stay monotonic and exact across fragment boundaries.
       final shallow = surface.positionForOffset(const Offset(10, 40));
