@@ -133,8 +133,8 @@ Short bounded paragraph $id.
 const _productTour = r'''# Flark dogfood
 
 This is the real **Rust → Dart → Flutter** editor path. Use it like an editor,
-not a static Markdown preview. The punctuation on the active row stays visible;
-passive rows use parser-authored projection.
+not a static Markdown preview. Certified Markdown stays rendered while focused;
+only incomplete or temporarily pending syntax becomes exact source locally.
 
 ## Start here
 
@@ -155,9 +155,9 @@ passive rows use parser-authored projection.
 
 | Surface | Authority | State |
 | :--- | :--- | ---: |
-| active row | exact Markdown source | 1 |
-| passive row | parser projection | 2 |
-| pending row | neutral exact source | 3 |
+| editing surface | certified parser projection | 1 |
+| reading surface | shared render plan | 2 |
+| pending island | neutral exact source | 3 |
 
 ```dart
 final editor = FlarkEditor(controller: controller);
@@ -174,7 +174,7 @@ Try bidirectional text: English العربية עברית English.
 ## Marker transitions
 
 Turn the following ordinary line into a heading, quote, list, task, and fenced
-code block. Watch both the active source and passive projection:
+code block. Watch the rendered construct and local incomplete transition:
 
 change this line
 

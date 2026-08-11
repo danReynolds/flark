@@ -138,6 +138,9 @@ pub const DOCUMENT_TABLE_CELL_ALIGNMENT_MASK: u8 = 0x03;
 pub const DOCUMENT_TABLE_CELL_HEADER: u8 = 1 << 2;
 pub const DOCUMENT_TABLE_CELL_ROW_START: u8 = 1 << 3;
 pub const DOCUMENT_TABLE_CELL_AUTOCOMPLETED: u8 = 1 << 4;
+/// The parser authorizes transaction-bound continuity for conservative plain
+/// text edits wholly inside this fact's visible content range.
+pub const DOCUMENT_INLINE_FACT_CONTINUITY_PLAIN_TEXT: u8 = 1 << 7;
 
 /// Parser-cooked visible text replacing one exact source range.
 ///
@@ -1507,11 +1510,19 @@ fn map_document_inline_facts(
         {
             return Err(DocumentSessionError::Faulted);
         }
+        let continuity = match kind {
+            DocumentInlineFactKind::Emphasis
+            | DocumentInlineFactKind::Strong
+            | DocumentInlineFactKind::Code
+            | DocumentInlineFactKind::Strikethrough
+            | DocumentInlineFactKind::DirectLink => DOCUMENT_INLINE_FACT_CONTINUITY_PLAIN_TEXT,
+            _ => 0,
+        };
         push_document_inline_fact(
             &mut mapped,
             &lease,
             kind,
-            fact.flags(),
+            fact.flags() | continuity,
             source,
             content,
             replacement,

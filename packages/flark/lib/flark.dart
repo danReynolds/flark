@@ -9,6 +9,7 @@ export 'src/controller.dart'
         FlarkSurfaceRow,
         FlarkSurfaceTextRun;
 export 'src/editor.dart' show FlarkEditor;
+export 'src/markdown_view.dart' show FlarkMarkdownView;
 export 'src/input_window.dart'
     show
         FlarkInputResyncReason,

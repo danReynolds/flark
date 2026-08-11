@@ -23,6 +23,7 @@ final class FlarkSurfaceHit {
   const FlarkSurfaceHit({
     required this.globalUtf16Offset,
     required this.ordinal,
+    required this.affinity,
     this.row,
     this.neutralText,
     this.neutralUtf16Start,
@@ -30,6 +31,7 @@ final class FlarkSurfaceHit {
 
   final int globalUtf16Offset;
   final int ordinal;
+  final TextAffinity affinity;
   final FlarkViewportRow? row;
   final String? neutralText;
   final int? neutralUtf16Start;
@@ -76,6 +78,7 @@ final class FlarkRenderSurfaceWidget extends LeafRenderObjectWidget {
     required this.padding,
     required this.caretColor,
     required this.selectionColor,
+    this.includeEditingState = true,
     super.key,
   });
 
@@ -84,6 +87,7 @@ final class FlarkRenderSurfaceWidget extends LeafRenderObjectWidget {
   final EdgeInsets padding;
   final Color caretColor;
   final Color selectionColor;
+  final bool includeEditingState;
 
   @override
   RenderFlarkSurface createRenderObject(BuildContext context) =>
@@ -93,6 +97,7 @@ final class FlarkRenderSurfaceWidget extends LeafRenderObjectWidget {
         padding: padding,
         caretColor: caretColor,
         selectionColor: selectionColor,
+        includeEditingState: includeEditingState,
         textDirection: Directionality.of(context),
       );
 
@@ -107,6 +112,7 @@ final class FlarkRenderSurfaceWidget extends LeafRenderObjectWidget {
       ..padding = padding
       ..caretColor = caretColor
       ..selectionColor = selectionColor
+      ..includeEditingState = includeEditingState
       ..textDirection = Directionality.of(context);
   }
 }
@@ -118,12 +124,14 @@ final class RenderFlarkSurface extends RenderBox {
     required EdgeInsets padding,
     required Color caretColor,
     required Color selectionColor,
+    required bool includeEditingState,
     required TextDirection textDirection,
   }) : _controller = controller,
        _textStyle = textStyle,
        _padding = padding,
        _caretColor = caretColor,
        _selectionColor = selectionColor,
+       _includeEditingState = includeEditingState,
        _textDirection = textDirection;
 
   FlarkEditorController _controller;
@@ -131,6 +139,7 @@ final class RenderFlarkSurface extends RenderBox {
   EdgeInsets _padding;
   Color _caretColor;
   Color _selectionColor;
+  bool _includeEditingState;
   TextDirection _textDirection;
   final List<_PaintedRow> _paintedRows = [];
   double _scrollOffset = 0;
@@ -142,6 +151,8 @@ final class RenderFlarkSurface extends RenderBox {
   double _skippedFragmentEstimate = 0;
 
   double get scrollOffset => _scrollOffset;
+  double get debugContentHeight => _contentHeight;
+  Size get debugSurfaceSize => size;
 
   /// Rows fully laid out in the last pass; below-fold rows are skipped.
   int get debugLaidOutRowCount => _laidOutRowCount;
@@ -164,6 +175,37 @@ final class RenderFlarkSurface extends RenderBox {
   int get debugMaxFragmentUnits => _paintedRows.fold(
     0,
     (maximum, row) => math.max(maximum, row.fragmentEnd - row.fragmentStart),
+  );
+
+  /// Content/layout identity excluding editor-only caret and selection paint.
+  int get debugRenderPlanHash => Object.hashAll(
+    _paintedRows.map(
+      (painted) => Object.hash(
+        painted.ordinal,
+        painted.fragmentStart,
+        painted.fragmentEnd,
+        painted.leadingLength,
+        painted.presentation.leadingText,
+        painted.presentation.text,
+        painted.presentation.kind,
+        painted.presentation.headingLevel,
+        painted.presentation.blockQuoteDepth,
+        painted.presentation.thematicBreak,
+        Object.hashAll(
+          painted.presentation.runs.map(
+            (run) => Object.hash(
+              run.text,
+              run.sourceUtf16Start,
+              run.sourceUtf16End,
+              run.sourceExact,
+              Object.hashAllUnordered(run.styles),
+            ),
+          ),
+        ),
+        painted.painter.width,
+        painted.painter.height,
+      ),
+    ),
   );
 
   FlarkEditorController get controller => _controller;
@@ -201,6 +243,13 @@ final class RenderFlarkSurface extends RenderBox {
     if (value == _selectionColor) return;
     _selectionColor = value;
     markNeedsPaint();
+  }
+
+  bool get includeEditingState => _includeEditingState;
+  set includeEditingState(bool value) {
+    if (value == _includeEditingState) return;
+    _includeEditingState = value;
+    markNeedsLayout();
   }
 
   TextDirection get textDirection => _textDirection;
@@ -299,7 +348,10 @@ final class RenderFlarkSurface extends RenderBox {
           skippedEstimate += _estimatedRowHeight + 6;
           continue;
         }
-        final presentation = _controller.surfaceRow(row);
+        final presentation = _controller.surfaceRow(
+          row,
+          includeEditingState: _includeEditingState,
+        );
         top = _emitFragments(
           presentation: presentation,
           ordinal: row.ordinal,
@@ -362,6 +414,7 @@ final class RenderFlarkSurface extends RenderBox {
         globalUtf16Start: _controller.visibleUtf16Start + sourceOffset,
         text: text,
         ordinal: ordinal,
+        includeEditingState: _includeEditingState,
       );
       top = _emitFragments(
         presentation: presentation,
@@ -564,8 +617,12 @@ final class RenderFlarkSurface extends RenderBox {
         .clamp(row.fragmentStart, row.fragmentEnd)
         .clamp(0, row.presentation.text.length);
     return FlarkSurfaceHit(
-      globalUtf16Offset: row.presentation.sourceOffsetForTextOffset(local),
+      globalUtf16Offset: row.presentation.sourceOffsetForTextOffset(
+        local,
+        affinity: position.affinity,
+      ),
       ordinal: row.ordinal,
+      affinity: position.affinity,
       row: row.row,
       neutralText: row.neutralText,
       neutralUtf16Start: row.neutralUtf16Start,
@@ -635,6 +692,7 @@ final class RenderFlarkSurface extends RenderBox {
           final caret = row.painter.getOffsetForCaret(
             TextPosition(
               offset: extent - row.fragmentStart + row.leadingLength,
+              affinity: selection.affinity,
             ),
             Rect.zero,
           );

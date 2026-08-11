@@ -13,6 +13,7 @@ LIBRARY="$ROOT/native/comrak_bridge/target/release/libflark_abi.dylib"
 SHAPE="${FLARK_PROFILE_SHAPE:-ordinary}"
 WORKLOAD="${FLARK_PROFILE_WORKLOAD:-typing}"
 SOURCE_BYTES="${FLARK_PROFILE_SOURCE_BYTES:-1048576}"
+START_DELAY_MS="${FLARK_PROFILE_START_DELAY_MS:-0}"
 
 cargo build --manifest-path "$ROOT/native/comrak_bridge/Cargo.toml" \
   --package flark-abi --release
@@ -30,4 +31,5 @@ exec caffeinate -dis flutter drive \
   --dart-define=FLARK_V4_LIBRARY_PATH="$LIBRARY" \
   --dart-define=FLARK_PROFILE_SHAPE="$SHAPE" \
   --dart-define=FLARK_PROFILE_WORKLOAD="$WORKLOAD" \
-  --dart-define=FLARK_PROFILE_SOURCE_BYTES="$SOURCE_BYTES"
+  --dart-define=FLARK_PROFILE_SOURCE_BYTES="$SOURCE_BYTES" \
+  --dart-define=FLARK_PROFILE_START_DELAY_MS="$START_DELAY_MS"

@@ -29,6 +29,7 @@ export 'src/models.dart'
         FlarkHeadingStyle,
         FlarkInlineFact,
         FlarkInlineFactKind,
+        FlarkInlineContinuityPolicy,
         FlarkListItemPresentation,
         FlarkListMarkerStyle,
         FlarkSourceRange,
@@ -38,5 +39,7 @@ export 'src/models.dart'
         FlarkViewport,
         FlarkViewportRow,
         FlarkViewportRowEditCapability;
+export 'src/projection_continuity.dart'
+    show FlarkProjectionContinuityReceipt, authorizeInlineProjectionContinuity;
 export 'src/native/native_document.dart'
     show FlarkNativeDocument, FlarkNativeException;

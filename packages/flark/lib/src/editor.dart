@@ -142,13 +142,18 @@ final class _FlarkEditorState extends State<FlarkEditor>
         activeOrdinal: hit.row?.ordinal ?? -hit.ordinal - 1,
       );
     } else if (hit.row case final row?) {
-      widget.controller.activateRow(row, hit.globalUtf16Offset);
+      widget.controller.activateRow(
+        row,
+        hit.globalUtf16Offset,
+        affinity: hit.affinity,
+      );
     } else {
       widget.controller.activateNeutralLine(
         text: hit.neutralText ?? '',
         globalUtf16Start: hit.neutralUtf16Start ?? 0,
         globalUtf16Offset: hit.globalUtf16Offset,
         ordinal: hit.ordinal,
+        affinity: hit.affinity,
       );
     }
     _focusNode.requestFocus();
@@ -168,8 +173,12 @@ final class _FlarkEditorState extends State<FlarkEditor>
               _surface?.scrollBy(event.scrollDelta.dy);
             }
           },
+          onPointerPanZoomUpdate: (event) {
+            _surface?.scrollBy(-event.localPanDelta.dy);
+          },
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
+            supportedDevices: const {PointerDeviceKind.mouse},
             onTapDown: (details) => _activate(details.localPosition),
             onPanStart: (details) => _activate(details.localPosition),
             onPanUpdate: (details) =>
@@ -181,6 +190,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
               padding: widget.padding,
               caretColor: widget.caretColor,
               selectionColor: widget.selectionColor,
+              includeEditingState: true,
             ),
           ),
         ),

@@ -44,6 +44,28 @@ Rust-authored edit-presentation continuity receipt is permitted only if that
 measurement shows current projection cannot be served by the paint deadline;
 Flutter may never infer continuity by carrying old Markdown facts forward.
 
+### T2 execution result
+
+The recertification-only spike was falsified and the permitted receipt is now
+implemented end to end. Rust publishes conservative per-fact continuity,
+`flark_core` validates and binds it to the exact transaction, and Flutter keeps
+only that authorized content projected until a covering certified viewport
+arrives. Syntax-like input and constructs with non-local validity fail closed.
+
+The dedicated `FlarkMarkdownView` and editor share the same bounded render
+surface. Focus no longer reveals inline markers, hidden-boundary deletion and
+platform selection normalize through source/display mappings, and mouse versus
+trackpad arbitration prevents scrolling from changing selection. The product
+tour exposes Edit and Read modes for dogfood.
+
+The T2 profile-mode Mac development receipt used 20 warmups and 120 measured
+edits against a 1 MiB dense-inline fixture. It recorded zero raw or missing
+projected frames; editor-attributed p99 was 3.481 ms with no editor-attributed
+over-budget samples. Flutter failed to foreground the final harness run, so
+wall-clock frame latency remains unclaimed until a controlled visible session.
+This is a dogfood checkpoint, not the complete T5 matrix or mobile proof.
+The authoritative `./scripts/verify_v4.sh` gate passes at this checkpoint.
+
 ## 2026-08-11 conformance-profile update
 
 The active semantic product profile is now unambiguous: official GFM

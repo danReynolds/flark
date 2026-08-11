@@ -83,6 +83,7 @@ const _inlineFactTableCell = 14;
 const _inlineFactAutolinkUriWww = 0x1;
 const _inlineFactCodeNormalizeLineEndings = 0x1;
 const _inlineFactCodeTrimOneSpace = 0x2;
+const _inlineFactContinuityPlainText = 1 << 7;
 const _inlineFactTableAlignmentMask = 0x3;
 const _inlineFactTableHeader = 0x4;
 const _inlineFactTableRowStart = 0x8;
@@ -1413,10 +1414,16 @@ final class FlarkNativeDocument {
       FlarkInlineFactKind.code =>
         record.flags &
                 ~(_inlineFactCodeNormalizeLineEndings |
-                    _inlineFactCodeTrimOneSpace) ==
+                    _inlineFactCodeTrimOneSpace |
+                    _inlineFactContinuityPlainText) ==
             0,
       FlarkInlineFactKind.tableCell =>
         record.flags & ~_knownInlineFactTableFlags == 0,
+      FlarkInlineFactKind.emphasis ||
+      FlarkInlineFactKind.strong ||
+      FlarkInlineFactKind.strikethrough ||
+      FlarkInlineFactKind.directLink =>
+        record.flags & ~_inlineFactContinuityPlainText == 0,
       _ => record.flags == 0,
     };
     final replacement = kind == FlarkInlineFactKind.replacement

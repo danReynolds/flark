@@ -35,12 +35,31 @@ final class FlarkSurfaceTextRun {
   final bool sourceExact;
   final Set<FlarkSurfaceInlineStyle> styles;
 
-  int sourceOffsetForTextOffset(int offset) {
+  int sourceOffsetForTextOffset(
+    int offset, {
+    TextAffinity affinity = TextAffinity.downstream,
+  }) {
     final local = offset.clamp(0, text.length);
     if (sourceExact) return sourceUtf16Start + local;
     if (local == 0) return sourceUtf16Start;
     if (local == text.length) return sourceUtf16End;
-    return local * 2 <= text.length ? sourceUtf16Start : sourceUtf16End;
+    return affinity == TextAffinity.upstream
+        ? sourceUtf16Start
+        : sourceUtf16End;
+  }
+
+  int textOffsetForSourceOffset(
+    int offset, {
+    TextAffinity affinity = TextAffinity.downstream,
+  }) {
+    final local = (offset - sourceUtf16Start).clamp(
+      0,
+      sourceUtf16End - sourceUtf16Start,
+    );
+    if (sourceExact) return local;
+    if (local == 0) return 0;
+    if (local == sourceUtf16End - sourceUtf16Start) return text.length;
+    return affinity == TextAffinity.upstream ? 0 : text.length;
   }
 }
 
@@ -73,18 +92,50 @@ final class FlarkSurfaceRow {
   final TextSelection? selection;
   final List<FlarkSurfaceTextRun> runs;
 
-  int sourceOffsetForTextOffset(int offset) {
+  int sourceOffsetForTextOffset(
+    int offset, {
+    TextAffinity affinity = TextAffinity.downstream,
+  }) {
     final local = offset.clamp(0, text.length);
     if (runs.isEmpty) return globalUtf16Start + local;
     var consumed = 0;
-    for (final run in runs) {
+    for (var index = 0; index < runs.length; index += 1) {
+      final run = runs[index];
       final runEnd = consumed + run.text.length;
-      if (local <= runEnd) {
-        return run.sourceOffsetForTextOffset(local - consumed);
+      if (local < runEnd) {
+        return run.sourceOffsetForTextOffset(
+          local - consumed,
+          affinity: affinity,
+        );
+      }
+      if (local == runEnd) {
+        if (affinity == TextAffinity.downstream && index + 1 < runs.length) {
+          return runs[index + 1].sourceUtf16Start;
+        }
+        return run.sourceUtf16End;
       }
       consumed = runEnd;
     }
     return runs.last.sourceUtf16End;
+  }
+
+  int textOffsetForSourceOffset(
+    int offset, {
+    TextAffinity affinity = TextAffinity.downstream,
+  }) {
+    if (runs.isEmpty) {
+      return (offset - globalUtf16Start).clamp(0, text.length);
+    }
+    var consumed = 0;
+    for (final run in runs) {
+      if (offset < run.sourceUtf16Start) return consumed;
+      if (offset <= run.sourceUtf16End) {
+        return consumed +
+            run.textOffsetForSourceOffset(offset, affinity: affinity);
+      }
+      consumed += run.text.length;
+    }
+    return text.length;
   }
 }
 
@@ -108,6 +159,16 @@ final class _OptimisticViewportEdit {
   final int replacementLength;
 
   int get delta => replacementLength - (end - start);
+}
+
+final class _ProjectionContinuitySurface {
+  const _ProjectionContinuitySurface({
+    required this.receipt,
+    required this.presentation,
+  });
+
+  final FlarkProjectionContinuityReceipt receipt;
+  final FlarkSurfaceRow presentation;
 }
 
 final class _EditorSelectionSnapshot {
@@ -152,6 +213,7 @@ final class FlarkEditorController extends ChangeNotifier {
   Future<bool>? _pageTask;
   final List<int> _pageStarts = [0];
   final List<_OptimisticViewportEdit> _optimisticViewportEdits = [];
+  _ProjectionContinuitySurface? _projectionContinuity;
   int _pageIndex = 0;
   int _editGeneration = 0;
   int _pendingEdits = 0;
@@ -395,7 +457,10 @@ final class FlarkEditorController extends ChangeNotifier {
 
   List<FlarkViewportRow> get rows => _cachedRows;
 
-  FlarkSurfaceRow surfaceRow(FlarkViewportRow row) {
+  FlarkSurfaceRow surfaceRow(
+    FlarkViewportRow row, {
+    bool includeEditingState = true,
+  }) {
     final mappedSource = _mapViewportRange(row.sourceUtf16);
     final listItem = row.listItem;
     final blockQuote = row.blockQuote;
@@ -410,12 +475,34 @@ final class FlarkEditorController extends ChangeNotifier {
     final exactLeadingText = mappedPrefix == null
         ? ''
         : _sliceVisibleUtf16(mappedPrefix.start, mappedPrefix.end);
-    final exactRange = semanticRange;
-    if (_crossRowSelection &&
-        (_selectionIntersects(exactRange) || _activeOrdinal == row.ordinal)) {
-      return _exactSelectionSurfaceRow(range: exactRange, ordinal: row.ordinal);
+    final continuity = _projectionContinuity;
+    final continuityOwnsRow =
+        includeEditingState &&
+        continuity != null &&
+        semanticRange.start <= _globalSelectionExtent &&
+        _globalSelectionExtent <= semanticRange.end;
+    final caretOwnsRow =
+        includeEditingState &&
+        !_crossRowSelection &&
+        semanticRange.start <= _globalSelectionExtent &&
+        _globalSelectionExtent < semanticRange.end;
+    final active =
+        includeEditingState &&
+        (_activeOrdinal == row.ordinal || continuityOwnsRow || caretOwnsRow);
+    final selected =
+        includeEditingState &&
+        _crossRowSelection &&
+        (_selectionIntersects(semanticRange) || active);
+    if (continuityOwnsRow) {
+      return _activeContinuitySurface(continuity, row.ordinal);
     }
-    if (_activeOrdinal == row.ordinal) {
+    if (selected && !active && (!rowCertified || row.table != null)) {
+      return _exactSelectionSurfaceRow(
+        range: semanticRange,
+        ordinal: row.ordinal,
+      );
+    }
+    if (active && (!rowCertified || row.table != null)) {
       final paintInput = _paintInputWindow();
       return FlarkSurfaceRow(
         leadingText: exactLeadingText,
@@ -427,8 +514,8 @@ final class FlarkEditorController extends ChangeNotifier {
         codeBlock: rowCertified ? row.codeBlock : null,
         thematicBreak: rowCertified && row.thematicBreak,
         ordinal: row.ordinal,
-        active: true,
-        selection: paintInput.selection,
+        active: active,
+        selection: includeEditingState ? paintInput.selection : null,
         runs: [
           FlarkSurfaceTextRun(
             text: paintInput.text,
@@ -456,9 +543,10 @@ final class FlarkEditorController extends ChangeNotifier {
         : rowCertified && row.inlineFacts != null
         ? _projectInlineRuns(range, row.inlineFacts!)
         : [_exactSurfaceRun(range)];
+    final text = runs.map((run) => run.text).join();
     return FlarkSurfaceRow(
       leadingText: leadingText,
-      text: runs.map((run) => run.text).join(),
+      text: text,
       globalUtf16Start: range.start,
       kind: rowCertified ? row.kind : 0,
       headingLevel: row.headingLevel,
@@ -466,8 +554,10 @@ final class FlarkEditorController extends ChangeNotifier {
       codeBlock: rowCertified ? row.codeBlock : null,
       thematicBreak: rowCertified && row.thematicBreak,
       ordinal: row.ordinal,
-      active: false,
-      selection: null,
+      active: active,
+      selection: active || selected
+          ? _projectedSelection(runs, text.length)
+          : null,
       runs: runs,
     );
   }
@@ -476,17 +566,20 @@ final class FlarkEditorController extends ChangeNotifier {
     required int globalUtf16Start,
     required String text,
     required int ordinal,
+    bool includeEditingState = true,
   }) {
     final surfaceOrdinal = -ordinal - 1;
     final range = FlarkSourceRange(
       globalUtf16Start,
       globalUtf16Start + text.length,
     );
-    if (_crossRowSelection &&
+    if (includeEditingState &&
+        _crossRowSelection &&
         (_selectionIntersects(range) || _activeOrdinal == surfaceOrdinal)) {
       return _exactSelectionSurfaceRow(range: range, ordinal: surfaceOrdinal);
     }
-    if (_activeOrdinal == surfaceOrdinal &&
+    if (includeEditingState &&
+        _activeOrdinal == surfaceOrdinal &&
         _globalSelectionExtent >= globalUtf16Start &&
         _globalSelectionExtent <= globalUtf16Start + text.length) {
       final paintInput = _paintInputWindow(
@@ -566,6 +659,61 @@ final class FlarkEditorController extends ChangeNotifier {
           styles: const {},
         ),
       ],
+    );
+  }
+
+  TextSelection _projectedSelection(
+    List<FlarkSurfaceTextRun> runs,
+    int textLength,
+  ) {
+    int project(int sourceOffset, TextAffinity affinity) {
+      if (runs.isEmpty) return 0;
+      var consumed = 0;
+      for (final run in runs) {
+        if (sourceOffset < run.sourceUtf16Start) return consumed;
+        if (sourceOffset <= run.sourceUtf16End) {
+          return (consumed +
+                  run.textOffsetForSourceOffset(
+                    sourceOffset,
+                    affinity: affinity,
+                  ))
+              .clamp(0, textLength);
+        }
+        consumed += run.text.length;
+      }
+      return textLength;
+    }
+
+    final affinity = _inputValue.selection.affinity;
+    return TextSelection(
+      baseOffset: project(_globalSelectionBase, affinity),
+      extentOffset: project(_globalSelectionExtent, affinity),
+      affinity: affinity,
+      isDirectional: _inputValue.selection.isDirectional,
+    );
+  }
+
+  FlarkSurfaceRow _activeContinuitySurface(
+    _ProjectionContinuitySurface continuity,
+    int ordinal,
+  ) {
+    final presentation = continuity.presentation;
+    return FlarkSurfaceRow(
+      leadingText: presentation.leadingText,
+      text: presentation.text,
+      globalUtf16Start: presentation.globalUtf16Start,
+      kind: presentation.kind,
+      headingLevel: presentation.headingLevel,
+      blockQuoteDepth: presentation.blockQuoteDepth,
+      codeBlock: presentation.codeBlock,
+      thematicBreak: presentation.thematicBreak,
+      ordinal: ordinal,
+      active: true,
+      selection: _projectedSelection(
+        presentation.runs,
+        presentation.text.length,
+      ),
+      runs: presentation.runs,
     );
   }
 
@@ -736,7 +884,12 @@ final class FlarkEditorController extends ChangeNotifier {
         FlarkInlineFactKind.tableCell => null,
       };
 
-  void activateRow(FlarkViewportRow row, int globalUtf16Offset) {
+  void activateRow(
+    FlarkViewportRow row,
+    int globalUtf16Offset, {
+    TextAffinity affinity = TextAffinity.downstream,
+  }) {
+    _projectionContinuity = null;
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
     _abandonOversizedSelection();
@@ -747,6 +900,7 @@ final class FlarkEditorController extends ChangeNotifier {
       sourceStart: range.start,
       caret: globalUtf16Offset,
       ordinal: row.ordinal,
+      affinity: affinity,
     );
     unawaited(_installCanonicalSelection(_selectionSnapshot()));
   }
@@ -756,7 +910,9 @@ final class FlarkEditorController extends ChangeNotifier {
     required int globalUtf16Start,
     required int globalUtf16Offset,
     required int ordinal,
+    TextAffinity affinity = TextAffinity.downstream,
   }) {
+    _projectionContinuity = null;
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
     _abandonOversizedSelection();
@@ -765,6 +921,7 @@ final class FlarkEditorController extends ChangeNotifier {
       sourceStart: globalUtf16Start,
       caret: globalUtf16Offset,
       ordinal: -ordinal - 1,
+      affinity: affinity,
     );
     unawaited(_installCanonicalSelection(_selectionSnapshot()));
   }
@@ -859,6 +1016,7 @@ final class FlarkEditorController extends ChangeNotifier {
       }
       if (mutatingDeltas == 0) {
         _breakTypingHistoryGroup();
+        finalValue = _normalizeProjectedSelection(finalValue);
         _inputValue = finalValue;
         _trackCompositionWithoutMutation(finalValue.composing);
         _updateGlobalSelection();
@@ -917,6 +1075,7 @@ final class FlarkEditorController extends ChangeNotifier {
   void _updateEditingValueFromPlatform(TextEditingValue value) {
     if (value.text == _inputValue.text) {
       _breakTypingHistoryGroup();
+      value = _normalizeProjectedSelection(value);
       _inputValue = value;
       _trackCompositionWithoutMutation(value.composing);
       _updateGlobalSelection();
@@ -1089,6 +1248,7 @@ final class FlarkEditorController extends ChangeNotifier {
         _deleteProjectedHeadingPrefix(selection.extentOffset)) {
       return;
     }
+    if (_deleteProjectedVisible(backward: true)) return;
     if (selection.extentOffset == 0) return;
     final end = selection.extentOffset;
     final cluster = FlarkCoreGraphemePolicy.previousClusterRange(
@@ -1112,6 +1272,7 @@ final class FlarkEditorController extends ChangeNotifier {
       replaceSelection('');
       return;
     }
+    if (_deleteProjectedVisible(backward: false)) return;
     final start = selection.extentOffset;
     if (start == _inputValue.text.length) return;
     final cluster = FlarkCoreGraphemePolicy.nextClusterRange(
@@ -1133,6 +1294,101 @@ final class FlarkEditorController extends ChangeNotifier {
       return;
     }
     replaceSelection('\n');
+  }
+
+  TextEditingValue _normalizeProjectedSelection(TextEditingValue value) {
+    if (!value.selection.isValid || !value.composing.isCollapsed) return value;
+    final row = _activeCachedRow();
+    if (row == null || row.table != null) return value;
+    final presentation = surfaceRow(row, includeEditingState: false);
+    if (!_surfaceHasProjection(presentation, row)) return value;
+
+    int normalize(int localOffset) {
+      final global = _inputGlobalUtf16Start + localOffset;
+      final display = presentation.textOffsetForSourceOffset(
+        global,
+        affinity: value.selection.affinity,
+      );
+      final normalizedGlobal = presentation.sourceOffsetForTextOffset(
+        display,
+        affinity: value.selection.affinity,
+      );
+      return (normalizedGlobal - _inputGlobalUtf16Start).clamp(
+        0,
+        value.text.length,
+      );
+    }
+
+    final selection = TextSelection(
+      baseOffset: normalize(value.selection.baseOffset),
+      extentOffset: normalize(value.selection.extentOffset),
+      affinity: value.selection.affinity,
+      isDirectional: value.selection.isDirectional,
+    );
+    return selection == value.selection
+        ? value
+        : value.copyWith(selection: selection);
+  }
+
+  bool _deleteProjectedVisible({required bool backward}) {
+    final row = _activeCachedRow();
+    if (row == null || row.table != null) return false;
+    final presentation = surfaceRow(row);
+    if (!presentation.active || !_surfaceHasProjection(presentation, row)) {
+      return false;
+    }
+    final selection = _inputValue.selection;
+    if (!selection.isCollapsed) return false;
+    final globalCaret = _inputGlobalUtf16Start + selection.extentOffset;
+    final displayCaret = presentation.textOffsetForSourceOffset(
+      globalCaret,
+      affinity: selection.affinity,
+    );
+    final cluster = backward
+        ? FlarkCoreGraphemePolicy.previousClusterRange(
+            presentation.text,
+            displayCaret,
+          )
+        : FlarkCoreGraphemePolicy.nextClusterRange(
+            presentation.text,
+            displayCaret,
+          );
+    // The visual edge can still have hidden source on the other side. Treat
+    // that edge as a legal stop instead of deleting an invisible delimiter.
+    if (cluster == null) return true;
+    final sourceStart = presentation.sourceOffsetForTextOffset(
+      cluster.$1,
+      affinity: TextAffinity.downstream,
+    );
+    final sourceEnd = presentation.sourceOffsetForTextOffset(
+      cluster.$2,
+      affinity: TextAffinity.upstream,
+    );
+    if (sourceStart >= sourceEnd) return true;
+    final localStart = sourceStart - _inputGlobalUtf16Start;
+    final localEnd = sourceEnd - _inputGlobalUtf16Start;
+    if (localStart < 0 || localEnd > _inputValue.text.length) return false;
+    _inputValue = _inputValue.copyWith(
+      selection: TextSelection(baseOffset: localStart, extentOffset: localEnd),
+      composing: TextRange.empty,
+    );
+    replaceSelection('');
+    return true;
+  }
+
+  bool _surfaceHasProjection(
+    FlarkSurfaceRow presentation,
+    FlarkViewportRow row,
+  ) {
+    if (presentation.runs.isEmpty) return false;
+    final activation = _mapViewportRange(_activationRange(row));
+    if (!_rowSemanticsCurrent(activation)) return false;
+    var sourceCursor = activation.start;
+    for (final run in presentation.runs) {
+      if (!run.sourceExact || run.sourceUtf16Start != sourceCursor) return true;
+      sourceCursor = run.sourceUtf16End;
+    }
+    return sourceCursor != activation.end;
   }
 
   bool _smallEditFits(String source, int start, int end, String replacement) {
@@ -1425,6 +1681,7 @@ final class FlarkEditorController extends ChangeNotifier {
     required int sourceStart,
     required int caret,
     required int ordinal,
+    required TextAffinity affinity,
   }) {
     final localCaret = (caret - sourceStart).clamp(0, text.length);
     var windowStart = 0;
@@ -1441,7 +1698,10 @@ final class FlarkEditorController extends ChangeNotifier {
     _inputGlobalUtf16Start = sourceStart + windowStart;
     _inputValue = TextEditingValue(
       text: window,
-      selection: TextSelection.collapsed(offset: windowCaret),
+      selection: TextSelection.collapsed(
+        offset: windowCaret,
+        affinity: affinity,
+      ),
     );
     _activeOrdinal = ordinal;
     _crossRowSelection = false;
@@ -1699,6 +1959,7 @@ final class FlarkEditorController extends ChangeNotifier {
     required int? compositionHistoryGroup,
     bool recenterAfterOptimisticEdit = false,
   }) {
+    _prepareProjectionContinuity(start, end, replacement);
     _applyOptimisticViewportEdit(start, end, replacement);
     if (recenterAfterOptimisticEdit) {
       _restoreSelectionSnapshot(afterSelection);
@@ -1723,6 +1984,141 @@ final class FlarkEditorController extends ChangeNotifier {
     unawaited(_completeQueuedEdit(operation, generation));
   }
 
+  void _prepareProjectionContinuity(int start, int end, String replacement) {
+    final current = _projectionContinuity;
+    if (current != null) {
+      final receipt = current.receipt.continueWith(
+        startUtf16: start,
+        endUtf16: end,
+        replacement: replacement,
+      );
+      final presentation = receipt == null
+          ? null
+          : _spliceContinuityPresentation(
+              current.presentation,
+              receipt.authorizedContentUtf16,
+              start,
+              end,
+              replacement,
+            );
+      _projectionContinuity = receipt == null || presentation == null
+          ? null
+          : _ProjectionContinuitySurface(
+              receipt: receipt,
+              presentation: presentation,
+            );
+      return;
+    }
+    if (_optimisticViewportEdits.isNotEmpty) return;
+    final row = _activeCachedRow();
+    final facts = row?.inlineFacts;
+    if (row == null || row.table != null || facts == null || facts.isEmpty) {
+      return;
+    }
+    final activation = _mapViewportRange(_activationRange(row));
+    if (!_rowSemanticsCurrent(activation)) return;
+    final receipt = authorizeInlineProjectionContinuity(
+      revision: revision,
+      facts: facts,
+      startUtf16: start,
+      endUtf16: end,
+      replacement: replacement,
+    );
+    if (receipt == null) return;
+    final base = surfaceRow(row, includeEditingState: false);
+    final presentation = _spliceContinuityPresentation(
+      base,
+      receipt.authorizedContentUtf16,
+      start,
+      end,
+      replacement,
+    );
+    if (presentation == null) return;
+    _projectionContinuity = _ProjectionContinuitySurface(
+      receipt: receipt,
+      presentation: presentation,
+    );
+  }
+
+  FlarkSurfaceRow? _spliceContinuityPresentation(
+    FlarkSurfaceRow presentation,
+    FlarkSourceRange authorizedContent,
+    int start,
+    int end,
+    String replacement,
+  ) {
+    var target = -1;
+    for (var index = 0; index < presentation.runs.length; index += 1) {
+      final run = presentation.runs[index];
+      final insertionInside =
+          start == end &&
+          start >= run.sourceUtf16Start &&
+          start <= run.sourceUtf16End;
+      final replacementInside =
+          start < end &&
+          start >= run.sourceUtf16Start &&
+          end <= run.sourceUtf16End;
+      final runInsideAuthority =
+          authorizedContent.start <= run.sourceUtf16Start &&
+          run.sourceUtf16End <= authorizedContent.end;
+      if (run.sourceExact &&
+          runInsideAuthority &&
+          (insertionInside || replacementInside)) {
+        target = index;
+        break;
+      }
+    }
+    if (target < 0) return null;
+
+    final delta = replacement.length - (end - start);
+    final runs = <FlarkSurfaceTextRun>[];
+    for (var index = 0; index < presentation.runs.length; index += 1) {
+      final run = presentation.runs[index];
+      if (index < target) {
+        runs.add(run);
+        continue;
+      }
+      if (index == target) {
+        final localStart = start - run.sourceUtf16Start;
+        final localEnd = end - run.sourceUtf16Start;
+        runs.add(
+          FlarkSurfaceTextRun(
+            text: run.text.replaceRange(localStart, localEnd, replacement),
+            sourceUtf16Start: run.sourceUtf16Start,
+            sourceUtf16End: run.sourceUtf16End + delta,
+            sourceExact: true,
+            styles: run.styles,
+          ),
+        );
+        continue;
+      }
+      runs.add(
+        FlarkSurfaceTextRun(
+          text: run.text,
+          sourceUtf16Start: run.sourceUtf16Start + delta,
+          sourceUtf16End: run.sourceUtf16End + delta,
+          sourceExact: run.sourceExact,
+          styles: run.styles,
+        ),
+      );
+    }
+    final projected = List<FlarkSurfaceTextRun>.unmodifiable(runs);
+    return FlarkSurfaceRow(
+      leadingText: presentation.leadingText,
+      text: projected.map((run) => run.text).join(),
+      globalUtf16Start: presentation.globalUtf16Start,
+      kind: presentation.kind,
+      headingLevel: presentation.headingLevel,
+      blockQuoteDepth: presentation.blockQuoteDepth,
+      codeBlock: presentation.codeBlock,
+      thematicBreak: presentation.thematicBreak,
+      ordinal: presentation.ordinal,
+      active: false,
+      selection: null,
+      runs: projected,
+    );
+  }
+
   Future<void> _completeQueuedEdit(
     Future<void> operation,
     int generation,
@@ -1730,6 +2126,7 @@ final class FlarkEditorController extends ChangeNotifier {
     try {
       await operation;
     } catch (error) {
+      _projectionContinuity = null;
       _pendingEdits = math.max(0, _pendingEdits - 1);
       _lastError = error;
       _status = FlarkEditorStatus.faulted;
@@ -1766,6 +2163,7 @@ final class FlarkEditorController extends ChangeNotifier {
       return Future<bool>.value(false);
     }
     _historyReplayPending = true;
+    _projectionContinuity = null;
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
     _parseTimer?.cancel();
@@ -1908,24 +2306,63 @@ final class FlarkEditorController extends ChangeNotifier {
   }) {
     _viewport = viewport;
     final installsFreshRows = viewport.rows.isNotEmpty;
+    final retainsExistingSurface =
+        !installsFreshRows &&
+        !viewport.isCertified &&
+        _projectionContinuity != null &&
+        _cachedRows.isNotEmpty;
     if (installsFreshRows) {
       _cachedRows = viewport.rows;
+    } else if (viewport.isCertified) {
+      _cachedRows = const [];
     }
-    _visibleSource = source;
+    // Rows and their source cache are one publication. A pending viewport can
+    // legitimately contain no semantic rows; pairing that new source window
+    // with retained rows creates a torn surface and can eject the active row.
+    // Optimistic edits have already updated the retained source cache, so keep
+    // both halves until a fresh row publication arrives.
+    if (!retainsExistingSurface) {
+      _visibleSource = source;
+      _visibleUtf16Start = viewport.coveredUtf16.start;
+    }
     _certificationRanges = viewport.certificationRanges;
     _certificationRevisionCurrent = viewport.certificationRanges.isNotEmpty;
     if (installsFreshRows) _optimisticViewportEdits.clear();
     _semanticViewportCurrent = viewport.isCertified && installsFreshRows;
-    _visibleUtf16Start = viewport.coveredUtf16.start;
+    if (_viewportSupersedesProjectionContinuity(viewport)) {
+      _projectionContinuity = null;
+    }
     _status = _semanticViewportCurrent
         ? FlarkEditorStatus.ready
         : FlarkEditorStatus.parsing;
     if (restoreInputWindow) {
       _restoreInputWindow();
     } else if (ensureActiveInputVisible) {
-      _ensureActiveInputVisible();
+      if (!_ensureActiveInputVisible()) {
+        _activeOrdinal = _surfaceOrdinalAt(_globalSelectionExtent);
+      }
+    }
+    if (installsFreshRows &&
+        !_cachedRows.any((row) => row.ordinal == _activeOrdinal)) {
+      // Row ordinals belong to one viewport publication. A later parsing
+      // installment can replace them after the edit refresh has already
+      // restored the input window, so resolve the active row from the
+      // canonical caret whenever the retained ordinal is no longer present.
+      _activeOrdinal = _surfaceOrdinalAt(_globalSelectionExtent);
     }
     notifyListeners();
+  }
+
+  bool _viewportSupersedesProjectionContinuity(FlarkViewport viewport) {
+    final continuity = _projectionContinuity;
+    if (continuity == null || !viewport.isCertified || viewport.rows.isEmpty) {
+      return false;
+    }
+    final receipt = continuity.receipt;
+    if (viewport.revision < receipt.resultRevision) return false;
+    final authorized = receipt.authorizedContentUtf16;
+    return viewport.coveredUtf16.start <= authorized.start &&
+        authorized.end <= viewport.coveredUtf16.end;
   }
 
   void _restoreInputWindow() {

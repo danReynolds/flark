@@ -371,7 +371,11 @@ final class FlarkCoreDocument {
 
   void _requireOwnedAnchor(FlarkCoreAnchor anchor) {
     if (!identical(anchor._owner, _historyOwner)) {
-      throw ArgumentError.value(anchor, 'anchor', 'belongs to another document');
+      throw ArgumentError.value(
+        anchor,
+        'anchor',
+        'belongs to another document',
+      );
     }
     if (anchor._released) {
       throw StateError('Flark anchor was already released');

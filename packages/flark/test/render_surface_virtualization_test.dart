@@ -197,10 +197,12 @@ void main() {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
-          child: SizedBox(
-            width: 640,
-            height: 240,
-            child: FlarkEditor(controller: controller),
+          child: Center(
+            child: SizedBox(
+              width: 640,
+              height: 240,
+              child: FlarkEditor(controller: controller),
+            ),
           ),
         ),
       );
@@ -209,7 +211,16 @@ void main() {
       final surface = tester.renderObject<RenderFlarkSurface>(
         find.byType(FlarkRenderSurfaceWidget),
       );
-      expect(surface.debugSkippedRowCount, greaterThan(0));
+      expect(
+        surface.debugSkippedRowCount,
+        greaterThan(0),
+        reason:
+            'laidOut=${surface.debugLaidOutRowCount} '
+            'rows=${controller.rows.length} fragments='
+            '${surface.debugPaintedFragmentCount} size='
+            '${surface.debugSurfaceSize} content='
+            '${surface.debugContentHeight}',
+      );
       expect(
         surface.debugLaidOutRowCount + surface.debugSkippedRowCount,
         controller.rows.length,

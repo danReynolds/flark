@@ -1,0 +1,353 @@
+import 'dart:io';
+
+import 'package:flark/flark.dart';
+import 'package:flark/src/render_surface.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  final libraryPath = Platform.environment['FLARK_V4_LIBRARY_PATH'];
+
+  test(
+    'focus preserves inline projection and hidden-boundary topology',
+    () async {
+      const source = 'Anchor.\n\nbefore **bold** after\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+
+      final row = controller.rows.last;
+      final passive = controller.surfaceRow(row);
+      final boldStart = source.indexOf('bold');
+      final boldEnd = boldStart + 'bold'.length;
+      final boldDisplayStart = passive.text.indexOf('bold');
+      final boldDisplayEnd = boldDisplayStart + 'bold'.length;
+
+      controller.activateRow(row, boldStart + 2);
+      final active = controller.surfaceRow(row);
+      expect(active.text, passive.text);
+      expect(
+        active.runs.map((run) => run.text),
+        passive.runs.map((run) => run.text),
+      );
+      expect(
+        active.runs.any(
+          (run) => run.styles.contains(FlarkSurfaceInlineStyle.strong),
+        ),
+        isTrue,
+      );
+      expect(
+        active.sourceOffsetForTextOffset(
+          boldDisplayStart,
+          affinity: TextAffinity.downstream,
+        ),
+        boldStart,
+      );
+      expect(
+        active.sourceOffsetForTextOffset(
+          boldDisplayStart,
+          affinity: TextAffinity.upstream,
+        ),
+        boldStart - 2,
+      );
+      expect(
+        active.sourceOffsetForTextOffset(
+          boldDisplayEnd,
+          affinity: TextAffinity.upstream,
+        ),
+        boldEnd,
+      );
+      expect(
+        active.sourceOffsetForTextOffset(
+          boldDisplayEnd,
+          affinity: TextAffinity.downstream,
+        ),
+        boldEnd + 2,
+      );
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'Backspace edits visible graphemes and never hidden delimiters',
+    () async {
+      const source = '**bold** after\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      final row = controller.rows.first;
+      final boldStart = source.indexOf('bold');
+
+      controller.activateRow(row, boldStart);
+      controller.deleteBackward();
+      expect(controller.visibleSource, source);
+
+      controller.activateRow(row, boldStart + 1);
+      controller.deleteBackward();
+      expect(controller.visibleSource, '**old** after\n');
+      await _settle(controller);
+      expect(controller.surfaceRow(controller.rows.first).text, 'old after');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'parser-authorized ordinary edits retain projection while pending',
+    () async {
+      const source = '**bold** after\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      final row = controller.rows.first;
+      controller.activateRow(row, source.indexOf('bold') + 2);
+      final before = controller.inputValue;
+
+      controller.applyDeltas([
+        TextEditingDeltaInsertion(
+          oldText: before.text,
+          textInserted: 'x',
+          insertionOffset: before.selection.extentOffset,
+          selection: TextSelection.collapsed(
+            offset: before.selection.extentOffset + 1,
+          ),
+          composing: TextRange.empty,
+        ),
+      ]);
+
+      expect(controller.semanticsCurrent, isFalse);
+      final pending = controller.surfaceRow(row);
+      expect(pending.text, 'boxld after');
+      expect(pending.text, isNot(contains('**')));
+      expect(
+        pending.runs.any(
+          (run) =>
+              run.text == 'boxld' &&
+              run.styles.contains(FlarkSurfaceInlineStyle.strong),
+        ),
+        isTrue,
+      );
+      await _settle(controller);
+      expect(controller.visibleSource, '**boxld** after\n');
+      final settled = controller.surfaceRow(controller.rows.first);
+      expect(settled.active, isTrue);
+      expect(settled.text, 'boxld after');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'plain-text edits at inline content edges retain projection',
+    () async {
+      const source = '**bold** after\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      final row = controller.rows.first;
+      controller.activateRow(row, source.indexOf('bold') + 'bold'.length);
+      final before = controller.inputValue;
+
+      controller.applyDeltas([
+        TextEditingDeltaInsertion(
+          oldText: before.text,
+          textInserted: 'x',
+          insertionOffset: before.selection.extentOffset,
+          selection: TextSelection.collapsed(
+            offset: before.selection.extentOffset + 1,
+          ),
+          composing: TextRange.empty,
+        ),
+      ]);
+
+      expect(controller.surfaceRow(row).text, 'boldx after');
+      expect(controller.surfaceRow(row).text, isNot(contains('**')));
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'syntax-shaped edits fall back to exact local source',
+    () async {
+      const source = '**bold** after\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      final row = controller.rows.first;
+      controller.activateRow(row, source.indexOf('bold') + 2);
+      final before = controller.inputValue;
+
+      controller.applyDeltas([
+        TextEditingDeltaInsertion(
+          oldText: before.text,
+          textInserted: '*',
+          insertionOffset: before.selection.extentOffset,
+          selection: TextSelection.collapsed(
+            offset: before.selection.extentOffset + 1,
+          ),
+          composing: TextRange.empty,
+        ),
+      ]);
+
+      expect(controller.surfaceRow(row).text, contains('**'));
+      expect(controller.surfaceRow(row).text, contains('bo*ld'));
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'completed inline syntax projects after parser certification',
+    () async {
+      const source = '*bold\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      final row = controller.rows.first;
+      controller.activateRow(row, source.indexOf('\n'));
+      final before = controller.inputValue;
+
+      controller.applyDeltas([
+        TextEditingDeltaInsertion(
+          oldText: before.text,
+          textInserted: '*',
+          insertionOffset: before.selection.extentOffset,
+          selection: TextSelection.collapsed(
+            offset: before.selection.extentOffset + 1,
+          ),
+          composing: TextRange.empty,
+        ),
+      ]);
+
+      expect(controller.surfaceRow(row).text, contains('*bold*'));
+      await _settle(controller);
+      expect(controller.surfaceRow(controller.rows.first).text, 'bold');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'platform selections inside hidden markers normalize to legal stops',
+    () async {
+      const source = '**bold**\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      controller.activateRow(controller.rows.first, 2);
+
+      controller.updateEditingValue(
+        controller.inputValue.copyWith(
+          selection: const TextSelection.collapsed(offset: 1),
+        ),
+      );
+      expect(controller.inputValue.selection.extentOffset, 2);
+      expect(controller.globalCaretOffset, 2);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets('editor and read-only view share one render plan', (
+    tester,
+  ) async {
+    const source = '# Heading\n\nbefore **bold** after\n';
+    final controller = (await tester.runAsync(
+      () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+    ))!;
+    addTearDown(controller.close);
+    await tester.runAsync(controller.continueParsing);
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Row(
+          children: [
+            Expanded(child: FlarkEditor(controller: controller)),
+            Expanded(child: FlarkMarkdownView(controller: controller)),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final surfaces = tester
+        .renderObjectList<RenderFlarkSurface>(
+          find.byType(FlarkRenderSurfaceWidget),
+        )
+        .toList();
+    expect(surfaces, hasLength(2));
+    expect(surfaces[0].debugRenderPlanHash, surfaces[1].debugRenderPlanHash);
+    expect(find.byType(EditableText), findsNothing);
+  }, skip: libraryPath == null);
+
+  testWidgets(
+    'trackpad scrolling never changes the canonical selection',
+    (tester) async {
+      final source = List<String>.generate(
+        100,
+        (index) => 'Paragraph $index with enough text.\n\n',
+      ).join();
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      addTearDown(controller.close);
+      await tester.runAsync(controller.continueParsing);
+      controller.activateRow(controller.rows.first, 4);
+      final selectionBefore = controller.inputValue.selection;
+      final globalCaretBefore = controller.globalCaretOffset;
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 640,
+            height: 240,
+            child: FlarkEditor(controller: controller),
+          ),
+        ),
+      );
+      await tester.pump();
+      final surface = tester.renderObject<RenderFlarkSurface>(
+        find.byType(FlarkRenderSurfaceWidget),
+      );
+
+      await tester.trackpadFling(
+        find.byType(FlarkEditor),
+        const Offset(0, -300),
+        1200,
+      );
+      await tester.pump();
+
+      expect(surface.scrollOffset, greaterThan(0));
+      expect(controller.inputValue.selection, selectionBefore);
+      expect(controller.globalCaretOffset, globalCaretBefore);
+    },
+    skip: libraryPath == null,
+  );
+}
+
+Future<void> _settle(FlarkEditorController controller) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (controller.pendingEdits != 0 && DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(const Duration(milliseconds: 2));
+  }
+  await controller.continueParsing();
+}

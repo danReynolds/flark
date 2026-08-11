@@ -35,6 +35,10 @@ enum FlarkInlineFactKind {
   tableCell,
 }
 
+enum FlarkInlineContinuityPolicy { none, plainTextContent }
+
+const _inlineFactContinuityPlainText = 1 << 7;
+
 enum FlarkTableAlignment { none, left, center, right }
 
 final class FlarkTableCellPresentation {
@@ -297,6 +301,11 @@ final class FlarkInlineFact {
   final FlarkSourceRange sourceUtf16;
   final FlarkSourceRange contentBytes;
   final FlarkSourceRange contentUtf16;
+
+  FlarkInlineContinuityPolicy get continuityPolicy =>
+      flags & _inlineFactContinuityPlainText != 0
+      ? FlarkInlineContinuityPolicy.plainTextContent
+      : FlarkInlineContinuityPolicy.none;
 
   /// Parser-cooked visible text replacing [sourceUtf16], when present.
   final String? replacement;

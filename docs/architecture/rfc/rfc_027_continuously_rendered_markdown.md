@@ -166,23 +166,28 @@ and hit testing use that topology rather than an arbitrary nearest integer.
 The runtime continues to fail closed: no semantic fact is current without a
 proof for the committed revision and range.
 
-The first implementation attempts the smallest design:
+The T2 implementation first attempted the smallest design:
 
 1. commit the source edit;
 2. spend the existing bounded foreground pump/query budget;
 3. paint a current certified projection if available; otherwise
 4. paint a local exact-source island while unrelated certified runs remain.
 
-Ordinary insertion inside a certified inline or block must not produce a
-rendered frame containing the whole raw active row. The first product spike
-measures whether existing local recertification satisfies this. If it cannot,
-the next allowed mechanism is a Rust-authored edit-presentation continuity
-receipt that states exactly which presentation survives a particular
-transaction. Flutter may not infer continuity from the inserted characters or
-old marker geometry.
+The profile spike falsified recertification-only presentation: all 120 measured
+ordinary edits could be observed without an active projected row even though
+editor work remained far below the frame budget. T2 therefore implements the
+allowed Rust-authored edit-presentation continuity receipt. Rust marks only
+constructs whose content can safely retain presentation for conservative
+plain-text transactions; `flark_core` binds that policy to the exact edit and
+revision; Flutter may splice only the authorized exact-content run. Syntax-like
+input, marker edits, autolinks, and reference links fail closed to current exact
+source until parser recertification.
 
-No continuity protocol is added speculatively. Failure of this spike is a
-design checkpoint, not permission to show stale styling.
+A receipt is retired only when a certified viewport at or after its result
+revision covers the authorized content range. A profile-mode Mac development
+receipt then observed 0 raw/missing active projections across 120 measured
+edits in a 1 MiB dense-inline document. That is the T2 continuity proof, not a
+mobile, IME, wall-clock latency, or full performance-matrix claim.
 
 ### 4.5 Composition islands
 
@@ -285,7 +290,7 @@ runtime, ABI, `flark_core`, and custom `flark` path.
 | Challenge | Consequence | Refined decision |
 | --- | --- | --- |
 | Hidden delimiters create several source positions at one visual boundary. | A scalar offset map gives incorrect arrows, insertion affinity, and deletion. | Model legal caret stops plus affinity as a topology. |
-| The parser may not recertify before the next frame. | Raw syntax could flash during ordinary styled typing. | Gate same-frame recertification first; add only a Rust-authored continuity receipt if required. |
+| The parser may not recertify before the next frame. | Raw syntax could flash during ordinary styled typing. | The Mac spike proved the gap; use a transaction-bound Rust-authored continuity receipt and retire it only after covering recertification. |
 | Composition may span a marker or replacement run. | Reprojecting can corrupt the IME transaction or candidate rectangle. | Freeze an exact composition island and project around it. |
 | A certified reference definition edit has non-local dependents. | Retaining old link presentation would be stale. | Pending dependency ranges become exact/local; unrelated certified presentation remains. |
 | A valid construct has no editable rendered text, such as a reference definition. | Hiding it makes exact source unreachable. | Editor shows an explicit source-material affordance; read-only mode follows GFM output. |
@@ -306,13 +311,13 @@ This is five product tranches, not one slice per syntax construct.
 
 ### T1 — Contract, topology, and shared surface
 
-- Materialize `flark-live-v2` as an executable matrix.
-- Add typed projection runs and legal caret-stop topology through Rust, ABI,
+- [x] Materialize `flark-live-v2` as an executable matrix.
+- [x] Add typed projection runs and legal caret-stop topology through Rust, ABI,
   `flark_core`, and Flutter only where current facts are insufficient.
-- Extract one internal snapshot/layout/paint path from the existing passive
+- [x] Extract one internal snapshot/layout/paint path from the existing passive
   renderer.
-- Introduce `FlarkMarkdownView` as the read-only consumer of that path.
-- Preserve v1 fixtures as historical tests; do not mutate their meaning.
+- [x] Introduce `FlarkMarkdownView` as the read-only consumer of that path.
+- [x] Preserve v1 fixtures as historical tests; do not mutate their meaning.
 
 Exit: editor-passive and view render-plan parity passes for the supported v4
 GFM facts, source/display mappings are total at legal stops, and no second
@@ -320,13 +325,13 @@ parser or renderer exists.
 
 ### T2 — Continuously rendered inline editing and gestures
 
-- Keep emphasis, strong, strikethrough, code, autolinks, and link labels
+- [x] Keep emphasis, strong, strikethrough, code, autolinks, and link labels
   rendered while active.
-- Implement display hit testing, insertion affinity, arrow movement,
+- [x] Implement display hit testing, insertion affinity, arrow movement,
   selection, replacement, Backspace, and Delete across hidden markers.
-- Implement incomplete-to-certified and certified-to-incomplete transitions.
-- Replace generic pan-to-selection with the desktop pointer/scroll matrix.
-- Measure the same-frame continuity decision on the Mac profile app.
+- [x] Implement incomplete-to-certified and certified-to-incomplete transitions.
+- [x] Replace generic pan-to-selection with the desktop pointer/scroll matrix.
+- [x] Measure the same-frame continuity decision on the Mac profile app.
 
 Exit: the product-tour document can be edited without focus reveal, common
 inline edits do not flash a raw row, scrolling cannot mutate selection, exact

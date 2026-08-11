@@ -36,6 +36,7 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
   Duration? _openDuration;
   Object? _loadError;
   int _loadGeneration = 0;
+  bool _readOnly = false;
 
   bool get _loading => _loadingPreset != null;
 
@@ -127,6 +128,8 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
                 onPresetSelected: _loading ? null : _load,
                 onReload: _loading ? null : () => _load(_preset),
                 onShowGuide: _showGuide,
+                readOnly: _readOnly,
+                onReadOnlyChanged: (value) => setState(() => _readOnly = value),
               ),
               if (controller != null)
                 AnimatedBuilder(
@@ -144,13 +147,26 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    if (controller != null)
+                    if (controller != null && !_readOnly)
                       ColoredBox(
                         color: const Color(0xfffffefa),
                         child: FlarkEditor(
                           key: ValueKey(controller),
                           controller: controller,
                           autofocus: true,
+                          textStyle: const TextStyle(
+                            color: Color(0xff25272b),
+                            fontSize: 17,
+                            height: 1.48,
+                          ),
+                        ),
+                      )
+                    else if (controller != null)
+                      ColoredBox(
+                        color: const Color(0xfffffefa),
+                        child: FlarkMarkdownView(
+                          key: ValueKey(controller),
+                          controller: controller,
                           textStyle: const TextStyle(
                             color: Color(0xff25272b),
                             fontSize: 17,
@@ -190,6 +206,8 @@ final class _DogfoodToolbar extends StatelessWidget {
     required this.onPresetSelected,
     required this.onReload,
     required this.onShowGuide,
+    required this.readOnly,
+    required this.onReadOnlyChanged,
   });
 
   final DogfoodDocumentPreset preset;
@@ -197,6 +215,8 @@ final class _DogfoodToolbar extends StatelessWidget {
   final ValueChanged<DogfoodDocumentPreset>? onPresetSelected;
   final VoidCallback? onReload;
   final VoidCallback onShowGuide;
+  final bool readOnly;
+  final ValueChanged<bool> onReadOnlyChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -291,6 +311,26 @@ final class _DogfoodToolbar extends StatelessWidget {
               onPressed: onReload,
               tooltip: 'Reset this document',
               icon: const Icon(Icons.refresh, size: 20),
+            ),
+            const SizedBox(width: 8),
+            SegmentedButton<bool>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(
+                  value: false,
+                  icon: Icon(Icons.edit_outlined, size: 17),
+                  label: Text('EDIT'),
+                ),
+                ButtonSegment(
+                  value: true,
+                  icon: Icon(Icons.visibility_outlined, size: 17),
+                  label: Text('READ'),
+                ),
+              ],
+              selected: {readOnly},
+              onSelectionChanged: (selection) {
+                onReadOnlyChanged(selection.single);
+              },
             ),
             const Spacer(),
             OutlinedButton.icon(
@@ -604,14 +644,15 @@ Anything else:
               _GuideItem('Copy, cut, paste, undo, and redo.'),
               _GuideItem('Scroll and switch presets while parsing is active.'),
               _GuideItem(
-                'Edit Markdown markers and watch active/passive transitions.',
+                'Edit rendered Markdown and watch incomplete syntax transition locally.',
               ),
+              _GuideItem('Switch between Edit and Read and compare rendering.'),
               _GuideItem(
                 'Resize the window and inspect wrapping and hit testing.',
               ),
               SizedBox(height: 14),
               Text(
-                'Mobile controls, final accessibility, themes, and visual polish are not ready for judgment yet.',
+                'Tables still use exact-source editing; mobile controls, final accessibility, themes, and visual polish are not ready for judgment yet.',
                 style: TextStyle(color: Color(0xff6a6f77)),
               ),
             ],

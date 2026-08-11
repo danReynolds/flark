@@ -31,7 +31,7 @@ void main() {
       expect(controller.surfaceRow(first).selection, isNotNull);
       expect(controller.surfaceRow(middle).selection, isNotNull);
       expect(controller.surfaceRow(last).active, isTrue);
-      expect(controller.surfaceRow(first).text, startsWith('**alpha**'));
+      expect(controller.surfaceRow(first).text, startsWith('alpha'));
 
       controller.replaceSelection('X');
       final replaced = source.replaceRange(selectionStart, selectionEnd, 'X');

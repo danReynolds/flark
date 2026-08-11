@@ -3,7 +3,7 @@
 **Profile ID:** `flark-live-v2`  
 **Semantic profile:** `flark-gfm-0.29-v2`  
 **Owner:** [RFC 027](../../rfc/rfc_027_continuously_rendered_markdown.md)  
-**Status:** normative design contract; executable fixture is T1 work.
+**Status:** normative executable contract; T1 and T2 product checkpoint implemented.
 
 ## 1. Scope
 
@@ -199,10 +199,23 @@ For semantic presentation, the surface may use only:
 2. a transaction-bound Rust continuity receipt that explicitly authorizes the
    retained presentation and mapping.
 
-The initial T2 implementation must first attempt bounded commit, pump, and
-query with the existing protocol. A continuity receipt is added only if a Mac
-profile trace demonstrates that ordinary content edits otherwise produce a
-visible raw-marker frame or miss the frame budget.
+The initial T2 spike attempted bounded commit, pump, and query with the existing
+protocol. The Mac profile trace demonstrated missing active projection on all
+120 measured ordinary edits despite sub-budget editor work, so the runtime now
+publishes a typed continuity policy. `flark_core` turns it into an exact
+transaction/revision receipt; Flutter may update only the authorized visible
+content run. The receipt remains live until a certified viewport at or after
+its result revision covers the authorized content range.
+
+Continuity is currently authorized for conservative plain-text edits to
+emphasis, strong, strikethrough, code-span, and direct-link label content.
+Syntax-shaped replacements, marker edits, autolinks, and reference links wait
+for current parser certification. A profile-mode 1 MiB dense-inline Mac
+development receipt recorded 0 raw or missing projected frames across 120
+measured edits. Editor-attributed p99 was 3.481 ms with no editor-attributed
+over-budget samples. Flutter failed to foreground the final harness run, so its
+wall-clock outliers are explicitly not claim evidence; controlled wall-clock,
+broad shape/size, and device qualification remain open.
 
 Old facts plus a source splice are not sufficient authority. Flutter may keep
 layout/cache storage internally, but it cannot paint stale semantic identity as

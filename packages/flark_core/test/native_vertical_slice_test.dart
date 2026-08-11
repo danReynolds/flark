@@ -354,6 +354,13 @@ void main() {
         ),
         ['em🌍', 'strong', 'code', 'link', 'https://a.test'],
       );
+      expect(facts.map((fact) => fact.continuityPolicy), [
+        FlarkInlineContinuityPolicy.plainTextContent,
+        FlarkInlineContinuityPolicy.plainTextContent,
+        FlarkInlineContinuityPolicy.plainTextContent,
+        FlarkInlineContinuityPolicy.plainTextContent,
+        FlarkInlineContinuityPolicy.none,
+      ]);
 
       await document.applyEditUtf16(0, source.length, '*x &amp; y*\n');
       await document.pumpUntilReady();

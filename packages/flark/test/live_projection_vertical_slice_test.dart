@@ -22,18 +22,21 @@ void main() {
       expect(controller.rows.first.kind, 12);
       final distant = controller.rows.last;
 
-      controller.activateRow(controller.rows.first, 1);
+      controller.activateRow(
+        controller.rows.first,
+        controller.rows.first.editableUtf16!.start,
+      );
       controller.deleteBackward();
 
       expect(controller.semanticsCurrent, isFalse);
-      expect(controller.visibleSource, ' Heading\n\nDistant.\n');
+      expect(controller.visibleSource, 'Heading\n\nDistant.\n');
       final active = controller.surfaceRow(controller.rows.first);
-      expect(active.text, startsWith(' Heading'));
+      expect(active.text, startsWith('Heading'));
       expect(active.kind, 0);
       final neutralDistant = controller.surfaceRow(distant);
       expect(neutralDistant.text, 'Distant.\n');
       expect(neutralDistant.kind, 0);
-      expect(neutralDistant.globalUtf16Start, 10);
+      expect(neutralDistant.globalUtf16Start, 9);
 
       final deadline = DateTime.now().add(const Duration(seconds: 5));
       while (controller.pendingEdits != 0 &&
@@ -44,7 +47,7 @@ void main() {
 
       expect(controller.lastError, isNull);
       expect(controller.semanticsCurrent, isTrue);
-      expect(controller.visibleSource, ' Heading\n\nDistant.\n');
+      expect(controller.visibleSource, 'Heading\n\nDistant.\n');
       expect(controller.rows.first.kind, isNot(12));
     },
     skip: libraryPath == null,
@@ -120,7 +123,7 @@ void main() {
       final third = controller.rows[1];
       expect(first.headingLevel, 1);
       expect(third.headingLevel, 3);
-      expect(controller.surfaceRow(first).text, '# First\n');
+      expect(controller.surfaceRow(first).text, 'First');
       expect(controller.surfaceRow(first).active, isTrue);
       expect(controller.surfaceRow(third).text, 'Third');
 
@@ -140,7 +143,7 @@ void main() {
       expect(controller.semanticsCurrent, isTrue);
       expect(controller.rows[0].headingLevel, 1);
       expect(controller.rows[1].kind, 5);
-      expect(controller.surfaceRow(controller.rows[1]).text, 'Third\n');
+      expect(controller.surfaceRow(controller.rows[1]).text, 'Third');
     },
     skip: libraryPath == null,
   );
@@ -293,7 +296,7 @@ void main() {
   );
 
   test(
-    'passive inline Markdown projects marker-free styled runs with exact hits',
+    'inline Markdown stays marker-free and source-mapped while active',
     () async {
       const source =
           'Active.\n\n*em🌍* **strong** `code` [link](https://example.com) '
@@ -345,9 +348,14 @@ void main() {
       controller.activateRow(inlineRow, passive.sourceOffsetForTextOffset(0));
       final active = controller.surfaceRow(inlineRow);
       expect(active.active, isTrue);
-      expect(active.text, contains('*em🌍*'));
-      expect(active.text, contains('[link](https://example.com)'));
-      expect(active.runs.single.styles, isEmpty);
+      expect(active.text, passive.text);
+      expect(active.runs, hasLength(passive.runs.length));
+      expect(
+        active.runs.any(
+          (run) => run.styles.contains(FlarkSurfaceInlineStyle.emphasis),
+        ),
+        isTrue,
+      );
     },
     skip: libraryPath == null,
   );
@@ -404,7 +412,7 @@ void main() {
         inlineRow,
         passive.sourceOffsetForTextOffset(replacementTextOffset),
       );
-      expect(controller.surfaceRow(inlineRow).text, contains('&ngE;'));
+      expect(controller.surfaceRow(inlineRow).text, contains('≧̸'));
 
       const codeSource = 'Active.\n\n`a\r\nb`\n';
       final code = await FlarkEditorController.open(
@@ -437,9 +445,7 @@ void main() {
       expect(passive.text, 'f|oo │ bar\nx|y │ baz');
       expect(
         passive.runs
-            .where(
-              (run) => run.styles.contains(FlarkSurfaceInlineStyle.code),
-            )
+            .where((run) => run.styles.contains(FlarkSurfaceInlineStyle.code))
             .map((run) => run.text)
             .join(),
         'x|y',

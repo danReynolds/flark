@@ -2,6 +2,7 @@ use flark_runtime::{
     DocumentBulletMarker, DocumentCodeBlockStyle, DocumentFenceCharacter, DocumentHeadingStyle,
     DocumentInlineFactKind, DocumentListDelimiter, DocumentListMarker, DocumentLiveViewportSpan,
     DocumentSession, DocumentSessionPhase, DocumentViewportRowPresentation,
+    DOCUMENT_INLINE_FACT_CONTINUITY_PLAIN_TEXT,
 };
 
 fn pump_ready(document: &mut DocumentSession) -> usize {
@@ -344,6 +345,14 @@ fn viewport_carries_complete_parser_authored_inline_geometry_or_fails_closed() {
             DocumentInlineFactKind::DirectLink,
             DocumentInlineFactKind::AutolinkUri,
         ]
+    );
+    assert!(facts[..4]
+        .iter()
+        .all(|fact| fact.flags & DOCUMENT_INLINE_FACT_CONTINUITY_PLAIN_TEXT != 0));
+    assert_eq!(
+        facts[4].flags & DOCUMENT_INLINE_FACT_CONTINUITY_PLAIN_TEXT,
+        0,
+        "autolink validity must be recertified"
     );
     for (fact, spelling, content) in [
         (&facts[0], "*em*", "em"),
