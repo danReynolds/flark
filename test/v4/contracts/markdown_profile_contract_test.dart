@@ -114,21 +114,35 @@ void main() {
     expect(ledgers['commonmark_semantic']!['claimRole'], 'compatibility');
     expect(ledgers['commonmark_incremental']!['claimRole'], 'compatibility');
     expect(ledgers['gfm_semantic']!['counts'], {
-      'exact': 572,
-      'missing': 81,
-      'divergent': 19,
+      'exact': 672,
+      'missing': 0,
+      'divergent': 0,
       'approved_deviation': 0,
     });
     expect(
       ledgers['gfm_semantic']!['receiptSha256'],
-      '138b04d9a4afbc85073425311d69512809a57ba73ea94bc06f3d7f9be557f19a',
+      '076d0465102cbd46e81e0bf9cb3f3b26fdac32964eaa44e740cc999998a0207d',
     );
-    expect(ledgers['commonmark_semantic']!['counts'], {
-      'exact': 563,
-      'missing': 77,
-      'divergent': 12,
+    expect(ledgers['gfm_incremental']!['counts'], {
+      'exact': 672,
+      'missing': 0,
+      'divergent': 0,
       'approved_deviation': 0,
     });
+    expect(
+      ledgers['gfm_incremental']!['receiptSha256'],
+      '40b6b939da32781f413b9ed55960d4f23894139d4770503f5dd07eb4d490aa7f',
+    );
+    expect(ledgers['commonmark_semantic']!['counts'], {
+      'exact': 652,
+      'missing': 0,
+      'divergent': 0,
+      'approved_deviation': 0,
+    });
+    expect(
+      ledgers['commonmark_semantic']!['receiptSha256'],
+      '360e43e90532263e859914c369e25980f43f05b1330b70c45d41f8182a36498f',
+    );
     expect(ledgers['commonmark_semantic']!['denominator'], 652);
     expect(ledgers['gfm_semantic']!['denominator'], 672);
   });

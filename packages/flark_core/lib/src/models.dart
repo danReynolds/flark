@@ -32,6 +32,90 @@ enum FlarkInlineFactKind {
   directImage,
   referenceLink,
   referenceImage,
+  tableCell,
+}
+
+enum FlarkTableAlignment { none, left, center, right }
+
+final class FlarkTableCellPresentation {
+  const FlarkTableCellPresentation({
+    required this.alignment,
+    required this.header,
+    required this.autocompleted,
+    required this.sourceBytes,
+    required this.sourceUtf16,
+    required this.contentBytes,
+    required this.contentUtf16,
+  });
+
+  final FlarkTableAlignment alignment;
+  final bool header;
+  final bool autocompleted;
+  final FlarkSourceRange sourceBytes;
+  final FlarkSourceRange sourceUtf16;
+  final FlarkSourceRange contentBytes;
+  final FlarkSourceRange contentUtf16;
+
+  Map<String, Object?> toMessage() => {
+    'alignment': alignment.index,
+    'header': header,
+    'autocompleted': autocompleted,
+    'sourceBytes': sourceBytes.toMessage(),
+    'sourceUtf16': sourceUtf16.toMessage(),
+    'contentBytes': contentBytes.toMessage(),
+    'contentUtf16': contentUtf16.toMessage(),
+  };
+
+  static FlarkTableCellPresentation fromMessage(
+    Map<Object?, Object?> message,
+  ) => FlarkTableCellPresentation(
+    alignment: FlarkTableAlignment.values[message['alignment']! as int],
+    header: message['header']! as bool,
+    autocompleted: message['autocompleted']! as bool,
+    sourceBytes: FlarkSourceRange.fromMessage(
+      message['sourceBytes']! as Map<Object?, Object?>,
+    ),
+    sourceUtf16: FlarkSourceRange.fromMessage(
+      message['sourceUtf16']! as Map<Object?, Object?>,
+    ),
+    contentBytes: FlarkSourceRange.fromMessage(
+      message['contentBytes']! as Map<Object?, Object?>,
+    ),
+    contentUtf16: FlarkSourceRange.fromMessage(
+      message['contentUtf16']! as Map<Object?, Object?>,
+    ),
+  );
+}
+
+final class FlarkTablePresentation {
+  const FlarkTablePresentation({required this.rows});
+
+  final List<List<FlarkTableCellPresentation>> rows;
+
+  int get columnCount => rows.isEmpty ? 0 : rows.first.length;
+
+  Map<String, Object?> toMessage() => {
+    'rows': rows
+        .map(
+          (row) => row.map((cell) => cell.toMessage()).toList(growable: false),
+        )
+        .toList(growable: false),
+  };
+
+  static FlarkTablePresentation fromMessage(Map<Object?, Object?> message) =>
+      FlarkTablePresentation(
+        rows: (message['rows']! as List<Object?>)
+            .map(
+              (row) => (row! as List<Object?>)
+                  .map(
+                    (cell) => FlarkTableCellPresentation.fromMessage(
+                      cell! as Map<Object?, Object?>,
+                    ),
+                  )
+                  .toList(growable: false),
+            )
+            .toList(growable: false),
+      );
 }
 
 final class FlarkListItemPresentation {
@@ -294,6 +378,7 @@ final class FlarkViewportRow {
     required this.blockQuote,
     required this.codeBlock,
     required this.thematicBreak,
+    this.table,
     required this.pathDepth,
     this.inlineFacts,
   });
@@ -311,6 +396,7 @@ final class FlarkViewportRow {
   final FlarkBlockQuotePresentation? blockQuote;
   final FlarkCodeBlockPresentation? codeBlock;
   final bool thematicBreak;
+  final FlarkTablePresentation? table;
   final int pathDepth;
 
   /// `null` means inline presentation is unavailable and exact source is
@@ -331,6 +417,7 @@ final class FlarkViewportRow {
     'blockQuote': blockQuote?.toMessage(),
     'codeBlock': codeBlock?.toMessage(),
     'thematicBreak': thematicBreak,
+    'table': table?.toMessage(),
     'pathDepth': pathDepth,
     'inlineFacts': inlineFacts
         ?.map((fact) => fact.toMessage())
@@ -380,6 +467,12 @@ final class FlarkViewportRow {
       _ => null,
     },
     thematicBreak: message['thematicBreak']! as bool,
+    table: switch (message['table']) {
+      final Map<Object?, Object?> table => FlarkTablePresentation.fromMessage(
+        table,
+      ),
+      _ => null,
+    },
     pathDepth: message['pathDepth']! as int,
     inlineFacts: switch (message['inlineFacts']) {
       final List<Object?> facts =>

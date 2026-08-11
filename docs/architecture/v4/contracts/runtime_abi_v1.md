@@ -267,9 +267,17 @@ without rebuilding it. All replacement words must be zero on non-replacement
 records, and a replacement record must carry a valid nonzero first Unicode
 scalar.
 
+ABI 4.7 adds bounded GFM table presentation without changing either fixed
+record size. A Table Paragraph uses semantic-variant bit 26. Table-cell kind
+14 carries alignment in flags bits 0-1, header in bit 2, row start in bit 3,
+and an autocompleted empty cell in bit 4. Cell source and content cuts remain
+absolute parser authority; table-specific escaped pipes are ordinary cooked
+replacement facts. If the complete table group does not fit, the row remains
+exact source and does not advertise table presentation.
+
 The current implementation derives this bounded projection on the native
 document actor while serving the viewport query, using the existing Rust
-inline grammar and a maximum 8 KiB leaf, 64 facts per row, and bounded parser
+inline grammar and a maximum 8 KiB leaf, 512 facts per row, and bounded parser
 transitions. This establishes functional authority, not final query-time
 performance: retained/cached inline publication and demand scheduling remain a
 separate optimization gate.

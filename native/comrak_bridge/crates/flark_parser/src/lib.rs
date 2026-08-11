@@ -15,6 +15,8 @@ mod bullet_list_local_delta;
 mod bullet_list_projection_job;
 mod contract;
 mod exact_clean;
+mod gfm_inline_projection;
+mod gfm_table_projection;
 mod indented_code_projection_job;
 #[allow(dead_code)] // Staged angle-autolink stage for M11InlineProjectionJob.
 mod inline_autolink;
@@ -86,6 +88,15 @@ pub use exact_clean::{
     M11ParserBinding, M11ReferenceDefinition, M11UnknownReason, M11UnsupportedOpener,
     M11_GRAMMAR_REVISION, M11_ORDINARY_PARAGRAPH_CHECKPOINT_STRIDE_BYTES,
     M11_SEGMENTED_LINE_PREFIX_BYTES,
+};
+pub use gfm_inline_projection::{
+    project_m11_gfm_inline, M11GfmInlineNode, M11GfmInlineOptions, M11GfmInlineProjectionError,
+    M11GfmInlineReference, M11_GFM_INLINE_PROJECTION_MAX_BYTES,
+};
+pub use gfm_table_projection::{
+    project_m11_gfm_table, M11GfmTableAlignment, M11GfmTableCell, M11GfmTableProjection,
+    M11GfmTableProjectionError, M11GfmTableRow, M11_GFM_TABLE_MAX_BYTES, M11_GFM_TABLE_MAX_CELLS,
+    M11_GFM_TABLE_MAX_COLUMNS, M11_GFM_TABLE_MAX_ROWS,
 };
 pub use indented_code_projection_job::{
     M11IndentedCodeProjectionJob, M11IndentedCodeProjectionJobError,

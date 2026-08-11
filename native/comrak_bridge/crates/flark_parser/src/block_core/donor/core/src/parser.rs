@@ -5171,8 +5171,29 @@ impl ValueBlockParser {
             }
             Ok(PrefixResult::Matched)
         } else if self.blank && self.tree.has_any_child(container) {
+            let start = self.offset;
             let offset = self.first_nonspace - self.offset;
             self.advance_offset(line, offset, false);
+            if let Some(direct) = &mut self.direct {
+                if direct.claimed_offset != start {
+                    return Err(ParseError::Invariant(
+                        "blank item continuation follows the claimed prefix",
+                    ));
+                }
+                if start < self.offset {
+                    direct.push_old_source(DirectIntent::Consume {
+                        owner: container,
+                        part: DirectCoveragePart::ContainerMarker,
+                        range: u32::try_from(start)
+                            .map_err(|_| ParseError::Invariant("direct offset below u32"))?
+                            ..u32::try_from(self.offset)
+                                .map_err(|_| ParseError::Invariant("direct offset below u32"))?,
+                        logical: DirectLogicalAction::None,
+                    })?;
+                    direct.line_marker_floor = Some(container);
+                }
+                direct.claimed_offset = self.offset;
+            }
             Ok(PrefixResult::Matched)
         } else {
             Ok(PrefixResult::Unmatched)

@@ -63,6 +63,7 @@ const _codeFenceOffsetShift = 20;
 const _codeFenceOffsetMask = 0x300000;
 const _knownCodeVariantBits = 0x3f0000;
 const _thematicBreakPresentation = 0x10000;
+const _tablePresentation = 0x4000000;
 const _inlineAuthoritative = 0x8;
 const _knownViewportRowFlags = 0xf;
 const _inlineFactEmphasis = 1;
@@ -78,10 +79,16 @@ const _inlineFactDirectLink = 10;
 const _inlineFactDirectImage = 11;
 const _inlineFactReferenceLink = 12;
 const _inlineFactReferenceImage = 13;
+const _inlineFactTableCell = 14;
 const _inlineFactAutolinkUriWww = 0x1;
 const _inlineFactCodeNormalizeLineEndings = 0x1;
 const _inlineFactCodeTrimOneSpace = 0x2;
-const _maxInlineFactsPerRow = 64;
+const _inlineFactTableAlignmentMask = 0x3;
+const _inlineFactTableHeader = 0x4;
+const _inlineFactTableRowStart = 0x8;
+const _inlineFactTableAutocompleted = 0x10;
+const _knownInlineFactTableFlags = 0x1f;
+const _maxInlineFactsPerRow = 512;
 const _absentPresentationPrefix = 0xffffffffffffffff;
 const _maxChunkBytes = 64 * 1024;
 const _maximumSmallEditBytes = 4 * 1024;
@@ -89,8 +96,8 @@ const _bulkCommitWorkUnits = 1;
 const _resultPayloadBytes = 64 * 1024;
 const _defaultWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 6;
-// Every v4.6 capability is used by the safe core boundary, including
+const _abiMinor = 7;
+// Every v4.7 capability is used by the safe core boundary, including
 // resumable close and snapshot continuations.
 const _requiredCapabilityBits = 0x7fff;
 
@@ -1132,7 +1139,9 @@ final class FlarkNativeDocument {
       FlarkListItemPresentation? listItem;
       FlarkBlockQuotePresentation? blockQuote;
       FlarkCodeBlockPresentation? codeBlock;
+      FlarkTablePresentation? table;
       var thematicBreak = false;
+      var hasTablePresentation = false;
       final listMarker = matchesListRowKind(record.kind)
           ? record.semanticVariant & _listMarkerMask
           : 0;
@@ -1261,6 +1270,17 @@ final class FlarkNativeDocument {
           );
         }
         thematicBreak = true;
+      } else if (record.kind == _paragraphKind &&
+          record.semanticVariant == _tablePresentation) {
+        if (record.semanticValue != 0 ||
+            !_hasAbsentPresentationPrefix(record)) {
+          throw FlarkNativeException(
+            'decode_viewport',
+            _notCertified,
+            record.semanticVariant,
+          );
+        }
+        hasTablePresentation = true;
       } else if (record.kind != _headingKind &&
           (record.semanticVariant != 0 ||
               record.semanticValue != 0 ||
@@ -1280,7 +1300,7 @@ final class FlarkNativeDocument {
           record.semanticVariant,
         );
       }
-      final inlineFacts = record.flags & _inlineAuthoritative != 0
+      final decodedFacts = record.flags & _inlineAuthoritative != 0
           ? List<FlarkInlineFact>.generate(record.inlineFactCount, (index) {
               final fact = _decodeInlineFact(
                 (inlineRecords + nextInlineFact + index).ref,
@@ -1293,6 +1313,21 @@ final class FlarkNativeDocument {
             }, growable: false)
           : null;
       nextInlineFact += record.inlineFactCount;
+      final tableFacts = decodedFacts
+          ?.where((fact) => fact.kind == FlarkInlineFactKind.tableCell)
+          .toList(growable: false);
+      if (hasTablePresentation) {
+        table = _decodeTablePresentation(tableFacts ?? const []);
+      } else if (tableFacts?.isNotEmpty ?? false) {
+        throw FlarkNativeException(
+          'decode_viewport',
+          _notCertified,
+          _inlineFactTableCell,
+        );
+      }
+      final inlineFacts = decodedFacts
+          ?.where((fact) => fact.kind != FlarkInlineFactKind.tableCell)
+          .toList(growable: false);
       return FlarkViewportRow(
         ordinal: record.ordinal,
         kind: record.kind,
@@ -1307,6 +1342,7 @@ final class FlarkNativeDocument {
         blockQuote: blockQuote,
         codeBlock: codeBlock,
         thematicBreak: thematicBreak,
+        table: table,
         pathDepth: record.pathDepth,
         inlineFacts: inlineFacts,
       );
@@ -1348,6 +1384,7 @@ final class FlarkNativeDocument {
       _inlineFactDirectImage => FlarkInlineFactKind.directImage,
       _inlineFactReferenceLink => FlarkInlineFactKind.referenceLink,
       _inlineFactReferenceImage => FlarkInlineFactKind.referenceImage,
+      _inlineFactTableCell => FlarkInlineFactKind.tableCell,
       _ => throw FlarkNativeException(
         'decode_viewport',
         _notCertified,
@@ -1378,6 +1415,8 @@ final class FlarkNativeDocument {
                 ~(_inlineFactCodeNormalizeLineEndings |
                     _inlineFactCodeTrimOneSpace) ==
             0,
+      FlarkInlineFactKind.tableCell =>
+        record.flags & ~_knownInlineFactTableFlags == 0,
       _ => record.flags == 0,
     };
     final replacement = kind == FlarkInlineFactKind.replacement
@@ -1397,8 +1436,8 @@ final class FlarkNativeDocument {
         factSourceBytes.end > editableBytes.end ||
         factSourceUtf16.start < editableUtf16.start ||
         factSourceUtf16.end > editableUtf16.end ||
-        factSourceBytes.length == 0 ||
-        factSourceUtf16.length == 0 ||
+        (kind != FlarkInlineFactKind.tableCell &&
+            (factSourceBytes.length == 0 || factSourceUtf16.length == 0)) ||
         contentBytes.start < factSourceBytes.start ||
         contentBytes.end > factSourceBytes.end ||
         contentUtf16.start < factSourceUtf16.start ||
@@ -1419,6 +1458,61 @@ final class FlarkNativeDocument {
       contentBytes: contentBytes,
       contentUtf16: contentUtf16,
       replacement: replacement,
+    );
+  }
+
+  static FlarkTablePresentation _decodeTablePresentation(
+    List<FlarkInlineFact> facts,
+  ) {
+    if (facts.isEmpty) {
+      throw const FlarkNativeException(
+        'decode_viewport',
+        _notCertified,
+        _inlineFactTableCell,
+      );
+    }
+    final rows = <List<FlarkTableCellPresentation>>[];
+    List<FlarkTableCellPresentation>? current;
+    for (final fact in facts) {
+      final rowStart = fact.flags & _inlineFactTableRowStart != 0;
+      if (rowStart) {
+        current = <FlarkTableCellPresentation>[];
+        rows.add(current);
+      } else if (current == null) {
+        throw const FlarkNativeException(
+          'decode_viewport',
+          _notCertified,
+          _inlineFactTableCell,
+        );
+      }
+      current.add(
+        FlarkTableCellPresentation(
+          alignment: FlarkTableAlignment
+              .values[fact.flags & _inlineFactTableAlignmentMask],
+          header: fact.flags & _inlineFactTableHeader != 0,
+          autocompleted: fact.flags & _inlineFactTableAutocompleted != 0,
+          sourceBytes: fact.sourceBytes,
+          sourceUtf16: fact.sourceUtf16,
+          contentBytes: fact.contentBytes,
+          contentUtf16: fact.contentUtf16,
+        ),
+      );
+    }
+    final columns = rows.first.length;
+    if (columns == 0 ||
+        rows.any((row) => row.length != columns) ||
+        rows.first.any((cell) => !cell.header) ||
+        rows.skip(1).any((row) => row.any((cell) => cell.header))) {
+      throw const FlarkNativeException(
+        'decode_viewport',
+        _notCertified,
+        _inlineFactTableCell,
+      );
+    }
+    return FlarkTablePresentation(
+      rows: rows
+          .map(List<FlarkTableCellPresentation>.unmodifiable)
+          .toList(growable: false),
     );
   }
 

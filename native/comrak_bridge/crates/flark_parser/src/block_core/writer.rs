@@ -1198,14 +1198,35 @@ fn read_fragment_scalar(
             "fragment projection requested an empty scalar",
         ));
     }
-    let probe_end = start
-        .checked_add(remaining.min(4))
+    let start = usize::try_from(start).map_err(|_| M11BlockWriterError::CounterOverflow)?;
+    let end = usize::try_from(end).map_err(|_| M11BlockWriterError::CounterOverflow)?;
+    // SourceCursor ranges must be scalar aligned. A blind four-byte probe can
+    // end inside a later multibyte scalar even though the coverage envelope is
+    // exact (for example `[ΑΓΩ]`). Resolve the next scalar boundary through
+    // the source's byte/UTF-16 authority before opening the bounded cursor.
+    let lease = fragment
+        .lease
+        .as_ref()
+        .ok_or(M11BlockWriterError::Poisoned)?;
+    let utf16_start = lease.utf16_offset_for_byte(start)?;
+    let next_utf16 = utf16_start
+        .checked_add(1)
         .ok_or(M11BlockWriterError::CounterOverflow)?;
-    let probe = read_fragment_bytes(
-        &mut fragment.lease,
-        usize::try_from(start).map_err(|_| M11BlockWriterError::CounterOverflow)?,
-        usize::try_from(probe_end).map_err(|_| M11BlockWriterError::CounterOverflow)?,
-    )?;
+    let scalar_end = match lease.byte_offset_for_utf16(next_utf16) {
+        Ok(offset) => offset,
+        Err(SourceEditError::SplitUtf16Scalar { .. }) => lease.byte_offset_for_utf16(
+            next_utf16
+                .checked_add(1)
+                .ok_or(M11BlockWriterError::CounterOverflow)?,
+        )?,
+        Err(error) => return Err(error.into()),
+    };
+    if scalar_end > end {
+        return Err(M11BlockWriterError::InvalidCommand(
+            "fragment projection scalar crossed its coverage",
+        ));
+    }
+    let probe = read_fragment_bytes(&mut fragment.lease, start, scalar_end)?;
     fragment.source_bytes_read = fragment
         .source_bytes_read
         .checked_add(u64::try_from(probe.len()).unwrap_or(u64::MAX))

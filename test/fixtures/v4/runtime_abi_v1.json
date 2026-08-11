@@ -4,7 +4,7 @@
   "status": "m0-interface-only",
   "abi": {
     "major": 4,
-    "minor": 6,
+    "minor": 7,
     "header": "native/comrak_bridge/include/flark_v4.h",
     "runtimeCrate": "native/comrak_bridge/crates/flark_runtime",
     "abiCrate": "native/comrak_bridge/crates/flark_abi",
@@ -302,7 +302,7 @@
     "codeClosedBit": 524288,
     "codeFenceOffsetMask": 3145728,
     "thematicBreakPresentationBit": 65536,
-    "rule": "For Heading rows, bits 0..7 contain parser-authored level 1..6 and bit 8 distinguishes Setext from ATX. For parser-authored List Item Paragraph and empty-item rows, marker code 1..5 occupies bits 0..2, nesting depth bits 3..10, marker offset bits 11..12, simple top-level continuation bit 13, and starts-list bit 14. ABI 4.4 gives BlockQuote Paragraph rows an explicit presentation bit, depth in bits 17..24, simple top-level continuation bit 25, and exact prefix ranges. Indented/Fenced Code rows carry the code presentation bit; fenced rows also carry fence family, closed state, offset, and minimum closing length. ThematicBreak rows carry their explicit presentation bit. semantic_value is the literal ordered marker value, fenced minimum closing length, or zero otherwise. Other semantic bits are zero; ABI 4.5 assigns the former final reserved word to inline_fact_count."
+    "rule": "For Heading rows, bits 0..7 contain parser-authored level 1..6 and bit 8 distinguishes Setext from ATX. For parser-authored List Item Paragraph and empty-item rows, marker code 1..5 occupies bits 0..2, nesting depth bits 3..10, marker offset bits 11..12, simple top-level continuation bit 13, and starts-list bit 14. ABI 4.4 gives BlockQuote Paragraph rows an explicit presentation bit, depth in bits 17..24, simple top-level continuation bit 25, and exact prefix ranges. Indented/Fenced Code rows carry the code presentation bit; fenced rows also carry fence family, closed state, offset, and minimum closing length. ThematicBreak rows carry their explicit presentation bit. ABI 4.7 gives bounded GFM Table Paragraph rows bit 26 and typed cell records. semantic_value is the literal ordered marker value, fenced minimum closing length, or zero otherwise. Other semantic bits are zero; ABI 4.5 assigns the former final reserved word to inline_fact_count."
   },
   "viewportInlineFacts": {
     "abiMinor": 6,
@@ -324,7 +324,7 @@
       "REFERENCE_LINK": 12,
       "REFERENCE_IMAGE": 13
     },
-    "rule": "SEMANTIC_FACTS payloads contain item_count fixed row records followed by 80-byte inline records grouped in row order. A row with bit 3 set owns exactly inline_fact_count following records; zero is an authoritative empty set. A row without bit 3 must have count zero and render exact source for inline presentation. Every source and visible-content range is absolute, current-revision, and supplied in both UTF-8 bytes and UTF-16 code units. Replacement records carry one required and one optional Unicode scalar; those words are zero for every other kind. No row publishes a partial inline set."
+    "rule": "SEMANTIC_FACTS payloads contain item_count fixed row records followed by 80-byte semantic records grouped in row order. A row with bit 3 set owns exactly inline_fact_count following records; zero is an authoritative empty set. A row without bit 3 must have count zero and render exact source for inline presentation. Every source and visible-content range is absolute, current-revision, and supplied in both UTF-8 bytes and UTF-16 code units. Replacement records carry one required and one optional Unicode scalar; those words are zero for every other kind. ABI 4.7 table-cell kind 14 uses flags bits 0..1 for alignment, bit 2 for header cells, bit 3 for the first cell of a row, and bit 4 for an autocompleted empty cell. No row publishes a partial semantic set."
   },
   "snapshotLifetime": {
     "ownership": "NON_OWNING_EPOCH",

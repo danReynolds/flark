@@ -417,6 +417,49 @@ void main() {
     },
     skip: libraryPath == null,
   );
+
+  test(
+    'passive tables use parser-owned cells while active editing stays exact',
+    () async {
+      const tableSource =
+          '| f\\|oo | bar |\n| :--- | ---: |\n| `x\\|y` | **baz** |\n';
+      const source = 'Active.\n\n$tableSource';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      await controller.continueParsing();
+      addTearDown(controller.close);
+
+      final row = controller.rows.firstWhere((row) => row.table != null);
+      expect(row.table?.columnCount, 2);
+      final passive = controller.surfaceRow(row);
+      expect(passive.text, 'f|oo │ bar\nx|y │ baz');
+      expect(
+        passive.runs
+            .where(
+              (run) => run.styles.contains(FlarkSurfaceInlineStyle.code),
+            )
+            .map((run) => run.text)
+            .join(),
+        'x|y',
+      );
+      expect(
+        passive.runs.any(
+          (run) =>
+              run.text == 'baz' &&
+              run.styles.contains(FlarkSurfaceInlineStyle.strong),
+        ),
+        isTrue,
+      );
+
+      controller.activateRow(row, row.sourceUtf16.start);
+      final active = controller.surfaceRow(row);
+      expect(active.text, tableSource);
+      expect(active.text, contains('| :--- | ---: |'));
+    },
+    skip: libraryPath == null,
+  );
 }
 
 Future<void> _settle(FlarkEditorController controller) async {

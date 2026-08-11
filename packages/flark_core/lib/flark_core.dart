@@ -32,6 +32,9 @@ export 'src/models.dart'
         FlarkListItemPresentation,
         FlarkListMarkerStyle,
         FlarkSourceRange,
+        FlarkTableAlignment,
+        FlarkTableCellPresentation,
+        FlarkTablePresentation,
         FlarkViewport,
         FlarkViewportRow,
         FlarkViewportRowEditCapability;

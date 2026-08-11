@@ -19,24 +19,33 @@ Live editor projection is separately versioned as `flark-live-v1` and cannot
 be counted as semantic conformance.
 
 The production parser now executes the complete static GFM denominator through
-one fail-closed receipt. After routing the ledger through the existing generic
-Heading/Paragraph leaf authority, live reference resolver, and bounded cooked
-link/image sidecar, the pinned result is 572 exact, 81 typed missing, and 19
-divergent, with all 672 cases admitted and zero invalid or unclassified
-outcomes. That is an executable implementation-gap map, not a full-GFM claim.
-The runtime now selects GFM on the direct block controller and that identity
-survives bounded checkpoint/resume. The bounded task-list protocol is now
-parser-authored through runtime, ABI, Dart, and Flutter; tables remain
-unpromoted. The CommonMark compatibility receipt is 563 exact, 77 typed
-missing, and 12 divergent. Incremental-edit parity remains its own open
-normative ledger.
+one fail-closed receipt. The selected block controller, live reference
+resolver, bounded typed inline projector, and bounded typed table projector are
+672 exact, 0 missing, and 0 divergent. Projection leaves fail closed above
+8 KiB and table output is capped at 512 semantic facts per leaf; no Markdown
+recognition moved into Dart or Flutter. The runtime now carries typed table
+cells and alignment through the C ABI and `flark_core` to the passive Flutter
+surface, while an active table remains exact source Markdown. The separate
+CommonMark compatibility receipt is 652 exact, 0 missing, and 0 divergent.
+
+The normative incremental ledger now applies all six type, erase, split,
+merge, paste, and incomplete-syntax histories to every GFM example: 4,032
+edits. Every target matches a clean selected-profile Green semantic digest and
+reference resolution. 4,027 edits converge through local adoption; five pinned
+paste cases use the contract-required clean fallback because the edit precedes
+retained reference-definition coverage. The maximum source read by a completed
+local adoption in this corpus is 274 bytes.
 
 The first GFM run also exposed and fixed a real coroutine replay defect: a
 nested task-list opener could advance the line cursor, pause for reference
 prefix work, then replay the same stage and underflow. List openers now resolve
 that potentially pausing paragraph finalization before consuming the marker,
 while preserving same-list reuse. The official nested task-list example and
-the prior complete CommonMark receipt both pass.
+the prior complete CommonMark receipt both pass. The completed incremental
+matrix additionally found and fixed a multibyte reference replay probe that
+could split a UTF-8 scalar, a deleted-newline convergence cut that landed
+inside a target line, and unclaimed blank list continuation indentation inside
+a fenced code block.
 
 `scripts/verify_v4_markdown_conformance.sh` reproduces the semantic receipts,
 and the everyday `scripts/verify_v4.sh` gate now includes it. The immutable M0
@@ -67,8 +76,9 @@ its final product identities:
 This is an end-to-end vertical slice, not the complete product boundary. ABI
 continuation and bounded close are now implemented through Rust, C, and Dart;
 the custom Flutter surface pages forward and backward without a scroll widget.
-The full GFM/live-projection behavior matrix and claim-eligible multi-shape,
-multi-size performance receipts remain open.
+Static and incremental GFM receipts are complete. The live-projection behavior
+matrix and claim-eligible multi-shape, multi-size performance receipts remain
+open.
 
 Focused vertical-slice checks pass for the Rust runtime, fixed ABI, Dart actor,
 UTF-8/UTF-16 edits, Flutter custom surface, and optimistic one-frame state
@@ -777,9 +787,11 @@ legacy deletion, and directory moves remain separate reviewable checkpoints.
 ### Starting receipts that must remain honest
 
 - CommonMark structural admission: 652/652.
-- Semantic replay: 563 exact, 77 typed missing, 12 divergent.
-- Normative GFM 0.29-gfm semantic replay: all 672 cases admitted and classified;
-  572 exact, 81 typed missing, and 19 divergent. Full conformance remains open.
+- CommonMark semantic compatibility: 652 exact, 0 missing, 0 divergent.
+- Normative GFM 0.29-gfm semantic replay: 672 exact, 0 missing, 0 divergent.
+- Normative GFM incrementality: all six histories for all 672 cases are clean
+  oracle-exact; 4,027 use local adoption and five use the explicit
+  edit-before-reference-coverage clean fallback.
 - Live projection: selected behavior exists in prototypes, but there is no
   complete versioned matrix covering incomplete syntax, marker transitions,
   selection, edit histories, and certification states through the final path.
@@ -1239,13 +1251,13 @@ must close together for the Mac product checkpoint.
 
 - [x] Make the selected GFM profile executable and versioned; its first receipt
   is an implementation-gap ledger, not a conformance claim.
-- [ ] Close semantic CommonMark cases and GFM extensions using parser-owned
+- [x] Close semantic CommonMark cases and GFM extensions using parser-owned
   logic only.
-- [ ] Add edit histories for every construct: type, erase, split, merge, paste,
+- [x] Add edit histories for every construct: type, erase, split, merge, paste,
   incomplete syntax, and non-local dependency changes.
-- [ ] Keep clean/incremental oracle parity and locality/resumability receipts
+- [x] Keep clean/incremental oracle parity and locality/resumability receipts
   separate from static conformance.
-- [ ] Reach zero CommonMark semantic divergence and pass every assertion in the
+- [x] Reach zero CommonMark semantic divergence and pass every assertion in the
   pinned GFM profile. Intentional exclusions are versioned out-of-profile cases,
   never explained failures counted inside a completed denominator.
 

@@ -25,7 +25,7 @@ pub use flark_runtime::{
 };
 
 pub const ABI_MAJOR: u16 = 4;
-pub const ABI_MINOR: u16 = 6;
+pub const ABI_MINOR: u16 = 7;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
@@ -290,6 +290,7 @@ pub const VIEWPORT_ROW_CODE_CLOSED: u32 = 1 << 19;
 pub const VIEWPORT_ROW_CODE_FENCE_OFFSET_SHIFT: u32 = 20;
 pub const VIEWPORT_ROW_CODE_FENCE_OFFSET_MASK: u32 = 0x3 << VIEWPORT_ROW_CODE_FENCE_OFFSET_SHIFT;
 pub const VIEWPORT_ROW_THEMATIC_BREAK_PRESENTATION: u32 = 1 << 16;
+pub const VIEWPORT_ROW_TABLE_PRESENTATION: u32 = 1 << 26;
 
 /// One parser-authored inline semantic following the viewport-row array in a
 /// `SEMANTIC_FACTS` payload. Records are grouped in row order; each row's
@@ -326,6 +327,11 @@ pub const INLINE_FACT_DIRECT_LINK: u32 = 10;
 pub const INLINE_FACT_DIRECT_IMAGE: u32 = 11;
 pub const INLINE_FACT_REFERENCE_LINK: u32 = 12;
 pub const INLINE_FACT_REFERENCE_IMAGE: u32 = 13;
+pub const INLINE_FACT_TABLE_CELL: u32 = 14;
+pub const INLINE_FACT_TABLE_ALIGNMENT_MASK: u32 = 0x03;
+pub const INLINE_FACT_TABLE_HEADER: u32 = 1 << 2;
+pub const INLINE_FACT_TABLE_ROW_START: u32 = 1 << 3;
+pub const INLINE_FACT_TABLE_AUTOCOMPLETED: u32 = 1 << 4;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]

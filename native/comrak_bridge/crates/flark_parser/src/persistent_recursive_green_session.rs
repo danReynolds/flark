@@ -3229,9 +3229,39 @@ impl M11PersistentRecursiveGreenSession {
                         (checkpoint.parser_physical().bytes() as usize) < base_edit.end
                             || (checkpoint.accepted_physical().bytes() as usize) < base_edit.end
                     });
-            let convergence_index = convergence_search_start
+            let mut convergence_index = convergence_search_start
                 .checked_add(convergence_offset)
                 .filter(|index| *index < self.checkpoints.len());
+            // Deleting a newline can map an otherwise valid base checkpoint
+            // into the middle of one target physical line. Such a point is an
+            // exact unchanged suffix cut, but not a parser convergence cut.
+            while let Some(index) = convergence_index {
+                let checkpoint = &self.checkpoints[index];
+                let parser = checkpoint.parser_physical();
+                if parser.bytes() as usize == self.source.byte_len()
+                    && parser.utf16() as usize == self.source.utf16_len()
+                {
+                    break;
+                }
+                let suffix = runtime.mint_exact_unchanged_suffix_witness(
+                    self.source,
+                    parser.bytes() as usize,
+                    parser.utf16() as usize,
+                )?;
+                if target_lease
+                    .is_physical_line_start(suffix.target_byte_start())
+                    .map_err(|_| {
+                        M11PersistentRecursiveGreenSessionError::InvalidState(
+                            "recursive-Green convergence cut is not a target source boundary",
+                        )
+                    })?
+                {
+                    break;
+                }
+                convergence_index = index
+                    .checked_add(1)
+                    .filter(|next| *next < self.checkpoints.len());
+            }
             if convergence_index.is_none() && self.terminal_convergence.is_none() {
                 return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
                     "sparse recursive-Green index has no convergence after the edit",

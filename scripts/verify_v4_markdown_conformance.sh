@@ -11,4 +11,10 @@ cargo test --locked \
   --test block_core_commonmark_ledger \
   -- --nocapture
 
-echo "verify_v4_markdown_conformance: GFM normative + CommonMark compatibility receipts passed."
+cargo test --locked \
+  --manifest-path "$ROOT/native/comrak_bridge/Cargo.toml" \
+  --package flark-parser \
+  --test gfm_incremental_ledger \
+  -- --nocapture
+
+echo "verify_v4_markdown_conformance: GFM semantic + incremental and CommonMark compatibility receipts passed."

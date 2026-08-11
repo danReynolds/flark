@@ -2,7 +2,7 @@
 
 use std::{
     any::Any,
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     panic::{catch_unwind, AssertUnwindSafe},
 };
 
@@ -10,7 +10,8 @@ use flark_engine::parser_internal::{
     M11InlineLinkValue, M11InlineProjectionFact, M11InlineProjectionKind, M11RecursiveGreenEvent,
     M11RecursiveGreenFrameId, M11RecursiveGreenFrameQueryLimits, M11RecursiveGreenLogicalAction,
     M11RecursiveGreenPoint, M11RecursiveGreenRoot, M11ReferenceJournal, M11ReferenceJournalRoot,
-    M11ReferenceJournalStatus, M11ReferenceResolver, M11_INLINE_PROJECTION_FLAG_AUTOLINK_URI_WWW,
+    M11ReferenceJournalStatus, M11ReferenceResolution, M11ReferenceResolver,
+    M11_INLINE_PROJECTION_FLAG_AUTOLINK_URI_WWW,
 };
 use flark_engine::{
     DocumentRuntime, DocumentRuntimeConfig, ParserProfileId, SourceBoundaryAffinity,
@@ -24,17 +25,19 @@ use flark_parser::block_core::{
     M11_DIRECT_BLOCK_MAX_RETAINED_SOURCE_BYTES,
 };
 use flark_parser::{
-    M11ExactController, M11InlineProjectionJob, M11InlineProjectionJobPollStatus,
-    M11InlineProjectionPublication, M11ParserBinding, M11SourceLinePollStatus, M11SourceLineSource,
-    SnapshotLinePoll, SnapshotLineScanner, SnapshotLineSource, SourceAdapterError,
+    project_m11_gfm_inline, project_m11_gfm_table, M11ExactController, M11GfmInlineNode,
+    M11GfmInlineOptions, M11GfmInlineReference, M11GfmTableAlignment, M11GfmTableProjection,
+    M11InlineProjectionJob, M11InlineProjectionJobPollStatus, M11InlineProjectionPublication,
+    M11ParserBinding, M11SourceLinePollStatus, M11SourceLineSource, SnapshotLinePoll,
+    SnapshotLineScanner, SnapshotLineSource, SourceAdapterError,
 };
 use sha2::{Digest, Sha256};
 
 const COMMONMARK_FIXTURES: &str =
     include_str!("../../../../../test/fixtures/commonmark/upstream/common_mark_tests.json");
-// The normative GFM lane selects the production GFM controller. Extensions
-// without a promoted direct command protocol remain missing or divergent;
-// they are never delegated to the bundled AST renderer.
+// The normative GFM lane selects the production GFM controller. Complex leaf
+// grammar crosses only the bounded typed projector seam; it is never delegated
+// to the bundled AST renderer or reparsed outside Rust.
 const GFM_FIXTURES: &str =
     include_str!("../../../../../test/fixtures/commonmark/upstream/gfm_tests.json");
 const GFM_TASK_LIST_SUPPLEMENT: &str =
@@ -55,10 +58,10 @@ const EXPECTED_ADMITTED: usize = 652;
 const EXPECTED_UNSUPPORTED: usize = 0;
 const EXPECTED_RECEIPT_SHA256: &str =
     "b7b35caa97e225e86ca8d4d96275a8cc891135fa942e5bb9448a2d45aba7b79a";
-const EXPECTED_SEMANTIC_RENDER_EXACT: usize = 563;
-const EXPECTED_SEMANTIC_RENDER_DIVERGENT: usize = 12;
+const EXPECTED_SEMANTIC_RENDER_EXACT: usize = 652;
+const EXPECTED_SEMANTIC_RENDER_DIVERGENT: usize = 0;
 const EXPECTED_SEMANTIC_RECEIPT_SHA256: &str =
-    "4f5c490ac6c8cb2fb2d54065a7e084ec120fd4bef0755a28a74f88e970ce21ff";
+    "360e43e90532263e859914c369e25980f43f05b1330b70c45d41f8182a36498f";
 
 // First complete deterministic GFM 0.29-gfm product-parser receipt. Any
 // non-explicit result remains a hard failure.
@@ -66,10 +69,10 @@ const EXPECTED_GFM_ADMITTED: usize = 672;
 const EXPECTED_GFM_UNSUPPORTED: usize = 0;
 const EXPECTED_GFM_RECEIPT_SHA256: &str =
     "6914839f85b9b1f199dddf7754f77aa94e0e9d914a3826910850c0875dbb6ee4";
-const EXPECTED_GFM_SEMANTIC_RENDER_EXACT: usize = 572;
-const EXPECTED_GFM_SEMANTIC_RENDER_DIVERGENT: usize = 19;
+const EXPECTED_GFM_SEMANTIC_RENDER_EXACT: usize = 672;
+const EXPECTED_GFM_SEMANTIC_RENDER_DIVERGENT: usize = 0;
 const EXPECTED_GFM_SEMANTIC_RECEIPT_SHA256: &str =
-    "138b04d9a4afbc85073425311d69512809a57ba73ea94bc06f3d7f9be557f19a";
+    "076d0465102cbd46e81e0bf9cb3f3b26fdac32964eaa44e740cc999998a0207d";
 
 #[derive(Debug)]
 struct Fixture {
@@ -77,6 +80,7 @@ struct Fixture {
     html: String,
     example: usize,
     section: String,
+    extensions: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -239,10 +243,7 @@ fn production_controller_commonmark_coverage_is_monotonic_and_fail_closed() {
         "production CommonMark ledger rejected non-explicit failures instead of laundering them as unsupported (admitted={admitted} unsupported={unsupported} receipt_sha256={receipt_sha256}):\n{}",
         invalid.join("\n")
     );
-    let expected_missing = BTreeMap::from([
-        ("inline-fail-closed".to_owned(), 55),
-        ("projected-inline-authority".to_owned(), 22),
-    ]);
+    let expected_missing = BTreeMap::new();
     assert_eq!(
         semantic_exact + semantic_missing.values().sum::<usize>() + semantic_divergent.len(),
         EXPECTED_EXAMPLES,
@@ -288,6 +289,7 @@ fn production_controller_gfm_0_29_semantic_coverage_is_complete_and_fail_closed(
     let mut unsupported = 0;
     let mut semantic_exact = 0;
     let mut semantic_missing = BTreeMap::<String, usize>::new();
+    let mut semantic_missing_examples = Vec::new();
     let mut semantic_divergent = Vec::new();
     let mut invalid = Vec::new();
     let mut receipt = String::new();
@@ -313,6 +315,10 @@ fn production_controller_gfm_0_29_semantic_coverage_is_complete_and_fail_closed(
                     }
                     SemanticOutcome::Missing(mechanism) => {
                         *semantic_missing.entry(mechanism.into()).or_default() += 1;
+                        semantic_missing_examples.push(format!(
+                            "{} ({:?}): {mechanism}",
+                            fixture.example, fixture.section
+                        ));
                         semantic_receipt.push_str(&format!(
                             "{}\t{}\tmissing:{mechanism}\n",
                             fixture.example, fixture.section
@@ -366,10 +372,7 @@ fn production_controller_gfm_0_29_semantic_coverage_is_complete_and_fail_closed(
         "GFM lane rejected non-explicit failures instead of classifying them:\n{}",
         invalid.join("\n")
     );
-    let expected_missing = BTreeMap::from([
-        ("inline-fail-closed".to_owned(), 59),
-        ("projected-inline-authority".to_owned(), 22),
-    ]);
+    let expected_missing = BTreeMap::new();
     assert_eq!(
         (
             admitted,
@@ -389,7 +392,8 @@ fn production_controller_gfm_0_29_semantic_coverage_is_complete_and_fail_closed(
             EXPECTED_GFM_SEMANTIC_RENDER_DIVERGENT,
             EXPECTED_GFM_SEMANTIC_RECEIPT_SHA256,
         ),
-        "review the deterministic GFM receipt before updating its snapshot:\n{}",
+        "review the deterministic GFM receipt before updating its snapshot:\nmissing:\n{}\n\ndivergent:\n{}",
+        semantic_missing_examples.join("\n"),
         semantic_divergent.join("\n")
     );
     assert_eq!(
@@ -400,17 +404,23 @@ fn production_controller_gfm_0_29_semantic_coverage_is_complete_and_fail_closed(
 }
 
 fn drive_document(markdown: &str) -> Result<(), DriveFailure> {
-    drive(markdown, None, false).map(|_| ())
+    drive(markdown, None, false, &[]).map(|_| ())
 }
 
 fn drive_fixture(fixture: &Fixture, gfm: bool) -> Result<DriveReceipt, DriveFailure> {
-    drive(&fixture.markdown, Some(&fixture.html), gfm)
+    drive(
+        &fixture.markdown,
+        Some(&fixture.html),
+        gfm,
+        &fixture.extensions,
+    )
 }
 
 fn drive(
     markdown: &str,
     expected_html: Option<&str>,
     gfm: bool,
+    extensions: &[String],
 ) -> Result<DriveReceipt, DriveFailure> {
     let mut runtime = DocumentRuntime::new(markdown, DocumentRuntimeConfig::default())
         .map_err(|error| DriveFailure::Invalid(format!("runtime creation: {error:?}")))?;
@@ -470,6 +480,8 @@ fn drive(
             Ok(blocks) => semantic_outcome(
                 markdown,
                 expected_html,
+                gfm,
+                extensions,
                 &blocks,
                 &green,
                 &references,
@@ -865,12 +877,16 @@ struct SemanticRenderer<'a> {
     green: &'a M11RecursiveGreenRoot,
     references: &'a M11ReferenceJournalRoot,
     runtime: &'a mut DocumentRuntime,
+    gfm: bool,
+    extensions: &'a [String],
     output: String,
 }
 
 fn semantic_outcome(
     markdown: &str,
     expected_html: &str,
+    gfm: bool,
+    extensions: &[String],
     blocks: &[GreenBlock],
     green: &M11RecursiveGreenRoot,
     references: &M11ReferenceJournalRoot,
@@ -882,6 +898,8 @@ fn semantic_outcome(
         green,
         references,
         runtime,
+        gfm,
+        extensions,
         output: String::new(),
     }
     .render();
@@ -994,7 +1012,13 @@ impl SemanticRenderer<'_> {
             }
             5 => self.render_paragraph(ordinal),
             6 => {
-                let literal = self.blocks[ordinal].logical.clone();
+                let mut literal = self.blocks[ordinal]
+                    .logical
+                    .trim_end_matches(['\r', '\n'])
+                    .to_owned();
+                if !literal.is_empty() {
+                    literal.push('\n');
+                }
                 self.render_code("", &literal)
             }
             7 => {
@@ -1012,7 +1036,11 @@ impl SemanticRenderer<'_> {
             8 => {
                 let literal = self.blocks[ordinal].logical.clone();
                 self.cr();
-                self.output.push_str(&literal);
+                if self.extension_enabled("tagfilter") {
+                    push_gfm_tagfiltered_html(&mut self.output, &literal);
+                } else {
+                    self.output.push_str(&literal);
+                }
                 self.cr();
                 Ok(())
             }
@@ -1049,6 +1077,20 @@ impl SemanticRenderer<'_> {
     }
 
     fn render_paragraph(&mut self, ordinal: usize) -> Result<(), RenderFailure> {
+        if self.gfm && self.extension_enabled("table") {
+            let inline = project_inline_leaf(
+                self.markdown,
+                &self.blocks[ordinal],
+                self.green,
+                self.references,
+                self.runtime,
+            )?;
+            match project_m11_gfm_table(&inline.source) {
+                Ok(Some(table)) => return self.render_table(&inline, &table),
+                Ok(None) => {}
+                Err(_) => return Err(RenderFailure::Missing("table-fail-closed")),
+            }
+        }
         let tight = self.paragraph_is_tight(ordinal)?;
         if !tight {
             self.cr();
@@ -1062,16 +1104,137 @@ impl SemanticRenderer<'_> {
         Ok(())
     }
 
-    fn render_inline_leaf(&mut self, ordinal: usize) -> Result<(), RenderFailure> {
-        let inline = project_inline_leaf(
-            self.markdown,
-            &self.blocks[ordinal],
-            self.green,
-            self.references,
-            self.runtime,
-        )?;
-        render_inline_projection(&mut self.output, &inline)?;
+    fn render_table(
+        &mut self,
+        inline: &InlineProjection,
+        table: &M11GfmTableProjection,
+    ) -> Result<(), RenderFailure> {
+        let allow_bare_autolinks = self.extension_enabled("autolink");
+        let (nodes, roots) = inline_forest(&inline.facts)?;
+        if let Some(preface) = table.preface_range.clone() {
+            self.cr();
+            self.output.push_str("<p>");
+            render_inline_table_range(
+                &mut self.output,
+                inline,
+                &nodes,
+                &roots,
+                u32_range_to_usize(preface)?,
+                allow_bare_autolinks,
+            )?;
+            self.output.push_str("</p>");
+            self.lf();
+        }
+        self.cr();
+        self.output.push_str("<table>\n<thead>\n<tr>\n");
+        self.render_table_row(inline, &nodes, &roots, table, &table.header, true)?;
+        self.output.push_str("</tr>\n</thead>\n");
+        if !table.body.is_empty() {
+            self.output.push_str("<tbody>\n");
+            for row in &table.body {
+                self.output.push_str("<tr>\n");
+                self.render_table_row(inline, &nodes, &roots, table, row, false)?;
+                self.output.push_str("</tr>\n");
+            }
+            self.output.push_str("</tbody>\n");
+        }
+        self.output.push_str("</table>");
+        self.lf();
         Ok(())
+    }
+
+    fn render_table_row(
+        &mut self,
+        inline: &InlineProjection,
+        nodes: &[InlineNode],
+        roots: &[usize],
+        table: &M11GfmTableProjection,
+        row: &flark_parser::M11GfmTableRow,
+        header: bool,
+    ) -> Result<(), RenderFailure> {
+        let allow_bare_autolinks = self.extension_enabled("autolink");
+        for (column, cell) in row.cells.iter().enumerate() {
+            let tag = if header { "th" } else { "td" };
+            self.output.push('<');
+            self.output.push_str(tag);
+            match table
+                .alignments
+                .get(column)
+                .copied()
+                .unwrap_or(M11GfmTableAlignment::None)
+            {
+                M11GfmTableAlignment::None => {}
+                M11GfmTableAlignment::Left => self.output.push_str(" align=\"left\""),
+                M11GfmTableAlignment::Center => self.output.push_str(" align=\"center\""),
+                M11GfmTableAlignment::Right => self.output.push_str(" align=\"right\""),
+            }
+            self.output.push('>');
+            if !cell.autocompleted {
+                render_inline_table_range(
+                    &mut self.output,
+                    inline,
+                    nodes,
+                    roots,
+                    u32_range_to_usize(cell.content_range.clone())?,
+                    allow_bare_autolinks,
+                )?;
+            }
+            self.output.push_str("</");
+            self.output.push_str(tag);
+            self.output.push_str(">\n");
+        }
+        Ok(())
+    }
+
+    fn render_inline_leaf(&mut self, ordinal: usize) -> Result<(), RenderFailure> {
+        let logical = normalize_inline_logical_source(&self.blocks[ordinal].logical);
+        let references = self.inline_references(&logical)?;
+        let nodes = project_m11_gfm_inline(
+            &logical,
+            M11GfmInlineOptions {
+                strikethrough: self.extension_enabled("strikethrough"),
+                autolink: self.extension_enabled("autolink"),
+            },
+            &references,
+        )
+        .map_err(|_| RenderFailure::Missing("bounded-inline-projection"))?;
+        let tagfilter = self.extension_enabled("tagfilter");
+        render_gfm_inline_nodes(&mut self.output, &nodes, tagfilter)?;
+        Ok(())
+    }
+
+    fn inline_references(
+        &self,
+        logical: &str,
+    ) -> Result<Vec<M11GfmInlineReference>, RenderFailure> {
+        let resolver =
+            M11ReferenceResolver::from_live_reference_journal(self.runtime, self.references)
+                .map_err(|error| RenderFailure::Invalid(format!("reference resolver: {error}")))?;
+        let mut references = Vec::new();
+        for normalized_label in candidate_reference_labels(logical) {
+            match resolver
+                .resolve(self.runtime, &normalized_label, 8 * 1024)
+                .map_err(|error| {
+                    RenderFailure::Invalid(format!("bounded reference resolution: {error}"))
+                })? {
+                M11ReferenceResolution::Missing => {}
+                M11ReferenceResolution::ValueTooLarge => {
+                    return Err(RenderFailure::Missing("bounded-reference-value"));
+                }
+                M11ReferenceResolution::Resolved(reference) => {
+                    references.push(M11GfmInlineReference {
+                        normalized_label,
+                        destination: reference.cooked_destination().to_owned(),
+                        title: reference.cooked_title().unwrap_or_default().to_owned(),
+                    });
+                }
+            }
+        }
+        Ok(references)
+    }
+
+    fn extension_enabled(&self, extension: &str) -> bool {
+        self.extensions.iter().any(|value| value == extension)
     }
 
     fn paragraph_is_tight(&self, paragraph: usize) -> Result<bool, RenderFailure> {
@@ -1263,20 +1426,245 @@ fn project_inline_leaf(
     result
 }
 
-fn render_inline_projection(
+fn normalize_inline_logical_source(source: &str) -> String {
+    let mut output = String::with_capacity(source.len());
+    for (index, line) in source.split('\n').enumerate() {
+        if index != 0 {
+            output.push('\n');
+        }
+        if index == 0 {
+            output.push_str(line);
+        } else {
+            output.push_str(line.trim_start_matches([' ', '\t']));
+        }
+    }
+    output
+}
+
+fn candidate_reference_labels(source: &str) -> Vec<String> {
+    let bytes = source.as_bytes();
+    let mut labels = BTreeSet::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'[' || byte_is_escaped(bytes, index) {
+            index += 1;
+            continue;
+        }
+        let start = index + 1;
+        let mut end = start;
+        while end < bytes.len() && end - start <= 999 {
+            if bytes[end] == b']' && !byte_is_escaped(bytes, end) {
+                if let Some(label) = source.get(start..end) {
+                    let normalized = comrak::block_spine_facade::normalize_reference_label(label);
+                    if !normalized.is_empty() {
+                        labels.insert(normalized);
+                    }
+                }
+                break;
+            }
+            end += 1;
+        }
+        index += 1;
+    }
+    labels.into_iter().collect()
+}
+
+fn byte_is_escaped(bytes: &[u8], index: usize) -> bool {
+    let mut backslashes = 0;
+    let mut cursor = index;
+    while cursor > 0 && bytes[cursor - 1] == b'\\' {
+        backslashes += 1;
+        cursor -= 1;
+    }
+    backslashes % 2 != 0
+}
+
+fn render_gfm_inline_nodes(
+    output: &mut String,
+    nodes: &[M11GfmInlineNode],
+    tagfilter: bool,
+) -> Result<(), RenderFailure> {
+    for node in nodes {
+        match node {
+            M11GfmInlineNode::Text(text) => push_escaped_html(output, text),
+            M11GfmInlineNode::SoftBreak => output.push('\n'),
+            M11GfmInlineNode::LineBreak => output.push_str("<br />\n"),
+            M11GfmInlineNode::Code(code) => {
+                output.push_str("<code>");
+                push_escaped_html(output, code);
+                output.push_str("</code>");
+            }
+            M11GfmInlineNode::Html(html) => {
+                if tagfilter && gfm_tagfilter_matches(html) {
+                    output.push_str("&lt;");
+                    output.push_str(&html[1..]);
+                } else {
+                    output.push_str(html);
+                }
+            }
+            M11GfmInlineNode::Transparent(children) => {
+                render_gfm_inline_nodes(output, children, tagfilter)?;
+            }
+            M11GfmInlineNode::Emphasis(children) => {
+                output.push_str("<em>");
+                render_gfm_inline_nodes(output, children, tagfilter)?;
+                output.push_str("</em>");
+            }
+            M11GfmInlineNode::Strong(children) => {
+                output.push_str("<strong>");
+                render_gfm_inline_nodes(output, children, tagfilter)?;
+                output.push_str("</strong>");
+            }
+            M11GfmInlineNode::Strikethrough(children) => {
+                output.push_str("<del>");
+                render_gfm_inline_nodes(output, children, tagfilter)?;
+                output.push_str("</del>");
+            }
+            M11GfmInlineNode::Link {
+                destination,
+                title,
+                children,
+            } => {
+                output.push_str("<a href=\"");
+                push_safe_escaped_href(output, destination)?;
+                if !title.is_empty() {
+                    output.push_str("\" title=\"");
+                    push_escaped_html(output, title);
+                }
+                output.push_str("\">");
+                render_gfm_inline_nodes(output, children, tagfilter)?;
+                output.push_str("</a>");
+            }
+            M11GfmInlineNode::Image {
+                destination,
+                title,
+                children,
+            } => {
+                output.push_str("<img src=\"");
+                push_safe_escaped_href(output, destination)?;
+                output.push_str("\" alt=\"");
+                render_gfm_inline_plain(output, children);
+                if !title.is_empty() {
+                    output.push_str("\" title=\"");
+                    push_escaped_html(output, title);
+                }
+                output.push_str("\" />");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn render_gfm_inline_plain(output: &mut String, nodes: &[M11GfmInlineNode]) {
+    for node in nodes {
+        match node {
+            M11GfmInlineNode::Text(text)
+            | M11GfmInlineNode::Code(text)
+            | M11GfmInlineNode::Html(text) => push_escaped_html(output, text),
+            M11GfmInlineNode::SoftBreak | M11GfmInlineNode::LineBreak => output.push(' '),
+            M11GfmInlineNode::Emphasis(children)
+            | M11GfmInlineNode::Transparent(children)
+            | M11GfmInlineNode::Strong(children)
+            | M11GfmInlineNode::Strikethrough(children)
+            | M11GfmInlineNode::Link { children, .. }
+            | M11GfmInlineNode::Image { children, .. } => {
+                render_gfm_inline_plain(output, children);
+            }
+        }
+    }
+}
+
+fn gfm_tagfilter_matches(literal: &str) -> bool {
+    const BLACKLIST: [&str; 9] = [
+        "title",
+        "textarea",
+        "style",
+        "xmp",
+        "iframe",
+        "noembed",
+        "noframes",
+        "script",
+        "plaintext",
+    ];
+    let bytes = literal.as_bytes();
+    if bytes.len() < 3 || bytes[0] != b'<' {
+        return false;
+    }
+    let mut start = 1;
+    if bytes[start] == b'/' {
+        start += 1;
+    }
+    let lower = literal[start..].to_ascii_lowercase();
+    BLACKLIST.iter().any(|tag| {
+        if !lower.starts_with(tag) {
+            return false;
+        }
+        let end = start + tag.len();
+        bytes.get(end).is_some_and(|byte| {
+            byte.is_ascii_whitespace()
+                || *byte == b'>'
+                || (*byte == b'/' && bytes.get(end + 1) == Some(&b'>'))
+        })
+    })
+}
+
+fn push_gfm_tagfiltered_html(output: &mut String, literal: &str) {
+    let mut cursor = 0;
+    while let Some(relative) = literal[cursor..].find('<') {
+        let marker = cursor + relative;
+        output.push_str(&literal[cursor..marker]);
+        if gfm_tagfilter_matches(&literal[marker..]) {
+            output.push_str("&lt;");
+        } else {
+            output.push('<');
+        }
+        cursor = marker + 1;
+    }
+    output.push_str(&literal[cursor..]);
+}
+
+fn render_inline_table_range(
     output: &mut String,
     projection: &InlineProjection,
+    nodes: &[InlineNode],
+    roots: &[usize],
+    range: std::ops::Range<usize>,
+    allow_bare_autolinks: bool,
 ) -> Result<(), RenderFailure> {
-    let (nodes, roots) = inline_forest(&projection.facts)?;
-    let semantic_end = projection.source.trim_end_matches([' ', '\t']).len();
+    let mut contained = Vec::new();
+    collect_inline_facts_in_range(nodes, roots, &range, &mut contained)?;
+    let mut rendered = String::new();
     render_inline_range(
-        output,
+        &mut rendered,
         &projection.source,
-        &nodes,
-        &roots,
+        nodes,
+        &contained,
         &projection.link_values,
-        0..semantic_end,
-    )
+        range,
+        allow_bare_autolinks,
+    )?;
+    // GFM removes the escape byte before a pipe before parsing a table cell.
+    // Ordinary escapes have already consumed it; this remaining spelling is
+    // the code-span case from GFM example 200.
+    output.push_str(&rendered.replace("\\|", "|"));
+    Ok(())
+}
+
+fn collect_inline_facts_in_range(
+    nodes: &[InlineNode],
+    candidates: &[usize],
+    range: &std::ops::Range<usize>,
+    output: &mut Vec<usize>,
+) -> Result<(), RenderFailure> {
+    for candidate in candidates.iter().copied() {
+        let fact_range = u32_range_to_usize(nodes[candidate].fact.relative_range())?;
+        if fact_range.start >= range.start && fact_range.end <= range.end {
+            output.push(candidate);
+        } else if fact_range.start < range.end && fact_range.end > range.start {
+            collect_inline_facts_in_range(nodes, &nodes[candidate].children, range, output)?;
+        }
+    }
+    Ok(())
 }
 
 fn inline_forest(
@@ -1330,6 +1718,7 @@ fn render_inline_range(
     children: &[usize],
     link_values: &[M11InlineLinkValue],
     range: std::ops::Range<usize>,
+    allow_bare_autolinks: bool,
 ) -> Result<(), RenderFailure> {
     let mut cursor = range.start;
     for child in children.iter().copied() {
@@ -1345,7 +1734,14 @@ fn render_inline_range(
                 RenderFailure::Invalid("inline text gap is not UTF-8 aligned".into())
             })?,
         );
-        render_inline_fact(output, source, nodes, child, link_values)?;
+        render_inline_fact(
+            output,
+            source,
+            nodes,
+            child,
+            link_values,
+            allow_bare_autolinks,
+        )?;
         cursor = fact_range.end;
     }
     push_inline_text(
@@ -1363,18 +1759,35 @@ fn render_inline_fact(
     nodes: &[InlineNode],
     ordinal: usize,
     link_values: &[M11InlineLinkValue],
+    allow_bare_autolinks: bool,
 ) -> Result<(), RenderFailure> {
     let node = &nodes[ordinal];
     let content = u32_range_to_usize(node.fact.relative_content_range())?;
     match node.fact.kind() {
         M11InlineProjectionKind::Emphasis => {
             output.push_str("<em>");
-            render_inline_range(output, source, nodes, &node.children, link_values, content)?;
+            render_inline_range(
+                output,
+                source,
+                nodes,
+                &node.children,
+                link_values,
+                content,
+                allow_bare_autolinks,
+            )?;
             output.push_str("</em>");
         }
         M11InlineProjectionKind::Strong => {
             output.push_str("<strong>");
-            render_inline_range(output, source, nodes, &node.children, link_values, content)?;
+            render_inline_range(
+                output,
+                source,
+                nodes,
+                &node.children,
+                link_values,
+                content,
+                allow_bare_autolinks,
+            )?;
             output.push_str("</strong>");
         }
         M11InlineProjectionKind::Code => {
@@ -1403,13 +1816,27 @@ fn render_inline_fact(
         }
         M11InlineProjectionKind::Strikethrough => {
             output.push_str("<del>");
-            render_inline_range(output, source, nodes, &node.children, link_values, content)?;
+            render_inline_range(
+                output,
+                source,
+                nodes,
+                &node.children,
+                link_values,
+                content,
+                allow_bare_autolinks,
+            )?;
             output.push_str("</del>");
         }
         M11InlineProjectionKind::AutolinkUri | M11InlineProjectionKind::AutolinkEmail => {
             let visible = source.get(content).ok_or_else(|| {
                 RenderFailure::Invalid("autolink content is not UTF-8 aligned".into())
             })?;
+            if node.fact.relative_range() == node.fact.relative_content_range()
+                && !allow_bare_autolinks
+            {
+                push_inline_text(output, visible);
+                return Ok(());
+            }
             let href = match node.fact.kind() {
                 M11InlineProjectionKind::AutolinkEmail => format!("mailto:{visible}"),
                 M11InlineProjectionKind::AutolinkUri
@@ -1435,7 +1862,15 @@ fn render_inline_fact(
                 push_escaped_html(output, title);
             }
             output.push_str("\">");
-            render_inline_range(output, source, nodes, &node.children, link_values, content)?;
+            render_inline_range(
+                output,
+                source,
+                nodes,
+                &node.children,
+                link_values,
+                content,
+                allow_bare_autolinks,
+            )?;
             output.push_str("</a>");
         }
         M11InlineProjectionKind::DirectImage | M11InlineProjectionKind::ReferenceImage => {
@@ -1892,11 +2327,18 @@ fn load_fixtures(json: &str) -> Vec<Fixture> {
         cursor = number_end;
         cursor += json[cursor..].find(SECTION).expect("fixture section field") + SECTION.len();
         let section = json_string(json, &mut cursor);
+        let extensions = if json[cursor..].starts_with(",\n    \"extensions\": [") {
+            cursor += ",\n    \"extensions\": [".len();
+            json_string_array(json, &mut cursor)
+        } else {
+            Vec::new()
+        };
         fixtures.push(Fixture {
             markdown,
             html,
             example,
             section,
+            extensions,
         });
     }
     fixtures
@@ -1913,16 +2355,39 @@ fn gfm_fixtures() -> Vec<Fixture> {
             html: "<ul>\n<li><input disabled=\"\" type=\"checkbox\"> foo</li>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> bar</li>\n</ul>\n".into(),
             example: 279,
             section: "Task list items (extension)".into(),
+            extensions: vec!["tasklist".into()],
         },
         Fixture {
             markdown: "- [x] foo\n  - [ ] bar\n  - [x] baz\n- [ ] bim\n".into(),
             html: "<ul>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> foo\n<ul>\n<li><input disabled=\"\" type=\"checkbox\"> bar</li>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> baz</li>\n</ul>\n</li>\n<li><input disabled=\"\" type=\"checkbox\"> bim</li>\n</ul>\n".into(),
             example: 280,
             section: "Task list items (extension)".into(),
+            extensions: vec!["tasklist".into()],
         },
     ]);
     fixtures.sort_by_key(|fixture| fixture.example);
     fixtures
+}
+
+fn json_string_array(json: &str, cursor: &mut usize) -> Vec<String> {
+    let bytes = json.as_bytes();
+    let mut values = Vec::new();
+    loop {
+        while matches!(
+            bytes.get(*cursor),
+            Some(b' ' | b'\n' | b'\r' | b'\t' | b',')
+        ) {
+            *cursor += 1;
+        }
+        match bytes.get(*cursor) {
+            Some(b']') => {
+                *cursor += 1;
+                return values;
+            }
+            Some(b'\"') => values.push(json_string(json, cursor)),
+            _ => panic!("JSON string array value"),
+        }
+    }
 }
 
 fn json_string(json: &str, cursor: &mut usize) -> String {

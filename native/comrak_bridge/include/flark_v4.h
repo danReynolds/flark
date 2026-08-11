@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define FLARK_V4_ABI_MAJOR UINT16_C(4)
-#define FLARK_V4_ABI_MINOR UINT16_C(6)
+#define FLARK_V4_ABI_MINOR UINT16_C(7)
 
 /* Zero sentinels are legal only where the operation rules below say so. */
 #define FLARK_V4_CONTINUATION_NONE UINT64_C(0)
@@ -282,7 +282,8 @@ typedef struct FlarkV4ResultPageHeader {
 /* Fixed payload record for SEMANTIC_FACTS viewport pages. UINT64_MAX in an
  * editable endpoint means the row has no contiguous active-edit projection.
  * ABI 4.5 appends grouped inline-fact records after the row array. ABI 4.6
- * adds bounded parser-cooked replacement scalars to those records. */
+ * adds bounded parser-cooked replacement scalars to those records. ABI 4.7
+ * adds parser-owned bounded GFM table cells in the same grouped stream. */
 typedef struct FlarkV4ViewportRowRecord {
   uint64_t ordinal;
   uint32_t kind;
@@ -334,6 +335,7 @@ typedef struct FlarkV4ViewportRowRecord {
 #define FLARK_V4_VIEWPORT_ROW_CODE_FENCE_OFFSET_SHIFT UINT32_C(20)
 #define FLARK_V4_VIEWPORT_ROW_CODE_FENCE_OFFSET_MASK UINT32_C(0x300000)
 #define FLARK_V4_VIEWPORT_ROW_THEMATIC_BREAK_PRESENTATION UINT32_C(0x10000)
+#define FLARK_V4_VIEWPORT_ROW_TABLE_PRESENTATION UINT32_C(0x4000000)
 
 /* Parser-authored inline facts grouped in row order after the fixed row array.
  * source_* spans the complete Markdown form; content_* spans visible content. */
@@ -365,6 +367,11 @@ typedef struct FlarkV4InlineFactRecord {
 #define FLARK_V4_INLINE_FACT_DIRECT_IMAGE UINT32_C(11)
 #define FLARK_V4_INLINE_FACT_REFERENCE_LINK UINT32_C(12)
 #define FLARK_V4_INLINE_FACT_REFERENCE_IMAGE UINT32_C(13)
+#define FLARK_V4_INLINE_FACT_TABLE_CELL UINT32_C(14)
+#define FLARK_V4_INLINE_FACT_TABLE_ALIGNMENT_MASK UINT32_C(0x3)
+#define FLARK_V4_INLINE_FACT_TABLE_HEADER UINT32_C(0x4)
+#define FLARK_V4_INLINE_FACT_TABLE_ROW_START UINT32_C(0x8)
+#define FLARK_V4_INLINE_FACT_TABLE_AUTOCOMPLETED UINT32_C(0x10)
 
 typedef struct FlarkV4EditDescriptor {
   uint64_t start_byte;

@@ -19,18 +19,19 @@ use flark_parser::{
         ListDelimiter, M11RecursiveGreenCodeBlockStyle, M11RecursiveGreenInlineLeafKind,
         M11RecursiveGreenListMarker, M11RecursiveGreenRowPresentation,
     },
-    M11InlineProjectionJob, M11InlineProjectionJobError, M11InlineProjectionJobPollStatus,
-    M11ParserBinding, M11PersistentRecursiveGreenAdoption,
-    M11PersistentRecursiveGreenAdoptionStatus, M11PersistentRecursiveGreenAdoptionWork,
-    M11PersistentRecursiveGreenBuildStatus, M11PersistentRecursiveGreenCleanBuild,
-    M11PersistentRecursiveGreenCleanPlan, M11PersistentRecursiveGreenSession,
-    M11PersistentRecursiveGreenSessionError, M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
+    project_m11_gfm_table, M11GfmTableAlignment, M11InlineProjectionJob,
+    M11InlineProjectionJobError, M11InlineProjectionJobPollStatus, M11ParserBinding,
+    M11PersistentRecursiveGreenAdoption, M11PersistentRecursiveGreenAdoptionStatus,
+    M11PersistentRecursiveGreenAdoptionWork, M11PersistentRecursiveGreenBuildStatus,
+    M11PersistentRecursiveGreenCleanBuild, M11PersistentRecursiveGreenCleanPlan,
+    M11PersistentRecursiveGreenSession, M11PersistentRecursiveGreenSessionError,
+    M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
 };
 
 const SYNTAX_PROFILE_GFM_V1: u32 = 1;
 const QUERY_OPEN_DEPTH_LIMIT: usize = 256;
 const VIEWPORT_INLINE_LEAF_MAX_BYTES: u64 = 8 * 1024;
-const VIEWPORT_INLINE_FACTS_PER_ROW_MAX: usize = 64;
+const VIEWPORT_INLINE_FACTS_PER_ROW_MAX: usize = 512;
 const VIEWPORT_INLINE_TOTAL_TRANSITIONS_MAX: usize = 1_000_000;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -130,7 +131,13 @@ pub enum DocumentInlineFactKind {
     DirectImage,
     ReferenceLink,
     ReferenceImage,
+    TableCell,
 }
+
+pub const DOCUMENT_TABLE_CELL_ALIGNMENT_MASK: u8 = 0x03;
+pub const DOCUMENT_TABLE_CELL_HEADER: u8 = 1 << 2;
+pub const DOCUMENT_TABLE_CELL_ROW_START: u8 = 1 << 3;
+pub const DOCUMENT_TABLE_CELL_AUTOCOMPLETED: u8 = 1 << 4;
 
 /// Parser-cooked visible text replacing one exact source range.
 ///
@@ -189,6 +196,7 @@ pub enum DocumentViewportRowPresentation {
         style: DocumentCodeBlockStyle,
     },
     ThematicBreak,
+    Table,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1069,6 +1077,39 @@ mod tests {
     use super::*;
 
     #[test]
+    fn gfm_table_projection_reaches_the_viewport_as_typed_cells() {
+        let source = "| f\\|oo | bar |\n| :--- | ---: |\n| `x\\|y` | baz |\n";
+        let mut document = DocumentSession::begin(source).expect("begin table document");
+        while document.pump(512).expect("pump table").phase != DocumentSessionPhase::Ready {}
+        let viewport = document
+            .query_viewport(document.revision(), 0..source.len(), 8)
+            .expect("query table viewport");
+        let row = viewport.rows.first().expect("table row");
+        assert_eq!(row.presentation, DocumentViewportRowPresentation::Table);
+        let facts = row.inline_facts.as_ref().expect("table inline facts");
+        let cells = facts
+            .iter()
+            .filter(|fact| fact.kind == DocumentInlineFactKind::TableCell)
+            .collect::<Vec<_>>();
+        assert_eq!(cells.len(), 4);
+        assert_eq!(
+            cells[0].flags,
+            1 | DOCUMENT_TABLE_CELL_HEADER | DOCUMENT_TABLE_CELL_ROW_START
+        );
+        assert_eq!(cells[1].flags, 3 | DOCUMENT_TABLE_CELL_HEADER);
+        assert_eq!(cells[2].flags, 1 | DOCUMENT_TABLE_CELL_ROW_START);
+        assert_eq!(cells[3].flags, 3);
+        assert_eq!(
+            facts
+                .iter()
+                .filter(|fact| fact.kind == DocumentInlineFactKind::Replacement)
+                .count(),
+            2
+        );
+        document.close().expect("close table document");
+    }
+
+    #[test]
     fn dense_capacity_fault_has_a_fast_bounded_reclamation_probe() {
         const PAYLOAD_BUDGET: usize = 1024 * 1024;
         let source = "x.\n\n".repeat(32 * 1024);
@@ -1174,7 +1215,7 @@ fn document_viewport_row(
     session: &M11PersistentRecursiveGreenSession,
     row: &M11RecursiveGreenRenderableRow,
 ) -> Result<DocumentViewportRow, DocumentSessionError> {
-    let presentation = match m11_recursive_green_row_presentation(runtime, row)
+    let mut presentation = match m11_recursive_green_row_presentation(runtime, row)
         .map_err(M11PersistentRecursiveGreenSessionError::from)?
     {
         M11RecursiveGreenRowPresentation::Plain => DocumentViewportRowPresentation::Plain,
@@ -1283,6 +1324,15 @@ fn document_viewport_row(
         }
     }
     let inline_facts = document_inline_facts(runtime, session, row)?;
+    if presentation == DocumentViewportRowPresentation::Plain
+        && inline_facts.as_ref().is_some_and(|facts| {
+            facts
+                .iter()
+                .any(|fact| fact.kind == DocumentInlineFactKind::TableCell)
+        })
+    {
+        presentation = DocumentViewportRowPresentation::Table;
+    }
     Ok(DocumentViewportRow {
         ordinal: row.ordinal(),
         kind: row.kind().get(),
@@ -1482,7 +1532,85 @@ fn map_document_inline_facts(
             return Ok(None);
         }
     }
+    append_document_table_facts(&mut mapped, &lease, inline_source.start, &inline_bytes)?;
+    if mapped.len() > VIEWPORT_INLINE_FACTS_PER_ROW_MAX {
+        return Ok(None);
+    }
     Ok(Some(mapped))
+}
+
+fn append_document_table_facts(
+    mapped: &mut Vec<DocumentInlineFact>,
+    lease: &SourceSnapshotLease,
+    inline_base: u32,
+    inline_bytes: &[u8],
+) -> Result<(), DocumentSessionError> {
+    let source = str::from_utf8(inline_bytes).map_err(|_| DocumentSessionError::Faulted)?;
+    let table = match project_m11_gfm_table(source) {
+        Ok(Some(table)) if table.preface_range.is_none() => table,
+        Ok(None) | Err(_) => return Ok(()),
+        Ok(Some(_)) => return Ok(()),
+    };
+    for (header, row) in
+        std::iter::once((true, &table.header)).chain(table.body.iter().map(|row| (false, row)))
+    {
+        for (column, cell) in row.cells.iter().enumerate() {
+            let alignment = match table
+                .alignments
+                .get(column)
+                .copied()
+                .unwrap_or(M11GfmTableAlignment::None)
+            {
+                M11GfmTableAlignment::None => 0,
+                M11GfmTableAlignment::Left => 1,
+                M11GfmTableAlignment::Center => 2,
+                M11GfmTableAlignment::Right => 3,
+            };
+            let flags = alignment
+                | if header {
+                    DOCUMENT_TABLE_CELL_HEADER
+                } else {
+                    0
+                }
+                | if column == 0 {
+                    DOCUMENT_TABLE_CELL_ROW_START
+                } else {
+                    0
+                }
+                | if cell.autocompleted {
+                    DOCUMENT_TABLE_CELL_AUTOCOMPLETED
+                } else {
+                    0
+                };
+            let source = absolute_inline_range(inline_base, cell.source_range.clone())?;
+            let content = absolute_inline_range(inline_base, cell.content_range.clone())?;
+            push_document_inline_fact(
+                mapped,
+                lease,
+                DocumentInlineFactKind::TableCell,
+                flags,
+                source,
+                content,
+                None,
+            )?;
+            for escape in &cell.pipe_escape_ranges {
+                let source = absolute_inline_range(inline_base, escape.clone())?;
+                push_document_inline_fact(
+                    mapped,
+                    lease,
+                    DocumentInlineFactKind::Replacement,
+                    0,
+                    source.clone(),
+                    source,
+                    Some(DocumentInlineReplacement {
+                        first: '|',
+                        second: None,
+                    }),
+                )?;
+            }
+        }
+    }
+    Ok(())
 }
 
 fn trim_code_content_range(

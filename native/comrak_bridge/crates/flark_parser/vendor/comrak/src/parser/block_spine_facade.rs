@@ -7,9 +7,14 @@
 
 #![allow(missing_copy_implementations, missing_docs)]
 
+use std::collections::VecDeque;
 use std::ops::Range;
 
+use crate::Arena;
+use crate::nodes::{Ast, Node, NodeValue};
+use crate::parser::autolink;
 use crate::parser::inlines::{self, Scanner};
+use crate::parser::{Options, ResolvedReference, Spx};
 use crate::scanners;
 use crate::strings::{self, Case};
 
@@ -223,6 +228,316 @@ pub fn normalize_code_info(input: &str) -> Result<String, FacadeError> {
 pub fn table_delimiter_candidate(input: &str) -> Result<bool, FacadeError> {
     bounded(input)?;
     Ok(scanners::table_start(input).is_some())
+}
+
+/// One exact GFM table cell scanned by the donor grammar.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FacadeTableCell {
+    /// Complete cell source after the adjacent pipe separators are removed.
+    pub source: Range<usize>,
+    /// The source-backed content after GFM table whitespace trimming.
+    pub content_source: Range<usize>,
+    /// Exact donor content after table-specific escaped-pipe cooking.
+    pub content: String,
+    /// Two-byte `\\|` spellings removed by the table layer before inline
+    /// parsing, in row-relative coordinates.
+    pub pipe_escape_sources: Vec<Range<usize>>,
+}
+
+/// One exact GFM table row. The source must contain exactly one logical line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FacadeTableRow {
+    pub cells: Vec<FacadeTableCell>,
+}
+
+/// Scan one GFM table row through the same generated scanners and pipe
+/// unescape rule used by Comrak's table block parser.
+pub fn table_row(input: &str) -> Result<Option<FacadeTableRow>, FacadeError> {
+    bounded(input)?;
+    let len = input.len();
+    let mut cells = Vec::new();
+    let mut offset = scanners::table_cell_end(input).unwrap_or(0);
+
+    while offset < len {
+        let cell_matched = scanners::table_cell(&input[offset..], false).unwrap_or(0);
+        let pipe_matched = scanners::table_cell_end(&input[offset + cell_matched..]).unwrap_or(0);
+        if cell_matched > 0 || pipe_matched > 0 {
+            if cells.len() == u16::MAX as usize {
+                return Ok(None);
+            }
+            let source = offset..offset + cell_matched;
+            let raw = &input[source.clone()];
+            let trimmed = strings::trim_slice(raw);
+            let trim_start = trimmed.as_ptr() as usize - raw.as_ptr() as usize;
+            let content_source =
+                source.start + trim_start..source.start + trim_start + trimmed.len();
+            let content = unescape_table_pipes(trimmed);
+            let pipe_escape_sources = table_pipe_escape_sources(trimmed)
+                .into_iter()
+                .map(|range| {
+                    source.start + trim_start + range.start..source.start + trim_start + range.end
+                })
+                .collect();
+            cells.push(FacadeTableCell {
+                source,
+                content_source,
+                content,
+                pipe_escape_sources,
+            });
+        }
+        offset += cell_matched + pipe_matched;
+        if pipe_matched == 0 {
+            offset += scanners::table_row_end(&input[offset..]).unwrap_or(0);
+            break;
+        }
+    }
+
+    if offset != len || cells.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(FacadeTableRow { cells }))
+    }
+}
+
+fn unescape_table_pipes(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(character) = chars.next() {
+        if character == '\\' && chars.peek() == Some(&'|') {
+            chars.next();
+            output.push('|');
+        } else {
+            output.push(character);
+        }
+    }
+    output
+}
+
+fn table_pipe_escape_sources(input: &str) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut last_was_backslash = false;
+    for (index, character) in input.char_indices() {
+        if last_was_backslash {
+            if character == '|' {
+                ranges.push(index - 1..index + 1);
+            }
+            last_was_backslash = false;
+        } else if character == '\\' {
+            last_was_backslash = true;
+        }
+    }
+    ranges
+}
+
+/// Exact bounded inline semantics returned without exposing Comrak arena
+/// nodes or its HTML renderer. This is the complex-leaf complement to Flark's
+/// streaming fast path: callers retain the 8 KiB admission ceiling and map
+/// these typed values into their own persistent/output representation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FacadeInlineNode {
+    Text(String),
+    SoftBreak,
+    LineBreak,
+    Code(String),
+    Html(String),
+    Transparent(Vec<FacadeInlineNode>),
+    Emphasis(Vec<FacadeInlineNode>),
+    Strong(Vec<FacadeInlineNode>),
+    Strikethrough(Vec<FacadeInlineNode>),
+    Link {
+        destination: String,
+        title: String,
+        children: Vec<FacadeInlineNode>,
+    },
+    Image {
+        destination: String,
+        title: String,
+        children: Vec<FacadeInlineNode>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct FacadeInlineOptions {
+    pub strikethrough: bool,
+    pub autolink: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FacadeInlineReference {
+    pub normalized_label: String,
+    pub destination: String,
+    pub title: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FacadeInlineError {
+    OverCap { bytes: usize, cap: usize },
+    UnsupportedNode(&'static str),
+}
+
+/// Parse one already-established logical inline leaf through the pinned donor
+/// grammar and return a narrow typed semantic tree. No final renderer, block
+/// parser, or arena node crosses this façade.
+pub fn inline_projection(
+    input: &str,
+    selected: FacadeInlineOptions,
+    references: &[FacadeInlineReference],
+) -> Result<Vec<FacadeInlineNode>, FacadeInlineError> {
+    bounded(input).map_err(|error| match error {
+        FacadeError::OverCap { bytes, cap } => FacadeInlineError::OverCap { bytes, cap },
+        FacadeError::UnsupportedHtmlBlockType(_) => {
+            FacadeInlineError::UnsupportedNode("unreachable inline façade error")
+        }
+    })?;
+
+    let arena = Arena::new();
+    let mut paragraph = Ast::new(NodeValue::Paragraph, (1, 1).into());
+    paragraph.line_offsets = vec![0; logical_line_count(input)];
+    let paragraph = arena.alloc(paragraph.into());
+
+    let mut options = Options::default();
+    options.extension.strikethrough = selected.strikethrough;
+    options.extension.autolink = selected.autolink;
+
+    let mut refmap = inlines::RefMap::new();
+    for reference in references {
+        refmap
+            .map
+            .entry(reference.normalized_label.clone())
+            .or_insert_with(|| ResolvedReference {
+                url: reference.destination.clone(),
+                title: reference.title.clone(),
+            });
+    }
+    let mut footnotes = inlines::FootnoteDefs::new();
+    let delimiters = typed_arena::Arena::new();
+    let mut content = input.to_owned();
+    strings::rtrim(&mut content);
+    let mut subject = inlines::Subject::new(
+        &arena,
+        &options,
+        content,
+        1,
+        &mut refmap,
+        &mut footnotes,
+        &delimiters,
+        0,
+    );
+    while subject.parse_inline(paragraph, &mut paragraph.data_mut()) {}
+    subject.process_emphasis(0);
+    subject.clear_brackets();
+    if selected.autolink {
+        postprocess_bare_email_autolinks(&arena, paragraph, options.parse.relaxed_autolinks);
+    }
+    project_inline_children(paragraph)
+}
+
+fn postprocess_bare_email_autolinks<'a>(
+    arena: &'a Arena<'a>,
+    paragraph: Node<'a>,
+    relaxed_autolinks: bool,
+) {
+    let mut current = paragraph.first_child();
+    while let Some(node) = current {
+        coalesce_adjacent_text(node);
+        let mut ast = node.data_mut();
+        let sourcepos = ast.sourcepos;
+        if let NodeValue::Text(ref mut text) = ast.value {
+            let length = text.len();
+            let mut adjusted_sourcepos = sourcepos;
+            let mut spx = Spx(VecDeque::from([(sourcepos, length)]));
+            autolink::process_email_autolinks(
+                arena,
+                node,
+                text,
+                relaxed_autolinks,
+                &mut adjusted_sourcepos,
+                &mut spx,
+            );
+            ast.sourcepos = adjusted_sourcepos;
+        }
+        drop(ast);
+        current = node.next_sibling();
+    }
+}
+
+fn coalesce_adjacent_text(node: Node<'_>) {
+    loop {
+        let Some(next) = node.next_sibling() else {
+            return;
+        };
+        let (text, end) = {
+            let next_ast = next.data();
+            let NodeValue::Text(text) = &next_ast.value else {
+                return;
+            };
+            (text.clone(), next_ast.sourcepos.end)
+        };
+        let mut ast = node.data_mut();
+        let NodeValue::Text(target) = &mut ast.value else {
+            return;
+        };
+        target.to_mut().push_str(&text);
+        ast.sourcepos.end = end;
+        drop(ast);
+        next.detach();
+    }
+}
+
+fn logical_line_count(input: &str) -> usize {
+    let bytes = input.as_bytes();
+    let mut count = 1;
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\r' if bytes.get(index + 1) == Some(&b'\n') => {
+                count += 1;
+                index += 2;
+            }
+            b'\r' | b'\n' => {
+                count += 1;
+                index += 1;
+            }
+            _ => index += 1,
+        }
+    }
+    count
+}
+
+fn project_inline_children(parent: Node<'_>) -> Result<Vec<FacadeInlineNode>, FacadeInlineError> {
+    parent.children().map(project_inline_node).collect()
+}
+
+fn project_inline_node(node: Node<'_>) -> Result<FacadeInlineNode, FacadeInlineError> {
+    let value = node.data().value.clone();
+    match value {
+        NodeValue::Text(text) => Ok(FacadeInlineNode::Text(text.into_owned())),
+        NodeValue::SoftBreak => Ok(FacadeInlineNode::SoftBreak),
+        NodeValue::LineBreak => Ok(FacadeInlineNode::LineBreak),
+        NodeValue::Code(code) => Ok(FacadeInlineNode::Code(code.literal)),
+        NodeValue::HtmlInline(html) | NodeValue::Raw(html) => Ok(FacadeInlineNode::Html(html)),
+        NodeValue::Escaped => Ok(FacadeInlineNode::Transparent(project_inline_children(
+            node,
+        )?)),
+        NodeValue::Emph => Ok(FacadeInlineNode::Emphasis(project_inline_children(node)?)),
+        NodeValue::Strong => Ok(FacadeInlineNode::Strong(project_inline_children(node)?)),
+        NodeValue::Strikethrough => Ok(FacadeInlineNode::Strikethrough(project_inline_children(
+            node,
+        )?)),
+        NodeValue::Link(link) => Ok(FacadeInlineNode::Link {
+            destination: link.url,
+            title: link.title,
+            children: project_inline_children(node)?,
+        }),
+        NodeValue::Image(link) => Ok(FacadeInlineNode::Image {
+            destination: link.url,
+            title: link.title,
+            children: project_inline_children(node)?,
+        }),
+        _ => Err(FacadeInlineError::UnsupportedNode(
+            "node is outside the selected GFM inline profile",
+        )),
+    }
 }
 
 /// Exact standard GFM task-list marker at the beginning of one Item's first

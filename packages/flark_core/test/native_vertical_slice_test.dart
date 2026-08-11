@@ -367,4 +367,51 @@ void main() {
     },
     skip: libraryPath == null,
   );
+
+  test(
+    'bounded GFM table cells cross as typed Dart presentation',
+    () async {
+      const source =
+          '| f\\|oo | bar |\n| :--- | ---: |\n| `x\\|y` | **baz** |\n';
+      final document = await FlarkCoreDocument.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(document.dispose);
+      await document.pumpUntilReady();
+
+      final row = (await document.queryViewport()).rows.single;
+      final table = row.table!;
+      expect(table.rows, hasLength(2));
+      expect(table.columnCount, 2);
+      expect(table.rows.first.map((cell) => cell.alignment), [
+        FlarkTableAlignment.left,
+        FlarkTableAlignment.right,
+      ]);
+      expect(table.rows.first.every((cell) => cell.header), isTrue);
+      expect(table.rows.last.every((cell) => !cell.header), isTrue);
+      expect(
+        source.substring(
+          table.rows.first.first.contentUtf16.start,
+          table.rows.first.first.contentUtf16.end,
+        ),
+        r'f\|oo',
+      );
+      expect(
+        row.inlineFacts!.map((fact) => fact.kind),
+        containsAll([
+          FlarkInlineFactKind.code,
+          FlarkInlineFactKind.strong,
+          FlarkInlineFactKind.replacement,
+        ]),
+      );
+      expect(
+        row.inlineFacts!.any(
+          (fact) => fact.kind == FlarkInlineFactKind.tableCell,
+        ),
+        isFalse,
+      );
+    },
+    skip: libraryPath == null,
+  );
 }

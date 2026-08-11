@@ -451,7 +451,9 @@ final class FlarkEditorController extends ChangeNotifier {
         : blockQuote != null
         ? _projectedBlockQuotePrefix(blockQuote)
         : '';
-    final runs = rowCertified && row.inlineFacts != null
+    final runs = rowCertified && row.table != null && row.inlineFacts != null
+        ? _projectTableRuns(row.table!, row.inlineFacts!)
+        : rowCertified && row.inlineFacts != null
         ? _projectInlineRuns(range, row.inlineFacts!)
         : [_exactSurfaceRun(range)];
     return FlarkSurfaceRow(
@@ -665,6 +667,56 @@ final class FlarkEditorController extends ChangeNotifier {
     return List.unmodifiable(runs);
   }
 
+  List<FlarkSurfaceTextRun> _projectTableRuns(
+    FlarkTablePresentation table,
+    List<FlarkInlineFact> facts,
+  ) {
+    final runs = <FlarkSurfaceTextRun>[];
+    for (var rowIndex = 0; rowIndex < table.rows.length; rowIndex++) {
+      final cells = table.rows[rowIndex];
+      for (var column = 0; column < cells.length; column++) {
+        final cell = cells[column];
+        final content = _mapViewportRange(cell.contentUtf16);
+        final cellFacts = facts
+            .where(
+              (fact) =>
+                  fact.sourceUtf16.start >= cell.contentUtf16.start &&
+                  fact.sourceUtf16.end <= cell.contentUtf16.end,
+            )
+            .toList(growable: false);
+        runs.addAll(_projectInlineRuns(content, cellFacts));
+        final lastColumn = column + 1 == cells.length;
+        final lastRow = rowIndex + 1 == table.rows.length;
+        if (!lastColumn) {
+          final next = _mapViewportRange(cells[column + 1].contentUtf16);
+          runs.add(
+            FlarkSurfaceTextRun(
+              text: ' │ ',
+              sourceUtf16Start: content.end,
+              sourceUtf16End: next.start,
+              sourceExact: false,
+              styles: const {},
+            ),
+          );
+        } else if (!lastRow) {
+          final next = _mapViewportRange(
+            table.rows[rowIndex + 1].first.contentUtf16,
+          );
+          runs.add(
+            FlarkSurfaceTextRun(
+              text: '\n',
+              sourceUtf16Start: content.end,
+              sourceUtf16End: next.start,
+              sourceExact: false,
+              styles: const {},
+            ),
+          );
+        }
+      }
+    }
+    return List.unmodifiable(runs);
+  }
+
   static FlarkSurfaceInlineStyle? _surfaceStyleFor(FlarkInlineFactKind kind) =>
       switch (kind) {
         FlarkInlineFactKind.emphasis => FlarkSurfaceInlineStyle.emphasis,
@@ -681,6 +733,7 @@ final class FlarkEditorController extends ChangeNotifier {
         FlarkInlineFactKind.replacement ||
         FlarkInlineFactKind.directImage ||
         FlarkInlineFactKind.referenceImage => null,
+        FlarkInlineFactKind.tableCell => null,
       };
 
   void activateRow(FlarkViewportRow row, int globalUtf16Offset) {
