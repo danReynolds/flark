@@ -8,85 +8,87 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final libraryPath = Platform.environment['FLARK_V4_LIBRARY_PATH'];
 
-  testWidgets('a giant physical line lays out as bounded fragments', (
-    tester,
-  ) async {
-    final giant = List.filled(8 * 1024, 'p').join();
-    final controller = (await tester.runAsync(
-      () => FlarkEditorController.open(
-        '$giant\n\nAfter paragraph.\n',
-        libraryPath: libraryPath!,
-      ),
-    ))!;
-    await tester.runAsync(controller.continueParsing);
-
-    await tester.pumpWidget(
-      Directionality(
-        textDirection: TextDirection.ltr,
-        child: SizedBox(
-          width: 640,
-          height: 3000,
-          child: FlarkEditor(controller: controller),
+  testWidgets(
+    'a giant physical line lays out as bounded fragments',
+    (tester) async {
+      final giant = List.filled(8 * 1024, 'p').join();
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(
+          '$giant\n\nAfter paragraph.\n',
+          libraryPath: libraryPath!,
         ),
-      ),
-    );
-    await tester.pump();
+      ))!;
+      await tester.runAsync(controller.continueParsing);
 
-    final surface = tester.renderObject<RenderFlarkSurface>(
-      find.byType(FlarkRenderSurfaceWidget),
-    );
-    expect(surface.debugMaxFragmentUnits, lessThanOrEqualTo(2048));
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 640,
+            height: 3000,
+            child: FlarkEditor(controller: controller),
+          ),
+        ),
+      );
+      await tester.pump();
 
-    // The active row is separately paint-capped by the controller; the
-    // fragmentation property under test needs the giant row passive.
-    controller.activateRow(
-      controller.rows.last,
-      controller.rows.last.sourceUtf16.start,
-    );
-    await tester.pump();
+      final surface = tester.renderObject<RenderFlarkSurface>(
+        find.byType(FlarkRenderSurfaceWidget),
+      );
+      expect(surface.debugMaxFragmentUnits, lessThanOrEqualTo(2048));
 
-    // Every painter stays inside the fragment budget, and the giant row is
-    // fully accounted for: whatever is not laid out is explicitly skipped.
-    expect(surface.debugMaxFragmentUnits, lessThanOrEqualTo(2048));
-    final rowUnits = controller.surfaceRow(controller.rows.first).text.length;
-    expect(rowUnits, 8192);
-    expect(
-      surface.debugPaintedFragmentCount + surface.debugSkippedFragmentCount,
-      greaterThanOrEqualTo((rowUnits / 2048).ceil()),
-    );
+      // The active row is separately paint-capped by the controller; the
+      // fragmentation property under test needs the giant row passive.
+      controller.activateRow(
+        controller.rows.last,
+        controller.rows.last.sourceUtf16.start,
+      );
+      await tester.pump();
 
-    // The layout budget applies within a row, not only between rows: a
-    // giant line does not lay out its whole length for one visible frame.
-    expect(surface.debugSkippedFragmentCount, greaterThan(0));
-    final shortViewportFragments = surface.debugPaintedFragmentCount;
+      // Every painter stays inside the fragment budget, and the giant row is
+      // fully accounted for: whatever is not laid out is explicitly skipped.
+      expect(surface.debugMaxFragmentUnits, lessThanOrEqualTo(2048));
+      final rowUnits = controller.surfaceRow(controller.rows.first).text.length;
+      expect(rowUnits, 8192);
+      expect(
+        surface.debugPaintedFragmentCount + surface.debugSkippedFragmentCount,
+        greaterThanOrEqualTo((rowUnits / 2048).ceil()),
+      );
 
-    // A taller viewport materializes more of the same row. The test surface
-    // itself must grow: a SizedBox alone is clamped by the 800x600 default.
-    await tester.binding.setSurfaceSize(const Size(640, 12000));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pump();
-    expect(
-      surface.debugPaintedFragmentCount,
-      greaterThan(shortViewportFragments),
-    );
-    expect(surface.debugMaxFragmentUnits, lessThanOrEqualTo(2048));
+      // The layout budget applies within a row, not only between rows: a
+      // giant line does not lay out its whole length for one visible frame.
+      expect(surface.debugSkippedFragmentCount, greaterThan(0));
+      final shortViewportFragments = surface.debugPaintedFragmentCount;
 
-    // Offsets stay monotonic and exact across fragment boundaries.
-    final shallow = surface.positionForOffset(const Offset(10, 40));
-    final deep = surface.positionForOffset(const Offset(10, 4000));
-    expect(shallow, isNotNull);
-    expect(deep, isNotNull);
-    expect(deep!.globalUtf16Offset, greaterThan(shallow!.globalUtf16Offset));
+      // A taller viewport materializes more of the same row. The test surface
+      // itself must grow: a SizedBox alone is clamped by the 800x600 default.
+      await tester.binding.setSurfaceSize(const Size(640, 12000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pump();
+      expect(
+        surface.debugPaintedFragmentCount,
+        greaterThan(shortViewportFragments),
+      );
+      expect(surface.debugMaxFragmentUnits, lessThanOrEqualTo(2048));
 
-    // Activating deep inside the giant line places the caret without fault.
-    controller.activateRow(controller.rows.first, 5000);
-    await tester.pump();
-    expect(controller.globalCaretOffset, 5000);
-    expect(controller.lastError, isNull);
+      // Offsets stay monotonic and exact across fragment boundaries.
+      final shallow = surface.positionForOffset(const Offset(10, 40));
+      final deep = surface.positionForOffset(const Offset(10, 4000));
+      expect(shallow, isNotNull);
+      expect(deep, isNotNull);
+      expect(deep!.globalUtf16Offset, greaterThan(shallow!.globalUtf16Offset));
 
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.runAsync(controller.close);
-  }, skip: libraryPath == null);
+      // Activating deep inside the giant line places the caret without fault.
+      controller.activateRow(controller.rows.first, 5000);
+      await tester.pump();
+      expect(controller.globalCaretOffset, 5000);
+      expect(controller.lastError, isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
 
   testWidgets('fragment cuts land on grapheme-cluster boundaries', (
     tester,
@@ -138,46 +140,80 @@ void main() {
     await tester.runAsync(controller.close);
   }, skip: libraryPath == null);
 
-  testWidgets('below-fold rows are estimated, not laid out, until scrolled', (
-    tester,
-  ) async {
-    final source = List<String>.generate(
-      600,
-      (index) => 'Paragraph $index.\n\n',
-    ).join();
-    final controller = (await tester.runAsync(
-      () => FlarkEditorController.open(source, libraryPath: libraryPath!),
-    ))!;
-    await tester.runAsync(controller.continueParsing);
-
-    await tester.pumpWidget(
-      Directionality(
-        textDirection: TextDirection.ltr,
-        child: SizedBox(
-          width: 640,
-          height: 240,
+  testWidgets(
+    'one oversized grapheme remains one bounded visible fragment',
+    (tester) async {
+      final cluster = 'a${List<String>.filled(3000, '\u0301').join()}';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(
+          'Start.\n\n$cluster\n',
+          libraryPath: libraryPath!,
+        ),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      await tester.binding.setSurfaceSize(const Size(640, 12000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
           child: FlarkEditor(controller: controller),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    final surface = tester.renderObject<RenderFlarkSurface>(
-      find.byType(FlarkRenderSurfaceWidget),
-    );
-    expect(surface.debugSkippedRowCount, greaterThan(0));
-    expect(
-      surface.debugLaidOutRowCount + surface.debugSkippedRowCount,
-      controller.rows.length,
-    );
-    final laidOutBefore = surface.debugLaidOutRowCount;
+      final surface = tester.renderObject<RenderFlarkSurface>(
+        find.byType(FlarkRenderSurfaceWidget),
+      );
+      expect(surface.debugMaxFragmentUnits, cluster.length);
 
-    // Scrolling toward the estimated region materializes it.
-    surface.scrollBy(600);
-    await tester.pump();
-    expect(surface.debugLaidOutRowCount, greaterThan(laidOutBefore));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
 
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.runAsync(controller.close);
-  }, skip: libraryPath == null);
+  testWidgets(
+    'below-fold rows are estimated, not laid out, until scrolled',
+    (tester) async {
+      final source = List<String>.generate(
+        600,
+        (index) => 'Paragraph $index.\n\n',
+      ).join();
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 640,
+            height: 240,
+            child: FlarkEditor(controller: controller),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final surface = tester.renderObject<RenderFlarkSurface>(
+        find.byType(FlarkRenderSurfaceWidget),
+      );
+      expect(surface.debugSkippedRowCount, greaterThan(0));
+      expect(
+        surface.debugLaidOutRowCount + surface.debugSkippedRowCount,
+        controller.rows.length,
+      );
+      final laidOutBefore = surface.debugLaidOutRowCount;
+
+      // Scrolling toward the estimated region materializes it.
+      surface.scrollBy(600);
+      await tester.pump();
+      expect(surface.debugLaidOutRowCount, greaterThan(laidOutBefore));
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
 }

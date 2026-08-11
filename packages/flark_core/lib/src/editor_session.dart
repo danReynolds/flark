@@ -44,6 +44,14 @@ abstract final class FlarkCoreGraphemePolicy {
     final cluster = CharacterRange.at(text, offset);
     return cluster.isEmpty ? offset : cluster.stringBeforeLength;
   }
+
+  /// The smallest extended-grapheme-cluster boundary at or after [offset].
+  static int clusterBoundaryAtOrAfter(String text, int offset) {
+    if (offset <= 0) return 0;
+    if (offset >= text.length) return text.length;
+    final cluster = CharacterRange.at(text, offset);
+    return cluster.isEmpty ? offset : text.length - cluster.stringAfterLength;
+  }
 }
 
 /// A canonical selection observation: plain UTF-16 offsets valid at
@@ -191,6 +199,12 @@ final class FlarkCoreEditorSession {
       typing: typing,
       compositionGroup: compositionGroup,
     );
+    await setSelectionUtf16(
+      afterSelection.base,
+      afterSelection.extent,
+      affinity: afterSelection.affinity,
+      adapterState: afterSelection.adapterState,
+    );
     return receipt;
   }
 
@@ -250,13 +264,16 @@ final class FlarkCoreEditorSession {
     final start = base <= extent ? base : extent;
     final end = base <= extent ? extent : base;
     final collapsed = start == end;
-    final nextStart = await document.createAnchorUtf16(
-      start,
-      downstream: true,
-    );
-    final nextEnd = collapsed
-        ? nextStart
-        : await document.createAnchorUtf16(end, downstream: false);
+    final nextStart = await document.createAnchorUtf16(start, downstream: true);
+    late final FlarkCoreAnchor nextEnd;
+    try {
+      nextEnd = collapsed
+          ? nextStart
+          : await document.createAnchorUtf16(end, downstream: false);
+    } catch (_) {
+      await document.releaseAnchor(nextStart);
+      rethrow;
+    }
     await _releaseSelectionAnchors();
     _selectionStart = nextStart;
     _selectionEnd = nextEnd;
@@ -345,9 +362,7 @@ final class FlarkCoreEditorSession {
   int? _compositionGroupForMutation(bool composingActive) {
     final wasActive = _activeCompositionGroup != 0;
     if (!wasActive && !composingActive) return null;
-    final group = wasActive
-        ? _activeCompositionGroup
-        : ++_nextCompositionGroup;
+    final group = wasActive ? _activeCompositionGroup : ++_nextCompositionGroup;
     _activeCompositionGroup = composingActive ? group : 0;
     return group;
   }
@@ -428,15 +443,24 @@ final class FlarkCoreEditorSession {
       await _releaseUnits(stale);
       // Source is unchanged (or rolled back exactly), so the selection to
       // restore is the unit's current-state side, not its replayed side.
-      return FlarkCoreHistoryDropped(
-        undo ? unit.afterSelection : unit.beforeSelection,
+      final restore = undo ? unit.afterSelection : unit.beforeSelection;
+      await setSelectionUtf16(
+        restore.base,
+        restore.extent,
+        affinity: restore.affinity,
+        adapterState: restore.adapterState,
       );
+      return FlarkCoreHistoryDropped(restore);
     }
     destination.add(replayed.unit);
-    return FlarkCoreHistoryReplayed(
-      undo ? unit.beforeSelection : unit.afterSelection,
-      replayed.receipt,
+    final restore = undo ? unit.beforeSelection : unit.afterSelection;
+    await setSelectionUtf16(
+      restore.base,
+      restore.extent,
+      affinity: restore.affinity,
+      adapterState: restore.adapterState,
     );
+    return FlarkCoreHistoryReplayed(restore, replayed.receipt);
   }
 
   void _breakActiveGroups() {

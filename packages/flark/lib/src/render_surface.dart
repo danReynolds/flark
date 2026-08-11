@@ -400,7 +400,10 @@ final class RenderFlarkSurface extends RenderBox {
         _skippedFragmentEstimate += skippedFragments * _estimatedRowHeight;
         break;
       }
-      var fragmentEnd = math.min(text.length, fragmentStart + _fragmentUtf16Budget);
+      var fragmentEnd = math.min(
+        text.length,
+        fragmentStart + _fragmentUtf16Budget,
+      );
       if (fragmentEnd < text.length) {
         // Cut on an extended-grapheme-cluster boundary, not merely between
         // surrogates: splitting a ZWJ sequence or a combining mark would
@@ -409,9 +412,16 @@ final class RenderFlarkSurface extends RenderBox {
           text,
           fragmentEnd,
         );
-        // A single cluster longer than the budget still has to be cut
-        // somewhere; keep forward progress rather than looping.
-        if (snapped > fragmentStart) fragmentEnd = snapped;
+        if (snapped > fragmentStart) {
+          fragmentEnd = snapped;
+        } else {
+          // One cluster can exceed the ordinary fragment target. Keep it
+          // intact; the visible-source cap remains the hard outer bound.
+          fragmentEnd = FlarkCoreGraphemePolicy.clusterBoundaryAtOrAfter(
+            text,
+            fragmentEnd,
+          );
+        }
       }
       final painter = _layoutText(
         presentation,

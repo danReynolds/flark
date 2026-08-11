@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# One local gate for the direct v4 path (macOS, per the Mac-first plan).
-# Builds the flark-abi library and runs every focused v4 suite with
+# Fast local gate for the active direct v4 path (macOS, per the Mac-first plan).
+# Builds the flark-abi library and runs the active implementation and contract
+# suites with
 # FLARK_V4_LIBRARY_PATH exported: without it the Dart and Flutter suites
 # silently skip, so a run without this script can look green while executing
-# nothing. No pipeline here may mask an exit code.
+# nothing. The immutable 2026-08-08 M0 receipt drift audit and full-scale
+# payload-budget stress are historical/certification lanes, not everyday gates.
+# No pipeline here may mask an exit code.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,9 +26,12 @@ fi
 
 cargo test --manifest-path "$BRIDGE/Cargo.toml" -p flark-runtime -p flark-abi
 
+(cd "$ROOT" && dart test test/v4/contracts --exclude-tags historical-receipt)
 (cd "$ROOT/packages/flark_core" && dart analyze)
 (cd "$ROOT/packages/flark_core" && FLARK_V4_LIBRARY_PATH="$LIBRARY" dart test)
 (cd "$ROOT/packages/flark" && FLARK_V4_LIBRARY_PATH="$LIBRARY" flutter analyze)
 (cd "$ROOT/packages/flark" && FLARK_V4_LIBRARY_PATH="$LIBRARY" flutter test)
+(cd "$ROOT/packages/flark_flutter" && flutter test test/v4/contracts)
 
-echo "verify_v4: rust + dart + flutter v4 suites all executed and passed."
+echo "verify_v4: active rust + dart + flutter v4 suites executed and passed."
+echo "verify_v4: run scripts/verify_v4_certification_stress.sh for slow stress lanes."

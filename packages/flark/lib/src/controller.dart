@@ -326,9 +326,16 @@ final class FlarkEditorController extends ChangeNotifier {
         return FlarkInputResyncReason.rangeOutOfWindow;
       }
       final selection = delta.selection;
-      if (selection.isValid &&
-          (selection.start > value.text.length ||
-              selection.end > value.text.length)) {
+      if (!selection.isValid ||
+          selection.start < 0 ||
+          selection.end > value.text.length) {
+        return FlarkInputResyncReason.rangeOutOfWindow;
+      }
+      final composing = delta.composing;
+      if (composing != TextRange.empty &&
+          (!composing.isValid ||
+              composing.start < 0 ||
+              composing.end > value.text.length)) {
         return FlarkInputResyncReason.rangeOutOfWindow;
       }
       runningHash = flarkWindowTextSha256(value.text);
@@ -351,6 +358,11 @@ final class FlarkEditorController extends ChangeNotifier {
     );
     final controller = FlarkEditorController._(document);
     await controller._refreshViewport(restoreInputWindow: true);
+    await controller._session.setSelectionUtf16(
+      controller._globalSelectionBase,
+      controller._globalSelectionExtent,
+      adapterState: controller._selectionSnapshot(),
+    );
     return controller;
   }
 
@@ -683,6 +695,7 @@ final class FlarkEditorController extends ChangeNotifier {
       caret: globalUtf16Offset,
       ordinal: row.ordinal,
     );
+    unawaited(_installCanonicalSelection(_selectionSnapshot()));
   }
 
   void activateNeutralLine({
@@ -700,6 +713,7 @@ final class FlarkEditorController extends ChangeNotifier {
       caret: globalUtf16Offset,
       ordinal: -ordinal - 1,
     );
+    unawaited(_installCanonicalSelection(_selectionSnapshot()));
   }
 
   void extendSelectionTo(int globalUtf16Offset, {int? activeOrdinal}) {
@@ -722,6 +736,7 @@ final class FlarkEditorController extends ChangeNotifier {
         composing: TextRange.empty,
       );
       _globalSelectionExtent = globalUtf16Offset;
+      unawaited(_installCanonicalSelection(_selectionSnapshot()));
       notifyListeners();
       return;
     }
@@ -729,13 +744,24 @@ final class FlarkEditorController extends ChangeNotifier {
     final visibleEnd = _visibleUtf16Start + _visibleSource.length;
     final start = math.min(_globalSelectionBase, globalUtf16Offset);
     final end = math.max(_globalSelectionBase, globalUtf16Offset);
-    if (end - start > _maximumInputCodeUnits) {
-      unawaited(
-        selectOversizedRangeUtf16(_globalSelectionBase, globalUtf16Offset),
+    if (end - start > _maximumInputCodeUnits ||
+        start < _visibleUtf16Start ||
+        end > visibleEnd) {
+      final exactBase = _globalSelectionBase;
+      _globalSelectionExtent = globalUtf16Offset;
+      _activeOrdinal = activeOrdinal ?? _surfaceOrdinalAt(globalUtf16Offset);
+      _crossRowSelection = true;
+      _oversizedSelection = true;
+      _restoreCollapsedInputWindow(
+        globalUtf16Offset,
+        preferredOrdinal: _activeOrdinal,
       );
-      return;
-    }
-    if (start < _visibleUtf16Start || end > visibleEnd) {
+      _globalSelectionBase = exactBase;
+      _globalSelectionExtent = globalUtf16Offset;
+      _crossRowSelection = true;
+      _oversizedSelection = true;
+      notifyListeners();
+      unawaited(selectOversizedRangeUtf16(exactBase, globalUtf16Offset));
       return;
     }
     final selection = TextSelection(
@@ -752,6 +778,7 @@ final class FlarkEditorController extends ChangeNotifier {
     _activeOrdinal = activeOrdinal ?? _surfaceOrdinalAt(globalUtf16Offset);
     _crossRowSelection = !selection.isCollapsed;
     _globalSelectionExtent = globalUtf16Offset;
+    unawaited(_installCanonicalSelection(_selectionSnapshot()));
     notifyListeners();
   }
 
@@ -767,33 +794,52 @@ final class FlarkEditorController extends ChangeNotifier {
     }
     _platformMutation = true;
     try {
+      var finalValue = _inputValue;
+      var mutatingDeltas = 0;
+      var typingInput = true;
       for (final delta in deltas) {
-        final mutation = _mutationFor(delta);
-        if (mutation == null) {
-          _breakTypingHistoryGroup();
-          _inputValue = delta.apply(_inputValue);
-          _trackCompositionWithoutMutation(_inputValue.composing);
-          _updateGlobalSelection();
-          continue;
+        finalValue = delta.apply(finalValue);
+        if (_mutationFor(delta) != null) {
+          mutatingDeltas += 1;
+          typingInput = typingInput && delta is TextEditingDeltaInsertion;
         }
-        if (delta.oldText != _inputValue.text ||
-            !_acceptMutation(
-              mutation,
-              selection: delta.selection,
-              composing: delta.composing,
-              typingInput: delta is TextEditingDeltaInsertion,
-              fullValue:
-                  _replacementLength(
-                        _inputValue.text,
-                        mutation.start,
-                        mutation.end,
-                        mutation.replacement,
-                      ) <=
-                      _maximumInputCodeUnits
-                  ? delta.apply(_inputValue)
-                  : null,
-            )) {
-          break;
+      }
+      if (mutatingDeltas == 0) {
+        _breakTypingHistoryGroup();
+        _inputValue = finalValue;
+        _trackCompositionWithoutMutation(finalValue.composing);
+        _updateGlobalSelection();
+        unawaited(_installCanonicalSelection(_selectionSnapshot()));
+      } else {
+        final before = _inputValue.text;
+        final after = finalValue.text;
+        var prefix = 0;
+        while (prefix < before.length &&
+            prefix < after.length &&
+            before.codeUnitAt(prefix) == after.codeUnitAt(prefix)) {
+          prefix += 1;
+        }
+        var oldSuffix = before.length;
+        var newSuffix = after.length;
+        while (oldSuffix > prefix &&
+            newSuffix > prefix &&
+            before.codeUnitAt(oldSuffix - 1) ==
+                after.codeUnitAt(newSuffix - 1)) {
+          oldSuffix -= 1;
+          newSuffix -= 1;
+        }
+        final accepted = _acceptMutation(
+          _TextMutation(prefix, oldSuffix, after.substring(prefix, newSuffix)),
+          selection: finalValue.selection,
+          composing: finalValue.composing,
+          typingInput: typingInput,
+          fullValue: finalValue.text.length <= _maximumInputCodeUnits
+              ? finalValue
+              : null,
+        );
+        if (!accepted) {
+          _resynchronize(FlarkInputResyncReason.rangeOutOfWindow);
+          return;
         }
       }
       notifyListeners();
@@ -821,6 +867,7 @@ final class FlarkEditorController extends ChangeNotifier {
       _inputValue = value;
       _trackCompositionWithoutMutation(value.composing);
       _updateGlobalSelection();
+      unawaited(_installCanonicalSelection(_selectionSnapshot()));
       notifyListeners();
       return;
     }
@@ -854,7 +901,20 @@ final class FlarkEditorController extends ChangeNotifier {
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
     if (_oversizedSelection) {
-      unawaited(_replaceOversizedSelection(replacement));
+      _pendingEdits += 1;
+      _status = FlarkEditorStatus.editing;
+      notifyListeners();
+      unawaited(
+        _replaceOversizedSelection(replacement)
+            .catchError((Object error, StackTrace stackTrace) {
+              _lastError = error;
+              _status = FlarkEditorStatus.faulted;
+            })
+            .whenComplete(() {
+              _pendingEdits = math.max(0, _pendingEdits - 1);
+              notifyListeners();
+            }),
+      );
       return;
     }
     final selection = _inputValue.selection;
@@ -879,12 +939,13 @@ final class FlarkEditorController extends ChangeNotifier {
     final length = sourceUtf16Length;
     final clampedBase = base.clamp(0, length);
     final clampedExtent = extent.clamp(0, length);
-    final generation = await _session.setSelectionUtf16(
-      clampedBase,
-      clampedExtent,
+    final exactSelection = _EditorSelectionSnapshot(
+      TextSelection(baseOffset: clampedBase, extentOffset: clampedExtent),
+      _activeOrdinal,
     );
+    final generation = await _installCanonicalSelection(exactSelection);
     _oversizedSelection = true;
-    _crossRowSelection = false;
+    _crossRowSelection = clampedBase != clampedExtent;
     await _restoreHistorySelection(
       _EditorSelectionSnapshot(
         TextSelection.collapsed(offset: clampedExtent),
@@ -893,23 +954,39 @@ final class FlarkEditorController extends ChangeNotifier {
     );
     _globalSelectionBase = clampedBase;
     _globalSelectionExtent = clampedExtent;
+    _crossRowSelection = clampedBase != clampedExtent;
+    _oversizedSelection = true;
     notifyListeners();
     return generation;
   }
 
-  /// A user activation abandons an installed oversized selection; the
-  /// canonical anchors release asynchronously.
+  /// A user activation abandons the platform surrogate. The immediately
+  /// queued ordinary selection replaces the canonical anchors in order.
   void _abandonOversizedSelection() {
     if (!_oversizedSelection) return;
     _oversizedSelection = false;
-    unawaited(_session.clearSelection());
+  }
+
+  /// Resolves the exact core-owned selection after every queued edit or host
+  /// selection replacement ahead of it has completed.
+  Future<FlarkCoreSelectionSnapshot?> resolveCanonicalSelection() =>
+      _editTail.then((_) => _session.resolveSelection());
+
+  /// Reads the complete selected source even when the platform input window
+  /// carries only an active-extent surrogate.
+  Future<String?> readSelectedText() async {
+    if (!_crossRowSelection && !_oversizedSelection) return selectedText;
+    final selection = await resolveCanonicalSelection();
+    if (selection == null || selection.isCollapsed) return null;
+    final start = math.min(selection.base, selection.extent);
+    final end = math.max(selection.base, selection.extent);
+    return _document.readSourceUtf16Range(start, end);
   }
 
   Future<void> _replaceOversizedSelection(String replacement) async {
-    final resolved = await _session.resolveSelection();
+    final resolved = await resolveCanonicalSelection();
     _oversizedSelection = false;
     if (resolved == null) return;
-    await _session.clearSelection();
     final start = math.min(resolved.base, resolved.extent);
     final end = math.max(resolved.base, resolved.extent);
     final caret = start + replacement.length;
@@ -1129,18 +1206,45 @@ final class FlarkEditorController extends ChangeNotifier {
       FlarkCoreSelectionSnapshot(
         base: snapshot.selection.baseOffset,
         extent: snapshot.selection.extentOffset,
+        affinity: snapshot.selection.affinity == TextAffinity.upstream
+            ? FlarkCoreAffinity.upstream
+            : FlarkCoreAffinity.downstream,
         adapterState: snapshot,
       );
+
+  Future<int> _installCanonicalSelection(_EditorSelectionSnapshot snapshot) {
+    final core = _coreSnapshot(snapshot);
+    final operation = _editTail.then(
+      (_) => _session.setSelectionUtf16(
+        core.base,
+        core.extent,
+        affinity: core.affinity,
+        adapterState: snapshot,
+      ),
+    );
+    _editTail = operation
+        .then<void>((_) {})
+        .catchError((Object _, StackTrace _) {});
+    unawaited(
+      operation
+          .then((_) {
+            if (!_closed) notifyListeners();
+          })
+          .catchError((Object error, StackTrace stackTrace) {
+            _lastError = error;
+            _status = FlarkEditorStatus.faulted;
+            notifyListeners();
+          }),
+    );
+    return operation;
+  }
 
   _EditorSelectionSnapshot _adapterSnapshot(
     FlarkCoreSelectionSnapshot snapshot,
   ) => switch (snapshot.adapterState) {
     final _EditorSelectionSnapshot adapter => adapter,
     _ => _EditorSelectionSnapshot(
-      TextSelection(
-        baseOffset: snapshot.base,
-        extentOffset: snapshot.extent,
-      ),
+      TextSelection(baseOffset: snapshot.base, extentOffset: snapshot.extent),
       null,
     ),
   };
@@ -1206,6 +1310,7 @@ final class FlarkEditorController extends ChangeNotifier {
     _parseTimer?.cancel();
     _parseTimer = null;
     await _editTail;
+    await _session.dispose();
     await _document.dispose();
     _status = FlarkEditorStatus.disposed;
   }

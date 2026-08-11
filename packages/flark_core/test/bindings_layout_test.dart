@@ -5,6 +5,8 @@ import 'package:test/test.dart';
 
 void main() {
   test('Dart FFI records match the frozen v4 C layouts', () {
+    expect(sizeOf<FlarkV4AbiInfo>(), 64);
+    expect(sizeOf<FlarkV4NegotiateRequest>(), 16);
     expect(sizeOf<FlarkV4Outcome>(), 112);
     expect(sizeOf<FlarkV4ResultPageHeader>(), 96);
     expect(sizeOf<FlarkV4ViewportRowRecord>(), 128);

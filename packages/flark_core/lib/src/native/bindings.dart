@@ -1,5 +1,54 @@
 import 'dart:ffi';
 
+final class FlarkV4AbiInfo extends Struct {
+  @Uint32()
+  external int structSize;
+
+  @Uint16()
+  external int abiMajor;
+
+  @Uint16()
+  external int abiMinor;
+
+  @Uint64()
+  external int capabilityBits;
+
+  @Uint32()
+  external int maxSmallEditBytes;
+
+  @Uint32()
+  external int maxBulkChunkBytes;
+
+  @Uint32()
+  external int maxSourceChunkBytes;
+
+  @Uint32()
+  external int maxResultBytes;
+
+  @Uint32()
+  external int maxQueryItems;
+
+  @Uint32()
+  external int maxTransactionEdits;
+
+  @Array(3)
+  external Array<Uint64> reserved;
+}
+
+final class FlarkV4NegotiateRequest extends Struct {
+  @Uint32()
+  external int structSize;
+
+  @Uint16()
+  external int requestedMajor;
+
+  @Uint16()
+  external int requestedMinor;
+
+  @Uint64()
+  external int requiredCapabilityBits;
+}
+
 final class FlarkV4SessionConfig extends Struct {
   @Uint32()
   external int structSize;
@@ -818,9 +867,25 @@ typedef SessionInspectDart =
       Pointer<FlarkV4Outcome>,
     );
 
+typedef _NegotiateNative =
+    Uint32 Function(
+      Pointer<FlarkV4NegotiateRequest>,
+      Pointer<FlarkV4AbiInfo>,
+      Pointer<FlarkV4Outcome>,
+    );
+typedef NegotiateDart =
+    int Function(
+      Pointer<FlarkV4NegotiateRequest>,
+      Pointer<FlarkV4AbiInfo>,
+      Pointer<FlarkV4Outcome>,
+    );
+
 final class FlarkV4Bindings {
   FlarkV4Bindings(DynamicLibrary library)
-    : createBegin = library.lookupFunction<_CreateBeginNative, CreateBeginDart>(
+    : negotiate = library.lookupFunction<_NegotiateNative, NegotiateDart>(
+        'flark_v4_negotiate',
+      ),
+      createBegin = library.lookupFunction<_CreateBeginNative, CreateBeginDart>(
         'flark_v4_create_begin',
       ),
       createAppend = library
@@ -911,6 +976,7 @@ final class FlarkV4Bindings {
             'flark_v4_session_inspect',
           );
 
+  final NegotiateDart negotiate;
   final CreateBeginDart createBegin;
   final CreateAppendDart createAppend;
   final CreateCommitDart createCommit;

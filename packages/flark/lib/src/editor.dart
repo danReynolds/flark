@@ -236,7 +236,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
   }
 
   Future<void> _copySelection() async {
-    final text = widget.controller.selectedText;
+    final text = await widget.controller.readSelectedText();
     if (text == null) return;
     await Clipboard.setData(ClipboardData(text: text));
   }
@@ -244,11 +244,13 @@ final class _FlarkEditorState extends State<FlarkEditor>
   Future<void> _cutSelection() async {
     final controller = widget.controller;
     final value = controller.inputValue;
-    final text = controller.selectedText;
+    final text = await controller.readSelectedText();
     if (text == null) return;
+    final selectionGeneration = controller.canonicalSelectionGeneration;
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted || !identical(controller, widget.controller)) return;
     if (controller.inputValue != value) return;
+    if (controller.canonicalSelectionGeneration != selectionGeneration) return;
     controller.replaceSelection('');
   }
 

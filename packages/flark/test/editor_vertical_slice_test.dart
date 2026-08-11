@@ -53,14 +53,7 @@ void main() {
         reason: 'local input state must be available inside one 16 ms frame',
       );
       expect(controller.pendingEdits, 1);
-      await tester.runAsync(() async {
-        final deadline = DateTime.now().add(const Duration(seconds: 5));
-        while (controller.pendingEdits != 0 &&
-            DateTime.now().isBefore(deadline)) {
-          await Future<void>.delayed(const Duration(milliseconds: 5));
-        }
-      });
-      await tester.pump();
+      await _pumpUntilTransactions(tester, controller);
       expect(controller.revision, 2);
       expect(controller.pendingEdits, 0);
       await tester.pumpWidget(const SizedBox.shrink());
@@ -175,38 +168,36 @@ void main() {
       );
       final dynamic state = tester.state(find.byType(FlarkEditor));
 
-      await tester.runAsync(() async {
-        state.performSelector('copy:');
-        await _waitForClipboard(() => clipboardText == 'alpha');
-      });
+      state.performSelector('copy:');
+      await _pumpUntil(tester, () => clipboardText == 'alpha');
       expect(clipboardText, 'alpha');
 
-      await tester.runAsync(() async {
-        state.performSelector('cut:');
-        await _waitForSource(controller, ' beta\n');
-        await _waitForTransactions(controller);
-      });
+      state.performSelector('cut:');
+      await _pumpUntil(tester, () => controller.visibleSource == ' beta\n');
+      await _pumpUntilTransactions(tester, controller);
       expect(clipboardText, 'alpha');
       expect(controller.visibleSource, ' beta\n');
 
       clipboardText = 'pasted';
-      await tester.runAsync(() async {
-        state.performSelector('paste:');
-        await _waitForSource(controller, 'pasted beta\n');
-        await _waitForTransactions(controller);
-      });
+      state.performSelector('paste:');
+      await _pumpUntil(
+        tester,
+        () => controller.visibleSource == 'pasted beta\n',
+      );
+      await _pumpUntilTransactions(tester, controller);
       expect(controller.visibleSource, 'pasted beta\n');
       expect(controller.lastError, isNull);
+      await tester.runAsync(controller.close);
     },
     skip: libraryPath == null,
   );
 }
 
-Future<void> _waitForTransactions(FlarkEditorController controller) async {
-  final deadline = DateTime.now().add(const Duration(seconds: 5));
-  while (controller.pendingEdits != 0 && DateTime.now().isBefore(deadline)) {
-    await Future<void>.delayed(const Duration(milliseconds: 2));
-  }
+Future<void> _pumpUntilTransactions(
+  WidgetTester tester,
+  FlarkEditorController controller,
+) async {
+  await _pumpUntil(tester, () => controller.pendingEdits == 0);
   expect(
     controller.pendingEdits,
     0,
@@ -214,22 +205,16 @@ Future<void> _waitForTransactions(FlarkEditorController controller) async {
   );
 }
 
-Future<void> _waitForSource(
-  FlarkEditorController controller,
-  String expected,
-) async {
-  final deadline = DateTime.now().add(const Duration(seconds: 5));
-  while (controller.visibleSource != expected &&
-      DateTime.now().isBefore(deadline)) {
-    await Future<void>.delayed(const Duration(milliseconds: 2));
-  }
-  expect(controller.visibleSource, expected);
-}
-
-Future<void> _waitForClipboard(bool Function() predicate) async {
+Future<void> _pumpUntil(WidgetTester tester, bool Function() predicate) async {
   final deadline = DateTime.now().add(const Duration(seconds: 5));
   while (!predicate() && DateTime.now().isBefore(deadline)) {
-    await Future<void>.delayed(const Duration(milliseconds: 2));
+    // Native/isolate replies arrive in real time; controller continuations
+    // and widget work run on the test binding's fake frame clock. Advance
+    // both just as the live event loop would between frames.
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 1)),
+    );
+    await tester.pump(const Duration(milliseconds: 1));
   }
   expect(predicate(), isTrue);
 }

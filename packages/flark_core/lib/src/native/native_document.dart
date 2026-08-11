@@ -86,6 +86,11 @@ const _maximumSmallEditBytes = 4 * 1024;
 const _bulkCommitWorkUnits = 1;
 const _resultPayloadBytes = 64 * 1024;
 const _defaultWorkUnits = 512;
+const _abiMajor = 4;
+const _abiMinor = 6;
+// Every v4.6 capability is used by the safe core boundary, including
+// resumable close and snapshot continuations.
+const _requiredCapabilityBits = 0x7fff;
 
 final class FlarkNativeException implements Exception {
   const FlarkNativeException(this.operation, this.status, [this.detail = 0]);
@@ -196,6 +201,7 @@ final class FlarkNativeDocument {
     }
     final library = DynamicLibrary.open(libraryPath);
     final bindings = FlarkV4Bindings(library);
+    _negotiate(bindings);
     final bytes = utf8.encode(source);
     final ownerToken = _nextOwnerToken++;
     final outcome = calloc<FlarkV4Outcome>();
@@ -235,9 +241,21 @@ final class FlarkNativeDocument {
         sourceByteLength: bytes.length,
         sourceUtf16Length: source.length,
       );
-      document._appendSource(bytes, firstLength);
-      document._commitCreate();
-      return document;
+      try {
+        document._appendSource(bytes, firstLength);
+        document._commitCreate();
+        return document;
+      } catch (_) {
+        // A successful CREATE_BEGIN owns a provisional session and
+        // transaction. Never strand them when append/commit fails.
+        try {
+          document._abortCreate();
+        } catch (_) {
+          // Preserve the initiating failure; the abort path is best-effort
+          // only after the native boundary has already rejected startup.
+        }
+        rethrow;
+      }
     } finally {
       calloc
         ..free(request)
@@ -300,6 +318,27 @@ final class FlarkNativeDocument {
       _revision = outcome.ref.revision;
       _progressToken = outcome.ref.progressToken;
       _ready = status == _ok;
+    } finally {
+      calloc
+        ..free(request)
+        ..free(outcome);
+    }
+  }
+
+  void _abortCreate() {
+    final request = calloc<FlarkV4TransactionRequest>();
+    final outcome = calloc<FlarkV4Outcome>();
+    try {
+      request.ref
+        ..structSize = sizeOf<FlarkV4TransactionRequest>()
+        ..flags = 0
+        ..transaction = _transaction
+        ..expectedRevision = 0
+        ..progressToken = 0;
+      _fillSession(request.ref.session);
+      _fillBudget(request.ref.budget, workUnits: 1);
+      final status = _bindings.createAbort(request, outcome);
+      _requireStatus('create_abort', status, outcome.ref, {_ok});
     } finally {
       calloc
         ..free(request)
@@ -1539,6 +1578,42 @@ final class FlarkNativeDocument {
   ) {
     if (!accepted.contains(status) || outcome.status != status) {
       throw FlarkNativeException(operation, status, outcome.detailCode);
+    }
+  }
+
+  static void _negotiate(FlarkV4Bindings bindings) {
+    final request = calloc<FlarkV4NegotiateRequest>();
+    final info = calloc<FlarkV4AbiInfo>();
+    final outcome = calloc<FlarkV4Outcome>();
+    try {
+      request.ref
+        ..structSize = sizeOf<FlarkV4NegotiateRequest>()
+        ..requestedMajor = _abiMajor
+        ..requestedMinor = _abiMinor
+        ..requiredCapabilityBits = _requiredCapabilityBits;
+      final status = bindings.negotiate(request, info, outcome);
+      _requireStatus('negotiate', status, outcome.ref, {_ok});
+      final value = info.ref;
+      final compatible =
+          value.structSize >= sizeOf<FlarkV4AbiInfo>() &&
+          value.abiMajor == _abiMajor &&
+          value.abiMinor >= _abiMinor &&
+          value.capabilityBits & _requiredCapabilityBits ==
+              _requiredCapabilityBits &&
+          value.maxSmallEditBytes >= _maximumSmallEditBytes &&
+          value.maxBulkChunkBytes >= _maxChunkBytes &&
+          value.maxSourceChunkBytes >= _maxChunkBytes &&
+          value.maxResultBytes >= _resultPayloadBytes &&
+          value.maxQueryItems >= 256 &&
+          value.maxTransactionEdits >= 1;
+      if (!compatible) {
+        throw StateError('Flark v4 runtime returned incompatible ABI limits.');
+      }
+    } finally {
+      calloc
+        ..free(request)
+        ..free(info)
+        ..free(outcome);
     }
   }
 }

@@ -14,6 +14,7 @@ fn tiny_blocks(target_bytes: usize) -> String {
 }
 
 #[test]
+#[ignore = "full-scale 5 MiB payload-budget certification stress"]
 fn exhausting_the_payload_budget_is_a_typed_error_not_a_crash() {
     // Driven through the actor because that is the production owner: a
     // faulted session must never be dropped bare, and the actor is what
