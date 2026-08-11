@@ -8,6 +8,37 @@ Rust engine, then builds the Flutter product `flark` on top. The first proof and
 all initial performance work run on the available Mac. Android and iOS claims
 wait for physical devices; Windows follows later.
 
+## 2026-08-11 conformance-profile update
+
+The active semantic product profile is now unambiguous: official GFM
+0.29-gfm is the sole normative corpus, with all 672 numbered examples owned by
+`flark-gfm-0.29-v2`. The imported 670-case corpus is supplemented by the two
+official task-list examples it omitted. CommonMark 0.31.2 remains a separate
+diagnostic compatibility ledger; it cannot change a GFM pass or failure.
+Live editor projection is separately versioned as `flark-live-v1` and cannot
+be counted as semantic conformance.
+
+The production parser now executes the complete static GFM denominator through
+one fail-closed receipt. Its first pinned result is 385 exact, 273 typed
+missing, and 14 divergent, with all 672 cases admitted and zero invalid or
+unclassified outcomes. That is an executable implementation-gap map, not a
+full-GFM claim: the direct block controller still exposes only its CommonMark
+grammar, so selected-profile block support is a first implementation target.
+The CommonMark compatibility receipt remains 384 exact, 262 typed missing, and
+6 divergent. Incremental-edit parity remains its own open normative ledger.
+
+The first GFM run also exposed and fixed a real coroutine replay defect: a
+nested task-list opener could advance the line cursor, pause for reference
+prefix work, then replay the same stage and underflow. List openers now resolve
+that potentially pausing paragraph finalization before consuming the marker,
+while preserving same-list reuse. The official nested task-list example and
+the prior complete CommonMark receipt both pass.
+
+`scripts/verify_v4_markdown_conformance.sh` reproduces the semantic receipts,
+and the everyday `scripts/verify_v4.sh` gate now includes it. The immutable M0
+v1 profile and receipt remain historical evidence; the v2 manifests are the
+active execution contract.
+
 ## 2026-08-09 execution update
 
 The v4 implementation is a new path. Legacy v3 packages remain read-only
@@ -743,7 +774,8 @@ legacy deletion, and directory moves remain separate reviewable checkpoints.
 
 - CommonMark structural admission: 652/652.
 - Semantic replay: 384 exact, 262 typed missing, 6 divergent.
-- Selected GFM profile: not yet covered by one complete executable lane.
+- Normative GFM 0.29-gfm semantic replay: all 672 cases admitted and classified;
+  385 exact, 273 typed missing, and 14 divergent. Full conformance remains open.
 - Live projection: selected behavior exists in prototypes, but there is no
   complete versioned matrix covering incomplete syntax, marker transitions,
   selection, edit histories, and certification states through the final path.
@@ -899,9 +931,11 @@ Work:
   character-frames, memory, fast-input backlog, and the competitor-derived
   multi-MiB envelope. Changing a threshold later requires an explicit RFC
   amendment and a fresh run; it cannot turn a failed run green.
-- [ ] Pin the CommonMark version and selected GFM profile, including an explicit
+- [x] Pin official GFM 0.29-gfm as the normative product profile and CommonMark
+  0.31.2 as a diagnostic compatibility profile, including an explicit
   deviation policy and separate semantic/incremental ledgers.
-- [ ] Version the separate live-projection matrix: incomplete syntax,
+- [x] Version the separate `flark-live-v1` projection profile and matrix:
+  incomplete syntax,
   reveal/hide behavior, caret/selection states, edit histories, neutral pending
   output, current certification, and transitions between them.
 - [ ] Specify the direct runtime contract: revisions, transactions, progress
@@ -1199,7 +1233,8 @@ must close together for the Mac product checkpoint.
 
 #### M6A — Grammar and incrementality
 
-- [ ] Make the selected GFM profile executable and versioned.
+- [x] Make the selected GFM profile executable and versioned; its first receipt
+  is an implementation-gap ledger, not a conformance claim.
 - [ ] Close semantic CommonMark cases and GFM extensions using parser-owned
   logic only.
 - [ ] Add edit histories for every construct: type, erase, split, merge, paste,

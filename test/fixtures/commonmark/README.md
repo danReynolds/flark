@@ -12,6 +12,12 @@ Upstream fixture source:
   `tool/gfm_tests.json` in markdown `7.3.0`), which tracks CommonMark/GFM
   example corpora used by that package.
 
+The active v4 product profile is `flark-gfm-0.29-v2`: official GFM 0.29-gfm
+is normative, with the two omitted official task-list examples supplied by
+`test/fixtures/v4/task_list_profile_cases_v1.json`. CommonMark 0.31.2 is kept as
+a separate compatibility diagnostic and never changes GFM conformance status.
+Live editor projection is independently versioned as `flark-live-v1`.
+
 Deviation register:
 
 - `deviation_register.json` stores approved exclusions keyed by lane.

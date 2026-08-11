@@ -5882,6 +5882,23 @@ impl ValueBlockParser {
         let Some((matched, mut list)) = self.detect_list(*container, line, indented, depth) else {
             return Ok(false);
         };
+        let needs_list = match &self.tree.node(*container).kind {
+            BlockKind::List(existing) => !lists_match(&list, &existing),
+            _ => true,
+        };
+        // Closing an open Paragraph can pause for reference-prefix work. Do it
+        // before advancing the line cursor so replaying this coroutine stage
+        // remains idempotent after the rendezvous.
+        if needs_list {
+            while !self
+                .tree
+                .node(*container)
+                .kind
+                .can_contain(&BlockKind::List(list))
+            {
+                *container = self.finalize(*container)?;
+            }
+        }
         let claim_start = self.offset;
         let offset = self.first_nonspace + matched - self.offset;
         self.advance_offset(line, offset, false);
@@ -5902,10 +5919,6 @@ impl ValueBlockParser {
         }
         list.marker_offset = self.indent;
 
-        let needs_list = match &self.tree.node(*container).kind {
-            BlockKind::List(existing) => !lists_match(&list, &existing),
-            _ => true,
-        };
         if needs_list {
             *container =
                 self.add_child(*container, BlockKind::List(list), self.first_nonspace + 1)?;

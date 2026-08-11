@@ -25,6 +25,7 @@ if [[ ! -f "$LIBRARY" ]]; then
 fi
 
 cargo test --manifest-path "$BRIDGE/Cargo.toml" -p flark-runtime -p flark-abi
+"$ROOT/scripts/verify_v4_markdown_conformance.sh"
 
 (cd "$ROOT" && dart test test/v4/contracts --exclude-tags historical-receipt)
 (cd "$ROOT/packages/flark_core" && dart analyze)

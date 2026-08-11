@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 2,
+  "profile": "test/fixtures/v4/markdown_profile_v2.json",
+  "deviationRegister": "test/fixtures/v4/markdown_deviations_v2.json",
+  "statusDefinitions": {
+    "exact": "The named executable lane matches its selected corpus for this case.",
+    "missing": "The lane has no completed executable semantic result for this case or lacks a required mechanism.",
+    "divergent": "The executable result differs from its selected corpus and has not been approved as a deviation.",
+    "approved_deviation": "The result intentionally differs under an explicitly reviewed deviation that remains in the denominator."
+  },
+  "ledgers": [
+    {
+      "id": "gfm_semantic",
+      "claimRole": "normative",
+      "caseIdSelector": "GFM-1..GFM-672",
+      "denominator": 672,
+      "counts": {
+        "exact": 385,
+        "missing": 273,
+        "divergent": 14,
+        "approved_deviation": 0
+      },
+      "admissionReceiptSha256": "6914839f85b9b1f199dddf7754f77aa94e0e9d914a3826910850c0875dbb6ee4",
+      "receiptSha256": "16cb762caf36aa4770696dcd41982a5a608ccf308c9b4aef3e798e27e7dbbd77",
+      "evidence": {
+        "command": "cargo test --locked --manifest-path native/comrak_bridge/Cargo.toml --package flark-parser --test block_core_commonmark_ledger production_controller_gfm_0_29_semantic_coverage_is_complete_and_fail_closed -- --exact --nocapture",
+        "source": "native/comrak_bridge/crates/flark_parser/tests/block_core_commonmark_ledger.rs",
+        "note": "All 672 cases are admitted and fail-closed classified against the current product controller. The block controller still runs its CommonMark grammar, so this receipt exposes selected-profile and semantic implementation gaps; it does not claim complete GFM conformance."
+      }
+    },
+    {
+      "id": "gfm_incremental",
+      "claimRole": "normative",
+      "caseIdSelector": "GFM-1..GFM-672",
+      "denominator": 672,
+      "counts": {
+        "exact": 0,
+        "missing": 672,
+        "divergent": 0,
+        "approved_deviation": 0
+      },
+      "receiptSha256": null,
+      "evidence": {
+        "command": null,
+        "source": null,
+        "note": "No complete selected-profile incremental GFM lane exists yet."
+      }
+    },
+    {
+      "id": "commonmark_semantic",
+      "claimRole": "compatibility",
+      "caseIdSelector": "CM-1..CM-652",
+      "denominator": 652,
+      "counts": {
+        "exact": 384,
+        "missing": 262,
+        "divergent": 6,
+        "approved_deviation": 0
+      },
+      "receiptSha256": "dc6e79a29eb93bf1053d9416d62465568593155b4b5bab34ade2dd243e58ea85",
+      "evidence": {
+        "command": "cargo test --locked --manifest-path native/comrak_bridge/Cargo.toml --package flark-parser --test block_core_commonmark_ledger production_controller_commonmark_coverage_is_monotonic_and_fail_closed -- --exact --nocapture",
+        "source": "native/comrak_bridge/crates/flark_parser/tests/block_core_commonmark_ledger.rs",
+        "note": "Diagnostic compatibility evidence only; it cannot change normative GFM status."
+      }
+    },
+    {
+      "id": "commonmark_incremental",
+      "claimRole": "compatibility",
+      "caseIdSelector": "CM-1..CM-652",
+      "denominator": 652,
+      "counts": {
+        "exact": 0,
+        "missing": 652,
+        "divergent": 0,
+        "approved_deviation": 0
+      },
+      "receiptSha256": null,
+      "evidence": {
+        "command": "cargo test --locked --manifest-path native/comrak_bridge/Cargo.toml --test recursive_green_commonmark_incrementality_classifier -- --ignored --nocapture",
+        "source": "native/comrak_bridge/tests/recursive_green_commonmark_incrementality_classifier.rs",
+        "note": "The ignored classifier is diagnostic seed evidence, not a completed denominator-owning receipt."
+      }
+    }
+  ],
+  "separateProfiles": [
+    "test/fixtures/v4/live_projection_profile_v1.json"
+  ],
+  "separateMatrices": [
+    "test/fixtures/v4/live_projection_matrix_v1.json",
+    "test/fixtures/v4/m0_regressions_v1.json"
+  ]
+}

@@ -5,23 +5,18 @@ import 'package:crypto/crypto.dart';
 import 'package:test/test.dart';
 
 void main() {
-  final profile = _object('test/fixtures/v4/markdown_profile_v1.json');
-  final ledger = _object('test/fixtures/v4/markdown_ledgers_v1.json');
+  final profilePath = 'test/fixtures/v4/markdown_profile_v2.json';
+  final profile = _object(profilePath);
+  final ledger = _object('test/fixtures/v4/markdown_ledgers_v2.json');
 
-  test('pins complete CommonMark and selected GFM inventories', () {
-    final commonmark = _map(profile['commonmark']);
-    final commonmarkCases = _listFromFile(commonmark['fixture'] as String);
-    expect(commonmarkCases, hasLength(commonmark['caseCount'] as int));
-    expect(
-      commonmarkCases.map((entry) => _map(entry)['example']),
-      List<int>.generate(652, (index) => index + 1),
-    );
-    _expectHash(
-      commonmark['fixture'] as String,
-      commonmark['fixtureSha256'] as String,
-    );
+  test('pins GFM as normative and CommonMark 0.31.2 as compatibility only', () {
+    expect(profile['schemaVersion'], 2);
+    expect(profile['profileId'], 'flark-gfm-0.29-v2');
+    expect(ledger['profile'], profilePath);
 
-    final gfm = _map(profile['gfm']);
+    final gfm = _map(profile['normativeSemanticProfile']);
+    expect(gfm['specVersion'], '0.29-gfm');
+    expect(gfm['precedence'], contains('sole semantic product authority'));
     final gfmCases = _listFromFile(gfm['fixture'] as String);
     expect(gfmCases, hasLength(gfm['fixtureCaseCount'] as int));
     _expectHash(gfm['fixture'] as String, gfm['fixtureSha256'] as String);
@@ -48,6 +43,38 @@ void main() {
       'extended_autolinks',
       'disallowed_raw_html',
     ]);
+
+    final compatibility = _list(profile['compatibilityProfiles']).map(_map);
+    final commonmark = compatibility.single;
+    expect(commonmark['id'], 'commonmark-0.31.2-compatibility');
+    expect(commonmark['normativeForProduct'], isFalse);
+    expect(commonmark['rule'], contains('never changes GFM pass or fail'));
+    final commonmarkCases = _listFromFile(commonmark['fixture'] as String);
+    expect(commonmarkCases, hasLength(commonmark['caseCount'] as int));
+    expect(
+      commonmarkCases.map((entry) => _map(entry)['example']),
+      List<int>.generate(652, (index) => index + 1),
+    );
+    _expectHash(
+      commonmark['fixture'] as String,
+      commonmark['fixtureSha256'] as String,
+    );
+  });
+
+  test('keeps flark-live-v1 independent from semantic conformance', () {
+    final selected = _map(profile['liveProjectionProfile']);
+    expect(selected['profileId'], 'flark-live-v1');
+    expect(selected['rule'], contains('never counted as semantic GFM'));
+    final manifestPath = selected['manifest'] as String;
+    _expectHash(manifestPath, selected['manifestSha256'] as String);
+    final manifest = _object(manifestPath);
+    expect(manifest['profileId'], 'flark-live-v1');
+    expect(manifest['semanticProfileId'], profile['profileId']);
+    expect(manifest['separationRule'], contains('never changes GFM'));
+    _expectHash(
+      manifest['matrix'] as String,
+      manifest['matrixSha256'] as String,
+    );
   });
 
   test('keeps four denominator-owning ledgers separate', () {
@@ -82,6 +109,20 @@ void main() {
       }
     }
 
+    expect(ledgers['gfm_semantic']!['claimRole'], 'normative');
+    expect(ledgers['gfm_incremental']!['claimRole'], 'normative');
+    expect(ledgers['commonmark_semantic']!['claimRole'], 'compatibility');
+    expect(ledgers['commonmark_incremental']!['claimRole'], 'compatibility');
+    expect(ledgers['gfm_semantic']!['counts'], {
+      'exact': 385,
+      'missing': 273,
+      'divergent': 14,
+      'approved_deviation': 0,
+    });
+    expect(
+      ledgers['gfm_semantic']!['receiptSha256'],
+      '16cb762caf36aa4770696dcd41982a5a608ccf308c9b4aef3e798e27e7dbbd77',
+    );
     expect(ledgers['commonmark_semantic']!['counts'], {
       'exact': 384,
       'missing': 262,
@@ -99,7 +140,7 @@ void main() {
     _expectHash(registerPath, policy['registerSha256']! as String);
 
     final register = _object(registerPath);
-    expect(register['schemaVersion'], 1);
+    expect(register['schemaVersion'], 2);
     expect(register['profileId'], profile['profileId']);
     final deviations = _list(register['deviations']).map(_map).toList();
     final allowedStates = _list(
@@ -139,7 +180,7 @@ void main() {
             '${entry.key} approved_deviation must equal approved register rows',
       );
     }
-    expect(deviations, isEmpty, reason: 'M0 has no approved deviations');
+    expect(deviations, isEmpty, reason: 'the active profile has no deviations');
   });
 
   test('rejects malformed, duplicate, and out-of-denominator deviations', () {

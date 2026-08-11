@@ -32,12 +32,21 @@ use sha2::{Digest, Sha256};
 
 const COMMONMARK_FIXTURES: &str =
     include_str!("../../../../../test/fixtures/commonmark/upstream/common_mark_tests.json");
-// The production direct controller currently has one CommonMark profile and
-// no GFM-profile constructor. Feeding the pinned GFM corpus through that same
-// controller would measure profile mismatch, not selected-profile parity.
+// The production direct block controller still exposes its CommonMark grammar
+// only. The normative GFM lane deliberately scores that current product path
+// against GFM, so profile/extension gaps remain missing or divergent until the
+// controller itself gains selected-profile support.
+const GFM_FIXTURES: &str =
+    include_str!("../../../../../test/fixtures/commonmark/upstream/gfm_tests.json");
+const GFM_TASK_LIST_SUPPLEMENT: &str =
+    include_str!("../../../../../test/fixtures/v4/task_list_profile_cases_v1.json");
 const COMMONMARK_FIXTURE_SHA256: &str =
     "d431b29d97b6f73e69d547109cf5081578fac931e72afe95639ebe766c1b2a20";
+const GFM_FIXTURE_SHA256: &str = "ce09eea1c15b61235868465468f6281ec82ab177998e404d9143e1641c4e5b55";
+const GFM_TASK_LIST_SUPPLEMENT_SHA256: &str =
+    "8a735bd2ce45b2cea42a687f6425d0519f8c9b2a62f77d3cb37b9e404c3e9a69";
 const EXPECTED_EXAMPLES: usize = 652;
+const EXPECTED_GFM_EXAMPLES: usize = 672;
 const FUEL: usize = 7;
 const MAX_POLLS: usize = 1_000_000;
 
@@ -51,6 +60,17 @@ const EXPECTED_SEMANTIC_RENDER_EXACT: usize = 384;
 const EXPECTED_SEMANTIC_RENDER_DIVERGENT: usize = 6;
 const EXPECTED_SEMANTIC_RECEIPT_SHA256: &str =
     "dc6e79a29eb93bf1053d9416d62465568593155b4b5bab34ade2dd243e58ea85";
+
+// First complete deterministic GFM 0.29-gfm product-parser receipt. Any
+// non-explicit result remains a hard failure.
+const EXPECTED_GFM_ADMITTED: usize = 672;
+const EXPECTED_GFM_UNSUPPORTED: usize = 0;
+const EXPECTED_GFM_RECEIPT_SHA256: &str =
+    "6914839f85b9b1f199dddf7754f77aa94e0e9d914a3826910850c0875dbb6ee4";
+const EXPECTED_GFM_SEMANTIC_RENDER_EXACT: usize = 385;
+const EXPECTED_GFM_SEMANTIC_RENDER_DIVERGENT: usize = 14;
+const EXPECTED_GFM_SEMANTIC_RECEIPT_SHA256: &str =
+    "16cb762caf36aa4770696dcd41982a5a608ccf308c9b4aef3e798e27e7dbbd77";
 
 #[derive(Debug)]
 struct Fixture {
@@ -248,6 +268,143 @@ fn production_controller_commonmark_coverage_is_monotonic_and_fail_closed() {
         ),
         "production semantic/render coverage changed; review the corpus-wide receipt before updating this one snapshot:\n{}",
         semantic_divergent.join("\n")
+    );
+}
+
+#[test]
+fn production_controller_gfm_0_29_semantic_coverage_is_complete_and_fail_closed() {
+    assert_eq!(sha256(GFM_FIXTURES.as_bytes()), GFM_FIXTURE_SHA256);
+    assert_eq!(
+        sha256(GFM_TASK_LIST_SUPPLEMENT.as_bytes()),
+        GFM_TASK_LIST_SUPPLEMENT_SHA256
+    );
+    let fixtures = gfm_fixtures();
+    assert_eq!(fixtures.len(), EXPECTED_GFM_EXAMPLES);
+    assert_eq!(
+        fixtures
+            .iter()
+            .map(|fixture| fixture.example)
+            .collect::<Vec<_>>(),
+        (1..=EXPECTED_GFM_EXAMPLES).collect::<Vec<_>>(),
+        "the selected GFM profile must own every official example exactly once"
+    );
+
+    let mut admitted = 0;
+    let mut unsupported = 0;
+    let mut semantic_exact = 0;
+    let mut semantic_missing = BTreeMap::<String, usize>::new();
+    let mut semantic_divergent = Vec::new();
+    let mut invalid = Vec::new();
+    let mut receipt = String::new();
+    let mut semantic_receipt = String::new();
+
+    for fixture in &fixtures {
+        let result = catch_unwind(AssertUnwindSafe(|| drive_fixture(fixture)))
+            .unwrap_or_else(|panic| Err(DriveFailure::Invalid(panic_message(&panic))));
+        match result {
+            Ok(drive) => {
+                admitted += 1;
+                receipt.push_str(&format!(
+                    "{}\t{}\tadmitted\n",
+                    fixture.example, fixture.section
+                ));
+                match drive.semantic {
+                    SemanticOutcome::Exact => {
+                        semantic_exact += 1;
+                        semantic_receipt.push_str(&format!(
+                            "{}\t{}\tsemantic-render-exact\n",
+                            fixture.example, fixture.section
+                        ));
+                    }
+                    SemanticOutcome::Missing(mechanism) => {
+                        *semantic_missing.entry(mechanism.into()).or_default() += 1;
+                        semantic_receipt.push_str(&format!(
+                            "{}\t{}\tmissing:{mechanism}\n",
+                            fixture.example, fixture.section
+                        ));
+                    }
+                    SemanticOutcome::Divergent(difference) => {
+                        semantic_divergent.push(format!(
+                            "{} ({:?}): {difference}",
+                            fixture.example, fixture.section
+                        ));
+                        semantic_receipt.push_str(&format!(
+                            "{}\t{}\tsemantic-divergent:{difference}\n",
+                            fixture.example, fixture.section
+                        ));
+                    }
+                }
+            }
+            Err(DriveFailure::Unsupported(reason)) => {
+                unsupported += 1;
+                receipt.push_str(&format!(
+                    "{}\t{}\tunsupported:{reason:?}\n",
+                    fixture.example, fixture.section
+                ));
+            }
+            Err(DriveFailure::Invalid(reason)) => {
+                invalid.push(format!(
+                    "{} ({:?}): {reason}",
+                    fixture.example, fixture.section
+                ));
+                receipt.push_str(&format!(
+                    "{}\t{}\tINVALID:{reason}\n",
+                    fixture.example, fixture.section
+                ));
+            }
+        }
+    }
+
+    let receipt_sha256 = sha256(receipt.as_bytes());
+    let semantic_receipt_sha256 = sha256(semantic_receipt.as_bytes());
+    eprintln!(
+        "GFM 0.29-gfm receipt: admitted={admitted} unsupported={unsupported} invalid={} exact={semantic_exact} missing={semantic_missing:?} divergent={} admission_sha256={receipt_sha256} semantic_sha256={semantic_receipt_sha256}",
+        invalid.len(),
+        semantic_divergent.len(),
+    );
+    assert_eq!(
+        admitted + unsupported + invalid.len(),
+        EXPECTED_GFM_EXAMPLES
+    );
+    assert!(
+        invalid.is_empty(),
+        "GFM lane rejected non-explicit failures instead of classifying them:\n{}",
+        invalid.join("\n")
+    );
+    let expected_missing = BTreeMap::from([
+        ("autolink-render-value".to_owned(), 28),
+        ("heading-inline-authority".to_owned(), 40),
+        ("inline-fail-closed".to_owned(), 50),
+        ("inline-link-value-replay".to_owned(), 44),
+        ("projected-inline-authority".to_owned(), 19),
+        ("reference-resolver".to_owned(), 92),
+    ]);
+    assert_eq!(
+        (
+            admitted,
+            unsupported,
+            receipt_sha256.as_str(),
+            semantic_exact,
+            &semantic_missing,
+            semantic_divergent.len(),
+            semantic_receipt_sha256.as_str(),
+        ),
+        (
+            EXPECTED_GFM_ADMITTED,
+            EXPECTED_GFM_UNSUPPORTED,
+            EXPECTED_GFM_RECEIPT_SHA256,
+            EXPECTED_GFM_SEMANTIC_RENDER_EXACT,
+            &expected_missing,
+            EXPECTED_GFM_SEMANTIC_RENDER_DIVERGENT,
+            EXPECTED_GFM_SEMANTIC_RECEIPT_SHA256,
+        ),
+        "review the deterministic GFM receipt before updating its snapshot:\n{}",
+        semantic_divergent.join("\n")
+    );
+    assert_eq!(
+        semantic_exact + semantic_missing.values().sum::<usize>() + semantic_divergent.len(),
+        admitted,
+        "the GFM semantic ledger must classify every admitted fixture exactly once"
     );
 }
 
@@ -936,8 +1093,9 @@ fn fenced_code_logical_bounds(block: &GreenBlock) -> Result<(u64, u64, u64), Str
     let logical_end = match close.len() {
         // Legacy semantic-only fenced close facts.
         49 => read_u64(close, 33)?,
-        // Current semantic prefix followed by the versioned RGEO trailer.
-        57 if close.get(33..37) == Some(&b"RGEO"[..]) => u64::try_from(block.logical.len())
+        // Current semantic prefix followed by a self-sized versioned RGEO
+        // trailer. Its compact width depends on the row-relative coordinates.
+        _ if close.get(33..37) == Some(&b"RGEO"[..]) => u64::try_from(block.logical.len())
             .map_err(|_| "fenced-code logical length exceeds u64".to_owned())?,
         _ => return Err("fenced-code close facts have an unsupported schema".to_owned()),
     };
@@ -1523,6 +1681,29 @@ fn load_fixtures(json: &str) -> Vec<Fixture> {
             section,
         });
     }
+    fixtures
+}
+
+fn gfm_fixtures() -> Vec<Fixture> {
+    let mut fixtures = load_fixtures(GFM_FIXTURES);
+    // These two values mirror the hash-pinned supplement above. The imported
+    // corpus and supplement use different JSON field orders, while this test's
+    // deliberately tiny loader follows the upstream corpus order.
+    fixtures.extend([
+        Fixture {
+            markdown: "- [ ] foo\n- [x] bar\n".into(),
+            html: "<ul>\n<li><input disabled=\"\" type=\"checkbox\"> foo</li>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> bar</li>\n</ul>\n".into(),
+            example: 279,
+            section: "Task list items (extension)".into(),
+        },
+        Fixture {
+            markdown: "- [x] foo\n  - [ ] bar\n  - [x] baz\n- [ ] bim\n".into(),
+            html: "<ul>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> foo\n<ul>\n<li><input disabled=\"\" type=\"checkbox\"> bar</li>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> baz</li>\n</ul>\n</li>\n<li><input disabled=\"\" type=\"checkbox\"> bim</li>\n</ul>\n".into(),
+            example: 280,
+            section: "Task list items (extension)".into(),
+        },
+    ]);
+    fixtures.sort_by_key(|fixture| fixture.example);
     fixtures
 }
 
