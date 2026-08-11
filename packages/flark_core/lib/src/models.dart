@@ -44,6 +44,7 @@ final class FlarkListItemPresentation {
     required this.markerOffset,
     required this.simpleContinuation,
     required this.startsList,
+    this.taskChecked,
   });
 
   final FlarkListMarkerStyle markerStyle;
@@ -54,6 +55,7 @@ final class FlarkListItemPresentation {
   final int markerOffset;
   final bool simpleContinuation;
   final bool startsList;
+  final bool? taskChecked;
 
   bool get isOrdered =>
       markerStyle == FlarkListMarkerStyle.orderedPeriod ||
@@ -86,6 +88,7 @@ final class FlarkListItemPresentation {
     'markerOffset': markerOffset,
     'simpleContinuation': simpleContinuation,
     'startsList': startsList,
+    'taskChecked': taskChecked,
   };
 
   static FlarkListItemPresentation fromMessage(Map<Object?, Object?> message) =>
@@ -103,6 +106,7 @@ final class FlarkListItemPresentation {
         markerOffset: message['markerOffset']! as int,
         simpleContinuation: message['simpleContinuation']! as bool,
         startsList: message['startsList']! as bool,
+        taskChecked: message['taskChecked'] as bool?,
       );
 }
 

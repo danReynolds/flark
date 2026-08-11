@@ -53,6 +53,10 @@ use crate::{
 };
 
 const SOURCE_WORK_QUANTUM: usize = flark_engine::SOURCE_CURSOR_WINDOW_BYTES;
+// Product profile identity shared with `flark-runtime`. Other nonzero profile
+// identities retain the compatibility CommonMark grammar until explicitly
+// promoted rather than silently inheriting GFM behavior.
+const SYNTAX_PROFILE_GFM_V1: u32 = 1;
 const CHECKPOINT_STRIDE_BYTES: u64 = 4 * 1024;
 const LATER_CONVERGENCE_MAX_BYTES: usize = 64 * 1024;
 const LATER_CONVERGENCE_MAX_PHYSICAL_LINES: u64 = 512;
@@ -202,7 +206,11 @@ impl M11PersistentRecursiveGreenCleanPlan {
             ));
         }
         let scanner = SnapshotLineScanner::new(self.scanner_lease)?;
-        let controller = M11DirectBlockController::new()?;
+        let controller = if self.syntax_profile == SYNTAX_PROFILE_GFM_V1 {
+            M11DirectBlockController::new_gfm()?
+        } else {
+            M11DirectBlockController::new()?
+        };
         let writer = M11BlockWriter::new(runtime, self.writer_lease)?;
         let journal = M11ReferenceJournal::new(runtime, source, self.syntax_profile)?;
         Ok(M11PersistentRecursiveGreenCleanBuild {

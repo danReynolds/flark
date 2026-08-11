@@ -306,10 +306,11 @@ IME, and touch claims require physical devices and the same versioned harness.
 The current repository is a strong starting engine, not a finished product:
 
 - all 652 CommonMark 0.31.2 fixtures are structurally admitted;
-- the executable semantic ledger currently records 384 exact results, 262
-  typed missing capabilities, and 6 explicit divergences;
-- the selected GFM profile is not yet represented by a complete executable
-  conformance lane;
+- the diagnostic CommonMark semantic ledger records 563 exact results, 77
+  typed missing capabilities, and 12 explicit divergences;
+- the selected GFM profile owns a complete 672-case executable semantic lane,
+  currently at 572 exact, 81 typed missing, and 19 divergent; this is a
+  complete gap map, not a conformance pass;
 - certification currently falls back to whole-document pending rather than
   proving arbitrary current-revision ranges;
 - a 32 KiB paste can silently fail to converge;

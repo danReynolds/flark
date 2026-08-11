@@ -175,6 +175,7 @@ pub enum DocumentViewportRowPresentation {
         marker_offset: u8,
         simple_continuation: bool,
         starts_list: bool,
+        task_checked: Option<bool>,
     },
     BlockQuote {
         prefix_start_byte: u64,
@@ -1196,6 +1197,7 @@ fn document_viewport_row(
             marker_offset,
             simple_continuation,
             starts_list,
+            task_checked,
         } => DocumentViewportRowPresentation::ListItem {
             marker: match marker {
                 M11RecursiveGreenListMarker::Bullet(marker) => {
@@ -1223,6 +1225,7 @@ fn document_viewport_row(
             marker_offset,
             simple_continuation,
             starts_list,
+            task_checked,
         },
         M11RecursiveGreenRowPresentation::BlockQuote {
             prefix_start_byte,

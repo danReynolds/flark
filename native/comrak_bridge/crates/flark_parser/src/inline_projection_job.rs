@@ -620,6 +620,7 @@ pub struct M11InlineProjectionJob {
     emphasis_visited: u32,
     emitted_facts: u64,
     projected_fact_capture: Option<Vec<M11InlineProjectionFact>>,
+    projected_link_value_capture: Option<Vec<M11InlineLinkValue>>,
     last_order_key: Option<(u32, u32)>,
     initial_lexical_source_bytes_read: u64,
 }
@@ -984,6 +985,7 @@ impl M11InlineProjectionJob {
             emphasis_visited: 0,
             emitted_facts: 0,
             projected_fact_capture: capture_projected_facts.then(Vec::new),
+            projected_link_value_capture: capture_projected_facts.then(Vec::new),
             last_order_key: None,
             initial_lexical_source_bytes_read: 0,
         })
@@ -1779,6 +1781,11 @@ impl M11InlineProjectionJob {
         if let Some(captured) = self.projected_fact_capture.as_mut() {
             captured.push(fact);
         }
+        if let (Some(captured), Some(value)) =
+            (self.projected_link_value_capture.as_mut(), link_value)
+        {
+            captured.push(value);
+        }
         self.emitted_facts = self
             .emitted_facts
             .checked_add(1)
@@ -2152,6 +2159,20 @@ impl M11InlineProjectionJob {
             return None;
         }
         self.projected_fact_capture.take()
+    }
+
+    /// Transfers cooked link/image values captured with the projected facts.
+    /// Entries identify their parent fact ordinal and retain the same bounded
+    /// sidecar contract as the authoritative Projection publication.
+    #[must_use]
+    pub fn take_projected_link_values(&mut self) -> Option<Vec<M11InlineLinkValue>> {
+        if !matches!(
+            self.phase,
+            ProjectionJobPhase::Complete | ProjectionJobPhase::Transferred
+        ) {
+            return None;
+        }
+        self.projected_link_value_capture.take()
     }
 
     pub fn begin_abort(

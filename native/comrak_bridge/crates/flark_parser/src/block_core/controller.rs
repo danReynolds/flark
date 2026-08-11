@@ -342,7 +342,7 @@ struct LineCoordinates {
     prefix: Vec<u8>,
 }
 
-/// CommonMark direct block controller promoted from the corpus-proven donor.
+/// Selected-profile direct block controller promoted from the corpus-proven donor.
 ///
 /// The donor retains only its open semantic path and fixed line-local scratch.
 /// This adapter adds no grammar classifier: it converts the donor's scalar
@@ -359,9 +359,19 @@ pub struct M11DirectBlockController {
 impl M11DirectBlockController {
     /// Creates a CommonMark controller with its initial Document command ready.
     pub fn new() -> Result<Self, M11DirectBlockError> {
+        Self::new_with_profile(donor::SyntaxProfile::CommonMark)
+    }
+
+    /// Creates a GFM controller with its initial Document command ready.
+    /// Extensions without a promoted direct command protocol remain fail
+    /// closed inside the donor rather than falling back to another parser.
+    pub fn new_gfm() -> Result<Self, M11DirectBlockError> {
+        Self::new_with_profile(donor::SyntaxProfile::Gfm)
+    }
+
+    fn new_with_profile(profile: donor::SyntaxProfile) -> Result<Self, M11DirectBlockError> {
         let id = next_controller_id()?;
-        let parser = donor::DirectValueBlockParser::new(donor::SyntaxProfile::CommonMark)
-            .map_err(map_parse_error)?;
+        let parser = donor::DirectValueBlockParser::new(profile).map_err(map_parse_error)?;
         let mut controller = Self {
             id,
             parser,
@@ -1136,7 +1146,7 @@ fn map_kind(kind: donor::DirectBlockKind) -> Result<BlockKind, M11DirectBlockErr
         ),
         donor::DirectBlockKind::List(facts) => BlockKind::List(map_list_facts(facts)?),
         donor::DirectBlockKind::Item(facts) => BlockKind::Item(
-            ItemFacts::new(facts.marker_offset, facts.padding)
+            ItemFacts::new_with_task(facts.marker_offset, facts.padding, facts.task_checked)
                 .ok_or(M11DirectBlockError::Invariant("donor item facts are valid"))?,
         ),
         donor::DirectBlockKind::IndentedCode => BlockKind::IndentedCode,

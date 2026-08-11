@@ -67,6 +67,7 @@ pub enum M11RecursiveGreenRowPresentation {
         marker_offset: u8,
         simple_continuation: bool,
         starts_list: bool,
+        task_checked: Option<bool>,
     },
     BlockQuote {
         prefix_start_byte: u64,
@@ -181,7 +182,7 @@ fn list_item_row_presentation(
     if list_fact.tag().get() != FACT_LIST
         || list_bytes.len() != 8
         || item_fact.tag().get() != FACT_ITEM
-        || item_bytes.len() != 4
+        || !matches!(item_bytes.len(), 4 | 5)
     {
         return Err(M11RecursiveGreenError::Corrupt(
             "List Item row carried invalid parser-authored facts",
@@ -189,6 +190,16 @@ fn list_item_row_presentation(
     }
     let marker_offset = u16::from_le_bytes([item_bytes[0], item_bytes[1]]);
     let padding = u16::from_le_bytes([item_bytes[2], item_bytes[3]]);
+    let task_checked = match item_bytes.get(4).copied().unwrap_or(0) {
+        0 => None,
+        1 => Some(false),
+        2 => Some(true),
+        _ => {
+            return Err(M11RecursiveGreenError::Corrupt(
+                "List Item row carried an invalid task marker fact",
+            ));
+        }
+    };
     if marker_offset > 3 || !(2..=14).contains(&padding) {
         return Err(M11RecursiveGreenError::Corrupt(
             "List Item row carried invalid indentation facts",
@@ -253,7 +264,12 @@ fn list_item_row_presentation(
         .ok_or(M11RecursiveGreenError::Corrupt(
             "List Item UTF-16 prefix line ending exceeds its row start",
         ))?;
-    let marker = decode_list_marker(prefix, list_bytes)?;
+    let list_marker_prefix = if let Some(checked) = task_checked {
+        task_list_marker_prefix(prefix, checked)?
+    } else {
+        prefix
+    };
+    let marker = decode_list_marker(list_marker_prefix, list_bytes)?;
     let nesting_depth = u8::try_from(
         path.iter()
             .filter(|frame| frame.kind().get() == KIND_LIST)
@@ -276,6 +292,7 @@ fn list_item_row_presentation(
             .expect("validated Item marker offsets fit in u8"),
         simple_continuation,
         starts_list,
+        task_checked,
     }))
 }
 
@@ -516,6 +533,33 @@ fn decode_list_marker(
             "List Item row carried an invalid List style",
         )),
     }
+}
+
+fn task_list_marker_prefix(prefix: &[u8], checked: bool) -> Result<&[u8], M11RecursiveGreenError> {
+    let Some(marker_start) = prefix.iter().rposition(|byte| *byte == b'[') else {
+        return Err(M11RecursiveGreenError::Corrupt(
+            "Task List Item prefix omitted its task marker",
+        ));
+    };
+    let Some(marker) = prefix.get(marker_start..marker_start + 3) else {
+        return Err(M11RecursiveGreenError::Corrupt(
+            "Task List Item prefix truncated its task marker",
+        ));
+    };
+    let expected_symbol = if checked { b'x' } else { b' ' };
+    let symbol_matches = marker[1].to_ascii_lowercase() == expected_symbol;
+    if marker[0] != b'['
+        || marker[2] != b']'
+        || !symbol_matches
+        || !prefix[marker_start + 3..]
+            .iter()
+            .all(|byte| matches!(byte, b' ' | b'\t'))
+    {
+        return Err(M11RecursiveGreenError::Corrupt(
+            "Task List Item prefix disagrees with its parser-authored task fact",
+        ));
+    }
+    Ok(&prefix[..marker_start])
 }
 
 /// Parser-owned inline-bearing recursive-Green leaf kinds.

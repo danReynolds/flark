@@ -103,6 +103,7 @@ fn viewport_preserves_parser_authored_list_markers_and_prefix_geometry() {
                 marker_offset,
                 simple_continuation,
                 starts_list,
+                task_checked,
             } => Some((
                 row.kind,
                 marker,
@@ -115,6 +116,7 @@ fn viewport_preserves_parser_authored_list_markers_and_prefix_geometry() {
                 marker_offset,
                 simple_continuation,
                 starts_list,
+                task_checked,
             )),
             _ => None,
         })
@@ -149,6 +151,7 @@ fn viewport_preserves_parser_authored_list_markers_and_prefix_geometry() {
         }
     );
     assert!(!lists[2].10, "later item does not start its ordered List");
+    assert!(lists.iter().all(|row| row.11.is_none()));
     document.close().expect("close document");
 
     let continued_source = "9) alpha\n10) \n";
@@ -181,6 +184,28 @@ fn viewport_preserves_parser_authored_list_markers_and_prefix_geometry() {
         other => panic!("unexpected terminal List presentation: {other:?}"),
     }
     continued.close().expect("close continued List");
+}
+
+#[test]
+fn viewport_exposes_gfm_task_state_without_reparsing_source() {
+    let source = "- [ ] foo\n- [X] bar\n";
+    let mut document = DocumentSession::begin(source).expect("begin task document");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..source.len(), 32)
+        .expect("task viewport");
+    let tasks = viewport
+        .rows
+        .iter()
+        .filter_map(|row| match row.presentation {
+            DocumentViewportRowPresentation::ListItem { task_checked, .. } => {
+                Some((task_checked, row.source_range.clone()))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(tasks, vec![(Some(false), 6..10), (Some(true), 16..20)]);
+    document.close().expect("close task document");
 }
 
 #[test]

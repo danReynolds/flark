@@ -374,17 +374,28 @@ pub struct ItemFacts {
     /// Donor `ListData::padding`: marker width plus the selected following
     /// whitespace, in columns. Ordered markers can therefore reach fourteen.
     padding: u16,
+    task_checked: Option<bool>,
 }
 
 impl ItemFacts {
     #[must_use]
     pub const fn new(marker_offset: u16, padding: u16) -> Option<Self> {
+        Self::new_with_task(marker_offset, padding, None)
+    }
+
+    #[must_use]
+    pub const fn new_with_task(
+        marker_offset: u16,
+        padding: u16,
+        task_checked: Option<bool>,
+    ) -> Option<Self> {
         if marker_offset > 3 || padding < 2 || padding > 14 {
             return None;
         }
         Some(Self {
             marker_offset,
             padding,
+            task_checked,
         })
     }
 
@@ -401,6 +412,11 @@ impl ItemFacts {
     #[must_use]
     pub const fn effective_content_indent(self) -> u16 {
         self.marker_offset + self.padding
+    }
+
+    #[must_use]
+    pub const fn task_checked(self) -> Option<bool> {
+        self.task_checked
     }
 }
 

@@ -225,6 +225,33 @@ pub fn table_delimiter_candidate(input: &str) -> Result<bool, FacadeError> {
     Ok(scanners::table_start(input).is_some())
 }
 
+/// Exact standard GFM task-list marker at the beginning of one Item's first
+/// inline block. `consumed_bytes` includes the required trailing whitespace,
+/// matching the donor's removal boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FacadeTaskListMarker {
+    pub consumed_bytes: usize,
+    pub checked: bool,
+}
+
+pub fn task_list_marker(input: &str) -> Result<Option<FacadeTaskListMarker>, FacadeError> {
+    bounded(input)?;
+    let Some((consumed_bytes, matched, _)) = scanners::tasklist(input) else {
+        return Ok(None);
+    };
+    let mut symbols = matched.chars();
+    let Some(symbol) = symbols.next() else {
+        return Ok(None);
+    };
+    if symbols.next().is_some() || !matches!(symbol, ' ' | 'x' | 'X') {
+        return Ok(None);
+    }
+    Ok(Some(FacadeTaskListMarker {
+        consumed_bytes,
+        checked: matches!(symbol, 'x' | 'X'),
+    }))
+}
+
 #[derive(Clone, Debug)]
 pub struct FacadeReferenceDefinition {
     pub source: Range<usize>,

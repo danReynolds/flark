@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use comrak::block_spine_facade::{
     FacadeError, FacadeSetextChar, atx_heading_start, chop_trailing_hashes, close_code_fence,
     html_block_end, html_block_start, open_code_fence, reference_definitions, setext_heading_line,
+    task_list_marker,
 };
 use generated_scanner_gate::{
     AtxLineCuts, CURSOR_ATX_MAX_LOOKAHEAD_SLACK, CursorScanError,
@@ -298,6 +299,7 @@ pub struct DirectListFacts {
 pub struct DirectItemFacts {
     pub marker_offset: u16,
     pub padding: u16,
+    pub task_checked: Option<bool>,
 }
 
 /// Ephemeral selector into the consumer's currently open stack.
@@ -2402,9 +2404,10 @@ struct DirectFinishWork {
 /// This wrapper drives the same `LineTransition` and `FinishTransition`
 /// functions as the unlimited parser. Output is intercepted at the actual
 /// grammar mutation sites and exposed as a bounded stack protocol. The
-/// supported slice currently covers `CommonMark` Document, Paragraph, Setext
-/// Heading, Quote, List, Item, and `FencedCode` blocks plus blank-line
-/// ownership. Every other block behavior fails closed.
+/// supported slice currently covers Document, Paragraph, Setext Heading,
+/// Quote, List, Item, and `FencedCode` blocks plus blank-line ownership. The
+/// selected CommonMark/GFM profile is retained through restart; extensions
+/// without a promoted direct protocol remain fail closed.
 pub struct DirectValueBlockParser {
     parser: ValueBlockParser,
     line_work: Option<DirectLineWork>,
@@ -3312,14 +3315,13 @@ fn direct_restart_output_into_parts(
 
 fn validate_direct_pause_shape(
     schema: u32,
-    profile: SyntaxProfile,
+    _profile: SyntaxProfile,
     current_frame: usize,
     frames: &[DirectPauseFrame],
     deferred: DirectDeferredState,
     paragraph: Option<DirectPauseParagraphState>,
 ) -> Result<(), ParseError> {
     if schema != DIRECT_LINE_BOUNDARY_PAUSE_SCHEMA
-        || profile != SyntaxProfile::CommonMark
         || frames.is_empty()
         || u32::try_from(frames.len()).is_err()
         || current_frame.checked_add(1) != Some(frames.len())
@@ -3420,7 +3422,6 @@ fn validate_direct_pause_shape(
 
 fn validate_direct_grammar_shape(grammar: &DirectGrammarContinuation) -> Result<(), ParseError> {
     if grammar.schema != DIRECT_LINE_BOUNDARY_PAUSE_SCHEMA
-        || grammar.profile != SyntaxProfile::CommonMark
         || grammar.frames.is_empty()
         || u32::try_from(grammar.frames.len()).is_err()
         || grammar.current_frame.checked_add(1) != Some(grammar.frames.len())
@@ -3707,7 +3708,11 @@ fn encode_direct_durable_frame(frame: DirectPauseFrame) -> DirectDurableLineBoun
             [
                 u64::from(facts.marker_offset),
                 u64::from(facts.padding),
-                0,
+                match facts.task_checked {
+                    None => 0,
+                    Some(false) => 1,
+                    Some(true) => 2,
+                },
                 0,
             ],
         ),
@@ -3799,11 +3804,17 @@ fn decode_direct_durable_frame(
             bullet_char: u8::try_from(fact_3)
                 .map_err(|_| ParseError::Invariant("direct durable bullet fits u8"))?,
         }),
-        3 if fact_2 == 0 && fact_3 == 0 => DirectBlockKind::Item(DirectItemFacts {
+        3 if fact_2 <= 2 && fact_3 == 0 => DirectBlockKind::Item(DirectItemFacts {
             marker_offset: u16::try_from(fact_0)
                 .map_err(|_| ParseError::Invariant("direct durable item offset fits u16"))?,
             padding: u16::try_from(fact_1)
                 .map_err(|_| ParseError::Invariant("direct durable item padding fits u16"))?,
+            task_checked: match fact_2 {
+                0 => None,
+                1 => Some(false),
+                2 => Some(true),
+                _ => unreachable!(),
+            },
         }),
         4 if facts == [0; 4] => DirectBlockKind::Paragraph,
         5 if fact_2 == 0 && fact_3 == 0 => DirectBlockKind::Heading(DirectHeadingFacts {
@@ -5919,10 +5930,25 @@ impl ValueBlockParser {
         }
         list.marker_offset = self.indent;
 
+        let task_checked = if self.profile == SyntaxProfile::Gfm {
+            task_list_marker(&line[self.offset..])?.map(|marker| {
+                self.advance_offset(line, marker.consumed_bytes, false);
+                marker.checked
+            })
+        } else {
+            None
+        };
+
         if needs_list {
-            *container =
-                self.add_child(*container, BlockKind::List(list), self.first_nonspace + 1)?;
+            let mut list_container = list;
+            list_container.task_checked = None;
+            *container = self.add_child(
+                *container,
+                BlockKind::List(list_container),
+                self.first_nonspace + 1,
+            )?;
         }
+        list.task_checked = task_checked;
         *container = self.add_child(*container, BlockKind::Item(list), self.first_nonspace + 1)?;
         if let Some(direct) = &mut self.direct {
             if direct.claimed_offset != claim_start {
@@ -7608,6 +7634,7 @@ fn direct_pause_block_kind(kind: DirectBlockKind) -> Result<BlockKind, ParseErro
                 delimiter: facts.delimiter,
                 bullet_char: facts.bullet_char,
                 tight: false,
+                task_checked: None,
             }))
         }
         DirectBlockKind::Item(facts) => {
@@ -7624,6 +7651,7 @@ fn direct_pause_block_kind(kind: DirectBlockKind) -> Result<BlockKind, ParseErro
                 delimiter: ListDelimiter::Period,
                 bullet_char: b'-',
                 tight: false,
+                task_checked: facts.task_checked,
             }))
         }
         DirectBlockKind::Paragraph => Ok(BlockKind::Paragraph),
@@ -7703,6 +7731,7 @@ fn direct_block_kind(kind: &BlockKind) -> Result<DirectBlockKind, ParseError> {
                 .map_err(|_| ParseError::Invariant("direct item marker offset below u16"))?,
             padding: u16::try_from(item.padding)
                 .map_err(|_| ParseError::Invariant("direct item padding below u16"))?,
+            task_checked: item.task_checked,
         })),
         BlockKind::Paragraph => Ok(DirectBlockKind::Paragraph),
         BlockKind::Heading { level, setext, .. }
@@ -7789,11 +7818,6 @@ impl DirectValueBlockParser {
     pub const MAX_LINE_BYTES: usize = DIRECT_MAX_LINE_BYTES;
 
     pub fn new(profile: SyntaxProfile) -> Result<Self, ParseError> {
-        if profile != SyntaxProfile::CommonMark {
-            return Err(ParseError::DirectUnsupported(
-                DirectUnsupported::SyntaxProfile,
-            ));
-        }
         let mut parser = ValueBlockParser::new("", profile);
         parser.defer_output_repairs = true;
         parser.direct = Some(DirectHooks::new());
@@ -7923,8 +7947,7 @@ impl DirectValueBlockParser {
             #[cfg(test)]
                 open_new_scheduler: _,
         } = parser;
-        if *profile != SyntaxProfile::CommonMark
-            || !*defer_output_repairs
+        if !*defer_output_repairs
             || !source.leaves.is_empty()
             || !references.is_empty()
             || !opened_this_line.is_empty()
@@ -8243,7 +8266,6 @@ impl DirectValueBlockParser {
         } = pause;
         let is_document_start = cursor.line_number == 0;
         if schema != DIRECT_LINE_BOUNDARY_PAUSE_SCHEMA
-            || profile != SyntaxProfile::CommonMark
             || frames.is_empty()
             || u32::try_from(frames.len()).is_err()
             || current_frame.checked_add(1) != Some(frames.len())
@@ -9697,6 +9719,7 @@ pub(crate) fn parse_list_marker(
                 delimiter: ListDelimiter::Period,
                 bullet_char: marker,
                 tight: false,
+                task_checked: None,
             },
         ));
     }
@@ -9751,6 +9774,7 @@ pub(crate) fn parse_list_marker(
                 },
                 bullet_char: 0,
                 tight: false,
+                task_checked: None,
             },
         ));
     }

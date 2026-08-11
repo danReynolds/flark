@@ -19,13 +19,17 @@ Live editor projection is separately versioned as `flark-live-v1` and cannot
 be counted as semantic conformance.
 
 The production parser now executes the complete static GFM denominator through
-one fail-closed receipt. Its first pinned result is 385 exact, 273 typed
-missing, and 14 divergent, with all 672 cases admitted and zero invalid or
-unclassified outcomes. That is an executable implementation-gap map, not a
-full-GFM claim: the direct block controller still exposes only its CommonMark
-grammar, so selected-profile block support is a first implementation target.
-The CommonMark compatibility receipt remains 384 exact, 262 typed missing, and
-6 divergent. Incremental-edit parity remains its own open normative ledger.
+one fail-closed receipt. After routing the ledger through the existing generic
+Heading/Paragraph leaf authority, live reference resolver, and bounded cooked
+link/image sidecar, the pinned result is 572 exact, 81 typed missing, and 19
+divergent, with all 672 cases admitted and zero invalid or unclassified
+outcomes. That is an executable implementation-gap map, not a full-GFM claim.
+The runtime now selects GFM on the direct block controller and that identity
+survives bounded checkpoint/resume. The bounded task-list protocol is now
+parser-authored through runtime, ABI, Dart, and Flutter; tables remain
+unpromoted. The CommonMark compatibility receipt is 563 exact, 77 typed
+missing, and 12 divergent. Incremental-edit parity remains its own open
+normative ledger.
 
 The first GFM run also exposed and fixed a real coroutine replay defect: a
 nested task-list opener could advance the line cursor, pause for reference
@@ -773,9 +777,9 @@ legacy deletion, and directory moves remain separate reviewable checkpoints.
 ### Starting receipts that must remain honest
 
 - CommonMark structural admission: 652/652.
-- Semantic replay: 384 exact, 262 typed missing, 6 divergent.
+- Semantic replay: 563 exact, 77 typed missing, 12 divergent.
 - Normative GFM 0.29-gfm semantic replay: all 672 cases admitted and classified;
-  385 exact, 273 typed missing, and 14 divergent. Full conformance remains open.
+  572 exact, 81 typed missing, and 19 divergent. Full conformance remains open.
 - Live projection: selected behavior exists in prototypes, but there is no
   complete versioned matrix covering incomplete syntax, marker transitions,
   selection, edit histories, and certification states through the final path.

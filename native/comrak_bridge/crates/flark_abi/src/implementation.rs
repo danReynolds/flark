@@ -39,6 +39,7 @@ use crate::{
     VIEWPORT_ROW_LIST_DEPTH_SHIFT, VIEWPORT_ROW_LIST_HYPHEN, VIEWPORT_ROW_LIST_MARKER_OFFSET_SHIFT,
     VIEWPORT_ROW_LIST_ORDERED_PARENTHESIS, VIEWPORT_ROW_LIST_ORDERED_PERIOD,
     VIEWPORT_ROW_LIST_PLUS, VIEWPORT_ROW_LIST_SIMPLE_CONTINUATION, VIEWPORT_ROW_LIST_STARTS_LIST,
+    VIEWPORT_ROW_LIST_TASK, VIEWPORT_ROW_LIST_TASK_CHECKED,
     VIEWPORT_ROW_THEMATIC_BREAK_PRESENTATION,
 };
 
@@ -2904,6 +2905,7 @@ fn viewport_record(
             marker_offset,
             simple_continuation,
             starts_list,
+            task_checked,
         } => {
             let (marker_variant, marker_value) = match marker {
                 DocumentListMarker::Bullet(marker) => (
@@ -2937,6 +2939,16 @@ fn viewport_record(
                     }
                     | if starts_list {
                         VIEWPORT_ROW_LIST_STARTS_LIST
+                    } else {
+                        0
+                    }
+                    | if task_checked.is_some() {
+                        VIEWPORT_ROW_LIST_TASK
+                    } else {
+                        0
+                    }
+                    | if task_checked == Some(true) {
+                        VIEWPORT_ROW_LIST_TASK_CHECKED
                     } else {
                         0
                     },

@@ -1,10 +1,10 @@
-//! Deliberately unreachable GFM table seam in the private CommonMark-only
-//! production promotion.
+//! Deliberately unpromoted GFM table seam in the direct production parser.
 //!
-//! The promoted direct controller rejects every non-CommonMark profile at
-//! construction. Retaining a table implementation here would require the
-//! research-only oracle facade and would broaden the production dependency
-//! surface without making any reachable direct transition more exact.
+//! The direct controller now preserves selected GFM identity, but tables need
+//! a bounded variable-cell command protocol and recursive-Green schema before
+//! they can become authoritative. Until that protocol is present, this seam
+//! leaves the source as ordinary Paragraph content instead of importing the
+//! research-only AST renderer or fabricating table authority.
 
 use crate::parser::{ParseError, ValueBlockParser};
 use crate::tree::NodeId;

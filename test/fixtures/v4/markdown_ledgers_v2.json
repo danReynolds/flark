@@ -15,17 +15,17 @@
       "caseIdSelector": "GFM-1..GFM-672",
       "denominator": 672,
       "counts": {
-        "exact": 385,
-        "missing": 273,
-        "divergent": 14,
+        "exact": 572,
+        "missing": 81,
+        "divergent": 19,
         "approved_deviation": 0
       },
       "admissionReceiptSha256": "6914839f85b9b1f199dddf7754f77aa94e0e9d914a3826910850c0875dbb6ee4",
-      "receiptSha256": "16cb762caf36aa4770696dcd41982a5a608ccf308c9b4aef3e798e27e7dbbd77",
+      "receiptSha256": "138b04d9a4afbc85073425311d69512809a57ba73ea94bc06f3d7f9be557f19a",
       "evidence": {
         "command": "cargo test --locked --manifest-path native/comrak_bridge/Cargo.toml --package flark-parser --test block_core_commonmark_ledger production_controller_gfm_0_29_semantic_coverage_is_complete_and_fail_closed -- --exact --nocapture",
         "source": "native/comrak_bridge/crates/flark_parser/tests/block_core_commonmark_ledger.rs",
-        "note": "All 672 cases are admitted and fail-closed classified against the current product controller. The block controller still runs its CommonMark grammar, so this receipt exposes selected-profile and semantic implementation gaps; it does not claim complete GFM conformance."
+        "note": "All 672 cases are admitted and fail-closed classified through the selected-GFM block controller and production heading/reference/link projection path. The bounded task-list protocol is promoted; GFM tables remain unpromoted, so this receipt is an implementation-gap map, not a complete-conformance claim."
       }
     },
     {
@@ -52,12 +52,12 @@
       "caseIdSelector": "CM-1..CM-652",
       "denominator": 652,
       "counts": {
-        "exact": 384,
-        "missing": 262,
-        "divergent": 6,
+        "exact": 563,
+        "missing": 77,
+        "divergent": 12,
         "approved_deviation": 0
       },
-      "receiptSha256": "dc6e79a29eb93bf1053d9416d62465568593155b4b5bab34ade2dd243e58ea85",
+      "receiptSha256": "4f5c490ac6c8cb2fb2d54065a7e084ec120fd4bef0755a28a74f88e970ce21ff",
       "evidence": {
         "command": "cargo test --locked --manifest-path native/comrak_bridge/Cargo.toml --package flark-parser --test block_core_commonmark_ledger production_controller_commonmark_coverage_is_monotonic_and_fail_closed -- --exact --nocapture",
         "source": "native/comrak_bridge/crates/flark_parser/tests/block_core_commonmark_ledger.rs",

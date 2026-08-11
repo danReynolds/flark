@@ -210,6 +210,21 @@ void main() {
       await _settle(empty);
       expect(empty.lastError, isNull);
       expect(empty.semanticsCurrent, isTrue);
+
+      final tasks = await FlarkEditorController.open(
+        '- [ ] todo\n- [X] done\n',
+        libraryPath: libraryPath,
+      );
+      await tasks.continueParsing();
+      addTearDown(tasks.close);
+      expect(tasks.rows[0].listItem?.taskChecked, isFalse);
+      expect(tasks.rows[1].listItem?.taskChecked, isTrue);
+      tasks.activateRow(tasks.rows[1], tasks.rows[1].editableUtf16!.end);
+      expect(tasks.surfaceRow(tasks.rows[0]).leadingText, '☐ ');
+      tasks.insertNewline();
+      expect(tasks.visibleSource, '- [ ] todo\n- [X] done\n- [ ] \n');
+      await _settle(tasks);
+      expect(tasks.rows.last.listItem?.taskChecked, isFalse);
     },
     skip: libraryPath == null,
   );

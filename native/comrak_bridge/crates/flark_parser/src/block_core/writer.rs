@@ -5200,9 +5200,14 @@ fn open_property(
             Ok(Some(property(FACT_LIST, &payload)?))
         }
         BlockKind::Item(facts) => {
-            let mut payload = [0_u8; 4];
+            let mut payload = [0_u8; 5];
             payload[..2].copy_from_slice(&facts.marker_offset().to_le_bytes());
-            payload[2..].copy_from_slice(&facts.padding().to_le_bytes());
+            payload[2..4].copy_from_slice(&facts.padding().to_le_bytes());
+            payload[4] = match facts.task_checked() {
+                None => 0,
+                Some(false) => 1,
+                Some(true) => 2,
+            };
             Ok(Some(property(FACT_ITEM, &payload)?))
         }
         BlockKind::Heading(facts) => Ok(Some(property(

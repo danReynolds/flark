@@ -114,19 +114,19 @@ void main() {
     expect(ledgers['commonmark_semantic']!['claimRole'], 'compatibility');
     expect(ledgers['commonmark_incremental']!['claimRole'], 'compatibility');
     expect(ledgers['gfm_semantic']!['counts'], {
-      'exact': 385,
-      'missing': 273,
-      'divergent': 14,
+      'exact': 572,
+      'missing': 81,
+      'divergent': 19,
       'approved_deviation': 0,
     });
     expect(
       ledgers['gfm_semantic']!['receiptSha256'],
-      '16cb762caf36aa4770696dcd41982a5a608ccf308c9b4aef3e798e27e7dbbd77',
+      '138b04d9a4afbc85073425311d69512809a57ba73ea94bc06f3d7f9be557f19a',
     );
     expect(ledgers['commonmark_semantic']!['counts'], {
-      'exact': 384,
-      'missing': 262,
-      'divergent': 6,
+      'exact': 563,
+      'missing': 77,
+      'divergent': 12,
       'approved_deviation': 0,
     });
     expect(ledgers['commonmark_semantic']!['denominator'], 652);

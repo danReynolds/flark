@@ -43,6 +43,9 @@ pub struct ListData {
     pub delimiter: ListDelimiter,
     pub bullet_char: u8,
     pub tight: bool,
+    /// Present only on a GFM Item whose first inline block begins with a
+    /// parser-certified task marker. List containers always retain `None`.
+    pub task_checked: Option<bool>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

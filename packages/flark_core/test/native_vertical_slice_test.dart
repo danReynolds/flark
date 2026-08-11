@@ -234,7 +234,7 @@ void main() {
   test(
     'list marker facts and exact prefix geometry cross the Dart boundary',
     () async {
-      const source = '- alpha\n9) beta\n42) \n';
+      const source = '- alpha\n9) beta\n42) \n- [ ] todo\n- [X] done\n';
       final document = await FlarkCoreDocument.open(
         source,
         libraryPath: libraryPath!,
@@ -249,7 +249,7 @@ void main() {
           .map((row) => row.listItem)
           .whereType<FlarkListItemPresentation>()
           .toList();
-      expect(items, hasLength(3));
+      expect(items, hasLength(5));
       expect(items[0].markerStyle, FlarkListMarkerStyle.hyphen);
       expect(items[0].prefixUtf16.start, 0);
       expect(items[0].prefixUtf16.end, 2);
@@ -259,10 +259,9 @@ void main() {
       expect(items[1].markerValue, 9);
       expect(items[2].markerValue, 42);
       expect(items[2].startsList, isFalse);
-      expect(items[2].prefixUtf16.end, source.length - 1);
-      expect(viewport.rows.last.kind, 14);
-      expect(viewport.rows.last.sourceUtf16.start, source.length);
-      expect(viewport.rows.last.editableUtf16?.start, source.length - 1);
+      expect(items[3].taskChecked, isFalse);
+      expect(items[4].taskChecked, isTrue);
+      expect(items[4].prefixUtf16.end, source.indexOf('done'));
     },
     skip: libraryPath == null,
   );

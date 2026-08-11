@@ -2188,7 +2188,8 @@ final class FlarkEditorController extends ChangeNotifier {
       return true;
     }
     final continuation =
-        '${''.padLeft(listItem.markerOffset)}${listItem.nextMarkerText} ';
+        '${''.padLeft(listItem.markerOffset)}${listItem.nextMarkerText} '
+        '${listItem.taskChecked == null ? '' : '[ ] '}';
     replaceSelection('\n$continuation');
     return true;
   }
@@ -2288,7 +2289,12 @@ final class FlarkEditorController extends ChangeNotifier {
 
   String _projectedListPrefix(FlarkListItemPresentation item) {
     final nestingIndent = math.max(0, item.nestingDepth - 1) * 2;
-    return '${''.padLeft(nestingIndent + item.markerOffset)}${item.markerText} ';
+    final marker = switch (item.taskChecked) {
+      null => item.markerText,
+      false => '☐',
+      true => '☑',
+    };
+    return '${''.padLeft(nestingIndent + item.markerOffset)}$marker ';
   }
 
   String _projectedBlockQuotePrefix(FlarkBlockQuotePresentation quote) =>

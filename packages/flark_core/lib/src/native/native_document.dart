@@ -47,7 +47,9 @@ const _listMarkerOffsetShift = 11;
 const _listMarkerOffsetMask = 0x1800;
 const _listSimpleContinuation = 0x2000;
 const _listStartsList = 0x4000;
-const _knownListVariantBits = 0x7fff;
+const _listTask = 0x8000;
+const _listTaskChecked = 0x10000;
+const _knownListVariantBits = 0x1ffff;
 const _blockQuotePresentation = 0x10000;
 const _blockQuoteDepthShift = 17;
 const _blockQuoteDepthMask = 0x1fe0000;
@@ -1131,12 +1133,13 @@ final class FlarkNativeDocument {
       FlarkBlockQuotePresentation? blockQuote;
       FlarkCodeBlockPresentation? codeBlock;
       var thematicBreak = false;
-      final hasBlockQuotePresentation =
-          record.semanticVariant & _blockQuotePresentation != 0 &&
-          record.kind == _paragraphKind;
       final listMarker = matchesListRowKind(record.kind)
           ? record.semanticVariant & _listMarkerMask
           : 0;
+      final hasBlockQuotePresentation =
+          listMarker == 0 &&
+          record.semanticVariant & _blockQuotePresentation != 0 &&
+          record.kind == _paragraphKind;
       if (hasBlockQuotePresentation) {
         final depth =
             (record.semanticVariant & _blockQuoteDepthMask) >>
@@ -1179,9 +1182,12 @@ final class FlarkNativeDocument {
           _ => null,
         };
         final ordered = listMarker >= _listOrderedPeriod;
+        final task = record.semanticVariant & _listTask != 0;
+        final taskChecked = record.semanticVariant & _listTaskChecked != 0;
         if (!matchesListRowKind(record.kind) ||
             markerStyle == null ||
             depth == 0 ||
+            (taskChecked && !task) ||
             (record.semanticVariant & ~_knownListVariantBits) != 0 ||
             !_hasValidPresentationPrefix(record) ||
             (ordered
@@ -1209,6 +1215,7 @@ final class FlarkNativeDocument {
           simpleContinuation:
               record.semanticVariant & _listSimpleContinuation != 0,
           startsList: record.semanticVariant & _listStartsList != 0,
+          taskChecked: task ? taskChecked : null,
         );
       } else if (record.kind == _indentedCodeKind ||
           record.kind == _fencedCodeKind) {
