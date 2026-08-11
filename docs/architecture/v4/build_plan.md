@@ -48,7 +48,7 @@ Flutter may never infer continuity by carrying old Markdown facts forward.
 
 The recertification-only spike was falsified and the permitted receipt is now
 implemented end to end. Rust publishes conservative per-fact continuity,
-plus ABI 4.8 row continuity for safe plain-text insertions. `flark_core`
+plus ABI 4.9 row continuity for safe plain-text edits. `flark_core`
 validates and binds either capability to the exact transaction, and Flutter
 keeps only authorized content and unaffected cached presentation projected
 until a covering certified viewport arrives. Syntax-like input and constructs

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flark/flark.dart';
 import 'package:flark_core/flark_core.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -228,6 +229,60 @@ void main() {
       expect(tasks.visibleSource, '- [ ] todo\n- [X] done\n- [ ] \n');
       await _settle(tasks);
       expect(tasks.rows.last.listItem?.taskChecked, isFalse);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'platform Return uses list continuation and visual block split recipes',
+    () async {
+      final ordered = await FlarkEditorController.open(
+        '9) alpha\n',
+        libraryPath: libraryPath!,
+      );
+      await ordered.continueParsing();
+      addTearDown(ordered.close);
+      final orderedRow = ordered.rows.single;
+      ordered.activateRow(orderedRow, orderedRow.editableUtf16!.end);
+      var before = ordered.inputValue;
+      ordered.applyDeltas([
+        TextEditingDeltaInsertion(
+          oldText: before.text,
+          textInserted: '\n',
+          insertionOffset: before.selection.extentOffset,
+          selection: TextSelection.collapsed(
+            offset: before.selection.extentOffset + 1,
+          ),
+          composing: TextRange.empty,
+        ),
+      ]);
+      expect(ordered.visibleSource, '9) alpha\n10) \n');
+      expect(ordered.resyncCount, 0);
+
+      final separated = await FlarkEditorController.open(
+        'Paragraph.\n1. item\n',
+        libraryPath: libraryPath,
+      );
+      await separated.continueParsing();
+      addTearDown(separated.close);
+      final paragraph = separated.rows.firstWhere((row) => row.kind == 5);
+      separated.activateRow(paragraph, paragraph.editableUtf16!.end);
+      before = separated.inputValue;
+      separated.applyDeltas([
+        TextEditingDeltaInsertion(
+          oldText: before.text,
+          textInserted: '\n',
+          insertionOffset: before.selection.extentOffset,
+          selection: TextSelection.collapsed(
+            offset: before.selection.extentOffset + 1,
+          ),
+          composing: TextRange.empty,
+        ),
+      ]);
+      expect(separated.visibleSource, 'Paragraph.\n\n1. item\n');
+      expect(separated.resyncCount, 0);
+      await _settle(separated);
+      expect(separated.rows.any((row) => row.listItem != null), isTrue);
     },
     skip: libraryPath == null,
   );

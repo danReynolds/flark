@@ -247,7 +247,7 @@ void main() {
       expect(viewport.coveredUtf16.end, source.length);
       expect(
         viewport.rows.first.continuityPolicy,
-        FlarkViewportRowContinuityPolicy.plainTextInsertion,
+        FlarkViewportRowContinuityPolicy.plainTextEdit,
       );
       final items = viewport.rows
           .map((row) => row.listItem)

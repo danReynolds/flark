@@ -74,11 +74,12 @@ void main() {
     );
   });
 
-  test('parser-authored row policy retains only plain text insertions', () {
+  test('parser-authored row policy retains conservative plain text edits', () {
     final receipt = authorizeRowProjectionContinuity(
       revision: 7,
-      policy: FlarkViewportRowContinuityPolicy.plainTextInsertion,
+      policy: FlarkViewportRowContinuityPolicy.plainTextEdit,
       editableUtf16: const FlarkSourceRange(2, 9),
+      editableText: 'content',
       inlineFacts: const [],
       startUtf16: 7,
       endUtf16: 7,
@@ -93,14 +94,19 @@ void main() {
       isNotNull,
     );
     expect(
-      receipt.continueWith(startUtf16: 6, endUtf16: 7, replacement: ''),
+      receipt.continueWith(startUtf16: 7, endUtf16: 8, replacement: ''),
+      isNotNull,
+    );
+    expect(
+      receipt.continueWith(startUtf16: 2, endUtf16: 3, replacement: ''),
       isNull,
     );
     expect(
       authorizeRowProjectionContinuity(
         revision: 7,
-        policy: FlarkViewportRowContinuityPolicy.plainTextInsertion,
+        policy: FlarkViewportRowContinuityPolicy.plainTextEdit,
         editableUtf16: const FlarkSourceRange(2, 9),
+        editableText: 'content',
         inlineFacts: const [],
         startUtf16: 7,
         endUtf16: 7,
@@ -114,8 +120,9 @@ void main() {
     expect(
       authorizeRowProjectionContinuity(
         revision: 7,
-        policy: FlarkViewportRowContinuityPolicy.plainTextInsertion,
+        policy: FlarkViewportRowContinuityPolicy.plainTextEdit,
         editableUtf16: const FlarkSourceRange(0, 12),
+        editableText: '**bold** aft',
         inlineFacts: const [fact],
         startUtf16: 4,
         endUtf16: 4,

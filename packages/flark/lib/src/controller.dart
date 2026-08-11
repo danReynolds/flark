@@ -1004,6 +1004,10 @@ final class FlarkEditorController extends ChangeNotifier {
     }
     _platformMutation = true;
     try {
+      if (_isPlatformNewlineMutation(deltas)) {
+        insertNewline();
+        return;
+      }
       var finalValue = _inputValue;
       var mutatingDeltas = 0;
       var typingInput = true;
@@ -1290,10 +1294,26 @@ final class FlarkEditorController extends ChangeNotifier {
     final selection = _inputValue.selection;
     if (selection.isCollapsed &&
         (_insertProjectedListNewline(selection.extentOffset) ||
-            _insertProjectedBlockQuoteNewline(selection.extentOffset))) {
+            _insertProjectedBlockQuoteNewline(selection.extentOffset) ||
+            _insertProjectedBlockNewline(selection.extentOffset))) {
       return;
     }
     replaceSelection('\n');
+  }
+
+  bool _isPlatformNewlineMutation(List<TextEditingDelta> deltas) {
+    if (deltas.length != 1 ||
+        _inputValue.composing != TextRange.empty ||
+        deltas.single.composing != TextRange.empty) {
+      return false;
+    }
+    final mutation = _mutationFor(deltas.single);
+    if (mutation == null || mutation.replacement != '\n') return false;
+    final selection = _inputValue.selection;
+    if (!selection.isValid) return false;
+    return mutation.start ==
+            math.min(selection.baseOffset, selection.extentOffset) &&
+        mutation.end == math.max(selection.baseOffset, selection.extentOffset);
   }
 
   TextEditingValue _normalizeProjectedSelection(TextEditingValue value) {
@@ -2015,6 +2035,9 @@ final class FlarkEditorController extends ChangeNotifier {
     if (row == null || row.table != null || facts == null) return;
     final activation = _mapViewportRange(_activationRange(row));
     if (!_rowSemanticsCurrent(activation)) return;
+    final editable = _mapViewportRange(
+      row.editableUtf16 ?? _activationRange(row),
+    );
     final inlineReceipt = facts.isEmpty
         ? null
         : authorizeInlineProjectionContinuity(
@@ -2029,7 +2052,8 @@ final class FlarkEditorController extends ChangeNotifier {
         authorizeRowProjectionContinuity(
           revision: revision,
           policy: row.continuityPolicy,
-          editableUtf16: activation,
+          editableUtf16: editable,
+          editableText: _sliceVisibleUtf16(editable.start, editable.end),
           inlineFacts: facts,
           startUtf16: start,
           endUtf16: end,
@@ -2741,6 +2765,37 @@ final class FlarkEditorController extends ChangeNotifier {
     final exactPrefix = _sliceVisibleUtf16(prefix.start, prefix.end);
     if (exactPrefix.isEmpty) return false;
     replaceSelection('\n$exactPrefix');
+    return true;
+  }
+
+  bool _insertProjectedBlockNewline(int localCaret) {
+    final row = _activeCachedRow();
+    final editableRange = row?.editableUtf16;
+    if (row == null ||
+        editableRange == null ||
+        (row.kind != 5 && row.kind != 12)) {
+      return false;
+    }
+    final editable = _mapViewportRange(editableRange);
+    final globalCaret = _inputGlobalUtf16Start + localCaret;
+    if (!_rowSemanticsCurrent(editable) ||
+        globalCaret < editable.start ||
+        globalCaret > editable.end) {
+      return false;
+    }
+
+    // A visual block split needs a Markdown blank-line boundary. At either
+    // edge the row's existing line ending supplies one newline; in the middle
+    // both are inserted by the recipe.
+    final visibleStart = _visibleUtf16Start;
+    final visibleEnd = visibleStart + _visibleSource.length;
+    final beforeIsNewline =
+        globalCaret > visibleStart &&
+        _sliceVisibleUtf16(globalCaret - 1, globalCaret) == '\n';
+    final afterIsNewline =
+        globalCaret < visibleEnd &&
+        _sliceVisibleUtf16(globalCaret, globalCaret + 1) == '\n';
+    replaceSelection(beforeIsNewline || afterIsNewline ? '\n' : '\n\n');
     return true;
   }
 

@@ -18,7 +18,7 @@ enum FlarkViewportRowEditCapability {
   unavailable,
 }
 
-enum FlarkViewportRowContinuityPolicy { none, plainTextInsertion }
+enum FlarkViewportRowContinuityPolicy { none, plainTextEdit }
 
 enum FlarkInlineFactKind {
   emphasis,

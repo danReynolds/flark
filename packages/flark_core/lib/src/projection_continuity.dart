@@ -10,8 +10,8 @@ final class FlarkProjectionContinuityReceipt {
     required this.editStartUtf16,
     required this.editEndUtf16,
     required this.replacement,
-    required bool insertionOnly,
-  }) : _insertionOnly = insertionOnly;
+    required String? rowContent,
+  }) : _rowContent = rowContent;
 
   final int baseRevision;
   final int resultRevision;
@@ -19,18 +19,30 @@ final class FlarkProjectionContinuityReceipt {
   final int editStartUtf16;
   final int editEndUtf16;
   final String replacement;
-  final bool _insertionOnly;
+
+  /// Exact bounded content retained only for parser-authorized row edits.
+  /// Inline-fact continuity remains range-only because the fact itself owns
+  /// the complete safe content boundary.
+  final String? _rowContent;
 
   FlarkProjectionContinuityReceipt? continueWith({
     required int startUtf16,
     required int endUtf16,
     required String replacement,
   }) {
-    if (_insertionOnly && (startUtf16 != endUtf16 || replacement.isEmpty)) {
-      return null;
-    }
-    if (!_plainTextTransactionAllowed(
+    final retainedRowContent = _rowContent;
+    if (retainedRowContent == null) {
+      if (!_plainTextTransactionAllowed(
+        authorizedContentUtf16,
+        startUtf16,
+        endUtf16,
+        replacement,
+      )) {
+        return null;
+      }
+    } else if (!_rowPlainTextTransactionAllowed(
       authorizedContentUtf16,
+      retainedRowContent,
       startUtf16,
       endUtf16,
       replacement,
@@ -38,6 +50,11 @@ final class FlarkProjectionContinuityReceipt {
       return null;
     }
     final delta = replacement.length - (endUtf16 - startUtf16);
+    final nextRowContent = retainedRowContent?.replaceRange(
+      startUtf16 - authorizedContentUtf16.start,
+      endUtf16 - authorizedContentUtf16.start,
+      replacement,
+    );
     return FlarkProjectionContinuityReceipt._(
       baseRevision: resultRevision,
       resultRevision: resultRevision + 1,
@@ -48,7 +65,7 @@ final class FlarkProjectionContinuityReceipt {
       editStartUtf16: startUtf16,
       editEndUtf16: endUtf16,
       replacement: replacement,
-      insertionOnly: _insertionOnly,
+      rowContent: nextRowContent,
     );
   }
 }
@@ -107,37 +124,49 @@ FlarkProjectionContinuityReceipt? authorizeInlineProjectionContinuity({
     editStartUtf16: startUtf16,
     editEndUtf16: endUtf16,
     replacement: replacement,
-    insertionOnly: false,
+    rowContent: null,
   );
 }
 
-/// Binds a parser-authored row policy to one exact source insertion. The
-/// policy deliberately authorizes insertions only; deletion and replacement
-/// can join formerly separate Markdown-sensitive source and must recertify.
+/// Binds a parser-authored row policy to one exact conservative source edit.
+/// The bounded exact row content lets deletions fail closed when they touch a
+/// boundary or could join Markdown-sensitive source.
 FlarkProjectionContinuityReceipt? authorizeRowProjectionContinuity({
   required int revision,
   required FlarkViewportRowContinuityPolicy policy,
   required FlarkSourceRange editableUtf16,
+  required String editableText,
   required List<FlarkInlineFact> inlineFacts,
   required int startUtf16,
   required int endUtf16,
   required String replacement,
 }) {
   if (revision <= 0 ||
-      policy != FlarkViewportRowContinuityPolicy.plainTextInsertion ||
-      startUtf16 != endUtf16 ||
-      replacement.isEmpty ||
-      startUtf16 < editableUtf16.start ||
-      startUtf16 > editableUtf16.end ||
-      !_plainTextReplacementAllowed(replacement)) {
+      policy != FlarkViewportRowContinuityPolicy.plainTextEdit ||
+      editableText.length != editableUtf16.length ||
+      !_rowPlainTextTransactionAllowed(
+        editableUtf16,
+        editableText,
+        startUtf16,
+        endUtf16,
+        replacement,
+      )) {
     return null;
   }
   for (final fact in inlineFacts) {
-    if (fact.sourceUtf16.start <= startUtf16 &&
-        startUtf16 <= fact.sourceUtf16.end) {
+    final source = fact.sourceUtf16;
+    final touchesFact = startUtf16 == endUtf16
+        ? source.start <= startUtf16 && startUtf16 <= source.end
+        : startUtf16 < source.end && source.start < endUtf16;
+    if (touchesFact) {
       return null;
     }
   }
+  final nextText = editableText.replaceRange(
+    startUtf16 - editableUtf16.start,
+    endUtf16 - editableUtf16.start,
+    replacement,
+  );
   return FlarkProjectionContinuityReceipt._(
     baseRevision: revision,
     resultRevision: revision + 1,
@@ -148,8 +177,37 @@ FlarkProjectionContinuityReceipt? authorizeRowProjectionContinuity({
     editStartUtf16: startUtf16,
     editEndUtf16: endUtf16,
     replacement: replacement,
-    insertionOnly: true,
+    rowContent: nextText,
   );
+}
+
+bool _rowPlainTextTransactionAllowed(
+  FlarkSourceRange content,
+  String exactContent,
+  int start,
+  int end,
+  String replacement,
+) {
+  if (!_plainTextTransactionAllowed(content, start, end, replacement)) {
+    return false;
+  }
+  if (exactContent.length != content.length) return false;
+  if (start == end) return replacement.isNotEmpty;
+
+  // A boundary deletion can expose a block marker that was previously plain
+  // text. Deletes in the interior are retained only when the removed source
+  // and the two newly adjacent scalars are all syntax-insensitive.
+  if (start == content.start) return false;
+  final localStart = start - content.start;
+  final localEnd = end - content.start;
+  final removed = exactContent.substring(localStart, localEnd);
+  if (!_plainTextReplacementAllowed(removed)) return false;
+  final left = exactContent.substring(localStart - 1, localStart);
+  final right = localEnd == exactContent.length
+      ? ''
+      : exactContent.substring(localEnd, localEnd + 1);
+  return !_containsMarkdownSensitiveAscii(left) &&
+      !_containsMarkdownSensitiveAscii(right);
 }
 
 bool _plainTextTransactionAllowed(
@@ -175,4 +233,11 @@ bool _plainTextReplacementAllowed(String replacement) {
     }
   }
   return true;
+}
+
+bool _containsMarkdownSensitiveAscii(String value) {
+  const sensitive = r'\*_~`[]<>#>-+.!()|';
+  return value.runes.any(
+    (scalar) => scalar <= 0x7f && sensitive.codeUnits.contains(scalar),
+  );
 }

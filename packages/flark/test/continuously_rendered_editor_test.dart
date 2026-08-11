@@ -241,6 +241,98 @@ void main() {
   );
 
   test(
+    'plain heading backspace never demotes the visible page between receipts',
+    () async {
+      const source = '# Heading\n\nPlain paragraph.\n\n## Sibling\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+
+      final heading = controller.rows.first;
+      controller.activateRow(heading, heading.editableUtf16!.end);
+      final observed = <({int firstKind, int lastKind, String firstText})>[];
+      void capture() {
+        final rows = controller.rows;
+        if (rows.length < 3) return;
+        observed.add((
+          firstKind: controller.surfaceRow(rows.first).kind,
+          lastKind: controller.surfaceRow(rows.last).kind,
+          firstText: controller.surfaceRow(rows.first).text,
+        ));
+      }
+
+      controller.addListener(capture);
+      addTearDown(() => controller.removeListener(capture));
+      controller.deleteBackward();
+      capture();
+      await _settle(controller);
+
+      expect(observed, isNotEmpty);
+      expect(
+        observed,
+        everyElement(
+          isA<({int firstKind, int lastKind, String firstText})>()
+              .having((state) => state.firstKind, 'active heading kind', 12)
+              .having((state) => state.lastKind, 'sibling heading kind', 12)
+              .having(
+                (state) => state.firstText,
+                'projected active text',
+                isNot(contains('#')),
+              ),
+        ),
+      );
+      expect(controller.visibleSource, startsWith('# Headin\n'));
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'plain paragraph backspace retains block and sibling presentation',
+    () async {
+      const source = 'Plain paragraph.\n\n## Sibling\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+
+      final paragraph = controller.rows.first;
+      controller.activateRow(paragraph, paragraph.editableUtf16!.end);
+      final observed = <({int paragraphKind, int siblingKind})>[];
+      void capture() {
+        final rows = controller.rows;
+        if (rows.length < 2) return;
+        observed.add((
+          paragraphKind: controller.surfaceRow(rows.first).kind,
+          siblingKind: controller.surfaceRow(rows.last).kind,
+        ));
+      }
+
+      controller.addListener(capture);
+      addTearDown(() => controller.removeListener(capture));
+      controller.deleteBackward();
+      capture();
+      await _settle(controller);
+
+      expect(observed, isNotEmpty);
+      expect(
+        observed,
+        everyElement(
+          isA<({int paragraphKind, int siblingKind})>()
+              .having((state) => state.paragraphKind, 'paragraph kind', 5)
+              .having((state) => state.siblingKind, 'sibling heading kind', 12),
+        ),
+      );
+      expect(controller.visibleSource, startsWith('Plain paragraph\n'));
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'syntax-shaped edits fall back to exact local source',
     () async {
       const source = '**bold** after\n';

@@ -77,9 +77,10 @@ pub enum DocumentViewportRowEditCapability {
 pub enum DocumentViewportRowContinuityPolicy {
     #[default]
     None,
-    /// A nonempty insertion of conservative plain text inside the parser's
-    /// contiguous editable range cannot change this row's Markdown identity.
-    PlainTextInsertion,
+    /// A conservative plain-text edit inside the parser's contiguous editable
+    /// range can retain identity when the host's bounded validator approves
+    /// the exact transaction.
+    PlainTextEdit,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1357,7 +1358,7 @@ fn document_viewport_row(
             presentation,
             DocumentViewportRowPresentation::ThematicBreak | DocumentViewportRowPresentation::Table
         ) {
-        DocumentViewportRowContinuityPolicy::PlainTextInsertion
+        DocumentViewportRowContinuityPolicy::PlainTextEdit
     } else {
         DocumentViewportRowContinuityPolicy::None
     };

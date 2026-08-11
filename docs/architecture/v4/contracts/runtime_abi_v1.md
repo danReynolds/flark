@@ -276,11 +276,13 @@ replacement facts. If the complete table group does not fit, the row remains
 exact source and does not advertise table presentation.
 
 ABI 4.8 assigns viewport-row flag bit 4 to parser-authored presentation
-continuity for nonempty conservative plain-text insertions wholly inside a
-contiguous editable row range. The host binds that capability to one exact
-transaction and revision. It does not authorize deletion, replacement,
-syntax-shaped input, table or thematic-break presentation, or an insertion
-that touches an inline fact. The fixed row record remains 128 bytes.
+continuity for conservative plain-text insertions wholly inside a contiguous
+editable row range. ABI 4.9 broadens that flag to conservative plain-text
+edits. The host binds the capability to one exact transaction and revision and
+retains the bounded exact row content. Deletion fails closed at the content
+boundary, beside Markdown-sensitive source, when it empties the content, or
+when it touches an inline fact. Syntax-shaped input, tables, and thematic
+breaks remain unauthorized. The fixed row record remains 128 bytes.
 
 The current implementation derives this bounded projection on the native
 document actor while serving the viewport query, using the existing Rust
