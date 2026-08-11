@@ -275,6 +275,13 @@ absolute parser authority; table-specific escaped pipes are ordinary cooked
 replacement facts. If the complete table group does not fit, the row remains
 exact source and does not advertise table presentation.
 
+ABI 4.8 assigns viewport-row flag bit 4 to parser-authored presentation
+continuity for nonempty conservative plain-text insertions wholly inside a
+contiguous editable row range. The host binds that capability to one exact
+transaction and revision. It does not authorize deletion, replacement,
+syntax-shaped input, table or thematic-break presentation, or an insertion
+that touches an inline fact. The fixed row record remains 128 bytes.
+
 The current implementation derives this bounded projection on the native
 document actor while serving the viewport query, using the existing Rust
 inline grammar and a maximum 8 KiB leaf, 512 facts per row, and bounded parser

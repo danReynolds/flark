@@ -18,6 +18,8 @@ enum FlarkViewportRowEditCapability {
   unavailable,
 }
 
+enum FlarkViewportRowContinuityPolicy { none, plainTextInsertion }
+
 enum FlarkInlineFactKind {
   emphasis,
   strong,
@@ -381,6 +383,7 @@ final class FlarkViewportRow {
     required this.editableBytes,
     required this.editableUtf16,
     required this.editCapability,
+    this.continuityPolicy = FlarkViewportRowContinuityPolicy.none,
     required this.headingLevel,
     required this.headingStyle,
     required this.listItem,
@@ -399,6 +402,7 @@ final class FlarkViewportRow {
   final FlarkSourceRange? editableBytes;
   final FlarkSourceRange? editableUtf16;
   final FlarkViewportRowEditCapability editCapability;
+  final FlarkViewportRowContinuityPolicy continuityPolicy;
   final int? headingLevel;
   final FlarkHeadingStyle? headingStyle;
   final FlarkListItemPresentation? listItem;
@@ -420,6 +424,7 @@ final class FlarkViewportRow {
     'editableBytes': editableBytes?.toMessage(),
     'editableUtf16': editableUtf16?.toMessage(),
     'editCapability': editCapability.index,
+    'continuityPolicy': continuityPolicy.index,
     'headingLevel': headingLevel,
     'headingStyle': headingStyle?.index,
     'listItem': listItem?.toMessage(),
@@ -454,6 +459,8 @@ final class FlarkViewportRow {
     },
     editCapability: FlarkViewportRowEditCapability
         .values[message['editCapability']! as int],
+    continuityPolicy: FlarkViewportRowContinuityPolicy
+        .values[(message['continuityPolicy'] as int?) ?? 0],
     headingLevel: message['headingLevel'] as int?,
     headingStyle: switch (message['headingStyle']) {
       final int index => FlarkHeadingStyle.values[index],

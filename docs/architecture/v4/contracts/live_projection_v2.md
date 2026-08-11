@@ -208,14 +208,18 @@ content run. The receipt remains live until a certified viewport at or after
 its result revision covers the authorized content range.
 
 Continuity is currently authorized for conservative plain-text edits to
-emphasis, strong, strikethrough, code-span, and direct-link label content.
-Syntax-shaped replacements, marker edits, autolinks, and reference links wait
-for current parser certification. A profile-mode 1 MiB dense-inline Mac
-development receipt recorded 0 raw or missing projected frames across 120
-measured edits. Editor-attributed p99 was 3.481 ms with no editor-attributed
-over-budget samples. Flutter failed to foreground the final harness run, so its
-wall-clock outliers are explicitly not claim evidence; controlled wall-clock,
-broad shape/size, and device qualification remain open.
+emphasis, strong, strikethrough, code-span, and direct-link label content, plus
+plain-text insertions inside parser-authored contiguous editable rows. The row
+receipt preserves the active block and unaffected cached presentation through
+the admission/certification interval; it does not authorize deletion,
+replacement, or edits that touch an inline fact. Syntax-shaped replacements,
+marker edits, autolinks, and reference links wait for current parser
+certification. A profile-mode 1 MiB dense-inline Mac development receipt
+recorded 0 raw or missing projected frames across 120 measured edits.
+Editor-attributed p99 was 3.481 ms with no editor-attributed over-budget
+samples. Flutter failed to foreground the final harness run, so its wall-clock
+outliers are explicitly not claim evidence; controlled wall-clock, broad
+shape/size, and device qualification remain open.
 
 Old facts plus a source splice are not sufficient authority. Flutter may keep
 layout/cache storage internally, but it cannot paint stale semantic identity as

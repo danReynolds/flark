@@ -245,6 +245,10 @@ void main() {
       final viewport = await document.queryViewport();
       expect(viewport.coveredUtf16.start, 0);
       expect(viewport.coveredUtf16.end, source.length);
+      expect(
+        viewport.rows.first.continuityPolicy,
+        FlarkViewportRowContinuityPolicy.plainTextInsertion,
+      );
       final items = viewport.rows
           .map((row) => row.listItem)
           .whereType<FlarkListItemPresentation>()

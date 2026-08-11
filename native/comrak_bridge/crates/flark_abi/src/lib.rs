@@ -25,7 +25,7 @@ pub use flark_runtime::{
 };
 
 pub const ABI_MAJOR: u16 = 4;
-pub const ABI_MINOR: u16 = 7;
+pub const ABI_MINOR: u16 = 8;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
@@ -263,6 +263,7 @@ pub const VIEWPORT_ROW_FLAG_CONTIGUOUS_EDIT: u32 = 1 << 0;
 pub const VIEWPORT_ROW_FLAG_PROJECTED_RESERVED: u32 = 1 << 1;
 pub const VIEWPORT_ROW_FLAG_EDIT_UNAVAILABLE: u32 = 1 << 2;
 pub const VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE: u32 = 1 << 3;
+pub const VIEWPORT_ROW_FLAG_CONTINUITY_PLAIN_TEXT_INSERTION: u32 = 1 << 4;
 pub const VIEWPORT_ROW_HEADING_LEVEL_MASK: u32 = 0xff;
 pub const VIEWPORT_ROW_HEADING_SETEXT: u32 = 1 << 8;
 pub const VIEWPORT_ROW_LIST_MARKER_MASK: u32 = 0x7;

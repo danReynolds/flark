@@ -65,7 +65,8 @@ const _knownCodeVariantBits = 0x3f0000;
 const _thematicBreakPresentation = 0x10000;
 const _tablePresentation = 0x4000000;
 const _inlineAuthoritative = 0x8;
-const _knownViewportRowFlags = 0xf;
+const _continuityPlainTextInsertion = 0x10;
+const _knownViewportRowFlags = 0x1f;
 const _inlineFactEmphasis = 1;
 const _inlineFactStrong = 2;
 const _inlineFactCode = 3;
@@ -97,7 +98,7 @@ const _bulkCommitWorkUnits = 1;
 const _resultPayloadBytes = 64 * 1024;
 const _defaultWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 7;
+const _abiMinor = 8;
 // Every v4.7 capability is used by the safe core boundary, including
 // resumable close and snapshot continuations.
 const _requiredCapabilityBits = 0x7fff;
@@ -1337,6 +1338,9 @@ final class FlarkNativeDocument {
         editableBytes: editableBytes,
         editableUtf16: editableUtf16,
         editCapability: capability,
+        continuityPolicy: record.flags & _continuityPlainTextInsertion != 0
+            ? FlarkViewportRowContinuityPolicy.plainTextInsertion
+            : FlarkViewportRowContinuityPolicy.none,
         headingLevel: headingLevel,
         headingStyle: headingStyle,
         listItem: listItem,

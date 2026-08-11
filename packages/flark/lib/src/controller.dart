@@ -2012,18 +2012,29 @@ final class FlarkEditorController extends ChangeNotifier {
     if (_optimisticViewportEdits.isNotEmpty) return;
     final row = _activeCachedRow();
     final facts = row?.inlineFacts;
-    if (row == null || row.table != null || facts == null || facts.isEmpty) {
-      return;
-    }
+    if (row == null || row.table != null || facts == null) return;
     final activation = _mapViewportRange(_activationRange(row));
     if (!_rowSemanticsCurrent(activation)) return;
-    final receipt = authorizeInlineProjectionContinuity(
-      revision: revision,
-      facts: facts,
-      startUtf16: start,
-      endUtf16: end,
-      replacement: replacement,
-    );
+    final inlineReceipt = facts.isEmpty
+        ? null
+        : authorizeInlineProjectionContinuity(
+            revision: revision,
+            facts: facts,
+            startUtf16: start,
+            endUtf16: end,
+            replacement: replacement,
+          );
+    final receipt =
+        inlineReceipt ??
+        authorizeRowProjectionContinuity(
+          revision: revision,
+          policy: row.continuityPolicy,
+          editableUtf16: activation,
+          inlineFacts: facts,
+          startUtf16: start,
+          endUtf16: end,
+          replacement: replacement,
+        );
     if (receipt == null) return;
     final base = surfaceRow(row, includeEditingState: false);
     final presentation = _spliceContinuityPresentation(
@@ -2792,6 +2803,11 @@ final class FlarkEditorController extends ChangeNotifier {
 
   bool _rowSemanticsCurrent(FlarkSourceRange mappedSource) {
     if (_semanticViewportCurrent) return true;
+    // A transaction-bound continuity receipt proves that the conservative
+    // source edit cannot alter presentation outside its authorized active
+    // content. Keep unchanged cached rows semantic as well; demoting the whole
+    // viewport for one safe keystroke produces a visible page-wide flash.
+    if (_projectionContinuity != null) return true;
     if (!_certificationRevisionCurrent) return false;
     return _certificationRanges.any(
       (range) =>

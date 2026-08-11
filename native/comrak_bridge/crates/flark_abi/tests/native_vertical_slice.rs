@@ -8,7 +8,7 @@ use flark_abi::{
     EditDescriptor, HistoryRequest, InlineFactRecord, Outcome, PumpRequest, QueryRequest,
     ResultPageHeader, SessionConfig, SessionRef, SmallEditRequest, SourceRange, SourceReadRequest,
     TransactionRequest, ViewportRowRecord, WorkBudget, INLINE_FACT_EMPHASIS,
-    VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE,
+    VIEWPORT_ROW_FLAG_CONTINUITY_PLAIN_TEXT_INSERTION, VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE,
 };
 use flark_runtime::{HistoryDisposition, StatusCode};
 
@@ -111,6 +111,11 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     };
     assert_eq!(first.kind, 12, "ATX heading kind");
     assert_eq!(first.semantic_variant, 1, "parser-authored H1 variant");
+    assert_ne!(
+        first.flags & VIEWPORT_ROW_FLAG_CONTINUITY_PLAIN_TEXT_INSERTION,
+        0,
+        "heading content authorizes stable plain-text insertion presentation"
+    );
     assert_ne!(first.flags & VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE, 0);
     assert_eq!(first.inline_fact_count, 1);
     assert_eq!(header.payload_bytes, 128 + 80);

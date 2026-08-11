@@ -38,8 +38,12 @@ export 'src/models.dart'
         FlarkTablePresentation,
         FlarkViewport,
         FlarkViewportRow,
+        FlarkViewportRowContinuityPolicy,
         FlarkViewportRowEditCapability;
 export 'src/projection_continuity.dart'
-    show FlarkProjectionContinuityReceipt, authorizeInlineProjectionContinuity;
+    show
+        FlarkProjectionContinuityReceipt,
+        authorizeInlineProjectionContinuity,
+        authorizeRowProjectionContinuity;
 export 'src/native/native_document.dart'
     show FlarkNativeDocument, FlarkNativeException;

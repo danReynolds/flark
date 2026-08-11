@@ -178,6 +178,69 @@ void main() {
   );
 
   test(
+    'plain heading typing never demotes the visible page between receipts',
+    () async {
+      const source = '# Heading\n\nPlain paragraph.\n\n## Sibling\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+
+      final heading = controller.rows.first;
+      final caret = source.indexOf('Heading') + 'Heading'.length;
+      controller.activateRow(heading, caret);
+      final observed = <({int firstKind, int lastKind, String firstText})>[];
+      void capture() {
+        final rows = controller.rows;
+        if (rows.length < 3) return;
+        final first = controller.surfaceRow(rows.first);
+        final last = controller.surfaceRow(rows.last);
+        observed.add((
+          firstKind: first.kind,
+          lastKind: last.kind,
+          firstText: first.text,
+        ));
+      }
+
+      controller.addListener(capture);
+      addTearDown(() => controller.removeListener(capture));
+      final before = controller.inputValue;
+      controller.applyDeltas([
+        TextEditingDeltaInsertion(
+          oldText: before.text,
+          textInserted: 'x',
+          insertionOffset: before.selection.extentOffset,
+          selection: TextSelection.collapsed(
+            offset: before.selection.extentOffset + 1,
+          ),
+          composing: TextRange.empty,
+        ),
+      ]);
+
+      capture();
+      await _settle(controller);
+      expect(observed, isNotEmpty);
+      expect(
+        observed,
+        everyElement(
+          isA<({int firstKind, int lastKind, String firstText})>()
+              .having((state) => state.firstKind, 'active heading kind', 12)
+              .having((state) => state.lastKind, 'sibling heading kind', 12)
+              .having(
+                (state) => state.firstText,
+                'projected active text',
+                isNot(contains('#')),
+              ),
+        ),
+      );
+      expect(controller.visibleSource, startsWith('# Headingx'));
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'syntax-shaped edits fall back to exact local source',
     () async {
       const source = '**bold** after\n';

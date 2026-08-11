@@ -16,9 +16,10 @@ pub use document::{
     DocumentInlineReplacement, DocumentListDelimiter, DocumentListMarker, DocumentLiveViewport,
     DocumentLiveViewportSpan, DocumentPumpReceipt, DocumentQueryReceipt, DocumentSession,
     DocumentSessionError, DocumentSessionPhase, DocumentViewport, DocumentViewportRow,
-    DocumentViewportRowEditCapability, DocumentViewportRowPresentation,
-    DOCUMENT_INLINE_FACT_CONTINUITY_PLAIN_TEXT, DOCUMENT_TABLE_CELL_ALIGNMENT_MASK,
-    DOCUMENT_TABLE_CELL_AUTOCOMPLETED, DOCUMENT_TABLE_CELL_HEADER, DOCUMENT_TABLE_CELL_ROW_START,
+    DocumentViewportRowContinuityPolicy, DocumentViewportRowEditCapability,
+    DocumentViewportRowPresentation, DOCUMENT_INLINE_FACT_CONTINUITY_PLAIN_TEXT,
+    DOCUMENT_TABLE_CELL_ALIGNMENT_MASK, DOCUMENT_TABLE_CELL_AUTOCOMPLETED,
+    DOCUMENT_TABLE_CELL_HEADER, DOCUMENT_TABLE_CELL_ROW_START,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

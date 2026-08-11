@@ -48,9 +48,11 @@ Flutter may never infer continuity by carrying old Markdown facts forward.
 
 The recertification-only spike was falsified and the permitted receipt is now
 implemented end to end. Rust publishes conservative per-fact continuity,
-`flark_core` validates and binds it to the exact transaction, and Flutter keeps
-only that authorized content projected until a covering certified viewport
-arrives. Syntax-like input and constructs with non-local validity fail closed.
+plus ABI 4.8 row continuity for safe plain-text insertions. `flark_core`
+validates and binds either capability to the exact transaction, and Flutter
+keeps only authorized content and unaffected cached presentation projected
+until a covering certified viewport arrives. Syntax-like input and constructs
+with non-local validity fail closed.
 
 The dedicated `FlarkMarkdownView` and editor share the same bounded render
 surface. Focus no longer reveals inline markers, hidden-boundary deletion and

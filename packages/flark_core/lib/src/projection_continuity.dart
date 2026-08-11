@@ -10,7 +10,8 @@ final class FlarkProjectionContinuityReceipt {
     required this.editStartUtf16,
     required this.editEndUtf16,
     required this.replacement,
-  });
+    required bool insertionOnly,
+  }) : _insertionOnly = insertionOnly;
 
   final int baseRevision;
   final int resultRevision;
@@ -18,12 +19,16 @@ final class FlarkProjectionContinuityReceipt {
   final int editStartUtf16;
   final int editEndUtf16;
   final String replacement;
+  final bool _insertionOnly;
 
   FlarkProjectionContinuityReceipt? continueWith({
     required int startUtf16,
     required int endUtf16,
     required String replacement,
   }) {
+    if (_insertionOnly && (startUtf16 != endUtf16 || replacement.isEmpty)) {
+      return null;
+    }
     if (!_plainTextTransactionAllowed(
       authorizedContentUtf16,
       startUtf16,
@@ -43,6 +48,7 @@ final class FlarkProjectionContinuityReceipt {
       editStartUtf16: startUtf16,
       editEndUtf16: endUtf16,
       replacement: replacement,
+      insertionOnly: _insertionOnly,
     );
   }
 }
@@ -101,6 +107,48 @@ FlarkProjectionContinuityReceipt? authorizeInlineProjectionContinuity({
     editStartUtf16: startUtf16,
     editEndUtf16: endUtf16,
     replacement: replacement,
+    insertionOnly: false,
+  );
+}
+
+/// Binds a parser-authored row policy to one exact source insertion. The
+/// policy deliberately authorizes insertions only; deletion and replacement
+/// can join formerly separate Markdown-sensitive source and must recertify.
+FlarkProjectionContinuityReceipt? authorizeRowProjectionContinuity({
+  required int revision,
+  required FlarkViewportRowContinuityPolicy policy,
+  required FlarkSourceRange editableUtf16,
+  required List<FlarkInlineFact> inlineFacts,
+  required int startUtf16,
+  required int endUtf16,
+  required String replacement,
+}) {
+  if (revision <= 0 ||
+      policy != FlarkViewportRowContinuityPolicy.plainTextInsertion ||
+      startUtf16 != endUtf16 ||
+      replacement.isEmpty ||
+      startUtf16 < editableUtf16.start ||
+      startUtf16 > editableUtf16.end ||
+      !_plainTextReplacementAllowed(replacement)) {
+    return null;
+  }
+  for (final fact in inlineFacts) {
+    if (fact.sourceUtf16.start <= startUtf16 &&
+        startUtf16 <= fact.sourceUtf16.end) {
+      return null;
+    }
+  }
+  return FlarkProjectionContinuityReceipt._(
+    baseRevision: revision,
+    resultRevision: revision + 1,
+    authorizedContentUtf16: FlarkSourceRange(
+      editableUtf16.start,
+      editableUtf16.end + replacement.length,
+    ),
+    editStartUtf16: startUtf16,
+    editEndUtf16: endUtf16,
+    replacement: replacement,
+    insertionOnly: true,
   );
 }
 
@@ -116,6 +164,10 @@ bool _plainTextTransactionAllowed(
   if (start < content.start || end > content.end || end < start) return false;
   final resultingLength = content.length - (end - start) + replacement.length;
   if (resultingLength <= 0) return false;
+  return _plainTextReplacementAllowed(replacement);
+}
+
+bool _plainTextReplacementAllowed(String replacement) {
   for (final scalar in replacement.runes) {
     if (scalar == 0x0a || scalar == 0x0d || scalar == 0x00) return false;
     if (scalar <= 0x7f && r'\*_~`[]<>'.codeUnits.contains(scalar)) {

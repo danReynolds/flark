@@ -11,12 +11,13 @@ use flark_runtime::{
     DocumentActorError, DocumentBulletMarker, DocumentCodeBlockStyle, DocumentFenceCharacter,
     DocumentHeadingStyle, DocumentInlineFact, DocumentInlineFactKind, DocumentListDelimiter,
     DocumentListMarker, DocumentLiveViewportSpan, DocumentSessionError, DocumentSessionPhase,
-    DocumentViewportRowEditCapability, DocumentViewportRowPresentation, HistoryDisposition,
-    HistoryToken, OperationCode, OperationResult, Outcome as RuntimeOutcome, ProgressState,
-    ProgressToken, ResultPageReceipt, ResultRecordKind, Revision, SessionHandle,
-    SessionInspectionReceipt, SessionState, SnapshotId, SourceRange as RuntimeSourceRange,
-    StatusCode, TransactionHandle, MAX_BULK_CHUNK_BYTES, MAX_LIVE_ANCHORS, MAX_QUERY_ITEMS,
-    MAX_RESULT_BYTES, MAX_SMALL_EDIT_BYTES, MAX_SOURCE_CHUNK_BYTES, MAX_TRANSACTION_EDITS,
+    DocumentViewportRowContinuityPolicy, DocumentViewportRowEditCapability,
+    DocumentViewportRowPresentation, HistoryDisposition, HistoryToken, OperationCode,
+    OperationResult, Outcome as RuntimeOutcome, ProgressState, ProgressToken, ResultPageReceipt,
+    ResultRecordKind, Revision, SessionHandle, SessionInspectionReceipt, SessionState, SnapshotId,
+    SourceRange as RuntimeSourceRange, StatusCode, TransactionHandle, MAX_BULK_CHUNK_BYTES,
+    MAX_LIVE_ANCHORS, MAX_QUERY_ITEMS, MAX_RESULT_BYTES, MAX_SMALL_EDIT_BYTES,
+    MAX_SOURCE_CHUNK_BYTES, MAX_TRANSACTION_EDITS,
 };
 
 use crate::{
@@ -33,7 +34,8 @@ use crate::{
     VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_SHIFT, VIEWPORT_ROW_BLOCK_QUOTE_PRESENTATION,
     VIEWPORT_ROW_BLOCK_QUOTE_SIMPLE_CONTINUATION, VIEWPORT_ROW_CODE_CLOSED,
     VIEWPORT_ROW_CODE_FENCED, VIEWPORT_ROW_CODE_FENCE_OFFSET_SHIFT, VIEWPORT_ROW_CODE_PRESENTATION,
-    VIEWPORT_ROW_CODE_TILDE, VIEWPORT_ROW_FLAG_CONTIGUOUS_EDIT, VIEWPORT_ROW_FLAG_EDIT_UNAVAILABLE,
+    VIEWPORT_ROW_CODE_TILDE, VIEWPORT_ROW_FLAG_CONTIGUOUS_EDIT,
+    VIEWPORT_ROW_FLAG_CONTINUITY_PLAIN_TEXT_INSERTION, VIEWPORT_ROW_FLAG_EDIT_UNAVAILABLE,
     VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE, VIEWPORT_ROW_FLAG_PROJECTED_RESERVED,
     VIEWPORT_ROW_HEADING_LEVEL_MASK, VIEWPORT_ROW_HEADING_SETEXT, VIEWPORT_ROW_LIST_ASTERISK,
     VIEWPORT_ROW_LIST_DEPTH_SHIFT, VIEWPORT_ROW_LIST_HYPHEN, VIEWPORT_ROW_LIST_MARKER_OFFSET_SHIFT,
@@ -2872,6 +2874,9 @@ fn viewport_record(
     };
     if inline_authoritative {
         flags |= VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE;
+    }
+    if row.continuity_policy == DocumentViewportRowContinuityPolicy::PlainTextInsertion {
+        flags |= VIEWPORT_ROW_FLAG_CONTINUITY_PLAIN_TEXT_INSERTION;
     }
     let (
         presentation_prefix_start_byte,

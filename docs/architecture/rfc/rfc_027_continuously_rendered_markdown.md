@@ -176,12 +176,14 @@ The T2 implementation first attempted the smallest design:
 The profile spike falsified recertification-only presentation: all 120 measured
 ordinary edits could be observed without an active projected row even though
 editor work remained far below the frame budget. T2 therefore implements the
-allowed Rust-authored edit-presentation continuity receipt. Rust marks only
+allowed Rust-authored edit-presentation continuity receipt. Rust marks inline
 constructs whose content can safely retain presentation for conservative
-plain-text transactions; `flark_core` binds that policy to the exact edit and
-revision; Flutter may splice only the authorized exact-content run. Syntax-like
-input, marker edits, autolinks, and reference links fail closed to current exact
-source until parser recertification.
+plain-text transactions and contiguous rows whose block presentation can
+safely survive a plain-text insertion. `flark_core` binds either policy to the
+exact edit and revision; Flutter may splice only the authorized exact-content
+run. Syntax-like input, marker edits, autolinks, reference links, and row-level
+deletions or replacements fail closed to current exact source until parser
+recertification.
 
 A receipt is retired only when a certified viewport at or after its result
 revision covers the authorized content range. A profile-mode Mac development

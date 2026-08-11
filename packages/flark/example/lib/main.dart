@@ -360,6 +360,12 @@ final class _DiagnosticsBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = controller.status;
     final faulted = status == FlarkEditorStatus.faulted;
+    final publicStatus = switch (status) {
+      FlarkEditorStatus.opening => 'opening',
+      FlarkEditorStatus.faulted => 'faulted',
+      FlarkEditorStatus.disposed => 'disposed',
+      _ => 'live',
+    };
     return ColoredBox(
       color: faulted ? const Color(0xffffe9e7) : const Color(0xffeeece7),
       child: SizedBox(
@@ -372,21 +378,11 @@ final class _DiagnosticsBar extends StatelessWidget {
               children: [
                 _StatusDot(status: status),
                 const SizedBox(width: 7),
-                _Metric(status.name),
+                _Metric(publicStatus),
                 _Separator(),
                 _Metric(_formatBytes(controller.sourceByteLength)),
                 _Separator(),
-                _Metric('rev ${controller.revision}'),
-                _Separator(),
-                _Metric('${controller.pendingEdits} pending'),
-                _Separator(),
                 _Metric('page ${controller.viewportPageIndex + 1}'),
-                _Separator(),
-                _Metric(
-                  controller.semanticsCurrent
-                      ? 'semantics current'
-                      : 'neutral/pending',
-                ),
                 _Separator(),
                 _Metric('input ${controller.inputWindowState.name}'),
                 _Separator(),
@@ -429,7 +425,9 @@ final class _StatusDot extends StatelessWidget {
       FlarkEditorStatus.ready => const Color(0xff16834a),
       FlarkEditorStatus.faulted => const Color(0xffc83b30),
       FlarkEditorStatus.disposed => const Color(0xff777777),
-      _ => const Color(0xffd38812),
+      FlarkEditorStatus.opening => const Color(0xffd38812),
+      FlarkEditorStatus.editing ||
+      FlarkEditorStatus.parsing => const Color(0xff16834a),
     };
     return DecoratedBox(
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),

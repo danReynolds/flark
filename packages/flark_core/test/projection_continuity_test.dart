@@ -73,4 +73,55 @@ void main() {
       isNotNull,
     );
   });
+
+  test('parser-authored row policy retains only plain text insertions', () {
+    final receipt = authorizeRowProjectionContinuity(
+      revision: 7,
+      policy: FlarkViewportRowContinuityPolicy.plainTextInsertion,
+      editableUtf16: const FlarkSourceRange(2, 9),
+      inlineFacts: const [],
+      startUtf16: 7,
+      endUtf16: 7,
+      replacement: 'x',
+    );
+
+    expect(receipt, isNotNull);
+    expect(receipt!.authorizedContentUtf16.start, 2);
+    expect(receipt.authorizedContentUtf16.end, 10);
+    expect(
+      receipt.continueWith(startUtf16: 8, endUtf16: 8, replacement: 'y'),
+      isNotNull,
+    );
+    expect(
+      receipt.continueWith(startUtf16: 6, endUtf16: 7, replacement: ''),
+      isNull,
+    );
+    expect(
+      authorizeRowProjectionContinuity(
+        revision: 7,
+        policy: FlarkViewportRowContinuityPolicy.plainTextInsertion,
+        editableUtf16: const FlarkSourceRange(2, 9),
+        inlineFacts: const [],
+        startUtf16: 7,
+        endUtf16: 7,
+        replacement: '*',
+      ),
+      isNull,
+    );
+  });
+
+  test('row continuity never overrides an inline fact policy', () {
+    expect(
+      authorizeRowProjectionContinuity(
+        revision: 7,
+        policy: FlarkViewportRowContinuityPolicy.plainTextInsertion,
+        editableUtf16: const FlarkSourceRange(0, 12),
+        inlineFacts: const [fact],
+        startUtf16: 4,
+        endUtf16: 4,
+        replacement: 'x',
+      ),
+      isNull,
+    );
+  });
 }

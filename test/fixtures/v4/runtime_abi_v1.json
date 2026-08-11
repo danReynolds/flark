@@ -4,7 +4,7 @@
   "status": "m0-interface-only",
   "abi": {
     "major": 4,
-    "minor": 7,
+    "minor": 8,
     "header": "native/comrak_bridge/include/flark_v4.h",
     "runtimeCrate": "native/comrak_bridge/crates/flark_runtime",
     "abiCrate": "native/comrak_bridge/crates/flark_abi",
@@ -325,6 +325,11 @@
       "REFERENCE_IMAGE": 13
     },
     "rule": "SEMANTIC_FACTS payloads contain item_count fixed row records followed by 80-byte semantic records grouped in row order. A row with bit 3 set owns exactly inline_fact_count following records; zero is an authoritative empty set. A row without bit 3 must have count zero and render exact source for inline presentation. Every source and visible-content range is absolute, current-revision, and supplied in both UTF-8 bytes and UTF-16 code units. Replacement records carry one required and one optional Unicode scalar; those words are zero for every other kind. ABI 4.7 table-cell kind 14 uses flags bits 0..1 for alignment, bit 2 for header cells, bit 3 for the first cell of a row, and bit 4 for an autocompleted empty cell. No row publishes a partial semantic set."
+  },
+  "viewportRowContinuity": {
+    "abiMinor": 8,
+    "plainTextInsertionBit": 16,
+    "rule": "Viewport row flag bit 4 is parser-authored authority for retaining the row presentation during a nonempty conservative plain-text insertion wholly inside its contiguous editable UTF-16 range. The flag does not authorize deletion, replacement, syntax-shaped input, table or thematic-break presentation, or an insertion touching an inline fact. The host binds it to one exact transaction and revision."
   },
   "snapshotLifetime": {
     "ownership": "NON_OWNING_EPOCH",

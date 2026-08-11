@@ -71,6 +71,17 @@ pub enum DocumentViewportRowEditCapability {
     Unavailable,
 }
 
+/// Parser-authored authority for retaining one row's presentation while an
+/// exact source transaction is waiting for current-revision certification.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DocumentViewportRowContinuityPolicy {
+    #[default]
+    None,
+    /// A nonempty insertion of conservative plain text inside the parser's
+    /// contiguous editable range cannot change this row's Markdown identity.
+    PlainTextInsertion,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DocumentHeadingStyle {
     Atx,
@@ -211,6 +222,7 @@ pub struct DocumentViewportRow {
     pub editable_range: Option<Range<u64>>,
     pub editable_utf16_range: Option<Range<u64>>,
     pub edit_capability: DocumentViewportRowEditCapability,
+    pub continuity_policy: DocumentViewportRowContinuityPolicy,
     pub presentation: DocumentViewportRowPresentation,
     /// `Some` means the complete bounded inline leaf is authoritative. Empty
     /// is distinct from `None`, which requires exact-source neutral display.
@@ -1336,6 +1348,19 @@ fn document_viewport_row(
     {
         presentation = DocumentViewportRowPresentation::Table;
     }
+    let continuity_policy = if row.edit_capability()
+        == M11RecursiveGreenRowEditCapability::Contiguous
+        && editable_utf16_range
+            .as_ref()
+            .is_some_and(|range| range.start < range.end)
+        && !matches!(
+            presentation,
+            DocumentViewportRowPresentation::ThematicBreak | DocumentViewportRowPresentation::Table
+        ) {
+        DocumentViewportRowContinuityPolicy::PlainTextInsertion
+    } else {
+        DocumentViewportRowContinuityPolicy::None
+    };
     Ok(DocumentViewportRow {
         ordinal: row.ordinal(),
         kind: row.kind().get(),
@@ -1344,6 +1369,7 @@ fn document_viewport_row(
         editable_range,
         editable_utf16_range,
         edit_capability: document_edit_capability(row.edit_capability()),
+        continuity_policy,
         presentation,
         inline_facts,
         path_depth: u32::try_from(row.path().len()).unwrap_or(u32::MAX),
