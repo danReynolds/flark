@@ -279,7 +279,7 @@ void main() {
           composing: TextRange.empty,
         ),
       ]);
-      expect(separated.visibleSource, 'Paragraph.\n\n1. item\n');
+      expect(separated.visibleSource, 'Paragraph.\n\n\n1. item\n');
       expect(separated.resyncCount, 0);
       await _settle(separated);
       expect(separated.rows.any((row) => row.listItem != null), isTrue);

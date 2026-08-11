@@ -171,6 +171,21 @@ final class _ProjectionContinuitySurface {
   final FlarkSurfaceRow presentation;
 }
 
+final class _PendingBlockSplit {
+  _PendingBlockSplit({
+    required this.rowOrdinal,
+    required this.editStartUtf16,
+    required this.rowEndUtf16,
+    required this.replacement,
+  });
+
+  final int rowOrdinal;
+  final int editStartUtf16;
+  final int rowEndUtf16;
+  final String replacement;
+  bool admitted = false;
+}
+
 final class _EditorSelectionSnapshot {
   const _EditorSelectionSnapshot(this.selection, this.activeOrdinal);
 
@@ -214,6 +229,7 @@ final class FlarkEditorController extends ChangeNotifier {
   final List<int> _pageStarts = [0];
   final List<_OptimisticViewportEdit> _optimisticViewportEdits = [];
   _ProjectionContinuitySurface? _projectionContinuity;
+  _PendingBlockSplit? _pendingBlockSplit;
   int _pageIndex = 0;
   int _editGeneration = 0;
   int _pendingEdits = 0;
@@ -461,7 +477,7 @@ final class FlarkEditorController extends ChangeNotifier {
     FlarkViewportRow row, {
     bool includeEditingState = true,
   }) {
-    final mappedSource = _mapViewportRange(row.sourceUtf16);
+    final mappedSource = surfaceSourceRange(row);
     final listItem = row.listItem;
     final blockQuote = row.blockQuote;
     final presentationPrefix = listItem?.prefixUtf16 ?? blockQuote?.prefixUtf16;
@@ -560,6 +576,21 @@ final class FlarkEditorController extends ChangeNotifier {
           : null,
       runs: runs,
     );
+  }
+
+  /// Exact source extent currently owned by one rendered row. During a
+  /// parser-pending block split this excludes the newly created empty block,
+  /// allowing the surface to paint that block as a source-backed caret row.
+  FlarkSourceRange surfaceSourceRange(FlarkViewportRow row) {
+    final mapped = _mappedExactRowRange(row);
+    final split = _pendingBlockSplit;
+    if (split == null ||
+        split.rowOrdinal != row.ordinal ||
+        split.rowEndUtf16 < mapped.start ||
+        split.rowEndUtf16 > mapped.end) {
+      return mapped;
+    }
+    return FlarkSourceRange(mapped.start, split.rowEndUtf16);
   }
 
   FlarkSurfaceRow neutralSurfaceRow({
@@ -889,6 +920,7 @@ final class FlarkEditorController extends ChangeNotifier {
     int globalUtf16Offset, {
     TextAffinity affinity = TextAffinity.downstream,
   }) {
+    _pendingBlockSplit = null;
     _projectionContinuity = null;
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
@@ -1770,19 +1802,12 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   int? _surfaceOrdinalAt(int globalUtf16Offset) {
-    FlarkViewportRow? boundaryCandidate;
-    FlarkViewportRow? precedingCandidate;
     for (final row in _cachedRows) {
-      final range = _mappedExactRowRange(row);
+      final range = surfaceSourceRange(row);
       if (range.start <= globalUtf16Offset && globalUtf16Offset < range.end) {
         return row.ordinal;
       }
-      if (globalUtf16Offset == range.end) boundaryCandidate ??= row;
-      if (range.start <= globalUtf16Offset) precedingCandidate = row;
     }
-    if (boundaryCandidate != null) return boundaryCandidate.ordinal;
-    if (precedingCandidate != null) return precedingCandidate.ordinal;
-    if (_cachedRows.isNotEmpty) return _cachedRows.first.ordinal;
     if (_visibleSource.isEmpty) return -1;
     final local = (globalUtf16Offset - _visibleUtf16Start).clamp(
       0,
@@ -1979,8 +2004,30 @@ final class FlarkEditorController extends ChangeNotifier {
     required int? compositionHistoryGroup,
     bool recenterAfterOptimisticEdit = false,
   }) {
+    final split = _pendingBlockSplit;
+    var retainsSplit = false;
+    if (split != null) {
+      final admitsSplit =
+          !split.admitted &&
+          split.editStartUtf16 == start &&
+          start == end &&
+          split.replacement == replacement;
+      if (admitsSplit) {
+        split.admitted = true;
+        retainsSplit = true;
+      } else if (split.admitted &&
+          start >= split.rowEndUtf16 &&
+          end <= _pendingGapEnd(split)) {
+        retainsSplit = true;
+      } else {
+        _pendingBlockSplit = null;
+      }
+    }
     _prepareProjectionContinuity(start, end, replacement);
     _applyOptimisticViewportEdit(start, end, replacement);
+    if (retainsSplit && split?.admitted == true) {
+      _activeOrdinal = _surfaceOrdinalAt(_globalSelectionExtent);
+    }
     if (recenterAfterOptimisticEdit) {
       _restoreSelectionSnapshot(afterSelection);
     }
@@ -2002,6 +2049,16 @@ final class FlarkEditorController extends ChangeNotifier {
     });
     _editTail = operation.catchError((Object _, StackTrace _) {});
     unawaited(_completeQueuedEdit(operation, generation));
+  }
+
+  int _pendingGapEnd(_PendingBlockSplit split) {
+    var end = _visibleUtf16Start + _visibleSource.length;
+    for (final row in _cachedRows) {
+      if (row.ordinal == split.rowOrdinal) continue;
+      final start = surfaceSourceRange(row).start;
+      if (start >= split.rowEndUtf16) end = math.min(end, start);
+    }
+    return end;
   }
 
   void _prepareProjectionContinuity(int start, int end, String replacement) {
@@ -2385,6 +2442,12 @@ final class FlarkEditorController extends ChangeNotifier {
       // canonical caret whenever the retained ordinal is no longer present.
       _activeOrdinal = _surfaceOrdinalAt(_globalSelectionExtent);
     }
+    if (installsFreshRows && (_activeOrdinal ?? 0) < 0) {
+      _restoreNeutralInputWindow(_globalSelectionExtent);
+    }
+    if (installsFreshRows && (_activeOrdinal ?? -1) >= 0) {
+      _pendingBlockSplit = null;
+    }
     notifyListeners();
   }
 
@@ -2403,6 +2466,10 @@ final class FlarkEditorController extends ChangeNotifier {
   void _restoreInputWindow() {
     if (_crossRowSelection) {
       _restoreSelectionSnapshot(_selectionSnapshot());
+      return;
+    }
+    if ((_activeOrdinal ?? 0) < 0) {
+      _restoreNeutralInputWindow(_globalSelectionExtent);
       return;
     }
     if (_cachedRows.isNotEmpty) {
@@ -2432,6 +2499,37 @@ final class FlarkEditorController extends ChangeNotifier {
       sourceStart: _visibleUtf16Start,
       caret: _globalSelectionExtent.clamp(_visibleUtf16Start, visibleEnd),
       ordinal: -1,
+    );
+  }
+
+  void _restoreNeutralInputWindow(int caret) {
+    if (_visibleSource.isEmpty) {
+      _activateWindowWithoutNotification(
+        text: '',
+        sourceStart: _visibleUtf16Start,
+        caret: _visibleUtf16Start,
+        ordinal: -1,
+      );
+      return;
+    }
+    final localCaret = (caret - _visibleUtf16Start).clamp(
+      0,
+      _visibleSource.length,
+    );
+    final lineStart = localCaret == 0
+        ? 0
+        : _visibleSource.lastIndexOf('\n', localCaret - 1) + 1;
+    final newline = _visibleSource.indexOf('\n', localCaret);
+    final lineEnd = newline == -1 ? _visibleSource.length : newline + 1;
+    var lineOrdinal = 0;
+    for (var index = 0; index < lineStart; index += 1) {
+      if (_visibleSource.codeUnitAt(index) == 0x0a) lineOrdinal += 1;
+    }
+    _activateWindowWithoutNotification(
+      text: _visibleSource.substring(lineStart, lineEnd),
+      sourceStart: _visibleUtf16Start + lineStart,
+      caret: caret,
+      ordinal: -lineOrdinal - 1,
     );
   }
 
@@ -2784,18 +2882,20 @@ final class FlarkEditorController extends ChangeNotifier {
       return false;
     }
 
-    // A visual block split needs a Markdown blank-line boundary. At either
-    // edge the row's existing line ending supplies one newline; in the middle
-    // both are inserted by the recipe.
-    final visibleStart = _visibleUtf16Start;
-    final visibleEnd = visibleStart + _visibleSource.length;
-    final beforeIsNewline =
-        globalCaret > visibleStart &&
-        _sliceVisibleUtf16(globalCaret - 1, globalCaret) == '\n';
-    final afterIsNewline =
-        globalCaret < visibleEnd &&
-        _sliceVisibleUtf16(globalCaret, globalCaret + 1) == '\n';
-    replaceSelection(beforeIsNewline || afterIsNewline ? '\n' : '\n\n');
+    // A visual block split always inserts a complete Markdown paragraph
+    // boundary. Existing line endings belong to the surrounding blocks; using
+    // one of them for the new block makes subsequent typing a soft-line
+    // continuation of the previous paragraph.
+    const replacement = '\n\n';
+    _pendingBlockSplit = _PendingBlockSplit(
+      rowOrdinal: row.ordinal,
+      editStartUtf16: globalCaret,
+      rowEndUtf16: globalCaret + 1,
+      replacement: replacement,
+    );
+    replaceSelection(replacement);
+    _activeOrdinal = _surfaceOrdinalAt(_globalSelectionExtent);
+    notifyListeners();
     return true;
   }
 
@@ -2858,6 +2958,10 @@ final class FlarkEditorController extends ChangeNotifier {
 
   bool _rowSemanticsCurrent(FlarkSourceRange mappedSource) {
     if (_semanticViewportCurrent) return true;
+    // A block-split recipe preserves every pre-existing row and introduces a
+    // separate exact-source empty block. The parser shortly republishes the
+    // same rows around that gap; demoting them meanwhile causes a page flash.
+    if (_pendingBlockSplit != null) return true;
     // A transaction-bound continuity receipt proves that the conservative
     // source edit cannot alter presentation outside its authorized active
     // content. Keep unchanged cached rows semantic as well; demoting the whole

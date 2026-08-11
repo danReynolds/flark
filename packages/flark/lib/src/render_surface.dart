@@ -162,6 +162,20 @@ final class RenderFlarkSurface extends RenderBox {
 
   int get debugPaintedFragmentCount => _paintedRows.length;
 
+  List<({int ordinal, bool neutral, int sourceStart, String text, bool active})>
+  get debugPaintedPlan => _paintedRows
+      .map(
+        (row) => (
+          ordinal: row.ordinal,
+          neutral: row.row == null,
+          sourceStart:
+              row.neutralUtf16Start ?? row.presentation.globalUtf16Start,
+          text: row.presentation.text,
+          active: row.presentation.active,
+        ),
+      )
+      .toList(growable: false);
+
   int get debugFragmentBudget => _fragmentUtf16Budget;
 
   /// Fragments of a laid-out row whose layout was skipped as below-fold.
@@ -342,10 +356,23 @@ final class RenderFlarkSurface extends RenderBox {
     final rows = _controller.rows;
     if (rows.isNotEmpty) {
       var skippedEstimate = 0.0;
+      var sourceCursor = _controller.visibleUtf16Start;
       for (final row in rows) {
+        final sourceRange = _controller.surfaceSourceRange(row);
+        if (sourceRange.start > sourceCursor) {
+          top = _emitNeutralGap(
+            globalStart: sourceCursor,
+            globalEnd: sourceRange.start,
+            hasPrecedingRow: sourceCursor > _controller.visibleUtf16Start,
+            hasFollowingRow: true,
+            top: top,
+            maxWidth: maxWidth,
+          );
+        }
         if (top > _layoutBudgetBottom) {
           _skippedRowCount += 1;
           skippedEstimate += _estimatedRowHeight + 6;
+          sourceCursor = math.max(sourceCursor, sourceRange.end);
           continue;
         }
         final presentation = _controller.surfaceRow(
@@ -361,6 +388,19 @@ final class RenderFlarkSurface extends RenderBox {
         );
         top += 6;
         _laidOutRowCount += 1;
+        sourceCursor = math.max(sourceCursor, sourceRange.end);
+      }
+      final visibleEnd =
+          _controller.visibleUtf16Start + _controller.visibleSource.length;
+      if (sourceCursor < visibleEnd) {
+        top = _emitNeutralGap(
+          globalStart: sourceCursor,
+          globalEnd: visibleEnd,
+          hasPrecedingRow: true,
+          hasFollowingRow: false,
+          top: top,
+          maxWidth: maxWidth,
+        );
       }
       _contentHeight =
           top + skippedEstimate + _skippedFragmentEstimate + _padding.bottom;
@@ -428,6 +468,68 @@ final class RenderFlarkSurface extends RenderBox {
     }
     _contentHeight =
         top + skippedEstimate + _skippedFragmentEstimate + _padding.bottom;
+  }
+
+  double _emitNeutralGap({
+    required int globalStart,
+    required int globalEnd,
+    required bool hasPrecedingRow,
+    required bool hasFollowingRow,
+    required double top,
+    required double maxWidth,
+  }) {
+    final visibleStart = _controller.visibleUtf16Start;
+    final source = _controller.visibleSource;
+    final localStart = (globalStart - visibleStart).clamp(0, source.length);
+    final localEnd = (globalEnd - visibleStart).clamp(
+      localStart,
+      source.length,
+    );
+    final lines = <({int start, int end})>[];
+    var cursor = localStart;
+    while (cursor < localEnd) {
+      final newline = source.indexOf('\n', cursor);
+      final end = newline == -1 || newline >= localEnd ? localEnd : newline + 1;
+      lines.add((start: cursor, end: end));
+      cursor = end;
+    }
+
+    // The outer blank lines are Markdown separators owned by the surrounding
+    // semantic rows. Interior lines are editor-owned empty blocks and need a
+    // caret-bearing row even though the parser intentionally omits them.
+    final firstEmitted = hasPrecedingRow ? 1 : 0;
+    final endEmitted = math.max(
+      firstEmitted,
+      lines.length - (hasFollowingRow ? 1 : 0),
+    );
+    for (var index = firstEmitted; index < endEmitted; index += 1) {
+      final line = lines[index];
+      if (top > _layoutBudgetBottom) {
+        _skippedRowCount += 1;
+        continue;
+      }
+      var ordinal = 0;
+      for (var offset = 0; offset < line.start; offset += 1) {
+        if (source.codeUnitAt(offset) == 0x0a) ordinal += 1;
+      }
+      final text = source.substring(line.start, line.end);
+      final presentation = _controller.neutralSurfaceRow(
+        globalUtf16Start: visibleStart + line.start,
+        text: text,
+        ordinal: ordinal,
+        includeEditingState: _includeEditingState,
+      );
+      top = _emitFragments(
+        presentation: presentation,
+        ordinal: ordinal,
+        top: top,
+        maxWidth: maxWidth,
+        neutralText: text,
+        neutralUtf16Start: visibleStart + line.start,
+      );
+      _laidOutRowCount += 1;
+    }
+    return top;
   }
 
   /// Lays out one presentation as one or more bounded fragments and returns

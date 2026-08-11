@@ -332,6 +332,106 @@ void main() {
     skip: libraryPath == null,
   );
 
+  testWidgets(
+    'Return at the dogfood paragraph boundary owns a visible empty block',
+    (tester) async {
+      const source =
+          '''This is the real **Rust → Dart → Flutter** editor path. Use it like an editor,
+not a static Markdown preview. Certified Markdown stays rendered while focused;
+only incomplete or temporarily pending syntax becomes exact source locally.
+
+## Start here
+
+1. Click here.
+''';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      addTearDown(controller.close);
+      await tester.runAsync(controller.continueParsing);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 900,
+            height: 600,
+            child: FlarkEditor(controller: controller),
+          ),
+        ),
+      );
+
+      final boundary = source.indexOf('\n\n##');
+      final paragraph = controller.rows.firstWhere(
+        (row) => row.kind == 5 && row.editableUtf16!.end == boundary,
+      );
+      controller.activateRow(paragraph, boundary);
+      controller.insertNewline();
+      await tester.pump();
+
+      RenderFlarkSurface surface() =>
+          tester.renderObject(find.byType(FlarkRenderSurfaceWidget));
+      expect(controller.rows.map((row) => controller.surfaceRow(row).kind), [
+        5,
+        12,
+        5,
+      ]);
+      var emptyBlock = surface().debugPaintedPlan.singleWhere(
+        (entry) =>
+            entry.neutral && entry.sourceStart == controller.globalCaretOffset,
+      );
+      expect(emptyBlock.text, '\n');
+      expect(emptyBlock.active, isTrue);
+
+      await tester.runAsync(() => _settle(controller));
+      await tester.pump();
+      emptyBlock = surface().debugPaintedPlan.singleWhere(
+        (entry) =>
+            entry.neutral && entry.sourceStart == controller.globalCaretOffset,
+      );
+      expect(emptyBlock.text, '\n');
+      expect(emptyBlock.active, isTrue);
+      expect(controller.inputValue.text, '\n');
+      expect(controller.inputValue.selection.extentOffset, 0);
+
+      final beforeTyping = controller.inputValue;
+      controller.applyDeltas([
+        TextEditingDeltaInsertion(
+          oldText: beforeTyping.text,
+          textInserted: 'x',
+          insertionOffset: beforeTyping.selection.extentOffset,
+          selection: const TextSelection.collapsed(offset: 1),
+          composing: TextRange.empty,
+        ),
+      ]);
+      await tester.pump();
+      expect(controller.rows.map((row) => controller.surfaceRow(row).kind), [
+        5,
+        12,
+        5,
+      ]);
+      final pendingTextBlock = surface().debugPaintedPlan.singleWhere(
+        (entry) => entry.neutral && entry.active,
+      );
+      expect(pendingTextBlock.text, 'x\n');
+
+      await tester.runAsync(() => _settle(controller));
+      await tester.pump();
+      expect(
+        controller.rows.any(
+          (row) =>
+              controller.surfaceRow(row).active &&
+              controller.surfaceRow(row).text == 'x',
+        ),
+        isTrue,
+      );
+      expect(
+        controller.surfaceRow(controller.rows.first).text,
+        isNot(contains('**')),
+      );
+    },
+    skip: libraryPath == null,
+  );
+
   test(
     'syntax-shaped edits fall back to exact local source',
     () async {
