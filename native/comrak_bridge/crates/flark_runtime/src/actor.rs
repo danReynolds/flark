@@ -133,6 +133,13 @@ impl DocumentActor {
         self.call(move |document| document.source_bytes(range))
     }
 
+    /// Moves a byte offset back to the nearest UTF-8 scalar boundary. Hosts
+    /// and the ABI cap byte ranges against buffer and work budgets; only the
+    /// runtime knows where a cut is legal.
+    pub fn snapped_to_scalar_boundary(&self, offset: usize) -> Result<usize, DocumentActorError> {
+        self.call(move |document| document.snapped_to_scalar_boundary(offset))
+    }
+
     pub fn byte_offset_for_utf16(&self, offset: usize) -> Result<usize, DocumentActorError> {
         self.call(move |document| document.byte_offset_for_utf16(offset))
     }

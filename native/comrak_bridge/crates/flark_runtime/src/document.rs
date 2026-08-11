@@ -763,6 +763,36 @@ impl DocumentSession {
             .utf16_offset_for_byte(offset)?)
     }
 
+    /// Moves `offset` back to the nearest UTF-8 scalar boundary.
+    ///
+    /// A viewport request is a coverage hint expressed in bytes, and a host
+    /// that caps it against a byte budget cannot know where scalars end —
+    /// that knowledge is the runtime's. Snapping can only cover slightly
+    /// less, never produce a wrong result, so it is preferred to rejecting a
+    /// request whose only fault is landing inside a multi-byte scalar.
+    pub fn snapped_to_scalar_boundary(&self, offset: usize) -> Result<usize, DocumentSessionError> {
+        let length = self.source_byte_len();
+        if offset == 0 || offset >= length {
+            return Ok(offset.min(length));
+        }
+        // Coordinate conversion is itself the boundary test: it rejects an
+        // offset inside a scalar. A scalar is at most four bytes, so at most
+        // four probes are needed, and reading raw bytes would not work here
+        // because a byte range must itself be boundary-aligned.
+        let lease = self.runtime.snapshot_current_source()?;
+        let floor = offset.saturating_sub(3);
+        let mut candidate = offset;
+        loop {
+            if lease.utf16_offset_for_byte(candidate).is_ok() {
+                return Ok(candidate);
+            }
+            if candidate == floor {
+                return Ok(floor);
+            }
+            candidate -= 1;
+        }
+    }
+
     pub fn query_viewport(
         &mut self,
         revision: u64,
@@ -782,6 +812,8 @@ impl DocumentSession {
         {
             return Err(DocumentSessionError::RangeOutOfBounds);
         }
+        let requested_range = self.snapped_to_scalar_boundary(requested_range.start)?
+            ..self.snapped_to_scalar_boundary(requested_range.end)?;
         let session = match &self.parser {
             ParseState::Ready(session) => session,
             ParseState::Faulted => return Err(DocumentSessionError::Faulted),
@@ -819,6 +851,8 @@ impl DocumentSession {
         {
             return Err(DocumentSessionError::RangeOutOfBounds);
         }
+        let requested_range = self.snapped_to_scalar_boundary(requested_range.start)?
+            ..self.snapped_to_scalar_boundary(requested_range.end)?;
         match &self.parser {
             ParseState::Ready(_) => certified_range_live_viewport(
                 &self.runtime,

@@ -88,6 +88,56 @@ void main() {
     await tester.runAsync(controller.close);
   }, skip: libraryPath == null);
 
+  testWidgets('fragment cuts land on grapheme-cluster boundaries', (
+    tester,
+  ) async {
+    // A family emoji is one cluster of 11 UTF-16 units. Padding is chosen so
+    // clusters straddle the 2048-unit fragment budget rather than aligning
+    // with it.
+    const family = '\u{1F468}‍\u{1F469}‍\u{1F467}‍\u{1F466}';
+    final buffer = StringBuffer();
+    while (buffer.length < 9000) {
+      buffer.write(family);
+    }
+    final line = buffer.toString();
+    // A short first paragraph holds the caret so the emoji row stays
+    // passive; the active row has its own separate transient cap.
+    final controller = (await tester.runAsync(
+      () => FlarkEditorController.open(
+        'Start.\n\n$line\n',
+        libraryPath: libraryPath!,
+      ),
+    ))!;
+    await tester.runAsync(controller.continueParsing);
+
+    await tester.binding.setSurfaceSize(const Size(640, 12000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlarkEditor(controller: controller),
+      ),
+    );
+    await tester.pump();
+    final surface = tester.renderObject<RenderFlarkSurface>(
+      find.byType(FlarkRenderSurfaceWidget),
+    );
+    expect(surface.debugPaintedFragmentCount, greaterThan(1));
+    // Every cut sits on a cluster boundary, so no fragment begins or ends
+    // mid-family.
+    for (final boundary in surface.debugFragmentBoundaries) {
+      if (boundary == 0 || boundary >= line.length) continue;
+      expect(
+        boundary % family.length,
+        0,
+        reason: 'cut at $boundary splits a grapheme cluster',
+      );
+    }
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.runAsync(controller.close);
+  }, skip: libraryPath == null);
+
   testWidgets('below-fold rows are estimated, not laid out, until scrolled', (
     tester,
   ) async {

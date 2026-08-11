@@ -2611,7 +2611,12 @@ fn query_page(
             let start = usize::try_from(page_start).map_err(|_| StatusCode::RangeOutOfBounds)?;
             let requested_end_usize =
                 usize::try_from(requested_end).map_err(|_| StatusCode::RangeOutOfBounds)?;
-            let end = start.saturating_add(maximum).min(requested_end_usize);
+            // Buffer and budget caps produce an arbitrary byte cut, which a
+            // multi-byte scalar can straddle; only the runtime knows where a
+            // legal cut is, and a page may cover less than requested.
+            let end = document
+                .snapped_to_scalar_boundary(start.saturating_add(maximum).min(requested_end_usize))
+                .map_err(|error| map_actor_error(&error))?;
             let bytes = document
                 .source_bytes(start..end)
                 .map_err(|error| map_actor_error(&error))?;

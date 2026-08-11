@@ -152,6 +152,10 @@ final class RenderFlarkSurface extends RenderBox {
   /// Fragments of a laid-out row whose layout was skipped as below-fold.
   int get debugSkippedFragmentCount => _skippedFragmentCount;
 
+  /// Start offsets of every laid-out fragment, in presentation-text units.
+  List<int> get debugFragmentBoundaries =>
+      _paintedRows.map((row) => row.fragmentStart).toList();
+
   /// The largest fragment any single painter holds, in UTF-16 units.
   int get debugMaxFragmentUnits => _paintedRows.fold(
     0,
@@ -398,8 +402,16 @@ final class RenderFlarkSurface extends RenderBox {
       }
       var fragmentEnd = math.min(text.length, fragmentStart + _fragmentUtf16Budget);
       if (fragmentEnd < text.length) {
-        final unit = text.codeUnitAt(fragmentEnd);
-        if (unit >= 0xdc00 && unit <= 0xdfff) fragmentEnd -= 1;
+        // Cut on an extended-grapheme-cluster boundary, not merely between
+        // surrogates: splitting a ZWJ sequence or a combining mark would
+        // render one cluster as two. Policy lives in the core.
+        final snapped = FlarkCoreGraphemePolicy.clusterBoundaryAtOrBefore(
+          text,
+          fragmentEnd,
+        );
+        // A single cluster longer than the budget still has to be cut
+        // somewhere; keep forward progress rather than looping.
+        if (snapped > fragmentStart) fragmentEnd = snapped;
       }
       final painter = _layoutText(
         presentation,

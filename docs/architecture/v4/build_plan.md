@@ -528,6 +528,34 @@ former uniform 50-62 ms wall behavior, and what remains is occasional
 rasterization cost for tall wrapped fragments rather than layout work. That
 residue is a candidate optimization, not a correctness gate.
 
+Continuing on the render surface then exposed a defect well outside it. A
+fragment cut is now placed on an extended-grapheme-cluster boundary rather
+than merely between surrogates, so a ZWJ sequence or a combining mark can no
+longer be rendered as two clusters; the boundary primitive lives in
+`flark_core` beside the rest of the grapheme policy, because that decision
+is not the render surface's to make. Writing a fixture out of family emoji —
+eleven UTF-16 units and twenty-five UTF-8 bytes per cluster — then failed
+before it could assert anything, with the viewport query returning
+`RANGE_OUT_OF_BOUNDS`.
+
+The cause was a byte cut landing inside a multi-byte scalar, in two places.
+The visible-byte budget recorded above caps a viewport request at 16 KiB,
+and `flark-abi` independently caps a source page against the caller's buffer
+and result budget; both produced an arbitrary byte offset, and every ASCII
+fixture in the suite hid it. Only the runtime knows where a cut is legal, so
+the runtime now snaps a viewport request and a capped source page back to
+the nearest scalar boundary instead of rejecting them: a page may cover less
+than requested, which the page header already expresses, but a host capping
+bytes against a budget can never be expected to know where scalars end.
+Coordinate conversion is itself the boundary test, so the snap probes at
+most four offsets rather than reading bytes, which a boundary-aligned read
+could not have done anyway. A regression covers a mid-scalar cap through
+both the certified and live projection paths.
+
+This was a latent correctness bug for any document with non-ASCII text near
+a window boundary — emoji, CJK, or accented prose — not merely for the
+contrived fixture that surfaced it.
+
 The tiny-blocks hard failure is now root-caused, and it is two defects
 stacked. The engine reports a typed `PayloadBudgetExceeded` when a document
 whose block count rather than byte count dominates exhausts the arena's live

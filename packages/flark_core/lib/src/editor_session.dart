@@ -30,6 +30,20 @@ abstract final class FlarkCoreGraphemePolicy {
 
   static bool isSingleCluster(String text) =>
       text.isNotEmpty && text.characters.length == 1;
+
+  /// The largest extended-grapheme-cluster boundary at or before [offset].
+  ///
+  /// Hosts that must cut a text window — a render surface splitting a long
+  /// row into bounded fragments, for example — use this so a cut never lands
+  /// inside a cluster and render one cluster as two.
+  static int clusterBoundaryAtOrBefore(String text, int offset) {
+    if (offset <= 0) return 0;
+    if (offset >= text.length) return text.length;
+    // `CharacterRange.at` is empty exactly when the index already sits on a
+    // cluster boundary, and otherwise expands to the containing cluster.
+    final cluster = CharacterRange.at(text, offset);
+    return cluster.isEmpty ? offset : cluster.stringBeforeLength;
+  }
 }
 
 /// A canonical selection observation: plain UTF-16 offsets valid at
