@@ -171,19 +171,17 @@ final class _ProjectionContinuitySurface {
   final FlarkSurfaceRow presentation;
 }
 
-final class _PendingBlockSplit {
-  _PendingBlockSplit({
+/// Receipt-bound geometry for the neutral line introduced by a committed
+/// paragraph split. This never predicts source: it exists only after Rust has
+/// returned the exact committed splice.
+final class _CommittedParagraphSplit {
+  const _CommittedParagraphSplit({
     required this.rowOrdinal,
-    required this.editStartUtf16,
     required this.rowEndUtf16,
-    required this.replacement,
   });
 
   final int rowOrdinal;
-  final int editStartUtf16;
   final int rowEndUtf16;
-  final String replacement;
-  bool admitted = false;
 }
 
 final class _EditorSelectionSnapshot {
@@ -229,7 +227,7 @@ final class FlarkEditorController extends ChangeNotifier {
   final List<int> _pageStarts = [0];
   final List<_OptimisticViewportEdit> _optimisticViewportEdits = [];
   _ProjectionContinuitySurface? _projectionContinuity;
-  _PendingBlockSplit? _pendingBlockSplit;
+  _CommittedParagraphSplit? _committedParagraphSplit;
   int _pageIndex = 0;
   int _editGeneration = 0;
   int _pendingEdits = 0;
@@ -578,12 +576,10 @@ final class FlarkEditorController extends ChangeNotifier {
     );
   }
 
-  /// Exact source extent currently owned by one rendered row. During a
-  /// parser-pending block split this excludes the newly created empty block,
-  /// allowing the surface to paint that block as a source-backed caret row.
+  /// Exact source extent currently owned by one rendered row.
   FlarkSourceRange surfaceSourceRange(FlarkViewportRow row) {
     final mapped = _mappedExactRowRange(row);
-    final split = _pendingBlockSplit;
+    final split = _committedParagraphSplit;
     if (split == null ||
         split.rowOrdinal != row.ordinal ||
         split.rowEndUtf16 < mapped.start ||
@@ -920,7 +916,7 @@ final class FlarkEditorController extends ChangeNotifier {
     int globalUtf16Offset, {
     TextAffinity affinity = TextAffinity.downstream,
   }) {
-    _pendingBlockSplit = null;
+    _committedParagraphSplit = null;
     _projectionContinuity = null;
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
@@ -1279,7 +1275,8 @@ final class FlarkEditorController extends ChangeNotifier {
       replaceSelection('');
       return;
     }
-    if (_deleteProjectedListPrefix(selection.extentOffset) ||
+    if (_queueSemanticDeleteBackward(selection.extentOffset) ||
+        _deleteProjectedListPrefix(selection.extentOffset) ||
         _deleteProjectedBlockQuotePrefix(selection.extentOffset) ||
         _deleteProjectedHeadingPrefix(selection.extentOffset)) {
       return;
@@ -1325,7 +1322,8 @@ final class FlarkEditorController extends ChangeNotifier {
   void insertNewline() {
     final selection = _inputValue.selection;
     if (selection.isCollapsed &&
-        (_insertProjectedListNewline(selection.extentOffset) ||
+        (_queueSemanticParagraphBreak(selection.extentOffset) ||
+            _insertProjectedListNewline(selection.extentOffset) ||
             _insertProjectedBlockQuoteNewline(selection.extentOffset) ||
             _insertProjectedBlockNewline(selection.extentOffset))) {
       return;
@@ -2004,30 +2002,13 @@ final class FlarkEditorController extends ChangeNotifier {
     required int? compositionHistoryGroup,
     bool recenterAfterOptimisticEdit = false,
   }) {
-    final split = _pendingBlockSplit;
-    var retainsSplit = false;
-    if (split != null) {
-      final admitsSplit =
-          !split.admitted &&
-          split.editStartUtf16 == start &&
-          start == end &&
-          split.replacement == replacement;
-      if (admitsSplit) {
-        split.admitted = true;
-        retainsSplit = true;
-      } else if (split.admitted &&
-          start >= split.rowEndUtf16 &&
-          end <= _pendingGapEnd(split)) {
-        retainsSplit = true;
-      } else {
-        _pendingBlockSplit = null;
-      }
+    final split = _committedParagraphSplit;
+    if (split != null &&
+        (start < split.rowEndUtf16 || end > _committedGapEnd(split))) {
+      _committedParagraphSplit = null;
     }
     _prepareProjectionContinuity(start, end, replacement);
     _applyOptimisticViewportEdit(start, end, replacement);
-    if (retainsSplit && split?.admitted == true) {
-      _activeOrdinal = _surfaceOrdinalAt(_globalSelectionExtent);
-    }
     if (recenterAfterOptimisticEdit) {
       _restoreSelectionSnapshot(afterSelection);
     }
@@ -2051,7 +2032,144 @@ final class FlarkEditorController extends ChangeNotifier {
     unawaited(_completeQueuedEdit(operation, generation));
   }
 
-  int _pendingGapEnd(_PendingBlockSplit split) {
+  bool _queueSemanticParagraphBreak(int localCaret) {
+    final row = _activeCachedRow();
+    final editableRange = row?.editableUtf16;
+    if (row == null || editableRange == null) return false;
+    final listItem = row.listItem;
+    final simpleList =
+        listItem != null &&
+        listItem.simpleContinuation &&
+        listItem.taskChecked == null;
+    final plainParagraph =
+        row.kind == 5 &&
+        listItem == null &&
+        row.blockQuote == null &&
+        row.headingLevel == null &&
+        row.codeBlock == null &&
+        !row.thematicBreak &&
+        row.table == null;
+    if (!plainParagraph && !simpleList) return false;
+    final editable = _mapViewportRange(editableRange);
+    final globalCaret = _inputGlobalUtf16Start + localCaret;
+    if (globalCaret < editable.start || globalCaret > editable.end) {
+      return false;
+    }
+    _queueSemanticEdit(FlarkCoreEditIntentV1.insertParagraphBreak);
+    return true;
+  }
+
+  bool _queueSemanticDeleteBackward(int localCaret) {
+    final row = _activeCachedRow();
+    final editableRange = row?.editableUtf16;
+    if (row == null || editableRange == null) return false;
+    final listItem = row.listItem;
+    final simpleList =
+        listItem != null &&
+        listItem.simpleContinuation &&
+        listItem.taskChecked == null;
+    final plainParagraph =
+        row.kind == 5 &&
+        listItem == null &&
+        row.blockQuote == null &&
+        row.headingLevel == null &&
+        row.codeBlock == null &&
+        !row.thematicBreak &&
+        row.table == null;
+    if (!plainParagraph && !simpleList) return false;
+    final editable = _mapViewportRange(editableRange);
+    final globalCaret = _inputGlobalUtf16Start + localCaret;
+    if (globalCaret != editable.start) return false;
+    _queueSemanticEdit(FlarkCoreEditIntentV1.deleteBackward);
+    return true;
+  }
+
+  void _queueSemanticEdit(FlarkCoreEditIntentV1 intent) {
+    _projectionContinuity = null;
+    _committedParagraphSplit = null;
+    _breakTypingHistoryGroup();
+    _parseTimer?.cancel();
+    _parseTimer = null;
+    final generation = ++_editGeneration;
+    _pendingEdits += 1;
+    _status = FlarkEditorStatus.editing;
+    final operation = _editTail.then(
+      (_) => _session.applyEditIntentV1(
+        intent,
+        compositionActive: _session.compositionActive,
+      ),
+    );
+    final completion = _completeSemanticEdit(operation, generation);
+    _editTail = completion.catchError((Object _, StackTrace _) {});
+    unawaited(completion);
+    notifyListeners();
+  }
+
+  Future<void> _completeSemanticEdit(
+    Future<FlarkCoreEditIntentReceiptV1> operation,
+    int generation,
+  ) async {
+    try {
+      final receipt = await operation;
+      if (receipt.hasCommit) {
+        _adoptSemanticReceipt(receipt);
+      }
+      _pendingEdits = math.max(0, _pendingEdits - 1);
+      notifyListeners();
+      if (generation != _editGeneration || !receipt.hasCommit) {
+        _status = _semanticViewportCurrent
+            ? FlarkEditorStatus.ready
+            : FlarkEditorStatus.parsing;
+        return;
+      }
+      await _refreshViewport(
+        restoreInputWindow: false,
+        expectedEditGeneration: generation,
+        ensureActiveInputVisible: true,
+      );
+      if (generation == _editGeneration) _scheduleParsingAfterInput();
+    } catch (error) {
+      _projectionContinuity = null;
+      _pendingEdits = math.max(0, _pendingEdits - 1);
+      _lastError = error;
+      _status = FlarkEditorStatus.faulted;
+      notifyListeners();
+    }
+  }
+
+  void _adoptSemanticReceipt(FlarkCoreEditIntentReceiptV1 receipt) {
+    final priorActiveOrdinal = _activeOrdinal;
+    _applyOptimisticViewportEdit(
+      receipt.baseUtf16Start,
+      receipt.baseUtf16End,
+      receipt.replacement,
+    );
+    final firstEndingLength = _doubledLineEndingLength(receipt.replacement);
+    if (priorActiveOrdinal != null &&
+        priorActiveOrdinal >= 0 &&
+        receipt.baseUtf16Start == receipt.baseUtf16End &&
+        firstEndingLength != null) {
+      _committedParagraphSplit = _CommittedParagraphSplit(
+        rowOrdinal: priorActiveOrdinal,
+        rowEndUtf16: receipt.baseUtf16Start + firstEndingLength,
+      );
+    }
+    final caret = receipt.resultSelectionUtf16;
+    _globalSelectionBase = caret;
+    _globalSelectionExtent = caret;
+    _crossRowSelection = false;
+    _oversizedSelection = false;
+    _activeOrdinal = _surfaceOrdinalAt(caret);
+    _restoreCollapsedInputWindow(caret, preferredOrdinal: _activeOrdinal);
+  }
+
+  int? _doubledLineEndingLength(String replacement) => switch (replacement) {
+    '\n\n' || '\r\r' => 1,
+    '\r\n\r\n' => 2,
+    _ => null,
+  };
+
+  int _committedGapEnd(_CommittedParagraphSplit split) {
     var end = _visibleUtf16Start + _visibleSource.length;
     for (final row in _cachedRows) {
       if (row.ordinal == split.rowOrdinal) continue;
@@ -2446,7 +2564,7 @@ final class FlarkEditorController extends ChangeNotifier {
       _restoreNeutralInputWindow(_globalSelectionExtent);
     }
     if (installsFreshRows && (_activeOrdinal ?? -1) >= 0) {
-      _pendingBlockSplit = null;
+      _committedParagraphSplit = null;
     }
     notifyListeners();
   }
@@ -2761,6 +2879,9 @@ final class FlarkEditorController extends ChangeNotifier {
     return true;
   }
 
+  // Transitional fallback for list constructs outside edit-intents-v1 (tasks
+  // today). Plain and non-task simple lists are intercepted by the
+  // source-authoritative semantic lane above.
   bool _deleteProjectedListPrefix(int localCaret) {
     final row = _activeCachedRow();
     final listItem = row?.listItem;
@@ -2887,12 +3008,6 @@ final class FlarkEditorController extends ChangeNotifier {
     // one of them for the new block makes subsequent typing a soft-line
     // continuation of the previous paragraph.
     const replacement = '\n\n';
-    _pendingBlockSplit = _PendingBlockSplit(
-      rowOrdinal: row.ordinal,
-      editStartUtf16: globalCaret,
-      rowEndUtf16: globalCaret + 1,
-      replacement: replacement,
-    );
     replaceSelection(replacement);
     _activeOrdinal = _surfaceOrdinalAt(_globalSelectionExtent);
     notifyListeners();
@@ -2958,10 +3073,9 @@ final class FlarkEditorController extends ChangeNotifier {
 
   bool _rowSemanticsCurrent(FlarkSourceRange mappedSource) {
     if (_semanticViewportCurrent) return true;
-    // A block-split recipe preserves every pre-existing row and introduces a
-    // separate exact-source empty block. The parser shortly republishes the
-    // same rows around that gap; demoting them meanwhile causes a page flash.
-    if (_pendingBlockSplit != null) return true;
+    // The committed splice proves that prior rows remain unchanged while the
+    // newly introduced gap is painted from exact source as a neutral island.
+    if (_committedParagraphSplit != null) return true;
     // A transaction-bound continuity receipt proves that the conservative
     // source edit cannot alter presentation outside its authorized active
     // content. Keep unchanged cached rows semantic as well; demoting the whole

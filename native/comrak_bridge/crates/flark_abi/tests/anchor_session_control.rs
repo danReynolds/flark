@@ -4,13 +4,15 @@ use flark_abi::{
     flark_v4_anchor_create, flark_v4_anchor_release, flark_v4_anchor_resolve,
     flark_v4_anchor_transform, flark_v4_bulk_abort, flark_v4_bulk_begin, flark_v4_cancel,
     flark_v4_close_begin, flark_v4_close_finish, flark_v4_close_pump, flark_v4_create_abort,
-    flark_v4_create_begin, flark_v4_create_commit, flark_v4_history_release,
-    flark_v4_history_replay, flark_v4_pump, flark_v4_query_viewport, flark_v4_session_inspect,
-    flark_v4_session_transfer_owner, flark_v4_small_edit, AnchorRequest, BulkBeginRequest,
-    CancelRequest, CloseRequest, CreateRequest, EditDescriptor, InspectRequest, Outcome,
-    OwnerTransferRequest, PumpRequest, QueryRequest, ResultPageHeader, SessionConfig,
-    SessionInspection, SessionRef, SmallEditRequest, SourceRange, SourceReadRequest,
-    TransactionRequest, WorkBudget,
+    flark_v4_create_begin, flark_v4_create_commit, flark_v4_edit_intent_v1,
+    flark_v4_history_release, flark_v4_history_replay, flark_v4_pump, flark_v4_query_viewport,
+    flark_v4_session_inspect, flark_v4_session_transfer_owner, flark_v4_small_edit, AnchorRequest,
+    BulkBeginRequest, CancelRequest, CloseRequest, CreateRequest, EditDescriptor,
+    EditIntentReceiptV1, EditIntentRequestV1, InspectRequest, Outcome, OwnerTransferRequest,
+    PumpRequest, QueryRequest, ResultPageHeader, SessionConfig, SessionInspection, SessionRef,
+    SmallEditRequest, SourceRange, SourceReadRequest, TransactionRequest, WorkBudget,
+    EDIT_INTENT_DISPOSITION_APPLIED, EDIT_INTENT_INSERT_PARAGRAPH_BREAK,
+    EDIT_INTENT_RECEIPT_HAS_COMMIT, EDIT_INTENT_RECEIPT_SEMANTIC_BYTES, EDIT_PROFILE_FLARK_V1,
 };
 use flark_runtime::{HistoryDisposition, SessionState, StatusCode};
 
@@ -24,6 +26,10 @@ fn budget(work: u64) -> WorkBudget {
 }
 
 fn open_session(source: &[u8], owner: u64) -> SessionRef {
+    open_session_with_history(source, owner, 8 * 1024)
+}
+
+fn open_session_with_history(source: &[u8], owner: u64, history_budget_bytes: u64) -> SessionRef {
     let create = CreateRequest {
         struct_size: size_of::<CreateRequest>() as u32,
         flags: 0,
@@ -32,7 +38,7 @@ fn open_session(source: &[u8], owner: u64) -> SessionRef {
         config: SessionConfig {
             struct_size: size_of::<SessionConfig>() as u32,
             parser_profile: 2,
-            history_budget_bytes: 8 * 1024,
+            history_budget_bytes,
             max_document_bytes: 16 * 1024 * 1024,
             flags: 0,
             reserved: [0; 4],
@@ -212,6 +218,216 @@ const SOURCE_BYTE: u32 = 1;
 const UTF16: u32 = 2;
 const UPSTREAM: u32 = 1;
 const DOWNSTREAM: u32 = 2;
+
+fn edit_intent_request(
+    session: SessionRef,
+    revision: u64,
+    anchor: u64,
+    logical_edit_id: u64,
+    request_digest: u64,
+) -> EditIntentRequestV1 {
+    EditIntentRequestV1 {
+        struct_size: size_of::<EditIntentRequestV1>() as u32,
+        profile_id: EDIT_PROFILE_FLARK_V1,
+        session,
+        expected_revision: revision,
+        selection_base_anchor: anchor,
+        selection_extent_anchor: anchor,
+        logical_edit_id,
+        request_digest,
+        acknowledge_previous_logical_edit_id: 0,
+        selection_generation: logical_edit_id,
+        intent: EDIT_INTENT_INSERT_PARAGRAPH_BREAK,
+        selection_affinity: DOWNSTREAM,
+        selection_direction: 0,
+        composition_active: 0,
+        budget: budget(1),
+        reserved: [0; 1],
+    }
+}
+
+fn read_source(session: SessionRef, revision: u64, length: usize) -> Vec<u8> {
+    let request = SourceReadRequest {
+        struct_size: size_of::<SourceReadRequest>() as u32,
+        flags: 0,
+        session,
+        revision,
+        range: SourceRange {
+            start_byte: 0,
+            end_byte: length as u64,
+        },
+        reserved: [0; 2],
+    };
+    let mut output = vec![0_u8; size_of::<ResultPageHeader>() + length];
+    let mut outcome = Outcome::default();
+    assert_eq!(
+        flark_abi::flark_v4_source_read(
+            &request,
+            output.as_mut_ptr(),
+            output.len() as u64,
+            &mut outcome,
+        ),
+        StatusCode::Ok as u32
+    );
+    output[size_of::<ResultPageHeader>()..].to_vec()
+}
+
+#[test]
+fn semantic_edit_is_one_commit_with_required_history_and_recoverable_terminal() {
+    let source = b"- one\n- two\n";
+    let session = open_session(source, 451);
+    let anchor = create_anchor(session, 1, SOURCE_BYTE, 5, DOWNSTREAM);
+    let mut request = edit_intent_request(session, 1, anchor, 1, 0xA11CE);
+    let mut output = vec![0_u8; size_of::<EditIntentReceiptV1>() + 4096];
+    let mut outcome = Outcome::default();
+
+    assert_eq!(
+        flark_v4_edit_intent_v1(
+            &request,
+            output.as_mut_ptr(),
+            output.len() as u64,
+            &mut outcome,
+        ),
+        StatusCode::Ok as u32
+    );
+    let first = unsafe {
+        output
+            .as_ptr()
+            .cast::<EditIntentReceiptV1>()
+            .read_unaligned()
+    };
+    assert_eq!(first.semantic_disposition, EDIT_INTENT_DISPOSITION_APPLIED);
+    assert_eq!(
+        first.flags & (EDIT_INTENT_RECEIPT_HAS_COMMIT | EDIT_INTENT_RECEIPT_SEMANTIC_BYTES),
+        EDIT_INTENT_RECEIPT_HAS_COMMIT | EDIT_INTENT_RECEIPT_SEMANTIC_BYTES
+    );
+    assert_eq!(first.base_revision, 1);
+    assert_eq!(first.result_revision, 2);
+    assert_eq!(
+        first.base_byte_range,
+        SourceRange {
+            start_byte: 5,
+            end_byte: 5
+        }
+    );
+    assert_eq!(first.result_selection_utf16, 8);
+    assert_ne!(first.history_token, 0);
+    assert_eq!(outcome.primary_handle, first.history_token);
+    assert_eq!(outcome.detail_code, HistoryDisposition::Retained as u64);
+    assert_eq!(first.replacement_bytes, 3);
+    assert_eq!(
+        &output[size_of::<EditIntentReceiptV1>()..size_of::<EditIntentReceiptV1>() + 3],
+        b"\n- "
+    );
+    let after_first = b"- one\n- \n- two\n";
+    assert_eq!(read_source(session, 2, after_first.len()), after_first);
+    assert_eq!(resolve_anchor(session, anchor, 2, SOURCE_BYTE), 8);
+
+    // A lost caller reply retries the same logical ID and digest. Native
+    // returns the retained terminal receipt without replaying the source edit.
+    output.fill(0);
+    assert_eq!(
+        flark_v4_edit_intent_v1(
+            &request,
+            output.as_mut_ptr(),
+            output.len() as u64,
+            &mut outcome,
+        ),
+        StatusCode::Ok as u32
+    );
+    let recovered = unsafe {
+        output
+            .as_ptr()
+            .cast::<EditIntentReceiptV1>()
+            .read_unaligned()
+    };
+    assert_eq!(recovered, first);
+    assert_eq!(read_source(session, 2, after_first.len()), after_first);
+
+    // A different command cannot pass the unacknowledged terminal.
+    request.expected_revision = 2;
+    request.logical_edit_id = 2;
+    request.request_digest = 0xB0B;
+    assert_eq!(
+        flark_v4_edit_intent_v1(
+            &request,
+            output.as_mut_ptr(),
+            output.len() as u64,
+            &mut outcome,
+        ),
+        StatusCode::Backpressure as u32
+    );
+
+    // Acknowledging it admits the next command. The empty list row exits the
+    // list with one source commit and a second required history token.
+    request.acknowledge_previous_logical_edit_id = 1;
+    assert_eq!(
+        flark_v4_edit_intent_v1(
+            &request,
+            output.as_mut_ptr(),
+            output.len() as u64,
+            &mut outcome,
+        ),
+        StatusCode::Ok as u32
+    );
+    let second = unsafe {
+        output
+            .as_ptr()
+            .cast::<EditIntentReceiptV1>()
+            .read_unaligned()
+    };
+    assert_eq!(second.result_revision, 3);
+    assert_ne!(second.history_token, first.history_token);
+    let after_second = b"- one\n\n- two\n";
+    assert_eq!(read_source(session, 3, after_second.len()), after_second);
+
+    // During H1 the ordered legacy literal lane implicitly acknowledges the
+    // terminal at its result revision. A later duplicate therefore cannot
+    // recover and replay an already superseded receipt.
+    small_edit(
+        session,
+        3,
+        after_second.len() as u64,
+        after_second.len() as u64,
+        b"x",
+    );
+    assert_eq!(
+        flark_v4_edit_intent_v1(
+            &request,
+            output.as_mut_ptr(),
+            output.len() as u64,
+            &mut outcome,
+        ),
+        StatusCode::InvalidArgument as u32
+    );
+    assert_eq!(
+        read_source(session, 4, after_second.len() + 1),
+        b"- one\n\n- two\nx"
+    );
+    close_session(session);
+}
+
+#[test]
+fn semantic_edit_rejects_before_commit_without_required_history_headroom() {
+    let source = b"- one\n";
+    let session = open_session_with_history(source, 452, 0);
+    let anchor = create_anchor(session, 1, SOURCE_BYTE, 5, DOWNSTREAM);
+    let request = edit_intent_request(session, 1, anchor, 1, 0xCAFE);
+    let mut output = vec![0_u8; size_of::<EditIntentReceiptV1>() + 4096];
+    let mut outcome = Outcome::default();
+    assert_eq!(
+        flark_v4_edit_intent_v1(
+            &request,
+            output.as_mut_ptr(),
+            output.len() as u64,
+            &mut outcome,
+        ),
+        StatusCode::ResourceLimitExceeded as u32
+    );
+    assert_eq!(read_source(session, 1, source.len()), source);
+    assert_eq!(resolve_anchor(session, anchor, 1, SOURCE_BYTE), 5);
+    close_session(session);
+}
 
 #[test]
 fn anchors_stay_source_stable_through_edits_and_replay() {

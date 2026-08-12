@@ -219,6 +219,38 @@ void main() {
         );
       });
 
+      test(
+        'semantic Return commits from canonical anchors and remains one undo unit',
+        () async {
+          await open('- one\n- two\n');
+          addTearDown(() async {
+            await session.dispose();
+            await document.dispose();
+          });
+          await session.setSelectionUtf16(5, 5);
+
+          final receipt = await session.applyEditIntentV1(
+            FlarkCoreEditIntentV1.insertParagraphBreak,
+            compositionActive: false,
+          );
+          expect(receipt.disposition, FlarkCoreEditIntentDispositionV1.applied);
+          expect(receipt.replacement, '\n- ');
+          expect(receipt.resultSelectionUtf16, 8);
+          expect(await document.readSource(), '- one\n- \n- two\n');
+          expect((await session.resolveSelection())!.extent, 8);
+
+          final undone = await session.undo();
+          expect(undone, isA<FlarkCoreHistoryReplayed>());
+          expect(await document.readSource(), '- one\n- two\n');
+          expect((await session.resolveSelection())!.extent, 5);
+
+          final redone = await session.redo();
+          expect(redone, isA<FlarkCoreHistoryReplayed>());
+          expect(await document.readSource(), '- one\n- \n- two\n');
+          expect((await session.resolveSelection())!.extent, 8);
+        },
+      );
+
       test('canonical selection anchors survive edits by affinity', () async {
         await open('Hello world!\n');
         addTearDown(() async {

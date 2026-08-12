@@ -6,6 +6,15 @@ import 'native/native_document.dart';
 
 enum FlarkCoreHistoryDisposition { retained, disabled, overBudget }
 
+enum FlarkCoreEditIntentV1 { insertParagraphBreak, deleteBackward }
+
+enum FlarkCoreEditIntentDispositionV1 {
+  applied,
+  handledNoChange,
+  notApplicable,
+  needsCurrentSemantics,
+}
+
 /// An opaque, one-shot handle to inverse source retained by the native core.
 final class FlarkCoreHistoryToken {
   FlarkCoreHistoryToken._(this._value, this._owner);
@@ -61,6 +70,17 @@ final class FlarkCoreNativeException implements Exception {
       'FlarkCoreNativeException($operation, status: $status, detail: $detail)';
 }
 
+/// Typed fail-stop raised when the document worker or its native session is
+/// lost. A mutation awaiting a reply must treat its commit state as unknown.
+final class FlarkCoreWorkerException implements Exception {
+  const FlarkCoreWorkerException(this.reason);
+
+  final String reason;
+
+  @override
+  String toString() => 'FlarkCoreWorkerException($reason)';
+}
+
 final class FlarkCoreEditReceipt {
   const FlarkCoreEditReceipt({
     required this.revision,
@@ -77,6 +97,55 @@ final class FlarkCoreEditReceipt {
   final FlarkCoreHistoryDisposition historyDisposition;
 }
 
+/// Complete authoritative result of one semantic edit command. The committed
+/// splice is descriptive source truth; Flutter applies it to bounded caches
+/// and never interprets it as a recipe.
+final class FlarkCoreEditIntentReceiptV1 {
+  const FlarkCoreEditIntentReceiptV1({
+    required this.disposition,
+    required this.baseRevision,
+    required this.resultRevision,
+    required this.baseByteStart,
+    required this.baseByteEnd,
+    required this.baseUtf16Start,
+    required this.baseUtf16End,
+    required this.resultByteStart,
+    required this.resultByteEnd,
+    required this.resultUtf16Start,
+    required this.resultUtf16End,
+    required this.replacement,
+    required this.resultSelectionUtf16,
+    required this.resultSourceByteLength,
+    required this.resultSourceUtf16Length,
+    required this.historyToken,
+    required this.parserPending,
+    required this.logicalEditId,
+    required this.requestDigest,
+  });
+
+  final FlarkCoreEditIntentDispositionV1 disposition;
+  final int baseRevision;
+  final int resultRevision;
+  final int baseByteStart;
+  final int baseByteEnd;
+  final int baseUtf16Start;
+  final int baseUtf16End;
+  final int resultByteStart;
+  final int resultByteEnd;
+  final int resultUtf16Start;
+  final int resultUtf16End;
+  final String replacement;
+  final int resultSelectionUtf16;
+  final int resultSourceByteLength;
+  final int resultSourceUtf16Length;
+  final FlarkCoreHistoryToken? historyToken;
+  final bool parserPending;
+  final int logicalEditId;
+  final int requestDigest;
+
+  bool get hasCommit => disposition == FlarkCoreEditIntentDispositionV1.applied;
+}
+
 /// Headless Dart document actor backed by the Rust Flark runtime.
 ///
 /// A single persistent isolate owns the native session. Calls are serialized by
@@ -86,17 +155,32 @@ final class FlarkCoreDocument {
   FlarkCoreDocument._(
     this._isolate,
     this._commands, {
+    required ReceivePort workerErrors,
+    required ReceivePort workerExits,
+    required StreamSubscription<Object?> workerErrorSubscription,
+    required StreamSubscription<Object?> workerExitSubscription,
+    required Completer<FlarkCoreWorkerException> workerFailure,
     required int revision,
     required int sourceByteLength,
     required int sourceUtf16Length,
     required bool ready,
-  }) : _revision = revision,
+  }) : _workerErrors = workerErrors,
+       _workerExits = workerExits,
+       _workerErrorSubscription = workerErrorSubscription,
+       _workerExitSubscription = workerExitSubscription,
+       _workerFailure = workerFailure,
+       _revision = revision,
        _sourceByteLength = sourceByteLength,
        _sourceUtf16Length = sourceUtf16Length,
        _ready = ready;
 
   final Isolate _isolate;
   final SendPort _commands;
+  final ReceivePort _workerErrors;
+  final ReceivePort _workerExits;
+  final StreamSubscription<Object?> _workerErrorSubscription;
+  final StreamSubscription<Object?> _workerExitSubscription;
+  final Completer<FlarkCoreWorkerException> _workerFailure;
   final Object _historyOwner = Object();
 
   int _revision;
@@ -121,6 +205,19 @@ final class FlarkCoreDocument {
     final startup = ReceivePort();
     final errors = ReceivePort();
     final exits = ReceivePort();
+    final workerFailure = Completer<FlarkCoreWorkerException>();
+    final errorSubscription = errors.listen((Object? error) {
+      if (!workerFailure.isCompleted) {
+        workerFailure.complete(
+          FlarkCoreWorkerException('worker error: ${_workerErrorText(error)}'),
+        );
+      }
+    });
+    final exitSubscription = exits.listen((Object? _) {
+      if (!workerFailure.isCompleted) {
+        workerFailure.complete(const FlarkCoreWorkerException('worker exited'));
+      }
+    });
     final isolate = await Isolate.spawn<List<Object?>>(
       _documentWorker,
       [startup.sendPort, source, libraryPath, historyBudgetBytes],
@@ -129,12 +226,12 @@ final class FlarkCoreDocument {
       errorsAreFatal: true,
       debugName: 'flark-core-document',
     );
+    var monitoringTransferred = false;
     try {
       final message = await Future.any<Object?>([
         startup.first,
-        errors.first.then((error) => {'error': error.toString()}),
-        exits.first.then(
-          (_) => {'error': 'Flark worker exited during startup'},
+        workerFailure.future.then(
+          (failure) => <Object?, Object?>{'workerFailure': failure},
         ),
       ]);
       final envelope = message! as Map<Object?, Object?>;
@@ -142,22 +239,40 @@ final class FlarkCoreDocument {
         isolate.kill(priority: Isolate.immediate);
         throw _decodeNativeException(error);
       }
+      if (envelope case {
+        'workerFailure': final FlarkCoreWorkerException error,
+      }) {
+        isolate.kill(priority: Isolate.immediate);
+        throw error;
+      }
       if (envelope case {'error': final Object error}) {
         isolate.kill(priority: Isolate.immediate);
         throw StateError(error.toString());
       }
-      return FlarkCoreDocument._(
+      final document = FlarkCoreDocument._(
         isolate,
         envelope['commands']! as SendPort,
+        workerErrors: errors,
+        workerExits: exits,
+        workerErrorSubscription: errorSubscription,
+        workerExitSubscription: exitSubscription,
+        workerFailure: workerFailure,
         revision: envelope['revision']! as int,
         sourceByteLength: envelope['sourceByteLength']! as int,
         sourceUtf16Length: envelope['sourceUtf16Length']! as int,
         ready: envelope['ready']! as bool,
       );
+      monitoringTransferred = true;
+      return document;
     } finally {
       startup.close();
-      errors.close();
-      exits.close();
+      if (!monitoringTransferred) {
+        isolate.kill(priority: Isolate.immediate);
+        await errorSubscription.cancel();
+        await exitSubscription.cancel();
+        errors.close();
+        exits.close();
+      }
     }
   }
 
@@ -176,6 +291,65 @@ final class FlarkCoreDocument {
     _sourceUtf16Length = result['sourceUtf16Length']! as int;
     _ready = false;
     return _editReceipt(result);
+  }
+
+  Future<FlarkCoreEditIntentReceiptV1> applyEditIntentV1({
+    required FlarkCoreEditIntentV1 intent,
+    required int expectedRevision,
+    required FlarkCoreAnchor selectionBaseAnchor,
+    required FlarkCoreAnchor selectionExtentAnchor,
+    required int logicalEditId,
+    required int requestDigest,
+    required int acknowledgePreviousLogicalEditId,
+    required int selectionGeneration,
+    required bool compositionActive,
+  }) async {
+    _requireOwnedAnchor(selectionBaseAnchor);
+    _requireOwnedAnchor(selectionExtentAnchor);
+    final result = await _request('editIntentV1', {
+      'intent': intent.index,
+      'expectedRevision': expectedRevision,
+      'selectionBaseAnchor': selectionBaseAnchor._value,
+      'selectionExtentAnchor': selectionExtentAnchor._value,
+      'logicalEditId': logicalEditId,
+      'requestDigest': requestDigest,
+      'acknowledgePreviousLogicalEditId': acknowledgePreviousLogicalEditId,
+      'selectionGeneration': selectionGeneration,
+      'compositionActive': compositionActive,
+    });
+    final disposition =
+        FlarkCoreEditIntentDispositionV1.values[result['disposition']! as int];
+    final hasCommit = disposition == FlarkCoreEditIntentDispositionV1.applied;
+    if (hasCommit) {
+      _revision = result['resultRevision']! as int;
+      _sourceByteLength = result['resultSourceByteLength']! as int;
+      _sourceUtf16Length = result['resultSourceUtf16Length']! as int;
+    }
+    _ready = !(result['parserPending']! as bool);
+    final token = result['historyToken'] as int?;
+    return FlarkCoreEditIntentReceiptV1(
+      disposition: disposition,
+      baseRevision: result['baseRevision']! as int,
+      resultRevision: result['resultRevision']! as int,
+      baseByteStart: result['baseByteStart']! as int,
+      baseByteEnd: result['baseByteEnd']! as int,
+      baseUtf16Start: result['baseUtf16Start']! as int,
+      baseUtf16End: result['baseUtf16End']! as int,
+      resultByteStart: result['resultByteStart']! as int,
+      resultByteEnd: result['resultByteEnd']! as int,
+      resultUtf16Start: result['resultUtf16Start']! as int,
+      resultUtf16End: result['resultUtf16End']! as int,
+      replacement: result['replacement']! as String,
+      resultSelectionUtf16: result['resultSelectionUtf16']! as int,
+      resultSourceByteLength: result['resultSourceByteLength']! as int,
+      resultSourceUtf16Length: result['resultSourceUtf16Length']! as int,
+      historyToken: token == null
+          ? null
+          : FlarkCoreHistoryToken._(token, _historyOwner),
+      parserPending: result['parserPending']! as bool,
+      logicalEditId: result['logicalEditId']! as int,
+      requestDigest: result['requestDigest']! as int,
+    );
   }
 
   /// Replays and consumes [token]. The returned receipt contains the inverse
@@ -312,9 +486,17 @@ final class FlarkCoreDocument {
     if (_disposed) return;
     _disposed = true;
     try {
-      await _send('dispose', const {});
+      if (!_workerFailure.isCompleted) {
+        await _send('dispose', const {});
+      }
+    } on FlarkCoreWorkerException {
+      // The worker is already gone; contained local teardown still completes.
     } finally {
       _isolate.kill(priority: Isolate.immediate);
+      await _workerErrorSubscription.cancel();
+      await _workerExitSubscription.cancel();
+      _workerErrors.close();
+      _workerExits.close();
     }
   }
 
@@ -330,10 +512,16 @@ final class FlarkCoreDocument {
     String operation,
     Map<String, Object?> arguments,
   ) async {
+    if (_workerFailure.isCompleted) throw await _workerFailure.future;
     final reply = ReceivePort();
     try {
       _commands.send([operation, arguments, reply.sendPort]);
-      final envelope = await reply.first as Map<Object?, Object?>;
+      final envelope = await Future.any<Map<Object?, Object?>>([
+        reply.first.then((value) => value! as Map<Object?, Object?>),
+        _workerFailure.future.then<Map<Object?, Object?>>(
+          (failure) => throw failure,
+        ),
+      ]);
       if (envelope case {'nativeError': final Map<Object?, Object?> error}) {
         throw _decodeNativeException(error);
       }
@@ -390,6 +578,11 @@ FlarkCoreNativeException _decodeNativeException(Map<Object?, Object?> error) =>
       error['detail']! as int,
     );
 
+String _workerErrorText(Object? error) {
+  if (error is List && error.isNotEmpty) return error.first.toString();
+  return error.toString();
+}
+
 Future<void> _documentWorker(List<Object?> startup) async {
   final startupPort = startup[0]! as SendPort;
   try {
@@ -425,6 +618,41 @@ Future<void> _documentWorker(List<Object?> startup) async {
               'sourceUtf16Length': receipt.sourceUtf16Length,
               'historyToken': receipt.historyToken,
               'historyDisposition': receipt.historyDisposition.index,
+            });
+          case 'editIntentV1':
+            final receipt = document.applyEditIntentV1(
+              intent:
+                  FlarkNativeEditIntentV1.values[arguments['intent']! as int],
+              expectedRevision: arguments['expectedRevision']! as int,
+              selectionBaseAnchor: arguments['selectionBaseAnchor']! as int,
+              selectionExtentAnchor: arguments['selectionExtentAnchor']! as int,
+              logicalEditId: arguments['logicalEditId']! as int,
+              requestDigest: arguments['requestDigest']! as int,
+              acknowledgePreviousLogicalEditId:
+                  arguments['acknowledgePreviousLogicalEditId']! as int,
+              selectionGeneration: arguments['selectionGeneration']! as int,
+              compositionActive: arguments['compositionActive']! as bool,
+            );
+            reply.send({
+              'disposition': receipt.disposition.index,
+              'baseRevision': receipt.baseRevision,
+              'resultRevision': receipt.resultRevision,
+              'baseByteStart': receipt.baseByteStart,
+              'baseByteEnd': receipt.baseByteEnd,
+              'baseUtf16Start': receipt.baseUtf16Start,
+              'baseUtf16End': receipt.baseUtf16End,
+              'resultByteStart': receipt.resultByteStart,
+              'resultByteEnd': receipt.resultByteEnd,
+              'resultUtf16Start': receipt.resultUtf16Start,
+              'resultUtf16End': receipt.resultUtf16End,
+              'replacement': receipt.replacement,
+              'resultSelectionUtf16': receipt.resultSelectionUtf16,
+              'resultSourceByteLength': receipt.resultSourceByteLength,
+              'resultSourceUtf16Length': receipt.resultSourceUtf16Length,
+              'historyToken': receipt.historyToken,
+              'parserPending': receipt.parserPending,
+              'logicalEditId': receipt.logicalEditId,
+              'requestDigest': receipt.requestDigest,
             });
           case 'replayHistory':
             final receipt = document.replayHistory(

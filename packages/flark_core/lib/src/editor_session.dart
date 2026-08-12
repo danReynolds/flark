@@ -132,9 +132,10 @@ const _historyTokenStale = 0x0306;
 /// and grouping of opaque native history tokens, typing coalescing,
 /// composition grouping, and the anchor-backed canonical selection.
 ///
-/// This class holds no Markdown knowledge and no document text beyond the
-/// bounded arguments callers pass in. Callers serialize their own mutations:
-/// operations must be awaited in order, never interleaved.
+/// This class holds no document text beyond bounded caller arguments. Literal
+/// policy remains host-neutral while the named `flark-edit-v1` semantic
+/// commands are resolved by Rust. Every logical mutation is serialized by the
+/// private command gate, including its history and selection adoption.
 final class FlarkCoreEditorSession {
   FlarkCoreEditorSession(this.document, {int Function()? clockMicros})
     : _clockMicros = clockMicros ?? _stopwatchClock();
@@ -152,6 +153,10 @@ final class FlarkCoreEditorSession {
   int _typingEpoch = 0;
   int _activeCompositionGroup = 0;
   int _nextCompositionGroup = 0;
+  Future<void> _commandTail = Future<void>.value();
+  int _nextLogicalEditId = 0;
+  int _pendingTerminalLogicalEditId = 0;
+  bool _postCommitUnknown = false;
 
   FlarkCoreAnchor? _selectionStart;
   FlarkCoreAnchor? _selectionEnd;
@@ -159,12 +164,15 @@ final class FlarkCoreEditorSession {
   FlarkCoreAffinity _selectionAffinity = FlarkCoreAffinity.downstream;
   Object? _selectionAdapterState;
   int _selectionGeneration = 0;
+  int _selectionBaseUtf16 = 0;
+  int _selectionExtentUtf16 = 0;
 
   bool get canUndo => _undoUnits.isNotEmpty;
   bool get canRedo => _redoUnits.isNotEmpty;
   bool get compositionActive => _activeCompositionGroup != 0;
   int get selectionGeneration => _selectionGeneration;
   bool get hasCanonicalSelection => _selectionStart != null;
+  bool get postCommitUnknown => _postCommitUnknown;
 
   /// Applies one revision-checked source edit and records it as history.
   ///
@@ -181,7 +189,28 @@ final class FlarkCoreEditorSession {
     required FlarkCoreSelectionSnapshot afterSelection,
     bool coalesceTyping = false,
     int? compositionGroup,
+  }) => _serializeCommand(
+    () => _applyEditUtf16(
+      start,
+      end,
+      replacement,
+      beforeSelection: beforeSelection,
+      afterSelection: afterSelection,
+      coalesceTyping: coalesceTyping,
+      compositionGroup: compositionGroup,
+    ),
+  );
+
+  Future<FlarkCoreEditReceipt> _applyEditUtf16(
+    int start,
+    int end,
+    String replacement, {
+    required FlarkCoreSelectionSnapshot beforeSelection,
+    required FlarkCoreSelectionSnapshot afterSelection,
+    bool coalesceTyping = false,
+    int? compositionGroup,
   }) async {
+    _ensureAuthoritativeCommandsAvailable();
     final typing = coalesceTyping && compositionGroup == null
         ? _typingEvent(
             start: start,
@@ -192,6 +221,7 @@ final class FlarkCoreEditorSession {
           )
         : null;
     final receipt = await document.applyEditUtf16(start, end, replacement);
+    _pendingTerminalLogicalEditId = 0;
     await _recordForward(
       receipt,
       beforeSelection: beforeSelection,
@@ -199,12 +229,121 @@ final class FlarkCoreEditorSession {
       typing: typing,
       compositionGroup: compositionGroup,
     );
-    await setSelectionUtf16(
+    await _setSelectionUtf16(
       afterSelection.base,
       afterSelection.extent,
       affinity: afterSelection.affinity,
       adapterState: afterSelection.adapterState,
     );
+    return receipt;
+  }
+
+  /// Applies one collapsed-caret `flark-edit-v1` command. Rust resolves and
+  /// commits the exact Markdown splice from the canonical native anchors;
+  /// Core adopts only the returned receipt and records one standalone undo
+  /// unit. No source or coordinate preflight crosses the worker boundary.
+  Future<FlarkCoreEditIntentReceiptV1> applyEditIntentV1(
+    FlarkCoreEditIntentV1 intent, {
+    required bool compositionActive,
+  }) => _serializeCommand(
+    () => _applyEditIntentV1(intent, compositionActive: compositionActive),
+  );
+
+  Future<FlarkCoreEditIntentReceiptV1> _applyEditIntentV1(
+    FlarkCoreEditIntentV1 intent, {
+    required bool compositionActive,
+  }) async {
+    _ensureAuthoritativeCommandsAvailable();
+    final start = _selectionStart;
+    final end = _selectionEnd;
+    if (start == null || end == null) {
+      throw StateError('Flark semantic edit requires a canonical selection');
+    }
+    if (!identical(start, end) ||
+        _selectionBaseUtf16 != _selectionExtentUtf16 ||
+        _selectionAffinity != FlarkCoreAffinity.downstream) {
+      throw StateError(
+        'flark-edit-v1 currently requires one collapsed downstream caret',
+      );
+    }
+    final baseRevision = document.revision;
+    final baseGeneration = _selectionGeneration;
+    final logicalEditId = ++_nextLogicalEditId;
+    final requestDigest = _editIntentDigest(
+      logicalEditId,
+      baseRevision,
+      baseGeneration,
+      intent.index,
+      compositionActive,
+    );
+    final before = FlarkCoreSelectionSnapshot(
+      base: _selectionBaseUtf16,
+      extent: _selectionExtentUtf16,
+      affinity: _selectionAffinity,
+      generation: baseGeneration,
+      revision: baseRevision,
+      adapterState: _selectionAdapterState,
+    );
+    late final FlarkCoreEditIntentReceiptV1 receipt;
+    try {
+      receipt = await document.applyEditIntentV1(
+        intent: intent,
+        expectedRevision: baseRevision,
+        selectionBaseAnchor: start,
+        selectionExtentAnchor: end,
+        logicalEditId: logicalEditId,
+        requestDigest: requestDigest,
+        acknowledgePreviousLogicalEditId: _pendingTerminalLogicalEditId,
+        selectionGeneration: baseGeneration,
+        compositionActive: compositionActive,
+      );
+    } on FlarkCoreWorkerException {
+      _postCommitUnknown = true;
+      rethrow;
+    }
+    if (receipt.logicalEditId != logicalEditId ||
+        receipt.requestDigest != requestDigest ||
+        receipt.baseRevision != baseRevision) {
+      _postCommitUnknown = true;
+      throw StateError('Flark semantic receipt correlation failed');
+    }
+    _pendingTerminalLogicalEditId = logicalEditId;
+    if (!receipt.hasCommit) return receipt;
+    final token = receipt.historyToken;
+    if (token == null) {
+      _postCommitUnknown = true;
+      throw StateError('Flark semantic commit omitted required history');
+    }
+    _breakActiveGroups();
+    _selectionBaseUtf16 = receipt.resultSelectionUtf16;
+    _selectionExtentUtf16 = receipt.resultSelectionUtf16;
+    final afterGeneration = ++_selectionGeneration;
+    final after = FlarkCoreSelectionSnapshot(
+      base: receipt.resultSelectionUtf16,
+      extent: receipt.resultSelectionUtf16,
+      affinity: _selectionAffinity,
+      generation: afterGeneration,
+      revision: receipt.resultRevision,
+      adapterState: _selectionAdapterState,
+    );
+    try {
+      await _recordForward(
+        FlarkCoreEditReceipt(
+          revision: receipt.resultRevision,
+          sourceByteLength: receipt.resultSourceByteLength,
+          sourceUtf16Length: receipt.resultSourceUtf16Length,
+          historyToken: token,
+          historyDisposition: FlarkCoreHistoryDisposition.retained,
+        ),
+        beforeSelection: before,
+        afterSelection: after,
+        typing: null,
+        compositionGroup: null,
+      );
+    } on Object {
+      _postCommitUnknown = true;
+      rethrow;
+    }
     return receipt;
   }
 
@@ -238,12 +377,16 @@ final class FlarkCoreEditorSession {
     _activeCompositionGroup = 0;
   }
 
-  Future<FlarkCoreHistoryOutcome?> undo() => _replayDirection(undo: true);
+  Future<FlarkCoreHistoryOutcome?> undo() =>
+      _serializeCommand(() => _replayDirection(undo: true));
 
-  Future<FlarkCoreHistoryOutcome?> redo() => _replayDirection(undo: false);
+  Future<FlarkCoreHistoryOutcome?> redo() =>
+      _serializeCommand(() => _replayDirection(undo: false));
 
   /// Releases every retained unit in both directions.
-  Future<void> clearHistory() async {
+  Future<void> clearHistory() => _serializeCommand(_clearHistory);
+
+  Future<void> _clearHistory() async {
     final units = [..._undoUnits, ..._redoUnits];
     _undoUnits.clear();
     _redoUnits.clear();
@@ -260,7 +403,22 @@ final class FlarkCoreEditorSession {
     int extent, {
     FlarkCoreAffinity affinity = FlarkCoreAffinity.downstream,
     Object? adapterState,
+  }) => _serializeCommand(
+    () => _setSelectionUtf16(
+      base,
+      extent,
+      affinity: affinity,
+      adapterState: adapterState,
+    ),
+  );
+
+  Future<int> _setSelectionUtf16(
+    int base,
+    int extent, {
+    FlarkCoreAffinity affinity = FlarkCoreAffinity.downstream,
+    Object? adapterState,
   }) async {
+    _ensureAuthoritativeCommandsAvailable();
     final start = base <= extent ? base : extent;
     final end = base <= extent ? extent : base;
     final collapsed = start == end;
@@ -280,12 +438,17 @@ final class FlarkCoreEditorSession {
     _selectionBaseIsStart = base <= extent;
     _selectionAffinity = affinity;
     _selectionAdapterState = adapterState;
+    _selectionBaseUtf16 = base;
+    _selectionExtentUtf16 = extent;
     return ++_selectionGeneration;
   }
 
   /// Resolves the canonical selection at the current revision, or null when
   /// no canonical selection is installed.
-  Future<FlarkCoreSelectionSnapshot?> resolveSelection() async {
+  Future<FlarkCoreSelectionSnapshot?> resolveSelection() =>
+      _serializeCommand(_resolveSelection);
+
+  Future<FlarkCoreSelectionSnapshot?> _resolveSelection() async {
     final startAnchor = _selectionStart;
     final endAnchor = _selectionEnd;
     if (startAnchor == null || endAnchor == null) return null;
@@ -295,9 +458,11 @@ final class FlarkCoreEditorSession {
         ? start
         : await document.resolveAnchorUtf16(endAnchor);
     if (generation != _selectionGeneration) return null;
+    _selectionBaseUtf16 = _selectionBaseIsStart ? start : end;
+    _selectionExtentUtf16 = _selectionBaseIsStart ? end : start;
     return FlarkCoreSelectionSnapshot(
-      base: _selectionBaseIsStart ? start : end,
-      extent: _selectionBaseIsStart ? end : start,
+      base: _selectionBaseUtf16,
+      extent: _selectionExtentUtf16,
       affinity: _selectionAffinity,
       generation: generation,
       revision: document.revision,
@@ -305,7 +470,9 @@ final class FlarkCoreEditorSession {
     );
   }
 
-  Future<void> clearSelection() async {
+  Future<void> clearSelection() => _serializeCommand(_clearSelection);
+
+  Future<void> _clearSelection() async {
     await _releaseSelectionAnchors();
     _selectionAdapterState = null;
     _selectionGeneration += 1;
@@ -313,8 +480,10 @@ final class FlarkCoreEditorSession {
 
   /// Releases history and selection authority. The document itself is owned
   /// by the caller and stays open.
-  Future<void> dispose() async {
-    await clearHistory();
+  Future<void> dispose() => _serializeCommand(_dispose);
+
+  Future<void> _dispose() async {
+    await _clearHistory();
     await _releaseSelectionAnchors();
   }
 
@@ -430,6 +599,7 @@ final class FlarkCoreEditorSession {
   Future<FlarkCoreHistoryOutcome?> _replayDirection({
     required bool undo,
   }) async {
+    _ensureAuthoritativeCommandsAvailable();
     final source = undo ? _undoUnits : _redoUnits;
     final destination = undo ? _redoUnits : _undoUnits;
     if (source.isEmpty) return null;
@@ -444,7 +614,7 @@ final class FlarkCoreEditorSession {
       // Source is unchanged (or rolled back exactly), so the selection to
       // restore is the unit's current-state side, not its replayed side.
       final restore = undo ? unit.afterSelection : unit.beforeSelection;
-      await setSelectionUtf16(
+      await _setSelectionUtf16(
         restore.base,
         restore.extent,
         affinity: restore.affinity,
@@ -454,7 +624,7 @@ final class FlarkCoreEditorSession {
     }
     destination.add(replayed.unit);
     final restore = undo ? unit.beforeSelection : unit.afterSelection;
-    await setSelectionUtf16(
+    await _setSelectionUtf16(
       restore.base,
       restore.extent,
       affinity: restore.affinity,
@@ -476,6 +646,7 @@ final class FlarkCoreEditorSession {
     for (final token in unit.tokens.reversed) {
       try {
         receipt = await document.replayHistory(token);
+        _pendingTerminalLogicalEditId = 0;
       } on FlarkCoreNativeException catch (error) {
         if (error.status == _historyTokenEvicted ||
             error.status == _historyTokenStale) {
@@ -505,6 +676,7 @@ final class FlarkCoreEditorSession {
   Future<void> _rollback(List<FlarkCoreHistoryToken> reverseTokens) async {
     for (final token in reverseTokens.reversed) {
       final receipt = await document.replayHistory(token);
+      _pendingTerminalLogicalEditId = 0;
       final restoredToken = receipt.historyToken;
       if (restoredToken == null) {
         throw StateError('Flark could not roll back a grouped history replay');
@@ -527,5 +699,42 @@ final class FlarkCoreEditorSession {
         }
       }
     }
+  }
+
+  Future<T> _serializeCommand<T>(Future<T> Function() command) {
+    final result = _commandTail.then((_) => command());
+    _commandTail = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return result;
+  }
+
+  void _ensureAuthoritativeCommandsAvailable() {
+    if (_postCommitUnknown) {
+      throw StateError(
+        'Flark editor session is fail-stopped after an uncertain native commit',
+      );
+    }
+  }
+
+  static int _editIntentDigest(
+    int logicalEditId,
+    int revision,
+    int selectionGeneration,
+    int intent,
+    bool compositionActive,
+  ) {
+    var hash = 0x6a09e667f3bcc909;
+    for (final value in [
+      logicalEditId,
+      revision,
+      selectionGeneration,
+      intent,
+      compositionActive ? 1 : 0,
+    ]) {
+      hash = ((hash ^ value) * 0x100000001b3) & 0x7fffffffffffffff;
+    }
+    return hash == 0 ? 1 : hash;
   }
 }

@@ -14,6 +14,7 @@ mod block_quote_projection_job;
 mod bullet_list_local_delta;
 mod bullet_list_projection_job;
 mod contract;
+mod edit_context;
 mod exact_clean;
 mod gfm_inline_projection;
 mod gfm_table_projection;
@@ -71,6 +72,10 @@ pub use bullet_list_projection_job::{
 pub use contract::{
     M11ExactController, M11LineEnding, M11PhysicalLineFacts, M11SourceLinePollReceipt,
     M11SourceLinePollStatus, M11SourceLineSource, SourceLineIdentity,
+};
+pub use edit_context::{
+    classify_m11_simple_edit_line, M11SimpleEditLine, M11SimpleEditLineKind,
+    M11SimpleEditListMarker, M11_SIMPLE_EDIT_LINE_MAX_BYTES,
 };
 pub use exact_clean::{
     LeadingReferencesAwaitingRemainder, LeadingReferencesCheckpointError,

@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define FLARK_V4_ABI_MAJOR UINT16_C(4)
-#define FLARK_V4_ABI_MINOR UINT16_C(9)
+#define FLARK_V4_ABI_MINOR UINT16_C(10)
 
 /* Zero sentinels are legal only where the operation rules below say so. */
 #define FLARK_V4_CONTINUATION_NONE UINT64_C(0)
@@ -127,6 +127,7 @@ typedef uint64_t FlarkV4OwnerToken;
 #define FLARK_V4_OPERATION_CLOSE_FINISH UINT32_C(25)
 #define FLARK_V4_OPERATION_SESSION_TRANSFER_OWNER UINT32_C(26)
 #define FLARK_V4_OPERATION_SESSION_INSPECT UINT32_C(27)
+#define FLARK_V4_OPERATION_EDIT_INTENT_V1 UINT32_C(28)
 
 #define FLARK_V4_PROGRESS_NONE UINT32_C(0)
 #define FLARK_V4_PROGRESS_ADVANCED UINT32_C(1)
@@ -203,6 +204,18 @@ typedef uint64_t FlarkV4OwnerToken;
 #define FLARK_V4_CAPABILITY_PANIC_CONTAINMENT UINT64_C(0x0000000000001000)
 #define FLARK_V4_CAPABILITY_COMMONMARK_0_31_2 UINT64_C(0x0000000000002000)
 #define FLARK_V4_CAPABILITY_SELECTED_GFM_V1 UINT64_C(0x0000000000004000)
+#define FLARK_V4_CAPABILITY_EDIT_INTENTS_V1 UINT64_C(0x0000000000008000)
+
+#define FLARK_V4_EDIT_PROFILE_FLARK_V1 UINT32_C(1)
+#define FLARK_V4_EDIT_INTENT_INSERT_PARAGRAPH_BREAK UINT32_C(1)
+#define FLARK_V4_EDIT_INTENT_DELETE_BACKWARD UINT32_C(2)
+#define FLARK_V4_EDIT_INTENT_DISPOSITION_APPLIED UINT32_C(1)
+#define FLARK_V4_EDIT_INTENT_DISPOSITION_HANDLED_NO_CHANGE UINT32_C(2)
+#define FLARK_V4_EDIT_INTENT_DISPOSITION_NOT_APPLICABLE UINT32_C(3)
+#define FLARK_V4_EDIT_INTENT_DISPOSITION_NEEDS_CURRENT_SEMANTICS UINT32_C(4)
+#define FLARK_V4_EDIT_INTENT_RECEIPT_HAS_COMMIT UINT32_C(0x1)
+#define FLARK_V4_EDIT_INTENT_RECEIPT_PARSER_PENDING UINT32_C(0x2)
+#define FLARK_V4_EDIT_INTENT_RECEIPT_SEMANTIC_BYTES UINT32_C(0x4)
 
 #define FLARK_V4_MAX_SMALL_EDIT_BYTES UINT32_C(4096)
 #define FLARK_V4_MAX_BULK_CHUNK_BYTES UINT32_C(65536)
@@ -462,6 +475,52 @@ typedef struct FlarkV4SmallEditRequest {
  * replacement bytes, and total deleted source bytes together must not exceed
  * FLARK_V4_MAX_SMALL_EDIT_BYTES; larger edits use the resumable bulk path. */
 
+typedef struct FlarkV4EditIntentRequestV1 {
+  uint32_t struct_size;
+  uint32_t profile_id;
+  FlarkV4SessionRef session;
+  uint64_t expected_revision;
+  FlarkV4AnchorHandle selection_base_anchor;
+  FlarkV4AnchorHandle selection_extent_anchor;
+  uint64_t logical_edit_id;
+  uint64_t request_digest;
+  uint64_t acknowledge_previous_logical_edit_id;
+  uint64_t selection_generation;
+  uint32_t intent;
+  uint32_t selection_affinity;
+  uint32_t selection_direction;
+  uint32_t composition_active;
+  FlarkV4WorkBudget budget;
+  uint64_t reserved[1];
+} FlarkV4EditIntentRequestV1;
+
+typedef struct FlarkV4EditIntentReceiptV1 {
+  uint32_t struct_size;
+  uint32_t semantic_disposition;
+  FlarkV4HistoryDisposition history_disposition;
+  uint32_t flags;
+  uint64_t logical_edit_id;
+  uint64_t request_digest;
+  FlarkV4Revision base_revision;
+  FlarkV4Revision result_revision;
+  FlarkV4SourceRange base_byte_range;
+  FlarkV4SourceRange base_utf16_range;
+  FlarkV4SourceRange result_byte_range;
+  FlarkV4SourceRange result_utf16_range;
+  uint64_t result_selection_utf16;
+  uint32_t result_selection_affinity;
+  uint32_t result_selection_direction;
+  uint64_t result_source_byte_length;
+  uint64_t result_source_utf16_length;
+  FlarkV4SourceRange affected_result_utf16_range;
+  FlarkV4HistoryToken history_token;
+  uint32_t replacement_bytes;
+  uint32_t reserved_u32;
+  uint64_t reserved[2];
+} FlarkV4EditIntentReceiptV1;
+/* The replacement payload begins immediately after the fixed receipt. E1
+ * requires two collapsed downstream anchors at the same current byte. */
+
 typedef struct FlarkV4BulkBeginRequest {
   uint32_t struct_size;
   uint32_t flags;
@@ -636,6 +695,8 @@ typedef struct FlarkV4SessionInspection {
 #define FLARK_V4_SIZEOF_STAGE_REQUEST UINT32_C(64)
 #define FLARK_V4_SIZEOF_SOURCE_READ_REQUEST UINT32_C(64)
 #define FLARK_V4_SIZEOF_SMALL_EDIT_REQUEST UINT32_C(88)
+#define FLARK_V4_SIZEOF_EDIT_INTENT_REQUEST_V1 UINT32_C(128)
+#define FLARK_V4_SIZEOF_EDIT_INTENT_RECEIPT_V1 UINT32_C(192)
 #define FLARK_V4_SIZEOF_BULK_BEGIN_REQUEST UINT32_C(72)
 #define FLARK_V4_SIZEOF_TRANSACTION_REQUEST UINT32_C(80)
 #define FLARK_V4_SIZEOF_PUMP_REQUEST UINT32_C(64)
@@ -672,6 +733,8 @@ FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4CreateRequest) == FLARK_V4_SIZEOF_CREATE_RE
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4StageRequest) == FLARK_V4_SIZEOF_STAGE_REQUEST, "FlarkV4StageRequest layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4SourceReadRequest) == FLARK_V4_SIZEOF_SOURCE_READ_REQUEST, "FlarkV4SourceReadRequest layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4SmallEditRequest) == FLARK_V4_SIZEOF_SMALL_EDIT_REQUEST, "FlarkV4SmallEditRequest layout");
+FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4EditIntentRequestV1) == FLARK_V4_SIZEOF_EDIT_INTENT_REQUEST_V1, "FlarkV4EditIntentRequestV1 layout");
+FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4EditIntentReceiptV1) == FLARK_V4_SIZEOF_EDIT_INTENT_RECEIPT_V1, "FlarkV4EditIntentReceiptV1 layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4BulkBeginRequest) == FLARK_V4_SIZEOF_BULK_BEGIN_REQUEST, "FlarkV4BulkBeginRequest layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4TransactionRequest) == FLARK_V4_SIZEOF_TRANSACTION_REQUEST, "FlarkV4TransactionRequest layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4PumpRequest) == FLARK_V4_SIZEOF_PUMP_REQUEST, "FlarkV4PumpRequest layout");
@@ -706,6 +769,7 @@ FlarkV4StatusCode flark_v4_create_commit(const FlarkV4TransactionRequest *reques
 FlarkV4StatusCode flark_v4_create_abort(const FlarkV4TransactionRequest *request, FlarkV4Outcome *outcome);
 FlarkV4StatusCode flark_v4_source_read(const FlarkV4SourceReadRequest *request, uint8_t *output, uint64_t output_capacity, FlarkV4Outcome *outcome);
 FlarkV4StatusCode flark_v4_small_edit(const FlarkV4SmallEditRequest *request, const FlarkV4EditDescriptor *edits, uint32_t edit_count, const uint8_t *replacement_bytes, uint64_t replacement_bytes_len, FlarkV4Outcome *outcome);
+FlarkV4StatusCode flark_v4_edit_intent_v1(const FlarkV4EditIntentRequestV1 *request, uint8_t *output, uint64_t output_capacity, FlarkV4Outcome *outcome);
 FlarkV4StatusCode flark_v4_bulk_begin(const FlarkV4BulkBeginRequest *request, FlarkV4Outcome *outcome);
 FlarkV4StatusCode flark_v4_bulk_append(const FlarkV4StageRequest *request, const uint8_t *input, uint64_t input_len, FlarkV4Outcome *outcome);
 FlarkV4StatusCode flark_v4_bulk_commit(const FlarkV4TransactionRequest *request, FlarkV4Outcome *outcome);

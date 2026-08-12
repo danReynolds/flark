@@ -167,8 +167,8 @@ void main() {
 
       bullet.activateRow(second, second.editableUtf16!.start);
       bullet.deleteBackward();
-      expect(bullet.visibleSource, '- alpha\n\nbeta\n');
       await _settle(bullet);
+      expect(bullet.visibleSource, '- alpha\n\nbeta\n');
       expect(bullet.rows[0].listItem, isNotNull);
       expect(bullet.rows[1].listItem, isNull);
 
@@ -181,8 +181,8 @@ void main() {
       final orderedRow = ordered.rows.single;
       ordered.activateRow(orderedRow, orderedRow.editableUtf16!.end);
       ordered.insertNewline();
-      expect(ordered.visibleSource, '9) alpha\n10) \n');
       await _settle(ordered);
+      expect(ordered.visibleSource, '9) alpha\n10) \n');
       expect(
         ordered.rows.map((row) => row.listItem?.markerValue),
         contains(10),
@@ -197,8 +197,8 @@ void main() {
       );
       ordered.activateRow(continuedEmpty, continuedEmpty.editableUtf16!.start);
       ordered.insertNewline();
-      expect(ordered.visibleSource, '9) alpha\n\n');
       await _settle(ordered);
+      expect(ordered.visibleSource, '9) alpha\n\n');
 
       final empty = await FlarkEditorController.open(
         '- alpha\n- ',
@@ -210,8 +210,8 @@ void main() {
       expect(emptyRow.kind, 14);
       empty.activateRow(emptyRow, emptyRow.editableUtf16!.start);
       empty.insertNewline();
-      expect(empty.visibleSource, '- alpha\n\n');
       await _settle(empty);
+      expect(empty.visibleSource, '- alpha\n\n');
       expect(empty.lastError, isNull);
       expect(empty.semanticsCurrent, isTrue);
 
@@ -226,8 +226,8 @@ void main() {
       tasks.activateRow(tasks.rows[1], tasks.rows[1].editableUtf16!.end);
       expect(tasks.surfaceRow(tasks.rows[0]).leadingText, '☐ ');
       tasks.insertNewline();
-      expect(tasks.visibleSource, '- [ ] todo\n- [X] done\n- [ ] \n');
       await _settle(tasks);
+      expect(tasks.visibleSource, '- [ ] todo\n- [X] done\n- [ ] \n');
       expect(tasks.rows.last.listItem?.taskChecked, isFalse);
     },
     skip: libraryPath == null,
@@ -256,6 +256,7 @@ void main() {
           composing: TextRange.empty,
         ),
       ]);
+      await _settle(ordered);
       expect(ordered.visibleSource, '9) alpha\n10) \n');
       expect(ordered.resyncCount, 0);
 
@@ -279,9 +280,9 @@ void main() {
           composing: TextRange.empty,
         ),
       ]);
+      await _settle(separated);
       expect(separated.visibleSource, 'Paragraph.\n\n\n1. item\n');
       expect(separated.resyncCount, 0);
-      await _settle(separated);
       expect(separated.rows.any((row) => row.listItem != null), isTrue);
     },
     skip: libraryPath == null,

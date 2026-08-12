@@ -365,7 +365,24 @@ only incomplete or temporarily pending syntax becomes exact source locally.
         (row) => row.kind == 5 && row.editableUtf16!.end == boundary,
       );
       controller.activateRow(paragraph, boundary);
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump();
       controller.insertNewline();
+      expect(controller.visibleSource, source);
+      expect(controller.pendingEdits, 1);
+      await tester.pump();
+      for (var turn = 0; turn < 4 && controller.pendingEdits != 0; turn += 1) {
+        await tester.pump();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+        await tester.pump();
+      }
+      expect(controller.pendingEdits, 0);
+      expect(controller.lastError, isNull);
       await tester.pump();
 
       RenderFlarkSurface surface() =>
@@ -382,7 +399,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       expect(emptyBlock.text, '\n');
       expect(emptyBlock.active, isTrue);
 
-      await tester.runAsync(() => _settle(controller));
+      await tester.runAsync(controller.continueParsing);
       await tester.pump();
       emptyBlock = surface().debugPaintedPlan.singleWhere(
         (entry) =>
@@ -414,7 +431,15 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       );
       expect(pendingTextBlock.text, 'x\n');
 
-      await tester.runAsync(() => _settle(controller));
+      for (var turn = 0; turn < 4 && controller.pendingEdits != 0; turn += 1) {
+        await tester.pump();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+        await tester.pump();
+      }
+      expect(controller.pendingEdits, 0);
+      await tester.runAsync(controller.continueParsing);
       await tester.pump();
       expect(
         controller.rows.any(
@@ -428,6 +453,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.
         controller.surfaceRow(controller.rows.first).text,
         isNot(contains('**')),
       );
+      await tester.runAsync(controller.close);
     },
     skip: libraryPath == null,
   );

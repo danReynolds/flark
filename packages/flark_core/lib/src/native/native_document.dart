@@ -94,14 +94,24 @@ const _maxInlineFactsPerRow = 512;
 const _absentPresentationPrefix = 0xffffffffffffffff;
 const _maxChunkBytes = 64 * 1024;
 const _maximumSmallEditBytes = 4 * 1024;
+const _editIntentProfileV1 = 1;
+const _editIntentInsertParagraphBreak = 1;
+const _editIntentDeleteBackward = 2;
+const _editIntentApplied = 1;
+const _editIntentHandledNoChange = 2;
+const _editIntentNotApplicable = 3;
+const _editIntentNeedsCurrentSemantics = 4;
+const _editIntentHasCommit = 1;
+const _editIntentParserPending = 2;
+const _editIntentSemanticBytes = 4;
 const _bulkCommitWorkUnits = 1;
 const _resultPayloadBytes = 64 * 1024;
 const _defaultWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 9;
+const _abiMinor = 10;
 // Every v4.7 capability is used by the safe core boundary, including
 // resumable close and snapshot continuations.
-const _requiredCapabilityBits = 0x7fff;
+const _requiredCapabilityBits = 0xffff;
 
 final class FlarkNativeException implements Exception {
   const FlarkNativeException(this.operation, this.status, [this.detail = 0]);
@@ -132,6 +142,62 @@ final class FlarkNativeEditReceipt {
 }
 
 enum FlarkNativeHistoryDisposition { retained, disabled, overBudget }
+
+enum FlarkNativeEditIntentV1 { insertParagraphBreak, deleteBackward }
+
+enum FlarkNativeEditIntentDispositionV1 {
+  applied,
+  handledNoChange,
+  notApplicable,
+  needsCurrentSemantics,
+}
+
+final class FlarkNativeEditIntentReceiptV1 {
+  const FlarkNativeEditIntentReceiptV1({
+    required this.disposition,
+    required this.baseRevision,
+    required this.resultRevision,
+    required this.baseByteStart,
+    required this.baseByteEnd,
+    required this.baseUtf16Start,
+    required this.baseUtf16End,
+    required this.resultByteStart,
+    required this.resultByteEnd,
+    required this.resultUtf16Start,
+    required this.resultUtf16End,
+    required this.replacement,
+    required this.resultSelectionUtf16,
+    required this.resultSourceByteLength,
+    required this.resultSourceUtf16Length,
+    required this.historyToken,
+    required this.parserPending,
+    required this.logicalEditId,
+    required this.requestDigest,
+  });
+
+  final FlarkNativeEditIntentDispositionV1 disposition;
+  final int baseRevision;
+  final int resultRevision;
+  final int baseByteStart;
+  final int baseByteEnd;
+  final int baseUtf16Start;
+  final int baseUtf16End;
+  final int resultByteStart;
+  final int resultByteEnd;
+  final int resultUtf16Start;
+  final int resultUtf16End;
+  final String replacement;
+  final int resultSelectionUtf16;
+  final int resultSourceByteLength;
+  final int resultSourceUtf16Length;
+  final int? historyToken;
+  final bool parserPending;
+  final int logicalEditId;
+  final int requestDigest;
+
+  bool get hasCommit =>
+      disposition == FlarkNativeEditIntentDispositionV1.applied;
+}
 
 const _coordinateUtf16 = 2;
 const _affinityUpstream = 1;
@@ -490,6 +556,140 @@ final class FlarkNativeDocument {
         ..free(descriptor)
         ..free(outcome)
         ..free(replacementPointer);
+    }
+  }
+
+  /// Resolves and commits one source-authoritative Markdown edit through the
+  /// single-call ABI. No coordinate or source preflight is performed here;
+  /// native resolves the canonical anchors inside its transaction.
+  FlarkNativeEditIntentReceiptV1 applyEditIntentV1({
+    required FlarkNativeEditIntentV1 intent,
+    required int expectedRevision,
+    required int selectionBaseAnchor,
+    required int selectionExtentAnchor,
+    required int logicalEditId,
+    required int requestDigest,
+    required int acknowledgePreviousLogicalEditId,
+    required int selectionGeneration,
+    required bool compositionActive,
+  }) {
+    final request = calloc<FlarkV4EditIntentRequestV1>();
+    final outcome = calloc<FlarkV4Outcome>();
+    final outputLength =
+        sizeOf<FlarkV4EditIntentReceiptV1>() + _maximumSmallEditBytes;
+    final output = calloc<Uint8>(outputLength);
+    try {
+      request.ref
+        ..structSize = sizeOf<FlarkV4EditIntentRequestV1>()
+        ..profileId = _editIntentProfileV1
+        ..expectedRevision = expectedRevision
+        ..selectionBaseAnchor = selectionBaseAnchor
+        ..selectionExtentAnchor = selectionExtentAnchor
+        ..logicalEditId = logicalEditId
+        ..requestDigest = requestDigest
+        ..acknowledgePreviousLogicalEditId = acknowledgePreviousLogicalEditId
+        ..selectionGeneration = selectionGeneration
+        ..intent = switch (intent) {
+          FlarkNativeEditIntentV1.insertParagraphBreak =>
+            _editIntentInsertParagraphBreak,
+          FlarkNativeEditIntentV1.deleteBackward => _editIntentDeleteBackward,
+        }
+        ..selectionAffinity = _affinityDownstream
+        ..selectionDirection = 0
+        ..compositionActive = compositionActive ? 1 : 0;
+      _fillSession(request.ref.session);
+      _fillBudget(request.ref.budget, workUnits: 1);
+      final status = _bindings.editIntentV1(
+        request,
+        output,
+        outputLength,
+        outcome,
+      );
+      _requireStatus('edit_intent_v1', status, outcome.ref, {_ok});
+      final native = output.cast<FlarkV4EditIntentReceiptV1>().ref;
+      if (native.structSize != sizeOf<FlarkV4EditIntentReceiptV1>() ||
+          native.logicalEditId != logicalEditId ||
+          native.requestDigest != requestDigest ||
+          native.replacementBytes > _maximumSmallEditBytes ||
+          outcome.ref.writtenBytes !=
+              sizeOf<FlarkV4EditIntentReceiptV1>() + native.replacementBytes) {
+        throw const FlarkNativeException('edit_intent_v1', _internalFault, 1);
+      }
+      final disposition = switch (native.semanticDisposition) {
+        _editIntentApplied => FlarkNativeEditIntentDispositionV1.applied,
+        _editIntentHandledNoChange =>
+          FlarkNativeEditIntentDispositionV1.handledNoChange,
+        _editIntentNotApplicable =>
+          FlarkNativeEditIntentDispositionV1.notApplicable,
+        _editIntentNeedsCurrentSemantics =>
+          FlarkNativeEditIntentDispositionV1.needsCurrentSemantics,
+        _ => throw FlarkNativeException(
+          'edit_intent_v1',
+          _internalFault,
+          native.semanticDisposition,
+        ),
+      };
+      final hasCommit = native.flags & _editIntentHasCommit != 0;
+      final historyToken = native.historyToken == 0
+          ? null
+          : native.historyToken;
+      if (hasCommit !=
+              (disposition == FlarkNativeEditIntentDispositionV1.applied) ||
+          (hasCommit &&
+              (native.flags & _editIntentSemanticBytes == 0 ||
+                  native.historyDisposition != _historyRetained ||
+                  historyToken == null)) ||
+          (!hasCommit &&
+              (native.replacementBytes != 0 || historyToken != null))) {
+        throw const FlarkNativeException('edit_intent_v1', _internalFault, 2);
+      }
+      final replacementBytes = (output + sizeOf<FlarkV4EditIntentReceiptV1>())
+          .asTypedList(native.replacementBytes);
+      final replacement = utf8.decode(replacementBytes);
+      if (hasCommit) {
+        _revision = native.resultRevision;
+        _sourceByteLength = native.resultSourceByteLength;
+        _sourceUtf16Length = native.resultSourceUtf16Length;
+        _progressToken = 0;
+        if (historyToken != null) {
+          _historyLengthDeltas[historyToken] = _HistoryLengthDelta(
+            (native.baseByteRange.endByte - native.baseByteRange.startByte) -
+                (native.resultByteRange.endByte -
+                    native.resultByteRange.startByte),
+            (native.baseUtf16Range.endByte - native.baseUtf16Range.startByte) -
+                (native.resultUtf16Range.endByte -
+                    native.resultUtf16Range.startByte),
+          );
+        }
+      }
+      final parserPending = native.flags & _editIntentParserPending != 0;
+      _ready = !parserPending;
+      return FlarkNativeEditIntentReceiptV1(
+        disposition: disposition,
+        baseRevision: native.baseRevision,
+        resultRevision: native.resultRevision,
+        baseByteStart: native.baseByteRange.startByte,
+        baseByteEnd: native.baseByteRange.endByte,
+        baseUtf16Start: native.baseUtf16Range.startByte,
+        baseUtf16End: native.baseUtf16Range.endByte,
+        resultByteStart: native.resultByteRange.startByte,
+        resultByteEnd: native.resultByteRange.endByte,
+        resultUtf16Start: native.resultUtf16Range.startByte,
+        resultUtf16End: native.resultUtf16Range.endByte,
+        replacement: replacement,
+        resultSelectionUtf16: native.resultSelectionUtf16,
+        resultSourceByteLength: native.resultSourceByteLength,
+        resultSourceUtf16Length: native.resultSourceUtf16Length,
+        historyToken: historyToken,
+        parserPending: parserPending,
+        logicalEditId: native.logicalEditId,
+        requestDigest: native.requestDigest,
+      );
+    } finally {
+      calloc
+        ..free(request)
+        ..free(outcome)
+        ..free(output);
     }
   }
 

@@ -5,8 +5,9 @@ use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread::{self, JoinHandle};
 
 use crate::{
-    DocumentCloseReceipt, DocumentEditReceipt, DocumentLiveViewport, DocumentPumpReceipt,
-    DocumentSession, DocumentSessionError, DocumentSessionPhase, DocumentViewport,
+    DocumentCloseReceipt, DocumentEditIntentReceiptV1, DocumentEditIntentV1, DocumentEditReceipt,
+    DocumentLiveViewport, DocumentPumpReceipt, DocumentSession, DocumentSessionError,
+    DocumentSessionPhase, DocumentViewport,
 };
 
 const DOCUMENT_ACTOR_STACK_BYTES: usize = 16 * 1024 * 1024;
@@ -127,6 +128,40 @@ impl DocumentActor {
         replacement: String,
     ) -> Result<DocumentEditReceipt, DocumentActorError> {
         self.call(move |document| document.apply_edit(expected_revision, range, &replacement))
+    }
+
+    pub fn try_apply_edit_intent_v1(
+        &self,
+        expected_revision: u64,
+        intent: DocumentEditIntentV1,
+        selection_utf16: usize,
+        composition_active: bool,
+    ) -> Result<DocumentEditIntentReceiptV1, DocumentActorError> {
+        self.call(move |document| {
+            document.try_apply_edit_intent_v1(
+                expected_revision,
+                intent,
+                selection_utf16,
+                composition_active,
+            )
+        })
+    }
+
+    pub fn try_apply_edit_intent_v1_at_byte(
+        &self,
+        expected_revision: u64,
+        intent: DocumentEditIntentV1,
+        selection_byte: usize,
+        composition_active: bool,
+    ) -> Result<DocumentEditIntentReceiptV1, DocumentActorError> {
+        self.call(move |document| {
+            document.try_apply_edit_intent_v1_at_byte(
+                expected_revision,
+                intent,
+                selection_byte,
+                composition_active,
+            )
+        })
     }
 
     pub fn source_bytes(&self, range: Range<usize>) -> Result<Vec<u8>, DocumentActorError> {

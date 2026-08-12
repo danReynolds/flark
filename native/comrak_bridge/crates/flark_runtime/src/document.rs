@@ -19,14 +19,21 @@ use flark_parser::{
         ListDelimiter, M11RecursiveGreenCodeBlockStyle, M11RecursiveGreenInlineLeafKind,
         M11RecursiveGreenListMarker, M11RecursiveGreenRowPresentation,
     },
-    project_m11_gfm_table, M11GfmTableAlignment, M11InlineProjectionJob,
-    M11InlineProjectionJobError, M11InlineProjectionJobPollStatus, M11ParserBinding,
-    M11PersistentRecursiveGreenAdoption, M11PersistentRecursiveGreenAdoptionStatus,
-    M11PersistentRecursiveGreenAdoptionWork, M11PersistentRecursiveGreenBuildStatus,
-    M11PersistentRecursiveGreenCleanBuild, M11PersistentRecursiveGreenCleanPlan,
-    M11PersistentRecursiveGreenSession, M11PersistentRecursiveGreenSessionError,
-    M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
+    classify_m11_simple_edit_line, project_m11_gfm_table, M11GfmTableAlignment,
+    M11InlineProjectionJob, M11InlineProjectionJobError, M11InlineProjectionJobPollStatus,
+    M11ParserBinding, M11PersistentRecursiveGreenAdoption,
+    M11PersistentRecursiveGreenAdoptionStatus, M11PersistentRecursiveGreenAdoptionWork,
+    M11PersistentRecursiveGreenBuildStatus, M11PersistentRecursiveGreenCleanBuild,
+    M11PersistentRecursiveGreenCleanPlan, M11PersistentRecursiveGreenSession,
+    M11PersistentRecursiveGreenSessionError, M11SimpleEditLineKind, M11SimpleEditListMarker,
+    M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS, M11_SIMPLE_EDIT_LINE_MAX_BYTES,
 };
+
+use crate::edit_intent::{
+    resolve_document_edit_intent_v1, DocumentEditLineEnding, DocumentParagraphMerge,
+    DocumentSimpleEditContext, DocumentSimpleEditRow,
+};
+use crate::{DocumentEditIntentDispositionV1, DocumentEditIntentReceiptV1, DocumentEditIntentV1};
 
 const SYNTAX_PROFILE_GFM_V1: u32 = 1;
 const QUERY_OPEN_DEPTH_LIMIT: usize = 256;
@@ -303,6 +310,8 @@ pub enum DocumentSessionError {
     Faulted,
     StaleRevision { expected: u64, actual: u64 },
     RangeOutOfBounds,
+    EditIntentLimitExceeded,
+    UnsupportedEditIntentSelection,
     QueryBudgetExceeded,
     Engine(DocumentRuntimeError),
     Source(SourceEditError),
@@ -334,6 +343,12 @@ impl fmt::Display for DocumentSessionError {
                 )
             }
             Self::RangeOutOfBounds => formatter.write_str("source range is out of bounds"),
+            Self::EditIntentLimitExceeded => {
+                formatter.write_str("semantic edit exceeds the bounded small-edit envelope")
+            }
+            Self::UnsupportedEditIntentSelection => {
+                formatter.write_str("semantic edit result cannot use mechanical anchor mapping")
+            }
             Self::QueryBudgetExceeded => formatter.write_str("viewport query budget exhausted"),
             Self::Engine(error) => error.fmt(formatter),
             Self::Source(error) => error.fmt(formatter),
@@ -397,6 +412,8 @@ pub struct DocumentSession {
     parser: ParseState,
     last_edit_work: M11PersistentRecursiveGreenAdoptionWork,
     fault_arena_metrics: Option<ArenaMetrics>,
+    edit_context: Option<DocumentSimpleEditContext>,
+    fallback_line_ending: DocumentEditLineEnding,
 }
 
 impl fmt::Debug for DocumentSession {
@@ -418,6 +435,7 @@ impl DocumentSession {
         source: &str,
         config: DocumentRuntimeConfig,
     ) -> Result<Self, DocumentSessionError> {
+        let fallback_line_ending = dominant_edit_line_ending(source.as_bytes());
         let mut runtime = DocumentRuntime::new(source, config)?;
         let parser = ParseState::Clean(Box::new(begin_clean_build(&mut runtime)?));
         Ok(Self {
@@ -425,6 +443,8 @@ impl DocumentSession {
             parser,
             last_edit_work: M11PersistentRecursiveGreenAdoptionWork::default(),
             fault_arena_metrics: None,
+            edit_context: None,
+            fallback_line_ending,
         })
     }
 
@@ -663,9 +683,28 @@ impl DocumentSession {
                 actual: actual_revision,
             });
         }
+        let base_utf16_range = self
+            .runtime
+            .snapshot_current_source()
+            .ok()
+            .and_then(|lease| {
+                Some(
+                    lease.utf16_offset_for_byte(range.start).ok()?
+                        ..lease.utf16_offset_for_byte(range.end).ok()?,
+                )
+            });
+        let base_edit_context = self
+            .edit_context
+            .as_ref()
+            .filter(|context| context.revision == expected_revision)
+            .cloned()
+            .or_else(|| self.capture_ready_edit_context(range.start))
+            .or_else(|| self.capture_exact_edit_context(range.start));
         let state = mem::replace(&mut self.parser, ParseState::Transition);
-        match state {
-            ParseState::Ready(base) => self.apply_edit_to_ready_base(base, range, replacement),
+        let result = match state {
+            ParseState::Ready(base) => {
+                self.apply_edit_to_ready_base(base, range.clone(), replacement)
+            }
             ParseState::Faulted => {
                 self.parser = ParseState::Faulted;
                 Err(DocumentSessionError::Faulted)
@@ -675,12 +714,12 @@ impl DocumentSession {
                     self.parser = ParseState::Clean(build);
                     return Err(error.into());
                 }
-                let result = self.apply_edit_while_building(range, replacement);
+                let result = self.apply_edit_while_building(range.clone(), replacement);
                 self.parser = ParseState::CancellingClean(build);
                 result
             }
             ParseState::CancellingClean(build) => {
-                let result = self.apply_edit_while_building(range, replacement);
+                let result = self.apply_edit_while_building(range.clone(), replacement);
                 self.parser = ParseState::CancellingClean(build);
                 result
             }
@@ -689,17 +728,17 @@ impl DocumentSession {
                     self.parser = ParseState::Adopting(adoption);
                     return Err(error.into());
                 }
-                let result = self.apply_edit_while_building(range, replacement);
+                let result = self.apply_edit_while_building(range.clone(), replacement);
                 self.parser = ParseState::CancellingAdoption(adoption);
                 result
             }
             ParseState::CancellingAdoption(adoption) => {
-                let result = self.apply_edit_while_building(range, replacement);
+                let result = self.apply_edit_while_building(range.clone(), replacement);
                 self.parser = ParseState::CancellingAdoption(adoption);
                 result
             }
             ParseState::ReleasingBaseForClean(base) => {
-                let result = self.apply_edit_while_building(range, replacement);
+                let result = self.apply_edit_while_building(range.clone(), replacement);
                 self.parser = ParseState::ReleasingBaseForClean(base);
                 result
             }
@@ -715,6 +754,470 @@ impl DocumentSession {
                 self.parser = other;
                 Err(DocumentSessionError::Busy)
             }
+        };
+        if let Ok(receipt) = result {
+            self.edit_context = match (base_edit_context, base_utf16_range) {
+                (Some(context), Some(utf16_range)) => self.transform_edit_context(
+                    context,
+                    range,
+                    utf16_range,
+                    replacement,
+                    receipt.revision,
+                ),
+                _ => None,
+            };
+        }
+        result
+    }
+
+    /// Resolves and commits the collapsed-caret `flark-edit-v1` subset without
+    /// waiting for parser certification. The semantic context is either read
+    /// from the current certified row or carried through exact local lineage.
+    pub fn try_apply_edit_intent_v1(
+        &mut self,
+        expected_revision: u64,
+        intent: DocumentEditIntentV1,
+        selection_utf16: usize,
+        composition_active: bool,
+    ) -> Result<DocumentEditIntentReceiptV1, DocumentSessionError> {
+        let selection_byte = self.byte_offset_for_utf16(selection_utf16)?;
+        self.try_apply_edit_intent_v1_at_byte(
+            expected_revision,
+            intent,
+            selection_byte,
+            composition_active,
+        )
+    }
+
+    pub fn try_apply_edit_intent_v1_at_byte(
+        &mut self,
+        expected_revision: u64,
+        intent: DocumentEditIntentV1,
+        selection_byte: usize,
+        composition_active: bool,
+    ) -> Result<DocumentEditIntentReceiptV1, DocumentSessionError> {
+        let actual_revision = self.revision();
+        if expected_revision != actual_revision {
+            return Err(DocumentSessionError::StaleRevision {
+                expected: expected_revision,
+                actual: actual_revision,
+            });
+        }
+        if selection_byte > self.source_byte_len() {
+            return Err(DocumentSessionError::RangeOutOfBounds);
+        }
+        let selection_utf16 = self.utf16_offset_for_byte(selection_byte)?;
+        if composition_active {
+            return Ok(DocumentEditIntentReceiptV1 {
+                disposition: DocumentEditIntentDispositionV1::NotApplicable,
+                base_revision: expected_revision,
+                result_revision: expected_revision,
+                committed_splice: None,
+                inverse: Vec::new(),
+                result_selection_utf16: selection_utf16,
+                result_source_byte_length: self.source_byte_len(),
+                result_source_utf16_length: self.source_utf16_len(),
+                parser_pending: self.phase() != DocumentSessionPhase::Ready,
+            });
+        }
+
+        let context = self
+            .edit_context
+            .as_ref()
+            .filter(|context| {
+                context.revision == expected_revision
+                    && selection_byte >= context.editable_bytes.start
+                    && selection_byte <= context.editable_bytes.end
+            })
+            .cloned()
+            .or_else(|| self.capture_ready_edit_context(selection_byte))
+            .or_else(|| self.capture_exact_edit_context(selection_byte));
+        let Some(context) = context else {
+            return Ok(DocumentEditIntentReceiptV1 {
+                disposition: DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                base_revision: expected_revision,
+                result_revision: expected_revision,
+                committed_splice: None,
+                inverse: Vec::new(),
+                result_selection_utf16: selection_utf16,
+                result_source_byte_length: self.source_byte_len(),
+                result_source_utf16_length: self.source_utf16_len(),
+                parser_pending: self.phase() != DocumentSessionPhase::Ready,
+            });
+        };
+        let resolved =
+            resolve_document_edit_intent_v1(intent, selection_byte, selection_utf16, &context);
+        let Some(splice) = resolved.splice.clone() else {
+            return Ok(DocumentEditIntentReceiptV1 {
+                disposition: resolved.disposition,
+                base_revision: expected_revision,
+                result_revision: expected_revision,
+                committed_splice: None,
+                inverse: Vec::new(),
+                result_selection_utf16: resolved.result_selection_utf16,
+                result_source_byte_length: self.source_byte_len(),
+                result_source_utf16_length: self.source_utf16_len(),
+                parser_pending: self.phase() != DocumentSessionPhase::Ready,
+            });
+        };
+        if selection_byte != splice.base_byte_range.end
+            || resolved.result_selection_utf16 != splice.result_utf16_range.end
+        {
+            return Err(DocumentSessionError::UnsupportedEditIntentSelection);
+        }
+
+        // Reuse the context already resolved above. Without this handoff the
+        // generic one-splice commit path performs a redundant current-row
+        // query before applying the exact semantic splice.
+        self.edit_context = Some(context);
+        let semantic_bytes = 32usize
+            .checked_add(splice.base_byte_range.len())
+            .and_then(|bytes| bytes.checked_add(splice.replacement.len()))
+            .ok_or(DocumentSessionError::EditIntentLimitExceeded)?;
+        if semantic_bytes > crate::MAX_SMALL_EDIT_BYTES as usize {
+            return Err(DocumentSessionError::EditIntentLimitExceeded);
+        }
+        let inverse = self.source_bytes(splice.base_byte_range.clone())?;
+        let edit = self.apply_edit(
+            expected_revision,
+            splice.base_byte_range.clone(),
+            &splice.replacement,
+        )?;
+        self.edit_context = resolved.result_context;
+        Ok(DocumentEditIntentReceiptV1 {
+            disposition: DocumentEditIntentDispositionV1::Applied,
+            base_revision: expected_revision,
+            result_revision: edit.revision,
+            committed_splice: Some(splice),
+            inverse,
+            result_selection_utf16: resolved.result_selection_utf16,
+            result_source_byte_length: self.source_byte_len(),
+            result_source_utf16_length: self.source_utf16_len(),
+            parser_pending: edit.parser_pending,
+        })
+    }
+
+    fn capture_ready_edit_context(
+        &mut self,
+        selection_byte: usize,
+    ) -> Option<DocumentSimpleEditContext> {
+        if selection_byte > self.source_byte_len() {
+            return None;
+        }
+        let requested_start = self
+            .snapped_to_scalar_boundary(selection_byte.saturating_sub(16))
+            .ok()?;
+        let requested_end = selection_byte
+            .checked_add(1)
+            .unwrap_or(selection_byte)
+            .min(self.source_byte_len());
+        let revision = self.revision();
+        let session = match &self.parser {
+            ParseState::Ready(session) => session,
+            _ => return None,
+        };
+        let viewport = query_session_viewport(
+            &mut self.runtime,
+            session,
+            revision,
+            requested_start..requested_end,
+            8,
+        )
+        .ok()?;
+        let current = viewport.rows.iter().find(|row| {
+            row.editable_range.as_ref().is_some_and(|range| {
+                selection_byte >= range.start as usize && selection_byte <= range.end as usize
+            })
+        })?;
+        let source_bytes = u64_range_to_usize(&current.source_range)?;
+        let source_utf16 = u64_range_to_usize(&current.source_utf16_range)?;
+        let editable_bytes = u64_range_to_usize(current.editable_range.as_ref()?)?;
+        let editable_utf16 = u64_range_to_usize(current.editable_utf16_range.as_ref()?)?;
+        let ending = self
+            .edit_line_ending_at(source_bytes.end)
+            .unwrap_or(self.fallback_line_ending);
+
+        let row = match current.presentation {
+            DocumentViewportRowPresentation::Plain if current.kind == 5 => {
+                DocumentSimpleEditRow::Plain
+            }
+            DocumentViewportRowPresentation::ListItem {
+                marker,
+                prefix_start_byte,
+                prefix_end_byte,
+                prefix_start_utf16,
+                prefix_end_utf16,
+                nesting_depth: 1,
+                marker_offset,
+                simple_continuation: true,
+                starts_list,
+                task_checked: None,
+            } => DocumentSimpleEditRow::ListItem {
+                marker,
+                prefix_bytes: usize::try_from(prefix_start_byte).ok()?
+                    ..usize::try_from(prefix_end_byte).ok()?,
+                prefix_utf16: usize::try_from(prefix_start_utf16).ok()?
+                    ..usize::try_from(prefix_end_utf16).ok()?,
+                marker_offset,
+                starts_list,
+                empty: current.kind == 14 || editable_bytes.is_empty(),
+            },
+            _ => return None,
+        };
+
+        let paragraph_merge = matches!(row, DocumentSimpleEditRow::Plain)
+            .then(|| {
+                self.capture_plain_paragraph_merge(&viewport.rows, current.ordinal, &source_bytes)
+            })
+            .flatten();
+        Some(DocumentSimpleEditContext {
+            revision: viewport.revision,
+            source_bytes,
+            source_utf16,
+            editable_bytes,
+            editable_utf16,
+            ending,
+            row,
+            paragraph_merge,
+        })
+    }
+
+    /// Builds the same bounded edit facts directly from exact current source
+    /// when no certified row has existed yet. Classification still belongs to
+    /// `flark_parser`; this method only locates one physical line and converts
+    /// its parser-authored facts into current document coordinates.
+    fn capture_exact_edit_context(
+        &self,
+        selection_byte: usize,
+    ) -> Option<DocumentSimpleEditContext> {
+        if selection_byte > self.source_byte_len() {
+            return None;
+        }
+        let window_start = self
+            .snapped_to_scalar_boundary(
+                selection_byte.saturating_sub(M11_SIMPLE_EDIT_LINE_MAX_BYTES),
+            )
+            .ok()?;
+        let window_end = self
+            .snapped_to_scalar_boundary(
+                selection_byte
+                    .saturating_add(M11_SIMPLE_EDIT_LINE_MAX_BYTES)
+                    .min(self.source_byte_len()),
+            )
+            .ok()?;
+        let window = self.source_bytes(window_start..window_end).ok()?;
+        let local_selection = selection_byte - window_start;
+        let local_line_start = line_start_in_window(&window, local_selection)?;
+        if local_line_start == 0 && window_start != 0 {
+            return None;
+        }
+        let local_line_end = line_end_in_window(&window, local_selection);
+        let line_start = window_start + local_line_start;
+        let line_end = window_start + local_line_end;
+        let classified = classify_m11_simple_edit_line(
+            &window[local_line_start..local_line_end],
+            line_start == 0,
+        );
+        let lease = self.runtime.snapshot_current_source().ok()?;
+        let source_utf16 = lease.utf16_offset_for_byte(line_start).ok()?
+            ..lease.utf16_offset_for_byte(line_end).ok()?;
+        let ending = match classified.ending {
+            flark_parser::M11LineEnding::Lf => DocumentEditLineEnding::Lf,
+            flark_parser::M11LineEnding::CrLf => DocumentEditLineEnding::CrLf,
+            flark_parser::M11LineEnding::Cr => DocumentEditLineEnding::Cr,
+            flark_parser::M11LineEnding::Eof => self.fallback_line_ending,
+        };
+        let (row, editable_bytes) = match classified.kind {
+            M11SimpleEditLineKind::Plain => (
+                DocumentSimpleEditRow::Plain,
+                line_start..line_start + classified.content_end,
+            ),
+            M11SimpleEditLineKind::ListItem {
+                marker,
+                prefix,
+                content,
+                marker_offset,
+                empty,
+            } => {
+                let starts_list =
+                    exact_simple_list_starts_list(&window, window_start, local_line_start, marker);
+                let prefix_bytes = line_start + prefix.start..line_start + prefix.end;
+                let prefix_utf16 = lease.utf16_offset_for_byte(prefix_bytes.start).ok()?
+                    ..lease.utf16_offset_for_byte(prefix_bytes.end).ok()?;
+                let editable = line_start + content.start..line_start + content.end;
+                (
+                    DocumentSimpleEditRow::ListItem {
+                        marker: document_marker_from_parser(marker),
+                        prefix_bytes,
+                        prefix_utf16,
+                        marker_offset,
+                        starts_list,
+                        empty,
+                    },
+                    editable,
+                )
+            }
+            M11SimpleEditLineKind::Unsupported => return None,
+        };
+        if selection_byte < editable_bytes.start || selection_byte > editable_bytes.end {
+            return None;
+        }
+        let editable_utf16 = lease.utf16_offset_for_byte(editable_bytes.start).ok()?
+            ..lease.utf16_offset_for_byte(editable_bytes.end).ok()?;
+        let paragraph_merge = matches!(row, DocumentSimpleEditRow::Plain)
+            .then(|| exact_plain_paragraph_merge(&lease, &window, window_start, local_line_start))
+            .flatten();
+        Some(DocumentSimpleEditContext {
+            revision: self.revision(),
+            source_bytes: line_start..line_end,
+            source_utf16,
+            editable_bytes,
+            editable_utf16,
+            ending,
+            row,
+            paragraph_merge,
+        })
+    }
+
+    fn capture_plain_paragraph_merge(
+        &self,
+        rows: &[DocumentViewportRow],
+        current_ordinal: u64,
+        current_source: &Range<usize>,
+    ) -> Option<DocumentParagraphMerge> {
+        let previous = rows
+            .iter()
+            .filter(|row| {
+                row.ordinal < current_ordinal
+                    && row.kind == 5
+                    && row.presentation == DocumentViewportRowPresentation::Plain
+                    && row.source_range.end <= current_source.start as u64
+            })
+            .max_by_key(|row| row.ordinal)?;
+        let previous_source_bytes = u64_range_to_usize(&previous.source_range)?;
+        let previous_source_utf16 = u64_range_to_usize(&previous.source_utf16_range)?;
+        let previous_content_end = self
+            .edit_line_ending_at(previous_source_bytes.end)
+            .map_or(previous_source_bytes.end, |ending| {
+                previous_source_bytes.end - ending.text().len()
+            });
+        if previous_content_end > current_source.start {
+            return None;
+        }
+        let separator_bytes = previous_content_end..current_source.start;
+        let separator = self.source_bytes(separator_bytes.clone()).ok()?;
+        if !contains_exactly_two_line_endings(&separator) {
+            return None;
+        }
+        let lease = self.runtime.snapshot_current_source().ok()?;
+        let separator_utf16 = lease.utf16_offset_for_byte(separator_bytes.start).ok()?
+            ..lease.utf16_offset_for_byte(separator_bytes.end).ok()?;
+        Some(DocumentParagraphMerge {
+            previous_source_bytes,
+            previous_source_utf16,
+            separator_bytes,
+            separator_utf16,
+        })
+    }
+
+    fn edit_line_ending_at(&self, physical_end: usize) -> Option<DocumentEditLineEnding> {
+        if physical_end == 0 {
+            return None;
+        }
+        match self
+            .source_bytes(physical_end - 1..physical_end)
+            .ok()?
+            .as_slice()
+        {
+            b"\n" => {
+                if physical_end >= 2
+                    && self
+                        .source_bytes(physical_end - 2..physical_end - 1)
+                        .ok()
+                        .as_deref()
+                        == Some(b"\r")
+                {
+                    Some(DocumentEditLineEnding::CrLf)
+                } else {
+                    Some(DocumentEditLineEnding::Lf)
+                }
+            }
+            b"\r" => Some(DocumentEditLineEnding::Cr),
+            _ => None,
+        }
+    }
+
+    fn transform_edit_context(
+        &self,
+        mut context: DocumentSimpleEditContext,
+        base_bytes: Range<usize>,
+        base_utf16: Range<usize>,
+        replacement: &str,
+        result_revision: u64,
+    ) -> Option<DocumentSimpleEditContext> {
+        if replacement.contains(['\r', '\n'])
+            || base_bytes.start < context.editable_bytes.start
+            || base_bytes.end > context.editable_bytes.end
+            || base_utf16.start < context.editable_utf16.start
+            || base_utf16.end > context.editable_utf16.end
+        {
+            return None;
+        }
+        let replacement_utf16 = replacement.encode_utf16().count();
+        let byte_delta = replacement.len() as isize - base_bytes.len() as isize;
+        let utf16_delta = replacement_utf16 as isize - base_utf16.len() as isize;
+        context.revision = result_revision;
+        context.source_bytes.end = add_signed(context.source_bytes.end, byte_delta)?;
+        context.source_utf16.end = add_signed(context.source_utf16.end, utf16_delta)?;
+        context.editable_bytes.end = add_signed(context.editable_bytes.end, byte_delta)?;
+        context.editable_utf16.end = add_signed(context.editable_utf16.end, utf16_delta)?;
+        if let DocumentSimpleEditRow::ListItem { empty, .. } = &mut context.row {
+            *empty = context.editable_bytes.is_empty();
+        }
+        self.validate_transformed_edit_context(&context)
+            .then_some(context)
+    }
+
+    fn validate_transformed_edit_context(&self, context: &DocumentSimpleEditContext) -> bool {
+        let line_start = match &context.row {
+            DocumentSimpleEditRow::Plain => context.source_bytes.start,
+            DocumentSimpleEditRow::ListItem { prefix_bytes, .. } => prefix_bytes.start,
+        };
+        if line_start > context.source_bytes.end {
+            return false;
+        }
+        let requested_end = context
+            .source_bytes
+            .end
+            .min(line_start.saturating_add(M11_SIMPLE_EDIT_LINE_MAX_BYTES));
+        let Ok(requested_end) = self.snapped_to_scalar_boundary(requested_end) else {
+            return false;
+        };
+        let Ok(source) = self.source_bytes(line_start..requested_end) else {
+            return false;
+        };
+        let classified = classify_m11_simple_edit_line(&source, line_start == 0);
+        match (&context.row, classified.kind) {
+            (DocumentSimpleEditRow::Plain, M11SimpleEditLineKind::Plain) => true,
+            (
+                DocumentSimpleEditRow::ListItem {
+                    marker,
+                    prefix_bytes,
+                    marker_offset,
+                    ..
+                },
+                M11SimpleEditLineKind::ListItem {
+                    marker: classified_marker,
+                    prefix,
+                    marker_offset: classified_offset,
+                    ..
+                },
+            ) => {
+                document_marker_matches_parser(*marker, classified_marker)
+                    && prefix.end == prefix_bytes.end.saturating_sub(line_start)
+                    && classified_offset == *marker_offset
+            }
+            _ => false,
         }
     }
 
@@ -1085,6 +1588,270 @@ impl DocumentSession {
         self.begin_close()?;
         while !self.pump_close(256)?.complete {}
         Ok(())
+    }
+}
+
+fn dominant_edit_line_ending(source: &[u8]) -> DocumentEditLineEnding {
+    let mut lf = 0_u64;
+    let mut crlf = 0_u64;
+    let mut cr = 0_u64;
+    let mut index = 0;
+    while index < source.len() {
+        match source[index] {
+            b'\r' if source.get(index + 1) == Some(&b'\n') => {
+                crlf += 1;
+                index += 2;
+            }
+            b'\r' => {
+                cr += 1;
+                index += 1;
+            }
+            b'\n' => {
+                lf += 1;
+                index += 1;
+            }
+            _ => index += 1,
+        }
+    }
+    if crlf > lf && crlf >= cr {
+        DocumentEditLineEnding::CrLf
+    } else if cr > lf && cr > crlf {
+        DocumentEditLineEnding::Cr
+    } else {
+        DocumentEditLineEnding::Lf
+    }
+}
+
+fn contains_exactly_two_line_endings(source: &[u8]) -> bool {
+    let mut endings = 0;
+    let mut index = 0;
+    while index < source.len() {
+        match source[index] {
+            b'\r' if source.get(index + 1) == Some(&b'\n') => {
+                endings += 1;
+                index += 2;
+            }
+            b'\r' | b'\n' => {
+                endings += 1;
+                index += 1;
+            }
+            _ => return false,
+        }
+    }
+    endings == 2
+}
+
+fn line_start_in_window(source: &[u8], selection: usize) -> Option<usize> {
+    if selection > source.len()
+        || (selection > 0
+            && selection < source.len()
+            && source[selection - 1] == b'\r'
+            && source[selection] == b'\n')
+    {
+        return None;
+    }
+    Some(
+        source[..selection]
+            .iter()
+            .rposition(|byte| matches!(byte, b'\r' | b'\n'))
+            .map_or(0, |index| index + 1),
+    )
+}
+
+fn line_end_in_window(source: &[u8], selection: usize) -> usize {
+    let Some(relative) = source[selection..]
+        .iter()
+        .position(|byte| matches!(byte, b'\r' | b'\n'))
+    else {
+        return source.len();
+    };
+    let ending = selection + relative;
+    if source[ending] == b'\r' && source.get(ending + 1) == Some(&b'\n') {
+        ending + 2
+    } else {
+        ending + 1
+    }
+}
+
+fn previous_line_ending_start(source: &[u8], end: usize) -> Option<usize> {
+    match source.get(end.checked_sub(1)?)? {
+        b'\n' if end >= 2 && source[end - 2] == b'\r' => Some(end - 2),
+        b'\n' | b'\r' => Some(end - 1),
+        _ => None,
+    }
+}
+
+fn exact_plain_paragraph_merge(
+    lease: &SourceSnapshotLease,
+    window: &[u8],
+    window_start: usize,
+    current_line_start: usize,
+) -> Option<DocumentParagraphMerge> {
+    let last_ending = previous_line_ending_start(window, current_line_start)?;
+    let previous_ending = previous_line_ending_start(window, last_ending)?;
+    let previous_line_start = window[..previous_ending]
+        .iter()
+        .rposition(|byte| matches!(byte, b'\r' | b'\n'))
+        .map_or(0, |index| index + 1);
+    if previous_line_start == 0 && window_start != 0 {
+        return None;
+    }
+    let previous_source = &window[previous_line_start..last_ending];
+    if !matches!(
+        classify_m11_simple_edit_line(previous_source, window_start + previous_line_start == 0)
+            .kind,
+        M11SimpleEditLineKind::Plain
+    ) {
+        return None;
+    }
+    let previous_source_bytes = window_start + previous_line_start..window_start + last_ending;
+    let separator_bytes = window_start + previous_ending..window_start + current_line_start;
+    let previous_source_utf16 = lease
+        .utf16_offset_for_byte(previous_source_bytes.start)
+        .ok()?
+        ..lease
+            .utf16_offset_for_byte(previous_source_bytes.end)
+            .ok()?;
+    let separator_utf16 = lease.utf16_offset_for_byte(separator_bytes.start).ok()?
+        ..lease.utf16_offset_for_byte(separator_bytes.end).ok()?;
+    Some(DocumentParagraphMerge {
+        previous_source_bytes,
+        previous_source_utf16,
+        separator_bytes,
+        separator_utf16,
+    })
+}
+
+fn exact_simple_list_starts_list(
+    window: &[u8],
+    window_start: usize,
+    current_line_start: usize,
+    current_marker: M11SimpleEditListMarker,
+) -> bool {
+    let Some(previous_ending_start) = previous_line_ending_start(window, current_line_start) else {
+        return true;
+    };
+    let previous_line_start = window[..previous_ending_start]
+        .iter()
+        .rposition(|byte| matches!(byte, b'\r' | b'\n'))
+        .map_or(0, |index| index + 1);
+    if previous_line_start == 0 && window_start != 0 {
+        return true;
+    }
+    let previous = classify_m11_simple_edit_line(
+        &window[previous_line_start..current_line_start],
+        window_start + previous_line_start == 0,
+    );
+    let M11SimpleEditLineKind::ListItem {
+        marker: previous_marker,
+        ..
+    } = previous.kind
+    else {
+        return true;
+    };
+    !simple_list_markers_are_compatible(previous_marker, current_marker)
+}
+
+fn simple_list_markers_are_compatible(
+    left: M11SimpleEditListMarker,
+    right: M11SimpleEditListMarker,
+) -> bool {
+    match (left, right) {
+        (M11SimpleEditListMarker::Bullet(left), M11SimpleEditListMarker::Bullet(right)) => {
+            left == right
+        }
+        (
+            M11SimpleEditListMarker::Ordered {
+                delimiter: left, ..
+            },
+            M11SimpleEditListMarker::Ordered {
+                delimiter: right, ..
+            },
+        ) => left == right,
+        _ => false,
+    }
+}
+
+fn u64_range_to_usize(range: &Range<u64>) -> Option<Range<usize>> {
+    Some(usize::try_from(range.start).ok()?..usize::try_from(range.end).ok()?)
+}
+
+fn add_signed(value: usize, delta: isize) -> Option<usize> {
+    if delta >= 0 {
+        value.checked_add(delta as usize)
+    } else {
+        value.checked_sub(delta.unsigned_abs())
+    }
+}
+
+fn document_marker_matches_parser(
+    document: DocumentListMarker,
+    parser: M11SimpleEditListMarker,
+) -> bool {
+    matches!(
+        (document, parser),
+        (
+            DocumentListMarker::Bullet(DocumentBulletMarker::Hyphen),
+            M11SimpleEditListMarker::Bullet(BulletMarker::Hyphen)
+        ) | (
+            DocumentListMarker::Bullet(DocumentBulletMarker::Plus),
+            M11SimpleEditListMarker::Bullet(BulletMarker::Plus)
+        ) | (
+            DocumentListMarker::Bullet(DocumentBulletMarker::Asterisk),
+            M11SimpleEditListMarker::Bullet(BulletMarker::Asterisk)
+        ) | (
+            DocumentListMarker::Ordered {
+                value: _,
+                delimiter: DocumentListDelimiter::Period,
+            },
+            M11SimpleEditListMarker::Ordered {
+                value: _,
+                delimiter: ListDelimiter::Period,
+            }
+        ) | (
+            DocumentListMarker::Ordered {
+                value: _,
+                delimiter: DocumentListDelimiter::Parenthesis,
+            },
+            M11SimpleEditListMarker::Ordered {
+                value: _,
+                delimiter: ListDelimiter::Parenthesis,
+            }
+        )
+    ) && match (document, parser) {
+        (
+            DocumentListMarker::Ordered { value: left, .. },
+            M11SimpleEditListMarker::Ordered { value: right, .. },
+        ) => left == right,
+        _ => true,
+    }
+}
+
+fn document_marker_from_parser(marker: M11SimpleEditListMarker) -> DocumentListMarker {
+    match marker {
+        M11SimpleEditListMarker::Bullet(BulletMarker::Hyphen) => {
+            DocumentListMarker::Bullet(DocumentBulletMarker::Hyphen)
+        }
+        M11SimpleEditListMarker::Bullet(BulletMarker::Plus) => {
+            DocumentListMarker::Bullet(DocumentBulletMarker::Plus)
+        }
+        M11SimpleEditListMarker::Bullet(BulletMarker::Asterisk) => {
+            DocumentListMarker::Bullet(DocumentBulletMarker::Asterisk)
+        }
+        M11SimpleEditListMarker::Ordered {
+            value,
+            delimiter: ListDelimiter::Period,
+        } => DocumentListMarker::Ordered {
+            value,
+            delimiter: DocumentListDelimiter::Period,
+        },
+        M11SimpleEditListMarker::Ordered {
+            value,
+            delimiter: ListDelimiter::Parenthesis,
+        } => DocumentListMarker::Ordered {
+            value,
+            delimiter: DocumentListDelimiter::Parenthesis,
+        },
     }
 }
 

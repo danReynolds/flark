@@ -12,10 +12,10 @@ pub use implementation::{
     flark_v4_bulk_commit, flark_v4_cancel, flark_v4_close_begin, flark_v4_close_finish,
     flark_v4_close_pump, flark_v4_continuation_next, flark_v4_continuation_release,
     flark_v4_coordinate_convert, flark_v4_create_abort, flark_v4_create_append,
-    flark_v4_create_begin, flark_v4_create_commit, flark_v4_history_release,
-    flark_v4_history_replay, flark_v4_negotiate, flark_v4_pump, flark_v4_query_viewport,
-    flark_v4_session_inspect, flark_v4_session_transfer_owner, flark_v4_small_edit,
-    flark_v4_source_read,
+    flark_v4_create_begin, flark_v4_create_commit, flark_v4_edit_intent_v1,
+    flark_v4_history_release, flark_v4_history_replay, flark_v4_negotiate, flark_v4_pump,
+    flark_v4_query_viewport, flark_v4_session_inspect, flark_v4_session_transfer_owner,
+    flark_v4_small_edit, flark_v4_source_read,
 };
 
 pub use flark_runtime::{
@@ -25,7 +25,7 @@ pub use flark_runtime::{
 };
 
 pub const ABI_MAJOR: u16 = 4;
-pub const ABI_MINOR: u16 = 9;
+pub const ABI_MINOR: u16 = 10;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
@@ -423,6 +423,65 @@ pub struct SmallEditRequest {
     pub reserved_u32: u32,
     pub replacement_bytes_len: u64,
     pub budget: WorkBudget,
+    pub reserved: [u64; 2],
+}
+
+pub const EDIT_PROFILE_FLARK_V1: u32 = 1;
+pub const EDIT_INTENT_INSERT_PARAGRAPH_BREAK: u32 = 1;
+pub const EDIT_INTENT_DELETE_BACKWARD: u32 = 2;
+pub const EDIT_INTENT_DISPOSITION_APPLIED: u32 = 1;
+pub const EDIT_INTENT_DISPOSITION_HANDLED_NO_CHANGE: u32 = 2;
+pub const EDIT_INTENT_DISPOSITION_NOT_APPLICABLE: u32 = 3;
+pub const EDIT_INTENT_DISPOSITION_NEEDS_CURRENT_SEMANTICS: u32 = 4;
+pub const EDIT_INTENT_RECEIPT_HAS_COMMIT: u32 = 1 << 0;
+pub const EDIT_INTENT_RECEIPT_PARSER_PENDING: u32 = 1 << 1;
+pub const EDIT_INTENT_RECEIPT_SEMANTIC_BYTES: u32 = 1 << 2;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(C)]
+pub struct EditIntentRequestV1 {
+    pub struct_size: u32,
+    pub profile_id: u32,
+    pub session: SessionRef,
+    pub expected_revision: u64,
+    pub selection_base_anchor: u64,
+    pub selection_extent_anchor: u64,
+    pub logical_edit_id: u64,
+    pub request_digest: u64,
+    pub acknowledge_previous_logical_edit_id: u64,
+    pub selection_generation: u64,
+    pub intent: u32,
+    pub selection_affinity: u32,
+    pub selection_direction: u32,
+    pub composition_active: u32,
+    pub budget: WorkBudget,
+    pub reserved: [u64; 1],
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(C)]
+pub struct EditIntentReceiptV1 {
+    pub struct_size: u32,
+    pub semantic_disposition: u32,
+    pub history_disposition: u32,
+    pub flags: u32,
+    pub logical_edit_id: u64,
+    pub request_digest: u64,
+    pub base_revision: u64,
+    pub result_revision: u64,
+    pub base_byte_range: SourceRange,
+    pub base_utf16_range: SourceRange,
+    pub result_byte_range: SourceRange,
+    pub result_utf16_range: SourceRange,
+    pub result_selection_utf16: u64,
+    pub result_selection_affinity: u32,
+    pub result_selection_direction: u32,
+    pub result_source_byte_length: u64,
+    pub result_source_utf16_length: u64,
+    pub affected_result_utf16_range: SourceRange,
+    pub history_token: u64,
+    pub replacement_bytes: u32,
+    pub reserved_u32: u32,
     pub reserved: [u64; 2],
 }
 
@@ -832,6 +891,14 @@ pub const RECORD_LAYOUTS: &[(&str, usize)] = &[
     (
         "SMALL_EDIT_REQUEST",
         core::mem::size_of::<SmallEditRequest>(),
+    ),
+    (
+        "EDIT_INTENT_REQUEST_V1",
+        core::mem::size_of::<EditIntentRequestV1>(),
+    ),
+    (
+        "EDIT_INTENT_RECEIPT_V1",
+        core::mem::size_of::<EditIntentReceiptV1>(),
     ),
     (
         "BULK_BEGIN_REQUEST",

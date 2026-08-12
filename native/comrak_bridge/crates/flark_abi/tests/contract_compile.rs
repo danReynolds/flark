@@ -7,12 +7,13 @@ use std::{
 };
 
 use flark_abi::{
-    AbiInfo, AnchorRequest, CertificationRangeRecord, EditDescriptor, InlineFactRecord, Outcome,
-    QueryRequest, RequestFieldRuleKind, ResultPageHeader, SessionInspection, SmallEditRequest,
-    ABI_MAJOR, ABI_MINOR, AFFINITIES, CAPABILITY_BITS, CERTIFICATION_STATES, COORDINATE_KINDS,
-    HANDLE_KINDS, HISTORY_DISPOSITIONS, OPERATION_CODES, OWNERSHIP_KINDS, PARSER_PROFILES,
-    PROGRESS_STATES, QUERY_KINDS, RECORD_LAYOUTS, REQUEST_FIELD_RULES, RESULT_RECORD_KINDS,
-    SESSION_STATES, STATUS_CODES, TRANSACTION_STATES,
+    AbiInfo, AnchorRequest, CertificationRangeRecord, EditDescriptor, EditIntentReceiptV1,
+    EditIntentRequestV1, InlineFactRecord, Outcome, QueryRequest, RequestFieldRuleKind,
+    ResultPageHeader, SessionInspection, SmallEditRequest, ABI_MAJOR, ABI_MINOR, AFFINITIES,
+    CAPABILITY_BITS, CERTIFICATION_STATES, COORDINATE_KINDS, HANDLE_KINDS, HISTORY_DISPOSITIONS,
+    OPERATION_CODES, OWNERSHIP_KINDS, PARSER_PROFILES, PROGRESS_STATES, QUERY_KINDS,
+    RECORD_LAYOUTS, REQUEST_FIELD_RULES, RESULT_RECORD_KINDS, SESSION_STATES, STATUS_CODES,
+    TRANSACTION_STATES,
 };
 use flark_runtime::{
     AnchorHandle, CertificationState, ContinuationHandle, CoordinateKind, HistoryDisposition,
@@ -58,6 +59,12 @@ fn fixed_width_records_match_the_frozen_layout() {
     assert_eq!(offset_of!(SmallEditRequest, edit_count), 32);
     assert_eq!(offset_of!(SmallEditRequest, replacement_bytes_len), 40);
     assert_eq!(offset_of!(SmallEditRequest, budget), 48);
+    assert_eq!(size_of::<EditIntentRequestV1>(), 128);
+    assert_eq!(offset_of!(EditIntentRequestV1, logical_edit_id), 48);
+    assert_eq!(offset_of!(EditIntentRequestV1, budget), 96);
+    assert_eq!(size_of::<EditIntentReceiptV1>(), 192);
+    assert_eq!(offset_of!(EditIntentReceiptV1, base_byte_range), 48);
+    assert_eq!(offset_of!(EditIntentReceiptV1, history_token), 160);
     assert_eq!(size_of::<QueryRequest>(), 96);
     assert_eq!(offset_of!(QueryRequest, budget), 64);
     assert_eq!(size_of::<AnchorRequest>(), 96);
@@ -173,7 +180,7 @@ fn operations_name_real_header_symbols_and_known_request_records() {
         .into_keys()
         .collect::<BTreeSet<_>>();
     let operations = manifest["operations"].as_array().expect("operations array");
-    assert_eq!(operations.len(), 28);
+    assert_eq!(operations.len(), 29);
     for operation in operations {
         let symbol = operation["symbol"].as_str().expect("operation symbol");
         let request = operation["requestRecord"]
