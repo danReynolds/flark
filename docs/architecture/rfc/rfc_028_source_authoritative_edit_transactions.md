@@ -673,7 +673,7 @@ alternating Return/Backspace.
 
 ## 12. Execution and gates
 
-### 12.1 Implementation checkpoint (2026-08-11)
+### 12.1 Implementation checkpoint (2026-08-12)
 
 Implemented: the parser-owned bounded line classifier; the one-splice Rust
 resolver/commit path in ready, parser-pending, and initial-building states; ABI
@@ -690,12 +690,20 @@ approximately 2.6-2.9 ms for 1-10 MiB ordinary documents and about 0.05 ms for a
 1 MiB giant line on the benchmark Mac. These are development probes, not H1
 p99 receipts.
 
-Still required for H1: the platform-observation arbiter and bounded successor
-FIFO; injected lost-reply recovery through the retained terminal slot; maximum
-live-anchor and multi-session contention measurements; stable structural frame
-evidence; and complete event-to-presented-frame instrumentation. Literal source
-transactions, non-collapsed replacement, task lists, full composition, and
-other structural constructs remain H3/H4 work.
+The delta-model Return lane now assigns mutation authority to the delta and
+treats its later action as acknowledgement. One bounded provisional successor
+FIFO reconciles rapid typing against the exact Rust receipt; it is capped at
+seven dependent observations and fails closed on ambiguous interiors or
+unsupported non-delta successors. Injected reply loss recovers the retained
+terminal by replaying the exact logical ID/digest, with one source revision and
+one undo unit.
+
+Still required for H1: the remaining platform-observation modes, especially
+selector/full-value successor capture; maximum live-anchor and multi-session
+contention measurements; stable structural frame evidence; and complete
+event-to-presented-frame instrumentation. Literal source transactions,
+non-collapsed replacement, task lists, full composition, and other structural
+constructs remain H3/H4 work.
 
 ### H1 — one-splice vertical slice
 

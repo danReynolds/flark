@@ -216,9 +216,10 @@ final class _FlarkEditorState extends State<FlarkEditor>
 
   @override
   void performAction(TextInputAction action) {
-    if (action == TextInputAction.newline) {
-      widget.controller.insertNewline();
-    }
+    // On a multiline delta-model connection, Return arrives as a text delta
+    // before the platform reports the action. The delta is the mutation; the
+    // action is only its acknowledgement. Treating both as edits duplicates
+    // every Return on macOS.
   }
 
   @override

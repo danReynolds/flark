@@ -191,6 +191,35 @@ void main() {
     },
     skip: libraryPath == null,
   );
+
+  testWidgets(
+    'platform newline action is an acknowledgement, not mutation authority',
+    (tester) async {
+      final controller = (await tester.runAsync(
+        () =>
+            FlarkEditorController.open('9) alpha\n', libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(child: FlarkEditor(controller: controller)),
+        ),
+      );
+      final dynamic state = tester.state(find.byType(FlarkEditor));
+      final revision = controller.revision;
+      state.performAction(TextInputAction.newline);
+
+      expect(controller.revision, revision);
+      expect(controller.visibleSource, '9) alpha\n');
+      expect(controller.pendingEdits, 0);
+      expect(controller.lastError, isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
 }
 
 Future<void> _pumpUntilTransactions(

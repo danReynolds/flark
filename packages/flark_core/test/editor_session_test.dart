@@ -54,10 +54,16 @@ void main() {
       late int clockMicros;
       late FlarkCoreEditorSession session;
 
-      Future<void> open(String source) async {
+      Future<void> open(
+        String source, {
+        Duration editIntentReplyTimeout = const Duration(milliseconds: 250),
+        bool debugDropFirstEditIntentReply = false,
+      }) async {
         document = await FlarkCoreDocument.open(
           source,
           libraryPath: libraryPath!,
+          editIntentReplyTimeout: editIntentReplyTimeout,
+          debugDropFirstEditIntentReply: debugDropFirstEditIntentReply,
         );
         clockMicros = 0;
         session = FlarkCoreEditorSession(
@@ -250,6 +256,32 @@ void main() {
           expect((await session.resolveSelection())!.extent, 8);
         },
       );
+
+      test('lost semantic reply recovers the terminal exactly once', () async {
+        await open(
+          '- one\n- two\n',
+          editIntentReplyTimeout: const Duration(milliseconds: 10),
+          debugDropFirstEditIntentReply: true,
+        );
+        addTearDown(() async {
+          await session.dispose();
+          await document.dispose();
+        });
+        await session.setSelectionUtf16(5, 5);
+        final revision = document.revision;
+
+        final receipt = await session.applyEditIntentV1(
+          FlarkCoreEditIntentV1.insertParagraphBreak,
+          compositionActive: false,
+        );
+
+        expect(receipt.disposition, FlarkCoreEditIntentDispositionV1.applied);
+        expect(document.revision, revision + 1);
+        expect(await document.readSource(), '- one\n- \n- two\n');
+        expect(await session.undo(), isA<FlarkCoreHistoryReplayed>());
+        expect(await document.readSource(), '- one\n- two\n');
+        expect(session.canUndo, isFalse);
+      });
 
       test('canonical selection anchors survive edits by affinity', () async {
         await open('Hello world!\n');

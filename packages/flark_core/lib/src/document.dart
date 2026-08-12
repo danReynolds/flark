@@ -70,8 +70,9 @@ final class FlarkCoreNativeException implements Exception {
       'FlarkCoreNativeException($operation, status: $status, detail: $detail)';
 }
 
-/// Typed fail-stop raised when the document worker or its native session is
-/// lost. A mutation awaiting a reply must treat its commit state as unknown.
+/// Typed fail-stop raised when the document worker, its native session, or a
+/// protected mutation's terminal receipt is lost. A mutation awaiting a reply
+/// must treat its commit state as unknown.
 final class FlarkCoreWorkerException implements Exception {
   const FlarkCoreWorkerException(this.reason);
 
@@ -160,6 +161,7 @@ final class FlarkCoreDocument {
     required StreamSubscription<Object?> workerErrorSubscription,
     required StreamSubscription<Object?> workerExitSubscription,
     required Completer<FlarkCoreWorkerException> workerFailure,
+    required Duration editIntentReplyTimeout,
     required int revision,
     required int sourceByteLength,
     required int sourceUtf16Length,
@@ -169,6 +171,7 @@ final class FlarkCoreDocument {
        _workerErrorSubscription = workerErrorSubscription,
        _workerExitSubscription = workerExitSubscription,
        _workerFailure = workerFailure,
+       _editIntentReplyTimeout = editIntentReplyTimeout,
        _revision = revision,
        _sourceByteLength = sourceByteLength,
        _sourceUtf16Length = sourceUtf16Length,
@@ -181,6 +184,7 @@ final class FlarkCoreDocument {
   final StreamSubscription<Object?> _workerErrorSubscription;
   final StreamSubscription<Object?> _workerExitSubscription;
   final Completer<FlarkCoreWorkerException> _workerFailure;
+  final Duration _editIntentReplyTimeout;
   final Object _historyOwner = Object();
 
   int _revision;
@@ -198,9 +202,17 @@ final class FlarkCoreDocument {
     String source, {
     required String libraryPath,
     int historyBudgetBytes = 8 * 1024 * 1024,
+    Duration editIntentReplyTimeout = const Duration(milliseconds: 250),
+    bool debugDropFirstEditIntentReply = false,
   }) async {
     if (historyBudgetBytes < 0) {
       throw RangeError.value(historyBudgetBytes, 'historyBudgetBytes');
+    }
+    if (editIntentReplyTimeout.inMicroseconds <= 0) {
+      throw ArgumentError.value(
+        editIntentReplyTimeout,
+        'editIntentReplyTimeout',
+      );
     }
     final startup = ReceivePort();
     final errors = ReceivePort();
@@ -220,7 +232,13 @@ final class FlarkCoreDocument {
     });
     final isolate = await Isolate.spawn<List<Object?>>(
       _documentWorker,
-      [startup.sendPort, source, libraryPath, historyBudgetBytes],
+      [
+        startup.sendPort,
+        source,
+        libraryPath,
+        historyBudgetBytes,
+        debugDropFirstEditIntentReply,
+      ],
       onError: errors.sendPort,
       onExit: exits.sendPort,
       errorsAreFatal: true,
@@ -257,6 +275,7 @@ final class FlarkCoreDocument {
         workerErrorSubscription: errorSubscription,
         workerExitSubscription: exitSubscription,
         workerFailure: workerFailure,
+        editIntentReplyTimeout: editIntentReplyTimeout,
         revision: envelope['revision']! as int,
         sourceByteLength: envelope['sourceByteLength']! as int,
         sourceUtf16Length: envelope['sourceUtf16Length']! as int,
@@ -306,7 +325,7 @@ final class FlarkCoreDocument {
   }) async {
     _requireOwnedAnchor(selectionBaseAnchor);
     _requireOwnedAnchor(selectionExtentAnchor);
-    final result = await _request('editIntentV1', {
+    final arguments = <String, Object?>{
       'intent': intent.index,
       'expectedRevision': expectedRevision,
       'selectionBaseAnchor': selectionBaseAnchor._value,
@@ -316,7 +335,8 @@ final class FlarkCoreDocument {
       'acknowledgePreviousLogicalEditId': acknowledgePreviousLogicalEditId,
       'selectionGeneration': selectionGeneration,
       'compositionActive': compositionActive,
-    });
+    };
+    final result = await _requestSemanticTerminal(arguments);
     final disposition =
         FlarkCoreEditIntentDispositionV1.values[result['disposition']! as int];
     final hasCommit = disposition == FlarkCoreEditIntentDispositionV1.applied;
@@ -508,20 +528,52 @@ final class FlarkCoreDocument {
     return _send(operation, arguments);
   }
 
-  Future<Map<Object?, Object?>> _send(
-    String operation,
+  Future<Map<Object?, Object?>> _requestSemanticTerminal(
     Map<String, Object?> arguments,
   ) async {
+    try {
+      return await _send(
+        'editIntentV1',
+        arguments,
+        replyTimeout: _editIntentReplyTimeout,
+      );
+    } on TimeoutException {
+      // The native terminal slot makes this exact logical ID/digest replay
+      // idempotent whether the first request committed or was merely delayed.
+      try {
+        return await _send(
+          'editIntentV1',
+          arguments,
+          replyTimeout: _editIntentReplyTimeout,
+        );
+      } on FlarkCoreWorkerException {
+        rethrow;
+      } on Object catch (error) {
+        throw FlarkCoreWorkerException(
+          'semantic terminal recovery failed: $error',
+        );
+      }
+    }
+  }
+
+  Future<Map<Object?, Object?>> _send(
+    String operation,
+    Map<String, Object?> arguments, {
+    Duration? replyTimeout,
+  }) async {
     if (_workerFailure.isCompleted) throw await _workerFailure.future;
     final reply = ReceivePort();
     try {
       _commands.send([operation, arguments, reply.sendPort]);
-      final envelope = await Future.any<Map<Object?, Object?>>([
+      final response = Future.any<Map<Object?, Object?>>([
         reply.first.then((value) => value! as Map<Object?, Object?>),
         _workerFailure.future.then<Map<Object?, Object?>>(
           (failure) => throw failure,
         ),
       ]);
+      final envelope = replyTimeout == null
+          ? await response
+          : await response.timeout(replyTimeout);
       if (envelope case {'nativeError': final Map<Object?, Object?> error}) {
         throw _decodeNativeException(error);
       }
@@ -592,6 +644,7 @@ Future<void> _documentWorker(List<Object?> startup) async {
       historyBudgetBytes: startup[3]! as int,
     );
     final commands = ReceivePort();
+    var dropNextEditIntentReply = startup[4]! as bool;
     startupPort.send({
       'commands': commands.sendPort,
       'revision': document.revision,
@@ -633,7 +686,7 @@ Future<void> _documentWorker(List<Object?> startup) async {
               selectionGeneration: arguments['selectionGeneration']! as int,
               compositionActive: arguments['compositionActive']! as bool,
             );
-            reply.send({
+            final envelope = <Object?, Object?>{
               'disposition': receipt.disposition.index,
               'baseRevision': receipt.baseRevision,
               'resultRevision': receipt.resultRevision,
@@ -653,7 +706,12 @@ Future<void> _documentWorker(List<Object?> startup) async {
               'parserPending': receipt.parserPending,
               'logicalEditId': receipt.logicalEditId,
               'requestDigest': receipt.requestDigest,
-            });
+            };
+            if (dropNextEditIntentReply) {
+              dropNextEditIntentReply = false;
+            } else {
+              reply.send(envelope);
+            }
           case 'replayHistory':
             final receipt = document.replayHistory(
               arguments['historyToken']! as int,

@@ -136,6 +136,72 @@ void main() {
   );
 
   test(
+    'typing behind semantic Return reconciles provisional coordinates in FIFO order',
+    () async {
+      final body = List<String>.filled(4000, 'a').join();
+      final controller = await open('9) $body\n');
+      addTearDown(controller.close);
+      final row = controller.rows.single;
+      controller.activateRow(row, row.editableUtf16!.end);
+      final revisionBefore = controller.revision;
+      final before = controller.inputValue;
+      final newline = insertion(before, before.selection.extentOffset, '\n');
+      final provisionalAfter = newline.apply(before);
+      final successor = insertion(
+        provisionalAfter,
+        provisionalAfter.selection.extentOffset,
+        'x',
+      );
+
+      controller.applyDeltas([newline]);
+      controller.applyDeltas([successor]);
+
+      expect(controller.resyncCount, 0);
+      await settle(controller);
+      expect(controller.semanticSuccessorHighWatermark, 1);
+      expect(controller.lastSemanticReconciliationMicros, lessThan(16000));
+      expect(controller.revision, revisionBefore + 2);
+      expect(controller.visibleSource, '9) $body\n10) x\n');
+      expect(controller.globalCaretOffset, 4009);
+      expect(await controller.undo(), isTrue);
+      await settle(controller);
+      expect(controller.visibleSource, '9) $body\n10) \n');
+      expect(await controller.undo(), isTrue);
+      await settle(controller);
+      expect(controller.visibleSource, '9) $body\n');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'unsupported successor observations resynchronize without corrupting the semantic commit',
+    () async {
+      final controller = await open('9) alpha\n');
+      addTearDown(controller.close);
+      final row = controller.rows.single;
+      controller.activateRow(row, row.editableUtf16!.end);
+      final before = controller.inputValue;
+
+      controller.applyDeltas([
+        insertion(before, before.selection.extentOffset, '\n'),
+      ]);
+      controller.deleteBackward();
+
+      expect(controller.resyncCount, 1);
+      expect(
+        controller.lastResyncReason,
+        FlarkInputResyncReason.unsupportedSuccessorObservation,
+      );
+      await settle(controller);
+      expect(controller.visibleSource, '9) alpha\n10) \n');
+      expect(await controller.undo(), isTrue);
+      await settle(controller);
+      expect(controller.visibleSource, '9) alpha\n');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'a stale first delta resynchronizes without mutation',
     () async {
       final controller = await open('# Flark\n\nA quick paragraph.\n');

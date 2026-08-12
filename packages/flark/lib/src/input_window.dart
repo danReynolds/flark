@@ -23,6 +23,9 @@ enum FlarkInputResyncReason {
   rangeOutOfWindow,
   batchOverEnvelope,
   staleSelectionGeneration,
+  successorQueueOverflow,
+  successorReconciliationFailed,
+  unsupportedSuccessorObservation,
 }
 
 /// The host-attached serialized shadow of the active platform client: the

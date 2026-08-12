@@ -15,6 +15,7 @@ const _maximumSmallEditBytes = 4 * 1024;
 const _smallEditDescriptorBytes = 32;
 const _viewportRowsPerPage = 32;
 const _parseIdleDelay = Duration(milliseconds: 32);
+const _maximumSemanticSuccessors = 7;
 
 enum FlarkEditorStatus { opening, parsing, ready, editing, faulted, disposed }
 
@@ -191,6 +192,77 @@ final class _EditorSelectionSnapshot {
   final int? activeOrdinal;
 }
 
+final class _ProvisionalInputBatch {
+  const _ProvisionalInputBatch({
+    required this.before,
+    required this.after,
+    required this.typingInput,
+  });
+
+  final TextEditingValue before;
+  final TextEditingValue after;
+  final bool typingInput;
+}
+
+final class _PendingSemanticInput {
+  _PendingSemanticInput(TextEditingValue provisionalAfter)
+    : provisionalTail = provisionalAfter;
+
+  TextEditingValue provisionalTail;
+  final List<_ProvisionalInputBatch> successors = [];
+}
+
+/// One bounded monotone map between a platform-provisional input window and
+/// the Rust-committed window. Offsets inside the differing interiors are
+/// intentionally unmappable; callers resynchronize instead of guessing.
+final class _InputReconciliationMap {
+  const _InputReconciliationMap({
+    required this.fromStart,
+    required this.fromEnd,
+    required this.toStart,
+    required this.toEnd,
+  });
+
+  final int fromStart;
+  final int fromEnd;
+  final int toStart;
+  final int toEnd;
+
+  static _InputReconciliationMap between(String from, String to) {
+    var prefix = 0;
+    while (prefix < from.length &&
+        prefix < to.length &&
+        from.codeUnitAt(prefix) == to.codeUnitAt(prefix)) {
+      prefix += 1;
+    }
+    var fromSuffix = from.length;
+    var toSuffix = to.length;
+    while (fromSuffix > prefix &&
+        toSuffix > prefix &&
+        from.codeUnitAt(fromSuffix - 1) == to.codeUnitAt(toSuffix - 1)) {
+      fromSuffix -= 1;
+      toSuffix -= 1;
+    }
+    return _InputReconciliationMap(
+      fromStart: prefix,
+      fromEnd: fromSuffix,
+      toStart: prefix,
+      toEnd: toSuffix,
+    );
+  }
+
+  int? mapOffset(int offset, {required bool downstream}) {
+    if (offset < fromStart) return offset;
+    if (offset > fromEnd) return toEnd + offset - fromEnd;
+    if (fromStart == fromEnd && offset == fromStart) {
+      return downstream ? toEnd : toStart;
+    }
+    if (offset == fromStart) return toStart;
+    if (offset == fromEnd) return toEnd;
+    return null;
+  }
+}
+
 /// UI-isolate state for a bounded viewport and bounded platform input window.
 ///
 /// The complete document remains in [FlarkCoreDocument]'s worker/native actor.
@@ -250,6 +322,9 @@ final class FlarkEditorController extends ChangeNotifier {
   int _shadowWindowStart = 0;
   TextSelection? _shadowSelection;
   bool _platformMutation = false;
+  _PendingSemanticInput? _pendingSemanticInput;
+  int _semanticSuccessorHighWatermark = 0;
+  int _lastSemanticReconciliationMicros = 0;
 
   FlarkEditorStatus get status => _status;
   FlarkViewport? get viewport => _viewport;
@@ -287,6 +362,8 @@ final class FlarkEditorController extends ChangeNotifier {
   int get resyncCount => _resyncCount;
   bool get hasOversizedSelection => _oversizedSelection;
   int get canonicalSelectionGeneration => _session.selectionGeneration;
+  int get semanticSuccessorHighWatermark => _semanticSuccessorHighWatermark;
+  int get lastSemanticReconciliationMicros => _lastSemanticReconciliationMicros;
 
   FlarkInputWindowShadow get inputWindowShadow => FlarkInputWindowShadow(
     connectionEpoch: _connectionEpoch,
@@ -369,13 +446,19 @@ final class FlarkEditorController extends ChangeNotifier {
   /// window, and a multi-delta batch must fit the whole-batch small-edit
   /// envelope. A bad or over-cap second delta therefore cannot leave the
   /// first applied.
-  FlarkInputResyncReason _validateDeltaBatch(List<TextEditingDelta> deltas) {
+  FlarkInputResyncReason _validateDeltaBatch(
+    List<TextEditingDelta> deltas, {
+    TextEditingValue? against,
+    String? expectedTextSha256,
+  }) {
     if (deltas.isEmpty) return FlarkInputResyncReason.none;
-    if (flarkWindowTextSha256(deltas.first.oldText) != _windowTextSha256) {
+    final initial = against ?? _inputValue;
+    final expectedHash = expectedTextSha256 ?? _windowTextSha256;
+    if (flarkWindowTextSha256(deltas.first.oldText) != expectedHash) {
       return FlarkInputResyncReason.oldTextMismatch;
     }
-    var value = _inputValue;
-    var runningHash = _windowTextSha256;
+    var value = initial;
+    var runningHash = expectedHash;
     var envelopeBytes = 0;
     var mutatingDeltas = 0;
     for (final delta in deltas) {
@@ -1025,6 +1108,7 @@ final class FlarkEditorController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    if (_captureSemanticSuccessors(deltas)) return;
     final rejection = _validateDeltaBatch(deltas);
     if (rejection != FlarkInputResyncReason.none) {
       _resynchronize(rejection);
@@ -1032,6 +1116,10 @@ final class FlarkEditorController extends ChangeNotifier {
     }
     _platformMutation = true;
     try {
+      if (_isPlatformNewlineMutation(deltas) &&
+          _queuePlatformSemanticNewline(deltas)) {
+        return;
+      }
       if (_isPlatformNewlineMutation(deltas)) {
         insertNewline();
         return;
@@ -1056,23 +1144,18 @@ final class FlarkEditorController extends ChangeNotifier {
       } else {
         final before = _inputValue.text;
         final after = finalValue.text;
-        var prefix = 0;
-        while (prefix < before.length &&
-            prefix < after.length &&
-            before.codeUnitAt(prefix) == after.codeUnitAt(prefix)) {
-          prefix += 1;
-        }
-        var oldSuffix = before.length;
-        var newSuffix = after.length;
-        while (oldSuffix > prefix &&
-            newSuffix > prefix &&
-            before.codeUnitAt(oldSuffix - 1) ==
-                after.codeUnitAt(newSuffix - 1)) {
-          oldSuffix -= 1;
-          newSuffix -= 1;
+        final mutation = _differenceMutation(before, after);
+        if (mutation == null) {
+          _breakTypingHistoryGroup();
+          _inputValue = finalValue;
+          _trackCompositionWithoutMutation(finalValue.composing);
+          _updateGlobalSelection();
+          unawaited(_installCanonicalSelection(_selectionSnapshot()));
+          notifyListeners();
+          return;
         }
         final accepted = _acceptMutation(
-          _TextMutation(prefix, oldSuffix, after.substring(prefix, newSuffix)),
+          mutation,
           selection: finalValue.selection,
           composing: finalValue.composing,
           typingInput: typingInput,
@@ -1096,6 +1179,7 @@ final class FlarkEditorController extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    if (_rejectUnsupportedSemanticSuccessor()) return;
     _platformMutation = true;
     try {
       _updateEditingValueFromPlatform(value);
@@ -1142,6 +1226,7 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   void replaceSelection(String replacement) {
+    if (_rejectUnsupportedSemanticSuccessor()) return;
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
     if (_oversizedSelection) {
@@ -1266,6 +1351,7 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   void deleteBackward() {
+    if (_rejectUnsupportedSemanticSuccessor()) return;
     if (_oversizedSelection) {
       replaceSelection('');
       return;
@@ -1296,6 +1382,7 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   void deleteForward() {
+    if (_rejectUnsupportedSemanticSuccessor()) return;
     if (_oversizedSelection) {
       replaceSelection('');
       return;
@@ -1320,6 +1407,7 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   void insertNewline() {
+    if (_rejectUnsupportedSemanticSuccessor()) return;
     final selection = _inputValue.selection;
     if (selection.isCollapsed &&
         (_queueSemanticParagraphBreak(selection.extentOffset) ||
@@ -1344,6 +1432,65 @@ final class FlarkEditorController extends ChangeNotifier {
     return mutation.start ==
             math.min(selection.baseOffset, selection.extentOffset) &&
         mutation.end == math.max(selection.baseOffset, selection.extentOffset);
+  }
+
+  bool _queuePlatformSemanticNewline(List<TextEditingDelta> deltas) {
+    final provisionalAfter = deltas.single.apply(_inputValue);
+    _pendingSemanticInput = _PendingSemanticInput(provisionalAfter);
+    final queued = _queueSemanticParagraphBreak(
+      _inputValue.selection.extentOffset,
+    );
+    if (!queued) _pendingSemanticInput = null;
+    return queued;
+  }
+
+  bool _captureSemanticSuccessors(List<TextEditingDelta> deltas) {
+    final pending = _pendingSemanticInput;
+    if (pending == null) return false;
+    if (pending.successors.length >= _maximumSemanticSuccessors) {
+      _pendingSemanticInput = null;
+      _resynchronize(FlarkInputResyncReason.successorQueueOverflow);
+      return true;
+    }
+    final before = pending.provisionalTail;
+    final rejection = _validateDeltaBatch(
+      deltas,
+      against: before,
+      expectedTextSha256: flarkWindowTextSha256(before.text),
+    );
+    if (rejection != FlarkInputResyncReason.none) {
+      _pendingSemanticInput = null;
+      _resynchronize(rejection);
+      return true;
+    }
+    var after = before;
+    var typingInput = true;
+    for (final delta in deltas) {
+      after = delta.apply(after);
+      if (_mutationFor(delta) != null) {
+        typingInput = typingInput && delta is TextEditingDeltaInsertion;
+      }
+    }
+    pending.successors.add(
+      _ProvisionalInputBatch(
+        before: before,
+        after: after,
+        typingInput: typingInput,
+      ),
+    );
+    pending.provisionalTail = after;
+    _semanticSuccessorHighWatermark = math.max(
+      _semanticSuccessorHighWatermark,
+      pending.successors.length,
+    );
+    return true;
+  }
+
+  bool _rejectUnsupportedSemanticSuccessor() {
+    if (_pendingSemanticInput == null) return false;
+    _pendingSemanticInput = null;
+    _resynchronize(FlarkInputResyncReason.unsupportedSuccessorObservation);
+    return true;
   }
 
   TextEditingValue _normalizeProjectedSelection(TextEditingValue value) {
@@ -2113,6 +2260,10 @@ final class FlarkEditorController extends ChangeNotifier {
       final receipt = await operation;
       if (receipt.hasCommit) {
         _adoptSemanticReceipt(receipt);
+        _promoteSemanticSuccessors();
+      } else if (_pendingSemanticInput != null) {
+        _pendingSemanticInput = null;
+        _resynchronize(FlarkInputResyncReason.successorReconciliationFailed);
       }
       _pendingEdits = math.max(0, _pendingEdits - 1);
       notifyListeners();
@@ -2130,6 +2281,7 @@ final class FlarkEditorController extends ChangeNotifier {
       if (generation == _editGeneration) _scheduleParsingAfterInput();
     } catch (error) {
       _projectionContinuity = null;
+      _pendingSemanticInput = null;
       _pendingEdits = math.max(0, _pendingEdits - 1);
       _lastError = error;
       _status = FlarkEditorStatus.faulted;
@@ -2161,6 +2313,107 @@ final class FlarkEditorController extends ChangeNotifier {
     _oversizedSelection = false;
     _activeOrdinal = _surfaceOrdinalAt(caret);
     _restoreCollapsedInputWindow(caret, preferredOrdinal: _activeOrdinal);
+  }
+
+  void _promoteSemanticSuccessors() {
+    final stopwatch = Stopwatch()..start();
+    final pending = _pendingSemanticInput;
+    _pendingSemanticInput = null;
+    try {
+      if (pending == null) return;
+      for (final batch in pending.successors) {
+        final map = _InputReconciliationMap.between(
+          batch.before.text,
+          _inputValue.text,
+        );
+        final selection = _mapProvisionalSelection(map, batch.after.selection);
+        final composing = _mapProvisionalRange(map, batch.after.composing);
+        if (selection == null || composing == null) {
+          _resynchronize(FlarkInputResyncReason.successorReconciliationFailed);
+          return;
+        }
+        final mutation = _differenceMutation(
+          batch.before.text,
+          batch.after.text,
+        );
+        if (mutation == null) {
+          _breakTypingHistoryGroup();
+          _inputValue = _inputValue.copyWith(
+            selection: selection,
+            composing: composing,
+          );
+          _trackCompositionWithoutMutation(composing);
+          _updateGlobalSelection();
+          unawaited(_installCanonicalSelection(_selectionSnapshot()));
+          continue;
+        }
+        final mappedStart = map.mapOffset(mutation.start, downstream: true);
+        final mappedEnd = map.mapOffset(mutation.end, downstream: true);
+        if (mappedStart == null ||
+            mappedEnd == null ||
+            !_acceptMutation(
+              _TextMutation(mappedStart, mappedEnd, mutation.replacement),
+              selection: selection,
+              composing: composing,
+              typingInput: batch.typingInput,
+            )) {
+          _resynchronize(FlarkInputResyncReason.successorReconciliationFailed);
+          return;
+        }
+      }
+    } finally {
+      stopwatch.stop();
+      _lastSemanticReconciliationMicros = stopwatch.elapsedMicroseconds;
+    }
+  }
+
+  TextSelection? _mapProvisionalSelection(
+    _InputReconciliationMap map,
+    TextSelection selection,
+  ) {
+    final downstream = selection.affinity == TextAffinity.downstream;
+    final base = map.mapOffset(selection.baseOffset, downstream: downstream);
+    final extent = map.mapOffset(
+      selection.extentOffset,
+      downstream: downstream,
+    );
+    if (base == null || extent == null) return null;
+    return TextSelection(
+      baseOffset: base,
+      extentOffset: extent,
+      affinity: selection.affinity,
+      isDirectional: selection.isDirectional,
+    );
+  }
+
+  TextRange? _mapProvisionalRange(
+    _InputReconciliationMap map,
+    TextRange range,
+  ) {
+    if (range == TextRange.empty) return TextRange.empty;
+    final start = map.mapOffset(range.start, downstream: true);
+    final end = map.mapOffset(range.end, downstream: true);
+    if (start == null || end == null) return null;
+    return TextRange(start: start, end: end);
+  }
+
+  _TextMutation? _differenceMutation(String before, String after) {
+    if (before == after) return null;
+    var prefix = 0;
+    while (prefix < before.length &&
+        prefix < after.length &&
+        before.codeUnitAt(prefix) == after.codeUnitAt(prefix)) {
+      prefix += 1;
+    }
+    var oldSuffix = before.length;
+    var newSuffix = after.length;
+    while (oldSuffix > prefix &&
+        newSuffix > prefix &&
+        before.codeUnitAt(oldSuffix - 1) == after.codeUnitAt(newSuffix - 1)) {
+      oldSuffix -= 1;
+      newSuffix -= 1;
+    }
+    return _TextMutation(prefix, oldSuffix, after.substring(prefix, newSuffix));
   }
 
   int? _doubledLineEndingLength(String replacement) => switch (replacement) {
