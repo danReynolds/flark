@@ -2480,6 +2480,7 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   bool _queueSemanticParagraphBreak(int localCaret) {
+    if (!_inputValue.selection.isCollapsed) return false;
     final row = _activeCachedRow();
     final editableRange = row?.editableUtf16;
     final rowEligible = row != null && _supportsSemanticEditV1(row);
@@ -2501,6 +2502,7 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   bool _queueSemanticDeleteBackward(int localCaret) {
+    if (!_inputValue.selection.isCollapsed) return false;
     final row = _activeCachedRow();
     final editableRange = row?.editableUtf16;
     final rowEligible = row != null && _supportsSemanticEditV1(row);

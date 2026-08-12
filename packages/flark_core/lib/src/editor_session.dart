@@ -242,6 +242,11 @@ final class FlarkCoreEditorSession {
   /// commits the exact Markdown splice from the canonical native anchors;
   /// Core adopts only the returned receipt and records one standalone undo
   /// unit. No source or coordinate preflight crosses the worker boundary.
+  ///
+  /// A collapsed platform selection may report either visual affinity. Core's
+  /// single collapsed source anchor is deliberately downstream regardless;
+  /// [_selectionAffinity] remains adapter metadata for restoring the visual
+  /// caret and is not a semantic-edit admission rule.
   Future<FlarkCoreEditIntentReceiptV1> applyEditIntentV1(
     FlarkCoreEditIntentV1 intent, {
     required bool compositionActive,
@@ -268,11 +273,8 @@ final class FlarkCoreEditorSession {
       throw StateError('Flark semantic edit requires a canonical selection');
     }
     if (!identical(start, end) ||
-        _selectionBaseUtf16 != _selectionExtentUtf16 ||
-        _selectionAffinity != FlarkCoreAffinity.downstream) {
-      throw StateError(
-        'flark-edit-v1 currently requires one collapsed downstream caret',
-      );
+        _selectionBaseUtf16 != _selectionExtentUtf16) {
+      throw StateError('flark-edit-v1 currently requires one collapsed caret');
     }
     final baseRevision = document.revision;
     final baseGeneration = _selectionGeneration;

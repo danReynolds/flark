@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flark/flark.dart';
 import 'package:flark/src/render_surface.dart';
+import 'package:flark_core/flark_core.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -95,6 +96,39 @@ void main() {
       expect(controller.visibleSource, '**old** after\n');
       await _settle(controller);
       expect(controller.surfaceRow(controller.rows.first).text, 'old after');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'macOS upstream caret remains valid for a semantic Return',
+    () async {
+      const source = '- one\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      final row = controller.rows.first;
+      controller.activateRow(row, row.editableUtf16!.end);
+      controller.updateEditingValue(
+        controller.inputValue.copyWith(
+          selection: TextSelection.collapsed(
+            offset: controller.inputValue.selection.extentOffset,
+            affinity: TextAffinity.upstream,
+          ),
+        ),
+      );
+      final canonical = await controller.resolveCanonicalSelection();
+      expect(canonical!.affinity, FlarkCoreAffinity.upstream);
+
+      controller.insertNewline();
+      await _settle(controller);
+
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, '- one\n- \n');
+      expect(controller.status, isNot(FlarkEditorStatus.faulted));
     },
     skip: libraryPath == null,
   );

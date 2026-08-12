@@ -442,6 +442,32 @@ void main() {
         },
       );
 
+      test('semantic edits accept a collapsed upstream visual caret', () async {
+        await open('- one\n');
+        addTearDown(() async {
+          await session.dispose();
+          await document.dispose();
+        });
+
+        await session.setSelectionUtf16(
+          5,
+          5,
+          affinity: FlarkCoreAffinity.upstream,
+          adapterState: 'upstream-caret',
+        );
+        final receipt = await session.applyEditIntentV1(
+          FlarkCoreEditIntentV1.insertParagraphBreak,
+          compositionActive: false,
+        );
+
+        expect(receipt.disposition, FlarkCoreEditIntentDispositionV1.applied);
+        expect(await document.readSource(), '- one\n- \n');
+        final selection = await session.resolveSelection();
+        expect(selection!.affinity, FlarkCoreAffinity.upstream);
+        expect(selection.adapterState, 'upstream-caret');
+        expect(selection.extent, 8);
+      });
+
       test('worker loss fail-stops the editor session', () async {
         await open('- one\n');
         addTearDown(() async {
