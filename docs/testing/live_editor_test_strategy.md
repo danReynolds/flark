@@ -146,6 +146,13 @@ set; four add depth in the standard set. We do not begin with the roughly two
 dozen useful legacy candidates because the harness should prove its leverage
 before its vocabulary grows.
 
+These 12 bootstrap the runner; they are not the intended size of the behavioral
+acceptance corpus. After the contract is trustworthy, compact parameterized
+families may compile into hundreds of named cases. Every named case runs through
+both the no-window and Flutter-surface drivers. Model-generated exploration runs
+primarily no-window, and every minimized failure is promoted into the named,
+universally targetable corpus.
+
 ### Smoke: every capable runner
 
 1. `projected-inline-rapid-typing` — type quickly adjacent to and inside
@@ -243,6 +250,62 @@ every OS/device/keyboard combination. A higher-tier pass cannot rescue a
 headless failure, simulator green is required preparation rather than device
 proof, and missing or stale receipts mean unexecuted rather than passed.
 
+## Corpus-throughput feasibility experiment
+
+On 2026-08-12, before expanding the schema, a synthetic interaction shape was
+run repeatedly through real Core/Rust transactions and through a mounted macOS
+Flutter surface. Each case opened a fresh document/session, parsed it, mounted
+the surface where applicable, activated a source point, inserted text, issued
+a semantic Return, immediately inserted successor text, settled, asserted exact
+source/caret/presentation/fault state, unmounted, and closed the session.
+
+The cases had zero artificial typing delay. The measurements describe warm
+runner throughput in a debug/test build, not product latency or heterogeneous
+scenario complexity.
+
+| Runner | Cases | Corpus time | Case p50 | Case p95 | Result |
+|---|---:|---:|---:|---:|---|
+| No-window controller | 25 | 292 ms | 5.93 ms | 9.53 ms | PASS |
+| No-window controller | 100 | 623 ms | 5.17 ms | 5.87 ms | PASS |
+| No-window controller | 300 | 1,767 ms | 4.93 ms | 5.53 ms | PASS |
+| No-window controller, repeated 300-case runs | 300 | 1,647–2,160 ms | 4.63–5.19 ms | 5.12–8.53 ms | PASS |
+| Mounted Flutter surface on macOS | 25 | 1,189 ms | 41.69 ms | 44.56 ms | PASS |
+| Mounted Flutter surface on macOS | 100 | 4,312 ms | 41.65 ms | 42.32 ms | PASS |
+| Mounted Flutter surface on macOS | 300 | 12,556 ms | 41.65 ms | 42.11 ms | PASS |
+
+The original deliberate-cadence regression still took about 0.5 seconds per
+case because it sleeps 35 ms between characters. Timing schedules therefore
+belong only on cases where cadence is the property under test.
+
+The experiment supports a larger universal semantic corpus: hundreds of named
+cases can run no-window in seconds and through a mounted host surface in tens
+of seconds when the process stays alive and documents reset in-process. It does
+not support launching a new application per case. The current CGEvent runner
+did that and took 6.69 seconds wall time for two schedules; its immediate case
+also observed a forbidden raw-marker controller snapshot. Because that observer
+is not render-bound, the latter remains a diagnostic follow-up rather than
+proved flicker.
+
+Consequences:
+
+- every named portable case should run through the no-window and Flutter
+  surface drivers;
+- generated exploration can remain no-window, with minimized failures promoted
+  into the named corpus;
+- platform-native event, IME, touch, clipboard, and accessibility canaries stay
+  small and replay the relevant named cases rather than the entire generated
+  search space;
+- native/product runners must reuse one application process and reset sessions
+  in-process;
+- the experiment is rerun at 25/100/300 after the canonical compiler/executor
+  lands and again after the corpus becomes heterogeneous.
+
+Run the experiment with:
+
+```sh
+./scripts/benchmark_v4_live_editor_scenario_scaling.sh all 25,100,300
+```
+
 ## Admission and regression rules
 
 A portable scenario is added only when all of these are true:
@@ -303,11 +366,12 @@ regression reproducer.
 ### H3 — Grow from evidence
 
 Promote shipped construct families from the candidate list as their v4 product
-semantics land. Add simulator/emulator drivers when platform packaging work
-begins and physical qualification when hardware is available. Do not build
-sharding, dashboards, a generic RPC service, fixture generators, or a broad
-expression DSL until measured suite cost or repeated authoring friction proves
-the need.
+semantics land. Add bounded case matrices and model-generated interaction
+sequences; shrink failures and retain the minimized plan as a named regression.
+Add simulator/emulator drivers when platform packaging work begins and physical
+qualification when hardware is available. Do not build sharding, dashboards, a
+generic RPC service, or a broad expression DSL until measured suite cost or
+repeated authoring friction proves the need.
 
 ## Go/no-go for implementation
 
