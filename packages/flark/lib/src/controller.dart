@@ -2477,6 +2477,32 @@ final class FlarkEditorController extends ChangeNotifier {
         start >= _visibleUtf16Start &&
         end <= visibleEnd &&
         end - start <= _maximumInputCodeUnits) {
+      FlarkViewportRow? containingRow;
+      for (final row in _cachedRows) {
+        final range = _mapViewportRange(_activationRange(row));
+        if (range.start <= start && end <= range.end) {
+          containingRow = row;
+          break;
+        }
+      }
+      if (containingRow != null) {
+        final range = _mapViewportRange(_activationRange(containingRow));
+        _inputGlobalUtf16Start = range.start;
+        _inputValue = TextEditingValue(
+          text: _sliceVisibleUtf16(range.start, range.end),
+          selection: TextSelection(
+            baseOffset: selection.baseOffset - range.start,
+            extentOffset: selection.extentOffset - range.start,
+            affinity: selection.affinity,
+            isDirectional: selection.isDirectional,
+          ),
+        );
+        _globalSelectionBase = selection.baseOffset;
+        _globalSelectionExtent = selection.extentOffset;
+        _activeOrdinal = containingRow.ordinal;
+        _crossRowSelection = false;
+        return;
+      }
       _inputGlobalUtf16Start = start;
       _inputValue = TextEditingValue(
         text: _sliceVisibleUtf16(start, end),
@@ -3155,9 +3181,13 @@ final class FlarkEditorController extends ChangeNotifier {
     }
     final row = _activeCachedRow();
     final facts = row?.inlineFacts;
-    if (row == null || row.table != null || facts == null) return;
+    if (row == null || row.table != null || facts == null) {
+      return;
+    }
     final activation = _mapViewportRange(_activationRange(row));
-    if (!_rowSemanticsCurrent(activation)) return;
+    if (!_rowSemanticsCurrent(activation)) {
+      return;
+    }
     final editable = _mapViewportRange(
       row.editableUtf16 ?? _activationRange(row),
     );
@@ -3182,7 +3212,9 @@ final class FlarkEditorController extends ChangeNotifier {
           endUtf16: end,
           replacement: replacement,
         );
-    if (receipt == null) return;
+    if (receipt == null) {
+      return;
+    }
     final base = surfaceRow(row, includeEditingState: false);
     final presentation = _spliceContinuityPresentation(
       base,
@@ -3191,7 +3223,9 @@ final class FlarkEditorController extends ChangeNotifier {
       end,
       replacement,
     );
-    if (presentation == null) return;
+    if (presentation == null) {
+      return;
+    }
     _projectionContinuity = _ProjectionContinuitySurface(
       receipt: receipt,
       presentation: presentation,
@@ -3205,6 +3239,11 @@ final class FlarkEditorController extends ChangeNotifier {
     int end,
     String replacement,
   ) {
+    final delta = replacement.length - (end - start);
+    final baseAuthorizedContent = FlarkSourceRange(
+      authorizedContent.start,
+      authorizedContent.end - delta,
+    );
     var target = -1;
     for (var index = 0; index < presentation.runs.length; index += 1) {
       final run = presentation.runs[index];
@@ -3217,8 +3256,8 @@ final class FlarkEditorController extends ChangeNotifier {
           start >= run.sourceUtf16Start &&
           end <= run.sourceUtf16End;
       final runInsideAuthority =
-          authorizedContent.start <= run.sourceUtf16Start &&
-          run.sourceUtf16End <= authorizedContent.end;
+          baseAuthorizedContent.start <= run.sourceUtf16Start &&
+          run.sourceUtf16End <= baseAuthorizedContent.end;
       if (run.sourceExact &&
           runInsideAuthority &&
           (insertionInside || replacementInside)) {
@@ -3228,7 +3267,6 @@ final class FlarkEditorController extends ChangeNotifier {
     }
     if (target < 0) return null;
 
-    final delta = replacement.length - (end - start);
     final runs = <FlarkSurfaceTextRun>[];
     for (var index = 0; index < presentation.runs.length; index += 1) {
       final run = presentation.runs[index];
@@ -3341,6 +3379,14 @@ final class FlarkEditorController extends ChangeNotifier {
       if (outcome == null) return false;
       final restore = _adapterSnapshot(outcome.restoreSelection);
       _optimisticViewportEdits.clear();
+      // History replay is one authoritative visual transaction. Do not
+      // publish a pending exact-source viewport between the native replay and
+      // its parser-certified result; retain the prior frame while bounded
+      // parsing catches up, then adopt source, projection, and selection
+      // together.
+      while (!_document.isReady && !_closed) {
+        await _document.pump(workUnits: 512);
+      }
       await _refreshViewport(
         restoreInputWindow: false,
         expectedEditGeneration: generation,

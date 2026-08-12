@@ -754,6 +754,54 @@ final class RenderFlarkSurface extends RenderBox {
     );
   }
 
+  /// Returns a visible local point that hit-tests to [sourceUtf16Offset].
+  ///
+  /// This is a debug/integration-test inverse of [positionForOffset]. It is
+  /// intentionally bounded to rows laid out by the current viewport; callers
+  /// must page/scroll before asking for an offscreen source position.
+  Offset? debugLocalPositionForSourceUtf16(int sourceUtf16Offset) {
+    for (final row in _paintedRows) {
+      final sourceStart = row.presentation.runs.isEmpty
+          ? row.presentation.globalUtf16Start
+          : row.presentation.runs.first.sourceUtf16Start;
+      final sourceEnd = row.presentation.runs.isEmpty
+          ? row.presentation.globalUtf16Start + row.presentation.text.length
+          : row.presentation.runs.last.sourceUtf16End;
+      if (sourceUtf16Offset < sourceStart || sourceUtf16Offset > sourceEnd) {
+        continue;
+      }
+      final textOffset = row.presentation.textOffsetForSourceOffset(
+        sourceUtf16Offset,
+      );
+      final ownsOffset =
+          row.fragmentStart <= textOffset &&
+          (textOffset < row.fragmentEnd ||
+              (textOffset == row.fragmentEnd &&
+                  row.fragmentEnd == row.presentation.text.length));
+      if (!ownsOffset) continue;
+      final painterOffset = textOffset - row.fragmentStart + row.leadingLength;
+      final caret = row.painter.getOffsetForCaret(
+        TextPosition(offset: painterOffset),
+        Rect.zero,
+      );
+      final result = Offset(
+        _padding.left + caret.dx,
+        row.top -
+            _scrollOffset +
+            caret.dy +
+            row.painter.preferredLineHeight / 2,
+      );
+      if (result.dx < 0 ||
+          result.dy < 0 ||
+          result.dx > size.width ||
+          result.dy > size.height) {
+        return null;
+      }
+      return result;
+    }
+    return null;
+  }
+
   @override
   void paint(PaintingContext context, Offset offset) {
     final canvas = context.canvas;

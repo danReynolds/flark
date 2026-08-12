@@ -374,18 +374,27 @@ The compiler, executor, barriers, render observer, and migrated scenario are
 complete. Capability/provenance fields remain intentionally absent rather than
 partially implemented; they land with the first native driver that needs them.
 
-### H0N — Make native actuation trustworthy — next platform slice
+### H0N — Make native actuation trustworthy — macOS core slice complete
 
 1. Convert the macOS helper to primitive request/reply actuation behind the
    shared Dart executor; remove high-level product assertion logic from Swift.
+   **Complete.** Dart owns canonical plans, scheduling, barriers, and
+   assertions; Swift owns process/window and OS-event actuation only.
 2. Replace pixel activation with source-offset lookup supplied by the app.
+   **Complete.** The Flutter surface resolves a visible source offset to
+   app-relative geometry; the actuator converts it to the foreground window.
 3. Deliver a validated canonical plan bundle without relying on host filesystem
    paths, so the same integration test can target macOS and later simulators or
    devices.
 4. Add capability and normalized provenance receipts, rejecting or explicitly
    labelling stale artifacts.
 5. Prove the small native keyboard/pointer/clipboard canary pack; do not replay
-   the full semantic matrix through raw platform events.
+   the full semantic matrix through raw platform events. **Core slice
+   complete:** one reused profile app process runs both rapid Return schedules,
+   Unicode Backspace, source-offset drag selection, system pasteboard paste,
+   undo, and redo with exact source/caret, zero resyncs, and bounded paint
+   assertions. Wheel scrolling and explicit focus loss/regain are the next
+   distinct macOS canaries.
 
 ### H1 — Establish the portable smoke set — complete
 

@@ -49,6 +49,8 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
   int _loadGeneration = 0;
   bool _readOnly = false;
   DogfoodScenarioReceiptWriter? _scenarioReceiptWriter;
+  DogfoodScenarioCommandMailbox? _scenarioCommandMailbox;
+  final FlarkEditorDebugHandle _scenarioDebugHandle = FlarkEditorDebugHandle();
 
   bool get _loading => _loadingPreset != null;
 
@@ -57,6 +59,14 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
     super.initState();
     if (widget.scenarioMode case final mode?) {
       _scenarioReceiptWriter = DogfoodScenarioReceiptWriter(mode);
+      if (mode.commandPath case final commandPath?) {
+        _scenarioCommandMailbox = DogfoodScenarioCommandMailbox(
+          path: commandPath,
+          onCommand: _handleScenarioCommand,
+          onError: (sequence, error) =>
+              _scenarioReceiptWriter!.writeCommandError(sequence, error),
+        )..start();
+      }
     }
     unawaited(_load(DogfoodDocumentPreset.productTour));
   }
@@ -64,6 +74,7 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
   @override
   void dispose() {
     _loadGeneration += 1;
+    _scenarioCommandMailbox?.dispose();
     _scenarioReceiptWriter?.dispose();
     final controller = _controller;
     if (controller != null) unawaited(controller.close());
@@ -71,6 +82,26 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
   }
 
   Future<void> _load(DogfoodDocumentPreset preset) async {
+    final generationWatch = Stopwatch()..start();
+    final String source;
+    if (widget.scenarioMode case final mode?) {
+      source = mode.source;
+    } else {
+      source = await compute(buildDogfoodDocument, preset);
+    }
+    generationWatch.stop();
+    await _openSource(
+      source,
+      preset: preset,
+      generationDuration: generationWatch.elapsed,
+    );
+  }
+
+  Future<FlarkEditorController?> _openSource(
+    String source, {
+    required DogfoodDocumentPreset preset,
+    Duration? generationDuration,
+  }) async {
     final generation = ++_loadGeneration;
     setState(() {
       _loadingPreset = preset;
@@ -78,14 +109,6 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
     });
     FlarkEditorController? next;
     try {
-      final generationWatch = Stopwatch()..start();
-      final String source;
-      if (widget.scenarioMode case final mode?) {
-        source = mode.source;
-      } else {
-        source = await compute(buildDogfoodDocument, preset);
-      }
-      generationWatch.stop();
       final openWatch = Stopwatch()..start();
       final opened = await FlarkEditorController.open(
         source,
@@ -96,27 +119,98 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
       openWatch.stop();
       if (!mounted || generation != _loadGeneration) {
         await opened.close();
-        return;
+        return null;
       }
       final previous = _controller;
       setState(() {
         _controller = next;
         _preset = preset;
         _loadingPreset = null;
-        _generationDuration = generationWatch.elapsed;
+        _generationDuration = generationDuration;
         _openDuration = openWatch.elapsed;
       });
-      if (previous != null) unawaited(previous.close());
+      if (previous != null) {
+        unawaited(previous.close());
+      }
       _scenarioReceiptWriter?.attach(opened);
       if (widget.scenarioMode == null) unawaited(opened.continueParsing());
+      return opened;
     } catch (error) {
       if (next != null) await next.close();
-      if (!mounted || generation != _loadGeneration) return;
+      if (!mounted || generation != _loadGeneration) return null;
       setState(() {
         _loadingPreset = null;
         _loadError = error;
       });
+      rethrow;
     }
+  }
+
+  Future<void> _handleScenarioCommand(DogfoodScenarioCommand command) async {
+    final writer = _scenarioReceiptWriter!;
+    switch (command.operation) {
+      case 'reset':
+        final scenarioId = command.arguments['scenarioId']! as String;
+        final source = command.arguments['source']! as String;
+        final controller = await _openSource(
+          source,
+          preset: _preset,
+          generationDuration: Duration.zero,
+        );
+        if (controller == null) {
+          throw StateError('scenario reset was cancelled');
+        }
+        writer.beginScenario(scenarioId);
+        await _settleScenarioController(controller);
+        await _awaitScenarioFrame();
+        await writer.writeNow(commandSequence: command.sequence);
+        return;
+      case 'settle':
+        final controller = _controller;
+        if (controller == null) throw StateError('scenario has no controller');
+        await writer.waitForPlatformInputQuiescence();
+        await _settleScenarioController(controller);
+        await _awaitScenarioFrame();
+        await writer.writeNow(commandSequence: command.sequence);
+        return;
+      case 'lookupSourcePoint':
+        final controller = _controller;
+        if (controller == null) throw StateError('scenario has no controller');
+        final offset = command.arguments['utf16Offset']! as int;
+        await _settleScenarioController(controller);
+        await _awaitScenarioFrame();
+        final geometry = _scenarioDebugHandle.geometryForSourceUtf16(offset);
+        if (geometry == null) {
+          throw StateError('source offset $offset is not painted');
+        }
+        await writer.writeNow(
+          commandSequence: command.sequence,
+          sourcePointOffset: offset,
+          sourcePointGeometry: geometry,
+        );
+        return;
+      default:
+        throw StateError('unsupported scenario command ${command.operation}');
+    }
+  }
+
+  Future<void> _settleScenarioController(
+    FlarkEditorController controller,
+  ) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (controller.pendingEdits != 0 && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+    if (controller.pendingEdits != 0) {
+      throw StateError('scenario edit did not settle in 5 seconds');
+    }
+    await controller.continueParsing();
+    if (controller.lastError case final error?) throw error;
+  }
+
+  Future<void> _awaitScenarioFrame() async {
+    WidgetsBinding.instance.ensureVisualUpdate();
+    await WidgetsBinding.instance.endOfFrame;
   }
 
   void _showGuide() {
@@ -179,6 +273,11 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
                           autofocus: true,
                           debugInputEventObserver:
                               _scenarioReceiptWriter?.recordInputEvent,
+                          debugPaintObserver:
+                              _scenarioReceiptWriter?.recordPaintObservation,
+                          debugHandle: _scenarioReceiptWriter == null
+                              ? null
+                              : _scenarioDebugHandle,
                           textStyle: const TextStyle(
                             color: Color(0xff25272b),
                             fontSize: 17,

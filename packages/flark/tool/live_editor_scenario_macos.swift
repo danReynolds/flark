@@ -3,7 +3,7 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 
-enum ScenarioFailure: Error, CustomStringConvertible {
+enum ActuatorFailure: Error, CustomStringConvertible {
   case message(String)
 
   var description: String {
@@ -15,28 +15,21 @@ enum ScenarioFailure: Error, CustomStringConvertible {
 
 func dictionary(_ value: Any?, _ label: String) throws -> [String: Any] {
   guard let result = value as? [String: Any] else {
-    throw ScenarioFailure.message("missing object \(label)")
-  }
-  return result
-}
-
-func array(_ value: Any?, _ label: String) throws -> [Any] {
-  guard let result = value as? [Any] else {
-    throw ScenarioFailure.message("missing array \(label)")
+    throw ActuatorFailure.message("missing object \(label)")
   }
   return result
 }
 
 func string(_ value: Any?, _ label: String) throws -> String {
   guard let result = value as? String else {
-    throw ScenarioFailure.message("missing string \(label)")
+    throw ActuatorFailure.message("missing string \(label)")
   }
   return result
 }
 
 func integer(_ value: Any?, _ label: String) throws -> Int {
   guard let result = value as? Int else {
-    throw ScenarioFailure.message("missing integer \(label)")
+    throw ActuatorFailure.message("missing integer \(label)")
   }
   return result
 }
@@ -47,15 +40,12 @@ func pause(milliseconds: Int) {
 
 func readJSON(_ path: String) throws -> [String: Any] {
   let data = try Data(contentsOf: URL(fileURLWithPath: path))
-  return try dictionary(
-    JSONSerialization.jsonObject(with: data),
-    "JSON document"
-  )
+  return try dictionary(JSONSerialization.jsonObject(with: data), "JSON document")
 }
 
 func waitUntil(
-  _ label: String = "condition",
-  timeoutSeconds: TimeInterval = 8,
+  _ label: String,
+  timeoutSeconds: TimeInterval = 12,
   _ predicate: () throws -> Bool
 ) throws {
   let deadline = Date().addingTimeInterval(timeoutSeconds)
@@ -63,7 +53,7 @@ func waitUntil(
     if try predicate() { return }
     pause(milliseconds: 20)
   }
-  throw ScenarioFailure.message("\(label) timed out after \(timeoutSeconds)s")
+  throw ActuatorFailure.message("\(label) timed out after \(timeoutSeconds)s")
 }
 
 func cgWindow(pid: pid_t) -> (number: Int, bounds: CGRect)? {
@@ -95,11 +85,11 @@ func setAXValue(
 
 func focusWindow(
   pid: pid_t,
-  width: Int,
-  height: Int
+  width: Int = 800,
+  height: Int = 632
 ) throws -> (origin: CGPoint, size: CGSize, number: Int) {
   let application = AXUIElementCreateApplication(pid)
-  var window: AXUIElement?
+  var accessibleWindow: AXUIElement?
   try waitUntil("application window") {
     var value: CFTypeRef?
     guard AXUIElementCopyAttributeValue(
@@ -110,35 +100,35 @@ func focusWindow(
       let windows = value as? [AXUIElement],
       let first = windows.first
     else { return false }
-    window = first
+    accessibleWindow = first
     return true
   }
-  guard let window else {
-    throw ScenarioFailure.message("dogfood window was not accessible")
+  guard let accessibleWindow else {
+    throw ActuatorFailure.message("dogfood window was not accessible")
   }
 
   var requestedOrigin = CGPoint(x: 180, y: 100)
   var requestedSize = CGSize(width: width, height: height)
   setAXValue(
-    window,
+    accessibleWindow,
     attribute: kAXPositionAttribute,
     type: .cgPoint,
     value: &requestedOrigin
   )
   setAXValue(
-    window,
+    accessibleWindow,
     attribute: kAXSizeAttribute,
     type: .cgSize,
     value: &requestedSize
   )
-  AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+  AXUIElementPerformAction(accessibleWindow, kAXRaiseAction as CFString)
   AXUIElementSetAttributeValue(
-    window,
+    accessibleWindow,
     kAXMainAttribute as CFString,
     kCFBooleanTrue
   )
   AXUIElementSetAttributeValue(
-    window,
+    accessibleWindow,
     kAXFocusedAttribute as CFString,
     kCFBooleanTrue
   )
@@ -150,32 +140,7 @@ func focusWindow(
   if let window = cgWindow(pid: pid) {
     return (window.bounds.origin, window.bounds.size, window.number)
   }
-
-  var actualOrigin = requestedOrigin
-  var actualSize = requestedSize
-  var positionValue: CFTypeRef?
-  if AXUIElementCopyAttributeValue(
-    window,
-    kAXPositionAttribute as CFString,
-    &positionValue
-  ) == .success,
-    let value = positionValue,
-    CFGetTypeID(value) == AXValueGetTypeID()
-  {
-    AXValueGetValue(value as! AXValue, .cgPoint, &actualOrigin)
-  }
-  var sizeValue: CFTypeRef?
-  if AXUIElementCopyAttributeValue(
-    window,
-    kAXSizeAttribute as CFString,
-    &sizeValue
-  ) == .success,
-    let value = sizeValue,
-    CFGetTypeID(value) == AXValueGetTypeID()
-  {
-    AXValueGetValue(value as! AXValue, .cgSize, &actualSize)
-  }
-  return (actualOrigin, actualSize, 0)
+  return (requestedOrigin, requestedSize, 0)
 }
 
 let eventSource = CGEventSource(stateID: .hidSystemState)
@@ -187,14 +152,14 @@ func click(_ location: CGPoint) {
     mouseCursorPosition: location,
     mouseButton: .left
   )?.post(tap: .cghidEventTap)
-  pause(milliseconds: 30)
+  pause(milliseconds: 20)
   CGEvent(
     mouseEventSource: eventSource,
     mouseType: .leftMouseDown,
     mouseCursorPosition: location,
     mouseButton: .left
   )?.post(tap: .cghidEventTap)
-  pause(milliseconds: 20)
+  pause(milliseconds: 10)
   CGEvent(
     mouseEventSource: eventSource,
     mouseType: .leftMouseUp,
@@ -204,9 +169,46 @@ func click(_ location: CGPoint) {
   pause(milliseconds: 100)
 }
 
+func drag(from start: CGPoint, to end: CGPoint) {
+  CGEvent(
+    mouseEventSource: eventSource,
+    mouseType: .mouseMoved,
+    mouseCursorPosition: start,
+    mouseButton: .left
+  )?.post(tap: .cghidEventTap)
+  pause(milliseconds: 20)
+  CGEvent(
+    mouseEventSource: eventSource,
+    mouseType: .leftMouseDown,
+    mouseCursorPosition: start,
+    mouseButton: .left
+  )?.post(tap: .cghidEventTap)
+  for step in 1...12 {
+    let fraction = CGFloat(step) / 12
+    let point = CGPoint(
+      x: start.x + (end.x - start.x) * fraction,
+      y: start.y + (end.y - start.y) * fraction
+    )
+    CGEvent(
+      mouseEventSource: eventSource,
+      mouseType: .leftMouseDragged,
+      mouseCursorPosition: point,
+      mouseButton: .left
+    )?.post(tap: .cghidEventTap)
+    pause(milliseconds: 8)
+  }
+  CGEvent(
+    mouseEventSource: eventSource,
+    mouseType: .leftMouseUp,
+    mouseCursorPosition: end,
+    mouseButton: .left
+  )?.post(tap: .cghidEventTap)
+  pause(milliseconds: 60)
+}
+
 func typeText(_ value: String, intervalMs: Int) {
-  for scalar in value.unicodeScalars {
-    var units = Array(String(scalar).utf16)
+  for character in value {
+    var units = Array(String(character).utf16)
     let down = CGEvent(
       keyboardEventSource: eventSource,
       virtualKey: 0,
@@ -219,224 +221,270 @@ func typeText(_ value: String, intervalMs: Int) {
       )
     }
     down.post(tap: .cghidEventTap)
-    CGEvent(
+    let up = CGEvent(
       keyboardEventSource: eventSource,
       virtualKey: 0,
       keyDown: false
-    )?.post(tap: .cghidEventTap)
+    )!
+    units.withUnsafeMutableBufferPointer { buffer in
+      up.keyboardSetUnicodeString(
+        stringLength: buffer.count,
+        unicodeString: buffer.baseAddress
+      )
+    }
+    up.post(tap: .cghidEventTap)
     pause(milliseconds: intervalMs)
   }
 }
 
-func pressReturn() {
-  CGEvent(
+func pressKey(_ virtualKey: CGKeyCode, flags: CGEventFlags = []) {
+  let down = CGEvent(
     keyboardEventSource: eventSource,
-    virtualKey: 36,
+    virtualKey: virtualKey,
     keyDown: true
-  )?.post(tap: .cghidEventTap)
+  )
+  down?.flags = flags
+  down?.post(tap: .cghidEventTap)
   pause(milliseconds: 10)
-  CGEvent(
+  let up = CGEvent(
     keyboardEventSource: eventSource,
-    virtualKey: 36,
+    virtualKey: virtualKey,
     keyDown: false
-  )?.post(tap: .cghidEventTap)
+  )
+  up?.flags = flags
+  up?.post(tap: .cghidEventTap)
 }
 
-func captureWindow(
-  origin: CGPoint,
-  size: CGSize,
-  number: Int,
-  path: String
-) {
-  let process = Process()
-  process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-  process.arguments = number == 0
-    ? [
-        "-x",
-        "-R\(Int(origin.x)),\(Int(origin.y)),\(Int(size.width)),\(Int(size.height))",
-        path,
-      ]
-    : ["-x", "-l\(number)", path]
-  try? process.run()
-  process.waitUntilExit()
+func pressCommandShortcut(_ virtualKey: CGKeyCode, shift: Bool = false) {
+  let leftCommand = CGEventFlags(
+    rawValue: CGEventFlags.maskCommand.rawValue | 0x00000008
+  )
+  let leftCommandShift = CGEventFlags(
+    rawValue: leftCommand.rawValue |
+      CGEventFlags.maskShift.rawValue |
+      0x00000002
+  )
+  func modifier(_ key: CGKeyCode, down: Bool, flags: CGEventFlags) {
+    let event = CGEvent(
+      keyboardEventSource: eventSource,
+      virtualKey: key,
+      keyDown: down
+    )
+    event?.type = .flagsChanged
+    event?.flags = flags
+    event?.post(tap: .cghidEventTap)
+    pause(milliseconds: 10)
+  }
+
+  modifier(55, down: true, flags: leftCommand)
+  if shift {
+    modifier(56, down: true, flags: leftCommandShift)
+  }
+  pressKey(
+    virtualKey,
+    flags: shift ? leftCommandShift : leftCommand
+  )
+  if shift {
+    modifier(56, down: false, flags: leftCommand)
+  }
+  modifier(55, down: false, flags: [])
 }
 
-guard CommandLine.arguments.count == 4 else {
+func postKey(named name: String) throws {
+  switch name {
+  case "enter": pressKey(36)
+  case "backspace": pressKey(51)
+  case "delete": pressKey(117)
+  case "undo": pressCommandShortcut(6)
+  case "redo": pressCommandShortcut(6, shift: true)
+  default: throw ActuatorFailure.message("unsupported key \(name)")
+  }
+}
+
+func writeJSONLine(_ value: [String: Any]) {
+  do {
+    let data = try JSONSerialization.data(withJSONObject: value)
+    print(String(decoding: data, as: UTF8.self))
+    fflush(stdout)
+  } catch {
+    fputs("actuator could not serialize response: \(error)\n", stderr)
+  }
+}
+
+guard CommandLine.arguments.count == 3 else {
   fputs(
-    "usage: live_editor_scenario_macos.swift SCENARIO_JSON APP_EXECUTABLE LIBRARY\n",
+    "usage: live_editor_scenario_macos.swift APP_EXECUTABLE LIBRARY\n",
     stderr
   )
   exit(64)
 }
 
-let scenarioPath = URL(fileURLWithPath: CommandLine.arguments[1]).path
-let appExecutable = URL(fileURLWithPath: CommandLine.arguments[2]).path
-let libraryPath = URL(fileURLWithPath: CommandLine.arguments[3]).path
-let scenario = try readJSON(scenarioPath)
-let scenarioID = try string(scenario["id"], "id")
-let steps = try array(scenario["steps"], "steps")
-let schedules = try array(scenario["schedules"], "schedules")
-let expectation = try dictionary(scenario["expect"], "expect")
-let hints = try dictionary(scenario["runnerHints"], "runnerHints")
-let macHints = try dictionary(hints["macos"], "runnerHints.macos")
-let expectedSource = try string(expectation["source"], "expect.source")
-let expectedCaret = try integer(expectation["caretUtf16"], "expect.caretUtf16")
-let expectedResyncs = try integer(
-  expectation["resyncCount"],
-  "expect.resyncCount"
+let appExecutable = URL(fileURLWithPath: CommandLine.arguments[1]).path
+let libraryPath = URL(fileURLWithPath: CommandLine.arguments[2]).path
+let harnessDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+  .appendingPathComponent("flark-native-actuator-\(UUID().uuidString)")
+try FileManager.default.createDirectory(
+  at: harnessDirectory,
+  withIntermediateDirectories: true
 )
-let expectedFaulted = expectation["faulted"] as? Bool ?? false
-let forbidden = try array(
-  expectation["forbiddenSurfaceSubstrings"],
-  "expect.forbiddenSurfaceSubstrings"
-).map { try string($0, "forbidden surface substring") }
+let commandPath = harnessDirectory.appendingPathComponent("command.json").path
+let receiptPath = harnessDirectory.appendingPathComponent("receipt.json").path
 
-var failed = false
-for scheduleValue in schedules {
-  let schedule = try dictionary(scheduleValue, "schedule")
-  let scheduleID = try string(schedule["id"], "schedule.id")
-  let receiptPath = URL(fileURLWithPath: NSTemporaryDirectory())
-    .appendingPathComponent(
-      "flark-\(scenarioID)-\(scheduleID)-\(UUID().uuidString).json"
-    ).path
-  let screenshotPath = receiptPath.replacingOccurrences(
-    of: ".json",
-    with: ".png"
+let appProcess = Process()
+appProcess.executableURL = URL(fileURLWithPath: appExecutable)
+var environment = ProcessInfo.processInfo.environment
+environment["FLARK_V4_LIBRARY_PATH"] = libraryPath
+environment["FLARK_SCENARIO_COMMAND_PATH"] = commandPath
+environment["FLARK_SCENARIO_RECEIPT_PATH"] = receiptPath
+appProcess.environment = environment
+appProcess.standardOutput = FileHandle.nullDevice
+appProcess.standardError = FileHandle.standardError
+try appProcess.run()
+let appPID = appProcess.processIdentifier
+try waitUntil("initial app harness receipt") {
+  guard let receipt = try? readJSON(receiptPath) else { return false }
+  return receipt["commandSequence"] as? Int == 0 &&
+    receipt["pendingEdits"] as? Int == 0
+}
+var appSequence = 0
+
+func appRequest(
+  operation: String,
+  arguments: [String: Any] = [:]
+) throws -> [String: Any] {
+  appSequence += 1
+  let sequence = appSequence
+  let request: [String: Any] = [
+    "sequence": sequence,
+    "operation": operation,
+    "arguments": arguments,
+  ]
+  let data = try JSONSerialization.data(withJSONObject: request)
+  try data.write(to: URL(fileURLWithPath: commandPath), options: .atomic)
+  var receipt: [String: Any] = [:]
+  try waitUntil("app receipt for request \(sequence)") {
+    guard let candidate = try? readJSON(receiptPath),
+      candidate["commandSequence"] as? Int == sequence
+    else { return false }
+    receipt = candidate
+    return true
+  }
+  if let error = receipt["commandError"] as? String, !error.isEmpty {
+    throw ActuatorFailure.message(error)
+  }
+  return receipt
+}
+
+func screenPoint(
+  sourceUtf16Offset: Int,
+  window: (origin: CGPoint, size: CGSize, number: Int)
+) throws -> CGPoint {
+  let receipt = try appRequest(
+    operation: "lookupSourcePoint",
+    arguments: ["utf16Offset": sourceUtf16Offset]
   )
-  let process = Process()
-  process.executableURL = URL(fileURLWithPath: appExecutable)
-  var environment = ProcessInfo.processInfo.environment
-  environment["FLARK_V4_LIBRARY_PATH"] = libraryPath
-  environment["FLARK_SCENARIO_PATH"] = scenarioPath
-  environment["FLARK_SCENARIO_RECEIPT_PATH"] = receiptPath
-  process.environment = environment
-  let watch = Date()
-  var window = (origin: CGPoint.zero, size: CGSize.zero, number: 0)
-  var scheduleFailed = false
+  let point = try dictionary(receipt["sourcePoint"], "sourcePoint")
+  guard let globalX = point["globalX"] as? Double,
+    let globalY = point["globalY"] as? Double,
+    let rootHeight = point["rootHeight"] as? Double
+  else {
+    throw ActuatorFailure.message("source point contained invalid geometry")
+  }
+  let contentTopInset = max(0, window.size.height - rootHeight)
+  return CGPoint(
+    x: window.origin.x + globalX,
+    y: window.origin.y + contentTopInset + globalY
+  )
+}
 
+var shouldStop = false
+while !shouldStop, let line = readLine() {
+  var sequence = 0
   do {
-    try process.run()
-    let pid = process.processIdentifier
-    window = try focusWindow(
-      pid: pid,
-      width: try integer(macHints["windowWidth"], "macos.windowWidth"),
-      height: try integer(macHints["windowHeight"], "macos.windowHeight")
+    let data = Data(line.utf8)
+    let request = try dictionary(
+      JSONSerialization.jsonObject(with: data),
+      "actuator request"
     )
-    var initialRevision = 0
-    try waitUntil("initial receipt") {
-      guard let receipt = try? readJSON(receiptPath),
-        receipt["scenarioId"] as? String == scenarioID,
-        receipt["pendingEdits"] as? Int == 0
-      else { return false }
-      initialRevision = receipt["revision"] as? Int ?? 0
-      return receipt["source"] as? String == scenario["initialSource"] as? String
-    }
-
-    click(
-      CGPoint(
-        x: window.origin.x
-          + CGFloat(try integer(macHints["activationX"], "macos.activationX")),
-        y: window.origin.y
-          + CGFloat(try integer(macHints["activationY"], "macos.activationY"))
-      )
-    )
-    var expectedRevision = initialRevision
-    for (stepIndex, stepValue) in steps.enumerated() {
-      let step = try dictionary(stepValue, "step")
-      switch try string(step["type"], "step.type") {
-      case "typeText":
-        let text = try string(step["text"], "step.text")
-        typeText(
-          text,
-          intervalMs: step["intervalMs"] as? Int ?? 0
-        )
-        expectedRevision += text.unicodeScalars.count
-      case "pressReturn":
-        pressReturn()
-        expectedRevision += 1
-      case "scheduleDelay":
-        let key = try string(step["key"], "step.key")
-        pause(milliseconds: try integer(schedule[key], "schedule.\(key)"))
-      case "waitForIdle":
-        try waitUntil("step \(stepIndex) idle receipt") {
-          guard let receipt = try? readJSON(receiptPath) else { return false }
-          return receipt["pendingEdits"] as? Int == 0
-            && (receipt["revision"] as? Int ?? -1) >= expectedRevision
-        }
-      default:
-        throw ScenarioFailure.message("unsupported scenario step")
-      }
-    }
-
-    var finalReceipt: [String: Any] = [:]
-    try waitUntil("final receipt") {
-      guard let receipt = try? readJSON(receiptPath) else { return false }
-      finalReceipt = receipt
-      return receipt["pendingEdits"] as? Int == 0
-        && (receipt["revision"] as? Int ?? -1) >= expectedRevision
-    }
-    var failures: [String] = []
-    if finalReceipt["source"] as? String != expectedSource {
-      failures.append("authoritative source differed")
-    }
-    if finalReceipt["caretUtf16"] as? Int != expectedCaret {
-      failures.append("caret differed: \(finalReceipt["caretUtf16"] ?? "nil")")
-    }
-    if finalReceipt["resyncCount"] as? Int != expectedResyncs {
-      failures.append("resync count differed: \(finalReceipt["resyncCount"] ?? "nil")")
-    }
-    let faulted = finalReceipt["status"] as? String == "faulted"
-    if faulted != expectedFaulted {
-      failures.append("fault status differed: \(finalReceipt["status"] ?? "nil")")
-    }
-    let frames = finalReceipt["surfaceFrames"] as? [String] ?? []
-    for substring in forbidden where frames.contains(where: { $0.contains(substring) }) {
-      failures.append("surface contained forbidden substring \(substring)")
-    }
-    if !failures.isEmpty {
-      throw ScenarioFailure.message(failures.joined(separator: "; "))
-    }
-    let elapsedMs = Int(Date().timeIntervalSince(watch) * 1_000)
-    let result: [String: Any] = [
-      "id": scenarioID,
-      "runner": "macos-native",
-      "schedule": scheduleID,
-      "elapsedMs": elapsedMs,
-      "frames": frames.count,
-      "revision": finalReceipt["revision"] ?? 0,
-      "resyncs": finalReceipt["resyncCount"] ?? 0,
-      "passed": true,
+    sequence = try integer(request["sequence"], "sequence")
+    let operation = try string(request["operation"], "operation")
+    let arguments = try dictionary(request["arguments"], "arguments")
+    var response: [String: Any] = [
+      "schema": "flark.native-actuator/v1",
+      "sequence": sequence,
+      "ok": true,
+      "appPid": Int(appPID),
+      "platform": "macos",
     ]
-    let output = try JSONSerialization.data(withJSONObject: result)
-    print("FLARK_SCENARIO_RESULT \(String(decoding: output, as: UTF8.self))")
-  } catch {
-    failed = true
-    scheduleFailed = true
-    captureWindow(
-      origin: window.origin,
-      size: window.size,
-      number: window.number,
-      path: screenshotPath
-    )
-    if let receipt = try? readJSON(receiptPath),
-      let events = receipt["inputEvents"] as? [String]
-    {
-      fputs("input events:\n\(events.suffix(24).joined(separator: "\n"))\n", stderr)
+
+    switch operation {
+    case "reset":
+      response["snapshot"] = try appRequest(
+        operation: "reset",
+        arguments: arguments
+      )
+    case "settle":
+      response["snapshot"] = try appRequest(
+        operation: "settle"
+      )
+    case "activateAtUtf16":
+      let offset = try integer(arguments["utf16Offset"], "utf16Offset")
+      let window = try focusWindow(pid: appPID)
+      click(try screenPoint(sourceUtf16Offset: offset, window: window))
+      let activationReceipt = try appRequest(operation: "settle")
+      guard activationReceipt["selectionBaseUtf16"] as? Int == offset,
+        activationReceipt["selectionExtentUtf16"] as? Int == offset
+      else {
+        throw ActuatorFailure.message(
+          "activation did not settle at source offset \(offset)"
+        )
+      }
+      response["snapshot"] = activationReceipt
+    case "selectSourceRange":
+      let base = try integer(arguments["baseUtf16"], "baseUtf16")
+      let extent = try integer(arguments["extentUtf16"], "extentUtf16")
+      let window = try focusWindow(pid: appPID)
+      drag(
+        from: try screenPoint(sourceUtf16Offset: base, window: window),
+        to: try screenPoint(sourceUtf16Offset: extent, window: window)
+      )
+    case "insertText":
+      typeText(
+        try string(arguments["text"], "text"),
+        intervalMs: try integer(arguments["cadenceMs"], "cadenceMs")
+      )
+    case "key":
+      let key = try string(arguments["key"], "key")
+      try postKey(named: key)
+    case "pasteText":
+      let text = try string(arguments["text"], "text")
+      NSPasteboard.general.clearContents()
+      guard NSPasteboard.general.setString(text, forType: .string) else {
+        throw ActuatorFailure.message("could not set the macOS pasteboard")
+      }
+      pressCommandShortcut(9)
+    case "pause":
+      pause(milliseconds: try integer(arguments["milliseconds"], "milliseconds"))
+    case "stop":
+      shouldStop = true
+    default:
+      throw ActuatorFailure.message("unsupported actuator operation \(operation)")
     }
-    fputs(
-      "\(scenarioID) [macos-native/\(scheduleID)] failed: \(error)\n"
-        + "receipt: \(receiptPath)\n"
-        + "screenshot: \(screenshotPath)\n",
-      stderr
-    )
-  }
-  if process.isRunning {
-    process.terminate()
-    process.waitUntilExit()
-  }
-  if !scheduleFailed {
-    try? FileManager.default.removeItem(atPath: receiptPath)
+    writeJSONLine(response)
+  } catch {
+    writeJSONLine([
+      "schema": "flark.native-actuator/v1",
+      "sequence": sequence,
+      "ok": false,
+      "error": String(describing: error),
+      "appPid": Int(appPID),
+      "platform": "macos",
+    ])
   }
 }
 
-if failed { exit(1) }
+if appProcess.isRunning {
+  appProcess.terminate()
+  appProcess.waitUntilExit()
+}
+try? FileManager.default.removeItem(at: harnessDirectory)

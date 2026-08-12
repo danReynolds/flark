@@ -20,12 +20,12 @@ portable drivers consume that exact plan:
   and adds bounded observations emitted by actual paint calls. It uses the same
   actions, barriers, and assertions as the no-window driver.
 
-The macOS CGEvent helper is still a native-input diagnostic, not a third
-canonical driver: it parses the source JSON itself and uses legacy pixel hints.
-It remains useful for routing regressions until it becomes a primitive actuator
-behind the Dart executor. Future simulator and physical drivers reuse the Dart
-plan/executor boundary; device-only IME, touch, clipboard, accessibility, and
-lifecycle canaries remain separate evidence.
+The macOS CGEvent helper is a thin native actuator behind the same Dart
+compiler/executor as the portable runners. It owns neither scenario semantics
+nor assertion policy. Its small canary pack reuses one profile app process and
+adds real keyboard, pointer, pasteboard, and paint evidence. Future simulator
+and physical drivers reuse the same Dart plan/executor boundary; device-only
+IME, touch, accessibility, and lifecycle canaries remain separate evidence.
 
 Run both portable lanes after editing input or projection machinery:
 
@@ -40,8 +40,8 @@ Focus one scenario in either lane:
 ./scripts/run_v4_live_editor_scenario.sh surface packages/flark/test/scenarios/simple_list_continue_exit_type.json
 ```
 
-Run the legacy native-input diagnostic with `macos`, or include it after the
-portable corpus with `all`. The native app is rebuilt by default; reuse an
+Run the native-input canary pack with `macos`, or include it after the portable
+corpus with `all`. The native app is rebuilt by default; reuse an
 already-current profile build with `FLARK_SCENARIO_REUSE_APP=1`. The Rust
 library is rebuilt incrementally by default; `FLARK_SCENARIO_REUSE_CORE=1`
 explicitly opts into the existing artifact.

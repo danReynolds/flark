@@ -7,6 +7,43 @@ import 'package:flutter/widgets.dart';
 import 'controller.dart';
 import 'render_surface.dart';
 
+/// App-relative geometry exposed only to integration harnesses.
+final class FlarkEditorDebugGeometry {
+  const FlarkEditorDebugGeometry({
+    required this.globalPosition,
+    required this.rootLogicalSize,
+  });
+
+  final Offset globalPosition;
+  final Size rootLogicalSize;
+}
+
+/// Opt-in bridge from source offsets to the currently painted Flutter surface.
+///
+/// Product input never depends on this handle. Native integration runners use
+/// it to drive real pointer events without freezing tests to pixel guesses.
+final class FlarkEditorDebugHandle {
+  RenderFlarkSurface? _surface;
+
+  FlarkEditorDebugGeometry? geometryForSourceUtf16(int offset) {
+    final surface = _surface;
+    if (surface == null || !surface.attached || !surface.hasSize) return null;
+    final local = surface.debugLocalPositionForSourceUtf16(offset);
+    if (local == null) return null;
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    return FlarkEditorDebugGeometry(
+      globalPosition: surface.localToGlobal(local),
+      rootLogicalSize: view.physicalSize / view.devicePixelRatio,
+    );
+  }
+
+  void _attach(RenderFlarkSurface? surface) => _surface = surface;
+
+  void _detach(RenderFlarkSurface? surface) {
+    if (identical(_surface, surface)) _surface = null;
+  }
+}
+
 /// A real custom Flutter render surface backed by [FlarkEditorController].
 ///
 /// It intentionally does not compose TextField, EditableText, ListView, or a
@@ -26,6 +63,8 @@ final class FlarkEditor extends StatefulWidget {
     this.caretColor = const Color(0xff246bfd),
     this.selectionColor = const Color(0x40246bfd),
     this.debugInputEventObserver,
+    this.debugPaintObserver,
+    this.debugHandle,
     super.key,
   });
 
@@ -40,6 +79,10 @@ final class FlarkEditor extends StatefulWidget {
   /// Opt-in adapter trace used by native scenario runners. It is never called
   /// unless supplied and does not participate in editing behavior.
   final ValueChanged<String>? debugInputEventObserver;
+
+  /// Opt-in observations and geometry used only by integration harnesses.
+  final ValueChanged<FlarkSurfacePaintObservation>? debugPaintObserver;
+  final FlarkEditorDebugHandle? debugHandle;
 
   @override
   State<FlarkEditor> createState() => _FlarkEditorState();
@@ -68,6 +111,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
         if (mounted) _focusNode.requestFocus();
       });
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _attachDebugHandle());
   }
 
   @override
@@ -87,10 +131,15 @@ final class _FlarkEditorState extends State<FlarkEditor>
       _ownedFocusNode = widget.focusNode == null ? FocusNode() : null;
       _focusNode.addListener(_focusChanged);
     }
+    if (!identical(oldWidget.debugHandle, widget.debugHandle)) {
+      oldWidget.debugHandle?._detach(_surface);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _attachDebugHandle());
+    }
   }
 
   @override
   void dispose() {
+    widget.debugHandle?._detach(_surface);
     widget.controller.removeListener(_controllerChanged);
     _focusNode.removeListener(_focusChanged);
     _connection?.close();
@@ -138,6 +187,10 @@ final class _FlarkEditorState extends State<FlarkEditor>
   RenderFlarkSurface? get _surface =>
       _surfaceKey.currentContext?.findRenderObject() as RenderFlarkSurface?;
 
+  void _attachDebugHandle() {
+    if (mounted) widget.debugHandle?._attach(_surface);
+  }
+
   void _activate(Offset localPosition, {bool extend = false}) {
     final hit = _surface?.positionForOffset(localPosition);
     if (hit == null) return;
@@ -168,40 +221,87 @@ final class _FlarkEditorState extends State<FlarkEditor>
 
   @override
   Widget build(BuildContext context) {
-    return Focus(
-      focusNode: _focusNode,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.text,
-        child: Listener(
-          onPointerSignal: (event) {
-            if (event is PointerScrollEvent) {
-              _surface?.scrollBy(event.scrollDelta.dy);
-            }
-          },
-          onPointerPanZoomUpdate: (event) {
-            _surface?.scrollBy(-event.localPanDelta.dy);
-          },
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            supportedDevices: const {PointerDeviceKind.mouse},
-            onTapDown: (details) => _activate(details.localPosition),
-            onPanStart: (details) => _activate(details.localPosition),
-            onPanUpdate: (details) =>
-                _activate(details.localPosition, extend: true),
-            child: FlarkRenderSurfaceWidget(
-              key: _surfaceKey,
-              controller: widget.controller,
-              textStyle: widget.textStyle,
-              padding: widget.padding,
-              caretColor: widget.caretColor,
-              selectionColor: widget.selectionColor,
-              includeEditingState: true,
+    return CallbackShortcuts(
+      bindings: _desktopShortcutBindings,
+      child: Focus(
+        focusNode: _focusNode,
+        onKeyEvent: (node, event) {
+          widget.debugInputEventObserver?.call(
+            'key:${event.runtimeType}:${event.logicalKey.keyLabel}'
+            ':meta=${HardwareKeyboard.instance.isMetaPressed}'
+            ':control=${HardwareKeyboard.instance.isControlPressed}'
+            ':shift=${HardwareKeyboard.instance.isShiftPressed}',
+          );
+          return KeyEventResult.ignored;
+        },
+        child: MouseRegion(
+          cursor: SystemMouseCursors.text,
+          child: Listener(
+            onPointerSignal: (event) {
+              if (event is PointerScrollEvent) {
+                _surface?.scrollBy(event.scrollDelta.dy);
+              }
+            },
+            onPointerPanZoomUpdate: (event) {
+              _surface?.scrollBy(-event.localPanDelta.dy);
+            },
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              supportedDevices: const {PointerDeviceKind.mouse},
+              onTapDown: (details) => _activate(details.localPosition),
+              onPanStart: (details) => _activate(details.localPosition),
+              onPanUpdate: (details) =>
+                  _activate(details.localPosition, extend: true),
+              child: FlarkRenderSurfaceWidget(
+                key: _surfaceKey,
+                controller: widget.controller,
+                textStyle: widget.textStyle,
+                padding: widget.padding,
+                caretColor: widget.caretColor,
+                selectionColor: widget.selectionColor,
+                includeEditingState: true,
+                debugPaintObserver: widget.debugPaintObserver,
+              ),
             ),
           ),
         ),
       ),
     );
   }
+
+  Map<ShortcutActivator, VoidCallback> get _desktopShortcutBindings => {
+    for (final meta in [true, false]) ...{
+      SingleActivator(LogicalKeyboardKey.keyC, meta: meta, control: !meta): () {
+        widget.debugInputEventObserver?.call('shortcut:copy');
+        unawaited(_copySelection());
+      },
+      SingleActivator(LogicalKeyboardKey.keyX, meta: meta, control: !meta): () {
+        widget.debugInputEventObserver?.call('shortcut:cut');
+        unawaited(_cutSelection());
+      },
+      SingleActivator(LogicalKeyboardKey.keyV, meta: meta, control: !meta): () {
+        widget.debugInputEventObserver?.call('shortcut:paste');
+        unawaited(_pasteClipboard());
+      },
+      SingleActivator(LogicalKeyboardKey.keyZ, meta: meta, control: !meta): () {
+        widget.debugInputEventObserver?.call('shortcut:undo');
+        unawaited(widget.controller.undo());
+      },
+      SingleActivator(
+        LogicalKeyboardKey.keyZ,
+        meta: meta,
+        control: !meta,
+        shift: true,
+      ): () {
+        widget.debugInputEventObserver?.call('shortcut:redo');
+        unawaited(widget.controller.redo());
+      },
+    },
+    SingleActivator(LogicalKeyboardKey.keyY, control: true): () {
+      widget.debugInputEventObserver?.call('shortcut:redo');
+      unawaited(widget.controller.redo());
+    },
+  };
 
   @override
   TextEditingValue? get currentTextEditingValue => widget.controller.inputValue;

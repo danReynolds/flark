@@ -213,6 +213,67 @@ void main() {
   );
 
   test(
+    'shorter styled selection replacements retain projection while pending',
+    () async {
+      const source = 'Before **bold** after.\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      final row = controller.rows.first;
+      controller.activateRow(row, 10);
+      controller.extendSelectionTo(12, activeOrdinal: row.ordinal);
+
+      controller.replaceSelection('X');
+
+      final pending = controller.surfaceRow(row);
+      expect(pending.text, 'Before bXd after.');
+      expect(pending.text, isNot(contains('**')));
+      expect(
+        pending.runs.any(
+          (run) =>
+              run.text == 'bXd' &&
+              run.styles.contains(FlarkSurfaceInlineStyle.strong),
+        ),
+        isTrue,
+      );
+      await _settle(controller);
+      expect(controller.visibleSource, 'Before **bXd** after.\n');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'history restores an in-row selection without narrowing the paint window',
+    () async {
+      const source = 'Before **bold** after.\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      final row = controller.rows.first;
+      controller.activateRow(row, 10);
+      controller.extendSelectionTo(12, activeOrdinal: row.ordinal);
+      controller.replaceSelection('X');
+      await _settle(controller);
+
+      await controller.undo();
+
+      expect(controller.inputValue.text, source);
+      expect(
+        controller.surfaceRow(controller.rows.first).text,
+        'Before bold after.',
+      );
+      expect(controller.surfaceRow(controller.rows.first).text, isNot('ol'));
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'plain heading typing never demotes the visible page between receipts',
     () async {
       const source = '# Heading\n\nPlain paragraph.\n\n## Sibling\n';

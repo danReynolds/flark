@@ -10,12 +10,23 @@ final class DogfoodScenarioMode {
     required this.id,
     required this.source,
     required this.receiptPath,
+    this.commandPath,
   });
 
   static DogfoodScenarioMode? fromEnvironment() {
-    final scenarioPath = Platform.environment['FLARK_SCENARIO_PATH'];
     final receiptPath = Platform.environment['FLARK_SCENARIO_RECEIPT_PATH'];
-    if (scenarioPath == null || receiptPath == null) return null;
+    if (receiptPath == null) return null;
+    final commandPath = Platform.environment['FLARK_SCENARIO_COMMAND_PATH'];
+    if (commandPath != null) {
+      return DogfoodScenarioMode(
+        id: 'native-harness',
+        source: '',
+        receiptPath: receiptPath,
+        commandPath: commandPath,
+      );
+    }
+    final scenarioPath = Platform.environment['FLARK_SCENARIO_PATH'];
+    if (scenarioPath == null) return null;
     final json =
         jsonDecode(File(scenarioPath).readAsStringSync())
             as Map<String, Object?>;
@@ -29,14 +40,85 @@ final class DogfoodScenarioMode {
   final String id;
   final String source;
   final String receiptPath;
+
+  /// Present only for the primitive native actuator. The app polls this one
+  /// atomic request slot while the external actuator owns OS input events.
+  final String? commandPath;
+}
+
+final class DogfoodScenarioCommand {
+  DogfoodScenarioCommand.fromJson(Map<String, Object?> json)
+    : sequence = json['sequence']! as int,
+      operation = json['operation']! as String,
+      arguments = Map<String, Object?>.unmodifiable(
+        (json['arguments']! as Map).cast<String, Object?>(),
+      );
+
+  final int sequence;
+  final String operation;
+  final Map<String, Object?> arguments;
+}
+
+/// A deliberately tiny, opt-in mailbox for native integration actuation.
+/// Product semantics and assertions stay in the shared Dart scenario executor;
+/// this slot only lets one already-running app reset, settle, or resolve a
+/// source offset to painted geometry.
+final class DogfoodScenarioCommandMailbox {
+  DogfoodScenarioCommandMailbox({
+    required this.path,
+    required this.onCommand,
+    required this.onError,
+  });
+
+  final String path;
+  final Future<void> Function(DogfoodScenarioCommand command) onCommand;
+  final Future<void> Function(int sequence, Object error) onError;
+  Timer? _timer;
+  bool _polling = false;
+  int _lastSequence = 0;
+
+  void start() {
+    _timer ??= Timer.periodic(
+      const Duration(milliseconds: 20),
+      (_) => unawaited(_poll()),
+    );
+  }
+
+  void dispose() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  Future<void> _poll() async {
+    if (_polling) return;
+    _polling = true;
+    try {
+      final file = File(path);
+      if (!await file.exists()) return;
+      final json = jsonDecode(await file.readAsString());
+      if (json is! Map<String, Object?>) return;
+      final command = DogfoodScenarioCommand.fromJson(json);
+      if (command.sequence <= _lastSequence) return;
+      _lastSequence = command.sequence;
+      try {
+        await onCommand(command);
+      } catch (error) {
+        await onError(command.sequence, error);
+      }
+    } on FormatException {
+      // The actuator writes atomically. A malformed request is ignored rather
+      // than allowed to perturb the product isolate under test.
+    } finally {
+      _polling = false;
+    }
+  }
 }
 
 /// Opt-in dogfood instrumentation for native scenario runners. It retains
-/// controller snapshots in memory during an interaction and publishes one
-/// atomic receipt only after 100 ms of quiet, keeping file I/O off the typing
-/// path that the scenario is trying to observe.
+/// bounded observations in memory and publishes atomic receipts outside the
+/// product input callback itself.
 final class DogfoodScenarioReceiptWriter {
-  DogfoodScenarioReceiptWriter(this.mode);
+  DogfoodScenarioReceiptWriter(this.mode) : _scenarioId = mode.id;
 
   final DogfoodScenarioMode mode;
   final List<String> _surfaceFrames = [];
@@ -45,6 +127,24 @@ final class DogfoodScenarioReceiptWriter {
   Timer? _timer;
   int _writeGeneration = 0;
   bool _frameScheduled = false;
+  String _scenarioId;
+  String _settledPresentation = '<empty>';
+  int _commandSequence = 0;
+  Object? _commandError;
+  int? _sourcePointOffset;
+  FlarkEditorDebugGeometry? _sourcePointGeometry;
+  DateTime? _lastInputEventAt;
+
+  void beginScenario(String id) {
+    _scenarioId = id;
+    _surfaceFrames.clear();
+    _inputEvents.clear();
+    _settledPresentation = '<empty>';
+    _commandError = null;
+    _sourcePointOffset = null;
+    _sourcePointGeometry = null;
+    _lastInputEventAt = null;
+  }
 
   void attach(FlarkEditorController controller) {
     detach();
@@ -63,9 +163,76 @@ final class DogfoodScenarioReceiptWriter {
   void dispose() => detach();
 
   void recordInputEvent(String event) {
+    _lastInputEventAt = DateTime.now();
     if (_inputEvents.length == 128) _inputEvents.removeAt(0);
     _inputEvents.add('${DateTime.now().microsecondsSinceEpoch}:$event');
     _record();
+  }
+
+  /// Waits for native delivery and any async selector work to enter the
+  /// controller before the harness evaluates the authoritative edit barrier.
+  Future<void> waitForPlatformInputQuiescence() async {
+    final notBefore = DateTime.now().add(const Duration(milliseconds: 50));
+    while (true) {
+      final now = DateTime.now();
+      final lastInput = _lastInputEventAt;
+      final quiet =
+          lastInput == null ||
+          now.difference(lastInput) >= const Duration(milliseconds: 50);
+      if (!now.isBefore(notBefore) && quiet) return;
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+  }
+
+  void recordPaintObservation(FlarkSurfacePaintObservation observation) {
+    final surface = observation.presentation;
+    if (_surfaceFrames.isEmpty || _surfaceFrames.last != surface) {
+      if (_surfaceFrames.length == 128) {
+        _surfaceFrames.removeAt(0);
+      }
+      _surfaceFrames.add(surface);
+    }
+    final controller = _controller;
+    if (controller == null) return;
+    _timer?.cancel();
+    final generation = ++_writeGeneration;
+    _timer = Timer(
+      const Duration(milliseconds: 100),
+      () => unawaited(_write(controller, generation)),
+    );
+  }
+
+  Future<void> writeNow({
+    required int commandSequence,
+    int? sourcePointOffset,
+    FlarkEditorDebugGeometry? sourcePointGeometry,
+  }) async {
+    _timer?.cancel();
+    _timer = null;
+    _commandSequence = commandSequence;
+    _commandError = null;
+    _sourcePointOffset = sourcePointOffset;
+    _sourcePointGeometry = sourcePointGeometry;
+    _captureSettledPresentation();
+    _timer?.cancel();
+    _timer = null;
+    final controller = _controller;
+    if (controller == null) {
+      throw StateError('scenario receipt writer has no controller');
+    }
+    final generation = ++_writeGeneration;
+    await _write(controller, generation);
+  }
+
+  Future<void> writeCommandError(int commandSequence, Object error) async {
+    _timer?.cancel();
+    _timer = null;
+    _commandSequence = commandSequence;
+    _commandError = error;
+    final controller = _controller;
+    if (controller == null) return;
+    final generation = ++_writeGeneration;
+    await _write(controller, generation);
   }
 
   void _record() {
@@ -73,25 +240,20 @@ final class DogfoodScenarioReceiptWriter {
     _frameScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _frameScheduled = false;
-      _capturePaintedState();
+      _captureSettledPresentation();
     });
     WidgetsBinding.instance.ensureVisualUpdate();
   }
 
-  void _capturePaintedState() {
+  void _captureSettledPresentation() {
     final controller = _controller;
     if (controller == null) return;
-    final surface = controller.rows.isEmpty
+    _settledPresentation = controller.rows.isEmpty
         ? '<empty>'
         : controller.rows
-              .map((row) {
-                final presentation = controller.surfaceRow(row);
-                return '${presentation.leadingText}${presentation.text}';
-              })
+              .map(controller.surfaceRow)
+              .map((row) => '${row.leadingText}${row.text}')
               .join('\n');
-    if (_surfaceFrames.isEmpty || _surfaceFrames.last != surface) {
-      _surfaceFrames.add(surface);
-    }
     _timer?.cancel();
     final generation = ++_writeGeneration;
     _timer = Timer(
@@ -102,23 +264,38 @@ final class DogfoodScenarioReceiptWriter {
 
   Future<void> _write(FlarkEditorController controller, int generation) async {
     final source = await controller.readSource();
+    final selection = await controller.resolveCanonicalSelection();
     if (!identical(controller, _controller) || generation != _writeGeneration) {
       return;
     }
+    final geometry = _sourcePointGeometry;
     final receipt = <String, Object?>{
-      'schemaVersion': 1,
-      'scenarioId': mode.id,
+      'schemaVersion': 2,
+      'scenarioId': _scenarioId,
+      'commandSequence': _commandSequence,
+      'commandError': _commandError?.toString(),
       'status': controller.status.name,
       'revision': controller.revision,
       'source': source,
       'sourceUtf16Length': controller.sourceUtf16Length,
-      'caretUtf16': controller.globalCaretOffset,
+      'selectionBaseUtf16': selection?.base ?? controller.globalCaretOffset,
+      'selectionExtentUtf16': selection?.extent ?? controller.globalCaretOffset,
+      'caretUtf16': selection?.extent ?? controller.globalCaretOffset,
       'pendingEdits': controller.pendingEdits,
       'resyncCount': controller.resyncCount,
       'lastResyncReason': controller.lastResyncReason.name,
       'lastError': controller.lastError?.toString(),
+      'settledPresentation': _settledPresentation,
       'surfaceFrames': List<String>.unmodifiable(_surfaceFrames),
       'inputEvents': List<String>.unmodifiable(_inputEvents),
+      if (geometry != null)
+        'sourcePoint': {
+          'utf16Offset': _sourcePointOffset,
+          'globalX': geometry.globalPosition.dx,
+          'globalY': geometry.globalPosition.dy,
+          'rootWidth': geometry.rootLogicalSize.width,
+          'rootHeight': geometry.rootLogicalSize.height,
+        },
     };
     final destination = File(mode.receiptPath);
     final temporary = File('${mode.receiptPath}.tmp');
