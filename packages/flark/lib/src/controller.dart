@@ -222,6 +222,21 @@ final class _PendingSemanticInput {
   final List<_SemanticInputSuccessor> successors = [];
 }
 
+/// Briefly retains the platform-provisional lineage after a semantic receipt
+/// wins the race. The text service may emit one or more deltas against its old
+/// newline window before it adopts the committed replacement window.
+final class _LateSemanticInput {
+  _LateSemanticInput({
+    required this.provisionalTail,
+    required this.reconciliation,
+    required this.successorCount,
+  });
+
+  TextEditingValue provisionalTail;
+  final _InputReconciliationMap reconciliation;
+  int successorCount;
+}
+
 /// Layer attribution for the most recent platform-observed semantic edit.
 /// The profile harness joins this receipt to Flutter's proving frame.
 final class FlarkSemanticEditPerformance {
@@ -388,6 +403,7 @@ final class FlarkEditorController extends ChangeNotifier {
   TextSelection? _shadowSelection;
   bool _platformMutation = false;
   _PendingSemanticInput? _pendingSemanticInput;
+  _LateSemanticInput? _lateSemanticInput;
   int? _activePlatformCallbackStartedEpochMicros;
   FlarkSemanticEditPerformance? _lastSemanticEditPerformance;
   bool _platformNewlineMutationAwaitingAction = false;
@@ -496,6 +512,7 @@ final class FlarkEditorController extends ChangeNotifier {
   /// retires with a typed reason and the unchanged authoritative window is
   /// re-exposed on a fresh connection epoch.
   void _resynchronize(FlarkInputResyncReason reason) {
+    _lateSemanticInput = null;
     _lastResyncReason = reason;
     _resyncCount += 1;
     _windowState = FlarkInputWindowState.resyncRequired;
@@ -1243,6 +1260,7 @@ final class FlarkEditorController extends ChangeNotifier {
       return;
     }
     if (_captureSemanticSuccessors(deltas)) return;
+    if (_captureLateSemanticSuccessors(deltas)) return;
     final rejection = _validateDeltaBatch(deltas);
     if (rejection != FlarkInputResyncReason.none) {
       _resynchronize(rejection);
@@ -1329,6 +1347,7 @@ final class FlarkEditorController extends ChangeNotifier {
       return;
     }
     if (_captureSemanticSuccessorValue(value)) return;
+    if (value.text == _inputValue.text) _lateSemanticInput = null;
     _platformMutation = true;
     try {
       if (_isPlatformNewlineValue(value) &&
@@ -1441,6 +1460,10 @@ final class FlarkEditorController extends ChangeNotifier {
     notifyListeners();
     return generation;
   }
+
+  /// Reads the complete authoritative Markdown source after every edit
+  /// already accepted by this controller has settled in the Core session.
+  Future<String> readSource() => _editTail.then((_) => _document.readSource());
 
   /// A user activation abandons the platform surrogate. The immediately
   /// queued ordinary selection replaces the canonical anchors in order.
@@ -1596,6 +1619,7 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   bool _queuePlatformSemanticNewline(List<TextEditingDelta> deltas) {
+    _lateSemanticInput = null;
     final provisionalMutation = _mutationFor(deltas.single)!;
     final provisionalAfter = deltas.single.apply(_inputValue);
     _pendingSemanticInput = _PendingSemanticInput(
@@ -1631,6 +1655,7 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   bool _queuePlatformSemanticNewlineValue(TextEditingValue value) {
+    _lateSemanticInput = null;
     final selection = _inputValue.selection;
     final provisionalMutation = _TextMutation(
       math.min(selection.baseOffset, selection.extentOffset),
@@ -1705,6 +1730,61 @@ final class FlarkEditorController extends ChangeNotifier {
     );
     pending.provisionalTail = after;
     _recordSemanticSuccessorHighWatermark(pending);
+    return true;
+  }
+
+  bool _captureLateSemanticSuccessors(List<TextEditingDelta> deltas) {
+    final late = _lateSemanticInput;
+    if (late == null) return false;
+    final before = late.provisionalTail;
+    final rejection = _validateDeltaBatch(
+      deltas,
+      against: before,
+      expectedTextSha256: flarkWindowTextSha256(before.text),
+    );
+    if (rejection != FlarkInputResyncReason.none) {
+      // The platform has adopted the committed window. Let the ordinary lane
+      // validate this callback against that current window.
+      _lateSemanticInput = null;
+      return false;
+    }
+    if (late.successorCount >= _maximumSemanticSuccessors) {
+      _lateSemanticInput = null;
+      _resynchronize(FlarkInputResyncReason.successorQueueOverflow);
+      return true;
+    }
+    var after = before;
+    var typingInput = true;
+    for (final delta in deltas) {
+      after = delta.apply(after);
+      if (_mutationFor(delta) != null) {
+        typingInput = typingInput && delta is TextEditingDeltaInsertion;
+      }
+    }
+    final holder = _PendingSemanticInput(
+      base: before,
+      inputGlobalUtf16Start: _inputGlobalUtf16Start,
+      initialCallbackStartedEpochMicros:
+          _activePlatformCallbackStartedEpochMicros ??
+          DateTime.now().microsecondsSinceEpoch,
+      provisionalAfter: before,
+    );
+    holder.successors.add(
+      _ProvisionalInputBatch(
+        before: before,
+        after: after,
+        typingInput: typingInput,
+      ),
+    );
+    late.provisionalTail = after;
+    late.successorCount += 1;
+    _platformMutation = true;
+    try {
+      _promoteSemanticSuccessorsWithMap(holder, late.reconciliation);
+      notifyListeners();
+    } finally {
+      _platformMutation = false;
+    }
     return true;
   }
 
@@ -2563,6 +2643,7 @@ final class FlarkEditorController extends ChangeNotifier {
 
   void _ensureSemanticInputBarrier() {
     if (_pendingSemanticInput != null) return;
+    _lateSemanticInput = null;
     _pendingSemanticInput = _PendingSemanticInput(
       base: _inputValue,
       inputGlobalUtf16Start: _inputGlobalUtf16Start,
@@ -2803,7 +2884,15 @@ final class FlarkEditorController extends ChangeNotifier {
         _resynchronize(FlarkInputResyncReason.successorReconciliationFailed);
         return;
       }
+      final resyncCount = _resyncCount;
       _promoteSemanticSuccessorsWithMap(pending, reconciliation);
+      if (pending.provisionalMutation != null && _resyncCount == resyncCount) {
+        _lateSemanticInput = _LateSemanticInput(
+          provisionalTail: pending.provisionalTail,
+          reconciliation: reconciliation,
+          successorCount: pending.successors.length,
+        );
+      }
     } finally {
       stopwatch.stop();
       _lastSemanticReconciliationMicros = stopwatch.elapsedMicroseconds;
@@ -2814,6 +2903,7 @@ final class FlarkEditorController extends ChangeNotifier {
     final stopwatch = Stopwatch()..start();
     final pending = _pendingSemanticInput;
     _pendingSemanticInput = null;
+    _lateSemanticInput = null;
     try {
       if (pending == null) return;
       _promoteSemanticSuccessorsWithMap(

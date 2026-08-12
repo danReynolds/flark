@@ -25,6 +25,7 @@ final class FlarkEditor extends StatefulWidget {
     this.padding = const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
     this.caretColor = const Color(0xff246bfd),
     this.selectionColor = const Color(0x40246bfd),
+    this.debugInputEventObserver,
     super.key,
   });
 
@@ -35,6 +36,10 @@ final class FlarkEditor extends StatefulWidget {
   final EdgeInsets padding;
   final Color caretColor;
   final Color selectionColor;
+
+  /// Opt-in adapter trace used by native scenario runners. It is never called
+  /// unless supplied and does not participate in editing behavior.
+  final ValueChanged<String>? debugInputEventObserver;
 
   @override
   State<FlarkEditor> createState() => _FlarkEditorState();
@@ -206,16 +211,25 @@ final class _FlarkEditorState extends State<FlarkEditor>
 
   @override
   void updateEditingValueWithDeltas(List<TextEditingDelta> textEditingDeltas) {
+    widget.debugInputEventObserver?.call(
+      'deltas:${textEditingDeltas.map((delta) => delta.runtimeType).join(',')}'
+      ':old=${textEditingDeltas.isEmpty ? -1 : textEditingDeltas.first.oldText.length}',
+    );
     widget.controller.applyDeltas(textEditingDeltas);
   }
 
   @override
   void updateEditingValue(TextEditingValue value) {
+    widget.debugInputEventObserver?.call(
+      'full-value:length=${value.text.length}:selection=${value.selection}'
+      ':composing=${value.composing}',
+    );
     widget.controller.updateEditingValue(value);
   }
 
   @override
   void performAction(TextInputAction action) {
+    widget.debugInputEventObserver?.call('action:$action');
     if (action == TextInputAction.newline) {
       widget.controller.observePlatformNewlineAction();
     }
@@ -223,6 +237,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
 
   @override
   void performSelector(String selectorName) {
+    widget.debugInputEventObserver?.call('selector:$selectorName');
     switch (selectorName) {
       case 'copy:':
         unawaited(_copySelection());
@@ -308,6 +323,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
 
   @override
   void connectionClosed() {
+    widget.debugInputEventObserver?.call('connection-closed');
     _connection = null;
   }
 }

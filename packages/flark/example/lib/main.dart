@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'dogfood_documents.dart';
+import 'scenario_mode.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,13 +17,23 @@ void main() {
       File(
         '../../../native/comrak_bridge/target/release/libflark_abi.dylib',
       ).absolute.path;
-  runApp(FlarkDogfoodApp(libraryPath: libraryPath));
+  runApp(
+    FlarkDogfoodApp(
+      libraryPath: libraryPath,
+      scenarioMode: DogfoodScenarioMode.fromEnvironment(),
+    ),
+  );
 }
 
 final class FlarkDogfoodApp extends StatefulWidget {
-  const FlarkDogfoodApp({required this.libraryPath, super.key});
+  const FlarkDogfoodApp({
+    required this.libraryPath,
+    this.scenarioMode,
+    super.key,
+  });
 
   final String libraryPath;
+  final DogfoodScenarioMode? scenarioMode;
 
   @override
   State<FlarkDogfoodApp> createState() => _FlarkDogfoodAppState();
@@ -37,18 +48,23 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
   Object? _loadError;
   int _loadGeneration = 0;
   bool _readOnly = false;
+  DogfoodScenarioReceiptWriter? _scenarioReceiptWriter;
 
   bool get _loading => _loadingPreset != null;
 
   @override
   void initState() {
     super.initState();
+    if (widget.scenarioMode case final mode?) {
+      _scenarioReceiptWriter = DogfoodScenarioReceiptWriter(mode);
+    }
     unawaited(_load(DogfoodDocumentPreset.productTour));
   }
 
   @override
   void dispose() {
     _loadGeneration += 1;
+    _scenarioReceiptWriter?.dispose();
     final controller = _controller;
     if (controller != null) unawaited(controller.close());
     super.dispose();
@@ -63,7 +79,12 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
     FlarkEditorController? next;
     try {
       final generationWatch = Stopwatch()..start();
-      final source = await compute(buildDogfoodDocument, preset);
+      final String source;
+      if (widget.scenarioMode case final mode?) {
+        source = mode.source;
+      } else {
+        source = await compute(buildDogfoodDocument, preset);
+      }
       generationWatch.stop();
       final openWatch = Stopwatch()..start();
       final opened = await FlarkEditorController.open(
@@ -71,6 +92,7 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
         libraryPath: widget.libraryPath,
       );
       next = opened;
+      if (widget.scenarioMode != null) await opened.continueParsing();
       openWatch.stop();
       if (!mounted || generation != _loadGeneration) {
         await opened.close();
@@ -85,7 +107,8 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
         _openDuration = openWatch.elapsed;
       });
       if (previous != null) unawaited(previous.close());
-      unawaited(opened.continueParsing());
+      _scenarioReceiptWriter?.attach(opened);
+      if (widget.scenarioMode == null) unawaited(opened.continueParsing());
     } catch (error) {
       if (next != null) await next.close();
       if (!mounted || generation != _loadGeneration) return;
@@ -154,6 +177,8 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
                           key: ValueKey(controller),
                           controller: controller,
                           autofocus: true,
+                          debugInputEventObserver:
+                              _scenarioReceiptWriter?.recordInputEvent,
                           textStyle: const TextStyle(
                             color: Color(0xff25272b),
                             fontSize: 17,
