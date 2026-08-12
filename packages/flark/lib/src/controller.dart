@@ -3241,8 +3241,10 @@ final class FlarkEditorController extends ChangeNotifier {
         await _document.pump(workUnits: 512);
       }
       if (_closed || _session.compositionActive) return;
-      await _refreshViewport(restoreInputWindow: false);
-      if (!_ensureActiveInputVisible()) _restoreInputWindow();
+      await _refreshViewport(
+        restoreInputWindow: true,
+        ensureActiveInputVisible: true,
+      );
     } catch (error) {
       _lastError = error;
       _status = FlarkEditorStatus.faulted;
@@ -3342,7 +3344,9 @@ final class FlarkEditorController extends ChangeNotifier {
         ? FlarkEditorStatus.ready
         : FlarkEditorStatus.parsing;
     if (restoreInputWindow) {
-      _restoreInputWindow();
+      if (!ensureActiveInputVisible || !_ensureActiveInputVisible()) {
+        _restoreInputWindow();
+      }
     } else if (ensureActiveInputVisible) {
       if (!_ensureActiveInputVisible()) {
         _activeOrdinal = _surfaceOrdinalAt(_globalSelectionExtent);

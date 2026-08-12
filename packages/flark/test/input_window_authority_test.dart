@@ -38,6 +38,23 @@ void main() {
     composing: TextRange.empty,
   );
 
+  Future<void> typePlatformText(
+    FlarkEditorController controller,
+    String text,
+  ) async {
+    for (final rune in text.runes) {
+      final before = controller.inputValue;
+      controller.applyDeltas([
+        insertion(
+          before,
+          before.selection.extentOffset,
+          String.fromCharCode(rune),
+        ),
+      ]);
+      await Future<void>.delayed(const Duration(milliseconds: 35));
+    }
+  }
+
   test(
     'an attached window carries a truthful serialized shadow',
     () async {
@@ -258,6 +275,59 @@ void main() {
         isEmpty,
         reason: 'the rendered surface disappeared during a structural burst',
       );
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'action-only Return keeps rapid successors across input-window refresh timing',
+    () async {
+      const source = '''# Flark dogfood
+
+This is the real **Rust → Dart → Flutter** editor path. Use it like an editor,
+not a static Markdown preview. Certified Markdown stays rendered while focused;
+only incomplete or temporarily pending syntax becomes exact source locally.
+
+## Start here
+''';
+      const expected = '''# Flark dogfood
+
+This is the real **Rust → Dart → Flutter** editor parapid
+
+secondth. Use it like an editor,
+not a static Markdown preview. Certified Markdown stays rendered while focused;
+only incomplete or temporarily pending syntax becomes exact source locally.
+
+## Start here
+''';
+
+      for (final successorDelay in <Duration>[
+        Duration.zero,
+        const Duration(milliseconds: 100),
+      ]) {
+        final controller = await open(source);
+        addTearDown(controller.close);
+        final paragraph = controller.rows.firstWhere((row) => row.kind == 5);
+        controller.activateRow(paragraph, source.indexOf('th. Use'));
+        await typePlatformText(controller, 'rapid');
+        await settle(controller);
+
+        controller.observePlatformNewlineAction();
+        if (successorDelay > Duration.zero) {
+          await Future<void>.delayed(successorDelay);
+        }
+        await typePlatformText(controller, 'second');
+        await settle(controller);
+
+        expect(
+          controller.visibleSource,
+          startsWith(expected.trimRight()),
+          reason: '${successorDelay.inMilliseconds}ms successor delay',
+        );
+        expect(controller.sourceUtf16Length, expected.length);
+        expect(controller.globalCaretOffset, 82);
+        expect(controller.resyncCount, 0);
+      }
     },
     skip: libraryPath == null,
   );
