@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "paragraph-list-boundary-newline",
+  "description": "Return between an ordinary paragraph and an ordered list creates an editable paragraph and preserves immediate successor typing.",
+  "initialSource": "Paragraph.\n1. item\n",
+  "activation": {
+    "needle": "Paragraph.",
+    "occurrence": 0,
+    "utf16OffsetInNeedle": 10
+  },
+  "steps": [
+    {
+      "type": "pressReturn"
+    },
+    {
+      "type": "typeText",
+      "text": "Next",
+      "intervalMs": 0
+    },
+    {
+      "type": "waitForIdle"
+    }
+  ],
+  "schedules": [
+    {
+      "id": "immediate"
+    }
+  ],
+  "expect": {
+    "source": "Paragraph.\n\nNext\n1. item\n",
+    "caretUtf16": 16,
+    "resyncCount": 0,
+    "faulted": false,
+    "forbiddenSurfaceSubstrings": ["<empty>"],
+    "paintedSurfaceNeverContains": ["<empty>"]
+  }
+}

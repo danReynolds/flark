@@ -442,6 +442,37 @@ only incomplete or temporarily pending syntax becomes exact source locally.
   );
 
   test(
+    'typing behind empty-list exit maps across distinct structural splices',
+    () async {
+      final controller = await open('- one\n- \n');
+      addTearDown(controller.close);
+      final empty = controller.rows.last;
+      controller.activateRow(empty, empty.editableUtf16!.end);
+      final before = controller.inputValue;
+      final newline = insertion(before, before.selection.extentOffset, '\n');
+      final provisional = newline.apply(before);
+
+      controller.applyDeltas([newline]);
+      controller.observePlatformNewlineAction();
+      controller.applyDeltas([
+        insertion(provisional, provisional.selection.extentOffset, 'plain'),
+      ]);
+
+      expect(controller.resyncCount, 0);
+      await settle(controller);
+      expect(
+        controller.resyncCount,
+        0,
+        reason: controller.lastResyncReason.name,
+      );
+      expect(controller.visibleSource, '- one\n\nplain\n');
+      expect(controller.globalCaretOffset, 12);
+      expect(controller.semanticSuccessorHighWatermark, 1);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'semantic successor queue fails closed at its declared cap',
     () async {
       final controller = await open('9) alpha\n');

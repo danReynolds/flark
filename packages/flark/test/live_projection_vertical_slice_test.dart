@@ -198,7 +198,7 @@ void main() {
       ordered.activateRow(continuedEmpty, continuedEmpty.editableUtf16!.start);
       ordered.insertNewline();
       await _settle(ordered);
-      expect(ordered.visibleSource, '9) alpha\n\n');
+      expect(ordered.visibleSource, '9) alpha\n\n\n');
 
       final empty = await FlarkEditorController.open(
         '- alpha\n- ',

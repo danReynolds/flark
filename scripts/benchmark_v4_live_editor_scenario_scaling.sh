@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Measures the same synthetic live-editor interaction shape through the
-# no-window controller and a mounted macOS Flutter surface. This is a runner
-# throughput experiment, not a product-performance or native-input receipt.
+# no-window controller, the fast mounted Flutter test surface, and optionally
+# a macOS host surface. This is runner throughput, not a product-performance or
+# native-input receipt.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -11,9 +12,9 @@ COUNTS="${2:-25,100,300}"
 LIBRARY="$BRIDGE/target/release/libflark_abi.dylib"
 
 case "$MODE" in
-  headless|macos-surface|all) ;;
+  headless|surface|macos-surface|all) ;;
   *)
-    echo "usage: $0 [headless|macos-surface|all] [comma-separated-counts]" >&2
+    echo "usage: $0 [headless|surface|macos-surface|all] [comma-separated-counts]" >&2
     exit 64
     ;;
 esac
@@ -31,6 +32,16 @@ if [[ "$MODE" == "headless" || "$MODE" == "all" ]]; then
     FLARK_V4_LIBRARY_PATH="$LIBRARY" \
       FLARK_SCENARIO_SCALE_COUNTS="$COUNTS" \
       flutter test test/live_editor_scenario_scaling_test.dart \
+        --reporter expanded
+  )
+fi
+
+if [[ "$MODE" == "surface" || "$MODE" == "all" ]]; then
+  (
+    cd "$ROOT/packages/flark"
+    FLARK_V4_LIBRARY_PATH="$LIBRARY" \
+      FLARK_SCENARIO_SCALE_COUNTS="$COUNTS" \
+      flutter test test/live_editor_scenario_surface_scaling_test.dart \
         --reporter expanded
   )
 fi

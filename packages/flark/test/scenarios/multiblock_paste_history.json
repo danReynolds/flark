@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "id": "multiblock-paste-history",
+  "description": "A structured multi-block paste is one exact reversible history unit.",
+  "initialSource": "Start.\n",
+  "activation": {
+    "needle": "Start.",
+    "occurrence": 0,
+    "utf16OffsetInNeedle": 6
+  },
+  "steps": [
+    {
+      "type": "pasteText",
+      "text": "\n\n# Added\n\n- one\n"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "checkpoint",
+      "id": "pasted",
+      "source": "Start.\n\n# Added\n\n- one\n\n",
+      "caretUtf16": 23
+    },
+    {
+      "type": "undo"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "checkpoint",
+      "id": "undone",
+      "source": "Start.\n",
+      "caretUtf16": 6
+    },
+    {
+      "type": "redo"
+    },
+    {
+      "type": "waitForIdle"
+    }
+  ],
+  "schedules": [
+    {
+      "id": "default"
+    }
+  ],
+  "expect": {
+    "source": "Start.\n\n# Added\n\n- one\n\n",
+    "caretUtf16": 23,
+    "resyncCount": 0,
+    "faulted": false,
+    "forbiddenSurfaceSubstrings": ["<empty>"],
+    "paintedSurfaceNeverContains": ["<empty>"]
+  }
+}

@@ -5,6 +5,7 @@
   "initialSource": "# Flark dogfood\n\nThis is the real **Rust → Dart → Flutter** editor path. Use it like an editor,\nnot a static Markdown preview. Certified Markdown stays rendered while focused;\nonly incomplete or temporarily pending syntax becomes exact source locally.\n\n## Start here\n",
   "activation": {
     "needle": "th. Use",
+    "occurrence": 0,
     "utf16OffsetInNeedle": 0
   },
   "steps": [
@@ -48,6 +49,10 @@
     "resyncCount": 0,
     "faulted": false,
     "forbiddenSurfaceSubstrings": [
+      "**",
+      "<empty>"
+    ],
+    "paintedSurfaceNeverContains": [
       "**",
       "<empty>"
     ]

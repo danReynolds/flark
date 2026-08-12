@@ -171,16 +171,22 @@ pub(crate) fn resolve_document_edit_intent_v1(
                 prefix_bytes,
                 prefix_utf16,
                 marker_offset,
-                starts_list: _,
+                starts_list,
                 empty,
             },
         ) => {
             if *empty || context.editable_bytes.is_empty() {
-                // Removing an empty marker must still leave a physical blank
-                // line. If the row already owns a line ending, retaining that
-                // ending is sufficient; an unterminated EOF row needs one in
-                // the replacement.
-                let replacement = if context.source_bytes.end == prefix_bytes.end {
+                // Removing an empty marker must still leave a physical plain
+                // row. A continuing list row also needs separation from the
+                // preceding list; otherwise the next typed paragraph becomes
+                // a CommonMark lazy continuation of the prior item. Its owned
+                // line ending remains the new row's terminal ending. A list
+                // that starts on this row already has whatever separation its
+                // preceding context requires. An unterminated EOF row needs
+                // one physical ending in either case.
+                let replacement = if context.source_bytes.end == prefix_bytes.end
+                    || !starts_list
+                {
                     context.ending.text().to_owned()
                 } else {
                     String::new()

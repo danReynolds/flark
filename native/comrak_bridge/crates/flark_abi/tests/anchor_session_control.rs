@@ -384,7 +384,7 @@ fn semantic_edit_is_one_commit_with_required_history_and_recoverable_terminal() 
     assert_eq!(second.result_revision, 3);
     assert_eq!(second.presentation_transition, EDIT_PRESENTATION_EXIT_LIST);
     assert_ne!(second.history_token, first.history_token);
-    let after_second = b"- one\n\n- two\n";
+    let after_second = b"- one\n\n\n- two\n";
     assert_eq!(read_source(session, 3, after_second.len()), after_second);
 
     // During H1 the ordered legacy literal lane implicitly acknowledges the
@@ -408,7 +408,7 @@ fn semantic_edit_is_one_commit_with_required_history_and_recoverable_terminal() 
     );
     assert_eq!(
         read_source(session, 4, after_second.len() + 1),
-        b"- one\n\n- two\nx"
+        b"- one\n\n\n- two\nx"
     );
     close_session(session);
 }

@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "id": "cross-block-selection-replace-history",
+  "description": "A source-global selection spanning styled and plain blocks replaces atomically and round-trips through history.",
+  "initialSource": "First **bold**.\n\nSecond line.\n",
+  "activation": {
+    "needle": "First",
+    "occurrence": 0,
+    "utf16OffsetInNeedle": 0
+  },
+  "steps": [
+    {
+      "type": "selectSourceRange",
+      "baseUtf16": 0,
+      "extentUtf16": 30
+    },
+    {
+      "type": "pasteText",
+      "text": "Replacement.\n"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "checkpoint",
+      "id": "replaced",
+      "source": "Replacement.\n",
+      "caretUtf16": 13
+    },
+    {
+      "type": "undo"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "checkpoint",
+      "id": "undone",
+      "source": "First **bold**.\n\nSecond line.\n",
+      "selectionBaseUtf16": 0,
+      "selectionExtentUtf16": 30
+    },
+    {
+      "type": "redo"
+    },
+    {
+      "type": "waitForIdle"
+    }
+  ],
+  "schedules": [
+    {
+      "id": "default"
+    }
+  ],
+  "expect": {
+    "source": "Replacement.\n",
+    "caretUtf16": 13,
+    "resyncCount": 0,
+    "faulted": false,
+    "forbiddenSurfaceSubstrings": ["<empty>"],
+    "paintedSurfaceNeverContains": ["<empty>"]
+  }
+}

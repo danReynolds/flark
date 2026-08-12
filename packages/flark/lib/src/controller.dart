@@ -277,31 +277,81 @@ final class _InputReconciliationMap {
   final int toStart;
   final int toEnd;
 
-  static _InputReconciliationMap? forCommittedSplice({
-    required _TextMutation provisionalMutation,
-    required int committedStart,
-    required int committedEnd,
-  }) {
-    if (provisionalMutation.start != committedStart) return null;
-    return _InputReconciliationMap(
-      fromStart: provisionalMutation.start,
-      fromEnd:
-          provisionalMutation.start + provisionalMutation.replacement.length,
-      toStart: committedStart,
-      toEnd: committedEnd,
-    );
-  }
-
   static _InputReconciliationMap? forSemanticBarrier({
     required _PendingSemanticInput pending,
     required FlarkCoreEditIntentReceiptV1 receipt,
   }) {
     final provisional = pending.provisionalMutation;
     if (provisional != null) {
-      return forCommittedSplice(
-        provisionalMutation: provisional,
-        committedStart: receipt.baseUtf16Start - pending.inputGlobalUtf16Start,
-        committedEnd: receipt.resultUtf16End - pending.inputGlobalUtf16Start,
+      final windowStart = pending.inputGlobalUtf16Start;
+      final windowEnd = windowStart + pending.base.text.length;
+      if (receipt.baseUtf16End <= windowStart ||
+          receipt.baseUtf16Start >= windowEnd) {
+        // The semantic source splice sits outside the bounded platform
+        // window. Rust may still move that window globally (an empty terminal
+        // list exposes a zero-length window after its marker), but its local
+        // text remains the base value. Reconcile by reversing only the
+        // platform's provisional splice.
+        return _InputReconciliationMap(
+          fromStart: provisional.start,
+          fromEnd: provisional.start + provisional.replacement.length,
+          toStart: provisional.start,
+          toEnd: provisional.end,
+        );
+      }
+      final committedStart =
+          receipt.baseUtf16Start - pending.inputGlobalUtf16Start;
+      final committedEnd = receipt.baseUtf16End - pending.inputGlobalUtf16Start;
+      if (provisional.start < 0 ||
+          provisional.end < provisional.start ||
+          provisional.end > pending.base.text.length ||
+          committedStart < 0 ||
+          committedEnd < committedStart ||
+          committedEnd > pending.base.text.length) {
+        return null;
+      }
+
+      // Both the text service and Rust edit the same base input window, but a
+      // structural command need not choose the same splice. For example,
+      // Return on an empty list provisionally inserts a newline after `- `,
+      // while Rust commits by removing that marker. Reconcile their complete
+      // union in base coordinates, leaving unchanged prefixes and suffixes
+      // exactly mappable and treating the differing interior as opaque.
+      final affectedStart = math.min(provisional.start, committedStart);
+      final affectedEnd = math.max(provisional.end, committedEnd);
+      final fromStart = _mapBaseBoundaryThroughSplice(
+        affectedStart,
+        start: provisional.start,
+        end: provisional.end,
+        replacementLength: provisional.replacement.length,
+        downstream: false,
+      );
+      final fromEnd = _mapBaseBoundaryThroughSplice(
+        affectedEnd,
+        start: provisional.start,
+        end: provisional.end,
+        replacementLength: provisional.replacement.length,
+        downstream: true,
+      );
+      final toStart = _mapBaseBoundaryThroughSplice(
+        affectedStart,
+        start: committedStart,
+        end: committedEnd,
+        replacementLength: receipt.replacement.length,
+        downstream: false,
+      );
+      final toEnd = _mapBaseBoundaryThroughSplice(
+        affectedEnd,
+        start: committedStart,
+        end: committedEnd,
+        replacementLength: receipt.replacement.length,
+        downstream: true,
+      );
+      return _InputReconciliationMap(
+        fromStart: fromStart,
+        fromEnd: fromEnd,
+        toStart: toStart,
+        toEnd: toEnd,
       );
     }
     final windowStart = pending.inputGlobalUtf16Start;
@@ -327,6 +377,23 @@ final class _InputReconciliationMap {
       toStart: localStart,
       toEnd: localStart + receipt.replacement.length,
     );
+  }
+
+  static int _mapBaseBoundaryThroughSplice(
+    int offset, {
+    required int start,
+    required int end,
+    required int replacementLength,
+    required bool downstream,
+  }) {
+    if (offset < start) return offset;
+    if (offset > end) return start + replacementLength + offset - end;
+    if (start == end && offset == start) {
+      return downstream ? start + replacementLength : start;
+    }
+    if (offset == start) return start;
+    if (offset == end) return start + replacementLength;
+    throw StateError('union boundary fell inside a source splice');
   }
 
   int? mapOffset(int offset, {required bool downstream}) {

@@ -1,212 +1,214 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flark/flark.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_test/flutter_test.dart';
 
 import 'live_editor_scenario.dart';
+import 'live_editor_scenario_executor.dart';
 
-final class LiveEditorScenarioRunResult {
-  const LiveEditorScenarioRunResult({
-    required this.elapsed,
-    required this.presentationSamples,
-    required this.revision,
-    required this.resyncCount,
-  });
+base class NoWindowLiveEditorScenarioDriver
+    implements LiveEditorScenarioDriver {
+  NoWindowLiveEditorScenarioDriver({required this.libraryPath});
 
-  final Duration elapsed;
-  final int presentationSamples;
-  final int revision;
-  final int resyncCount;
+  final String libraryPath;
+  FlarkEditorController? _controller;
+  TextEditingValue? _platformValue;
 
-  Map<String, Object?> toJson({
-    required String scenarioId,
-    required String scheduleId,
-  }) => <String, Object?>{
-    'id': scenarioId,
-    'runner': 'headless',
-    'schedule': scheduleId,
-    'elapsedMs': elapsed.inMilliseconds,
-    'frames': presentationSamples,
-    'revision': revision,
-    'resyncs': resyncCount,
-    'passed': true,
-  };
-}
+  FlarkEditorController get _activeController =>
+      _controller ?? (throw StateError('scenario driver is not started'));
 
-Future<LiveEditorScenarioRunResult> runLiveEditorScenario(
-  LiveEditorScenario scenario,
-  ScenarioSchedule schedule, {
-  required String libraryPath,
-  bool emitResult = true,
-}) async {
-  final watch = Stopwatch()..start();
-  final controller = await FlarkEditorController.open(
-    scenario.initialSource,
-    libraryPath: libraryPath,
-  );
-  await controller.continueParsing();
-  final presentations = <String>[];
+  FlarkEditorController get activeController => _activeController;
 
-  void capturePresentation() {
-    final rows = controller.rows
-        .map(controller.surfaceRow)
-        .toList(growable: false);
-    final presentation = rows.isEmpty
-        ? '<empty>'
-        : rows.map((row) => row.text).join('\n');
-    if (presentations.isEmpty || presentations.last != presentation) {
-      presentations.add(presentation);
+  @override
+  String get name => 'no-window';
+
+  @override
+  bool get observesPaint => false;
+
+  @override
+  Future<void> start(LiveEditorScenarioPlan plan) async {
+    if (_controller != null) {
+      throw StateError('scenario driver already started');
     }
+    final controller = await FlarkEditorController.open(
+      plan.initialSource,
+      libraryPath: libraryPath,
+    );
+    _controller = controller;
+    await controller.continueParsing();
+    _platformValue = controller.inputValue;
   }
 
-  capturePresentation();
-  final presentationSampler = Timer.periodic(
-    const Duration(milliseconds: 8),
-    (_) => capturePresentation(),
-  );
-
-  try {
-    final caret = scenario.activation.resolve(scenario.initialSource);
+  @override
+  Future<void> activateAtUtf16(int offset) async {
+    final controller = _activeController;
     final row = controller.rows.firstWhere(
       (candidate) =>
           candidate.editableUtf16 != null &&
-          candidate.editableUtf16!.start <= caret &&
-          caret <= candidate.editableUtf16!.end,
+          candidate.editableUtf16!.start <= offset &&
+          offset <= candidate.editableUtf16!.end,
+      orElse: () => throw StateError(
+        'activation offset $offset is not in an editable viewport row',
+      ),
     );
-    controller.activateRow(row, caret);
-    var platformValue = controller.inputValue;
-    var retainPlatformShadow = false;
+    controller.activateRow(row, offset);
+    _platformValue = controller.inputValue;
+  }
 
-    for (final step in scenario.steps) {
-      switch (step.type) {
-        case 'typeText':
-          platformValue = await _typeText(
-            controller,
-            platformValue,
-            step.text!,
-            interval: Duration(milliseconds: step.intervalMs ?? 0),
-            followControllerUpdates: !retainPlatformShadow,
-          );
-        case 'pressReturn':
-          platformValue = _pressReturn(controller, platformValue);
-          retainPlatformShadow = true;
-        case 'scheduleDelay':
-          final delay = schedule.delaysMs[step.scheduleKey];
-          if (delay == null) {
-            throw StateError(
-              'schedule ${schedule.id} does not define ${step.scheduleKey}',
+  @override
+  Future<void> insertText(String text, {required Duration cadence}) async {
+    final controller = _activeController;
+    var platformValue = _platformValue ?? controller.inputValue;
+    for (final rune in text.runes) {
+      final character = String.fromCharCode(rune);
+      // A platform burst is a lineage of observations against the text
+      // service's preceding local value. The controller may still expose the
+      // pre-barrier or post-barrier window while a semantic Return is in
+      // flight; sampling it between synchronous callbacks creates a sequence
+      // no real text service emitted.
+      final before = platformValue;
+      final selection = before.selection;
+      final start = selection.start;
+      final end = selection.end;
+      final delta = start == end
+          ? TextEditingDeltaInsertion(
+              oldText: before.text,
+              textInserted: character,
+              insertionOffset: start,
+              selection: TextSelection.collapsed(
+                offset: start + character.length,
+              ),
+              composing: TextRange.empty,
+            )
+          : TextEditingDeltaReplacement(
+              oldText: before.text,
+              replacementText: character,
+              replacedRange: TextRange(start: start, end: end),
+              selection: TextSelection.collapsed(
+                offset: start + character.length,
+              ),
+              composing: TextRange.empty,
             );
-          }
-          await Future<void>.delayed(Duration(milliseconds: delay));
-          if (delay > 0) {
-            platformValue = controller.inputValue;
-            retainPlatformShadow = false;
-          }
-        case 'waitForIdle':
-          await _settle(controller);
+      controller.applyDeltas([delta]);
+      platformValue = delta.apply(before);
+      if (cadence > Duration.zero) {
+        await Future<void>.delayed(cadence);
+        // Once the authoritative edit has settled, model the platform
+        // adopting the remote editing state before its next paced callback.
+        if (controller.pendingEdits == 0) {
           platformValue = controller.inputValue;
-          retainPlatformShadow = false;
-        default:
-          throw StateError('unsupported scenario step ${step.type}');
+        }
       }
     }
-    await _settle(controller);
-    capturePresentation();
-    watch.stop();
+    _platformValue = platformValue;
+  }
 
-    final expectation = scenario.expectation;
-    expect(await controller.readSource(), expectation.source);
-    expect(controller.globalCaretOffset, expectation.caretUtf16);
-    expect(controller.resyncCount, expectation.resyncCount);
-    expect(controller.status == FlarkEditorStatus.faulted, expectation.faulted);
-    expect(controller.lastError, isNull);
-    // Controller states can change more often than Flutter paints. This lane
-    // requires a clean settled state; render-bound transient checks belong to
-    // the product-surface driver.
-    final settledPresentation = presentations.last;
-    for (final forbidden in expectation.forbiddenSurfaceSubstrings) {
-      expect(
-        settledPresentation.contains(forbidden),
-        isFalse,
-        reason: 'settled presentation contained "$forbidden"',
-      );
+  @override
+  Future<void> pressKey(LiveEditorScenarioKey key) async {
+    final controller = _activeController;
+    switch (key) {
+      case LiveEditorScenarioKey.enter:
+        final before = _platformValue ?? controller.inputValue;
+        final selection = before.selection;
+        final start = selection.start;
+        final end = selection.end;
+        final delta = start == end
+            ? TextEditingDeltaInsertion(
+                oldText: before.text,
+                textInserted: '\n',
+                insertionOffset: start,
+                selection: TextSelection.collapsed(offset: start + 1),
+                composing: TextRange.empty,
+              )
+            : TextEditingDeltaReplacement(
+                oldText: before.text,
+                replacementText: '\n',
+                replacedRange: TextRange(start: start, end: end),
+                selection: TextSelection.collapsed(offset: start + 1),
+                composing: TextRange.empty,
+              );
+        controller.applyDeltas([delta]);
+        controller.observePlatformNewlineAction();
+        _platformValue = delta.apply(before);
+      case LiveEditorScenarioKey.backspace:
+        controller.deleteBackward();
+        _platformValue = controller.inputValue;
+      case LiveEditorScenarioKey.delete:
+        controller.deleteForward();
+        _platformValue = controller.inputValue;
+      case LiveEditorScenarioKey.undo:
+        await controller.undo();
+        _platformValue = controller.inputValue;
+      case LiveEditorScenarioKey.redo:
+        await controller.redo();
+        _platformValue = controller.inputValue;
     }
+  }
 
-    final result = LiveEditorScenarioRunResult(
-      elapsed: watch.elapsed,
-      presentationSamples: presentations.length,
-      revision: controller.revision,
+  @override
+  Future<void> selectSourceRange({
+    required int base,
+    required int extent,
+  }) async {
+    await activateAtUtf16(base);
+    _activeController.extendSelectionTo(extent);
+    _platformValue = _activeController.inputValue;
+  }
+
+  @override
+  Future<void> pasteText(String text) async {
+    _activeController.replaceSelection(text);
+    _platformValue = _activeController.inputValue;
+  }
+
+  @override
+  Future<void> pause(Duration duration) async {
+    if (duration > Duration.zero) await Future<void>.delayed(duration);
+    final controller = _activeController;
+    if (controller.pendingEdits == 0) {
+      _platformValue = controller.inputValue;
+    }
+  }
+
+  @override
+  Future<void> awaitBarrier(LiveEditorScenarioBarrier barrier) async {
+    await _settle(_activeController);
+    _platformValue = _activeController.inputValue;
+  }
+
+  @override
+  Future<LiveEditorScenarioSnapshot> snapshot() async {
+    final controller = _activeController;
+    final selection = await controller.resolveCanonicalSelection();
+    if (selection == null) {
+      throw StateError('canonical selection is unavailable');
+    }
+    final presentation = controller.rows.isEmpty
+        ? '<empty>'
+        : controller.rows
+              .map(controller.surfaceRow)
+              .map((row) => '${row.leadingText}${row.text}')
+              .join('\n');
+    return LiveEditorScenarioSnapshot(
+      source: await controller.readSource(),
+      selectionBaseUtf16: selection.base,
+      selectionExtentUtf16: selection.extent,
       resyncCount: controller.resyncCount,
+      faulted: controller.status == FlarkEditorStatus.faulted,
+      lastError: controller.lastError,
+      settledPresentation: presentation,
+      paintedPresentations: const [],
+      revision: controller.revision,
     );
-    if (emitResult) {
-      print(
-        'FLARK_SCENARIO_RESULT ${jsonEncode(result.toJson(scenarioId: scenario.id, scheduleId: schedule.id))}',
-      );
-    }
-    return result;
-  } finally {
-    presentationSampler.cancel();
-    await controller.close();
   }
-}
 
-TextEditingValue _pressReturn(
-  FlarkEditorController controller,
-  TextEditingValue before,
-) {
-  final selection = before.selection;
-  final start = selection.start;
-  final end = selection.end;
-  final delta = start == end
-      ? TextEditingDeltaInsertion(
-          oldText: before.text,
-          textInserted: '\n',
-          insertionOffset: start,
-          selection: TextSelection.collapsed(offset: start + 1),
-          composing: TextRange.empty,
-        )
-      : TextEditingDeltaReplacement(
-          oldText: before.text,
-          replacementText: '\n',
-          replacedRange: TextRange(start: start, end: end),
-          selection: TextSelection.collapsed(offset: start + 1),
-          composing: TextRange.empty,
-        );
-  controller.applyDeltas([delta]);
-  controller.observePlatformNewlineAction();
-  return delta.apply(before);
-}
-
-Future<TextEditingValue> _typeText(
-  FlarkEditorController controller,
-  TextEditingValue initialValue,
-  String text, {
-  required Duration interval,
-  required bool followControllerUpdates,
-}) async {
-  var platformValue = initialValue;
-  var follow = followControllerUpdates;
-  for (final rune in text.runes) {
-    final character = String.fromCharCode(rune);
-    final before = follow ? controller.inputValue : platformValue;
-    final offset = before.selection.extentOffset;
-    final delta = TextEditingDeltaInsertion(
-      oldText: before.text,
-      textInserted: character,
-      insertionOffset: offset,
-      selection: TextSelection.collapsed(offset: offset + character.length),
-      composing: TextRange.empty,
-    );
-    controller.applyDeltas([delta]);
-    platformValue = delta.apply(before);
-    if (interval > Duration.zero) {
-      await Future<void>.delayed(interval);
-    }
-    follow = true;
+  @override
+  Future<void> stop() async {
+    final controller = _controller;
+    _controller = null;
+    _platformValue = null;
+    if (controller != null) await controller.close();
   }
-  return platformValue;
 }
 
 Future<void> _settle(FlarkEditorController controller) async {
@@ -214,9 +216,7 @@ Future<void> _settle(FlarkEditorController controller) async {
   while (controller.pendingEdits != 0 && DateTime.now().isBefore(deadline)) {
     await Future<void>.delayed(const Duration(milliseconds: 1));
   }
-  if (controller.pendingEdits == 0) {
-    await controller.continueParsing();
-  }
+  if (controller.pendingEdits == 0) await controller.continueParsing();
   if (controller.pendingEdits != 0) {
     throw StateError('scenario did not settle before its 5 second deadline');
   }

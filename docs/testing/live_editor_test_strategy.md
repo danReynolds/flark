@@ -1,6 +1,7 @@
 # Live-editor test strategy
 
-**Status:** proposed for implementation
+**Status:** canonical portable runner and smoke corpus implemented; native
+actuation, device delivery, and standard-depth expansion remain
 
 **Date:** 2026-08-12
 
@@ -31,11 +32,36 @@ In this document, `headless` means the existing Flutter-test, no-window
 controller path through real Core and Rust. It does not mean a pure Dart unit
 test and it does not observe Flutter layout or paint.
 
-The existing dual-run scenario at commit `e97c139` remains a useful diagnostic,
-but it is not yet the general contract. Its headless runner activates by source
-offset while its macOS runner activates at fixed pixels, its barriers differ by
-runner, and its frame samples are not bound to the state actually painted.
-Those gaps are fixed before the catalog expands.
+The old CGEvent runner remains a useful macOS routing diagnostic, but it is not
+the portable contract: it still parses source JSON independently and uses
+fixed-pixel hints. The canonical v1 contract is the strict plan compiler, shared
+executor, no-window driver, and mounted Flutter-surface driver. Both drivers
+consume identical plan objects and barrier semantics; the surface driver adds
+render-bound observations emitted by the production render object.
+
+## Current implementation
+
+As of 2026-08-12:
+
+- the closed JSON compiler, canonical plan hash, plan-bundle validation,
+  negative schema tests, shared executor, and typed driver boundary are live;
+- no-window and mounted Flutter-surface tests run every named plan, with exact
+  source/selection/resync/fault checks and bounded actual-paint predicates;
+- the eight-scenario smoke set is implemented, plus the original
+  paragraph/ordered-list boundary regression;
+- a single portable list journey found an inaccurate synthetic platform
+  lineage and two real product defects: structural-splice reconciliation for a
+  zero-length input window, and list exit that allowed the next paragraph to
+  become a CommonMark lazy continuation. Each now has focused lower-layer
+  coverage;
+- the warm corpus remains cheap enough to grow: the latest debug/test run put
+  300 canonical cases through no-window in 3.95 seconds and through the mounted
+  Flutter surface in 5.31 seconds.
+
+Still outstanding are native source-offset actuation behind the Dart executor,
+artifact/provenance receipts, device-safe plan-bundle delivery, the remaining
+standard scenarios, and real platform/device canaries. None of those are
+silently credited by the portable green runs.
 
 ## What each layer owns
 
@@ -141,10 +167,11 @@ non-claim-eligible.
 
 ## Initial catalog
 
-The first catalog is intentionally 12 scenarios. Eight are the permanent smoke
-set; four add depth in the standard set. We do not begin with the roughly two
-dozen useful legacy candidates because the harness should prove its leverage
-before its vocabulary grows.
+The starter catalog is intentionally bounded. Eight scenarios form the
+permanent smoke set; standard cases are admitted one by one after they expose a
+distinct cross-layer risk. We do not transplant the roughly two dozen useful
+legacy candidates because the harness must prove leverage before its vocabulary
+grows.
 
 These 12 bootstrap the runner; they are not the intended size of the behavioral
 acceptance corpus. After the contract is trustworthy, compact parameterized
@@ -173,7 +200,7 @@ universally targetable corpus.
 8. `simple-list-continue-exit-type` — Return continues a simple item, Return on
    an empty item exits, and immediate plain-paragraph typing is preserved.
 
-### Standard starter set
+### Standard candidates
 
 9. `distant-selection-replace-undo` — a source-global selection spanning
    distant blocks remains exact and reversible; widget/host tests additionally
@@ -184,8 +211,11 @@ universally targetable corpus.
 11. `paragraph-list-boundary-newline` — Return at the boundary between ordinary
     paragraph text and an ordered list creates the intended separation and
     preserves immediate successor typing.
-12. `read-only-parity` — the read-only surface uses the same settled render
-    plan and rejects mutation or input activation.
+12. `ordered-list-renumber-history` — structural continuation and renumbering
+    remain exact and reversible across neighboring list items.
+
+Read-only render parity stays a focused Flutter surface test because a
+no-window editing driver cannot add independent evidence for UI input rejection.
 
 Next candidates are admitted by shipped behavior: quote continuation/exit,
 nested-list outdent, tasks, headings, fenced code, tables, links/images,
@@ -252,12 +282,12 @@ proof, and missing or stale receipts mean unexecuted rather than passed.
 
 ## Corpus-throughput feasibility experiment
 
-On 2026-08-12, before expanding the schema, a synthetic interaction shape was
-run repeatedly through real Core/Rust transactions and through a mounted macOS
-Flutter surface. Each case opened a fresh document/session, parsed it, mounted
-the surface where applicable, activated a source point, inserted text, issued
-a semantic Return, immediately inserted successor text, settled, asserted exact
-source/caret/presentation/fault state, unmounted, and closed the session.
+On 2026-08-12, the canonical shared executor repeatedly ran a synthetic
+interaction shape through real Core/Rust transactions and the production
+Flutter render surface. Each case opened a fresh document/session, parsed it,
+mounted the surface where applicable, activated a source point, inserted text,
+issued semantic Return, immediately inserted successor text, settled, asserted
+exact source/caret/presentation/fault state, unmounted, and closed the session.
 
 The cases had zero artificial typing delay. The measurements describe warm
 runner throughput in a debug/test build, not product latency or heterogeneous
@@ -265,26 +295,24 @@ scenario complexity.
 
 | Runner | Cases | Corpus time | Case p50 | Case p95 | Result |
 |---|---:|---:|---:|---:|---|
-| No-window controller | 25 | 292 ms | 5.93 ms | 9.53 ms | PASS |
-| No-window controller | 100 | 623 ms | 5.17 ms | 5.87 ms | PASS |
-| No-window controller | 300 | 1,767 ms | 4.93 ms | 5.53 ms | PASS |
-| No-window controller, repeated 300-case runs | 300 | 1,647–2,160 ms | 4.63–5.19 ms | 5.12–8.53 ms | PASS |
-| Mounted Flutter surface on macOS | 25 | 1,189 ms | 41.69 ms | 44.56 ms | PASS |
-| Mounted Flutter surface on macOS | 100 | 4,312 ms | 41.65 ms | 42.32 ms | PASS |
-| Mounted Flutter surface on macOS | 300 | 12,556 ms | 41.65 ms | 42.11 ms | PASS |
+| No-window controller | 25 | 1,187 ms | 14.96 ms | 17.14 ms | PASS |
+| No-window controller | 100 | 1,499 ms | 13.68 ms | 16.59 ms | PASS |
+| No-window controller | 300 | 3,949 ms | 12.35 ms | 13.87 ms | PASS |
+| Mounted Flutter surface | 25 | 678 ms | 18.26 ms | 25.40 ms | PASS |
+| Mounted Flutter surface | 100 | 2,225 ms | 17.31 ms | 23.02 ms | PASS |
+| Mounted Flutter surface | 300 | 5,311 ms | 15.64 ms | 18.00 ms | PASS |
 
 The original deliberate-cadence regression still took about 0.5 seconds per
 case because it sleeps 35 ms between characters. Timing schedules therefore
 belong only on cases where cadence is the property under test.
 
-The experiment supports a larger universal semantic corpus: hundreds of named
-cases can run no-window in seconds and through a mounted host surface in tens
-of seconds when the process stays alive and documents reset in-process. It does
-not support launching a new application per case. The current CGEvent runner
-did that and took 6.69 seconds wall time for two schedules; its immediate case
-also observed a forbidden raw-marker controller snapshot. Because that observer
-is not render-bound, the latter remains a diagnostic follow-up rather than
-proved flicker.
+The first 25-case no-window group includes a 781 ms cold-start outlier; its
+100- and 300-case groups show steady-state throughput. The experiment supports
+a larger universal semantic corpus: hundreds of named cases run through both
+portable drivers in seconds when the process stays alive and documents reset
+in-process. It does not support launching a new application per case. Native
+event canaries therefore reuse one app process and remain a deliberately small
+adapter suite.
 
 Consequences:
 
@@ -330,38 +358,49 @@ breakage and a duplicate end-to-end matrix that is slow and hard to diagnose.
 
 ## Implementation sequence
 
-### H0 — Make the existing scenario trustworthy
+### H0P — Make the portable scenario trustworthy — complete
 
-1. Add the strict compiler/validator, canonical plan, hash, capability manifest,
-   deterministic ordering, and negative schema tests.
-2. Extract the shared executor and typed driver boundary. Convert the macOS
-   helper to primitive request/reply actuation; remove high-level JSON parsing
-   from Swift.
-3. Replace pixel activation with source-offset lookup supplied by the app.
-4. Define and prove identical `editSettled` and `paintSettled` behavior with a
+1. Add the strict compiler/validator, canonical plan, hash, deterministic
+   ordering, and negative schema tests.
+2. Extract the shared executor and typed driver boundary.
+3. Define and prove identical `editSettled` behavior with a
    small adapter-conformance suite.
-5. Bind paint observations to the render object's actual frame, revision, and
+4. Bind paint observations to the render object's actual frame, revision, and
    visible range; record bounded predicate summaries.
-6. Add normalized provenance receipts and reject or label stale artifacts.
-7. Migrate `paragraph-split-rapid-successor`; it must pass headless and macOS
-   without runner-specific assertion meanings.
+5. Migrate `paragraph-split-rapid-successor`; it must pass no-window and the
+   mounted Flutter surface without runner-specific assertion meanings.
 
-This is a go/no-go gate. No catalog expansion or new platform runner starts
-until it passes.
+The compiler, executor, barriers, render observer, and migrated scenario are
+complete. Capability/provenance fields remain intentionally absent rather than
+partially implemented; they land with the first native driver that needs them.
 
-### H1 — Establish the smoke set
+### H0N — Make native actuation trustworthy — next platform slice
+
+1. Convert the macOS helper to primitive request/reply actuation behind the
+   shared Dart executor; remove high-level product assertion logic from Swift.
+2. Replace pixel activation with source-offset lookup supplied by the app.
+3. Deliver a validated canonical plan bundle without relying on host filesystem
+   paths, so the same integration test can target macOS and later simulators or
+   devices.
+4. Add capability and normalized provenance receipts, rejecting or explicitly
+   labelling stale artifacts.
+5. Prove the small native keyboard/pointer/clipboard canary pack; do not replay
+   the full semantic matrix through raw platform events.
+
+### H1 — Establish the portable smoke set — complete
 
 Add scenarios 1–4, measure diagnostic value and runtime, then add 5–8. Add only
 the closed operations those scenarios require. Each scenario must first expose
 or protect a specific mechanism; a passing duplicate is not enough reason to
 keep it.
 
-### H2 — Establish the standard starter set
+### H2 — Establish standard depth — in progress
 
-Add scenarios 9–12, run the full headless set and macOS smoke before the next
-dogfood handoff, and review failures by owning layer. This is the first point at
-which the portable catalog is a meaningful product checkpoint rather than one
-regression reproducer.
+Add the remaining distinct standard mechanisms, run the full portable set and
+the H0N macOS canaries before the next broad dogfood handoff, and review failures
+by owning layer. `paragraph-list-boundary-newline` is already live. This is the
+first point at which portable depth plus real routing provides a meaningful
+product checkpoint rather than only semantic confidence.
 
 ### H3 — Grow from evidence
 
@@ -373,9 +412,9 @@ qualification when hardware is available. Do not build sharding, dashboards, a
 generic RPC service, or a broad expression DSL until measured suite cost or
 repeated authoring friction proves the need.
 
-## Go/no-go for implementation
+## Fixed boundaries
 
-The strategy is ready to build when we agree on these boundaries:
+The implementation continues under these boundaries:
 
 - portable JSON expresses user intent and outcome, never raw platform callback
   sequences;
@@ -383,7 +422,8 @@ The strategy is ready to build when we agree on these boundaries:
 - actual paint assertions cannot fall back to controller snapshots;
 - simulator and Mac evidence cannot substitute for physical-device proof;
 - performance has its own receipts;
-- the first build target is H0 plus one migrated scenario, not a large catalog.
+- native/device work extends the driver boundary rather than forking scenario
+  semantics or assertions.
 
 References: [RFC 028](../architecture/rfc/rfc_028_source_authoritative_edit_transactions.md),
 [v4 build plan](../architecture/v4/build_plan.md), and

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "paragraph-join-backspace-successor",
+  "description": "Backspace at the start of a paragraph joins the boundary and immediate successor input is not lost.",
+  "initialSource": "Alpha.\n\nBeta.\n",
+  "activation": {
+    "needle": "Beta.",
+    "occurrence": 0,
+    "utf16OffsetInNeedle": 0
+  },
+  "steps": [
+    {
+      "type": "pressBackspace"
+    },
+    {
+      "type": "typeText",
+      "text": "X",
+      "intervalMs": 0
+    },
+    {
+      "type": "waitForIdle"
+    }
+  ],
+  "schedules": [
+    {
+      "id": "immediate"
+    }
+  ],
+  "expect": {
+    "source": "Alpha.XBeta.\n",
+    "caretUtf16": 7,
+    "resyncCount": 0,
+    "faulted": false,
+    "forbiddenSurfaceSubstrings": ["<empty>"],
+    "paintedSurfaceNeverContains": ["<empty>"]
+  }
+}

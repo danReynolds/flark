@@ -19,6 +19,23 @@ const _fragmentUtf16Budget = 256;
 /// out; their height is estimated until scrolling materializes them.
 const _layoutOverscanPx = 400.0;
 
+/// A test-only observation emitted synchronously after the render object paints
+/// one visible frame. The text is the exact presentation plan visited by that
+/// paint, bounded to visible rows rather than the complete document.
+final class FlarkSurfacePaintObservation {
+  const FlarkSurfacePaintObservation({
+    required this.revision,
+    required this.viewportPageIndex,
+    required this.presentation,
+    required this.renderPlanHash,
+  });
+
+  final int revision;
+  final int viewportPageIndex;
+  final String presentation;
+  final int renderPlanHash;
+}
+
 final class FlarkSurfaceHit {
   const FlarkSurfaceHit({
     required this.globalUtf16Offset,
@@ -79,6 +96,7 @@ final class FlarkRenderSurfaceWidget extends LeafRenderObjectWidget {
     required this.caretColor,
     required this.selectionColor,
     this.includeEditingState = true,
+    this.debugPaintObserver,
     super.key,
   });
 
@@ -88,6 +106,7 @@ final class FlarkRenderSurfaceWidget extends LeafRenderObjectWidget {
   final Color caretColor;
   final Color selectionColor;
   final bool includeEditingState;
+  final ValueChanged<FlarkSurfacePaintObservation>? debugPaintObserver;
 
   @override
   RenderFlarkSurface createRenderObject(BuildContext context) =>
@@ -98,6 +117,7 @@ final class FlarkRenderSurfaceWidget extends LeafRenderObjectWidget {
         caretColor: caretColor,
         selectionColor: selectionColor,
         includeEditingState: includeEditingState,
+        debugPaintObserver: debugPaintObserver,
         textDirection: Directionality.of(context),
       );
 
@@ -113,6 +133,7 @@ final class FlarkRenderSurfaceWidget extends LeafRenderObjectWidget {
       ..caretColor = caretColor
       ..selectionColor = selectionColor
       ..includeEditingState = includeEditingState
+      ..debugPaintObserver = debugPaintObserver
       ..textDirection = Directionality.of(context);
   }
 }
@@ -125,6 +146,7 @@ final class RenderFlarkSurface extends RenderBox {
     required Color caretColor,
     required Color selectionColor,
     required bool includeEditingState,
+    this.debugPaintObserver,
     required TextDirection textDirection,
   }) : _controller = controller,
        _textStyle = textStyle,
@@ -140,6 +162,7 @@ final class RenderFlarkSurface extends RenderBox {
   Color _caretColor;
   Color _selectionColor;
   bool _includeEditingState;
+  ValueChanged<FlarkSurfacePaintObservation>? debugPaintObserver;
   TextDirection _textDirection;
   final List<_PaintedRow> _paintedRows = [];
   double _scrollOffset = 0;
@@ -734,11 +757,21 @@ final class RenderFlarkSurface extends RenderBox {
   @override
   void paint(PaintingContext context, Offset offset) {
     final canvas = context.canvas;
+    final observedRows = <String>[];
+    final observedKeys = <Object>{};
     canvas.save();
     canvas.clipRect(offset & size);
     for (final row in _paintedRows) {
       final paintedTop = row.top - _scrollOffset;
       if (paintedTop + row.height < 0 || paintedTop > size.height) continue;
+      final observationKey = row.row != null
+          ? ('row', row.row!.ordinal)
+          : ('neutral', row.ordinal, row.neutralUtf16Start, row.neutralText);
+      if (observedKeys.add(observationKey)) {
+        observedRows.add(
+          '${row.presentation.leadingText}${row.presentation.text}',
+        );
+      }
       final origin = offset + Offset(_padding.left, paintedTop);
       if (row.presentation.thematicBreak && !row.presentation.active) {
         final lineY = origin.dy + row.height / 2;
@@ -811,5 +844,15 @@ final class RenderFlarkSurface extends RenderBox {
       }
     }
     canvas.restore();
+    debugPaintObserver?.call(
+      FlarkSurfacePaintObservation(
+        revision: _controller.revision,
+        viewportPageIndex: _controller.viewportPageIndex,
+        presentation: observedRows.isEmpty
+            ? '<empty>'
+            : observedRows.join('\n'),
+        renderPlanHash: debugRenderPlanHash,
+      ),
+    );
   }
 }

@@ -3,8 +3,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'support/live_editor_scenario.dart';
+import 'support/live_editor_scenario_executor.dart';
 import 'support/live_editor_scenario_runner.dart';
+import 'support/live_editor_scenario_scaling_fixture.dart';
 
 void main() {
   final libraryPath = Platform.environment['FLARK_V4_LIBRARY_PATH'];
@@ -25,13 +26,11 @@ void main() {
       final corpusWatch = Stopwatch()..start();
       final caseMicros = <int>[];
       for (var index = 0; index < count; index += 1) {
-        final scenario = _scalingScenario(index);
+        final plan = scalingScenarioPlan(index);
         try {
-          final result = await runLiveEditorScenario(
-            scenario,
-            scenario.schedules.single,
-            libraryPath: libraryPath!,
-            emitResult: false,
+          final result = await executeLiveEditorScenario(
+            plan,
+            NoWindowLiveEditorScenarioDriver(libraryPath: libraryPath!),
           );
           caseMicros.add(result.elapsed.inMicroseconds);
         } catch (error, stackTrace) {
@@ -44,7 +43,7 @@ void main() {
       corpusWatch.stop();
       caseMicros.sort();
       final result = <String, Object?>{
-        'runner': 'headless',
+        'runner': 'no-window',
         'cases': count,
         'elapsedMs': corpusWatch.elapsedMilliseconds,
         'casesPerSecond':
@@ -59,38 +58,6 @@ void main() {
       print('FLARK_SCENARIO_SCALE_RESULT ${jsonEncode(result)}');
     }
   }, skip: skipReason);
-}
-
-LiveEditorScenario _scalingScenario(int index) {
-  final beforeCaret = '# Scale $index\n\nAlpha beta';
-  const afterCaret = ' gamma.\n';
-  final initialSource = '$beforeCaret$afterCaret';
-  final expectedSource = '${beforeCaret}X\n\nY$afterCaret';
-  return LiveEditorScenario(
-    id: 'scale-$index',
-    description: 'Synthetic portable transaction case for runner scaling.',
-    initialSource: initialSource,
-    activation: const ScenarioActivation(
-      needle: 'beta',
-      utf16OffsetInNeedle: 4,
-    ),
-    steps: const <ScenarioStep>[
-      ScenarioStep(type: 'typeText', text: 'X', intervalMs: 0),
-      ScenarioStep(type: 'pressReturn'),
-      ScenarioStep(type: 'typeText', text: 'Y', intervalMs: 0),
-      ScenarioStep(type: 'waitForIdle'),
-    ],
-    schedules: const <ScenarioSchedule>[
-      ScenarioSchedule(id: 'default', delaysMs: <String, int>{}),
-    ],
-    expectation: ScenarioExpectation(
-      source: expectedSource,
-      caretUtf16: beforeCaret.length + 4,
-      resyncCount: 0,
-      faulted: false,
-      forbiddenSurfaceSubstrings: const <String>['<empty>'],
-    ),
-  );
 }
 
 int _percentile(List<int> sortedValues, double percentile) {
