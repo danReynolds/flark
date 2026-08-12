@@ -16,6 +16,20 @@ pub enum DocumentEditIntentDispositionV1 {
     NeedsCurrentSemantics,
 }
 
+/// Parser-authoritative presentation effect of an applied E1 command.
+/// Hosts may use this to retain unaffected projected source while the result
+/// revision is being certified; they never infer Markdown structure from the
+/// committed replacement bytes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DocumentEditPresentationTransitionV1 {
+    None,
+    SplitParagraph,
+    ContinueList,
+    ExitList,
+    MergeParagraph,
+    LiftList,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DocumentCommittedSpliceV1 {
     pub base_byte_range: Range<usize>,
@@ -39,6 +53,7 @@ pub struct DocumentEditIntentReceiptV1 {
     pub result_source_byte_length: usize,
     pub result_source_utf16_length: usize,
     pub parser_pending: bool,
+    pub presentation_transition: DocumentEditPresentationTransitionV1,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -97,6 +112,7 @@ pub(crate) struct ResolvedDocumentEditIntentV1 {
     pub(crate) splice: Option<DocumentCommittedSpliceV1>,
     pub(crate) result_selection_utf16: usize,
     pub(crate) result_context: Option<DocumentSimpleEditContext>,
+    pub(crate) presentation_transition: DocumentEditPresentationTransitionV1,
 }
 
 pub(crate) fn resolve_document_edit_intent_v1(
@@ -141,7 +157,12 @@ pub(crate) fn resolve_document_edit_intent_v1(
                 row: DocumentSimpleEditRow::Plain,
                 paragraph_merge: None,
             };
-            applied(splice, result_selection_utf16, Some(result_context))
+            applied(
+                splice,
+                result_selection_utf16,
+                Some(result_context),
+                DocumentEditPresentationTransitionV1::SplitParagraph,
+            )
         }
         (
             DocumentEditIntentV1::InsertParagraphBreak,
@@ -193,7 +214,12 @@ pub(crate) fn resolve_document_edit_intent_v1(
                     row: DocumentSimpleEditRow::Plain,
                     paragraph_merge: None,
                 };
-                return applied(splice, result_selection_utf16, Some(result_context));
+                return applied(
+                    splice,
+                    result_selection_utf16,
+                    Some(result_context),
+                    DocumentEditPresentationTransitionV1::ExitList,
+                );
             }
 
             let marker_text = next_marker_text(*marker);
@@ -230,7 +256,12 @@ pub(crate) fn resolve_document_edit_intent_v1(
                 },
                 paragraph_merge: None,
             };
-            applied(splice, result_selection_utf16, Some(result_context))
+            applied(
+                splice,
+                result_selection_utf16,
+                Some(result_context),
+                DocumentEditPresentationTransitionV1::ContinueList,
+            )
         }
         (
             DocumentEditIntentV1::DeleteBackward,
@@ -274,7 +305,12 @@ pub(crate) fn resolve_document_edit_intent_v1(
                 row: DocumentSimpleEditRow::Plain,
                 paragraph_merge: None,
             };
-            applied(splice, result_selection_utf16, Some(result_context))
+            applied(
+                splice,
+                result_selection_utf16,
+                Some(result_context),
+                DocumentEditPresentationTransitionV1::LiftList,
+            )
         }
         (DocumentEditIntentV1::DeleteBackward, DocumentSimpleEditRow::Plain)
             if selection_byte == context.editable_bytes.start
@@ -312,7 +348,12 @@ pub(crate) fn resolve_document_edit_intent_v1(
                 row: DocumentSimpleEditRow::Plain,
                 paragraph_merge: None,
             };
-            applied(splice, result_selection_utf16, Some(result_context))
+            applied(
+                splice,
+                result_selection_utf16,
+                Some(result_context),
+                DocumentEditPresentationTransitionV1::MergeParagraph,
+            )
         }
         _ => disposition(
             DocumentEditIntentDispositionV1::NotApplicable,
@@ -341,12 +382,14 @@ fn applied(
     splice: DocumentCommittedSpliceV1,
     result_selection_utf16: usize,
     result_context: Option<DocumentSimpleEditContext>,
+    presentation_transition: DocumentEditPresentationTransitionV1,
 ) -> ResolvedDocumentEditIntentV1 {
     ResolvedDocumentEditIntentV1 {
         disposition: DocumentEditIntentDispositionV1::Applied,
         splice: Some(splice),
         result_selection_utf16,
         result_context,
+        presentation_transition,
     }
 }
 
@@ -359,6 +402,7 @@ fn disposition(
         splice: None,
         result_selection_utf16,
         result_context: None,
+        presentation_transition: DocumentEditPresentationTransitionV1::None,
     }
 }
 

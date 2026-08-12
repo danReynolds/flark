@@ -12,9 +12,10 @@ use flark_abi::{
     PumpRequest, QueryRequest, ResultPageHeader, SessionConfig, SessionInspection, SessionRef,
     SmallEditRequest, SourceRange, SourceReadRequest, TransactionRequest, WorkBudget,
     EDIT_INTENT_DISPOSITION_APPLIED, EDIT_INTENT_INSERT_PARAGRAPH_BREAK,
-    EDIT_INTENT_RECEIPT_HAS_COMMIT, EDIT_INTENT_RECEIPT_SEMANTIC_BYTES, EDIT_PROFILE_FLARK_V1,
+    EDIT_INTENT_RECEIPT_HAS_COMMIT, EDIT_INTENT_RECEIPT_SEMANTIC_BYTES,
+    EDIT_PRESENTATION_CONTINUE_LIST, EDIT_PRESENTATION_EXIT_LIST, EDIT_PROFILE_FLARK_V1,
 };
-use flark_runtime::{HistoryDisposition, SessionState, StatusCode};
+use flark_runtime::{HistoryDisposition, SessionState, StatusCode, MAX_LIVE_ANCHORS};
 
 fn budget(work: u64) -> WorkBudget {
     WorkBudget {
@@ -316,6 +317,10 @@ fn semantic_edit_is_one_commit_with_required_history_and_recoverable_terminal() 
     assert_eq!(outcome.detail_code, HistoryDisposition::Retained as u64);
     assert_eq!(first.replacement_bytes, 3);
     assert_eq!(
+        first.presentation_transition,
+        EDIT_PRESENTATION_CONTINUE_LIST
+    );
+    assert_eq!(
         &output[size_of::<EditIntentReceiptV1>()..size_of::<EditIntentReceiptV1>() + 3],
         b"\n- "
     );
@@ -377,6 +382,7 @@ fn semantic_edit_is_one_commit_with_required_history_and_recoverable_terminal() 
             .read_unaligned()
     };
     assert_eq!(second.result_revision, 3);
+    assert_eq!(second.presentation_transition, EDIT_PRESENTATION_EXIT_LIST);
     assert_ne!(second.history_token, first.history_token);
     let after_second = b"- one\n\n- two\n";
     assert_eq!(read_source(session, 3, after_second.len()), after_second);
@@ -403,6 +409,48 @@ fn semantic_edit_is_one_commit_with_required_history_and_recoverable_terminal() 
     assert_eq!(
         read_source(session, 4, after_second.len() + 1),
         b"- one\n\n- two\nx"
+    );
+    close_session(session);
+}
+
+#[test]
+fn semantic_edit_transforms_the_maximum_live_anchor_set() {
+    let session = open_session(b"- one\n", 452);
+    let selection = create_anchor(session, 1, SOURCE_BYTE, 5, DOWNSTREAM);
+    let mut anchors = Vec::with_capacity(MAX_LIVE_ANCHORS as usize);
+    anchors.push(selection);
+    for _ in 1..MAX_LIVE_ANCHORS {
+        anchors.push(create_anchor(session, 1, SOURCE_BYTE, 5, DOWNSTREAM));
+    }
+
+    let overflow = AnchorRequest {
+        coordinate_kind: SOURCE_BYTE,
+        revision: 1,
+        position: 5,
+        affinity: DOWNSTREAM,
+        ..anchor_request(session)
+    };
+    let mut outcome = Outcome::default();
+    assert_eq!(
+        flark_v4_anchor_create(&overflow, &mut outcome),
+        StatusCode::ResourceLimitExceeded as u32
+    );
+
+    let request = edit_intent_request(session, 1, selection, 1, 0xA11CF);
+    let mut output = vec![0_u8; size_of::<EditIntentReceiptV1>() + 4096];
+    assert_eq!(
+        flark_v4_edit_intent_v1(
+            &request,
+            output.as_mut_ptr(),
+            output.len() as u64,
+            &mut outcome,
+        ),
+        StatusCode::Ok as u32
+    );
+    assert_eq!(resolve_anchor(session, anchors[0], 2, SOURCE_BYTE), 8);
+    assert_eq!(
+        resolve_anchor(session, *anchors.last().unwrap(), 2, SOURCE_BYTE),
+        8
     );
     close_session(session);
 }

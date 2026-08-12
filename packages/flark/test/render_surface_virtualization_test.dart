@@ -43,10 +43,13 @@ void main() {
 
       // The active row is separately paint-capped by the controller; the
       // fragmentation property under test needs the giant row passive.
-      controller.activateRow(
-        controller.rows.last,
-        controller.rows.last.sourceUtf16.start,
-      );
+      await tester.runAsync(() async {
+        controller.activateRow(
+          controller.rows.last,
+          controller.rows.last.sourceUtf16.start,
+        );
+        await controller.resolveCanonicalSelection();
+      });
       await tester.pump();
 
       // Every painter stays inside the fragment budget, and the giant row is
@@ -89,7 +92,10 @@ void main() {
       expect(deep!.globalUtf16Offset, greaterThan(shallow!.globalUtf16Offset));
 
       // Activating deep inside the giant line places the caret without fault.
-      controller.activateRow(controller.rows.first, 5000);
+      await tester.runAsync(() async {
+        controller.activateRow(controller.rows.first, 5000);
+        await controller.resolveCanonicalSelection();
+      });
       await tester.pump();
       expect(controller.globalCaretOffset, 5000);
       expect(controller.lastError, isNull);

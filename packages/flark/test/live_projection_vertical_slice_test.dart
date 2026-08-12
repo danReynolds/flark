@@ -289,6 +289,92 @@ void main() {
   );
 
   test(
+    'paragraph merge never publishes empty rows or completed inline markers',
+    () async {
+      final controller = await FlarkEditorController.open(
+        'Before **bold**.\n\nAfter.\n',
+        libraryPath: libraryPath!,
+      );
+      await controller.continueParsing();
+      addTearDown(controller.close);
+
+      final frames = <String>[];
+      void captureFrame() {
+        frames.add(
+          controller.rows.isEmpty
+              ? '<empty>'
+              : controller.rows
+                    .map((row) {
+                      final surface = controller.surfaceRow(row);
+                      return '${surface.leadingText}${surface.text}';
+                    })
+                    .join('|'),
+        );
+      }
+
+      controller.addListener(captureFrame);
+      addTearDown(() => controller.removeListener(captureFrame));
+      final after = controller.rows.last;
+      controller.activateRow(after, after.editableUtf16!.start);
+      controller.deleteBackward();
+      await _settle(controller);
+
+      expect(controller.visibleSource, 'Before **bold**.After.\n');
+      expect(frames, isNot(contains('<empty>')));
+      expect(
+        frames.where((frame) => frame.contains('**')),
+        isEmpty,
+        reason: 'completed inline markers flashed in frames: $frames',
+      );
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'list lift keeps completed inline projection through pending frames',
+    () async {
+      final controller = await FlarkEditorController.open(
+        '- first\n- **bold**\n',
+        libraryPath: libraryPath!,
+      );
+      await controller.continueParsing();
+      addTearDown(controller.close);
+
+      final frames = <String>[];
+      void captureFrame() {
+        frames.add(
+          controller.rows
+              .map((row) {
+                final surface = controller.surfaceRow(row);
+                return '${surface.leadingText}${surface.text}';
+              })
+              .join('|'),
+        );
+      }
+
+      controller.addListener(captureFrame);
+      addTearDown(() => controller.removeListener(captureFrame));
+      final second = controller.rows.last;
+      controller.activateRow(second, second.editableUtf16!.start);
+      controller.deleteBackward();
+      await _settle(controller);
+
+      expect(controller.visibleSource, '- first\n\n**bold**\n');
+      expect(frames.where((frame) => frame.isEmpty), isEmpty);
+      expect(
+        frames.where((frame) => frame.contains('**')),
+        isEmpty,
+        reason: 'completed inline markers flashed in frames: $frames',
+      );
+      final lifted = controller.rows.last;
+      final presentation = controller.surfaceRow(lifted);
+      expect(presentation.leadingText, isEmpty);
+      expect(presentation.text, 'bold');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'block structures project and edit from parser-owned facts',
     () async {
       final quote = await FlarkEditorController.open(

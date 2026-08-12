@@ -24,7 +24,7 @@ pub use document::{
 };
 pub use edit_intent::{
     DocumentCommittedSpliceV1, DocumentEditIntentDispositionV1, DocumentEditIntentReceiptV1,
-    DocumentEditIntentV1,
+    DocumentEditIntentV1, DocumentEditPresentationTransitionV1,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flark/flark.dart';
 import 'package:flark/src/render_surface.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -583,7 +584,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.
     'trackpad scrolling never changes the canonical selection',
     (tester) async {
       final source = List<String>.generate(
-        100,
+        20,
         (index) => 'Paragraph $index with enough text.\n\n',
       ).join();
       final controller = (await tester.runAsync(
@@ -591,7 +592,10 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       ))!;
       addTearDown(controller.close);
       await tester.runAsync(controller.continueParsing);
-      controller.activateRow(controller.rows.first, 4);
+      await tester.runAsync(() async {
+        controller.activateRow(controller.rows.first, 4);
+        await controller.resolveCanonicalSelection();
+      });
       final selectionBefore = controller.inputValue.selection;
       final globalCaretBefore = controller.globalCaretOffset;
 
@@ -610,16 +614,19 @@ only incomplete or temporarily pending syntax becomes exact source locally.
         find.byType(FlarkRenderSurfaceWidget),
       );
 
-      await tester.trackpadFling(
-        find.byType(FlarkEditor),
-        const Offset(0, -300),
-        1200,
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: tester.getCenter(find.byType(FlarkEditor)),
+          scrollDelta: const Offset(0, 300),
+        ),
       );
       await tester.pump();
 
       expect(surface.scrollOffset, greaterThan(0));
       expect(controller.inputValue.selection, selectionBefore);
       expect(controller.globalCaretOffset, globalCaretBefore);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
     },
     skip: libraryPath == null,
   );

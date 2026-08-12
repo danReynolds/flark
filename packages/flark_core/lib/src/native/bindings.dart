@@ -363,7 +363,7 @@ final class FlarkV4EditIntentReceiptV1 extends Struct {
   external int replacementBytes;
 
   @Uint32()
-  external int reservedU32;
+  external int presentationTransition;
 
   @Array(2)
   external Array<Uint64> reserved;

@@ -245,13 +245,21 @@ final class FlarkCoreEditorSession {
   Future<FlarkCoreEditIntentReceiptV1> applyEditIntentV1(
     FlarkCoreEditIntentV1 intent, {
     required bool compositionActive,
-  }) => _serializeCommand(
-    () => _applyEditIntentV1(intent, compositionActive: compositionActive),
-  );
+  }) {
+    final queuedAt = _clockMicros();
+    return _serializeCommand(
+      () => _applyEditIntentV1(
+        intent,
+        compositionActive: compositionActive,
+        coreQueueMicros: _clockMicros() - queuedAt,
+      ),
+    );
+  }
 
   Future<FlarkCoreEditIntentReceiptV1> _applyEditIntentV1(
     FlarkCoreEditIntentV1 intent, {
     required bool compositionActive,
+    required int coreQueueMicros,
   }) async {
     _ensureAuthoritativeCommandsAvailable();
     final start = _selectionStart;
@@ -301,6 +309,7 @@ final class FlarkCoreEditorSession {
       _postCommitUnknown = true;
       rethrow;
     }
+    final adoptionWatch = Stopwatch()..start();
     if (receipt.logicalEditId != logicalEditId ||
         receipt.requestDigest != requestDigest ||
         receipt.baseRevision != baseRevision) {
@@ -308,7 +317,13 @@ final class FlarkCoreEditorSession {
       throw StateError('Flark semantic receipt correlation failed');
     }
     _pendingTerminalLogicalEditId = logicalEditId;
-    if (!receipt.hasCommit) return receipt;
+    if (!receipt.hasCommit) {
+      adoptionWatch.stop();
+      return receipt.withCoreTelemetry(
+        coreQueueMicros: coreQueueMicros,
+        coreAdoptionMicros: adoptionWatch.elapsedMicroseconds,
+      );
+    }
     final token = receipt.historyToken;
     if (token == null) {
       _postCommitUnknown = true;
@@ -344,7 +359,11 @@ final class FlarkCoreEditorSession {
       _postCommitUnknown = true;
       rethrow;
     }
-    return receipt;
+    adoptionWatch.stop();
+    return receipt.withCoreTelemetry(
+      coreQueueMicros: coreQueueMicros,
+      coreAdoptionMicros: adoptionWatch.elapsedMicroseconds,
+    );
   }
 
   /// Claims the history group for a mutation observed with the given

@@ -104,9 +104,17 @@ const _editIntentNeedsCurrentSemantics = 4;
 const _editIntentHasCommit = 1;
 const _editIntentParserPending = 2;
 const _editIntentSemanticBytes = 4;
+const _editPresentationNone = 0;
+const _editPresentationSplitParagraph = 1;
+const _editPresentationContinueList = 2;
+const _editPresentationExitList = 3;
+const _editPresentationMergeParagraph = 4;
+const _editPresentationLiftList = 5;
 const _bulkCommitWorkUnits = 1;
 const _resultPayloadBytes = 64 * 1024;
 const _defaultWorkUnits = 512;
+const _editIntentRetirementPumpUnits = 64;
+const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
 const _abiMinor = 10;
 // Every v4.7 capability is used by the safe core boundary, including
@@ -152,6 +160,15 @@ enum FlarkNativeEditIntentDispositionV1 {
   needsCurrentSemantics,
 }
 
+enum FlarkNativeEditPresentationTransitionV1 {
+  none,
+  splitParagraph,
+  continueList,
+  exitList,
+  mergeParagraph,
+  liftList,
+}
+
 final class FlarkNativeEditIntentReceiptV1 {
   const FlarkNativeEditIntentReceiptV1({
     required this.disposition,
@@ -173,6 +190,7 @@ final class FlarkNativeEditIntentReceiptV1 {
     required this.parserPending,
     required this.logicalEditId,
     required this.requestDigest,
+    required this.presentationTransition,
   });
 
   final FlarkNativeEditIntentDispositionV1 disposition;
@@ -194,6 +212,7 @@ final class FlarkNativeEditIntentReceiptV1 {
   final bool parserPending;
   final int logicalEditId;
   final int requestDigest;
+  final FlarkNativeEditPresentationTransitionV1 presentationTransition;
 
   bool get hasCommit =>
       disposition == FlarkNativeEditIntentDispositionV1.applied;
@@ -599,12 +618,20 @@ final class FlarkNativeDocument {
         ..compositionActive = compositionActive ? 1 : 0;
       _fillSession(request.ref.session);
       _fillBudget(request.ref.budget, workUnits: 1);
-      final status = _bindings.editIntentV1(
+      var status = _bindings.editIntentV1(
         request,
         output,
         outputLength,
         outcome,
       );
+      var retirementWorkUnits = 0;
+      while (status == _backpressure &&
+          retirementWorkUnits < _editIntentRetirementMaximumWorkUnits) {
+        _requireStatus('edit_intent_v1', status, outcome.ref, {_backpressure});
+        pump(workUnits: _editIntentRetirementPumpUnits);
+        retirementWorkUnits += _editIntentRetirementPumpUnits;
+        status = _bindings.editIntentV1(request, output, outputLength, outcome);
+      }
       _requireStatus('edit_intent_v1', status, outcome.ref, {_ok});
       final native = output.cast<FlarkV4EditIntentReceiptV1>().ref;
       if (native.structSize != sizeOf<FlarkV4EditIntentReceiptV1>() ||
@@ -630,6 +657,24 @@ final class FlarkNativeDocument {
         ),
       };
       final hasCommit = native.flags & _editIntentHasCommit != 0;
+      final presentationTransition = switch (native.presentationTransition) {
+        _editPresentationNone => FlarkNativeEditPresentationTransitionV1.none,
+        _editPresentationSplitParagraph =>
+          FlarkNativeEditPresentationTransitionV1.splitParagraph,
+        _editPresentationContinueList =>
+          FlarkNativeEditPresentationTransitionV1.continueList,
+        _editPresentationExitList =>
+          FlarkNativeEditPresentationTransitionV1.exitList,
+        _editPresentationMergeParagraph =>
+          FlarkNativeEditPresentationTransitionV1.mergeParagraph,
+        _editPresentationLiftList =>
+          FlarkNativeEditPresentationTransitionV1.liftList,
+        _ => throw FlarkNativeException(
+          'edit_intent_v1',
+          _internalFault,
+          native.presentationTransition,
+        ),
+      };
       final historyToken = native.historyToken == 0
           ? null
           : native.historyToken;
@@ -640,7 +685,13 @@ final class FlarkNativeDocument {
                   native.historyDisposition != _historyRetained ||
                   historyToken == null)) ||
           (!hasCommit &&
-              (native.replacementBytes != 0 || historyToken != null))) {
+              (native.replacementBytes != 0 ||
+                  historyToken != null ||
+                  presentationTransition !=
+                      FlarkNativeEditPresentationTransitionV1.none)) ||
+          (hasCommit &&
+              presentationTransition ==
+                  FlarkNativeEditPresentationTransitionV1.none)) {
         throw const FlarkNativeException('edit_intent_v1', _internalFault, 2);
       }
       final replacementBytes = (output + sizeOf<FlarkV4EditIntentReceiptV1>())
@@ -684,6 +735,7 @@ final class FlarkNativeDocument {
         parserPending: parserPending,
         logicalEditId: native.logicalEditId,
         requestDigest: native.requestDigest,
+        presentationTransition: presentationTransition,
       );
     } finally {
       calloc

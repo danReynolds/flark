@@ -240,6 +240,10 @@ void main() {
             compositionActive: false,
           );
           expect(receipt.disposition, FlarkCoreEditIntentDispositionV1.applied);
+          expect(
+            receipt.presentationTransition,
+            FlarkCoreEditPresentationTransitionV1.continueList,
+          );
           expect(receipt.replacement, '\n- ');
           expect(receipt.resultSelectionUtf16, 8);
           expect(await document.readSource(), '- one\n- \n- two\n');
@@ -249,6 +253,17 @@ void main() {
           expect(undone, isA<FlarkCoreHistoryReplayed>());
           expect(await document.readSource(), '- one\n- two\n');
           expect((await session.resolveSelection())!.extent, 5);
+
+          final next = await session.applyEditIntentV1(
+            FlarkCoreEditIntentV1.insertParagraphBreak,
+            compositionActive: false,
+          );
+          expect(next.disposition, FlarkCoreEditIntentDispositionV1.applied);
+          expect(await document.readSource(), '- one\n- \n- two\n');
+
+          final nextUndone = await session.undo();
+          expect(nextUndone, isA<FlarkCoreHistoryReplayed>());
+          expect(await document.readSource(), '- one\n- two\n');
 
           final redone = await session.redo();
           expect(redone, isA<FlarkCoreHistoryReplayed>());
@@ -282,6 +297,34 @@ void main() {
         expect(await document.readSource(), '- one\n- two\n');
         expect(session.canUndo, isFalse);
       });
+
+      test(
+        'a noncommitting semantic terminal is acknowledged in order',
+        () async {
+          await open('- one\n');
+          addTearDown(() async {
+            await session.dispose();
+            await document.dispose();
+          });
+          await session.setSelectionUtf16(5, 5);
+
+          final guarded = await session.applyEditIntentV1(
+            FlarkCoreEditIntentV1.insertParagraphBreak,
+            compositionActive: true,
+          );
+          expect(
+            guarded.disposition,
+            FlarkCoreEditIntentDispositionV1.notApplicable,
+          );
+
+          final applied = await session.applyEditIntentV1(
+            FlarkCoreEditIntentV1.insertParagraphBreak,
+            compositionActive: false,
+          );
+          expect(applied.disposition, FlarkCoreEditIntentDispositionV1.applied);
+          expect(await document.readSource(), '- one\n- \n');
+        },
+      );
 
       test('canonical selection anchors survive edits by affinity', () async {
         await open('Hello world!\n');
@@ -354,6 +397,72 @@ void main() {
         );
         expect(session.canUndo, isFalse);
         expect(await session.undo(), isNull);
+      });
+
+      test(
+        'independent editor sessions serialize without cross-talk',
+        () async {
+          final firstDocument = await FlarkCoreDocument.open(
+            '- one\n',
+            libraryPath: libraryPath!,
+          );
+          final secondDocument = await FlarkCoreDocument.open(
+            '9) nine\n',
+            libraryPath: libraryPath,
+          );
+          final firstSession = FlarkCoreEditorSession(firstDocument);
+          final secondSession = FlarkCoreEditorSession(secondDocument);
+          addTearDown(() async {
+            await firstSession.dispose();
+            await secondSession.dispose();
+            await firstDocument.dispose();
+            await secondDocument.dispose();
+          });
+
+          await Future.wait([
+            firstSession.setSelectionUtf16(5, 5),
+            secondSession.setSelectionUtf16(7, 7),
+          ]);
+          final receipts = await Future.wait([
+            firstSession.applyEditIntentV1(
+              FlarkCoreEditIntentV1.insertParagraphBreak,
+              compositionActive: false,
+            ),
+            secondSession.applyEditIntentV1(
+              FlarkCoreEditIntentV1.insertParagraphBreak,
+              compositionActive: false,
+            ),
+          ]);
+
+          expect(receipts.every((receipt) => receipt.hasCommit), isTrue);
+          expect(await firstDocument.readSource(), '- one\n- \n');
+          expect(await secondDocument.readSource(), '9) nine\n10) \n');
+          expect(firstDocument.revision, 2);
+          expect(secondDocument.revision, 2);
+        },
+      );
+
+      test('worker loss fail-stops the editor session', () async {
+        await open('- one\n');
+        addTearDown(() async {
+          await session.dispose();
+          await document.dispose();
+        });
+        await session.setSelectionUtf16(5, 5);
+
+        final crash = document.debugCrashWorkerForTesting();
+        final edit = session.applyEditIntentV1(
+          FlarkCoreEditIntentV1.insertParagraphBreak,
+          compositionActive: false,
+        );
+
+        await expectLater(crash, throwsA(isA<FlarkCoreWorkerException>()));
+        await expectLater(edit, throwsA(isA<FlarkCoreWorkerException>()));
+        expect(session.postCommitUnknown, isTrue);
+        await expectLater(
+          document.readSource(),
+          throwsA(isA<FlarkCoreWorkerException>()),
+        );
       });
     },
     skip: libraryPath == null ? 'Set FLARK_V4_LIBRARY_PATH.' : false,

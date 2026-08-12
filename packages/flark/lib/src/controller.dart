@@ -172,19 +172,6 @@ final class _ProjectionContinuitySurface {
   final FlarkSurfaceRow presentation;
 }
 
-/// Receipt-bound geometry for the neutral line introduced by a committed
-/// paragraph split. This never predicts source: it exists only after Rust has
-/// returned the exact committed splice.
-final class _CommittedParagraphSplit {
-  const _CommittedParagraphSplit({
-    required this.rowOrdinal,
-    required this.rowEndUtf16,
-  });
-
-  final int rowOrdinal;
-  final int rowEndUtf16;
-}
-
 final class _EditorSelectionSnapshot {
   const _EditorSelectionSnapshot(this.selection, this.activeOrdinal);
 
@@ -192,24 +179,71 @@ final class _EditorSelectionSnapshot {
   final int? activeOrdinal;
 }
 
-final class _ProvisionalInputBatch {
+sealed class _SemanticInputSuccessor {
+  const _SemanticInputSuccessor();
+}
+
+final class _ProvisionalInputBatch extends _SemanticInputSuccessor {
   const _ProvisionalInputBatch({
     required this.before,
     required this.after,
     required this.typingInput,
-  });
+  }) : super();
 
   final TextEditingValue before;
   final TextEditingValue after;
   final bool typingInput;
 }
 
-final class _PendingSemanticInput {
-  _PendingSemanticInput(TextEditingValue provisionalAfter)
-    : provisionalTail = provisionalAfter;
+enum _DeferredInputCommand { deleteBackward, deleteForward, insertNewline }
 
+final class _DeferredInputSuccessor extends _SemanticInputSuccessor {
+  const _DeferredInputSuccessor(this.command, {this.replacement}) : super();
+
+  final _DeferredInputCommand? command;
+  final String? replacement;
+}
+
+final class _PendingSemanticInput {
+  _PendingSemanticInput({
+    required this.base,
+    required this.inputGlobalUtf16Start,
+    required this.initialCallbackStartedEpochMicros,
+    this.provisionalMutation,
+    required TextEditingValue provisionalAfter,
+  }) : provisionalTail = provisionalAfter;
+
+  final TextEditingValue base;
+  final int inputGlobalUtf16Start;
+  final int initialCallbackStartedEpochMicros;
+  final _TextMutation? provisionalMutation;
+  int initialCallbackMicros = 0;
   TextEditingValue provisionalTail;
-  final List<_ProvisionalInputBatch> successors = [];
+  final List<_SemanticInputSuccessor> successors = [];
+}
+
+/// Layer attribution for the most recent platform-observed semantic edit.
+/// The profile harness joins this receipt to Flutter's proving frame.
+final class FlarkSemanticEditPerformance {
+  const FlarkSemanticEditPerformance({
+    required this.platformCallbackMicros,
+    required this.coreQueueMicros,
+    required this.workerRoundTripMicros,
+    required this.workerQueueMicros,
+    required this.nativeFfiMicros,
+    required this.coreAdoptionMicros,
+    required this.flutterReceiptAdoptionMicros,
+    required this.callbackToReceiptMicros,
+  });
+
+  final int platformCallbackMicros;
+  final int coreQueueMicros;
+  final int workerRoundTripMicros;
+  final int workerQueueMicros;
+  final int nativeFfiMicros;
+  final int coreAdoptionMicros;
+  final int flutterReceiptAdoptionMicros;
+  final int callbackToReceiptMicros;
 }
 
 /// One bounded monotone map between a platform-provisional input window and
@@ -228,26 +262,55 @@ final class _InputReconciliationMap {
   final int toStart;
   final int toEnd;
 
-  static _InputReconciliationMap between(String from, String to) {
-    var prefix = 0;
-    while (prefix < from.length &&
-        prefix < to.length &&
-        from.codeUnitAt(prefix) == to.codeUnitAt(prefix)) {
-      prefix += 1;
-    }
-    var fromSuffix = from.length;
-    var toSuffix = to.length;
-    while (fromSuffix > prefix &&
-        toSuffix > prefix &&
-        from.codeUnitAt(fromSuffix - 1) == to.codeUnitAt(toSuffix - 1)) {
-      fromSuffix -= 1;
-      toSuffix -= 1;
-    }
+  static _InputReconciliationMap? forCommittedSplice({
+    required _TextMutation provisionalMutation,
+    required int committedStart,
+    required int committedEnd,
+  }) {
+    if (provisionalMutation.start != committedStart) return null;
     return _InputReconciliationMap(
-      fromStart: prefix,
-      fromEnd: fromSuffix,
-      toStart: prefix,
-      toEnd: toSuffix,
+      fromStart: provisionalMutation.start,
+      fromEnd:
+          provisionalMutation.start + provisionalMutation.replacement.length,
+      toStart: committedStart,
+      toEnd: committedEnd,
+    );
+  }
+
+  static _InputReconciliationMap? forSemanticBarrier({
+    required _PendingSemanticInput pending,
+    required FlarkCoreEditIntentReceiptV1 receipt,
+  }) {
+    final provisional = pending.provisionalMutation;
+    if (provisional != null) {
+      return forCommittedSplice(
+        provisionalMutation: provisional,
+        committedStart: receipt.baseUtf16Start - pending.inputGlobalUtf16Start,
+        committedEnd: receipt.resultUtf16End - pending.inputGlobalUtf16Start,
+      );
+    }
+    final windowStart = pending.inputGlobalUtf16Start;
+    final windowEnd = windowStart + pending.base.text.length;
+    if (receipt.baseUtf16End <= windowStart ||
+        receipt.baseUtf16Start >= windowEnd) {
+      return const _InputReconciliationMap(
+        fromStart: 0,
+        fromEnd: 0,
+        toStart: 0,
+        toEnd: 0,
+      );
+    }
+    if (receipt.baseUtf16Start < windowStart ||
+        receipt.baseUtf16End > windowEnd) {
+      return null;
+    }
+    final localStart = receipt.baseUtf16Start - windowStart;
+    final localEnd = receipt.baseUtf16End - windowStart;
+    return _InputReconciliationMap(
+      fromStart: localStart,
+      fromEnd: localEnd,
+      toStart: localStart,
+      toEnd: localStart + receipt.replacement.length,
     );
   }
 
@@ -299,13 +362,15 @@ final class FlarkEditorController extends ChangeNotifier {
   final List<int> _pageStarts = [0];
   final List<_OptimisticViewportEdit> _optimisticViewportEdits = [];
   _ProjectionContinuitySurface? _projectionContinuity;
-  _CommittedParagraphSplit? _committedParagraphSplit;
+  FlarkCoreCommittedPresentationGapV1? _committedParagraphSplit;
+  FlarkCoreCommittedPresentationSurfaceV1? _committedStructuralSurface;
   int _pageIndex = 0;
   int _editGeneration = 0;
   int _pendingEdits = 0;
   Object? _lastError;
   bool _closed = false;
   bool _semanticViewportCurrent = false;
+  bool _semanticEditV1Active = false;
   bool _certificationRevisionCurrent = false;
   bool _crossRowSelection = false;
   bool _historyReplayPending = false;
@@ -323,6 +388,9 @@ final class FlarkEditorController extends ChangeNotifier {
   TextSelection? _shadowSelection;
   bool _platformMutation = false;
   _PendingSemanticInput? _pendingSemanticInput;
+  int? _activePlatformCallbackStartedEpochMicros;
+  FlarkSemanticEditPerformance? _lastSemanticEditPerformance;
+  bool _platformNewlineMutationAwaitingAction = false;
   int _semanticSuccessorHighWatermark = 0;
   int _lastSemanticReconciliationMicros = 0;
 
@@ -364,6 +432,8 @@ final class FlarkEditorController extends ChangeNotifier {
   int get canonicalSelectionGeneration => _session.selectionGeneration;
   int get semanticSuccessorHighWatermark => _semanticSuccessorHighWatermark;
   int get lastSemanticReconciliationMicros => _lastSemanticReconciliationMicros;
+  FlarkSemanticEditPerformance? get lastSemanticEditPerformance =>
+      _lastSemanticEditPerformance;
 
   FlarkInputWindowShadow get inputWindowShadow => FlarkInputWindowShadow(
     connectionEpoch: _connectionEpoch,
@@ -558,6 +628,13 @@ final class FlarkEditorController extends ChangeNotifier {
     FlarkViewportRow row, {
     bool includeEditingState = true,
   }) {
+    final structural = _committedStructuralSurface;
+    if (structural != null && structural.rowOrdinal == row.ordinal) {
+      return _committedStructuralSurfaceRow(
+        structural,
+        includeEditingState: includeEditingState,
+      );
+    }
     final mappedSource = surfaceSourceRange(row);
     final listItem = row.listItem;
     final blockQuote = row.blockQuote;
@@ -661,6 +738,10 @@ final class FlarkEditorController extends ChangeNotifier {
 
   /// Exact source extent currently owned by one rendered row.
   FlarkSourceRange surfaceSourceRange(FlarkViewportRow row) {
+    final structural = _committedStructuralSurface;
+    if (structural != null && structural.rowOrdinal == row.ordinal) {
+      return structural.sourceUtf16;
+    }
     final mapped = _mappedExactRowRange(row);
     final split = _committedParagraphSplit;
     if (split == null ||
@@ -800,6 +881,40 @@ final class FlarkEditorController extends ChangeNotifier {
       extentOffset: project(_globalSelectionExtent, affinity),
       affinity: affinity,
       isDirectional: _inputValue.selection.isDirectional,
+    );
+  }
+
+  FlarkSurfaceRow _committedStructuralSurfaceRow(
+    FlarkCoreCommittedPresentationSurfaceV1 structural, {
+    required bool includeEditingState,
+  }) {
+    final presentation = structural.presentation;
+    final runs = presentation.runs
+        .map(_surfaceRunFromCore)
+        .toList(growable: false);
+    final active =
+        includeEditingState &&
+        structural.sourceUtf16.start <= _globalSelectionExtent &&
+        _globalSelectionExtent <= structural.sourceUtf16.end;
+    final selected =
+        includeEditingState &&
+        _crossRowSelection &&
+        _selectionIntersects(structural.sourceUtf16);
+    return FlarkSurfaceRow(
+      leadingText: presentation.leadingText,
+      text: presentation.text,
+      globalUtf16Start: presentation.globalUtf16Start,
+      kind: presentation.kind,
+      headingLevel: presentation.headingLevel,
+      blockQuoteDepth: presentation.blockQuoteDepth,
+      codeBlock: presentation.codeBlock,
+      thematicBreak: presentation.thematicBreak,
+      ordinal: structural.rowOrdinal,
+      active: active,
+      selection: active || selected
+          ? _projectedSelection(runs, presentation.text.length)
+          : null,
+      runs: runs,
     );
   }
 
@@ -999,7 +1114,9 @@ final class FlarkEditorController extends ChangeNotifier {
     int globalUtf16Offset, {
     TextAffinity affinity = TextAffinity.downstream,
   }) {
+    _semanticEditV1Active = _supportsSemanticEditV1(row);
     _committedParagraphSplit = null;
+    _committedStructuralSurface = null;
     _projectionContinuity = null;
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
@@ -1023,6 +1140,8 @@ final class FlarkEditorController extends ChangeNotifier {
     required int ordinal,
     TextAffinity affinity = TextAffinity.downstream,
   }) {
+    _semanticEditV1Active = false;
+    _committedStructuralSurface = null;
     _projectionContinuity = null;
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
@@ -1104,6 +1223,21 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   void applyDeltas(List<TextEditingDelta> deltas) {
+    final started = DateTime.now().microsecondsSinceEpoch;
+    _activePlatformCallbackStartedEpochMicros = started;
+    try {
+      _applyDeltas(deltas);
+    } finally {
+      final elapsed = DateTime.now().microsecondsSinceEpoch - started;
+      final pending = _pendingSemanticInput;
+      if (pending?.initialCallbackStartedEpochMicros == started) {
+        pending!.initialCallbackMicros = math.max(0, elapsed);
+      }
+      _activePlatformCallbackStartedEpochMicros = null;
+    }
+  }
+
+  void _applyDeltas(List<TextEditingDelta> deltas) {
     if (_historyReplayPending) {
       notifyListeners();
       return;
@@ -1175,13 +1309,32 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   void updateEditingValue(TextEditingValue value) {
+    final started = DateTime.now().microsecondsSinceEpoch;
+    _activePlatformCallbackStartedEpochMicros = started;
+    try {
+      _updateEditingValue(value);
+    } finally {
+      final elapsed = DateTime.now().microsecondsSinceEpoch - started;
+      final pending = _pendingSemanticInput;
+      if (pending?.initialCallbackStartedEpochMicros == started) {
+        pending!.initialCallbackMicros = math.max(0, elapsed);
+      }
+      _activePlatformCallbackStartedEpochMicros = null;
+    }
+  }
+
+  void _updateEditingValue(TextEditingValue value) {
     if (_historyReplayPending) {
       notifyListeners();
       return;
     }
-    if (_rejectUnsupportedSemanticSuccessor()) return;
+    if (_captureSemanticSuccessorValue(value)) return;
     _platformMutation = true;
     try {
+      if (_isPlatformNewlineValue(value) &&
+          _queuePlatformSemanticNewlineValue(value)) {
+        return;
+      }
       _updateEditingValueFromPlatform(value);
     } finally {
       _platformMutation = false;
@@ -1226,7 +1379,7 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   void replaceSelection(String replacement) {
-    if (_rejectUnsupportedSemanticSuccessor()) return;
+    if (_deferSemanticSuccessor(replacement: replacement)) return;
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
     if (_oversizedSelection) {
@@ -1351,7 +1504,11 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   void deleteBackward() {
-    if (_rejectUnsupportedSemanticSuccessor()) return;
+    if (_deferSemanticSuccessor(
+      command: _DeferredInputCommand.deleteBackward,
+    )) {
+      return;
+    }
     if (_oversizedSelection) {
       replaceSelection('');
       return;
@@ -1382,7 +1539,9 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   void deleteForward() {
-    if (_rejectUnsupportedSemanticSuccessor()) return;
+    if (_deferSemanticSuccessor(command: _DeferredInputCommand.deleteForward)) {
+      return;
+    }
     if (_oversizedSelection) {
       replaceSelection('');
       return;
@@ -1407,7 +1566,9 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   void insertNewline() {
-    if (_rejectUnsupportedSemanticSuccessor()) return;
+    if (_deferSemanticSuccessor(command: _DeferredInputCommand.insertNewline)) {
+      return;
+    }
     final selection = _inputValue.selection;
     if (selection.isCollapsed &&
         (_queueSemanticParagraphBreak(selection.extentOffset) ||
@@ -1435,21 +1596,85 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   bool _queuePlatformSemanticNewline(List<TextEditingDelta> deltas) {
+    final provisionalMutation = _mutationFor(deltas.single)!;
     final provisionalAfter = deltas.single.apply(_inputValue);
-    _pendingSemanticInput = _PendingSemanticInput(provisionalAfter);
+    _pendingSemanticInput = _PendingSemanticInput(
+      base: _inputValue,
+      inputGlobalUtf16Start: _inputGlobalUtf16Start,
+      initialCallbackStartedEpochMicros:
+          _activePlatformCallbackStartedEpochMicros ??
+          DateTime.now().microsecondsSinceEpoch,
+      provisionalMutation: provisionalMutation,
+      provisionalAfter: provisionalAfter,
+    );
+    _platformNewlineMutationAwaitingAction = true;
     final queued = _queueSemanticParagraphBreak(
       _inputValue.selection.extentOffset,
     );
-    if (!queued) _pendingSemanticInput = null;
+    if (!queued) {
+      _pendingSemanticInput = null;
+      _platformNewlineMutationAwaitingAction = false;
+    }
     return queued;
+  }
+
+  bool _isPlatformNewlineValue(TextEditingValue value) {
+    if (_inputValue.composing != TextRange.empty ||
+        value.composing != TextRange.empty) {
+      return false;
+    }
+    final selection = _inputValue.selection;
+    if (!selection.isValid) return false;
+    final start = math.min(selection.baseOffset, selection.extentOffset);
+    final end = math.max(selection.baseOffset, selection.extentOffset);
+    return _inputValue.text.replaceRange(start, end, '\n') == value.text;
+  }
+
+  bool _queuePlatformSemanticNewlineValue(TextEditingValue value) {
+    final selection = _inputValue.selection;
+    final provisionalMutation = _TextMutation(
+      math.min(selection.baseOffset, selection.extentOffset),
+      math.max(selection.baseOffset, selection.extentOffset),
+      '\n',
+    );
+    _pendingSemanticInput = _PendingSemanticInput(
+      base: _inputValue,
+      inputGlobalUtf16Start: _inputGlobalUtf16Start,
+      initialCallbackStartedEpochMicros:
+          _activePlatformCallbackStartedEpochMicros ??
+          DateTime.now().microsecondsSinceEpoch,
+      provisionalMutation: provisionalMutation,
+      provisionalAfter: value,
+    );
+    _platformNewlineMutationAwaitingAction = true;
+    final queued = _queueSemanticParagraphBreak(
+      _inputValue.selection.extentOffset,
+    );
+    if (!queued) {
+      _pendingSemanticInput = null;
+      _platformNewlineMutationAwaitingAction = false;
+    }
+    return queued;
+  }
+
+  /// Adopts a platform action only when no preceding text observation already
+  /// carried the newline. macOS deliberately emits both for one Return.
+  void observePlatformNewlineAction() {
+    if (_platformNewlineMutationAwaitingAction) {
+      _platformNewlineMutationAwaitingAction = false;
+      return;
+    }
+    insertNewline();
   }
 
   bool _captureSemanticSuccessors(List<TextEditingDelta> deltas) {
     final pending = _pendingSemanticInput;
     if (pending == null) return false;
-    if (pending.successors.length >= _maximumSemanticSuccessors) {
+    if (!_reserveSemanticSuccessor(pending)) return true;
+    if (pending.successors.isNotEmpty &&
+        pending.successors.last is _DeferredInputSuccessor) {
       _pendingSemanticInput = null;
-      _resynchronize(FlarkInputResyncReason.successorQueueOverflow);
+      _resynchronize(FlarkInputResyncReason.unsupportedSuccessorObservation);
       return true;
     }
     final before = pending.provisionalTail;
@@ -1479,18 +1704,84 @@ final class FlarkEditorController extends ChangeNotifier {
       ),
     );
     pending.provisionalTail = after;
+    _recordSemanticSuccessorHighWatermark(pending);
+    return true;
+  }
+
+  bool _captureSemanticSuccessorValue(TextEditingValue value) {
+    final pending = _pendingSemanticInput;
+    if (pending == null) return false;
+    if (!_reserveSemanticSuccessor(pending)) return true;
+    if (!_validObservedValue(value) ||
+        (pending.successors.isNotEmpty &&
+            pending.successors.last is _DeferredInputSuccessor)) {
+      _pendingSemanticInput = null;
+      _resynchronize(FlarkInputResyncReason.unsupportedSuccessorObservation);
+      return true;
+    }
+    final before = pending.provisionalTail;
+    final mutation = _differenceMutation(before.text, value.text);
+    pending.successors.add(
+      _ProvisionalInputBatch(
+        before: before,
+        after: value,
+        typingInput:
+            mutation != null &&
+            mutation.start == mutation.end &&
+            mutation.replacement.isNotEmpty,
+      ),
+    );
+    pending.provisionalTail = value;
+    _recordSemanticSuccessorHighWatermark(pending);
+    return true;
+  }
+
+  bool _deferSemanticSuccessor({
+    _DeferredInputCommand? command,
+    String? replacement,
+  }) {
+    final pending = _pendingSemanticInput;
+    if (pending == null) return false;
+    if (!_reserveSemanticSuccessor(pending)) return true;
+    if (pending.successors.isNotEmpty &&
+        pending.successors.last is _DeferredInputSuccessor) {
+      _pendingSemanticInput = null;
+      _resynchronize(FlarkInputResyncReason.unsupportedSuccessorObservation);
+      return true;
+    }
+    pending.successors.add(
+      _DeferredInputSuccessor(command, replacement: replacement),
+    );
+    _recordSemanticSuccessorHighWatermark(pending);
+    return true;
+  }
+
+  bool _reserveSemanticSuccessor(_PendingSemanticInput pending) {
+    if (pending.successors.length < _maximumSemanticSuccessors) return true;
+    _pendingSemanticInput = null;
+    _resynchronize(FlarkInputResyncReason.successorQueueOverflow);
+    return false;
+  }
+
+  void _recordSemanticSuccessorHighWatermark(_PendingSemanticInput pending) {
     _semanticSuccessorHighWatermark = math.max(
       _semanticSuccessorHighWatermark,
       pending.successors.length,
     );
-    return true;
   }
 
-  bool _rejectUnsupportedSemanticSuccessor() {
-    if (_pendingSemanticInput == null) return false;
-    _pendingSemanticInput = null;
-    _resynchronize(FlarkInputResyncReason.unsupportedSuccessorObservation);
-    return true;
+  bool _validObservedValue(TextEditingValue value) {
+    if (value.text.length > _maximumInputCodeUnits ||
+        !value.selection.isValid ||
+        value.selection.start < 0 ||
+        value.selection.end > value.text.length) {
+      return false;
+    }
+    final composing = value.composing;
+    return composing == TextRange.empty ||
+        (composing.isValid &&
+            composing.start >= 0 &&
+            composing.end <= value.text.length);
   }
 
   TextEditingValue _normalizeProjectedSelection(TextEditingValue value) {
@@ -2154,7 +2445,16 @@ final class FlarkEditorController extends ChangeNotifier {
         (start < split.rowEndUtf16 || end > _committedGapEnd(split))) {
       _committedParagraphSplit = null;
     }
+    final structural = _committedStructuralSurface;
     _prepareProjectionContinuity(start, end, replacement);
+    if (structural != null) {
+      final touchesStructural = start == end
+          ? structural.sourceUtf16.start <= start &&
+                start <= structural.sourceUtf16.end
+          : start < structural.sourceUtf16.end &&
+                structural.sourceUtf16.start < end;
+      if (touchesStructural) _committedStructuralSurface = null;
+    }
     _applyOptimisticViewportEdit(start, end, replacement);
     if (recenterAfterOptimisticEdit) {
       _restoreSelectionSnapshot(afterSelection);
@@ -2182,25 +2482,19 @@ final class FlarkEditorController extends ChangeNotifier {
   bool _queueSemanticParagraphBreak(int localCaret) {
     final row = _activeCachedRow();
     final editableRange = row?.editableUtf16;
-    if (row == null || editableRange == null) return false;
-    final listItem = row.listItem;
-    final simpleList =
-        listItem != null &&
-        listItem.simpleContinuation &&
-        listItem.taskChecked == null;
-    final plainParagraph =
-        row.kind == 5 &&
-        listItem == null &&
-        row.blockQuote == null &&
-        row.headingLevel == null &&
-        row.codeBlock == null &&
-        !row.thematicBreak &&
-        row.table == null;
-    if (!plainParagraph && !simpleList) return false;
-    final editable = _mapViewportRange(editableRange);
-    final globalCaret = _inputGlobalUtf16Start + localCaret;
-    if (globalCaret < editable.start || globalCaret > editable.end) {
-      return false;
+    final rowEligible = row != null && _supportsSemanticEditV1(row);
+    if (!rowEligible && !_semanticEditV1Active) return false;
+    if (rowEligible) {
+      _semanticEditV1Active = true;
+      final editable = _mapViewportRange(editableRange!);
+      final globalCaret = _inputGlobalUtf16Start + localCaret;
+      if (globalCaret < editable.start || globalCaret > editable.end) {
+        // A retained certified row can border the exact neutral island
+        // created by the last semantic receipt. While recertification is
+        // pending, the lane remains authoritative and Rust reclassifies the
+        // current source at the anchor; the stale row range is not a gate.
+        if (_semanticViewportCurrent) return false;
+      }
     }
     _queueSemanticEdit(FlarkCoreEditIntentV1.insertParagraphBreak);
     return true;
@@ -2209,7 +2503,25 @@ final class FlarkEditorController extends ChangeNotifier {
   bool _queueSemanticDeleteBackward(int localCaret) {
     final row = _activeCachedRow();
     final editableRange = row?.editableUtf16;
-    if (row == null || editableRange == null) return false;
+    final rowEligible = row != null && _supportsSemanticEditV1(row);
+    if (!rowEligible && (!_semanticEditV1Active || localCaret != 0)) {
+      return false;
+    }
+    if (rowEligible) {
+      _semanticEditV1Active = true;
+      final editable = _mapViewportRange(editableRange!);
+      final globalCaret = _inputGlobalUtf16Start + localCaret;
+      if (globalCaret != editable.start &&
+          (_semanticViewportCurrent || localCaret != 0)) {
+        return false;
+      }
+    }
+    _queueSemanticEdit(FlarkCoreEditIntentV1.deleteBackward);
+    return true;
+  }
+
+  bool _supportsSemanticEditV1(FlarkViewportRow row) {
+    if (row.editableUtf16 == null) return false;
     final listItem = row.listItem;
     final simpleList =
         listItem != null &&
@@ -2223,17 +2535,12 @@ final class FlarkEditorController extends ChangeNotifier {
         row.codeBlock == null &&
         !row.thematicBreak &&
         row.table == null;
-    if (!plainParagraph && !simpleList) return false;
-    final editable = _mapViewportRange(editableRange);
-    final globalCaret = _inputGlobalUtf16Start + localCaret;
-    if (globalCaret != editable.start) return false;
-    _queueSemanticEdit(FlarkCoreEditIntentV1.deleteBackward);
-    return true;
+    return plainParagraph || simpleList;
   }
 
   void _queueSemanticEdit(FlarkCoreEditIntentV1 intent) {
+    _ensureSemanticInputBarrier();
     _projectionContinuity = null;
-    _committedParagraphSplit = null;
     _breakTypingHistoryGroup();
     _parseTimer?.cancel();
     _parseTimer = null;
@@ -2252,18 +2559,56 @@ final class FlarkEditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _ensureSemanticInputBarrier() {
+    if (_pendingSemanticInput != null) return;
+    _pendingSemanticInput = _PendingSemanticInput(
+      base: _inputValue,
+      inputGlobalUtf16Start: _inputGlobalUtf16Start,
+      initialCallbackStartedEpochMicros:
+          _activePlatformCallbackStartedEpochMicros ??
+          DateTime.now().microsecondsSinceEpoch,
+      provisionalAfter: _inputValue,
+    );
+  }
+
   Future<void> _completeSemanticEdit(
     Future<FlarkCoreEditIntentReceiptV1> operation,
     int generation,
   ) async {
     try {
       final receipt = await operation;
+      final observedInput = _pendingSemanticInput;
+      final adoptionWatch = Stopwatch()..start();
       if (receipt.hasCommit) {
         _adoptSemanticReceipt(receipt);
-        _promoteSemanticSuccessors();
-      } else if (_pendingSemanticInput != null) {
-        _pendingSemanticInput = null;
-        _resynchronize(FlarkInputResyncReason.successorReconciliationFailed);
+        _promoteSemanticSuccessors(receipt);
+      } else {
+        _semanticEditV1Active = false;
+        final pending = _pendingSemanticInput;
+        if (pending?.provisionalMutation != null) {
+          _pendingSemanticInput = null;
+          _resynchronize(FlarkInputResyncReason.successorReconciliationFailed);
+        } else if (pending != null) {
+          _promoteUncommittedSemanticSuccessors();
+        }
+      }
+      adoptionWatch.stop();
+      if (observedInput != null && observedInput.provisionalMutation != null) {
+        final telemetry = receipt.telemetry;
+        _lastSemanticEditPerformance = FlarkSemanticEditPerformance(
+          platformCallbackMicros: observedInput.initialCallbackMicros,
+          coreQueueMicros: telemetry.coreQueueMicros,
+          workerRoundTripMicros: telemetry.workerRoundTripMicros,
+          workerQueueMicros: telemetry.workerQueueMicros,
+          nativeFfiMicros: telemetry.nativeFfiMicros,
+          coreAdoptionMicros: telemetry.coreAdoptionMicros,
+          flutterReceiptAdoptionMicros: adoptionWatch.elapsedMicroseconds,
+          callbackToReceiptMicros: math.max(
+            0,
+            DateTime.now().microsecondsSinceEpoch -
+                observedInput.initialCallbackStartedEpochMicros,
+          ),
+        );
       }
       _pendingEdits = math.max(0, _pendingEdits - 1);
       notifyListeners();
@@ -2290,80 +2635,270 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   void _adoptSemanticReceipt(FlarkCoreEditIntentReceiptV1 receipt) {
-    final priorActiveOrdinal = _activeOrdinal;
+    final transition = _prepareCommittedPresentationTransition(receipt);
+    if (transition?.clearPriorGap ?? false) {
+      _committedParagraphSplit = null;
+    }
     _applyOptimisticViewportEdit(
       receipt.baseUtf16Start,
       receipt.baseUtf16End,
       receipt.replacement,
     );
-    final firstEndingLength = _doubledLineEndingLength(receipt.replacement);
-    if (priorActiveOrdinal != null &&
-        priorActiveOrdinal >= 0 &&
-        receipt.baseUtf16Start == receipt.baseUtf16End &&
-        firstEndingLength != null) {
-      _committedParagraphSplit = _CommittedParagraphSplit(
-        rowOrdinal: priorActiveOrdinal,
-        rowEndUtf16: receipt.baseUtf16Start + firstEndingLength,
+    _committedStructuralSurface = transition?.surface;
+    final removedRowOrdinal = transition?.surface?.removedRowOrdinal;
+    if (removedRowOrdinal != null) {
+      _cachedRows = List.unmodifiable(
+        _cachedRows.where((row) => row.ordinal != removedRowOrdinal),
       );
     }
+    _committedParagraphSplit = transition?.gap ?? _committedParagraphSplit;
     final caret = receipt.resultSelectionUtf16;
     _globalSelectionBase = caret;
     _globalSelectionExtent = caret;
     _crossRowSelection = false;
     _oversizedSelection = false;
     _activeOrdinal = _surfaceOrdinalAt(caret);
-    _restoreCollapsedInputWindow(caret, preferredOrdinal: _activeOrdinal);
+    if (!_installCommittedSemanticInputWindow(receipt, caret)) {
+      _restoreCollapsedInputWindow(caret, preferredOrdinal: _activeOrdinal);
+    }
   }
 
-  void _promoteSemanticSuccessors() {
+  FlarkCoreCommittedPresentationTransitionV1?
+  _prepareCommittedPresentationTransition(
+    FlarkCoreEditIntentReceiptV1 receipt,
+  ) {
+    final activeOrdinal = _activeOrdinal;
+    final activeIndex = activeOrdinal == null
+        ? -1
+        : _cachedRows.indexWhere((row) => row.ordinal == activeOrdinal);
+
+    FlarkCorePresentationRow? coreRowAt(int index) {
+      if (index < 0 || index >= _cachedRows.length) return null;
+      final row = _cachedRows[index];
+      return _corePresentationRow(
+        surfaceRow(row, includeEditingState: false),
+        surfaceSourceRange(row),
+      );
+    }
+
+    return resolveCommittedPresentationTransitionV1(
+      receipt: receipt,
+      priorActiveOrdinal: activeOrdinal,
+      activeRow: coreRowAt(activeIndex),
+      precedingRow: coreRowAt(activeIndex - 1),
+      priorGapPending: _committedParagraphSplit != null,
+    );
+  }
+
+  FlarkCorePresentationRow _corePresentationRow(
+    FlarkSurfaceRow row,
+    FlarkSourceRange sourceUtf16,
+  ) => FlarkCorePresentationRow(
+    sourceUtf16: sourceUtf16,
+    leadingText: row.leadingText,
+    text: row.text,
+    globalUtf16Start: row.globalUtf16Start,
+    kind: row.kind,
+    headingLevel: row.headingLevel,
+    blockQuoteDepth: row.blockQuoteDepth,
+    codeBlock: row.codeBlock,
+    thematicBreak: row.thematicBreak,
+    ordinal: row.ordinal,
+    runs: List.unmodifiable(
+      row.runs.map(
+        (run) => FlarkCorePresentationRun(
+          text: run.text,
+          sourceUtf16Start: run.sourceUtf16Start,
+          sourceUtf16End: run.sourceUtf16End,
+          sourceExact: run.sourceExact,
+          styles: Set.unmodifiable(run.styles.map(_coreStyleFromSurface)),
+        ),
+      ),
+    ),
+  );
+
+  FlarkSurfaceTextRun _surfaceRunFromCore(FlarkCorePresentationRun run) =>
+      FlarkSurfaceTextRun(
+        text: run.text,
+        sourceUtf16Start: run.sourceUtf16Start,
+        sourceUtf16End: run.sourceUtf16End,
+        sourceExact: run.sourceExact,
+        styles: Set.unmodifiable(run.styles.map(_surfaceStyleFromCore)),
+      );
+
+  static FlarkCorePresentationInlineStyle _coreStyleFromSurface(
+    FlarkSurfaceInlineStyle style,
+  ) => FlarkCorePresentationInlineStyle.values[style.index];
+
+  static FlarkSurfaceInlineStyle _surfaceStyleFromCore(
+    FlarkCorePresentationInlineStyle style,
+  ) => FlarkSurfaceInlineStyle.values[style.index];
+
+  bool _installCommittedSemanticInputWindow(
+    FlarkCoreEditIntentReceiptV1 receipt,
+    int caret,
+  ) {
+    final pending = _pendingSemanticInput;
+    if (pending == null) return false;
+    final windowStart = pending.inputGlobalUtf16Start;
+    final windowEnd = windowStart + pending.base.text.length;
+    final delta =
+        receipt.replacement.length -
+        (receipt.baseUtf16End - receipt.baseUtf16Start);
+    if (receipt.baseUtf16End <= windowStart ||
+        receipt.baseUtf16Start >= windowEnd) {
+      final resultWindowStart = receipt.baseUtf16End <= windowStart
+          ? windowStart + delta
+          : windowStart;
+      final localCaret = caret - resultWindowStart;
+      if (localCaret < 0 || localCaret > pending.base.text.length) {
+        return false;
+      }
+      _inputGlobalUtf16Start = resultWindowStart;
+      _inputValue = pending.base.copyWith(
+        selection: TextSelection.collapsed(offset: localCaret),
+        composing: TextRange.empty,
+      );
+      return true;
+    }
+    final localStart = receipt.baseUtf16Start - pending.inputGlobalUtf16Start;
+    final localEnd = receipt.baseUtf16End - pending.inputGlobalUtf16Start;
+    if (localStart < 0 ||
+        localEnd < localStart ||
+        localEnd > pending.base.text.length) {
+      return false;
+    }
+    final text = pending.base.text.replaceRange(
+      localStart,
+      localEnd,
+      receipt.replacement,
+    );
+    final localCaret = caret - pending.inputGlobalUtf16Start;
+    if (text.length > _maximumInputCodeUnits ||
+        localCaret < 0 ||
+        localCaret > text.length) {
+      return false;
+    }
+    _inputGlobalUtf16Start = pending.inputGlobalUtf16Start;
+    _inputValue = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: localCaret),
+    );
+    return true;
+  }
+
+  void _promoteSemanticSuccessors(FlarkCoreEditIntentReceiptV1 receipt) {
     final stopwatch = Stopwatch()..start();
     final pending = _pendingSemanticInput;
     _pendingSemanticInput = null;
     try {
       if (pending == null) return;
-      for (final batch in pending.successors) {
-        final map = _InputReconciliationMap.between(
-          batch.before.text,
-          _inputValue.text,
-        );
-        final selection = _mapProvisionalSelection(map, batch.after.selection);
-        final composing = _mapProvisionalRange(map, batch.after.composing);
-        if (selection == null || composing == null) {
-          _resynchronize(FlarkInputResyncReason.successorReconciliationFailed);
-          return;
-        }
-        final mutation = _differenceMutation(
-          batch.before.text,
-          batch.after.text,
-        );
-        if (mutation == null) {
-          _breakTypingHistoryGroup();
-          _inputValue = _inputValue.copyWith(
-            selection: selection,
-            composing: composing,
-          );
-          _trackCompositionWithoutMutation(composing);
-          _updateGlobalSelection();
-          unawaited(_installCanonicalSelection(_selectionSnapshot()));
-          continue;
-        }
-        final mappedStart = map.mapOffset(mutation.start, downstream: true);
-        final mappedEnd = map.mapOffset(mutation.end, downstream: true);
-        if (mappedStart == null ||
-            mappedEnd == null ||
-            !_acceptMutation(
-              _TextMutation(mappedStart, mappedEnd, mutation.replacement),
-              selection: selection,
-              composing: composing,
-              typingInput: batch.typingInput,
-            )) {
-          _resynchronize(FlarkInputResyncReason.successorReconciliationFailed);
-          return;
-        }
+      final reconciliation = _InputReconciliationMap.forSemanticBarrier(
+        pending: pending,
+        receipt: receipt,
+      );
+      if (reconciliation == null) {
+        _resynchronize(FlarkInputResyncReason.successorReconciliationFailed);
+        return;
       }
+      _promoteSemanticSuccessorsWithMap(pending, reconciliation);
     } finally {
       stopwatch.stop();
       _lastSemanticReconciliationMicros = stopwatch.elapsedMicroseconds;
+    }
+  }
+
+  void _promoteUncommittedSemanticSuccessors() {
+    final stopwatch = Stopwatch()..start();
+    final pending = _pendingSemanticInput;
+    _pendingSemanticInput = null;
+    try {
+      if (pending == null) return;
+      _promoteSemanticSuccessorsWithMap(
+        pending,
+        const _InputReconciliationMap(
+          fromStart: 0,
+          fromEnd: 0,
+          toStart: 0,
+          toEnd: 0,
+        ),
+      );
+    } finally {
+      stopwatch.stop();
+      _lastSemanticReconciliationMicros = stopwatch.elapsedMicroseconds;
+    }
+  }
+
+  void _promoteSemanticSuccessorsWithMap(
+    _PendingSemanticInput pending,
+    _InputReconciliationMap reconciliation,
+  ) {
+    for (final successor in pending.successors) {
+      if (successor case _DeferredInputSuccessor(
+        command: final command,
+        replacement: final replacement,
+      )) {
+        if (replacement != null) {
+          replaceSelection(replacement);
+        } else {
+          switch (command!) {
+            case _DeferredInputCommand.deleteBackward:
+              _queueSemanticEdit(FlarkCoreEditIntentV1.deleteBackward);
+              break;
+            case _DeferredInputCommand.deleteForward:
+              deleteForward();
+              break;
+            case _DeferredInputCommand.insertNewline:
+              _queueSemanticEdit(FlarkCoreEditIntentV1.insertParagraphBreak);
+              break;
+          }
+        }
+        continue;
+      }
+      final batch = successor as _ProvisionalInputBatch;
+      final selection = _mapProvisionalSelection(
+        reconciliation,
+        batch.after.selection,
+      );
+      final composing = _mapProvisionalRange(
+        reconciliation,
+        batch.after.composing,
+      );
+      if (selection == null || composing == null) {
+        _resynchronize(FlarkInputResyncReason.successorReconciliationFailed);
+        return;
+      }
+      final mutation = _differenceMutation(batch.before.text, batch.after.text);
+      if (mutation == null) {
+        _breakTypingHistoryGroup();
+        _inputValue = _inputValue.copyWith(
+          selection: selection,
+          composing: composing,
+        );
+        _trackCompositionWithoutMutation(composing);
+        _updateGlobalSelection();
+        unawaited(_installCanonicalSelection(_selectionSnapshot()));
+        continue;
+      }
+      final mappedStart = reconciliation.mapOffset(
+        mutation.start,
+        downstream: true,
+      );
+      final mappedEnd = reconciliation.mapOffset(
+        mutation.end,
+        downstream: true,
+      );
+      if (mappedStart == null ||
+          mappedEnd == null ||
+          !_acceptMutation(
+            _TextMutation(mappedStart, mappedEnd, mutation.replacement),
+            selection: selection,
+            composing: composing,
+            typingInput: batch.typingInput,
+          )) {
+        _resynchronize(FlarkInputResyncReason.successorReconciliationFailed);
+        return;
+      }
     }
   }
 
@@ -2416,13 +2951,7 @@ final class FlarkEditorController extends ChangeNotifier {
     return _TextMutation(prefix, oldSuffix, after.substring(prefix, newSuffix));
   }
 
-  int? _doubledLineEndingLength(String replacement) => switch (replacement) {
-    '\n\n' || '\r\r' => 1,
-    '\r\n\r\n' => 2,
-    _ => null,
-  };
-
-  int _committedGapEnd(_CommittedParagraphSplit split) {
+  int _committedGapEnd(FlarkCoreCommittedPresentationGapV1 split) {
     var end = _visibleUtf16Start + _visibleSource.length;
     for (final row in _cachedRows) {
       if (row.ordinal == split.rowOrdinal) continue;
@@ -2457,7 +2986,14 @@ final class FlarkEditorController extends ChangeNotifier {
             );
       return;
     }
-    if (_optimisticViewportEdits.isNotEmpty) return;
+    // A committed structural surface is already mapped to the current
+    // revision by its authoritative receipt. It may therefore seed the next
+    // conservative literal continuation even though the older viewport rows
+    // still have an optimistic splice in front of them.
+    if (_optimisticViewportEdits.isNotEmpty &&
+        _committedStructuralSurface == null) {
+      return;
+    }
     final row = _activeCachedRow();
     final facts = row?.inlineFacts;
     if (row == null || row.table != null || facts == null) return;
@@ -2627,6 +3163,9 @@ final class FlarkEditorController extends ChangeNotifier {
     }
     _historyReplayPending = true;
     _projectionContinuity = null;
+    _committedParagraphSplit = null;
+    _committedStructuralSurface = null;
+    _semanticEditV1Active = false;
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
     _parseTimer?.cancel();
@@ -2768,12 +3307,14 @@ final class FlarkEditorController extends ChangeNotifier {
     bool ensureActiveInputVisible = false,
   }) {
     _viewport = viewport;
-    final installsFreshRows = viewport.rows.isNotEmpty;
+    final hasCommittedSurface =
+        _projectionContinuity != null ||
+        _committedParagraphSplit != null ||
+        _committedStructuralSurface != null;
     final retainsExistingSurface =
-        !installsFreshRows &&
-        !viewport.isCertified &&
-        _projectionContinuity != null &&
-        _cachedRows.isNotEmpty;
+        !viewport.isCertified && hasCommittedSurface && _cachedRows.isNotEmpty;
+    final installsFreshRows =
+        viewport.rows.isNotEmpty && !retainsExistingSurface;
     if (installsFreshRows) {
       _cachedRows = viewport.rows;
     } else if (viewport.isCertified) {
@@ -2813,11 +3354,16 @@ final class FlarkEditorController extends ChangeNotifier {
       // canonical caret whenever the retained ordinal is no longer present.
       _activeOrdinal = _surfaceOrdinalAt(_globalSelectionExtent);
     }
-    if (installsFreshRows && (_activeOrdinal ?? 0) < 0) {
+    final mayRestoreInputWindow =
+        restoreInputWindow || ensureActiveInputVisible;
+    if (installsFreshRows &&
+        mayRestoreInputWindow &&
+        (_activeOrdinal ?? 0) < 0) {
       _restoreNeutralInputWindow(_globalSelectionExtent);
     }
-    if (installsFreshRows && (_activeOrdinal ?? -1) >= 0) {
+    if (_semanticViewportCurrent && (_activeOrdinal ?? -1) >= 0) {
       _committedParagraphSplit = null;
+      _committedStructuralSurface = null;
     }
     notifyListeners();
   }
@@ -3334,6 +3880,7 @@ final class FlarkEditorController extends ChangeNotifier {
     // content. Keep unchanged cached rows semantic as well; demoting the whole
     // viewport for one safe keystroke produces a visible page-wide flash.
     if (_projectionContinuity != null) return true;
+    if (_committedStructuralSurface != null) return true;
     if (!_certificationRevisionCurrent) return false;
     return _certificationRanges.any(
       (range) =>

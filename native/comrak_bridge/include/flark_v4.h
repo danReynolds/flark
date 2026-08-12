@@ -216,6 +216,12 @@ typedef uint64_t FlarkV4OwnerToken;
 #define FLARK_V4_EDIT_INTENT_RECEIPT_HAS_COMMIT UINT32_C(0x1)
 #define FLARK_V4_EDIT_INTENT_RECEIPT_PARSER_PENDING UINT32_C(0x2)
 #define FLARK_V4_EDIT_INTENT_RECEIPT_SEMANTIC_BYTES UINT32_C(0x4)
+#define FLARK_V4_EDIT_PRESENTATION_NONE UINT32_C(0)
+#define FLARK_V4_EDIT_PRESENTATION_SPLIT_PARAGRAPH UINT32_C(1)
+#define FLARK_V4_EDIT_PRESENTATION_CONTINUE_LIST UINT32_C(2)
+#define FLARK_V4_EDIT_PRESENTATION_EXIT_LIST UINT32_C(3)
+#define FLARK_V4_EDIT_PRESENTATION_MERGE_PARAGRAPH UINT32_C(4)
+#define FLARK_V4_EDIT_PRESENTATION_LIFT_LIST UINT32_C(5)
 
 #define FLARK_V4_MAX_SMALL_EDIT_BYTES UINT32_C(4096)
 #define FLARK_V4_MAX_BULK_CHUNK_BYTES UINT32_C(65536)
@@ -515,7 +521,7 @@ typedef struct FlarkV4EditIntentReceiptV1 {
   FlarkV4SourceRange affected_result_utf16_range;
   FlarkV4HistoryToken history_token;
   uint32_t replacement_bytes;
-  uint32_t reserved_u32;
+  uint32_t presentation_transition;
   uint64_t reserved[2];
 } FlarkV4EditIntentReceiptV1;
 /* The replacement payload begins immediately after the fixed receipt. E1

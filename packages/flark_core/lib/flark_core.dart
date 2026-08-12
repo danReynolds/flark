@@ -7,12 +7,15 @@ export 'src/document.dart'
         FlarkCoreDocument,
         FlarkCoreEditReceipt,
         FlarkCoreEditIntentDispositionV1,
+        FlarkCoreEditPresentationTransitionV1,
         FlarkCoreEditIntentReceiptV1,
+        FlarkCoreEditIntentTelemetryV1,
         FlarkCoreEditIntentV1,
         FlarkCoreHistoryDisposition,
         FlarkCoreHistoryToken,
         FlarkCoreNativeException,
-        FlarkCoreSessionInspection;
+        FlarkCoreSessionInspection,
+        FlarkCoreWorkerException;
 export 'src/editor_session.dart'
     show
         FlarkCoreAffinity,
@@ -48,5 +51,14 @@ export 'src/projection_continuity.dart'
         FlarkProjectionContinuityReceipt,
         authorizeInlineProjectionContinuity,
         authorizeRowProjectionContinuity;
+export 'src/presentation.dart'
+    show
+        FlarkCoreCommittedPresentationGapV1,
+        FlarkCoreCommittedPresentationSurfaceV1,
+        FlarkCoreCommittedPresentationTransitionV1,
+        FlarkCorePresentationInlineStyle,
+        FlarkCorePresentationRow,
+        FlarkCorePresentationRun,
+        resolveCommittedPresentationTransitionV1;
 export 'src/native/native_document.dart'
     show FlarkNativeDocument, FlarkNativeException;

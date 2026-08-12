@@ -436,6 +436,12 @@ pub const EDIT_INTENT_DISPOSITION_NEEDS_CURRENT_SEMANTICS: u32 = 4;
 pub const EDIT_INTENT_RECEIPT_HAS_COMMIT: u32 = 1 << 0;
 pub const EDIT_INTENT_RECEIPT_PARSER_PENDING: u32 = 1 << 1;
 pub const EDIT_INTENT_RECEIPT_SEMANTIC_BYTES: u32 = 1 << 2;
+pub const EDIT_PRESENTATION_NONE: u32 = 0;
+pub const EDIT_PRESENTATION_SPLIT_PARAGRAPH: u32 = 1;
+pub const EDIT_PRESENTATION_CONTINUE_LIST: u32 = 2;
+pub const EDIT_PRESENTATION_EXIT_LIST: u32 = 3;
+pub const EDIT_PRESENTATION_MERGE_PARAGRAPH: u32 = 4;
+pub const EDIT_PRESENTATION_LIFT_LIST: u32 = 5;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
@@ -481,7 +487,7 @@ pub struct EditIntentReceiptV1 {
     pub affected_result_utf16_range: SourceRange,
     pub history_token: u64,
     pub replacement_bytes: u32,
-    pub reserved_u32: u32,
+    pub presentation_transition: u32,
     pub reserved: [u64; 2],
 }
 

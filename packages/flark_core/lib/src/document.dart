@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:isolate';
+import 'dart:math' as math;
 
 import 'models.dart';
 import 'native/native_document.dart';
@@ -13,6 +14,15 @@ enum FlarkCoreEditIntentDispositionV1 {
   handledNoChange,
   notApplicable,
   needsCurrentSemantics,
+}
+
+enum FlarkCoreEditPresentationTransitionV1 {
+  none,
+  splitParagraph,
+  continueList,
+  exitList,
+  mergeParagraph,
+  liftList,
 }
 
 /// An opaque, one-shot handle to inverse source retained by the native core.
@@ -122,6 +132,8 @@ final class FlarkCoreEditIntentReceiptV1 {
     required this.parserPending,
     required this.logicalEditId,
     required this.requestDigest,
+    required this.telemetry,
+    required this.presentationTransition,
   });
 
   final FlarkCoreEditIntentDispositionV1 disposition;
@@ -143,8 +155,69 @@ final class FlarkCoreEditIntentReceiptV1 {
   final bool parserPending;
   final int logicalEditId;
   final int requestDigest;
+  final FlarkCoreEditIntentTelemetryV1 telemetry;
+  final FlarkCoreEditPresentationTransitionV1 presentationTransition;
 
   bool get hasCommit => disposition == FlarkCoreEditIntentDispositionV1.applied;
+
+  FlarkCoreEditIntentReceiptV1 withCoreTelemetry({
+    required int coreQueueMicros,
+    required int coreAdoptionMicros,
+  }) => FlarkCoreEditIntentReceiptV1(
+    disposition: disposition,
+    baseRevision: baseRevision,
+    resultRevision: resultRevision,
+    baseByteStart: baseByteStart,
+    baseByteEnd: baseByteEnd,
+    baseUtf16Start: baseUtf16Start,
+    baseUtf16End: baseUtf16End,
+    resultByteStart: resultByteStart,
+    resultByteEnd: resultByteEnd,
+    resultUtf16Start: resultUtf16Start,
+    resultUtf16End: resultUtf16End,
+    replacement: replacement,
+    resultSelectionUtf16: resultSelectionUtf16,
+    resultSourceByteLength: resultSourceByteLength,
+    resultSourceUtf16Length: resultSourceUtf16Length,
+    historyToken: historyToken,
+    parserPending: parserPending,
+    logicalEditId: logicalEditId,
+    requestDigest: requestDigest,
+    telemetry: telemetry.withCoreStages(
+      coreQueueMicros: coreQueueMicros,
+      coreAdoptionMicros: coreAdoptionMicros,
+    ),
+    presentationTransition: presentationTransition,
+  );
+}
+
+/// Causal durations for one semantic command. These are diagnostic timings,
+/// not wall-clock claim evidence; the Flutter harness joins them to a frame.
+final class FlarkCoreEditIntentTelemetryV1 {
+  const FlarkCoreEditIntentTelemetryV1({
+    required this.coreQueueMicros,
+    required this.workerRoundTripMicros,
+    required this.workerQueueMicros,
+    required this.nativeFfiMicros,
+    required this.coreAdoptionMicros,
+  });
+
+  final int coreQueueMicros;
+  final int workerRoundTripMicros;
+  final int workerQueueMicros;
+  final int nativeFfiMicros;
+  final int coreAdoptionMicros;
+
+  FlarkCoreEditIntentTelemetryV1 withCoreStages({
+    required int coreQueueMicros,
+    required int coreAdoptionMicros,
+  }) => FlarkCoreEditIntentTelemetryV1(
+    coreQueueMicros: coreQueueMicros,
+    workerRoundTripMicros: workerRoundTripMicros,
+    workerQueueMicros: workerQueueMicros,
+    nativeFfiMicros: nativeFfiMicros,
+    coreAdoptionMicros: coreAdoptionMicros,
+  );
 }
 
 /// Headless Dart document actor backed by the Rust Flark runtime.
@@ -335,8 +408,11 @@ final class FlarkCoreDocument {
       'acknowledgePreviousLogicalEditId': acknowledgePreviousLogicalEditId,
       'selectionGeneration': selectionGeneration,
       'compositionActive': compositionActive,
+      'dispatchEpochMicros': DateTime.now().microsecondsSinceEpoch,
     };
+    final roundTrip = Stopwatch()..start();
     final result = await _requestSemanticTerminal(arguments);
+    roundTrip.stop();
     final disposition =
         FlarkCoreEditIntentDispositionV1.values[result['disposition']! as int];
     final hasCommit = disposition == FlarkCoreEditIntentDispositionV1.applied;
@@ -369,6 +445,15 @@ final class FlarkCoreDocument {
       parserPending: result['parserPending']! as bool,
       logicalEditId: result['logicalEditId']! as int,
       requestDigest: result['requestDigest']! as int,
+      telemetry: FlarkCoreEditIntentTelemetryV1(
+        coreQueueMicros: 0,
+        workerRoundTripMicros: roundTrip.elapsedMicroseconds,
+        workerQueueMicros: result['workerQueueMicros']! as int,
+        nativeFfiMicros: result['nativeFfiMicros']! as int,
+        coreAdoptionMicros: 0,
+      ),
+      presentationTransition: FlarkCoreEditPresentationTransitionV1
+          .values[result['presentationTransition']! as int],
     );
   }
 
@@ -500,6 +585,12 @@ final class FlarkCoreDocument {
       'endUtf16': endUtf16,
     });
     return result['source']! as String;
+  }
+
+  /// Forces the document worker to exit so containment and fail-stop behavior
+  /// can be verified without depending on an actual native crash.
+  Future<void> debugCrashWorkerForTesting() async {
+    await _request('debugCrashWorkerForTesting', const {});
   }
 
   Future<void> dispose() async {
@@ -657,6 +748,9 @@ Future<void> _documentWorker(List<Object?> startup) async {
       final operation = message[0]! as String;
       final arguments = message[1]! as Map<Object?, Object?>;
       final reply = message[2]! as SendPort;
+      if (operation == 'debugCrashWorkerForTesting') {
+        throw StateError('debug worker crash');
+      }
       try {
         switch (operation) {
           case 'edit':
@@ -673,6 +767,9 @@ Future<void> _documentWorker(List<Object?> startup) async {
               'historyDisposition': receipt.historyDisposition.index,
             });
           case 'editIntentV1':
+            final workerReceivedEpochMicros =
+                DateTime.now().microsecondsSinceEpoch;
+            final nativeWatch = Stopwatch()..start();
             final receipt = document.applyEditIntentV1(
               intent:
                   FlarkNativeEditIntentV1.values[arguments['intent']! as int],
@@ -686,6 +783,7 @@ Future<void> _documentWorker(List<Object?> startup) async {
               selectionGeneration: arguments['selectionGeneration']! as int,
               compositionActive: arguments['compositionActive']! as bool,
             );
+            nativeWatch.stop();
             final envelope = <Object?, Object?>{
               'disposition': receipt.disposition.index,
               'baseRevision': receipt.baseRevision,
@@ -706,6 +804,13 @@ Future<void> _documentWorker(List<Object?> startup) async {
               'parserPending': receipt.parserPending,
               'logicalEditId': receipt.logicalEditId,
               'requestDigest': receipt.requestDigest,
+              'presentationTransition': receipt.presentationTransition.index,
+              'workerQueueMicros': math.max(
+                0,
+                workerReceivedEpochMicros -
+                    (arguments['dispatchEpochMicros']! as int),
+              ),
+              'nativeFfiMicros': nativeWatch.elapsedMicroseconds,
             };
             if (dropNextEditIntentReply) {
               dropNextEditIntentReply = false;

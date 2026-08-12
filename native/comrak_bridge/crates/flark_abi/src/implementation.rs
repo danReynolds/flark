@@ -9,10 +9,10 @@ use std::sync::{Mutex, OnceLock};
 use flark_runtime::{
     Affinity, AnchorHandle, CertificationState, ContinuationHandle, CoordinateKind, DocumentActor,
     DocumentActorError, DocumentBulletMarker, DocumentCodeBlockStyle,
-    DocumentEditIntentDispositionV1, DocumentEditIntentV1, DocumentFenceCharacter,
-    DocumentHeadingStyle, DocumentInlineFact, DocumentInlineFactKind, DocumentListDelimiter,
-    DocumentListMarker, DocumentLiveViewportSpan, DocumentSessionError, DocumentSessionPhase,
-    DocumentViewportRowContinuityPolicy, DocumentViewportRowEditCapability,
+    DocumentEditIntentDispositionV1, DocumentEditIntentV1, DocumentEditPresentationTransitionV1,
+    DocumentFenceCharacter, DocumentHeadingStyle, DocumentInlineFact, DocumentInlineFactKind,
+    DocumentListDelimiter, DocumentListMarker, DocumentLiveViewportSpan, DocumentSessionError,
+    DocumentSessionPhase, DocumentViewportRowContinuityPolicy, DocumentViewportRowEditCapability,
     DocumentViewportRowPresentation, HistoryDisposition, HistoryToken, OperationCode,
     OperationResult, Outcome as RuntimeOutcome, ProgressState, ProgressToken, ResultPageReceipt,
     ResultRecordKind, Revision, SessionHandle, SessionInspectionReceipt, SessionState, SnapshotId,
@@ -32,9 +32,11 @@ use crate::{
     EDIT_INTENT_DISPOSITION_HANDLED_NO_CHANGE, EDIT_INTENT_DISPOSITION_NEEDS_CURRENT_SEMANTICS,
     EDIT_INTENT_DISPOSITION_NOT_APPLICABLE, EDIT_INTENT_INSERT_PARAGRAPH_BREAK,
     EDIT_INTENT_RECEIPT_HAS_COMMIT, EDIT_INTENT_RECEIPT_PARSER_PENDING,
-    EDIT_INTENT_RECEIPT_SEMANTIC_BYTES, EDIT_PROFILE_FLARK_V1, INLINE_FACT_AUTOLINK_EMAIL,
-    INLINE_FACT_AUTOLINK_URI, INLINE_FACT_BACKSLASH_ESCAPE, INLINE_FACT_CODE,
-    INLINE_FACT_DIRECT_IMAGE, INLINE_FACT_DIRECT_LINK, INLINE_FACT_EMPHASIS,
+    EDIT_INTENT_RECEIPT_SEMANTIC_BYTES, EDIT_PRESENTATION_CONTINUE_LIST,
+    EDIT_PRESENTATION_EXIT_LIST, EDIT_PRESENTATION_LIFT_LIST, EDIT_PRESENTATION_MERGE_PARAGRAPH,
+    EDIT_PRESENTATION_NONE, EDIT_PRESENTATION_SPLIT_PARAGRAPH, EDIT_PROFILE_FLARK_V1,
+    INLINE_FACT_AUTOLINK_EMAIL, INLINE_FACT_AUTOLINK_URI, INLINE_FACT_BACKSLASH_ESCAPE,
+    INLINE_FACT_CODE, INLINE_FACT_DIRECT_IMAGE, INLINE_FACT_DIRECT_LINK, INLINE_FACT_EMPHASIS,
     INLINE_FACT_HARD_LINE_BREAK, INLINE_FACT_REFERENCE_IMAGE, INLINE_FACT_REFERENCE_LINK,
     INLINE_FACT_REPLACEMENT, INLINE_FACT_STRIKETHROUGH, INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL,
     VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_SHIFT, VIEWPORT_ROW_BLOCK_QUOTE_PRESENTATION,
@@ -1228,7 +1230,11 @@ pub extern "C" fn flark_v4_edit_intent_v1(
                 {
                     return Err(StatusCode::Backpressure);
                 }
-                entry.terminal_edit_intent = None;
+                // Keep the acknowledged terminal until this request itself
+                // reaches a terminal. A bounded pre-commit rejection (most
+                // notably parser-retirement backpressure) must be retryable
+                // with the exact same logical request and acknowledgement.
+                // Every successful disposition below atomically replaces it.
             } else if request.acknowledge_previous_logical_edit_id != 0 {
                 return Err(StatusCode::InvalidArgument);
             }
@@ -1305,8 +1311,21 @@ pub extern "C" fn flark_v4_edit_intent_v1(
                 EDIT_INTENT_DISPOSITION_NEEDS_CURRENT_SEMANTICS
             }
         };
+        let presentation_transition = match receipt.presentation_transition {
+            DocumentEditPresentationTransitionV1::None => EDIT_PRESENTATION_NONE,
+            DocumentEditPresentationTransitionV1::SplitParagraph => {
+                EDIT_PRESENTATION_SPLIT_PARAGRAPH
+            }
+            DocumentEditPresentationTransitionV1::ContinueList => EDIT_PRESENTATION_CONTINUE_LIST,
+            DocumentEditPresentationTransitionV1::ExitList => EDIT_PRESENTATION_EXIT_LIST,
+            DocumentEditPresentationTransitionV1::MergeParagraph => {
+                EDIT_PRESENTATION_MERGE_PARAGRAPH
+            }
+            DocumentEditPresentationTransitionV1::LiftList => EDIT_PRESENTATION_LIFT_LIST,
+        };
 
         if receipt.disposition != DocumentEditIntentDispositionV1::Applied {
+            debug_assert_eq!(presentation_transition, EDIT_PRESENTATION_NONE);
             if let Some(token) = reserved_history {
                 detach_history(&mut registry, token);
             }
@@ -1440,7 +1459,7 @@ pub extern "C" fn flark_v4_edit_intent_v1(
                 },
                 history_token,
                 replacement_bytes: replacement.len() as u32,
-                reserved_u32: 0,
+                presentation_transition,
                 reserved: [0; 2],
             },
             replacement,

@@ -193,7 +193,7 @@ void main() {
   );
 
   testWidgets(
-    'platform newline action is an acknowledgement, not mutation authority',
+    'macOS newline delta plus action commits exactly once',
     (tester) async {
       final controller = (await tester.runAsync(
         () =>
@@ -209,11 +209,37 @@ void main() {
       );
       final dynamic state = tester.state(find.byType(FlarkEditor));
       final revision = controller.revision;
-      state.performAction(TextInputAction.newline);
-
-      expect(controller.revision, revision);
-      expect(controller.visibleSource, '9) alpha\n');
-      expect(controller.pendingEdits, 0);
+      final row = controller.rows.single;
+      await tester.runAsync(() async {
+        controller.activateRow(row, row.editableUtf16!.end);
+        await controller.resolveCanonicalSelection();
+        final before = controller.inputValue;
+        controller.applyDeltas([
+          TextEditingDeltaInsertion(
+            oldText: before.text,
+            textInserted: '\n',
+            insertionOffset: before.selection.extentOffset,
+            selection: TextSelection.collapsed(
+              offset: before.selection.extentOffset + 1,
+            ),
+            composing: TextRange.empty,
+          ),
+        ]);
+        state.performAction(TextInputAction.newline);
+        final deadline = DateTime.now().add(const Duration(seconds: 5));
+        while (controller.pendingEdits != 0 &&
+            DateTime.now().isBefore(deadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+        }
+      });
+      await tester.pump();
+      expect(
+        controller.pendingEdits,
+        0,
+        reason: 'status=${controller.status}; error=${controller.lastError}',
+      );
+      expect(controller.revision, revision + 1);
+      expect(controller.visibleSource, '9) alpha\n10) \n');
       expect(controller.lastError, isNull);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(controller.close);

@@ -174,29 +174,233 @@ void main() {
   );
 
   test(
-    'unsupported successor observations resynchronize without corrupting the semantic commit',
+    'repeated Return then typing keeps one truthful platform window',
+    () async {
+      final controller = await open(
+        'A quick paragraph with **bold text**.\n\nTrailing paragraph.\n',
+      );
+      addTearDown(controller.close);
+      final target = controller.rows.first;
+      controller.activateRow(target, target.editableUtf16!.end);
+      final frames = <String>[];
+      void captureFrame() {
+        frames.add(
+          controller.rows
+              .map((row) {
+                final surface = controller.surfaceRow(row);
+                return '${surface.leadingText}${surface.text}';
+              })
+              .join('\n'),
+        );
+      }
+
+      controller.addListener(captureFrame);
+      addTearDown(() => controller.removeListener(captureFrame));
+
+      for (var index = 0; index < 40; index += 1) {
+        final before = controller.inputValue;
+        final offset = before.selection.extentOffset;
+        final newline = insertion(before, offset, '\n');
+        final provisional = newline.apply(before);
+        final successor = insertion(
+          provisional,
+          provisional.selection.extentOffset,
+          'x',
+        );
+
+        controller.applyDeltas([newline]);
+        expect(
+          controller.resyncCount,
+          0,
+          reason: 'newline dispatch in burst ${index + 1}',
+        );
+        controller.observePlatformNewlineAction();
+        controller.applyDeltas([successor]);
+        expect(
+          controller.resyncCount,
+          0,
+          reason: 'successor capture in burst ${index + 1}',
+        );
+        await settle(controller);
+
+        expect(
+          controller.resyncCount,
+          0,
+          reason:
+              'burst ${index + 1}: ${controller.lastResyncReason.name}; '
+              'input=${controller.inputValue.text}/'
+              '${controller.inputValue.selection}',
+        );
+        expect(
+          controller.inputWindowShadow.windowTextSha256,
+          flarkWindowTextSha256(controller.inputValue.text),
+        );
+        expect(
+          controller.rows,
+          isNotEmpty,
+          reason: 'burst ${index + 1} dropped the rendered row surface',
+        );
+        expect(
+          controller.rows
+              .map((row) => controller.surfaceRow(row).text)
+              .join('\n'),
+          isNot(contains('**')),
+          reason: 'burst ${index + 1} exposed Markdown markers',
+        );
+      }
+      expect(
+        frames.where((frame) => frame.contains('**')),
+        isEmpty,
+        reason: 'completed Markdown flashed during a structural burst',
+      );
+      expect(
+        frames.where((frame) => frame.isEmpty),
+        isEmpty,
+        reason: 'the rendered surface disappeared during a structural burst',
+      );
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'selector Backspace waits behind semantic Return without losing either command',
     () async {
       final controller = await open('9) alpha\n');
       addTearDown(controller.close);
       final row = controller.rows.single;
       controller.activateRow(row, row.editableUtf16!.end);
       final before = controller.inputValue;
+      final revisionBefore = controller.revision;
 
       controller.applyDeltas([
         insertion(before, before.selection.extentOffset, '\n'),
       ]);
       controller.deleteBackward();
 
-      expect(controller.resyncCount, 1);
-      expect(
-        controller.lastResyncReason,
-        FlarkInputResyncReason.unsupportedSuccessorObservation,
-      );
+      expect(controller.resyncCount, 0);
+      await settle(controller);
+      expect(controller.semanticSuccessorHighWatermark, 1);
+      expect(controller.revision, revisionBefore + 2);
+      expect(controller.visibleSource, '9) alpha\n\n\n');
+      expect(await controller.undo(), isTrue);
       await settle(controller);
       expect(controller.visibleSource, '9) alpha\n10) \n');
       expect(await controller.undo(), isTrue);
       await settle(controller);
       expect(controller.visibleSource, '9) alpha\n');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'typing behind semantic Backspace maps from the pre-command window',
+    () async {
+      final controller = await open('Before **bold**.\n\nAfter.\n');
+      addTearDown(controller.close);
+      final after = controller.rows.last;
+      controller.activateRow(after, after.editableUtf16!.start);
+
+      controller.deleteBackward();
+      final beforeTyping = controller.inputValue;
+      controller.applyDeltas([insertion(beforeTyping, 0, 'x')]);
+
+      expect(controller.resyncCount, 0);
+      await settle(controller);
+      expect(controller.semanticSuccessorHighWatermark, 1);
+      expect(controller.visibleSource, 'Before **bold**.xAfter.\n');
+      expect(controller.globalCaretOffset, 'Before **bold**.x'.length);
+      expect(
+        controller.rows
+            .map((row) => controller.surfaceRow(row).text)
+            .join('\n'),
+        isNot(contains('**')),
+      );
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'typing behind handled-no-change Backspace keeps the current window',
+    () async {
+      final controller = await open('alpha\n');
+      addTearDown(controller.close);
+      final row = controller.rows.single;
+      controller.activateRow(row, row.editableUtf16!.start);
+
+      controller.deleteBackward();
+      final beforeTyping = controller.inputValue;
+      controller.applyDeltas([insertion(beforeTyping, 0, 'x')]);
+
+      expect(controller.resyncCount, 0);
+      await settle(controller);
+      expect(controller.semanticSuccessorHighWatermark, 1);
+      expect(controller.visibleSource, 'xalpha\n');
+      expect(controller.globalCaretOffset, 1);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'full-value successor reconciles behind semantic Return',
+    () async {
+      final controller = await open('9) alpha\n');
+      addTearDown(controller.close);
+      final row = controller.rows.single;
+      controller.activateRow(row, row.editableUtf16!.end);
+      final before = controller.inputValue;
+      final newline = insertion(before, before.selection.extentOffset, '\n');
+      final provisional = newline.apply(before);
+
+      controller.updateEditingValue(provisional);
+      controller.updateEditingValue(
+        provisional.copyWith(
+          text:
+              '${provisional.text.substring(0, provisional.selection.extentOffset)}x${provisional.text.substring(provisional.selection.extentOffset)}',
+          selection: TextSelection.collapsed(
+            offset: provisional.selection.extentOffset + 1,
+          ),
+        ),
+      );
+      controller.observePlatformNewlineAction();
+
+      expect(controller.resyncCount, 0);
+      await settle(controller);
+      expect(controller.visibleSource, '9) alpha\n10) x\n');
+      expect(controller.semanticSuccessorHighWatermark, 1);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'semantic successor queue fails closed at its declared cap',
+    () async {
+      final controller = await open('9) alpha\n');
+      addTearDown(controller.close);
+      final row = controller.rows.single;
+      controller.activateRow(row, row.editableUtf16!.end);
+      final before = controller.inputValue;
+      final newline = insertion(before, before.selection.extentOffset, '\n');
+      var provisional = newline.apply(before);
+
+      controller.applyDeltas([newline]);
+      for (var index = 0; index < 8; index += 1) {
+        final successor = insertion(
+          provisional,
+          provisional.selection.extentOffset,
+          'x',
+        );
+        controller.applyDeltas([successor]);
+        provisional = successor.apply(provisional);
+      }
+
+      expect(controller.resyncCount, 1);
+      expect(
+        controller.lastResyncReason,
+        FlarkInputResyncReason.successorQueueOverflow,
+      );
+      expect(controller.semanticSuccessorHighWatermark, 7);
+      await settle(controller);
+      expect(controller.visibleSource, '9) alpha\n10) \n');
     },
     skip: libraryPath == null,
   );

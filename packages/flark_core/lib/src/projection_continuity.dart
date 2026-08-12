@@ -192,7 +192,17 @@ bool _rowPlainTextTransactionAllowed(
     return false;
   }
   if (exactContent.length != content.length) return false;
-  if (start == end) return replacement.isNotEmpty;
+  if (start == end) {
+    if (replacement.isEmpty) return false;
+    // At a block content boundary, otherwise-inline-safe punctuation can
+    // create a heading, quote, list, or other block construct. Fail closed;
+    // the parser will publish the new presentation for the result revision.
+    if (start == content.start &&
+        _containsMarkdownSensitiveAscii(replacement)) {
+      return false;
+    }
+    return true;
+  }
 
   // A boundary deletion can expose a block marker that was previously plain
   // text. Deletes in the interior are retained only when the removed source

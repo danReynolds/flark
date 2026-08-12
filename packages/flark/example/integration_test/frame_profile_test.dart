@@ -46,7 +46,10 @@ void main() {
       Directionality(
         textDirection: TextDirection.ltr,
         child: SizedBox.expand(
-          child: FlarkEditor(controller: controller, autofocus: true),
+          child: FlarkEditor(
+            controller: controller,
+            autofocus: workload != 'semantic-burst',
+          ),
         ),
       ),
     );
@@ -64,6 +67,14 @@ void main() {
     final inputFrameBuildMicros = <int>[];
     final settleMicros = <int>[];
     final undoSettleMicros = <int>[];
+    final semanticPlatformCallbackMicros = <int>[];
+    final semanticCoreQueueMicros = <int>[];
+    final semanticWorkerRoundTripMicros = <int>[];
+    final semanticWorkerQueueMicros = <int>[];
+    final semanticNativeFfiMicros = <int>[];
+    final semanticCoreAdoptionMicros = <int>[];
+    final semanticFlutterAdoptionMicros = <int>[];
+    final semanticCallbackToReceiptMicros = <int>[];
     var projectedContinuitySamples = 0;
     var rawProjectionFrames = 0;
     var missingActiveProjectionFrames = 0;
@@ -235,6 +246,91 @@ void main() {
           await tester.pump();
           expect(controller.sourceByteLength, baseBytes);
           expect(controller.sourceUtf16Length, baseUtf16);
+        }
+      case 'semantic-burst':
+        final target = controller.rows.firstWhere(
+          (row) =>
+              row.kind == 5 &&
+              row.editableUtf16 != null &&
+              row.inlineFacts?.any((fact) => fact.kind.name == 'strong') ==
+                  true,
+        );
+        final selectionGeneration = controller.canonicalSelectionGeneration;
+        controller.activateRow(target, target.editableUtf16!.end);
+        await _waitForCanonicalSelection(controller, selectionGeneration);
+        await tester.pump();
+        stdout.writeln(
+          'FLARK_SEMANTIC_TARGET ${jsonEncode({'ordinal': target.ordinal, 'kind': target.kind, 'editableStart': target.editableUtf16!.start, 'editableEnd': target.editableUtf16!.end, 'inputStart': controller.inputWindowShadow.globalUtf16Start, 'inputCaret': controller.inputValue.selection.extentOffset, 'inputLength': controller.inputValue.text.length, 'surfaceActive': controller.surfaceRow(target).active})}',
+        );
+        var previousSourceBytes = controller.sourceByteLength;
+        const warmups = 20;
+        for (var index = 0; index < warmups + 120; index += 1) {
+          final measured = index >= warmups;
+          final priorPerformance = controller.lastSemanticEditPerformance;
+          final before = controller.inputValue;
+          final offset = before.selection.extentOffset;
+          final provisionalText = before.text.replaceRange(
+            offset,
+            offset,
+            '\n',
+          );
+          final watch = Stopwatch()..start();
+          controller.applyDeltas([
+            TextEditingDeltaInsertion(
+              oldText: before.text,
+              textInserted: '\n',
+              insertionOffset: offset,
+              selection: TextSelection.collapsed(offset: offset + 1),
+              composing: TextRange.empty,
+            ),
+          ]);
+          controller.observePlatformNewlineAction();
+          controller.applyDeltas([
+            TextEditingDeltaInsertion(
+              oldText: provisionalText,
+              textInserted: 'x',
+              insertionOffset: offset + 1,
+              selection: TextSelection.collapsed(offset: offset + 2),
+              composing: TextRange.empty,
+            ),
+          ]);
+          if (index == 0) {
+            stdout.writeln(
+              'FLARK_SEMANTIC_DISPATCH ${jsonEncode({'pendingEdits': controller.pendingEdits, 'revision': controller.revision, 'resyncCount': controller.resyncCount, 'resyncReason': controller.lastResyncReason.name, 'inputLength': controller.inputValue.text.length, 'inputCaret': controller.inputValue.selection.extentOffset})}',
+            );
+          }
+          final performance = await _waitForSemanticReceipt(
+            controller,
+            priorPerformance,
+          );
+          await _waitForPending(controller);
+          await tester.pump();
+          watch.stop();
+          if (measured) {
+            inputHandlingMicros.add(performance.platformCallbackMicros);
+            inputToFrameMicros.add(watch.elapsedMicroseconds);
+            sampleFrameStamps.add(
+              binding.currentSystemFrameTimeStamp.inMicroseconds,
+            );
+            semanticPlatformCallbackMicros.add(
+              performance.platformCallbackMicros,
+            );
+            semanticCoreQueueMicros.add(performance.coreQueueMicros);
+            semanticWorkerRoundTripMicros.add(
+              performance.workerRoundTripMicros,
+            );
+            semanticWorkerQueueMicros.add(performance.workerQueueMicros);
+            semanticNativeFfiMicros.add(performance.nativeFfiMicros);
+            semanticCoreAdoptionMicros.add(performance.coreAdoptionMicros);
+            semanticFlutterAdoptionMicros.add(
+              performance.flutterReceiptAdoptionMicros,
+            );
+            semanticCallbackToReceiptMicros.add(
+              performance.callbackToReceiptMicros,
+            );
+          }
+          expect(controller.sourceByteLength, greaterThan(previousSourceBytes));
+          previousSourceBytes = controller.sourceByteLength;
         }
       default:
         throw ArgumentError.value(
@@ -411,6 +507,11 @@ void main() {
     stdout.writeln(
       'FLARK_PROFILE_RECEIPT ${jsonEncode({'fixtureShape': fixtureShape, 'workload': workload, 'sourceBytes': controller.sourceByteLength, 'inputSamples': inputToFrameMicros.length, 'projectedContinuitySamples': projectedContinuitySamples, 'rawProjectionFrames': rawProjectionFrames, 'missingActiveProjectionFrames': missingActiveProjectionFrames, 'markerProjectionFrames': markerProjectionFrames, 'missingCaretInsideSourceRowFrames': missingCaretInsideSourceRowFrames, 'missingCaretOutsideSourceRowsFrames': missingCaretOutsideSourceRowsFrames, 'finalCaretUtf16': controller.globalCaretOffset, 'finalRowCount': controller.rows.length, 'inputHandlingRawMs': inputHandlingMicros.map((value) => value / 1000).toList(), 'inputHandlingP50Ms': _percentile(inputHandlingMicros, 50) / 1000, 'inputHandlingP99Ms': _percentile(inputHandlingMicros, 99) / 1000, 'inputHandlingMaxMs': _maximum(inputHandlingMicros) / 1000, 'inputToFrameRawMs': inputToFrameMicros.map((value) => value / 1000).toList(), 'inputToFrameP50Ms': _percentile(inputToFrameMicros, 50) / 1000, 'inputToFrameP99Ms': _percentile(inputToFrameMicros, 99) / 1000, 'inputToFrameMaxMs': _maximum(inputToFrameMicros) / 1000, 'inputFrameBuildRawMs': inputFrameBuildMicros.map((value) => value / 1000).toList(), 'inputFrameBuildP50Ms': _percentile(inputFrameBuildMicros, 50) / 1000, 'inputFrameBuildP99Ms': _percentile(inputFrameBuildMicros, 99) / 1000, 'inputFrameBuildMaxMs': _maximum(inputFrameBuildMicros) / 1000, 'settleRawMs': settleMicros.map((value) => value / 1000).toList(), 'settleP50Ms': _percentile(settleMicros, 50) / 1000, 'settleP99Ms': _percentile(settleMicros, 99) / 1000, 'settleMaxMs': _maximum(settleMicros) / 1000, 'undoSettleRawMs': undoSettleMicros.map((value) => value / 1000).toList(), 'undoSettleMaxMs': _maximum(undoSettleMicros) / 1000, 'frameSamples': frameTimings.length, 'buildP99Ms': _percentile(buildMicros, 99) / 1000, 'buildMaxMs': _maximum(buildMicros) / 1000, 'rasterP99Ms': _percentile(rasterMicros, 99) / 1000, 'rasterMaxMs': _maximum(rasterMicros) / 1000, 'vsyncGapTopMs': vsyncGapTopMs, 'editorLatencyP50Ms': _percentile(editorLatencyMicros, 50) / 1000, 'editorLatencyP99Ms': _percentile(editorLatencyMicros, 99) / 1000, 'editorLatencyMaxMs': _maximum(editorLatencyMicros) / 1000, 'servedIntervalP50Ms': _percentile(servedIntervals, 50) / 1000, 'servedDisplayHz': servedIntervals.isEmpty ? 0 : (1000000 / _percentile(servedIntervals, 50)).round(), 'overBudgetAttribution': attributions, 'editorAttributedOverBudget': editorAttributedOverBudget, 'displayAttributedOverBudget': displayAttributedOverBudget, 'unexplainedOverBudget': unexplainedOverBudget, 'throttledFrameFraction': throttledFraction, 'foregroundValid': foregroundValid, 'pendingEdits': controller.pendingEdits})}',
     );
+    if (semanticCallbackToReceiptMicros.isNotEmpty) {
+      stdout.writeln(
+        'FLARK_SEMANTIC_RECEIPT ${jsonEncode({'platformCallback': _distribution(semanticPlatformCallbackMicros), 'coreQueue': _distribution(semanticCoreQueueMicros), 'workerRoundTrip': _distribution(semanticWorkerRoundTripMicros), 'workerQueue': _distribution(semanticWorkerQueueMicros), 'nativeFfi': _distribution(semanticNativeFfiMicros), 'coreAdoption': _distribution(semanticCoreAdoptionMicros), 'flutterAdoption': _distribution(semanticFlutterAdoptionMicros), 'callbackToReceipt': _distribution(semanticCallbackToReceiptMicros)})}',
+      );
+    }
 
     expect(
       foregroundValid,
@@ -445,6 +546,47 @@ Future<void> _waitForPending(FlarkEditorController controller) async {
   expect(controller.lastError, isNull);
 }
 
+Future<void> _waitForCanonicalSelection(
+  FlarkEditorController controller,
+  int previousGeneration,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 15));
+  while (controller.canonicalSelectionGeneration == previousGeneration &&
+      controller.lastError == null &&
+      DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+  }
+  expect(controller.lastError, isNull);
+  expect(
+    controller.canonicalSelectionGeneration,
+    greaterThan(previousGeneration),
+  );
+}
+
+Future<FlarkSemanticEditPerformance> _waitForSemanticReceipt(
+  FlarkEditorController controller,
+  FlarkSemanticEditPerformance? previous,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 15));
+  while (identical(controller.lastSemanticEditPerformance, previous) &&
+      controller.lastError == null &&
+      DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+  }
+  expect(controller.lastError, isNull);
+  final receipt = controller.lastSemanticEditPerformance;
+  expect(receipt, isNotNull);
+  expect(
+    identical(receipt, previous),
+    isFalse,
+    reason:
+        'semantic receipt did not advance; pending=${controller.pendingEdits}, '
+        'revision=${controller.revision}, resync=${controller.resyncCount}/'
+        '${controller.lastResyncReason.name}, input=${controller.inputValue}',
+  );
+  return receipt!;
+}
+
 Future<void> _captureInputFrameBuild(
   List<FrameTiming> timings,
   int start,
@@ -471,6 +613,13 @@ int _percentile(List<int> values, int percentile) {
 
 int _maximum(List<int> values) =>
     values.fold(0, (maximum, value) => value > maximum ? value : maximum);
+
+Map<String, Object> _distribution(List<int> values) => {
+  'rawMs': values.map((value) => value / 1000).toList(),
+  'p50Ms': _percentile(values, 50) / 1000,
+  'p99Ms': _percentile(values, 99) / 1000,
+  'maxMs': _maximum(values) / 1000,
+};
 
 String _fixture(int targetBytes, {required String shape}) {
   if (shape == 'giant-line') {

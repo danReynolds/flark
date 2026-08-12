@@ -1,7 +1,8 @@
 use std::time::{Duration, Instant};
 
 use flark_runtime::{
-    DocumentEditIntentDispositionV1, DocumentEditIntentV1, DocumentSession, DocumentSessionPhase,
+    DocumentEditIntentDispositionV1, DocumentEditIntentV1, DocumentEditPresentationTransitionV1,
+    DocumentSession, DocumentSessionPhase,
 };
 
 fn pump_ready(document: &mut DocumentSession) {
@@ -30,6 +31,7 @@ struct IntentCase {
     selection_utf16: usize,
     expected: &'static str,
     expected_selection_utf16: usize,
+    expected_transition: DocumentEditPresentationTransitionV1,
 }
 
 #[test]
@@ -42,6 +44,7 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             selection_utf16: 5,
             expected: "alpha\n\n bravo\n",
             expected_selection_utf16: 7,
+            expected_transition: DocumentEditPresentationTransitionV1::SplitParagraph,
         },
         IntentCase {
             name: "unordered continuation",
@@ -50,6 +53,7 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             selection_utf16: 7,
             expected: "- alpha\n- \n",
             expected_selection_utf16: 10,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueList,
         },
         IntentCase {
             name: "ordered continuation",
@@ -58,6 +62,7 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             selection_utf16: 8,
             expected: "9) alpha\n10) \n",
             expected_selection_utf16: 13,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueList,
         },
         IntentCase {
             name: "empty list exits",
@@ -66,6 +71,7 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             selection_utf16: 2,
             expected: "\n",
             expected_selection_utf16: 0,
+            expected_transition: DocumentEditPresentationTransitionV1::ExitList,
         },
         IntentCase {
             name: "unterminated empty list exits onto a blank line",
@@ -74,6 +80,7 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             selection_utf16: 2,
             expected: "\n",
             expected_selection_utf16: 1,
+            expected_transition: DocumentEditPresentationTransitionV1::ExitList,
         },
         IntentCase {
             name: "first list item lifts",
@@ -82,6 +89,7 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             selection_utf16: 2,
             expected: "alpha\n",
             expected_selection_utf16: 0,
+            expected_transition: DocumentEditPresentationTransitionV1::LiftList,
         },
         IntentCase {
             name: "later list item lifts with separation",
@@ -90,6 +98,7 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             selection_utf16: 8,
             expected: "- one\n\ntwo\n",
             expected_selection_utf16: 7,
+            expected_transition: DocumentEditPresentationTransitionV1::LiftList,
         },
         IntentCase {
             name: "plain paragraph merge",
@@ -98,6 +107,7 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             selection_utf16: 5,
             expected: "onetwo\n",
             expected_selection_utf16: 3,
+            expected_transition: DocumentEditPresentationTransitionV1::MergeParagraph,
         },
         IntentCase {
             name: "CRLF paragraph Return",
@@ -106,6 +116,7 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             selection_utf16: 5,
             expected: "alpha\r\n\r\n\r\n",
             expected_selection_utf16: 9,
+            expected_transition: DocumentEditPresentationTransitionV1::SplitParagraph,
         },
     ];
 
@@ -124,6 +135,11 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
         assert_eq!(receipt.base_revision, 1, "{}", case.name);
         assert_eq!(receipt.result_revision, 2, "{}", case.name);
         assert!(receipt.committed_splice.is_some(), "{}", case.name);
+        assert_eq!(
+            receipt.presentation_transition, case.expected_transition,
+            "{}",
+            case.name
+        );
         assert_eq!(
             receipt.result_selection_utf16, case.expected_selection_utf16,
             "{}",

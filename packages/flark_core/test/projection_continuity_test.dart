@@ -114,6 +114,19 @@ void main() {
       ),
       isNull,
     );
+    expect(
+      authorizeRowProjectionContinuity(
+        revision: 7,
+        policy: FlarkViewportRowContinuityPolicy.plainTextEdit,
+        editableUtf16: const FlarkSourceRange(2, 9),
+        editableText: 'content',
+        inlineFacts: const [],
+        startUtf16: 2,
+        endUtf16: 2,
+        replacement: '# ',
+      ),
+      isNull,
+    );
   });
 
   test('row continuity never overrides an inline fact policy', () {

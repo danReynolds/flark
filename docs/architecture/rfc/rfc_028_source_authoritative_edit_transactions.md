@@ -1,7 +1,8 @@
 # RFC 028: Source-authoritative edit transactions
 
-**Status:** PROPOSED — H1 semantic seam implemented in part and under focused
-validation. 2026-08-11.
+**Status:** PROPOSED — H1 semantic seam and performance receipt implemented;
+H2 framework-neutral structural transitions passed the full v4 gate and are
+ready for focused dogfood. 2026-08-12.
 
 **Amends:**
 [RFC 026](rfc_026_flark_v4_product_architecture.md) and
@@ -597,10 +598,14 @@ before the next dogfood; it is not conditioned on rediscovering flicker.
 H2 extends the existing transaction-bound `EditPresentationContinuity` protocol
 with the smallest operation-specific old-to-new source mapping needed for E1.
 It does not create a second projection-transition subsystem and does not claim
-certification. Flutter consumes the typed mapping and otherwise shows the
+certification. Rust classifies the transition in the committed receipt;
+`flark_core` maps source-backed presentation runs and publishes a
+framework-neutral transitional row or neutral gap. Flutter adapts that model to
+selection, layout, and paint without switching on Markdown transition kinds.
+Any other Dart frontend consumes the same Core model and otherwise shows the
 smallest authenticated neutral island. The speculative `_pendingBlockSplit`
-bypass is removed; H1 may retain only receipt-bound local gap geometry after an
-exact committed splice, never a Flutter-guessed source operation.
+bypass is removed; only receipt-bound local geometry may survive an exact
+committed splice, never a frontend-guessed source operation.
 
 ## 9. Composition, clipboard, and platforms
 
@@ -633,17 +638,21 @@ gateway. The common editing behavior is not reimplemented once per platform.
   choreography.
 - **`flark_core`**: canonical selection generation, one authoritative mutation
   gate, worker request, receipt validation/adoption, history grouping, ordered
-  compact publication, and `postCommitUnknown` recovery state.
+  compact publication, `postCommitUnknown` recovery state, framework-neutral
+  source-mapped presentation rows, and receipt-backed transition state.
 - **`flark`**: platform observation arbiter and small dependent-observation FIFO,
   input-window reconciliation, connection lifecycle, gestures, clipboard/menu
-  adapters, one receipt installation, projection, and frame presentation.
+  adapters, Core-presentation adaptation, selection decoration, layout, and
+  frame presentation.
 - **`flark_parser` / projection runtime**: Markdown semantics, certification,
   bounded edit context, optional single-use prepared hint, and the existing
   continuity protocol's structural mappings.
 
 No Flutter dependency enters `flark_core`. No Markdown recognizer, marker
 incrementer, block-split policy, or delimiter-sensitive carry validator remains
-authoritative in Dart at the destination.
+authoritative in a frontend adapter at the destination. A non-Flutter Dart UI
+must implement its own input, layout, hit-testing, accessibility, and paint
+adapters, but not Markdown edit or structural-transition semantics.
 
 ## 11. Scenario and proof harness
 
@@ -690,20 +699,55 @@ approximately 2.6-2.9 ms for 1-10 MiB ordinary documents and about 0.05 ms for a
 1 MiB giant line on the benchmark Mac. These are development probes, not H1
 p99 receipts.
 
-The delta-model Return lane now assigns mutation authority to the delta and
-treats its later action as acknowledgement. One bounded provisional successor
-FIFO reconciles rapid typing against the exact Rust receipt; it is capped at
-seven dependent observations and fails closed on ambiguous interiors or
-unsupported non-delta successors. Injected reply loss recovers the retained
-terminal by replaying the exact logical ID/digest, with one source revision and
-one undo unit.
+The input arbiter now handles delta and full-value Return, treats the paired
+macOS action as acknowledgement, admits selector Backspace and other terminal
+commands as bounded successors, and reconciles full-value or delta typing in
+the exact pre-edit input window. The FIFO is capped at seven dependent
+observations and fails closed on overflow or a successor after a deferred
+command. Focused regressions cover duplicate delta/action delivery, Return then
+Backspace, whole-value typing, cap overflow, and cross-page selection without
+viewport navigation mutating the canonical selection.
 
-Still required for H1: the remaining platform-observation modes, especially
-selector/full-value successor capture; maximum live-anchor and multi-session
-contention measurements; stable structural frame evidence; and complete
-event-to-presented-frame instrumentation. Literal source transactions,
-non-collapsed replacement, task lists, full composition, and other structural
-constructs remain H3/H4 work.
+Injected reply loss recovers the retained terminal by replaying the exact
+logical ID/digest, with one source revision and one undo unit. Injected worker
+loss fail-stops Core, two independent editor sessions commit without cross-talk,
+and a semantic transaction transforms all 4,096 negotiated live anchors while
+the 4,097th allocation fails closed.
+
+The reproduced 12,000-byte ordered-list creation failure is not a general open
+or document-size cap. It is the parser's explicit `SegmentedLine` refusal when
+a block-opening physical line exceeds its 4 KiB direct-classification window;
+plain giant lines remain supported. Proving suffix-dependent block semantics
+for segmented opener lines is parser-hardening work, not an input-arbitration
+patch, and remains tracked for H5.
+
+The valid foreground 1 MiB, 120-observation semantic burst measured 8.322 ms
+callback-to-frame p50, 8.900 ms p99, and 8.982 ms max. Editor-attributed work
+measured 1.512 ms p50, 2.142 ms p99, and 2.593 ms max; callback-to-receipt p99
+was 2.031 ms, worker round-trip p99 1.878 ms, and native FFI p99 1.606 ms. No
+sample crossed the frame budget. The headless 5 MiB semantic lane measured
+approximately 0.297 ms p50 and 3.815 ms p99, with size-independent development
+probes through 10 MiB. These receipts prove the benchmark-Mac H1 path, not
+mobile, IME, or the full shape matrix.
+
+H2 now carries Rust-authored split/continue/exit/merge/lift classifications
+through ABI and Core. Core owns source-run remapping and neutral-gap geometry;
+Flutter contains no switch over those transition kinds. Focused headless,
+controller, and real-surface Return checks cover repeated Return plus typing,
+Return then selector Backspace, immediate typing behind Backspace, paragraph
+merge, list lift, undo, and no raw-marker/empty-surface intermediate state. A
+no-Flutter fake frontend consumes the same Core transition model.
+
+The final tree passed the unmasked `verify_v4.sh` gate. The single post-gate
+foreground attempt was correctly rejected by the harness after macOS left the
+display inactive for 29.6 seconds; its component medians remained 0.360 ms from
+callback to receipt and 1.429 ms of editor-attributed latency, but it is not p99
+evidence. The earlier valid H1 receipt therefore remains the performance record
+for this checkpoint. Maximum-anchor and multi-session *contention
+measurements* and proof of bounded zero-state reclamation after worker loss
+remain hardening evidence rather than reasons to duplicate the now-green H2
+behavior work. Literal source transactions, non-collapsed replacement, task
+lists, full composition, and other structural constructs remain H3/H4 work.
 
 ### H1 — one-splice vertical slice
 
@@ -762,11 +806,20 @@ performance evidence contract.
 
 ### H2 — stable structural presentation
 
-Extend the existing continuity protocol for E1 structural mappings and rerun
-the complete path. If and only if semantic availability or resolve time caused
-an H1 miss, add the single-use piggybacked prepared hint and rerun. No broader
-dogfood occurs until Return and Backspace are visually stable through pending
-parser, burst, and transition lanes.
+Carry Rust-authored E1 transition classifications into a framework-neutral Core
+presentation transition, then adapt that result in Flutter. Core must retain
+only untouched source-mapped runs or a neutral exact-source gap; ambiguous
+mapping fails closed. Flutter may decorate selection and paint the result but
+may not infer a Markdown transition. A headless fake frontend and the Flutter
+adapter must pass the same transition fixtures.
+
+If and only if semantic availability or resolve time caused an H1 miss, add the
+single-use piggybacked prepared hint and rerun. No broader dogfood occurs until
+Return and Backspace are visually stable through pending parser, burst, and
+transition lanes. H2 behavior and framework-boundary checks are green, and the
+full v4 gate passed. The post-gate foreground attempt was environmentally
+invalid, so its wall-clock tail is excluded rather than rerun as low-signal
+work; the valid H1 receipt remains the checkpoint's performance authority.
 
 ### H3 — literal transaction convergence
 

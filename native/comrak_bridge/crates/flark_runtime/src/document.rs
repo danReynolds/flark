@@ -33,7 +33,10 @@ use crate::edit_intent::{
     resolve_document_edit_intent_v1, DocumentEditLineEnding, DocumentParagraphMerge,
     DocumentSimpleEditContext, DocumentSimpleEditRow,
 };
-use crate::{DocumentEditIntentDispositionV1, DocumentEditIntentReceiptV1, DocumentEditIntentV1};
+use crate::{
+    DocumentEditIntentDispositionV1, DocumentEditIntentReceiptV1, DocumentEditIntentV1,
+    DocumentEditPresentationTransitionV1,
+};
 
 const SYNTAX_PROFILE_GFM_V1: u32 = 1;
 const QUERY_OPEN_DEPTH_LIMIT: usize = 256;
@@ -818,6 +821,7 @@ impl DocumentSession {
                 result_source_byte_length: self.source_byte_len(),
                 result_source_utf16_length: self.source_utf16_len(),
                 parser_pending: self.phase() != DocumentSessionPhase::Ready,
+                presentation_transition: DocumentEditPresentationTransitionV1::None,
             });
         }
 
@@ -843,6 +847,7 @@ impl DocumentSession {
                 result_source_byte_length: self.source_byte_len(),
                 result_source_utf16_length: self.source_utf16_len(),
                 parser_pending: self.phase() != DocumentSessionPhase::Ready,
+                presentation_transition: DocumentEditPresentationTransitionV1::None,
             });
         };
         let resolved =
@@ -858,6 +863,7 @@ impl DocumentSession {
                 result_source_byte_length: self.source_byte_len(),
                 result_source_utf16_length: self.source_utf16_len(),
                 parser_pending: self.phase() != DocumentSessionPhase::Ready,
+                presentation_transition: DocumentEditPresentationTransitionV1::None,
             });
         };
         if selection_byte != splice.base_byte_range.end
@@ -894,6 +900,7 @@ impl DocumentSession {
             result_source_byte_length: self.source_byte_len(),
             result_source_utf16_length: self.source_utf16_len(),
             parser_pending: edit.parser_pending,
+            presentation_transition: resolved.presentation_transition,
         })
     }
 
