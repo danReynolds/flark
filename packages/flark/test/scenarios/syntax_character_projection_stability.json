@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "syntax-character-projection-stability",
-  "description": "Typing Markdown-significant punctuation keeps certified inline surroundings marker-free while the result is re-certified.",
+  "description": "Typing and removing representative Markdown syntax hazards keeps certified inline surroundings marker-free while each result is re-certified.",
   "initialSource": "Before **bold** after\n",
   "activation": {
     "needle": "after",
@@ -16,6 +16,96 @@
     },
     {
       "type": "waitForIdle"
+    },
+    {
+      "type": "pressBackspace"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "typeText",
+      "text": "_",
+      "intervalMs": 0
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "pressBackspace"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "typeText",
+      "text": "`",
+      "intervalMs": 0
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "pressBackspace"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "typeText",
+      "text": "[",
+      "intervalMs": 0
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "pressBackspace"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "typeText",
+      "text": "~",
+      "intervalMs": 0
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "pressBackspace"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "typeText",
+      "text": "<",
+      "intervalMs": 0
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "pressBackspace"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "typeText",
+      "text": "\\",
+      "intervalMs": 0
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "pressBackspace"
+    },
+    {
+      "type": "waitForIdle"
     }
   ],
   "schedules": [
@@ -24,14 +114,29 @@
     }
   ],
   "expect": {
-    "source": "Before **bold** aft*er\n",
-    "caretUtf16": 20,
+    "source": "Before **bold** after\n",
+    "caretUtf16": 19,
     "resyncCount": 0,
     "faulted": false,
     "forbiddenSurfaceSubstrings": ["**", "<empty>"],
     "paintedSurfaceNeverContains": ["**", "<empty>"],
-    "expectedPaintedPresentations": ["Before bold aft*er"],
-    "expectedPaintedRenderPlanSamples": 1,
-    "expectedPaintedVisualStateSamples": 1
+    "expectedPaintedPresentations": [
+      "Before bold aft*er",
+      "Before bold after",
+      "Before bold aft_er",
+      "Before bold after",
+      "Before bold aft`er",
+      "Before bold after",
+      "Before bold aft[er",
+      "Before bold after",
+      "Before bold aft~er",
+      "Before bold after",
+      "Before bold aft<er",
+      "Before bold after",
+      "Before bold aft\\er",
+      "Before bold after"
+    ],
+    "expectedPaintedRenderPlanSamples": 14,
+    "expectedPaintedVisualStateSamples": 14
   }
 }

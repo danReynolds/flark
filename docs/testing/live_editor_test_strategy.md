@@ -442,6 +442,14 @@ in the faster Rust/Core matrices. Those additions found and closed shared
 duplicate-action, successor-history, parser-refresh generation, and structural
 recertification bugs rather than adding construct-local handlers.
 
+The syntax-character stability journey is one compact hazard-family cycle, not
+one fixture per punctuation mark. It inserts and removes representative
+emphasis, code, link, strikethrough, angle, and escape punctuation and requires
+exactly one mounted presentation/render/selection state per edit. This caught
+the same user-visible whole-row relay behind an incomplete `<` opener after the
+original `*` case was green, proving why the gate is organized by parser-hazard
+families rather than one reported character.
+
 Rendered task-checkbox activation now uses the same portable plan as other
 cross-layer behavior. The no-window lane invokes the framework-neutral target
 action, the mounted lane observes its receipt-backed projection through

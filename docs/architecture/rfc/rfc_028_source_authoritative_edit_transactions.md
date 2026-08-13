@@ -1126,6 +1126,16 @@ grapheme-safe cuts remain bounded. Portable mounted regressions pin the blank
 paragraph and syntax-character cases; a render-object regression pins the exact
 257-unit boundary reported during dogfood.
 
+The syntax-character gate now cycles representative emphasis, code, link,
+strikethrough, angle-hazard, and escape punctuation through insert and delete.
+That expansion found a second whole-row relay for an incomplete `<` opener:
+the block row was certified, but its authoritative inline fact set was empty.
+An empty fact set may supersede a provisional projection when the edit touched
+the styled run itself; when the edit is confined to a plain exact run, the
+mechanically unchanged sibling styles remain until nonempty inline facts or a
+real block-kind change arrive. This is a general authority rule, not a
+character-specific parser exception.
+
 ### H5 — hardening and later architecture
 
 Qualify memory envelopes, fault recovery, giant-line raster behavior, GFM and

@@ -4724,8 +4724,38 @@ final class FlarkEditorController extends ChangeNotifier {
     }
     if (viewport.revision < continuity.resultRevision) return false;
     final authorized = continuity.contentUtf16;
-    return viewport.coveredUtf16.start <= authorized.start &&
-        authorized.end <= viewport.coveredUtf16.end;
+    for (final row in viewport.rows) {
+      final source = row.sourceUtf16;
+      if (source.start > authorized.start || authorized.end > source.end) {
+        continue;
+      }
+      // Block certification and inline presentation are separate facts. An
+      // incomplete autolink/HTML opener can produce a certified Paragraph
+      // whose inline facts are deliberately unavailable. Replacing the
+      // mechanically exact provisional surface with that row would expose
+      // unrelated, previously certified delimiters. Keep the provisional
+      // presentation until the parser publishes usable inline facts, while a
+      // real block-kind change is still allowed to supersede it immediately.
+      if (row.kind != continuity.presentation.kind ||
+          row.projectionSegments != null) {
+        return true;
+      }
+      final inlineFacts = row.inlineFacts;
+      if (inlineFacts == null) return false;
+      if (inlineFacts.isNotEmpty) return true;
+      // An authoritative empty fact set is allowed to remove styling only
+      // when the literal edit actually touched the run that owned it. When
+      // the edit landed in a plain run, an empty result can be the parser's
+      // conservative response to a new incomplete hazard (`<`, for example);
+      // unrelated projected runs remain mechanically valid.
+      return continuity.presentation.runs.any(
+        (run) =>
+            run.styles.isNotEmpty &&
+            run.sourceUtf16Start < authorized.end &&
+            authorized.start < run.sourceUtf16End,
+      );
+    }
+    return false;
   }
 
   void _restoreInputWindow() {
