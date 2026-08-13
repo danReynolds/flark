@@ -12,6 +12,8 @@ final class LiveEditorScenarioSnapshot {
     required this.lastError,
     required this.settledPresentation,
     required this.paintedPresentations,
+    required this.paintedRenderPlanHashes,
+    required this.paintedVisualStateHashes,
     required this.revision,
     required this.scrollOffset,
   });
@@ -24,6 +26,8 @@ final class LiveEditorScenarioSnapshot {
   final Object? lastError;
   final String settledPresentation;
   final List<String> paintedPresentations;
+  final List<int> paintedRenderPlanHashes;
+  final List<int> paintedVisualStateHashes;
   final int revision;
   final double? scrollOffset;
 }
@@ -82,6 +86,8 @@ final class LiveEditorScenarioExecutionResult {
     'revision': snapshot.revision,
     'resyncs': snapshot.resyncCount,
     'paintSamples': snapshot.paintedPresentations.length,
+    'renderPlanSamples': snapshot.paintedRenderPlanHashes.length,
+    'visualStateSamples': snapshot.paintedVisualStateHashes.length,
     'scrollOffset': ?snapshot.scrollOffset,
     'passed': true,
   };
@@ -217,6 +223,24 @@ void _assertExpectation(
   if (expected.paintedPresentationNeverContains.isNotEmpty &&
       !driver.observesPaint) {
     return;
+  }
+  if (driver.observesPaint) {
+    if (expected.expectedPaintedRenderPlanSamples case final count?) {
+      _equal(
+        plan,
+        'paintedRenderPlanSamples',
+        count,
+        actual.paintedRenderPlanHashes.length,
+      );
+    }
+    if (expected.expectedPaintedVisualStateSamples case final count?) {
+      _equal(
+        plan,
+        'paintedVisualStateSamples',
+        count,
+        actual.paintedVisualStateHashes.length,
+      );
+    }
   }
   for (final forbidden in expected.paintedPresentationNeverContains) {
     for (

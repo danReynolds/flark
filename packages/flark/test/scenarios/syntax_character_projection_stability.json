@@ -29,6 +29,8 @@
     "resyncCount": 0,
     "faulted": false,
     "forbiddenSurfaceSubstrings": ["**", "<empty>"],
-    "paintedSurfaceNeverContains": ["**", "<empty>"]
+    "paintedSurfaceNeverContains": ["**", "<empty>"],
+    "expectedPaintedRenderPlanSamples": 1,
+    "expectedPaintedVisualStateSamples": 1
   }
 }

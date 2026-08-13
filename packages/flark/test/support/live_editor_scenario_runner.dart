@@ -250,6 +250,8 @@ base class NoWindowLiveEditorScenarioDriver
       lastError: controller.lastError,
       settledPresentation: presentation,
       paintedPresentations: const [],
+      paintedRenderPlanHashes: const [],
+      paintedVisualStateHashes: const [],
       revision: controller.revision,
       scrollOffset: null,
     );

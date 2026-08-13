@@ -15,6 +15,8 @@ final class FlutterSurfaceLiveEditorScenarioDriver
 
   final WidgetTester tester;
   final List<String> _paintedPresentations = [];
+  final List<int> _paintedRenderPlanHashes = [];
+  final List<int> _paintedVisualStateHashes = [];
 
   @override
   String get name => 'flutter-surface';
@@ -33,6 +35,8 @@ final class FlutterSurfaceLiveEditorScenarioDriver
   Future<void> start(LiveEditorScenarioPlan plan) async {
     await super.start(plan);
     _paintedPresentations.clear();
+    _paintedRenderPlanHashes.clear();
+    _paintedVisualStateHashes.clear();
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
@@ -53,12 +57,29 @@ final class FlutterSurfaceLiveEditorScenarioDriver
 
   void _recordPaint(FlarkSurfacePaintObservation observation) {
     if (_paintedPresentations.isEmpty ||
-        _paintedPresentations.last != observation.presentation) {
+        _paintedPresentations.last != observation.presentation ||
+        _paintedRenderPlanHashes.last != observation.renderPlanHash ||
+        _paintedVisualStateHashes.last != observation.visualStateHash) {
       if (_paintedPresentations.length == 128) {
         _paintedPresentations.removeAt(0);
+        _paintedRenderPlanHashes.removeAt(0);
+        _paintedVisualStateHashes.removeAt(0);
       }
       _paintedPresentations.add(observation.presentation);
+      _paintedRenderPlanHashes.add(observation.renderPlanHash);
+      _paintedVisualStateHashes.add(observation.visualStateHash);
     }
+  }
+
+  @override
+  Future<void> activateAtUtf16(int offset) async {
+    await super.activateAtUtf16(offset);
+    await tester.pump();
+    // Scenario paint assertions describe the edit, not the preceding focus
+    // transition needed to place the caret.
+    _paintedPresentations.clear();
+    _paintedRenderPlanHashes.clear();
+    _paintedVisualStateHashes.clear();
   }
 
   @override
@@ -86,6 +107,8 @@ final class FlutterSurfaceLiveEditorScenarioDriver
       lastError: controllerSnapshot.lastError,
       settledPresentation: controllerSnapshot.settledPresentation,
       paintedPresentations: List.unmodifiable(_paintedPresentations),
+      paintedRenderPlanHashes: List.unmodifiable(_paintedRenderPlanHashes),
+      paintedVisualStateHashes: List.unmodifiable(_paintedVisualStateHashes),
       revision: controllerSnapshot.revision,
       scrollOffset: _surface.scrollOffset,
     );

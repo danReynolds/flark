@@ -19,6 +19,7 @@ final class MacosNativeLiveEditorScenarioDriver
   Process? _process;
   StreamIterator<String>? _responses;
   int _sequence = 0;
+  int _paintObservationStart = 0;
   LiveEditorScenarioSnapshot? _lastSnapshot;
   Map<String, Object?>? _lastRawSnapshot;
 
@@ -41,6 +42,7 @@ final class MacosNativeLiveEditorScenarioDriver
       'scenarioId': plan.qualifiedId,
       'source': plan.initialSource,
     });
+    _paintObservationStart = 0;
     _lastSnapshot = _snapshot(response);
   }
 
@@ -63,7 +65,10 @@ final class MacosNativeLiveEditorScenarioDriver
 
   @override
   Future<void> activateAtUtf16(int offset) async {
-    await _request('activateAtUtf16', {'utf16Offset': offset});
+    final response = await _request('activateAtUtf16', {'utf16Offset': offset});
+    final json = (response['snapshot']! as Map).cast<String, Object?>();
+    _paintObservationStart = (json['surfaceFrames']! as List).length;
+    _lastSnapshot = null;
   }
 
   @override
@@ -204,7 +209,19 @@ final class MacosNativeLiveEditorScenarioDriver
       lastError: json['lastError'],
       settledPresentation: json['settledPresentation']! as String,
       paintedPresentations: List<String>.unmodifiable(
-        (json['surfaceFrames']! as List).cast<String>(),
+        (json['surfaceFrames']! as List).cast<String>().skip(
+          _paintObservationStart,
+        ),
+      ),
+      paintedRenderPlanHashes: List<int>.unmodifiable(
+        ((json['surfaceFrameHashes'] as List?) ?? const <Object?>[])
+            .cast<int>()
+            .skip(_paintObservationStart),
+      ),
+      paintedVisualStateHashes: List<int>.unmodifiable(
+        ((json['surfaceVisualStateHashes'] as List?) ?? const <Object?>[])
+            .cast<int>()
+            .skip(_paintObservationStart),
       ),
       revision: json['revision']! as int,
       scrollOffset: (json['scrollOffset']! as num).toDouble(),

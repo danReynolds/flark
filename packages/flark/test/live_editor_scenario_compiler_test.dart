@@ -22,6 +22,8 @@ void main() {
     );
     expect(plans.first.planHash, hasLength(64));
     expect(plans.first.planHash, isNot(plans.last.planHash));
+    expect(plans.first.expectation.expectedPaintedRenderPlanSamples, 1);
+    expect(plans.first.expectation.expectedPaintedVisualStateSamples, 1);
     final roundTrip = decodeLiveEditorScenarioPlanBundle(
       encodeLiveEditorScenarioPlanBundle(plans),
     );
@@ -126,5 +128,7 @@ Map<String, Object?> _fixture({String initialSource = 'Alpha beta.'}) => {
     'faulted': false,
     'forbiddenSurfaceSubstrings': <Object?>[],
     'paintedSurfaceNeverContains': <Object?>[],
+    'expectedPaintedRenderPlanSamples': 1,
+    'expectedPaintedVisualStateSamples': 1,
   },
 };

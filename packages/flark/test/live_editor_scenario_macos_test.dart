@@ -24,6 +24,7 @@ void main() {
           File('test/scenarios/simple_list_continue_exit_type.json'),
           File('test/scenarios/unicode_grapheme_delete_successor.json'),
           File('test/scenarios/projected_inline_rapid_typing.json'),
+          File('test/scenarios/syntax_character_projection_stability.json'),
           File('test/scenarios/scroll_preserves_selection.json'),
           File('test/scenarios/styled_selection_replace_history.json'),
           File('test/scenarios/multiblock_paste_history.json'),
@@ -58,6 +59,9 @@ void main() {
       try {
         final result = await executeLiveEditorScenario(plan, driver!);
         print('FLARK_SCENARIO_RESULT ${jsonEncode(result.toJson())}');
+        if (Platform.environment['FLARK_SCENARIO_TRACE'] == '1') {
+          print('FLARK_NATIVE_RECEIPT ${driver.debugLastReceipt}');
+        }
       } catch (_) {
         stderr.writeln('FLARK_NATIVE_RECEIPT ${driver!.debugLastReceipt}');
         rethrow;

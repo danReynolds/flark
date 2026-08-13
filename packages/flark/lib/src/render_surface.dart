@@ -34,6 +34,7 @@ final class FlarkSurfacePaintObservation {
     required this.scrollOffset,
     required this.presentation,
     required this.renderPlanHash,
+    required this.visualStateHash,
   });
 
   final int revision;
@@ -41,6 +42,7 @@ final class FlarkSurfacePaintObservation {
   final double scrollOffset;
   final String presentation;
   final int renderPlanHash;
+  final int visualStateHash;
 }
 
 enum FlarkSurfaceAction { toggleTaskChecked }
@@ -261,6 +263,24 @@ final class RenderFlarkSurface extends RenderBox {
         ),
         painted.painter.width,
         painted.painter.height,
+      ),
+    ),
+  );
+
+  /// Caret/selection ownership layered over [debugRenderPlanHash]. Keeping it
+  /// separate distinguishes a content/layout flash from a transient loss of
+  /// editor visual state.
+  int get debugVisualStateHash => Object.hash(
+    debugRenderPlanHash,
+    Object.hashAll(
+      _paintedRows.map(
+        (painted) => Object.hash(
+          painted.presentation.active,
+          painted.presentation.selection?.baseOffset,
+          painted.presentation.selection?.extentOffset,
+          painted.presentation.selection?.affinity,
+          painted.presentation.selection?.isDirectional,
+        ),
       ),
     ),
   );
@@ -1481,6 +1501,7 @@ final class RenderFlarkSurface extends RenderBox {
             ? '<empty>'
             : observedRows.join('\n'),
         renderPlanHash: debugRenderPlanHash,
+        visualStateHash: debugVisualStateHash,
       ),
     );
   }

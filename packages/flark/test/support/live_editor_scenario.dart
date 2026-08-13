@@ -227,6 +227,8 @@ final class LiveEditorScenarioExpectation {
     required this.settledPresentationNeverContains,
     required this.paintedPresentationNeverContains,
     this.minimumObservedScrollOffset,
+    this.expectedPaintedRenderPlanSamples,
+    this.expectedPaintedVisualStateSamples,
   });
 
   factory LiveEditorScenarioExpectation.fromJson(Map<String, Object?> json) {
@@ -240,6 +242,8 @@ final class LiveEditorScenarioExpectation {
       'settledPresentationNeverContains',
       'paintedPresentationNeverContains',
       'minimumObservedScrollOffset',
+      'expectedPaintedRenderPlanSamples',
+      'expectedPaintedVisualStateSamples',
     });
     return LiveEditorScenarioExpectation(
       source: reader.requiredString('source'),
@@ -258,6 +262,12 @@ final class LiveEditorScenarioExpectation {
       minimumObservedScrollOffset: reader.optionalNonNegativeInt(
         'minimumObservedScrollOffset',
       ),
+      expectedPaintedRenderPlanSamples: reader.optionalNonNegativeInt(
+        'expectedPaintedRenderPlanSamples',
+      ),
+      expectedPaintedVisualStateSamples: reader.optionalNonNegativeInt(
+        'expectedPaintedVisualStateSamples',
+      ),
     );
   }
 
@@ -269,6 +279,8 @@ final class LiveEditorScenarioExpectation {
   final List<String> settledPresentationNeverContains;
   final List<String> paintedPresentationNeverContains;
   final int? minimumObservedScrollOffset;
+  final int? expectedPaintedRenderPlanSamples;
+  final int? expectedPaintedVisualStateSamples;
 
   Map<String, Object?> toJson() => {
     'source': source,
@@ -279,6 +291,8 @@ final class LiveEditorScenarioExpectation {
     'settledPresentationNeverContains': settledPresentationNeverContains,
     'paintedPresentationNeverContains': paintedPresentationNeverContains,
     'minimumObservedScrollOffset': ?minimumObservedScrollOffset,
+    'expectedPaintedRenderPlanSamples': ?expectedPaintedRenderPlanSamples,
+    'expectedPaintedVisualStateSamples': ?expectedPaintedVisualStateSamples,
   };
 }
 
@@ -520,6 +534,8 @@ final class LiveEditorScenarioCompiler {
       'forbiddenSurfaceSubstrings',
       'paintedSurfaceNeverContains',
       'minimumObservedScrollOffset',
+      'expectedPaintedRenderPlanSamples',
+      'expectedPaintedVisualStateSamples',
     });
     final caret = reader.requiredNonNegativeInt('caretUtf16');
     return LiveEditorScenarioExpectation(
@@ -535,6 +551,12 @@ final class LiveEditorScenarioCompiler {
           reader.optionalStringList('paintedSurfaceNeverContains') ?? const [],
       minimumObservedScrollOffset: reader.optionalNonNegativeInt(
         'minimumObservedScrollOffset',
+      ),
+      expectedPaintedRenderPlanSamples: reader.optionalNonNegativeInt(
+        'expectedPaintedRenderPlanSamples',
+      ),
+      expectedPaintedVisualStateSamples: reader.optionalNonNegativeInt(
+        'expectedPaintedVisualStateSamples',
       ),
     );
   }

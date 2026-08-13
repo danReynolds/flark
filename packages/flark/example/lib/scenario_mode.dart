@@ -122,6 +122,8 @@ final class DogfoodScenarioReceiptWriter {
 
   final DogfoodScenarioMode mode;
   final List<String> _surfaceFrames = [];
+  final List<int> _surfaceFrameHashes = [];
+  final List<int> _surfaceVisualStateHashes = [];
   final List<String> _inputEvents = [];
   FlarkEditorController? _controller;
   Timer? _timer;
@@ -141,6 +143,8 @@ final class DogfoodScenarioReceiptWriter {
   void beginScenario(String id) {
     _scenarioId = id;
     _surfaceFrames.clear();
+    _surfaceFrameHashes.clear();
+    _surfaceVisualStateHashes.clear();
     _inputEvents.clear();
     _settledPresentation = '<empty>';
     _commandError = null;
@@ -193,11 +197,18 @@ final class DogfoodScenarioReceiptWriter {
   void recordPaintObservation(FlarkSurfacePaintObservation observation) {
     _lastScrollOffset = observation.scrollOffset;
     final surface = observation.presentation;
-    if (_surfaceFrames.isEmpty || _surfaceFrames.last != surface) {
+    if (_surfaceFrames.isEmpty ||
+        _surfaceFrames.last != surface ||
+        _surfaceFrameHashes.last != observation.renderPlanHash ||
+        _surfaceVisualStateHashes.last != observation.visualStateHash) {
       if (_surfaceFrames.length == 128) {
         _surfaceFrames.removeAt(0);
+        _surfaceFrameHashes.removeAt(0);
+        _surfaceVisualStateHashes.removeAt(0);
       }
       _surfaceFrames.add(surface);
+      _surfaceFrameHashes.add(observation.renderPlanHash);
+      _surfaceVisualStateHashes.add(observation.visualStateHash);
     }
     final controller = _controller;
     if (controller == null) return;
@@ -299,6 +310,10 @@ final class DogfoodScenarioReceiptWriter {
       'lastError': controller.lastError?.toString(),
       'settledPresentation': _settledPresentation,
       'surfaceFrames': List<String>.unmodifiable(_surfaceFrames),
+      'surfaceFrameHashes': List<int>.unmodifiable(_surfaceFrameHashes),
+      'surfaceVisualStateHashes': List<int>.unmodifiable(
+        _surfaceVisualStateHashes,
+      ),
       'scrollOffset': _lastScrollOffset,
       'inputEvents': List<String>.unmodifiable(_inputEvents),
       if (geometry != null)
