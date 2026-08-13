@@ -72,6 +72,102 @@ void main() {
   );
 
   testWidgets(
+    'touch taps activate text while touch drags scroll without selecting',
+    (tester) async {
+      final source = List.generate(
+        12,
+        (index) => 'Paragraph $index has enough text to paint.\n\n',
+      ).join();
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final first = controller.rows.first;
+      await tester.runAsync(() async {
+        controller.activateRow(first, first.editableUtf16!.start);
+        await controller.resolveCanonicalSelection();
+      });
+      final selectionBeforeScroll = await tester.runAsync(
+        controller.resolveCanonicalSelection,
+      );
+      final debugHandle = FlarkEditorDebugHandle();
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Center(
+            child: SizedBox(
+              width: 420,
+              height: 240,
+              child: FlarkEditor(
+                controller: controller,
+                padding: EdgeInsets.zero,
+                debugHandle: debugHandle,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final firstPoint = debugHandle.geometryForSourceUtf16(
+        first.editableUtf16!.start,
+      );
+      expect(firstPoint, isNotNull);
+
+      final scroll = await tester.startGesture(
+        const Offset(400, 300),
+        kind: PointerDeviceKind.touch,
+      );
+      for (var step = 0; step < 3; step += 1) {
+        await scroll.moveBy(const Offset(0, -30));
+      }
+      await scroll.up();
+      await tester.pump();
+
+      final selectionAfterScroll = await tester.runAsync(
+        controller.resolveCanonicalSelection,
+      );
+      expect(selectionAfterScroll?.base, selectionBeforeScroll?.base);
+      expect(selectionAfterScroll?.extent, selectionBeforeScroll?.extent);
+      final firstPointAfterScroll = debugHandle.geometryForSourceUtf16(
+        first.editableUtf16!.start,
+      );
+      expect(
+        firstPointAfterScroll == null ||
+            firstPointAfterScroll.globalPosition.dy <
+                firstPoint!.globalPosition.dy - 40,
+        isTrue,
+      );
+      expect(await tester.runAsync(controller.readSource), source);
+
+      final visibleRow = controller.rows.firstWhere((row) {
+        final editable = row.editableUtf16;
+        return editable != null &&
+            debugHandle.geometryForSourceUtf16(editable.start) != null;
+      });
+      final target = visibleRow.editableUtf16!.start + 3;
+      final targetPoint = debugHandle.geometryForSourceUtf16(target);
+      expect(targetPoint, isNotNull);
+      final selectionGeneration = controller.canonicalSelectionGeneration;
+      final tap = await tester.startGesture(
+        targetPoint!.globalPosition,
+        kind: PointerDeviceKind.touch,
+      );
+      await tap.up();
+      await tester.pump();
+      await _pumpUntil(
+        tester,
+        () => controller.canonicalSelectionGeneration > selectionGeneration,
+      );
+      expect(controller.globalCaretOffset, target);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
     'custom surface paints bounded rows and applies input optimistically',
     (tester) async {
       final controller = (await tester.runAsync(

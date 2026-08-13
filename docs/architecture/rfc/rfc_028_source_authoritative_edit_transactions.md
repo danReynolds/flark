@@ -970,6 +970,15 @@ mounted Flutter; the macOS driver resolves that target to painted geometry and
 performs a real pointer click. This is the general target-action seam, with task
 toggle as its first admitted action rather than a task-specific second editor.
 
+Flutter pointer routing now separates recognizers by intent instead of enabling
+one pan policy on every device: a touch or stylus tap activates text or a
+semantic surface action, a touch or stylus vertical drag scrolls without moving
+selection, and mouse drag remains source selection. Gesture-arena acceptance,
+not pointer-down speculation, decides activation. This closes the original
+scroll-select coupling in the framework adapter; fling physics, selection
+handles, magnifier, platform menus, and physical-device behavior remain H4/H5
+qualification rather than implied by a widget test.
+
 ### H5 — hardening and later architecture
 
 Qualify memory envelopes, fault recovery, giant-line raster behavior, GFM and

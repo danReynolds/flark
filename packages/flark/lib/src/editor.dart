@@ -106,7 +106,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
   FocusNode? _ownedFocusNode;
   TextInputConnection? _connection;
   TextEditingValue? _lastSentValue;
-  FlarkSurfaceHit? _pendingActionHit;
+  FlarkSurfaceHit? _pendingTapHit;
 
   FocusNode get _focusNode => widget.focusNode ?? _ownedFocusNode!;
 
@@ -237,27 +237,81 @@ final class _FlarkEditorState extends State<FlarkEditor>
   }
 
   void _handleTapDown(TapDownDetails details) {
-    final hit = _surface?.positionForOffset(details.localPosition);
-    if (hit == null) return;
-    if (hit.action != null) {
-      _pendingActionHit = hit;
-      return;
-    }
-    _pendingActionHit = null;
-    _activateHit(hit);
+    _pendingTapHit = _surface?.positionForOffset(details.localPosition);
   }
 
   void _handleTap() {
-    final hit = _pendingActionHit;
-    _pendingActionHit = null;
-    if (hit?.action != FlarkSurfaceAction.toggleTaskChecked ||
-        hit?.row == null) {
+    final hit = _pendingTapHit;
+    _pendingTapHit = null;
+    if (hit == null) return;
+    if (hit.action == null) {
+      _activateHit(hit);
+      return;
+    }
+    if (hit.action != FlarkSurfaceAction.toggleTaskChecked || hit.row == null) {
       return;
     }
     _focusNode.requestFocus();
     _openConnection();
-    unawaited(widget.controller.toggleTaskChecked(hit!.row!));
+    unawaited(widget.controller.toggleTaskChecked(hit.row!));
   }
+
+  Map<Type, GestureRecognizerFactory> get _gestureRecognizers => {
+    TapGestureRecognizer:
+        GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+          () => TapGestureRecognizer(
+            debugOwner: this,
+            supportedDevices: const {
+              PointerDeviceKind.mouse,
+              PointerDeviceKind.touch,
+              PointerDeviceKind.stylus,
+              PointerDeviceKind.invertedStylus,
+            },
+          ),
+          (recognizer) {
+            recognizer
+              ..onTapDown = _handleTapDown
+              ..onTap = _handleTap
+              ..onTapCancel = () => _pendingTapHit = null;
+          },
+        ),
+    PanGestureRecognizer:
+        GestureRecognizerFactoryWithHandlers<PanGestureRecognizer>(
+          () => PanGestureRecognizer(
+            debugOwner: this,
+            supportedDevices: const {PointerDeviceKind.mouse},
+          ),
+          (recognizer) {
+            recognizer
+              ..onStart = (details) {
+                _pendingTapHit = null;
+                _activate(details.localPosition);
+              }
+              ..onUpdate = (details) =>
+                  _activate(details.localPosition, extend: true);
+          },
+        ),
+    VerticalDragGestureRecognizer:
+        GestureRecognizerFactoryWithHandlers<VerticalDragGestureRecognizer>(
+          () => VerticalDragGestureRecognizer(
+            debugOwner: this,
+            supportedDevices: const {
+              PointerDeviceKind.touch,
+              PointerDeviceKind.stylus,
+              PointerDeviceKind.invertedStylus,
+            },
+          ),
+          (recognizer) {
+            recognizer
+              ..onStart = (_) {
+                _pendingTapHit = null;
+              }
+              ..onUpdate = (details) {
+                _surface?.scrollBy(-details.delta.dy);
+              };
+          },
+        ),
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -285,18 +339,9 @@ final class _FlarkEditorState extends State<FlarkEditor>
             onPointerPanZoomUpdate: (event) {
               _surface?.scrollBy(-event.localPanDelta.dy);
             },
-            child: GestureDetector(
+            child: RawGestureDetector(
               behavior: HitTestBehavior.opaque,
-              supportedDevices: const {PointerDeviceKind.mouse},
-              onTapDown: _handleTapDown,
-              onTap: _handleTap,
-              onTapCancel: () => _pendingActionHit = null,
-              onPanStart: (details) {
-                _pendingActionHit = null;
-                _activate(details.localPosition);
-              },
-              onPanUpdate: (details) =>
-                  _activate(details.localPosition, extend: true),
+              gestures: _gestureRecognizers,
               child: FlarkRenderSurfaceWidget(
                 key: _surfaceKey,
                 controller: widget.controller,

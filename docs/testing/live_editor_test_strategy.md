@@ -439,6 +439,13 @@ geometry before sending a real click. A focused editor widget test separately
 owns hit-testing and selection preservation, so the portable corpus does not
 duplicate pointer mechanics in every runner.
 
+A focused Flutter adapter test additionally pins the cross-device gesture
+boundary: touch drag scrolls without changing canonical selection, touch tap
+activates an exact painted source position, and the existing mouse gesture test
+still reaches the rendered task action. This is host-routing evidence only;
+mobile physics, selection controls, IME, menus, and accessibility stay in the
+simulator/physical canary matrix.
+
 ### H3 — Grow from evidence
 
 Promote shipped construct families from the candidate list as their v4 product
