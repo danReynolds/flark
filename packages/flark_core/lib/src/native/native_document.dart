@@ -67,6 +67,9 @@ const _tablePresentation = 0x4000000;
 const _inlineAuthoritative = 0x8;
 const _continuityPlainTextEdit = 0x10;
 const _knownViewportRowFlags = 0x1f;
+const _viewportEditCapabilityFlags = 0x7;
+const _inlineFactCountMask = 0xffff;
+const _projectionSegmentCountShift = 16;
 const _inlineFactEmphasis = 1;
 const _inlineFactStrong = 2;
 const _inlineFactCode = 3;
@@ -91,6 +94,7 @@ const _inlineFactTableRowStart = 0x8;
 const _inlineFactTableAutocompleted = 0x10;
 const _knownInlineFactTableFlags = 0x1f;
 const _maxInlineFactsPerRow = 512;
+const _maxProjectionSegmentsPerRow = 256;
 const _absentPresentationPrefix = 0xffffffffffffffff;
 const _maxChunkBytes = 64 * 1024;
 const _maximumSmallEditBytes = 4 * 1024;
@@ -126,7 +130,7 @@ const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 14;
+const _abiMinor = 15;
 // Every v4.7 capability is used by the safe core boundary, including
 // resumable close and snapshot continuations.
 const _requiredCapabilityBits = 0x3ffff;
@@ -1358,7 +1362,7 @@ final class FlarkNativeDocument {
     try {
       request.ref
         ..structSize = sizeOf<FlarkV4QueryRequest>()
-        ..queryKind = _ready ? 2 : 3
+        ..queryKind = _ready ? 4 : 3
         ..revision = _revision
         ..snapshot = 0
         ..continuation = 0;
@@ -1555,22 +1559,36 @@ final class FlarkNativeDocument {
     }
     final records = payload.cast<FlarkV4ViewportRowRecord>();
     var totalInlineFacts = 0;
+    var totalProjectionSegments = 0;
     for (var index = 0; index < header.itemCount; index++) {
       final record = (records + index).ref;
       final inlineIsAuthoritative = record.flags & _inlineAuthoritative != 0;
+      final editCapabilityFlags = record.flags & _viewportEditCapabilityFlags;
+      final inlineFactCount = record.inlineFactCount & _inlineFactCountMask;
+      final projectionSegmentCount =
+          record.inlineFactCount >> _projectionSegmentCountShift;
+      final projected = editCapabilityFlags == 2;
       if (record.flags & ~_knownViewportRowFlags != 0 ||
-          (!inlineIsAuthoritative && record.inlineFactCount != 0) ||
-          record.inlineFactCount > _maxInlineFactsPerRow) {
+          !const {1, 2, 4}.contains(editCapabilityFlags) ||
+          (!inlineIsAuthoritative && inlineFactCount != 0) ||
+          inlineFactCount > _maxInlineFactsPerRow ||
+          projectionSegmentCount > _maxProjectionSegmentsPerRow ||
+          (projected
+              ? projectionSegmentCount < 2
+              : projectionSegmentCount != 0)) {
         throw FlarkNativeException(
           'decode_viewport',
           _notCertified,
           record.flags,
         );
       }
-      totalInlineFacts += record.inlineFactCount;
+      totalInlineFacts += inlineFactCount;
+      totalProjectionSegments += projectionSegmentCount;
     }
     final expectedPayloadBytes =
-        rowRecordBytes + totalInlineFacts * sizeOf<FlarkV4InlineFactRecord>();
+        rowRecordBytes +
+        totalInlineFacts * sizeOf<FlarkV4InlineFactRecord>() +
+        totalProjectionSegments * sizeOf<FlarkV4ProjectionSegmentRecord>();
     if (expectedPayloadBytes != header.payloadBytes) {
       throw FlarkNativeException(
         'decode_viewport',
@@ -1580,9 +1598,18 @@ final class FlarkNativeDocument {
     }
     final inlineRecords = (payload + rowRecordBytes)
         .cast<FlarkV4InlineFactRecord>();
+    final projectionSegmentRecords =
+        (payload +
+                rowRecordBytes +
+                totalInlineFacts * sizeOf<FlarkV4InlineFactRecord>())
+            .cast<FlarkV4ProjectionSegmentRecord>();
     var nextInlineFact = 0;
+    var nextProjectionSegment = 0;
     final rows = List<FlarkViewportRow>.generate(header.itemCount, (index) {
       final record = (records + index).ref;
+      final inlineFactCount = record.inlineFactCount & _inlineFactCountMask;
+      final projectionSegmentCount =
+          record.inlineFactCount >> _projectionSegmentCountShift;
       final capability = switch (record.flags) {
         final int flags when flags & 1 != 0 =>
           FlarkViewportRowEditCapability.contiguous,
@@ -1788,7 +1815,7 @@ final class FlarkNativeDocument {
         );
       }
       final decodedFacts = record.flags & _inlineAuthoritative != 0
-          ? List<FlarkInlineFact>.generate(record.inlineFactCount, (index) {
+          ? List<FlarkInlineFact>.generate(inlineFactCount, (index) {
               final fact = _decodeInlineFact(
                 (inlineRecords + nextInlineFact + index).ref,
                 sourceBytes: sourceBytes,
@@ -1799,7 +1826,42 @@ final class FlarkNativeDocument {
               return fact;
             }, growable: false)
           : null;
-      nextInlineFact += record.inlineFactCount;
+      nextInlineFact += inlineFactCount;
+      final projectionSegments =
+          capability == FlarkViewportRowEditCapability.projectedReserved
+          ? List<FlarkProjectionSegment>.generate(projectionSegmentCount, (
+              index,
+            ) {
+              final segment =
+                  (projectionSegmentRecords + nextProjectionSegment + index)
+                      .ref;
+              return FlarkProjectionSegment(
+                sourceBytes: FlarkSourceRange(
+                  segment.sourceRange.startByte,
+                  segment.sourceRange.endByte,
+                ),
+                sourceUtf16: FlarkSourceRange(
+                  segment.sourceUtf16Range.startByte,
+                  segment.sourceUtf16Range.endByte,
+                ),
+              );
+            }, growable: false)
+          : null;
+      nextProjectionSegment += projectionSegmentCount;
+      if (projectionSegments != null &&
+          !_validProjectionSegments(
+            projectionSegments,
+            editableBytes: editableBytes,
+            editableUtf16: editableUtf16,
+            sourceBytes: sourceBytes,
+            sourceUtf16: sourceUtf16,
+          )) {
+        throw FlarkNativeException(
+          'decode_viewport',
+          _notCertified,
+          projectionSegmentCount,
+        );
+      }
       final tableFacts = decodedFacts
           ?.where((fact) => fact.kind == FlarkInlineFactKind.tableCell)
           .toList(growable: false);
@@ -1835,6 +1897,7 @@ final class FlarkNativeDocument {
         table: table,
         pathDepth: record.pathDepth,
         inlineFacts: inlineFacts,
+        projectionSegments: projectionSegments,
       );
     }, growable: false);
     return FlarkViewport(
@@ -1852,6 +1915,41 @@ final class FlarkNativeDocument {
 
   static bool matchesListRowKind(int kind) =>
       kind == _paragraphKind || kind == _emptyListItemKind;
+
+  static bool _validProjectionSegments(
+    List<FlarkProjectionSegment> segments, {
+    required FlarkSourceRange? editableBytes,
+    required FlarkSourceRange? editableUtf16,
+    required FlarkSourceRange sourceBytes,
+    required FlarkSourceRange sourceUtf16,
+  }) {
+    if (segments.length < 2 || editableBytes == null || editableUtf16 == null) {
+      return false;
+    }
+    var previousByteEnd = editableBytes.start;
+    var previousUtf16End = editableUtf16.start;
+    for (var index = 0; index < segments.length; index++) {
+      final bytes = segments[index].sourceBytes;
+      final utf16 = segments[index].sourceUtf16;
+      if (bytes.start >= bytes.end ||
+          utf16.start >= utf16.end ||
+          bytes.start < sourceBytes.start ||
+          bytes.end > sourceBytes.end ||
+          utf16.start < sourceUtf16.start ||
+          utf16.end > sourceUtf16.end ||
+          (index == 0
+              ? bytes.start != editableBytes.start ||
+                    utf16.start != editableUtf16.start
+              : bytes.start <= previousByteEnd ||
+                    utf16.start <= previousUtf16End)) {
+        return false;
+      }
+      previousByteEnd = bytes.end;
+      previousUtf16End = utf16.end;
+    }
+    return previousByteEnd == editableBytes.end &&
+        previousUtf16End == editableUtf16.end;
+  }
 
   static FlarkInlineFact _decodeInlineFact(
     FlarkV4InlineFactRecord record, {

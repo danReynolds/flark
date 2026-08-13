@@ -11,38 +11,38 @@ use flark_runtime::{
     DocumentActorError, DocumentBulletMarker, DocumentCodeBlockStyle,
     DocumentEditIntentDispositionV1, DocumentEditIntentV1, DocumentEditPresentationTransitionV1,
     DocumentFenceCharacter, DocumentHeadingStyle, DocumentInlineFact, DocumentInlineFactKind,
-    DocumentListDelimiter, DocumentListMarker, DocumentLiveViewportSpan, DocumentSessionError,
-    DocumentSessionPhase, DocumentViewportRowContinuityPolicy, DocumentViewportRowEditCapability,
-    DocumentViewportRowPresentation, HistoryDisposition, HistoryToken, OperationCode,
-    OperationResult, Outcome as RuntimeOutcome, ProgressState, ProgressToken, ResultPageReceipt,
-    ResultRecordKind, Revision, SessionHandle, SessionInspectionReceipt, SessionState, SnapshotId,
-    SourceRange as RuntimeSourceRange, StatusCode, TransactionHandle, MAX_BULK_CHUNK_BYTES,
-    MAX_LIVE_ANCHORS, MAX_QUERY_ITEMS, MAX_RESULT_BYTES, MAX_SMALL_EDIT_BYTES,
-    MAX_SOURCE_CHUNK_BYTES, MAX_TRANSACTION_EDITS,
+    DocumentListDelimiter, DocumentListMarker, DocumentLiveViewportSpan, DocumentProjectionSegment,
+    DocumentSessionError, DocumentSessionPhase, DocumentViewportRowContinuityPolicy,
+    DocumentViewportRowEditCapability, DocumentViewportRowPresentation, HistoryDisposition,
+    HistoryToken, OperationCode, OperationResult, Outcome as RuntimeOutcome, ProgressState,
+    ProgressToken, ResultPageReceipt, ResultRecordKind, Revision, SessionHandle,
+    SessionInspectionReceipt, SessionState, SnapshotId, SourceRange as RuntimeSourceRange,
+    StatusCode, TransactionHandle, MAX_BULK_CHUNK_BYTES, MAX_LIVE_ANCHORS, MAX_QUERY_ITEMS,
+    MAX_RESULT_BYTES, MAX_SMALL_EDIT_BYTES, MAX_SOURCE_CHUNK_BYTES, MAX_TRANSACTION_EDITS,
 };
 
 use crate::{
     AbiInfo, AnchorRequest, BulkBeginRequest, CancelRequest, CertificationRangeRecord,
     CloseRequest, ContinuationRequest, CoordinateRequest, CreateRequest, EditDescriptor,
     EditIntentReceiptV1, EditIntentRequestV1, HistoryRequest, InlineFactRecord, InspectRequest,
-    NegotiateRequest, Outcome, OwnerTransferRequest, PumpRequest, QueryRequest, ResultPageHeader,
-    SessionInspection, SessionRef, SmallEditRequest, SourceRange, SourceReadRequest,
-    SourceTransactionReceiptV1, SourceTransactionRequestV1, StageRequest, TransactionRequest,
-    ViewportRowRecord, WorkBudget, ABI_MAJOR, ABI_MINOR, EDIT_INTENT_DELETE_BACKWARD,
-    EDIT_INTENT_DISPOSITION_APPLIED, EDIT_INTENT_DISPOSITION_HANDLED_NO_CHANGE,
-    EDIT_INTENT_DISPOSITION_NEEDS_CURRENT_SEMANTICS, EDIT_INTENT_DISPOSITION_NOT_APPLICABLE,
-    EDIT_INTENT_INSERT_PARAGRAPH_BREAK, EDIT_INTENT_RECEIPT_HAS_COMMIT,
-    EDIT_INTENT_RECEIPT_PARSER_PENDING, EDIT_INTENT_RECEIPT_SEMANTIC_BYTES,
-    EDIT_PRESENTATION_CONTINUE_BLOCK_QUOTE, EDIT_PRESENTATION_CONTINUE_LIST,
-    EDIT_PRESENTATION_EXIT_BLOCK_QUOTE, EDIT_PRESENTATION_EXIT_HEADING,
-    EDIT_PRESENTATION_EXIT_LIST, EDIT_PRESENTATION_LIFT_BLOCK_QUOTE,
-    EDIT_PRESENTATION_LIFT_HEADING, EDIT_PRESENTATION_LIFT_LIST, EDIT_PRESENTATION_MERGE_PARAGRAPH,
-    EDIT_PRESENTATION_NONE, EDIT_PRESENTATION_OUTDENT_LIST, EDIT_PRESENTATION_SPLIT_PARAGRAPH,
-    EDIT_PROFILE_FLARK_V1, INLINE_FACT_AUTOLINK_EMAIL, INLINE_FACT_AUTOLINK_URI,
-    INLINE_FACT_BACKSLASH_ESCAPE, INLINE_FACT_CODE, INLINE_FACT_DIRECT_IMAGE,
-    INLINE_FACT_DIRECT_LINK, INLINE_FACT_EMPHASIS, INLINE_FACT_HARD_LINE_BREAK,
-    INLINE_FACT_REFERENCE_IMAGE, INLINE_FACT_REFERENCE_LINK, INLINE_FACT_REPLACEMENT,
-    INLINE_FACT_STRIKETHROUGH, INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL,
+    NegotiateRequest, Outcome, OwnerTransferRequest, ProjectionSegmentRecord, PumpRequest,
+    QueryRequest, ResultPageHeader, SessionInspection, SessionRef, SmallEditRequest, SourceRange,
+    SourceReadRequest, SourceTransactionReceiptV1, SourceTransactionRequestV1, StageRequest,
+    TransactionRequest, ViewportRowRecord, WorkBudget, ABI_MAJOR, ABI_MINOR,
+    EDIT_INTENT_DELETE_BACKWARD, EDIT_INTENT_DISPOSITION_APPLIED,
+    EDIT_INTENT_DISPOSITION_HANDLED_NO_CHANGE, EDIT_INTENT_DISPOSITION_NEEDS_CURRENT_SEMANTICS,
+    EDIT_INTENT_DISPOSITION_NOT_APPLICABLE, EDIT_INTENT_INSERT_PARAGRAPH_BREAK,
+    EDIT_INTENT_RECEIPT_HAS_COMMIT, EDIT_INTENT_RECEIPT_PARSER_PENDING,
+    EDIT_INTENT_RECEIPT_SEMANTIC_BYTES, EDIT_PRESENTATION_CONTINUE_BLOCK_QUOTE,
+    EDIT_PRESENTATION_CONTINUE_LIST, EDIT_PRESENTATION_EXIT_BLOCK_QUOTE,
+    EDIT_PRESENTATION_EXIT_HEADING, EDIT_PRESENTATION_EXIT_LIST,
+    EDIT_PRESENTATION_LIFT_BLOCK_QUOTE, EDIT_PRESENTATION_LIFT_HEADING,
+    EDIT_PRESENTATION_LIFT_LIST, EDIT_PRESENTATION_MERGE_PARAGRAPH, EDIT_PRESENTATION_NONE,
+    EDIT_PRESENTATION_OUTDENT_LIST, EDIT_PRESENTATION_SPLIT_PARAGRAPH, EDIT_PROFILE_FLARK_V1,
+    INLINE_FACT_AUTOLINK_EMAIL, INLINE_FACT_AUTOLINK_URI, INLINE_FACT_BACKSLASH_ESCAPE,
+    INLINE_FACT_CODE, INLINE_FACT_DIRECT_IMAGE, INLINE_FACT_DIRECT_LINK, INLINE_FACT_EMPHASIS,
+    INLINE_FACT_HARD_LINE_BREAK, INLINE_FACT_REFERENCE_IMAGE, INLINE_FACT_REFERENCE_LINK,
+    INLINE_FACT_REPLACEMENT, INLINE_FACT_STRIKETHROUGH, INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL,
     SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES,
     SOURCE_TRANSACTION_RECEIPT_COMPOSITE_HISTORY_EXTENDED, SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT,
     SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING, VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_SHIFT,
@@ -51,11 +51,13 @@ use crate::{
     VIEWPORT_ROW_CODE_PRESENTATION, VIEWPORT_ROW_CODE_TILDE, VIEWPORT_ROW_FLAG_CONTIGUOUS_EDIT,
     VIEWPORT_ROW_FLAG_CONTINUITY_PLAIN_TEXT_EDIT, VIEWPORT_ROW_FLAG_EDIT_UNAVAILABLE,
     VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE, VIEWPORT_ROW_FLAG_PROJECTED_RESERVED,
-    VIEWPORT_ROW_HEADING_LEVEL_MASK, VIEWPORT_ROW_HEADING_SETEXT, VIEWPORT_ROW_LIST_ASTERISK,
-    VIEWPORT_ROW_LIST_DEPTH_SHIFT, VIEWPORT_ROW_LIST_HYPHEN, VIEWPORT_ROW_LIST_MARKER_OFFSET_SHIFT,
+    VIEWPORT_ROW_HEADING_LEVEL_MASK, VIEWPORT_ROW_HEADING_SETEXT,
+    VIEWPORT_ROW_INLINE_FACT_COUNT_MASK, VIEWPORT_ROW_LIST_ASTERISK, VIEWPORT_ROW_LIST_DEPTH_SHIFT,
+    VIEWPORT_ROW_LIST_HYPHEN, VIEWPORT_ROW_LIST_MARKER_OFFSET_SHIFT,
     VIEWPORT_ROW_LIST_ORDERED_PARENTHESIS, VIEWPORT_ROW_LIST_ORDERED_PERIOD,
     VIEWPORT_ROW_LIST_PLUS, VIEWPORT_ROW_LIST_SIMPLE_CONTINUATION, VIEWPORT_ROW_LIST_STARTS_LIST,
-    VIEWPORT_ROW_LIST_TASK, VIEWPORT_ROW_LIST_TASK_CHECKED, VIEWPORT_ROW_TABLE_PRESENTATION,
+    VIEWPORT_ROW_LIST_TASK, VIEWPORT_ROW_LIST_TASK_CHECKED,
+    VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_SHIFT, VIEWPORT_ROW_TABLE_PRESENTATION,
     VIEWPORT_ROW_THEMATIC_BREAK_PRESENTATION,
 };
 
@@ -3256,7 +3258,7 @@ pub extern "C" fn flark_v4_query_viewport(
         if !valid_budget(request.budget, true)
             || request.continuation != 0
             || request.range.start_byte > request.range.end_byte
-            || !matches!(request.query_kind, 1 | 2 | 3)
+            || !matches!(request.query_kind, 1 | 2 | 3 | 4)
             || request.reserved != [0; 1]
         {
             return Err(StatusCode::InvalidArgument);
@@ -3940,14 +3942,33 @@ fn query_page(
                 .query_viewport(revision, start..end, maximum_rows as u32)
                 .map_err(|error| map_actor_error(&error))?;
             let row_payload_bytes = viewport.rows.len() * size_of::<ViewportRowRecord>();
-            let mut remaining_inline_records =
-                payload_capacity.saturating_sub(row_payload_bytes) / size_of::<InlineFactRecord>();
+            let mut remaining_payload_bytes = payload_capacity.saturating_sub(row_payload_bytes);
             let mut records = Vec::with_capacity(viewport.rows.len());
             let mut inline_facts = Vec::new();
+            let mut projection_segments = Vec::new();
             for row in &viewport.rows {
+                let projection_segment_count = match &row.projection_segments {
+                    Some(segments)
+                        if query_kind == 4
+                            && segments.len() > 1
+                            && segments.len() <= u16::MAX as usize
+                            && segments.len() * size_of::<ProjectionSegmentRecord>()
+                                <= remaining_payload_bytes =>
+                    {
+                        remaining_payload_bytes -=
+                            segments.len() * size_of::<ProjectionSegmentRecord>();
+                        projection_segments.extend(segments.iter().map(projection_segment_record));
+                        u32::try_from(segments.len()).map_err(|_| StatusCode::InternalFault)?
+                    }
+                    _ => 0,
+                };
                 let (inline_authoritative, inline_fact_count) = match &row.inline_facts {
-                    Some(facts) if facts.len() <= remaining_inline_records => {
-                        remaining_inline_records -= facts.len();
+                    Some(facts)
+                        if facts.len() <= VIEWPORT_ROW_INLINE_FACT_COUNT_MASK as usize
+                            && facts.len() * size_of::<InlineFactRecord>()
+                                <= remaining_payload_bytes =>
+                    {
+                        remaining_payload_bytes -= facts.len() * size_of::<InlineFactRecord>();
                         inline_facts.extend(facts.iter().map(inline_fact_record));
                         (
                             true,
@@ -3960,6 +3981,7 @@ fn query_page(
                     row,
                     inline_authoritative,
                     inline_fact_count,
+                    projection_segment_count,
                 ));
             }
             let has_more = !viewport.complete && !records.is_empty();
@@ -3987,7 +4009,8 @@ fn query_page(
                 },
                 item_count: records.len() as u32,
                 payload_bytes: (row_payload_bytes
-                    + inline_facts.len() * size_of::<InlineFactRecord>())
+                    + inline_facts.len() * size_of::<InlineFactRecord>()
+                    + projection_segments.len() * size_of::<ProjectionSegmentRecord>())
                     as u32,
                 continuation: if has_more {
                     ContinuationHandle(continuation_candidate)
@@ -4005,6 +4028,7 @@ fn query_page(
                 QueryPayload::Rows {
                     rows: records,
                     inline_facts,
+                    projection_segments,
                 },
             )
         }
@@ -4012,11 +4036,18 @@ fn query_page(
 
     write_page(output, page, |output| match &payload {
         QueryPayload::Source(bytes) => output.copy_from_slice(bytes),
-        QueryPayload::Rows { rows, inline_facts } => {
+        QueryPayload::Rows {
+            rows,
+            inline_facts,
+            projection_segments,
+        } => {
             let row_bytes = rows.len() * size_of::<ViewportRowRecord>();
-            let (row_output, inline_output) = output.split_at_mut(row_bytes);
+            let inline_bytes = inline_facts.len() * size_of::<InlineFactRecord>();
+            let (row_output, trailing_output) = output.split_at_mut(row_bytes);
+            let (inline_output, segment_output) = trailing_output.split_at_mut(inline_bytes);
             write_row_records(row_output, rows);
             write_inline_fact_records(inline_output, inline_facts);
+            write_projection_segment_records(segment_output, projection_segments);
         }
         QueryPayload::CertificationRanges { records, source } => {
             let record_bytes = records.len() * size_of::<CertificationRangeRecord>();
@@ -4067,6 +4098,7 @@ enum QueryPayload {
     Rows {
         rows: Vec<ViewportRowRecord>,
         inline_facts: Vec<InlineFactRecord>,
+        projection_segments: Vec<ProjectionSegmentRecord>,
     },
     CertificationRanges {
         records: Vec<CertificationRangeRecord>,
@@ -4111,20 +4143,32 @@ fn viewport_record(
     row: &flark_runtime::DocumentViewportRow,
     inline_authoritative: bool,
     inline_fact_count: u32,
+    projection_segment_count: u32,
 ) -> ViewportRowRecord {
-    let (editable_start_byte, editable_end_byte) = row
-        .editable_range
-        .as_ref()
-        .map_or((u64::MAX, u64::MAX), |range| (range.start, range.end));
-    let (editable_start_utf16, editable_end_utf16) = row
-        .editable_utf16_range
-        .as_ref()
-        .map_or((u64::MAX, u64::MAX), |range| (range.start, range.end));
+    let projected_authoritative = projection_segment_count > 1;
+    let has_editable = row.edit_capability == DocumentViewportRowEditCapability::Contiguous
+        || (row.edit_capability == DocumentViewportRowEditCapability::ProjectedReserved
+            && projected_authoritative);
+    let (editable_start_byte, editable_end_byte) = if has_editable {
+        row.editable_range
+            .as_ref()
+            .map_or((u64::MAX, u64::MAX), |range| (range.start, range.end))
+    } else {
+        (u64::MAX, u64::MAX)
+    };
+    let (editable_start_utf16, editable_end_utf16) = if has_editable {
+        row.editable_utf16_range
+            .as_ref()
+            .map_or((u64::MAX, u64::MAX), |range| (range.start, range.end))
+    } else {
+        (u64::MAX, u64::MAX)
+    };
     let mut flags = match row.edit_capability {
         DocumentViewportRowEditCapability::Contiguous => VIEWPORT_ROW_FLAG_CONTIGUOUS_EDIT,
-        DocumentViewportRowEditCapability::ProjectedReserved => {
+        DocumentViewportRowEditCapability::ProjectedReserved if projected_authoritative => {
             VIEWPORT_ROW_FLAG_PROJECTED_RESERVED
         }
+        DocumentViewportRowEditCapability::ProjectedReserved => VIEWPORT_ROW_FLAG_EDIT_UNAVAILABLE,
         DocumentViewportRowEditCapability::Unavailable => VIEWPORT_ROW_FLAG_EDIT_UNAVAILABLE,
     };
     if inline_authoritative {
@@ -4306,7 +4350,21 @@ fn viewport_record(
         path_depth: row.path_depth,
         semantic_variant,
         semantic_value,
-        inline_fact_count,
+        inline_fact_count: (inline_fact_count & VIEWPORT_ROW_INLINE_FACT_COUNT_MASK)
+            | projection_segment_count << VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_SHIFT,
+    }
+}
+
+fn projection_segment_record(segment: &DocumentProjectionSegment) -> ProjectionSegmentRecord {
+    ProjectionSegmentRecord {
+        source_range: SourceRange {
+            start_byte: segment.source_range.start,
+            end_byte: segment.source_range.end,
+        },
+        source_utf16_range: SourceRange {
+            start_byte: segment.source_utf16_range.start,
+            end_byte: segment.source_utf16_range.end,
+        },
     }
 }
 
@@ -4389,6 +4447,24 @@ fn write_inline_fact_records(output: &mut [u8], records: &[InlineFactRecord]) {
                     .as_mut_ptr()
                     .add(index * size_of::<InlineFactRecord>())
                     .cast::<InlineFactRecord>(),
+                record,
+            );
+        }
+    }
+}
+
+fn write_projection_segment_records(output: &mut [u8], records: &[ProjectionSegmentRecord]) {
+    debug_assert_eq!(
+        output.len(),
+        records.len() * size_of::<ProjectionSegmentRecord>()
+    );
+    for (index, record) in records.iter().copied().enumerate() {
+        unsafe {
+            ptr::write_unaligned(
+                output
+                    .as_mut_ptr()
+                    .add(index * size_of::<ProjectionSegmentRecord>())
+                    .cast::<ProjectionSegmentRecord>(),
                 record,
             );
         }

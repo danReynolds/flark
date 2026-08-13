@@ -189,6 +189,39 @@ void main() {
   );
 
   test(
+    'projected multiline quote segments survive the native worker boundary',
+    () async {
+      const source = '> first\n> second\n';
+      final document = await FlarkCoreDocument.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(document.dispose);
+      await document.pumpUntilReady();
+
+      final viewport = await document.queryViewport(maxRows: 1);
+      expect(viewport.rows, hasLength(1));
+      final row = viewport.rows.single;
+      expect(
+        row.editCapability,
+        FlarkViewportRowEditCapability.projectedReserved,
+      );
+      expect((row.editableUtf16?.start, row.editableUtf16?.end), (2, 16));
+      expect(
+        row.projectionSegments
+            ?.map(
+              (segment) => (segment.sourceUtf16.start, segment.sourceUtf16.end),
+            )
+            .toList(growable: false),
+        const [(2, 8), (10, 16)],
+      );
+    },
+    skip: libraryPath == null
+        ? 'Set FLARK_V4_LIBRARY_PATH to the built flark_abi library.'
+        : false,
+  );
+
+  test(
     'live query decodes a current-source mixed certification partition',
     () async {
       final source = List<String>.generate(

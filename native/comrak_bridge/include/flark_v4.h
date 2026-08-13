@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define FLARK_V4_ABI_MAJOR UINT16_C(4)
-#define FLARK_V4_ABI_MINOR UINT16_C(14)
+#define FLARK_V4_ABI_MINOR UINT16_C(15)
 
 /* Zero sentinels are legal only where the operation rules below say so. */
 #define FLARK_V4_CONTINUATION_NONE UINT64_C(0)
@@ -168,6 +168,7 @@ typedef uint64_t FlarkV4OwnerToken;
 #define FLARK_V4_QUERY_SOURCE UINT32_C(1)
 #define FLARK_V4_QUERY_SEMANTIC UINT32_C(2)
 #define FLARK_V4_QUERY_SOURCE_AND_SEMANTIC UINT32_C(3)
+#define FLARK_V4_QUERY_SEMANTIC_PROJECTED UINT32_C(4)
 
 #define FLARK_V4_RESULT_RECORD_SOURCE_BYTES UINT32_C(1)
 #define FLARK_V4_RESULT_RECORD_SEMANTIC_FACTS UINT32_C(2)
@@ -315,7 +316,9 @@ typedef struct FlarkV4ResultPageHeader {
  * editable endpoint means the row has no contiguous active-edit projection.
  * ABI 4.5 appends grouped inline-fact records after the row array. ABI 4.6
  * adds bounded parser-cooked replacement scalars to those records. ABI 4.7
- * adds parser-owned bounded GFM table cells in the same grouped stream. */
+ * adds parser-owned bounded GFM table cells in the same grouped stream. ABI
+ * 4.15 packs the inline-fact count in the low 16 bits and the grouped
+ * projected-segment count in the high 16 bits. */
 typedef struct FlarkV4ViewportRowRecord {
   uint64_t ordinal;
   uint32_t kind;
@@ -338,10 +341,20 @@ typedef struct FlarkV4ViewportRowRecord {
   uint32_t inline_fact_count;
 } FlarkV4ViewportRowRecord;
 
+/* One exact identity-source segment in a PROJECTED_RESERVED row. Segment
+ * records follow all grouped inline facts in row order. */
+typedef struct FlarkV4ProjectionSegmentRecord {
+  FlarkV4SourceRange source_range;
+  FlarkV4SourceRange source_utf16_range;
+} FlarkV4ProjectionSegmentRecord;
+
 #define FLARK_V4_VIEWPORT_ROW_CONTIGUOUS_EDIT UINT32_C(0x1)
 #define FLARK_V4_VIEWPORT_ROW_PROJECTED_RESERVED UINT32_C(0x2)
 #define FLARK_V4_VIEWPORT_ROW_EDIT_UNAVAILABLE UINT32_C(0x4)
 #define FLARK_V4_VIEWPORT_ROW_INLINE_AUTHORITATIVE UINT32_C(0x8)
+#define FLARK_V4_VIEWPORT_ROW_INLINE_FACT_COUNT_MASK UINT32_C(0x0000ffff)
+#define FLARK_V4_VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_SHIFT UINT32_C(16)
+#define FLARK_V4_VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_MASK UINT32_C(0xffff0000)
 #define FLARK_V4_VIEWPORT_ROW_HEADING_LEVEL_MASK UINT32_C(0xff)
 #define FLARK_V4_VIEWPORT_ROW_HEADING_SETEXT UINT32_C(0x100)
 #define FLARK_V4_VIEWPORT_ROW_LIST_MARKER_MASK UINT32_C(0x7)
@@ -750,6 +763,7 @@ typedef struct FlarkV4SessionInspection {
 #define FLARK_V4_SIZEOF_OUTCOME UINT32_C(112)
 #define FLARK_V4_SIZEOF_RESULT_PAGE_HEADER UINT32_C(96)
 #define FLARK_V4_SIZEOF_VIEWPORT_ROW_RECORD UINT32_C(128)
+#define FLARK_V4_SIZEOF_PROJECTION_SEGMENT_RECORD UINT32_C(32)
 #define FLARK_V4_SIZEOF_INLINE_FACT_RECORD UINT32_C(80)
 #define FLARK_V4_SIZEOF_CERTIFICATION_RANGE_RECORD UINT32_C(40)
 #define FLARK_V4_SIZEOF_SOURCE_RANGE UINT32_C(16)
@@ -790,6 +804,7 @@ FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4AbiInfo) == FLARK_V4_SIZEOF_ABI_INFO, "Flar
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4Outcome) == FLARK_V4_SIZEOF_OUTCOME, "FlarkV4Outcome layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4ResultPageHeader) == FLARK_V4_SIZEOF_RESULT_PAGE_HEADER, "FlarkV4ResultPageHeader layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4ViewportRowRecord) == FLARK_V4_SIZEOF_VIEWPORT_ROW_RECORD, "FlarkV4ViewportRowRecord layout");
+FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4ProjectionSegmentRecord) == FLARK_V4_SIZEOF_PROJECTION_SEGMENT_RECORD, "FlarkV4ProjectionSegmentRecord layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4InlineFactRecord) == FLARK_V4_SIZEOF_INLINE_FACT_RECORD, "FlarkV4InlineFactRecord layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4CertificationRangeRecord) == FLARK_V4_SIZEOF_CERTIFICATION_RANGE_RECORD, "FlarkV4CertificationRangeRecord layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4SourceRange) == FLARK_V4_SIZEOF_SOURCE_RANGE, "FlarkV4SourceRange layout");

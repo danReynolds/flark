@@ -5,10 +5,12 @@ use flark_abi::{
     flark_v4_continuation_release, flark_v4_create_begin, flark_v4_create_commit,
     flark_v4_history_release, flark_v4_history_replay, flark_v4_pump, flark_v4_query_viewport,
     flark_v4_small_edit, flark_v4_source_read, CloseRequest, ContinuationRequest, CreateRequest,
-    EditDescriptor, HistoryRequest, InlineFactRecord, Outcome, PumpRequest, QueryRequest,
-    ResultPageHeader, SessionConfig, SessionRef, SmallEditRequest, SourceRange, SourceReadRequest,
-    TransactionRequest, ViewportRowRecord, WorkBudget, INLINE_FACT_EMPHASIS,
-    VIEWPORT_ROW_FLAG_CONTINUITY_PLAIN_TEXT_EDIT, VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE,
+    EditDescriptor, HistoryRequest, InlineFactRecord, Outcome, ProjectionSegmentRecord,
+    PumpRequest, QueryRequest, ResultPageHeader, SessionConfig, SessionRef, SmallEditRequest,
+    SourceRange, SourceReadRequest, TransactionRequest, ViewportRowRecord, WorkBudget,
+    INLINE_FACT_EMPHASIS, VIEWPORT_ROW_FLAG_CONTINUITY_PLAIN_TEXT_EDIT,
+    VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE, VIEWPORT_ROW_FLAG_PROJECTED_RESERVED,
+    VIEWPORT_ROW_INLINE_FACT_COUNT_MASK, VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_SHIFT,
 };
 use flark_runtime::{HistoryDisposition, StatusCode};
 
@@ -24,8 +26,9 @@ fn budget(work: u64) -> WorkBudget {
 #[test]
 fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     assert_eq!(size_of::<ViewportRowRecord>(), 128);
+    assert_eq!(size_of::<ProjectionSegmentRecord>(), 32);
     assert_eq!(size_of::<InlineFactRecord>(), 80);
-    let source = b"# *Flark*\n\nA quick paragraph.\n\n- one\n- two\n";
+    let source = b"# *Flark*\n\nA quick paragraph.\n\n- one\n- two\n\n> first\n> second\n";
     let owner = 71;
     let create = CreateRequest {
         struct_size: size_of::<CreateRequest>() as u32,
@@ -130,6 +133,72 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     assert_eq!(inline.source_end_byte, 9);
     assert_eq!(inline.content_start_byte, 3);
     assert_eq!(inline.content_end_byte, 8);
+
+    let quote_start = source
+        .windows(b"> first".len())
+        .position(|window| window == b"> first")
+        .expect("multiline quote offset");
+    let quote_query = QueryRequest {
+        query_kind: 4,
+        range: SourceRange {
+            start_byte: quote_start as u64,
+            end_byte: source.len() as u64,
+        },
+        budget: WorkBudget {
+            max_result_items: 1,
+            ..budget(64)
+        },
+        ..query
+    };
+    page.fill(0);
+    status = flark_v4_query_viewport(
+        &quote_query,
+        page.as_mut_ptr(),
+        page.len() as u64,
+        &mut outcome,
+    );
+    assert!(status == StatusCode::Ok as u32 || status == StatusCode::ResultCapReached as u32);
+    let quote_header = unsafe { page.as_ptr().cast::<ResultPageHeader>().read_unaligned() };
+    assert_eq!(quote_header.item_count, 1);
+    assert_eq!(quote_header.payload_bytes, 128 + 2 * 32);
+    let quote = unsafe {
+        page.as_ptr()
+            .add(size_of::<ResultPageHeader>())
+            .cast::<ViewportRowRecord>()
+            .read_unaligned()
+    };
+    assert_ne!(quote.flags & VIEWPORT_ROW_FLAG_PROJECTED_RESERVED, 0);
+    assert_eq!(
+        quote.inline_fact_count & VIEWPORT_ROW_INLINE_FACT_COUNT_MASK,
+        0
+    );
+    assert_eq!(
+        quote.inline_fact_count >> VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_SHIFT,
+        2,
+    );
+    assert_eq!(quote.editable_start_byte, (quote_start + 2) as u64);
+    assert_eq!(quote.editable_end_byte, (quote_start + 16) as u64);
+    let segment_base = unsafe {
+        page.as_ptr()
+            .add(size_of::<ResultPageHeader>() + size_of::<ViewportRowRecord>())
+            .cast::<ProjectionSegmentRecord>()
+    };
+    let first_segment = unsafe { segment_base.read_unaligned() };
+    let second_segment = unsafe { segment_base.add(1).read_unaligned() };
+    assert_eq!(
+        first_segment.source_range,
+        SourceRange {
+            start_byte: (quote_start + 2) as u64,
+            end_byte: (quote_start + 8) as u64,
+        },
+    );
+    assert_eq!(
+        second_segment.source_range,
+        SourceRange {
+            start_byte: (quote_start + 10) as u64,
+            end_byte: (quote_start + 16) as u64,
+        },
+    );
 
     let continuation = ContinuationRequest {
         struct_size: size_of::<ContinuationRequest>() as u32,

@@ -189,6 +189,13 @@ pub struct DocumentInlineFact {
     pub replacement: Option<DocumentInlineReplacement>,
 }
 
+/// One ordered identity-source cut in a parser-certified projected row.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DocumentProjectionSegment {
+    pub source_range: Range<u64>,
+    pub source_utf16_range: Range<u64>,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum DocumentViewportRowPresentation {
     #[default]
@@ -238,6 +245,9 @@ pub struct DocumentViewportRow {
     /// `Some` means the complete bounded inline leaf is authoritative. Empty
     /// is distinct from `None`, which requires exact-source neutral display.
     pub inline_facts: Option<Vec<DocumentInlineFact>>,
+    /// Present only for `ProjectedReserved` rows. Every segment is exact
+    /// source; gaps are parser-certified hidden container material.
+    pub projection_segments: Option<Vec<DocumentProjectionSegment>>,
     pub path_depth: u32,
 }
 
@@ -2604,11 +2614,39 @@ fn document_viewport_row(
     {
         presentation = DocumentViewportRowPresentation::Table;
     }
-    let continuity_policy = if row.edit_capability()
-        == M11RecursiveGreenRowEditCapability::Contiguous
-        && editable_utf16_range
-            .as_ref()
-            .is_some_and(|range| range.start < range.end)
+    let edit_capability = match row.edit_capability() {
+        M11RecursiveGreenRowEditCapability::ProjectedReserved
+            if !matches!(
+                presentation,
+                DocumentViewportRowPresentation::BlockQuote {
+                    nesting_depth: 1,
+                    ..
+                }
+            ) =>
+        {
+            editable_range = None;
+            editable_utf16_range = None;
+            DocumentViewportRowEditCapability::Unavailable
+        }
+        capability => document_edit_capability(capability),
+    };
+    let projection_segments =
+        (edit_capability == DocumentViewportRowEditCapability::ProjectedReserved).then(|| {
+            row.editable_segments()
+                .iter()
+                .map(|segment| DocumentProjectionSegment {
+                    source_range: segment.byte_range(),
+                    source_utf16_range: segment.utf16_range(),
+                })
+                .collect::<Vec<_>>()
+        });
+    let continuity_policy = if matches!(
+        edit_capability,
+        DocumentViewportRowEditCapability::Contiguous
+            | DocumentViewportRowEditCapability::ProjectedReserved
+    ) && editable_utf16_range
+        .as_ref()
+        .is_some_and(|range| range.start < range.end)
         && !matches!(
             presentation,
             DocumentViewportRowPresentation::ThematicBreak | DocumentViewportRowPresentation::Table
@@ -2624,10 +2662,11 @@ fn document_viewport_row(
         source_utf16_range,
         editable_range,
         editable_utf16_range,
-        edit_capability: document_edit_capability(row.edit_capability()),
+        edit_capability,
         continuity_policy,
         presentation,
         inline_facts,
+        projection_segments,
         path_depth: u32::try_from(row.path().len()).unwrap_or(u32::MAX),
     })
 }

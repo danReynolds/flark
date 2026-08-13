@@ -796,7 +796,14 @@ final class FlarkEditorController extends ChangeNotifier {
         : blockQuote != null
         ? _projectedBlockQuotePrefix(blockQuote)
         : '';
-    final runs = rowCertified && row.table != null && row.inlineFacts != null
+    final runs = rowCertified && row.projectionSegments != null
+        ? row.projectionSegments!
+              .map(
+                (segment) =>
+                    _exactSurfaceRun(_mapViewportRange(segment.sourceUtf16)),
+              )
+              .toList(growable: false)
+        : rowCertified && row.table != null && row.inlineFacts != null
         ? _projectTableRuns(row.table!, row.inlineFacts!)
         : rowCertified && row.inlineFacts != null
         ? _projectInlineRuns(range, row.inlineFacts!)
@@ -3166,7 +3173,9 @@ final class FlarkEditorController extends ChangeNotifier {
       return;
     }
     final row = _activeCachedRow();
-    final facts = row?.inlineFacts;
+    final facts =
+        row?.inlineFacts ??
+        (row?.projectionSegments != null ? const <FlarkInlineFact>[] : null);
     if (row == null || row.table != null || facts == null) {
       return;
     }

@@ -78,6 +78,51 @@ fn assert_original_base(
 }
 
 #[test]
+fn multiline_block_quote_preserves_hidden_prefix_projection_segments() {
+    let source = "> first\n> second\n";
+    let mut runtime =
+        DocumentRuntime::new(source, DocumentRuntimeConfig::default()).expect("quote runtime");
+    let mut session = build_session(&mut runtime);
+    let window = session
+        .query_renderable_rows(
+            &runtime,
+            M11RecursiveGreenPoint::new(2, 2, SourceBoundaryAffinity::After),
+            source.len() as u64,
+            M11RecursiveGreenRowQueryLimits::new(1, 16, 1024, 16, 1024).expect("quote row limits"),
+        )
+        .expect("multiline quote row query");
+    let row = window.rows().first().expect("multiline quote row");
+    assert_eq!(
+        row.edit_capability(),
+        M11RecursiveGreenRowEditCapability::ProjectedReserved
+    );
+    assert_eq!(row.editable_range(), Some(2..16));
+    assert_eq!(row.editable_utf16_range(), Some(2..16));
+    assert_eq!(
+        row.editable_segments()
+            .iter()
+            .map(|segment| segment.byte_range())
+            .collect::<Vec<_>>(),
+        vec![2..8, 10..16],
+    );
+    assert_eq!(
+        row.editable_segments()
+            .iter()
+            .map(|segment| segment.utf16_range())
+            .collect::<Vec<_>>(),
+        vec![2..8, 10..16],
+    );
+
+    release_session(&mut runtime, &mut session);
+    runtime.begin_close().expect("begin quote runtime close");
+    while !runtime
+        .poll_close(64)
+        .expect("poll quote runtime close")
+        .complete
+    {}
+}
+
+#[test]
 fn clean_session_retains_green_and_reference_authority_for_late_queries() {
     let source = "[a]: /target\n\nbefore\n\nLate **bold** [a].\n";
     let mut runtime =

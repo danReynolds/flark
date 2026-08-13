@@ -172,7 +172,7 @@ FlarkProjectionContinuityReceipt? authorizeRowProjectionContinuity({
     resultRevision: revision + 1,
     authorizedContentUtf16: FlarkSourceRange(
       editableUtf16.start,
-      editableUtf16.end + replacement.length,
+      editableUtf16.end + replacement.length - (endUtf16 - startUtf16),
     ),
     editStartUtf16: startUtf16,
     editEndUtf16: endUtf16,

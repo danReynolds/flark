@@ -38,6 +38,7 @@ export 'src/models.dart'
         FlarkInlineContinuityPolicy,
         FlarkListItemPresentation,
         FlarkListMarkerStyle,
+        FlarkProjectionSegment,
         FlarkSourceRange,
         FlarkTableAlignment,
         FlarkTableCellPresentation,

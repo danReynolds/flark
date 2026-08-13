@@ -438,6 +438,56 @@ void main() {
   );
 
   test(
+    'multiline block quote keeps repeated prefixes hidden while typing',
+    () async {
+      final controller = await FlarkEditorController.open(
+        '> first\n> second\n',
+        libraryPath: libraryPath!,
+      );
+      await controller.continueParsing();
+      addTearDown(controller.close);
+
+      final row = controller.rows.single;
+      expect(
+        row.editCapability,
+        FlarkViewportRowEditCapability.projectedReserved,
+      );
+      final initial = controller.surfaceRow(row);
+      expect(initial.leadingText, '│ ');
+      expect(initial.text, 'first\nsecond');
+      expect(initial.runs, hasLength(2));
+      expect(initial.sourceOffsetForTextOffset(6), 10);
+      expect(
+        initial.sourceOffsetForTextOffset(6, affinity: TextAffinity.upstream),
+        8,
+      );
+
+      final frames = <String>[];
+      void capture() => frames.add(controller.surfaceRow(row).text);
+      controller.addListener(capture);
+      addTearDown(() => controller.removeListener(capture));
+      controller.activateRow(row, 10);
+      controller.replaceSelection('X');
+      expect(controller.visibleSource, '> first\n> Xsecond\n');
+      expect(controller.surfaceRow(row).text, 'first\nXsecond');
+      await _settle(controller);
+
+      expect(controller.lastError, isNull);
+      expect(
+        controller.surfaceRow(controller.rows.single).text,
+        'first\nXsecond',
+      );
+      expect(frames, isNotEmpty);
+      expect(
+        frames.where((frame) => frame.contains('>')),
+        isEmpty,
+        reason: 'a repeated quote marker flashed in frames: $frames',
+      );
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'inline Markdown stays marker-free and source-mapped while active',
     () async {
       const source =

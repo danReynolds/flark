@@ -149,6 +149,19 @@ onto display boundaries with explicit upstream/downstream affinity. Synthetic
 content maps to a parser-authored source owner and edit recipe; Flutter does
 not reverse-engineer Markdown from the glyph it painted.
 
+Implementation checkpoint: ABI 4.15 activates the previously reserved
+projected-row lane for ordered identity segments separated only by
+parser-certified hidden container coverage. The first admitted shape is a
+depth-one multiline block quote: repeated `> ` prefixes stay in the exact
+platform input window but are absent from painting, hit testing maps the
+collapsed boundary with affinity, and conservative literal typing retains the
+segment topology through a transaction-bound continuity receipt. The fixed
+128-byte row record is unchanged; new callers opt into the grouped 32-byte
+segment payload with `SEMANTIC_PROJECTED`, while the older `SEMANTIC` query
+continues to receive an unavailable row. Structural Return/Backspace across
+those segment boundaries requires a later multi-surface transition and is not
+silently inferred by Flutter.
+
 ### 4.3 Canonical selection and display selection
 
 `flark_core` retains the canonical source-anchored selection. Flutter derives

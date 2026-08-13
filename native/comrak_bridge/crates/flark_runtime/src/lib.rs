@@ -15,9 +15,9 @@ pub use document::{
     DocumentBulletMarker, DocumentCloseReceipt, DocumentCodeBlockStyle, DocumentEditReceipt,
     DocumentFenceCharacter, DocumentHeadingStyle, DocumentInlineFact, DocumentInlineFactKind,
     DocumentInlineReplacement, DocumentListDelimiter, DocumentListMarker, DocumentLiveViewport,
-    DocumentLiveViewportSpan, DocumentPumpReceipt, DocumentQueryReceipt, DocumentSession,
-    DocumentSessionError, DocumentSessionPhase, DocumentViewport, DocumentViewportRow,
-    DocumentViewportRowContinuityPolicy, DocumentViewportRowEditCapability,
+    DocumentLiveViewportSpan, DocumentProjectionSegment, DocumentPumpReceipt, DocumentQueryReceipt,
+    DocumentSession, DocumentSessionError, DocumentSessionPhase, DocumentViewport,
+    DocumentViewportRow, DocumentViewportRowContinuityPolicy, DocumentViewportRowEditCapability,
     DocumentViewportRowPresentation, DOCUMENT_INLINE_FACT_CONTINUITY_PLAIN_TEXT,
     DOCUMENT_TABLE_CELL_ALIGNMENT_MASK, DOCUMENT_TABLE_CELL_AUTOCOMPLETED,
     DOCUMENT_TABLE_CELL_HEADER, DOCUMENT_TABLE_CELL_ROW_START,
@@ -452,12 +452,14 @@ pub enum QueryKind {
     Source = 1,
     Semantic = 2,
     SourceAndSemantic = 3,
+    SemanticProjected = 4,
 }
 
 pub const QUERY_KINDS: &[(&str, u32)] = &[
     ("SOURCE", QueryKind::Source as u32),
     ("SEMANTIC", QueryKind::Semantic as u32),
     ("SOURCE_AND_SEMANTIC", QueryKind::SourceAndSemantic as u32),
+    ("SEMANTIC_PROJECTED", QueryKind::SemanticProjected as u32),
 ];
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

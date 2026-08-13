@@ -858,10 +858,11 @@ same receipt-backed continue/exit/lift transitions for isolated depth-1 block
 quotes and split/exit/lift transitions for ATX headings. Exact quote prefixes
 are preserved, empty ATX caret geometry is repaired inside the parser-certified
 runtime viewport, and generated successor context remains usable while parsing
-is pending. Certified unsupported rows (including Setext headings, nested or
-multiline quotes, and quoted headings) now fail closed rather than falling
-through to line-local guessing; an absent certified row may use exact source
-only for an isolated empty structural marker.
+is pending. Certified unsupported rows (including Setext headings, nested
+quotes, quoted headings, and structural commands inside multiline quotes) now
+fail closed rather than falling through to line-local guessing; an absent
+certified row may use exact source only for an isolated empty structural
+marker.
 
 ABI 4.14 extends the same lane to parser-certified depth-two list rows. Return
 preserves the exact container indentation and next marker/task policy; an empty
@@ -874,6 +875,14 @@ their visual outdent without a frontend-specific spacing assumption.
 The final Dart structural-newline and prefix mutation fallbacks are removed;
 unsupported constructs now receive only literal input until Rust admits an
 explicit profile.
+
+ABI 4.15 adds an opt-in `SEMANTIC_PROJECTED` viewport query without changing
+the fixed row record. It carries bounded ordered identity segments after the
+inline-fact stream and activates the first discontinuous edit surface for
+depth-one multiline block quotes. Parser certification, runtime validation,
+Core worker serialization, source/display affinity mapping, and conservative
+literal continuity are end-to-end; structural Return/Backspace remains a
+separate multi-surface receipt problem rather than a frontend text heuristic.
 
 ### H5 — hardening and later architecture
 

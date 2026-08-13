@@ -374,6 +374,32 @@ final class FlarkCertificationRange {
       );
 }
 
+/// One exact identity-source cut in a parser-certified projected row.
+final class FlarkProjectionSegment {
+  const FlarkProjectionSegment({
+    required this.sourceBytes,
+    required this.sourceUtf16,
+  });
+
+  final FlarkSourceRange sourceBytes;
+  final FlarkSourceRange sourceUtf16;
+
+  Map<String, Object?> toMessage() => {
+    'sourceBytes': sourceBytes.toMessage(),
+    'sourceUtf16': sourceUtf16.toMessage(),
+  };
+
+  static FlarkProjectionSegment fromMessage(Map<Object?, Object?> message) =>
+      FlarkProjectionSegment(
+        sourceBytes: FlarkSourceRange.fromMessage(
+          message['sourceBytes']! as Map<Object?, Object?>,
+        ),
+        sourceUtf16: FlarkSourceRange.fromMessage(
+          message['sourceUtf16']! as Map<Object?, Object?>,
+        ),
+      );
+}
+
 final class FlarkViewportRow {
   const FlarkViewportRow({
     required this.ordinal,
@@ -393,6 +419,7 @@ final class FlarkViewportRow {
     this.table,
     required this.pathDepth,
     this.inlineFacts,
+    this.projectionSegments,
   });
 
   final int ordinal;
@@ -416,6 +443,10 @@ final class FlarkViewportRow {
   /// required. An empty list authoritatively means no inline semantics.
   final List<FlarkInlineFact>? inlineFacts;
 
+  /// Exact ordered identity cuts for a [FlarkViewportRowEditCapability.projectedReserved]
+  /// row. Gaps between cuts are parser-certified hidden container material.
+  final List<FlarkProjectionSegment>? projectionSegments;
+
   Map<String, Object?> toMessage() => {
     'ordinal': ordinal,
     'kind': kind,
@@ -435,6 +466,9 @@ final class FlarkViewportRow {
     'pathDepth': pathDepth,
     'inlineFacts': inlineFacts
         ?.map((fact) => fact.toMessage())
+        .toList(growable: false),
+    'projectionSegments': projectionSegments
+        ?.map((segment) => segment.toMessage())
         .toList(growable: false),
   };
 
@@ -496,6 +530,17 @@ final class FlarkViewportRow {
             .map(
               (fact) =>
                   FlarkInlineFact.fromMessage(fact! as Map<Object?, Object?>),
+            )
+            .toList(growable: false),
+      _ => null,
+    },
+    projectionSegments: switch (message['projectionSegments']) {
+      final List<Object?> segments =>
+        segments
+            .map(
+              (segment) => FlarkProjectionSegment.fromMessage(
+                segment! as Map<Object?, Object?>,
+              ),
             )
             .toList(growable: false),
       _ => null,

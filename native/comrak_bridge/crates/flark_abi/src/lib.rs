@@ -25,7 +25,7 @@ pub use flark_runtime::{
 };
 
 pub const ABI_MAJOR: u16 = 4;
-pub const ABI_MINOR: u16 = 14;
+pub const ABI_MINOR: u16 = 15;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
@@ -259,11 +259,22 @@ pub struct ViewportRowRecord {
     pub inline_fact_count: u32,
 }
 
+/// One exact identity-source segment in a projected viewport row.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(C)]
+pub struct ProjectionSegmentRecord {
+    pub source_range: SourceRange,
+    pub source_utf16_range: SourceRange,
+}
+
 pub const VIEWPORT_ROW_FLAG_CONTIGUOUS_EDIT: u32 = 1 << 0;
 pub const VIEWPORT_ROW_FLAG_PROJECTED_RESERVED: u32 = 1 << 1;
 pub const VIEWPORT_ROW_FLAG_EDIT_UNAVAILABLE: u32 = 1 << 2;
 pub const VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE: u32 = 1 << 3;
 pub const VIEWPORT_ROW_FLAG_CONTINUITY_PLAIN_TEXT_EDIT: u32 = 1 << 4;
+pub const VIEWPORT_ROW_INLINE_FACT_COUNT_MASK: u32 = 0x0000_ffff;
+pub const VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_SHIFT: u32 = 16;
+pub const VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_MASK: u32 = 0xffff_0000;
 pub const VIEWPORT_ROW_HEADING_LEVEL_MASK: u32 = 0xff;
 pub const VIEWPORT_ROW_HEADING_SETEXT: u32 = 1 << 8;
 pub const VIEWPORT_ROW_LIST_MARKER_MASK: u32 = 0x7;
@@ -937,6 +948,10 @@ pub const RECORD_LAYOUTS: &[(&str, usize)] = &[
     (
         "VIEWPORT_ROW_RECORD",
         core::mem::size_of::<ViewportRowRecord>(),
+    ),
+    (
+        "PROJECTION_SEGMENT_RECORD",
+        core::mem::size_of::<ProjectionSegmentRecord>(),
     ),
     (
         "INLINE_FACT_RECORD",

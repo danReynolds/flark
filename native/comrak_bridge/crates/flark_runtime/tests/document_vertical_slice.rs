@@ -1,8 +1,8 @@
 use flark_runtime::{
     DocumentBulletMarker, DocumentCodeBlockStyle, DocumentFenceCharacter, DocumentHeadingStyle,
     DocumentInlineFactKind, DocumentListDelimiter, DocumentListMarker, DocumentLiveViewportSpan,
-    DocumentSession, DocumentSessionPhase, DocumentViewportRowPresentation,
-    DOCUMENT_INLINE_FACT_CONTINUITY_PLAIN_TEXT,
+    DocumentSession, DocumentSessionPhase, DocumentViewportRowEditCapability,
+    DocumentViewportRowPresentation, DOCUMENT_INLINE_FACT_CONTINUITY_PLAIN_TEXT,
 };
 
 fn pump_ready(document: &mut DocumentSession) -> usize {
@@ -336,7 +336,49 @@ fn viewport_preserves_parser_authored_block_structure_presentations() {
             ..
         }
     ));
+    assert_eq!(
+        viewport.rows[0].edit_capability,
+        DocumentViewportRowEditCapability::ProjectedReserved,
+    );
+    assert_eq!(viewport.rows[0].editable_range, Some(2..16));
+    assert_eq!(viewport.rows[0].editable_utf16_range, Some(2..16));
+    let segments = viewport.rows[0]
+        .projection_segments
+        .as_ref()
+        .expect("multiline quote projection segments");
+    assert_eq!(
+        segments
+            .iter()
+            .map(|segment| segment.source_range.clone())
+            .collect::<Vec<_>>(),
+        vec![2..8, 10..16],
+    );
+    assert_eq!(
+        segments
+            .iter()
+            .map(|segment| segment.source_utf16_range.clone())
+            .collect::<Vec<_>>(),
+        vec![2..8, 10..16],
+    );
     multiline.close().expect("close multiline BlockQuote");
+
+    let nested_multiline_source = "> > first\n> > second\n";
+    let mut nested_multiline =
+        DocumentSession::begin(nested_multiline_source).expect("begin nested multiline quote");
+    pump_ready(&mut nested_multiline);
+    let nested_multiline_viewport = nested_multiline
+        .query_viewport(1, 0..nested_multiline_source.len(), 32)
+        .expect("nested multiline quote viewport");
+    assert_eq!(
+        nested_multiline_viewport.rows[0].edit_capability,
+        DocumentViewportRowEditCapability::Unavailable,
+    );
+    assert!(nested_multiline_viewport.rows[0]
+        .projection_segments
+        .is_none());
+    nested_multiline
+        .close()
+        .expect("close nested multiline quote");
 
     let fenced_source = "```dart\ncode\n```\n";
     let mut fenced = DocumentSession::begin(fenced_source).expect("begin FencedCode");

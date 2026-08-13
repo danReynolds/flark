@@ -543,7 +543,31 @@ pub struct M11RecursiveGreenRenderableRow {
     edit_capability: M11RecursiveGreenRowEditCapability,
     editable: Option<Range<u64>>,
     editable_utf16: Option<Range<u64>>,
+    editable_segments: Vec<M11RecursiveGreenRowEditableSegment>,
     path: Vec<M11RecursiveGreenRowPathFrame>,
+}
+
+/// One exact identity-source segment in a parser-certified projected row.
+///
+/// Adjacent segments are separated only by `HiddenUpstream` coverage. The
+/// ordered collection is therefore sufficient to paint and hit-test the row
+/// without treating hidden container prefixes as editable display text.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct M11RecursiveGreenRowEditableSegment {
+    bytes: Range<u64>,
+    utf16: Range<u64>,
+}
+
+impl M11RecursiveGreenRowEditableSegment {
+    #[must_use]
+    pub fn byte_range(&self) -> Range<u64> {
+        self.bytes.clone()
+    }
+
+    #[must_use]
+    pub fn utf16_range(&self) -> Range<u64> {
+        self.utf16.clone()
+    }
 }
 
 /// Whether one renderable row has an exact contiguous active-edit cut.
@@ -591,6 +615,10 @@ impl M11RecursiveGreenRenderableRow {
     #[must_use]
     pub fn editable_utf16_range(&self) -> Option<Range<u64>> {
         self.editable_utf16.clone()
+    }
+    #[must_use]
+    pub fn editable_segments(&self) -> &[M11RecursiveGreenRowEditableSegment] {
+        &self.editable_segments
     }
     #[must_use]
     pub fn path(&self) -> &[M11RecursiveGreenRowPathFrame] {
@@ -2203,6 +2231,7 @@ pub(super) fn locate_renderable_rows_in_arena(
             edit_capability: editable.capability,
             editable: editable.bytes,
             editable_utf16: editable.utf16,
+            editable_segments: editable.segments,
             path,
         });
         ordinal = ordinal
@@ -2917,6 +2946,7 @@ struct PointZipperRowEditable {
     capability: M11RecursiveGreenRowEditCapability,
     bytes: Option<Range<u64>>,
     utf16: Option<Range<u64>>,
+    segments: Vec<M11RecursiveGreenRowEditableSegment>,
     ancestry_point: Option<(u64, u64)>,
 }
 
@@ -3047,20 +3077,19 @@ fn point_zipper_row_editable(
             .ok_or(M11RecursiveGreenError::CounterOverflow)?;
         let ancestry_point =
             (start != end || utf16_start != utf16_end).then_some((start, utf16_start));
-        return Ok(match cached.capability() {
-            M11RecursiveGreenCachedRowEditCapability::Contiguous => PointZipperRowEditable {
+        if cached.capability() == M11RecursiveGreenCachedRowEditCapability::Contiguous {
+            return Ok(PointZipperRowEditable {
                 capability: M11RecursiveGreenRowEditCapability::Contiguous,
                 bytes: Some(start..end),
                 utf16: Some(utf16_start..utf16_end),
+                segments: Vec::new(),
                 ancestry_point,
-            },
-            M11RecursiveGreenCachedRowEditCapability::Unavailable => PointZipperRowEditable {
-                capability: M11RecursiveGreenRowEditCapability::Unavailable,
-                bytes: None,
-                utf16: None,
-                ancestry_point,
-            },
-        });
+            });
+        }
+        // An unavailable cached scalar cannot distinguish a genuinely
+        // non-projectable row from several identity cuts separated by hidden
+        // container prefixes. Re-scan that one bounded row and preserve the
+        // stronger fact only when every interior gap is HiddenUpstream.
     }
     let fenced_literal = if boundary.final_kind.get() == 7 {
         let close = boundary.close.ok_or(M11RecursiveGreenError::Corrupt(
@@ -3088,7 +3117,10 @@ fn point_zipper_row_editable(
         .filter(|(start, _)| *start == (0, 0))
         .map(|_| (open.byte_start, open.utf16_start));
     let mut gap_after = false;
+    let mut gap_is_hidden_container = true;
     let mut contiguous = true;
+    let mut projected_safe = true;
+    let mut editable_segments = Vec::<M11RecursiveGreenRowEditableSegment>::new();
     for leaf_ordinal in open.enter_leaf_ordinal..=boundary.exit_leaf_ordinal {
         let leaf = tree
             .locate_leaf_with_prefix(arena, leaf_ordinal, &mut work.inspection)?
@@ -3175,6 +3207,19 @@ fn point_zipper_row_editable(
                     if compatible {
                         if gap_after {
                             contiguous = false;
+                            projected_safe &= gap_is_hidden_container;
+                            editable_segments.push(M11RecursiveGreenRowEditableSegment {
+                                bytes: source_bytes..byte_end,
+                                utf16: source_utf16..utf16_end,
+                            });
+                        } else if let Some(segment) = editable_segments.last_mut() {
+                            segment.bytes.end = byte_end;
+                            segment.utf16.end = utf16_end;
+                        } else {
+                            editable_segments.push(M11RecursiveGreenRowEditableSegment {
+                                bytes: source_bytes..byte_end,
+                                utf16: source_utf16..utf16_end,
+                            });
                         }
                         editable_start.get_or_insert(source_bytes);
                         editable_utf16_start.get_or_insert(source_utf16);
@@ -3187,8 +3232,16 @@ fn point_zipper_row_editable(
                             editable_logical_utf16_end = logical_utf16_end;
                         }
                         gap_after = false;
+                        gap_is_hidden_container = true;
                     } else if editable_start.is_some() {
                         gap_after = true;
+                        gap_is_hidden_container &= atom
+                            == M11RecursiveGreenLogicalAtom::HiddenUpstream
+                            || (atom == M11RecursiveGreenLogicalAtom::None
+                                && part == M11RecursiveGreenCoveragePart::ContainerMarker
+                                && usize::try_from(owner_depth)
+                                    .ok()
+                                    .is_some_and(|depth| depth > relative_depth));
                     }
                     if let Some((literal_start, _)) = fenced_literal {
                         if empty_literal_cut.is_none()
@@ -3216,10 +3269,22 @@ fn point_zipper_row_editable(
         }
     };
     if !contiguous {
+        if projected_safe && editable_segments.len() > 1 {
+            return Ok(PointZipperRowEditable {
+                capability: M11RecursiveGreenRowEditCapability::ProjectedReserved,
+                bytes: Some(editable_start.expect("segments have a start")..editable_end),
+                utf16: Some(
+                    editable_utf16_start.expect("segments have a UTF-16 start")..editable_utf16_end,
+                ),
+                segments: editable_segments,
+                ancestry_point,
+            });
+        }
         return Ok(PointZipperRowEditable {
             capability: M11RecursiveGreenRowEditCapability::Unavailable,
             bytes: None,
             utf16: None,
+            segments: Vec::new(),
             ancestry_point,
         });
     }
@@ -3237,6 +3302,7 @@ fn point_zipper_row_editable(
                 capability: M11RecursiveGreenRowEditCapability::Contiguous,
                 bytes: Some(byte..byte),
                 utf16: Some(utf16..utf16),
+                segments: Vec::new(),
                 ancestry_point: None,
             });
         }
@@ -3249,6 +3315,7 @@ fn point_zipper_row_editable(
                 capability: M11RecursiveGreenRowEditCapability::Unavailable,
                 bytes: None,
                 utf16: None,
+                segments: Vec::new(),
                 ancestry_point,
             });
         }
@@ -3267,6 +3334,7 @@ fn point_zipper_row_editable(
         capability: M11RecursiveGreenRowEditCapability::Contiguous,
         bytes,
         utf16,
+        segments: Vec::new(),
         ancestry_point,
     })
 }

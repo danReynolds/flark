@@ -4,7 +4,7 @@
   "status": "m0-interface-only",
   "abi": {
     "major": 4,
-    "minor": 14,
+    "minor": 15,
     "header": "native/comrak_bridge/include/flark_v4.h",
     "runtimeCrate": "native/comrak_bridge/crates/flark_runtime",
     "abiCrate": "native/comrak_bridge/crates/flark_abi",
@@ -168,7 +168,8 @@
   "queryKinds": [
     {"name": "SOURCE", "code": 1},
     {"name": "SEMANTIC", "code": 2},
-    {"name": "SOURCE_AND_SEMANTIC", "code": 3}
+    {"name": "SOURCE_AND_SEMANTIC", "code": 3},
+    {"name": "SEMANTIC_PROJECTED", "code": 4}
   ],
   "resultRecordKinds": [
     {"name": "SOURCE_BYTES", "code": 1},
@@ -201,6 +202,7 @@
     {"name": "RESULT_PAGE_HEADER", "sizeBytes": 96},
     {"name": "CERTIFICATION_RANGE_RECORD", "sizeBytes": 40},
     {"name": "VIEWPORT_ROW_RECORD", "sizeBytes": 128},
+    {"name": "PROJECTION_SEGMENT_RECORD", "sizeBytes": 32},
     {"name": "INLINE_FACT_RECORD", "sizeBytes": 80},
     {"name": "SOURCE_RANGE", "sizeBytes": 16},
     {"name": "EDIT_DESCRIPTOR", "sizeBytes": 32},

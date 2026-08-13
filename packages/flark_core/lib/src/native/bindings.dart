@@ -754,6 +754,12 @@ final class FlarkV4ViewportRowRecord extends Struct {
   external int inlineFactCount;
 }
 
+final class FlarkV4ProjectionSegmentRecord extends Struct {
+  external FlarkV4SourceRange sourceRange;
+
+  external FlarkV4SourceRange sourceUtf16Range;
+}
+
 final class FlarkV4InlineFactRecord extends Struct {
   @Uint32()
   external int kind;
