@@ -409,6 +409,16 @@ transaction, anchor, history, and presentation-receipt path. Nested rows and
 stale semantics fail closed; ordinary typing and Return at the boundary remain
 literal source edits, and deletion preserves a BOF BOM.
 
+ABI 4.20 extends pure block-quote editing from depth one to a bounded parser-
+owned container lineage. Return repeats the complete exact prefix; Return on
+an empty nested row and Backspace at its content boundary remove one innermost
+marker. For a later nonempty physical line, Rust emits one canonical splice
+that creates a block boundary and restarts the line at the remaining quote
+depth, preventing CommonMark lazy continuation from silently retaining the old
+nesting. Core maps that receipt into ordered marker-free temporary surfaces,
+while Flutter only chooses how each semantic depth is painted. Mixed quote/list
+or quote/heading paths remain fail closed.
+
 Exit: the complete v2 behavior denominator is exact or an explicitly scoped
 unsupported product feature; “active raw” is not an accepted fallback for a
 supported construct.

@@ -1035,7 +1035,9 @@ final class FlarkEditorController extends ChangeNotifier {
         _crossRowSelection &&
         _selectionIntersects(structural.sourceUtf16);
     return FlarkSurfaceRow(
-      leadingText: presentation.leadingText,
+      leadingText: presentation.blockQuoteDepth == null
+          ? presentation.leadingText
+          : _projectedBlockQuotePrefixDepth(presentation.blockQuoteDepth!),
       text: presentation.text,
       globalUtf16Start: presentation.globalUtf16Start,
       kind: presentation.kind,
@@ -3117,7 +3119,7 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   bool _isProjectedBlockQuote(FlarkViewportRow row) =>
-      row.blockQuote?.nestingDepth == 1 &&
+      row.blockQuote != null &&
       row.editCapability == FlarkViewportRowEditCapability.projectedReserved &&
       row.projectionSegments != null;
 
@@ -4356,7 +4358,10 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   String _projectedBlockQuotePrefix(FlarkBlockQuotePresentation quote) =>
-      List<String>.filled(quote.nestingDepth, '│ ').join();
+      _projectedBlockQuotePrefixDepth(quote.nestingDepth);
+
+  String _projectedBlockQuotePrefixDepth(int depth) =>
+      List<String>.filled(depth, '│ ').join();
 
   bool _rowSemanticsCurrent(FlarkSourceRange mappedSource) {
     if (_semanticViewportCurrent) return true;

@@ -37,6 +37,7 @@ enum FlarkCoreEditPresentationTransitionV1 {
   joinIndentedCode,
   liftIndentedCode,
   deleteThematicBreak,
+  outdentBlockQuote,
 }
 
 /// An opaque, one-shot handle to inverse source retained by the native core.

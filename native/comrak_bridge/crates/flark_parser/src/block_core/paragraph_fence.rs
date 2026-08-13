@@ -78,6 +78,10 @@ pub enum M11RecursiveGreenRowPresentation {
         prefix_start_utf16: u64,
         prefix_end_utf16: u64,
         nesting_depth: u8,
+        /// Exact parser-certified physical widths of each quote marker,
+        /// packed root-first as four-bit values.
+        container_widths: u64,
+        container_count: u8,
         simple_continuation: bool,
     },
     CodeBlock {
@@ -416,14 +420,14 @@ fn block_quote_row_presentation(
         0
     };
     let marker_end = read_len.saturating_sub(trailing_line_ending_len);
-    let marker_start = if empty_quote_row {
-        prefix[..marker_end]
-            .iter()
-            .rposition(|byte| matches!(byte, b'\r' | b'\n'))
-            .map_or(0, |index| index + 1)
-    } else {
-        0
-    };
+    // A quote container may begin with an empty physical line before this
+    // paragraph. In that case `quote_start..row_start` contains both that
+    // line and this row's prefix; only the final physical-line prefix belongs
+    // to the row presentation.
+    let marker_start = prefix[..marker_end]
+        .iter()
+        .rposition(|byte| matches!(byte, b'\r' | b'\n'))
+        .map_or(0, |index| index + 1);
     if empty_quote_row && marker_start == 0 && read_start != quote_start {
         return Ok(None);
     }
@@ -455,10 +459,21 @@ fn block_quote_row_presentation(
         usize::try_from(prefix_end).map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
     )?)
     .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
-    let simple_continuation = nesting_depth == 1
-        && first_quote_index == 1
-        && path.len() == 3
+    let pure_quote_path = first_quote_index == 1
+        && path.len() == usize::from(nesting_depth) + 2
         && path[0].kind().get() == super::writer::KIND_DOCUMENT
+        && path[1..=usize::from(nesting_depth)]
+            .iter()
+            .all(|frame| frame.kind().get() == KIND_BLOCK_QUOTE);
+    let (container_widths, container_count) = if pure_quote_path {
+        m11_block_quote_prefix_lineage(&prefix[marker_start..marker_end], nesting_depth)
+            .unwrap_or((0, 0))
+    } else {
+        (0, 0)
+    };
+    let bounded_lineage = container_count == nesting_depth;
+    let simple_continuation = pure_quote_path
+        && bounded_lineage
         && row.editable_range().is_some()
         && row_has_one_physical_line(runtime, row)?;
     Ok(Some(M11RecursiveGreenRowPresentation::BlockQuote {
@@ -467,8 +482,63 @@ fn block_quote_row_presentation(
         prefix_start_utf16,
         prefix_end_utf16,
         nesting_depth,
+        container_widths,
+        container_count,
         simple_continuation,
     }))
+}
+
+/// Splits an already parser-certified pure block-quote prefix into exact
+/// container contributions. This does not classify arbitrary Markdown: the
+/// caller supplies the certified nesting depth, and the complete prefix must
+/// be consumed by exactly that many markers.
+pub fn m11_block_quote_prefix_lineage(prefix: &[u8], nesting_depth: u8) -> Option<(u64, u8)> {
+    if nesting_depth == 0 || nesting_depth > 16 {
+        return None;
+    }
+    let mut cursor = 0_usize;
+    let mut widths = 0_u64;
+    for index in 0..nesting_depth {
+        let marker = prefix[cursor..].iter().position(|byte| *byte == b'>')? + cursor;
+        if prefix[cursor..marker]
+            .iter()
+            .any(|byte| !matches!(byte, b' ' | b'\t'))
+        {
+            return None;
+        }
+        let mut end = marker.checked_add(1)?;
+        if prefix
+            .get(end)
+            .is_some_and(|byte| matches!(byte, b' ' | b'\t'))
+        {
+            end += 1;
+        }
+        let width = end.checked_sub(cursor)?;
+        if !(1..=15).contains(&width) {
+            return None;
+        }
+        widths |= u64::try_from(width).ok()? << (u32::from(index) * 4);
+        cursor = end;
+    }
+    (cursor == prefix.len()).then_some((widths, nesting_depth))
+}
+
+#[cfg(test)]
+mod block_quote_prefix_lineage_tests {
+    use super::m11_block_quote_prefix_lineage;
+
+    #[test]
+    fn accepts_exact_physical_marker_widths_and_rejects_partial_prefixes() {
+        assert_eq!(m11_block_quote_prefix_lineage(b"> > ", 2), Some((0x22, 2)));
+        assert_eq!(m11_block_quote_prefix_lineage(b">>", 2), Some((0x11, 2)));
+        assert_eq!(
+            m11_block_quote_prefix_lineage(b" >\t> ", 2),
+            Some((0x23, 2))
+        );
+        assert_eq!(m11_block_quote_prefix_lineage(b"> > tail", 2), None);
+        assert_eq!(m11_block_quote_prefix_lineage(b"- > ", 1), None);
+        assert_eq!(m11_block_quote_prefix_lineage(b"> ", 0), None);
+    }
 }
 
 fn row_has_one_physical_line(

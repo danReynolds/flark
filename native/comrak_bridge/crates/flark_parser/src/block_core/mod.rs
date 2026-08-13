@@ -34,7 +34,8 @@ pub use controller::{
     M11_DIRECT_BLOCK_MAX_LEXICAL_SLACK, M11_DIRECT_BLOCK_MAX_RETAINED_SOURCE_BYTES,
 };
 pub use paragraph_fence::{
-    m11_recursive_green_row_presentation, resolve_m11_recursive_green_inline_leaf_fence,
+    m11_block_quote_prefix_lineage, m11_recursive_green_row_presentation,
+    resolve_m11_recursive_green_inline_leaf_fence,
     resolve_m11_recursive_green_inline_leaf_row_fence, resolve_m11_recursive_green_paragraph_fence,
     M11RecursiveGreenCodeBlockStyle, M11RecursiveGreenInlineLeafFence,
     M11RecursiveGreenInlineLeafKind, M11RecursiveGreenListMarker, M11RecursiveGreenParagraphFence,

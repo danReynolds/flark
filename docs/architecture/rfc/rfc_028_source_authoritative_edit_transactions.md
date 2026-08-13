@@ -945,6 +945,18 @@ literal edits, so this profile does not silently turn every key at an atom into
 a structural command. The runtime owns newline and BOF-BOM preservation, while
 the Flutter surface owns only focus routing and divider paint.
 
+ABI 4.20 adds `NESTED_BLOCK_QUOTE_EDITING_V1`. The parser publishes a bounded
+root-first lineage of exact physical quote-marker widths for pure quote paths;
+the runtime validates that lineage against current source and removes one
+innermost container per Return/Backspace command. Nonempty Return continues the
+entire prefix, while an empty nested row outdents without an intervening parser
+pump. A later nonempty physical-line outdent replaces the complete line prefix
+with one line ending plus the remaining outer prefix: deleting only the inner
+marker would be source-shaped but can remain nested through CommonMark lazy
+continuation. The one committed splice drives anchors, history, Core temporary
+surfaces, and Flutter paint. Mixed-container paths and unbounded prefixes remain
+explicitly unadmitted rather than delegated to host Markdown inference.
+
 ### H5 — hardening and later architecture
 
 Qualify memory envelopes, fault recovery, giant-line raster behavior, GFM and

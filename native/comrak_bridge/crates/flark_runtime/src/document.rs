@@ -15,9 +15,10 @@ use flark_engine::{
 };
 use flark_parser::{
     block_core::{
-        m11_recursive_green_row_presentation, BulletMarker, FenceCharacter, HeadingStyle,
-        ListDelimiter, M11RecursiveGreenCodeBlockStyle, M11RecursiveGreenInlineLeafKind,
-        M11RecursiveGreenListMarker, M11RecursiveGreenRowPresentation,
+        m11_block_quote_prefix_lineage, m11_recursive_green_row_presentation, BulletMarker,
+        FenceCharacter, HeadingStyle, ListDelimiter, M11RecursiveGreenCodeBlockStyle,
+        M11RecursiveGreenInlineLeafKind, M11RecursiveGreenListMarker,
+        M11RecursiveGreenRowPresentation,
     },
     classify_m11_simple_edit_line, project_m11_gfm_table, M11GfmTableAlignment,
     M11InlineProjectionJob, M11InlineProjectionJobError, M11InlineProjectionJobPollStatus,
@@ -30,8 +31,8 @@ use flark_parser::{
 };
 
 use crate::edit_intent::{
-    resolve_document_edit_intent_v1, DocumentEditLineEnding, DocumentListOutdent,
-    DocumentParagraphMerge, DocumentSimpleEditContext, DocumentSimpleEditRow,
+    resolve_document_edit_intent_v1, DocumentBlockQuoteOutdent, DocumentEditLineEnding,
+    DocumentListOutdent, DocumentParagraphMerge, DocumentSimpleEditContext, DocumentSimpleEditRow,
 };
 use crate::{
     DocumentEditIntentDispositionV1, DocumentEditIntentReceiptV1, DocumentEditIntentV1,
@@ -225,6 +226,8 @@ pub enum DocumentViewportRowPresentation {
         prefix_start_utf16: u64,
         prefix_end_utf16: u64,
         nesting_depth: u8,
+        container_widths: u64,
+        container_count: u8,
         simple_continuation: bool,
     },
     CodeBlock {
@@ -1131,10 +1134,11 @@ impl DocumentSession {
         if matches!(
             current.presentation,
             DocumentViewportRowPresentation::BlockQuote {
-                nesting_depth: 1,
+                nesting_depth,
+                container_count,
                 simple_continuation: false,
                 ..
-            }
+            } if nesting_depth == container_count
         ) && current.edit_capability == DocumentViewportRowEditCapability::ProjectedReserved
         {
             return self.capture_projected_block_quote_edit_context(
@@ -1266,20 +1270,37 @@ impl DocumentSession {
                 prefix_end_byte,
                 prefix_start_utf16,
                 prefix_end_utf16,
-                nesting_depth: 1,
+                nesting_depth,
+                container_widths,
+                container_count,
                 simple_continuation: true,
-            } => {
+            } if container_count == nesting_depth => {
                 let prefix_bytes = usize::try_from(prefix_start_byte).ok()?
                     ..usize::try_from(prefix_end_byte).ok()?;
+                let prefix_utf16 = usize::try_from(prefix_start_utf16).ok()?
+                    ..usize::try_from(prefix_end_utf16).ok()?;
                 let prefix_text =
                     String::from_utf8(self.source_bytes(prefix_bytes.clone()).ok()?).ok()?;
+                let outdent = self.capture_block_quote_outdent(
+                    &prefix_bytes,
+                    &prefix_utf16,
+                    nesting_depth,
+                    container_widths,
+                    container_count,
+                );
+                if nesting_depth > 1 && outdent.is_none() {
+                    return None;
+                }
                 DocumentSimpleEditRow::BlockQuote {
                     prefix_bytes,
-                    prefix_utf16: usize::try_from(prefix_start_utf16).ok()?
-                        ..usize::try_from(prefix_end_utf16).ok()?,
+                    prefix_utf16,
                     prefix_text,
+                    nesting_depth,
+                    container_widths,
+                    container_count,
                     starts_quote: true,
                     empty: editable_bytes.is_empty(),
+                    outdent,
                 }
             }
             _ => return None,
@@ -1359,7 +1380,28 @@ impl DocumentSession {
         let editable_end_utf16 = lease.utf16_offset_for_byte(editable_bytes.end).ok()?;
         let prefix_bytes = physical_start..segment_bytes.start;
         let prefix_utf16 = physical_start_utf16..editable_start_utf16;
-        let prefix_text = String::from_utf8(self.source_bytes(prefix_bytes.clone()).ok()?).ok()?;
+        let prefix_source = self.source_bytes(prefix_bytes.clone()).ok()?;
+        let prefix_text = String::from_utf8(prefix_source.clone()).ok()?;
+        let nesting_depth = match row.presentation {
+            DocumentViewportRowPresentation::BlockQuote {
+                nesting_depth,
+                container_count,
+                ..
+            } if container_count == nesting_depth => nesting_depth,
+            _ => return None,
+        };
+        let (container_widths, container_count) =
+            m11_block_quote_prefix_lineage(&prefix_source, nesting_depth)?;
+        let outdent = self.capture_block_quote_outdent(
+            &prefix_bytes,
+            &prefix_utf16,
+            nesting_depth,
+            container_widths,
+            container_count,
+        );
+        if nesting_depth > 1 && outdent.is_none() {
+            return None;
+        }
 
         Some(DocumentSimpleEditContext {
             revision,
@@ -1372,8 +1414,12 @@ impl DocumentSession {
                 prefix_bytes,
                 prefix_utf16,
                 prefix_text,
+                nesting_depth,
+                container_widths,
+                container_count,
                 starts_quote: segment_index == 0,
                 empty: editable_start_utf16 == editable_end_utf16,
+                outdent,
             },
             paragraph_merge: None,
         })
@@ -1552,6 +1598,28 @@ impl DocumentSession {
             bytes: marker_start_byte.checked_sub(width)?..marker_start_byte,
             utf16: marker_start_utf16.checked_sub(width)?..marker_start_utf16,
             indentation: indentation.indentation,
+        })
+    }
+
+    fn capture_block_quote_outdent(
+        &self,
+        prefix_bytes: &Range<usize>,
+        prefix_utf16: &Range<usize>,
+        nesting_depth: u8,
+        container_widths: u64,
+        container_count: u8,
+    ) -> Option<DocumentBlockQuoteOutdent> {
+        if nesting_depth <= 1 || container_count != nesting_depth || container_count > 16 {
+            return None;
+        }
+        let shift = u32::from(container_count - 1) * 4;
+        let width = usize::try_from((container_widths >> shift) & 0x0f).ok()?;
+        if !(1..=15).contains(&width) || width > prefix_bytes.len() || width > prefix_utf16.len() {
+            return None;
+        }
+        Some(DocumentBlockQuoteOutdent {
+            bytes: prefix_bytes.end.checked_sub(width)?..prefix_bytes.end,
+            utf16: prefix_utf16.end.checked_sub(width)?..prefix_utf16.end,
         })
     }
 
@@ -1784,13 +1852,20 @@ impl DocumentSession {
                     window[local_line_start + prefix.start..local_line_start + prefix.end].to_vec(),
                 )
                 .ok()?;
+                let prefix_source = prefix_text.as_bytes();
+                let (container_widths, container_count) =
+                    m11_block_quote_prefix_lineage(prefix_source, 1)?;
                 (
                     DocumentSimpleEditRow::BlockQuote {
                         prefix_bytes,
                         prefix_utf16,
                         prefix_text,
+                        nesting_depth: 1,
+                        container_widths,
+                        container_count,
                         starts_quote: true,
                         empty,
+                        outdent: None,
                     },
                     line_start + content.start..line_start + content.end,
                 )
@@ -2904,6 +2979,8 @@ fn document_viewport_row(
             prefix_start_utf16,
             prefix_end_utf16,
             nesting_depth,
+            container_widths,
+            container_count,
             simple_continuation,
         } => DocumentViewportRowPresentation::BlockQuote {
             prefix_start_byte,
@@ -2911,6 +2988,8 @@ fn document_viewport_row(
             prefix_start_utf16,
             prefix_end_utf16,
             nesting_depth,
+            container_widths,
+            container_count,
             simple_continuation,
         },
         M11RecursiveGreenRowPresentation::CodeBlock { style } => {
@@ -2990,9 +3069,13 @@ fn document_viewport_row(
             if !matches!(
                 presentation,
                 DocumentViewportRowPresentation::BlockQuote {
-                    nesting_depth: 1,
+                    nesting_depth,
+                    container_count,
                     ..
-                } | DocumentViewportRowPresentation::CodeBlock {
+                } if container_count == nesting_depth
+            ) && !matches!(
+                presentation,
+                DocumentViewportRowPresentation::CodeBlock {
                     style: DocumentCodeBlockStyle::Indented,
                 }
             ) =>

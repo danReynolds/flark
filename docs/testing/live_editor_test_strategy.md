@@ -424,9 +424,12 @@ product checkpoint rather than only semantic confidence.
 Current portable depth also includes ordered-list continuation/history,
 depth-three successive outdent, nonuniform ordered-parent container geometry,
 task and quote continuation/exit, fenced-code Return/type/history, and
-conservative table-cell typing. Those additions found and closed shared
-duplicate-action, successor-history, and parser-refresh generation races rather
-than adding construct-local handlers.
+conservative table-cell typing. Pure nested block quotes now add a bounded
+continue/outdent/exit journey shared by the no-window and mounted-surface lanes;
+exact prefix-width, CRLF, lazy-continuation, and fail-closed permutations stay
+in the faster Rust/Core matrices. Those additions found and closed shared
+duplicate-action, successor-history, parser-refresh generation, and structural
+recertification bugs rather than adding construct-local handlers.
 
 ### H3 — Grow from evidence
 

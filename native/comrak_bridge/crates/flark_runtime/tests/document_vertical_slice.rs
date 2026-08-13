@@ -366,6 +366,8 @@ fn viewport_preserves_parser_authored_block_structure_presentations() {
             prefix_start_utf16: 0,
             prefix_end_utf16: 2,
             nesting_depth: 1,
+            container_widths: 2,
+            container_count: 1,
             simple_continuation: true,
         }
     );
@@ -396,7 +398,9 @@ fn viewport_preserves_parser_authored_block_structure_presentations() {
             prefix_start_utf16: 0,
             prefix_end_utf16: 4,
             nesting_depth: 2,
-            simple_continuation: false,
+            container_widths: 0x22,
+            container_count: 2,
+            simple_continuation: true,
         }
     );
     nested.close().expect("close nested BlockQuote");
@@ -462,6 +466,8 @@ fn viewport_preserves_parser_authored_block_structure_presentations() {
             prefix_start_utf16: 8,
             prefix_end_utf16: 10,
             nesting_depth: 1,
+            container_widths: 2,
+            container_count: 1,
             simple_continuation: true,
         }
     );
@@ -503,6 +509,8 @@ fn viewport_preserves_parser_authored_block_structure_presentations() {
             prefix_start_utf16: prefix_start_utf16 as u64,
             prefix_end_utf16: prefix_end_utf16 as u64,
             nesting_depth: 1,
+            container_widths: 2,
+            container_count: 1,
             simple_continuation: true,
         },
     );
@@ -519,14 +527,46 @@ fn viewport_preserves_parser_authored_block_structure_presentations() {
         .expect("nested multiline quote viewport");
     assert_eq!(
         nested_multiline_viewport.rows[0].edit_capability,
-        DocumentViewportRowEditCapability::Unavailable,
+        DocumentViewportRowEditCapability::ProjectedReserved,
     );
-    assert!(nested_multiline_viewport.rows[0]
-        .projection_segments
-        .is_none());
+    assert_eq!(
+        nested_multiline_viewport.rows[0]
+            .projection_segments
+            .as_ref()
+            .expect("nested quote projection segments")
+            .iter()
+            .map(|segment| segment.source_range.clone())
+            .collect::<Vec<_>>(),
+        vec![4..10, 14..20],
+    );
     nested_multiline
         .close()
         .expect("close nested multiline quote");
+
+    let nested_boundary_source = "> > first\n> \n> second\n";
+    let mut nested_boundary =
+        DocumentSession::begin(nested_boundary_source).expect("begin nested quote boundary");
+    pump_ready(&mut nested_boundary);
+    let nested_boundary_viewport = nested_boundary
+        .query_viewport(1, 0..nested_boundary_source.len(), 32)
+        .expect("nested quote boundary viewport");
+    assert_eq!(nested_boundary_viewport.rows.len(), 2);
+    assert_eq!(
+        nested_boundary_viewport.rows[1].presentation,
+        DocumentViewportRowPresentation::BlockQuote {
+            prefix_start_byte: 13,
+            prefix_end_byte: 15,
+            prefix_start_utf16: 13,
+            prefix_end_utf16: 15,
+            nesting_depth: 1,
+            container_widths: 2,
+            container_count: 1,
+            simple_continuation: true,
+        }
+    );
+    nested_boundary
+        .close()
+        .expect("close nested quote boundary");
 
     let fenced_source = "```dart\ncode\n```\n";
     let mut fenced = DocumentSession::begin(fenced_source).expect("begin FencedCode");
@@ -616,6 +656,8 @@ fn viewport_preserves_parser_authored_block_structure_presentations() {
                 prefix_start_utf16: 0,
                 prefix_end_utf16: 2,
                 nesting_depth: 1,
+                container_widths: 2,
+                container_count: 1,
                 simple_continuation: true,
             }
         );

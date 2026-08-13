@@ -318,6 +318,81 @@ void main() {
   );
 
   test(
+    'nested block quotes continue and outdent one parser-owned level',
+    () async {
+      const source = '> > alpha';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      var row = controller.rows.first;
+      expect(row.blockQuote?.nestingDepth, 2);
+      expect(controller.surfaceRow(row).leadingText, '│ │ ');
+      controller.activateRow(row, row.editableUtf16!.end);
+
+      controller.insertNewline();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, '> > alpha\n> > ');
+
+      controller.insertNewline();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, '> > alpha\n> ');
+      expect(controller.rows.last.blockQuote?.nestingDepth, 1);
+
+      controller.insertNewline();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, '> > alpha\n\n');
+
+      expect(await controller.undo(), isTrue);
+      expect(await controller.undo(), isTrue);
+      expect(await controller.undo(), isTrue);
+      await _settle(controller);
+      expect(controller.visibleSource, source);
+      row = controller.rows.first;
+      controller.activateRow(row, row.editableUtf16!.start);
+      controller.deleteBackward();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, '> alpha');
+      expect(controller.rows.first.blockQuote?.nestingDepth, 1);
+      expect(controller.surfaceRow(controller.rows.first).leadingText, '│ ');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'multiline nested quote outdents only the active rendered line',
+    () async {
+      const source = '> > first\n> > second\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      final row = controller.rows.first;
+      expect(row.blockQuote?.nestingDepth, 2);
+      expect(row.projectionSegments, isNotNull);
+      controller.activateRow(row, source.indexOf('second'));
+
+      controller.deleteBackward();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, '> > first\n\n> second\n');
+      expect(
+        controller.rows.map((row) => row.blockQuote?.nestingDepth),
+        containsAllInOrder([2, 1]),
+      );
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'indented code Return and Backspace preserve the rendered surface',
     () async {
       const source = '    one\n    two\n';

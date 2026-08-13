@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "id": "nested-block-quote-outdent",
+  "description": "A pure nested quote continues, outdents one parser-owned level at a time, exits, and never exposes its physical prefixes.",
+  "initialSource": "> > alpha\n",
+  "activation": {
+    "needle": "alpha",
+    "occurrence": 0,
+    "utf16OffsetInNeedle": 5
+  },
+  "steps": [
+    {
+      "type": "pressReturn"
+    },
+    {
+      "type": "typeText",
+      "text": "beta",
+      "intervalMs": 0
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "checkpoint",
+      "id": "continued",
+      "source": "> > alpha\n> > beta\n",
+      "caretUtf16": 18
+    },
+    {
+      "type": "pressReturn"
+    },
+    {
+      "type": "pressReturn"
+    },
+    {
+      "type": "pressReturn"
+    },
+    {
+      "type": "typeText",
+      "text": "plain",
+      "intervalMs": 0
+    },
+    {
+      "type": "waitForIdle"
+    }
+  ],
+  "schedules": [
+    {
+      "id": "immediate"
+    }
+  ],
+  "expect": {
+    "source": "> > alpha\n> > beta\n\nplain\n",
+    "caretUtf16": 25,
+    "resyncCount": 0,
+    "faulted": false,
+    "forbiddenSurfaceSubstrings": ["> ", "<empty>"],
+    "paintedSurfaceNeverContains": ["> ", "<empty>"]
+  }
+}

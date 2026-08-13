@@ -132,16 +132,17 @@ const _editPresentationContinueIndentedCode = 12;
 const _editPresentationJoinIndentedCode = 13;
 const _editPresentationLiftIndentedCode = 14;
 const _editPresentationDeleteThematicBreak = 15;
+const _editPresentationOutdentBlockQuote = 16;
 const _bulkCommitWorkUnits = 1;
 const _resultPayloadBytes = 64 * 1024;
 const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 19;
+const _abiMinor = 20;
 // Every capability through this ABI minor is required by the safe Core
 // boundary; negotiation must fail rather than silently losing an edit lane.
-const _requiredCapabilityBits = 0x1fffff;
+const _requiredCapabilityBits = 0x3fffff;
 
 final class FlarkNativeException implements Exception {
   const FlarkNativeException(this.operation, this.status, [this.detail = 0]);
@@ -203,6 +204,7 @@ enum FlarkNativeEditPresentationTransitionV1 {
   joinIndentedCode,
   liftIndentedCode,
   deleteThematicBreak,
+  outdentBlockQuote,
 }
 
 final class FlarkNativeEditIntentReceiptV1 {
@@ -931,6 +933,8 @@ final class FlarkNativeDocument {
           FlarkNativeEditPresentationTransitionV1.liftIndentedCode,
         _editPresentationDeleteThematicBreak =>
           FlarkNativeEditPresentationTransitionV1.deleteThematicBreak,
+        _editPresentationOutdentBlockQuote =>
+          FlarkNativeEditPresentationTransitionV1.outdentBlockQuote,
         _ => throw FlarkNativeException(
           'edit_intent_v1',
           _internalFault,

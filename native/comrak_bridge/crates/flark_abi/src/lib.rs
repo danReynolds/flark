@@ -25,7 +25,7 @@ pub use flark_runtime::{
 };
 
 pub const ABI_MAJOR: u16 = 4;
-pub const ABI_MINOR: u16 = 19;
+pub const ABI_MINOR: u16 = 20;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
@@ -466,6 +466,7 @@ pub const EDIT_PRESENTATION_CONTINUE_INDENTED_CODE: u32 = 12;
 pub const EDIT_PRESENTATION_JOIN_INDENTED_CODE: u32 = 13;
 pub const EDIT_PRESENTATION_LIFT_INDENTED_CODE: u32 = 14;
 pub const EDIT_PRESENTATION_DELETE_THEMATIC_BREAK: u32 = 15;
+pub const EDIT_PRESENTATION_OUTDENT_BLOCK_QUOTE: u32 = 16;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]

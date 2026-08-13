@@ -432,6 +432,58 @@ void main() {
     expect(transition?.clearPriorGap, isTrue);
   });
 
+  test('nested quote outdent changes only the targeted physical line', () {
+    final quote = _row(
+      ordinal: 20,
+      sourceStart: 0,
+      sourceEnd: 21,
+      text: 'first\nsecond',
+      leadingText: '│ │ ',
+      blockQuoteDepth: 2,
+      runs: const [
+        FlarkCorePresentationRun(
+          text: 'first\n',
+          sourceUtf16Start: 4,
+          sourceUtf16End: 10,
+          sourceExact: true,
+          styles: {},
+        ),
+        FlarkCorePresentationRun(
+          text: 'second',
+          sourceUtf16Start: 14,
+          sourceUtf16End: 20,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
+
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.outdentBlockQuote,
+        baseStart: 10,
+        baseEnd: 14,
+        replacement: '\n> ',
+      ),
+      activeOrdinal: 20,
+      active: quote,
+    );
+
+    expect(transition?.surfaces, hasLength(2));
+    expect(transition?.surfaces.first.presentation.blockQuoteDepth, 2);
+    expect(transition?.surfaces.first.presentation.text, 'first\n');
+    expect(transition?.surfaces.last.presentation.blockQuoteDepth, 1);
+    expect(transition?.surfaces.last.presentation.text, '\nsecond');
+    expect(transition?.surfaces.last.presentation.globalUtf16Start, 10);
+    expect(
+      (
+        transition?.surfaces.last.sourceUtf16.start,
+        transition?.surfaces.last.sourceUtf16.end,
+      ),
+      (10, 20),
+    );
+  });
+
   test('literal successor maps one temporary surface without losing peers', () {
     final transition = frontend.adopt(
       receipt: _receipt(

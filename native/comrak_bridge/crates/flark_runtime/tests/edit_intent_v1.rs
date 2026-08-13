@@ -146,6 +146,51 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             expected_transition: DocumentEditPresentationTransitionV1::LiftBlockQuote,
         },
         IntentCase {
+            name: "nested quote continues with its exact parser prefix",
+            initial: "> > alpha",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 9,
+            expected: "> > alpha\n> > ",
+            expected_selection_utf16: 14,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueBlockQuote,
+        },
+        IntentCase {
+            name: "nested quote Backspace outdents one container",
+            initial: "> > alpha\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 4,
+            expected: "> alpha\n",
+            expected_selection_utf16: 2,
+            expected_transition: DocumentEditPresentationTransitionV1::OutdentBlockQuote,
+        },
+        IntentCase {
+            name: "empty nested quote Return outdents one container",
+            initial: "> > ",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 4,
+            expected: "> ",
+            expected_selection_utf16: 2,
+            expected_transition: DocumentEditPresentationTransitionV1::OutdentBlockQuote,
+        },
+        IntentCase {
+            name: "multiline nested quote outdents only the active physical line",
+            initial: "> > first\n> > second\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 14,
+            expected: "> > first\n\n> second\n",
+            expected_selection_utf16: 13,
+            expected_transition: DocumentEditPresentationTransitionV1::OutdentBlockQuote,
+        },
+        IntentCase {
+            name: "multiline CRLF nested quote preserves its line ending while outdenting",
+            initial: "> > first\r\n> > second\r\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 15,
+            expected: "> > first\r\n\r\n> second\r\n",
+            expected_selection_utf16: 15,
+            expected_transition: DocumentEditPresentationTransitionV1::OutdentBlockQuote,
+        },
+        IntentCase {
             name: "unordered continuation",
             initial: "- alpha\n",
             intent: DocumentEditIntentV1::InsertParagraphBreak,
@@ -450,7 +495,7 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
 #[test]
 fn complex_context_fails_closed_and_composition_never_mutates() {
     for initial in [
-        "> > nested\n",
+        "> - nested\n",
         "> # child heading\n",
         "> ---\n",
         "Setext\n---\n",
@@ -572,6 +617,42 @@ fn parser_pending_quote_continues_then_exits_without_pumping() {
     assert_eq!(exited.disposition, DocumentEditIntentDispositionV1::Applied);
     assert_eq!(source(&document), "> alpha\n\n");
     document.close().expect("close pending quote");
+}
+
+#[test]
+fn parser_pending_nested_quote_outdents_one_level_per_command() {
+    let mut document = DocumentSession::begin("> > > ").expect("begin nested quote");
+    pump_ready(&mut document);
+
+    let first = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 6, false)
+        .expect("first quote outdent");
+    assert_eq!(
+        first.presentation_transition,
+        DocumentEditPresentationTransitionV1::OutdentBlockQuote,
+    );
+    assert_eq!(source(&document), "> > ");
+    assert_eq!(first.result_selection_utf16, 4);
+
+    let second = document
+        .try_apply_edit_intent_v1(2, DocumentEditIntentV1::InsertParagraphBreak, 4, false)
+        .expect("second quote outdent while parser pending");
+    assert_eq!(
+        second.presentation_transition,
+        DocumentEditPresentationTransitionV1::OutdentBlockQuote,
+    );
+    assert_eq!(source(&document), "> ");
+    assert_eq!(second.result_selection_utf16, 2);
+
+    let exit = document
+        .try_apply_edit_intent_v1(3, DocumentEditIntentV1::InsertParagraphBreak, 2, false)
+        .expect("exit outer quote while parser pending");
+    assert_eq!(
+        exit.presentation_transition,
+        DocumentEditPresentationTransitionV1::ExitBlockQuote,
+    );
+    assert_eq!(source(&document), "\n");
+    document.close().expect("close nested quote");
 }
 
 #[test]
