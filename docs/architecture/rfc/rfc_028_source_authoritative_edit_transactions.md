@@ -837,10 +837,14 @@ KiB ingress chunk. It validates result selection before commit, reserves the
 exact inverse before mutation, atomically retargets the canonical anchors, and
 recovers a lost reply from the terminal slot. ABI 4.12 keeps rapid typing and
 composition in one bounded native token and replays each group in one source
-commit. The common bounded transaction gateway is therefore complete. Larger
-replacements or deletions temporarily retain the staged bulk lane with
-explicit fail-stop postcommit adoption; a receipt-bearing staged commit remains
-H4 clipboard/bulk work rather than an unstated exception.
+commit. ABI 4.22 extends the same authoritative receipt, required-history,
+atomic-anchor, ordered-terminal, and lost-reply guarantees to replacements and
+deletions larger than one ingress chunk. Bytes still enter through bounded
+`BULK_BEGIN`/`BULK_APPEND` staging, but only
+`STAGED_SOURCE_TRANSACTION_V1` may commit them. The compatibility bulk path now
+remains only for the unadmitted case where a large edit requests a noncollapsed
+result selection away from the inserted-range end. The common transaction
+gateway is therefore complete for normal typing, deletion, paste, and undo.
 
 ### H4 — structural and production input matrix
 
@@ -969,6 +973,15 @@ up. A portable source-targeted scenario runs the same action headlessly and on
 mounted Flutter; the macOS driver resolves that target to painted geometry and
 performs a real pointer click. This is the general target-action seam, with task
 toggle as its first admitted action rather than a task-specific second editor.
+
+ABI 4.22 adds `STAGED_SOURCE_TRANSACTIONS_V1`. Large replacement bytes remain
+bounded during ingress, UTF-8 validation, UTF-16 counting, and inverse capture;
+source mutation occurs only after the exact inverse and standalone history
+token fit the configured budget. The commit returns the ordinary source
+transaction receipt, retargets canonical anchors in the same native critical
+section, and preserves idempotent terminal replay if the worker reply is lost.
+This closes the normal clipboard and large-deletion correctness gap without
+placing clipboard policy or platform UI in Rust.
 
 Flutter pointer routing now separates recognizers by intent instead of enabling
 one pan policy on every device: a touch or stylus tap activates text or a

@@ -2,21 +2,23 @@ use std::mem::size_of;
 
 use flark_abi::{
     flark_v4_anchor_create, flark_v4_anchor_release, flark_v4_anchor_resolve,
-    flark_v4_anchor_transform, flark_v4_bulk_abort, flark_v4_bulk_begin, flark_v4_cancel,
-    flark_v4_close_begin, flark_v4_close_finish, flark_v4_close_pump, flark_v4_create_abort,
-    flark_v4_create_begin, flark_v4_create_commit, flark_v4_edit_intent_v1,
+    flark_v4_anchor_transform, flark_v4_bulk_abort, flark_v4_bulk_append, flark_v4_bulk_begin,
+    flark_v4_cancel, flark_v4_close_begin, flark_v4_close_finish, flark_v4_close_pump,
+    flark_v4_create_abort, flark_v4_create_begin, flark_v4_create_commit, flark_v4_edit_intent_v1,
     flark_v4_history_release, flark_v4_history_replay, flark_v4_pump, flark_v4_query_viewport,
     flark_v4_session_inspect, flark_v4_session_transfer_owner, flark_v4_small_edit,
-    flark_v4_source_transaction_v1, AnchorRequest, BulkBeginRequest, CancelRequest, CloseRequest,
-    CreateRequest, EditDescriptor, EditIntentReceiptV1, EditIntentRequestV1, InspectRequest,
-    Outcome, OwnerTransferRequest, PumpRequest, QueryRequest, ResultPageHeader, SessionConfig,
-    SessionInspection, SessionRef, SmallEditRequest, SourceRange, SourceReadRequest,
-    SourceTransactionReceiptV1, SourceTransactionRequestV1, TransactionRequest, WorkBudget,
-    EDIT_INTENT_DISPOSITION_APPLIED, EDIT_INTENT_INSERT_PARAGRAPH_BREAK,
+    flark_v4_source_transaction_v1, flark_v4_staged_source_transaction_v1, AnchorRequest,
+    BulkBeginRequest, CancelRequest, CloseRequest, CreateRequest, EditDescriptor,
+    EditIntentReceiptV1, EditIntentRequestV1, InspectRequest, Outcome, OwnerTransferRequest,
+    PumpRequest, QueryRequest, ResultPageHeader, SessionConfig, SessionInspection, SessionRef,
+    SmallEditRequest, SourceRange, SourceReadRequest, SourceTransactionReceiptV1,
+    SourceTransactionRequestV1, StageRequest, StagedSourceTransactionRequestV1, TransactionRequest,
+    WorkBudget, EDIT_INTENT_DISPOSITION_APPLIED, EDIT_INTENT_INSERT_PARAGRAPH_BREAK,
     EDIT_INTENT_RECEIPT_HAS_COMMIT, EDIT_INTENT_RECEIPT_SEMANTIC_BYTES,
     EDIT_INTENT_TOGGLE_TASK_CHECKED, EDIT_PRESENTATION_CONTINUE_LIST, EDIT_PRESENTATION_EXIT_LIST,
     EDIT_PRESENTATION_TOGGLE_TASK_CHECKED, EDIT_PROFILE_FLARK_V1,
     SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES, SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT,
+    SOURCE_TRANSACTION_RECEIPT_STAGED_BYTES,
 };
 use flark_runtime::{HistoryDisposition, SessionState, StatusCode, MAX_LIVE_ANCHORS};
 
@@ -1279,5 +1281,118 @@ fn source_transaction_commits_history_and_retargets_selection_atomically() {
     );
     assert_eq!(outcome.revision, 2);
     assert_eq!(output, retry_output);
+    close_session(session);
+}
+
+#[test]
+fn staged_source_transaction_is_resumable_receipted_and_replayable() {
+    let session = open_session(b"hello", 0x5252);
+    let base = create_anchor(session, 1, SOURCE_BYTE, 1, DOWNSTREAM);
+    let extent = create_anchor(session, 1, SOURCE_BYTE, 4, UPSTREAM);
+    let replacement = vec![b'x'; 90_000];
+    let begin = BulkBeginRequest {
+        struct_size: size_of::<BulkBeginRequest>() as u32,
+        flags: 0,
+        session,
+        expected_revision: 1,
+        range: SourceRange {
+            start_byte: 1,
+            end_byte: 4,
+        },
+        expected_total_bytes: replacement.len() as u64,
+        reserved: [0; 2],
+    };
+    let mut outcome = Outcome::default();
+    assert_eq!(
+        flark_v4_bulk_begin(&begin, &mut outcome),
+        StatusCode::Ok as u32
+    );
+    let transaction = outcome.primary_handle;
+    for (index, chunk) in replacement.chunks(65_536).enumerate() {
+        let stage = StageRequest {
+            struct_size: size_of::<StageRequest>() as u32,
+            flags: 0,
+            session,
+            transaction,
+            chunk_offset: if index == 0 { 0 } else { 65_536 },
+            chunk_len: chunk.len() as u64,
+            reserved: [0; 2],
+        };
+        assert_eq!(
+            flark_v4_bulk_append(&stage, chunk.as_ptr(), chunk.len() as u64, &mut outcome,),
+            StatusCode::Ok as u32
+        );
+    }
+
+    let mut request = StagedSourceTransactionRequestV1 {
+        struct_size: size_of::<StagedSourceTransactionRequestV1>() as u32,
+        flags: 0,
+        session,
+        transaction,
+        expected_revision: 1,
+        progress_token: 0,
+        selection_base_anchor: base,
+        selection_extent_anchor: extent,
+        logical_edit_id: 1,
+        request_digest: 0x5252_0001,
+        acknowledge_previous_logical_edit_id: 0,
+        selection_generation: 1,
+        result_selection_utf16: 90_001,
+        selection_affinity: DOWNSTREAM,
+        selection_direction: 0,
+        budget: budget(1),
+        history_group_id: 0,
+        reserved: [0; 2],
+    };
+    let mut output = vec![0u8; size_of::<SourceTransactionReceiptV1>()];
+    let mut status = flark_v4_staged_source_transaction_v1(
+        &request,
+        output.as_mut_ptr(),
+        output.len() as u64,
+        &mut outcome,
+    );
+    let mut turns = 0;
+    while status == StatusCode::BudgetExhausted as u32 {
+        request.progress_token = outcome.progress_token;
+        status = flark_v4_staged_source_transaction_v1(
+            &request,
+            output.as_mut_ptr(),
+            output.len() as u64,
+            &mut outcome,
+        );
+        turns += 1;
+        assert!(turns < 10, "bounded staged commit should converge");
+    }
+    assert_eq!(status, StatusCode::Ok as u32);
+    let receipt =
+        unsafe { std::ptr::read_unaligned(output.as_ptr().cast::<SourceTransactionReceiptV1>()) };
+    assert_eq!(receipt.result_revision, 2);
+    assert_eq!(receipt.result_source_byte_length, 90_002);
+    assert_eq!(receipt.result_source_utf16_length, 90_002);
+    assert_eq!(receipt.result_selection_base_utf16, 90_001);
+    assert_eq!(receipt.result_selection_extent_utf16, 90_001);
+    assert_eq!(receipt.replacement_bytes, replacement.len() as u64);
+    assert_ne!(receipt.history_token, 0);
+    assert_eq!(
+        receipt.flags
+            & (SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT | SOURCE_TRANSACTION_RECEIPT_STAGED_BYTES),
+        SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT | SOURCE_TRANSACTION_RECEIPT_STAGED_BYTES
+    );
+    assert_eq!(resolve_anchor(session, base, 2, UTF16), 90_001);
+    assert_eq!(resolve_anchor(session, extent, 2, UTF16), 90_001);
+
+    // A lost terminal reply remains recoverable even though the staging
+    // handle was consumed by the source commit.
+    let mut replay = vec![0u8; size_of::<SourceTransactionReceiptV1>()];
+    assert_eq!(
+        flark_v4_staged_source_transaction_v1(
+            &request,
+            replay.as_mut_ptr(),
+            replay.len() as u64,
+            &mut outcome,
+        ),
+        StatusCode::Ok as u32
+    );
+    assert_eq!(output, replay);
     close_session(session);
 }

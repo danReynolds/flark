@@ -4,7 +4,7 @@
   "status": "m0-interface-only",
   "abi": {
     "major": 4,
-    "minor": 21,
+    "minor": 22,
     "header": "native/comrak_bridge/include/flark_v4.h",
     "runtimeCrate": "native/comrak_bridge/crates/flark_runtime",
     "abiCrate": "native/comrak_bridge/crates/flark_abi",
@@ -44,7 +44,8 @@
     {"name": "INDENTED_CODE_EDITING_V1", "bit": 524288},
     {"name": "SEMANTIC_ATOMS_V1", "bit": 1048576},
     {"name": "NESTED_BLOCK_QUOTE_EDITING_V1", "bit": 2097152},
-    {"name": "SEMANTIC_ACTIONS_V1", "bit": 4194304}
+    {"name": "SEMANTIC_ACTIONS_V1", "bit": 4194304},
+    {"name": "STAGED_SOURCE_TRANSACTIONS_V1", "bit": 8388608}
   ],
   "operations": [
     {"name": "NEGOTIATE", "code": 0, "symbol": "flark_v4_negotiate", "requestRecord": "NEGOTIATE_REQUEST", "allowedSessionStates": ["NONE"], "borrowedInput": false, "callerOutput": true},
@@ -76,7 +77,8 @@
     {"name": "SESSION_TRANSFER_OWNER", "code": 26, "symbol": "flark_v4_session_transfer_owner", "requestRecord": "OWNER_TRANSFER_REQUEST", "allowedSessionStates": ["OPEN"], "borrowedInput": false, "callerOutput": false},
     {"name": "SESSION_INSPECT", "code": 27, "symbol": "flark_v4_session_inspect", "requestRecord": "INSPECT_REQUEST", "outputRecord": "SESSION_INSPECTION", "allowedSessionStates": ["CREATING", "OPEN", "CLOSING", "FAULTED"], "borrowedInput": false, "callerOutput": true},
     {"name": "EDIT_INTENT_V1", "code": 28, "symbol": "flark_v4_edit_intent_v1", "requestRecord": "EDIT_INTENT_REQUEST_V1", "outputRecord": "EDIT_INTENT_RECEIPT_V1", "allowedSessionStates": ["OPEN"], "borrowedInput": false, "callerOutput": true},
-    {"name": "SOURCE_TRANSACTION_V1", "code": 29, "symbol": "flark_v4_source_transaction_v1", "requestRecord": "SOURCE_TRANSACTION_REQUEST_V1", "outputRecord": "SOURCE_TRANSACTION_RECEIPT_V1", "allowedSessionStates": ["OPEN"], "borrowedInput": true, "callerOutput": true}
+    {"name": "SOURCE_TRANSACTION_V1", "code": 29, "symbol": "flark_v4_source_transaction_v1", "requestRecord": "SOURCE_TRANSACTION_REQUEST_V1", "outputRecord": "SOURCE_TRANSACTION_RECEIPT_V1", "allowedSessionStates": ["OPEN"], "borrowedInput": true, "callerOutput": true},
+    {"name": "STAGED_SOURCE_TRANSACTION_V1", "code": 30, "symbol": "flark_v4_staged_source_transaction_v1", "requestRecord": "STAGED_SOURCE_TRANSACTION_REQUEST_V1", "outputRecord": "SOURCE_TRANSACTION_RECEIPT_V1", "allowedSessionStates": ["OPEN"], "borrowedInput": false, "callerOutput": true}
   ],
   "statuses": [
     {"name": "OK", "code": 0, "category": "success", "sessionTerminal": false},
@@ -223,6 +225,7 @@
     {"name": "EDIT_INTENT_RECEIPT_V1", "sizeBytes": 192},
     {"name": "SOURCE_TRANSACTION_REQUEST_V1", "sizeBytes": 160},
     {"name": "SOURCE_TRANSACTION_RECEIPT_V1", "sizeBytes": 200},
+    {"name": "STAGED_SOURCE_TRANSACTION_REQUEST_V1", "sizeBytes": 160},
     {"name": "BULK_BEGIN_REQUEST", "sizeBytes": 72},
     {"name": "TRANSACTION_REQUEST", "sizeBytes": 80},
     {"name": "PUMP_REQUEST", "sizeBytes": 64},
@@ -405,7 +408,8 @@
     {"operation": "SESSION_TRANSFER_OWNER", "runtimeResults": ["OwnerTransferred"], "fields": {"primary_handle": "session whose owner changed"}},
     {"operation": "SESSION_INSPECT", "runtimeResults": ["SessionInspection"], "fields": {"primary_handle": "inspected session", "revision": "current revision or zero while creating", "detail_code": "SessionState"}, "separateOutput": "SESSION_INSPECTION"},
     {"operation": "EDIT_INTENT_V1", "runtimeResults": ["None", "RevisionCommitted"], "fields": {"primary_handle": "required history token on commit", "revision": "result revision on commit", "detail_code": "HistoryDisposition on commit", "written_bytes": "fixed receipt plus exact committed replacement"}, "separateOutput": "EDIT_INTENT_RECEIPT_V1"},
-    {"operation": "SOURCE_TRANSACTION_V1", "runtimeResults": ["RevisionCommitted"], "fields": {"primary_handle": "required history token", "revision": "result revision", "detail_code": "HistoryDisposition", "written_bytes": "fixed receipt"}, "separateOutput": "SOURCE_TRANSACTION_RECEIPT_V1"}
+    {"operation": "SOURCE_TRANSACTION_V1", "runtimeResults": ["RevisionCommitted"], "fields": {"primary_handle": "required history token", "revision": "result revision", "detail_code": "HistoryDisposition", "written_bytes": "fixed receipt"}, "separateOutput": "SOURCE_TRANSACTION_RECEIPT_V1"},
+    {"operation": "STAGED_SOURCE_TRANSACTION_V1", "runtimeResults": ["RevisionCommitted", "Progress"], "fields": {"primary_handle": "required history token on completion", "revision": "base revision while pending or result revision on completion", "progress_token": "latest token while staged validation remains", "detail_code": "HistoryDisposition on completion", "written_bytes": "fixed receipt on completion"}, "separateOutput": "SOURCE_TRANSACTION_RECEIPT_V1"}
   ],
   "ownershipRules": [
     "Input pointers are optional only when input_len is zero and are borrowed for that call only.",
@@ -413,6 +417,7 @@
     "Every SOURCE_READ, QUERY_VIEWPORT, and CONTINUATION_NEXT output begins with a 96-byte RESULT_PAGE_HEADER; payload begins at struct_size and written_bytes includes header plus payload.",
     "EDIT_INTENT_V1 requires capacity for its 192-byte receipt plus MAX_SMALL_EDIT_BYTES before admission. Its exact replacement payload begins at byte 192, and written_bytes includes both receipt and payload.",
     "SOURCE_TRANSACTION_V1 requires capacity for its 200-byte receipt before admission. Replacement bytes are borrowed caller input and are not copied back in the receipt.",
+    "STAGED_SOURCE_TRANSACTION_V1 resumes the BULK_BEGIN/BULK_APPEND staging transaction and requires capacity for the same 200-byte source transaction receipt. Its v1 result selection is one collapsed downstream caret at the inserted range end.",
     "A successful create/bulk append copies bytes into runtime-owned staging; commit or abort releases the staging transaction.",
     "Opaque handles are generation checked. Zero is never a live object; requestFieldRules exhaustively names operations where zero means none, uncommitted, or select-latest.",
     "StageRequest.chunk_len must equal its function input_len. SmallEditRequest.edit_count and replacement_bytes_len must equal the corresponding function arguments. A mismatch is INVALID_ARGUMENT.",

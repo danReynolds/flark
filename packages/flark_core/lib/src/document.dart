@@ -561,6 +561,78 @@ final class FlarkCoreDocument {
     );
   }
 
+  Future<FlarkCoreSourceTransactionReceiptV1> applyStagedSourceTransactionV1({
+    required int expectedRevision,
+    required FlarkCoreAnchor selectionBaseAnchor,
+    required FlarkCoreAnchor selectionExtentAnchor,
+    required int logicalEditId,
+    required int requestDigest,
+    required int acknowledgePreviousLogicalEditId,
+    required int selectionGeneration,
+    required int startUtf16,
+    required int endUtf16,
+    required String replacement,
+    required int resultSelectionUtf16,
+  }) async {
+    _requireOwnedAnchor(selectionBaseAnchor);
+    _requireOwnedAnchor(selectionExtentAnchor);
+    final arguments = <String, Object?>{
+      'expectedRevision': expectedRevision,
+      'selectionBaseAnchor': selectionBaseAnchor._value,
+      'selectionExtentAnchor': selectionExtentAnchor._value,
+      'logicalEditId': logicalEditId,
+      'requestDigest': requestDigest,
+      'acknowledgePreviousLogicalEditId': acknowledgePreviousLogicalEditId,
+      'selectionGeneration': selectionGeneration,
+      'startUtf16': startUtf16,
+      'endUtf16': endUtf16,
+      'replacement': replacement,
+      'resultSelectionUtf16': resultSelectionUtf16,
+      'dispatchEpochMicros': DateTime.now().microsecondsSinceEpoch,
+    };
+    final roundTrip = Stopwatch()..start();
+    final result = await _requestMutationTerminal(
+      'stagedSourceTransactionV1',
+      arguments,
+    );
+    roundTrip.stop();
+    _revision = result['resultRevision']! as int;
+    _sourceByteLength = result['resultSourceByteLength']! as int;
+    _sourceUtf16Length = result['resultSourceUtf16Length']! as int;
+    _ready = !(result['parserPending']! as bool);
+    return FlarkCoreSourceTransactionReceiptV1(
+      baseRevision: result['baseRevision']! as int,
+      resultRevision: result['resultRevision']! as int,
+      baseByteStart: result['baseByteStart']! as int,
+      baseByteEnd: result['baseByteEnd']! as int,
+      baseUtf16Start: result['baseUtf16Start']! as int,
+      baseUtf16End: result['baseUtf16End']! as int,
+      resultByteStart: result['resultByteStart']! as int,
+      resultByteEnd: result['resultByteEnd']! as int,
+      resultUtf16Start: result['resultUtf16Start']! as int,
+      resultUtf16End: result['resultUtf16End']! as int,
+      resultSelectionBaseUtf16: result['resultSelectionBaseUtf16']! as int,
+      resultSelectionExtentUtf16: result['resultSelectionExtentUtf16']! as int,
+      resultSourceByteLength: _sourceByteLength,
+      resultSourceUtf16Length: _sourceUtf16Length,
+      historyToken: FlarkCoreHistoryToken._(
+        result['historyToken']! as int,
+        _historyOwner,
+      ),
+      historyCompositeExtended: false,
+      parserPending: result['parserPending']! as bool,
+      logicalEditId: result['logicalEditId']! as int,
+      requestDigest: result['requestDigest']! as int,
+      telemetry: FlarkCoreEditIntentTelemetryV1(
+        coreQueueMicros: 0,
+        workerRoundTripMicros: roundTrip.elapsedMicroseconds,
+        workerQueueMicros: result['workerQueueMicros']! as int,
+        nativeFfiMicros: result['nativeFfiMicros']! as int,
+        coreAdoptionMicros: 0,
+      ),
+    );
+  }
+
   Future<FlarkCoreEditIntentReceiptV1> applyEditIntentV1({
     required FlarkCoreEditIntentV1 intent,
     required int expectedRevision,
@@ -999,6 +1071,56 @@ Future<void> _documentWorker(List<Object?> startup) async {
               'resultSourceUtf16Length': receipt.resultSourceUtf16Length,
               'historyToken': receipt.historyToken,
               'historyCompositeExtended': receipt.historyCompositeExtended,
+              'parserPending': receipt.parserPending,
+              'logicalEditId': receipt.logicalEditId,
+              'requestDigest': receipt.requestDigest,
+              'workerQueueMicros': math.max(
+                0,
+                workerReceivedEpochMicros -
+                    (arguments['dispatchEpochMicros']! as int),
+              ),
+              'nativeFfiMicros': nativeWatch.elapsedMicroseconds,
+            };
+            if (dropNextMutationReply) {
+              dropNextMutationReply = false;
+            } else {
+              reply.send(envelope);
+            }
+          case 'stagedSourceTransactionV1':
+            final workerReceivedEpochMicros =
+                DateTime.now().microsecondsSinceEpoch;
+            final nativeWatch = Stopwatch()..start();
+            final receipt = document.applyStagedSourceTransactionV1(
+              expectedRevision: arguments['expectedRevision']! as int,
+              selectionBaseAnchor: arguments['selectionBaseAnchor']! as int,
+              selectionExtentAnchor: arguments['selectionExtentAnchor']! as int,
+              logicalEditId: arguments['logicalEditId']! as int,
+              requestDigest: arguments['requestDigest']! as int,
+              acknowledgePreviousLogicalEditId:
+                  arguments['acknowledgePreviousLogicalEditId']! as int,
+              selectionGeneration: arguments['selectionGeneration']! as int,
+              startUtf16: arguments['startUtf16']! as int,
+              endUtf16: arguments['endUtf16']! as int,
+              replacement: arguments['replacement']! as String,
+              resultSelectionUtf16: arguments['resultSelectionUtf16']! as int,
+            );
+            nativeWatch.stop();
+            final envelope = <Object?, Object?>{
+              'baseRevision': receipt.baseRevision,
+              'resultRevision': receipt.resultRevision,
+              'baseByteStart': receipt.baseByteStart,
+              'baseByteEnd': receipt.baseByteEnd,
+              'baseUtf16Start': receipt.baseUtf16Start,
+              'baseUtf16End': receipt.baseUtf16End,
+              'resultByteStart': receipt.resultByteStart,
+              'resultByteEnd': receipt.resultByteEnd,
+              'resultUtf16Start': receipt.resultUtf16Start,
+              'resultUtf16End': receipt.resultUtf16End,
+              'resultSelectionBaseUtf16': receipt.resultSelectionBaseUtf16,
+              'resultSelectionExtentUtf16': receipt.resultSelectionExtentUtf16,
+              'resultSourceByteLength': receipt.resultSourceByteLength,
+              'resultSourceUtf16Length': receipt.resultSourceUtf16Length,
+              'historyToken': receipt.historyToken,
               'parserPending': receipt.parserPending,
               'logicalEditId': receipt.logicalEditId,
               'requestDigest': receipt.requestDigest,

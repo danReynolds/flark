@@ -482,6 +482,60 @@ final class FlarkV4SourceTransactionReceiptV1 extends Struct {
   external Array<Uint64> reserved;
 }
 
+final class FlarkV4StagedSourceTransactionRequestV1 extends Struct {
+  @Uint32()
+  external int structSize;
+
+  @Uint32()
+  external int flags;
+
+  external FlarkV4SessionRef session;
+
+  @Uint64()
+  external int transaction;
+
+  @Uint64()
+  external int expectedRevision;
+
+  @Uint64()
+  external int progressToken;
+
+  @Uint64()
+  external int selectionBaseAnchor;
+
+  @Uint64()
+  external int selectionExtentAnchor;
+
+  @Uint64()
+  external int logicalEditId;
+
+  @Uint64()
+  external int requestDigest;
+
+  @Uint64()
+  external int acknowledgePreviousLogicalEditId;
+
+  @Uint64()
+  external int selectionGeneration;
+
+  @Uint64()
+  external int resultSelectionUtf16;
+
+  @Uint32()
+  external int selectionAffinity;
+
+  @Uint32()
+  external int selectionDirection;
+
+  external FlarkV4WorkBudget budget;
+
+  @Uint64()
+  external int historyGroupId;
+
+  @Array(2)
+  external Array<Uint64> reserved;
+}
+
 final class FlarkV4BulkBeginRequest extends Struct {
   @Uint32()
   external int structSize;
@@ -1001,6 +1055,21 @@ typedef SourceTransactionV1Dart =
       Pointer<FlarkV4Outcome>,
     );
 
+typedef _StagedSourceTransactionV1Native =
+    Uint32 Function(
+      Pointer<FlarkV4StagedSourceTransactionRequestV1>,
+      Pointer<Uint8>,
+      Uint64,
+      Pointer<FlarkV4Outcome>,
+    );
+typedef StagedSourceTransactionV1Dart =
+    int Function(
+      Pointer<FlarkV4StagedSourceTransactionRequestV1>,
+      Pointer<Uint8>,
+      int,
+      Pointer<FlarkV4Outcome>,
+    );
+
 typedef _BulkBeginNative =
     Uint32 Function(Pointer<FlarkV4BulkBeginRequest>, Pointer<FlarkV4Outcome>);
 typedef BulkBeginDart =
@@ -1169,6 +1238,11 @@ final class FlarkV4Bindings {
           .lookupFunction<_SourceTransactionV1Native, SourceTransactionV1Dart>(
             'flark_v4_source_transaction_v1',
           ),
+      stagedSourceTransactionV1 = library
+          .lookupFunction<
+            _StagedSourceTransactionV1Native,
+            StagedSourceTransactionV1Dart
+          >('flark_v4_staged_source_transaction_v1'),
       bulkBegin = library.lookupFunction<_BulkBeginNative, BulkBeginDart>(
         'flark_v4_bulk_begin',
       ),
@@ -1253,6 +1327,7 @@ final class FlarkV4Bindings {
   final SmallEditDart smallEdit;
   final EditIntentV1Dart editIntentV1;
   final SourceTransactionV1Dart sourceTransactionV1;
+  final StagedSourceTransactionV1Dart stagedSourceTransactionV1;
   final BulkBeginDart bulkBegin;
   final BulkAppendDart bulkAppend;
   final BulkTransactionDart bulkCommit;

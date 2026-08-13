@@ -185,6 +185,49 @@ void main() {
       });
 
       test(
+        'staged deletion rejects before mutation without history room',
+        () async {
+          final source = List.filled(20 * 1024, 'x').join();
+          document = await FlarkCoreDocument.open(
+            source,
+            libraryPath: libraryPath!,
+            historyBudgetBytes: 1024,
+          );
+          session = FlarkCoreEditorSession(document, clockMicros: () => 0);
+          addTearDown(() async {
+            await session.dispose();
+            await document.dispose();
+          });
+          final before = FlarkCoreSelectionSnapshot(
+            base: 0,
+            extent: source.length,
+          );
+          await session.setSelectionUtf16(before.base, before.extent);
+          final revision = document.revision;
+
+          await expectLater(
+            session.applyEditUtf16(
+              0,
+              source.length,
+              '',
+              beforeSelection: before,
+              afterSelection: caret(0),
+            ),
+            throwsA(
+              isA<FlarkCoreNativeException>().having(
+                (error) => error.status,
+                'status',
+                0x0403,
+              ),
+            ),
+          );
+          expect(document.revision, revision);
+          expect(await document.readSource(), source);
+          expect(session.canUndo, isFalse);
+        },
+      );
+
+      test(
         'idle gaps, epochs, and non-typing edits break coalescing',
         () async {
           await open('base\n');
@@ -431,6 +474,35 @@ void main() {
 
         expect(document.revision, revision + 1);
         expect(await document.readSource(), 'abase\n');
+        expect(await session.undo(), isA<FlarkCoreHistoryReplayed>());
+        expect(await document.readSource(), 'base\n');
+        expect(session.canUndo, isFalse);
+      });
+
+      test('lost staged reply recovers the terminal exactly once', () async {
+        await open(
+          'base\n',
+          editIntentReplyTimeout: const Duration(milliseconds: 10),
+          debugDropFirstEditIntentReply: true,
+        );
+        addTearDown(() async {
+          await session.dispose();
+          await document.dispose();
+        });
+        final revision = document.revision;
+        final paste = List.filled(96 * 1024, 'p').join();
+
+        await session.applyEditUtf16(
+          0,
+          0,
+          paste,
+          beforeSelection: caret(0),
+          afterSelection: caret(paste.length),
+        );
+
+        expect(document.revision, revision + 1);
+        expect(document.sourceUtf16Length, paste.length + 5);
+        expect((await session.resolveSelection())!.extent, paste.length);
         expect(await session.undo(), isA<FlarkCoreHistoryReplayed>());
         expect(await document.readSource(), 'base\n');
         expect(session.canUndo, isFalse);

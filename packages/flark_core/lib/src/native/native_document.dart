@@ -13,6 +13,7 @@ const _notCertified = 3;
 const _budgetExhausted = 6;
 const _resultCapReached = 7;
 const _backpressure = 9;
+const _invalidHandle = 0x0103;
 const _historyRetained = 1;
 const _historyDisabled = 2;
 const _historyOverBudget = 3;
@@ -117,6 +118,7 @@ const _sourceTransactionHasCommit = 1;
 const _sourceTransactionParserPending = 2;
 const _sourceTransactionCallerKnownBytes = 4;
 const _sourceTransactionCompositeHistoryExtended = 8;
+const _sourceTransactionStagedBytes = 16;
 const _editPresentationNone = 0;
 const _editPresentationSplitParagraph = 1;
 const _editPresentationContinueList = 2;
@@ -141,10 +143,10 @@ const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 21;
+const _abiMinor = 22;
 // Every capability through this ABI minor is required by the safe Core
 // boundary; negotiation must fail rather than silently losing an edit lane.
-const _requiredCapabilityBits = 0x7fffff;
+const _requiredCapabilityBits = 0xffffff;
 
 final class FlarkNativeException implements Exception {
   const FlarkNativeException(this.operation, this.status, [this.detail = 0]);
@@ -822,6 +824,221 @@ final class FlarkNativeDocument {
         ..free(outcome)
         ..free(output)
         ..free(replacementPointer);
+    }
+  }
+
+  /// Stages an arbitrarily large replacement in bounded chunks, then commits
+  /// it through the receipt-bearing authoritative transaction operation.
+  FlarkNativeSourceTransactionReceiptV1 applyStagedSourceTransactionV1({
+    required int expectedRevision,
+    required int selectionBaseAnchor,
+    required int selectionExtentAnchor,
+    required int logicalEditId,
+    required int requestDigest,
+    required int acknowledgePreviousLogicalEditId,
+    required int selectionGeneration,
+    required int startUtf16,
+    required int endUtf16,
+    required String replacement,
+    required int resultSelectionUtf16,
+  }) {
+    final replacementBytes = utf8.encode(replacement);
+    final begin = calloc<FlarkV4BulkBeginRequest>();
+    final stage = calloc<FlarkV4StageRequest>();
+    final commit = calloc<FlarkV4StagedSourceTransactionRequestV1>();
+    final abort = calloc<FlarkV4TransactionRequest>();
+    final outcome = calloc<FlarkV4Outcome>();
+    final outputLength = sizeOf<FlarkV4SourceTransactionReceiptV1>();
+    final output = calloc<Uint8>(outputLength);
+    var transaction = 0;
+    var committed = false;
+    try {
+      commit.ref
+        ..structSize = sizeOf<FlarkV4StagedSourceTransactionRequestV1>()
+        ..flags = 0
+        ..transaction = 0
+        ..expectedRevision = expectedRevision
+        ..progressToken = 0
+        ..selectionBaseAnchor = selectionBaseAnchor
+        ..selectionExtentAnchor = selectionExtentAnchor
+        ..logicalEditId = logicalEditId
+        ..requestDigest = requestDigest
+        ..acknowledgePreviousLogicalEditId = acknowledgePreviousLogicalEditId
+        ..selectionGeneration = selectionGeneration
+        ..resultSelectionUtf16 = resultSelectionUtf16
+        ..selectionAffinity = _affinityDownstream
+        ..selectionDirection = 0
+        ..historyGroupId = 0;
+      _fillSession(commit.ref.session);
+      _fillBudget(commit.ref.budget, workUnits: _bulkCommitWorkUnits);
+      var status = _bindings.stagedSourceTransactionV1(
+        commit,
+        output,
+        outputLength,
+        outcome,
+      );
+      if (status == _ok) {
+        // Exact terminal recovery after the worker dropped the first reply.
+        committed = true;
+      } else {
+        _requireStatus('staged_source_transaction_v1', status, outcome.ref, {
+          _invalidHandle,
+        });
+        final startByte = _convertCoordinate(startUtf16, from: 2, to: 1);
+        final endByte = _convertCoordinate(endUtf16, from: 2, to: 1);
+        begin.ref
+          ..structSize = sizeOf<FlarkV4BulkBeginRequest>()
+          ..flags = 0
+          ..expectedRevision = expectedRevision
+          ..expectedTotalBytes = replacementBytes.length;
+        _fillSession(begin.ref.session);
+        begin.ref.range
+          ..startByte = startByte
+          ..endByte = endByte;
+        _requireStatus(
+          'bulk_begin',
+          _bindings.bulkBegin(begin, outcome),
+          outcome.ref,
+          {_ok},
+        );
+        transaction = outcome.ref.primaryHandle;
+        if (transaction == 0) {
+          throw const FlarkNativeException('bulk_begin', _internalFault);
+        }
+        // BULK_BEGIN is itself an ordered native admission and therefore
+        // consumes the preceding terminal acknowledgement. The commit must
+        // not acknowledge the same terminal a second time.
+        commit.ref.acknowledgePreviousLogicalEditId = 0;
+
+        var cursor = 0;
+        while (cursor < replacementBytes.length) {
+          final length = math.min(
+            _maxChunkBytes,
+            replacementBytes.length - cursor,
+          );
+          final chunk = _copyBytes(replacementBytes, cursor, length);
+          try {
+            stage.ref
+              ..structSize = sizeOf<FlarkV4StageRequest>()
+              ..flags = 0
+              ..transaction = transaction
+              ..chunkOffset = cursor
+              ..chunkLen = length;
+            _fillSession(stage.ref.session);
+            _requireStatus(
+              'bulk_append',
+              _bindings.bulkAppend(stage, chunk, length, outcome),
+              outcome.ref,
+              {_ok},
+            );
+          } finally {
+            calloc.free(chunk);
+          }
+          cursor += length;
+        }
+
+        commit.ref.transaction = transaction;
+        status = _bindings.stagedSourceTransactionV1(
+          commit,
+          output,
+          outputLength,
+          outcome,
+        );
+        _requireStatus('staged_source_transaction_v1', status, outcome.ref, {
+          _ok,
+          _budgetExhausted,
+        });
+        while (status == _budgetExhausted) {
+          commit.ref.progressToken = outcome.ref.progressToken;
+          status = _bindings.stagedSourceTransactionV1(
+            commit,
+            output,
+            outputLength,
+            outcome,
+          );
+          _requireStatus('staged_source_transaction_v1', status, outcome.ref, {
+            _ok,
+            _budgetExhausted,
+          });
+        }
+        committed = true;
+      }
+      final native = output.cast<FlarkV4SourceTransactionReceiptV1>().ref;
+      final historyToken = native.historyToken;
+      if (native.structSize != sizeOf<FlarkV4SourceTransactionReceiptV1>() ||
+          native.logicalEditId != logicalEditId ||
+          native.requestDigest != requestDigest ||
+          native.baseRevision != expectedRevision ||
+          native.historyDisposition != _historyRetained ||
+          historyToken == 0 ||
+          native.replacementBytes != replacementBytes.length ||
+          native.flags & _sourceTransactionHasCommit == 0 ||
+          native.flags & _sourceTransactionStagedBytes == 0 ||
+          native.resultSelectionBaseUtf16 != resultSelectionUtf16 ||
+          native.resultSelectionExtentUtf16 != resultSelectionUtf16 ||
+          outcome.ref.writtenBytes != outputLength) {
+        throw const FlarkNativeException(
+          'staged_source_transaction_v1',
+          _internalFault,
+        );
+      }
+      final terminalReplay = native.resultRevision == _revision;
+      _revision = native.resultRevision;
+      _sourceByteLength = native.resultSourceByteLength;
+      _sourceUtf16Length = native.resultSourceUtf16Length;
+      _progressToken = 0;
+      final parserPending = native.flags & _sourceTransactionParserPending != 0;
+      _ready = !parserPending;
+      if (!terminalReplay) {
+        _historyLengthDeltas[historyToken] = _HistoryLengthDelta(
+          (native.baseByteRange.endByte - native.baseByteRange.startByte) -
+              (native.resultByteRange.endByte -
+                  native.resultByteRange.startByte),
+          (native.baseUtf16Range.endByte - native.baseUtf16Range.startByte) -
+              (native.resultUtf16Range.endByte -
+                  native.resultUtf16Range.startByte),
+        );
+      }
+      return FlarkNativeSourceTransactionReceiptV1(
+        baseRevision: native.baseRevision,
+        resultRevision: native.resultRevision,
+        baseByteStart: native.baseByteRange.startByte,
+        baseByteEnd: native.baseByteRange.endByte,
+        baseUtf16Start: native.baseUtf16Range.startByte,
+        baseUtf16End: native.baseUtf16Range.endByte,
+        resultByteStart: native.resultByteRange.startByte,
+        resultByteEnd: native.resultByteRange.endByte,
+        resultUtf16Start: native.resultUtf16Range.startByte,
+        resultUtf16End: native.resultUtf16Range.endByte,
+        resultSelectionBaseUtf16: native.resultSelectionBaseUtf16,
+        resultSelectionExtentUtf16: native.resultSelectionExtentUtf16,
+        resultSourceByteLength: native.resultSourceByteLength,
+        resultSourceUtf16Length: native.resultSourceUtf16Length,
+        historyToken: historyToken,
+        historyCompositeExtended: false,
+        parserPending: parserPending,
+        logicalEditId: native.logicalEditId,
+        requestDigest: native.requestDigest,
+      );
+    } finally {
+      if (!committed && transaction != 0) {
+        abort.ref
+          ..structSize = sizeOf<FlarkV4TransactionRequest>()
+          ..flags = 0
+          ..transaction = transaction
+          ..expectedRevision = _revision
+          ..progressToken = 0;
+        _fillSession(abort.ref.session);
+        _fillBudget(abort.ref.budget, workUnits: 1);
+        _bindings.bulkAbort(abort, outcome);
+      }
+      calloc
+        ..free(begin)
+        ..free(stage)
+        ..free(commit)
+        ..free(abort)
+        ..free(outcome)
+        ..free(output);
     }
   }
 

@@ -249,6 +249,19 @@ final class FlarkCoreEditorSession {
     if (end - start > _sourceTransactionV1MaximumDeletedUtf16 ||
         utf8.encode(replacement).length >
             _sourceTransactionV1MaximumReplacementBytes) {
+      final stagedResultCaret = start + replacement.length;
+      if (afterSelection.base == stagedResultCaret &&
+          afterSelection.extent == stagedResultCaret) {
+        return _applyStagedSourceTransactionUtf16(
+          start,
+          end,
+          replacement,
+          beforeSelection: beforeSelection,
+          afterSelection: afterSelection,
+          coalesceTyping: coalesceTyping,
+          compositionGroup: compositionGroup,
+        );
+      }
       return _applyLegacyBulkEditUtf16(
         start,
         end,
@@ -374,11 +387,106 @@ final class FlarkCoreEditorSession {
     return receipt;
   }
 
-  /// Temporary staged-ingress bridge for replacements larger than one v1
-  /// source-transaction chunk. H4 replaces this with a receipt-bearing staged
-  /// commit. Keeping the prior bulk lane here prevents large clipboard input
-  /// from regressing while making its weaker postcommit selection adoption
-  /// explicit and fail-stop.
+  Future<FlarkCoreEditReceipt> _applyStagedSourceTransactionUtf16(
+    int start,
+    int end,
+    String replacement, {
+    required FlarkCoreSelectionSnapshot beforeSelection,
+    required FlarkCoreSelectionSnapshot afterSelection,
+    required bool coalesceTyping,
+    required int? compositionGroup,
+  }) async {
+    final startAnchor = _selectionStart!;
+    final endAnchor = _selectionEnd!;
+    final baseAnchor = _selectionBaseIsStart ? startAnchor : endAnchor;
+    final extentAnchor = _selectionBaseIsStart ? endAnchor : startAnchor;
+    final baseRevision = document.revision;
+    final baseGeneration = _selectionGeneration;
+    final logicalEditId = ++_nextLogicalEditId;
+    final typing = coalesceTyping && compositionGroup == null
+        ? _typingEvent(
+            start: start,
+            end: end,
+            replacement: replacement,
+            beforeSelection: beforeSelection,
+            afterSelection: afterSelection,
+          )
+        : null;
+    final requestDigest = _sourceTransactionDigest(
+      logicalEditId: logicalEditId,
+      revision: baseRevision,
+      selectionGeneration: baseGeneration,
+      start: start,
+      end: end,
+      replacement: replacement,
+      resultBase: afterSelection.base,
+      resultExtent: afterSelection.extent,
+      historyGroupId: 0,
+    );
+    late final FlarkCoreSourceTransactionReceiptV1 transaction;
+    try {
+      transaction = await document.applyStagedSourceTransactionV1(
+        expectedRevision: baseRevision,
+        selectionBaseAnchor: baseAnchor,
+        selectionExtentAnchor: extentAnchor,
+        logicalEditId: logicalEditId,
+        requestDigest: requestDigest,
+        acknowledgePreviousLogicalEditId: _pendingTerminalLogicalEditId,
+        selectionGeneration: baseGeneration,
+        startUtf16: start,
+        endUtf16: end,
+        replacement: replacement,
+        resultSelectionUtf16: afterSelection.extent,
+      );
+    } on FlarkCoreWorkerException {
+      _postCommitUnknown = true;
+      rethrow;
+    }
+    if (transaction.logicalEditId != logicalEditId ||
+        transaction.requestDigest != requestDigest ||
+        transaction.baseRevision != baseRevision ||
+        transaction.baseUtf16Start != start ||
+        transaction.baseUtf16End != end ||
+        transaction.resultSelectionBaseUtf16 != afterSelection.base ||
+        transaction.resultSelectionExtentUtf16 != afterSelection.extent ||
+        transaction.historyCompositeExtended) {
+      _postCommitUnknown = true;
+      throw StateError('Flark staged transaction receipt correlation failed');
+    }
+    _pendingTerminalLogicalEditId = logicalEditId;
+    _selectionBaseIsStart = true;
+    _selectionStart = baseAnchor;
+    _selectionEnd = extentAnchor;
+    _selectionBaseUtf16 = afterSelection.base;
+    _selectionExtentUtf16 = afterSelection.extent;
+    _selectionAffinity = afterSelection.affinity;
+    _selectionAdapterState = afterSelection.adapterState;
+    _selectionGeneration += 1;
+    final receipt = FlarkCoreEditReceipt(
+      revision: transaction.resultRevision,
+      sourceByteLength: transaction.resultSourceByteLength,
+      sourceUtf16Length: transaction.resultSourceUtf16Length,
+      historyToken: transaction.historyToken,
+      historyDisposition: FlarkCoreHistoryDisposition.retained,
+    );
+    try {
+      await _recordForward(
+        receipt,
+        beforeSelection: beforeSelection,
+        afterSelection: afterSelection,
+        typing: typing,
+        compositionGroup: compositionGroup,
+        nativeHistoryGroupId: 0,
+      );
+    } on Object {
+      _postCommitUnknown = true;
+      rethrow;
+    }
+    return receipt;
+  }
+
+  /// Compatibility fallback for a rare oversized operation whose requested
+  /// result is not the staged v1 collapsed caret at the inserted range end.
   Future<FlarkCoreEditReceipt> _applyLegacyBulkEditUtf16(
     int start,
     int end,

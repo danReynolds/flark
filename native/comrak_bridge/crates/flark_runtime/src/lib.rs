@@ -25,6 +25,7 @@ pub use document::{
 pub use edit_intent::{
     DocumentCommittedSpliceV1, DocumentEditIntentDispositionV1, DocumentEditIntentReceiptV1,
     DocumentEditIntentV1, DocumentEditPresentationTransitionV1, DocumentSourceTransactionReceiptV1,
+    DocumentStagedSourceTransactionReceiptV1,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -267,6 +268,7 @@ pub enum OperationCode {
     SessionInspect = 27,
     EditIntentV1 = 28,
     SourceTransactionV1 = 29,
+    StagedSourceTransactionV1 = 30,
 }
 
 impl OperationCode {
@@ -322,6 +324,10 @@ pub const OPERATION_CODES: &[(&str, u32)] = &[
     (
         "SOURCE_TRANSACTION_V1",
         OperationCode::SourceTransactionV1 as u32,
+    ),
+    (
+        "STAGED_SOURCE_TRANSACTION_V1",
+        OperationCode::StagedSourceTransactionV1 as u32,
     ),
 ];
 
@@ -535,6 +541,7 @@ pub const CAPABILITY_BITS: &[(&str, u64)] = &[
     ("SEMANTIC_ATOMS_V1", 1 << 20),
     ("NESTED_BLOCK_QUOTE_EDITING_V1", 1 << 21),
     ("SEMANTIC_ACTIONS_V1", 1 << 22),
+    ("STAGED_SOURCE_TRANSACTIONS_V1", 1 << 23),
 ];
 
 pub const MAX_SMALL_EDIT_BYTES: u32 = 4096;
@@ -842,6 +849,7 @@ impl OperationResult {
                         | OperationCode::HistoryReplay
                         | OperationCode::EditIntentV1
                         | OperationCode::SourceTransactionV1
+                        | OperationCode::StagedSourceTransactionV1
                 ) && revision.0 != Revision::UNCOMMITTED.0
                     && history_is_coherent
             }
@@ -858,6 +866,7 @@ impl OperationResult {
                     operation,
                     OperationCode::CreateCommit
                         | OperationCode::BulkCommit
+                        | OperationCode::StagedSourceTransactionV1
                         | OperationCode::Pump
                         | OperationCode::AnchorCreate
                         | OperationCode::AnchorTransform
@@ -940,7 +949,9 @@ impl Outcome {
             OperationResult::Page(page) => self.written_payload_bytes == page.payload_bytes as u64,
             _ if matches!(
                 self.operation,
-                OperationCode::EditIntentV1 | OperationCode::SourceTransactionV1
+                OperationCode::EditIntentV1
+                    | OperationCode::SourceTransactionV1
+                    | OperationCode::StagedSourceTransactionV1
             ) && matches!(self.status, StatusCode::Ok) =>
             {
                 self.written_payload_bytes != 0
@@ -1003,6 +1014,7 @@ const fn outcome_shape_is_contract_valid(
                     OperationCode::SmallEdit
                         | OperationCode::EditIntentV1
                         | OperationCode::SourceTransactionV1
+                        | OperationCode::StagedSourceTransactionV1
                         | OperationCode::HistoryReplay
                         | OperationCode::QueryViewport
                         | OperationCode::ContinuationNext
@@ -1102,7 +1114,8 @@ const fn operation_accepts_terminal_success(
                     | OperationCode::BulkCommit
                     | OperationCode::HistoryReplay
                     | OperationCode::EditIntentV1
-                    | OperationCode::SourceTransactionV1,
+                    | OperationCode::SourceTransactionV1
+                    | OperationCode::StagedSourceTransactionV1,
                 OperationResult::RevisionCommitted { .. }
             )
             | (OperationCode::Pump, OperationResult::Progress { .. })
@@ -1145,6 +1158,7 @@ const fn operation_accepts_progress(operation: OperationCode, result: OperationR
             operation,
             OperationCode::CreateCommit
                 | OperationCode::BulkCommit
+                | OperationCode::StagedSourceTransactionV1
                 | OperationCode::Pump
                 | OperationCode::AnchorCreate
                 | OperationCode::AnchorTransform
@@ -1172,6 +1186,7 @@ const fn operation_has_caller_output(operation: OperationCode) -> bool {
         OperationCode::Negotiate
             | OperationCode::EditIntentV1
             | OperationCode::SourceTransactionV1
+            | OperationCode::StagedSourceTransactionV1
             | OperationCode::SourceRead
             | OperationCode::QueryViewport
             | OperationCode::ContinuationNext

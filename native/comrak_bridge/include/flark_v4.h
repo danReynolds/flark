@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define FLARK_V4_ABI_MAJOR UINT16_C(4)
-#define FLARK_V4_ABI_MINOR UINT16_C(21)
+#define FLARK_V4_ABI_MINOR UINT16_C(22)
 
 /* Zero sentinels are legal only where the operation rules below say so. */
 #define FLARK_V4_CONTINUATION_NONE UINT64_C(0)
@@ -129,6 +129,7 @@ typedef uint64_t FlarkV4OwnerToken;
 #define FLARK_V4_OPERATION_SESSION_INSPECT UINT32_C(27)
 #define FLARK_V4_OPERATION_EDIT_INTENT_V1 UINT32_C(28)
 #define FLARK_V4_OPERATION_SOURCE_TRANSACTION_V1 UINT32_C(29)
+#define FLARK_V4_OPERATION_STAGED_SOURCE_TRANSACTION_V1 UINT32_C(30)
 
 #define FLARK_V4_PROGRESS_NONE UINT32_C(0)
 #define FLARK_V4_PROGRESS_ADVANCED UINT32_C(1)
@@ -214,6 +215,7 @@ typedef uint64_t FlarkV4OwnerToken;
 #define FLARK_V4_CAPABILITY_SEMANTIC_ATOMS_V1 UINT64_C(0x0000000000100000)
 #define FLARK_V4_CAPABILITY_NESTED_BLOCK_QUOTE_EDITING_V1 UINT64_C(0x0000000000200000)
 #define FLARK_V4_CAPABILITY_SEMANTIC_ACTIONS_V1 UINT64_C(0x0000000000400000)
+#define FLARK_V4_CAPABILITY_STAGED_SOURCE_TRANSACTIONS_V1 UINT64_C(0x0000000000800000)
 
 #define FLARK_V4_EDIT_PROFILE_FLARK_V1 UINT32_C(1)
 #define FLARK_V4_EDIT_INTENT_INSERT_PARAGRAPH_BREAK UINT32_C(1)
@@ -231,6 +233,7 @@ typedef uint64_t FlarkV4OwnerToken;
 #define FLARK_V4_SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING UINT32_C(0x2)
 #define FLARK_V4_SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES UINT32_C(0x4)
 #define FLARK_V4_SOURCE_TRANSACTION_RECEIPT_COMPOSITE_HISTORY_EXTENDED UINT32_C(0x8)
+#define FLARK_V4_SOURCE_TRANSACTION_RECEIPT_STAGED_BYTES UINT32_C(0x10)
 #define FLARK_V4_EDIT_PRESENTATION_NONE UINT32_C(0)
 #define FLARK_V4_EDIT_PRESENTATION_SPLIT_PARAGRAPH UINT32_C(1)
 #define FLARK_V4_EDIT_PRESENTATION_CONTINUE_LIST UINT32_C(2)
@@ -622,6 +625,31 @@ typedef struct FlarkV4SourceTransactionReceiptV1 {
   uint64_t reserved[2];
 } FlarkV4SourceTransactionReceiptV1;
 
+typedef struct FlarkV4StagedSourceTransactionRequestV1 {
+  uint32_t struct_size;
+  uint32_t flags;
+  FlarkV4SessionRef session;
+  FlarkV4TransactionHandle transaction;
+  FlarkV4Revision expected_revision;
+  FlarkV4ProgressToken progress_token;
+  FlarkV4AnchorHandle selection_base_anchor;
+  FlarkV4AnchorHandle selection_extent_anchor;
+  uint64_t logical_edit_id;
+  uint64_t request_digest;
+  uint64_t acknowledge_previous_logical_edit_id;
+  uint64_t selection_generation;
+  uint64_t result_selection_utf16;
+  FlarkV4Affinity selection_affinity;
+  uint32_t selection_direction;
+  FlarkV4WorkBudget budget;
+  uint64_t history_group_id;
+  uint64_t reserved[2];
+} FlarkV4StagedSourceTransactionRequestV1;
+/* V1 requires a collapsed downstream result caret at the inserted range end
+ * and history_group_id zero. BULK_BEGIN/BULK_APPEND stage the replacement;
+ * this resumable commit returns FlarkV4SourceTransactionReceiptV1. A zero
+ * transaction is accepted only to recover a matching stored terminal. */
+
 typedef struct FlarkV4BulkBeginRequest {
   uint32_t struct_size;
   uint32_t flags;
@@ -801,6 +829,7 @@ typedef struct FlarkV4SessionInspection {
 #define FLARK_V4_SIZEOF_EDIT_INTENT_RECEIPT_V1 UINT32_C(192)
 #define FLARK_V4_SIZEOF_SOURCE_TRANSACTION_REQUEST_V1 UINT32_C(160)
 #define FLARK_V4_SIZEOF_SOURCE_TRANSACTION_RECEIPT_V1 UINT32_C(200)
+#define FLARK_V4_SIZEOF_STAGED_SOURCE_TRANSACTION_REQUEST_V1 UINT32_C(160)
 #define FLARK_V4_SIZEOF_BULK_BEGIN_REQUEST UINT32_C(72)
 #define FLARK_V4_SIZEOF_TRANSACTION_REQUEST UINT32_C(80)
 #define FLARK_V4_SIZEOF_PUMP_REQUEST UINT32_C(64)
@@ -842,6 +871,7 @@ FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4EditIntentRequestV1) == FLARK_V4_SIZEOF_EDI
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4EditIntentReceiptV1) == FLARK_V4_SIZEOF_EDIT_INTENT_RECEIPT_V1, "FlarkV4EditIntentReceiptV1 layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4SourceTransactionRequestV1) == FLARK_V4_SIZEOF_SOURCE_TRANSACTION_REQUEST_V1, "FlarkV4SourceTransactionRequestV1 layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4SourceTransactionReceiptV1) == FLARK_V4_SIZEOF_SOURCE_TRANSACTION_RECEIPT_V1, "FlarkV4SourceTransactionReceiptV1 layout");
+FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4StagedSourceTransactionRequestV1) == FLARK_V4_SIZEOF_STAGED_SOURCE_TRANSACTION_REQUEST_V1, "FlarkV4StagedSourceTransactionRequestV1 layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4BulkBeginRequest) == FLARK_V4_SIZEOF_BULK_BEGIN_REQUEST, "FlarkV4BulkBeginRequest layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4TransactionRequest) == FLARK_V4_SIZEOF_TRANSACTION_REQUEST, "FlarkV4TransactionRequest layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4PumpRequest) == FLARK_V4_SIZEOF_PUMP_REQUEST, "FlarkV4PumpRequest layout");
@@ -878,6 +908,7 @@ FlarkV4StatusCode flark_v4_source_read(const FlarkV4SourceReadRequest *request, 
 FlarkV4StatusCode flark_v4_small_edit(const FlarkV4SmallEditRequest *request, const FlarkV4EditDescriptor *edits, uint32_t edit_count, const uint8_t *replacement_bytes, uint64_t replacement_bytes_len, FlarkV4Outcome *outcome);
 FlarkV4StatusCode flark_v4_edit_intent_v1(const FlarkV4EditIntentRequestV1 *request, uint8_t *output, uint64_t output_capacity, FlarkV4Outcome *outcome);
 FlarkV4StatusCode flark_v4_source_transaction_v1(const FlarkV4SourceTransactionRequestV1 *request, const uint8_t *replacement_bytes, uint64_t replacement_bytes_len, uint8_t *output, uint64_t output_capacity, FlarkV4Outcome *outcome);
+FlarkV4StatusCode flark_v4_staged_source_transaction_v1(const FlarkV4StagedSourceTransactionRequestV1 *request, uint8_t *output, uint64_t output_capacity, FlarkV4Outcome *outcome);
 FlarkV4StatusCode flark_v4_bulk_begin(const FlarkV4BulkBeginRequest *request, FlarkV4Outcome *outcome);
 FlarkV4StatusCode flark_v4_bulk_append(const FlarkV4StageRequest *request, const uint8_t *input, uint64_t input_len, FlarkV4Outcome *outcome);
 FlarkV4StatusCode flark_v4_bulk_commit(const FlarkV4TransactionRequest *request, FlarkV4Outcome *outcome);

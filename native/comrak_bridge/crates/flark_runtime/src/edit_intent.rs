@@ -91,6 +91,25 @@ pub struct DocumentSourceTransactionReceiptV1 {
     pub parser_pending: bool,
 }
 
+/// Result of a replacement that was validated and buffered by the staged ABI
+/// before entering the document actor. Unlike the inline source transaction,
+/// this receipt deliberately carries neither replacement nor inverse bytes:
+/// both may be document-sized, and the ABI already owns them.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DocumentStagedSourceTransactionReceiptV1 {
+    pub base_revision: u64,
+    pub result_revision: u64,
+    pub base_byte_range: Range<usize>,
+    pub base_utf16_range: Range<usize>,
+    pub result_byte_range: Range<usize>,
+    pub result_utf16_range: Range<usize>,
+    pub result_selection_utf16: usize,
+    pub result_selection_byte: usize,
+    pub result_source_byte_length: usize,
+    pub result_source_utf16_length: usize,
+    pub parser_pending: bool,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum DocumentEditLineEnding {
     Lf,

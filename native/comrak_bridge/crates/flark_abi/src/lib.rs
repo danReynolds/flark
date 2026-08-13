@@ -16,6 +16,7 @@ pub use implementation::{
     flark_v4_history_release, flark_v4_history_replay, flark_v4_negotiate, flark_v4_pump,
     flark_v4_query_viewport, flark_v4_session_inspect, flark_v4_session_transfer_owner,
     flark_v4_small_edit, flark_v4_source_read, flark_v4_source_transaction_v1,
+    flark_v4_staged_source_transaction_v1,
 };
 
 pub use flark_runtime::{
@@ -25,7 +26,7 @@ pub use flark_runtime::{
 };
 
 pub const ABI_MAJOR: u16 = 4;
-pub const ABI_MINOR: u16 = 21;
+pub const ABI_MINOR: u16 = 22;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
@@ -525,6 +526,7 @@ pub const SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT: u32 = 1 << 0;
 pub const SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING: u32 = 1 << 1;
 pub const SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES: u32 = 1 << 2;
 pub const SOURCE_TRANSACTION_RECEIPT_COMPOSITE_HISTORY_EXTENDED: u32 = 1 << 3;
+pub const SOURCE_TRANSACTION_RECEIPT_STAGED_BYTES: u32 = 1 << 4;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
@@ -575,6 +577,30 @@ pub struct SourceTransactionReceiptV1 {
     pub affected_result_utf16_range: SourceRange,
     pub history_token: u64,
     pub replacement_bytes: u64,
+    pub reserved: [u64; 2],
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(C)]
+pub struct StagedSourceTransactionRequestV1 {
+    pub struct_size: u32,
+    pub flags: u32,
+    pub session: SessionRef,
+    pub transaction: u64,
+    pub expected_revision: u64,
+    pub progress_token: u64,
+    pub selection_base_anchor: u64,
+    pub selection_extent_anchor: u64,
+    pub logical_edit_id: u64,
+    pub request_digest: u64,
+    pub acknowledge_previous_logical_edit_id: u64,
+    pub selection_generation: u64,
+    /// V1 admits only a collapsed result caret at the inserted range end.
+    pub result_selection_utf16: u64,
+    pub selection_affinity: u32,
+    pub selection_direction: u32,
+    pub budget: WorkBudget,
+    pub history_group_id: u64,
     pub reserved: [u64; 2],
 }
 
@@ -1004,6 +1030,10 @@ pub const RECORD_LAYOUTS: &[(&str, usize)] = &[
     (
         "SOURCE_TRANSACTION_RECEIPT_V1",
         core::mem::size_of::<SourceTransactionReceiptV1>(),
+    ),
+    (
+        "STAGED_SOURCE_TRANSACTION_REQUEST_V1",
+        core::mem::size_of::<StagedSourceTransactionRequestV1>(),
     ),
     (
         "BULK_BEGIN_REQUEST",

@@ -28,19 +28,19 @@ use crate::{
     NegotiateRequest, Outcome, OwnerTransferRequest, ProjectionSegmentRecord, PumpRequest,
     QueryRequest, ResultPageHeader, SessionInspection, SessionRef, SmallEditRequest, SourceRange,
     SourceReadRequest, SourceTransactionReceiptV1, SourceTransactionRequestV1, StageRequest,
-    TransactionRequest, ViewportRowRecord, WorkBudget, ABI_MAJOR, ABI_MINOR,
-    EDIT_INTENT_DELETE_BACKWARD, EDIT_INTENT_DELETE_FORWARD, EDIT_INTENT_DISPOSITION_APPLIED,
-    EDIT_INTENT_DISPOSITION_HANDLED_NO_CHANGE, EDIT_INTENT_DISPOSITION_NEEDS_CURRENT_SEMANTICS,
-    EDIT_INTENT_DISPOSITION_NOT_APPLICABLE, EDIT_INTENT_INSERT_PARAGRAPH_BREAK,
-    EDIT_INTENT_RECEIPT_HAS_COMMIT, EDIT_INTENT_RECEIPT_PARSER_PENDING,
-    EDIT_INTENT_RECEIPT_SEMANTIC_BYTES, EDIT_INTENT_TOGGLE_TASK_CHECKED,
-    EDIT_PRESENTATION_CONTINUE_BLOCK_QUOTE, EDIT_PRESENTATION_CONTINUE_INDENTED_CODE,
-    EDIT_PRESENTATION_CONTINUE_LIST, EDIT_PRESENTATION_DELETE_THEMATIC_BREAK,
-    EDIT_PRESENTATION_EXIT_BLOCK_QUOTE, EDIT_PRESENTATION_EXIT_HEADING,
-    EDIT_PRESENTATION_EXIT_LIST, EDIT_PRESENTATION_JOIN_INDENTED_CODE,
-    EDIT_PRESENTATION_LIFT_BLOCK_QUOTE, EDIT_PRESENTATION_LIFT_HEADING,
-    EDIT_PRESENTATION_LIFT_INDENTED_CODE, EDIT_PRESENTATION_LIFT_LIST,
-    EDIT_PRESENTATION_MERGE_PARAGRAPH, EDIT_PRESENTATION_NONE,
+    StagedSourceTransactionRequestV1, TransactionRequest, ViewportRowRecord, WorkBudget, ABI_MAJOR,
+    ABI_MINOR, EDIT_INTENT_DELETE_BACKWARD, EDIT_INTENT_DELETE_FORWARD,
+    EDIT_INTENT_DISPOSITION_APPLIED, EDIT_INTENT_DISPOSITION_HANDLED_NO_CHANGE,
+    EDIT_INTENT_DISPOSITION_NEEDS_CURRENT_SEMANTICS, EDIT_INTENT_DISPOSITION_NOT_APPLICABLE,
+    EDIT_INTENT_INSERT_PARAGRAPH_BREAK, EDIT_INTENT_RECEIPT_HAS_COMMIT,
+    EDIT_INTENT_RECEIPT_PARSER_PENDING, EDIT_INTENT_RECEIPT_SEMANTIC_BYTES,
+    EDIT_INTENT_TOGGLE_TASK_CHECKED, EDIT_PRESENTATION_CONTINUE_BLOCK_QUOTE,
+    EDIT_PRESENTATION_CONTINUE_INDENTED_CODE, EDIT_PRESENTATION_CONTINUE_LIST,
+    EDIT_PRESENTATION_DELETE_THEMATIC_BREAK, EDIT_PRESENTATION_EXIT_BLOCK_QUOTE,
+    EDIT_PRESENTATION_EXIT_HEADING, EDIT_PRESENTATION_EXIT_LIST,
+    EDIT_PRESENTATION_JOIN_INDENTED_CODE, EDIT_PRESENTATION_LIFT_BLOCK_QUOTE,
+    EDIT_PRESENTATION_LIFT_HEADING, EDIT_PRESENTATION_LIFT_INDENTED_CODE,
+    EDIT_PRESENTATION_LIFT_LIST, EDIT_PRESENTATION_MERGE_PARAGRAPH, EDIT_PRESENTATION_NONE,
     EDIT_PRESENTATION_OUTDENT_BLOCK_QUOTE, EDIT_PRESENTATION_OUTDENT_LIST,
     EDIT_PRESENTATION_SPLIT_PARAGRAPH, EDIT_PRESENTATION_TOGGLE_TASK_CHECKED,
     EDIT_PROFILE_FLARK_V1, INLINE_FACT_AUTOLINK_EMAIL, INLINE_FACT_AUTOLINK_URI,
@@ -50,10 +50,11 @@ use crate::{
     INLINE_FACT_STRIKETHROUGH, INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL,
     SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES,
     SOURCE_TRANSACTION_RECEIPT_COMPOSITE_HISTORY_EXTENDED, SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT,
-    SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING, VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_SHIFT,
-    VIEWPORT_ROW_BLOCK_QUOTE_PRESENTATION, VIEWPORT_ROW_BLOCK_QUOTE_SIMPLE_CONTINUATION,
-    VIEWPORT_ROW_CODE_CLOSED, VIEWPORT_ROW_CODE_FENCED, VIEWPORT_ROW_CODE_FENCE_OFFSET_SHIFT,
-    VIEWPORT_ROW_CODE_PRESENTATION, VIEWPORT_ROW_CODE_TILDE, VIEWPORT_ROW_FLAG_CONTIGUOUS_EDIT,
+    SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING, SOURCE_TRANSACTION_RECEIPT_STAGED_BYTES,
+    VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_SHIFT, VIEWPORT_ROW_BLOCK_QUOTE_PRESENTATION,
+    VIEWPORT_ROW_BLOCK_QUOTE_SIMPLE_CONTINUATION, VIEWPORT_ROW_CODE_CLOSED,
+    VIEWPORT_ROW_CODE_FENCED, VIEWPORT_ROW_CODE_FENCE_OFFSET_SHIFT, VIEWPORT_ROW_CODE_PRESENTATION,
+    VIEWPORT_ROW_CODE_TILDE, VIEWPORT_ROW_FLAG_CONTIGUOUS_EDIT,
     VIEWPORT_ROW_FLAG_CONTINUITY_PLAIN_TEXT_EDIT, VIEWPORT_ROW_FLAG_EDIT_UNAVAILABLE,
     VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE, VIEWPORT_ROW_FLAG_PROJECTED_RESERVED,
     VIEWPORT_ROW_HEADING_LEVEL_MASK, VIEWPORT_ROW_HEADING_SETEXT,
@@ -88,7 +89,8 @@ const IMPLEMENTED_CAPABILITIES: u64 = (1 << 0)
     | (1 << 19)
     | (1 << 20)
     | (1 << 21)
-    | (1 << 22);
+    | (1 << 22)
+    | (1 << 23);
 
 struct Registry {
     next_handle: u64,
@@ -178,9 +180,25 @@ struct StoredBulkTransaction {
     expected_bytes: usize,
     replacement: Vec<u8>,
     validated_bytes: usize,
+    validated_utf16: usize,
     inverse_next_byte: u64,
     history: BulkHistoryCapture,
     progress_token: u64,
+    source_request: Option<StoredStagedSourceRequest>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct StoredStagedSourceRequest {
+    selection_base_anchor: u64,
+    selection_extent_anchor: u64,
+    logical_edit_id: u64,
+    request_digest: u64,
+    acknowledge_previous_logical_edit_id: u64,
+    selection_generation: u64,
+    result_selection_utf16: u64,
+    selection_affinity: u32,
+    selection_direction: u32,
+    history_group_id: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -799,6 +817,95 @@ fn finalize_source_transaction_history(
     }
 }
 
+/// Installs an already-staged inverse as a required standalone undo unit.
+/// All allocation and history-headroom checks complete before source mutation;
+/// finalization after the actor receipt only changes scalar fields.
+fn reserve_staged_source_history(
+    registry: &mut Registry,
+    session: SessionRef,
+    applies_state: u64,
+    target_state: u64,
+    start_byte: u64,
+    replay_end: u64,
+    inverse: Vec<u8>,
+) -> Result<u64, (StatusCode, Vec<u8>)> {
+    let retained_bytes = match HISTORY_TOKEN_OVERHEAD_BYTES.checked_add(inverse.len() as u64) {
+        Some(bytes) => bytes,
+        None => return Err((StatusCode::ResourceLimitExceeded, inverse)),
+    };
+    let (history_budget_bytes, history_used_bytes, previous) =
+        match session_entry(registry, session) {
+            Ok(entry) => (
+                entry.history_budget_bytes,
+                entry.history_used_bytes,
+                entry.history_tail,
+            ),
+            Err(error) => return Err((error, inverse)),
+        };
+    if history_budget_bytes < retained_bytes
+        || history_used_bytes
+            .checked_add(retained_bytes)
+            .is_none_or(|used| used > history_budget_bytes)
+    {
+        return Err((StatusCode::ResourceLimitExceeded, inverse));
+    }
+    let mut splices = Vec::new();
+    if splices.try_reserve_exact(1).is_err() {
+        return Err((StatusCode::AllocationFailure, inverse));
+    }
+    splices.push(StoredHistorySplice {
+        start_byte,
+        end_byte: replay_end,
+        replacement: inverse,
+    });
+    let token = match registry.allocate_handle() {
+        Ok(token) => token,
+        Err(error) => return Err((error, splices.pop().unwrap().replacement)),
+    };
+    registry.histories.insert(
+        token,
+        StoredHistory {
+            session: session.session,
+            owner: session.owner_token,
+            applies_state,
+            target_state,
+            group_id: 0,
+            splices,
+            retained_bytes,
+            previous,
+            next: 0,
+        },
+    );
+    if previous != 0 {
+        registry
+            .histories
+            .get_mut(&previous)
+            .expect("reserved staged-history predecessor must remain live")
+            .next = token;
+    }
+    let entry = registry
+        .sessions
+        .get_mut(&session.session)
+        .expect("reserved staged-history session must remain live");
+    if entry.history_head == 0 {
+        entry.history_head = token;
+    }
+    entry.history_tail = token;
+    entry.history_used_bytes += retained_bytes;
+    entry.history_token_count += 1;
+    Ok(token)
+}
+
+fn rollback_staged_source_history(registry: &mut Registry, token: u64) -> Vec<u8> {
+    let mut history = detach_history(registry, token)
+        .expect("staged source history reservation must remain live");
+    history
+        .splices
+        .pop()
+        .expect("staged source history must own one splice")
+        .replacement
+}
+
 fn edit_intent_output_requirement() -> u64 {
     size_of::<EditIntentReceiptV1>() as u64 + u64::from(MAX_SMALL_EDIT_BYTES)
 }
@@ -854,8 +961,15 @@ unsafe fn write_source_transaction_terminal(
 fn source_transaction_terminal_outcome(
     terminal: &StoredSourceTransactionTerminal,
 ) -> RuntimeOutcome {
+    source_transaction_terminal_outcome_for(terminal, OperationCode::SourceTransactionV1)
+}
+
+fn source_transaction_terminal_outcome_for(
+    terminal: &StoredSourceTransactionTerminal,
+    operation: OperationCode,
+) -> RuntimeOutcome {
     RuntimeOutcome {
-        operation: OperationCode::SourceTransactionV1,
+        operation,
         status: StatusCode::Ok,
         progress: ProgressState::Complete,
         required_payload_bytes: 0,
@@ -1489,7 +1603,9 @@ pub extern "C" fn flark_v4_source_transaction_v1(
             let entry = session_entry(&mut registry, request.session)?;
             if let Some(terminal) = entry.terminal_source_transaction.as_ref() {
                 if terminal.receipt.logical_edit_id == request.logical_edit_id {
-                    if terminal.receipt.request_digest != request.request_digest {
+                    if terminal.receipt.request_digest != request.request_digest
+                        || terminal.receipt.flags & SOURCE_TRANSACTION_RECEIPT_STAGED_BYTES != 0
+                    {
                         return Err(StatusCode::TransactionConflict);
                     }
                     unsafe { write_source_transaction_terminal(terminal, output) };
@@ -2239,9 +2355,11 @@ pub extern "C" fn flark_v4_bulk_begin(
                 expected_bytes,
                 replacement,
                 validated_bytes: 0,
+                validated_utf16: 0,
                 inverse_next_byte: request.range.start_byte,
                 history,
                 progress_token: 0,
+                source_request: None,
             },
         );
         session_entry(&mut registry, request.session)?
@@ -2325,10 +2443,55 @@ fn next_utf8_validation_end(bytes: &[u8], cursor: usize) -> usize {
     }
 }
 
+/// Advances bounded UTF-8/UTF-16 validation and inverse capture shared by the
+/// legacy and receipt-bearing staged commit entrypoints.
+fn advance_bulk_commit_work(
+    registry: &mut Registry,
+    session: SessionRef,
+    transaction: &mut StoredBulkTransaction,
+    mut remaining: usize,
+) -> Result<usize, StatusCode> {
+    while remaining != 0 && transaction.validated_bytes < transaction.replacement.len() {
+        let end = next_utf8_validation_end(&transaction.replacement, transaction.validated_bytes);
+        let chunk = str::from_utf8(&transaction.replacement[transaction.validated_bytes..end])
+            .map_err(|_| StatusCode::InvalidUtf8)?;
+        transaction.validated_utf16 = transaction
+            .validated_utf16
+            .checked_add(chunk.encode_utf16().count())
+            .ok_or(StatusCode::ResourceLimitExceeded)?;
+        transaction.validated_bytes = end;
+        remaining -= 1;
+    }
+    while remaining != 0 && transaction.inverse_next_byte < transaction.end_byte {
+        let BulkHistoryCapture::Capturing(inverse) = &mut transaction.history else {
+            transaction.inverse_next_byte = transaction.end_byte;
+            break;
+        };
+        let chunk_end = transaction
+            .inverse_next_byte
+            .saturating_add(u64::from(MAX_BULK_CHUNK_BYTES))
+            .min(transaction.end_byte);
+        let bytes = {
+            let entry = session_entry(registry, session)?;
+            let StoredSessionState::Open(document) = &entry.state else {
+                return Err(StatusCode::SessionBusy);
+            };
+            document
+                .source_bytes(transaction.inverse_next_byte as usize..chunk_end as usize)
+                .map_err(|error| map_actor_error(&error))?
+        };
+        inverse.extend_from_slice(&bytes);
+        transaction.inverse_next_byte = chunk_end;
+        remaining -= 1;
+    }
+    Ok(remaining)
+}
+
 fn pending_bulk_commit(
     registry: &mut Registry,
     handle: u64,
     mut transaction: StoredBulkTransaction,
+    operation: OperationCode,
 ) -> Result<RuntimeOutcome, StatusCode> {
     let token = match registry.allocate_handle() {
         Ok(token) => token,
@@ -2341,7 +2504,7 @@ fn pending_bulk_commit(
     let revision = transaction.expected_revision;
     registry.transactions.insert(handle, transaction);
     Ok(RuntimeOutcome {
-        operation: OperationCode::BulkCommit,
+        operation,
         status: StatusCode::BudgetExhausted,
         progress: ProgressState::BudgetExhausted,
         required_payload_bytes: 0,
@@ -2385,6 +2548,7 @@ pub extern "C" fn flark_v4_bulk_commit(
         if transaction.session != request.session.session
             || transaction.owner != request.session.owner_token
             || transaction.expected_revision != request.expected_revision
+            || transaction.source_request.is_some()
         {
             return Err(StatusCode::TransactionConflict);
         }
@@ -2405,58 +2569,30 @@ pub extern "C" fn flark_v4_bulk_commit(
             .transactions
             .remove(&request.transaction)
             .ok_or(StatusCode::InternalFault)?;
-        let mut remaining = usize::try_from(request.budget.max_work_units).unwrap_or(usize::MAX);
-        while remaining != 0 && transaction.validated_bytes < transaction.replacement.len() {
-            let end =
-                next_utf8_validation_end(&transaction.replacement, transaction.validated_bytes);
-            if str::from_utf8(&transaction.replacement[transaction.validated_bytes..end]).is_err() {
+        let remaining = match advance_bulk_commit_work(
+            &mut registry,
+            request.session,
+            &mut transaction,
+            usize::try_from(request.budget.max_work_units).unwrap_or(usize::MAX),
+        ) {
+            Ok(remaining) => remaining,
+            Err(error) => {
                 registry
                     .transactions
                     .insert(request.transaction, transaction);
-                return Err(StatusCode::InvalidUtf8);
+                return Err(error);
             }
-            transaction.validated_bytes = end;
-            remaining -= 1;
-        }
-        while remaining != 0 && transaction.inverse_next_byte < transaction.end_byte {
-            let BulkHistoryCapture::Capturing(inverse) = &mut transaction.history else {
-                transaction.inverse_next_byte = transaction.end_byte;
-                break;
-            };
-            let chunk_end = transaction
-                .inverse_next_byte
-                .saturating_add(u64::from(MAX_BULK_CHUNK_BYTES))
-                .min(transaction.end_byte);
-            let bytes = {
-                let entry = session_entry(&mut registry, request.session)?;
-                let StoredSessionState::Open(document) = &entry.state else {
-                    registry
-                        .transactions
-                        .insert(request.transaction, transaction);
-                    return Err(StatusCode::SessionBusy);
-                };
-                match document
-                    .source_bytes(transaction.inverse_next_byte as usize..chunk_end as usize)
-                {
-                    Ok(bytes) => bytes,
-                    Err(error) => {
-                        let status = map_actor_error(&error);
-                        registry
-                            .transactions
-                            .insert(request.transaction, transaction);
-                        return Err(status);
-                    }
-                }
-            };
-            inverse.extend_from_slice(&bytes);
-            transaction.inverse_next_byte = chunk_end;
-            remaining -= 1;
-        }
+        };
         if transaction.validated_bytes != transaction.replacement.len()
             || transaction.inverse_next_byte != transaction.end_byte
             || remaining == 0
         {
-            return pending_bulk_commit(&mut registry, request.transaction, transaction);
+            return pending_bulk_commit(
+                &mut registry,
+                request.transaction,
+                transaction,
+                OperationCode::BulkCommit,
+            );
         }
 
         let replacement_len = transaction.replacement.len() as u64;
@@ -2530,6 +2666,395 @@ pub extern "C" fn flark_v4_bulk_commit(
                 history: disposition,
             },
         })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn flark_v4_staged_source_transaction_v1(
+    request: *const StagedSourceTransactionRequestV1,
+    output: *mut u8,
+    output_capacity: u64,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::StagedSourceTransactionV1, outcome, || {
+        let request = unsafe {
+            read_record(
+                request,
+                size_of::<StagedSourceTransactionRequestV1>() as u32,
+            )?
+        };
+        let required_output = source_transaction_output_requirement();
+        if output.is_null() || output_capacity < required_output {
+            return Ok(RuntimeOutcome {
+                operation: OperationCode::StagedSourceTransactionV1,
+                status: StatusCode::BufferTooSmall,
+                progress: ProgressState::None,
+                required_payload_bytes: required_output,
+                written_payload_bytes: 0,
+                result: OperationResult::None,
+            });
+        }
+        if !valid_budget(request.budget, false)
+            || u64::from(request.budget.max_result_bytes) < required_output
+            || request.flags != 0
+            || request.expected_revision == 0
+            || request.logical_edit_id == 0
+            || request.request_digest == 0
+            || request.selection_affinity != Affinity::Downstream as u32
+            || request.selection_direction != 0
+            || request.history_group_id != 0
+            || request.reserved != [0; 2]
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        let source_request = StoredStagedSourceRequest {
+            selection_base_anchor: request.selection_base_anchor,
+            selection_extent_anchor: request.selection_extent_anchor,
+            logical_edit_id: request.logical_edit_id,
+            request_digest: request.request_digest,
+            acknowledge_previous_logical_edit_id: request.acknowledge_previous_logical_edit_id,
+            selection_generation: request.selection_generation,
+            result_selection_utf16: request.result_selection_utf16,
+            selection_affinity: request.selection_affinity,
+            selection_direction: request.selection_direction,
+            history_group_id: request.history_group_id,
+        };
+
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        {
+            let entry = session_entry(&mut registry, request.session)?;
+            if let Some(terminal) = entry.terminal_source_transaction.as_ref() {
+                if terminal.receipt.logical_edit_id == request.logical_edit_id {
+                    if terminal.receipt.request_digest != request.request_digest
+                        || terminal.receipt.flags & SOURCE_TRANSACTION_RECEIPT_STAGED_BYTES == 0
+                    {
+                        return Err(StatusCode::TransactionConflict);
+                    }
+                    unsafe { write_source_transaction_terminal(terminal, output) };
+                    return Ok(source_transaction_terminal_outcome_for(
+                        terminal,
+                        OperationCode::StagedSourceTransactionV1,
+                    ));
+                }
+            }
+            if entry
+                .terminal_edit_intent
+                .as_ref()
+                .is_some_and(|terminal| terminal.receipt.logical_edit_id == request.logical_edit_id)
+            {
+                return Err(StatusCode::TransactionConflict);
+            }
+            let pending_logical_edit_id = entry
+                .terminal_source_transaction
+                .as_ref()
+                .map(|terminal| terminal.receipt.logical_edit_id)
+                .or_else(|| {
+                    entry
+                        .terminal_edit_intent
+                        .as_ref()
+                        .map(|terminal| terminal.receipt.logical_edit_id)
+                });
+            match pending_logical_edit_id {
+                Some(id) if request.acknowledge_previous_logical_edit_id != id => {
+                    return Err(StatusCode::Backpressure)
+                }
+                None if request.acknowledge_previous_logical_edit_id != 0 => {
+                    return Err(StatusCode::InvalidArgument)
+                }
+                _ => {}
+            }
+        }
+
+        // Zero is a terminal-recovery probe only. A first admission still
+        // requires one live BULK_BEGIN/BULK_APPEND staging handle.
+        if request.transaction == 0 {
+            return Err(StatusCode::InvalidHandle);
+        }
+
+        anchor_for_request(&registry, request.session, request.selection_base_anchor)?;
+        anchor_for_request(&registry, request.session, request.selection_extent_anchor)?;
+        let inspection = {
+            let entry = session_entry(&mut registry, request.session)?;
+            let StoredSessionState::Open(document) = &entry.state else {
+                return Err(StatusCode::SessionBusy);
+            };
+            document
+                .inspect()
+                .map_err(|error| map_actor_error(&error))?
+        };
+        if inspection.revision != request.expected_revision {
+            return Err(StatusCode::StaleRevision);
+        }
+        {
+            let transaction = registry
+                .transactions
+                .get_mut(&request.transaction)
+                .ok_or(StatusCode::InvalidHandle)?;
+            if transaction.session != request.session.session
+                || transaction.owner != request.session.owner_token
+                || transaction.expected_revision != request.expected_revision
+            {
+                return Err(StatusCode::TransactionConflict);
+            }
+            if transaction.replacement.len() != transaction.expected_bytes {
+                return Err(StatusCode::TransactionIncomplete);
+            }
+            if (transaction.progress_token == 0 && request.progress_token != 0)
+                || (transaction.progress_token != 0
+                    && request.progress_token != transaction.progress_token)
+            {
+                return Err(StatusCode::StaleProgressToken);
+            }
+            match transaction.source_request {
+                Some(existing) if existing != source_request => {
+                    return Err(StatusCode::TransactionConflict)
+                }
+                None => transaction.source_request = Some(source_request),
+                _ => {}
+            }
+        }
+
+        let mut transaction = registry
+            .transactions
+            .remove(&request.transaction)
+            .ok_or(StatusCode::InternalFault)?;
+        let remaining = match advance_bulk_commit_work(
+            &mut registry,
+            request.session,
+            &mut transaction,
+            usize::try_from(request.budget.max_work_units).unwrap_or(usize::MAX),
+        ) {
+            Ok(remaining) => remaining,
+            Err(error) => {
+                registry
+                    .transactions
+                    .insert(request.transaction, transaction);
+                return Err(error);
+            }
+        };
+        if transaction.validated_bytes != transaction.replacement.len()
+            || transaction.inverse_next_byte != transaction.end_byte
+            || remaining == 0
+        {
+            return pending_bulk_commit(
+                &mut registry,
+                request.transaction,
+                transaction,
+                OperationCode::StagedSourceTransactionV1,
+            );
+        }
+
+        let (start_utf16, applies_state, target_state) = {
+            let entry = session_entry(&mut registry, request.session)?;
+            let StoredSessionState::Open(document) = &entry.state else {
+                registry
+                    .transactions
+                    .insert(request.transaction, transaction);
+                return Err(StatusCode::SessionBusy);
+            };
+            let start_utf16 = document
+                .utf16_offset_for_byte(transaction.start_byte as usize)
+                .map_err(|error| map_actor_error(&error))?;
+            let expected_result_selection = start_utf16
+                .checked_add(transaction.validated_utf16)
+                .ok_or(StatusCode::ResourceLimitExceeded)?;
+            if request.result_selection_utf16 != expected_result_selection as u64 {
+                registry
+                    .transactions
+                    .insert(request.transaction, transaction);
+                return Err(StatusCode::InvalidArgument);
+            }
+            let applies_state = entry.next_history_state;
+            applies_state
+                .checked_add(1)
+                .ok_or(StatusCode::ResourceLimitExceeded)?;
+            (start_utf16, applies_state, entry.history_state)
+        };
+        let replacement_len = transaction.replacement.len() as u64;
+        let replay_end = transaction
+            .start_byte
+            .checked_add(replacement_len)
+            .ok_or(StatusCode::ResourceLimitExceeded)?;
+        let inverse =
+            match std::mem::replace(&mut transaction.history, BulkHistoryCapture::OverBudget) {
+                BulkHistoryCapture::Capturing(inverse) => inverse,
+                other => {
+                    transaction.history = other;
+                    registry
+                        .transactions
+                        .insert(request.transaction, transaction);
+                    return Err(StatusCode::ResourceLimitExceeded);
+                }
+            };
+        let history_token = match reserve_staged_source_history(
+            &mut registry,
+            request.session,
+            applies_state,
+            target_state,
+            transaction.start_byte,
+            replay_end,
+            inverse,
+        ) {
+            Ok(token) => token,
+            Err((error, inverse)) => {
+                transaction.history = BulkHistoryCapture::Capturing(inverse);
+                registry
+                    .transactions
+                    .insert(request.transaction, transaction);
+                return Err(error);
+            }
+        };
+        let replacement = unsafe {
+            // Every byte was validated in bounded chunks above.
+            String::from_utf8_unchecked(std::mem::take(&mut transaction.replacement))
+        };
+        let actor_result = {
+            let entry = session_entry(&mut registry, request.session)?;
+            let StoredSessionState::Open(document) = &mut entry.state else {
+                let inverse = rollback_staged_source_history(&mut registry, history_token);
+                transaction.history = BulkHistoryCapture::Capturing(inverse);
+                transaction.replacement = replacement.into_bytes();
+                registry
+                    .transactions
+                    .insert(request.transaction, transaction);
+                return Err(StatusCode::SessionBusy);
+            };
+            document.apply_staged_source_transaction_v1(
+                request.expected_revision,
+                transaction.start_byte as usize..transaction.end_byte as usize,
+                replacement,
+                transaction.validated_utf16,
+            )
+        };
+        let (replacement, receipt) = match actor_result {
+            Ok(result) => result,
+            Err(error) => {
+                rollback_staged_source_history(&mut registry, history_token);
+                return Err(map_actor_error(&error));
+            }
+        };
+        let receipt = match receipt {
+            Ok(receipt) => receipt,
+            Err(error) => {
+                let inverse = rollback_staged_source_history(&mut registry, history_token);
+                transaction.history = BulkHistoryCapture::Capturing(inverse);
+                transaction.replacement = replacement.into_bytes();
+                registry
+                    .transactions
+                    .insert(request.transaction, transaction);
+                return Err(map_document_error(&error));
+            }
+        };
+        drop(replacement);
+
+        let start_byte = receipt.base_byte_range.start as u64;
+        let deleted_bytes = receipt.base_byte_range.len() as u64;
+        transform_session_anchors(
+            &mut registry,
+            request.session.session,
+            start_byte,
+            deleted_bytes,
+            replacement_len,
+        );
+        let same_anchor = request.selection_base_anchor == request.selection_extent_anchor;
+        {
+            let base = registry
+                .anchors
+                .get_mut(&request.selection_base_anchor)
+                .expect("validated staged base anchor must remain live");
+            base.byte_offset = receipt.result_selection_byte as u64;
+            base.affinity = Affinity::Downstream;
+        }
+        if !same_anchor {
+            let extent = registry
+                .anchors
+                .get_mut(&request.selection_extent_anchor)
+                .expect("validated staged extent anchor must remain live");
+            extent.byte_offset = receipt.result_selection_byte as u64;
+            extent.affinity = Affinity::Downstream;
+        }
+        {
+            let entry = registry
+                .sessions
+                .get_mut(&request.session.session)
+                .expect("committed staged source session must remain live");
+            entry.history_state = applies_state;
+            entry.next_history_state = applies_state + 1;
+            entry.progress_token = 0;
+            entry.continuations.clear();
+            entry.transactions.remove(&request.transaction);
+        }
+        registry
+            .continuations
+            .retain(|_, continuation| continuation.session != request.session.session);
+
+        let terminal = StoredSourceTransactionTerminal {
+            receipt: SourceTransactionReceiptV1 {
+                struct_size: size_of::<SourceTransactionReceiptV1>() as u32,
+                history_disposition: HistoryDisposition::Retained as u32,
+                flags: SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT
+                    | SOURCE_TRANSACTION_RECEIPT_STAGED_BYTES
+                    | if receipt.parser_pending {
+                        SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING
+                    } else {
+                        0
+                    },
+                reserved_u32: 0,
+                logical_edit_id: request.logical_edit_id,
+                request_digest: request.request_digest,
+                base_revision: receipt.base_revision,
+                result_revision: receipt.result_revision,
+                base_byte_range: SourceRange {
+                    start_byte,
+                    end_byte: receipt.base_byte_range.end as u64,
+                },
+                base_utf16_range: SourceRange {
+                    start_byte: receipt.base_utf16_range.start as u64,
+                    end_byte: receipt.base_utf16_range.end as u64,
+                },
+                result_byte_range: SourceRange {
+                    start_byte: receipt.result_byte_range.start as u64,
+                    end_byte: receipt.result_byte_range.end as u64,
+                },
+                result_utf16_range: SourceRange {
+                    start_byte: receipt.result_utf16_range.start as u64,
+                    end_byte: receipt.result_utf16_range.end as u64,
+                },
+                result_selection_base_utf16: receipt.result_selection_utf16 as u64,
+                result_selection_extent_utf16: receipt.result_selection_utf16 as u64,
+                result_selection_affinity: Affinity::Downstream as u32,
+                result_selection_direction: 0,
+                result_source_byte_length: receipt.result_source_byte_length as u64,
+                result_source_utf16_length: receipt.result_source_utf16_length as u64,
+                affected_result_utf16_range: SourceRange {
+                    start_byte: start_utf16 as u64,
+                    end_byte: receipt.result_utf16_range.end as u64,
+                },
+                history_token,
+                replacement_bytes: replacement_len,
+                reserved: [0; 2],
+            },
+        };
+        let result = source_transaction_terminal_outcome_for(
+            &terminal,
+            OperationCode::StagedSourceTransactionV1,
+        );
+        let entry = registry
+            .sessions
+            .get_mut(&request.session.session)
+            .expect("committed staged source session must remain live");
+        entry.terminal_edit_intent = None;
+        entry.terminal_source_transaction = Some(terminal);
+        unsafe {
+            write_source_transaction_terminal(
+                entry
+                    .terminal_source_transaction
+                    .as_ref()
+                    .expect("stored staged terminal must remain live"),
+                output,
+            )
+        };
+        Ok(result)
     })
 }
 

@@ -38,6 +38,7 @@ use crate::edit_intent::{
 use crate::{
     DocumentEditIntentDispositionV1, DocumentEditIntentReceiptV1, DocumentEditIntentV1,
     DocumentEditPresentationTransitionV1, DocumentSourceTransactionReceiptV1,
+    DocumentStagedSourceTransactionReceiptV1,
 };
 
 const SYNTAX_PROFILE_GFM_V1: u32 = 1;
@@ -874,6 +875,64 @@ impl DocumentSession {
             result_selection_extent_byte,
             result_source_byte_length: self.source_byte_len(),
             result_source_utf16_length: self.source_utf16_len(),
+            parser_pending: edit.parser_pending,
+        })
+    }
+
+    /// Commits replacement bytes that the ABI already validated and staged.
+    ///
+    /// Staged v1 intentionally places one collapsed result caret at the end
+    /// of the inserted range. This keeps the actor linearization independent
+    /// of replacement size: no second scan or document-sized receipt is
+    /// needed for the large paste/delete behavior that v1 admits.
+    pub fn apply_staged_source_transaction_v1(
+        &mut self,
+        expected_revision: u64,
+        base_byte_range: Range<usize>,
+        replacement: &str,
+        replacement_utf16_length: usize,
+    ) -> Result<DocumentStagedSourceTransactionReceiptV1, DocumentSessionError> {
+        let actual_revision = self.revision();
+        if expected_revision != actual_revision {
+            return Err(DocumentSessionError::StaleRevision {
+                expected: expected_revision,
+                actual: actual_revision,
+            });
+        }
+        if base_byte_range.start > base_byte_range.end {
+            return Err(DocumentSessionError::RangeOutOfBounds);
+        }
+        let base_utf16_range = self.utf16_offset_for_byte(base_byte_range.start)?
+            ..self.utf16_offset_for_byte(base_byte_range.end)?;
+        let result_source_utf16_length = self
+            .source_utf16_len()
+            .checked_sub(base_utf16_range.len())
+            .and_then(|length| length.checked_add(replacement_utf16_length))
+            .ok_or(DocumentSessionError::RangeOutOfBounds)?;
+        let result_utf16_range = base_utf16_range.start
+            ..base_utf16_range
+                .start
+                .checked_add(replacement_utf16_length)
+                .ok_or(DocumentSessionError::RangeOutOfBounds)?;
+        let result_byte_range = base_byte_range.start
+            ..base_byte_range
+                .start
+                .checked_add(replacement.len())
+                .ok_or(DocumentSessionError::RangeOutOfBounds)?;
+        let result_selection_utf16 = result_utf16_range.end;
+        let result_selection_byte = result_byte_range.end;
+        let edit = self.apply_edit(expected_revision, base_byte_range.clone(), replacement)?;
+        Ok(DocumentStagedSourceTransactionReceiptV1 {
+            base_revision: expected_revision,
+            result_revision: edit.revision,
+            base_byte_range,
+            base_utf16_range,
+            result_byte_range,
+            result_utf16_range,
+            result_selection_utf16,
+            result_selection_byte,
+            result_source_byte_length: self.source_byte_len(),
+            result_source_utf16_length,
             parser_pending: edit.parser_pending,
         })
     }

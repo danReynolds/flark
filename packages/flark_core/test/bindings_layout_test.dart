@@ -21,6 +21,7 @@ void main() {
     expect(sizeOf<FlarkV4StageRequest>(), 64);
     expect(sizeOf<FlarkV4SourceReadRequest>(), 64);
     expect(sizeOf<FlarkV4SmallEditRequest>(), 88);
+    expect(sizeOf<FlarkV4StagedSourceTransactionRequestV1>(), 160);
     expect(sizeOf<FlarkV4BulkBeginRequest>(), 72);
     expect(sizeOf<FlarkV4TransactionRequest>(), 80);
     expect(sizeOf<FlarkV4PumpRequest>(), 64);
