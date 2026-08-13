@@ -125,11 +125,14 @@ resolveCommittedPresentationTransitionV1({
   switch (receipt.presentationTransition) {
     case FlarkCoreEditPresentationTransitionV1.splitParagraph:
     case FlarkCoreEditPresentationTransitionV1.continueList:
+    case FlarkCoreEditPresentationTransitionV1.continueBlockQuote:
       final ordinal = priorActiveOrdinal;
       final lineEndingLength = switch (receipt.presentationTransition) {
         FlarkCoreEditPresentationTransitionV1.splitParagraph =>
           _doubledLineEndingLength(receipt.replacement),
         FlarkCoreEditPresentationTransitionV1.continueList =>
+          _leadingLineEndingLength(receipt.replacement),
+        FlarkCoreEditPresentationTransitionV1.continueBlockQuote =>
           _leadingLineEndingLength(receipt.replacement),
         _ => null,
       };
@@ -188,6 +191,10 @@ resolveCommittedPresentationTransitionV1({
       );
     case FlarkCoreEditPresentationTransitionV1.liftList:
     case FlarkCoreEditPresentationTransitionV1.exitList:
+    case FlarkCoreEditPresentationTransitionV1.exitBlockQuote:
+    case FlarkCoreEditPresentationTransitionV1.liftBlockQuote:
+    case FlarkCoreEditPresentationTransitionV1.exitHeading:
+    case FlarkCoreEditPresentationTransitionV1.liftHeading:
       if (activeRow == null) return null;
       final runs = _mapRunsThroughCommittedSplice(activeRow.runs, receipt);
       if (runs == null) return null;

@@ -692,8 +692,8 @@ resolver/commit path in ready, parser-pending, and initial-building states; ABI
 and one retained terminal receipt; one Dart worker message; the private Core
 command gate and receipt adoption; persistent worker error/exit observation
 with typed fail-stop; and receipt-first Flutter routing for E1 paragraph and
-non-task simple-list Return/Backspace. Task lists, quotes, and headings retain
-their prior handlers because they are outside E1.
+non-task simple-list Return/Backspace. That was the initial E1 boundary; the H4
+checkpoint below records the structural handlers subsequently removed.
 
 Focused evidence is green through Rust, ABI, `flark_core`, and the non-widget
 Flutter controller. Release-mode synchronous resolve+commit probes measured
@@ -853,7 +853,15 @@ Implementation checkpoint: depth-1 GFM task items now use the parser-owned
 list context in both ready and exact-pending states. Return creates an unchecked
 successor, empty Return exits, and prefix Backspace lifts the item through the
 same Rust transaction and presentation receipts as ordinary lists; Flutter no
-longer selects its task-specific fallback for those cases.
+longer selects its task-specific fallback for those cases. ABI 4.13 adds the
+same receipt-backed continue/exit/lift transitions for isolated depth-1 block
+quotes and split/exit/lift transitions for ATX headings. Exact quote prefixes
+are preserved, empty ATX caret geometry is repaired inside the parser-certified
+runtime viewport, and generated successor context remains usable while parsing
+is pending. Certified unsupported rows (including Setext headings, nested or
+multiline quotes, and quoted headings) now fail closed rather than falling
+through to line-local guessing; an absent certified row may use exact source
+only for an isolated empty structural marker.
 
 ### H5 — hardening and later architecture
 

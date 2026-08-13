@@ -39,6 +39,16 @@ pub enum M11SimpleEditLineKind {
         task_checked: Option<bool>,
         empty: bool,
     },
+    AtxHeading {
+        prefix: Range<usize>,
+        content: Range<usize>,
+        empty: bool,
+    },
+    BlockQuote {
+        prefix: Range<usize>,
+        content: Range<usize>,
+        empty: bool,
+    },
     Unsupported,
 }
 
@@ -153,6 +163,53 @@ pub fn classify_m11_simple_edit_line(source: &[u8], strip_bom: bool) -> M11Simpl
                 };
             }
         }
+
+        if let Some(heading) = facts.atx_heading {
+            let empty = source[heading.content.start..heading.content.end]
+                .iter()
+                .all(|byte| matches!(byte, b' ' | b'\t'));
+            return M11SimpleEditLine {
+                kind: M11SimpleEditLineKind::AtxHeading {
+                    prefix: heading.opening_marker.start..heading.content.start,
+                    content: heading.content.start..heading.content.end,
+                    empty,
+                },
+                ending,
+                content_end,
+            };
+        }
+
+        if let Some(quote) = facts.block_quote_source {
+            let residual = quote.residual;
+            let simple_child = !residual.block_quote
+                && !residual.atx_heading
+                && !residual.fence
+                && !residual.html_block_1_to_6
+                && !residual.html_block_7
+                && !residual.setext
+                && !residual.thematic_break
+                && !residual.indented_code
+                && !residual.list
+                && !residual.interrupting_list
+                && !residual.table_delimiter_candidate
+                && !residual.potential_reference_definition;
+            if simple_child {
+                let content = quote.content.start..quote.line_ending.start;
+                let empty = residual.blank
+                    || source[content.clone()]
+                        .iter()
+                        .all(|byte| matches!(byte, b' ' | b'\t'));
+                return M11SimpleEditLine {
+                    kind: M11SimpleEditLineKind::BlockQuote {
+                        prefix: quote.hidden_prefix.start..quote.hidden_prefix.end,
+                        content,
+                        empty,
+                    },
+                    ending,
+                    content_end,
+                };
+            }
+        }
     }
 
     let starts_contextual_block = facts.blank
@@ -225,8 +282,8 @@ mod tests {
     #[test]
     fn contextual_and_complex_constructs_fail_closed() {
         for source in [
-            "# heading\n",
-            "> quote\n",
+            "> > nested\n",
+            "> # child heading\n",
             "- # child heading\n",
             "```\n",
             "---\n",
@@ -240,6 +297,30 @@ mod tests {
                 "{source:?}"
             );
         }
+    }
+
+    #[test]
+    fn exposes_atx_and_simple_quote_prefix_geometry() {
+        assert_eq!(
+            classify_m11_simple_edit_line(b"  ## heading\n", false).kind,
+            M11SimpleEditLineKind::AtxHeading {
+                prefix: 2..5,
+                content: 5..12,
+                empty: false,
+            }
+        );
+        assert_eq!(
+            classify_m11_simple_edit_line(b"> quote\n", false).kind,
+            M11SimpleEditLineKind::BlockQuote {
+                prefix: 0..2,
+                content: 2..7,
+                empty: false,
+            }
+        );
+        assert!(matches!(
+            classify_m11_simple_edit_line(b"> \n", false).kind,
+            M11SimpleEditLineKind::BlockQuote { empty: true, .. }
+        ));
     }
 
     #[test]

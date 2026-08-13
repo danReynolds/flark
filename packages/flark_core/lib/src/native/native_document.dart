@@ -114,13 +114,18 @@ const _editPresentationContinueList = 2;
 const _editPresentationExitList = 3;
 const _editPresentationMergeParagraph = 4;
 const _editPresentationLiftList = 5;
+const _editPresentationContinueBlockQuote = 6;
+const _editPresentationExitBlockQuote = 7;
+const _editPresentationLiftBlockQuote = 8;
+const _editPresentationExitHeading = 9;
+const _editPresentationLiftHeading = 10;
 const _bulkCommitWorkUnits = 1;
 const _resultPayloadBytes = 64 * 1024;
 const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 12;
+const _abiMinor = 13;
 // Every v4.7 capability is used by the safe core boundary, including
 // resumable close and snapshot continuations.
 const _requiredCapabilityBits = 0x3ffff;
@@ -171,6 +176,11 @@ enum FlarkNativeEditPresentationTransitionV1 {
   exitList,
   mergeParagraph,
   liftList,
+  continueBlockQuote,
+  exitBlockQuote,
+  liftBlockQuote,
+  exitHeading,
+  liftHeading,
 }
 
 final class FlarkNativeEditIntentReceiptV1 {
@@ -878,6 +888,16 @@ final class FlarkNativeDocument {
           FlarkNativeEditPresentationTransitionV1.mergeParagraph,
         _editPresentationLiftList =>
           FlarkNativeEditPresentationTransitionV1.liftList,
+        _editPresentationContinueBlockQuote =>
+          FlarkNativeEditPresentationTransitionV1.continueBlockQuote,
+        _editPresentationExitBlockQuote =>
+          FlarkNativeEditPresentationTransitionV1.exitBlockQuote,
+        _editPresentationLiftBlockQuote =>
+          FlarkNativeEditPresentationTransitionV1.liftBlockQuote,
+        _editPresentationExitHeading =>
+          FlarkNativeEditPresentationTransitionV1.exitHeading,
+        _editPresentationLiftHeading =>
+          FlarkNativeEditPresentationTransitionV1.liftHeading,
         _ => throw FlarkNativeException(
           'edit_intent_v1',
           _internalFault,

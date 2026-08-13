@@ -165,6 +165,97 @@ void main() {
   );
 
   test(
+    'block quote Return continues, empty Return exits, and Backspace lifts',
+    () async {
+      const source = '> alpha';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      var row = controller.rows.first;
+      controller.activateRow(row, row.editableUtf16!.end);
+
+      controller.insertNewline();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, '> alpha\n> ');
+
+      controller.insertNewline();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, '> alpha\n\n');
+
+      await controller.undo();
+      await controller.undo();
+      expect(controller.visibleSource, source);
+      row = controller.rows.first;
+      controller.activateRow(row, row.editableUtf16!.start);
+      controller.deleteBackward();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, 'alpha');
+      expect(controller.surfaceRow(controller.rows.first).leadingText, '');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'ATX heading Return creates plain space and Backspace lifts the prefix',
+    () async {
+      const source = '## Head';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      var row = controller.rows.first;
+      controller.activateRow(row, row.editableUtf16!.end);
+
+      controller.insertNewline();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, '## Head\n\n');
+
+      await controller.undo();
+      expect(controller.visibleSource, source);
+      row = controller.rows.first;
+      controller.activateRow(row, row.editableUtf16!.start);
+      controller.deleteBackward();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, 'Head');
+      expect(controller.surfaceRow(controller.rows.first).kind, 5);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'an empty ATX heading exposes its real caret and exits on Return',
+    () async {
+      const source = '# ';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      final row = controller.rows.first;
+      expect(row.editableUtf16!.start, 2);
+      expect(row.editableUtf16!.end, 2);
+      controller.activateRow(row, row.editableUtf16!.start);
+
+      controller.insertNewline();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, '\n');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'parser-authorized ordinary edits retain projection while pending',
     () async {
       const source = '**bold** after\n';

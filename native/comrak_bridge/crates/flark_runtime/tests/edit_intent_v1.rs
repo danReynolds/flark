@@ -47,6 +47,69 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             expected_transition: DocumentEditPresentationTransitionV1::SplitParagraph,
         },
         IntentCase {
+            name: "ATX heading Return creates a plain successor",
+            initial: "# head",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 6,
+            expected: "# head\n\n",
+            expected_selection_utf16: 8,
+            expected_transition: DocumentEditPresentationTransitionV1::SplitParagraph,
+        },
+        IntentCase {
+            name: "empty ATX heading exits",
+            initial: "# ",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 2,
+            expected: "\n",
+            expected_selection_utf16: 1,
+            expected_transition: DocumentEditPresentationTransitionV1::ExitHeading,
+        },
+        IntentCase {
+            name: "indented empty ATX heading preserves indentation",
+            initial: "  ## ",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 5,
+            expected: "  \n",
+            expected_selection_utf16: 3,
+            expected_transition: DocumentEditPresentationTransitionV1::ExitHeading,
+        },
+        IntentCase {
+            name: "ATX heading prefix lifts",
+            initial: "## Head\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 3,
+            expected: "Head\n",
+            expected_selection_utf16: 0,
+            expected_transition: DocumentEditPresentationTransitionV1::LiftHeading,
+        },
+        IntentCase {
+            name: "simple quote continues",
+            initial: "> alpha",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 7,
+            expected: "> alpha\n> ",
+            expected_selection_utf16: 10,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueBlockQuote,
+        },
+        IntentCase {
+            name: "empty quote exits",
+            initial: "> ",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 2,
+            expected: "\n",
+            expected_selection_utf16: 1,
+            expected_transition: DocumentEditPresentationTransitionV1::ExitBlockQuote,
+        },
+        IntentCase {
+            name: "quote prefix lifts",
+            initial: "> alpha\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 2,
+            expected: "alpha\n",
+            expected_selection_utf16: 0,
+            expected_transition: DocumentEditPresentationTransitionV1::LiftBlockQuote,
+        },
+        IntentCase {
             name: "unordered continuation",
             initial: "- alpha\n",
             intent: DocumentEditIntentV1::InsertParagraphBreak,
@@ -206,7 +269,12 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
 
 #[test]
 fn complex_context_fails_closed_and_composition_never_mutates() {
-    for initial in ["> quote\n", "# heading\n", "```\ncode\n```\n"] {
+    for initial in [
+        "> > nested\n",
+        "> # child heading\n",
+        "Setext\n---\n",
+        "```\ncode\n```\n",
+    ] {
         let mut document = DocumentSession::begin(initial).expect("begin complex fixture");
         pump_ready(&mut document);
         let before = source(&document);
@@ -298,6 +366,31 @@ fn initial_pending_exact_context_preserves_task_semantics() {
     );
     assert_eq!(source(&document), "- [x] task\n- [ ] \n");
     document.close().expect("close pending task");
+}
+
+#[test]
+fn parser_pending_quote_continues_then_exits_without_pumping() {
+    let mut document = DocumentSession::begin("> alpha").expect("begin pending quote");
+    let continued = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 7, false)
+        .expect("continue pending quote");
+    assert_eq!(
+        continued.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(source(&document), "> alpha\n> ");
+
+    let exited = document
+        .try_apply_edit_intent_v1(
+            2,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            continued.result_selection_utf16,
+            false,
+        )
+        .expect("exit pending quote");
+    assert_eq!(exited.disposition, DocumentEditIntentDispositionV1::Applied);
+    assert_eq!(source(&document), "> alpha\n\n");
+    document.close().expect("close pending quote");
 }
 
 #[test]

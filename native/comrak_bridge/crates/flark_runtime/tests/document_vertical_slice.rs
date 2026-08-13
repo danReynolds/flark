@@ -83,6 +83,27 @@ fn viewport_preserves_parser_authored_heading_level_and_style() {
 }
 
 #[test]
+fn viewport_exposes_an_empty_atx_heading_caret() {
+    let source = "# \n";
+    let mut document = DocumentSession::begin(source).expect("begin empty heading");
+    pump_ready(&mut document);
+    let viewport = document
+        .query_viewport(1, 0..source.len(), 8)
+        .expect("empty heading viewport");
+    let row = viewport.rows.first().expect("empty heading row");
+    assert_eq!(
+        row.presentation,
+        DocumentViewportRowPresentation::Heading {
+            level: 1,
+            style: DocumentHeadingStyle::Atx,
+        }
+    );
+    assert_eq!(row.editable_range, Some(2..2));
+    assert_eq!(row.editable_utf16_range, Some(2..2));
+    document.close().expect("close empty heading");
+}
+
+#[test]
 fn viewport_preserves_parser_authored_list_markers_and_prefix_geometry() {
     let source = "- alpha\n9) beta\n42) ";
     let mut document = DocumentSession::begin(source).expect("begin document");

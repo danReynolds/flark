@@ -2699,6 +2699,9 @@ final class FlarkEditorController extends ChangeNotifier {
     if (row.editableUtf16 == null) return false;
     final listItem = row.listItem;
     final simpleList = listItem != null && listItem.simpleContinuation;
+    final simpleBlockQuote = row.blockQuote?.simpleContinuation ?? false;
+    final atxHeading =
+        row.kind == 12 && row.headingStyle == FlarkHeadingStyle.atx;
     final plainParagraph =
         row.kind == 5 &&
         listItem == null &&
@@ -2707,7 +2710,7 @@ final class FlarkEditorController extends ChangeNotifier {
         row.codeBlock == null &&
         !row.thematicBreak &&
         row.table == null;
-    return plainParagraph || simpleList;
+    return plainParagraph || simpleList || simpleBlockQuote || atxHeading;
   }
 
   void _queueSemanticEdit(FlarkCoreEditIntentV1 intent) {

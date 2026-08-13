@@ -696,13 +696,18 @@ impl DocumentSession {
                         ..lease.utf16_offset_for_byte(range.end).ok()?,
                 )
             });
+        let parser_is_ready = matches!(&self.parser, ParseState::Ready(_));
         let base_edit_context = self
             .edit_context
             .as_ref()
             .filter(|context| context.revision == expected_revision)
             .cloned()
             .or_else(|| self.capture_ready_edit_context(range.start))
-            .or_else(|| self.capture_exact_edit_context(range.start));
+            .or_else(|| {
+                (!parser_is_ready)
+                    .then(|| self.capture_exact_edit_context(range.start))
+                    .flatten()
+            });
         let state = mem::replace(&mut self.parser, ParseState::Transition);
         let result = match state {
             ParseState::Ready(base) => {
@@ -958,6 +963,7 @@ impl DocumentSession {
             });
         }
 
+        let parser_is_ready = matches!(&self.parser, ParseState::Ready(_));
         let context = self
             .edit_context
             .as_ref()
@@ -968,7 +974,11 @@ impl DocumentSession {
             })
             .cloned()
             .or_else(|| self.capture_ready_edit_context(selection_byte))
-            .or_else(|| self.capture_exact_edit_context(selection_byte));
+            .or_else(|| {
+                (!parser_is_ready)
+                    .then(|| self.capture_exact_edit_context(selection_byte))
+                    .flatten()
+            });
         let Some(context) = context else {
             return Ok(DocumentEditIntentReceiptV1 {
                 disposition: DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
@@ -1068,7 +1078,35 @@ impl DocumentSession {
             row.editable_range.as_ref().is_some_and(|range| {
                 selection_byte >= range.start as usize && selection_byte <= range.end as usize
             })
-        })?;
+        });
+        let Some(current) = current else {
+            // Empty structural markers may have no renderable certified row.
+            // Admit only an exact, isolated empty construct in that case.
+            return self
+                .capture_exact_edit_context(selection_byte)
+                .filter(|context| {
+                    matches!(
+                        context.row,
+                        DocumentSimpleEditRow::AtxHeading { empty: true, .. }
+                            | DocumentSimpleEditRow::BlockQuote { empty: true, .. }
+                            | DocumentSimpleEditRow::ListItem { empty: true, .. }
+                    )
+                });
+        };
+        if matches!(
+            current.presentation,
+            DocumentViewportRowPresentation::Heading {
+                style: DocumentHeadingStyle::Atx,
+                ..
+            }
+        ) {
+            // Level/style is certified above. Only marker geometry comes from
+            // the bounded exact classifier, so it cannot override Setext or a
+            // different certified construct.
+            return self
+                .capture_exact_edit_context(selection_byte)
+                .filter(|context| matches!(context.row, DocumentSimpleEditRow::AtxHeading { .. }));
+        }
         let source_bytes = u64_range_to_usize(&current.source_range)?;
         let source_utf16 = u64_range_to_usize(&current.source_utf16_range)?;
         let editable_bytes = u64_range_to_usize(current.editable_range.as_ref()?)?;
@@ -1103,6 +1141,27 @@ impl DocumentSession {
                 task_checked,
                 empty: current.kind == 14 || editable_bytes.is_empty(),
             },
+            DocumentViewportRowPresentation::BlockQuote {
+                prefix_start_byte,
+                prefix_end_byte,
+                prefix_start_utf16,
+                prefix_end_utf16,
+                nesting_depth: 1,
+                simple_continuation: true,
+            } => {
+                let prefix_bytes = usize::try_from(prefix_start_byte).ok()?
+                    ..usize::try_from(prefix_end_byte).ok()?;
+                let prefix_text =
+                    String::from_utf8(self.source_bytes(prefix_bytes.clone()).ok()?).ok()?;
+                DocumentSimpleEditRow::BlockQuote {
+                    prefix_bytes,
+                    prefix_utf16: usize::try_from(prefix_start_utf16).ok()?
+                        ..usize::try_from(prefix_end_utf16).ok()?,
+                    prefix_text,
+                    starts_quote: true,
+                    empty: editable_bytes.is_empty(),
+                }
+            }
             _ => return None,
         };
 
@@ -1198,6 +1257,56 @@ impl DocumentSession {
                         empty,
                     },
                     editable,
+                )
+            }
+            M11SimpleEditLineKind::AtxHeading {
+                prefix,
+                content,
+                empty,
+            } => {
+                let prefix_bytes = line_start + prefix.start..line_start + prefix.end;
+                let prefix_utf16 = lease.utf16_offset_for_byte(prefix_bytes.start).ok()?
+                    ..lease.utf16_offset_for_byte(prefix_bytes.end).ok()?;
+                (
+                    DocumentSimpleEditRow::AtxHeading {
+                        prefix_bytes,
+                        prefix_utf16,
+                        empty,
+                    },
+                    line_start + content.start..line_start + content.end,
+                )
+            }
+            M11SimpleEditLineKind::BlockQuote {
+                prefix,
+                content,
+                empty,
+            } => {
+                if !exact_simple_block_quote_is_isolated(
+                    &window,
+                    window_start,
+                    window_end,
+                    self.source_byte_len(),
+                    local_line_start,
+                    local_line_end,
+                ) {
+                    return None;
+                }
+                let prefix_bytes = line_start + prefix.start..line_start + prefix.end;
+                let prefix_utf16 = lease.utf16_offset_for_byte(prefix_bytes.start).ok()?
+                    ..lease.utf16_offset_for_byte(prefix_bytes.end).ok()?;
+                let prefix_text = String::from_utf8(
+                    window[local_line_start + prefix.start..local_line_start + prefix.end].to_vec(),
+                )
+                .ok()?;
+                (
+                    DocumentSimpleEditRow::BlockQuote {
+                        prefix_bytes,
+                        prefix_utf16,
+                        prefix_text,
+                        starts_quote: true,
+                        empty,
+                    },
+                    line_start + content.start..line_start + content.end,
                 )
             }
             M11SimpleEditLineKind::Unsupported => return None,
@@ -1314,8 +1423,13 @@ impl DocumentSession {
         context.source_utf16.end = add_signed(context.source_utf16.end, utf16_delta)?;
         context.editable_bytes.end = add_signed(context.editable_bytes.end, byte_delta)?;
         context.editable_utf16.end = add_signed(context.editable_utf16.end, utf16_delta)?;
-        if let DocumentSimpleEditRow::ListItem { empty, .. } = &mut context.row {
-            *empty = context.editable_bytes.is_empty();
+        match &mut context.row {
+            DocumentSimpleEditRow::ListItem { empty, .. }
+            | DocumentSimpleEditRow::AtxHeading { empty, .. }
+            | DocumentSimpleEditRow::BlockQuote { empty, .. } => {
+                *empty = context.editable_bytes.is_empty();
+            }
+            DocumentSimpleEditRow::Plain => {}
         }
         self.validate_transformed_edit_context(&context)
             .then_some(context)
@@ -1324,7 +1438,9 @@ impl DocumentSession {
     fn validate_transformed_edit_context(&self, context: &DocumentSimpleEditContext) -> bool {
         let line_start = match &context.row {
             DocumentSimpleEditRow::Plain => context.source_bytes.start,
-            DocumentSimpleEditRow::ListItem { prefix_bytes, .. } => prefix_bytes.start,
+            DocumentSimpleEditRow::ListItem { prefix_bytes, .. }
+            | DocumentSimpleEditRow::AtxHeading { prefix_bytes, .. }
+            | DocumentSimpleEditRow::BlockQuote { prefix_bytes, .. } => prefix_bytes.start,
         };
         if line_start > context.source_bytes.end {
             return false;
@@ -1362,6 +1478,23 @@ impl DocumentSession {
                     && prefix.end == prefix_bytes.end.saturating_sub(line_start)
                     && classified_offset == *marker_offset
                     && classified_task_checked == *task_checked
+            }
+            (
+                DocumentSimpleEditRow::AtxHeading { prefix_bytes, .. },
+                M11SimpleEditLineKind::AtxHeading { prefix, .. },
+            ) => prefix.end == prefix_bytes.end.saturating_sub(line_start),
+            (
+                DocumentSimpleEditRow::BlockQuote {
+                    prefix_bytes,
+                    prefix_text,
+                    ..
+                },
+                M11SimpleEditLineKind::BlockQuote { prefix, .. },
+            ) => {
+                prefix.end == prefix_bytes.end.saturating_sub(line_start)
+                    && source
+                        .get(prefix)
+                        .is_some_and(|bytes| bytes == prefix_text.as_bytes())
             }
             _ => false,
         }
@@ -1827,6 +1960,43 @@ fn previous_line_ending_start(source: &[u8], end: usize) -> Option<usize> {
     }
 }
 
+fn exact_simple_block_quote_is_isolated(
+    window: &[u8],
+    window_start: usize,
+    window_end: usize,
+    source_len: usize,
+    line_start: usize,
+    line_end: usize,
+) -> bool {
+    let separated_before = if line_start == 0 {
+        window_start == 0
+    } else {
+        let Some(previous_ending) = previous_line_ending_start(window, line_start) else {
+            return false;
+        };
+        let previous_start = window[..previous_ending]
+            .iter()
+            .rposition(|byte| matches!(byte, b'\r' | b'\n'))
+            .map_or(0, |index| index + 1);
+        (previous_start != 0 || window_start == 0)
+            && physical_line_is_blank(&window[previous_start..line_start])
+    };
+    if !separated_before {
+        return false;
+    }
+    if line_end == window.len() {
+        return window_end == source_len;
+    }
+    let next_end = line_end_in_window(window, line_end);
+    physical_line_is_blank(&window[line_end..next_end])
+}
+
+fn physical_line_is_blank(source: &[u8]) -> bool {
+    source
+        .iter()
+        .all(|byte| matches!(byte, b' ' | b'\t' | b'\r' | b'\n'))
+}
+
 fn exact_plain_paragraph_merge(
     lease: &SourceSnapshotLease,
     window: &[u8],
@@ -2241,6 +2411,20 @@ fn document_viewport_row(
     let source_utf16_range = row.physical_utf16_range();
     let mut editable_range = row.editable_range();
     let mut editable_utf16_range = row.editable_utf16_range();
+    if matches!(
+        presentation,
+        DocumentViewportRowPresentation::Heading {
+            style: DocumentHeadingStyle::Atx,
+            ..
+        }
+    ) && editable_range.as_ref().is_some_and(Range::is_empty)
+    {
+        if let Some((exact_bytes, exact_utf16)) = certified_empty_atx_heading_editable(runtime, row)
+        {
+            editable_range = Some(exact_bytes);
+            editable_utf16_range = Some(exact_utf16);
+        }
+    }
     if let DocumentViewportRowPresentation::ListItem {
         prefix_end_byte,
         prefix_end_utf16,
@@ -2288,6 +2472,49 @@ fn document_viewport_row(
         inline_facts,
         path_depth: u32::try_from(row.path().len()).unwrap_or(u32::MAX),
     })
+}
+
+fn certified_empty_atx_heading_editable(
+    runtime: &DocumentRuntime,
+    row: &M11RecursiveGreenRenderableRow,
+) -> Option<(Range<u64>, Range<u64>)> {
+    let frame = row.path().last()?;
+    let frame_bytes = frame.physical_range();
+    let frame_utf16 = frame.physical_utf16_range();
+    let length = usize::try_from(frame_bytes.end.checked_sub(frame_bytes.start)?).ok()?;
+    if length > M11_SIMPLE_EDIT_LINE_MAX_BYTES {
+        return None;
+    }
+    let start = usize::try_from(frame_bytes.start).ok()?;
+    let end = usize::try_from(frame_bytes.end).ok()?;
+    let mut source = vec![0_u8; length];
+    if runtime
+        .read_current_source_window(start..end, &mut source)
+        .ok()?
+        != length
+    {
+        return None;
+    }
+    let classified = classify_m11_simple_edit_line(&source, start == 0);
+    let M11SimpleEditLineKind::AtxHeading { content, empty, .. } = classified.kind else {
+        return None;
+    };
+    if !empty {
+        return None;
+    }
+    let content_start_utf16 = std::str::from_utf8(source.get(..content.start)?)
+        .ok()?
+        .encode_utf16()
+        .count();
+    let content_end_utf16 = std::str::from_utf8(source.get(..content.end)?)
+        .ok()?
+        .encode_utf16()
+        .count();
+    Some((
+        frame_bytes.start + content.start as u64..frame_bytes.start + content.end as u64,
+        frame_utf16.start + content_start_utf16 as u64
+            ..frame_utf16.start + content_end_utf16 as u64,
+    ))
 }
 
 fn document_inline_facts(

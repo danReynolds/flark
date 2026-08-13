@@ -28,6 +28,11 @@ pub enum DocumentEditPresentationTransitionV1 {
     ExitList,
     MergeParagraph,
     LiftList,
+    ContinueBlockQuote,
+    ExitBlockQuote,
+    LiftBlockQuote,
+    ExitHeading,
+    LiftHeading,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -101,6 +106,18 @@ pub(crate) enum DocumentSimpleEditRow {
         marker_offset: u8,
         starts_list: bool,
         task_checked: Option<bool>,
+        empty: bool,
+    },
+    AtxHeading {
+        prefix_bytes: Range<usize>,
+        prefix_utf16: Range<usize>,
+        empty: bool,
+    },
+    BlockQuote {
+        prefix_bytes: Range<usize>,
+        prefix_utf16: Range<usize>,
+        prefix_text: String,
+        starts_quote: bool,
         empty: bool,
     },
 }
@@ -185,6 +202,119 @@ pub(crate) fn resolve_document_edit_intent_v1(
         }
         (
             DocumentEditIntentV1::InsertParagraphBreak,
+            DocumentSimpleEditRow::AtxHeading {
+                prefix_bytes,
+                prefix_utf16,
+                empty,
+            },
+        ) => {
+            if *empty || context.editable_bytes.is_empty() {
+                let replacement = if context.source_bytes.end == prefix_bytes.end {
+                    context.ending.text().to_owned()
+                } else {
+                    String::new()
+                };
+                return clear_prefixed_row(
+                    context,
+                    prefix_bytes.clone(),
+                    prefix_utf16.clone(),
+                    replacement,
+                    DocumentEditPresentationTransitionV1::ExitHeading,
+                );
+            }
+            let ending = context.ending.text();
+            let replacement = format!("{ending}{ending}");
+            let result_selection_utf16 = selection_utf16 + replacement.encode_utf16().count();
+            let splice = splice(
+                selection_byte..selection_byte,
+                selection_utf16..selection_utf16,
+                replacement,
+            );
+            let byte_delta = splice.replacement.len();
+            let utf16_delta = splice.replacement.encode_utf16().count();
+            let result_context = DocumentSimpleEditContext {
+                revision: context.revision + 1,
+                source_bytes: selection_byte + byte_delta..context.source_bytes.end + byte_delta,
+                source_utf16: selection_utf16 + utf16_delta..context.source_utf16.end + utf16_delta,
+                editable_bytes: selection_byte + byte_delta
+                    ..context.editable_bytes.end + byte_delta,
+                editable_utf16: selection_utf16 + utf16_delta
+                    ..context.editable_utf16.end + utf16_delta,
+                ending: context.ending,
+                row: DocumentSimpleEditRow::Plain,
+                paragraph_merge: None,
+            };
+            applied(
+                splice,
+                result_selection_utf16,
+                Some(result_context),
+                DocumentEditPresentationTransitionV1::SplitParagraph,
+            )
+        }
+        (
+            DocumentEditIntentV1::InsertParagraphBreak,
+            DocumentSimpleEditRow::BlockQuote {
+                prefix_bytes,
+                prefix_utf16,
+                prefix_text,
+                starts_quote,
+                empty,
+            },
+        ) => {
+            if *empty || context.editable_bytes.is_empty() {
+                let replacement = if context.source_bytes.end == prefix_bytes.end || !starts_quote {
+                    context.ending.text().to_owned()
+                } else {
+                    String::new()
+                };
+                return clear_prefixed_row(
+                    context,
+                    prefix_bytes.clone(),
+                    prefix_utf16.clone(),
+                    replacement,
+                    DocumentEditPresentationTransitionV1::ExitBlockQuote,
+                );
+            }
+            let replacement = format!("{}{prefix_text}", context.ending.text());
+            let result_selection_utf16 = selection_utf16 + replacement.encode_utf16().count();
+            let splice = splice(
+                selection_byte..selection_byte,
+                selection_utf16..selection_utf16,
+                replacement,
+            );
+            let byte_delta = splice.replacement.len();
+            let utf16_delta = splice.replacement.encode_utf16().count();
+            let ending_bytes = context.ending.text().len();
+            let ending_utf16 = context.ending.text().encode_utf16().count();
+            let prefix_start_byte = selection_byte + ending_bytes;
+            let prefix_start_utf16 = selection_utf16 + ending_utf16;
+            let result_context = DocumentSimpleEditContext {
+                revision: context.revision + 1,
+                source_bytes: selection_byte + byte_delta..context.source_bytes.end + byte_delta,
+                source_utf16: selection_utf16 + utf16_delta..context.source_utf16.end + utf16_delta,
+                editable_bytes: selection_byte + byte_delta
+                    ..context.editable_bytes.end + byte_delta,
+                editable_utf16: selection_utf16 + utf16_delta
+                    ..context.editable_utf16.end + utf16_delta,
+                ending: context.ending,
+                row: DocumentSimpleEditRow::BlockQuote {
+                    prefix_bytes: prefix_start_byte..selection_byte + byte_delta,
+                    prefix_utf16: prefix_start_utf16..selection_utf16 + utf16_delta,
+                    prefix_text: prefix_text.clone(),
+                    starts_quote: false,
+                    empty: selection_byte == context.editable_bytes.end,
+                },
+                paragraph_merge: None,
+            };
+            applied(
+                splice,
+                result_selection_utf16,
+                Some(result_context),
+                DocumentEditPresentationTransitionV1::ContinueBlockQuote,
+            )
+        }
+        (
+            DocumentEditIntentV1::InsertParagraphBreak,
             DocumentSimpleEditRow::ListItem {
                 marker,
                 prefix_bytes,
@@ -209,39 +339,11 @@ pub(crate) fn resolve_document_edit_intent_v1(
                 } else {
                     String::new()
                 };
-                let splice = splice(prefix_bytes.clone(), prefix_utf16.clone(), replacement);
-                let result_selection_utf16 =
-                    prefix_utf16.start + splice.replacement.encode_utf16().count();
-                let removed_bytes = prefix_bytes.end - prefix_bytes.start;
-                let removed_utf16 = prefix_utf16.end - prefix_utf16.start;
-                let replacement_bytes = splice.replacement.len();
-                let replacement_utf16 = splice.replacement.encode_utf16().count();
-                let result_context = DocumentSimpleEditContext {
-                    revision: context.revision + 1,
-                    source_bytes: prefix_bytes.start
-                        ..context
-                            .source_bytes
-                            .end
-                            .saturating_sub(removed_bytes)
-                            .saturating_add(replacement_bytes),
-                    source_utf16: prefix_utf16.start
-                        ..context
-                            .source_utf16
-                            .end
-                            .saturating_sub(removed_utf16)
-                            .saturating_add(replacement_utf16),
-                    editable_bytes: prefix_bytes.start + replacement_bytes
-                        ..prefix_bytes.start + replacement_bytes,
-                    editable_utf16: prefix_utf16.start + replacement_utf16
-                        ..prefix_utf16.start + replacement_utf16,
-                    ending: context.ending,
-                    row: DocumentSimpleEditRow::Plain,
-                    paragraph_merge: None,
-                };
-                return applied(
-                    splice,
-                    result_selection_utf16,
-                    Some(result_context),
+                return clear_prefixed_row(
+                    context,
+                    prefix_bytes.clone(),
+                    prefix_utf16.clone(),
+                    replacement,
                     DocumentEditPresentationTransitionV1::ExitList,
                 );
             }
@@ -294,6 +396,47 @@ pub(crate) fn resolve_document_edit_intent_v1(
         }
         (
             DocumentEditIntentV1::DeleteBackward,
+            DocumentSimpleEditRow::AtxHeading {
+                prefix_bytes,
+                prefix_utf16,
+                ..
+            },
+        ) if selection_byte == context.editable_bytes.start
+            && selection_utf16 == context.editable_utf16.start =>
+        {
+            clear_prefixed_row(
+                context,
+                prefix_bytes.clone(),
+                prefix_utf16.clone(),
+                String::new(),
+                DocumentEditPresentationTransitionV1::LiftHeading,
+            )
+        }
+        (
+            DocumentEditIntentV1::DeleteBackward,
+            DocumentSimpleEditRow::BlockQuote {
+                prefix_bytes,
+                prefix_utf16,
+                starts_quote,
+                ..
+            },
+        ) if selection_byte == context.editable_bytes.start
+            && selection_utf16 == context.editable_utf16.start =>
+        {
+            clear_prefixed_row(
+                context,
+                prefix_bytes.clone(),
+                prefix_utf16.clone(),
+                if *starts_quote {
+                    String::new()
+                } else {
+                    context.ending.text().to_owned()
+                },
+                DocumentEditPresentationTransitionV1::LiftBlockQuote,
+            )
+        }
+        (
+            DocumentEditIntentV1::DeleteBackward,
             DocumentSimpleEditRow::ListItem {
                 prefix_bytes,
                 prefix_utf16,
@@ -308,36 +451,11 @@ pub(crate) fn resolve_document_edit_intent_v1(
             } else {
                 context.ending.text().to_owned()
             };
-            let splice = splice(prefix_bytes.clone(), prefix_utf16.clone(), replacement);
-            let result_selection_utf16 =
-                prefix_utf16.start + splice.replacement.encode_utf16().count();
-            let byte_delta = splice.replacement.len() as isize
-                - (prefix_bytes.end - prefix_bytes.start) as isize;
-            let utf16_delta = splice.replacement.encode_utf16().count() as isize
-                - (prefix_utf16.end - prefix_utf16.start) as isize;
-            let content_start_byte =
-                add_signed(prefix_bytes.start, splice.replacement.len() as isize);
-            let content_start_utf16 = add_signed(
-                prefix_utf16.start,
-                splice.replacement.encode_utf16().count() as isize,
-            );
-            let result_context = DocumentSimpleEditContext {
-                revision: context.revision + 1,
-                source_bytes: content_start_byte..add_signed(context.source_bytes.end, byte_delta),
-                source_utf16: content_start_utf16
-                    ..add_signed(context.source_utf16.end, utf16_delta),
-                editable_bytes: content_start_byte
-                    ..add_signed(context.editable_bytes.end, byte_delta),
-                editable_utf16: content_start_utf16
-                    ..add_signed(context.editable_utf16.end, utf16_delta),
-                ending: context.ending,
-                row: DocumentSimpleEditRow::Plain,
-                paragraph_merge: None,
-            };
-            applied(
-                splice,
-                result_selection_utf16,
-                Some(result_context),
+            clear_prefixed_row(
+                context,
+                prefix_bytes.clone(),
+                prefix_utf16.clone(),
+                replacement,
                 DocumentEditPresentationTransitionV1::LiftList,
             )
         }
@@ -420,6 +538,38 @@ fn applied(
         result_context,
         presentation_transition,
     }
+}
+
+fn clear_prefixed_row(
+    context: &DocumentSimpleEditContext,
+    prefix_bytes: Range<usize>,
+    prefix_utf16: Range<usize>,
+    replacement: String,
+    transition: DocumentEditPresentationTransitionV1,
+) -> ResolvedDocumentEditIntentV1 {
+    let splice = splice(prefix_bytes.clone(), prefix_utf16.clone(), replacement);
+    let replacement_bytes = splice.replacement.len();
+    let replacement_utf16 = splice.replacement.encode_utf16().count();
+    let byte_delta = replacement_bytes as isize - prefix_bytes.len() as isize;
+    let utf16_delta = replacement_utf16 as isize - prefix_utf16.len() as isize;
+    let content_start_byte = add_signed(prefix_bytes.start, replacement_bytes as isize);
+    let content_start_utf16 = add_signed(prefix_utf16.start, replacement_utf16 as isize);
+    let result_context = DocumentSimpleEditContext {
+        revision: context.revision + 1,
+        source_bytes: content_start_byte..add_signed(context.source_bytes.end, byte_delta),
+        source_utf16: content_start_utf16..add_signed(context.source_utf16.end, utf16_delta),
+        editable_bytes: content_start_byte..add_signed(context.editable_bytes.end, byte_delta),
+        editable_utf16: content_start_utf16..add_signed(context.editable_utf16.end, utf16_delta),
+        ending: context.ending,
+        row: DocumentSimpleEditRow::Plain,
+        paragraph_merge: None,
+    };
+    applied(
+        splice,
+        content_start_utf16,
+        Some(result_context),
+        transition,
+    )
 }
 
 fn disposition(
