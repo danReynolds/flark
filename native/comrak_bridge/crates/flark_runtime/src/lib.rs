@@ -16,6 +16,7 @@ pub use document::{
     DocumentFenceCharacter, DocumentHeadingStyle, DocumentInlineFact, DocumentInlineFactKind,
     DocumentInlineReplacement, DocumentListDelimiter, DocumentListMarker, DocumentLiveViewport,
     DocumentLiveViewportSpan, DocumentProjectionSegment, DocumentPumpReceipt, DocumentQueryReceipt,
+    DocumentSemanticTarget, DocumentSemanticTargetKind, DocumentSemanticTargetSyntax,
     DocumentSession, DocumentSessionError, DocumentSessionPhase, DocumentViewport,
     DocumentViewportRow, DocumentViewportRowContinuityPolicy, DocumentViewportRowEditCapability,
     DocumentViewportRowPresentation, DOCUMENT_INLINE_FACT_CONTINUITY_PLAIN_TEXT,
@@ -459,6 +460,7 @@ pub enum QueryKind {
     Semantic = 2,
     SourceAndSemantic = 3,
     SemanticProjected = 4,
+    SemanticTarget = 5,
 }
 
 pub const QUERY_KINDS: &[(&str, u32)] = &[
@@ -466,6 +468,7 @@ pub const QUERY_KINDS: &[(&str, u32)] = &[
     ("SEMANTIC", QueryKind::Semantic as u32),
     ("SOURCE_AND_SEMANTIC", QueryKind::SourceAndSemantic as u32),
     ("SEMANTIC_PROJECTED", QueryKind::SemanticProjected as u32),
+    ("SEMANTIC_TARGET", QueryKind::SemanticTarget as u32),
 ];
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -474,6 +477,7 @@ pub enum ResultRecordKind {
     SourceBytes = 1,
     SemanticFacts = 2,
     SourceAndSemantic = 3,
+    SemanticTarget = 4,
 }
 
 pub const RESULT_RECORD_KINDS: &[(&str, u32)] = &[
@@ -483,6 +487,7 @@ pub const RESULT_RECORD_KINDS: &[(&str, u32)] = &[
         "SOURCE_AND_SEMANTIC",
         ResultRecordKind::SourceAndSemantic as u32,
     ),
+    ("SEMANTIC_TARGET", ResultRecordKind::SemanticTarget as u32),
 ];
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -543,6 +548,7 @@ pub const CAPABILITY_BITS: &[(&str, u64)] = &[
     ("SEMANTIC_ACTIONS_V1", 1 << 22),
     ("STAGED_SOURCE_TRANSACTIONS_V1", 1 << 23),
     ("LIST_INDENTATION_V1", 1 << 24),
+    ("SEMANTIC_TARGETS_V1", 1 << 25),
 ];
 
 pub const MAX_SMALL_EDIT_BYTES: u32 = 4096;
@@ -734,6 +740,7 @@ impl ResultPageReceipt {
                     && self.covered_range.byte_len() == self.payload_bytes as u64
             }
             (ResultRecordKind::SemanticFacts, CertificationState::CurrentCertified)
+            | (ResultRecordKind::SemanticTarget, CertificationState::CurrentCertified)
             | (ResultRecordKind::SourceAndSemantic, CertificationState::PendingNeutral)
             | (ResultRecordKind::SourceAndSemantic, CertificationState::CurrentCertified)
             | (ResultRecordKind::SourceAndSemantic, CertificationState::MixedCurrent) => {

@@ -5,6 +5,8 @@ import 'dart:math' as math;
 import 'models.dart';
 import 'native/native_document.dart';
 
+const _notReadySourceGapStatus = 8;
+
 enum FlarkCoreHistoryDisposition { retained, disabled, overBudget }
 
 enum FlarkCoreEditIntentV1 {
@@ -768,6 +770,28 @@ final class FlarkCoreDocument {
     );
   }
 
+  Future<FlarkSemanticTarget?> querySemanticTarget(FlarkInlineFact fact) async {
+    late final Map<Object?, Object?> result;
+    try {
+      result = await _request('querySemanticTarget', {
+        'fact': fact.toMessage(),
+      });
+    } on FlarkCoreNativeException catch (error) {
+      // A target lookup is an optional presentation query. Source edits may
+      // temporarily retire parser facts; callers should simply offer no target
+      // until the current revision is certified, while real native failures
+      // remain visible.
+      if (error.status == _notReadySourceGapStatus) return null;
+      rethrow;
+    }
+    return switch (result['target']) {
+      final Map<Object?, Object?> target => FlarkSemanticTarget.fromMessage(
+        target,
+      ),
+      _ => null,
+    };
+  }
+
   Future<FlarkViewport> queryViewportNext(
     FlarkViewport previous, {
     int maxRows = 256,
@@ -1221,6 +1245,13 @@ Future<void> _documentWorker(List<Object?> startup) async {
               maxRows: arguments['maxRows']! as int,
             );
             reply.send({'viewport': viewport.toMessage()});
+          case 'querySemanticTarget':
+            final target = document.querySemanticTarget(
+              FlarkInlineFact.fromMessage(
+                arguments['fact']! as Map<Object?, Object?>,
+              ),
+            );
+            reply.send({'target': target?.toMessage()});
           case 'queryViewportNext':
             final viewport = document.queryViewportNext(
               FlarkViewport.fromMessage(

@@ -3,9 +3,10 @@ use std::mem;
 use std::ops::Range;
 
 use flark_engine::parser_internal::{
-    M11InlineProjectionFact, M11InlineProjectionKind, M11RecursiveGreenPoint,
+    M11InlineLinkValue, M11InlineProjectionFact, M11InlineProjectionKind, M11RecursiveGreenPoint,
     M11RecursiveGreenRenderableRow, M11RecursiveGreenRowEditCapability,
     M11RecursiveGreenRowQueryLimits, M11RecursiveGreenRowQueryOutcome,
+    M11_INLINE_PROJECTION_FLAG_AUTOLINK_URI_WWW,
     M11_INLINE_PROJECTION_FLAG_CODE_NORMALIZE_LINE_ENDINGS,
     M11_INLINE_PROJECTION_FLAG_CODE_TRIM_ONE_SPACE,
 };
@@ -190,6 +191,41 @@ pub struct DocumentInlineFact {
     pub content_range: Range<u64>,
     pub content_utf16_range: Range<u64>,
     pub replacement: Option<DocumentInlineReplacement>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DocumentSemanticTargetKind {
+    Link,
+    Image,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DocumentSemanticTargetSyntax {
+    AutolinkUri,
+    AutolinkEmail,
+    Direct,
+    Reference,
+}
+
+/// One parser-certified link or image target resolved on demand.
+///
+/// Target values deliberately do not ride every viewport receipt: activation
+/// is outside the frame-critical path, while the exact source cuts and cooked
+/// values remain native-authoritative at the revision where they are used.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DocumentSemanticTarget {
+    pub kind: DocumentSemanticTargetKind,
+    pub syntax: DocumentSemanticTargetSyntax,
+    pub source_range: Range<u64>,
+    pub source_utf16_range: Range<u64>,
+    pub content_range: Range<u64>,
+    pub content_utf16_range: Range<u64>,
+    pub destination_source_range: Range<u64>,
+    pub destination_source_utf16_range: Range<u64>,
+    pub title_source_range: Option<Range<u64>>,
+    pub title_source_utf16_range: Option<Range<u64>>,
+    pub destination: String,
+    pub title: Option<String>,
 }
 
 /// One ordered identity-source cut in a parser-certified projected row.
@@ -2557,6 +2593,32 @@ impl DocumentSession {
         )
     }
 
+    /// Resolves one exact parser-authored link or image fact at the current
+    /// revision. This work is bounded to one inline leaf and is intentionally
+    /// performed on activation rather than on every viewport query.
+    pub fn query_semantic_target(
+        &mut self,
+        revision: u64,
+        source_range: Range<usize>,
+    ) -> Result<Option<DocumentSemanticTarget>, DocumentSessionError> {
+        let actual_revision = self.revision();
+        if revision != actual_revision {
+            return Err(DocumentSessionError::StaleRevision {
+                expected: revision,
+                actual: actual_revision,
+            });
+        }
+        if source_range.start >= source_range.end || source_range.end > self.source_byte_len() {
+            return Err(DocumentSessionError::RangeOutOfBounds);
+        }
+        let session = match &self.parser {
+            ParseState::Ready(session) => session,
+            ParseState::Faulted => return Err(DocumentSessionError::Faulted),
+            _ => return Err(DocumentSessionError::NotReady),
+        };
+        query_session_semantic_target(&mut self.runtime, session, source_range)
+    }
+
     /// Returns a current-revision live projection whose pending spans contain
     /// no semantic facts. During an incremental adoption, only ranges backed
     /// by parser-authenticated restart/convergence authority are queried from
@@ -3163,6 +3225,69 @@ mod tests {
     }
 
     #[test]
+    fn semantic_targets_are_parser_cooked_and_resolved_on_demand() {
+        let source = "[direct](https://example.com \"title\") <me@example.com> www.example.com ![alt][img]\n\n[img]: /asset.png 'cap'\n";
+        let mut document = DocumentSession::begin(source).expect("begin target document");
+        while document.pump(512).expect("pump targets").phase != DocumentSessionPhase::Ready {}
+        let revision = document.revision();
+
+        let direct_start = source.find("[direct]").expect("direct start");
+        let direct_end = source[direct_start..]
+            .find(')')
+            .map(|offset| direct_start + offset + 1)
+            .expect("direct end");
+        let direct = document
+            .query_semantic_target(revision, direct_start..direct_end)
+            .expect("query direct")
+            .expect("direct target");
+        assert_eq!(direct.kind, DocumentSemanticTargetKind::Link);
+        assert_eq!(direct.syntax, DocumentSemanticTargetSyntax::Direct);
+        assert_eq!(direct.destination, "https://example.com");
+        assert_eq!(direct.title.as_deref(), Some("title"));
+        assert_eq!(
+            &source[direct.destination_source_range.start as usize
+                ..direct.destination_source_range.end as usize],
+            "https://example.com"
+        );
+
+        let email_start = source.find("<me@example.com>").expect("email start");
+        let email_end = email_start + "<me@example.com>".len();
+        let email = document
+            .query_semantic_target(revision, email_start..email_end)
+            .expect("query email")
+            .expect("email target");
+        assert_eq!(email.syntax, DocumentSemanticTargetSyntax::AutolinkEmail);
+        assert_eq!(email.destination, "mailto:me@example.com");
+
+        let www_start = source.find("www.example.com").expect("www start");
+        let www_end = www_start + "www.example.com".len();
+        let www = document
+            .query_semantic_target(revision, www_start..www_end)
+            .expect("query www")
+            .expect("www target");
+        assert_eq!(www.syntax, DocumentSemanticTargetSyntax::AutolinkUri);
+        assert_eq!(www.destination, "http://www.example.com");
+
+        let image_start = source.find("![alt][img]").expect("image start");
+        let image_end = image_start + "![alt][img]".len();
+        let image = document
+            .query_semantic_target(revision, image_start..image_end)
+            .expect("query image")
+            .expect("image target");
+        assert_eq!(image.kind, DocumentSemanticTargetKind::Image);
+        assert_eq!(image.syntax, DocumentSemanticTargetSyntax::Reference);
+        assert_eq!(image.destination, "/asset.png");
+        assert_eq!(image.title.as_deref(), Some("cap"));
+        assert_eq!(
+            &source[image.destination_source_range.start as usize
+                ..image.destination_source_range.end as usize],
+            "/asset.png"
+        );
+
+        document.close().expect("close target document");
+    }
+
+    #[test]
     fn dense_capacity_fault_has_a_fast_bounded_reclamation_probe() {
         const PAYLOAD_BUDGET: usize = 1024 * 1024;
         let source = "x.\n\n".repeat(32 * 1024);
@@ -3261,6 +3386,161 @@ fn query_session_viewport(
             maximum_open_depth: receipt.maximum_open_depth(),
         },
     })
+}
+
+fn query_session_semantic_target(
+    runtime: &mut DocumentRuntime,
+    session: &M11PersistentRecursiveGreenSession,
+    source_range: Range<usize>,
+) -> Result<Option<DocumentSemanticTarget>, DocumentSessionError> {
+    let lease = runtime.snapshot_current_source()?;
+    let utf16 = lease.utf16_offset_for_byte(source_range.start)?;
+    let limits = row_query_limits(1).ok_or(DocumentSessionError::RangeOutOfBounds)?;
+    let outcome = session.query_renderable_rows_bounded(
+        runtime,
+        M11RecursiveGreenPoint::new(source_range.start, utf16, SourceBoundaryAffinity::After),
+        source_range.end as u64,
+        limits,
+    )?;
+    let window = match outcome {
+        M11RecursiveGreenRowQueryOutcome::Window(window) => window,
+        M11RecursiveGreenRowQueryOutcome::BudgetExceeded(_) => {
+            return Err(DocumentSessionError::QueryBudgetExceeded)
+        }
+    };
+    let requested = source_range.start as u64..source_range.end as u64;
+    let Some(row) = window.rows().iter().find(|row| {
+        let physical = row.physical_range();
+        physical.start <= requested.start && physical.end >= requested.end
+    }) else {
+        return Ok(None);
+    };
+    let Some(captured) = capture_document_inline_projection(runtime, session, row)? else {
+        return Ok(None);
+    };
+    map_document_semantic_target(runtime, captured, requested)
+}
+
+fn map_document_semantic_target(
+    runtime: &DocumentRuntime,
+    captured: CapturedDocumentInlineProjection,
+    requested: Range<u64>,
+) -> Result<Option<DocumentSemanticTarget>, DocumentSessionError> {
+    let Some((ordinal, fact)) = captured.facts.iter().enumerate().find(|(_, fact)| {
+        absolute_inline_range(captured.inline_source.start, fact.relative_range())
+            .is_ok_and(|range| range == requested)
+    }) else {
+        return Ok(None);
+    };
+    let (kind, syntax) = match fact.kind() {
+        M11InlineProjectionKind::AutolinkUri => (
+            DocumentSemanticTargetKind::Link,
+            DocumentSemanticTargetSyntax::AutolinkUri,
+        ),
+        M11InlineProjectionKind::AutolinkEmail => (
+            DocumentSemanticTargetKind::Link,
+            DocumentSemanticTargetSyntax::AutolinkEmail,
+        ),
+        M11InlineProjectionKind::DirectLink => (
+            DocumentSemanticTargetKind::Link,
+            DocumentSemanticTargetSyntax::Direct,
+        ),
+        M11InlineProjectionKind::DirectImage => (
+            DocumentSemanticTargetKind::Image,
+            DocumentSemanticTargetSyntax::Direct,
+        ),
+        M11InlineProjectionKind::ReferenceLink => (
+            DocumentSemanticTargetKind::Link,
+            DocumentSemanticTargetSyntax::Reference,
+        ),
+        M11InlineProjectionKind::ReferenceImage => (
+            DocumentSemanticTargetKind::Image,
+            DocumentSemanticTargetSyntax::Reference,
+        ),
+        _ => return Ok(None),
+    };
+    let source_range = requested;
+    let content_range =
+        absolute_inline_range(captured.inline_source.start, fact.relative_content_range())?;
+    let (destination_source_range, title_source_range, destination, title) = match syntax {
+        DocumentSemanticTargetSyntax::AutolinkUri | DocumentSemanticTargetSyntax::AutolinkEmail => {
+            let visible = read_utf8_source_range(runtime, &content_range)?;
+            let destination = match syntax {
+                DocumentSemanticTargetSyntax::AutolinkUri
+                    if fact.flags() & M11_INLINE_PROJECTION_FLAG_AUTOLINK_URI_WWW != 0 =>
+                {
+                    format!("http://{visible}")
+                }
+                DocumentSemanticTargetSyntax::AutolinkEmail => format!("mailto:{visible}"),
+                _ => visible,
+            };
+            (content_range.clone(), None, destination, None)
+        }
+        DocumentSemanticTargetSyntax::Direct | DocumentSemanticTargetSyntax::Reference => {
+            let value = captured
+                .link_values
+                .iter()
+                .find(|value| value.parent_fact_ordinal() as usize == ordinal)
+                .ok_or(DocumentSessionError::Faulted)?;
+            let direct = syntax == DocumentSemanticTargetSyntax::Direct;
+            let destination_source_range = if direct {
+                absolute_inline_range(
+                    captured.inline_source.start,
+                    value.destination_source_range().clone(),
+                )?
+            } else {
+                u64::from(value.destination_source_range().start)
+                    ..u64::from(value.destination_source_range().end)
+            };
+            let title_source_range = value
+                .title_source_range()
+                .map(|range| {
+                    if direct {
+                        absolute_inline_range(captured.inline_source.start, range.clone())
+                    } else {
+                        Ok(u64::from(range.start)..u64::from(range.end))
+                    }
+                })
+                .transpose()?;
+            (
+                destination_source_range,
+                title_source_range,
+                value.cooked_destination().to_owned(),
+                value.cooked_title().map(str::to_owned),
+            )
+        }
+    };
+    let lease = runtime.snapshot_current_source()?;
+    Ok(Some(DocumentSemanticTarget {
+        kind,
+        syntax,
+        source_utf16_range: source_utf16_range(&lease, &source_range)?,
+        content_utf16_range: source_utf16_range(&lease, &content_range)?,
+        destination_source_utf16_range: source_utf16_range(&lease, &destination_source_range)?,
+        title_source_utf16_range: title_source_range
+            .as_ref()
+            .map(|range| source_utf16_range(&lease, range))
+            .transpose()?,
+        source_range,
+        content_range,
+        destination_source_range,
+        title_source_range,
+        destination,
+        title,
+    }))
+}
+
+fn read_utf8_source_range(
+    runtime: &DocumentRuntime,
+    range: &Range<u64>,
+) -> Result<String, DocumentSessionError> {
+    let start = usize::try_from(range.start).map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
+    let end = usize::try_from(range.end).map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
+    let mut bytes = vec![0_u8; end.saturating_sub(start)];
+    if runtime.read_current_source_window(start..end, &mut bytes)? != bytes.len() {
+        return Err(DocumentSessionError::RangeOutOfBounds);
+    }
+    String::from_utf8(bytes).map_err(|_| DocumentSessionError::Faulted)
 }
 
 fn document_viewport_row(
@@ -3530,11 +3810,34 @@ fn certified_empty_atx_heading_editable(
     ))
 }
 
+struct CapturedDocumentInlineProjection {
+    inline_source: Range<u32>,
+    editable: Range<u64>,
+    facts: Vec<M11InlineProjectionFact>,
+    link_values: Vec<M11InlineLinkValue>,
+}
+
 fn document_inline_facts(
     runtime: &mut DocumentRuntime,
     session: &M11PersistentRecursiveGreenSession,
     row: &M11RecursiveGreenRenderableRow,
 ) -> Result<Option<Vec<DocumentInlineFact>>, DocumentSessionError> {
+    let Some(captured) = capture_document_inline_projection(runtime, session, row)? else {
+        return Ok(None);
+    };
+    map_document_inline_facts(
+        runtime,
+        captured.inline_source,
+        captured.editable,
+        captured.facts,
+    )
+}
+
+fn capture_document_inline_projection(
+    runtime: &mut DocumentRuntime,
+    session: &M11PersistentRecursiveGreenSession,
+    row: &M11RecursiveGreenRenderableRow,
+) -> Result<Option<CapturedDocumentInlineProjection>, DocumentSessionError> {
     if M11RecursiveGreenInlineLeafKind::from_green_kind(row.kind()).is_none()
         || row.edit_capability() != M11RecursiveGreenRowEditCapability::Contiguous
     {
@@ -3609,8 +3912,16 @@ fn document_inline_facts(
     let facts = job
         .take_projected_facts()
         .ok_or(DocumentSessionError::Faulted)?;
+    let link_values = job
+        .take_projected_link_values()
+        .ok_or(DocumentSessionError::Faulted)?;
     abort_inline_fact_job(runtime, &mut job)?;
-    map_document_inline_facts(runtime, inline_source, editable, facts)
+    Ok(Some(CapturedDocumentInlineProjection {
+        inline_source,
+        editable,
+        facts,
+        link_values,
+    }))
 }
 
 fn abort_inline_fact_job(

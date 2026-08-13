@@ -852,6 +852,32 @@ final class FlarkV4InlineFactRecord extends Struct {
   external int replacementSecond;
 }
 
+final class FlarkV4SemanticTargetRecord extends Struct {
+  @Uint32()
+  external int kind;
+
+  @Uint32()
+  external int syntax;
+
+  external FlarkV4SourceRange sourceRange;
+  external FlarkV4SourceRange sourceUtf16Range;
+  external FlarkV4SourceRange contentRange;
+  external FlarkV4SourceRange contentUtf16Range;
+  external FlarkV4SourceRange destinationSourceRange;
+  external FlarkV4SourceRange destinationSourceUtf16Range;
+  external FlarkV4SourceRange titleSourceRange;
+  external FlarkV4SourceRange titleSourceUtf16Range;
+
+  @Uint32()
+  external int destinationBytes;
+
+  @Uint32()
+  external int titleBytes;
+
+  @Array(2)
+  external Array<Uint64> reserved;
+}
+
 final class FlarkV4AnchorRequest extends Struct {
   @Uint32()
   external int structSize;

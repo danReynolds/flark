@@ -12,13 +12,14 @@ use flark_runtime::{
     DocumentEditIntentDispositionV1, DocumentEditIntentV1, DocumentEditPresentationTransitionV1,
     DocumentFenceCharacter, DocumentHeadingStyle, DocumentInlineFact, DocumentInlineFactKind,
     DocumentListDelimiter, DocumentListMarker, DocumentLiveViewportSpan, DocumentProjectionSegment,
-    DocumentSessionError, DocumentSessionPhase, DocumentViewportRowContinuityPolicy,
-    DocumentViewportRowEditCapability, DocumentViewportRowPresentation, HistoryDisposition,
-    HistoryToken, OperationCode, OperationResult, Outcome as RuntimeOutcome, ProgressState,
-    ProgressToken, ResultPageReceipt, ResultRecordKind, Revision, SessionHandle,
-    SessionInspectionReceipt, SessionState, SnapshotId, SourceRange as RuntimeSourceRange,
-    StatusCode, TransactionHandle, MAX_BULK_CHUNK_BYTES, MAX_LIVE_ANCHORS, MAX_QUERY_ITEMS,
-    MAX_RESULT_BYTES, MAX_SMALL_EDIT_BYTES, MAX_SOURCE_CHUNK_BYTES, MAX_TRANSACTION_EDITS,
+    DocumentSemanticTargetKind, DocumentSemanticTargetSyntax, DocumentSessionError,
+    DocumentSessionPhase, DocumentViewportRowContinuityPolicy, DocumentViewportRowEditCapability,
+    DocumentViewportRowPresentation, HistoryDisposition, HistoryToken, OperationCode,
+    OperationResult, Outcome as RuntimeOutcome, ProgressState, ProgressToken, ResultPageReceipt,
+    ResultRecordKind, Revision, SessionHandle, SessionInspectionReceipt, SessionState, SnapshotId,
+    SourceRange as RuntimeSourceRange, StatusCode, TransactionHandle, MAX_BULK_CHUNK_BYTES,
+    MAX_LIVE_ANCHORS, MAX_QUERY_ITEMS, MAX_RESULT_BYTES, MAX_SMALL_EDIT_BYTES,
+    MAX_SOURCE_CHUNK_BYTES, MAX_TRANSACTION_EDITS,
 };
 
 use crate::{
@@ -26,19 +27,20 @@ use crate::{
     CloseRequest, ContinuationRequest, CoordinateRequest, CreateRequest, EditDescriptor,
     EditIntentReceiptV1, EditIntentRequestV1, HistoryRequest, InlineFactRecord, InspectRequest,
     NegotiateRequest, Outcome, OwnerTransferRequest, ProjectionSegmentRecord, PumpRequest,
-    QueryRequest, ResultPageHeader, SessionInspection, SessionRef, SmallEditRequest, SourceRange,
-    SourceReadRequest, SourceTransactionReceiptV1, SourceTransactionRequestV1, StageRequest,
-    StagedSourceTransactionRequestV1, TransactionRequest, ViewportRowRecord, WorkBudget, ABI_MAJOR,
-    ABI_MINOR, EDIT_INTENT_DELETE_BACKWARD, EDIT_INTENT_DELETE_FORWARD,
-    EDIT_INTENT_DISPOSITION_APPLIED, EDIT_INTENT_DISPOSITION_HANDLED_NO_CHANGE,
-    EDIT_INTENT_DISPOSITION_NEEDS_CURRENT_SEMANTICS, EDIT_INTENT_DISPOSITION_NOT_APPLICABLE,
-    EDIT_INTENT_INDENT_LIST_ITEM, EDIT_INTENT_INSERT_PARAGRAPH_BREAK,
-    EDIT_INTENT_OUTDENT_LIST_ITEM, EDIT_INTENT_RECEIPT_HAS_COMMIT,
-    EDIT_INTENT_RECEIPT_PARSER_PENDING, EDIT_INTENT_RECEIPT_SEMANTIC_BYTES,
-    EDIT_INTENT_TOGGLE_TASK_CHECKED, EDIT_PRESENTATION_CONTINUE_BLOCK_QUOTE,
-    EDIT_PRESENTATION_CONTINUE_INDENTED_CODE, EDIT_PRESENTATION_CONTINUE_LIST,
-    EDIT_PRESENTATION_DELETE_THEMATIC_BREAK, EDIT_PRESENTATION_EXIT_BLOCK_QUOTE,
-    EDIT_PRESENTATION_EXIT_HEADING, EDIT_PRESENTATION_EXIT_LIST, EDIT_PRESENTATION_INDENT_LIST,
+    QueryRequest, ResultPageHeader, SemanticTargetRecord, SessionInspection, SessionRef,
+    SmallEditRequest, SourceRange, SourceReadRequest, SourceTransactionReceiptV1,
+    SourceTransactionRequestV1, StageRequest, StagedSourceTransactionRequestV1, TransactionRequest,
+    ViewportRowRecord, WorkBudget, ABI_MAJOR, ABI_MINOR, EDIT_INTENT_DELETE_BACKWARD,
+    EDIT_INTENT_DELETE_FORWARD, EDIT_INTENT_DISPOSITION_APPLIED,
+    EDIT_INTENT_DISPOSITION_HANDLED_NO_CHANGE, EDIT_INTENT_DISPOSITION_NEEDS_CURRENT_SEMANTICS,
+    EDIT_INTENT_DISPOSITION_NOT_APPLICABLE, EDIT_INTENT_INDENT_LIST_ITEM,
+    EDIT_INTENT_INSERT_PARAGRAPH_BREAK, EDIT_INTENT_OUTDENT_LIST_ITEM,
+    EDIT_INTENT_RECEIPT_HAS_COMMIT, EDIT_INTENT_RECEIPT_PARSER_PENDING,
+    EDIT_INTENT_RECEIPT_SEMANTIC_BYTES, EDIT_INTENT_TOGGLE_TASK_CHECKED,
+    EDIT_PRESENTATION_CONTINUE_BLOCK_QUOTE, EDIT_PRESENTATION_CONTINUE_INDENTED_CODE,
+    EDIT_PRESENTATION_CONTINUE_LIST, EDIT_PRESENTATION_DELETE_THEMATIC_BREAK,
+    EDIT_PRESENTATION_EXIT_BLOCK_QUOTE, EDIT_PRESENTATION_EXIT_HEADING,
+    EDIT_PRESENTATION_EXIT_LIST, EDIT_PRESENTATION_INDENT_LIST,
     EDIT_PRESENTATION_JOIN_INDENTED_CODE, EDIT_PRESENTATION_LIFT_BLOCK_QUOTE,
     EDIT_PRESENTATION_LIFT_HEADING, EDIT_PRESENTATION_LIFT_INDENTED_CODE,
     EDIT_PRESENTATION_LIFT_LIST, EDIT_PRESENTATION_MERGE_PARAGRAPH, EDIT_PRESENTATION_NONE,
@@ -92,7 +94,8 @@ const IMPLEMENTED_CAPABILITIES: u64 = (1 << 0)
     | (1 << 21)
     | (1 << 22)
     | (1 << 23)
-    | (1 << 24);
+    | (1 << 24)
+    | (1 << 25);
 
 struct Registry {
     next_handle: u64,
@@ -3853,7 +3856,7 @@ pub extern "C" fn flark_v4_query_viewport(
         if !valid_budget(request.budget, true)
             || request.continuation != 0
             || request.range.start_byte > request.range.end_byte
-            || !matches!(request.query_kind, 1 | 2 | 3 | 4)
+            || !matches!(request.query_kind, 1 | 2 | 3 | 4 | 5)
             || request.reserved != [0; 1]
         {
             return Err(StatusCode::InvalidArgument);
@@ -4380,7 +4383,69 @@ fn query_page(
         )
         .unwrap_or(usize::MAX);
 
-        if query_kind == 3 {
+        if query_kind == 5 {
+            if page_start != requested_start || requested_start >= requested_end {
+                return Err(StatusCode::InvalidArgument);
+            }
+            let start =
+                usize::try_from(requested_start).map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let end = usize::try_from(requested_end).map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let target = match document.query_semantic_target(revision, start..end) {
+                Ok(target) => target,
+                // Target activation is an optional presentation query. While
+                // the parser is retiring old facts, expose an empty current
+                // answer instead of turning normal incremental work into an
+                // exceptional UI path.
+                Err(DocumentActorError::Session(DocumentSessionError::NotReady)) => None,
+                Err(error) => return Err(map_actor_error(&error)),
+            };
+            let mut payload_bytes = 0_usize;
+            let payload = if let Some(target) = target {
+                let title_bytes = target.title.as_deref().map_or(&[][..], str::as_bytes);
+                payload_bytes = size_of::<SemanticTargetRecord>()
+                    .saturating_add(target.destination.len())
+                    .saturating_add(title_bytes.len());
+                if payload_bytes > payload_capacity {
+                    return Ok(RuntimeOutcome {
+                        operation,
+                        status: StatusCode::BufferTooSmall,
+                        progress: ProgressState::None,
+                        required_payload_bytes: payload_bytes as u64,
+                        written_payload_bytes: 0,
+                        result: OperationResult::None,
+                    });
+                }
+                QueryPayload::SemanticTarget {
+                    record: semantic_target_record(&target)?,
+                    destination: target.destination.into_bytes(),
+                    title: target.title.map_or_else(Vec::new, String::into_bytes),
+                }
+            } else {
+                QueryPayload::SemanticTarget {
+                    record: SemanticTargetRecord::default(),
+                    destination: Vec::new(),
+                    title: Vec::new(),
+                }
+            };
+            let page = ResultPageReceipt {
+                record_kind: ResultRecordKind::SemanticTarget,
+                certification: CertificationState::CurrentCertified,
+                revision: Revision(revision),
+                snapshot: SnapshotId(snapshot),
+                requested_range: RuntimeSourceRange {
+                    start_byte: requested_start,
+                    end_byte: requested_end,
+                },
+                covered_range: RuntimeSourceRange {
+                    start_byte: requested_start,
+                    end_byte: requested_end,
+                },
+                item_count: u32::from(payload_bytes != 0),
+                payload_bytes: payload_bytes as u32,
+                continuation: ContinuationHandle::NONE,
+            };
+            (page, StatusCode::Ok, payload)
+        } else if query_kind == 3 {
             let maximum_spans = budget.max_result_items.min(MAX_QUERY_ITEMS).min(3);
             if maximum_spans == 0 {
                 return Ok(RuntimeOutcome {
@@ -4650,6 +4715,26 @@ fn query_page(
             write_certification_range_records(record_output, records);
             source_output.copy_from_slice(source);
         }
+        QueryPayload::SemanticTarget {
+            record,
+            destination,
+            title,
+        } => {
+            if destination.is_empty() && title.is_empty() && record.kind == 0 {
+                return;
+            }
+            let (record_output, value_output) =
+                output.split_at_mut(size_of::<SemanticTargetRecord>());
+            unsafe {
+                ptr::write_unaligned(
+                    record_output.as_mut_ptr().cast::<SemanticTargetRecord>(),
+                    *record,
+                );
+            }
+            let (destination_output, title_output) = value_output.split_at_mut(destination.len());
+            destination_output.copy_from_slice(destination);
+            title_output.copy_from_slice(title);
+        }
     })?;
 
     if let Some(prior) = prior_continuation {
@@ -4699,6 +4784,51 @@ enum QueryPayload {
         records: Vec<CertificationRangeRecord>,
         source: Vec<u8>,
     },
+    SemanticTarget {
+        record: SemanticTargetRecord,
+        destination: Vec<u8>,
+        title: Vec<u8>,
+    },
+}
+
+fn semantic_target_record(
+    target: &flark_runtime::DocumentSemanticTarget,
+) -> Result<SemanticTargetRecord, StatusCode> {
+    fn range(value: &std::ops::Range<u64>) -> SourceRange {
+        SourceRange {
+            start_byte: value.start,
+            end_byte: value.end,
+        }
+    }
+    let empty = SourceRange::default();
+    Ok(SemanticTargetRecord {
+        kind: match target.kind {
+            DocumentSemanticTargetKind::Link => 1,
+            DocumentSemanticTargetKind::Image => 2,
+        },
+        syntax: match target.syntax {
+            DocumentSemanticTargetSyntax::AutolinkUri => 1,
+            DocumentSemanticTargetSyntax::AutolinkEmail => 2,
+            DocumentSemanticTargetSyntax::Direct => 3,
+            DocumentSemanticTargetSyntax::Reference => 4,
+        },
+        source_range: range(&target.source_range),
+        source_utf16_range: range(&target.source_utf16_range),
+        content_range: range(&target.content_range),
+        content_utf16_range: range(&target.content_utf16_range),
+        destination_source_range: range(&target.destination_source_range),
+        destination_source_utf16_range: range(&target.destination_source_utf16_range),
+        title_source_range: target.title_source_range.as_ref().map_or(empty, range),
+        title_source_utf16_range: target
+            .title_source_utf16_range
+            .as_ref()
+            .map_or(empty, range),
+        destination_bytes: u32::try_from(target.destination.len())
+            .map_err(|_| StatusCode::ResultCapReached)?,
+        title_bytes: u32::try_from(target.title.as_ref().map_or(0, String::len))
+            .map_err(|_| StatusCode::ResultCapReached)?,
+        reserved: [0; 2],
+    })
 }
 
 fn certification_range_record(span: &DocumentLiveViewportSpan) -> CertificationRangeRecord {

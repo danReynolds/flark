@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flark/flark.dart';
 import 'package:flark/src/render_surface.dart';
+import 'package:flark_core/flark_core.dart' show FlarkInlineFactKind;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -113,6 +114,59 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(controller.close);
       semantics.dispose();
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'read-only link hit maps to the parser-cooked target',
+    (tester) async {
+      const source = 'Before [link](https://example.com "title") after.\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 520,
+            height: 180,
+            child: FlarkMarkdownView(
+              controller: controller,
+              padding: EdgeInsets.zero,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final surface = tester.renderObject<RenderFlarkSurface>(
+        find.byType(FlarkRenderSurfaceWidget),
+      );
+      final link = controller.rows.first.inlineFacts!.firstWhere(
+        (fact) => fact.kind == FlarkInlineFactKind.directLink,
+      );
+      final start = surface.debugLocalPositionForSourceUtf16(
+        link.contentUtf16.start,
+      );
+      final end = surface.debugLocalPositionForSourceUtf16(
+        link.contentUtf16.end,
+      );
+      expect(start, isNotNull);
+      expect(end, isNotNull);
+      final local = Offset((start!.dx + end!.dx) / 2, start.dy + 8);
+      expect(surface.positionForOffset(local)?.semanticTargetFact, same(link));
+      final target = (await tester.runAsync(
+        () => controller.querySemanticTarget(link),
+      ))!;
+      expect(target.kind, FlarkSemanticTargetKind.link);
+      expect(target.destination, 'https://example.com');
+      expect(target.title, 'title');
+      expect(controller.pendingEdits, 0);
+      expect(await tester.runAsync(controller.readSource), source);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
     },
     skip: libraryPath == null,
   );

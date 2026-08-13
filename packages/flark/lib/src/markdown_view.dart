@@ -1,5 +1,8 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
+import 'dart:async';
+
+import 'package:flark_core/flark_core.dart';
 
 import 'controller.dart';
 import 'render_surface.dart';
@@ -19,12 +22,14 @@ final class FlarkMarkdownView extends StatefulWidget {
       height: 1.45,
     ),
     this.padding = const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
+    this.onSemanticTarget,
     super.key,
   });
 
   final FlarkEditorController controller;
   final TextStyle textStyle;
   final EdgeInsets padding;
+  final ValueChanged<FlarkSemanticTarget>? onSemanticTarget;
 
   @override
   State<FlarkMarkdownView> createState() => _FlarkMarkdownViewState();
@@ -32,11 +37,12 @@ final class FlarkMarkdownView extends StatefulWidget {
 
 final class _FlarkMarkdownViewState extends State<FlarkMarkdownView> {
   final GlobalKey _surfaceKey = GlobalKey();
+  final Map<int, Offset> _pointerDown = <int, Offset>{};
 
   RenderFlarkSurface? get _surface =>
       _surfaceKey.currentContext?.findRenderObject() as RenderFlarkSurface?;
 
-  Map<Type, GestureRecognizerFactory> get _touchScrollRecognizer => {
+  Map<Type, GestureRecognizerFactory> get _gestures => {
     VerticalDragGestureRecognizer:
         GestureRecognizerFactoryWithHandlers<VerticalDragGestureRecognizer>(
           () => VerticalDragGestureRecognizer(
@@ -54,6 +60,30 @@ final class _FlarkMarkdownViewState extends State<FlarkMarkdownView> {
           },
         ),
   };
+
+  Future<void> _activateTarget(Offset localPosition) async {
+    final fact = _surface?.positionForOffset(localPosition)?.semanticTargetFact;
+    if (fact == null || widget.onSemanticTarget == null) return;
+    final target = await widget.controller.querySemanticTarget(fact);
+    if (mounted && target != null) widget.onSemanticTarget?.call(target);
+  }
+
+  void _rememberPointerDown(PointerDownEvent event) {
+    _pointerDown[event.pointer] = event.position;
+  }
+
+  void _forgetPointer(PointerEvent event) {
+    _pointerDown.remove(event.pointer);
+  }
+
+  void _activatePointerUp(PointerUpEvent event) {
+    final down = _pointerDown.remove(event.pointer);
+    if (down == null || (event.position - down).distance > kTouchSlop) {
+      return;
+    }
+    final localPosition = _surface?.globalToLocal(event.position);
+    if (localPosition != null) unawaited(_activateTarget(localPosition));
+  }
 
   @override
   void initState() {
@@ -75,21 +105,24 @@ final class _FlarkMarkdownViewState extends State<FlarkMarkdownView> {
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.basic,
-      child: Listener(
-        behavior: HitTestBehavior.opaque,
-        onPointerSignal: (event) {
-          if (event is PointerScrollEvent) {
-            _surface?.scrollBy(event.scrollDelta.dy);
-          }
-        },
-        onPointerPanZoomUpdate: (event) {
-          _surface?.scrollBy(-event.localPanDelta.dy);
-        },
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: _rememberPointerDown,
+      onPointerCancel: _forgetPointer,
+      onPointerUp: _activatePointerUp,
+      onPointerSignal: (event) {
+        if (event is PointerScrollEvent) {
+          _surface?.scrollBy(event.scrollDelta.dy);
+        }
+      },
+      onPointerPanZoomUpdate: (event) {
+        _surface?.scrollBy(-event.localPanDelta.dy);
+      },
+      child: MouseRegion(
+        cursor: SystemMouseCursors.basic,
         child: RawGestureDetector(
           behavior: HitTestBehavior.opaque,
-          gestures: _touchScrollRecognizer,
+          gestures: _gestures,
           child: FlarkRenderSurfaceWidget(
             key: _surfaceKey,
             controller: widget.controller,

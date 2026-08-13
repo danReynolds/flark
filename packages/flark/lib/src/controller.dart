@@ -1721,6 +1721,9 @@ final class FlarkEditorController extends ChangeNotifier {
   /// already accepted by this controller has settled in the Core session.
   Future<String> readSource() => _editTail.then((_) => _document.readSource());
 
+  Future<FlarkSemanticTarget?> querySemanticTarget(FlarkInlineFact fact) =>
+      _editTail.then((_) => _document.querySemanticTarget(fact));
+
   /// A user activation abandons the platform surrogate. The immediately
   /// queued ordinary selection replaces the canonical anchors in order.
   void _abandonOversizedSelection() {

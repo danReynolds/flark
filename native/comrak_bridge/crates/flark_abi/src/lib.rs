@@ -26,7 +26,7 @@ pub use flark_runtime::{
 };
 
 pub const ABI_MAJOR: u16 = 4;
-pub const ABI_MINOR: u16 = 24;
+pub const ABI_MINOR: u16 = 25;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
@@ -327,6 +327,24 @@ pub struct InlineFactRecord {
     pub replacement_first: u32,
     /// Optional second replacement scalar, or zero.
     pub replacement_second: u32,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(C)]
+pub struct SemanticTargetRecord {
+    pub kind: u32,
+    pub syntax: u32,
+    pub source_range: SourceRange,
+    pub source_utf16_range: SourceRange,
+    pub content_range: SourceRange,
+    pub content_utf16_range: SourceRange,
+    pub destination_source_range: SourceRange,
+    pub destination_source_utf16_range: SourceRange,
+    pub title_source_range: SourceRange,
+    pub title_source_utf16_range: SourceRange,
+    pub destination_bytes: u32,
+    pub title_bytes: u32,
+    pub reserved: [u64; 2],
 }
 
 pub const INLINE_FACT_EMPHASIS: u32 = 1;
@@ -999,6 +1017,10 @@ pub const RECORD_LAYOUTS: &[(&str, usize)] = &[
     (
         "INLINE_FACT_RECORD",
         core::mem::size_of::<InlineFactRecord>(),
+    ),
+    (
+        "SEMANTIC_TARGET_RECORD",
+        core::mem::size_of::<SemanticTargetRecord>(),
     ),
     ("SOURCE_RANGE", core::mem::size_of::<SourceRange>()),
     ("EDIT_DESCRIPTOR", core::mem::size_of::<EditDescriptor>()),

@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define FLARK_V4_ABI_MAJOR UINT16_C(4)
-#define FLARK_V4_ABI_MINOR UINT16_C(24)
+#define FLARK_V4_ABI_MINOR UINT16_C(25)
 
 /* Zero sentinels are legal only where the operation rules below say so. */
 #define FLARK_V4_CONTINUATION_NONE UINT64_C(0)
@@ -170,10 +170,12 @@ typedef uint64_t FlarkV4OwnerToken;
 #define FLARK_V4_QUERY_SEMANTIC UINT32_C(2)
 #define FLARK_V4_QUERY_SOURCE_AND_SEMANTIC UINT32_C(3)
 #define FLARK_V4_QUERY_SEMANTIC_PROJECTED UINT32_C(4)
+#define FLARK_V4_QUERY_SEMANTIC_TARGET UINT32_C(5)
 
 #define FLARK_V4_RESULT_RECORD_SOURCE_BYTES UINT32_C(1)
 #define FLARK_V4_RESULT_RECORD_SEMANTIC_FACTS UINT32_C(2)
 #define FLARK_V4_RESULT_RECORD_SOURCE_AND_SEMANTIC UINT32_C(3)
+#define FLARK_V4_RESULT_RECORD_SEMANTIC_TARGET UINT32_C(4)
 
 #define FLARK_V4_HISTORY_NOT_APPLICABLE UINT32_C(0)
 #define FLARK_V4_HISTORY_RETAINED UINT32_C(1)
@@ -217,6 +219,14 @@ typedef uint64_t FlarkV4OwnerToken;
 #define FLARK_V4_CAPABILITY_SEMANTIC_ACTIONS_V1 UINT64_C(0x0000000000400000)
 #define FLARK_V4_CAPABILITY_STAGED_SOURCE_TRANSACTIONS_V1 UINT64_C(0x0000000000800000)
 #define FLARK_V4_CAPABILITY_LIST_INDENTATION_V1 UINT64_C(0x0000000001000000)
+#define FLARK_V4_CAPABILITY_SEMANTIC_TARGETS_V1 UINT64_C(0x0000000002000000)
+
+#define FLARK_V4_SEMANTIC_TARGET_LINK UINT32_C(1)
+#define FLARK_V4_SEMANTIC_TARGET_IMAGE UINT32_C(2)
+#define FLARK_V4_SEMANTIC_TARGET_AUTOLINK_URI UINT32_C(1)
+#define FLARK_V4_SEMANTIC_TARGET_AUTOLINK_EMAIL UINT32_C(2)
+#define FLARK_V4_SEMANTIC_TARGET_DIRECT UINT32_C(3)
+#define FLARK_V4_SEMANTIC_TARGET_REFERENCE UINT32_C(4)
 
 #define FLARK_V4_EDIT_PROFILE_FLARK_V1 UINT32_C(1)
 #define FLARK_V4_EDIT_INTENT_INSERT_PARAGRAPH_BREAK UINT32_C(1)
@@ -424,6 +434,25 @@ typedef struct FlarkV4InlineFactRecord {
   uint32_t replacement_first;
   uint32_t replacement_second;
 } FlarkV4InlineFactRecord;
+
+/* One on-demand parser-certified link/image target. The query range must be
+ * the exact source range of an authoritative inline fact. Variable UTF-8
+ * destination bytes followed by optional title bytes trail this record. */
+typedef struct FlarkV4SemanticTargetRecord {
+  uint32_t kind;
+  uint32_t syntax;
+  FlarkV4SourceRange source_range;
+  FlarkV4SourceRange source_utf16_range;
+  FlarkV4SourceRange content_range;
+  FlarkV4SourceRange content_utf16_range;
+  FlarkV4SourceRange destination_source_range;
+  FlarkV4SourceRange destination_source_utf16_range;
+  FlarkV4SourceRange title_source_range;
+  FlarkV4SourceRange title_source_utf16_range;
+  uint32_t destination_bytes;
+  uint32_t title_bytes;
+  uint64_t reserved[2];
+} FlarkV4SemanticTargetRecord;
 
 #define FLARK_V4_INLINE_FACT_EMPHASIS UINT32_C(1)
 #define FLARK_V4_INLINE_FACT_STRONG UINT32_C(2)
@@ -819,6 +848,7 @@ typedef struct FlarkV4SessionInspection {
 #define FLARK_V4_SIZEOF_VIEWPORT_ROW_RECORD UINT32_C(128)
 #define FLARK_V4_SIZEOF_PROJECTION_SEGMENT_RECORD UINT32_C(32)
 #define FLARK_V4_SIZEOF_INLINE_FACT_RECORD UINT32_C(80)
+#define FLARK_V4_SIZEOF_SEMANTIC_TARGET_RECORD UINT32_C(160)
 #define FLARK_V4_SIZEOF_CERTIFICATION_RANGE_RECORD UINT32_C(40)
 #define FLARK_V4_SIZEOF_SOURCE_RANGE UINT32_C(16)
 #define FLARK_V4_SIZEOF_EDIT_DESCRIPTOR UINT32_C(32)
@@ -861,6 +891,7 @@ FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4ResultPageHeader) == FLARK_V4_SIZEOF_RESULT
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4ViewportRowRecord) == FLARK_V4_SIZEOF_VIEWPORT_ROW_RECORD, "FlarkV4ViewportRowRecord layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4ProjectionSegmentRecord) == FLARK_V4_SIZEOF_PROJECTION_SEGMENT_RECORD, "FlarkV4ProjectionSegmentRecord layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4InlineFactRecord) == FLARK_V4_SIZEOF_INLINE_FACT_RECORD, "FlarkV4InlineFactRecord layout");
+FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4SemanticTargetRecord) == FLARK_V4_SIZEOF_SEMANTIC_TARGET_RECORD, "FlarkV4SemanticTargetRecord layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4CertificationRangeRecord) == FLARK_V4_SIZEOF_CERTIFICATION_RANGE_RECORD, "FlarkV4CertificationRangeRecord layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4SourceRange) == FLARK_V4_SIZEOF_SOURCE_RANGE, "FlarkV4SourceRange layout");
 FLARK_V4_STATIC_ASSERT(sizeof(FlarkV4EditDescriptor) == FLARK_V4_SIZEOF_EDIT_DESCRIPTOR, "FlarkV4EditDescriptor layout");

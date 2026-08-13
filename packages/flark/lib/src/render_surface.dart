@@ -56,6 +56,7 @@ final class FlarkSurfaceHit {
     this.neutralText,
     this.neutralUtf16Start,
     this.action,
+    this.semanticTargetFact,
   });
 
   final int globalUtf16Offset;
@@ -65,6 +66,7 @@ final class FlarkSurfaceHit {
   final String? neutralText;
   final int? neutralUtf16Start;
   final FlarkSurfaceAction? action;
+  final FlarkInlineFact? semanticTargetFact;
 }
 
 final class FlarkSurfaceSelection {
@@ -898,18 +900,50 @@ final class RenderFlarkSurface extends RenderBox {
     int textOffset, {
     required TextAffinity affinity,
     FlarkSurfaceAction? action,
-  }) => FlarkSurfaceHit(
-    globalUtf16Offset: row.presentation.sourceOffsetForTextOffset(
+  }) {
+    final globalUtf16Offset = row.presentation.sourceOffsetForTextOffset(
       textOffset,
       affinity: affinity,
-    ),
-    ordinal: row.ordinal,
-    affinity: affinity,
-    row: row.row,
-    neutralText: row.neutralText,
-    neutralUtf16Start: row.neutralUtf16Start,
-    action: action,
-  );
+    );
+    final semanticTargetFact = _semanticTargetFactFor(
+      row.row,
+      globalUtf16Offset,
+    );
+    return FlarkSurfaceHit(
+      globalUtf16Offset: globalUtf16Offset,
+      ordinal: row.ordinal,
+      affinity: affinity,
+      row: row.row,
+      neutralText: row.neutralText,
+      neutralUtf16Start: row.neutralUtf16Start,
+      action: action,
+      semanticTargetFact: semanticTargetFact,
+    );
+  }
+
+  static FlarkInlineFact? _semanticTargetFactFor(
+    FlarkViewportRow? row,
+    int globalUtf16Offset,
+  ) {
+    for (final fact in row?.inlineFacts ?? const <FlarkInlineFact>[]) {
+      if (_isSemanticTargetFact(fact.kind) &&
+          globalUtf16Offset >= fact.contentUtf16.start &&
+          globalUtf16Offset < fact.contentUtf16.end) {
+        return fact;
+      }
+    }
+    return null;
+  }
+
+  static bool _isSemanticTargetFact(FlarkInlineFactKind kind) => switch (kind) {
+    FlarkInlineFactKind.autolinkUri ||
+    FlarkInlineFactKind.autolinkEmail ||
+    FlarkInlineFactKind.directLink ||
+    FlarkInlineFactKind.directImage ||
+    FlarkInlineFactKind.referenceLink ||
+    FlarkInlineFactKind.referenceImage => true,
+    _ => false,
+  };
 
   Iterable<_PaintedRow> get _logicalRows sync* {
     int? previousOrdinal;

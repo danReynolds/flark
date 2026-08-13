@@ -39,6 +39,90 @@ enum FlarkInlineFactKind {
 
 enum FlarkInlineContinuityPolicy { none, plainTextContent }
 
+enum FlarkSemanticTargetKind { link, image }
+
+enum FlarkSemanticTargetSyntax { autolinkUri, autolinkEmail, direct, reference }
+
+final class FlarkSemanticTarget {
+  const FlarkSemanticTarget({
+    required this.kind,
+    required this.syntax,
+    required this.sourceBytes,
+    required this.sourceUtf16,
+    required this.contentBytes,
+    required this.contentUtf16,
+    required this.destinationSourceBytes,
+    required this.destinationSourceUtf16,
+    required this.titleSourceBytes,
+    required this.titleSourceUtf16,
+    required this.destination,
+    required this.title,
+  });
+
+  final FlarkSemanticTargetKind kind;
+  final FlarkSemanticTargetSyntax syntax;
+  final FlarkSourceRange sourceBytes;
+  final FlarkSourceRange sourceUtf16;
+  final FlarkSourceRange contentBytes;
+  final FlarkSourceRange contentUtf16;
+  final FlarkSourceRange destinationSourceBytes;
+  final FlarkSourceRange destinationSourceUtf16;
+  final FlarkSourceRange? titleSourceBytes;
+  final FlarkSourceRange? titleSourceUtf16;
+  final String destination;
+  final String? title;
+
+  Map<String, Object?> toMessage() => {
+    'kind': kind.index,
+    'syntax': syntax.index,
+    'sourceBytes': sourceBytes.toMessage(),
+    'sourceUtf16': sourceUtf16.toMessage(),
+    'contentBytes': contentBytes.toMessage(),
+    'contentUtf16': contentUtf16.toMessage(),
+    'destinationSourceBytes': destinationSourceBytes.toMessage(),
+    'destinationSourceUtf16': destinationSourceUtf16.toMessage(),
+    'titleSourceBytes': titleSourceBytes?.toMessage(),
+    'titleSourceUtf16': titleSourceUtf16?.toMessage(),
+    'destination': destination,
+    'title': title,
+  };
+
+  static FlarkSemanticTarget fromMessage(
+    Map<Object?, Object?> message,
+  ) => FlarkSemanticTarget(
+    kind: FlarkSemanticTargetKind.values[message['kind']! as int],
+    syntax: FlarkSemanticTargetSyntax.values[message['syntax']! as int],
+    sourceBytes: FlarkSourceRange.fromMessage(
+      message['sourceBytes']! as Map<Object?, Object?>,
+    ),
+    sourceUtf16: FlarkSourceRange.fromMessage(
+      message['sourceUtf16']! as Map<Object?, Object?>,
+    ),
+    contentBytes: FlarkSourceRange.fromMessage(
+      message['contentBytes']! as Map<Object?, Object?>,
+    ),
+    contentUtf16: FlarkSourceRange.fromMessage(
+      message['contentUtf16']! as Map<Object?, Object?>,
+    ),
+    destinationSourceBytes: FlarkSourceRange.fromMessage(
+      message['destinationSourceBytes']! as Map<Object?, Object?>,
+    ),
+    destinationSourceUtf16: FlarkSourceRange.fromMessage(
+      message['destinationSourceUtf16']! as Map<Object?, Object?>,
+    ),
+    titleSourceBytes: switch (message['titleSourceBytes']) {
+      final Map<Object?, Object?> range => FlarkSourceRange.fromMessage(range),
+      _ => null,
+    },
+    titleSourceUtf16: switch (message['titleSourceUtf16']) {
+      final Map<Object?, Object?> range => FlarkSourceRange.fromMessage(range),
+      _ => null,
+    },
+    destination: message['destination']! as String,
+    title: message['title'] as String?,
+  );
+}
+
 const _inlineFactContinuityPlainText = 1 << 7;
 
 enum FlarkTableAlignment { none, left, center, right }

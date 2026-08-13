@@ -147,10 +147,12 @@ const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 24;
+const _abiMinor = 25;
+const _semanticTargetRecord = 4;
+const _semanticTargetQuery = 5;
 // Every capability through this ABI minor is required by the safe Core
 // boundary; negotiation must fail rather than silently losing an edit lane.
-const _requiredCapabilityBits = 0x1ffffff;
+const _requiredCapabilityBits = 0x3ffffff;
 
 final class FlarkNativeException implements Exception {
   const FlarkNativeException(this.operation, this.status, [this.detail = 0]);
@@ -1653,6 +1655,125 @@ final class FlarkNativeDocument {
         _resultCapReached,
       });
       return _decodeViewport(output);
+    } finally {
+      calloc
+        ..free(request)
+        ..free(outcome)
+        ..free(output);
+    }
+  }
+
+  FlarkSemanticTarget? querySemanticTarget(FlarkInlineFact fact) {
+    final request = calloc<FlarkV4QueryRequest>();
+    final outcome = calloc<FlarkV4Outcome>();
+    final capacity = sizeOf<FlarkV4ResultPageHeader>() + _resultPayloadBytes;
+    final output = calloc<Uint8>(capacity);
+    try {
+      request.ref
+        ..structSize = sizeOf<FlarkV4QueryRequest>()
+        ..queryKind = _semanticTargetQuery
+        ..revision = _revision
+        ..snapshot = 0
+        ..continuation = 0;
+      _fillSession(request.ref.session);
+      request.ref.range
+        ..startByte = fact.sourceBytes.start
+        ..endByte = fact.sourceBytes.end;
+      _fillBudget(request.ref.budget, workUnits: 1, maxRows: 1);
+      final status = _bindings.queryViewport(
+        request,
+        output,
+        capacity,
+        outcome,
+      );
+      _requireStatus('query_semantic_target', status, outcome.ref, {_ok});
+      final header = output.cast<FlarkV4ResultPageHeader>().ref;
+      if (header.recordKind != _semanticTargetRecord ||
+          header.revision != _revision ||
+          header.continuation != 0 ||
+          header.itemCount > 1 ||
+          (header.itemCount == 0 && header.payloadBytes != 0)) {
+        throw FlarkNativeException(
+          'query_semantic_target',
+          _internalFault,
+          header.recordKind,
+        );
+      }
+      if (header.itemCount == 0) return null;
+      if (header.payloadBytes < sizeOf<FlarkV4SemanticTargetRecord>()) {
+        throw FlarkNativeException(
+          'query_semantic_target',
+          _internalFault,
+          header.payloadBytes,
+        );
+      }
+      final payload = output + sizeOf<FlarkV4ResultPageHeader>();
+      final record = payload.cast<FlarkV4SemanticTargetRecord>().ref;
+      final expectedPayload =
+          sizeOf<FlarkV4SemanticTargetRecord>() +
+          record.destinationBytes +
+          record.titleBytes;
+      if (record.sourceRange.startByte != fact.sourceBytes.start ||
+          record.sourceRange.endByte != fact.sourceBytes.end ||
+          record.reserved[0] != 0 ||
+          record.reserved[1] != 0 ||
+          header.payloadBytes != expectedPayload) {
+        throw const FlarkNativeException(
+          'query_semantic_target',
+          _internalFault,
+          1,
+        );
+      }
+      final valueBytes = payload + sizeOf<FlarkV4SemanticTargetRecord>();
+      final destination = utf8.decode(
+        valueBytes.asTypedList(record.destinationBytes),
+      );
+      final titlePresent =
+          record.titleSourceRange.startByte != 0 ||
+          record.titleSourceRange.endByte != 0;
+      final title = titlePresent
+          ? utf8.decode(
+              (valueBytes + record.destinationBytes).asTypedList(
+                record.titleBytes,
+              ),
+            )
+          : null;
+      FlarkSourceRange range(FlarkV4SourceRange value) =>
+          FlarkSourceRange(value.startByte, value.endByte);
+      FlarkSourceRange? optionalRange(FlarkV4SourceRange value) =>
+          value.startByte == 0 && value.endByte == 0 ? null : range(value);
+      return FlarkSemanticTarget(
+        kind: switch (record.kind) {
+          1 => FlarkSemanticTargetKind.link,
+          2 => FlarkSemanticTargetKind.image,
+          _ => throw FlarkNativeException(
+            'query_semantic_target',
+            _internalFault,
+            record.kind,
+          ),
+        },
+        syntax: switch (record.syntax) {
+          1 => FlarkSemanticTargetSyntax.autolinkUri,
+          2 => FlarkSemanticTargetSyntax.autolinkEmail,
+          3 => FlarkSemanticTargetSyntax.direct,
+          4 => FlarkSemanticTargetSyntax.reference,
+          _ => throw FlarkNativeException(
+            'query_semantic_target',
+            _internalFault,
+            record.syntax,
+          ),
+        },
+        sourceBytes: range(record.sourceRange),
+        sourceUtf16: range(record.sourceUtf16Range),
+        contentBytes: range(record.contentRange),
+        contentUtf16: range(record.contentUtf16Range),
+        destinationSourceBytes: range(record.destinationSourceRange),
+        destinationSourceUtf16: range(record.destinationSourceUtf16Range),
+        titleSourceBytes: optionalRange(record.titleSourceRange),
+        titleSourceUtf16: optionalRange(record.titleSourceUtf16Range),
+        destination: destination,
+        title: title,
+      );
     } finally {
       calloc
         ..free(request)

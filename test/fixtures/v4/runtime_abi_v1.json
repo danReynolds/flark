@@ -4,7 +4,7 @@
   "status": "m0-interface-only",
   "abi": {
     "major": 4,
-    "minor": 24,
+    "minor": 25,
     "header": "native/comrak_bridge/include/flark_v4.h",
     "runtimeCrate": "native/comrak_bridge/crates/flark_runtime",
     "abiCrate": "native/comrak_bridge/crates/flark_abi",
@@ -46,7 +46,8 @@
     {"name": "NESTED_BLOCK_QUOTE_EDITING_V1", "bit": 2097152},
     {"name": "SEMANTIC_ACTIONS_V1", "bit": 4194304},
     {"name": "STAGED_SOURCE_TRANSACTIONS_V1", "bit": 8388608},
-    {"name": "LIST_INDENTATION_V1", "bit": 16777216}
+    {"name": "LIST_INDENTATION_V1", "bit": 16777216},
+    {"name": "SEMANTIC_TARGETS_V1", "bit": 33554432}
   ],
   "operations": [
     {"name": "NEGOTIATE", "code": 0, "symbol": "flark_v4_negotiate", "requestRecord": "NEGOTIATE_REQUEST", "allowedSessionStates": ["NONE"], "borrowedInput": false, "callerOutput": true},
@@ -177,12 +178,14 @@
     {"name": "SOURCE", "code": 1},
     {"name": "SEMANTIC", "code": 2},
     {"name": "SOURCE_AND_SEMANTIC", "code": 3},
-    {"name": "SEMANTIC_PROJECTED", "code": 4}
+    {"name": "SEMANTIC_PROJECTED", "code": 4},
+    {"name": "SEMANTIC_TARGET", "code": 5}
   ],
   "resultRecordKinds": [
     {"name": "SOURCE_BYTES", "code": 1},
     {"name": "SEMANTIC_FACTS", "code": 2},
-    {"name": "SOURCE_AND_SEMANTIC", "code": 3}
+    {"name": "SOURCE_AND_SEMANTIC", "code": 3},
+    {"name": "SEMANTIC_TARGET", "code": 4}
   ],
   "historyDispositions": [
     {"name": "NOT_APPLICABLE", "code": 0},
@@ -212,6 +215,7 @@
     {"name": "VIEWPORT_ROW_RECORD", "sizeBytes": 128},
     {"name": "PROJECTION_SEGMENT_RECORD", "sizeBytes": 32},
     {"name": "INLINE_FACT_RECORD", "sizeBytes": 80},
+    {"name": "SEMANTIC_TARGET_RECORD", "sizeBytes": 160},
     {"name": "SOURCE_RANGE", "sizeBytes": 16},
     {"name": "EDIT_DESCRIPTOR", "sizeBytes": 32},
     {"name": "WORK_BUDGET", "sizeBytes": 24},

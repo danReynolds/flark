@@ -1152,6 +1152,20 @@ mechanically unchanged sibling styles remain until nonempty inline facts or a
 real block-kind change arrive. This is a general authority rule, not a
 character-specific parser exception.
 
+ABI 4.25 crosses the remaining semantic-target ownership boundary without
+inflating the viewport hot path. Given one exact parser-authored link or image
+fact, Core can query the cooked destination, optional title, syntax class, and
+their authoritative source ranges on demand. The runtime resolves direct and
+reference links/images plus URI, email, and `www` autolinks; Flutter never
+reparses Markdown or decodes destinations. A lookup made while incremental
+parsing has retired the prior facts returns no current target rather than an
+input-path error, while actual native faults remain typed failures. The
+read-only Flutter surface exposes target activation as a product callback;
+editing stays caret-first so a frontend may offer its own target popover
+without making ordinary label placement activate a link. Mounted geometry-to-
+fact and headless fact-to-cooked-target receipts cover the portable boundary;
+real pointer activation remains part of the final H4 dogfood pass.
+
 ### H5 — hardening and later architecture
 
 Qualify memory envelopes, fault recovery, giant-line raster behavior, GFM and

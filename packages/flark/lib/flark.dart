@@ -1,6 +1,12 @@
 /// Flutter's custom live Markdown editing surface.
 library;
 
+export 'package:flark_core/flark_core.dart'
+    show
+        FlarkSemanticTarget,
+        FlarkSemanticTargetKind,
+        FlarkSemanticTargetSyntax;
+
 export 'src/controller.dart'
     show
         FlarkEditorController,

@@ -6,8 +6,8 @@ use std::thread::{self, JoinHandle};
 
 use crate::{
     DocumentCloseReceipt, DocumentEditIntentReceiptV1, DocumentEditIntentV1, DocumentEditReceipt,
-    DocumentLiveViewport, DocumentPumpReceipt, DocumentSession, DocumentSessionError,
-    DocumentSessionPhase, DocumentSourceTransactionReceiptV1,
+    DocumentLiveViewport, DocumentPumpReceipt, DocumentSemanticTarget, DocumentSession,
+    DocumentSessionError, DocumentSessionPhase, DocumentSourceTransactionReceiptV1,
     DocumentStagedSourceTransactionReceiptV1, DocumentViewport,
 };
 
@@ -253,6 +253,14 @@ impl DocumentActor {
         maximum_rows: u32,
     ) -> Result<DocumentViewport, DocumentActorError> {
         self.call(move |document| document.query_viewport(revision, requested_range, maximum_rows))
+    }
+
+    pub fn query_semantic_target(
+        &self,
+        revision: u64,
+        source_range: Range<usize>,
+    ) -> Result<Option<DocumentSemanticTarget>, DocumentActorError> {
+        self.call(move |document| document.query_semantic_target(revision, source_range))
     }
 
     pub fn query_live_viewport(

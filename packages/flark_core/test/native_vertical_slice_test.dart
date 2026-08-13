@@ -486,4 +486,77 @@ void main() {
     },
     skip: libraryPath == null,
   );
+
+  test(
+    'parser-cooked semantic targets resolve only from authoritative facts',
+    () async {
+      const source =
+          '[direct](https://example.com "title") '
+          '<me@example.com> www.example.com ![alt][img]\n\n'
+          "[img]: /asset.png 'cap'\n";
+      final document = await FlarkCoreDocument.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(document.dispose);
+      await document.pumpUntilReady();
+      final facts = (await document.queryViewport()).rows.first.inlineFacts!;
+
+      Future<FlarkSemanticTarget> target(FlarkInlineFactKind kind) async =>
+          (await document.querySemanticTarget(
+            facts.firstWhere((fact) => fact.kind == kind),
+          ))!;
+
+      final direct = await target(FlarkInlineFactKind.directLink);
+      expect(direct.kind, FlarkSemanticTargetKind.link);
+      expect(direct.syntax, FlarkSemanticTargetSyntax.direct);
+      expect(direct.destination, 'https://example.com');
+      expect(direct.title, 'title');
+
+      final email = await target(FlarkInlineFactKind.autolinkEmail);
+      expect(email.destination, 'mailto:me@example.com');
+      final www = await target(FlarkInlineFactKind.autolinkUri);
+      expect(www.destination, 'http://www.example.com');
+
+      final image = await target(FlarkInlineFactKind.referenceImage);
+      expect(image.kind, FlarkSemanticTargetKind.image);
+      expect(image.syntax, FlarkSemanticTargetSyntax.reference);
+      expect(image.destination, '/asset.png');
+      expect(image.title, 'cap');
+      expect(
+        source.substring(
+          image.destinationSourceUtf16.start,
+          image.destinationSourceUtf16.end,
+        ),
+        '/asset.png',
+      );
+
+      final strong = facts.firstWhere(
+        (fact) => fact.kind == FlarkInlineFactKind.directLink,
+      );
+      final forged = FlarkInlineFact(
+        kind: FlarkInlineFactKind.strong,
+        flags: strong.flags,
+        sourceBytes: FlarkSourceRange(
+          strong.sourceBytes.start + 1,
+          strong.sourceBytes.end,
+        ),
+        sourceUtf16: FlarkSourceRange(
+          strong.sourceUtf16.start + 1,
+          strong.sourceUtf16.end,
+        ),
+        contentBytes: strong.contentBytes,
+        contentUtf16: strong.contentUtf16,
+      );
+      expect(await document.querySemanticTarget(forged), isNull);
+
+      final edit = await document.applyEditUtf16(0, 0, 'x');
+      expect(document.isReady, isFalse);
+      expect(await document.querySemanticTarget(strong), isNull);
+      if (edit.historyToken case final token?) {
+        await document.releaseHistory(token);
+      }
+    },
+    skip: libraryPath == null,
+  );
 }
