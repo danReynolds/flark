@@ -536,6 +536,22 @@ fn parser_pending_depth_three_list_outdents_one_level_per_command() {
 }
 
 #[test]
+fn terminal_newline_depth_three_list_continues() {
+    let mut document = DocumentSession::begin("- root\n  - child\n    - leaf\n")
+        .expect("begin terminated depth-three sequence");
+    pump_ready(&mut document);
+    let continued = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 27, false)
+        .expect("continue terminated depth-three item");
+    assert_eq!(
+        continued.presentation_transition,
+        DocumentEditPresentationTransitionV1::ContinueList
+    );
+    assert_eq!(source(&document), "- root\n  - child\n    - leaf\n    - \n");
+    document.close().expect("close terminated sequence");
+}
+
+#[test]
 fn nonuniform_nested_list_geometry_fails_closed() {
     let initial = "10. root\n    - child\n";
     let mut document = DocumentSession::begin(initial).expect("begin nonuniform nested List");

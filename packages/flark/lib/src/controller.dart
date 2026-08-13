@@ -1889,12 +1889,6 @@ final class FlarkEditorController extends ChangeNotifier {
     final pending = _pendingSemanticInput;
     if (pending == null) return false;
     if (!_reserveSemanticSuccessor(pending)) return true;
-    if (pending.successors.isNotEmpty &&
-        pending.successors.last is _DeferredInputSuccessor) {
-      _pendingSemanticInput = null;
-      _resynchronize(FlarkInputResyncReason.unsupportedSuccessorObservation);
-      return true;
-    }
     final before = pending.provisionalTail;
     final rejection = _validateDeltaBatch(
       deltas,
@@ -1913,6 +1907,24 @@ final class FlarkEditorController extends ChangeNotifier {
       if (_mutationFor(delta) != null) {
         typingInput = typingInput && delta is TextEditingDeltaInsertion;
       }
+    }
+    final logical = _logicalSemanticSuccessor(
+      before,
+      after,
+      observedMutation: deltas.length == 1 ? _mutationFor(deltas.single) : null,
+    );
+    if (logical != null) {
+      pending.successors.add(logical);
+      pending.provisionalTail = after;
+      _markObservedPlatformCommand(logical);
+      _recordSemanticSuccessorHighWatermark(pending);
+      return true;
+    }
+    if (pending.successors.isNotEmpty &&
+        pending.successors.last is _DeferredInputSuccessor) {
+      _pendingSemanticInput = null;
+      _resynchronize(FlarkInputResyncReason.unsupportedSuccessorObservation);
+      return true;
     }
     pending.successors.add(
       _ProvisionalInputBatch(
@@ -1954,6 +1966,11 @@ final class FlarkEditorController extends ChangeNotifier {
         typingInput = typingInput && delta is TextEditingDeltaInsertion;
       }
     }
+    final logical = _logicalSemanticSuccessor(
+      before,
+      after,
+      observedMutation: deltas.length == 1 ? _mutationFor(deltas.single) : null,
+    );
     final holder = _PendingSemanticInput(
       base: before,
       inputGlobalUtf16Start: _inputGlobalUtf16Start,
@@ -1962,13 +1979,18 @@ final class FlarkEditorController extends ChangeNotifier {
           DateTime.now().microsecondsSinceEpoch,
       provisionalAfter: before,
     );
-    holder.successors.add(
-      _ProvisionalInputBatch(
-        before: before,
-        after: after,
-        typingInput: typingInput,
-      ),
-    );
+    if (logical != null) {
+      holder.successors.add(logical);
+      _markObservedPlatformCommand(logical);
+    } else {
+      holder.successors.add(
+        _ProvisionalInputBatch(
+          before: before,
+          after: after,
+          typingInput: typingInput,
+        ),
+      );
+    }
     late.provisionalTail = after;
     late.successorCount += 1;
     _platformMutation = true;
@@ -1985,15 +2007,27 @@ final class FlarkEditorController extends ChangeNotifier {
     final pending = _pendingSemanticInput;
     if (pending == null) return false;
     if (!_reserveSemanticSuccessor(pending)) return true;
-    if (!_validObservedValue(value) ||
-        (pending.successors.isNotEmpty &&
-            pending.successors.last is _DeferredInputSuccessor)) {
+    if (!_validObservedValue(value)) {
       _pendingSemanticInput = null;
       _resynchronize(FlarkInputResyncReason.unsupportedSuccessorObservation);
       return true;
     }
     final before = pending.provisionalTail;
     final mutation = _differenceMutation(before.text, value.text);
+    final logical = _logicalSemanticSuccessor(before, value);
+    if (logical != null) {
+      pending.successors.add(logical);
+      pending.provisionalTail = value;
+      _markObservedPlatformCommand(logical);
+      _recordSemanticSuccessorHighWatermark(pending);
+      return true;
+    }
+    if (pending.successors.isNotEmpty &&
+        pending.successors.last is _DeferredInputSuccessor) {
+      _pendingSemanticInput = null;
+      _resynchronize(FlarkInputResyncReason.unsupportedSuccessorObservation);
+      return true;
+    }
     pending.successors.add(
       _ProvisionalInputBatch(
         before: before,
@@ -2016,17 +2050,136 @@ final class FlarkEditorController extends ChangeNotifier {
     final pending = _pendingSemanticInput;
     if (pending == null) return false;
     if (!_reserveSemanticSuccessor(pending)) return true;
-    if (pending.successors.isNotEmpty &&
-        pending.successors.last is _DeferredInputSuccessor) {
-      _pendingSemanticInput = null;
-      _resynchronize(FlarkInputResyncReason.unsupportedSuccessorObservation);
-      return true;
-    }
     pending.successors.add(
       _DeferredInputSuccessor(command, replacement: replacement),
     );
     _recordSemanticSuccessorHighWatermark(pending);
     return true;
+  }
+
+  _DeferredInputSuccessor? _logicalSemanticSuccessor(
+    TextEditingValue before,
+    TextEditingValue after, {
+    _TextMutation? observedMutation,
+  }) {
+    if (before.composing != TextRange.empty ||
+        after.composing != TextRange.empty ||
+        !before.selection.isValid ||
+        !after.selection.isValid ||
+        !after.selection.isCollapsed) {
+      return null;
+    }
+    final mutation =
+        observedMutation ?? _selectionObservedMutation(before, after);
+    if (mutation == null) return null;
+    if (mutation.start < 0 ||
+        mutation.end < mutation.start ||
+        mutation.end > before.text.length ||
+        before.text.replaceRange(
+              mutation.start,
+              mutation.end,
+              mutation.replacement,
+            ) !=
+            after.text) {
+      return null;
+    }
+    final selectionStart = math.min(
+      before.selection.baseOffset,
+      before.selection.extentOffset,
+    );
+    final selectionEnd = math.max(
+      before.selection.baseOffset,
+      before.selection.extentOffset,
+    );
+    final resultCaret = mutation.start + mutation.replacement.length;
+    if (after.selection.extentOffset != resultCaret) return null;
+
+    if (mutation.start == selectionStart && mutation.end == selectionEnd) {
+      if (mutation.replacement == '\n') {
+        return const _DeferredInputSuccessor(
+          _DeferredInputCommand.insertNewline,
+        );
+      }
+      if ((mutation.replacement.isNotEmpty || !before.selection.isCollapsed) &&
+          !mutation.replacement.contains('\n') &&
+          !mutation.replacement.contains('\r')) {
+        return _DeferredInputSuccessor(null, replacement: mutation.replacement);
+      }
+    }
+    if (!before.selection.isCollapsed || mutation.replacement.isNotEmpty) {
+      return null;
+    }
+    final caret = before.selection.extentOffset;
+    final previous = FlarkCoreGraphemePolicy.previousClusterRange(
+      before.text,
+      caret,
+    );
+    if (previous != null &&
+        mutation.start == previous.$1 &&
+        mutation.end == previous.$2) {
+      return const _DeferredInputSuccessor(
+        _DeferredInputCommand.deleteBackward,
+      );
+    }
+    final next = FlarkCoreGraphemePolicy.nextClusterRange(before.text, caret);
+    if (next != null && mutation.start == next.$1 && mutation.end == next.$2) {
+      return const _DeferredInputSuccessor(_DeferredInputCommand.deleteForward);
+    }
+    return null;
+  }
+
+  _TextMutation? _selectionObservedMutation(
+    TextEditingValue before,
+    TextEditingValue after,
+  ) {
+    final start = math.min(
+      before.selection.baseOffset,
+      before.selection.extentOffset,
+    );
+    final end = math.max(
+      before.selection.baseOffset,
+      before.selection.extentOffset,
+    );
+    final resultCaret = after.selection.extentOffset;
+    if (resultCaret >= start && resultCaret <= after.text.length) {
+      final replacement = after.text.substring(start, resultCaret);
+      if (before.text.replaceRange(start, end, replacement) == after.text) {
+        return _TextMutation(start, end, replacement);
+      }
+    }
+    if (before.selection.isCollapsed) {
+      final previous = FlarkCoreGraphemePolicy.previousClusterRange(
+        before.text,
+        start,
+      );
+      if (previous != null &&
+          after.selection.extentOffset == previous.$1 &&
+          before.text.replaceRange(previous.$1, previous.$2, '') ==
+              after.text) {
+        return _TextMutation(previous.$1, previous.$2, '');
+      }
+      final next = FlarkCoreGraphemePolicy.nextClusterRange(before.text, start);
+      if (next != null &&
+          after.selection.extentOffset == start &&
+          before.text.replaceRange(next.$1, next.$2, '') == after.text) {
+        return _TextMutation(next.$1, next.$2, '');
+      }
+    }
+    return _differenceMutation(before.text, after.text);
+  }
+
+  void _markObservedPlatformCommand(_DeferredInputSuccessor successor) {
+    switch (successor.command) {
+      case _DeferredInputCommand.insertNewline:
+        _platformNewlineMutationAwaitingAction = true;
+        return;
+      case _DeferredInputCommand.deleteBackward:
+        _platformDeleteBackwardMutationAwaitingSelector = true;
+        return;
+      case _DeferredInputCommand.deleteForward:
+      case null:
+        return;
+    }
   }
 
   bool _reserveSemanticSuccessor(_PendingSemanticInput pending) {
@@ -3162,7 +3315,9 @@ final class FlarkEditorController extends ChangeNotifier {
       }
       final resyncCount = _resyncCount;
       _promoteSemanticSuccessorsWithMap(pending, reconciliation);
-      if (pending.provisionalMutation != null && _resyncCount == resyncCount) {
+      if (pending.provisionalMutation != null &&
+          _pendingSemanticInput == null &&
+          _resyncCount == resyncCount) {
         _lateSemanticInput = _LateSemanticInput(
           provisionalTail: pending.provisionalTail,
           reconciliation: reconciliation,
@@ -3201,7 +3356,8 @@ final class FlarkEditorController extends ChangeNotifier {
     _PendingSemanticInput pending,
     _InputReconciliationMap reconciliation,
   ) {
-    for (final successor in pending.successors) {
+    for (var index = 0; index < pending.successors.length; index += 1) {
+      final successor = pending.successors[index];
       if (successor case _DeferredInputSuccessor(
         command: final command,
         replacement: final replacement,
@@ -3220,6 +3376,15 @@ final class FlarkEditorController extends ChangeNotifier {
               _queueSemanticEdit(FlarkCoreEditIntentV1.insertParagraphBreak);
               break;
           }
+        }
+        final nextBarrier = _pendingSemanticInput;
+        if (nextBarrier != null) {
+          if (index + 1 < pending.successors.length) {
+            nextBarrier.successors.addAll(pending.successors.skip(index + 1));
+            nextBarrier.provisionalTail = pending.provisionalTail;
+            _recordSemanticSuccessorHighWatermark(nextBarrier);
+          }
+          return;
         }
         continue;
       }
@@ -3635,14 +3800,22 @@ final class FlarkEditorController extends ChangeNotifier {
     try {
       _status = FlarkEditorStatus.parsing;
       notifyListeners();
-      while (!_document.isReady && !_closed) {
-        await _document.pump(workUnits: 512);
+      while (!_closed && !_session.compositionActive) {
+        while (!_document.isReady && !_closed) {
+          await _document.pump(workUnits: 512);
+        }
+        if (_closed || _session.compositionActive) return;
+        final generation = _editGeneration;
+        await _refreshViewport(
+          restoreInputWindow: true,
+          expectedEditGeneration: generation,
+          ensureActiveInputVisible: true,
+        );
+        if (generation == _editGeneration) return;
+        // A newer edit arrived while the parser/query task was in flight.
+        // This same task must converge on that generation: a later idle timer
+        // may already have observed `_parserTask` and joined this Future.
       }
-      if (_closed || _session.compositionActive) return;
-      await _refreshViewport(
-        restoreInputWindow: true,
-        ensureActiveInputVisible: true,
-      );
     } catch (error) {
       _lastError = error;
       _status = FlarkEditorStatus.faulted;
