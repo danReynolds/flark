@@ -1010,8 +1010,12 @@ surface cannot inherit from `EditableText`: Cmd/Ctrl+A installs one exact
 document-wide anchored selection through Core, and Home/End plus macOS
 left/right-line selectors resolve against the current `TextPainter` line before
 mapping back to source. Shift variants extend the canonical selection. Visual
-line commands are deliberately not reused for word, paragraph, document, or
-off-page navigation; those require distinct policies and evidence.
+line commands are deliberately not reused for word movement. Word commands use
+Flutter's Unicode word-boundary policy over the complete bounded presentation
+row, so hidden Markdown markers and internal 256-unit paint fragments do not
+create false stops; Apple Option-arrow and Windows/Linux Control-arrow route to
+that policy, including Shift extension. Paragraph commands and off-page
+navigation remain distinct policies requiring their own evidence.
 
 ### H5 — hardening and later architecture
 

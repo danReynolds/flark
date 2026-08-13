@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'controller.dart';
@@ -321,6 +322,15 @@ final class _FlarkEditorState extends State<FlarkEditor>
     if (hit != null) _adoptNavigationHit(hit, modify: modify);
   }
 
+  void _moveWord({required bool forward, required bool modify}) {
+    _preferredVerticalNavigationX = null;
+    final hit = _surface?.wordBoundaryHit(
+      widget.controller.globalSelectionExtent,
+      forward: forward,
+    );
+    if (hit != null) _adoptNavigationHit(hit, modify: modify);
+  }
+
   void _handleTap() {
     final hit = _pendingTapHit;
     _pendingTapHit = null;
@@ -440,6 +450,11 @@ final class _FlarkEditorState extends State<FlarkEditor>
     );
   }
 
+  bool get _usesAppleNavigationModifiers => switch (defaultTargetPlatform) {
+    TargetPlatform.iOS || TargetPlatform.macOS => true,
+    _ => false,
+  };
+
   Map<ShortcutActivator, VoidCallback> get _desktopShortcutBindings => {
     SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
         _moveCharacter(forward: false, modify: false),
@@ -465,6 +480,50 @@ final class _FlarkEditorState extends State<FlarkEditor>
         _moveToLineBoundary(forward: false, modify: true),
     SingleActivator(LogicalKeyboardKey.end, shift: true): () =>
         _moveToLineBoundary(forward: true, modify: true),
+    SingleActivator(
+      LogicalKeyboardKey.arrowLeft,
+      alt: _usesAppleNavigationModifiers,
+      control: !_usesAppleNavigationModifiers,
+    ): () =>
+        _moveWord(forward: false, modify: false),
+    SingleActivator(
+      LogicalKeyboardKey.arrowRight,
+      alt: _usesAppleNavigationModifiers,
+      control: !_usesAppleNavigationModifiers,
+    ): () =>
+        _moveWord(forward: true, modify: false),
+    SingleActivator(
+      LogicalKeyboardKey.arrowLeft,
+      alt: _usesAppleNavigationModifiers,
+      control: !_usesAppleNavigationModifiers,
+      shift: true,
+    ): () =>
+        _moveWord(forward: false, modify: true),
+    SingleActivator(
+      LogicalKeyboardKey.arrowRight,
+      alt: _usesAppleNavigationModifiers,
+      control: !_usesAppleNavigationModifiers,
+      shift: true,
+    ): () =>
+        _moveWord(forward: true, modify: true),
+    if (_usesAppleNavigationModifiers) ...{
+      SingleActivator(LogicalKeyboardKey.arrowLeft, meta: true): () =>
+          _moveToLineBoundary(forward: false, modify: false),
+      SingleActivator(LogicalKeyboardKey.arrowRight, meta: true): () =>
+          _moveToLineBoundary(forward: true, modify: false),
+      SingleActivator(
+        LogicalKeyboardKey.arrowLeft,
+        meta: true,
+        shift: true,
+      ): () =>
+          _moveToLineBoundary(forward: false, modify: true),
+      SingleActivator(
+        LogicalKeyboardKey.arrowRight,
+        meta: true,
+        shift: true,
+      ): () =>
+          _moveToLineBoundary(forward: true, modify: true),
+    },
     for (final meta in [true, false]) ...{
       SingleActivator(LogicalKeyboardKey.keyA, meta: meta, control: !meta): () {
         widget.debugInputEventObserver?.call('shortcut:select-all');
@@ -579,6 +638,14 @@ final class _FlarkEditorState extends State<FlarkEditor>
         _moveToLineBoundary(forward: false, modify: true);
       case 'moveToRightEndOfLineAndModifySelection:':
         _moveToLineBoundary(forward: true, modify: true);
+      case 'moveWordLeft:':
+        _moveWord(forward: false, modify: false);
+      case 'moveWordRight:':
+        _moveWord(forward: true, modify: false);
+      case 'moveWordLeftAndModifySelection:':
+        _moveWord(forward: false, modify: true);
+      case 'moveWordRightAndModifySelection:':
+        _moveWord(forward: true, modify: true);
       case 'insertNewline:':
         _preferredVerticalNavigationX = null;
         widget.controller.insertNewline();

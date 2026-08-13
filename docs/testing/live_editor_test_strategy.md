@@ -467,7 +467,11 @@ Focused command tests now cover a real Meta+A shortcut with exact full-source
 selection/readback and macOS line-boundary selectors with Shift extension over
 rendered inline Markdown. Existing controller tests retain ownership of large
 selection replacement/history; the widget layer tests only routing and
-source/display geometry.
+source/display geometry. Word-command coverage uses Flutter's Unicode boundary
+policy, checks hidden-delimiter mapping and a real Apple Option-arrow route,
+and proves a 600-unit word crosses multiple internal paint fragments without a
+false stop. The adapter performs at most one bounded presentation-row layout;
+this is not an off-page navigation claim.
 
 ### H3 — Grow from evidence
 

@@ -925,6 +925,54 @@ final class RenderFlarkSurface extends RenderBox {
     );
   }
 
+  FlarkSurfaceHit? wordBoundaryHit(int offset, {required bool forward}) {
+    final rows = _logicalRows.toList(growable: false);
+    final current = _logicalRowForSourceUtf16(offset);
+    if (current == null) return null;
+    var rowIndex = rows.indexWhere((row) => row.ordinal == current.ordinal);
+    if (rowIndex < 0) return null;
+    var row = rows[rowIndex];
+    var textOffset = row.presentation.textOffsetForSourceOffset(
+      offset,
+      affinity: forward ? TextAffinity.downstream : TextAffinity.upstream,
+    );
+    while (true) {
+      final text = row.presentation.text;
+      if ((forward && textOffset < text.length) ||
+          (!forward && textOffset > 0)) {
+        // Word navigation is a user action, so doing one bounded (<= 2 KiB)
+        // layout here is preferable to treating internal 256-unit paint
+        // fragments as semantic word boundaries.
+        final navigationPainter = TextPainter(
+          text: TextSpan(text: text),
+          textDirection: _textDirection,
+        )..layout();
+        try {
+          final boundaries =
+              navigationPainter.wordBoundaries.moveByWordBoundary;
+          final target = forward
+              ? boundaries.getTrailingTextBoundaryAt(textOffset)
+              : boundaries.getLeadingTextBoundaryAt(textOffset - 1);
+          if (target != null) {
+            return _hitForTextOffset(
+              row,
+              target.clamp(0, text.length),
+              affinity: forward
+                  ? TextAffinity.downstream
+                  : TextAffinity.upstream,
+            );
+          }
+        } finally {
+          navigationPainter.dispose();
+        }
+      }
+      rowIndex += forward ? 1 : -1;
+      if (rowIndex < 0 || rowIndex >= rows.length) return null;
+      row = rows[rowIndex];
+      textOffset = forward ? 0 : row.presentation.text.length;
+    }
+  }
+
   FlarkSurfaceHit? verticalHit(
     int offset, {
     required bool forward,

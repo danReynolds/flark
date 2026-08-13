@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flark/flark.dart';
 import 'package:flark/src/render_surface.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -465,6 +466,128 @@ void main() {
       );
       expect(controller.globalSelectionBase, 0);
       expect(controller.globalSelectionExtent, source.indexOf('\n'));
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'word selectors use Unicode layout boundaries and skip hidden markers',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      const source = 'one **two** three\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final row = controller.rows.single;
+      await tester.runAsync(() async {
+        controller.activateRow(row, 0);
+        await controller.resolveCanonicalSelection();
+      });
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(child: FlarkEditor(controller: controller)),
+        ),
+      );
+      await tester.pump();
+      final dynamic state = tester.state(find.byType(FlarkEditor));
+
+      await _performSelectorAndWait(
+        tester,
+        controller,
+        state,
+        'moveWordRight:',
+      );
+      expect(controller.globalCaretOffset, 3);
+      await _performSelectorAndWait(
+        tester,
+        controller,
+        state,
+        'moveWordRight:',
+      );
+      expect(
+        controller.globalCaretOffset,
+        11,
+        reason: 'the next rendered word stop skips opening and closing **',
+      );
+      await _performSelectorAndWait(tester, controller, state, 'moveWordLeft:');
+      expect(
+        controller.globalCaretOffset,
+        4,
+        reason: 'the rendered stop before two lands before opening **',
+      );
+      await _performSelectorAndWait(
+        tester,
+        controller,
+        state,
+        'moveWordRightAndModifySelection:',
+      );
+      expect(controller.globalSelectionBase, 4);
+      expect(controller.globalSelectionExtent, 11);
+
+      await tester.runAsync(() async {
+        controller.activateRow(row, 0);
+        await controller.resolveCanonicalSelection();
+      });
+      final generation = controller.canonicalSelectionGeneration;
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+      await _pumpUntil(
+        tester,
+        () => controller.canonicalSelectionGeneration > generation,
+      );
+      expect(controller.globalCaretOffset, 3);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+      debugDefaultTargetPlatformOverride = null;
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'word navigation does not stop at internal paint fragments',
+    (tester) async {
+      final source = '${'a' * 600}\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final row = controller.rows.single;
+      await tester.runAsync(() async {
+        controller.activateRow(row, 10);
+        await controller.resolveCanonicalSelection();
+      });
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 320,
+            height: 400,
+            child: FlarkEditor(controller: controller),
+          ),
+        ),
+      );
+      await tester.pump();
+      final surface = tester.renderObject<RenderFlarkSurface>(
+        find.byType(FlarkRenderSurfaceWidget),
+      );
+      expect(surface.debugPaintedFragmentCount, greaterThan(1));
+      final dynamic state = tester.state(find.byType(FlarkEditor));
+
+      await _performSelectorAndWait(
+        tester,
+        controller,
+        state,
+        'moveWordRight:',
+      );
+      expect(controller.globalCaretOffset, 600);
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(controller.close);
