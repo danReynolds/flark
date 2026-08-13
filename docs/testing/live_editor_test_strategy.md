@@ -473,6 +473,15 @@ and proves a 600-unit word crosses multiple internal paint fragments without a
 false stop. The adapter performs at most one bounded presentation-row layout;
 this is not an off-page navigation claim.
 
+Focused touch long-press and real mouse double-tap cases select the visible
+content of a styled word and assert that neither source endpoint enters its
+hidden delimiters; the long-press case replaces the selection while retaining
+the Markdown style. The existing touch-drag case must remain green in the same
+suite so the new recognizers cannot regress scroll arbitration. Selection
+handles, menus, Apple floating-cursor behavior, and platform-specific
+whitespace policy remain simulator/physical evidence rather than additional
+portable scenarios.
+
 ### H3 — Grow from evidence
 
 Promote shipped construct families from the candidate list as their v4 product

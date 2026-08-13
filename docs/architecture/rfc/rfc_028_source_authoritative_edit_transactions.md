@@ -1017,6 +1017,17 @@ create false stops; Apple Option-arrow and Windows/Linux Control-arrow route to
 that policy, including Shift extension. Paragraph commands and off-page
 navigation remain distinct policies requiring their own evidence.
 
+Touch/stylus long press and mouse double tap now use the same complete-row
+Unicode word geometry to install one bounded source selection. Selection
+mapping deliberately differs from cursor navigation: its downstream start and
+upstream end stay flush with, but never inside, hidden Markdown delimiters.
+Replacing a selected rendered word therefore preserves its enclosing source
+style instead of exposing or orphaning syntax. The controller publishes the
+local range and queues one canonical anchor installation rather than emitting a
+transient collapsed selection first. Handles, magnifier, menus, Apple floating
+cursor behavior, whitespace tailoring, and physical mobile behavior remain
+separate platform work.
+
 ### H5 — hardening and later architecture
 
 Qualify memory envelopes, fault recovery, giant-line raster behavior, GFM and

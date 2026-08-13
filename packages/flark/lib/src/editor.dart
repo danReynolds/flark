@@ -347,13 +347,40 @@ final class _FlarkEditorState extends State<FlarkEditor>
     unawaited(widget.controller.toggleTaskChecked(hit.row!));
   }
 
+  void _selectWordAt(Offset localPosition) {
+    _pendingTapHit = null;
+    final selection = _surface?.wordSelectionForOffset(localPosition);
+    if (selection == null) return;
+    final base = selection.base;
+    final extent = selection.extent;
+    if (base.row case final row?) {
+      widget.controller.activateRow(
+        row,
+        base.globalUtf16Offset,
+        selectionExtent: extent.globalUtf16Offset,
+        affinity: base.affinity,
+      );
+    } else {
+      widget.controller.activateNeutralLine(
+        text: base.neutralText ?? '',
+        globalUtf16Start: base.neutralUtf16Start ?? 0,
+        globalUtf16Offset: base.globalUtf16Offset,
+        selectionExtent: extent.globalUtf16Offset,
+        ordinal: base.ordinal,
+        affinity: base.affinity,
+      );
+    }
+    _focusNode.requestFocus();
+    _openConnection();
+    _sendEditingState(force: true);
+  }
+
   Map<Type, GestureRecognizerFactory> get _gestureRecognizers => {
     TapGestureRecognizer:
         GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
           () => TapGestureRecognizer(
             debugOwner: this,
             supportedDevices: const {
-              PointerDeviceKind.mouse,
               PointerDeviceKind.touch,
               PointerDeviceKind.stylus,
               PointerDeviceKind.invertedStylus,
@@ -366,20 +393,40 @@ final class _FlarkEditorState extends State<FlarkEditor>
               ..onTapCancel = () => _pendingTapHit = null;
           },
         ),
-    PanGestureRecognizer:
-        GestureRecognizerFactoryWithHandlers<PanGestureRecognizer>(
-          () => PanGestureRecognizer(
+    TapAndPanGestureRecognizer:
+        GestureRecognizerFactoryWithHandlers<TapAndPanGestureRecognizer>(
+          () => TapAndPanGestureRecognizer(
             debugOwner: this,
             supportedDevices: const {PointerDeviceKind.mouse},
           ),
           (recognizer) {
             recognizer
-              ..onStart = (details) {
-                _pendingTapHit = null;
-                _activate(details.localPosition);
+              ..dragStartBehavior = DragStartBehavior.down
+              ..onTapDown = (details) {
+                _pendingTapHit = _surface?.positionForOffset(
+                  details.localPosition,
+                );
+                if (details.consecutiveTapCount == 2) {
+                  _selectWordAt(details.localPosition);
+                }
               }
-              ..onUpdate = (details) =>
+              ..onTapUp = (details) {
+                if (details.consecutiveTapCount == 1) _handleTap();
+              }
+              ..onCancel = () {
+                _pendingTapHit = null;
+              }
+              ..onDragStart = (details) {
+                _pendingTapHit = null;
+                if (details.consecutiveTapCount == 1) {
+                  _activate(details.localPosition);
+                }
+              }
+              ..onDragUpdate = (details) {
+                if (details.consecutiveTapCount == 1) {
                   _activate(details.localPosition, extend: true);
+                }
+              };
           },
         ),
     VerticalDragGestureRecognizer:
@@ -400,6 +447,22 @@ final class _FlarkEditorState extends State<FlarkEditor>
               ..onUpdate = (details) {
                 _surface?.scrollBy(-details.delta.dy);
               };
+          },
+        ),
+    LongPressGestureRecognizer:
+        GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
+          () => LongPressGestureRecognizer(
+            debugOwner: this,
+            supportedDevices: const {
+              PointerDeviceKind.touch,
+              PointerDeviceKind.stylus,
+              PointerDeviceKind.invertedStylus,
+            },
+          ),
+          (recognizer) {
+            recognizer.onLongPressStart = (details) {
+              _selectWordAt(details.localPosition);
+            };
           },
         ),
   };

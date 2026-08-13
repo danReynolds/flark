@@ -1251,6 +1251,7 @@ final class FlarkEditorController extends ChangeNotifier {
   void activateRow(
     FlarkViewportRow row,
     int globalUtf16Offset, {
+    int? selectionExtent,
     TextAffinity affinity = TextAffinity.downstream,
   }) {
     _semanticEditV1Active = _supportsSemanticEditV1(row);
@@ -1261,14 +1262,19 @@ final class FlarkEditorController extends ChangeNotifier {
     _abandonOversizedSelection();
     final range = _mapViewportRange(_activationRange(row));
     final text = _sliceVisibleUtf16(range.start, range.end);
-    _activateWindow(
+    final selectionRepresented = _activateWindow(
       text: text,
       sourceStart: range.start,
       caret: globalUtf16Offset,
+      selectionExtent: selectionExtent,
       ordinal: row.ordinal,
       affinity: affinity,
     );
-    unawaited(_installCanonicalSelection(_selectionSnapshot()));
+    if (selectionExtent == null || selectionRepresented) {
+      unawaited(_installCanonicalSelection(_selectionSnapshot()));
+    } else {
+      unawaited(selectOversizedRangeUtf16(globalUtf16Offset, selectionExtent));
+    }
   }
 
   void activateNeutralLine({
@@ -1276,6 +1282,7 @@ final class FlarkEditorController extends ChangeNotifier {
     required int globalUtf16Start,
     required int globalUtf16Offset,
     required int ordinal,
+    int? selectionExtent,
     TextAffinity affinity = TextAffinity.downstream,
   }) {
     _semanticEditV1Active = false;
@@ -1283,14 +1290,19 @@ final class FlarkEditorController extends ChangeNotifier {
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
     _abandonOversizedSelection();
-    _activateWindow(
+    final selectionRepresented = _activateWindow(
       text: text,
       sourceStart: globalUtf16Start,
       caret: globalUtf16Offset,
+      selectionExtent: selectionExtent,
       ordinal: -ordinal - 1,
       affinity: affinity,
     );
-    unawaited(_installCanonicalSelection(_selectionSnapshot()));
+    if (selectionExtent == null || selectionRepresented) {
+      unawaited(_installCanonicalSelection(_selectionSnapshot()));
+    } else {
+      unawaited(selectOversizedRangeUtf16(globalUtf16Offset, selectionExtent));
+    }
   }
 
   void extendSelectionTo(int globalUtf16Offset, {int? activeOrdinal}) {
@@ -2650,14 +2662,22 @@ final class FlarkEditorController extends ChangeNotifier {
     }
   }
 
-  void _activateWindow({
+  bool _activateWindow({
     required String text,
     required int sourceStart,
     required int caret,
+    int? selectionExtent,
     required int ordinal,
     required TextAffinity affinity,
   }) {
-    final localCaret = (caret - sourceStart).clamp(0, text.length);
+    final requestedLocalCaret = caret - sourceStart;
+    final requestedLocalExtent = selectionExtent == null
+        ? requestedLocalCaret
+        : selectionExtent - sourceStart;
+    final localCaret = requestedLocalCaret.clamp(0, text.length);
+    final localExtent = selectionExtent == null
+        ? localCaret
+        : requestedLocalExtent.clamp(0, text.length);
     var windowStart = 0;
     var windowEnd = text.length;
     if (text.length > _maximumInputCodeUnits) {
@@ -2665,23 +2685,54 @@ final class FlarkEditorController extends ChangeNotifier {
         0,
         text.length - _maximumInputCodeUnits,
       );
+      final selectionStart = math.min(localCaret, localExtent);
+      final selectionEnd = math.max(localCaret, localExtent);
+      if (selectionEnd - selectionStart <= _maximumInputCodeUnits) {
+        if (selectionStart < windowStart) windowStart = selectionStart;
+        if (selectionEnd > windowStart + _maximumInputCodeUnits) {
+          windowStart = selectionEnd - _maximumInputCodeUnits;
+        }
+      }
       windowEnd = windowStart + _maximumInputCodeUnits;
     }
     final window = text.substring(windowStart, windowEnd);
     final windowCaret = localCaret - windowStart;
+    final windowExtent = localExtent - windowStart;
+    final selectionRepresented =
+        requestedLocalCaret == localCaret &&
+        requestedLocalExtent == localExtent &&
+        windowCaret >= 0 &&
+        windowCaret <= window.length &&
+        windowExtent >= 0 &&
+        windowExtent <= window.length;
     _inputGlobalUtf16Start = sourceStart + windowStart;
     _inputValue = TextEditingValue(
       text: window,
-      selection: TextSelection.collapsed(
-        offset: windowCaret,
-        affinity: affinity,
-      ),
+      selection: selectionExtent != null && selectionRepresented
+          ? TextSelection(
+              baseOffset: windowCaret,
+              extentOffset: windowExtent,
+              affinity: affinity,
+              isDirectional: true,
+            )
+          : TextSelection.collapsed(
+              offset: windowCaret.clamp(0, window.length),
+              affinity: affinity,
+            ),
     );
     _activeOrdinal = ordinal;
-    _crossRowSelection = false;
-    _globalSelectionBase = _inputGlobalUtf16Start + windowCaret;
-    _globalSelectionExtent = _globalSelectionBase;
+    _crossRowSelection =
+        selectionExtent != null &&
+        selectionRepresented &&
+        caret != selectionExtent;
+    _globalSelectionBase = selectionExtent != null && !selectionRepresented
+        ? caret
+        : _inputGlobalUtf16Start + _inputValue.selection.baseOffset;
+    _globalSelectionExtent = selectionExtent != null && !selectionRepresented
+        ? selectionExtent
+        : _inputGlobalUtf16Start + _inputValue.selection.extentOffset;
     notifyListeners();
+    return selectionRepresented;
   }
 
   void _updateGlobalSelection() {

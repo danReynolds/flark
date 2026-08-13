@@ -269,6 +269,106 @@ void main() {
   );
 
   testWidgets(
+    'touch long press selects and replaces one rendered styled word',
+    (tester) async {
+      const source = 'Tap **this** word\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final debugHandle = FlarkEditorDebugHandle();
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: FlarkEditor(
+              controller: controller,
+              debugHandle: debugHandle,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final target = debugHandle.geometryForSourceUtf16(
+        source.indexOf('this') + 1,
+      );
+      expect(target, isNotNull);
+      final generation = controller.canonicalSelectionGeneration;
+
+      await tester.longPressAt(target!.globalPosition);
+      await _pumpUntil(
+        tester,
+        () => controller.canonicalSelectionGeneration > generation,
+      );
+
+      expect(controller.canonicalSelectionGeneration, generation + 1);
+      expect(controller.globalSelectionBase, source.indexOf('this'));
+      expect(controller.globalSelectionExtent, source.indexOf('this') + 4);
+      expect(await tester.runAsync(controller.readSelectedText), 'this');
+      expect(await tester.runAsync(controller.readSource), source);
+
+      controller.replaceSelection('that');
+      await _pumpUntilTransactions(tester, controller);
+      expect(
+        await tester.runAsync(controller.readSource),
+        'Tap **that** word\n',
+      );
+      expect(controller.lastError, isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets('mouse double tap selects one rendered styled word', (
+    tester,
+  ) async {
+    const source = 'Tap **this** word\n';
+    final controller = (await tester.runAsync(
+      () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+    ))!;
+    await tester.runAsync(controller.continueParsing);
+    final debugHandle = FlarkEditorDebugHandle();
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: SizedBox.expand(
+          child: FlarkEditor(controller: controller, debugHandle: debugHandle),
+        ),
+      ),
+    );
+    await tester.pump();
+    final target = debugHandle.geometryForSourceUtf16(
+      source.indexOf('this') + 1,
+    );
+    expect(target, isNotNull);
+    final generation = controller.canonicalSelectionGeneration;
+
+    await tester.tapAt(target!.globalPosition, kind: PointerDeviceKind.mouse);
+    await tester.pump(kDoubleTapMinTime + const Duration(milliseconds: 25));
+    await tester.tapAt(target.globalPosition, kind: PointerDeviceKind.mouse);
+    await _pumpUntil(
+      tester,
+      () =>
+          controller.canonicalSelectionGeneration >= generation + 2 &&
+          controller.globalSelectionBase == source.indexOf('this') &&
+          controller.globalSelectionExtent == source.indexOf('this') + 4,
+    );
+    final selection = await tester.runAsync(
+      controller.resolveCanonicalSelection,
+    );
+    expect(selection?.base, source.indexOf('this'));
+    expect(selection?.extent, source.indexOf('this') + 4);
+    expect(await tester.runAsync(controller.readSelectedText), 'this');
+    expect(await tester.runAsync(controller.readSource), source);
+
+    await tester.pump(kDoubleTapTimeout);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.runAsync(controller.close);
+  }, skip: libraryPath == null);
+
+  testWidgets(
     'keyboard selectors navigate rendered graphemes and preserve source selection',
     (tester) async {
       const source = 'Before **A🌍B** after\n';

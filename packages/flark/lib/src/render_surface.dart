@@ -58,6 +58,13 @@ final class FlarkSurfaceHit {
   final FlarkSurfaceAction? action;
 }
 
+final class FlarkSurfaceSelection {
+  const FlarkSurfaceSelection({required this.base, required this.extent});
+
+  final FlarkSurfaceHit base;
+  final FlarkSurfaceHit extent;
+}
+
 final class _PaintedRow {
   const _PaintedRow({
     required this.top,
@@ -747,17 +754,9 @@ final class RenderFlarkSurface extends RenderBox {
     Offset offset, {
     double minimumActionExtent = 24,
   }) {
-    if (_paintedRows.isEmpty) return null;
-    final contentOffset = offset + Offset(0, _scrollOffset);
-    final row = _paintedRows.firstWhere(
-      (candidate) => contentOffset.dy <= candidate.top + candidate.height,
-      orElse: () => _paintedRows.last,
-    );
-    final painterPoint = Offset(
-      (contentOffset.dx - _padding.left).clamp(0, row.painter.width),
-      (contentOffset.dy - row.top).clamp(0, row.height),
-    );
-    final position = row.painter.getPositionForOffset(painterPoint);
+    final resolved = _textPositionForOffset(offset);
+    if (resolved == null) return null;
+    final (:row, :painterPoint, :position) = resolved;
     final local = (position.offset - row.leadingLength + row.fragmentStart)
         .clamp(row.fragmentStart, row.fragmentEnd)
         .clamp(0, row.presentation.text.length);
@@ -769,6 +768,25 @@ final class RenderFlarkSurface extends RenderBox {
       action: taskAction?.contains(painterPoint) == true
           ? FlarkSurfaceAction.toggleTaskChecked
           : null,
+    );
+  }
+
+  ({_PaintedRow row, Offset painterPoint, TextPosition position})?
+  _textPositionForOffset(Offset offset) {
+    if (_paintedRows.isEmpty) return null;
+    final contentOffset = offset + Offset(0, _scrollOffset);
+    final row = _paintedRows.firstWhere(
+      (candidate) => contentOffset.dy <= candidate.top + candidate.height,
+      orElse: () => _paintedRows.last,
+    );
+    final painterPoint = Offset(
+      (contentOffset.dx - _padding.left).clamp(0, row.painter.width),
+      (contentOffset.dy - row.top).clamp(0, row.height),
+    );
+    return (
+      row: row,
+      painterPoint: painterPoint,
+      position: row.painter.getPositionForOffset(painterPoint),
     );
   }
 
@@ -970,6 +988,49 @@ final class RenderFlarkSurface extends RenderBox {
       if (rowIndex < 0 || rowIndex >= rows.length) return null;
       row = rows[rowIndex];
       textOffset = forward ? 0 : row.presentation.text.length;
+    }
+  }
+
+  /// Selects one rendered Unicode word without placing either source endpoint
+  /// inside hidden Markdown syntax.
+  FlarkSurfaceSelection? wordSelectionForOffset(Offset offset) {
+    final resolved = _textPositionForOffset(offset);
+    if (resolved == null) return null;
+    final (:row, :position, painterPoint: _) = resolved;
+    final text = row.presentation.text;
+    final textOffset = (position.offset - row.leadingLength + row.fragmentStart)
+        .clamp(row.fragmentStart, row.fragmentEnd)
+        .clamp(0, text.length);
+    if (textOffset == text.length) {
+      final hit = _hitForTextOffset(
+        row,
+        textOffset,
+        affinity: TextAffinity.upstream,
+      );
+      return FlarkSurfaceSelection(base: hit, extent: hit);
+    }
+    final navigationPainter = TextPainter(
+      text: TextSpan(text: text),
+      textDirection: _textDirection,
+    )..layout();
+    try {
+      final word = navigationPainter.getWordBoundary(
+        TextPosition(offset: textOffset, affinity: position.affinity),
+      );
+      return FlarkSurfaceSelection(
+        base: _hitForTextOffset(
+          row,
+          word.start,
+          affinity: TextAffinity.downstream,
+        ),
+        extent: _hitForTextOffset(
+          row,
+          word.end,
+          affinity: TextAffinity.upstream,
+        ),
+      );
+    } finally {
+      navigationPainter.dispose();
     }
   }
 
