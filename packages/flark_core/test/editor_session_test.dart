@@ -383,6 +383,36 @@ void main() {
       );
 
       test(
+        'a queued semantic successor uses exact pending lineage without a pump',
+        () async {
+          await open('9) alpha\n');
+          addTearDown(() async {
+            await session.dispose();
+            await document.dispose();
+          });
+          await session.setSelectionUtf16(8, 8);
+
+          final inserted = await session.applyEditIntentV1(
+            FlarkCoreEditIntentV1.insertParagraphBreak,
+            compositionActive: false,
+          );
+          expect(
+            inserted.disposition,
+            FlarkCoreEditIntentDispositionV1.applied,
+          );
+          expect(document.isReady, isFalse);
+
+          final deleted = await session.applyEditIntentV1(
+            FlarkCoreEditIntentV1.deleteBackward,
+            compositionActive: false,
+          );
+          expect(deleted.disposition, FlarkCoreEditIntentDispositionV1.applied);
+          expect(await document.readSource(), '9) alpha\n\n\n');
+          expect((await session.resolveSelection())!.extent, 10);
+        },
+      );
+
+      test(
         'task action targets its row while preserving a directional selection',
         () async {
           const initial = '- [ ] task\n\nselection\n';

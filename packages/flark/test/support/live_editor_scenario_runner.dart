@@ -139,6 +139,12 @@ base class NoWindowLiveEditorScenarioDriver
       case LiveEditorScenarioKey.delete:
         controller.deleteForward();
         _platformValue = controller.inputValue;
+      case LiveEditorScenarioKey.selectAll:
+        await controller.selectOversizedRangeUtf16(
+          0,
+          controller.sourceUtf16Length,
+        );
+        _platformValue = controller.inputValue;
       case LiveEditorScenarioKey.undo:
         await controller.undo();
         _platformValue = controller.inputValue;

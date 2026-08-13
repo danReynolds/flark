@@ -14,6 +14,10 @@ void main() {
   final scenarioFiles = configuredScenario == null
       ? [
           File('test/scenarios/paragraph_split_rapid_successor.json'),
+          File('test/scenarios/list_return_backspace_successor.json'),
+          File('test/scenarios/cross_block_pointer_replace_history.json'),
+          File('test/scenarios/select_all_replace_history.json'),
+          File('test/scenarios/select_all_type_history.json'),
           File('test/scenarios/paragraph_list_boundary_newline.json'),
           File('test/scenarios/paragraph_join_backspace_successor.json'),
           File('test/scenarios/simple_list_continue_exit_type.json'),

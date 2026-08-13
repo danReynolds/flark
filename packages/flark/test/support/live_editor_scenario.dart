@@ -4,7 +4,7 @@ import 'package:crypto/crypto.dart';
 
 const liveEditorScenarioSchemaVersion = 1;
 
-enum LiveEditorScenarioKey { enter, backspace, delete, undo, redo }
+enum LiveEditorScenarioKey { enter, backspace, delete, selectAll, undo, redo }
 
 enum LiveEditorScenarioBarrier { editSettled, paintSettled }
 
@@ -603,6 +603,11 @@ final class LiveEditorScenarioCompiler {
       case 'pressDelete':
         reader.expectKeys(const {'type'});
         return const LiveEditorKeyOperation(key: LiveEditorScenarioKey.delete);
+      case 'selectAll':
+        reader.expectKeys(const {'type'});
+        return const LiveEditorKeyOperation(
+          key: LiveEditorScenarioKey.selectAll,
+        );
       case 'undo':
         reader.expectKeys(const {'type'});
         return const LiveEditorKeyOperation(key: LiveEditorScenarioKey.undo);

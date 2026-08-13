@@ -312,6 +312,7 @@ func postKey(named name: String) throws {
   case "enter": pressKey(36)
   case "backspace": pressKey(51)
   case "delete": pressKey(117)
+  case "selectAll": pressCommandShortcut(0)
   case "undo": pressCommandShortcut(6)
   case "redo": pressCommandShortcut(6, shift: true)
   default: throw ActuatorFailure.message("unsupported key \(name)")

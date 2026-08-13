@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "id": "list-return-backspace-successor",
+  "description": "Backspace queued immediately behind list continuation waits for current parser facts, lifts the new item, and remains a distinct undo unit.",
+  "initialSource": "9) alpha\n",
+  "activation": {
+    "needle": "alpha",
+    "occurrence": 0,
+    "utf16OffsetInNeedle": 5
+  },
+  "steps": [
+    {
+      "type": "pressReturn"
+    },
+    {
+      "type": "scheduleDelay",
+      "key": "afterReturnMs"
+    },
+    {
+      "type": "pressBackspace"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "checkpoint",
+      "id": "lifted",
+      "source": "9) alpha\n\n\n",
+      "caretUtf16": 10
+    },
+    {
+      "type": "undo"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "checkpoint",
+      "id": "continued",
+      "source": "9) alpha\n10) \n",
+      "caretUtf16": 13
+    }
+  ],
+  "schedules": [
+    {
+      "id": "immediate",
+      "afterReturnMs": 0
+    },
+    {
+      "id": "late-selector",
+      "afterReturnMs": 30
+    }
+  ],
+  "expect": {
+    "source": "9) alpha\n10) \n",
+    "caretUtf16": 13,
+    "resyncCount": 0,
+    "faulted": false,
+    "forbiddenSurfaceSubstrings": ["<empty>"],
+    "paintedSurfaceNeverContains": ["<empty>"]
+  }
+}

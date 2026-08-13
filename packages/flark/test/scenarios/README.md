@@ -30,6 +30,14 @@ native runners additionally enforce `minimumObservedScrollOffset` against an
 actual render-surface observation. A no-op platform adapter therefore cannot
 pass the higher-tier canary.
 
+Selection operations are intent-level as well. `selectAll` installs the exact
+Core-owned document range (including source that is not painted, such as a
+trailing newline); native runners invoke the real platform shortcut. Pointer
+selection scenarios use painted source points and therefore remain distinct
+from whole-document selection. Timing schedules deliberately cover both an
+input arriving while a semantic receipt is pending and one arriving just after
+commit but before the platform has adopted the new input window.
+
 - `live_editor_scenario_surface_test.dart` mounts the production render object
   and adds bounded observations emitted by actual paint calls. It uses the same
   actions, barriers, and assertions as the no-window driver.

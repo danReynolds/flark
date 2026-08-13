@@ -390,6 +390,38 @@ only incomplete or temporarily pending syntax becomes exact source locally.
   );
 
   test(
+    'deferred Backspace falls back to a literal grapheme after semantic miss',
+    () async {
+      final controller = await open('Before.\n\nAfter.\n');
+      addTearDown(controller.close);
+      final after = controller.rows.last;
+      controller.activateRow(after, after.editableUtf16!.start);
+
+      controller.deleteBackward();
+      controller.deleteBackward();
+
+      expect(controller.resyncCount, 0);
+      await settle(controller);
+      expect(
+        controller.visibleSource,
+        'BeforeAfter.\n',
+        reason:
+            'revision=${controller.revision} pending=${controller.pendingEdits} '
+            'status=${controller.status} error=${controller.lastError}',
+      );
+      expect(controller.revision, 3);
+      expect(controller.semanticSuccessorHighWatermark, 1);
+      expect(await controller.undo(), isTrue);
+      await settle(controller);
+      expect(controller.visibleSource, 'Before.After.\n');
+      expect(await controller.undo(), isTrue);
+      await settle(controller);
+      expect(controller.visibleSource, 'Before.\n\nAfter.\n');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'typing behind handled-no-change Backspace keeps the current window',
     () async {
       final controller = await open('alpha\n');
@@ -657,6 +689,140 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       expect(undone, isTrue);
       expect(controller.sourceUtf16Length, lengthBefore);
       await settle(controller);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'a surrogate selection echo cannot retarget an oversized selection',
+    () async {
+      const source = 'First **bold**.\n\nSecond line.\n';
+      final controller = await open(source);
+      addTearDown(controller.close);
+      await settle(controller);
+
+      await controller.selectOversizedRangeUtf16(0, source.length);
+      final surrogate = controller.inputValue;
+      controller.applyDeltas([
+        TextEditingDeltaNonTextUpdate(
+          oldText: surrogate.text,
+          selection: surrogate.selection,
+          composing: TextRange.empty,
+        ),
+      ]);
+
+      final exact = await controller.resolveCanonicalSelection();
+      expect(exact, isNotNull);
+      expect(exact!.base, 0);
+      expect(exact.extent, source.length);
+      expect(controller.globalSelectionBase, 0);
+      expect(controller.globalSelectionExtent, source.length);
+
+      controller.applyDeltas([
+        insertion(
+          controller.inputValue,
+          controller.inputValue.selection.extentOffset,
+          'X',
+        ),
+      ]);
+      await settle(controller);
+      expect(await controller.readSource(), 'X');
+      expect(controller.resyncCount, 0);
+
+      expect(await controller.undo(), isTrue);
+      await settle(controller);
+      expect(await controller.readSource(), source);
+      expect(controller.globalSelectionBase, 0);
+      expect(controller.globalSelectionExtent, source.length);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'a full-value mutation replaces an oversized selection once',
+    () async {
+      const source = 'First **bold**.\n\nSecond line.\n';
+      final controller = await open(source);
+      addTearDown(controller.close);
+      await settle(controller);
+
+      await controller.selectOversizedRangeUtf16(0, source.length);
+      controller.updateEditingValue(
+        const TextEditingValue(
+          text: 'Y',
+          selection: TextSelection.collapsed(offset: 1),
+        ),
+      );
+      await settle(controller);
+
+      expect(await controller.readSource(), 'Y');
+      expect(controller.revision, 2);
+      expect(controller.resyncCount, 0);
+      expect(await controller.undo(), isTrue);
+      await settle(controller);
+      expect(await controller.readSource(), source);
+      expect(controller.globalSelectionBase, 0);
+      expect(controller.globalSelectionExtent, source.length);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'an oversized replacement window never starts inside a Unicode scalar',
+    () async {
+      final source = List<String>.filled(20000, 's').join();
+      final replacement = '😀${List<String>.filled(16383, 'a').join()}';
+      final controller = await open(source);
+      addTearDown(controller.close);
+      await settle(controller);
+
+      await controller.selectOversizedRangeUtf16(0, source.length);
+      controller.replaceSelection(replacement);
+      await settle(controller);
+
+      expect(await controller.readSource(), replacement);
+      expect(
+        controller.inputValue.text,
+        List<String>.filled(16383, 'a').join(),
+      );
+      expect(controller.inputValue.text.runes.length, 16383);
+      expect(controller.inputValue.selection.extentOffset, 16383);
+      expect(controller.resyncCount, 0);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'an oversized Backspace delta suppresses its duplicate selector',
+    () async {
+      const source = 'Select this whole line';
+      final controller = await open(source);
+      addTearDown(controller.close);
+      await settle(controller);
+
+      await controller.selectOversizedRangeUtf16(0, source.length);
+      final surrogate = controller.inputValue;
+      final caret = surrogate.selection.extentOffset;
+      expect(caret, greaterThan(0));
+      controller.applyDeltas([
+        TextEditingDeltaDeletion(
+          oldText: surrogate.text,
+          deletedRange: TextRange(start: caret - 1, end: caret),
+          selection: TextSelection.collapsed(offset: caret - 1),
+          composing: TextRange.empty,
+        ),
+      ]);
+      controller.observePlatformDeleteBackwardAction();
+      await settle(controller);
+
+      expect(await controller.readSource(), '');
+      expect(controller.revision, 2);
+      expect(controller.resyncCount, 0);
+      expect(await controller.undo(), isTrue);
+      await settle(controller);
+      expect(await controller.readSource(), source);
+      expect(controller.globalSelectionBase, 0);
+      expect(controller.globalSelectionExtent, source.length);
     },
     skip: libraryPath == null,
   );
