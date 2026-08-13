@@ -36,6 +36,25 @@ final class _FlarkMarkdownViewState extends State<FlarkMarkdownView> {
   RenderFlarkSurface? get _surface =>
       _surfaceKey.currentContext?.findRenderObject() as RenderFlarkSurface?;
 
+  Map<Type, GestureRecognizerFactory> get _touchScrollRecognizer => {
+    VerticalDragGestureRecognizer:
+        GestureRecognizerFactoryWithHandlers<VerticalDragGestureRecognizer>(
+          () => VerticalDragGestureRecognizer(
+            debugOwner: this,
+            supportedDevices: const {
+              PointerDeviceKind.touch,
+              PointerDeviceKind.stylus,
+              PointerDeviceKind.invertedStylus,
+            },
+          ),
+          (recognizer) {
+            recognizer.onUpdate = (details) {
+              _surface?.scrollBy(-details.delta.dy);
+            };
+          },
+        ),
+  };
+
   @override
   void initState() {
     super.initState();
@@ -68,14 +87,18 @@ final class _FlarkMarkdownViewState extends State<FlarkMarkdownView> {
         onPointerPanZoomUpdate: (event) {
           _surface?.scrollBy(-event.localPanDelta.dy);
         },
-        child: FlarkRenderSurfaceWidget(
-          key: _surfaceKey,
-          controller: widget.controller,
-          textStyle: widget.textStyle,
-          padding: widget.padding,
-          caretColor: const Color(0x00000000),
-          selectionColor: const Color(0x00000000),
-          includeEditingState: false,
+        child: RawGestureDetector(
+          behavior: HitTestBehavior.opaque,
+          gestures: _touchScrollRecognizer,
+          child: FlarkRenderSurfaceWidget(
+            key: _surfaceKey,
+            controller: widget.controller,
+            textStyle: widget.textStyle,
+            padding: widget.padding,
+            caretColor: const Color(0x00000000),
+            selectionColor: const Color(0x00000000),
+            includeEditingState: false,
+          ),
         ),
       ),
     );

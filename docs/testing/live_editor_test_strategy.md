@@ -453,6 +453,10 @@ paint-geometry vertical movement. Broader word/line/document, bidi, page, and
 platform convention matrices are added only with their corresponding product
 behavior; they are not multiplied through the portable Markdown corpus.
 
+The read-only widget has one focused host test proving touch scroll over the
+shared bounded render object, unchanged source, zero edit traffic, and no
+`EditableText`. Editing scenarios are intentionally not replayed through it.
+
 ### H3 — Grow from evidence
 
 Promote shipped construct families from the candidate list as their v4 product

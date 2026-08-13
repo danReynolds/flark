@@ -990,6 +990,12 @@ does not move navigation semantics into Rust: layout-dependent destinations
 belong to the frontend, while word/line/document commands, bidi permutations,
 off-page navigation, and accessibility traversal remain explicit H4 work.
 
+The public `FlarkMarkdownView` shares the same bounded render object and now
+shares the device-appropriate scroll boundary: wheel and pan/zoom signals on
+desktop, vertical touch/stylus drag on mobile, and no input connection or
+selection mutation in read-only mode. This is render-surface parity, not a
+second parser or widget-per-block read path.
+
 ### H5 — hardening and later architecture
 
 Qualify memory envelopes, fault recovery, giant-line raster behavior, GFM and
