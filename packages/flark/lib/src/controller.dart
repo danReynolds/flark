@@ -1608,10 +1608,7 @@ final class FlarkEditorController extends ChangeNotifier {
       replaceSelection('');
       return;
     }
-    if (_queueSemanticDeleteBackward(selection.extentOffset) ||
-        _deleteProjectedListPrefix(selection.extentOffset) ||
-        _deleteProjectedBlockQuotePrefix(selection.extentOffset) ||
-        _deleteProjectedHeadingPrefix(selection.extentOffset)) {
+    if (_queueSemanticDeleteBackward(selection.extentOffset)) {
       return;
     }
     if (_deleteProjectedVisible(backward: true)) return;
@@ -1662,8 +1659,6 @@ final class FlarkEditorController extends ChangeNotifier {
     final selection = _inputValue.selection;
     if (selection.isCollapsed &&
         (_queueSemanticParagraphBreak(selection.extentOffset) ||
-            _insertProjectedListNewline(selection.extentOffset) ||
-            _insertProjectedBlockQuoteNewline(selection.extentOffset) ||
             _insertProjectedBlockNewline(selection.extentOffset))) {
       return;
     }
@@ -2024,16 +2019,6 @@ final class FlarkEditorController extends ChangeNotifier {
       sourceCursor = run.sourceUtf16End;
     }
     return sourceCursor != activation.end;
-  }
-
-  bool _smallEditFits(String source, int start, int end, String replacement) {
-    if (start < 0 || end < start || end > source.length) return false;
-    final nextInputLength = _replacementLength(source, start, end, replacement);
-    if (nextInputLength > _maximumInputCodeUnits) return false;
-    final deletedBytes = utf8.encode(source.substring(start, end)).length;
-    final replacementBytes = utf8.encode(replacement).length;
-    return _smallEditDescriptorBytes + deletedBytes + replacementBytes <=
-        _maximumSmallEditBytes;
   }
 
   int _replacementLength(
@@ -3856,141 +3841,6 @@ final class FlarkEditorController extends ChangeNotifier {
   bool _isLowSurrogate(int codeUnit) =>
       codeUnit >= 0xdc00 && codeUnit <= 0xdfff;
 
-  bool _deleteProjectedHeadingPrefix(int localCaret) {
-    final row = _activeCachedRow();
-    if (row == null ||
-        row.kind != 12 ||
-        row.headingStyle != FlarkHeadingStyle.atx ||
-        row.editableUtf16 == null) {
-      return false;
-    }
-    final source = _mapViewportRange(row.sourceUtf16);
-    final editable = _mapViewportRange(row.editableUtf16!);
-    final globalCaret = _inputGlobalUtf16Start + localCaret;
-    if (!_rowSemanticsCurrent(source) ||
-        globalCaret != editable.start ||
-        source.start >= editable.start) {
-      return false;
-    }
-    final localStart = source.start - _inputGlobalUtf16Start;
-    final localEnd = editable.start - _inputGlobalUtf16Start;
-    if (localStart < 0 || localEnd > _inputValue.text.length) return false;
-    _inputValue = _inputValue.copyWith(
-      selection: TextSelection(baseOffset: localStart, extentOffset: localEnd),
-      composing: TextRange.empty,
-    );
-    replaceSelection('');
-    return true;
-  }
-
-  // Transitional fallback for list constructs outside edit-intents-v1.
-  // Every simple depth-1 list, including tasks, is intercepted by the
-  // source-authoritative semantic lane above.
-  bool _deleteProjectedListPrefix(int localCaret) {
-    final row = _activeCachedRow();
-    final listItem = row?.listItem;
-    final editableRange = row?.editableUtf16;
-    if (row == null ||
-        listItem == null ||
-        editableRange == null ||
-        !listItem.simpleContinuation) {
-      return false;
-    }
-    final source = _mapViewportRange(row.sourceUtf16);
-    final prefix = _mapViewportRange(listItem.prefixUtf16);
-    final editable = _mapViewportRange(editableRange);
-    final globalCaret = _inputGlobalUtf16Start + localCaret;
-    if (!_rowSemanticsCurrent(FlarkSourceRange(prefix.start, source.end)) ||
-        globalCaret != editable.start ||
-        prefix.start >= prefix.end) {
-      return false;
-    }
-    _replaceProjectedPrefix(
-      prefix,
-      listItem.startsList || prefix.end < source.start ? '' : '\n',
-    );
-    return true;
-  }
-
-  bool _insertProjectedListNewline(int localCaret) {
-    final row = _activeCachedRow();
-    final listItem = row?.listItem;
-    final editableRange = row?.editableUtf16;
-    if (row == null ||
-        listItem == null ||
-        editableRange == null ||
-        !listItem.simpleContinuation) {
-      return false;
-    }
-    final source = _mapViewportRange(row.sourceUtf16);
-    final prefix = _mapViewportRange(listItem.prefixUtf16);
-    final editable = _mapViewportRange(editableRange);
-    final globalCaret = _inputGlobalUtf16Start + localCaret;
-    if (!_rowSemanticsCurrent(FlarkSourceRange(prefix.start, source.end)) ||
-        globalCaret < editable.start ||
-        globalCaret > editable.end) {
-      return false;
-    }
-    if (row.kind == 14 || editable.start == editable.end) {
-      _replaceProjectedPrefix(prefix, prefix.end < source.start ? '' : '\n');
-      return true;
-    }
-    final continuation =
-        '${''.padLeft(listItem.markerOffset)}${listItem.nextMarkerText} '
-        '${listItem.taskChecked == null ? '' : '[ ] '}';
-    replaceSelection('\n$continuation');
-    return true;
-  }
-
-  bool _deleteProjectedBlockQuotePrefix(int localCaret) {
-    final row = _activeCachedRow();
-    final blockQuote = row?.blockQuote;
-    final editableRange = row?.editableUtf16;
-    if (row == null ||
-        blockQuote == null ||
-        editableRange == null ||
-        !blockQuote.simpleContinuation) {
-      return false;
-    }
-    final source = _mapViewportRange(row.sourceUtf16);
-    final prefix = _mapViewportRange(blockQuote.prefixUtf16);
-    final editable = _mapViewportRange(editableRange);
-    final globalCaret = _inputGlobalUtf16Start + localCaret;
-    if (!_rowSemanticsCurrent(FlarkSourceRange(prefix.start, source.end)) ||
-        globalCaret != editable.start ||
-        prefix.start >= prefix.end) {
-      return false;
-    }
-    _replaceProjectedPrefix(prefix, '');
-    return true;
-  }
-
-  bool _insertProjectedBlockQuoteNewline(int localCaret) {
-    final row = _activeCachedRow();
-    final blockQuote = row?.blockQuote;
-    final editableRange = row?.editableUtf16;
-    if (row == null ||
-        blockQuote == null ||
-        editableRange == null ||
-        !blockQuote.simpleContinuation) {
-      return false;
-    }
-    final source = _mapViewportRange(row.sourceUtf16);
-    final prefix = _mapViewportRange(blockQuote.prefixUtf16);
-    final editable = _mapViewportRange(editableRange);
-    final globalCaret = _inputGlobalUtf16Start + localCaret;
-    if (!_rowSemanticsCurrent(FlarkSourceRange(prefix.start, source.end)) ||
-        globalCaret < editable.start ||
-        globalCaret > editable.end ||
-        prefix.start >= prefix.end) {
-      return false;
-    }
-    final exactPrefix = _sliceVisibleUtf16(prefix.start, prefix.end);
-    if (exactPrefix.isEmpty) return false;
-    replaceSelection('\n$exactPrefix');
-    return true;
-  }
-
   bool _insertProjectedBlockNewline(int localCaret) {
     final row = _activeCachedRow();
     final editableRange = row?.editableUtf16;
@@ -4035,31 +3885,6 @@ final class FlarkEditorController extends ChangeNotifier {
       return editable;
     }
     return row.sourceUtf16;
-  }
-
-  void _replaceProjectedPrefix(FlarkSourceRange prefix, String replacement) {
-    _breakTypingHistoryGroup();
-    _endCompositionHistoryGroup();
-    final exactPrefix = _sliceVisibleUtf16(prefix.start, prefix.end);
-    if (!_smallEditFits(exactPrefix, 0, exactPrefix.length, replacement)) {
-      return;
-    }
-    final beforeSelection = _selectionSnapshot();
-    final delta = replacement.length - prefix.length;
-    if (_inputGlobalUtf16Start >= prefix.end) {
-      _inputGlobalUtf16Start += delta;
-    }
-    _updateGlobalSelection();
-    _queueNativeEdit(
-      prefix.start,
-      prefix.end,
-      replacement,
-      beforeSelection: beforeSelection,
-      afterSelection: _selectionSnapshot(),
-      coalesceTyping: false,
-      compositionHistoryGroup: null,
-    );
-    notifyListeners();
   }
 
   String _projectedListPrefix(FlarkListItemPresentation item) {
