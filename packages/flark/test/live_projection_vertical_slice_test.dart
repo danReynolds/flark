@@ -9,7 +9,7 @@ void main() {
   final libraryPath = Platform.environment['FLARK_V4_LIBRARY_PATH'];
 
   test(
-    'a structural edit immediately drops stale semantics and keeps exact source',
+    'a structural edit waits for its receipt before adopting new source',
     () async {
       const source = '# Heading\n\nDistant.\n';
       final controller = await FlarkEditorController.open(
@@ -29,22 +29,15 @@ void main() {
       );
       controller.deleteBackward();
 
-      expect(controller.semanticsCurrent, isFalse);
-      expect(controller.visibleSource, 'Heading\n\nDistant.\n');
-      final active = controller.surfaceRow(controller.rows.first);
-      expect(active.text, startsWith('Heading'));
-      expect(active.kind, 0);
-      final neutralDistant = controller.surfaceRow(distant);
-      expect(neutralDistant.text, 'Distant.\n');
-      expect(neutralDistant.kind, 0);
-      expect(neutralDistant.globalUtf16Start, 9);
+      expect(controller.semanticsCurrent, isTrue);
+      expect(controller.visibleSource, source);
+      expect(controller.surfaceRow(controller.rows.first).text, 'Heading');
+      expect(controller.surfaceRow(distant).text, 'Distant.');
 
-      final deadline = DateTime.now().add(const Duration(seconds: 5));
-      while (controller.pendingEdits != 0 &&
-          DateTime.now().isBefore(deadline)) {
-        await Future<void>.delayed(const Duration(milliseconds: 2));
-      }
-      await controller.continueParsing();
+      await _settle(controller);
+      expect(controller.visibleSource, 'Heading\n\nDistant.\n');
+      expect(controller.rows.first.kind, 5);
+      expect(controller.surfaceRow(controller.rows.first).text, 'Heading');
 
       expect(controller.lastError, isNull);
       expect(controller.semanticsCurrent, isTrue);
@@ -130,15 +123,14 @@ void main() {
 
       controller.activateRow(third, third.editableUtf16!.start);
       controller.deleteBackward();
-      expect(controller.visibleSource, '# First\n\nThird\n\n');
-      expect(controller.surfaceRow(third).kind, 0);
+      expect(controller.visibleSource, source);
+      expect(controller.surfaceRow(third).text, 'Third');
 
-      final deadline = DateTime.now().add(const Duration(seconds: 5));
-      while (controller.pendingEdits != 0 &&
-          DateTime.now().isBefore(deadline)) {
-        await Future<void>.delayed(const Duration(milliseconds: 2));
-      }
-      await controller.continueParsing();
+      await _settle(controller);
+      expect(controller.visibleSource, '# First\n\nThird\n\n');
+      final demoted = controller.rows[1];
+      expect(demoted.kind, 5);
+      expect(controller.surfaceRow(demoted).text, 'Third');
 
       expect(controller.lastError, isNull);
       expect(controller.semanticsCurrent, isTrue);
@@ -775,7 +767,7 @@ void main() {
   );
 
   test(
-    'passive tables use parser-owned cells while active editing stays exact',
+    'tables stay projected while one parser-owned cell is edited',
     () async {
       const tableSource =
           '| f\\|oo | bar |\n| :--- | ---: |\n| `x\\|y` | **baz** |\n';
@@ -807,10 +799,45 @@ void main() {
         isTrue,
       );
 
-      controller.activateRow(row, row.sourceUtf16.start);
+      final frames = <String>[];
+      void capture() {
+        final tables = controller.rows.where((row) => row.table != null);
+        if (tables.isNotEmpty) {
+          frames.add(controller.surfaceRow(tables.first).text);
+        }
+      }
+
+      controller.addListener(capture);
+      addTearDown(() => controller.removeListener(capture));
+      final firstCell = row.table!.rows.first.first;
+      controller.activateRow(row, firstCell.contentUtf16.start + 4);
       final active = controller.surfaceRow(row);
-      expect(active.text, tableSource);
-      expect(active.text, contains('| :--- | ---: |'));
+      expect(active.text, passive.text);
+      expect(active.text, isNot(contains('| :--- | ---: |')));
+
+      controller.replaceSelection('X');
+      final optimistic = controller.surfaceRow(row);
+      expect(optimistic.text, 'f|oXo │ bar\nx|y │ baz');
+      expect(optimistic.text, isNot(contains('| :--- | ---: |')));
+
+      await _settle(controller);
+      final settled = controller.rows.firstWhere((row) => row.table != null);
+      expect(controller.surfaceRow(settled).text, 'f|oXo │ bar\nx|y │ baz');
+      expect(controller.visibleSource, contains(r'f\|oXo'));
+
+      controller.activateRow(
+        settled,
+        controller.visibleSource.indexOf('X') + 1,
+      );
+      controller.deleteBackward();
+      expect(controller.surfaceRow(settled).text, passive.text);
+      await _settle(controller);
+      expect(controller.visibleSource, source);
+      expect(
+        frames.where((frame) => frame.contains(':---')),
+        isEmpty,
+        reason: 'table delimiter source flashed in frames: $frames',
+      );
     },
     skip: libraryPath == null,
   );

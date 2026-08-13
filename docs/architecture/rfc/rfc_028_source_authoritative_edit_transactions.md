@@ -898,6 +898,14 @@ marker, the viewport publishes its exact final-line prefix/caret, and Return
 exits the quote through the ordinary authoritative transaction and presentation
 receipt.
 
+The first table slice keeps the parser-owned rendered table active for
+conservative literal typing and deletion wholly inside one real cell. A
+framework-neutral Core receipt binds the entire burst to that exact cell;
+unescaped delimiters, autocompleted cells, cross-cell edits, and syntax-shaped
+changes fail closed to exact source. This removes active-raw fallback for the
+ordinary cell-text lane without pretending that two-dimensional navigation,
+structural table commands, or nested-scroll arbitration are complete.
+
 ### H5 — hardening and later architecture
 
 Qualify memory envelopes, fault recovery, giant-line raster behavior, GFM and

@@ -768,7 +768,7 @@ final class FlarkEditorController extends ChangeNotifier {
         ordinal: row.ordinal,
       );
     }
-    if (active && (!rowCertified || row.table != null)) {
+    if (active && !rowCertified) {
       final paintInput = _paintInputWindow();
       return FlarkSurfaceRow(
         leadingText: exactLeadingText,
@@ -2060,7 +2060,7 @@ final class FlarkEditorController extends ChangeNotifier {
   TextEditingValue _normalizeProjectedSelection(TextEditingValue value) {
     if (!value.selection.isValid || !value.composing.isCollapsed) return value;
     final row = _activeCachedRow();
-    if (row == null || row.table != null) return value;
+    if (row == null) return value;
     final presentation = surfaceRow(row, includeEditingState: false);
     if (!_surfaceHasProjection(presentation, row)) return value;
 
@@ -2093,7 +2093,7 @@ final class FlarkEditorController extends ChangeNotifier {
 
   bool _deleteProjectedVisible({required bool backward}) {
     final row = _activeCachedRow();
-    if (row == null || row.table != null) return false;
+    if (row == null) return false;
     final presentation = surfaceRow(row);
     if (!presentation.active || !_surfaceHasProjection(presentation, row)) {
       return false;
@@ -2149,7 +2149,7 @@ final class FlarkEditorController extends ChangeNotifier {
   bool _mutationTouchesOnlyHiddenProjection(_TextMutation mutation) {
     if (mutation.start == mutation.end) return false;
     final row = _activeCachedRow();
-    if (row == null || row.table != null) return false;
+    if (row == null) return false;
     final presentation = surfaceRow(row, includeEditingState: false);
     if (!_surfaceHasProjection(presentation, row)) return false;
     final sourceStart = _inputGlobalUtf16Start + mutation.start;
@@ -3366,7 +3366,7 @@ final class FlarkEditorController extends ChangeNotifier {
     final facts =
         row?.inlineFacts ??
         (row?.projectionSegments != null ? const <FlarkInlineFact>[] : null);
-    if (row == null || row.table != null || facts == null) {
+    if (row == null || facts == null) {
       return;
     }
     final activation = _mapViewportRange(_activationRange(row));
@@ -3384,19 +3384,35 @@ final class FlarkEditorController extends ChangeNotifier {
             startUtf16: start,
             endUtf16: end,
             replacement: replacement,
+            table: row.table,
+          );
+    final tableReceipt = inlineReceipt != null || row.table == null
+        ? null
+        : authorizeTableCellProjectionContinuity(
+            revision: revision,
+            table: row.table!,
+            tableUtf16: activation,
+            tableText: _sliceVisibleUtf16(activation.start, activation.end),
+            inlineFacts: facts,
+            startUtf16: start,
+            endUtf16: end,
+            replacement: replacement,
           );
     final receipt =
         inlineReceipt ??
-        authorizeRowProjectionContinuity(
-          revision: revision,
-          policy: row.continuityPolicy,
-          editableUtf16: editable,
-          editableText: _sliceVisibleUtf16(editable.start, editable.end),
-          inlineFacts: facts,
-          startUtf16: start,
-          endUtf16: end,
-          replacement: replacement,
-        );
+        tableReceipt ??
+        (row.table == null
+            ? authorizeRowProjectionContinuity(
+                revision: revision,
+                policy: row.continuityPolicy,
+                editableUtf16: editable,
+                editableText: _sliceVisibleUtf16(editable.start, editable.end),
+                inlineFacts: facts,
+                startUtf16: start,
+                endUtf16: end,
+                replacement: replacement,
+              )
+            : null);
     if (receipt == null) {
       return;
     }

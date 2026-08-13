@@ -144,4 +144,112 @@ void main() {
       isNull,
     );
   });
+
+  test('table continuity is confined to one real parser-authored cell', () {
+    const first = FlarkTableCellPresentation(
+      alignment: FlarkTableAlignment.left,
+      header: true,
+      autocompleted: false,
+      sourceBytes: FlarkSourceRange(0, 8),
+      sourceUtf16: FlarkSourceRange(0, 8),
+      contentBytes: FlarkSourceRange(2, 7),
+      contentUtf16: FlarkSourceRange(2, 7),
+    );
+    const second = FlarkTableCellPresentation(
+      alignment: FlarkTableAlignment.right,
+      header: true,
+      autocompleted: false,
+      sourceBytes: FlarkSourceRange(8, 14),
+      sourceUtf16: FlarkSourceRange(8, 14),
+      contentBytes: FlarkSourceRange(10, 13),
+      contentUtf16: FlarkSourceRange(10, 13),
+    );
+    const table = FlarkTablePresentation(
+      rows: [
+        [first, second],
+      ],
+    );
+
+    final receipt = authorizeTableCellProjectionContinuity(
+      revision: 9,
+      table: table,
+      tableUtf16: const FlarkSourceRange(0, 15),
+      tableText: '| alpha | xy |\n',
+      inlineFacts: const [],
+      startUtf16: 4,
+      endUtf16: 4,
+      replacement: 'z',
+    );
+
+    expect(receipt, isNotNull);
+    expect(receipt!.authorizedContentUtf16.start, 2);
+    expect(receipt.authorizedContentUtf16.end, 8);
+    expect(
+      receipt.continueWith(startUtf16: 5, endUtf16: 5, replacement: 'q'),
+      isNotNull,
+    );
+    expect(
+      receipt.continueWith(startUtf16: 5, endUtf16: 5, replacement: '|'),
+      isNull,
+    );
+    expect(
+      authorizeTableCellProjectionContinuity(
+        revision: 9,
+        table: table,
+        tableUtf16: const FlarkSourceRange(0, 15),
+        tableText: '| alpha | xy |\n',
+        inlineFacts: const [],
+        startUtf16: 7,
+        endUtf16: 10,
+        replacement: '',
+      ),
+      isNull,
+    );
+    expect(
+      authorizeTableCellProjectionContinuity(
+        revision: 9,
+        table: table,
+        tableUtf16: const FlarkSourceRange(0, 15),
+        tableText: '| alpha | xy |\n',
+        inlineFacts: const [],
+        startUtf16: 4,
+        endUtf16: 4,
+        replacement: '|',
+      ),
+      isNull,
+    );
+
+    const cellFact = FlarkInlineFact(
+      kind: FlarkInlineFactKind.strong,
+      flags: 1 << 7,
+      sourceBytes: FlarkSourceRange(3, 6),
+      sourceUtf16: FlarkSourceRange(3, 6),
+      contentBytes: FlarkSourceRange(4, 5),
+      contentUtf16: FlarkSourceRange(4, 5),
+    );
+    final inline = authorizeInlineProjectionContinuity(
+      revision: 9,
+      facts: const [cellFact],
+      startUtf16: 4,
+      endUtf16: 4,
+      replacement: 'z',
+      table: table,
+    );
+    expect(inline, isNotNull);
+    expect(
+      inline!.continueWith(startUtf16: 5, endUtf16: 5, replacement: '|'),
+      isNull,
+    );
+    expect(
+      authorizeInlineProjectionContinuity(
+        revision: 9,
+        facts: const [cellFact],
+        startUtf16: 4,
+        endUtf16: 4,
+        replacement: '|',
+        table: table,
+      ),
+      isNull,
+    );
+  });
 }

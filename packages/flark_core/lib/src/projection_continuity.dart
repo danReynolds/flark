@@ -11,7 +11,9 @@ final class FlarkProjectionContinuityReceipt {
     required this.editEndUtf16,
     required this.replacement,
     required String? rowContent,
-  }) : _rowContent = rowContent;
+    bool tableCell = false,
+  }) : _rowContent = rowContent,
+       _tableCell = tableCell;
 
   final int baseRevision;
   final int resultRevision;
@@ -24,12 +26,14 @@ final class FlarkProjectionContinuityReceipt {
   /// Inline-fact continuity remains range-only because the fact itself owns
   /// the complete safe content boundary.
   final String? _rowContent;
+  final bool _tableCell;
 
   FlarkProjectionContinuityReceipt? continueWith({
     required int startUtf16,
     required int endUtf16,
     required String replacement,
   }) {
+    if (_tableCell && replacement.contains('|')) return null;
     final retainedRowContent = _rowContent;
     if (retainedRowContent == null) {
       if (!_plainTextTransactionAllowed(
@@ -66,6 +70,7 @@ final class FlarkProjectionContinuityReceipt {
       editEndUtf16: endUtf16,
       replacement: replacement,
       rowContent: nextRowContent,
+      tableCell: _tableCell,
     );
   }
 }
@@ -79,6 +84,7 @@ FlarkProjectionContinuityReceipt? authorizeInlineProjectionContinuity({
   required int startUtf16,
   required int endUtf16,
   required String replacement,
+  FlarkTablePresentation? table,
 }) {
   if (revision <= 0 || startUtf16 > endUtf16) return null;
 
@@ -114,6 +120,17 @@ FlarkProjectionContinuityReceipt? authorizeInlineProjectionContinuity({
     }
   }
   if (authority == null) return null;
+  if (table != null) {
+    if (replacement.contains('|') ||
+        !_singleRealTableCellOwns(
+          table,
+          startUtf16,
+          endUtf16,
+          ownedSource: authority.sourceUtf16,
+        )) {
+      return null;
+    }
+  }
   return FlarkProjectionContinuityReceipt._(
     baseRevision: revision,
     resultRevision: revision + 1,
@@ -125,6 +142,7 @@ FlarkProjectionContinuityReceipt? authorizeInlineProjectionContinuity({
     editEndUtf16: endUtf16,
     replacement: replacement,
     rowContent: null,
+    tableCell: table != null,
   );
 }
 
@@ -179,6 +197,119 @@ FlarkProjectionContinuityReceipt? authorizeRowProjectionContinuity({
     replacement: replacement,
     rowContent: nextText,
   );
+}
+
+/// Binds one conservative literal edit to exactly one parser-authored table
+/// cell. The table shape and cell boundaries come from Rust; this function
+/// does not recognize table syntax.
+///
+/// Unescaped delimiters, autocompleted cells, cross-cell edits, and edits that
+/// touch an inline fact fail closed so a frontend can show exact current
+/// source until the parser certifies the result.
+FlarkProjectionContinuityReceipt? authorizeTableCellProjectionContinuity({
+  required int revision,
+  required FlarkTablePresentation table,
+  required FlarkSourceRange tableUtf16,
+  required String tableText,
+  required List<FlarkInlineFact> inlineFacts,
+  required int startUtf16,
+  required int endUtf16,
+  required String replacement,
+}) {
+  if (revision <= 0 ||
+      startUtf16 > endUtf16 ||
+      tableText.length != tableUtf16.length ||
+      replacement.contains('|')) {
+    return null;
+  }
+
+  final authority = _singleRealTableCell(
+    table,
+    startUtf16,
+    endUtf16,
+    containingRange: tableUtf16,
+  );
+  if (authority == null) return null;
+
+  final content = authority.contentUtf16;
+  final localStart = content.start - tableUtf16.start;
+  final localEnd = content.end - tableUtf16.start;
+  final exactContent = tableText.substring(localStart, localEnd);
+  if (!_rowPlainTextTransactionAllowed(
+        content,
+        exactContent,
+        startUtf16,
+        endUtf16,
+        replacement,
+      ) ||
+      (startUtf16 < endUtf16 &&
+          exactContent
+              .substring(startUtf16 - content.start, endUtf16 - content.start)
+              .contains('|'))) {
+    return null;
+  }
+
+  for (final fact in inlineFacts) {
+    final source = fact.sourceUtf16;
+    final touchesFact = startUtf16 == endUtf16
+        ? source.start <= startUtf16 && startUtf16 <= source.end
+        : startUtf16 < source.end && source.start < endUtf16;
+    if (touchesFact) return null;
+  }
+
+  return FlarkProjectionContinuityReceipt._(
+    baseRevision: revision,
+    resultRevision: revision + 1,
+    authorizedContentUtf16: FlarkSourceRange(
+      content.start,
+      content.end + replacement.length - (endUtf16 - startUtf16),
+    ),
+    editStartUtf16: startUtf16,
+    editEndUtf16: endUtf16,
+    replacement: replacement,
+    rowContent: exactContent.replaceRange(
+      startUtf16 - content.start,
+      endUtf16 - content.start,
+      replacement,
+    ),
+    tableCell: true,
+  );
+}
+
+bool _singleRealTableCellOwns(
+  FlarkTablePresentation table,
+  int start,
+  int end, {
+  required FlarkSourceRange ownedSource,
+}) => _singleRealTableCell(table, start, end, ownedSource: ownedSource) != null;
+
+FlarkTableCellPresentation? _singleRealTableCell(
+  FlarkTablePresentation table,
+  int start,
+  int end, {
+  FlarkSourceRange? containingRange,
+  FlarkSourceRange? ownedSource,
+}) {
+  FlarkTableCellPresentation? authority;
+  for (final row in table.rows) {
+    for (final cell in row) {
+      final content = cell.contentUtf16;
+      if (cell.autocompleted ||
+          (containingRange != null &&
+              (content.start < containingRange.start ||
+                  content.end > containingRange.end)) ||
+          start < content.start ||
+          end > content.end ||
+          (ownedSource != null &&
+              (ownedSource.start < content.start ||
+                  ownedSource.end > content.end))) {
+        continue;
+      }
+      if (authority != null) return null;
+      authority = cell;
+    }
+  }
+  return authority;
 }
 
 bool _rowPlainTextTransactionAllowed(

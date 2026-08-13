@@ -383,6 +383,11 @@ surface; no composition is lost, duplicated, reordered, or visually detached.
   arbitration without falling back to an active raw table.
 - Pin editor/view parity for every selected GFM presentation class.
 
+Checkpoint: ordinary typing and Backspace now remain projected within one
+parser-authored table cell through recertification. Cross-cell selection,
+navigation, structural row/column actions, and nested-scroll arbitration remain
+in this tranche and fail closed meanwhile.
+
 Exit: the complete v2 behavior denominator is exact or an explicitly scoped
 unsupported product feature; “active raw” is not an accepted fallback for a
 supported construct.

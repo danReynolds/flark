@@ -51,7 +51,8 @@ export 'src/projection_continuity.dart'
     show
         FlarkProjectionContinuityReceipt,
         authorizeInlineProjectionContinuity,
-        authorizeRowProjectionContinuity;
+        authorizeRowProjectionContinuity,
+        authorizeTableCellProjectionContinuity;
 export 'src/presentation.dart'
     show
         FlarkCoreCommittedPresentationGapV1,
