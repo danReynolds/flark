@@ -23,6 +23,13 @@ no-window driver invokes the framework-neutral controller action; a native
 driver resolves the same target to the painted checkbox and performs a real
 pointer click.
 
+Viewport-only actions follow the same capability-honest rule. A `scrollBy`
+step always proves that source, selection, history, and fault state are
+unchanged. The no-window runner has no viewport and stops there; mounted and
+native runners additionally enforce `minimumObservedScrollOffset` against an
+actual render-surface observation. A no-op platform adapter therefore cannot
+pass the higher-tier canary.
+
 - `live_editor_scenario_surface_test.dart` mounts the production render object
   and adds bounded observations emitted by actual paint calls. It uses the same
   actions, barriers, and assertions as the no-window driver.

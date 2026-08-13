@@ -206,6 +206,23 @@ func drag(from start: CGPoint, to end: CGPoint) {
   pause(milliseconds: 60)
 }
 
+func scrollDown(deltaY: Int, in window: (origin: CGPoint, size: CGSize, number: Int)) {
+  let event = CGEvent(
+    scrollWheelEvent2Source: eventSource,
+    units: .pixel,
+    wheelCount: 1,
+    wheel1: Int32(-deltaY),
+    wheel2: 0,
+    wheel3: 0
+  )
+  event?.location = CGPoint(
+    x: window.origin.x + window.size.width / 2,
+    y: window.origin.y + window.size.height / 2
+  )
+  event?.post(tap: .cghidEventTap)
+  pause(milliseconds: 100)
+}
+
 func typeText(_ value: String, intervalMs: Int) {
   for character in value {
     var units = Array(String(character).utf16)
@@ -489,6 +506,10 @@ while !shouldStop, let line = readLine() {
       let target = try integer(arguments["targetUtf16"], "targetUtf16")
       let window = try focusWindow(pid: appPID)
       click(try taskCheckboxScreenPoint(targetUtf16: target, window: window))
+    case "scrollBy":
+      let deltaY = try integer(arguments["deltaY"], "deltaY")
+      let window = try focusWindow(pid: appPID)
+      scrollDown(deltaY: deltaY, in: window)
     case "pause":
       pause(milliseconds: try integer(arguments["milliseconds"], "milliseconds"))
     case "stop":

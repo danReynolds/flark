@@ -26,12 +26,14 @@ final class FlarkSurfacePaintObservation {
   const FlarkSurfacePaintObservation({
     required this.revision,
     required this.viewportPageIndex,
+    required this.scrollOffset,
     required this.presentation,
     required this.renderPlanHash,
   });
 
   final int revision;
   final int viewportPageIndex;
+  final double scrollOffset;
   final String presentation;
   final int renderPlanHash;
 }
@@ -1328,6 +1330,7 @@ final class RenderFlarkSurface extends RenderBox {
       FlarkSurfacePaintObservation(
         revision: _controller.revision,
         viewportPageIndex: _controller.viewportPageIndex,
+        scrollOffset: _scrollOffset,
         presentation: observedRows.isEmpty
             ? '<empty>'
             : observedRows.join('\n'),

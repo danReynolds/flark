@@ -32,6 +32,9 @@ final class MacosNativeLiveEditorScenarioDriver
   bool get observesPaint => true;
 
   @override
+  bool get observesScroll => true;
+
+  @override
   Future<void> start(LiveEditorScenarioPlan plan) async {
     if (_process == null) await _startActuator();
     final response = await _request('reset', {
@@ -92,6 +95,11 @@ final class MacosNativeLiveEditorScenarioDriver
   @override
   Future<void> toggleTaskAtUtf16(int targetUtf16) {
     return _request('toggleTaskAtUtf16', {'targetUtf16': targetUtf16});
+  }
+
+  @override
+  Future<void> scrollBy(int deltaY) {
+    return _request('scrollBy', {'deltaY': deltaY});
   }
 
   @override
@@ -199,6 +207,7 @@ final class MacosNativeLiveEditorScenarioDriver
         (json['surfaceFrames']! as List).cast<String>(),
       ),
       revision: json['revision']! as int,
+      scrollOffset: (json['scrollOffset']! as num).toDouble(),
     );
   }
 }

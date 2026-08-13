@@ -26,6 +26,9 @@ base class NoWindowLiveEditorScenarioDriver
   bool get observesPaint => false;
 
   @override
+  bool get observesScroll => false;
+
+  @override
   Future<void> start(LiveEditorScenarioPlan plan) async {
     if (_controller != null) {
       throw StateError('scenario driver already started');
@@ -181,6 +184,13 @@ base class NoWindowLiveEditorScenarioDriver
   }
 
   @override
+  Future<void> scrollBy(int deltaY) async {
+    // The no-window runner still proves that viewport-only input cannot alter
+    // source, selection, history, or fault state. Higher runners additionally
+    // prove that a mounted/native viewport actually moved.
+  }
+
+  @override
   Future<void> pause(Duration duration) async {
     if (duration > Duration.zero) await Future<void>.delayed(duration);
     final controller = _activeController;
@@ -218,6 +228,7 @@ base class NoWindowLiveEditorScenarioDriver
       settledPresentation: presentation,
       paintedPresentations: const [],
       revision: controller.revision,
+      scrollOffset: null,
     );
   }
 

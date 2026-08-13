@@ -48,6 +48,11 @@ sealed class LiveEditorScenarioOperation {
         return LiveEditorToggleTaskAtUtf16(
           targetUtf16: reader.requiredNonNegativeInt('targetUtf16'),
         );
+      case 'scrollBy':
+        reader.expectKeys(const {'op', 'deltaY'});
+        return LiveEditorScrollBy(
+          deltaY: reader.requiredNonNegativeInt('deltaY'),
+        );
       case 'pause':
         reader.expectKeys(const {'op', 'milliseconds'});
         return LiveEditorPause(
@@ -149,6 +154,15 @@ final class LiveEditorToggleTaskAtUtf16 extends LiveEditorScenarioOperation {
   };
 }
 
+final class LiveEditorScrollBy extends LiveEditorScenarioOperation {
+  const LiveEditorScrollBy({required this.deltaY});
+
+  final int deltaY;
+
+  @override
+  Map<String, Object?> toJson() => {'op': 'scrollBy', 'deltaY': deltaY};
+}
+
 final class LiveEditorPause extends LiveEditorScenarioOperation {
   const LiveEditorPause({required this.duration});
 
@@ -202,6 +216,7 @@ final class LiveEditorScenarioExpectation {
     required this.faulted,
     required this.settledPresentationNeverContains,
     required this.paintedPresentationNeverContains,
+    this.minimumObservedScrollOffset,
   });
 
   factory LiveEditorScenarioExpectation.fromJson(Map<String, Object?> json) {
@@ -214,6 +229,7 @@ final class LiveEditorScenarioExpectation {
       'faulted',
       'settledPresentationNeverContains',
       'paintedPresentationNeverContains',
+      'minimumObservedScrollOffset',
     });
     return LiveEditorScenarioExpectation(
       source: reader.requiredString('source'),
@@ -229,6 +245,9 @@ final class LiveEditorScenarioExpectation {
       paintedPresentationNeverContains: reader.requiredStringList(
         'paintedPresentationNeverContains',
       ),
+      minimumObservedScrollOffset: reader.optionalNonNegativeInt(
+        'minimumObservedScrollOffset',
+      ),
     );
   }
 
@@ -239,6 +258,7 @@ final class LiveEditorScenarioExpectation {
   final bool faulted;
   final List<String> settledPresentationNeverContains;
   final List<String> paintedPresentationNeverContains;
+  final int? minimumObservedScrollOffset;
 
   Map<String, Object?> toJson() => {
     'source': source,
@@ -248,6 +268,7 @@ final class LiveEditorScenarioExpectation {
     'faulted': faulted,
     'settledPresentationNeverContains': settledPresentationNeverContains,
     'paintedPresentationNeverContains': paintedPresentationNeverContains,
+    'minimumObservedScrollOffset': ?minimumObservedScrollOffset,
   };
 }
 
@@ -488,6 +509,7 @@ final class LiveEditorScenarioCompiler {
       'faulted',
       'forbiddenSurfaceSubstrings',
       'paintedSurfaceNeverContains',
+      'minimumObservedScrollOffset',
     });
     final caret = reader.requiredNonNegativeInt('caretUtf16');
     return LiveEditorScenarioExpectation(
@@ -501,6 +523,9 @@ final class LiveEditorScenarioCompiler {
       ),
       paintedPresentationNeverContains:
           reader.optionalStringList('paintedSurfaceNeverContains') ?? const [],
+      minimumObservedScrollOffset: reader.optionalNonNegativeInt(
+        'minimumObservedScrollOffset',
+      ),
     );
   }
 
@@ -597,6 +622,11 @@ final class LiveEditorScenarioCompiler {
         reader.expectKeys(const {'type', 'targetUtf16'});
         return LiveEditorToggleTaskAtUtf16(
           targetUtf16: reader.requiredNonNegativeInt('targetUtf16'),
+        );
+      case 'scrollBy':
+        reader.expectKeys(const {'type', 'deltaY'});
+        return LiveEditorScrollBy(
+          deltaY: reader.requiredNonNegativeInt('deltaY'),
         );
       case 'scheduleDelay':
         reader.expectKeys(const {'type', 'key'});

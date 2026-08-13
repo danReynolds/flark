@@ -13,6 +13,7 @@ final class LiveEditorScenarioSnapshot {
     required this.settledPresentation,
     required this.paintedPresentations,
     required this.revision,
+    required this.scrollOffset,
   });
 
   final String source;
@@ -24,12 +25,15 @@ final class LiveEditorScenarioSnapshot {
   final String settledPresentation;
   final List<String> paintedPresentations;
   final int revision;
+  final double? scrollOffset;
 }
 
 abstract interface class LiveEditorScenarioDriver {
   String get name;
 
   bool get observesPaint;
+
+  bool get observesScroll;
 
   Future<void> start(LiveEditorScenarioPlan plan);
 
@@ -44,6 +48,8 @@ abstract interface class LiveEditorScenarioDriver {
   Future<void> pasteText(String text);
 
   Future<void> toggleTaskAtUtf16(int targetUtf16);
+
+  Future<void> scrollBy(int deltaY);
 
   Future<void> pause(Duration duration);
 
@@ -76,6 +82,7 @@ final class LiveEditorScenarioExecutionResult {
     'revision': snapshot.revision,
     'resyncs': snapshot.resyncCount,
     'paintSamples': snapshot.paintedPresentations.length,
+    'scrollOffset': ?snapshot.scrollOffset,
     'passed': true,
   };
 }
@@ -112,6 +119,8 @@ Future<LiveEditorScenarioExecutionResult> executeLiveEditorScenario(
           await driver.pasteText(operation.text);
         case LiveEditorToggleTaskAtUtf16():
           await driver.toggleTaskAtUtf16(operation.targetUtf16);
+        case LiveEditorScrollBy():
+          await driver.scrollBy(operation.deltaY);
         case LiveEditorPause():
           await driver.pause(operation.duration);
         case LiveEditorAwait():
@@ -185,6 +194,18 @@ void _assertExpectation(
     throw LiveEditorScenarioFailure(
       '${plan.qualifiedId} produced an unexpected error: ${actual.lastError}',
     );
+  }
+  if (expected.minimumObservedScrollOffset case final minimum?) {
+    if (driver.observesScroll) {
+      final actualOffset = actual.scrollOffset;
+      if (actualOffset == null || actualOffset < minimum) {
+        throw LiveEditorScenarioFailure(
+          '${plan.qualifiedId} scroll offset differed:\n'
+          'expected at least: $minimum\n'
+          'actual:            $actualOffset',
+        );
+      }
+    }
   }
   for (final forbidden in expected.settledPresentationNeverContains) {
     if (actual.settledPresentation.contains(forbidden)) {

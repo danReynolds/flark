@@ -23,6 +23,13 @@ final class FlutterSurfaceLiveEditorScenarioDriver
   bool get observesPaint => true;
 
   @override
+  bool get observesScroll => true;
+
+  RenderFlarkSurface get _surface => tester.renderObject<RenderFlarkSurface>(
+    find.byType(FlarkRenderSurfaceWidget),
+  );
+
+  @override
   Future<void> start(LiveEditorScenarioPlan plan) async {
     await super.start(plan);
     _paintedPresentations.clear();
@@ -55,6 +62,12 @@ final class FlutterSurfaceLiveEditorScenarioDriver
   }
 
   @override
+  Future<void> scrollBy(int deltaY) async {
+    _surface.scrollBy(deltaY.toDouble());
+    await tester.pump();
+  }
+
+  @override
   Future<void> awaitBarrier(LiveEditorScenarioBarrier barrier) async {
     await super.awaitBarrier(barrier);
     await tester.pump();
@@ -74,6 +87,7 @@ final class FlutterSurfaceLiveEditorScenarioDriver
       settledPresentation: controllerSnapshot.settledPresentation,
       paintedPresentations: List.unmodifiable(_paintedPresentations),
       revision: controllerSnapshot.revision,
+      scrollOffset: _surface.scrollOffset,
     );
   }
 

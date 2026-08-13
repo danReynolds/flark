@@ -19,6 +19,7 @@ void main() {
           File('test/scenarios/simple_list_continue_exit_type.json'),
           File('test/scenarios/unicode_grapheme_delete_successor.json'),
           File('test/scenarios/projected_inline_rapid_typing.json'),
+          File('test/scenarios/scroll_preserves_selection.json'),
           File('test/scenarios/styled_selection_replace_history.json'),
           File('test/scenarios/multiblock_paste_history.json'),
           File('test/scenarios/task_checkbox_toggle_history.json'),

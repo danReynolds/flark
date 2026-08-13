@@ -136,6 +136,7 @@ final class DogfoodScenarioReceiptWriter {
   int? _taskActionTarget;
   FlarkEditorDebugGeometry? _taskActionGeometry;
   DateTime? _lastInputEventAt;
+  double _lastScrollOffset = 0;
 
   void beginScenario(String id) {
     _scenarioId = id;
@@ -148,6 +149,7 @@ final class DogfoodScenarioReceiptWriter {
     _taskActionTarget = null;
     _taskActionGeometry = null;
     _lastInputEventAt = null;
+    _lastScrollOffset = 0;
   }
 
   void attach(FlarkEditorController controller) {
@@ -189,6 +191,7 @@ final class DogfoodScenarioReceiptWriter {
   }
 
   void recordPaintObservation(FlarkSurfacePaintObservation observation) {
+    _lastScrollOffset = observation.scrollOffset;
     final surface = observation.presentation;
     if (_surfaceFrames.isEmpty || _surfaceFrames.last != surface) {
       if (_surfaceFrames.length == 128) {
@@ -296,6 +299,7 @@ final class DogfoodScenarioReceiptWriter {
       'lastError': controller.lastError?.toString(),
       'settledPresentation': _settledPresentation,
       'surfaceFrames': List<String>.unmodifiable(_surfaceFrames),
+      'scrollOffset': _lastScrollOffset,
       'inputEvents': List<String>.unmodifiable(_inputEvents),
       if (geometry != null)
         'sourcePoint': {
