@@ -2625,6 +2625,7 @@ final class FlarkEditorController extends ChangeNotifier {
       afterSelection: afterSelection,
       coalesceTyping: coalesceTyping,
       compositionHistoryGroup: compositionHistoryGroup,
+      compositionFinal: compositionHistoryGroup != null && !composing.isValid,
       recenterAfterOptimisticEdit: wasCrossRowSelection,
     );
     return true;
@@ -2701,13 +2702,21 @@ final class FlarkEditorController extends ChangeNotifier {
     );
     if (compositionEnded) {
       _compositionInputBase = null;
+      _queueCompositionFinish();
       _scheduleParsingAfterInput();
     }
   }
 
   void _endCompositionHistoryGroup() {
     _compositionInputBase = null;
+    final wasActive = _session.compositionActive;
     _session.endCompositionGroup();
+    if (wasActive) _queueCompositionFinish();
+  }
+
+  void _queueCompositionFinish() {
+    final operation = _editTail.then((_) => _session.finishComposition());
+    _editTail = operation.catchError((Object _, StackTrace _) {});
   }
 
   void _rememberCompositionInputBase(TextEditingValue value) {
@@ -3188,6 +3197,7 @@ final class FlarkEditorController extends ChangeNotifier {
     required _EditorSelectionSnapshot afterSelection,
     required bool coalesceTyping,
     required int? compositionHistoryGroup,
+    bool compositionFinal = false,
     bool recenterAfterOptimisticEdit = false,
     bool restoreSelectionAfterCommit = false,
   }) {
@@ -3232,6 +3242,7 @@ final class FlarkEditorController extends ChangeNotifier {
         afterSelection: _coreSnapshot(afterSelection),
         coalesceTyping: coalesceTyping,
         compositionGroup: compositionHistoryGroup,
+        compositionFinal: compositionFinal,
       );
       if (restoreSelectionAfterCommit) {
         await _restoreHistorySelection(afterSelection);

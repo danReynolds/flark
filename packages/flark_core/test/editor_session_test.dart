@@ -284,6 +284,7 @@ void main() {
               composingActive: true,
             ),
           );
+          expect((await document.inspectSession()).liveAnchors, 4);
           await session.applyEditUtf16(
             0,
             1,
@@ -304,9 +305,11 @@ void main() {
             compositionGroup: session.compositionGroupForMutation(
               composingActive: false,
             ),
+            compositionFinal: true,
           );
           expect(await document.readSource(), 'かbase\n');
           expect((await document.inspectSession()).liveHistoryTokens, 1);
+          expect((await document.inspectSession()).liveAnchors, 2);
 
           final outcome = await session.undo();
           expect(outcome, isA<FlarkCoreHistoryReplayed>());
@@ -356,6 +359,7 @@ void main() {
           );
           expect(await document.readSource(), 'xka\n');
           expect((await document.inspectSession()).liveHistoryTokens, 2);
+          expect((await document.inspectSession()).liveAnchors, 4);
 
           final cancelled = await session.cancelComposition();
           expect(cancelled, isA<FlarkCoreHistoryReplayed>());
@@ -366,10 +370,90 @@ void main() {
           expect(session.canUndo, isTrue);
           expect(session.canRedo, isFalse);
           expect((await document.inspectSession()).liveHistoryTokens, 1);
+          expect((await document.inspectSession()).liveAnchors, 2);
 
           expect(await session.undo(), isA<FlarkCoreHistoryReplayed>());
           expect(await document.readSource(), 'base\n');
           expect(session.canUndo, isFalse);
+        },
+      );
+
+      test(
+        'composition cancellation remains allocation-free at the anchor cap',
+        () async {
+          await open('base\n');
+          addTearDown(() async {
+            await session.dispose();
+            await document.dispose();
+          });
+
+          await session.applyEditUtf16(
+            0,
+            0,
+            'k',
+            beforeSelection: caret(0),
+            afterSelection: caret(1),
+            compositionGroup: session.compositionGroupForMutation(
+              composingActive: true,
+            ),
+          );
+          expect((await document.inspectSession()).liveAnchors, 4);
+
+          final held = <FlarkCoreAnchor>[];
+          FlarkCoreNativeException? limit;
+          for (var index = 0; index < 5000; index += 1) {
+            try {
+              held.add(await document.createAnchorUtf16(1, downstream: true));
+            } on FlarkCoreNativeException catch (error) {
+              limit = error;
+              break;
+            }
+          }
+          expect(limit?.status, 0x0403);
+          expect((await document.inspectSession()).liveAnchors, 4096);
+
+          final cancelled = await session.cancelComposition();
+          expect(cancelled, isA<FlarkCoreHistoryReplayed>());
+          expect(await document.readSource(), 'base\n');
+          expect((await session.resolveSelection())?.extent, 0);
+          expect((await document.inspectSession()).liveAnchors, 4094);
+
+          // Fill the two slots released by the former canonical pair. A new
+          // composition must now reject while reserving its base, before any
+          // source or history mutation can occur.
+          held.add(await document.createAnchorUtf16(0, downstream: true));
+          held.add(await document.createAnchorUtf16(0, downstream: true));
+          final beforeRejected = await document.inspectSession();
+          expect(beforeRejected.liveAnchors, 4096);
+          await expectLater(
+            session.applyEditUtf16(
+              0,
+              0,
+              'z',
+              beforeSelection: caret(0),
+              afterSelection: caret(1),
+              compositionGroup: session.compositionGroupForMutation(
+                composingActive: true,
+              ),
+            ),
+            throwsA(
+              isA<FlarkCoreNativeException>().having(
+                (error) => error.status,
+                'status',
+                0x0403,
+              ),
+            ),
+          );
+          expect(await document.readSource(), 'base\n');
+          final afterRejected = await document.inspectSession();
+          expect(afterRejected.revision, beforeRejected.revision);
+          expect(afterRejected.liveHistoryTokens, 0);
+          session.endCompositionGroup();
+
+          for (final anchor in held) {
+            await document.releaseAnchor(anchor);
+          }
+          expect((await document.inspectSession()).liveAnchors, 2);
         },
       );
 
@@ -392,6 +476,38 @@ void main() {
           isFalse,
         );
       });
+
+      test(
+        'metadata-only composition commit releases its base anchors',
+        () async {
+          await open('base\n');
+          addTearDown(() async {
+            await session.dispose();
+            await document.dispose();
+          });
+
+          await session.applyEditUtf16(
+            0,
+            0,
+            'k',
+            beforeSelection: caret(0),
+            afterSelection: caret(1),
+            compositionGroup: session.compositionGroupForMutation(
+              composingActive: true,
+            ),
+          );
+          expect((await document.inspectSession()).liveAnchors, 4);
+          expect(
+            session.trackCompositionWithoutMutation(composingActive: false),
+            isTrue,
+          );
+
+          await session.finishComposition();
+          expect((await document.inspectSession()).liveAnchors, 2);
+          expect(await session.undo(), isA<FlarkCoreHistoryReplayed>());
+          expect(await document.readSource(), 'base\n');
+        },
+      );
 
       test(
         'semantic Return commits from canonical anchors and remains one undo unit',

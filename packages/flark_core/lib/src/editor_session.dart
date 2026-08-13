@@ -111,6 +111,27 @@ final class _HistoryUnit {
   final int nativeHistoryStepCount;
 }
 
+/// Native anchors that preserve the selection on the precomposition side of
+/// a composition history unit.
+///
+/// The endpoints use outward affinity, rather than the canonical selection's
+/// inward affinity. A replacement may therefore collapse or cross these
+/// anchors while composing, but replaying the native inverse returns both to
+/// their exact original offsets without allocating after the source rewind.
+final class _CompositionScope {
+  const _CompositionScope({
+    required this.group,
+    required this.baseAnchor,
+    required this.extentAnchor,
+    required this.baseSelection,
+  });
+
+  final int group;
+  final FlarkCoreAnchor baseAnchor;
+  final FlarkCoreAnchor extentAnchor;
+  final FlarkCoreSelectionSnapshot baseSelection;
+}
+
 sealed class FlarkCoreHistoryOutcome {
   const FlarkCoreHistoryOutcome(this.restoreSelection);
 
@@ -173,6 +194,7 @@ final class FlarkCoreEditorSession {
   int _typingEpoch = 0;
   int _activeCompositionGroup = 0;
   int _nextCompositionGroup = 0;
+  _CompositionScope? _compositionScope;
   Future<void> _commandTail = Future<void>.value();
   int _nextLogicalEditId = 0;
   int _pendingTerminalLogicalEditId = 0;
@@ -211,33 +233,30 @@ final class FlarkCoreEditorSession {
     _activeCompositionGroup = 0;
     if (group == 0) return null;
     if (_undoUnits.isEmpty || _undoUnits.last.compositionGroup != group) {
+      await _releaseCompositionScope(group);
       return null;
     }
 
     final unit = _undoUnits.removeLast();
+    final scope = _compositionScope;
+    if (scope == null || scope.group != group) {
+      _postCommitUnknown = true;
+      throw StateError('Flark composition history omitted its base anchors');
+    }
     final replayed = await _replayUnit(unit);
     if (replayed == null) {
       final stale = [..._undoUnits, ..._redoUnits];
       _undoUnits.clear();
       _redoUnits.clear();
       await _releaseUnits(stale);
-      await _setSelectionUtf16(
-        unit.afterSelection.base,
-        unit.afterSelection.extent,
-        affinity: unit.afterSelection.affinity,
-        adapterState: unit.afterSelection.adapterState,
-      );
+      await _releaseCompositionScope(group);
+      _adoptSelectionMetadata(unit.afterSelection);
       return FlarkCoreHistoryDropped(unit.afterSelection);
     }
 
     await _releaseUnits([replayed.unit]);
-    await _setSelectionUtf16(
-      unit.beforeSelection.base,
-      unit.beforeSelection.extent,
-      affinity: unit.beforeSelection.affinity,
-      adapterState: unit.beforeSelection.adapterState,
-    );
-    return FlarkCoreHistoryReplayed(unit.beforeSelection, replayed.receipt);
+    await _adoptCompositionBase(scope);
+    return FlarkCoreHistoryReplayed(scope.baseSelection, replayed.receipt);
   }
 
   /// Applies one revision-checked source edit and records it as history.
@@ -255,6 +274,7 @@ final class FlarkCoreEditorSession {
     required FlarkCoreSelectionSnapshot afterSelection,
     bool coalesceTyping = false,
     int? compositionGroup,
+    bool compositionFinal = false,
   }) => _serializeCommand(
     () => _applyEditUtf16(
       start,
@@ -264,6 +284,7 @@ final class FlarkCoreEditorSession {
       afterSelection: afterSelection,
       coalesceTyping: coalesceTyping,
       compositionGroup: compositionGroup,
+      compositionFinal: compositionFinal,
     ),
   );
 
@@ -275,6 +296,7 @@ final class FlarkCoreEditorSession {
     required FlarkCoreSelectionSnapshot afterSelection,
     bool coalesceTyping = false,
     int? compositionGroup,
+    bool compositionFinal = false,
   }) async {
     _ensureAuthoritativeCommandsAvailable();
     if (_selectionStart == null ||
@@ -291,6 +313,14 @@ final class FlarkCoreEditorSession {
       _selectionAffinity = beforeSelection.affinity;
       _selectionAdapterState = beforeSelection.adapterState;
     }
+    if (compositionFinal && compositionGroup == null) {
+      throw ArgumentError(
+        'A final composition mutation requires its composition group',
+      );
+    }
+    if (compositionGroup != null) {
+      await _pinCompositionBase(compositionGroup, beforeSelection);
+    }
     if (end - start > _sourceTransactionV1MaximumDeletedUtf16 ||
         utf8.encode(replacement).length >
             _sourceTransactionV1MaximumReplacementBytes) {
@@ -305,6 +335,7 @@ final class FlarkCoreEditorSession {
           afterSelection: afterSelection,
           coalesceTyping: coalesceTyping,
           compositionGroup: compositionGroup,
+          compositionFinal: compositionFinal,
         );
       }
       return _applyLegacyBulkEditUtf16(
@@ -315,6 +346,7 @@ final class FlarkCoreEditorSession {
         afterSelection: afterSelection,
         coalesceTyping: coalesceTyping,
         compositionGroup: compositionGroup,
+        compositionFinal: compositionFinal,
       );
     }
     final startAnchor = _selectionStart!;
@@ -425,6 +457,9 @@ final class FlarkCoreEditorSession {
         nativeHistoryGroupId: historyGroupId,
         historyCompositeExtended: transaction.historyCompositeExtended,
       );
+      if (compositionFinal) {
+        await _releaseCompositionScope(compositionGroup!);
+      }
     } on Object {
       _postCommitUnknown = true;
       rethrow;
@@ -440,6 +475,7 @@ final class FlarkCoreEditorSession {
     required FlarkCoreSelectionSnapshot afterSelection,
     required bool coalesceTyping,
     required int? compositionGroup,
+    required bool compositionFinal,
   }) async {
     final startAnchor = _selectionStart!;
     final endAnchor = _selectionEnd!;
@@ -523,6 +559,9 @@ final class FlarkCoreEditorSession {
         compositionGroup: compositionGroup,
         nativeHistoryGroupId: 0,
       );
+      if (compositionFinal) {
+        await _releaseCompositionScope(compositionGroup!);
+      }
     } on Object {
       _postCommitUnknown = true;
       rethrow;
@@ -540,6 +579,7 @@ final class FlarkCoreEditorSession {
     required FlarkCoreSelectionSnapshot afterSelection,
     required bool coalesceTyping,
     required int? compositionGroup,
+    required bool compositionFinal,
   }) async {
     final typing = coalesceTyping && compositionGroup == null
         ? _typingEvent(
@@ -578,6 +618,9 @@ final class FlarkCoreEditorSession {
         affinity: afterSelection.affinity,
         adapterState: afterSelection.adapterState,
       );
+      if (compositionFinal) {
+        await _releaseCompositionScope(compositionGroup!);
+      }
     } on Object {
       _postCommitUnknown = true;
       rethrow;
@@ -727,7 +770,7 @@ final class FlarkCoreEditorSession {
       _postCommitUnknown = true;
       throw StateError('Flark semantic commit omitted required history');
     }
-    _breakActiveGroups();
+    await _breakActiveGroups();
     if (!preserveSelection) {
       _selectionBaseUtf16 = receipt.resultSelectionUtf16;
       _selectionExtentUtf16 = receipt.resultSelectionUtf16;
@@ -796,6 +839,12 @@ final class FlarkCoreEditorSession {
   void endCompositionGroup() {
     _activeCompositionGroup = 0;
   }
+
+  /// Releases the cancellation-only base anchors after a composition was
+  /// committed without a final source mutation. Callers must enqueue this
+  /// behind every source mutation already observed for that composition.
+  Future<void> finishComposition() =>
+      _serializeCommand(_releaseCompositionScope);
 
   Future<FlarkCoreHistoryOutcome?> undo() =>
       _serializeCommand(() => _replayDirection(undo: true));
@@ -902,7 +951,89 @@ final class FlarkCoreEditorSession {
 
   Future<void> _dispose() async {
     await _clearHistory();
+    await _releaseCompositionScope();
     await _releaseSelectionAnchors();
+  }
+
+  Future<void> _pinCompositionBase(
+    int group,
+    FlarkCoreSelectionSnapshot baseSelection,
+  ) async {
+    final existing = _compositionScope;
+    if (existing != null) {
+      if (existing.group != group) {
+        throw StateError(
+          'Flark composition $group overlapped composition ${existing.group}',
+        );
+      }
+      return;
+    }
+
+    // Outward affinity preserves both original range edges through a
+    // replacement followed by its native inverse. At a collapsed caret the
+    // pair deliberately brackets the composing insertion and converges again
+    // on cancellation.
+    final baseAnchor = await document.createAnchorUtf16(
+      baseSelection.base,
+      downstream: baseSelection.base > baseSelection.extent,
+    );
+    late final FlarkCoreAnchor extentAnchor;
+    try {
+      extentAnchor = await document.createAnchorUtf16(
+        baseSelection.extent,
+        downstream: baseSelection.extent >= baseSelection.base,
+      );
+    } catch (_) {
+      await _releaseAnchorPair(baseAnchor, null);
+      rethrow;
+    }
+    _compositionScope = _CompositionScope(
+      group: group,
+      baseAnchor: baseAnchor,
+      extentAnchor: extentAnchor,
+      baseSelection: baseSelection,
+    );
+  }
+
+  Future<void> _adoptCompositionBase(_CompositionScope scope) async {
+    final base = await document.resolveAnchorUtf16(scope.baseAnchor);
+    final extent = await document.resolveAnchorUtf16(scope.extentAnchor);
+    if (base != scope.baseSelection.base ||
+        extent != scope.baseSelection.extent) {
+      _postCommitUnknown = true;
+      throw StateError(
+        'Flark composition base anchors did not round-trip through replay',
+      );
+    }
+
+    final oldStart = _selectionStart;
+    final oldEnd = _selectionEnd;
+    final baseIsStart = base <= extent;
+    _selectionStart = baseIsStart ? scope.baseAnchor : scope.extentAnchor;
+    _selectionEnd = baseIsStart ? scope.extentAnchor : scope.baseAnchor;
+    _selectionBaseIsStart = baseIsStart;
+    _compositionScope = null;
+    _adoptSelectionMetadata(scope.baseSelection);
+    await _releaseAnchorPair(oldStart, oldEnd);
+  }
+
+  void _adoptSelectionMetadata(FlarkCoreSelectionSnapshot selection) {
+    _selectionBaseIsStart = selection.base <= selection.extent;
+    _selectionBaseUtf16 = selection.base;
+    _selectionExtentUtf16 = selection.extent;
+    _selectionAffinity = selection.affinity;
+    _selectionAdapterState = selection.adapterState;
+    _selectionGeneration += 1;
+  }
+
+  Future<void> _releaseCompositionScope([int? expectedGroup]) async {
+    final scope = _compositionScope;
+    if (scope == null ||
+        (expectedGroup != null && scope.group != expectedGroup)) {
+      return;
+    }
+    _compositionScope = null;
+    await _releaseAnchorPair(scope.baseAnchor, scope.extentAnchor);
   }
 
   Future<void> _releaseSelectionAnchors() async {
@@ -910,6 +1041,13 @@ final class FlarkCoreEditorSession {
     final end = _selectionEnd;
     _selectionStart = null;
     _selectionEnd = null;
+    await _releaseAnchorPair(start, end);
+  }
+
+  Future<void> _releaseAnchorPair(
+    FlarkCoreAnchor? start,
+    FlarkCoreAnchor? end,
+  ) async {
     if (start != null) {
       try {
         await document.releaseAnchor(start);
@@ -1052,7 +1190,7 @@ final class FlarkCoreEditorSession {
     final source = undo ? _undoUnits : _redoUnits;
     final destination = undo ? _redoUnits : _undoUnits;
     if (source.isEmpty) return null;
-    _breakActiveGroups();
+    await _breakActiveGroups();
     final unit = source.removeLast();
     final replayed = await _replayUnit(unit);
     if (replayed == null) {
@@ -1082,9 +1220,10 @@ final class FlarkCoreEditorSession {
     return FlarkCoreHistoryReplayed(restore, replayed.receipt);
   }
 
-  void _breakActiveGroups() {
+  Future<void> _breakActiveGroups() async {
     _typingEpoch += 1;
     _activeCompositionGroup = 0;
+    await _releaseCompositionScope();
   }
 
   Future<({_HistoryUnit unit, FlarkCoreEditReceipt receipt})?> _replayUnit(

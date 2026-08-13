@@ -999,9 +999,13 @@ rejected composing callback clears the platform composing state, commits the
 already-accepted prefix as one undo unit, and unpins parser convergence. Core,
 controller, and mounted-input regressions prove exact source, restored
 directional selection, zero stray redo, and surviving prior history. This is
-simulated composition evidence: atomic native retention of the base selection
-under anchor-cap exhaustion, real dead keys/CJK/autocorrect/dictation, and
-physical mobile IMEs remain open before composition is complete.
+simulated composition evidence. Core now reserves an outward-affinity native
+base-anchor pair before the first composition splice, so reservation failure is
+pre-mutation and cancellation reuses the retained pair after replay instead of
+allocating after source rewind. A cap test fills all 4,096 live-anchor slots and
+proves exact cancellation, directional restoration, and reclamation without
+headroom. Real dead keys/CJK/autocorrect/dictation and physical mobile IMEs
+remain open before composition is complete.
 
 A parser-certified projected-inline regression also proves that an active
 composition inserted inside strong text remains exact in source, keeps its
