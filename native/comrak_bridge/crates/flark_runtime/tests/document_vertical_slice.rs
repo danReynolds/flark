@@ -586,6 +586,13 @@ fn viewport_preserves_parser_authored_block_structure_presentations() {
         viewport.rows[0].presentation,
         DocumentViewportRowPresentation::ThematicBreak
     );
+    assert_eq!(
+        viewport.rows[0].edit_capability,
+        DocumentViewportRowEditCapability::Contiguous,
+    );
+    assert_eq!(viewport.rows[0].editable_range, Some(0..0));
+    assert_eq!(viewport.rows[0].editable_utf16_range, Some(0..0));
+    assert_eq!(viewport.rows[0].path_depth, 1);
     thematic.close().expect("close ThematicBreak");
 
     for empty_source in ["> ", "> \n"] {

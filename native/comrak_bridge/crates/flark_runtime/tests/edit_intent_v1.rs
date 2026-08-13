@@ -367,7 +367,7 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             intent: DocumentEditIntentV1::InsertParagraphBreak,
             selection_utf16: 7,
             expected: "  \tcode\n  \t\n",
-            expected_selection_utf16: 10,
+            expected_selection_utf16: 11,
             expected_transition: DocumentEditPresentationTransitionV1::ContinueIndentedCode,
         },
         IntentCase {
@@ -387,6 +387,33 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             expected: "\u{feff}    code\n    \n",
             expected_selection_utf16: 14,
             expected_transition: DocumentEditPresentationTransitionV1::ContinueIndentedCode,
+        },
+        IntentCase {
+            name: "thematic break Backspace deletes the whole physical atom",
+            initial: "---\nnext",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 0,
+            expected: "next",
+            expected_selection_utf16: 0,
+            expected_transition: DocumentEditPresentationTransitionV1::DeleteThematicBreak,
+        },
+        IntentCase {
+            name: "thematic break Delete deletes spaces tabs and CRLF atomically",
+            initial: "  * \t* *  \r\nnext",
+            intent: DocumentEditIntentV1::DeleteForward,
+            selection_utf16: 0,
+            expected: "next",
+            expected_selection_utf16: 0,
+            expected_transition: DocumentEditPresentationTransitionV1::DeleteThematicBreak,
+        },
+        IntentCase {
+            name: "thematic break deletion preserves a BOF BOM",
+            initial: "\u{feff}---\nnext",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 1,
+            expected: "\u{feff}next",
+            expected_selection_utf16: 1,
+            expected_transition: DocumentEditPresentationTransitionV1::DeleteThematicBreak,
         },
     ];
 
@@ -425,6 +452,7 @@ fn complex_context_fails_closed_and_composition_never_mutates() {
     for initial in [
         "> > nested\n",
         "> # child heading\n",
+        "> ---\n",
         "Setext\n---\n",
         "```\ncode\n```\n",
     ] {

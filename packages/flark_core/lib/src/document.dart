@@ -7,7 +7,11 @@ import 'native/native_document.dart';
 
 enum FlarkCoreHistoryDisposition { retained, disabled, overBudget }
 
-enum FlarkCoreEditIntentV1 { insertParagraphBreak, deleteBackward }
+enum FlarkCoreEditIntentV1 {
+  insertParagraphBreak,
+  deleteBackward,
+  deleteForward,
+}
 
 enum FlarkCoreEditIntentDispositionV1 {
   applied,
@@ -32,6 +36,7 @@ enum FlarkCoreEditPresentationTransitionV1 {
   continueIndentedCode,
   joinIndentedCode,
   liftIndentedCode,
+  deleteThematicBreak,
 }
 
 /// An opaque, one-shot handle to inverse source retained by the native core.

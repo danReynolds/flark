@@ -1156,6 +1156,35 @@ impl DocumentSession {
                 viewport.revision,
             );
         }
+        if current.presentation == DocumentViewportRowPresentation::ThematicBreak
+            && current.path_depth == 1
+        {
+            let source_bytes = u64_range_to_usize(&current.source_range)?;
+            let source_utf16 = u64_range_to_usize(&current.source_utf16_range)?;
+            let editable_bytes = u64_range_to_usize(current.editable_range.as_ref()?)?;
+            let editable_utf16 = u64_range_to_usize(current.editable_utf16_range.as_ref()?)?;
+            if !editable_bytes.is_empty()
+                || !editable_utf16.is_empty()
+                || selection_byte != editable_bytes.start
+            {
+                return None;
+            }
+            let (atom_bytes, atom_utf16) =
+                self.source_range_without_bof_bom(source_bytes.clone(), source_utf16.clone())?;
+            return Some(DocumentSimpleEditContext {
+                revision: viewport.revision,
+                source_bytes,
+                source_utf16,
+                editable_bytes,
+                editable_utf16,
+                ending: self.fallback_line_ending,
+                row: DocumentSimpleEditRow::ThematicBreak {
+                    atom_bytes,
+                    atom_utf16,
+                },
+                paragraph_merge: None,
+            });
+        }
         if matches!(
             current.presentation,
             DocumentViewportRowPresentation::Heading {
@@ -1471,12 +1500,20 @@ impl DocumentSession {
 
     fn indented_code_prefix_ranges(
         &self,
-        mut bytes: Range<usize>,
-        mut utf16: Range<usize>,
+        bytes: Range<usize>,
+        utf16: Range<usize>,
     ) -> Option<(Range<usize>, Range<usize>)> {
         // The parser hides a BOF BOM with the first code prefix. It remains
         // document metadata, not repeatable indentation and not part of a
         // prefix-lift deletion.
+        self.source_range_without_bof_bom(bytes, utf16)
+    }
+
+    fn source_range_without_bof_bom(
+        &self,
+        mut bytes: Range<usize>,
+        mut utf16: Range<usize>,
+    ) -> Option<(Range<usize>, Range<usize>)> {
         if bytes.start == 0
             && self.source_bytes(0..bytes.end.min(3)).ok()?.as_slice() == [0xef, 0xbb, 0xbf]
         {
@@ -1878,7 +1915,9 @@ impl DocumentSession {
             | DocumentSimpleEditRow::BlockQuote { empty, .. } => {
                 *empty = context.editable_bytes.is_empty();
             }
-            DocumentSimpleEditRow::Plain | DocumentSimpleEditRow::IndentedCode { .. } => {}
+            DocumentSimpleEditRow::Plain
+            | DocumentSimpleEditRow::IndentedCode { .. }
+            | DocumentSimpleEditRow::ThematicBreak { .. } => {}
         }
         self.validate_transformed_edit_context(&context)
             .then_some(context)
@@ -1891,6 +1930,7 @@ impl DocumentSession {
             | DocumentSimpleEditRow::AtxHeading { prefix_bytes, .. }
             | DocumentSimpleEditRow::BlockQuote { prefix_bytes, .. }
             | DocumentSimpleEditRow::IndentedCode { prefix_bytes, .. } => prefix_bytes.start,
+            DocumentSimpleEditRow::ThematicBreak { atom_bytes, .. } => atom_bytes.start,
         };
         if line_start > context.source_bytes.end {
             return false;
@@ -1963,6 +2003,9 @@ impl DocumentSession {
                                 without_bom.as_bytes() == prefix_text.as_bytes()
                             })
                 })
+            }
+            (DocumentSimpleEditRow::ThematicBreak { atom_bytes, .. }, _) => {
+                atom_bytes.start >= line_start && atom_bytes.end <= context.source_bytes.end
             }
             _ => false,
         }

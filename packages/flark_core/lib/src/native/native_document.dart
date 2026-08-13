@@ -104,6 +104,7 @@ const _maximumSmallEditBytes = 4 * 1024;
 const _editIntentProfileV1 = 1;
 const _editIntentInsertParagraphBreak = 1;
 const _editIntentDeleteBackward = 2;
+const _editIntentDeleteForward = 3;
 const _editIntentApplied = 1;
 const _editIntentHandledNoChange = 2;
 const _editIntentNotApplicable = 3;
@@ -130,16 +131,17 @@ const _editPresentationOutdentList = 11;
 const _editPresentationContinueIndentedCode = 12;
 const _editPresentationJoinIndentedCode = 13;
 const _editPresentationLiftIndentedCode = 14;
+const _editPresentationDeleteThematicBreak = 15;
 const _bulkCommitWorkUnits = 1;
 const _resultPayloadBytes = 64 * 1024;
 const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 18;
+const _abiMinor = 19;
 // Every capability through this ABI minor is required by the safe Core
 // boundary; negotiation must fail rather than silently losing an edit lane.
-const _requiredCapabilityBits = 0xfffff;
+const _requiredCapabilityBits = 0x1fffff;
 
 final class FlarkNativeException implements Exception {
   const FlarkNativeException(this.operation, this.status, [this.detail = 0]);
@@ -171,7 +173,11 @@ final class FlarkNativeEditReceipt {
 
 enum FlarkNativeHistoryDisposition { retained, disabled, overBudget }
 
-enum FlarkNativeEditIntentV1 { insertParagraphBreak, deleteBackward }
+enum FlarkNativeEditIntentV1 {
+  insertParagraphBreak,
+  deleteBackward,
+  deleteForward,
+}
 
 enum FlarkNativeEditIntentDispositionV1 {
   applied,
@@ -196,6 +202,7 @@ enum FlarkNativeEditPresentationTransitionV1 {
   continueIndentedCode,
   joinIndentedCode,
   liftIndentedCode,
+  deleteThematicBreak,
 }
 
 final class FlarkNativeEditIntentReceiptV1 {
@@ -846,6 +853,7 @@ final class FlarkNativeDocument {
           FlarkNativeEditIntentV1.insertParagraphBreak =>
             _editIntentInsertParagraphBreak,
           FlarkNativeEditIntentV1.deleteBackward => _editIntentDeleteBackward,
+          FlarkNativeEditIntentV1.deleteForward => _editIntentDeleteForward,
         }
         ..selectionAffinity = _affinityDownstream
         ..selectionDirection = 0
@@ -921,6 +929,8 @@ final class FlarkNativeDocument {
           FlarkNativeEditPresentationTransitionV1.joinIndentedCode,
         _editPresentationLiftIndentedCode =>
           FlarkNativeEditPresentationTransitionV1.liftIndentedCode,
+        _editPresentationDeleteThematicBreak =>
+          FlarkNativeEditPresentationTransitionV1.deleteThematicBreak,
         _ => throw FlarkNativeException(
           'edit_intent_v1',
           _internalFault,

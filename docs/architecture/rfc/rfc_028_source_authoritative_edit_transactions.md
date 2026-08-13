@@ -934,6 +934,17 @@ same source runs into a marker-free temporary surface for any Dart frontend.
 Space, tab, mixed space-tab, residual visible indentation, CRLF, and BOF BOM
 cases are pinned, including successive Return while certification is pending.
 
+ABI 4.19 adds `SEMANTIC_ATOMS_V1` and a forward-delete intent without creating
+a second edit path. The first admitted atom is a top-level parser-certified
+thematic break: its presentation publishes a zero-width editable boundary,
+Backspace or Delete at that exact current boundary commits deletion of the
+whole physical row, and Core removes the row using a framework-neutral
+`deleteThematicBreak` receipt. Nested thematic rows, stale facts, and other
+positions are not semantically admitted. Return and ordinary typing remain
+literal edits, so this profile does not silently turn every key at an atom into
+a structural command. The runtime owns newline and BOF-BOM preservation, while
+the Flutter surface owns only focus routing and divider paint.
+
 ### H5 — hardening and later architecture
 
 Qualify memory envelopes, fault recovery, giant-line raster behavior, GFM and

@@ -406,6 +406,32 @@ void main() {
     },
   );
 
+  test('thematic break deletion removes the certified semantic atom', () {
+    final atom = _row(
+      ordinal: 12,
+      sourceStart: 0,
+      sourceEnd: 4,
+      text: '',
+      runs: const [],
+      thematicBreak: true,
+    );
+
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.deleteThematicBreak,
+        baseStart: 0,
+        baseEnd: 4,
+        replacement: '',
+      ),
+      activeOrdinal: 12,
+      active: atom,
+    );
+
+    expect(transition?.surfaces, isEmpty);
+    expect(transition?.removedRowOrdinals, [12]);
+    expect(transition?.clearPriorGap, isTrue);
+  });
+
   test('literal successor maps one temporary surface without losing peers', () {
     final transition = frontend.adopt(
       receipt: _receipt(
@@ -493,6 +519,7 @@ FlarkCorePresentationRow _row({
   int? globalStart,
   int? blockQuoteDepth,
   FlarkCodeBlockPresentation? codeBlock,
+  bool thematicBreak = false,
 }) => FlarkCorePresentationRow(
   sourceUtf16: FlarkSourceRange(sourceStart, sourceEnd),
   leadingText: leadingText,
@@ -502,7 +529,7 @@ FlarkCorePresentationRow _row({
   headingLevel: null,
   blockQuoteDepth: blockQuoteDepth,
   codeBlock: codeBlock,
-  thematicBreak: false,
+  thematicBreak: thematicBreak,
   ordinal: ordinal,
   runs: runs,
 );

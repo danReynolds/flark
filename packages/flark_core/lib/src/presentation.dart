@@ -98,12 +98,20 @@ final class FlarkCoreCommittedPresentationTransitionV1 {
   FlarkCoreCommittedPresentationTransitionV1({
     this.gap,
     List<FlarkCoreCommittedPresentationSurfaceV1> surfaces = const [],
+    List<int> removedRowOrdinals = const [],
     this.clearPriorGap = false,
   }) : surfaces = List.unmodifiable(surfaces),
-       assert(gap != null || surfaces.isNotEmpty || clearPriorGap);
+       removedRowOrdinals = List.unmodifiable(removedRowOrdinals),
+       assert(
+         gap != null ||
+             surfaces.isNotEmpty ||
+             removedRowOrdinals.isNotEmpty ||
+             clearPriorGap,
+       );
 
   final FlarkCoreCommittedPresentationGapV1? gap;
   final List<FlarkCoreCommittedPresentationSurfaceV1> surfaces;
+  final List<int> removedRowOrdinals;
   final bool clearPriorGap;
 
   /// Compatibility view for transitions that still publish exactly one row.
@@ -238,6 +246,19 @@ resolveCommittedPresentationTransitionV1({
     case FlarkCoreEditPresentationTransitionV1.joinIndentedCode:
       if (activeRow == null) return null;
       return _joinProjectedIndentedCode(activeRow, receipt);
+    case FlarkCoreEditPresentationTransitionV1.deleteThematicBreak:
+      if (activeRow == null ||
+          !activeRow.thematicBreak ||
+          receipt.replacement.isNotEmpty ||
+          receipt.baseUtf16End != activeRow.sourceUtf16.end ||
+          receipt.baseUtf16Start < activeRow.sourceUtf16.start ||
+          receipt.baseUtf16Start >= receipt.baseUtf16End) {
+        return null;
+      }
+      return FlarkCoreCommittedPresentationTransitionV1(
+        removedRowOrdinals: [activeRow.ordinal],
+        clearPriorGap: true,
+      );
     case FlarkCoreEditPresentationTransitionV1.liftList:
     case FlarkCoreEditPresentationTransitionV1.exitList:
     case FlarkCoreEditPresentationTransitionV1.exitBlockQuote:

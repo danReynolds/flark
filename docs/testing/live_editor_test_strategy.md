@@ -57,6 +57,9 @@ As of 2026-08-12:
 - the warm corpus remains cheap enough to grow: the latest debug/test run put
   300 canonical cases through no-window in 3.95 seconds and through the mounted
   Flutter surface in 5.31 seconds.
+- thematic-break atom deletion now has one cross-layer portable journey in
+  both lanes; parser fixtures own the marker/newline/BOM/nesting matrix, and
+  focused widget tests own focus, literal typing, Return, and divider paint.
 
 Still outstanding are native source-offset actuation behind the Dart executor,
 artifact/provenance receipts, device-safe plan-bundle delivery, the remaining

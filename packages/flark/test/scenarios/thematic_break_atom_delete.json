@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "id": "thematic-break-atom-delete",
+  "description": "A focused thematic break remains marker-free and Backspace/Delete remove its complete parser-certified physical atom as one history unit.",
+  "initialSource": "before\n\n---\nnext\n",
+  "activation": {
+    "needle": "---",
+    "occurrence": 0,
+    "utf16OffsetInNeedle": 0
+  },
+  "steps": [
+    {
+      "type": "pressBackspace"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "checkpoint",
+      "id": "backspace-deleted",
+      "source": "before\n\nnext\n",
+      "caretUtf16": 8
+    },
+    {
+      "type": "undo"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "checkpoint",
+      "id": "restored",
+      "source": "before\n\n---\nnext\n",
+      "caretUtf16": 8
+    },
+    {
+      "type": "pressDelete"
+    },
+    {
+      "type": "waitForIdle"
+    }
+  ],
+  "schedules": [
+    {
+      "id": "immediate"
+    }
+  ],
+  "expect": {
+    "source": "before\n\nnext\n",
+    "caretUtf16": 8,
+    "resyncCount": 0,
+    "faulted": false,
+    "forbiddenSurfaceSubstrings": ["---"],
+    "paintedSurfaceNeverContains": ["---"]
+  }
+}

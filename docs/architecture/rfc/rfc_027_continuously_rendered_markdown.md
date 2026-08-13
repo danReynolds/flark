@@ -401,6 +401,14 @@ indentation. Framework-neutral receipt transitions keep spaces, tabs, residual
 visible indentation, CRLF, and a BOF BOM correct without exposing raw prefixes
 during recertification.
 
+ABI 4.19 establishes the first parser-certified semantic atom. A top-level
+thematic break stays rendered while active and exposes one zero-width editable
+boundary rather than its marker source. Backspace or forward Delete at that
+boundary removes the complete parser-owned row through the ordinary one-splice
+transaction, anchor, history, and presentation-receipt path. Nested rows and
+stale semantics fail closed; ordinary typing and Return at the boundary remain
+literal source edits, and deletion preserves a BOF BOM.
+
 Exit: the complete v2 behavior denominator is exact or an explicitly scoped
 unsupported product feature; “active raw” is not an accepted fallback for a
 supported construct.

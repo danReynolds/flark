@@ -359,6 +359,89 @@ void main() {
   );
 
   test(
+    'thematic break stays rendered on focus and deletes as one atom',
+    () async {
+      const source = 'before\n\n---\nnext\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+
+      var atom = controller.rows.firstWhere((row) => row.thematicBreak);
+      controller.activateRow(atom, source.indexOf('---') + 2);
+      expect(controller.inputValue.text, isEmpty);
+      expect(controller.globalCaretOffset, atom.editableUtf16!.start);
+      expect(controller.surfaceRow(atom).text, isEmpty);
+      expect(controller.surfaceRow(atom).thematicBreak, isTrue);
+
+      controller.deleteBackward();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, 'before\n\nnext\n');
+      expect(controller.rows.any((row) => row.thematicBreak), isFalse);
+
+      expect(await controller.undo(), isTrue);
+      await _settle(controller);
+      expect(controller.visibleSource, source);
+      atom = controller.rows.firstWhere((row) => row.thematicBreak);
+      controller.activateRow(atom, atom.editableUtf16!.start);
+      controller.deleteForward();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, 'before\n\nnext\n');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'typing at a thematic atom boundary stays literal and invalidates the atom',
+    () async {
+      const source = '---\nnext\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+
+      final atom = controller.rows.firstWhere((row) => row.thematicBreak);
+      controller.activateRow(atom, atom.editableUtf16!.start);
+      controller.replaceSelection('x');
+      await _settle(controller);
+
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, 'x---\nnext\n');
+      expect(controller.rows.any((row) => row.thematicBreak), isFalse);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'Return at a thematic atom boundary inserts a plain line before it',
+    () async {
+      const source = '---\nnext\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+
+      final atom = controller.rows.firstWhere((row) => row.thematicBreak);
+      controller.activateRow(atom, atom.editableUtf16!.start);
+      controller.insertNewline();
+      await _settle(controller);
+
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, '\n---\nnext\n');
+      expect(controller.rows.any((row) => row.thematicBreak), isTrue);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'ATX heading Return creates plain space and Backspace lifts the prefix',
     () async {
       const source = '## Head';

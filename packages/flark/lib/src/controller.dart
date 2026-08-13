@@ -1708,6 +1708,9 @@ final class FlarkEditorController extends ChangeNotifier {
       replaceSelection('');
       return;
     }
+    if (_queueSemanticDeleteForward(selection.extentOffset)) {
+      return;
+    }
     if (_deleteProjectedVisible(backward: false)) return;
     final start = selection.extentOffset;
     if (start == _inputValue.text.length) return;
@@ -2994,6 +2997,11 @@ final class FlarkEditorController extends ChangeNotifier {
   bool _queueSemanticParagraphBreak(int localCaret) {
     if (!_inputValue.selection.isCollapsed) return false;
     final row = _activeCachedRow();
+    // A thematic atom supports whole-atom deletion, not structural Return.
+    // Its zero-width input island therefore accepts Return as an ordinary
+    // literal insertion before the atom, even though the row has semantic
+    // commands in the same capability family.
+    if (row?.thematicBreak ?? false) return false;
     final editableRange = row?.editableUtf16;
     final rowEligible = row != null && _supportsSemanticParagraphBreakV1(row);
     if (!rowEligible && !_semanticEditV1Active) return false;
@@ -3059,19 +3067,32 @@ final class FlarkEditorController extends ChangeNotifier {
     return true;
   }
 
+  bool _queueSemanticDeleteForward(int localCaret) {
+    if (!_inputValue.selection.isCollapsed) return false;
+    final row = _activeCachedRow();
+    if (row == null || !_isTopLevelThematicBreak(row)) return false;
+    final editable = _mapViewportRange(row.editableUtf16!);
+    final globalCaret = _inputGlobalUtf16Start + localCaret;
+    if (globalCaret != editable.start) return false;
+    _semanticEditV1Active = true;
+    _queueSemanticEdit(FlarkCoreEditIntentV1.deleteForward);
+    return true;
+  }
+
   bool _supportsSemanticEditV1(FlarkViewportRow row) {
     return _supportsSemanticParagraphBreakV1(row) ||
         _supportsSemanticDeleteBackwardV1(row);
   }
 
   bool _supportsSemanticParagraphBreakV1(FlarkViewportRow row) {
-    return _supportsSemanticDeleteBackwardV1(row) ||
+    return (!row.thematicBreak && _supportsSemanticDeleteBackwardV1(row)) ||
         _isProjectedBlockQuote(row) ||
         _isProjectedIndentedCode(row);
   }
 
   bool _supportsSemanticDeleteBackwardV1(FlarkViewportRow row) {
     if (row.editableUtf16 == null) return false;
+    if (_isTopLevelThematicBreak(row)) return true;
     final listItem = row.listItem;
     final simpleList = listItem != null && listItem.simpleContinuation;
     final simpleBlockQuote = row.blockQuote?.simpleContinuation ?? false;
@@ -3104,6 +3125,15 @@ final class FlarkEditorController extends ChangeNotifier {
       row.codeBlock?.style == FlarkCodeBlockStyle.indented &&
       row.editCapability == FlarkViewportRowEditCapability.projectedReserved &&
       row.projectionSegments != null;
+
+  bool _isTopLevelThematicBreak(FlarkViewportRow row) {
+    final editable = row.editableUtf16;
+    return row.thematicBreak &&
+        row.pathDepth == 1 &&
+        editable != null &&
+        editable.length == 0 &&
+        _rowSemanticsCurrent(_mapViewportRange(editable));
+  }
 
   void _queueSemanticEdit(FlarkCoreEditIntentV1 intent) {
     _ensureSemanticInputBarrier();
@@ -3215,10 +3245,12 @@ final class FlarkEditorController extends ChangeNotifier {
       receipt.replacement,
     );
     _committedStructuralSurfaces = transition?.surfaces ?? const [];
-    final removedRowOrdinals = _committedStructuralSurfaces
-        .map((surface) => surface.removedRowOrdinal)
-        .whereType<int>()
-        .toSet();
+    final removedRowOrdinals = <int>{
+      ...?transition?.removedRowOrdinals,
+      ..._committedStructuralSurfaces
+          .map((surface) => surface.removedRowOrdinal)
+          .whereType<int>(),
+    };
     if (removedRowOrdinals.isNotEmpty) {
       _cachedRows = List.unmodifiable(
         _cachedRows.where((row) => !removedRowOrdinals.contains(row.ordinal)),
@@ -4305,6 +4337,9 @@ final class FlarkEditorController extends ChangeNotifier {
 
   FlarkSourceRange _activationRange(FlarkViewportRow row) {
     final editable = row.editableUtf16;
+    if (row.thematicBreak && editable != null && editable.length == 0) {
+      return editable;
+    }
     if (editable != null && editable.start < row.sourceUtf16.start) {
       return editable;
     }

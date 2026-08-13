@@ -833,7 +833,7 @@ final class RenderFlarkSurface extends RenderBox {
         );
       }
       final origin = offset + Offset(_padding.left, paintedTop);
-      if (row.presentation.thematicBreak && !row.presentation.active) {
+      if (row.presentation.thematicBreak) {
         final lineY = origin.dy + row.height / 2;
         canvas.drawLine(
           Offset(origin.dx, lineY),

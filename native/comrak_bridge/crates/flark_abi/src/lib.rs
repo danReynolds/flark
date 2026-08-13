@@ -25,7 +25,7 @@ pub use flark_runtime::{
 };
 
 pub const ABI_MAJOR: u16 = 4;
-pub const ABI_MINOR: u16 = 18;
+pub const ABI_MINOR: u16 = 19;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
@@ -442,6 +442,7 @@ pub struct SmallEditRequest {
 pub const EDIT_PROFILE_FLARK_V1: u32 = 1;
 pub const EDIT_INTENT_INSERT_PARAGRAPH_BREAK: u32 = 1;
 pub const EDIT_INTENT_DELETE_BACKWARD: u32 = 2;
+pub const EDIT_INTENT_DELETE_FORWARD: u32 = 3;
 pub const EDIT_INTENT_DISPOSITION_APPLIED: u32 = 1;
 pub const EDIT_INTENT_DISPOSITION_HANDLED_NO_CHANGE: u32 = 2;
 pub const EDIT_INTENT_DISPOSITION_NOT_APPLICABLE: u32 = 3;
@@ -464,6 +465,7 @@ pub const EDIT_PRESENTATION_OUTDENT_LIST: u32 = 11;
 pub const EDIT_PRESENTATION_CONTINUE_INDENTED_CODE: u32 = 12;
 pub const EDIT_PRESENTATION_JOIN_INDENTED_CODE: u32 = 13;
 pub const EDIT_PRESENTATION_LIFT_INDENTED_CODE: u32 = 14;
+pub const EDIT_PRESENTATION_DELETE_THEMATIC_BREAK: u32 = 15;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]

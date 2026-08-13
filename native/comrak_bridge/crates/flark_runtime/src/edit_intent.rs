@@ -6,6 +6,7 @@ use crate::{DocumentListDelimiter, DocumentListMarker};
 pub enum DocumentEditIntentV1 {
     InsertParagraphBreak,
     DeleteBackward,
+    DeleteForward,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -37,6 +38,7 @@ pub enum DocumentEditPresentationTransitionV1 {
     ContinueIndentedCode,
     JoinIndentedCode,
     LiftIndentedCode,
+    DeleteThematicBreak,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -144,6 +146,10 @@ pub(crate) enum DocumentSimpleEditRow {
         /// indentation to the host.
         join_bytes: Option<Range<usize>>,
         join_utf16: Option<Range<usize>>,
+    },
+    ThematicBreak {
+        atom_bytes: Range<usize>,
+        atom_utf16: Range<usize>,
     },
 }
 
@@ -596,6 +602,22 @@ pub(crate) fn resolve_document_edit_intent_v1(
                 prefix_utf16.clone(),
                 String::new(),
                 DocumentEditPresentationTransitionV1::LiftIndentedCode,
+            )
+        }
+        (
+            DocumentEditIntentV1::DeleteBackward | DocumentEditIntentV1::DeleteForward,
+            DocumentSimpleEditRow::ThematicBreak {
+                atom_bytes,
+                atom_utf16,
+            },
+        ) if selection_byte == context.editable_bytes.start
+            && selection_utf16 == context.editable_utf16.start =>
+        {
+            applied(
+                splice(atom_bytes.clone(), atom_utf16.clone(), String::new()),
+                context.editable_utf16.start,
+                None,
+                DocumentEditPresentationTransitionV1::DeleteThematicBreak,
             )
         }
         (
