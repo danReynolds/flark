@@ -924,6 +924,16 @@ Portable headless and mounted journeys cover fenced-code Return/type/history,
 ordered-list continuation/history, task continuation/exit, and quote
 continuation/exit with zero resynchronization and bounded paint predicates.
 
+ABI 4.18 extends that transaction lane to indented code without adding a host
+indentation classifier. The parser marks only its exact CommonMark deindent
+coverage as hidden-upstream projection, the runtime resolves one physical line
+from certified source segments, and the existing one-splice/history/anchor path
+commits Return, cross-line Backspace, or first-line lift. The receipt echoes
+`continueIndentedCode`, `joinIndentedCode`, or `liftIndentedCode`; Core maps the
+same source runs into a marker-free temporary surface for any Dart frontend.
+Space, tab, mixed space-tab, residual visible indentation, CRLF, and BOF BOM
+cases are pinned, including successive Return while certification is pending.
+
 ### H5 — hardening and later architecture
 
 Qualify memory envelopes, fault recovery, giant-line raster behavior, GFM and

@@ -560,6 +560,20 @@ fn viewport_preserves_parser_authored_block_structure_presentations() {
             style: DocumentCodeBlockStyle::Indented,
         }
     );
+    assert_eq!(
+        viewport.rows[0].edit_capability,
+        DocumentViewportRowEditCapability::ProjectedReserved,
+    );
+    assert_eq!(
+        viewport.rows[0]
+            .projection_segments
+            .as_ref()
+            .expect("indented code projection segments")
+            .iter()
+            .map(|segment| segment.source_range.clone())
+            .collect::<Vec<_>>(),
+        vec![4..9, 13..18],
+    );
     indented.close().expect("close IndentedCode");
 
     let thematic_source = "---\n";

@@ -316,6 +316,78 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             expected_selection_utf16: 9,
             expected_transition: DocumentEditPresentationTransitionV1::SplitParagraph,
         },
+        IntentCase {
+            name: "indented code Return preserves the hidden prefix",
+            initial: "    code\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 8,
+            expected: "    code\n    \n",
+            expected_selection_utf16: 13,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueIndentedCode,
+        },
+        IntentCase {
+            name: "indented code Backspace joins visible lines and hidden prefix",
+            initial: "    one\n    two\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 12,
+            expected: "    onetwo\n",
+            expected_selection_utf16: 7,
+            expected_transition: DocumentEditPresentationTransitionV1::JoinIndentedCode,
+        },
+        IntentCase {
+            name: "first indented code line Backspace lifts to plain text",
+            initial: "    code\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 4,
+            expected: "code\n",
+            expected_selection_utf16: 0,
+            expected_transition: DocumentEditPresentationTransitionV1::LiftIndentedCode,
+        },
+        IntentCase {
+            name: "CRLF indented code Return preserves the hidden prefix",
+            initial: "    code\r\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 8,
+            expected: "    code\r\n    \r\n",
+            expected_selection_utf16: 14,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueIndentedCode,
+        },
+        IntentCase {
+            name: "tab-indented code Return repeats the parser-owned tab",
+            initial: "\tcode\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 5,
+            expected: "\tcode\n\t\n",
+            expected_selection_utf16: 7,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueIndentedCode,
+        },
+        IntentCase {
+            name: "mixed space-tab code Return repeats the exact four-column prefix",
+            initial: "  \tcode\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 7,
+            expected: "  \tcode\n  \t\n",
+            expected_selection_utf16: 10,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueIndentedCode,
+        },
+        IntentCase {
+            name: "residual code indentation remains visible while Return adds four columns",
+            initial: "      code\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 10,
+            expected: "      code\n    \n",
+            expected_selection_utf16: 15,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueIndentedCode,
+        },
+        IntentCase {
+            name: "BOF BOM is not repeated by indented code Return",
+            initial: "\u{feff}    code\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 9,
+            expected: "\u{feff}    code\n    \n",
+            expected_selection_utf16: 14,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueIndentedCode,
+        },
     ];
 
     for case in cases {
@@ -472,6 +544,42 @@ fn parser_pending_quote_continues_then_exits_without_pumping() {
     assert_eq!(exited.disposition, DocumentEditIntentDispositionV1::Applied);
     assert_eq!(source(&document), "> alpha\n\n");
     document.close().expect("close pending quote");
+}
+
+#[test]
+fn parser_pending_indented_code_continues_without_pumping() {
+    let mut document = DocumentSession::begin("    code").expect("begin indented code sequence");
+    pump_ready(&mut document);
+    let first = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 8, false)
+        .expect("first indented code Return");
+    assert_eq!(
+        first.presentation_transition,
+        DocumentEditPresentationTransitionV1::ContinueIndentedCode
+    );
+    assert_eq!(source(&document), "    code\n    ");
+
+    document
+        .apply_edit(
+            2,
+            first.result_selection_utf16..first.result_selection_utf16,
+            "next",
+        )
+        .expect("type into pending indented code line");
+    let second = document
+        .try_apply_edit_intent_v1(
+            3,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            first.result_selection_utf16 + 4,
+            false,
+        )
+        .expect("second pending indented code Return");
+    assert_eq!(
+        second.presentation_transition,
+        DocumentEditPresentationTransitionV1::ContinueIndentedCode
+    );
+    assert_eq!(source(&document), "    code\n    next\n    ");
+    document.close().expect("close indented code sequence");
 }
 
 #[test]

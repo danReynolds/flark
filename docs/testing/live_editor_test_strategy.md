@@ -345,6 +345,13 @@ A portable scenario is added only when all of these are true:
 3. A lowest-layer ordinary test cannot by itself prove the experience.
 4. It covers a named mechanism not already represented by another scenario.
 
+The indented-code scenario is one such mechanism: one source of parser-owned
+hidden indentation drives both the no-window controller and mounted render
+surface through immediate Return/Backspace, exact final source/caret checks,
+zero resynchronization, and a painted-prefix exclusion. Tab/BOM/CRLF geometry
+stays in the faster Rust matrix because it does not gain evidence by repeating
+every lexical permutation through Flutter.
+
 When a real-platform bug is found:
 
 1. capture the smallest raw native event trace;

@@ -296,6 +296,116 @@ void main() {
     );
   });
 
+  test('indented code Return hides the new parser-owned prefix', () {
+    final code = _row(
+      ordinal: 9,
+      sourceStart: 0,
+      sourceEnd: 16,
+      globalStart: 4,
+      text: 'one\ntwo\n',
+      codeBlock: const FlarkCodeBlockPresentation(
+        style: FlarkCodeBlockStyle.indented,
+        minimumClosingLength: 0,
+        fenceOffset: 0,
+        closed: false,
+      ),
+      runs: const [
+        FlarkCorePresentationRun(
+          text: 'one\n',
+          sourceUtf16Start: 4,
+          sourceUtf16End: 8,
+          sourceExact: true,
+          styles: {},
+        ),
+        FlarkCorePresentationRun(
+          text: 'two\n',
+          sourceUtf16Start: 12,
+          sourceUtf16End: 16,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
+
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.continueIndentedCode,
+        baseStart: 14,
+        baseEnd: 14,
+        replacement: '\n    ',
+      ),
+      activeOrdinal: 9,
+      active: code,
+    );
+
+    final presentation = transition?.surface?.presentation;
+    expect(transition?.gap, isNull);
+    expect(presentation?.text, 'one\ntw\no\n');
+    expect(presentation?.sourceUtf16.end, 21);
+    expect(
+      presentation?.runs.map(
+        (run) => (run.text, run.sourceUtf16Start, run.sourceUtf16End),
+      ),
+      [('one\n', 4, 8), ('tw', 12, 14), ('\n', 14, 15), ('o\n', 19, 21)],
+    );
+  });
+
+  test(
+    'indented code Backspace joins visible lines without exposing prefix',
+    () {
+      final code = _row(
+        ordinal: 9,
+        sourceStart: 0,
+        sourceEnd: 16,
+        globalStart: 4,
+        text: 'one\ntwo\n',
+        codeBlock: const FlarkCodeBlockPresentation(
+          style: FlarkCodeBlockStyle.indented,
+          minimumClosingLength: 0,
+          fenceOffset: 0,
+          closed: false,
+        ),
+        runs: const [
+          FlarkCorePresentationRun(
+            text: 'one\n',
+            sourceUtf16Start: 4,
+            sourceUtf16End: 8,
+            sourceExact: true,
+            styles: {},
+          ),
+          FlarkCorePresentationRun(
+            text: 'two\n',
+            sourceUtf16Start: 12,
+            sourceUtf16End: 16,
+            sourceExact: true,
+            styles: {},
+          ),
+        ],
+      );
+
+      final transition = frontend.adopt(
+        receipt: _receipt(
+          transition: FlarkCoreEditPresentationTransitionV1.joinIndentedCode,
+          baseStart: 7,
+          baseEnd: 12,
+          replacement: '',
+        ),
+        activeOrdinal: 9,
+        active: code,
+      );
+
+      final presentation = transition?.surface?.presentation;
+      expect(presentation?.text, 'onetwo\n');
+      expect(presentation?.sourceUtf16.end, 11);
+      expect(
+        presentation?.runs.map(
+          (run) => (run.text, run.sourceUtf16Start, run.sourceUtf16End),
+        ),
+        [('one', 4, 7), ('two\n', 7, 11)],
+      );
+    },
+  );
+
   test('literal successor maps one temporary surface without losing peers', () {
     final transition = frontend.adopt(
       receipt: _receipt(
@@ -382,6 +492,7 @@ FlarkCorePresentationRow _row({
   int kind = 5,
   int? globalStart,
   int? blockQuoteDepth,
+  FlarkCodeBlockPresentation? codeBlock,
 }) => FlarkCorePresentationRow(
   sourceUtf16: FlarkSourceRange(sourceStart, sourceEnd),
   leadingText: leadingText,
@@ -390,7 +501,7 @@ FlarkCorePresentationRow _row({
   kind: kind,
   headingLevel: null,
   blockQuoteDepth: blockQuoteDepth,
-  codeBlock: null,
+  codeBlock: codeBlock,
   thematicBreak: false,
   ordinal: ordinal,
   runs: runs,

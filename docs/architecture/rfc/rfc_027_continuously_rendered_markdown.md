@@ -393,7 +393,13 @@ unsupported/fail-closed behavior. ABI 4.17 replaces the uniform-spacing
 assumption with a parser-authored marker column and bounded ancestor padding
 lineage. Pure lists with wide ordered markers now render, continue, and outdent
 through the same framework-neutral transaction lane; tabs and mixed-container
-paths still fail closed.
+paths still fail closed. ABI 4.18 makes the parser's exact indented-code
+deindent ranges projection-safe. Return repeats that parser-owned four-column
+source prefix, Backspace joins a prior visible code line by consuming its line
+ending plus the hidden prefix, and Backspace on the first line lifts only the
+indentation. Framework-neutral receipt transitions keep spaces, tabs, residual
+visible indentation, CRLF, and a BOF BOM correct without exposing raw prefixes
+during recertification.
 
 Exit: the complete v2 behavior denominator is exact or an explicitly scoped
 unsupported product feature; “active raw” is not an accepted fallback for a

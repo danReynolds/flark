@@ -2348,8 +2348,16 @@ final class FlarkEditorController extends ChangeNotifier {
     FlarkViewportRow row,
   ) {
     if (presentation.runs.isEmpty) return false;
-    final activation = _mapViewportRange(_activationRange(row));
-    if (!_rowSemanticsCurrent(activation)) return false;
+    FlarkCoreCommittedPresentationSurfaceV1? committed;
+    for (final surface in _committedStructuralSurfaces) {
+      if (surface.rowOrdinal == row.ordinal) {
+        committed = surface;
+        break;
+      }
+    }
+    final activation =
+        committed?.sourceUtf16 ?? _mapViewportRange(_activationRange(row));
+    if (committed == null && !_rowSemanticsCurrent(activation)) return false;
     var sourceCursor = activation.start;
     for (final run in presentation.runs) {
       if (!run.sourceExact || run.sourceUtf16Start != sourceCursor) return true;
@@ -3009,10 +3017,12 @@ final class FlarkEditorController extends ChangeNotifier {
     if (!_inputValue.selection.isCollapsed) return false;
     final row = _activeCachedRow();
     final editableRange = row?.editableUtf16;
-    final projectedBlockQuote = row != null && _isProjectedBlockQuote(row);
+    final projectedStructuralRow =
+        row != null &&
+        (_isProjectedBlockQuote(row) || _isProjectedIndentedCode(row));
     final rowEligible =
         row != null &&
-        (_supportsSemanticDeleteBackwardV1(row) || projectedBlockQuote);
+        (_supportsSemanticDeleteBackwardV1(row) || projectedStructuralRow);
     if (!rowEligible && (!_semanticEditV1Active || localCaret != 0)) {
       return false;
     }
@@ -3020,13 +3030,26 @@ final class FlarkEditorController extends ChangeNotifier {
       _semanticEditV1Active = true;
       final editable = _mapViewportRange(editableRange!);
       final globalCaret = _inputGlobalUtf16Start + localCaret;
-      final atProjectedSegmentStart =
-          projectedBlockQuote &&
-          row.projectionSegments!.any(
-            (segment) =>
-                _mapViewportRange(segment.sourceUtf16).start == globalCaret,
-          );
-      if (!atProjectedSegmentStart &&
+      final atStructuralSegmentStart =
+          (projectedStructuralRow &&
+              row.projectionSegments!.any(
+                (segment) =>
+                    _mapViewportRange(segment.sourceUtf16).start == globalCaret,
+              )) ||
+          (!_semanticViewportCurrent &&
+              _committedStructuralSurfaces.any((surface) {
+                final runs = surface.presentation.runs;
+                for (var index = 0; index < runs.length; index += 1) {
+                  final run = runs[index];
+                  if (run.sourceUtf16Start != globalCaret) continue;
+                  final precedingEnd = index == 0
+                      ? surface.sourceUtf16.start
+                      : runs[index - 1].sourceUtf16End;
+                  if (precedingEnd < globalCaret) return true;
+                }
+                return false;
+              }));
+      if (!atStructuralSegmentStart &&
           globalCaret != editable.start &&
           (_semanticViewportCurrent || localCaret != 0)) {
         return false;
@@ -3043,7 +3066,8 @@ final class FlarkEditorController extends ChangeNotifier {
 
   bool _supportsSemanticParagraphBreakV1(FlarkViewportRow row) {
     return _supportsSemanticDeleteBackwardV1(row) ||
-        _isProjectedBlockQuote(row);
+        _isProjectedBlockQuote(row) ||
+        _isProjectedIndentedCode(row);
   }
 
   bool _supportsSemanticDeleteBackwardV1(FlarkViewportRow row) {
@@ -3061,11 +3085,23 @@ final class FlarkEditorController extends ChangeNotifier {
         row.codeBlock == null &&
         !row.thematicBreak &&
         row.table == null;
-    return plainParagraph || simpleList || simpleBlockQuote || atxHeading;
+    final indentedCode =
+        row.codeBlock?.style == FlarkCodeBlockStyle.indented &&
+        row.editCapability != FlarkViewportRowEditCapability.unavailable;
+    return plainParagraph ||
+        simpleList ||
+        simpleBlockQuote ||
+        atxHeading ||
+        indentedCode;
   }
 
   bool _isProjectedBlockQuote(FlarkViewportRow row) =>
       row.blockQuote?.nestingDepth == 1 &&
+      row.editCapability == FlarkViewportRowEditCapability.projectedReserved &&
+      row.projectionSegments != null;
+
+  bool _isProjectedIndentedCode(FlarkViewportRow row) =>
+      row.codeBlock?.style == FlarkCodeBlockStyle.indented &&
       row.editCapability == FlarkViewportRowEditCapability.projectedReserved &&
       row.projectionSegments != null;
 
@@ -3393,13 +3429,17 @@ final class FlarkEditorController extends ChangeNotifier {
         } else {
           switch (command!) {
             case _DeferredInputCommand.deleteBackward:
-              _queueSemanticEdit(FlarkCoreEditIntentV1.deleteBackward);
+              // Re-enter the normal arbiter after each predecessor has been
+              // adopted. A deferred Backspace may now be an ordinary
+              // grapheme deletion or a structural command; classifying every
+              // successor as structural drops ordinary deletes.
+              deleteBackward();
               break;
             case _DeferredInputCommand.deleteForward:
               deleteForward();
               break;
             case _DeferredInputCommand.insertNewline:
-              _queueSemanticEdit(FlarkCoreEditIntentV1.insertParagraphBreak);
+              insertNewline();
               break;
           }
         }

@@ -1145,6 +1145,19 @@ impl DocumentSession {
         }
         if matches!(
             current.presentation,
+            DocumentViewportRowPresentation::CodeBlock {
+                style: DocumentCodeBlockStyle::Indented,
+            }
+        ) && current.edit_capability != DocumentViewportRowEditCapability::Unavailable
+        {
+            return self.capture_projected_indented_code_edit_context(
+                current,
+                selection_byte,
+                viewport.revision,
+            );
+        }
+        if matches!(
+            current.presentation,
             DocumentViewportRowPresentation::Heading {
                 style: DocumentHeadingStyle::Atx,
                 ..
@@ -1335,6 +1348,142 @@ impl DocumentSession {
             },
             paragraph_merge: None,
         })
+    }
+
+    /// Resolves one physical line inside a parser-certified indented-code row.
+    /// The projection segments are the visible code; every gap is the exact
+    /// four-column prefix owned by the parser, never a Dart/Rust heuristic.
+    fn capture_projected_indented_code_edit_context(
+        &self,
+        row: &DocumentViewportRow,
+        selection_byte: usize,
+        revision: u64,
+    ) -> Option<DocumentSimpleEditContext> {
+        let Some(segments) = row.projection_segments.as_ref() else {
+            let source_bytes = u64_range_to_usize(&row.source_range)?;
+            let source_utf16 = u64_range_to_usize(&row.source_utf16_range)?;
+            let editable_bytes = u64_range_to_usize(row.editable_range.as_ref()?)?;
+            let editable_utf16 = u64_range_to_usize(row.editable_utf16_range.as_ref()?)?;
+            if selection_byte < editable_bytes.start || selection_byte > editable_bytes.end {
+                return None;
+            }
+            let ending = self
+                .edit_line_ending_at(source_bytes.end)
+                .unwrap_or(self.fallback_line_ending);
+            let (prefix_bytes, prefix_utf16) = self.indented_code_prefix_ranges(
+                source_bytes.start..editable_bytes.start,
+                source_utf16.start..editable_utf16.start,
+            )?;
+            let prefix_text = self.indented_code_continuation_prefix(&prefix_bytes)?;
+            return Some(DocumentSimpleEditContext {
+                revision,
+                source_bytes,
+                source_utf16,
+                editable_bytes,
+                editable_utf16,
+                ending,
+                row: DocumentSimpleEditRow::IndentedCode {
+                    prefix_bytes,
+                    prefix_utf16,
+                    prefix_text,
+                    join_bytes: None,
+                    join_utf16: None,
+                },
+                paragraph_merge: None,
+            });
+        };
+        let (segment_index, segment) = segments.iter().enumerate().find(|(_, segment)| {
+            let range = &segment.source_range;
+            usize::try_from(range.start).is_ok_and(|start| selection_byte >= start)
+                && usize::try_from(range.end).is_ok_and(|end| selection_byte <= end)
+        })?;
+        let segment_bytes = u64_range_to_usize(&segment.source_range)?;
+        let physical_start = if segment_index == 0 {
+            usize::try_from(row.source_range.start).ok()?
+        } else {
+            usize::try_from(segments.get(segment_index - 1)?.source_range.end).ok()?
+        };
+        let physical_end = if segment_index + 1 < segments.len() {
+            segment_bytes.end
+        } else {
+            usize::try_from(row.source_range.end).ok()?
+        };
+        if physical_start > segment_bytes.start || segment_bytes.end > physical_end {
+            return None;
+        }
+        let observed_ending = self.edit_line_ending_at(physical_end);
+        let ending = observed_ending.unwrap_or(self.fallback_line_ending);
+        let editable_end = match observed_ending {
+            Some(ending) => physical_end.checked_sub(ending.text().len())?,
+            None => physical_end,
+        }
+        .min(segment_bytes.end);
+        let editable_bytes = segment_bytes.start..editable_end;
+        if selection_byte < editable_bytes.start || selection_byte > editable_bytes.end {
+            return None;
+        }
+
+        let lease = self.runtime.snapshot_current_source().ok()?;
+        let physical_start_utf16 = lease.utf16_offset_for_byte(physical_start).ok()?;
+        let physical_end_utf16 = lease.utf16_offset_for_byte(physical_end).ok()?;
+        let editable_start_utf16 = lease.utf16_offset_for_byte(editable_bytes.start).ok()?;
+        let editable_end_utf16 = lease.utf16_offset_for_byte(editable_bytes.end).ok()?;
+        let (prefix_bytes, prefix_utf16) = self.indented_code_prefix_ranges(
+            physical_start..segment_bytes.start,
+            physical_start_utf16..editable_start_utf16,
+        )?;
+        let prefix_text = self.indented_code_continuation_prefix(&prefix_bytes)?;
+
+        let (join_bytes, join_utf16) = if segment_index == 0 {
+            (None, None)
+        } else {
+            let previous_ending = self.edit_line_ending_at(physical_start)?;
+            let join_start = physical_start.checked_sub(previous_ending.text().len())?;
+            let join_start_utf16 = lease.utf16_offset_for_byte(join_start).ok()?;
+            (
+                Some(join_start..segment_bytes.start),
+                Some(join_start_utf16..editable_start_utf16),
+            )
+        };
+
+        Some(DocumentSimpleEditContext {
+            revision,
+            source_bytes: physical_start..physical_end,
+            source_utf16: physical_start_utf16..physical_end_utf16,
+            editable_bytes,
+            editable_utf16: editable_start_utf16..editable_end_utf16,
+            ending,
+            row: DocumentSimpleEditRow::IndentedCode {
+                prefix_bytes,
+                prefix_utf16,
+                prefix_text,
+                join_bytes,
+                join_utf16,
+            },
+            paragraph_merge: None,
+        })
+    }
+
+    fn indented_code_continuation_prefix(&self, prefix: &Range<usize>) -> Option<String> {
+        let prefix = String::from_utf8(self.source_bytes(prefix.clone()).ok()?).ok()?;
+        (!prefix.is_empty() && !prefix.contains(['\r', '\n'])).then_some(prefix)
+    }
+
+    fn indented_code_prefix_ranges(
+        &self,
+        mut bytes: Range<usize>,
+        mut utf16: Range<usize>,
+    ) -> Option<(Range<usize>, Range<usize>)> {
+        // The parser hides a BOF BOM with the first code prefix. It remains
+        // document metadata, not repeatable indentation and not part of a
+        // prefix-lift deletion.
+        if bytes.start == 0
+            && self.source_bytes(0..bytes.end.min(3)).ok()?.as_slice() == [0xef, 0xbb, 0xbf]
+        {
+            bytes.start = 3;
+            utf16.start = utf16.start.checked_add(1)?;
+        }
+        (bytes.start < bytes.end && utf16.start < utf16.end).then_some((bytes, utf16))
     }
 
     fn capture_nested_list_outdent(
@@ -1729,7 +1878,7 @@ impl DocumentSession {
             | DocumentSimpleEditRow::BlockQuote { empty, .. } => {
                 *empty = context.editable_bytes.is_empty();
             }
-            DocumentSimpleEditRow::Plain => {}
+            DocumentSimpleEditRow::Plain | DocumentSimpleEditRow::IndentedCode { .. } => {}
         }
         self.validate_transformed_edit_context(&context)
             .then_some(context)
@@ -1740,7 +1889,8 @@ impl DocumentSession {
             DocumentSimpleEditRow::Plain => context.source_bytes.start,
             DocumentSimpleEditRow::ListItem { prefix_bytes, .. }
             | DocumentSimpleEditRow::AtxHeading { prefix_bytes, .. }
-            | DocumentSimpleEditRow::BlockQuote { prefix_bytes, .. } => prefix_bytes.start,
+            | DocumentSimpleEditRow::BlockQuote { prefix_bytes, .. }
+            | DocumentSimpleEditRow::IndentedCode { prefix_bytes, .. } => prefix_bytes.start,
         };
         if line_start > context.source_bytes.end {
             return false;
@@ -1795,6 +1945,24 @@ impl DocumentSession {
                     && source
                         .get(prefix)
                         .is_some_and(|bytes| bytes == prefix_text.as_bytes())
+            }
+            (
+                DocumentSimpleEditRow::IndentedCode {
+                    prefix_bytes,
+                    prefix_text,
+                    ..
+                },
+                _,
+            ) => {
+                let relative_end = prefix_bytes.end.saturating_sub(line_start);
+                source.get(..relative_end).is_some_and(|bytes| {
+                    bytes == prefix_text.as_bytes()
+                        || String::from_utf8_lossy(bytes)
+                            .strip_prefix('\u{feff}')
+                            .is_some_and(|without_bom| {
+                                without_bom.as_bytes() == prefix_text.as_bytes()
+                            })
+                })
             }
             _ => false,
         }
@@ -2781,6 +2949,8 @@ fn document_viewport_row(
                 DocumentViewportRowPresentation::BlockQuote {
                     nesting_depth: 1,
                     ..
+                } | DocumentViewportRowPresentation::CodeBlock {
+                    style: DocumentCodeBlockStyle::Indented,
                 }
             ) =>
         {

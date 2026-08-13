@@ -531,6 +531,7 @@ pub const CAPABILITY_BITS: &[(&str, u64)] = &[
     ("SOURCE_TRANSACTIONS_V1", 1 << 16),
     ("NATIVE_COMPOSITE_HISTORY_V1", 1 << 17),
     ("LIST_CONTAINER_COLUMNS_V1", 1 << 18),
+    ("INDENTED_CODE_EDITING_V1", 1 << 19),
 ];
 
 pub const MAX_SMALL_EDIT_BYTES: u32 = 4096;

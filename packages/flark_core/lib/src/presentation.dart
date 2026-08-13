@@ -131,10 +131,13 @@ resolveCommittedPresentationTransitionV1({
     case FlarkCoreEditPresentationTransitionV1.splitParagraph:
     case FlarkCoreEditPresentationTransitionV1.continueList:
     case FlarkCoreEditPresentationTransitionV1.continueBlockQuote:
-      if (receipt.presentationTransition ==
-              FlarkCoreEditPresentationTransitionV1.continueBlockQuote &&
+    case FlarkCoreEditPresentationTransitionV1.continueIndentedCode:
+      if ((receipt.presentationTransition ==
+                  FlarkCoreEditPresentationTransitionV1.continueBlockQuote ||
+              receipt.presentationTransition ==
+                  FlarkCoreEditPresentationTransitionV1.continueIndentedCode) &&
           activeRow != null) {
-        final projected = _continueProjectedBlockQuote(activeRow, receipt);
+        final projected = _continueProjectedPrefixedRow(activeRow, receipt);
         if (projected != null) return projected;
       }
       final ordinal = priorActiveOrdinal;
@@ -144,6 +147,8 @@ resolveCommittedPresentationTransitionV1({
         FlarkCoreEditPresentationTransitionV1.continueList =>
           _leadingLineEndingLength(receipt.replacement),
         FlarkCoreEditPresentationTransitionV1.continueBlockQuote =>
+          _leadingLineEndingLength(receipt.replacement),
+        FlarkCoreEditPresentationTransitionV1.continueIndentedCode =>
           _leadingLineEndingLength(receipt.replacement),
         _ => null,
       };
@@ -230,12 +235,16 @@ resolveCommittedPresentationTransitionV1({
           ),
         ],
       );
+    case FlarkCoreEditPresentationTransitionV1.joinIndentedCode:
+      if (activeRow == null) return null;
+      return _joinProjectedIndentedCode(activeRow, receipt);
     case FlarkCoreEditPresentationTransitionV1.liftList:
     case FlarkCoreEditPresentationTransitionV1.exitList:
     case FlarkCoreEditPresentationTransitionV1.exitBlockQuote:
     case FlarkCoreEditPresentationTransitionV1.liftBlockQuote:
     case FlarkCoreEditPresentationTransitionV1.exitHeading:
     case FlarkCoreEditPresentationTransitionV1.liftHeading:
+    case FlarkCoreEditPresentationTransitionV1.liftIndentedCode:
       if (activeRow == null) return null;
       if (receipt.presentationTransition ==
               FlarkCoreEditPresentationTransitionV1.liftBlockQuote ||
@@ -457,12 +466,20 @@ FlarkCorePresentationRow _copyPresentationWithRuns(
   runs: List.unmodifiable(runs),
 );
 
-FlarkCoreCommittedPresentationTransitionV1? _continueProjectedBlockQuote(
+FlarkCoreCommittedPresentationTransitionV1? _continueProjectedPrefixedRow(
   FlarkCorePresentationRow row,
   FlarkCoreEditIntentReceiptV1 receipt,
 ) {
-  if (row.blockQuoteDepth != 1 ||
-      row.runs.length < 2 ||
+  final projectedQuote =
+      receipt.presentationTransition ==
+          FlarkCoreEditPresentationTransitionV1.continueBlockQuote &&
+      row.blockQuoteDepth == 1 &&
+      row.runs.length >= 2;
+  final projectedIndentedCode =
+      receipt.presentationTransition ==
+          FlarkCoreEditPresentationTransitionV1.continueIndentedCode &&
+      row.codeBlock?.style == FlarkCodeBlockStyle.indented;
+  if ((!projectedQuote && !projectedIndentedCode) ||
       receipt.baseUtf16Start != receipt.baseUtf16End) {
     return null;
   }
@@ -477,7 +494,7 @@ FlarkCoreCommittedPresentationTransitionV1? _continueProjectedBlockQuote(
       break;
     }
   }
-  if (!hasHiddenGap) return null;
+  if (projectedQuote && !hasHiddenGap) return null;
 
   final insertion = receipt.baseUtf16Start;
   final delta = _utf16Delta(receipt);
@@ -543,6 +560,83 @@ FlarkCoreCommittedPresentationTransitionV1? _continueProjectedBlockQuote(
   }
   if (!inserted) return null;
 
+  final source = FlarkSourceRange(
+    row.sourceUtf16.start,
+    row.sourceUtf16.end + delta,
+  );
+  final runs = List<FlarkCorePresentationRun>.unmodifiable(mapped);
+  return FlarkCoreCommittedPresentationTransitionV1(
+    surfaces: [
+      FlarkCoreCommittedPresentationSurfaceV1(
+        rowOrdinal: row.ordinal,
+        sourceUtf16: source,
+        presentation: FlarkCorePresentationRow(
+          sourceUtf16: source,
+          leadingText: row.leadingText,
+          text: runs.map((run) => run.text).join(),
+          globalUtf16Start: row.globalUtf16Start,
+          kind: row.kind,
+          headingLevel: row.headingLevel,
+          blockQuoteDepth: row.blockQuoteDepth,
+          codeBlock: row.codeBlock,
+          thematicBreak: row.thematicBreak,
+          ordinal: row.ordinal,
+          runs: runs,
+        ),
+      ),
+    ],
+  );
+}
+
+FlarkCoreCommittedPresentationTransitionV1? _joinProjectedIndentedCode(
+  FlarkCorePresentationRow row,
+  FlarkCoreEditIntentReceiptV1 receipt,
+) {
+  if (row.codeBlock?.style != FlarkCodeBlockStyle.indented ||
+      receipt.replacement.isNotEmpty ||
+      receipt.baseUtf16Start >= receipt.baseUtf16End) {
+    return null;
+  }
+  final delta = _utf16Delta(receipt);
+  final mapped = <FlarkCorePresentationRun>[];
+  var cutStartFound = false;
+  for (final run in row.runs) {
+    if (run.sourceUtf16End <= receipt.baseUtf16Start) {
+      mapped.add(run);
+      continue;
+    }
+    if (!cutStartFound &&
+        run.sourceExact &&
+        run.sourceUtf16Start <= receipt.baseUtf16Start &&
+        receipt.baseUtf16Start <= run.sourceUtf16End) {
+      final retained = receipt.baseUtf16Start - run.sourceUtf16Start;
+      if (retained < 0 || retained > run.text.length) return null;
+      if (retained > 0) {
+        mapped.add(
+          FlarkCorePresentationRun(
+            text: run.text.substring(0, retained),
+            sourceUtf16Start: run.sourceUtf16Start,
+            sourceUtf16End: receipt.baseUtf16Start,
+            sourceExact: true,
+            styles: run.styles,
+          ),
+        );
+      }
+      cutStartFound = true;
+      continue;
+    }
+    if (run.sourceUtf16Start < receipt.baseUtf16End) return null;
+    mapped.add(
+      FlarkCorePresentationRun(
+        text: run.text,
+        sourceUtf16Start: run.sourceUtf16Start + delta,
+        sourceUtf16End: run.sourceUtf16End + delta,
+        sourceExact: run.sourceExact,
+        styles: run.styles,
+      ),
+    );
+  }
+  if (!cutStartFound) return null;
   final source = FlarkSourceRange(
     row.sourceUtf16.start,
     row.sourceUtf16.end + delta,

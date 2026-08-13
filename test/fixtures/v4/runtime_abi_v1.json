@@ -4,7 +4,7 @@
   "status": "m0-interface-only",
   "abi": {
     "major": 4,
-    "minor": 17,
+    "minor": 18,
     "header": "native/comrak_bridge/include/flark_v4.h",
     "runtimeCrate": "native/comrak_bridge/crates/flark_runtime",
     "abiCrate": "native/comrak_bridge/crates/flark_abi",
@@ -40,7 +40,8 @@
     {"name": "EDIT_INTENTS_V1", "bit": 32768},
     {"name": "SOURCE_TRANSACTIONS_V1", "bit": 65536},
     {"name": "NATIVE_COMPOSITE_HISTORY_V1", "bit": 131072},
-    {"name": "LIST_CONTAINER_COLUMNS_V1", "bit": 262144}
+    {"name": "LIST_CONTAINER_COLUMNS_V1", "bit": 262144},
+    {"name": "INDENTED_CODE_EDITING_V1", "bit": 524288}
   ],
   "operations": [
     {"name": "NEGOTIATE", "code": 0, "symbol": "flark_v4_negotiate", "requestRecord": "NEGOTIATE_REQUEST", "allowedSessionStates": ["NONE"], "borrowedInput": false, "callerOutput": true},

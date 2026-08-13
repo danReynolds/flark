@@ -265,7 +265,10 @@ void main() {
       controller.insertNewline();
       await _settle(controller);
       expect(controller.visibleSource, '$source\n     - ');
-      expect(controller.surfaceRow(controller.rows.last).leadingText, '     - ');
+      expect(
+        controller.surfaceRow(controller.rows.last).leadingText,
+        '     - ',
+      );
 
       controller.insertNewline();
       await _settle(controller);
@@ -310,6 +313,47 @@ void main() {
       expect(controller.lastError, isNull);
       expect(controller.visibleSource, 'alpha');
       expect(controller.surfaceRow(controller.rows.first).leadingText, '');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'indented code Return and Backspace preserve the rendered surface',
+    () async {
+      const source = '    one\n    two\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      var row = controller.rows.first;
+      expect(row.codeBlock?.style, FlarkCodeBlockStyle.indented);
+      expect(controller.surfaceRow(row).text, 'one\ntwo\n');
+      controller.activateRow(row, source.indexOf('two') + 2);
+
+      controller.insertNewline();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, '    one\n    tw\n    o\n');
+      row = controller.rows.first;
+      expect(controller.surfaceRow(row).text, 'one\ntw\no\n');
+      expect(controller.surfaceRow(row).text, isNot(contains('    ')));
+
+      controller.activateRow(row, controller.visibleSource.indexOf('o\n'));
+      controller.deleteBackward();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, source);
+      expect(controller.surfaceRow(controller.rows.first).text, 'one\ntwo\n');
+
+      row = controller.rows.first;
+      controller.activateRow(row, source.indexOf('one'));
+      controller.deleteBackward();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, 'one\n    two\n');
+      expect(controller.rows.first.codeBlock, isNull);
     },
     skip: libraryPath == null,
   );

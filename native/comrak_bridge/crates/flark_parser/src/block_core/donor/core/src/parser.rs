@@ -5288,7 +5288,11 @@ impl ValueBlockParser {
                     .map_err(|_| ParseError::Invariant("direct offset below u32"))?
                     ..u32::try_from(self.offset)
                         .map_err(|_| ParseError::Invariant("direct offset below u32"))?,
-                logical: DirectLogicalAction::None,
+                // The parser consumed exactly the columns CommonMark removes
+                // from this physical code line. Preserve that source as a
+                // zero-width upstream projection so hosts never rediscover
+                // tab stops or indentation grammar.
+                logical: DirectLogicalAction::HiddenUpstream,
             })?;
         }
         direct.claimed_offset = self.offset;

@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "id": "indented-code-return-join",
+  "description": "Indented code continues and rejoins through parser-owned hidden prefixes while rapid literal successors remain source-exact.",
+  "initialSource": "    one\n    two\n",
+  "activation": {
+    "needle": "two",
+    "occurrence": 0,
+    "utf16OffsetInNeedle": 2
+  },
+  "steps": [
+    {
+      "type": "pressReturn"
+    },
+    {
+      "type": "typeText",
+      "text": "X",
+      "intervalMs": 0
+    },
+    {
+      "type": "pressBackspace"
+    },
+    {
+      "type": "pressBackspace"
+    },
+    {
+      "type": "checkpoint",
+      "id": "rejoined",
+      "source": "    one\n    two\n",
+      "caretUtf16": 14
+    },
+    {
+      "type": "pressReturn"
+    },
+    {
+      "type": "typeText",
+      "text": "X",
+      "intervalMs": 0
+    },
+    {
+      "type": "waitForIdle"
+    }
+  ],
+  "schedules": [
+    {
+      "id": "immediate"
+    }
+  ],
+  "expect": {
+    "source": "    one\n    tw\n    Xo\n",
+    "caretUtf16": 20,
+    "resyncCount": 0,
+    "faulted": false,
+    "forbiddenSurfaceSubstrings": ["    one", "    tw", "<empty>"],
+    "paintedSurfaceNeverContains": ["    one", "    tw", "<empty>"]
+  }
+}

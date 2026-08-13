@@ -34,6 +34,9 @@ pub enum DocumentEditPresentationTransitionV1 {
     ExitHeading,
     LiftHeading,
     OutdentList,
+    ContinueIndentedCode,
+    JoinIndentedCode,
+    LiftIndentedCode,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -131,6 +134,16 @@ pub(crate) enum DocumentSimpleEditRow {
         prefix_text: String,
         starts_quote: bool,
         empty: bool,
+    },
+    IndentedCode {
+        prefix_bytes: Range<usize>,
+        prefix_utf16: Range<usize>,
+        prefix_text: String,
+        /// Previous physical line ending plus this line's hidden prefix.
+        /// Removing it joins two visible code lines without exposing source
+        /// indentation to the host.
+        join_bytes: Option<Range<usize>>,
+        join_utf16: Option<Range<usize>>,
     },
 }
 
@@ -487,6 +500,49 @@ pub(crate) fn resolve_document_edit_intent_v1(
             )
         }
         (
+            DocumentEditIntentV1::InsertParagraphBreak,
+            DocumentSimpleEditRow::IndentedCode { prefix_text, .. },
+        ) => {
+            let ending = context.ending.text();
+            let replacement = format!("{ending}{prefix_text}");
+            let result_selection_utf16 = selection_utf16 + replacement.encode_utf16().count();
+            let splice = splice(
+                selection_byte..selection_byte,
+                selection_utf16..selection_utf16,
+                replacement,
+            );
+            let byte_delta = splice.replacement.len();
+            let utf16_delta = splice.replacement.encode_utf16().count();
+            let ending_bytes = ending.len();
+            let ending_utf16 = ending.encode_utf16().count();
+            let prefix_start_byte = selection_byte + ending_bytes;
+            let prefix_start_utf16 = selection_utf16 + ending_utf16;
+            let result_context = DocumentSimpleEditContext {
+                revision: context.revision + 1,
+                source_bytes: selection_byte + byte_delta..context.source_bytes.end + byte_delta,
+                source_utf16: selection_utf16 + utf16_delta..context.source_utf16.end + utf16_delta,
+                editable_bytes: selection_byte + byte_delta
+                    ..context.editable_bytes.end + byte_delta,
+                editable_utf16: selection_utf16 + utf16_delta
+                    ..context.editable_utf16.end + utf16_delta,
+                ending: context.ending,
+                row: DocumentSimpleEditRow::IndentedCode {
+                    prefix_bytes: prefix_start_byte..selection_byte + byte_delta,
+                    prefix_utf16: prefix_start_utf16..selection_utf16 + utf16_delta,
+                    prefix_text: prefix_text.clone(),
+                    join_bytes: Some(selection_byte..selection_byte + byte_delta),
+                    join_utf16: Some(selection_utf16..selection_utf16 + utf16_delta),
+                },
+                paragraph_merge: None,
+            };
+            applied(
+                splice,
+                result_selection_utf16,
+                Some(result_context),
+                DocumentEditPresentationTransitionV1::ContinueIndentedCode,
+            )
+        }
+        (
             DocumentEditIntentV1::DeleteBackward,
             DocumentSimpleEditRow::AtxHeading {
                 prefix_bytes,
@@ -502,6 +558,44 @@ pub(crate) fn resolve_document_edit_intent_v1(
                 prefix_utf16.clone(),
                 String::new(),
                 DocumentEditPresentationTransitionV1::LiftHeading,
+            )
+        }
+        (
+            DocumentEditIntentV1::DeleteBackward,
+            DocumentSimpleEditRow::IndentedCode {
+                join_bytes: Some(join_bytes),
+                join_utf16: Some(join_utf16),
+                ..
+            },
+        ) if selection_byte == context.editable_bytes.start
+            && selection_utf16 == context.editable_utf16.start =>
+        {
+            let splice = splice(join_bytes.clone(), join_utf16.clone(), String::new());
+            applied(
+                splice,
+                join_utf16.start,
+                None,
+                DocumentEditPresentationTransitionV1::JoinIndentedCode,
+            )
+        }
+        (
+            DocumentEditIntentV1::DeleteBackward,
+            DocumentSimpleEditRow::IndentedCode {
+                prefix_bytes,
+                prefix_utf16,
+                join_bytes: None,
+                join_utf16: None,
+                ..
+            },
+        ) if selection_byte == context.editable_bytes.start
+            && selection_utf16 == context.editable_utf16.start =>
+        {
+            clear_prefixed_row(
+                context,
+                prefix_bytes.clone(),
+                prefix_utf16.clone(),
+                String::new(),
+                DocumentEditPresentationTransitionV1::LiftIndentedCode,
             )
         }
         (
