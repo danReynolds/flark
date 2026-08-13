@@ -192,6 +192,120 @@ void main() {
   );
 
   testWidgets(
+    'Tab and Shift-Tab traverse parser-authored table cells',
+    (tester) async {
+      const source = '| a | b |\n| --- | --- |\n| c | d |\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final row = controller.rows.singleWhere((row) => row.table != null);
+      final dataCells = row.table!.rows.last;
+      await tester.runAsync(() async {
+        controller.activateRow(row, dataCells.first.contentUtf16.start);
+        await controller.resolveCanonicalSelection();
+      });
+      final events = <String>[];
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: FlarkEditor(
+              controller: controller,
+              autofocus: true,
+              debugInputEventObserver: events.add,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final surface = tester.renderObject<RenderFlarkSurface>(
+        find.byType(FlarkRenderSurfaceWidget),
+      );
+      expect(
+        surface.isTableCellPosition(dataCells.first.contentUtf16.start),
+        isTrue,
+      );
+      expect(
+        surface
+            .adjacentTableCellHit(
+              dataCells.first.contentUtf16.start,
+              forward: true,
+            )
+            ?.globalUtf16Offset,
+        dataCells.last.contentUtf16.start,
+      );
+      final dynamic state = tester.state(find.byType(FlarkEditor));
+
+      await _performSelectorAndWait(tester, controller, state, 'insertTab:');
+      expect(controller.globalCaretOffset, dataCells.last.contentUtf16.start);
+      expect(events, contains('shortcut:next-table-cell'));
+
+      await _performSelectorAndWait(
+        tester,
+        controller,
+        state,
+        'insertBacktab:',
+      );
+      expect(controller.globalCaretOffset, dataCells.first.contentUtf16.start);
+      expect(events, contains('shortcut:previous-table-cell'));
+      expect(controller.visibleSource, source);
+      expect(controller.lastError, isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'paragraph selectors cross a rendered block without entering markers',
+    (tester) async {
+      const source = '## alpha beta gamma\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final row = controller.rows.single;
+      final editable = row.editableUtf16!;
+      await tester.runAsync(() async {
+        controller.activateRow(row, source.indexOf('beta') + 2);
+        await controller.resolveCanonicalSelection();
+      });
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(child: FlarkEditor(controller: controller)),
+        ),
+      );
+      await tester.pump();
+      final dynamic state = tester.state(find.byType(FlarkEditor));
+
+      await _performSelectorAndWait(
+        tester,
+        controller,
+        state,
+        'moveToBeginningOfParagraph:',
+      );
+      expect(controller.globalCaretOffset, editable.start);
+
+      await _performSelectorAndWait(
+        tester,
+        controller,
+        state,
+        'moveToEndOfParagraphAndModifySelection:',
+      );
+      expect(controller.globalSelectionBase, editable.start);
+      expect(controller.globalSelectionExtent, editable.end);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
     'touch task target has a 48 logical pixel interaction extent',
     (tester) async {
       final controller = (await tester.runAsync(

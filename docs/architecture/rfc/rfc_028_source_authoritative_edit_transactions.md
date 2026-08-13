@@ -926,6 +926,19 @@ changes fail closed to exact source. This removes active-raw fallback for the
 ordinary cell-text lane without pretending that two-dimensional navigation,
 structural table commands, or nested-scroll arbitration are complete.
 
+The bounded H4 table-navigation profile now routes Tab and Shift-Tab across the
+ordered real cells in that same parser-authored table model. Flutter owns only
+the visible caret destination; it neither counts pipes nor reconstructs table
+shape. Autocompleted cells are skipped because they have no source-backed edit
+position, and the first/last real cell retains Tab ownership instead of leaking
+focus out of the editor. Automatic row creation remains deliberately
+unadmitted: it requires a Rust semantic transaction that chooses exact source
+style and atomically moves selection into newly inserted source, not a Flutter
+pipe-string recipe. Paragraph boundary selectors likewise resolve against one
+complete rendered block rather than a wrapped visual line and map back through
+the existing hidden-marker-safe surface. Mounted receipts cover table
+traversal, list-Tab nonregression, and directional paragraph selection.
+
 Fenced-code content now exercises the same authoritative literal lane without
 exposing its parser-owned fences. Duplicate platform action arbitration applies
 to literal as well as semantic Return/Backspace observations, and typing

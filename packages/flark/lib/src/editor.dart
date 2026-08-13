@@ -478,6 +478,15 @@ final class _FlarkEditorState extends State<FlarkEditor>
     if (hit != null) _adoptNavigationHit(hit, modify: modify);
   }
 
+  void _moveToParagraphBoundary({required bool forward, required bool modify}) {
+    _preferredVerticalNavigationX = null;
+    final hit = _surface?.paragraphBoundaryHit(
+      widget.controller.globalSelectionExtent,
+      forward: forward,
+    );
+    if (hit != null) _adoptNavigationHit(hit, modify: modify);
+  }
+
   void _moveWord({required bool forward, required bool modify}) {
     _preferredVerticalNavigationX = null;
     final hit = _surface?.wordBoundaryHit(
@@ -485,6 +494,33 @@ final class _FlarkEditorState extends State<FlarkEditor>
       forward: forward,
     );
     if (hit != null) _adoptNavigationHit(hit, modify: modify);
+  }
+
+  bool _moveTableCell({required bool forward}) {
+    final surface = _surface;
+    if (surface == null) return false;
+    final offset = widget.controller.globalSelectionExtent;
+    if (!surface.isTableCellPosition(offset)) return false;
+    _preferredVerticalNavigationX = null;
+    final hit = surface.adjacentTableCellHit(offset, forward: forward);
+    if (hit != null) _adoptNavigationHit(hit, modify: false);
+    return true;
+  }
+
+  bool _handleTab({required bool reverse}) {
+    if (widget.controller.handleListIndent(outdent: reverse)) {
+      widget.debugInputEventObserver?.call(
+        reverse ? 'shortcut:outdent-list' : 'shortcut:indent-list',
+      );
+      return true;
+    }
+    if (_moveTableCell(forward: !reverse)) {
+      widget.debugInputEventObserver?.call(
+        reverse ? 'shortcut:previous-table-cell' : 'shortcut:next-table-cell',
+      );
+      return true;
+    }
+    return false;
   }
 
   void _handleTap() {
@@ -640,16 +676,10 @@ final class _FlarkEditorState extends State<FlarkEditor>
               event.logicalKey == LogicalKeyboardKey.tab &&
               !HardwareKeyboard.instance.isMetaPressed &&
               !HardwareKeyboard.instance.isControlPressed &&
-              !HardwareKeyboard.instance.isAltPressed &&
-              widget.controller.handleListIndent(
-                outdent: HardwareKeyboard.instance.isShiftPressed,
-              )) {
-            widget.debugInputEventObserver?.call(
-              HardwareKeyboard.instance.isShiftPressed
-                  ? 'shortcut:outdent-list'
-                  : 'shortcut:indent-list',
-            );
-            return KeyEventResult.handled;
+              !HardwareKeyboard.instance.isAltPressed) {
+            if (_handleTab(reverse: HardwareKeyboard.instance.isShiftPressed)) {
+              return KeyEventResult.handled;
+            }
           }
           return KeyEventResult.ignored;
         },
@@ -714,6 +744,32 @@ final class _FlarkEditorState extends State<FlarkEditor>
         _moveToLineBoundary(forward: false, modify: true),
     SingleActivator(LogicalKeyboardKey.end, shift: true): () =>
         _moveToLineBoundary(forward: true, modify: true),
+    SingleActivator(
+      LogicalKeyboardKey.arrowUp,
+      meta: _usesAppleNavigationModifiers,
+      control: !_usesAppleNavigationModifiers,
+    ): () =>
+        _moveToParagraphBoundary(forward: false, modify: false),
+    SingleActivator(
+      LogicalKeyboardKey.arrowDown,
+      meta: _usesAppleNavigationModifiers,
+      control: !_usesAppleNavigationModifiers,
+    ): () =>
+        _moveToParagraphBoundary(forward: true, modify: false),
+    SingleActivator(
+      LogicalKeyboardKey.arrowUp,
+      meta: _usesAppleNavigationModifiers,
+      control: !_usesAppleNavigationModifiers,
+      shift: true,
+    ): () =>
+        _moveToParagraphBoundary(forward: false, modify: true),
+    SingleActivator(
+      LogicalKeyboardKey.arrowDown,
+      meta: _usesAppleNavigationModifiers,
+      control: !_usesAppleNavigationModifiers,
+      shift: true,
+    ): () =>
+        _moveToParagraphBoundary(forward: true, modify: true),
     SingleActivator(
       LogicalKeyboardKey.arrowLeft,
       alt: _usesAppleNavigationModifiers,
@@ -872,6 +928,14 @@ final class _FlarkEditorState extends State<FlarkEditor>
         _moveToLineBoundary(forward: false, modify: true);
       case 'moveToRightEndOfLineAndModifySelection:':
         _moveToLineBoundary(forward: true, modify: true);
+      case 'moveToBeginningOfParagraph:':
+        _moveToParagraphBoundary(forward: false, modify: false);
+      case 'moveToEndOfParagraph:':
+        _moveToParagraphBoundary(forward: true, modify: false);
+      case 'moveToBeginningOfParagraphAndModifySelection:':
+        _moveToParagraphBoundary(forward: false, modify: true);
+      case 'moveToEndOfParagraphAndModifySelection:':
+        _moveToParagraphBoundary(forward: true, modify: true);
       case 'moveWordLeft:':
         _moveWord(forward: false, modify: false);
       case 'moveWordRight:':
@@ -880,6 +944,10 @@ final class _FlarkEditorState extends State<FlarkEditor>
         _moveWord(forward: false, modify: true);
       case 'moveWordRightAndModifySelection:':
         _moveWord(forward: true, modify: true);
+      case 'insertTab:':
+        _handleTab(reverse: false);
+      case 'insertBacktab:':
+        _handleTab(reverse: true);
       case 'insertNewline:':
         _preferredVerticalNavigationX = null;
         widget.controller.insertNewline();

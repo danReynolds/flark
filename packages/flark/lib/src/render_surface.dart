@@ -1080,6 +1080,19 @@ final class RenderFlarkSurface extends RenderBox {
     );
   }
 
+  /// Resolves the boundary of the complete rendered block rather than the
+  /// current wrapped visual line. Hidden Markdown prefixes/suffixes stay
+  /// outside the caret path through the row's source mapping.
+  FlarkSurfaceHit? paragraphBoundaryHit(int offset, {required bool forward}) {
+    final row = _logicalRowForSourceUtf16(offset);
+    if (row == null) return null;
+    return _hitForTextOffset(
+      row,
+      forward ? row.presentation.text.length : 0,
+      affinity: forward ? TextAffinity.upstream : TextAffinity.downstream,
+    );
+  }
+
   FlarkSurfaceHit? wordBoundaryHit(int offset, {required bool forward}) {
     final rows = _logicalRows.toList(growable: false);
     final current = _logicalRowForSourceUtf16(offset);
@@ -1126,6 +1139,49 @@ final class RenderFlarkSurface extends RenderBox {
       row = rows[rowIndex];
       textOffset = forward ? 0 : row.presentation.text.length;
     }
+  }
+
+  /// Whether [offset] belongs to a parser-authored table cell on the current
+  /// painted page. This is layout navigation only: table shape and source
+  /// ownership come from Core, while Flutter chooses the visible caret stop.
+  bool isTableCellPosition(int offset) => _tableCellPosition(offset) != null;
+
+  /// Moves to the beginning of the next or previous real table cell.
+  /// Autocompleted cells have no source-backed editing position and are
+  /// intentionally skipped. A null result at the first/last cell still leaves
+  /// Tab owned by the table rather than leaking into widget focus traversal.
+  FlarkSurfaceHit? adjacentTableCellHit(int offset, {required bool forward}) {
+    final position = _tableCellPosition(offset);
+    if (position == null) return null;
+    final (:row, :cells, index: currentIndex) = position;
+    final targetIndex = currentIndex + (forward ? 1 : -1);
+    if (targetIndex < 0 || targetIndex >= cells.length) return null;
+    return _hitForTextOffset(
+      row,
+      row.presentation.textOffsetForSourceOffset(
+        cells[targetIndex].contentUtf16.start,
+        affinity: TextAffinity.downstream,
+      ),
+      affinity: TextAffinity.downstream,
+    );
+  }
+
+  ({_PaintedRow row, List<FlarkTableCellPresentation> cells, int index})?
+  _tableCellPosition(int offset) {
+    final row = _logicalRowForSourceUtf16(offset);
+    final table = row?.row?.table;
+    if (row == null || table == null) return null;
+    final cells = table.rows
+        .expand((cells) => cells)
+        .where((cell) => !cell.autocompleted)
+        .toList(growable: false);
+    for (var index = 0; index < cells.length; index += 1) {
+      final range = cells[index].contentUtf16;
+      if (range.start <= offset && offset <= range.end) {
+        return (row: row, cells: cells, index: index);
+      }
+    }
+    return null;
   }
 
   /// Selects one rendered Unicode word without placing either source endpoint
