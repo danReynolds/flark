@@ -463,6 +463,12 @@ read-only mode, a 48-pixel touch target, and omission of an offscreen sentinel
 from the semantics tree. These widget receipts prevent unbounded semantic
 publication; physical screen-reader UX remains device evidence.
 
+Focused command tests now cover a real Meta+A shortcut with exact full-source
+selection/readback and macOS line-boundary selectors with Shift extension over
+rendered inline Markdown. Existing controller tests retain ownership of large
+selection replacement/history; the widget layer tests only routing and
+source/display geometry.
+
 ### H3 — Grow from evidence
 
 Promote shipped construct families from the candidate list as their v4 product

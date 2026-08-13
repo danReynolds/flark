@@ -366,6 +366,113 @@ void main() {
   );
 
   testWidgets(
+    'select-all shortcut installs one exact document-wide selection',
+    (tester) async {
+      final source = List.generate(
+        24,
+        (index) => 'Paragraph $index with **rendered text**.\n\n',
+      ).join();
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final row = controller.rows.first;
+      await tester.runAsync(() async {
+        controller.activateRow(row, row.editableUtf16!.start);
+        await controller.resolveCanonicalSelection();
+      });
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: FlarkEditor(controller: controller, autofocus: true),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final generation = controller.canonicalSelectionGeneration;
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await _pumpUntil(
+        tester,
+        () => controller.canonicalSelectionGeneration > generation,
+      );
+      final selection = await tester.runAsync(
+        controller.resolveCanonicalSelection,
+      );
+      expect(selection?.base, 0);
+      expect(selection?.extent, source.length);
+      expect(await tester.runAsync(controller.readSelectedText), source);
+      expect(controller.hasOversizedSelection, isTrue);
+      expect(await tester.runAsync(controller.readSource), source);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'line-boundary selectors use rendered lines and source mappings',
+    (tester) async {
+      const source = 'abc **bold** tail\nsecond line\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final row = controller.rows.single;
+      final start = source.indexOf('bold') + 2;
+      await tester.runAsync(() async {
+        controller.activateRow(row, start);
+        await controller.resolveCanonicalSelection();
+      });
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 500,
+            child: FlarkEditor(
+              controller: controller,
+              padding: EdgeInsets.zero,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final dynamic state = tester.state(find.byType(FlarkEditor));
+
+      await _performSelectorAndWait(
+        tester,
+        controller,
+        state,
+        'moveToRightEndOfLine:',
+      );
+      expect(controller.globalCaretOffset, source.indexOf('\n'));
+      await _performSelectorAndWait(
+        tester,
+        controller,
+        state,
+        'moveToLeftEndOfLine:',
+      );
+      expect(controller.globalCaretOffset, 0);
+      await _performSelectorAndWait(
+        tester,
+        controller,
+        state,
+        'moveToRightEndOfLineAndModifySelection:',
+      );
+      expect(controller.globalSelectionBase, 0);
+      expect(controller.globalSelectionExtent, source.indexOf('\n'));
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
     'custom surface paints bounded rows and applies input optimistically',
     (tester) async {
       final controller = (await tester.runAsync(

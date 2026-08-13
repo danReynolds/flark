@@ -883,6 +883,48 @@ final class RenderFlarkSurface extends RenderBox {
     );
   }
 
+  _PaintedRow? _fragmentForSourceUtf16(int offset) {
+    for (final row in _paintedRows) {
+      final bounds = _sourceBounds(row);
+      if (offset < bounds.start || offset > bounds.end) continue;
+      final textOffset = row.presentation.textOffsetForSourceOffset(offset);
+      if (row.fragmentStart <= textOffset &&
+          (textOffset < row.fragmentEnd ||
+              (textOffset == row.fragmentEnd &&
+                  row.fragmentEnd == row.presentation.text.length))) {
+        return row;
+      }
+    }
+    return null;
+  }
+
+  FlarkSurfaceHit? lineBoundaryHit(int offset, {required bool forward}) {
+    final row = _fragmentForSourceUtf16(offset);
+    if (row == null) return null;
+    final textOffset = row.presentation.textOffsetForSourceOffset(
+      offset,
+      affinity: forward ? TextAffinity.downstream : TextAffinity.upstream,
+    );
+    final painterOffset = textOffset - row.fragmentStart + row.leadingLength;
+    final boundary = row.painter.getLineBoundary(
+      TextPosition(
+        offset: painterOffset,
+        affinity: forward ? TextAffinity.downstream : TextAffinity.upstream,
+      ),
+    );
+    final target =
+        ((forward ? boundary.end : boundary.start) -
+                row.leadingLength +
+                row.fragmentStart)
+            .clamp(row.fragmentStart, row.fragmentEnd)
+            .clamp(0, row.presentation.text.length);
+    return _hitForTextOffset(
+      row,
+      target,
+      affinity: forward ? TextAffinity.upstream : TextAffinity.downstream,
+    );
+  }
+
   FlarkSurfaceHit? verticalHit(
     int offset, {
     required bool forward,

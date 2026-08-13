@@ -1005,6 +1005,14 @@ glyph. This first accessibility slice proves bounded traversal and one action,
 not a complete editable-text semantics contract, off-page screen-reader
 navigation, platform menus, or physical VoiceOver/TalkBack behavior.
 
+The basic command adapter now restores two more behaviors that the custom
+surface cannot inherit from `EditableText`: Cmd/Ctrl+A installs one exact
+document-wide anchored selection through Core, and Home/End plus macOS
+left/right-line selectors resolve against the current `TextPainter` line before
+mapping back to source. Shift variants extend the canonical selection. Visual
+line commands are deliberately not reused for word, paragraph, document, or
+off-page navigation; those require distinct policies and evidence.
+
 ### H5 — hardening and later architecture
 
 Qualify memory envelopes, fault recovery, giant-line raster behavior, GFM and

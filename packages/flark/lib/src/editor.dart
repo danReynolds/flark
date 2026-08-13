@@ -304,6 +304,23 @@ final class _FlarkEditorState extends State<FlarkEditor>
     _preferredVerticalNavigationX = preferredX;
   }
 
+  Future<void> _selectAll() async {
+    _preferredVerticalNavigationX = null;
+    final controller = widget.controller;
+    await controller.selectOversizedRangeUtf16(0, controller.sourceUtf16Length);
+    if (!mounted || !identical(controller, widget.controller)) return;
+    _sendEditingState(force: true);
+  }
+
+  void _moveToLineBoundary({required bool forward, required bool modify}) {
+    _preferredVerticalNavigationX = null;
+    final hit = _surface?.lineBoundaryHit(
+      widget.controller.globalSelectionExtent,
+      forward: forward,
+    );
+    if (hit != null) _adoptNavigationHit(hit, modify: modify);
+  }
+
   void _handleTap() {
     final hit = _pendingTapHit;
     _pendingTapHit = null;
@@ -440,7 +457,19 @@ final class _FlarkEditorState extends State<FlarkEditor>
         _moveVertically(forward: false, modify: true),
     SingleActivator(LogicalKeyboardKey.arrowDown, shift: true): () =>
         _moveVertically(forward: true, modify: true),
+    SingleActivator(LogicalKeyboardKey.home): () =>
+        _moveToLineBoundary(forward: false, modify: false),
+    SingleActivator(LogicalKeyboardKey.end): () =>
+        _moveToLineBoundary(forward: true, modify: false),
+    SingleActivator(LogicalKeyboardKey.home, shift: true): () =>
+        _moveToLineBoundary(forward: false, modify: true),
+    SingleActivator(LogicalKeyboardKey.end, shift: true): () =>
+        _moveToLineBoundary(forward: true, modify: true),
     for (final meta in [true, false]) ...{
+      SingleActivator(LogicalKeyboardKey.keyA, meta: meta, control: !meta): () {
+        widget.debugInputEventObserver?.call('shortcut:select-all');
+        unawaited(_selectAll());
+      },
       SingleActivator(LogicalKeyboardKey.keyC, meta: meta, control: !meta): () {
         widget.debugInputEventObserver?.call('shortcut:copy');
         unawaited(_copySelection());
@@ -518,6 +547,8 @@ final class _FlarkEditorState extends State<FlarkEditor>
         unawaited(_cutSelection());
       case 'paste:':
         unawaited(_pasteClipboard());
+      case 'selectAll:':
+        unawaited(_selectAll());
       case 'deleteBackward:':
         _preferredVerticalNavigationX = null;
         widget.controller.observePlatformDeleteBackwardAction();
@@ -540,6 +571,14 @@ final class _FlarkEditorState extends State<FlarkEditor>
         _moveVertically(forward: false, modify: true);
       case 'moveDownAndModifySelection:':
         _moveVertically(forward: true, modify: true);
+      case 'moveToLeftEndOfLine:':
+        _moveToLineBoundary(forward: false, modify: false);
+      case 'moveToRightEndOfLine:':
+        _moveToLineBoundary(forward: true, modify: false);
+      case 'moveToLeftEndOfLineAndModifySelection:':
+        _moveToLineBoundary(forward: false, modify: true);
+      case 'moveToRightEndOfLineAndModifySelection:':
+        _moveToLineBoundary(forward: true, modify: true);
       case 'insertNewline:':
         _preferredVerticalNavigationX = null;
         widget.controller.insertNewline();
