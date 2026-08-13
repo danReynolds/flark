@@ -92,6 +92,15 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             expected_transition: DocumentEditPresentationTransitionV1::ContinueBlockQuote,
         },
         IntentCase {
+            name: "projected multiline quote continues its physical line",
+            initial: "> first\n> second\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 13,
+            expected: "> first\n> sec\n> ond\n",
+            expected_selection_utf16: 16,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueBlockQuote,
+        },
+        IntentCase {
             name: "empty quote exits",
             initial: "> ",
             intent: DocumentEditIntentV1::InsertParagraphBreak,

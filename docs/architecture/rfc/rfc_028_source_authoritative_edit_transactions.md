@@ -883,6 +883,12 @@ depth-one multiline block quotes. Parser certification, runtime validation,
 Core worker serialization, source/display affinity mapping, and conservative
 literal continuity are end-to-end; structural Return/Backspace remains a
 separate multi-surface receipt problem rather than a frontend text heuristic.
+The first structural subset is now closed: nonempty Return resolves one exact
+physical quote line inside that certified logical row, inserts the parser-owned
+prefix, and maps the committed splice into one marker-free Core surface through
+recertification. Backspace at a hidden segment boundary fails closed. Partial
+line lift and empty-line exit remain the multi-surface problem; no host guesses
+their mixed quote/plain presentation.
 
 ### H5 — hardening and later architecture
 

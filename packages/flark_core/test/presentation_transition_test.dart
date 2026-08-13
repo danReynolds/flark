@@ -154,6 +154,57 @@ void main() {
     expect(presentation?.sourceUtf16.start, 2);
     expect(presentation?.runs.single.sourceUtf16Start, 2);
   });
+
+  test('projected quote Return hides the new certified prefix', () {
+    final quote = _row(
+      ordinal: 8,
+      sourceStart: 0,
+      sourceEnd: 17,
+      globalStart: 2,
+      text: 'first\nsecond',
+      leadingText: '│ ',
+      blockQuoteDepth: 1,
+      runs: const [
+        FlarkCorePresentationRun(
+          text: 'first\n',
+          sourceUtf16Start: 2,
+          sourceUtf16End: 8,
+          sourceExact: true,
+          styles: {},
+        ),
+        FlarkCorePresentationRun(
+          text: 'second',
+          sourceUtf16Start: 10,
+          sourceUtf16End: 16,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
+
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.continueBlockQuote,
+        baseStart: 13,
+        baseEnd: 13,
+        replacement: '\n> ',
+      ),
+      activeOrdinal: 8,
+      active: quote,
+    );
+
+    final presentation = transition?.surface?.presentation;
+    expect(transition?.gap, isNull);
+    expect(presentation?.leadingText, '│ ');
+    expect(presentation?.text, 'first\nsec\nond');
+    expect(presentation?.sourceUtf16.end, 20);
+    expect(
+      presentation?.runs.map(
+        (run) => (run.text, run.sourceUtf16Start, run.sourceUtf16End),
+      ),
+      [('first\n', 2, 8), ('sec', 10, 13), ('\n', 13, 14), ('ond', 16, 19)],
+    );
+  });
 }
 
 /// Deliberately has no Flutter dependency. A future Dart UI adapter receives
@@ -183,14 +234,16 @@ FlarkCorePresentationRow _row({
   required List<FlarkCorePresentationRun> runs,
   String leadingText = '',
   int kind = 5,
+  int? globalStart,
+  int? blockQuoteDepth,
 }) => FlarkCorePresentationRow(
   sourceUtf16: FlarkSourceRange(sourceStart, sourceEnd),
   leadingText: leadingText,
   text: text,
-  globalUtf16Start: sourceStart,
+  globalUtf16Start: globalStart ?? sourceStart,
   kind: kind,
   headingLevel: null,
-  blockQuoteDepth: null,
+  blockQuoteDepth: blockQuoteDepth,
   codeBlock: null,
   thematicBreak: false,
   ordinal: ordinal,

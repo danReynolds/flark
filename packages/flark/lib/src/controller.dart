@@ -2000,6 +2000,15 @@ final class FlarkEditorController extends ChangeNotifier {
       cluster.$2,
       affinity: TextAffinity.upstream,
     );
+    // A visual neighbor separated from the caret by hidden source is not a
+    // legal one-code-unit deletion. In particular, Backspace at the start of
+    // a later projected quote line must not delete its hidden `> ` prefix one
+    // code unit at a time or remove the visible newline while leaving that
+    // prefix behind.
+    if ((backward && sourceEnd != globalCaret) ||
+        (!backward && sourceStart != globalCaret)) {
+      return true;
+    }
     if (sourceStart >= sourceEnd) return true;
     final localStart = sourceStart - _inputGlobalUtf16Start;
     final localEnd = sourceEnd - _inputGlobalUtf16Start;
@@ -2010,6 +2019,25 @@ final class FlarkEditorController extends ChangeNotifier {
     );
     replaceSelection('');
     return true;
+  }
+
+  bool _mutationTouchesOnlyHiddenProjection(_TextMutation mutation) {
+    if (mutation.start == mutation.end) return false;
+    final row = _activeCachedRow();
+    if (row == null || row.table != null) return false;
+    final presentation = surfaceRow(row, includeEditingState: false);
+    if (!_surfaceHasProjection(presentation, row)) return false;
+    final sourceStart = _inputGlobalUtf16Start + mutation.start;
+    final sourceEnd = _inputGlobalUtf16Start + mutation.end;
+    final displayStart = presentation.textOffsetForSourceOffset(
+      sourceStart,
+      affinity: TextAffinity.downstream,
+    );
+    final displayEnd = presentation.textOffsetForSourceOffset(
+      sourceEnd,
+      affinity: TextAffinity.upstream,
+    );
+    return displayStart == displayEnd;
   }
 
   bool _surfaceHasProjection(
@@ -2047,6 +2075,7 @@ final class FlarkEditorController extends ChangeNotifier {
         mutation.end > source.length) {
       return false;
     }
+    if (_mutationTouchesOnlyHiddenProjection(mutation)) return false;
     final nextLength = _replacementLength(
       source,
       mutation.start,
@@ -2647,7 +2676,7 @@ final class FlarkEditorController extends ChangeNotifier {
     if (!_inputValue.selection.isCollapsed) return false;
     final row = _activeCachedRow();
     final editableRange = row?.editableUtf16;
-    final rowEligible = row != null && _supportsSemanticEditV1(row);
+    final rowEligible = row != null && _supportsSemanticParagraphBreakV1(row);
     if (!rowEligible && !_semanticEditV1Active) return false;
     if (rowEligible) {
       _semanticEditV1Active = true;
@@ -2669,7 +2698,8 @@ final class FlarkEditorController extends ChangeNotifier {
     if (!_inputValue.selection.isCollapsed) return false;
     final row = _activeCachedRow();
     final editableRange = row?.editableUtf16;
-    final rowEligible = row != null && _supportsSemanticEditV1(row);
+    if (row != null && _isProjectedBlockQuote(row)) return false;
+    final rowEligible = row != null && _supportsSemanticDeleteBackwardV1(row);
     if (!rowEligible && (!_semanticEditV1Active || localCaret != 0)) {
       return false;
     }
@@ -2687,6 +2717,16 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   bool _supportsSemanticEditV1(FlarkViewportRow row) {
+    return _supportsSemanticParagraphBreakV1(row) ||
+        _supportsSemanticDeleteBackwardV1(row);
+  }
+
+  bool _supportsSemanticParagraphBreakV1(FlarkViewportRow row) {
+    return _supportsSemanticDeleteBackwardV1(row) ||
+        _isProjectedBlockQuote(row);
+  }
+
+  bool _supportsSemanticDeleteBackwardV1(FlarkViewportRow row) {
     if (row.editableUtf16 == null) return false;
     final listItem = row.listItem;
     final simpleList = listItem != null && listItem.simpleContinuation;
@@ -2703,6 +2743,11 @@ final class FlarkEditorController extends ChangeNotifier {
         row.table == null;
     return plainParagraph || simpleList || simpleBlockQuote || atxHeading;
   }
+
+  bool _isProjectedBlockQuote(FlarkViewportRow row) =>
+      row.blockQuote?.nestingDepth == 1 &&
+      row.editCapability == FlarkViewportRowEditCapability.projectedReserved &&
+      row.projectionSegments != null;
 
   void _queueSemanticEdit(FlarkCoreEditIntentV1 intent) {
     _ensureSemanticInputBarrier();

@@ -126,6 +126,12 @@ resolveCommittedPresentationTransitionV1({
     case FlarkCoreEditPresentationTransitionV1.splitParagraph:
     case FlarkCoreEditPresentationTransitionV1.continueList:
     case FlarkCoreEditPresentationTransitionV1.continueBlockQuote:
+      if (receipt.presentationTransition ==
+              FlarkCoreEditPresentationTransitionV1.continueBlockQuote &&
+          activeRow != null) {
+        final projected = _continueProjectedBlockQuote(activeRow, receipt);
+        if (projected != null) return projected;
+      }
       final ordinal = priorActiveOrdinal;
       final lineEndingLength = switch (receipt.presentationTransition) {
         FlarkCoreEditPresentationTransitionV1.splitParagraph =>
@@ -255,6 +261,118 @@ resolveCommittedPresentationTransitionV1({
     case FlarkCoreEditPresentationTransitionV1.none:
       return null;
   }
+}
+
+FlarkCoreCommittedPresentationTransitionV1? _continueProjectedBlockQuote(
+  FlarkCorePresentationRow row,
+  FlarkCoreEditIntentReceiptV1 receipt,
+) {
+  if (row.blockQuoteDepth != 1 ||
+      row.runs.length < 2 ||
+      receipt.baseUtf16Start != receipt.baseUtf16End) {
+    return null;
+  }
+  final endingLength = _leadingLineEndingLength(receipt.replacement);
+  if (endingLength == null || receipt.replacement.length <= endingLength) {
+    return null;
+  }
+  var hasHiddenGap = false;
+  for (var index = 1; index < row.runs.length; index += 1) {
+    if (row.runs[index - 1].sourceUtf16End < row.runs[index].sourceUtf16Start) {
+      hasHiddenGap = true;
+      break;
+    }
+  }
+  if (!hasHiddenGap) return null;
+
+  final insertion = receipt.baseUtf16Start;
+  final delta = _utf16Delta(receipt);
+  final mapped = <FlarkCorePresentationRun>[];
+  var inserted = false;
+  for (final run in row.runs) {
+    if (run.sourceUtf16End < insertion ||
+        (run.sourceUtf16End == insertion && inserted)) {
+      mapped.add(run);
+      continue;
+    }
+    if (!inserted &&
+        run.sourceExact &&
+        run.sourceUtf16Start <= insertion &&
+        insertion <= run.sourceUtf16End) {
+      final split = insertion - run.sourceUtf16Start;
+      if (split < 0 || split > run.text.length) return null;
+      if (split > 0) {
+        mapped.add(
+          FlarkCorePresentationRun(
+            text: run.text.substring(0, split),
+            sourceUtf16Start: run.sourceUtf16Start,
+            sourceUtf16End: insertion,
+            sourceExact: true,
+            styles: run.styles,
+          ),
+        );
+      }
+      final ending = receipt.replacement.substring(0, endingLength);
+      mapped.add(
+        FlarkCorePresentationRun(
+          text: ending,
+          sourceUtf16Start: insertion,
+          sourceUtf16End: insertion + endingLength,
+          sourceExact: true,
+          styles: const {},
+        ),
+      );
+      if (split < run.text.length) {
+        mapped.add(
+          FlarkCorePresentationRun(
+            text: run.text.substring(split),
+            sourceUtf16Start: insertion + receipt.replacement.length,
+            sourceUtf16End: run.sourceUtf16End + delta,
+            sourceExact: true,
+            styles: run.styles,
+          ),
+        );
+      }
+      inserted = true;
+      continue;
+    }
+    if (run.sourceUtf16Start < insertion) return null;
+    mapped.add(
+      FlarkCorePresentationRun(
+        text: run.text,
+        sourceUtf16Start: run.sourceUtf16Start + delta,
+        sourceUtf16End: run.sourceUtf16End + delta,
+        sourceExact: run.sourceExact,
+        styles: run.styles,
+      ),
+    );
+  }
+  if (!inserted) return null;
+
+  final source = FlarkSourceRange(
+    row.sourceUtf16.start,
+    row.sourceUtf16.end + delta,
+  );
+  final runs = List<FlarkCorePresentationRun>.unmodifiable(mapped);
+  return FlarkCoreCommittedPresentationTransitionV1(
+    surface: FlarkCoreCommittedPresentationSurfaceV1(
+      rowOrdinal: row.ordinal,
+      sourceUtf16: source,
+      presentation: FlarkCorePresentationRow(
+        sourceUtf16: source,
+        leadingText: row.leadingText,
+        text: runs.map((run) => run.text).join(),
+        globalUtf16Start: row.globalUtf16Start,
+        kind: row.kind,
+        headingLevel: row.headingLevel,
+        blockQuoteDepth: row.blockQuoteDepth,
+        codeBlock: row.codeBlock,
+        thematicBreak: row.thematicBreak,
+        ordinal: row.ordinal,
+        runs: runs,
+      ),
+    ),
+  );
 }
 
 List<FlarkCorePresentationRun>? _mapRunsThroughCommittedSplice(

@@ -1124,6 +1124,21 @@ impl DocumentSession {
         };
         if matches!(
             current.presentation,
+            DocumentViewportRowPresentation::BlockQuote {
+                nesting_depth: 1,
+                simple_continuation: false,
+                ..
+            }
+        ) && current.edit_capability == DocumentViewportRowEditCapability::ProjectedReserved
+        {
+            return self.capture_projected_block_quote_edit_context(
+                current,
+                selection_byte,
+                viewport.revision,
+            );
+        }
+        if matches!(
+            current.presentation,
             DocumentViewportRowPresentation::Heading {
                 style: DocumentHeadingStyle::Atx,
                 ..
@@ -1222,6 +1237,83 @@ impl DocumentSession {
             ending,
             row,
             paragraph_merge,
+        })
+    }
+
+    /// Resolves one physical line inside a parser-certified multiline quote.
+    ///
+    /// The logical row exposes exact content segments separated by hidden
+    /// quote prefixes. Semantic edit resolution still operates on one bounded
+    /// physical line, so this derives that line only from the certified
+    /// segment geometry and exact current source. No Markdown is reclassified
+    /// here.
+    fn capture_projected_block_quote_edit_context(
+        &self,
+        row: &DocumentViewportRow,
+        selection_byte: usize,
+        revision: u64,
+    ) -> Option<DocumentSimpleEditContext> {
+        let segments = row.projection_segments.as_ref()?;
+        let (segment_index, segment) = segments.iter().enumerate().find(|(_, segment)| {
+            let range = &segment.source_range;
+            usize::try_from(range.start).is_ok_and(|start| selection_byte >= start)
+                && usize::try_from(range.end).is_ok_and(|end| selection_byte <= end)
+        })?;
+        let segment_bytes = u64_range_to_usize(&segment.source_range)?;
+        let physical_start = if segment_index == 0 {
+            match row.presentation {
+                DocumentViewportRowPresentation::BlockQuote {
+                    prefix_start_byte, ..
+                } => usize::try_from(prefix_start_byte).ok()?,
+                _ => return None,
+            }
+        } else {
+            usize::try_from(segments.get(segment_index - 1)?.source_range.end).ok()?
+        };
+        let physical_end = if segment_index + 1 < segments.len() {
+            segment_bytes.end
+        } else {
+            usize::try_from(row.source_range.end).ok()?
+        };
+        if physical_start > segment_bytes.start || segment_bytes.end > physical_end {
+            return None;
+        }
+        let observed_ending = self.edit_line_ending_at(physical_end);
+        let ending = observed_ending.unwrap_or(self.fallback_line_ending);
+        let editable_end = match observed_ending {
+            Some(ending) => physical_end.checked_sub(ending.text().len())?,
+            None => physical_end,
+        }
+        .min(segment_bytes.end);
+        let editable_bytes = segment_bytes.start..editable_end;
+        if selection_byte < editable_bytes.start || selection_byte > editable_bytes.end {
+            return None;
+        }
+
+        let lease = self.runtime.snapshot_current_source().ok()?;
+        let physical_start_utf16 = lease.utf16_offset_for_byte(physical_start).ok()?;
+        let physical_end_utf16 = lease.utf16_offset_for_byte(physical_end).ok()?;
+        let editable_start_utf16 = lease.utf16_offset_for_byte(editable_bytes.start).ok()?;
+        let editable_end_utf16 = lease.utf16_offset_for_byte(editable_bytes.end).ok()?;
+        let prefix_bytes = physical_start..segment_bytes.start;
+        let prefix_utf16 = physical_start_utf16..editable_start_utf16;
+        let prefix_text = String::from_utf8(self.source_bytes(prefix_bytes.clone()).ok()?).ok()?;
+
+        Some(DocumentSimpleEditContext {
+            revision,
+            source_bytes: physical_start..physical_end,
+            source_utf16: physical_start_utf16..physical_end_utf16,
+            editable_bytes,
+            editable_utf16: editable_start_utf16..editable_end_utf16,
+            ending,
+            row: DocumentSimpleEditRow::BlockQuote {
+                prefix_bytes,
+                prefix_utf16,
+                prefix_text,
+                starts_quote: segment_index == 0,
+                empty: editable_start_utf16 == editable_end_utf16,
+            },
+            paragraph_merge: None,
         })
     }
 

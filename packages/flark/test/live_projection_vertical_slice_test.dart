@@ -488,6 +488,51 @@ void main() {
   );
 
   test(
+    'multiline block quote Return remains projected through certification',
+    () async {
+      final controller = await FlarkEditorController.open(
+        '> first\n> second\n',
+        libraryPath: libraryPath!,
+      );
+      await controller.continueParsing();
+      addTearDown(controller.close);
+
+      var row = controller.rows.single;
+      final frames = <String>[];
+      void capture() {
+        final index = controller.rows.indexWhere(
+          (candidate) => candidate.ordinal == row.ordinal,
+        );
+        if (index >= 0) {
+          frames.add(controller.surfaceRow(controller.rows[index]).text);
+        }
+      }
+
+      controller.addListener(capture);
+      addTearDown(() => controller.removeListener(capture));
+      controller.activateRow(row, 13);
+      controller.insertNewline();
+      await _settle(controller);
+
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, '> first\n> sec\n> ond\n');
+      row = controller.rows.single;
+      expect(controller.surfaceRow(row).text, 'first\nsec\nond');
+      expect(
+        frames.where((frame) => frame.contains('>')),
+        isEmpty,
+        reason: 'a quote marker flashed in frames: $frames',
+      );
+
+      final sourceBeforeBoundaryBackspace = controller.visibleSource;
+      controller.activateRow(row, 16);
+      controller.deleteBackward();
+      expect(controller.visibleSource, sourceBeforeBoundaryBackspace);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'inline Markdown stays marker-free and source-mapped while active',
     () async {
       const source =

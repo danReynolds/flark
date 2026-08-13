@@ -158,9 +158,12 @@ collapsed boundary with affinity, and conservative literal typing retains the
 segment topology through a transaction-bound continuity receipt. The fixed
 128-byte row record is unchanged; new callers opt into the grouped 32-byte
 segment payload with `SEMANTIC_PROJECTED`, while the older `SEMANTIC` query
-continues to receive an unavailable row. Structural Return/Backspace across
-those segment boundaries requires a later multi-surface transition and is not
-silently inferred by Flutter.
+continues to receive an unavailable row. Nonempty Return is also admitted:
+Rust resolves the exact certified physical segment, commits the quote prefix,
+and Core constructs a bounded projected transition that hides it through
+recertification. Backspace that would lift only one physical quote line, and
+empty Return that exits only part of the logical row, still require a later
+multi-surface transition and are not silently inferred by Flutter.
 
 ### 4.3 Canonical selection and display selection
 
