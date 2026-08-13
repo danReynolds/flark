@@ -12,11 +12,11 @@ void main() {
   final configuredScenario = Platform.environment['FLARK_SCENARIO_PATH'];
   final scenarioFiles = configuredScenario == null
       ? (Directory('test/scenarios')
-              .listSync()
-              .whereType<File>()
-              .where((file) => file.path.endsWith('.json'))
-              .toList()
-            ..sort((left, right) => left.path.compareTo(right.path)))
+            .listSync()
+            .whereType<File>()
+            .where((file) => file.path.endsWith('.json'))
+            .toList()
+          ..sort((left, right) => left.path.compareTo(right.path)))
       : [File(configuredScenario)];
 
   for (final scenarioFile in scenarioFiles) {
@@ -24,22 +24,26 @@ void main() {
       jsonDecode(scenarioFile.readAsStringSync()) as Map<String, Object?>,
     );
     for (final plan in plans) {
-      testWidgets(
-        '${plan.qualifiedId} [flutter-surface]',
-        (tester) async {
-          final result = await tester.runAsync(
-            () => executeLiveEditorScenario(
-              plan,
-              FlutterSurfaceLiveEditorScenarioDriver(
-                libraryPath: libraryPath!,
-                tester: tester,
-              ),
+      testWidgets('${plan.qualifiedId} [flutter-surface]', (tester) async {
+        final result = await tester.runAsync(
+          () => executeLiveEditorScenario(
+            plan,
+            FlutterSurfaceLiveEditorScenarioDriver(
+              libraryPath: libraryPath!,
+              tester: tester,
             ),
-          );
-          print('FLARK_SCENARIO_RESULT ${jsonEncode(result!.toJson())}');
-        },
-        skip: libraryPath == null,
-      );
+          ),
+        );
+        print('FLARK_SCENARIO_RESULT ${jsonEncode(result!.toJson())}');
+        if (Platform.environment['FLARK_SCENARIO_TRACE'] == '1') {
+          final trace = <String, Object?>{
+            'presentations': result.snapshot.paintedPresentations,
+            'renderPlanHashes': result.snapshot.paintedRenderPlanHashes,
+            'visualStateHashes': result.snapshot.paintedVisualStateHashes,
+          };
+          print('FLARK_SURFACE_TRACE ${jsonEncode(trace)}');
+        }
+      }, skip: libraryPath == null);
     }
   }
 }

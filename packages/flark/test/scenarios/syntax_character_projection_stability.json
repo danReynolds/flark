@@ -30,6 +30,7 @@
     "faulted": false,
     "forbiddenSurfaceSubstrings": ["**", "<empty>"],
     "paintedSurfaceNeverContains": ["**", "<empty>"],
+    "expectedPaintedPresentations": ["Before bold aft*er"],
     "expectedPaintedRenderPlanSamples": 1,
     "expectedPaintedVisualStateSamples": 1
   }

@@ -20,6 +20,7 @@ final class MacosNativeLiveEditorScenarioDriver
   StreamIterator<String>? _responses;
   int _sequence = 0;
   int _paintObservationStart = 0;
+  int _pendingPaintObservationStart = 0;
   LiveEditorScenarioSnapshot? _lastSnapshot;
   Map<String, Object?>? _lastRawSnapshot;
 
@@ -43,6 +44,7 @@ final class MacosNativeLiveEditorScenarioDriver
       'source': plan.initialSource,
     });
     _paintObservationStart = 0;
+    _pendingPaintObservationStart = 0;
     _lastSnapshot = _snapshot(response);
   }
 
@@ -67,8 +69,13 @@ final class MacosNativeLiveEditorScenarioDriver
   Future<void> activateAtUtf16(int offset) async {
     final response = await _request('activateAtUtf16', {'utf16Offset': offset});
     final json = (response['snapshot']! as Map).cast<String, Object?>();
-    _paintObservationStart = (json['surfaceFrames']! as List).length;
+    _pendingPaintObservationStart = (json['surfaceFrames']! as List).length;
     _lastSnapshot = null;
+  }
+
+  @override
+  Future<void> beginInteractionObservation() async {
+    _paintObservationStart = _pendingPaintObservationStart;
   }
 
   @override
@@ -205,6 +212,7 @@ final class MacosNativeLiveEditorScenarioDriver
       selectionBaseUtf16: json['selectionBaseUtf16']! as int,
       selectionExtentUtf16: json['selectionExtentUtf16']! as int,
       resyncCount: json['resyncCount']! as int,
+      lastResyncReason: json['lastResyncReason']! as String,
       faulted: json['status'] == 'faulted',
       lastError: json['lastError'],
       settledPresentation: json['settledPresentation']! as String,

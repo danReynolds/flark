@@ -60,6 +60,9 @@ base class NoWindowLiveEditorScenarioDriver
   }
 
   @override
+  Future<void> beginInteractionObservation() async {}
+
+  @override
   Future<void> insertText(String text, {required Duration cadence}) async {
     final controller = _activeController;
     var platformValue = _platformValue ?? controller.inputValue;
@@ -246,6 +249,7 @@ base class NoWindowLiveEditorScenarioDriver
       selectionBaseUtf16: selection.base,
       selectionExtentUtf16: selection.extent,
       resyncCount: controller.resyncCount,
+      lastResyncReason: controller.lastResyncReason.name,
       faulted: controller.status == FlarkEditorStatus.faulted,
       lastError: controller.lastError,
       settledPresentation: presentation,

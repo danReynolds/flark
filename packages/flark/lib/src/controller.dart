@@ -3843,6 +3843,14 @@ final class FlarkEditorController extends ChangeNotifier {
     _pendingSemanticInput = null;
     try {
       if (pending == null) return;
+      // Direct semantic commands may commit a structural splice that starts
+      // outside the currently exposed bounded input window. Receipt adoption
+      // has already installed the authoritative source/selection state; with
+      // no provisional platform edit and no queued successor, there is
+      // nothing to reconcile against that old window.
+      if (pending.provisionalMutation == null && pending.successors.isEmpty) {
+        return;
+      }
       final reconciliation = _InputReconciliationMap.forSemanticBarrier(
         pending: pending,
         receipt: receipt,

@@ -431,7 +431,11 @@ product checkpoint rather than only semantic confidence.
 Current portable depth also includes ordered-list continuation/history,
 depth-three successive outdent, nonuniform ordered-parent container geometry,
 task and quote continuation/exit, fenced-code Return/type/history, and
-conservative table-cell typing. Pure nested block quotes now add a bounded
+conservative table-cell typing. The inline syntax break/recover candidate is
+also live: incomplete emphasis is exact locally, completion returns to
+marker-free projection, and a visible-space break/recovery cycle asserts every
+edit-induced mounted presentation and render/selection plan with no extra
+transient state. Pure nested block quotes now add a bounded
 continue/outdent/exit journey shared by the no-window and mounted-surface lanes;
 exact prefix-width, CRLF, lazy-continuation, and fail-closed permutations stay
 in the faster Rust/Core matrices. Those additions found and closed shared

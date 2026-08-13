@@ -943,6 +943,9 @@ commits Return, cross-line Backspace, or first-line lift. The receipt echoes
 same source runs into a marker-free temporary surface for any Dart frontend.
 Space, tab, mixed space-tab, residual visible indentation, CRLF, and BOF BOM
 cases are pinned, including successive Return while certification is pending.
+A repeated Return/type/join/Return burst also proves that a direct structural
+receipt crossing the bounded input-window edge does not request successor
+reconciliation when no provisional platform edit or successor exists.
 
 ABI 4.19 adds `SEMANTIC_ATOMS_V1` and a forward-delete intent without creating
 a second edit path. The first admitted atom is a top-level parser-certified
@@ -1023,6 +1026,14 @@ local composing range, and stays marker-free and styled on the shared Core
 surface before commit; commit and one undo preserve the same projection. This
 closes the simulated hidden-delimiter interaction, not the live platform-IME
 qualification boundary.
+
+The standard inline editing cycle now carries a presentation receipt at each
+settled checkpoint: an unmatched emphasis marker is an exact local source
+island, completion restores marker-free projection, and inserting/removing a
+visible space at the closing boundary breaks and restores that projection
+without an extra mounted render or selection plan. Paint observations begin
+once after initial activation, so later caret or selection moves cannot erase
+the edit history being asserted.
 
 Flutter pointer routing now separates recognizers by intent instead of enabling
 one pan policy on every device: a touch or stylus tap activates text or a

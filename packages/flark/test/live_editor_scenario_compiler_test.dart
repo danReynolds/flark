@@ -24,6 +24,7 @@ void main() {
     expect(plans.first.planHash, isNot(plans.last.planHash));
     expect(plans.first.expectation.expectedPaintedRenderPlanSamples, 1);
     expect(plans.first.expectation.expectedPaintedVisualStateSamples, 1);
+    expect(plans.first.expectation.expectedPaintedPresentations, ['Alpha']);
     final roundTrip = decodeLiveEditorScenarioPlanBundle(
       encodeLiveEditorScenarioPlanBundle(plans),
     );
@@ -100,6 +101,30 @@ void main() {
     }
     expect(() => compiler.compile(duplicate), throwsFormatException);
   });
+
+  test('checkpoint presentation assertion survives plan round-trip', () {
+    final fixture = _fixture();
+    (fixture['steps']! as List<Object?>).insert(1, <String, Object?>{
+      'type': 'checkpoint',
+      'id': 'presented',
+      'source': 'Alpha beta.',
+      'caretUtf16': 0,
+      'settledPresentation': 'Alpha beta.',
+    });
+    final plan = compiler.compile(fixture).first;
+    final checkpoint = plan.operations.whereType<LiveEditorCheckpoint>().single;
+    expect(checkpoint.settledPresentation, 'Alpha beta.');
+    final roundTrip = decodeLiveEditorScenarioPlanBundle(
+      encodeLiveEditorScenarioPlanBundle([plan]),
+    ).single;
+    expect(
+      roundTrip.operations
+          .whereType<LiveEditorCheckpoint>()
+          .single
+          .settledPresentation,
+      'Alpha beta.',
+    );
+  });
 }
 
 Map<String, Object?> _fixture({String initialSource = 'Alpha beta.'}) => {
@@ -130,5 +155,6 @@ Map<String, Object?> _fixture({String initialSource = 'Alpha beta.'}) => {
     'paintedSurfaceNeverContains': <Object?>[],
     'expectedPaintedRenderPlanSamples': 1,
     'expectedPaintedVisualStateSamples': 1,
+    'expectedPaintedPresentations': <Object?>['Alpha'],
   },
 };

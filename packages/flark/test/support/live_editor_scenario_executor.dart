@@ -8,6 +8,7 @@ final class LiveEditorScenarioSnapshot {
     required this.selectionBaseUtf16,
     required this.selectionExtentUtf16,
     required this.resyncCount,
+    required this.lastResyncReason,
     required this.faulted,
     required this.lastError,
     required this.settledPresentation,
@@ -22,6 +23,7 @@ final class LiveEditorScenarioSnapshot {
   final int selectionBaseUtf16;
   final int selectionExtentUtf16;
   final int resyncCount;
+  final String lastResyncReason;
   final bool faulted;
   final Object? lastError;
   final String settledPresentation;
@@ -42,6 +44,10 @@ abstract interface class LiveEditorScenarioDriver {
   Future<void> start(LiveEditorScenarioPlan plan);
 
   Future<void> activateAtUtf16(int offset);
+
+  /// Starts bounded paint observations after the scenario's initial caret
+  /// activation. Later selection operations must not reset this boundary.
+  Future<void> beginInteractionObservation();
 
   Future<void> insertText(String text, {required Duration cadence});
 
@@ -85,6 +91,7 @@ final class LiveEditorScenarioExecutionResult {
     'elapsedMs': elapsed.inMilliseconds,
     'revision': snapshot.revision,
     'resyncs': snapshot.resyncCount,
+    'lastResyncReason': snapshot.lastResyncReason,
     'paintSamples': snapshot.paintedPresentations.length,
     'renderPlanSamples': snapshot.paintedRenderPlanHashes.length,
     'visualStateSamples': snapshot.paintedVisualStateHashes.length,
@@ -110,6 +117,7 @@ Future<LiveEditorScenarioExecutionResult> executeLiveEditorScenario(
   await driver.start(plan);
   try {
     await driver.activateAtUtf16(plan.activationUtf16);
+    await driver.beginInteractionObservation();
     for (final operation in plan.operations) {
       switch (operation) {
         case LiveEditorInsertText():
@@ -152,6 +160,14 @@ Future<LiveEditorScenarioExecutionResult> executeLiveEditorScenario(
             operation.selectionExtentUtf16,
             checkpoint.selectionExtentUtf16,
           );
+          if (operation.settledPresentation case final expected?) {
+            _equal(
+              plan,
+              'checkpoint.${operation.id}.settledPresentation',
+              expected,
+              checkpoint.settledPresentation,
+            );
+          }
           if (checkpoint.faulted || checkpoint.lastError != null) {
             throw LiveEditorScenarioFailure(
               '${plan.qualifiedId} checkpoint ${operation.id} faulted: '
@@ -194,7 +210,14 @@ void _assertExpectation(
     expected.selectionExtentUtf16,
     actual.selectionExtentUtf16,
   );
-  _equal(plan, 'resyncCount', expected.resyncCount, actual.resyncCount);
+  if (expected.resyncCount != actual.resyncCount) {
+    throw LiveEditorScenarioFailure(
+      '${plan.qualifiedId} resyncCount differed:\n'
+      'expected: ${expected.resyncCount}\n'
+      'actual:   ${actual.resyncCount}\n'
+      'reason:   ${actual.lastResyncReason}',
+    );
+  }
   _equal(plan, 'faulted', expected.faulted, actual.faulted);
   if (actual.lastError != null) {
     throw LiveEditorScenarioFailure(
@@ -225,6 +248,22 @@ void _assertExpectation(
     return;
   }
   if (driver.observesPaint) {
+    if (expected.expectedPaintedPresentations case final presentations?) {
+      _equal(
+        plan,
+        'paintedPresentations.length',
+        presentations.length,
+        actual.paintedPresentations.length,
+      );
+      for (var index = 0; index < presentations.length; index += 1) {
+        _equal(
+          plan,
+          'paintedPresentations[$index]',
+          presentations[index],
+          actual.paintedPresentations[index],
+        );
+      }
+    }
     if (expected.expectedPaintedRenderPlanSamples case final count?) {
       _equal(
         plan,

@@ -72,8 +72,7 @@ final class FlutterSurfaceLiveEditorScenarioDriver
   }
 
   @override
-  Future<void> activateAtUtf16(int offset) async {
-    await super.activateAtUtf16(offset);
+  Future<void> beginInteractionObservation() async {
     await tester.pump();
     // Scenario paint assertions describe the edit, not the preceding focus
     // transition needed to place the caret.
@@ -103,6 +102,7 @@ final class FlutterSurfaceLiveEditorScenarioDriver
       selectionBaseUtf16: controllerSnapshot.selectionBaseUtf16,
       selectionExtentUtf16: controllerSnapshot.selectionExtentUtf16,
       resyncCount: controllerSnapshot.resyncCount,
+      lastResyncReason: controllerSnapshot.lastResyncReason,
       faulted: controllerSnapshot.faulted,
       lastError: controllerSnapshot.lastError,
       settledPresentation: controllerSnapshot.settledPresentation,

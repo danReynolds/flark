@@ -86,6 +86,7 @@ sealed class LiveEditorScenarioOperation {
           'source',
           'selectionBaseUtf16',
           'selectionExtentUtf16',
+          'settledPresentation',
         });
         return LiveEditorCheckpoint(
           id: reader.requiredString('id'),
@@ -96,6 +97,7 @@ sealed class LiveEditorScenarioOperation {
           selectionExtentUtf16: reader.requiredNonNegativeInt(
             'selectionExtentUtf16',
           ),
+          settledPresentation: reader.optionalString('settledPresentation'),
         );
       default:
         throw FormatException('${reader.path}.op is unsupported: $op');
@@ -200,12 +202,14 @@ final class LiveEditorCheckpoint extends LiveEditorScenarioOperation {
     required this.source,
     required this.selectionBaseUtf16,
     required this.selectionExtentUtf16,
+    this.settledPresentation,
   });
 
   final String id;
   final String source;
   final int selectionBaseUtf16;
   final int selectionExtentUtf16;
+  final String? settledPresentation;
 
   @override
   Map<String, Object?> toJson() => {
@@ -214,6 +218,7 @@ final class LiveEditorCheckpoint extends LiveEditorScenarioOperation {
     'source': source,
     'selectionBaseUtf16': selectionBaseUtf16,
     'selectionExtentUtf16': selectionExtentUtf16,
+    'settledPresentation': ?settledPresentation,
   };
 }
 
@@ -229,6 +234,7 @@ final class LiveEditorScenarioExpectation {
     this.minimumObservedScrollOffset,
     this.expectedPaintedRenderPlanSamples,
     this.expectedPaintedVisualStateSamples,
+    this.expectedPaintedPresentations,
   });
 
   factory LiveEditorScenarioExpectation.fromJson(Map<String, Object?> json) {
@@ -244,6 +250,7 @@ final class LiveEditorScenarioExpectation {
       'minimumObservedScrollOffset',
       'expectedPaintedRenderPlanSamples',
       'expectedPaintedVisualStateSamples',
+      'expectedPaintedPresentations',
     });
     return LiveEditorScenarioExpectation(
       source: reader.requiredString('source'),
@@ -268,6 +275,9 @@ final class LiveEditorScenarioExpectation {
       expectedPaintedVisualStateSamples: reader.optionalNonNegativeInt(
         'expectedPaintedVisualStateSamples',
       ),
+      expectedPaintedPresentations: reader.optionalStringList(
+        'expectedPaintedPresentations',
+      ),
     );
   }
 
@@ -281,6 +291,7 @@ final class LiveEditorScenarioExpectation {
   final int? minimumObservedScrollOffset;
   final int? expectedPaintedRenderPlanSamples;
   final int? expectedPaintedVisualStateSamples;
+  final List<String>? expectedPaintedPresentations;
 
   Map<String, Object?> toJson() => {
     'source': source,
@@ -293,6 +304,7 @@ final class LiveEditorScenarioExpectation {
     'minimumObservedScrollOffset': ?minimumObservedScrollOffset,
     'expectedPaintedRenderPlanSamples': ?expectedPaintedRenderPlanSamples,
     'expectedPaintedVisualStateSamples': ?expectedPaintedVisualStateSamples,
+    'expectedPaintedPresentations': ?expectedPaintedPresentations,
   };
 }
 
@@ -536,6 +548,7 @@ final class LiveEditorScenarioCompiler {
       'minimumObservedScrollOffset',
       'expectedPaintedRenderPlanSamples',
       'expectedPaintedVisualStateSamples',
+      'expectedPaintedPresentations',
     });
     final caret = reader.requiredNonNegativeInt('caretUtf16');
     return LiveEditorScenarioExpectation(
@@ -557,6 +570,9 @@ final class LiveEditorScenarioCompiler {
       ),
       expectedPaintedVisualStateSamples: reader.optionalNonNegativeInt(
         'expectedPaintedVisualStateSamples',
+      ),
+      expectedPaintedPresentations: reader.optionalStringList(
+        'expectedPaintedPresentations',
       ),
     );
   }
@@ -695,6 +711,7 @@ final class LiveEditorScenarioCompiler {
           'caretUtf16',
           'selectionBaseUtf16',
           'selectionExtentUtf16',
+          'settledPresentation',
         });
         final caret = reader.optionalNonNegativeInt('caretUtf16');
         final base = reader.optionalNonNegativeInt('selectionBaseUtf16');
@@ -714,6 +731,7 @@ final class LiveEditorScenarioCompiler {
           source: reader.requiredString('source'),
           selectionBaseUtf16: caret ?? base!,
           selectionExtentUtf16: caret ?? extent!,
+          settledPresentation: reader.optionalString('settledPresentation'),
         );
       default:
         throw FormatException('${reader.path}.type is unsupported: $type');
@@ -852,6 +870,11 @@ final class _ObjectReader {
   int? optionalNonNegativeInt(String key) {
     if (!value.containsKey(key)) return null;
     return requiredNonNegativeInt(key);
+  }
+
+  String? optionalString(String key) {
+    if (!value.containsKey(key)) return null;
+    return requiredString(key);
   }
 
   bool requiredBool(String key) {
