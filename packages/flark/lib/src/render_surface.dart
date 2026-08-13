@@ -1103,6 +1103,32 @@ final class RenderFlarkSurface extends RenderBox {
   double? localXForSourceUtf16(int offset) =>
       _localPositionForSourceUtf16(offset)?.dx;
 
+  /// Scrolls an already laid-out source caret into the visible surface.
+  ///
+  /// This never changes viewport pages or source selection. The editor calls
+  /// it only after geometry has selected the next caret stop; any rows exposed
+  /// below the overscan boundary are materialized by the following layout.
+  void ensureSourceUtf16Visible(int offset) {
+    if (!hasSize) return;
+    final row = _fragmentForSourceUtf16(offset);
+    if (row == null) return;
+    final viewportTop = _scrollOffset;
+    final viewportBottom = viewportTop + size.height;
+    var next = viewportTop;
+    if (row.top < viewportTop) {
+      next = row.top;
+    } else if (row.top + row.height > viewportBottom) {
+      next = row.top + row.height - size.height;
+    }
+    next = next.clamp(0, _maximumScrollOffset);
+    if (next == _scrollOffset) return;
+    final movedForward = next > _scrollOffset;
+    _scrollOffset = next;
+    markNeedsPaint();
+    markNeedsSemanticsUpdate();
+    if (movedForward && _skippedRowCount > 0) markNeedsLayout();
+  }
+
   Rect? _taskActionBox(_PaintedRow row) {
     if (row.fragmentStart != 0 ||
         row.leadingLength == 0 ||

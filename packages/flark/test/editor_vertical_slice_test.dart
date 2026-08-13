@@ -552,33 +552,132 @@ void main() {
       );
       expect(surface.debugLocalPositionForSourceUtf16(sourceColumn), isNotNull);
       final dynamic state = tester.state(find.byType(FlarkEditor));
+      final observedPages = <int>[];
+      void recordPage() => observedPages.add(controller.viewportPageIndex);
+      controller.addListener(recordPage);
+      state.performSelector('moveDown:');
+      final firstRow = controller.rows.first;
+      final interruptedCaret = firstRow.editableUtf16!.start + 4;
+      controller.activateRow(firstRow, interruptedCaret);
+      await _pumpUntil(
+        tester,
+        () => observedPages.contains(1) && controller.viewportPageIndex == 0,
+      );
+      controller.removeListener(recordPage);
+      expect(controller.globalCaretOffset, interruptedCaret);
+      expect(controller.rows.first.ordinal, firstRow.ordinal);
+
+      await tester.runAsync(() async {
+        controller.activateRow(lastRow, sourceColumn);
+        await controller.resolveCanonicalSelection();
+      });
+      await tester.pump();
       final selectionGeneration = controller.canonicalSelectionGeneration;
 
       state.performSelector('moveDown:');
+      state.performSelector('moveDown:');
+      state.performSelector('moveDown:');
       await _pumpUntil(tester, () => controller.viewportPageIndex == 1);
+      final pageOneCaret = controller.rows[2].editableUtf16!.start + 4;
       await _pumpUntil(
         tester,
-        () => controller.canonicalSelectionGeneration > selectionGeneration,
+        () =>
+            controller.globalCaretOffset == pageOneCaret &&
+            controller.canonicalSelectionGeneration > selectionGeneration,
       );
-
-      final firstRow = controller.rows.first;
-      final pageOneCaret = firstRow.editableUtf16!.start + 4;
       expect(controller.globalCaretOffset, pageOneCaret);
       expect(controller.globalSelectionBase, controller.globalSelectionExtent);
+
+      await _performSelectorAndWait(tester, controller, state, 'moveUp:');
+      await _performSelectorAndWait(tester, controller, state, 'moveUp:');
+      final pageOneFirstCaret = controller.rows.first.editableUtf16!.start + 4;
+      expect(controller.globalCaretOffset, pageOneFirstCaret);
 
       final reverseGeneration = controller.canonicalSelectionGeneration;
       state.performSelector('moveUpAndModifySelection:');
       await _pumpUntil(tester, () => controller.viewportPageIndex == 0);
+      final previousLastRow = controller.rows.last;
+      final previousLastCaret = previousLastRow.editableUtf16!.start + 4;
       await _pumpUntil(
         tester,
-        () => controller.canonicalSelectionGeneration > reverseGeneration,
+        () =>
+            controller.globalSelectionExtent == previousLastCaret &&
+            controller.canonicalSelectionGeneration > reverseGeneration,
       );
 
-      final previousLastRow = controller.rows.last;
-      expect(controller.globalSelectionBase, pageOneCaret);
+      expect(controller.globalSelectionBase, pageOneFirstCaret);
+      expect(controller.globalSelectionExtent, previousLastCaret);
+      expect(await tester.runAsync(controller.readSource), source);
+      expect(controller.lastError, isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'vertical navigation keeps each adopted caret visible',
+    (tester) async {
+      final source = List<String>.generate(
+        48,
+        (index) => 'Paragraph ${index.toString().padLeft(3, '0')} text.\n\n',
+      ).join();
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 640,
+            height: 180,
+            child: FlarkEditor(
+              controller: controller,
+              padding: EdgeInsets.zero,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final surface = tester.renderObject<RenderFlarkSurface>(
+        find.byType(FlarkRenderSurfaceWidget),
+      );
+      final visibleRows = controller.rows
+          .where((row) {
+            final range = row.editableUtf16;
+            return range != null &&
+                surface.debugLocalPositionForSourceUtf16(range.start + 4) !=
+                    null;
+          })
+          .toList(growable: false);
+      expect(visibleRows.length, greaterThan(1));
+      expect(visibleRows.length, lessThan(controller.rows.length));
+      final row = visibleRows.last;
+      final start = row.editableUtf16!.start + 4;
+      await tester.runAsync(() async {
+        controller.activateRow(row, start);
+        await controller.resolveCanonicalSelection();
+      });
+      await tester.pump();
+      final dynamic state = tester.state(find.byType(FlarkEditor));
+      final initialScroll = surface.scrollOffset;
+
+      await _performSelectorAndWait(tester, controller, state, 'moveDown:');
+      await tester.pump();
+      final firstCaret = controller.globalCaretOffset;
+      expect(firstCaret, greaterThan(start));
+      expect(surface.scrollOffset, greaterThan(initialScroll));
+      expect(surface.debugLocalPositionForSourceUtf16(firstCaret), isNotNull);
+
+      await _performSelectorAndWait(tester, controller, state, 'moveDown:');
+      await tester.pump();
+      expect(controller.globalCaretOffset, greaterThan(firstCaret));
       expect(
-        controller.globalSelectionExtent,
-        previousLastRow.editableUtf16!.start + 4,
+        surface.debugLocalPositionForSourceUtf16(controller.globalCaretOffset),
+        isNotNull,
       );
       expect(await tester.runAsync(controller.readSource), source);
       expect(controller.lastError, isNull);

@@ -1046,9 +1046,15 @@ materialized bounded page, the adapter now requests exactly one adjacent Core
 viewport page, waits for its Flutter layout, and resolves the first or last
 rendered caret stop at the retained horizontal coordinate. A reverse Shift+Up
 receipt proves the selection base remains Core-anchored across the page swap.
-Word/line/document conventions beyond the implemented subset, caret-following
-scroll/materialization, bidi permutations, repeated-key arbitration, and
-accessibility traversal remain explicit H4 work.
+Every adopted vertical caret now scrolls its already-laid-out fragment into
+the visible surface and materializes the next bounded overscan region. Arrow
+events arriving during a page query enter a 32-command FIFO and drain at one
+move per Flutter frame; a three-event receipt proves they are not discarded.
+If another interaction changes selection before adoption, the adapter clears
+that FIFO and restores the prior page through the normal controller operation.
+Word/line/document conventions beyond the implemented subset, bidi
+permutations, overflow behavior beyond the bounded FIFO, and accessibility
+traversal remain explicit H4 work.
 
 The public `FlarkMarkdownView` shares the same bounded render object and now
 shares the device-appropriate scroll boundary: wheel and pan/zoom signals on

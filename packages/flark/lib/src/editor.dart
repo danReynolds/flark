@@ -9,6 +9,8 @@ import 'package:flutter/widgets.dart';
 import 'controller.dart';
 import 'render_surface.dart';
 
+const _maximumQueuedVerticalMoves = 32;
+
 /// App-relative geometry exposed only to integration harnesses.
 final class FlarkEditorDebugGeometry {
   const FlarkEditorDebugGeometry({
@@ -111,6 +113,8 @@ final class _FlarkEditorState extends State<FlarkEditor>
   FlarkSurfaceHit? _pendingTapHit;
   double? _preferredVerticalNavigationX;
   bool _verticalPageNavigationPending = false;
+  bool _verticalMoveDrainScheduled = false;
+  final List<({bool forward, bool modify})> _queuedVerticalMoves = [];
 
   FocusNode get _focusNode => widget.focusNode ?? _ownedFocusNode!;
 
@@ -293,7 +297,18 @@ final class _FlarkEditorState extends State<FlarkEditor>
     if (hit != null) _adoptNavigationHit(hit, modify: modify);
   }
 
-  void _moveVertically({required bool forward, required bool modify}) {
+  void _moveVertically({
+    required bool forward,
+    required bool modify,
+    bool fromQueue = false,
+  }) {
+    if (!fromQueue &&
+        (_verticalPageNavigationPending ||
+            _verticalMoveDrainScheduled ||
+            _queuedVerticalMoves.isNotEmpty)) {
+      _queueVerticalMove(forward: forward, modify: modify);
+      return;
+    }
     final surface = _surface;
     if (surface == null) return;
     final controller = widget.controller;
@@ -306,12 +321,12 @@ final class _FlarkEditorState extends State<FlarkEditor>
       preferredX: preferredX,
     );
     if (hit != null) {
+      surface.ensureSourceUtf16Visible(hit.globalUtf16Offset);
       _adoptNavigationHit(hit, modify: modify);
       _preferredVerticalNavigationX = preferredX;
       return;
     }
     if (preferredX == null ||
-        _verticalPageNavigationPending ||
         !surface.isAtViewportPageEdge(extent, forward: forward) ||
         (forward ? !controller.canPageForward : !controller.canPageBackward)) {
       return;
@@ -323,10 +338,50 @@ final class _FlarkEditorState extends State<FlarkEditor>
         forward: forward,
         modify: modify,
         preferredX: preferredX,
-        selectionGeneration: controller.canonicalSelectionGeneration,
+        selectionBase: controller.globalSelectionBase,
         selectionExtent: extent,
       ),
     );
+  }
+
+  void _queueVerticalMove({required bool forward, required bool modify}) {
+    if (_queuedVerticalMoves.length >= _maximumQueuedVerticalMoves) return;
+    _queuedVerticalMoves.add((forward: forward, modify: modify));
+  }
+
+  void _clearQueuedVerticalMoves() {
+    _queuedVerticalMoves.clear();
+  }
+
+  void _scheduleQueuedVerticalMove() {
+    if (!mounted ||
+        _verticalPageNavigationPending ||
+        _verticalMoveDrainScheduled ||
+        _queuedVerticalMoves.isEmpty) {
+      return;
+    }
+    final controller = widget.controller;
+    final expectedBase = controller.globalSelectionBase;
+    final expectedExtent = controller.globalSelectionExtent;
+    _verticalMoveDrainScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _verticalMoveDrainScheduled = false;
+      if (!mounted ||
+          !identical(controller, widget.controller) ||
+          controller.globalSelectionBase != expectedBase ||
+          controller.globalSelectionExtent != expectedExtent ||
+          _queuedVerticalMoves.isEmpty) {
+        _clearQueuedVerticalMoves();
+        return;
+      }
+      final move = _queuedVerticalMoves.removeAt(0);
+      _moveVertically(
+        forward: move.forward,
+        modify: move.modify,
+        fromQueue: true,
+      );
+      _scheduleQueuedVerticalMove();
+    });
   }
 
   Future<void> _continueVerticalNavigationAcrossPage({
@@ -334,36 +389,76 @@ final class _FlarkEditorState extends State<FlarkEditor>
     required bool forward,
     required bool modify,
     required double preferredX,
-    required int selectionGeneration,
+    required int selectionBase,
     required int selectionExtent,
   }) async {
     final moved = forward
         ? await controller.nextViewportPage()
         : await controller.previousViewportPage();
+    final selectionChanged =
+        controller.globalSelectionBase != selectionBase ||
+        controller.globalSelectionExtent != selectionExtent;
+    if (moved &&
+        selectionChanged &&
+        mounted &&
+        identical(controller, widget.controller)) {
+      await _restorePageAfterStaleVerticalNavigation(
+        controller: controller,
+        forward: forward,
+      );
+    }
     if (!moved ||
         !mounted ||
         !identical(controller, widget.controller) ||
-        controller.canonicalSelectionGeneration != selectionGeneration ||
-        controller.globalSelectionExtent != selectionExtent) {
+        selectionChanged) {
       _verticalPageNavigationPending = false;
+      _clearQueuedVerticalMoves();
       return;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _verticalPageNavigationPending = false;
       if (!mounted ||
           !identical(controller, widget.controller) ||
-          controller.canonicalSelectionGeneration != selectionGeneration ||
+          controller.globalSelectionBase != selectionBase ||
           controller.globalSelectionExtent != selectionExtent) {
+        _clearQueuedVerticalMoves();
+        if (mounted && identical(controller, widget.controller)) {
+          unawaited(
+            _restorePageAfterStaleVerticalNavigation(
+              controller: controller,
+              forward: forward,
+            ).whenComplete(() => _verticalPageNavigationPending = false),
+          );
+        } else {
+          _verticalPageNavigationPending = false;
+        }
         return;
       }
-      final hit = _surface?.verticalPageEdgeHit(
+      _verticalPageNavigationPending = false;
+      final surface = _surface;
+      final hit = surface?.verticalPageEdgeHit(
         forward: forward,
         preferredX: preferredX,
       );
-      if (hit == null) return;
+      if (hit == null) {
+        _clearQueuedVerticalMoves();
+        return;
+      }
+      surface?.ensureSourceUtf16Visible(hit.globalUtf16Offset);
       _adoptNavigationHit(hit, modify: modify);
       _preferredVerticalNavigationX = preferredX;
+      _scheduleQueuedVerticalMove();
     });
+  }
+
+  Future<void> _restorePageAfterStaleVerticalNavigation({
+    required FlarkEditorController controller,
+    required bool forward,
+  }) async {
+    if (forward) {
+      await controller.previousViewportPage();
+    } else {
+      await controller.nextViewportPage();
+    }
   }
 
   Future<void> _selectAll() async {
