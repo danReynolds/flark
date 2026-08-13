@@ -12,6 +12,8 @@ enum FlarkCoreEditIntentV1 {
   deleteBackward,
   deleteForward,
   toggleTaskChecked,
+  indentListItem,
+  outdentListItem,
 }
 
 enum FlarkCoreEditIntentDispositionV1 {
@@ -40,6 +42,8 @@ enum FlarkCoreEditPresentationTransitionV1 {
   deleteThematicBreak,
   outdentBlockQuote,
   toggleTaskChecked,
+  indentList,
+  retainParagraphGap,
 }
 
 /// An opaque, one-shot handle to inverse source retained by the native core.

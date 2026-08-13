@@ -47,6 +47,15 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             expected_transition: DocumentEditPresentationTransitionV1::SplitParagraph,
         },
         IntentCase {
+            name: "terminated paragraph boundary Return creates a distinct editor row",
+            initial: "alpha\n\nnext\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 5,
+            expected: "alpha\n\n\n\nnext\n",
+            expected_selection_utf16: 7,
+            expected_transition: DocumentEditPresentationTransitionV1::SplitParagraph,
+        },
+        IntentCase {
             name: "ATX heading Return creates a plain successor",
             initial: "# head",
             intent: DocumentEditIntentV1::InsertParagraphBreak,
@@ -207,6 +216,51 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             expected: "9) alpha\n10) \n",
             expected_selection_utf16: 13,
             expected_transition: DocumentEditPresentationTransitionV1::ContinueList,
+        },
+        IntentCase {
+            name: "Tab indents a later bullet beneath its preceding sibling",
+            initial: "- parent\n- child\n",
+            intent: DocumentEditIntentV1::IndentListItem,
+            selection_utf16: 16,
+            expected: "- parent\n  - child\n",
+            expected_selection_utf16: 18,
+            expected_transition: DocumentEditPresentationTransitionV1::IndentList,
+        },
+        IntentCase {
+            name: "Shift-Tab outdents a nested bullet without moving to its prefix",
+            initial: "- parent\n  - child\n",
+            intent: DocumentEditIntentV1::OutdentListItem,
+            selection_utf16: 18,
+            expected: "- parent\n- child\n",
+            expected_selection_utf16: 16,
+            expected_transition: DocumentEditPresentationTransitionV1::OutdentList,
+        },
+        IntentCase {
+            name: "ordered indentation uses the preceding item padding",
+            initial: "10. parent\n11. child\n",
+            intent: DocumentEditIntentV1::IndentListItem,
+            selection_utf16: 20,
+            expected: "10. parent\n    11. child\n",
+            expected_selection_utf16: 24,
+            expected_transition: DocumentEditPresentationTransitionV1::IndentList,
+        },
+        IntentCase {
+            name: "task indentation preserves the certified check state",
+            initial: "- [ ] parent\n- [x] child\n",
+            intent: DocumentEditIntentV1::IndentListItem,
+            selection_utf16: 24,
+            expected: "- [ ] parent\n  - [x] child\n",
+            expected_selection_utf16: 26,
+            expected_transition: DocumentEditPresentationTransitionV1::IndentList,
+        },
+        IntentCase {
+            name: "indentation finds a preceding sibling across its nested subtree",
+            initial: "- first\n  - nested\n- second\n",
+            intent: DocumentEditIntentV1::IndentListItem,
+            selection_utf16: 27,
+            expected: "- first\n  - nested\n  - second\n",
+            expected_selection_utf16: 29,
+            expected_transition: DocumentEditPresentationTransitionV1::IndentList,
         },
         IntentCase {
             name: "depth-two continuation preserves its container indentation",
@@ -493,6 +547,67 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
 }
 
 #[test]
+fn list_indentation_boundary_commands_are_handled_without_mutation() {
+    for (name, source_text, intent, selection) in [
+        (
+            "first item cannot indent",
+            "- first\n- second\n",
+            DocumentEditIntentV1::IndentListItem,
+            7,
+        ),
+        (
+            "top-level item cannot outdent",
+            "- first\n- second\n",
+            DocumentEditIntentV1::OutdentListItem,
+            16,
+        ),
+    ] {
+        let mut document = DocumentSession::begin(source_text).expect(name);
+        pump_ready(&mut document);
+        let receipt = document
+            .try_apply_edit_intent_v1(1, intent, selection, false)
+            .unwrap_or_else(|error| panic!("{name}: {error:?}"));
+        assert_eq!(
+            receipt.disposition,
+            DocumentEditIntentDispositionV1::HandledNoChange,
+            "{name}"
+        );
+        assert_eq!(document.revision(), 1, "{name}");
+        assert_eq!(source(&document), source_text, "{name}");
+        document.close().expect("close boundary fixture");
+    }
+}
+
+#[test]
+fn list_indent_never_partially_moves_a_multiline_item_or_its_subtree() {
+    for (name, source_text) in [
+        (
+            "multiline item",
+            "- previous\n- current first\n  continuation\n",
+        ),
+        (
+            "item with a nested child",
+            "- previous\n- current\n  - child\n",
+        ),
+    ] {
+        let selection = source_text.find("current").expect("current item") + "current".len();
+        let mut document = DocumentSession::begin(source_text).expect(name);
+        pump_ready(&mut document);
+        let receipt = document
+            .try_apply_edit_intent_v1(1, DocumentEditIntentV1::IndentListItem, selection, false)
+            .unwrap_or_else(|error| panic!("{name}: {error:?}"));
+        assert_ne!(
+            receipt.disposition,
+            DocumentEditIntentDispositionV1::Applied,
+            "{name} must not move only its first physical line"
+        );
+        assert_eq!(document.revision(), 1, "{name}");
+        assert_eq!(source(&document), source_text, "{name}");
+        document.close().expect("close multiline list fixture");
+    }
+}
+
+#[test]
 fn complex_context_fails_closed_and_composition_never_mutates() {
     for initial in [
         "> - nested\n",
@@ -564,6 +679,61 @@ fn parser_pending_lineage_resolves_without_pumping() {
     assert_eq!(second.disposition, DocumentEditIntentDispositionV1::Applied);
     assert_eq!(source(&document), "- ab\n- x\n- \n");
     document.close().expect("close pending fixture");
+}
+
+#[test]
+fn blank_paragraph_returns_and_backspaces_one_editor_row_per_command() {
+    let initial = "alpha\n\nnext\n";
+    let mut document = DocumentSession::begin(initial).expect("begin paragraph gap");
+    pump_ready(&mut document);
+
+    let first = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 5, false)
+        .expect("first boundary Return");
+    assert_eq!(first.result_selection_utf16, 7);
+    assert_eq!(source(&document), "alpha\n\n\n\nnext\n");
+
+    let second = document
+        .try_apply_edit_intent_v1(
+            2,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            first.result_selection_utf16,
+            false,
+        )
+        .expect("second pending blank Return");
+    assert_eq!(second.result_selection_utf16, 8);
+    assert_eq!(source(&document), "alpha\n\n\n\n\nnext\n");
+
+    let remove_second = document
+        .try_apply_edit_intent_v1(
+            3,
+            DocumentEditIntentV1::DeleteBackward,
+            second.result_selection_utf16,
+            false,
+        )
+        .expect("remove second blank row");
+    assert_eq!(
+        remove_second.presentation_transition,
+        DocumentEditPresentationTransitionV1::RetainParagraphGap
+    );
+    assert_eq!(remove_second.result_selection_utf16, 7);
+    assert_eq!(source(&document), "alpha\n\n\n\nnext\n");
+
+    let remove_first = document
+        .try_apply_edit_intent_v1(
+            4,
+            DocumentEditIntentV1::DeleteBackward,
+            remove_second.result_selection_utf16,
+            false,
+        )
+        .expect("remove first blank row");
+    assert_eq!(
+        remove_first.presentation_transition,
+        DocumentEditPresentationTransitionV1::MergeParagraph
+    );
+    assert_eq!(remove_first.result_selection_utf16, 5);
+    assert_eq!(source(&document), initial);
+    document.close().expect("close paragraph gap");
 }
 
 #[test]

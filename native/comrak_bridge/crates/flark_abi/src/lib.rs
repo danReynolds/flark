@@ -26,7 +26,7 @@ pub use flark_runtime::{
 };
 
 pub const ABI_MAJOR: u16 = 4;
-pub const ABI_MINOR: u16 = 22;
+pub const ABI_MINOR: u16 = 24;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
@@ -445,6 +445,8 @@ pub const EDIT_INTENT_INSERT_PARAGRAPH_BREAK: u32 = 1;
 pub const EDIT_INTENT_DELETE_BACKWARD: u32 = 2;
 pub const EDIT_INTENT_DELETE_FORWARD: u32 = 3;
 pub const EDIT_INTENT_TOGGLE_TASK_CHECKED: u32 = 4;
+pub const EDIT_INTENT_INDENT_LIST_ITEM: u32 = 5;
+pub const EDIT_INTENT_OUTDENT_LIST_ITEM: u32 = 6;
 pub const EDIT_INTENT_DISPOSITION_APPLIED: u32 = 1;
 pub const EDIT_INTENT_DISPOSITION_HANDLED_NO_CHANGE: u32 = 2;
 pub const EDIT_INTENT_DISPOSITION_NOT_APPLICABLE: u32 = 3;
@@ -470,6 +472,8 @@ pub const EDIT_PRESENTATION_LIFT_INDENTED_CODE: u32 = 14;
 pub const EDIT_PRESENTATION_DELETE_THEMATIC_BREAK: u32 = 15;
 pub const EDIT_PRESENTATION_OUTDENT_BLOCK_QUOTE: u32 = 16;
 pub const EDIT_PRESENTATION_TOGGLE_TASK_CHECKED: u32 = 17;
+pub const EDIT_PRESENTATION_INDENT_LIST: u32 = 18;
+pub const EDIT_PRESENTATION_RETAIN_PARAGRAPH_GAP: u32 = 19;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]

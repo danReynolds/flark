@@ -13,9 +13,11 @@ use flark_abi::{
     PumpRequest, QueryRequest, ResultPageHeader, SessionConfig, SessionInspection, SessionRef,
     SmallEditRequest, SourceRange, SourceReadRequest, SourceTransactionReceiptV1,
     SourceTransactionRequestV1, StageRequest, StagedSourceTransactionRequestV1, TransactionRequest,
-    WorkBudget, EDIT_INTENT_DISPOSITION_APPLIED, EDIT_INTENT_INSERT_PARAGRAPH_BREAK,
+    WorkBudget, EDIT_INTENT_DISPOSITION_APPLIED, EDIT_INTENT_INDENT_LIST_ITEM,
+    EDIT_INTENT_INSERT_PARAGRAPH_BREAK, EDIT_INTENT_OUTDENT_LIST_ITEM,
     EDIT_INTENT_RECEIPT_HAS_COMMIT, EDIT_INTENT_RECEIPT_SEMANTIC_BYTES,
     EDIT_INTENT_TOGGLE_TASK_CHECKED, EDIT_PRESENTATION_CONTINUE_LIST, EDIT_PRESENTATION_EXIT_LIST,
+    EDIT_PRESENTATION_INDENT_LIST, EDIT_PRESENTATION_OUTDENT_LIST,
     EDIT_PRESENTATION_TOGGLE_TASK_CHECKED, EDIT_PROFILE_FLARK_V1,
     SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES, SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT,
     SOURCE_TRANSACTION_RECEIPT_STAGED_BYTES,
@@ -415,6 +417,101 @@ fn semantic_edit_is_one_commit_with_required_history_and_recoverable_terminal() 
         read_source(session, 4, after_second.len() + 1),
         b"- one\n\n\n- two\nx"
     );
+    close_session(session);
+}
+
+#[test]
+fn list_indent_and_outdent_are_receipted_anchor_stable_transactions() {
+    let initial = b"- parent\n- child\n";
+    let session = open_session(initial, 454);
+    pump_to_ready(session, 1);
+    let selection = create_anchor(session, 1, SOURCE_BYTE, 16, DOWNSTREAM);
+    let mut request = edit_intent_request(session, 1, selection, 1, 0x1ADE17);
+    request.intent = EDIT_INTENT_INDENT_LIST_ITEM;
+    let mut output = vec![0_u8; size_of::<EditIntentReceiptV1>() + 4096];
+    let mut outcome = Outcome::default();
+
+    assert_eq!(
+        flark_v4_edit_intent_v1(
+            &request,
+            output.as_mut_ptr(),
+            output.len() as u64,
+            &mut outcome,
+        ),
+        StatusCode::Ok as u32
+    );
+    let indented = unsafe {
+        output
+            .as_ptr()
+            .cast::<EditIntentReceiptV1>()
+            .read_unaligned()
+    };
+    assert_eq!(
+        indented.semantic_disposition,
+        EDIT_INTENT_DISPOSITION_APPLIED
+    );
+    assert_eq!(
+        indented.presentation_transition,
+        EDIT_PRESENTATION_INDENT_LIST
+    );
+    assert_eq!(
+        indented.base_byte_range,
+        SourceRange {
+            start_byte: 9,
+            end_byte: 9
+        }
+    );
+    assert_eq!(indented.result_selection_utf16, 18);
+    assert_eq!(
+        &output[size_of::<EditIntentReceiptV1>()..size_of::<EditIntentReceiptV1>() + 2],
+        b"  "
+    );
+    assert_eq!(resolve_anchor(session, selection, 2, SOURCE_BYTE), 18);
+    assert_eq!(
+        read_source(session, 2, initial.len() + 2),
+        b"- parent\n  - child\n"
+    );
+
+    output.fill(0);
+    request.expected_revision = 2;
+    request.logical_edit_id = 2;
+    request.request_digest = 0x0A7DE17;
+    request.acknowledge_previous_logical_edit_id = 1;
+    request.selection_generation = 2;
+    request.intent = EDIT_INTENT_OUTDENT_LIST_ITEM;
+    assert_eq!(
+        flark_v4_edit_intent_v1(
+            &request,
+            output.as_mut_ptr(),
+            output.len() as u64,
+            &mut outcome,
+        ),
+        StatusCode::Ok as u32
+    );
+    let outdented = unsafe {
+        output
+            .as_ptr()
+            .cast::<EditIntentReceiptV1>()
+            .read_unaligned()
+    };
+    assert_eq!(
+        outdented.semantic_disposition,
+        EDIT_INTENT_DISPOSITION_APPLIED
+    );
+    assert_eq!(
+        outdented.presentation_transition,
+        EDIT_PRESENTATION_OUTDENT_LIST
+    );
+    assert_eq!(
+        outdented.base_byte_range,
+        SourceRange {
+            start_byte: 9,
+            end_byte: 11
+        }
+    );
+    assert_eq!(outdented.result_selection_utf16, 16);
+    assert_eq!(resolve_anchor(session, selection, 3, SOURCE_BYTE), 16);
+    assert_eq!(read_source(session, 3, initial.len()), initial);
     close_session(session);
 }
 

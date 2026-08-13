@@ -1094,6 +1094,27 @@ transient collapsed selection first. Handles, magnifier, menus, Apple floating
 cursor behavior, whitespace tailoring, and physical mobile behavior remain
 separate platform work.
 
+ABI 4.24 makes editor-created empty paragraphs an explicit authoritative
+lineage. A nonempty paragraph Return retains the two source line endings needed
+for a distinct Markdown paragraph; each further Return contributes exactly one
+visible empty row, and Backspace reverses one command at a time even while
+parsing is pending. Core maps the receipt to either a split, retained gap, or
+merge without asking Flutter to count line endings. The retained prior contexts
+share immutable state, so repeated blank-row commands do not copy the complete
+lineage on every edit.
+
+Literal syntax characters now use a separate presentation-only provisional
+surface when parser continuity conservatively declines the edit. It may splice
+one bounded exact source run and retain the surrounding source-mapped styles
+until recertification, but it is never semantic authority and cannot admit a
+Markdown command. This prevents a lone `*` from flashing an entire raw row
+without teaching Flutter delimiter semantics. The render surface also aligns
+its bounded 256-unit layout tiles to actual visual-line boundaries: a tile cut
+can no longer appear as a newline, while giant-line virtualization and
+grapheme-safe cuts remain bounded. Portable mounted regressions pin the blank
+paragraph and syntax-character cases; a render-object regression pins the exact
+257-unit boundary reported during dogfood.
+
 ### H5 — hardening and later architecture
 
 Qualify memory envelopes, fault recovery, giant-line raster behavior, GFM and

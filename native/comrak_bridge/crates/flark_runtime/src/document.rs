@@ -32,8 +32,8 @@ use flark_parser::{
 
 use crate::edit_intent::{
     resolve_document_edit_intent_v1, DocumentBlockQuoteOutdent, DocumentEditLineEnding,
-    DocumentListOutdent, DocumentParagraphMerge, DocumentSimpleEditContext, DocumentSimpleEditRow,
-    DocumentTaskCheck,
+    DocumentListIndent, DocumentListOutdent, DocumentParagraphMerge, DocumentSimpleEditContext,
+    DocumentSimpleEditRow, DocumentTaskCheck,
 };
 use crate::{
     DocumentEditIntentDispositionV1, DocumentEditIntentReceiptV1, DocumentEditIntentV1,
@@ -213,8 +213,11 @@ pub enum DocumentViewportRowPresentation {
         prefix_end_byte: u64,
         prefix_start_utf16: u64,
         prefix_end_utf16: u64,
+        item_end_byte: u64,
+        item_end_utf16: u64,
         nesting_depth: u8,
         marker_offset: u8,
+        item_padding: u8,
         container_widths: u64,
         container_count: u8,
         marker_column: u8,
@@ -720,7 +723,7 @@ impl DocumentSession {
             .as_ref()
             .filter(|context| context.revision == expected_revision)
             .cloned()
-            .or_else(|| self.capture_ready_edit_context(range.start))
+            .or_else(|| self.capture_ready_edit_context(range.start, false))
             .or_else(|| {
                 (!parser_is_ready)
                     .then(|| self.capture_exact_edit_context(range.start))
@@ -1070,9 +1073,25 @@ impl DocumentSession {
                 context.revision == expected_revision
                     && target_byte >= context.editable_bytes.start
                     && target_byte <= context.editable_bytes.end
+                    && (intent != DocumentEditIntentV1::IndentListItem
+                        || matches!(
+                            context.row,
+                            DocumentSimpleEditRow::ListItem {
+                                starts_list: true,
+                                ..
+                            } | DocumentSimpleEditRow::ListItem {
+                                indent: Some(_),
+                                ..
+                            }
+                        ))
             })
             .cloned()
-            .or_else(|| self.capture_ready_edit_context(target_byte))
+            .or_else(|| {
+                self.capture_ready_edit_context(
+                    target_byte,
+                    intent == DocumentEditIntentV1::IndentListItem,
+                )
+            })
             .or_else(|| {
                 (!parser_is_ready)
                     .then(|| self.capture_exact_edit_context(target_byte))
@@ -1169,13 +1188,18 @@ impl DocumentSession {
     fn capture_ready_edit_context(
         &mut self,
         selection_byte: usize,
+        include_list_indent: bool,
     ) -> Option<DocumentSimpleEditContext> {
         if selection_byte > self.source_byte_len() {
             return None;
         }
-        let requested_start = self
+        let ordinary_requested_start = self
             .snapped_to_scalar_boundary(selection_byte.saturating_sub(16))
             .ok()?;
+        let list_indent_requested_start = include_list_indent
+            .then(|| self.bounded_physical_line_window_start(selection_byte, 32, 4 * 1024))
+            .flatten();
+        let requested_start = list_indent_requested_start.unwrap_or(ordinary_requested_start);
         // A parser-authored zero-length row is positioned after its complete
         // physical line ending. Include both bytes of CRLF when the caret is
         // immediately before that ending.
@@ -1193,14 +1217,22 @@ impl DocumentSession {
             session,
             revision,
             requested_start..requested_end,
-            8,
+            if list_indent_requested_start.is_some() {
+                40
+            } else {
+                8
+            },
         )
         .ok()?;
-        let current = viewport.rows.iter().find(|row| {
-            row.editable_range.as_ref().is_some_and(|range| {
-                selection_byte >= range.start as usize && selection_byte <= range.end as usize
+        let current = viewport
+            .rows
+            .iter()
+            .find(|row| {
+                row.editable_range.as_ref().is_some_and(|range| {
+                    selection_byte >= range.start as usize && selection_byte <= range.end as usize
+                })
             })
-        });
+            .cloned();
         let Some(current) = current else {
             // Empty structural markers may have no renderable certified row.
             // Admit only an exact, isolated empty construct in that case.
@@ -1217,7 +1249,9 @@ impl DocumentSession {
                     DocumentSimpleEditRow::AtxHeading { empty: true, .. }
                         | DocumentSimpleEditRow::BlockQuote { empty: true, .. }
                         | DocumentSimpleEditRow::ListItem { empty: true, .. }
-                )
+                ) || (matches!(context.row, DocumentSimpleEditRow::Plain)
+                    && context.editable_bytes.is_empty()
+                    && context.paragraph_merge.is_some())
             });
         };
         if matches!(
@@ -1231,7 +1265,7 @@ impl DocumentSession {
         ) && current.edit_capability == DocumentViewportRowEditCapability::ProjectedReserved
         {
             return self.capture_projected_block_quote_edit_context(
-                current,
+                &current,
                 selection_byte,
                 viewport.revision,
             );
@@ -1244,7 +1278,7 @@ impl DocumentSession {
         ) && current.edit_capability != DocumentViewportRowEditCapability::Unavailable
         {
             return self.capture_projected_indented_code_edit_context(
-                current,
+                &current,
                 selection_byte,
                 viewport.revision,
             );
@@ -1310,8 +1344,11 @@ impl DocumentSession {
                 prefix_end_byte,
                 prefix_start_utf16,
                 prefix_end_utf16,
+                item_end_byte,
+                item_end_utf16,
                 nesting_depth,
                 marker_offset,
+                item_padding,
                 container_widths,
                 container_count,
                 marker_column,
@@ -1345,12 +1382,29 @@ impl DocumentSession {
                     }
                     None => None,
                 };
+                let complete_item_is_active_row = item_end_byte == current.source_range.end
+                    && item_end_utf16 == current.source_utf16_range.end;
+                let indent = (include_list_indent && complete_item_is_active_row)
+                    .then(|| {
+                        self.capture_list_indent(
+                            &viewport.rows,
+                            current.ordinal,
+                            &prefix_bytes,
+                            &prefix_utf16,
+                            nesting_depth,
+                            marker_offset,
+                            marker_column,
+                            starts_list,
+                        )
+                    })
+                    .flatten();
                 DocumentSimpleEditRow::ListItem {
                     marker,
                     prefix_bytes,
                     prefix_utf16,
                     nesting_depth,
                     marker_offset,
+                    item_padding,
                     container_widths,
                     container_count,
                     marker_column,
@@ -1358,6 +1412,7 @@ impl DocumentSession {
                     task_checked,
                     task_check,
                     empty: current.kind == 14 || editable_bytes.is_empty(),
+                    indent,
                     outdent,
                 }
             }
@@ -1416,6 +1471,107 @@ impl DocumentSession {
             ending,
             row,
             paragraph_merge,
+        })
+    }
+
+    /// Chooses a source window containing at most `maximum_previous_lines`
+    /// complete physical predecessors of the caret line. This is source
+    /// geometry only; Markdown ancestry still comes exclusively from the
+    /// parser-authored rows returned for the window.
+    fn bounded_physical_line_window_start(
+        &self,
+        selection_byte: usize,
+        maximum_previous_lines: usize,
+        maximum_source_bytes: usize,
+    ) -> Option<usize> {
+        let window_start = self
+            .snapped_to_scalar_boundary(selection_byte.saturating_sub(maximum_source_bytes))
+            .ok()?;
+        let source = self.source_bytes(window_start..selection_byte).ok()?;
+        let mut line_starts = Vec::with_capacity(maximum_previous_lines.saturating_add(1));
+        if window_start == 0 {
+            line_starts.push(0);
+        }
+        let mut cursor = 0;
+        while cursor < source.len() {
+            match source[cursor] {
+                b'\r' if source.get(cursor + 1) == Some(&b'\n') => cursor += 2,
+                b'\r' | b'\n' => cursor += 1,
+                _ => {
+                    cursor += 1;
+                    continue;
+                }
+            }
+            line_starts.push(window_start + cursor);
+        }
+        let current_line_start = *line_starts.last()?;
+        if current_line_start > selection_byte {
+            return None;
+        }
+        let retained = maximum_previous_lines.saturating_add(1);
+        Some(line_starts[line_starts.len().saturating_sub(retained)])
+    }
+
+    /// Certifies the one insertion width that makes the current list item a
+    /// child of its preceding sibling. `starts_list` is the parser's proof
+    /// that no such sibling exists; every other absence means the bounded
+    /// ancestry window was insufficient and the command must fail closed.
+    #[allow(clippy::too_many_arguments)]
+    fn capture_list_indent(
+        &self,
+        rows: &[DocumentViewportRow],
+        current_ordinal: u64,
+        prefix_bytes: &Range<usize>,
+        prefix_utf16: &Range<usize>,
+        nesting_depth: u8,
+        marker_offset: u8,
+        marker_column: u8,
+        starts_list: bool,
+    ) -> Option<DocumentListIndent> {
+        if starts_list {
+            return None;
+        }
+        let mut preceding_padding = None;
+        for row in rows
+            .iter()
+            .rev()
+            .filter(|row| row.ordinal < current_ordinal)
+        {
+            match row.presentation {
+                DocumentViewportRowPresentation::ListItem {
+                    nesting_depth: preceding_depth,
+                    item_padding,
+                    simple_continuation: true,
+                    ..
+                } if preceding_depth == nesting_depth => {
+                    preceding_padding = Some(item_padding);
+                    break;
+                }
+                DocumentViewportRowPresentation::ListItem {
+                    nesting_depth: preceding_depth,
+                    ..
+                } if preceding_depth < nesting_depth => return None,
+                _ => {}
+            }
+        }
+        let width = preceding_padding.filter(|width| (2..=14).contains(width))?;
+        let container_column = marker_column.checked_sub(marker_offset)?;
+        let byte_offset = prefix_bytes
+            .start
+            .checked_sub(usize::from(container_column))?;
+        let utf16_offset = prefix_utf16
+            .start
+            .checked_sub(usize::from(container_column))?;
+        let indentation = self.source_bytes(byte_offset..prefix_bytes.start).ok()?;
+        if indentation.len() != usize::from(container_column)
+            || indentation.iter().any(|byte| *byte != b' ')
+        {
+            return None;
+        }
+        Some(DocumentListIndent {
+            byte_offset,
+            utf16_offset,
+            width,
         })
     }
 
@@ -1916,6 +2072,7 @@ impl DocumentSession {
                 prefix,
                 content,
                 marker_offset,
+                item_padding,
                 task_checked,
                 empty,
             } => {
@@ -1938,6 +2095,7 @@ impl DocumentSession {
                         prefix_utf16,
                         nesting_depth: 1,
                         marker_offset,
+                        item_padding,
                         container_widths: 0,
                         container_count: 0,
                         marker_column: marker_offset,
@@ -1945,6 +2103,7 @@ impl DocumentSession {
                         task_checked,
                         task_check,
                         empty,
+                        indent: None,
                         outdent: None,
                     },
                     editable,
@@ -2015,7 +2174,19 @@ impl DocumentSession {
         let editable_utf16 = lease.utf16_offset_for_byte(editable_bytes.start).ok()?
             ..lease.utf16_offset_for_byte(editable_bytes.end).ok()?;
         let paragraph_merge = matches!(row, DocumentSimpleEditRow::Plain)
-            .then(|| exact_plain_paragraph_merge(&lease, &window, window_start, local_line_start))
+            .then(|| {
+                exact_plain_paragraph_merge(&lease, &window, window_start, local_line_start)
+                    .or_else(|| {
+                        editable_bytes.is_empty().then(|| {
+                            exact_empty_plain_backspace(
+                                &lease,
+                                &window,
+                                window_start,
+                                local_line_start,
+                            )
+                        })?
+                    })
+            })
             .flatten();
         Some(DocumentSimpleEditContext {
             revision: self.revision(),
@@ -2067,6 +2238,7 @@ impl DocumentSession {
             previous_source_utf16,
             separator_bytes,
             separator_utf16,
+            restore_context: None,
         })
     }
 
@@ -2772,6 +2944,51 @@ fn exact_plain_paragraph_merge(
         previous_source_utf16,
         separator_bytes,
         separator_utf16,
+        restore_context: None,
+    })
+}
+
+fn exact_empty_plain_backspace(
+    lease: &SourceSnapshotLease,
+    window: &[u8],
+    window_start: usize,
+    current_line_start: usize,
+) -> Option<DocumentParagraphMerge> {
+    let separator_start = previous_line_ending_start(window, current_line_start)?;
+    let previous_line_start = window[..separator_start]
+        .iter()
+        .rposition(|byte| matches!(byte, b'\r' | b'\n'))
+        .map_or(0, |index| index + 1);
+    if previous_line_start == 0 && window_start != 0 {
+        return None;
+    }
+    if !matches!(
+        classify_m11_simple_edit_line(
+            &window[previous_line_start..separator_start],
+            window_start + previous_line_start == 0,
+        )
+        .kind,
+        M11SimpleEditLineKind::Plain
+    ) {
+        return None;
+    }
+    let previous_source_bytes =
+        window_start + previous_line_start..window_start + current_line_start;
+    let separator_bytes = window_start + separator_start..window_start + current_line_start;
+    let previous_source_utf16 = lease
+        .utf16_offset_for_byte(previous_source_bytes.start)
+        .ok()?
+        ..lease
+            .utf16_offset_for_byte(previous_source_bytes.end)
+            .ok()?;
+    let separator_utf16 = lease.utf16_offset_for_byte(separator_bytes.start).ok()?
+        ..lease.utf16_offset_for_byte(separator_bytes.end).ok()?;
+    Some(DocumentParagraphMerge {
+        previous_source_bytes,
+        previous_source_utf16,
+        separator_bytes,
+        separator_utf16,
+        restore_context: None,
     })
 }
 
@@ -3070,8 +3287,11 @@ fn document_viewport_row(
             prefix_end_byte,
             prefix_start_utf16,
             prefix_end_utf16,
+            item_end_byte,
+            item_end_utf16,
             nesting_depth,
             marker_offset,
+            item_padding,
             container_widths,
             container_count,
             marker_column,
@@ -3101,8 +3321,11 @@ fn document_viewport_row(
             prefix_end_byte,
             prefix_start_utf16,
             prefix_end_utf16,
+            item_end_byte,
+            item_end_utf16,
             nesting_depth,
             marker_offset,
+            item_padding,
             container_widths,
             container_count,
             marker_column,

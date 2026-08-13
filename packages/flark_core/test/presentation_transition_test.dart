@@ -20,6 +20,37 @@ void main() {
     expect(transition?.surface, isNull);
   });
 
+  test('empty successor split extends the existing gap by one row', () {
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.splitParagraph,
+        baseStart: 4,
+        baseEnd: 4,
+        replacement: '\n',
+      ),
+      activeOrdinal: 7,
+    );
+
+    expect(transition?.gap?.rowOrdinal, 7);
+    expect(transition?.gap?.rowEndUtf16, 4);
+  });
+
+  test('partial blank paragraph Backspace retains the prior gap', () {
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.retainParagraphGap,
+        baseStart: 5,
+        baseEnd: 6,
+        replacement: '',
+      ),
+      activeOrdinal: -2,
+      priorGapPending: true,
+    );
+
+    expect(transition?.retainPriorGap, isTrue);
+    expect(transition?.clearPriorGap, isFalse);
+  });
+
   test('paragraph merge preserves mapped styling without Flutter', () {
     final left = _row(
       ordinal: 4,
@@ -123,8 +154,9 @@ void main() {
   test('list outdent removes one certified visual indentation level', () {
     final nested = _row(
       ordinal: 3,
-      sourceStart: 4,
+      sourceStart: 0,
       sourceEnd: 10,
+      globalStart: 4,
       text: 'child',
       leadingText: '  - ',
       runs: const [
@@ -151,8 +183,46 @@ void main() {
 
     final presentation = transition?.surface?.presentation;
     expect(presentation?.leadingText, '- ');
-    expect(presentation?.sourceUtf16.start, 2);
+    expect(presentation?.sourceUtf16.start, 0);
+    expect(presentation?.globalUtf16Start, 2);
     expect(presentation?.runs.single.sourceUtf16Start, 2);
+  });
+
+  test('list indent adds the receipt-certified visual indentation level', () {
+    final item = _row(
+      ordinal: 3,
+      sourceStart: 0,
+      sourceEnd: 8,
+      globalStart: 2,
+      text: 'child',
+      leadingText: '- ',
+      runs: const [
+        FlarkCorePresentationRun(
+          text: 'child',
+          sourceUtf16Start: 2,
+          sourceUtf16End: 7,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
+
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.indentList,
+        baseStart: 0,
+        baseEnd: 0,
+        replacement: '  ',
+      ),
+      activeOrdinal: 3,
+      active: item,
+    );
+
+    final presentation = transition?.surface?.presentation;
+    expect(presentation?.leadingText, '  - ');
+    expect(presentation?.sourceUtf16.start, 0);
+    expect(presentation?.globalUtf16Start, 4);
+    expect(presentation?.runs.single.sourceUtf16Start, 4);
   });
 
   test('deeper list outdent preserves preceding visual indentation', () {
@@ -185,7 +255,7 @@ void main() {
     );
 
     expect(transition?.surface?.presentation.leadingText, '  - ');
-    expect(transition?.surface?.presentation.sourceUtf16.start, 4);
+    expect(transition?.surface?.presentation.sourceUtf16.start, 2);
   });
 
   test('projected quote Return hides the new certified prefix', () {
@@ -551,12 +621,13 @@ final class _FakeDartFrontend {
     required int activeOrdinal,
     FlarkCorePresentationRow? active,
     FlarkCorePresentationRow? preceding,
+    bool priorGapPending = false,
   }) => resolveCommittedPresentationTransitionV1(
     receipt: receipt,
     priorActiveOrdinal: activeOrdinal,
     activeRow: active,
     precedingRow: preceding,
-    priorGapPending: false,
+    priorGapPending: priorGapPending,
   );
 }
 

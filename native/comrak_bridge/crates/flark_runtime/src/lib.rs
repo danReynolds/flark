@@ -542,6 +542,7 @@ pub const CAPABILITY_BITS: &[(&str, u64)] = &[
     ("NESTED_BLOCK_QUOTE_EDITING_V1", 1 << 21),
     ("SEMANTIC_ACTIONS_V1", 1 << 22),
     ("STAGED_SOURCE_TRANSACTIONS_V1", 1 << 23),
+    ("LIST_INDENTATION_V1", 1 << 24),
 ];
 
 pub const MAX_SMALL_EDIT_BYTES: u32 = 4096;

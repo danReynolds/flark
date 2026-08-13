@@ -63,8 +63,17 @@ pub enum M11RecursiveGreenRowPresentation {
         prefix_end_byte: u64,
         prefix_start_utf16: u64,
         prefix_end_utf16: u64,
+        /// Exact end of the complete parser-owned item, including nested
+        /// descendants. Indentation may use a one-line splice only when this
+        /// equals the active renderable row end.
+        item_end_byte: u64,
+        item_end_utf16: u64,
         nesting_depth: u8,
         marker_offset: u8,
+        /// Parser-authored CommonMark width of this item marker plus its
+        /// following padding. A following sibling must use this exact width
+        /// when it becomes this item's child.
+        item_padding: u8,
         container_widths: u64,
         container_count: u8,
         marker_column: u8,
@@ -347,9 +356,12 @@ fn list_item_row_presentation(
         prefix_end_byte: prefix_end,
         prefix_start_utf16,
         prefix_end_utf16,
+        item_end_byte: item.physical_range().end,
+        item_end_utf16: item.physical_utf16_range().end,
         nesting_depth,
         marker_offset: u8::try_from(marker_offset)
             .expect("validated Item marker offsets fit in u8"),
+        item_padding: u8::try_from(padding).expect("validated Item padding fits in u8"),
         container_widths,
         container_count,
         marker_column,

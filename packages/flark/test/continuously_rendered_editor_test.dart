@@ -973,6 +973,22 @@ only incomplete or temporarily pending syntax becomes exact source locally.
         ),
       );
 
+      Future<void> settleEdits() async {
+        for (
+          var turn = 0;
+          turn < 8 && controller.pendingEdits != 0;
+          turn += 1
+        ) {
+          await tester.pump();
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump();
+        }
+        expect(controller.pendingEdits, 0);
+        expect(controller.lastError, isNull);
+      }
+
       final boundary = source.indexOf('\n\n##');
       final paragraph = controller.rows.firstWhere(
         (row) => row.kind == 5 && row.editableUtf16!.end == boundary,
@@ -987,15 +1003,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       expect(controller.visibleSource, source);
       expect(controller.pendingEdits, 1);
       await tester.pump();
-      for (var turn = 0; turn < 4 && controller.pendingEdits != 0; turn += 1) {
-        await tester.pump();
-        await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 10)),
-        );
-        await tester.pump();
-      }
-      expect(controller.pendingEdits, 0);
-      expect(controller.lastError, isNull);
+      await settleEdits();
       await tester.pump();
 
       RenderFlarkSurface surface() =>
@@ -1023,6 +1031,38 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       expect(controller.inputValue.text, '\n');
       expect(controller.inputValue.selection.extentOffset, 0);
 
+      final afterFirstReturn = source.replaceRange(boundary, boundary, '\n\n');
+      expect(controller.visibleSource, afterFirstReturn);
+      final firstNeutralCount = surface().debugPaintedPlan
+          .where((entry) => entry.neutral)
+          .length;
+
+      controller.insertNewline();
+      await settleEdits();
+      await tester.runAsync(controller.continueParsing);
+      await tester.pump();
+      final afterSecondReturn = afterFirstReturn.replaceRange(
+        boundary + 2,
+        boundary + 2,
+        '\n',
+      );
+      expect(controller.visibleSource, afterSecondReturn);
+      expect(
+        surface().debugPaintedPlan.where((entry) => entry.neutral).length,
+        firstNeutralCount + 1,
+      );
+
+      controller.deleteBackward();
+      await settleEdits();
+      await tester.runAsync(controller.continueParsing);
+      await tester.pump();
+      expect(controller.visibleSource, afterFirstReturn);
+      expect(controller.globalCaretOffset, boundary + 2);
+      expect(
+        surface().debugPaintedPlan.where((entry) => entry.neutral).length,
+        firstNeutralCount,
+      );
+
       final beforeTyping = controller.inputValue;
       controller.applyDeltas([
         TextEditingDeltaInsertion(
@@ -1044,14 +1084,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       );
       expect(pendingTextBlock.text, 'x\n');
 
-      for (var turn = 0; turn < 4 && controller.pendingEdits != 0; turn += 1) {
-        await tester.pump();
-        await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 10)),
-        );
-        await tester.pump();
-      }
-      expect(controller.pendingEdits, 0);
+      await settleEdits();
       await tester.runAsync(controller.continueParsing);
       await tester.pump();
       final activeTexts = controller.rows
@@ -1059,7 +1092,14 @@ only incomplete or temporarily pending syntax becomes exact source locally.
           .where((row) => row.active)
           .map((row) => row.text)
           .toList(growable: false);
-      expect(activeTexts, contains('x'));
+      expect(
+        activeTexts,
+        contains('x'),
+        reason:
+            'caret=${controller.globalCaretOffset}; '
+            'input=${controller.inputValue}; '
+            'rows=${controller.rows.map((row) => (row.ordinal, controller.surfaceRow(row).text, controller.surfaceRow(row).active)).toList()}',
+      );
       expect(
         controller.surfaceRow(controller.rows.first).text,
         isNot(contains('**')),
@@ -1070,7 +1110,7 @@ only incomplete or temporarily pending syntax becomes exact source locally.
   );
 
   test(
-    'syntax-shaped edits fall back to exact local source',
+    'syntax-shaped edits keep certified inline surroundings stable',
     () async {
       const source = '**bold** after\n';
       final controller = await FlarkEditorController.open(
@@ -1095,8 +1135,15 @@ only incomplete or temporarily pending syntax becomes exact source locally.
         ),
       ]);
 
-      expect(controller.surfaceRow(row).text, contains('**'));
-      expect(controller.surfaceRow(row).text, contains('bo*ld'));
+      final pending = controller.surfaceRow(row);
+      expect(pending.text, 'bo*ld after');
+      expect(pending.text, isNot(contains('**')));
+      expect(
+        pending.runs.where((run) => run.text.contains('bo*ld')).single.styles,
+        contains(FlarkSurfaceInlineStyle.strong),
+      );
+      await _settle(controller);
+      expect(controller.surfaceRow(controller.rows.first).text, 'bo*ld after');
     },
     skip: libraryPath == null,
   );

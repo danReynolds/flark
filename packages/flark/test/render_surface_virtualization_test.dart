@@ -106,6 +106,43 @@ void main() {
     skip: libraryPath == null,
   );
 
+  testWidgets(
+    'an internal fragment boundary does not become a visible newline',
+    (tester) async {
+      final source = '${'a' * 256}h\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 640,
+            height: 500,
+            child: FlarkEditor(controller: controller),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final surface = tester.renderObject<RenderFlarkSurface>(
+        find.byType(FlarkRenderSurfaceWidget),
+      );
+      final beforeBoundary = surface.debugLocalPositionForSourceUtf16(255);
+      final afterBoundary = surface.debugLocalPositionForSourceUtf16(256);
+      expect(beforeBoundary, isNotNull);
+      expect(afterBoundary, isNotNull);
+      expect(afterBoundary!.dy, closeTo(beforeBoundary!.dy, 0.01));
+      expect(afterBoundary.dx, greaterThan(beforeBoundary.dx));
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
   testWidgets('fragment cuts land on grapheme-cluster boundaries', (
     tester,
   ) async {

@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "syntax-character-projection-stability",
+  "description": "Typing Markdown-significant punctuation keeps certified inline surroundings marker-free while the result is re-certified.",
+  "initialSource": "Before **bold** after\n",
+  "activation": {
+    "needle": "after",
+    "occurrence": 0,
+    "utf16OffsetInNeedle": 3
+  },
+  "steps": [
+    {
+      "type": "typeText",
+      "text": "*",
+      "intervalMs": 0
+    },
+    {
+      "type": "waitForIdle"
+    }
+  ],
+  "schedules": [
+    {
+      "id": "immediate"
+    }
+  ],
+  "expect": {
+    "source": "Before **bold** aft*er\n",
+    "caretUtf16": 20,
+    "resyncCount": 0,
+    "faulted": false,
+    "forbiddenSurfaceSubstrings": ["**", "<empty>"],
+    "paintedSurfaceNeverContains": ["**", "<empty>"]
+  }
+}

@@ -636,6 +636,21 @@ final class _FlarkEditorState extends State<FlarkEditor>
             ':control=${HardwareKeyboard.instance.isControlPressed}'
             ':shift=${HardwareKeyboard.instance.isShiftPressed}',
           );
+          if ((event is KeyDownEvent || event is KeyRepeatEvent) &&
+              event.logicalKey == LogicalKeyboardKey.tab &&
+              !HardwareKeyboard.instance.isMetaPressed &&
+              !HardwareKeyboard.instance.isControlPressed &&
+              !HardwareKeyboard.instance.isAltPressed &&
+              widget.controller.handleListIndent(
+                outdent: HardwareKeyboard.instance.isShiftPressed,
+              )) {
+            widget.debugInputEventObserver?.call(
+              HardwareKeyboard.instance.isShiftPressed
+                  ? 'shortcut:outdent-list'
+                  : 'shortcut:indent-list',
+            );
+            return KeyEventResult.handled;
+          }
           return KeyEventResult.ignored;
         },
         child: MouseRegion(

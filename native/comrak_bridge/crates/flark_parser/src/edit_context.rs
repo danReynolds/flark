@@ -36,6 +36,7 @@ pub enum M11SimpleEditLineKind {
         prefix: Range<usize>,
         content: Range<usize>,
         marker_offset: u8,
+        item_padding: u8,
         task_checked: Option<bool>,
         empty: bool,
     },
@@ -149,12 +150,23 @@ pub fn classify_m11_simple_edit_line(source: &[u8], strip_bom: bool) -> M11Simpl
                 } else {
                     item.empty
                 };
+                let item_padding = item
+                    .continuation_prefix
+                    .end
+                    .saturating_sub(item.opening_indent);
+                let Ok(item_padding) = u8::try_from(item_padding) else {
+                    return unsupported(ending, content_end);
+                };
+                if !(2..=14).contains(&item_padding) {
+                    return unsupported(ending, content_end);
+                }
                 return M11SimpleEditLine {
                     kind: M11SimpleEditLineKind::ListItem {
                         marker,
                         prefix: item.hidden_prefix.start..prefix_end,
                         content: content_start..item.content.end,
                         marker_offset: u8::try_from(item.opening_indent).unwrap_or(u8::MAX),
+                        item_padding,
                         task_checked,
                         empty,
                     },

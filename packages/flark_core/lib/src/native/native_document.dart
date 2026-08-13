@@ -107,6 +107,8 @@ const _editIntentInsertParagraphBreak = 1;
 const _editIntentDeleteBackward = 2;
 const _editIntentDeleteForward = 3;
 const _editIntentToggleTaskChecked = 4;
+const _editIntentIndentListItem = 5;
+const _editIntentOutdentListItem = 6;
 const _editIntentApplied = 1;
 const _editIntentHandledNoChange = 2;
 const _editIntentNotApplicable = 3;
@@ -137,16 +139,18 @@ const _editPresentationLiftIndentedCode = 14;
 const _editPresentationDeleteThematicBreak = 15;
 const _editPresentationOutdentBlockQuote = 16;
 const _editPresentationToggleTaskChecked = 17;
+const _editPresentationIndentList = 18;
+const _editPresentationRetainParagraphGap = 19;
 const _bulkCommitWorkUnits = 1;
 const _resultPayloadBytes = 64 * 1024;
 const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 22;
+const _abiMinor = 24;
 // Every capability through this ABI minor is required by the safe Core
 // boundary; negotiation must fail rather than silently losing an edit lane.
-const _requiredCapabilityBits = 0xffffff;
+const _requiredCapabilityBits = 0x1ffffff;
 
 final class FlarkNativeException implements Exception {
   const FlarkNativeException(this.operation, this.status, [this.detail = 0]);
@@ -183,6 +187,8 @@ enum FlarkNativeEditIntentV1 {
   deleteBackward,
   deleteForward,
   toggleTaskChecked,
+  indentListItem,
+  outdentListItem,
 }
 
 enum FlarkNativeEditIntentDispositionV1 {
@@ -211,6 +217,8 @@ enum FlarkNativeEditPresentationTransitionV1 {
   deleteThematicBreak,
   outdentBlockQuote,
   toggleTaskChecked,
+  indentList,
+  retainParagraphGap,
 }
 
 final class FlarkNativeEditIntentReceiptV1 {
@@ -1080,6 +1088,8 @@ final class FlarkNativeDocument {
           FlarkNativeEditIntentV1.deleteForward => _editIntentDeleteForward,
           FlarkNativeEditIntentV1.toggleTaskChecked =>
             _editIntentToggleTaskChecked,
+          FlarkNativeEditIntentV1.indentListItem => _editIntentIndentListItem,
+          FlarkNativeEditIntentV1.outdentListItem => _editIntentOutdentListItem,
         }
         ..selectionAffinity = _affinityDownstream
         ..selectionDirection = 0
@@ -1162,6 +1172,10 @@ final class FlarkNativeDocument {
           FlarkNativeEditPresentationTransitionV1.outdentBlockQuote,
         _editPresentationToggleTaskChecked =>
           FlarkNativeEditPresentationTransitionV1.toggleTaskChecked,
+        _editPresentationIndentList =>
+          FlarkNativeEditPresentationTransitionV1.indentList,
+        _editPresentationRetainParagraphGap =>
+          FlarkNativeEditPresentationTransitionV1.retainParagraphGap,
         _ => throw FlarkNativeException(
           'edit_intent_v1',
           _internalFault,

@@ -100,19 +100,22 @@ final class FlarkCoreCommittedPresentationTransitionV1 {
     List<FlarkCoreCommittedPresentationSurfaceV1> surfaces = const [],
     List<int> removedRowOrdinals = const [],
     this.clearPriorGap = false,
+    this.retainPriorGap = false,
   }) : surfaces = List.unmodifiable(surfaces),
        removedRowOrdinals = List.unmodifiable(removedRowOrdinals),
        assert(
          gap != null ||
              surfaces.isNotEmpty ||
              removedRowOrdinals.isNotEmpty ||
-             clearPriorGap,
+             clearPriorGap ||
+             retainPriorGap,
        );
 
   final FlarkCoreCommittedPresentationGapV1? gap;
   final List<FlarkCoreCommittedPresentationSurfaceV1> surfaces;
   final List<int> removedRowOrdinals;
   final bool clearPriorGap;
+  final bool retainPriorGap;
 
   /// Compatibility view for transitions that still publish exactly one row.
   FlarkCoreCommittedPresentationSurfaceV1? get surface =>
@@ -151,7 +154,7 @@ resolveCommittedPresentationTransitionV1({
       final ordinal = priorActiveOrdinal;
       final lineEndingLength = switch (receipt.presentationTransition) {
         FlarkCoreEditPresentationTransitionV1.splitParagraph =>
-          _doubledLineEndingLength(receipt.replacement),
+          _paragraphSplitRowExtension(receipt.replacement),
         FlarkCoreEditPresentationTransitionV1.continueList =>
           _leadingLineEndingLength(receipt.replacement),
         FlarkCoreEditPresentationTransitionV1.continueBlockQuote =>
@@ -172,6 +175,10 @@ resolveCommittedPresentationTransitionV1({
           rowEndUtf16: receipt.baseUtf16Start + lineEndingLength,
         ),
       );
+    case FlarkCoreEditPresentationTransitionV1.retainParagraphGap:
+      return priorGapPending
+          ? FlarkCoreCommittedPresentationTransitionV1(retainPriorGap: true)
+          : null;
     case FlarkCoreEditPresentationTransitionV1.mergeParagraph:
       if (priorGapPending || activeRow == null || precedingRow == null) {
         return FlarkCoreCommittedPresentationTransitionV1(clearPriorGap: true);
@@ -211,6 +218,42 @@ resolveCommittedPresentationTransitionV1({
           ),
         ],
       );
+    case FlarkCoreEditPresentationTransitionV1.indentList:
+      if (activeRow == null || receipt.replacement.isEmpty) return null;
+      final inserted = receipt.replacement.length;
+      if (receipt.baseUtf16Start != receipt.baseUtf16End ||
+          inserted <= 0 ||
+          receipt.replacement.codeUnits.any((unit) => unit != 0x20)) {
+        return null;
+      }
+      final runs = _mapRunsThroughCommittedSplice(activeRow.runs, receipt);
+      if (runs == null) return null;
+      final delta = _utf16Delta(receipt);
+      final source = FlarkSourceRange(
+        receipt.resultUtf16Start,
+        activeRow.sourceUtf16.end + delta,
+      );
+      return FlarkCoreCommittedPresentationTransitionV1(
+        surfaces: [
+          FlarkCoreCommittedPresentationSurfaceV1(
+            rowOrdinal: activeRow.ordinal,
+            sourceUtf16: source,
+            presentation: FlarkCorePresentationRow(
+              sourceUtf16: source,
+              leadingText: '${receipt.replacement}${activeRow.leadingText}',
+              text: activeRow.text,
+              globalUtf16Start: activeRow.globalUtf16Start + delta,
+              kind: activeRow.kind,
+              headingLevel: activeRow.headingLevel,
+              blockQuoteDepth: activeRow.blockQuoteDepth,
+              codeBlock: activeRow.codeBlock,
+              thematicBreak: activeRow.thematicBreak,
+              ordinal: activeRow.ordinal,
+              runs: runs,
+            ),
+          ),
+        ],
+      );
     case FlarkCoreEditPresentationTransitionV1.outdentList:
       if (activeRow == null || receipt.replacement.isNotEmpty) return null;
       final removed = receipt.baseUtf16End - receipt.baseUtf16Start;
@@ -219,7 +262,7 @@ resolveCommittedPresentationTransitionV1({
       if (runs == null) return null;
       final delta = _utf16Delta(receipt);
       final source = FlarkSourceRange(
-        activeRow.sourceUtf16.start + delta,
+        receipt.resultUtf16Start,
         activeRow.sourceUtf16.end + delta,
       );
       return FlarkCoreCommittedPresentationTransitionV1(
@@ -231,7 +274,7 @@ resolveCommittedPresentationTransitionV1({
               sourceUtf16: source,
               leadingText: activeRow.leadingText.substring(removed),
               text: activeRow.text,
-              globalUtf16Start: source.start,
+              globalUtf16Start: activeRow.globalUtf16Start + delta,
               kind: activeRow.kind,
               headingLevel: activeRow.headingLevel,
               blockQuoteDepth: activeRow.blockQuoteDepth,
@@ -958,7 +1001,8 @@ int _utf16Delta(FlarkCoreEditIntentReceiptV1 receipt) =>
     receipt.replacement.length -
     (receipt.baseUtf16End - receipt.baseUtf16Start);
 
-int? _doubledLineEndingLength(String replacement) => switch (replacement) {
+int? _paragraphSplitRowExtension(String replacement) => switch (replacement) {
+  '\n' || '\r' || '\r\n' => 0,
   '\n\n' || '\r\r' => 1,
   '\r\n\r\n' => 2,
   _ => null,

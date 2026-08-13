@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "id": "blank-paragraph-return-backspace",
+  "description": "Repeated Return adds one editor-owned empty row per command and Backspace removes the most recent row without losing projection.",
+  "initialSource": "alpha\n\n## next\n",
+  "activation": {
+    "needle": "alpha",
+    "occurrence": 0,
+    "utf16OffsetInNeedle": 5
+  },
+  "steps": [
+    {
+      "type": "pressReturn"
+    },
+    {
+      "type": "scheduleDelay",
+      "key": "afterFirstReturnMs"
+    },
+    {
+      "type": "pressReturn"
+    },
+    {
+      "type": "scheduleDelay",
+      "key": "afterSecondReturnMs"
+    },
+    {
+      "type": "pressBackspace"
+    },
+    {
+      "type": "waitForIdle"
+    }
+  ],
+  "schedules": [
+    {
+      "id": "immediate-successors",
+      "afterFirstReturnMs": 0,
+      "afterSecondReturnMs": 0
+    },
+    {
+      "id": "settled-successors",
+      "afterFirstReturnMs": 100,
+      "afterSecondReturnMs": 100
+    }
+  ],
+  "expect": {
+    "source": "alpha\n\n\n\n## next\n",
+    "caretUtf16": 7,
+    "resyncCount": 0,
+    "faulted": false,
+    "forbiddenSurfaceSubstrings": ["##", "<empty>"],
+    "paintedSurfaceNeverContains": ["##", "<empty>"]
+  }
+}

@@ -15,6 +15,11 @@ const _maximumNeutralPaintRows = 32;
 /// thousands of offscreen glyphs. One indivisible grapheme may exceed it.
 const _fragmentUtf16Budget = 256;
 
+/// A fragment target may be extended to the end of one visual line. This
+/// probe ceiling keeps that correction bounded even on an unusually wide
+/// surface; one indivisible grapheme may still exceed it.
+const _fragmentVisualLineProbeLimit = 2048;
+
 /// Rows starting below the viewport bottom plus this margin are not laid
 /// out; their height is estimated until scrolling materializes them.
 const _layoutOverscanPx = 400.0;
@@ -618,29 +623,12 @@ final class RenderFlarkSurface extends RenderBox {
         _skippedFragmentEstimate += skippedFragments * _estimatedRowHeight;
         break;
       }
-      var fragmentEnd = math.min(
-        text.length,
-        fragmentStart + _fragmentUtf16Budget,
+      final fragmentEnd = _visualLineAlignedFragmentEnd(
+        presentation,
+        maxWidth,
+        fragmentStart,
+        includeLeading: first,
       );
-      if (fragmentEnd < text.length) {
-        // Cut on an extended-grapheme-cluster boundary, not merely between
-        // surrogates: splitting a ZWJ sequence or a combining mark would
-        // render one cluster as two. Policy lives in the core.
-        final snapped = FlarkCoreGraphemePolicy.clusterBoundaryAtOrBefore(
-          text,
-          fragmentEnd,
-        );
-        if (snapped > fragmentStart) {
-          fragmentEnd = snapped;
-        } else {
-          // One cluster can exceed the ordinary fragment target. Keep it
-          // intact; the visible-source cap remains the hard outer bound.
-          fragmentEnd = FlarkCoreGraphemePolicy.clusterBoundaryAtOrAfter(
-            text,
-            fragmentEnd,
-          );
-        }
-      }
       final painter = _layoutText(
         presentation,
         maxWidth,
@@ -670,6 +658,90 @@ final class RenderFlarkSurface extends RenderBox {
       if (text.isEmpty) break;
     }
     return top;
+  }
+
+  /// Returns a bounded fragment cut that is also a real visual-line boundary.
+  ///
+  /// Independent [TextPainter]s are stacked vertically. Cutting at an
+  /// arbitrary 256-unit offset would therefore turn that implementation tile
+  /// into a visible newline. We probe only enough text to find the visual line
+  /// containing the target and move the cut to one of its boundaries.
+  int _visualLineAlignedFragmentEnd(
+    FlarkSurfaceRow presentation,
+    double maxWidth,
+    int fragmentStart, {
+    required bool includeLeading,
+  }) {
+    final text = presentation.text;
+    final remaining = text.length - fragmentStart;
+    if (remaining <= _fragmentUtf16Budget) return text.length;
+
+    var probeUnits = math.min(remaining, _fragmentUtf16Budget * 2);
+    while (true) {
+      var probeEnd = fragmentStart + probeUnits;
+      if (probeEnd < text.length) {
+        final snapped = FlarkCoreGraphemePolicy.clusterBoundaryAtOrBefore(
+          text,
+          probeEnd,
+        );
+        probeEnd = snapped > fragmentStart
+            ? snapped
+            : FlarkCoreGraphemePolicy.clusterBoundaryAtOrAfter(text, probeEnd);
+      }
+      final bodyUnits = probeEnd - fragmentStart;
+      final leadingLength = includeLeading
+          ? presentation.leadingText.length
+          : 0;
+      final probe = _layoutText(
+        presentation,
+        maxWidth,
+        fragmentStart: fragmentStart,
+        fragmentEnd: probeEnd,
+        includeLeading: includeLeading,
+      );
+      try {
+        final targetLocal =
+            leadingLength +
+            math.min(_fragmentUtf16Budget - 1, bodyUnits - 1).toInt();
+        final line = probe.getLineBoundary(
+          TextPosition(offset: targetLocal, affinity: TextAffinity.downstream),
+        );
+        final lineStart = (line.start - leadingLength)
+            .clamp(0, bodyUnits)
+            .toInt();
+        final lineEnd = (line.end - leadingLength).clamp(0, bodyUnits).toInt();
+        int? cutUnits;
+        if (lineStart > 0) {
+          // Move the partial final line into the next tile.
+          cutUnits = lineStart;
+        } else if (lineEnd < bodyUnits || probeEnd == text.length) {
+          // On a very wide surface the target can still be on the first line;
+          // retain that whole visual line as the smallest correct fragment.
+          cutUnits = lineEnd;
+        }
+        if (cutUnits != null && cutUnits > 0) {
+          final candidate = fragmentStart + cutUnits;
+          final snapped = FlarkCoreGraphemePolicy.clusterBoundaryAtOrBefore(
+            text,
+            candidate,
+          );
+          if (snapped > fragmentStart) return snapped;
+        }
+      } finally {
+        probe.dispose();
+      }
+
+      if (probeEnd == text.length ||
+          probeUnits >= _fragmentVisualLineProbeLimit) {
+        // A single visual line can be wider than the probe ceiling. The cap
+        // remains deterministic; an oversized grapheme is kept intact.
+        return probeEnd;
+      }
+      probeUnits = math.min(
+        remaining,
+        math.min(_fragmentVisualLineProbeLimit, probeUnits * 2),
+      );
+    }
   }
 
   TextPainter _layoutText(

@@ -131,6 +131,67 @@ void main() {
   );
 
   testWidgets(
+    'Tab and Shift-Tab route list indentation through authoritative receipts',
+    (tester) async {
+      const initial = '- parent\n- child\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(initial, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final child = controller.rows.last;
+      await tester.runAsync(() async {
+        controller.activateRow(child, child.editableUtf16!.end);
+        await controller.resolveCanonicalSelection();
+      });
+      final events = <String>[];
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: FlarkEditor(
+              controller: controller,
+              autofocus: true,
+              debugInputEventObserver: events.add,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await _pumpUntilTransactions(tester, controller);
+      expect(controller.visibleSource, '- parent\n  - child\n');
+      expect(controller.globalCaretOffset, 18);
+      expect(events, contains('shortcut:indent-list'));
+      expect(controller.lastError, isNull);
+
+      await tester.runAsync(controller.continueParsing);
+      await tester.pump();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await _pumpUntilTransactions(tester, controller);
+      expect(controller.visibleSource, initial);
+      expect(controller.globalCaretOffset, 16);
+      expect(events, contains('shortcut:outdent-list'));
+      expect(controller.lastError, isNull);
+
+      expect(await tester.runAsync(controller.undo), isTrue);
+      await tester.pump();
+      expect(controller.visibleSource, '- parent\n  - child\n');
+      expect(controller.globalCaretOffset, 18);
+      expect(await tester.runAsync(controller.redo), isTrue);
+      await tester.pump();
+      expect(controller.visibleSource, initial);
+      expect(controller.globalCaretOffset, 16);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
     'touch task target has a 48 logical pixel interaction extent',
     (tester) async {
       final controller = (await tester.runAsync(
