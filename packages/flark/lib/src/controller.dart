@@ -198,10 +198,15 @@ final class _ProvisionalInputBatch extends _SemanticInputSuccessor {
 enum _DeferredInputCommand { deleteBackward, deleteForward, insertNewline }
 
 final class _DeferredInputSuccessor extends _SemanticInputSuccessor {
-  const _DeferredInputSuccessor(this.command, {this.replacement}) : super();
+  const _DeferredInputSuccessor(
+    this.command, {
+    this.replacement,
+    this.typingInput = false,
+  }) : super();
 
   final _DeferredInputCommand? command;
   final String? replacement;
+  final bool typingInput;
 }
 
 final class _PendingSemanticInput {
@@ -1378,17 +1383,20 @@ final class FlarkEditorController extends ChangeNotifier {
     }
     _platformMutation = true;
     try {
-      if (_isPlatformNewlineMutation(deltas) &&
-          _queuePlatformSemanticNewline(deltas)) {
-        return;
-      }
-      if (_isPlatformDeleteBackwardMutation(deltas) &&
+      final platformNewline = _isPlatformNewlineMutation(deltas);
+      if (platformNewline && _queuePlatformSemanticNewline(deltas)) return;
+      final platformDeleteBackward = _isPlatformDeleteBackwardMutation(deltas);
+      if (platformDeleteBackward &&
           _queuePlatformSemanticDeleteBackward(deltas)) {
         return;
       }
-      if (_isPlatformNewlineMutation(deltas)) {
+      if (platformNewline) {
+        _platformNewlineMutationAwaitingAction = true;
         insertNewline();
         return;
+      }
+      if (platformDeleteBackward) {
+        _platformDeleteBackwardMutationAwaitingSelector = true;
       }
       var finalValue = _inputValue;
       var mutatingDeltas = 0;
@@ -1464,13 +1472,18 @@ final class FlarkEditorController extends ChangeNotifier {
     if (value.text == _inputValue.text) _lateSemanticInput = null;
     _platformMutation = true;
     try {
-      if (_isPlatformNewlineValue(value) &&
-          _queuePlatformSemanticNewlineValue(value)) {
-        return;
-      }
-      if (_isPlatformDeleteBackwardValue(value) &&
+      final platformNewline = _isPlatformNewlineValue(value);
+      if (platformNewline && _queuePlatformSemanticNewlineValue(value)) return;
+      final platformDeleteBackward = _isPlatformDeleteBackwardValue(value);
+      if (platformDeleteBackward &&
           _queuePlatformSemanticDeleteBackwardValue(value)) {
         return;
+      }
+      if (platformNewline) {
+        _platformNewlineMutationAwaitingAction = true;
+      }
+      if (platformDeleteBackward) {
+        _platformDeleteBackwardMutationAwaitingSelector = true;
       }
       _updateEditingValueFromPlatform(value);
     } finally {
@@ -1515,10 +1528,15 @@ final class FlarkEditorController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void replaceSelection(String replacement) {
+  void replaceSelection(String replacement) =>
+      _replaceSelection(replacement, typingInput: false);
+
+  void _replaceSelection(String replacement, {required bool typingInput}) {
     if (_deferSemanticSuccessor(replacement: replacement)) return;
-    _breakTypingHistoryGroup();
-    _endCompositionHistoryGroup();
+    if (!typingInput) {
+      _breakTypingHistoryGroup();
+      _endCompositionHistoryGroup();
+    }
     if (_oversizedSelection) {
       _pendingEdits += 1;
       _status = FlarkEditorStatus.editing;
@@ -1544,6 +1562,7 @@ final class FlarkEditorController extends ChangeNotifier {
       _TextMutation(start, end, replacement),
       selection: TextSelection.collapsed(offset: caret),
       composing: TextRange.empty,
+      typingInput: typingInput,
     );
     notifyListeners();
   }
@@ -1876,8 +1895,7 @@ final class FlarkEditorController extends ChangeNotifier {
   /// carried the same Backspace. Desktop embedders may emit both; mobile
   /// generally supplies only the deletion delta or full value.
   void observePlatformDeleteBackwardAction() {
-    if (_platformDeleteBackwardMutationAwaitingSelector &&
-        (_pendingSemanticInput != null || _lateSemanticInput != null)) {
+    if (_platformDeleteBackwardMutationAwaitingSelector) {
       _platformDeleteBackwardMutationAwaitingSelector = false;
       return;
     }
@@ -2103,7 +2121,14 @@ final class FlarkEditorController extends ChangeNotifier {
       if ((mutation.replacement.isNotEmpty || !before.selection.isCollapsed) &&
           !mutation.replacement.contains('\n') &&
           !mutation.replacement.contains('\r')) {
-        return _DeferredInputSuccessor(null, replacement: mutation.replacement);
+        return _DeferredInputSuccessor(
+          null,
+          replacement: mutation.replacement,
+          typingInput:
+              before.selection.isCollapsed &&
+              mutation.start == mutation.end &&
+              mutation.replacement.isNotEmpty,
+        );
       }
     }
     if (!before.selection.isCollapsed || mutation.replacement.isNotEmpty) {
@@ -3361,9 +3386,10 @@ final class FlarkEditorController extends ChangeNotifier {
       if (successor case _DeferredInputSuccessor(
         command: final command,
         replacement: final replacement,
+        typingInput: final typingInput,
       )) {
         if (replacement != null) {
-          replaceSelection(replacement);
+          _replaceSelection(replacement, typingInput: typingInput);
         } else {
           switch (command!) {
             case _DeferredInputCommand.deleteBackward:

@@ -910,6 +910,14 @@ changes fail closed to exact source. This removes active-raw fallback for the
 ordinary cell-text lane without pretending that two-dimensional navigation,
 structural table commands, or nested-scroll arbitration are complete.
 
+Fenced-code content now exercises the same authoritative literal lane without
+exposing its parser-owned fences. Duplicate platform action arbitration applies
+to literal as well as semantic Return/Backspace observations, and typing
+captured behind a structural receipt preserves the native typing-history group.
+Portable headless and mounted journeys cover fenced-code Return/type/history,
+ordered-list continuation/history, task continuation/exit, and quote
+continuation/exit with zero resynchronization and bounded paint predicates.
+
 ### H5 — hardening and later architecture
 
 Qualify memory envelopes, fault recovery, giant-line raster behavior, GFM and

@@ -173,8 +173,8 @@ distinct cross-layer risk. We do not transplant the roughly two dozen useful
 legacy candidates because the harness must prove leverage before its vocabulary
 grows.
 
-These 12 bootstrap the runner; they are not the intended size of the behavioral
-acceptance corpus. After the contract is trustworthy, compact parameterized
+The initial catalog bootstraps the runner; it is not the intended size of the
+behavioral acceptance corpus. After the contract is trustworthy, compact parameterized
 families may compile into hundreds of named cases. Every named case runs through
 both the no-window and Flutter-surface drivers. Model-generated exploration runs
 primarily no-window, and every minimized failure is promoted into the named,
@@ -410,6 +410,12 @@ the H0N macOS canaries before the next broad dogfood handoff, and review failure
 by owning layer. `paragraph-list-boundary-newline` is already live. This is the
 first point at which portable depth plus real routing provides a meaningful
 product checkpoint rather than only semantic confidence.
+
+Current portable depth also includes ordered-list continuation/history,
+depth-three successive outdent, task and quote continuation/exit, fenced-code
+Return/type/history, and conservative table-cell typing. Those additions found
+and closed shared duplicate-action, successor-history, and parser-refresh
+generation races rather than adding construct-local handlers.
 
 ### H3 — Grow from evidence
 

@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "id": "fenced-code-edit-history",
+  "description": "Return and rapid typing edit fenced code content while the fences remain hidden, then undo and redo exactly.",
+  "initialSource": "```dart\nfinal x = 1;\n```\n",
+  "activation": {
+    "needle": "1;",
+    "occurrence": 0,
+    "utf16OffsetInNeedle": 2
+  },
+  "steps": [
+    {
+      "type": "pressReturn"
+    },
+    {
+      "type": "typeText",
+      "text": "print(x);",
+      "intervalMs": 0
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "checkpoint",
+      "id": "edited",
+      "source": "```dart\nfinal x = 1;\nprint(x);\n```\n",
+      "caretUtf16": 30
+    },
+    {
+      "type": "undo"
+    },
+    {
+      "type": "undo"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "checkpoint",
+      "id": "undone",
+      "source": "```dart\nfinal x = 1;\n```\n",
+      "caretUtf16": 20
+    },
+    {
+      "type": "redo"
+    },
+    {
+      "type": "redo"
+    },
+    {
+      "type": "waitForIdle"
+    }
+  ],
+  "schedules": [
+    {
+      "id": "immediate"
+    }
+  ],
+  "expect": {
+    "source": "```dart\nfinal x = 1;\nprint(x);\n```\n",
+    "caretUtf16": 30,
+    "resyncCount": 0,
+    "faulted": false,
+    "forbiddenSurfaceSubstrings": ["```", "<empty>"],
+    "paintedSurfaceNeverContains": ["```", "<empty>"]
+  }
+}
