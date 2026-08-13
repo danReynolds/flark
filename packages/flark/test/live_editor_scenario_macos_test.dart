@@ -14,8 +14,14 @@ void main() {
   final scenarioFiles = configuredScenario == null
       ? [
           File('test/scenarios/paragraph_split_rapid_successor.json'),
+          File('test/scenarios/paragraph_list_boundary_newline.json'),
+          File('test/scenarios/paragraph_join_backspace_successor.json'),
+          File('test/scenarios/simple_list_continue_exit_type.json'),
           File('test/scenarios/unicode_grapheme_delete_successor.json'),
+          File('test/scenarios/projected_inline_rapid_typing.json'),
           File('test/scenarios/styled_selection_replace_history.json'),
+          File('test/scenarios/multiblock_paste_history.json'),
+          File('test/scenarios/task_checkbox_toggle_history.json'),
         ]
       : [File(configuredScenario)];
   final skipReason = libraryPath == null
