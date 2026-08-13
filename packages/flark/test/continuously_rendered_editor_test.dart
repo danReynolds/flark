@@ -618,6 +618,86 @@ void main() {
   );
 
   test(
+    'composition inside strong text stays projected and undoes as one unit',
+    () async {
+      const source = 'Before **β😀** and _em_.\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      final row = controller.rows.first;
+      final globalCaret = source.indexOf('😀');
+      controller.activateRow(row, globalCaret);
+      final before = controller.inputValue;
+      final localCaret = before.selection.extentOffset;
+      final composedText = before.text.replaceRange(
+        localCaret,
+        localCaret,
+        'に',
+      );
+
+      controller.updateEditingValue(
+        TextEditingValue(
+          text: composedText,
+          selection: TextSelection.collapsed(offset: localCaret + 1),
+          composing: TextRange(start: localCaret, end: localCaret + 1),
+        ),
+      );
+      final pendingDeadline = DateTime.now().add(const Duration(seconds: 5));
+      while (controller.pendingEdits != 0 &&
+          DateTime.now().isBefore(pendingDeadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
+
+      expect(controller.lastError, isNull);
+      expect(
+        controller.visibleSource,
+        source.replaceRange(globalCaret, globalCaret, 'に'),
+      );
+      expect(
+        controller.inputValue.composing,
+        TextRange(start: localCaret, end: localCaret + 1),
+      );
+      final composingSurface = controller.surfaceRow(row);
+      expect(composingSurface.text, 'Before βに😀 and em.');
+      expect(
+        composingSurface.text,
+        isNot(anyOf(contains('**'), contains('_'))),
+      );
+      expect(
+        composingSurface.runs.any(
+          (run) =>
+              run.text == 'βに😀' &&
+              run.styles.contains(FlarkSurfaceInlineStyle.strong),
+        ),
+        isTrue,
+      );
+
+      controller.updateEditingValue(
+        controller.inputValue.copyWith(composing: TextRange.empty),
+      );
+      await _settle(controller);
+      expect(controller.inputValue.composing, TextRange.empty);
+      expect(
+        controller.surfaceRow(controller.rows.first).text,
+        'Before βに😀 and em.',
+      );
+
+      expect(await controller.undo(), isTrue);
+      await _settle(controller);
+      expect(controller.visibleSource, source);
+      expect(
+        controller.surfaceRow(controller.rows.first).text,
+        'Before β😀 and em.',
+      );
+      expect(controller.canUndo, isFalse);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'plain-text edits at inline content edges retain projection',
     () async {
       const source = '**bold** after\n';

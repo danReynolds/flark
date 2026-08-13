@@ -1003,6 +1003,13 @@ simulated composition evidence: atomic native retention of the base selection
 under anchor-cap exhaustion, real dead keys/CJK/autocorrect/dictation, and
 physical mobile IMEs remain open before composition is complete.
 
+A parser-certified projected-inline regression also proves that an active
+composition inserted inside strong text remains exact in source, keeps its
+local composing range, and stays marker-free and styled on the shared Core
+surface before commit; commit and one undo preserve the same projection. This
+closes the simulated hidden-delimiter interaction, not the live platform-IME
+qualification boundary.
+
 Flutter pointer routing now separates recognizers by intent instead of enabling
 one pan policy on every device: a touch or stylus tap activates text or a
 semantic surface action, a touch or stylus vertical drag scrolls without moving
