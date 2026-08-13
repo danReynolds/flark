@@ -101,6 +101,7 @@ void main() {
           await type(2, 'c');
           expect(await document.readSource(), 'abcbase\n');
           expect((await session.resolveSelection())!.extent, 3);
+          expect((await document.inspectSession()).liveHistoryTokens, 1);
 
           final outcome = await session.undo();
           expect(outcome, isA<FlarkCoreHistoryReplayed>());
@@ -115,6 +116,27 @@ void main() {
           expect(redone!.restoreSelection.extent, 3);
           expect(await document.readSource(), 'abcbase\n');
           expect((await session.resolveSelection())!.extent, 3);
+        },
+      );
+
+      test(
+        'typing starts a new atomic unit at the native composite cap',
+        () async {
+          await open('base\n');
+          addTearDown(() async {
+            await session.dispose();
+            await document.dispose();
+          });
+
+          for (var index = 0; index < 257; index += 1) {
+            await type(index, 'x');
+          }
+          expect((await document.inspectSession()).liveHistoryTokens, 2);
+
+          expect(await session.undo(), isA<FlarkCoreHistoryReplayed>());
+          expect((await document.readSource()).length, 256 + 'base\n'.length);
+          expect(await session.undo(), isA<FlarkCoreHistoryReplayed>());
+          expect(await document.readSource(), 'base\n');
         },
       );
 
@@ -241,6 +263,7 @@ void main() {
             ),
           );
           expect(await document.readSource(), 'かbase\n');
+          expect((await document.inspectSession()).liveHistoryTokens, 1);
 
           final outcome = await session.undo();
           expect(outcome, isA<FlarkCoreHistoryReplayed>());

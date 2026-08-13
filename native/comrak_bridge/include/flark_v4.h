@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define FLARK_V4_ABI_MAJOR UINT16_C(4)
-#define FLARK_V4_ABI_MINOR UINT16_C(11)
+#define FLARK_V4_ABI_MINOR UINT16_C(12)
 
 /* Zero sentinels are legal only where the operation rules below say so. */
 #define FLARK_V4_CONTINUATION_NONE UINT64_C(0)
@@ -207,6 +207,7 @@ typedef uint64_t FlarkV4OwnerToken;
 #define FLARK_V4_CAPABILITY_SELECTED_GFM_V1 UINT64_C(0x0000000000004000)
 #define FLARK_V4_CAPABILITY_EDIT_INTENTS_V1 UINT64_C(0x0000000000008000)
 #define FLARK_V4_CAPABILITY_SOURCE_TRANSACTIONS_V1 UINT64_C(0x0000000000010000)
+#define FLARK_V4_CAPABILITY_NATIVE_COMPOSITE_HISTORY_V1 UINT64_C(0x0000000000020000)
 
 #define FLARK_V4_EDIT_PROFILE_FLARK_V1 UINT32_C(1)
 #define FLARK_V4_EDIT_INTENT_INSERT_PARAGRAPH_BREAK UINT32_C(1)
@@ -221,6 +222,7 @@ typedef uint64_t FlarkV4OwnerToken;
 #define FLARK_V4_SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT UINT32_C(0x1)
 #define FLARK_V4_SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING UINT32_C(0x2)
 #define FLARK_V4_SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES UINT32_C(0x4)
+#define FLARK_V4_SOURCE_TRANSACTION_RECEIPT_COMPOSITE_HISTORY_EXTENDED UINT32_C(0x8)
 #define FLARK_V4_EDIT_PRESENTATION_NONE UINT32_C(0)
 #define FLARK_V4_EDIT_PRESENTATION_SPLIT_PARAGRAPH UINT32_C(1)
 #define FLARK_V4_EDIT_PRESENTATION_CONTINUE_LIST UINT32_C(2)
@@ -550,7 +552,9 @@ typedef struct FlarkV4SourceTransactionRequestV1 {
   uint32_t selection_direction;
   uint64_t replacement_bytes_len;
   FlarkV4WorkBudget budget;
-  uint64_t reserved[1];
+  /* Zero creates a standalone token. A nonzero ID may extend only the
+   * adjacent native history tail carrying the same group identity. */
+  uint64_t history_group_id;
 } FlarkV4SourceTransactionRequestV1;
 
 typedef struct FlarkV4SourceTransactionReceiptV1 {

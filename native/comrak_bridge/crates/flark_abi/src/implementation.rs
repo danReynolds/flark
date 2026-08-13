@@ -40,7 +40,8 @@ use crate::{
     INLINE_FACT_DIRECT_LINK, INLINE_FACT_EMPHASIS, INLINE_FACT_HARD_LINE_BREAK,
     INLINE_FACT_REFERENCE_IMAGE, INLINE_FACT_REFERENCE_LINK, INLINE_FACT_REPLACEMENT,
     INLINE_FACT_STRIKETHROUGH, INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL,
-    SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES, SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT,
+    SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES,
+    SOURCE_TRANSACTION_RECEIPT_COMPOSITE_HISTORY_EXTENDED, SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT,
     SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING, VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_SHIFT,
     VIEWPORT_ROW_BLOCK_QUOTE_PRESENTATION, VIEWPORT_ROW_BLOCK_QUOTE_SIMPLE_CONTINUATION,
     VIEWPORT_ROW_CODE_CLOSED, VIEWPORT_ROW_CODE_FENCED, VIEWPORT_ROW_CODE_FENCE_OFFSET_SHIFT,
@@ -71,7 +72,8 @@ const IMPLEMENTED_CAPABILITIES: u64 = (1 << 0)
     | (1 << 13)
     | (1 << 14)
     | (1 << 15)
-    | (1 << 16);
+    | (1 << 16)
+    | (1 << 17);
 
 struct Registry {
     next_handle: u64,
@@ -179,7 +181,17 @@ struct StoredContinuation {
 }
 
 const HISTORY_TOKEN_OVERHEAD_BYTES: u64 = 64;
+const HISTORY_SPLICE_OVERHEAD_BYTES: u64 = 32;
+const MAX_COMPOSITE_HISTORY_STEPS: usize = 256;
+const MAX_COMPOSITE_HISTORY_MATERIALIZED_BYTES: u64 = 1 << 20;
 const MAX_EVICTED_HISTORY_TOMBSTONES: usize = 4096;
+
+#[derive(Clone)]
+struct StoredHistorySplice {
+    start_byte: u64,
+    end_byte: u64,
+    replacement: Vec<u8>,
+}
 
 #[derive(Clone)]
 struct StoredHistory {
@@ -187,9 +199,8 @@ struct StoredHistory {
     owner: u64,
     applies_state: u64,
     target_state: u64,
-    start_byte: u64,
-    end_byte: u64,
-    replacement: Vec<u8>,
+    group_id: u64,
+    splices: Vec<StoredHistorySplice>,
     retained_bytes: u64,
     previous: u64,
     next: u64,
@@ -420,6 +431,7 @@ fn retain_history(
     start_byte: u64,
     end_byte: u64,
     replacement: Vec<u8>,
+    group_id: u64,
 ) -> Result<(HistoryToken, HistoryDisposition), StatusCode> {
     let retained_bytes = HISTORY_TOKEN_OVERHEAD_BYTES
         .checked_add(replacement.len() as u64)
@@ -477,9 +489,12 @@ fn retain_history(
             owner: session.owner_token,
             applies_state,
             target_state,
-            start_byte,
-            end_byte,
-            replacement,
+            group_id,
+            splices: vec![StoredHistorySplice {
+                start_byte,
+                end_byte,
+                replacement,
+            }],
             retained_bytes,
             previous,
             next: 0,
@@ -511,6 +526,7 @@ fn reserve_edit_intent_history(
     applies_state: u64,
     target_state: u64,
     inverse_capacity: usize,
+    group_id: u64,
 ) -> Result<u64, StatusCode> {
     let retained_bytes = HISTORY_TOKEN_OVERHEAD_BYTES
         .checked_add(
@@ -531,6 +547,15 @@ fn reserve_edit_intent_history(
     replacement
         .try_reserve_exact(inverse_capacity)
         .map_err(|_| StatusCode::AllocationFailure)?;
+    let mut splices = Vec::new();
+    splices
+        .try_reserve_exact(1)
+        .map_err(|_| StatusCode::AllocationFailure)?;
+    splices.push(StoredHistorySplice {
+        start_byte: 0,
+        end_byte: 0,
+        replacement,
+    });
     let token = registry.allocate_handle()?;
     let previous = session_entry(registry, session)?.history_tail;
     registry.histories.insert(
@@ -540,9 +565,8 @@ fn reserve_edit_intent_history(
             owner: session.owner_token,
             applies_state,
             target_state,
-            start_byte: 0,
-            end_byte: 0,
-            replacement,
+            group_id,
+            splices,
             retained_bytes,
             previous,
             next: 0,
@@ -580,10 +604,14 @@ fn finalize_edit_intent_history(
             .histories
             .get_mut(&token)
             .expect("semantic history reservation must remain live");
-        debug_assert!(inverse.len() <= history.replacement.capacity());
-        history.start_byte = start_byte;
-        history.end_byte = end_byte;
-        history.replacement.extend_from_slice(inverse);
+        let splice = history
+            .splices
+            .first_mut()
+            .expect("reserved history must own one splice");
+        debug_assert!(inverse.len() <= splice.replacement.capacity());
+        splice.start_byte = start_byte;
+        splice.end_byte = end_byte;
+        splice.replacement.extend_from_slice(inverse);
         let released = history.retained_bytes - actual_retained;
         history.retained_bytes = actual_retained;
         (history.session, released)
@@ -593,6 +621,167 @@ fn finalize_edit_intent_history(
         .get_mut(&session)
         .expect("semantic history session must remain live");
     entry.history_used_bytes -= released_reservation;
+}
+
+#[derive(Clone, Copy)]
+enum SourceHistoryReservation {
+    New(u64),
+    Extend {
+        token: u64,
+        reserved_bytes: u64,
+        applies_state: u64,
+    },
+}
+
+impl SourceHistoryReservation {
+    const fn token(self) -> u64 {
+        match self {
+            Self::New(token) | Self::Extend { token, .. } => token,
+        }
+    }
+
+    const fn extended(self) -> bool {
+        matches!(self, Self::Extend { .. })
+    }
+}
+
+fn reserve_source_transaction_history(
+    registry: &mut Registry,
+    session: SessionRef,
+    applies_state: u64,
+    target_state: u64,
+    inverse_capacity: usize,
+    group_id: u64,
+) -> Result<SourceHistoryReservation, StatusCode> {
+    if group_id == 0 {
+        return reserve_edit_intent_history(
+            registry,
+            session,
+            applies_state,
+            target_state,
+            inverse_capacity,
+            0,
+        )
+        .map(SourceHistoryReservation::New);
+    }
+
+    let candidate = session_entry(registry, session)?.history_tail;
+    let can_extend = candidate != 0
+        && registry.histories.get(&candidate).is_some_and(|history| {
+            history.session == session.session
+                && history.owner == session.owner_token
+                && history.group_id == group_id
+                && history.applies_state == target_state
+                && history.next == 0
+                && history.splices.len() < MAX_COMPOSITE_HISTORY_STEPS
+        });
+    if !can_extend {
+        return reserve_edit_intent_history(
+            registry,
+            session,
+            applies_state,
+            target_state,
+            inverse_capacity,
+            group_id,
+        )
+        .map(SourceHistoryReservation::New);
+    }
+
+    let reserved_bytes = HISTORY_SPLICE_OVERHEAD_BYTES
+        .checked_add(
+            u64::try_from(inverse_capacity).map_err(|_| StatusCode::ResourceLimitExceeded)?,
+        )
+        .ok_or(StatusCode::ResourceLimitExceeded)?;
+    {
+        let entry = session_entry(registry, session)?;
+        if entry
+            .history_used_bytes
+            .checked_add(reserved_bytes)
+            .is_none_or(|used| used > entry.history_budget_bytes)
+        {
+            return Err(StatusCode::ResourceLimitExceeded);
+        }
+    }
+    registry
+        .histories
+        .get_mut(&candidate)
+        .expect("validated composite history tail must remain live")
+        .splices
+        .try_reserve(1)
+        .map_err(|_| StatusCode::AllocationFailure)?;
+    let history = registry
+        .histories
+        .get_mut(&candidate)
+        .expect("reserved composite history tail must remain live");
+    history.retained_bytes += reserved_bytes;
+    session_entry(registry, session)?.history_used_bytes += reserved_bytes;
+    Ok(SourceHistoryReservation::Extend {
+        token: candidate,
+        reserved_bytes,
+        applies_state,
+    })
+}
+
+fn rollback_source_history_reservation(
+    registry: &mut Registry,
+    reservation: SourceHistoryReservation,
+) {
+    match reservation {
+        SourceHistoryReservation::New(token) => {
+            let _ = detach_history(registry, token);
+        }
+        SourceHistoryReservation::Extend {
+            token,
+            reserved_bytes,
+            ..
+        } => {
+            let Some(history) = registry.histories.get_mut(&token) else {
+                return;
+            };
+            history.retained_bytes = history.retained_bytes.saturating_sub(reserved_bytes);
+            if let Some(entry) = registry.sessions.get_mut(&history.session) {
+                entry.history_used_bytes = entry.history_used_bytes.saturating_sub(reserved_bytes);
+            }
+        }
+    }
+}
+
+fn finalize_source_transaction_history(
+    registry: &mut Registry,
+    reservation: SourceHistoryReservation,
+    start_byte: u64,
+    end_byte: u64,
+    inverse: Vec<u8>,
+) {
+    match reservation {
+        SourceHistoryReservation::New(token) => {
+            finalize_edit_intent_history(registry, token, start_byte, end_byte, &inverse);
+        }
+        SourceHistoryReservation::Extend {
+            token,
+            reserved_bytes,
+            applies_state,
+        } => {
+            let actual_retained = HISTORY_SPLICE_OVERHEAD_BYTES + inverse.len() as u64;
+            let history = registry
+                .histories
+                .get_mut(&token)
+                .expect("reserved composite history tail must remain live");
+            history.applies_state = applies_state;
+            history.splices.push(StoredHistorySplice {
+                start_byte,
+                end_byte,
+                replacement: inverse,
+            });
+            let released = reserved_bytes - actual_retained;
+            history.retained_bytes -= released;
+            registry
+                .sessions
+                .get_mut(&history.session)
+                .expect("composite history session must remain live")
+                .history_used_bytes -= released;
+        }
+    }
 }
 
 fn edit_intent_output_requirement() -> u64 {
@@ -1212,6 +1401,7 @@ pub extern "C" fn flark_v4_small_edit(
             edit.start_byte,
             replay_end,
             inverse,
+            0,
         )
         .unwrap_or((HistoryToken::NONE, HistoryDisposition::OverBudget));
         Ok(RuntimeOutcome {
@@ -1266,7 +1456,6 @@ pub extern "C" fn flark_v4_source_transaction_v1(
                     || value == Affinity::Downstream as u32
             )
             || request.selection_direction > 1
-            || request.reserved != [0; 1]
         {
             return Err(StatusCode::InvalidArgument);
         }
@@ -1329,7 +1518,15 @@ pub extern "C" fn flark_v4_source_transaction_v1(
         anchor_for_request(&registry, request.session, request.selection_base_anchor)?;
         anchor_for_request(&registry, request.session, request.selection_extent_anchor)?;
 
-        let (deleted_bytes, applies_state, target_state) = {
+        let (
+            deleted_bytes,
+            applies_state,
+            target_state,
+            start_utf16,
+            end_utf16,
+            result_base,
+            result_extent,
+        ) = {
             let entry = session_entry(&mut registry, request.session)?;
             let StoredSessionState::Open(document) = &entry.state else {
                 return Err(StatusCode::SessionBusy);
@@ -1343,6 +1540,10 @@ pub extern "C" fn flark_v4_source_transaction_v1(
             let start_utf16 = usize::try_from(request.base_utf16_range.start_byte)
                 .map_err(|_| StatusCode::RangeOutOfBounds)?;
             let end_utf16 = usize::try_from(request.base_utf16_range.end_byte)
+                .map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let result_base = usize::try_from(request.result_selection_base_utf16)
+                .map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let result_extent = usize::try_from(request.result_selection_extent_utf16)
                 .map_err(|_| StatusCode::RangeOutOfBounds)?;
             let start_byte = document
                 .byte_offset_for_utf16(start_utf16)
@@ -1368,33 +1569,34 @@ pub extern "C" fn flark_v4_source_transaction_v1(
             applies_state
                 .checked_add(1)
                 .ok_or(StatusCode::ResourceLimitExceeded)?;
-            (deleted_bytes, applies_state, entry.history_state)
+            (
+                deleted_bytes,
+                applies_state,
+                entry.history_state,
+                start_utf16,
+                end_utf16,
+                result_base,
+                result_extent,
+            )
         };
-        let reserved_history = reserve_edit_intent_history(
+        let reserved_history = reserve_source_transaction_history(
             &mut registry,
             request.session,
             applies_state,
             target_state,
             deleted_bytes,
+            request.history_group_id,
         )?;
 
         let actor_result = {
             let entry = session_entry(&mut registry, request.session)?;
             let StoredSessionState::Open(document) = &mut entry.state else {
-                detach_history(&mut registry, reserved_history);
+                rollback_source_history_reservation(&mut registry, reserved_history);
                 return Err(StatusCode::SessionBusy);
             };
-            let start = usize::try_from(request.base_utf16_range.start_byte)
-                .map_err(|_| StatusCode::RangeOutOfBounds)?;
-            let end = usize::try_from(request.base_utf16_range.end_byte)
-                .map_err(|_| StatusCode::RangeOutOfBounds)?;
-            let result_base = usize::try_from(request.result_selection_base_utf16)
-                .map_err(|_| StatusCode::RangeOutOfBounds)?;
-            let result_extent = usize::try_from(request.result_selection_extent_utf16)
-                .map_err(|_| StatusCode::RangeOutOfBounds)?;
             document.apply_source_transaction_v1(
                 request.expected_revision,
-                start..end,
+                start_utf16..end_utf16,
                 replacement.to_owned(),
                 result_base,
                 result_extent,
@@ -1403,7 +1605,7 @@ pub extern "C" fn flark_v4_source_transaction_v1(
         let receipt = match actor_result {
             Ok(receipt) => receipt,
             Err(error) => {
-                detach_history(&mut registry, reserved_history);
+                rollback_source_history_reservation(&mut registry, reserved_history);
                 return Err(map_actor_error(&error));
             }
         };
@@ -1449,12 +1651,12 @@ pub extern "C" fn flark_v4_source_transaction_v1(
         }
 
         let result_end_byte = splice.result_byte_range.end as u64;
-        finalize_edit_intent_history(
+        finalize_source_transaction_history(
             &mut registry,
             reserved_history,
             start_byte,
             result_end_byte,
-            &receipt.inverse,
+            receipt.inverse,
         );
         {
             let entry = registry
@@ -1476,6 +1678,11 @@ pub extern "C" fn flark_v4_source_transaction_v1(
                 history_disposition: HistoryDisposition::Retained as u32,
                 flags: SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT
                     | SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES
+                    | if reserved_history.extended() {
+                        SOURCE_TRANSACTION_RECEIPT_COMPOSITE_HISTORY_EXTENDED
+                    } else {
+                        0
+                    }
                     | if receipt.parser_pending {
                         SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING
                     } else {
@@ -1512,7 +1719,7 @@ pub extern "C" fn flark_v4_source_transaction_v1(
                     start_byte: splice.result_utf16_range.start as u64,
                     end_byte: splice.result_utf16_range.end as u64,
                 },
-                history_token: reserved_history,
+                history_token: reserved_history.token(),
                 replacement_bytes: replacement_bytes_len,
                 reserved: [0; 2],
             },
@@ -1648,6 +1855,7 @@ pub extern "C" fn flark_v4_edit_intent_v1(
                 applies_state,
                 target_state,
                 MAX_SMALL_EDIT_BYTES as usize,
+                0,
             )?;
             (Some(token), applies_state)
         } else {
@@ -2225,6 +2433,7 @@ pub extern "C" fn flark_v4_bulk_commit(
                 transaction.start_byte,
                 replay_end,
                 inverse,
+                0,
             )
             .unwrap_or((HistoryToken::NONE, HistoryDisposition::OverBudget)),
             BulkHistoryCapture::Disabled => (HistoryToken::NONE, HistoryDisposition::Disabled),
@@ -2288,6 +2497,174 @@ pub extern "C" fn flark_v4_bulk_abort(
     })
 }
 
+#[derive(Clone, Copy)]
+enum HistoryPiece {
+    Original { start: u64, end: u64 },
+    Replacement { step: usize, start: u64, end: u64 },
+}
+
+fn history_piece_len(piece: HistoryPiece) -> u64 {
+    match piece {
+        HistoryPiece::Original { start, end } | HistoryPiece::Replacement { start, end, .. } => {
+            end - start
+        }
+    }
+}
+
+fn history_piece_slice(piece: HistoryPiece, start: u64, end: u64) -> HistoryPiece {
+    match piece {
+        HistoryPiece::Original {
+            start: source_start,
+            ..
+        } => HistoryPiece::Original {
+            start: source_start + start,
+            end: source_start + end,
+        },
+        HistoryPiece::Replacement {
+            step,
+            start: source_start,
+            ..
+        } => HistoryPiece::Replacement {
+            step,
+            start: source_start + start,
+            end: source_start + end,
+        },
+    }
+}
+
+fn split_history_pieces_at(
+    pieces: &mut Vec<HistoryPiece>,
+    position: u64,
+) -> Result<usize, StatusCode> {
+    let mut cursor = 0u64;
+    for index in 0..pieces.len() {
+        let length = history_piece_len(pieces[index]);
+        let end = cursor
+            .checked_add(length)
+            .ok_or(StatusCode::ResourceLimitExceeded)?;
+        if position == cursor {
+            return Ok(index);
+        }
+        if position < end {
+            let cut = position - cursor;
+            let piece = pieces[index];
+            let left = history_piece_slice(piece, 0, cut);
+            let right = history_piece_slice(piece, cut, length);
+            pieces[index] = left;
+            pieces
+                .try_reserve_exact(1)
+                .map_err(|_| StatusCode::AllocationFailure)?;
+            pieces.insert(index + 1, right);
+            return Ok(index + 1);
+        }
+        cursor = end;
+    }
+    if position == cursor {
+        Ok(pieces.len())
+    } else {
+        Err(StatusCode::HistoryTokenStale)
+    }
+}
+
+/// Reduces a chronological composite inverse to one bounded splice against
+/// the current source. All allocation, coordinate validation, and source
+/// materialization complete before the document's single replay commit.
+fn materialize_composite_history(
+    document: &DocumentActor,
+    history: &StoredHistory,
+    source_byte_length: u64,
+) -> Result<(u64, u64, String), StatusCode> {
+    let mut pieces = Vec::new();
+    pieces
+        .try_reserve_exact(history.splices.len().saturating_mul(2).saturating_add(1))
+        .map_err(|_| StatusCode::AllocationFailure)?;
+    if source_byte_length != 0 {
+        pieces.push(HistoryPiece::Original {
+            start: 0,
+            end: source_byte_length,
+        });
+    }
+    for step in (0..history.splices.len()).rev() {
+        let splice = &history.splices[step];
+        let start = split_history_pieces_at(&mut pieces, splice.start_byte)?;
+        let end = split_history_pieces_at(&mut pieces, splice.end_byte)?;
+        if start > end {
+            return Err(StatusCode::HistoryTokenStale);
+        }
+        let replacement = if splice.replacement.is_empty() {
+            None
+        } else {
+            Some(HistoryPiece::Replacement {
+                step,
+                start: 0,
+                end: splice.replacement.len() as u64,
+            })
+        };
+        pieces.splice(start..end, replacement);
+    }
+
+    let mut prefix = 0u64;
+    let mut prefix_count = 0usize;
+    for piece in &pieces {
+        match *piece {
+            HistoryPiece::Original { start, end } if start == prefix => {
+                prefix = end;
+                prefix_count += 1;
+            }
+            _ => break,
+        }
+    }
+    let mut suffix = source_byte_length;
+    let mut suffix_count = 0usize;
+    for piece in pieces[prefix_count..].iter().rev() {
+        match *piece {
+            HistoryPiece::Original { start, end } if end == suffix => {
+                suffix = start;
+                suffix_count += 1;
+            }
+            _ => break,
+        }
+    }
+    if prefix > suffix {
+        return Err(StatusCode::HistoryTokenStale);
+    }
+    let middle_end = pieces.len().saturating_sub(suffix_count);
+    let middle = &pieces[prefix_count..middle_end];
+    let replacement_bytes = middle.iter().try_fold(0u64, |total, piece| {
+        total
+            .checked_add(history_piece_len(*piece))
+            .ok_or(StatusCode::ResourceLimitExceeded)
+    })?;
+    if suffix - prefix > MAX_COMPOSITE_HISTORY_MATERIALIZED_BYTES
+        || replacement_bytes > MAX_COMPOSITE_HISTORY_MATERIALIZED_BYTES
+    {
+        return Err(StatusCode::ResourceLimitExceeded);
+    }
+    let mut replacement = Vec::new();
+    replacement
+        .try_reserve_exact(
+            usize::try_from(replacement_bytes).map_err(|_| StatusCode::ResourceLimitExceeded)?,
+        )
+        .map_err(|_| StatusCode::AllocationFailure)?;
+    for piece in middle {
+        match *piece {
+            HistoryPiece::Original { start, end } => {
+                let bytes = document
+                    .source_bytes(start as usize..end as usize)
+                    .map_err(|error| map_actor_error(&error))?;
+                replacement.extend_from_slice(&bytes);
+            }
+            HistoryPiece::Replacement { step, start, end } => {
+                replacement.extend_from_slice(
+                    &history.splices[step].replacement[start as usize..end as usize],
+                );
+            }
+        }
+    }
+    let replacement = String::from_utf8(replacement).map_err(|_| StatusCode::InternalFault)?;
+    Ok((prefix, suffix, replacement))
+}
+
 #[no_mangle]
 pub extern "C" fn flark_v4_history_replay(
     request: *const HistoryRequest,
@@ -2309,17 +2686,7 @@ pub extern "C" fn flark_v4_history_replay(
         if session_entry(&mut registry, request.session)?.history_state != history.applies_state {
             return Err(StatusCode::HistoryTokenStale);
         }
-        let replay_end = history
-            .start_byte
-            .checked_add(history.replacement.len() as u64)
-            .ok_or(StatusCode::ResourceLimitExceeded)?;
-        let start =
-            usize::try_from(history.start_byte).map_err(|_| StatusCode::RangeOutOfBounds)?;
-        let end = usize::try_from(history.end_byte).map_err(|_| StatusCode::RangeOutOfBounds)?;
-        let replacement = str::from_utf8(&history.replacement)
-            .map_err(|_| StatusCode::InternalFault)?
-            .to_owned();
-        let (receipt, inverse) = {
+        let (receipt, inverse, start_byte, end_byte, replay_end) = {
             let entry = session_entry(&mut registry, request.session)?;
             acknowledge_edit_terminal_for_ordered_mutation(entry, request.expected_revision);
             let StoredSessionState::Open(document) = &mut entry.state else {
@@ -2331,6 +2698,24 @@ pub extern "C" fn flark_v4_history_replay(
             if inspection.revision != request.expected_revision {
                 return Err(StatusCode::StaleRevision);
             }
+            let (start_byte, end_byte, replacement) = if history.splices.len() == 1 {
+                let splice = &history.splices[0];
+                let replacement = str::from_utf8(&splice.replacement)
+                    .map_err(|_| StatusCode::InternalFault)?
+                    .to_owned();
+                (splice.start_byte, splice.end_byte, replacement)
+            } else {
+                materialize_composite_history(
+                    document,
+                    &history,
+                    inspection.source_byte_len as u64,
+                )?
+            };
+            let start = usize::try_from(start_byte).map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let end = usize::try_from(end_byte).map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let replay_end = start_byte
+                .checked_add(replacement.len() as u64)
+                .ok_or(StatusCode::ResourceLimitExceeded)?;
             let inverse = document
                 .source_bytes(start..end)
                 .map_err(|error| map_actor_error(&error))?;
@@ -2340,7 +2725,7 @@ pub extern "C" fn flark_v4_history_replay(
             entry.history_state = history.target_state;
             entry.progress_token = 0;
             entry.continuations.clear();
-            (receipt, inverse)
+            (receipt, inverse, start_byte, end_byte, replay_end)
         };
         registry
             .continuations
@@ -2348,9 +2733,9 @@ pub extern "C" fn flark_v4_history_replay(
         transform_session_anchors(
             &mut registry,
             request.session.session,
-            history.start_byte,
-            history.end_byte - history.start_byte,
-            replay_end - history.start_byte,
+            start_byte,
+            end_byte - start_byte,
+            replay_end - start_byte,
         );
         let _ = detach_history(&mut registry, request.history_token);
         let (history_token, history) = retain_history(
@@ -2358,9 +2743,10 @@ pub extern "C" fn flark_v4_history_replay(
             request.session,
             history.target_state,
             history.applies_state,
-            history.start_byte,
+            start_byte,
             replay_end,
             inverse,
+            0,
         )
         .unwrap_or((HistoryToken::NONE, HistoryDisposition::OverBudget));
         Ok(RuntimeOutcome {

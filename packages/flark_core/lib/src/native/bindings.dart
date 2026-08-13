@@ -418,8 +418,8 @@ final class FlarkV4SourceTransactionRequestV1 extends Struct {
 
   external FlarkV4WorkBudget budget;
 
-  @Array(1)
-  external Array<Uint64> reserved;
+  @Uint64()
+  external int historyGroupId;
 }
 
 final class FlarkV4SourceTransactionReceiptV1 extends Struct {

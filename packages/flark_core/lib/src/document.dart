@@ -129,6 +129,7 @@ final class FlarkCoreSourceTransactionReceiptV1 {
     required this.resultSourceByteLength,
     required this.resultSourceUtf16Length,
     required this.historyToken,
+    required this.historyCompositeExtended,
     required this.parserPending,
     required this.logicalEditId,
     required this.requestDigest,
@@ -150,6 +151,7 @@ final class FlarkCoreSourceTransactionReceiptV1 {
   final int resultSourceByteLength;
   final int resultSourceUtf16Length;
   final FlarkCoreHistoryToken historyToken;
+  final bool historyCompositeExtended;
   final bool parserPending;
   final int logicalEditId;
   final int requestDigest;
@@ -174,6 +176,7 @@ final class FlarkCoreSourceTransactionReceiptV1 {
     resultSourceByteLength: resultSourceByteLength,
     resultSourceUtf16Length: resultSourceUtf16Length,
     historyToken: historyToken,
+    historyCompositeExtended: historyCompositeExtended,
     parserPending: parserPending,
     logicalEditId: logicalEditId,
     requestDigest: requestDigest,
@@ -469,6 +472,7 @@ final class FlarkCoreDocument {
     required int requestDigest,
     required int acknowledgePreviousLogicalEditId,
     required int selectionGeneration,
+    required int historyGroupId,
     required int startUtf16,
     required int endUtf16,
     required String replacement,
@@ -487,6 +491,7 @@ final class FlarkCoreDocument {
       'requestDigest': requestDigest,
       'acknowledgePreviousLogicalEditId': acknowledgePreviousLogicalEditId,
       'selectionGeneration': selectionGeneration,
+      'historyGroupId': historyGroupId,
       'startUtf16': startUtf16,
       'endUtf16': endUtf16,
       'replacement': replacement,
@@ -525,6 +530,7 @@ final class FlarkCoreDocument {
         result['historyToken']! as int,
         _historyOwner,
       ),
+      historyCompositeExtended: result['historyCompositeExtended']! as bool,
       parserPending: result['parserPending']! as bool,
       logicalEditId: result['logicalEditId']! as int,
       requestDigest: result['requestDigest']! as int,
@@ -937,6 +943,7 @@ Future<void> _documentWorker(List<Object?> startup) async {
               acknowledgePreviousLogicalEditId:
                   arguments['acknowledgePreviousLogicalEditId']! as int,
               selectionGeneration: arguments['selectionGeneration']! as int,
+              historyGroupId: arguments['historyGroupId']! as int,
               startUtf16: arguments['startUtf16']! as int,
               endUtf16: arguments['endUtf16']! as int,
               replacement: arguments['replacement']! as String,
@@ -965,6 +972,7 @@ Future<void> _documentWorker(List<Object?> startup) async {
               'resultSourceByteLength': receipt.resultSourceByteLength,
               'resultSourceUtf16Length': receipt.resultSourceUtf16Length,
               'historyToken': receipt.historyToken,
+              'historyCompositeExtended': receipt.historyCompositeExtended,
               'parserPending': receipt.parserPending,
               'logicalEditId': receipt.logicalEditId,
               'requestDigest': receipt.requestDigest,

@@ -527,6 +527,7 @@ pub const CAPABILITY_BITS: &[(&str, u64)] = &[
     ("SELECTED_GFM_V1", 1 << 14),
     ("EDIT_INTENTS_V1", 1 << 15),
     ("SOURCE_TRANSACTIONS_V1", 1 << 16),
+    ("NATIVE_COMPOSITE_HISTORY_V1", 1 << 17),
 ];
 
 pub const MAX_SMALL_EDIT_BYTES: u32 = 4096;

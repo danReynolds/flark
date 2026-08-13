@@ -1149,7 +1149,7 @@ fn source_transaction_commits_history_and_retargets_selection_atomically() {
         selection_direction: 0,
         replacement_bytes_len: replacement.len() as u64,
         budget: budget(1),
-        reserved: [0; 1],
+        history_group_id: 0,
     };
     let mut output = vec![0u8; size_of::<SourceTransactionReceiptV1>()];
     let mut outcome = Outcome::default();

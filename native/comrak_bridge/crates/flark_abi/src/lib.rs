@@ -25,7 +25,7 @@ pub use flark_runtime::{
 };
 
 pub const ABI_MAJOR: u16 = 4;
-pub const ABI_MINOR: u16 = 11;
+pub const ABI_MINOR: u16 = 12;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
@@ -494,6 +494,7 @@ pub struct EditIntentReceiptV1 {
 pub const SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT: u32 = 1 << 0;
 pub const SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING: u32 = 1 << 1;
 pub const SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES: u32 = 1 << 2;
+pub const SOURCE_TRANSACTION_RECEIPT_COMPOSITE_HISTORY_EXTENDED: u32 = 1 << 3;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
@@ -515,7 +516,9 @@ pub struct SourceTransactionRequestV1 {
     pub selection_direction: u32,
     pub replacement_bytes_len: u64,
     pub budget: WorkBudget,
-    pub reserved: [u64; 1],
+    /// Zero creates a standalone history token. A nonzero ID lets native
+    /// extend the current tail when it names the same adjacent edit group.
+    pub history_group_id: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

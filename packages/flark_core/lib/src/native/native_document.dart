@@ -107,6 +107,7 @@ const _editIntentSemanticBytes = 4;
 const _sourceTransactionHasCommit = 1;
 const _sourceTransactionParserPending = 2;
 const _sourceTransactionCallerKnownBytes = 4;
+const _sourceTransactionCompositeHistoryExtended = 8;
 const _editPresentationNone = 0;
 const _editPresentationSplitParagraph = 1;
 const _editPresentationContinueList = 2;
@@ -119,10 +120,10 @@ const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 11;
+const _abiMinor = 12;
 // Every v4.7 capability is used by the safe core boundary, including
 // resumable close and snapshot continuations.
-const _requiredCapabilityBits = 0x1ffff;
+const _requiredCapabilityBits = 0x3ffff;
 
 final class FlarkNativeException implements Exception {
   const FlarkNativeException(this.operation, this.status, [this.detail = 0]);
@@ -238,6 +239,7 @@ final class FlarkNativeSourceTransactionReceiptV1 {
     required this.resultSourceByteLength,
     required this.resultSourceUtf16Length,
     required this.historyToken,
+    required this.historyCompositeExtended,
     required this.parserPending,
     required this.logicalEditId,
     required this.requestDigest,
@@ -258,6 +260,7 @@ final class FlarkNativeSourceTransactionReceiptV1 {
   final int resultSourceByteLength;
   final int resultSourceUtf16Length;
   final int historyToken;
+  final bool historyCompositeExtended;
   final bool parserPending;
   final int logicalEditId;
   final int requestDigest;
@@ -633,6 +636,7 @@ final class FlarkNativeDocument {
     required int requestDigest,
     required int acknowledgePreviousLogicalEditId,
     required int selectionGeneration,
+    required int historyGroupId,
     required int startUtf16,
     required int endUtf16,
     required String replacement,
@@ -668,7 +672,8 @@ final class FlarkNativeDocument {
             ? _affinityDownstream
             : _affinityUpstream
         ..selectionDirection = selectionDirectional ? 1 : 0
-        ..replacementBytesLen = replacementBytes.length;
+        ..replacementBytesLen = replacementBytes.length
+        ..historyGroupId = historyGroupId;
       request.ref.baseUtf16Range
         ..startByte = startUtf16
         ..endByte = endUtf16;
@@ -719,19 +724,39 @@ final class FlarkNativeDocument {
           _internalFault,
         );
       }
+      final terminalReplay = native.resultRevision == _revision;
+      final historyCompositeExtended =
+          native.flags & _sourceTransactionCompositeHistoryExtended != 0;
       _revision = native.resultRevision;
       _sourceByteLength = native.resultSourceByteLength;
       _sourceUtf16Length = native.resultSourceUtf16Length;
       _progressToken = 0;
       final parserPending = native.flags & _sourceTransactionParserPending != 0;
       _ready = !parserPending;
-      _historyLengthDeltas[historyToken] = _HistoryLengthDelta(
+      final editDelta = _HistoryLengthDelta(
         (native.baseByteRange.endByte - native.baseByteRange.startByte) -
             (native.resultByteRange.endByte - native.resultByteRange.startByte),
         (native.baseUtf16Range.endByte - native.baseUtf16Range.startByte) -
             (native.resultUtf16Range.endByte -
                 native.resultUtf16Range.startByte),
       );
+      if (!terminalReplay) {
+        if (historyCompositeExtended) {
+          final prior = _historyLengthDeltas[historyToken];
+          if (prior == null) {
+            throw const FlarkNativeException(
+              'source_transaction_v1',
+              _internalFault,
+            );
+          }
+          _historyLengthDeltas[historyToken] = _HistoryLengthDelta(
+            prior.byteDelta + editDelta.byteDelta,
+            prior.utf16Delta + editDelta.utf16Delta,
+          );
+        } else {
+          _historyLengthDeltas[historyToken] = editDelta;
+        }
+      }
       return FlarkNativeSourceTransactionReceiptV1(
         baseRevision: native.baseRevision,
         resultRevision: native.resultRevision,
@@ -748,6 +773,7 @@ final class FlarkNativeDocument {
         resultSourceByteLength: native.resultSourceByteLength,
         resultSourceUtf16Length: native.resultSourceUtf16Length,
         historyToken: historyToken,
+        historyCompositeExtended: historyCompositeExtended,
         parserPending: parserPending,
         logicalEditId: native.logicalEditId,
         requestDigest: native.requestDigest,

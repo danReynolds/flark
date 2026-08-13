@@ -91,6 +91,8 @@ final class _HistoryUnit {
     this.typingAtMicros,
     this.typingEpoch,
     this.compositionGroup,
+    this.nativeHistoryGroupId = 0,
+    this.nativeHistoryStepCount = 1,
   });
 
   final List<FlarkCoreHistoryToken> tokens;
@@ -100,6 +102,8 @@ final class _HistoryUnit {
   final int? typingAtMicros;
   final int? typingEpoch;
   final int? compositionGroup;
+  final int nativeHistoryGroupId;
+  final int nativeHistoryStepCount;
 }
 
 sealed class FlarkCoreHistoryOutcome {
@@ -134,6 +138,10 @@ const _sourceTransactionV1MaximumReplacementBytes = 64 * 1024;
 // This conservative host-side cut guarantees native's 64 KiB inverse bound
 // without a coordinate/source preflight on the common transaction lane.
 const _sourceTransactionV1MaximumDeletedUtf16 = 16 * 1024;
+// Keep one native composite both replay-atomic and strictly bounded. Once a
+// user-visible group reaches the native cap, Core starts a new undo unit
+// instead of silently falling back to a multi-token partial-replay path.
+const _maximumNativeCompositeHistorySteps = 256;
 
 /// Canonical editing policy over one [FlarkCoreDocument]: undo/redo ordering
 /// and grouping of opaque native history tokens, typing coalescing,
@@ -163,6 +171,7 @@ final class FlarkCoreEditorSession {
   Future<void> _commandTail = Future<void>.value();
   int _nextLogicalEditId = 0;
   int _pendingTerminalLogicalEditId = 0;
+  int _nextNativeTypingHistoryGroup = 0;
   bool _postCommitUnknown = false;
 
   FlarkCoreAnchor? _selectionStart;
@@ -252,16 +261,6 @@ final class FlarkCoreEditorSession {
     final baseRevision = document.revision;
     final baseGeneration = _selectionGeneration;
     final logicalEditId = ++_nextLogicalEditId;
-    final requestDigest = _sourceTransactionDigest(
-      logicalEditId: logicalEditId,
-      revision: baseRevision,
-      selectionGeneration: baseGeneration,
-      start: start,
-      end: end,
-      replacement: replacement,
-      resultBase: afterSelection.base,
-      resultExtent: afterSelection.extent,
-    );
     final typing = coalesceTyping && compositionGroup == null
         ? _typingEvent(
             start: start,
@@ -271,6 +270,33 @@ final class FlarkCoreEditorSession {
             afterSelection: afterSelection,
           )
         : null;
+    final previous = _undoUnits.isEmpty ? null : _undoUnits.last;
+    final joinsComposition =
+        compositionGroup != null &&
+        previous != null &&
+        previous.compositionGroup == compositionGroup &&
+        previous.nativeHistoryStepCount < _maximumNativeCompositeHistorySteps;
+    final joinsTyping =
+        typing != null &&
+        previous != null &&
+        _typingCoalesces(previous, typing, beforeSelection);
+    final historyGroupId = switch ((compositionGroup, typing)) {
+      (final int group, _) => (group << 1) | 1,
+      (_, != null) when joinsTyping => previous.nativeHistoryGroupId,
+      (_, != null) => (++_nextNativeTypingHistoryGroup) << 1,
+      _ => 0,
+    };
+    final requestDigest = _sourceTransactionDigest(
+      logicalEditId: logicalEditId,
+      revision: baseRevision,
+      selectionGeneration: baseGeneration,
+      start: start,
+      end: end,
+      replacement: replacement,
+      resultBase: afterSelection.base,
+      resultExtent: afterSelection.extent,
+      historyGroupId: historyGroupId,
+    );
     late final FlarkCoreSourceTransactionReceiptV1 transaction;
     try {
       transaction = await document.applySourceTransactionV1(
@@ -281,6 +307,7 @@ final class FlarkCoreEditorSession {
         requestDigest: requestDigest,
         acknowledgePreviousLogicalEditId: _pendingTerminalLogicalEditId,
         selectionGeneration: baseGeneration,
+        historyGroupId: historyGroupId,
         startUtf16: start,
         endUtf16: end,
         replacement: replacement,
@@ -303,6 +330,11 @@ final class FlarkCoreEditorSession {
         transaction.resultSelectionExtentUtf16 != afterSelection.extent) {
       _postCommitUnknown = true;
       throw StateError('Flark source transaction receipt correlation failed');
+    }
+    if (transaction.historyCompositeExtended !=
+        (joinsComposition || joinsTyping)) {
+      _postCommitUnknown = true;
+      throw StateError('Flark native history grouping diverged from Core');
     }
     _pendingTerminalLogicalEditId = logicalEditId;
     _selectionBaseIsStart = afterSelection.base <= afterSelection.extent;
@@ -327,6 +359,8 @@ final class FlarkCoreEditorSession {
         afterSelection: afterSelection,
         typing: typing,
         compositionGroup: compositionGroup,
+        nativeHistoryGroupId: historyGroupId,
+        historyCompositeExtended: transaction.historyCompositeExtended,
       );
     } on Object {
       _postCommitUnknown = true;
@@ -378,6 +412,7 @@ final class FlarkCoreEditorSession {
         afterSelection: afterSelection,
         typing: typing,
         compositionGroup: compositionGroup,
+        nativeHistoryGroupId: 0,
       );
       await _setSelectionUtf16(
         afterSelection.base,
@@ -509,6 +544,7 @@ final class FlarkCoreEditorSession {
         afterSelection: after,
         typing: null,
         compositionGroup: null,
+        nativeHistoryGroupId: 0,
       );
     } on Object {
       _postCommitUnknown = true;
@@ -714,6 +750,8 @@ final class FlarkCoreEditorSession {
     required FlarkCoreSelectionSnapshot afterSelection,
     required ({int end, int atMicros})? typing,
     required int? compositionGroup,
+    required int nativeHistoryGroupId,
+    bool historyCompositeExtended = false,
   }) async {
     final stale = _redoUnits.toList(growable: false);
     _redoUnits.clear();
@@ -730,30 +768,47 @@ final class FlarkCoreEditorSession {
     final previous = _undoUnits.isEmpty ? null : _undoUnits.last;
     if (compositionGroup != null &&
         previous != null &&
-        previous.compositionGroup == compositionGroup) {
+        previous.compositionGroup == compositionGroup &&
+        previous.nativeHistoryStepCount < _maximumNativeCompositeHistorySteps) {
+      if (historyCompositeExtended &&
+          previous.nativeHistoryGroupId != nativeHistoryGroupId) {
+        throw StateError('Flark composite history group identity diverged');
+      }
       _undoUnits[_undoUnits.length - 1] = _HistoryUnit(
-        tokens: List.unmodifiable([...previous.tokens, token]),
+        tokens: historyCompositeExtended
+            ? previous.tokens
+            : List.unmodifiable([...previous.tokens, token]),
         beforeSelection: previous.beforeSelection,
         afterSelection: afterSelection,
         compositionGroup: compositionGroup,
+        nativeHistoryGroupId: nativeHistoryGroupId,
+        nativeHistoryStepCount: previous.nativeHistoryStepCount + 1,
       );
       return;
     }
     if (typing != null &&
         previous != null &&
-        previous.typingEnd == beforeSelection.extent &&
-        previous.typingAtMicros != null &&
-        typing.atMicros - previous.typingAtMicros! <= _typingIdleMicros &&
-        previous.typingEpoch == _typingEpoch) {
+        _typingCoalesces(previous, typing, beforeSelection)) {
+      if (historyCompositeExtended &&
+          previous.nativeHistoryGroupId != nativeHistoryGroupId) {
+        throw StateError('Flark composite typing identity diverged');
+      }
       _undoUnits[_undoUnits.length - 1] = _HistoryUnit(
-        tokens: List.unmodifiable([...previous.tokens, token]),
+        tokens: historyCompositeExtended
+            ? previous.tokens
+            : List.unmodifiable([...previous.tokens, token]),
         beforeSelection: previous.beforeSelection,
         afterSelection: afterSelection,
         typingEnd: typing.end,
         typingAtMicros: typing.atMicros,
         typingEpoch: _typingEpoch,
+        nativeHistoryGroupId: nativeHistoryGroupId,
+        nativeHistoryStepCount: previous.nativeHistoryStepCount + 1,
       );
       return;
+    }
+    if (historyCompositeExtended) {
+      throw StateError('Flark extended history without a matching Core unit');
     }
     _undoUnits.add(
       _HistoryUnit(
@@ -764,9 +819,21 @@ final class FlarkCoreEditorSession {
         typingAtMicros: typing?.atMicros,
         typingEpoch: typing == null ? null : _typingEpoch,
         compositionGroup: compositionGroup,
+        nativeHistoryGroupId: nativeHistoryGroupId,
       ),
     );
   }
+
+  bool _typingCoalesces(
+    _HistoryUnit previous,
+    ({int end, int atMicros}) typing,
+    FlarkCoreSelectionSnapshot beforeSelection,
+  ) =>
+      previous.typingEnd == beforeSelection.extent &&
+      previous.nativeHistoryStepCount < _maximumNativeCompositeHistorySteps &&
+      previous.typingAtMicros != null &&
+      typing.atMicros - previous.typingAtMicros! <= _typingIdleMicros &&
+      previous.typingEpoch == _typingEpoch;
 
   Future<FlarkCoreHistoryOutcome?> _replayDirection({
     required bool undo,
@@ -919,6 +986,7 @@ final class FlarkCoreEditorSession {
     required String replacement,
     required int resultBase,
     required int resultExtent,
+    required int historyGroupId,
   }) {
     var hash = 0x510e527fade682d1;
     for (final value in [
@@ -929,6 +997,7 @@ final class FlarkCoreEditorSession {
       end,
       resultBase,
       resultExtent,
+      historyGroupId,
       replacement.length,
       ...replacement.codeUnits,
     ]) {

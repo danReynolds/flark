@@ -321,9 +321,10 @@ after the predecessor publishes.
 
 ## 6. E1 native transaction contracts
 
-The ABI gains minor-version capabilities: ABI 4.10 `EDIT_INTENTS_V1` and ABI
-4.11 `SOURCE_TRANSACTIONS_V1`. Both use fixed-layout request/result headers
-plus a caller-owned bounded byte buffer. Neither uses a generic argument blob.
+The ABI gains minor-version capabilities: ABI 4.10 `EDIT_INTENTS_V1`, ABI 4.11
+`SOURCE_TRANSACTIONS_V1`, and ABI 4.12 `NATIVE_COMPOSITE_HISTORY_V1`. The edit
+operations use fixed-layout request/result headers plus a caller-owned bounded
+byte buffer. None uses a generic argument blob.
 
 Both operations share the linearization, required-history, anchor, and receipt
 rules in this section. They differ only in who determines the splice:
@@ -544,10 +545,12 @@ matching authority receipt updates metadata without a second layout when the
 visible result already agrees.
 
 Grouped undo/redo is not made atomic by replaying several native tokens with
-compensating rollback. Commands that require one grouped native history unit
-must eventually use a composite native token or native group replay operation.
-E1 semantic commands are standalone history barriers, so that work is not on
-the E1 critical path.
+compensating rollback. ABI 4.12 extends one adjacent native tail token for a
+caller-named source-transaction group and reduces its inverse sequence to one
+bounded replay splice. A composite is capped at 256 observations and 1 MiB of
+replay materialization; Core starts a new user-visible unit at that boundary
+instead of degrading to partial replay. E1 semantic commands remain standalone
+history barriers.
 
 ## 8. Parser-pending latency and the prepared fast path
 
@@ -828,14 +831,16 @@ history-retention ambiguity. Add non-collapsed selection replacement, the
 atomic anchor-retarget primitive, and native composite history before claiming
 the general transaction gateway complete.
 
-Implementation checkpoint: ABI 4.11 and the Core literal lane now use one
+Implementation checkpoint: ABI 4.11 and the Core literal lane use one
 receipt-bearing transaction for replacements and inverses bounded to one 64
 KiB ingress chunk. It validates result selection before commit, reserves the
 exact inverse before mutation, atomically retargets the canonical anchors, and
-recovers a lost reply from the terminal slot. Larger replacements or deletions
-temporarily retain the existing staged bulk lane with explicit fail-stop
-postcommit adoption. Native composite history and a receipt-bearing staged
-commit remain required before the general gateway claim.
+recovers a lost reply from the terminal slot. ABI 4.12 keeps rapid typing and
+composition in one bounded native token and replays each group in one source
+commit. The common bounded transaction gateway is therefore complete. Larger
+replacements or deletions temporarily retain the staged bulk lane with
+explicit fail-stop postcommit adoption; a receipt-bearing staged commit remains
+H4 clipboard/bulk work rather than an unstated exception.
 
 ### H4 — structural and production input matrix
 
