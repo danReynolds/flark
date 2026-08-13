@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define FLARK_V4_ABI_MAJOR UINT16_C(4)
-#define FLARK_V4_ABI_MINOR UINT16_C(20)
+#define FLARK_V4_ABI_MINOR UINT16_C(21)
 
 /* Zero sentinels are legal only where the operation rules below say so. */
 #define FLARK_V4_CONTINUATION_NONE UINT64_C(0)
@@ -213,11 +213,13 @@ typedef uint64_t FlarkV4OwnerToken;
 #define FLARK_V4_CAPABILITY_INDENTED_CODE_EDITING_V1 UINT64_C(0x0000000000080000)
 #define FLARK_V4_CAPABILITY_SEMANTIC_ATOMS_V1 UINT64_C(0x0000000000100000)
 #define FLARK_V4_CAPABILITY_NESTED_BLOCK_QUOTE_EDITING_V1 UINT64_C(0x0000000000200000)
+#define FLARK_V4_CAPABILITY_SEMANTIC_ACTIONS_V1 UINT64_C(0x0000000000400000)
 
 #define FLARK_V4_EDIT_PROFILE_FLARK_V1 UINT32_C(1)
 #define FLARK_V4_EDIT_INTENT_INSERT_PARAGRAPH_BREAK UINT32_C(1)
 #define FLARK_V4_EDIT_INTENT_DELETE_BACKWARD UINT32_C(2)
 #define FLARK_V4_EDIT_INTENT_DELETE_FORWARD UINT32_C(3)
+#define FLARK_V4_EDIT_INTENT_TOGGLE_TASK_CHECKED UINT32_C(4)
 #define FLARK_V4_EDIT_INTENT_DISPOSITION_APPLIED UINT32_C(1)
 #define FLARK_V4_EDIT_INTENT_DISPOSITION_HANDLED_NO_CHANGE UINT32_C(2)
 #define FLARK_V4_EDIT_INTENT_DISPOSITION_NOT_APPLICABLE UINT32_C(3)
@@ -246,6 +248,7 @@ typedef uint64_t FlarkV4OwnerToken;
 #define FLARK_V4_EDIT_PRESENTATION_LIFT_INDENTED_CODE UINT32_C(14)
 #define FLARK_V4_EDIT_PRESENTATION_DELETE_THEMATIC_BREAK UINT32_C(15)
 #define FLARK_V4_EDIT_PRESENTATION_OUTDENT_BLOCK_QUOTE UINT32_C(16)
+#define FLARK_V4_EDIT_PRESENTATION_TOGGLE_TASK_CHECKED UINT32_C(17)
 
 #define FLARK_V4_MAX_SMALL_EDIT_BYTES UINT32_C(4096)
 #define FLARK_V4_MAX_BULK_CHUNK_BYTES UINT32_C(65536)
@@ -538,7 +541,7 @@ typedef struct FlarkV4EditIntentRequestV1 {
   uint32_t selection_direction;
   uint32_t composition_active;
   FlarkV4WorkBudget budget;
-  uint64_t reserved[1];
+  FlarkV4AnchorHandle target_anchor;
 } FlarkV4EditIntentRequestV1;
 
 typedef struct FlarkV4EditIntentReceiptV1 {
@@ -565,8 +568,11 @@ typedef struct FlarkV4EditIntentReceiptV1 {
   uint32_t presentation_transition;
   uint64_t reserved[2];
 } FlarkV4EditIntentReceiptV1;
-/* The replacement payload begins immediately after the fixed receipt. E1
- * requires two collapsed downstream anchors at the same current byte. */
+/* The replacement payload begins immediately after the fixed receipt.
+ * Selection-bound keyboard intents require two collapsed downstream anchors
+ * at the same current byte and target_anchor zero. Selection-independent
+ * semantic actions require an owned target_anchor in the certified row and
+ * preserve both canonical selection anchors. */
 
 typedef struct FlarkV4SourceTransactionRequestV1 {
   uint32_t struct_size;

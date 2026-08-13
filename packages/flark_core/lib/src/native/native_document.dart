@@ -105,6 +105,7 @@ const _editIntentProfileV1 = 1;
 const _editIntentInsertParagraphBreak = 1;
 const _editIntentDeleteBackward = 2;
 const _editIntentDeleteForward = 3;
+const _editIntentToggleTaskChecked = 4;
 const _editIntentApplied = 1;
 const _editIntentHandledNoChange = 2;
 const _editIntentNotApplicable = 3;
@@ -133,16 +134,17 @@ const _editPresentationJoinIndentedCode = 13;
 const _editPresentationLiftIndentedCode = 14;
 const _editPresentationDeleteThematicBreak = 15;
 const _editPresentationOutdentBlockQuote = 16;
+const _editPresentationToggleTaskChecked = 17;
 const _bulkCommitWorkUnits = 1;
 const _resultPayloadBytes = 64 * 1024;
 const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 20;
+const _abiMinor = 21;
 // Every capability through this ABI minor is required by the safe Core
 // boundary; negotiation must fail rather than silently losing an edit lane.
-const _requiredCapabilityBits = 0x3fffff;
+const _requiredCapabilityBits = 0x7fffff;
 
 final class FlarkNativeException implements Exception {
   const FlarkNativeException(this.operation, this.status, [this.detail = 0]);
@@ -178,6 +180,7 @@ enum FlarkNativeEditIntentV1 {
   insertParagraphBreak,
   deleteBackward,
   deleteForward,
+  toggleTaskChecked,
 }
 
 enum FlarkNativeEditIntentDispositionV1 {
@@ -205,6 +208,7 @@ enum FlarkNativeEditPresentationTransitionV1 {
   liftIndentedCode,
   deleteThematicBreak,
   outdentBlockQuote,
+  toggleTaskChecked,
 }
 
 final class FlarkNativeEditIntentReceiptV1 {
@@ -829,6 +833,7 @@ final class FlarkNativeDocument {
     required int expectedRevision,
     required int selectionBaseAnchor,
     required int selectionExtentAnchor,
+    int targetAnchor = 0,
     required int logicalEditId,
     required int requestDigest,
     required int acknowledgePreviousLogicalEditId,
@@ -856,10 +861,13 @@ final class FlarkNativeDocument {
             _editIntentInsertParagraphBreak,
           FlarkNativeEditIntentV1.deleteBackward => _editIntentDeleteBackward,
           FlarkNativeEditIntentV1.deleteForward => _editIntentDeleteForward,
+          FlarkNativeEditIntentV1.toggleTaskChecked =>
+            _editIntentToggleTaskChecked,
         }
         ..selectionAffinity = _affinityDownstream
         ..selectionDirection = 0
-        ..compositionActive = compositionActive ? 1 : 0;
+        ..compositionActive = compositionActive ? 1 : 0
+        ..targetAnchor = targetAnchor;
       _fillSession(request.ref.session);
       _fillBudget(request.ref.budget, workUnits: 1);
       var status = _bindings.editIntentV1(
@@ -935,6 +943,8 @@ final class FlarkNativeDocument {
           FlarkNativeEditPresentationTransitionV1.deleteThematicBreak,
         _editPresentationOutdentBlockQuote =>
           FlarkNativeEditPresentationTransitionV1.outdentBlockQuote,
+        _editPresentationToggleTaskChecked =>
+          FlarkNativeEditPresentationTransitionV1.toggleTaskChecked,
         _ => throw FlarkNativeException(
           'edit_intent_v1',
           _internalFault,

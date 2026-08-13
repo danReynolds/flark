@@ -836,6 +836,83 @@ fn nonuniform_outdent_preserves_the_current_item_marker_offset() {
 }
 
 #[test]
+fn task_toggle_targets_a_certified_row_without_moving_the_selection() {
+    let initial = "- [ ] task\n\nselection stays here\n";
+    let target = initial.find("task").expect("task content");
+    let selection = initial.find("stays").expect("independent selection");
+    let mut document = DocumentSession::begin(initial).expect("begin task fixture");
+    pump_ready(&mut document);
+
+    let checked = document
+        .try_apply_edit_intent_v1_at_bytes(
+            1,
+            DocumentEditIntentV1::ToggleTaskChecked,
+            selection,
+            target,
+            false,
+        )
+        .expect("check task");
+    assert_eq!(
+        checked.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(
+        checked.presentation_transition,
+        DocumentEditPresentationTransitionV1::ToggleTaskChecked
+    );
+    assert_eq!(checked.result_selection_byte, selection);
+    assert_eq!(checked.result_selection_utf16, selection);
+    let splice = checked.committed_splice.expect("committed check splice");
+    assert_eq!(splice.base_byte_range, 3..4);
+    assert_eq!(splice.base_utf16_range, 3..4);
+    assert_eq!(splice.replacement, "x");
+    assert_eq!(source(&document), "- [x] task\n\nselection stays here\n");
+
+    // The carried edit context makes a repeated action deterministic even
+    // before the incremental parser has recertified the row.
+    let unchecked = document
+        .try_apply_edit_intent_v1_at_bytes(
+            2,
+            DocumentEditIntentV1::ToggleTaskChecked,
+            selection,
+            target,
+            false,
+        )
+        .expect("uncheck task while parser is pending");
+    assert_eq!(unchecked.result_selection_byte, selection);
+    assert_eq!(source(&document), initial);
+    document.close().expect("close task fixture");
+}
+
+#[test]
+fn task_toggle_is_fail_closed_for_non_tasks_and_composition() {
+    let initial = "- item\n";
+    let mut document = DocumentSession::begin(initial).expect("begin plain list");
+    pump_ready(&mut document);
+    let not_a_task = document
+        .try_apply_edit_intent_v1_at_bytes(1, DocumentEditIntentV1::ToggleTaskChecked, 6, 2, false)
+        .expect("reject plain list action");
+    assert_eq!(
+        not_a_task.disposition,
+        DocumentEditIntentDispositionV1::NotApplicable
+    );
+    assert_eq!(source(&document), initial);
+
+    let mut task = DocumentSession::begin("- [X] task\n").expect("begin checked task");
+    pump_ready(&mut task);
+    let composing = task
+        .try_apply_edit_intent_v1_at_bytes(1, DocumentEditIntentV1::ToggleTaskChecked, 10, 6, true)
+        .expect("composition guard");
+    assert_eq!(
+        composing.disposition,
+        DocumentEditIntentDispositionV1::NotApplicable
+    );
+    assert_eq!(source(&task), "- [X] task\n");
+    document.close().expect("close plain list");
+    task.close().expect("close checked task");
+}
+
+#[test]
 fn resolver_cost_is_size_independent_for_large_and_giant_lines() {
     let ordinary_tail = "paragraph padding for a large ordinary document.\n\n".repeat(24_000);
     let ordinary_10m_tail = "paragraph padding for a large ordinary document.\n\n".repeat(200_000);

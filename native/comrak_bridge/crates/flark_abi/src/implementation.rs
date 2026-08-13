@@ -33,19 +33,21 @@ use crate::{
     EDIT_INTENT_DISPOSITION_HANDLED_NO_CHANGE, EDIT_INTENT_DISPOSITION_NEEDS_CURRENT_SEMANTICS,
     EDIT_INTENT_DISPOSITION_NOT_APPLICABLE, EDIT_INTENT_INSERT_PARAGRAPH_BREAK,
     EDIT_INTENT_RECEIPT_HAS_COMMIT, EDIT_INTENT_RECEIPT_PARSER_PENDING,
-    EDIT_INTENT_RECEIPT_SEMANTIC_BYTES, EDIT_PRESENTATION_CONTINUE_BLOCK_QUOTE,
-    EDIT_PRESENTATION_CONTINUE_INDENTED_CODE, EDIT_PRESENTATION_CONTINUE_LIST,
-    EDIT_PRESENTATION_DELETE_THEMATIC_BREAK, EDIT_PRESENTATION_EXIT_BLOCK_QUOTE,
-    EDIT_PRESENTATION_EXIT_HEADING, EDIT_PRESENTATION_EXIT_LIST,
-    EDIT_PRESENTATION_JOIN_INDENTED_CODE, EDIT_PRESENTATION_LIFT_BLOCK_QUOTE,
-    EDIT_PRESENTATION_LIFT_HEADING, EDIT_PRESENTATION_LIFT_INDENTED_CODE,
-    EDIT_PRESENTATION_LIFT_LIST, EDIT_PRESENTATION_MERGE_PARAGRAPH, EDIT_PRESENTATION_NONE,
+    EDIT_INTENT_RECEIPT_SEMANTIC_BYTES, EDIT_INTENT_TOGGLE_TASK_CHECKED,
+    EDIT_PRESENTATION_CONTINUE_BLOCK_QUOTE, EDIT_PRESENTATION_CONTINUE_INDENTED_CODE,
+    EDIT_PRESENTATION_CONTINUE_LIST, EDIT_PRESENTATION_DELETE_THEMATIC_BREAK,
+    EDIT_PRESENTATION_EXIT_BLOCK_QUOTE, EDIT_PRESENTATION_EXIT_HEADING,
+    EDIT_PRESENTATION_EXIT_LIST, EDIT_PRESENTATION_JOIN_INDENTED_CODE,
+    EDIT_PRESENTATION_LIFT_BLOCK_QUOTE, EDIT_PRESENTATION_LIFT_HEADING,
+    EDIT_PRESENTATION_LIFT_INDENTED_CODE, EDIT_PRESENTATION_LIFT_LIST,
+    EDIT_PRESENTATION_MERGE_PARAGRAPH, EDIT_PRESENTATION_NONE,
     EDIT_PRESENTATION_OUTDENT_BLOCK_QUOTE, EDIT_PRESENTATION_OUTDENT_LIST,
-    EDIT_PRESENTATION_SPLIT_PARAGRAPH, EDIT_PROFILE_FLARK_V1, INLINE_FACT_AUTOLINK_EMAIL,
-    INLINE_FACT_AUTOLINK_URI, INLINE_FACT_BACKSLASH_ESCAPE, INLINE_FACT_CODE,
-    INLINE_FACT_DIRECT_IMAGE, INLINE_FACT_DIRECT_LINK, INLINE_FACT_EMPHASIS,
-    INLINE_FACT_HARD_LINE_BREAK, INLINE_FACT_REFERENCE_IMAGE, INLINE_FACT_REFERENCE_LINK,
-    INLINE_FACT_REPLACEMENT, INLINE_FACT_STRIKETHROUGH, INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL,
+    EDIT_PRESENTATION_SPLIT_PARAGRAPH, EDIT_PRESENTATION_TOGGLE_TASK_CHECKED,
+    EDIT_PROFILE_FLARK_V1, INLINE_FACT_AUTOLINK_EMAIL, INLINE_FACT_AUTOLINK_URI,
+    INLINE_FACT_BACKSLASH_ESCAPE, INLINE_FACT_CODE, INLINE_FACT_DIRECT_IMAGE,
+    INLINE_FACT_DIRECT_LINK, INLINE_FACT_EMPHASIS, INLINE_FACT_HARD_LINE_BREAK,
+    INLINE_FACT_REFERENCE_IMAGE, INLINE_FACT_REFERENCE_LINK, INLINE_FACT_REPLACEMENT,
+    INLINE_FACT_STRIKETHROUGH, INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL,
     SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES,
     SOURCE_TRANSACTION_RECEIPT_COMPOSITE_HISTORY_EXTENDED, SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT,
     SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING, VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_SHIFT,
@@ -85,7 +87,8 @@ const IMPLEMENTED_CAPABILITIES: u64 = (1 << 0)
     | (1 << 18)
     | (1 << 19)
     | (1 << 20)
-    | (1 << 21);
+    | (1 << 21)
+    | (1 << 22);
 
 struct Registry {
     next_handle: u64,
@@ -1782,10 +1785,7 @@ pub extern "C" fn flark_v4_edit_intent_v1(
             || request.expected_revision == 0
             || request.logical_edit_id == 0
             || request.request_digest == 0
-            || request.selection_affinity != Affinity::Downstream as u32
-            || request.selection_direction != 0
             || request.composition_active > 1
-            || request.reserved != [0; 1]
         {
             return Err(StatusCode::InvalidArgument);
         }
@@ -1793,8 +1793,25 @@ pub extern "C" fn flark_v4_edit_intent_v1(
             EDIT_INTENT_INSERT_PARAGRAPH_BREAK => DocumentEditIntentV1::InsertParagraphBreak,
             EDIT_INTENT_DELETE_BACKWARD => DocumentEditIntentV1::DeleteBackward,
             EDIT_INTENT_DELETE_FORWARD => DocumentEditIntentV1::DeleteForward,
+            EDIT_INTENT_TOGGLE_TASK_CHECKED => DocumentEditIntentV1::ToggleTaskChecked,
             _ => return Err(StatusCode::InvalidArgument),
         };
+        let is_target_action = intent == DocumentEditIntentV1::ToggleTaskChecked;
+        if if is_target_action {
+            request.target_anchor == 0
+                || !matches!(
+                    request.selection_affinity,
+                    value if value == Affinity::Upstream as u32
+                        || value == Affinity::Downstream as u32
+                )
+                || request.selection_direction > 1
+        } else {
+            request.target_anchor != 0
+                || request.selection_affinity != Affinity::Downstream as u32
+                || request.selection_direction != 0
+        } {
+            return Err(StatusCode::InvalidArgument);
+        }
 
         let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
         {
@@ -1839,18 +1856,32 @@ pub extern "C" fn flark_v4_edit_intent_v1(
             // retryable with the same request and acknowledgement.
         }
 
-        let selection_byte = {
+        let (selection_byte, selection_extent_byte, target_byte) = {
             let base =
                 anchor_for_request(&registry, request.session, request.selection_base_anchor)?;
             let extent =
                 anchor_for_request(&registry, request.session, request.selection_extent_anchor)?;
-            if base.byte_offset != extent.byte_offset
-                || base.affinity != Affinity::Downstream
-                || extent.affinity != Affinity::Downstream
+            if !is_target_action
+                && (base.byte_offset != extent.byte_offset
+                    || base.affinity != Affinity::Downstream
+                    || extent.affinity != Affinity::Downstream)
             {
                 return Err(StatusCode::InvalidArgument);
             }
-            usize::try_from(base.byte_offset).map_err(|_| StatusCode::RangeOutOfBounds)?
+            let selection_byte =
+                usize::try_from(base.byte_offset).map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let selection_extent_byte =
+                usize::try_from(extent.byte_offset).map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let target_byte = if is_target_action {
+                usize::try_from(
+                    anchor_for_request(&registry, request.session, request.target_anchor)?
+                        .byte_offset,
+                )
+                .map_err(|_| StatusCode::RangeOutOfBounds)?
+            } else {
+                selection_byte
+            };
+            (selection_byte, selection_extent_byte, target_byte)
         };
 
         let (reserved_history, applies_state) = if request.composition_active == 0 {
@@ -1883,10 +1914,11 @@ pub extern "C" fn flark_v4_edit_intent_v1(
                 }
                 return Err(StatusCode::SessionBusy);
             };
-            document.try_apply_edit_intent_v1_at_byte(
+            document.try_apply_edit_intent_v1_at_bytes(
                 request.expected_revision,
                 intent,
                 selection_byte,
+                target_byte,
                 request.composition_active != 0,
             )
         };
@@ -1949,6 +1981,9 @@ pub extern "C" fn flark_v4_edit_intent_v1(
             }
             DocumentEditPresentationTransitionV1::OutdentBlockQuote => {
                 EDIT_PRESENTATION_OUTDENT_BLOCK_QUOTE
+            }
+            DocumentEditPresentationTransitionV1::ToggleTaskChecked => {
+                EDIT_PRESENTATION_TOGGLE_TASK_CHECKED
             }
         };
 
@@ -2022,7 +2057,11 @@ pub extern "C" fn flark_v4_edit_intent_v1(
         debug_assert_eq!(
             anchor_for_request(&registry, request.session, request.selection_extent_anchor)
                 .map(|anchor| anchor.byte_offset),
-            Ok(receipt.result_selection_byte as u64)
+            Ok(if is_target_action {
+                selection_extent_byte as u64
+            } else {
+                receipt.result_selection_byte as u64
+            })
         );
         finalize_edit_intent_history(
             &mut registry,

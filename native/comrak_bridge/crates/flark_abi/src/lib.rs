@@ -25,7 +25,7 @@ pub use flark_runtime::{
 };
 
 pub const ABI_MAJOR: u16 = 4;
-pub const ABI_MINOR: u16 = 20;
+pub const ABI_MINOR: u16 = 21;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
@@ -443,6 +443,7 @@ pub const EDIT_PROFILE_FLARK_V1: u32 = 1;
 pub const EDIT_INTENT_INSERT_PARAGRAPH_BREAK: u32 = 1;
 pub const EDIT_INTENT_DELETE_BACKWARD: u32 = 2;
 pub const EDIT_INTENT_DELETE_FORWARD: u32 = 3;
+pub const EDIT_INTENT_TOGGLE_TASK_CHECKED: u32 = 4;
 pub const EDIT_INTENT_DISPOSITION_APPLIED: u32 = 1;
 pub const EDIT_INTENT_DISPOSITION_HANDLED_NO_CHANGE: u32 = 2;
 pub const EDIT_INTENT_DISPOSITION_NOT_APPLICABLE: u32 = 3;
@@ -467,6 +468,7 @@ pub const EDIT_PRESENTATION_JOIN_INDENTED_CODE: u32 = 13;
 pub const EDIT_PRESENTATION_LIFT_INDENTED_CODE: u32 = 14;
 pub const EDIT_PRESENTATION_DELETE_THEMATIC_BREAK: u32 = 15;
 pub const EDIT_PRESENTATION_OUTDENT_BLOCK_QUOTE: u32 = 16;
+pub const EDIT_PRESENTATION_TOGGLE_TASK_CHECKED: u32 = 17;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
@@ -486,7 +488,10 @@ pub struct EditIntentRequestV1 {
     pub selection_direction: u32,
     pub composition_active: u32,
     pub budget: WorkBudget,
-    pub reserved: [u64; 1],
+    /// Zero for selection-bound keyboard intents. A selection-independent
+    /// semantic action supplies one owned anchor inside its certified target
+    /// row; the action preserves both canonical selection anchors.
+    pub target_anchor: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

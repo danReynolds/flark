@@ -305,8 +305,8 @@ final class FlarkV4EditIntentRequestV1 extends Struct {
 
   external FlarkV4WorkBudget budget;
 
-  @Array(1)
-  external Array<Uint64> reserved;
+  @Uint64()
+  external int targetAnchor;
 }
 
 final class FlarkV4EditIntentReceiptV1 extends Struct {

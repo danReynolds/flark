@@ -33,6 +33,7 @@ use flark_parser::{
 use crate::edit_intent::{
     resolve_document_edit_intent_v1, DocumentBlockQuoteOutdent, DocumentEditLineEnding,
     DocumentListOutdent, DocumentParagraphMerge, DocumentSimpleEditContext, DocumentSimpleEditRow,
+    DocumentTaskCheck,
 };
 use crate::{
     DocumentEditIntentDispositionV1, DocumentEditIntentReceiptV1, DocumentEditIntentV1,
@@ -953,6 +954,27 @@ impl DocumentSession {
         selection_byte: usize,
         composition_active: bool,
     ) -> Result<DocumentEditIntentReceiptV1, DocumentSessionError> {
+        self.try_apply_edit_intent_v1_at_bytes(
+            expected_revision,
+            intent,
+            selection_byte,
+            selection_byte,
+            composition_active,
+        )
+    }
+
+    /// Resolves a semantic command at [target_byte] while preserving the
+    /// independently anchored selection represented by [selection_byte].
+    /// Keyboard intents pass the same byte for both. Selection-independent
+    /// actions may differ only when their committed splice is length-neutral.
+    pub fn try_apply_edit_intent_v1_at_bytes(
+        &mut self,
+        expected_revision: u64,
+        intent: DocumentEditIntentV1,
+        selection_byte: usize,
+        target_byte: usize,
+        composition_active: bool,
+    ) -> Result<DocumentEditIntentReceiptV1, DocumentSessionError> {
         let actual_revision = self.revision();
         if expected_revision != actual_revision {
             return Err(DocumentSessionError::StaleRevision {
@@ -960,10 +982,11 @@ impl DocumentSession {
                 actual: actual_revision,
             });
         }
-        if selection_byte > self.source_byte_len() {
+        if selection_byte > self.source_byte_len() || target_byte > self.source_byte_len() {
             return Err(DocumentSessionError::RangeOutOfBounds);
         }
         let selection_utf16 = self.utf16_offset_for_byte(selection_byte)?;
+        let target_utf16 = self.utf16_offset_for_byte(target_byte)?;
         if composition_active {
             return Ok(DocumentEditIntentReceiptV1 {
                 disposition: DocumentEditIntentDispositionV1::NotApplicable,
@@ -986,14 +1009,14 @@ impl DocumentSession {
             .as_ref()
             .filter(|context| {
                 context.revision == expected_revision
-                    && selection_byte >= context.editable_bytes.start
-                    && selection_byte <= context.editable_bytes.end
+                    && target_byte >= context.editable_bytes.start
+                    && target_byte <= context.editable_bytes.end
             })
             .cloned()
-            .or_else(|| self.capture_ready_edit_context(selection_byte))
+            .or_else(|| self.capture_ready_edit_context(target_byte))
             .or_else(|| {
                 (!parser_is_ready)
-                    .then(|| self.capture_exact_edit_context(selection_byte))
+                    .then(|| self.capture_exact_edit_context(target_byte))
                     .flatten()
             });
         let Some(context) = context else {
@@ -1011,8 +1034,7 @@ impl DocumentSession {
                 presentation_transition: DocumentEditPresentationTransitionV1::None,
             });
         };
-        let resolved =
-            resolve_document_edit_intent_v1(intent, selection_byte, selection_utf16, &context);
+        let resolved = resolve_document_edit_intent_v1(intent, target_byte, target_utf16, &context);
         let Some(splice) = resolved.splice.clone() else {
             return Ok(DocumentEditIntentReceiptV1 {
                 disposition: resolved.disposition,
@@ -1021,7 +1043,7 @@ impl DocumentSession {
                 committed_splice: None,
                 inverse: Vec::new(),
                 result_selection_byte: selection_byte,
-                result_selection_utf16: resolved.result_selection_utf16,
+                result_selection_utf16: selection_utf16,
                 result_source_byte_length: self.source_byte_len(),
                 result_source_utf16_length: self.source_utf16_len(),
                 parser_pending: self.phase() != DocumentSessionPhase::Ready,
@@ -1034,7 +1056,15 @@ impl DocumentSession {
             splice.replacement.encode_utf16().count(),
         )
         .ok_or(DocumentSessionError::UnsupportedEditIntentSelection)?;
-        if resolved.result_selection_utf16 != expected_result_selection_utf16 {
+        if intent != DocumentEditIntentV1::ToggleTaskChecked
+            && resolved.result_selection_utf16 != expected_result_selection_utf16
+        {
+            return Err(DocumentSessionError::UnsupportedEditIntentSelection);
+        }
+        if intent == DocumentEditIntentV1::ToggleTaskChecked
+            && (splice.base_byte_range.len() != splice.replacement.len()
+                || splice.base_utf16_range.len() != splice.replacement.encode_utf16().count())
+        {
             return Err(DocumentSessionError::UnsupportedEditIntentSelection);
         }
         let result_selection_byte = transformed_collapsed_selection(
@@ -1069,7 +1099,7 @@ impl DocumentSession {
             committed_splice: Some(splice),
             inverse,
             result_selection_byte,
-            result_selection_utf16: resolved.result_selection_utf16,
+            result_selection_utf16: expected_result_selection_utf16,
             result_source_byte_length: self.source_byte_len(),
             result_source_utf16_length: self.source_utf16_len(),
             parser_pending: edit.parser_pending,
@@ -1250,6 +1280,12 @@ impl DocumentSession {
                 if nesting_depth > 1 && outdent.is_none() {
                     return None;
                 }
+                let task_check = match task_checked {
+                    Some(checked) => {
+                        Some(self.capture_task_check(&prefix_bytes, &prefix_utf16, checked)?)
+                    }
+                    None => None,
+                };
                 DocumentSimpleEditRow::ListItem {
                     marker,
                     prefix_bytes,
@@ -1261,6 +1297,7 @@ impl DocumentSession {
                     marker_column,
                     starts_list,
                     task_checked,
+                    task_check,
                     empty: current.kind == 14 || editable_bytes.is_empty(),
                     outdent,
                 }
@@ -1623,6 +1660,40 @@ impl DocumentSession {
         })
     }
 
+    fn capture_task_check(
+        &self,
+        prefix_bytes: &Range<usize>,
+        prefix_utf16: &Range<usize>,
+        checked: bool,
+    ) -> Option<DocumentTaskCheck> {
+        if prefix_bytes.len() != prefix_utf16.len() || prefix_bytes.len() > 64 {
+            return None;
+        }
+        let prefix = self.source_bytes(prefix_bytes.clone()).ok()?;
+        let marker_start = prefix.windows(3).rposition(|window| {
+            window[0] == b'['
+                && window[2] == b']'
+                && if checked {
+                    matches!(window[1], b'x' | b'X')
+                } else {
+                    window[1] == b' '
+                }
+        })?;
+        if !prefix[marker_start + 3..]
+            .iter()
+            .all(|byte| matches!(byte, b' ' | b'\t'))
+        {
+            return None;
+        }
+        let byte_start = prefix_bytes.start.checked_add(marker_start + 1)?;
+        let utf16_start = prefix_utf16.start.checked_add(marker_start + 1)?;
+        Some(DocumentTaskCheck {
+            bytes: byte_start..byte_start + 1,
+            utf16: utf16_start..utf16_start + 1,
+            checked,
+        })
+    }
+
     fn capture_list_marker_indentation(
         &self,
         marker_start_byte: usize,
@@ -1795,6 +1866,12 @@ impl DocumentSession {
                 let prefix_utf16 = lease.utf16_offset_for_byte(prefix_bytes.start).ok()?
                     ..lease.utf16_offset_for_byte(prefix_bytes.end).ok()?;
                 let editable = line_start + content.start..line_start + content.end;
+                let task_check = match task_checked {
+                    Some(checked) => {
+                        Some(self.capture_task_check(&prefix_bytes, &prefix_utf16, checked)?)
+                    }
+                    None => None,
+                };
                 (
                     DocumentSimpleEditRow::ListItem {
                         marker: document_marker_from_parser(marker),
@@ -1807,6 +1884,7 @@ impl DocumentSession {
                         marker_column: marker_offset,
                         starts_list,
                         task_checked,
+                        task_check,
                         empty,
                         outdent: None,
                     },

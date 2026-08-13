@@ -309,6 +309,7 @@ resolveCommittedPresentationTransitionV1({
           ),
         ],
       );
+    case FlarkCoreEditPresentationTransitionV1.toggleTaskChecked:
     case FlarkCoreEditPresentationTransitionV1.none:
       return null;
   }

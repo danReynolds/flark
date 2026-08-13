@@ -8,6 +8,11 @@ import 'document.dart';
 /// exactly on it.
 enum FlarkCoreAffinity { upstream, downstream }
 
+/// A parser-certified edit whose target is independent of the current text
+/// selection. Frontends provide only a source position inside the target row;
+/// Rust owns the Markdown mutation and Core preserves canonical selection.
+enum FlarkCoreSemanticActionV1 { toggleTaskChecked }
+
 /// Extended-grapheme-cluster policy pinned to `package:characters` 1.4.1
 /// (Unicode 16.0.0). Pure functions over a caller-supplied bounded context:
 /// callers provide the text window, so no function here can scan a document.
@@ -440,6 +445,11 @@ final class FlarkCoreEditorSession {
     FlarkCoreEditIntentV1 intent, {
     required bool compositionActive,
   }) {
+    if (intent == FlarkCoreEditIntentV1.toggleTaskChecked) {
+      throw ArgumentError(
+        'Use applySemanticActionV1 for selection-independent actions',
+      );
+    }
     final queuedAt = _clockMicros();
     return _serializeCommand(
       () => _applyEditIntentV1(
@@ -450,10 +460,46 @@ final class FlarkCoreEditorSession {
     );
   }
 
+  /// Applies one parser-owned action at [targetUtf16] without moving or
+  /// replacing the canonical selection. The temporary target anchor and the
+  /// complete logical command live inside the same serialized Core gate.
+  Future<FlarkCoreEditIntentReceiptV1> applySemanticActionV1(
+    FlarkCoreSemanticActionV1 action, {
+    required int targetUtf16,
+    bool compositionActive = false,
+  }) {
+    final queuedAt = _clockMicros();
+    return _serializeCommand(() async {
+      _ensureAuthoritativeCommandsAvailable();
+      final target = await document.createAnchorUtf16(
+        targetUtf16,
+        downstream: true,
+      );
+      try {
+        return await _applyEditIntentV1(
+          switch (action) {
+            FlarkCoreSemanticActionV1.toggleTaskChecked =>
+              FlarkCoreEditIntentV1.toggleTaskChecked,
+          },
+          compositionActive: compositionActive,
+          coreQueueMicros: _clockMicros() - queuedAt,
+          targetAnchor: target,
+          targetUtf16: targetUtf16,
+          preserveSelection: true,
+        );
+      } finally {
+        await document.releaseAnchor(target);
+      }
+    });
+  }
+
   Future<FlarkCoreEditIntentReceiptV1> _applyEditIntentV1(
     FlarkCoreEditIntentV1 intent, {
     required bool compositionActive,
     required int coreQueueMicros,
+    FlarkCoreAnchor? targetAnchor,
+    int? targetUtf16,
+    bool preserveSelection = false,
   }) async {
     _ensureAuthoritativeCommandsAvailable();
     final start = _selectionStart;
@@ -461,8 +507,11 @@ final class FlarkCoreEditorSession {
     if (start == null || end == null) {
       throw StateError('Flark semantic edit requires a canonical selection');
     }
-    if (_selectionBaseUtf16 != _selectionExtentUtf16) {
+    if (!preserveSelection && _selectionBaseUtf16 != _selectionExtentUtf16) {
       throw StateError('flark-edit-v1 currently requires one collapsed caret');
+    }
+    if (preserveSelection != (targetAnchor != null && targetUtf16 != null)) {
+      throw StateError('Flark semantic action target contract is incomplete');
     }
     final baseRevision = document.revision;
     final baseGeneration = _selectionGeneration;
@@ -473,6 +522,7 @@ final class FlarkCoreEditorSession {
       baseGeneration,
       intent.index,
       compositionActive,
+      targetUtf16 ?? -1,
     );
     final before = FlarkCoreSelectionSnapshot(
       base: _selectionBaseUtf16,
@@ -489,6 +539,7 @@ final class FlarkCoreEditorSession {
         expectedRevision: baseRevision,
         selectionBaseAnchor: start,
         selectionExtentAnchor: end,
+        targetAnchor: targetAnchor,
         logicalEditId: logicalEditId,
         requestDigest: requestDigest,
         acknowledgePreviousLogicalEditId: _pendingTerminalLogicalEditId,
@@ -502,7 +553,11 @@ final class FlarkCoreEditorSession {
     final adoptionWatch = Stopwatch()..start();
     if (receipt.logicalEditId != logicalEditId ||
         receipt.requestDigest != requestDigest ||
-        receipt.baseRevision != baseRevision) {
+        receipt.baseRevision != baseRevision ||
+        (preserveSelection &&
+            receipt.hasCommit &&
+            receipt.resultSelectionUtf16 !=
+                (before.base <= before.extent ? before.base : before.extent))) {
       _postCommitUnknown = true;
       throw StateError('Flark semantic receipt correlation failed');
     }
@@ -520,12 +575,14 @@ final class FlarkCoreEditorSession {
       throw StateError('Flark semantic commit omitted required history');
     }
     _breakActiveGroups();
-    _selectionBaseUtf16 = receipt.resultSelectionUtf16;
-    _selectionExtentUtf16 = receipt.resultSelectionUtf16;
+    if (!preserveSelection) {
+      _selectionBaseUtf16 = receipt.resultSelectionUtf16;
+      _selectionExtentUtf16 = receipt.resultSelectionUtf16;
+    }
     final afterGeneration = ++_selectionGeneration;
     final after = FlarkCoreSelectionSnapshot(
-      base: receipt.resultSelectionUtf16,
-      extent: receipt.resultSelectionUtf16,
+      base: _selectionBaseUtf16,
+      extent: _selectionExtentUtf16,
       affinity: _selectionAffinity,
       generation: afterGeneration,
       revision: receipt.resultRevision,
@@ -963,6 +1020,7 @@ final class FlarkCoreEditorSession {
     int selectionGeneration,
     int intent,
     bool compositionActive,
+    int targetUtf16,
   ) {
     var hash = 0x6a09e667f3bcc909;
     for (final value in [
@@ -971,6 +1029,7 @@ final class FlarkCoreEditorSession {
       selectionGeneration,
       intent,
       compositionActive ? 1 : 0,
+      targetUtf16,
     ]) {
       hash = ((hash ^ value) * 0x100000001b3) & 0x7fffffffffffffff;
     }

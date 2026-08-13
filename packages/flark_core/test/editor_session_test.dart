@@ -339,6 +339,50 @@ void main() {
         },
       );
 
+      test(
+        'task action targets its row while preserving a directional selection',
+        () async {
+          const initial = '- [ ] task\n\nselection\n';
+          await open(initial);
+          addTearDown(() async {
+            await session.dispose();
+            await document.dispose();
+          });
+          await session.setSelectionUtf16(
+            21,
+            12,
+            affinity: FlarkCoreAffinity.upstream,
+            adapterState: 'selection-state',
+          );
+
+          final receipt = await session.applySemanticActionV1(
+            FlarkCoreSemanticActionV1.toggleTaskChecked,
+            targetUtf16: 6,
+          );
+          expect(receipt.disposition, FlarkCoreEditIntentDispositionV1.applied);
+          expect(
+            receipt.presentationTransition,
+            FlarkCoreEditPresentationTransitionV1.toggleTaskChecked,
+          );
+          expect(receipt.replacement, 'x');
+          expect(await document.readSource(), '- [x] task\n\nselection\n');
+          var selection = (await session.resolveSelection())!;
+          expect((selection.base, selection.extent), (21, 12));
+          expect(selection.affinity, FlarkCoreAffinity.upstream);
+          expect(selection.adapterState, 'selection-state');
+
+          expect(await session.undo(), isA<FlarkCoreHistoryReplayed>());
+          expect(await document.readSource(), initial);
+          selection = (await session.resolveSelection())!;
+          expect((selection.base, selection.extent), (21, 12));
+
+          expect(await session.redo(), isA<FlarkCoreHistoryReplayed>());
+          expect(await document.readSource(), '- [x] task\n\nselection\n');
+          selection = (await session.resolveSelection())!;
+          expect((selection.base, selection.extent), (21, 12));
+        },
+      );
+
       test('lost semantic reply recovers the terminal exactly once', () async {
         await open(
           '- one\n- two\n',

@@ -24,7 +24,8 @@ export 'src/editor_session.dart'
         FlarkCoreHistoryDropped,
         FlarkCoreHistoryOutcome,
         FlarkCoreHistoryReplayed,
-        FlarkCoreSelectionSnapshot;
+        FlarkCoreSelectionSnapshot,
+        FlarkCoreSemanticActionV1;
 export 'src/models.dart'
     show
         FlarkCertification,

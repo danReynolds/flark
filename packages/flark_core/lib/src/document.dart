@@ -11,6 +11,7 @@ enum FlarkCoreEditIntentV1 {
   insertParagraphBreak,
   deleteBackward,
   deleteForward,
+  toggleTaskChecked,
 }
 
 enum FlarkCoreEditIntentDispositionV1 {
@@ -38,6 +39,7 @@ enum FlarkCoreEditPresentationTransitionV1 {
   liftIndentedCode,
   deleteThematicBreak,
   outdentBlockQuote,
+  toggleTaskChecked,
 }
 
 /// An opaque, one-shot handle to inverse source retained by the native core.
@@ -564,6 +566,7 @@ final class FlarkCoreDocument {
     required int expectedRevision,
     required FlarkCoreAnchor selectionBaseAnchor,
     required FlarkCoreAnchor selectionExtentAnchor,
+    FlarkCoreAnchor? targetAnchor,
     required int logicalEditId,
     required int requestDigest,
     required int acknowledgePreviousLogicalEditId,
@@ -572,11 +575,19 @@ final class FlarkCoreDocument {
   }) async {
     _requireOwnedAnchor(selectionBaseAnchor);
     _requireOwnedAnchor(selectionExtentAnchor);
+    if (targetAnchor != null) _requireOwnedAnchor(targetAnchor);
+    if ((intent == FlarkCoreEditIntentV1.toggleTaskChecked) !=
+        (targetAnchor != null)) {
+      throw ArgumentError(
+        'Only selection-independent semantic actions accept a target anchor',
+      );
+    }
     final arguments = <String, Object?>{
       'intent': intent.index,
       'expectedRevision': expectedRevision,
       'selectionBaseAnchor': selectionBaseAnchor._value,
       'selectionExtentAnchor': selectionExtentAnchor._value,
+      'targetAnchor': targetAnchor?._value ?? 0,
       'logicalEditId': logicalEditId,
       'requestDigest': requestDigest,
       'acknowledgePreviousLogicalEditId': acknowledgePreviousLogicalEditId,
@@ -1013,6 +1024,7 @@ Future<void> _documentWorker(List<Object?> startup) async {
               expectedRevision: arguments['expectedRevision']! as int,
               selectionBaseAnchor: arguments['selectionBaseAnchor']! as int,
               selectionExtentAnchor: arguments['selectionExtentAnchor']! as int,
+              targetAnchor: arguments['targetAnchor']! as int,
               logicalEditId: arguments['logicalEditId']! as int,
               requestDigest: arguments['requestDigest']! as int,
               acknowledgePreviousLogicalEditId:

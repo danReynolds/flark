@@ -7,6 +7,7 @@ pub enum DocumentEditIntentV1 {
     InsertParagraphBreak,
     DeleteBackward,
     DeleteForward,
+    ToggleTaskChecked,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -40,6 +41,7 @@ pub enum DocumentEditPresentationTransitionV1 {
     LiftIndentedCode,
     DeleteThematicBreak,
     OutdentBlockQuote,
+    ToggleTaskChecked,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -123,6 +125,7 @@ pub(crate) enum DocumentSimpleEditRow {
         marker_column: u8,
         starts_list: bool,
         task_checked: Option<bool>,
+        task_check: Option<DocumentTaskCheck>,
         empty: bool,
         outdent: Option<DocumentListOutdent>,
     },
@@ -169,6 +172,13 @@ pub(crate) struct DocumentListOutdent {
 pub(crate) struct DocumentBlockQuoteOutdent {
     pub(crate) bytes: Range<usize>,
     pub(crate) utf16: Range<usize>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct DocumentTaskCheck {
+    pub(crate) bytes: Range<usize>,
+    pub(crate) utf16: Range<usize>,
+    pub(crate) checked: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -219,6 +229,39 @@ pub(crate) fn resolve_document_edit_intent_v1(
     }
 
     match (intent, &context.row) {
+        (
+            DocumentEditIntentV1::ToggleTaskChecked,
+            DocumentSimpleEditRow::ListItem {
+                task_checked: Some(checked),
+                task_check: Some(task_check),
+                ..
+            },
+        ) if task_check.checked == *checked => {
+            let replacement = if *checked { " " } else { "x" }.to_owned();
+            let mut result_context = context.clone();
+            if let DocumentSimpleEditRow::ListItem {
+                task_checked,
+                task_check,
+                ..
+            } = &mut result_context.row
+            {
+                *task_checked = Some(!checked);
+                if let Some(task_check) = task_check {
+                    task_check.checked = !checked;
+                }
+            }
+            result_context.revision += 1;
+            applied(
+                splice(
+                    task_check.bytes.clone(),
+                    task_check.utf16.clone(),
+                    replacement,
+                ),
+                selection_utf16,
+                Some(result_context),
+                DocumentEditPresentationTransitionV1::ToggleTaskChecked,
+            )
+        }
         (DocumentEditIntentV1::InsertParagraphBreak, DocumentSimpleEditRow::Plain) => {
             let ending = context.ending.text();
             let replacement = format!("{ending}{ending}");
@@ -423,6 +466,7 @@ pub(crate) fn resolve_document_edit_intent_v1(
                 marker_column,
                 starts_list,
                 task_checked,
+                task_check,
                 empty,
                 outdent,
             },
@@ -448,6 +492,7 @@ pub(crate) fn resolve_document_edit_intent_v1(
                                 *container_count,
                                 *marker_column,
                                 *task_checked,
+                                task_check.as_ref(),
                                 true,
                                 outdent,
                             )
@@ -544,6 +589,11 @@ pub(crate) fn resolve_document_edit_intent_v1(
                     marker_column: *marker_column,
                     starts_list: false,
                     task_checked: task_checked.map(|_| false),
+                    task_check: task_checked.map(|_| DocumentTaskCheck {
+                        bytes: selection_byte + byte_delta - 3..selection_byte + byte_delta - 2,
+                        utf16: selection_utf16 + utf16_delta - 3..selection_utf16 + utf16_delta - 2,
+                        checked: false,
+                    }),
                     empty: selection_byte == context.editable_bytes.end,
                     outdent: result_outdent,
                 },
@@ -737,6 +787,7 @@ pub(crate) fn resolve_document_edit_intent_v1(
                 marker_column,
                 starts_list,
                 task_checked,
+                task_check,
                 empty,
                 outdent,
                 ..
@@ -764,6 +815,7 @@ pub(crate) fn resolve_document_edit_intent_v1(
                             *container_count,
                             *marker_column,
                             *task_checked,
+                            task_check.as_ref(),
                             *empty,
                             outdent,
                         )
@@ -1097,6 +1149,7 @@ fn outdent_list_row(
     container_count: u8,
     marker_column: u8,
     task_checked: Option<bool>,
+    task_check: Option<&DocumentTaskCheck>,
     empty: bool,
     outdent: &DocumentListOutdent,
 ) -> ResolvedDocumentEditIntentV1 {
@@ -1208,6 +1261,11 @@ fn outdent_list_row(
     } else {
         None
     };
+    let result_task_check = task_check.map(|task_check| DocumentTaskCheck {
+        bytes: task_check.bytes.start - removed_bytes..task_check.bytes.end - removed_bytes,
+        utf16: task_check.utf16.start - removed_utf16..task_check.utf16.end - removed_utf16,
+        checked: task_check.checked,
+    });
     let result_context = DocumentSimpleEditContext {
         revision: context.revision + 1,
         source_bytes: source_start_byte..source_end_byte,
@@ -1226,6 +1284,7 @@ fn outdent_list_row(
             marker_column: result_marker_column,
             starts_list: false,
             task_checked,
+            task_check: result_task_check,
             empty,
             outdent: result_outdent,
         },

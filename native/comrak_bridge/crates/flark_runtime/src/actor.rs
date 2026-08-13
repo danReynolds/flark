@@ -183,6 +183,25 @@ impl DocumentActor {
         })
     }
 
+    pub fn try_apply_edit_intent_v1_at_bytes(
+        &self,
+        expected_revision: u64,
+        intent: DocumentEditIntentV1,
+        selection_byte: usize,
+        target_byte: usize,
+        composition_active: bool,
+    ) -> Result<DocumentEditIntentReceiptV1, DocumentActorError> {
+        self.call(move |document| {
+            document.try_apply_edit_intent_v1_at_bytes(
+                expected_revision,
+                intent,
+                selection_byte,
+                target_byte,
+                composition_active,
+            )
+        })
+    }
+
     pub fn source_bytes(&self, range: Range<usize>) -> Result<Vec<u8>, DocumentActorError> {
         self.call(move |document| document.source_bytes(range))
     }

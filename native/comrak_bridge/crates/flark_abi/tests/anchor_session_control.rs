@@ -14,7 +14,8 @@ use flark_abi::{
     SourceTransactionReceiptV1, SourceTransactionRequestV1, TransactionRequest, WorkBudget,
     EDIT_INTENT_DISPOSITION_APPLIED, EDIT_INTENT_INSERT_PARAGRAPH_BREAK,
     EDIT_INTENT_RECEIPT_HAS_COMMIT, EDIT_INTENT_RECEIPT_SEMANTIC_BYTES,
-    EDIT_PRESENTATION_CONTINUE_LIST, EDIT_PRESENTATION_EXIT_LIST, EDIT_PROFILE_FLARK_V1,
+    EDIT_INTENT_TOGGLE_TASK_CHECKED, EDIT_PRESENTATION_CONTINUE_LIST, EDIT_PRESENTATION_EXIT_LIST,
+    EDIT_PRESENTATION_TOGGLE_TASK_CHECKED, EDIT_PROFILE_FLARK_V1,
     SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES, SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT,
 };
 use flark_runtime::{HistoryDisposition, SessionState, StatusCode, MAX_LIVE_ANCHORS};
@@ -245,7 +246,7 @@ fn edit_intent_request(
         selection_direction: 0,
         composition_active: 0,
         budget: budget(1),
-        reserved: [0; 1],
+        target_anchor: 0,
     }
 }
 
@@ -411,6 +412,66 @@ fn semantic_edit_is_one_commit_with_required_history_and_recoverable_terminal() 
     assert_eq!(
         read_source(session, 4, after_second.len() + 1),
         b"- one\n\n\n- two\nx"
+    );
+    close_session(session);
+}
+
+#[test]
+fn semantic_action_targets_a_task_and_preserves_a_range_selection() {
+    let source = b"- [ ] task\n\nselection\n";
+    let session = open_session(source, 453);
+    let base = create_anchor(session, 1, SOURCE_BYTE, 12, DOWNSTREAM);
+    let extent = create_anchor(session, 1, SOURCE_BYTE, 21, UPSTREAM);
+    let target = create_anchor(session, 1, SOURCE_BYTE, 6, DOWNSTREAM);
+    let mut request = edit_intent_request(session, 1, base, 1, 0xAC710);
+    request.intent = EDIT_INTENT_TOGGLE_TASK_CHECKED;
+    request.selection_extent_anchor = extent;
+    request.target_anchor = target;
+    let mut output = vec![0_u8; size_of::<EditIntentReceiptV1>() + 4096];
+    let mut outcome = Outcome::default();
+
+    assert_eq!(
+        flark_v4_edit_intent_v1(
+            &request,
+            output.as_mut_ptr(),
+            output.len() as u64,
+            &mut outcome,
+        ),
+        StatusCode::Ok as u32
+    );
+    let receipt = unsafe {
+        output
+            .as_ptr()
+            .cast::<EditIntentReceiptV1>()
+            .read_unaligned()
+    };
+    assert_eq!(
+        receipt.semantic_disposition,
+        EDIT_INTENT_DISPOSITION_APPLIED
+    );
+    assert_eq!(
+        receipt.presentation_transition,
+        EDIT_PRESENTATION_TOGGLE_TASK_CHECKED
+    );
+    assert_eq!(
+        receipt.base_byte_range,
+        SourceRange {
+            start_byte: 3,
+            end_byte: 4
+        }
+    );
+    assert_eq!(receipt.result_selection_utf16, 12);
+    assert_ne!(receipt.history_token, 0);
+    assert_eq!(
+        &output[size_of::<EditIntentReceiptV1>()..size_of::<EditIntentReceiptV1>() + 1],
+        b"x"
+    );
+    assert_eq!(resolve_anchor(session, base, 2, SOURCE_BYTE), 12);
+    assert_eq!(resolve_anchor(session, extent, 2, SOURCE_BYTE), 21);
+    assert_eq!(resolve_anchor(session, target, 2, SOURCE_BYTE), 6);
+    assert_eq!(
+        read_source(session, 2, source.len()),
+        b"- [x] task\n\nselection\n"
     );
     close_session(session);
 }
