@@ -189,6 +189,34 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
           sourcePointGeometry: geometry,
         );
         return;
+      case 'lookupTaskCheckboxPoint':
+        final controller = _controller;
+        if (controller == null) throw StateError('scenario has no controller');
+        final target = command.arguments['targetUtf16']! as int;
+        await _settleScenarioController(controller);
+        await _awaitScenarioFrame();
+        final row = controller.rows.firstWhere(
+          (candidate) =>
+              candidate.listItem?.taskChecked != null &&
+              candidate.editableUtf16 != null &&
+              candidate.editableUtf16!.start <= target &&
+              target <= candidate.editableUtf16!.end,
+          orElse: () => throw StateError(
+            'task target $target is not in a certified task row',
+          ),
+        );
+        final geometry = _scenarioDebugHandle.geometryForTaskCheckboxOrdinal(
+          row.ordinal,
+        );
+        if (geometry == null) {
+          throw StateError('task checkbox at $target is not painted');
+        }
+        await writer.writeNow(
+          commandSequence: command.sequence,
+          taskActionTarget: target,
+          taskActionGeometry: geometry,
+        );
+        return;
       default:
         throw StateError('unsupported scenario command ${command.operation}');
     }

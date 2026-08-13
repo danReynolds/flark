@@ -43,6 +43,11 @@ sealed class LiveEditorScenarioOperation {
       case 'pasteText':
         reader.expectKeys(const {'op', 'text'});
         return LiveEditorPasteText(text: reader.requiredString('text'));
+      case 'toggleTaskAtUtf16':
+        reader.expectKeys(const {'op', 'targetUtf16'});
+        return LiveEditorToggleTaskAtUtf16(
+          targetUtf16: reader.requiredNonNegativeInt('targetUtf16'),
+        );
       case 'pause':
         reader.expectKeys(const {'op', 'milliseconds'});
         return LiveEditorPause(
@@ -130,6 +135,18 @@ final class LiveEditorPasteText extends LiveEditorScenarioOperation {
 
   @override
   Map<String, Object?> toJson() => {'op': 'pasteText', 'text': text};
+}
+
+final class LiveEditorToggleTaskAtUtf16 extends LiveEditorScenarioOperation {
+  const LiveEditorToggleTaskAtUtf16({required this.targetUtf16});
+
+  final int targetUtf16;
+
+  @override
+  Map<String, Object?> toJson() => {
+    'op': 'toggleTaskAtUtf16',
+    'targetUtf16': targetUtf16,
+  };
 }
 
 final class LiveEditorPause extends LiveEditorScenarioOperation {
@@ -576,6 +593,11 @@ final class LiveEditorScenarioCompiler {
       case 'pasteText':
         reader.expectKeys(const {'type', 'text'});
         return LiveEditorPasteText(text: reader.requiredString('text'));
+      case 'toggleTaskAtUtf16':
+        reader.expectKeys(const {'type', 'targetUtf16'});
+        return LiveEditorToggleTaskAtUtf16(
+          targetUtf16: reader.requiredNonNegativeInt('targetUtf16'),
+        );
       case 'scheduleDelay':
         reader.expectKeys(const {'type', 'key'});
         final key = reader.requiredString('key');

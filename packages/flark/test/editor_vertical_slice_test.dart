@@ -2,12 +2,74 @@ import 'dart:io';
 
 import 'package:flark/flark.dart';
 import 'package:flark/src/render_surface.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   final libraryPath = Platform.environment['FLARK_V4_LIBRARY_PATH'];
+
+  testWidgets(
+    'rendered task checkbox toggles without moving the editor selection',
+    (tester) async {
+      const initial = '- [ ] todo\n\nSelection stays here.\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(initial, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final task = controller.rows.first;
+      final paragraph = controller.rows.last;
+      await tester.runAsync(() async {
+        controller.activateRow(paragraph, paragraph.editableUtf16!.end);
+        await controller.resolveCanonicalSelection();
+      });
+      final selectionBefore = controller.inputValue.selection;
+      final caretBefore = controller.globalCaretOffset;
+      final debugHandle = FlarkEditorDebugHandle();
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: FlarkEditor(
+              controller: controller,
+              debugHandle: debugHandle,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final checkbox = debugHandle.geometryForTaskCheckboxOrdinal(task.ordinal);
+      expect(checkbox, isNotNull);
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: checkbox!.globalPosition);
+      await gesture.down(checkbox.globalPosition);
+      await gesture.up();
+      await gesture.removePointer();
+      await _pumpUntilTransactions(tester, controller);
+
+      expect(controller.visibleSource, '- [x] todo\n\nSelection stays here.\n');
+      expect(controller.surfaceRow(controller.rows.first).leadingText, '☑ ');
+      expect(controller.globalCaretOffset, caretBefore);
+      expect(controller.inputValue.selection, selectionBefore);
+      expect(controller.lastError, isNull);
+
+      expect(await tester.runAsync(controller.undo), isTrue);
+      await tester.pump();
+      expect(controller.visibleSource, initial);
+      expect(controller.globalCaretOffset, caretBefore);
+
+      expect(await tester.runAsync(controller.redo), isTrue);
+      await tester.pump();
+      expect(controller.visibleSource, '- [x] todo\n\nSelection stays here.\n');
+      expect(controller.globalCaretOffset, caretBefore);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
 
   testWidgets(
     'custom surface paints bounded rows and applies input optimistically',

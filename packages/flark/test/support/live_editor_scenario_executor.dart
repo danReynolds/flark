@@ -43,6 +43,8 @@ abstract interface class LiveEditorScenarioDriver {
 
   Future<void> pasteText(String text);
 
+  Future<void> toggleTaskAtUtf16(int targetUtf16);
+
   Future<void> pause(Duration duration);
 
   Future<void> awaitBarrier(LiveEditorScenarioBarrier barrier);
@@ -108,6 +110,8 @@ Future<LiveEditorScenarioExecutionResult> executeLiveEditorScenario(
           );
         case LiveEditorPasteText():
           await driver.pasteText(operation.text);
+        case LiveEditorToggleTaskAtUtf16():
+          await driver.toggleTaskAtUtf16(operation.targetUtf16);
         case LiveEditorPause():
           await driver.pause(operation.duration);
         case LiveEditorAwait():

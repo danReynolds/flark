@@ -957,11 +957,24 @@ continuation. The one committed splice drives anchors, history, Core temporary
 surfaces, and Flutter paint. Mixed-container paths and unbounded prefixes remain
 explicitly unadmitted rather than delegated to host Markdown inference.
 
+ABI 4.21 adds `SEMANTIC_ACTIONS_V1` without creating a UI-specific mutation
+path. A parser-certified task row contributes an exact checkbox byte range;
+Core binds a temporary target anchor to that row, and Rust toggles only the
+certified marker through the existing one-splice admission, history, anchor,
+idempotency, and terminal-receipt machinery. Canonical selection is an
+independent anchor set and is preserved, including directional ranges. The
+Flutter surface maps its rendered checkbox hit target to this framework-neutral
+action and holds only the receipt-backed checked value while parsing catches
+up. A portable source-targeted scenario runs the same action headlessly and on
+mounted Flutter; the macOS driver resolves that target to painted geometry and
+performs a real pointer click. This is the general target-action seam, with task
+toggle as its first admitted action rather than a task-specific second editor.
+
 ### H5 — hardening and later architecture
 
 Qualify memory envelopes, fault recovery, giant-line raster behavior, GFM and
 live-projection matrices, physical devices, and Windows. Design true multi-
-splice and semantic action transactions as a separate coordinated change only
+splice transactions and batched semantic actions as coordinated changes only
 when a proven command requires them.
 
 ## 13. Falsification questions

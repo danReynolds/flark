@@ -397,6 +397,28 @@ func screenPoint(
   )
 }
 
+func taskCheckboxScreenPoint(
+  targetUtf16: Int,
+  window: (origin: CGPoint, size: CGSize, number: Int)
+) throws -> CGPoint {
+  let receipt = try appRequest(
+    operation: "lookupTaskCheckboxPoint",
+    arguments: ["targetUtf16": targetUtf16]
+  )
+  let point = try dictionary(receipt["taskActionPoint"], "taskActionPoint")
+  guard let globalX = point["globalX"] as? Double,
+    let globalY = point["globalY"] as? Double,
+    let rootHeight = point["rootHeight"] as? Double
+  else {
+    throw ActuatorFailure.message("task action point contained invalid geometry")
+  }
+  let contentTopInset = max(0, window.size.height - rootHeight)
+  return CGPoint(
+    x: window.origin.x + globalX,
+    y: window.origin.y + contentTopInset + globalY
+  )
+}
+
 var shouldStop = false
 while !shouldStop, let line = readLine() {
   var sequence = 0
@@ -463,6 +485,10 @@ while !shouldStop, let line = readLine() {
         throw ActuatorFailure.message("could not set the macOS pasteboard")
       }
       pressCommandShortcut(9)
+    case "toggleTaskAtUtf16":
+      let target = try integer(arguments["targetUtf16"], "targetUtf16")
+      let window = try focusWindow(pid: appPID)
+      click(try taskCheckboxScreenPoint(targetUtf16: target, window: window))
     case "pause":
       pause(milliseconds: try integer(arguments["milliseconds"], "milliseconds"))
     case "stop":

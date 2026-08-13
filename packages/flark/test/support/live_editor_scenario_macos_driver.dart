@@ -90,6 +90,11 @@ final class MacosNativeLiveEditorScenarioDriver
   }
 
   @override
+  Future<void> toggleTaskAtUtf16(int targetUtf16) {
+    return _request('toggleTaskAtUtf16', {'targetUtf16': targetUtf16});
+  }
+
+  @override
   Future<void> pause(Duration duration) async {
     await _request('pause', {'milliseconds': duration.inMilliseconds});
   }

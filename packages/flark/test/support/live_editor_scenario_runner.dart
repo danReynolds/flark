@@ -162,6 +162,25 @@ base class NoWindowLiveEditorScenarioDriver
   }
 
   @override
+  Future<void> toggleTaskAtUtf16(int targetUtf16) async {
+    final controller = _activeController;
+    final row = controller.rows.firstWhere(
+      (candidate) =>
+          candidate.listItem?.taskChecked != null &&
+          candidate.editableUtf16 != null &&
+          candidate.editableUtf16!.start <= targetUtf16 &&
+          targetUtf16 <= candidate.editableUtf16!.end,
+      orElse: () => throw StateError(
+        'task target $targetUtf16 is not in a certified task row',
+      ),
+    );
+    if (!await controller.toggleTaskChecked(row)) {
+      throw StateError('task target $targetUtf16 was not applicable');
+    }
+    _platformValue = controller.inputValue;
+  }
+
+  @override
   Future<void> pause(Duration duration) async {
     if (duration > Duration.zero) await Future<void>.delayed(duration);
     final controller = _activeController;

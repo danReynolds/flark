@@ -431,6 +431,14 @@ in the faster Rust/Core matrices. Those additions found and closed shared
 duplicate-action, successor-history, parser-refresh generation, and structural
 recertification bugs rather than adding construct-local handlers.
 
+Rendered task-checkbox activation now uses the same portable plan as other
+cross-layer behavior. The no-window lane invokes the framework-neutral target
+action, the mounted lane observes its receipt-backed projection through
+undo/redo, and the macOS actuator resolves the source target to current painted
+geometry before sending a real click. A focused editor widget test separately
+owns hit-testing and selection preservation, so the portable corpus does not
+duplicate pointer mechanics in every runner.
+
 ### H3 — Grow from evidence
 
 Promote shipped construct families from the candidate list as their v4 product

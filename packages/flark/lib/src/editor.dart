@@ -37,6 +37,18 @@ final class FlarkEditorDebugHandle {
     );
   }
 
+  FlarkEditorDebugGeometry? geometryForTaskCheckboxOrdinal(int ordinal) {
+    final surface = _surface;
+    if (surface == null || !surface.attached || !surface.hasSize) return null;
+    final local = surface.debugLocalPositionForTaskCheckbox(ordinal);
+    if (local == null) return null;
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    return FlarkEditorDebugGeometry(
+      globalPosition: surface.localToGlobal(local),
+      rootLogicalSize: view.physicalSize / view.devicePixelRatio,
+    );
+  }
+
   void _attach(RenderFlarkSurface? surface) => _surface = surface;
 
   void _detach(RenderFlarkSurface? surface) {
@@ -94,6 +106,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
   FocusNode? _ownedFocusNode;
   TextInputConnection? _connection;
   TextEditingValue? _lastSentValue;
+  FlarkSurfaceHit? _pendingActionHit;
 
   FocusNode get _focusNode => widget.focusNode ?? _ownedFocusNode!;
 
@@ -194,6 +207,10 @@ final class _FlarkEditorState extends State<FlarkEditor>
   void _activate(Offset localPosition, {bool extend = false}) {
     final hit = _surface?.positionForOffset(localPosition);
     if (hit == null) return;
+    _activateHit(hit, extend: extend);
+  }
+
+  void _activateHit(FlarkSurfaceHit hit, {bool extend = false}) {
     if (extend) {
       widget.controller.extendSelectionTo(
         hit.globalUtf16Offset,
@@ -217,6 +234,29 @@ final class _FlarkEditorState extends State<FlarkEditor>
     _focusNode.requestFocus();
     _openConnection();
     _sendEditingState(force: true);
+  }
+
+  void _handleTapDown(TapDownDetails details) {
+    final hit = _surface?.positionForOffset(details.localPosition);
+    if (hit == null) return;
+    if (hit.action != null) {
+      _pendingActionHit = hit;
+      return;
+    }
+    _pendingActionHit = null;
+    _activateHit(hit);
+  }
+
+  void _handleTap() {
+    final hit = _pendingActionHit;
+    _pendingActionHit = null;
+    if (hit?.action != FlarkSurfaceAction.toggleTaskChecked ||
+        hit?.row == null) {
+      return;
+    }
+    _focusNode.requestFocus();
+    _openConnection();
+    unawaited(widget.controller.toggleTaskChecked(hit!.row!));
   }
 
   @override
@@ -248,8 +288,13 @@ final class _FlarkEditorState extends State<FlarkEditor>
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               supportedDevices: const {PointerDeviceKind.mouse},
-              onTapDown: (details) => _activate(details.localPosition),
-              onPanStart: (details) => _activate(details.localPosition),
+              onTapDown: _handleTapDown,
+              onTap: _handleTap,
+              onTapCancel: () => _pendingActionHit = null,
+              onPanStart: (details) {
+                _pendingActionHit = null;
+                _activate(details.localPosition);
+              },
               onPanUpdate: (details) =>
                   _activate(details.localPosition, extend: true),
               child: FlarkRenderSurfaceWidget(

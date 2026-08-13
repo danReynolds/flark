@@ -133,6 +133,8 @@ final class DogfoodScenarioReceiptWriter {
   Object? _commandError;
   int? _sourcePointOffset;
   FlarkEditorDebugGeometry? _sourcePointGeometry;
+  int? _taskActionTarget;
+  FlarkEditorDebugGeometry? _taskActionGeometry;
   DateTime? _lastInputEventAt;
 
   void beginScenario(String id) {
@@ -143,6 +145,8 @@ final class DogfoodScenarioReceiptWriter {
     _commandError = null;
     _sourcePointOffset = null;
     _sourcePointGeometry = null;
+    _taskActionTarget = null;
+    _taskActionGeometry = null;
     _lastInputEventAt = null;
   }
 
@@ -206,6 +210,8 @@ final class DogfoodScenarioReceiptWriter {
     required int commandSequence,
     int? sourcePointOffset,
     FlarkEditorDebugGeometry? sourcePointGeometry,
+    int? taskActionTarget,
+    FlarkEditorDebugGeometry? taskActionGeometry,
   }) async {
     _timer?.cancel();
     _timer = null;
@@ -213,6 +219,8 @@ final class DogfoodScenarioReceiptWriter {
     _commandError = null;
     _sourcePointOffset = sourcePointOffset;
     _sourcePointGeometry = sourcePointGeometry;
+    _taskActionTarget = taskActionTarget;
+    _taskActionGeometry = taskActionGeometry;
     _captureSettledPresentation();
     _timer?.cancel();
     _timer = null;
@@ -269,6 +277,7 @@ final class DogfoodScenarioReceiptWriter {
       return;
     }
     final geometry = _sourcePointGeometry;
+    final taskGeometry = _taskActionGeometry;
     final receipt = <String, Object?>{
       'schemaVersion': 2,
       'scenarioId': _scenarioId,
@@ -295,6 +304,14 @@ final class DogfoodScenarioReceiptWriter {
           'globalY': geometry.globalPosition.dy,
           'rootWidth': geometry.rootLogicalSize.width,
           'rootHeight': geometry.rootLogicalSize.height,
+        },
+      if (taskGeometry != null)
+        'taskActionPoint': {
+          'targetUtf16': _taskActionTarget,
+          'globalX': taskGeometry.globalPosition.dx,
+          'globalY': taskGeometry.globalPosition.dy,
+          'rootWidth': taskGeometry.rootLogicalSize.width,
+          'rootHeight': taskGeometry.rootLogicalSize.height,
         },
     };
     final destination = File(mode.receiptPath);

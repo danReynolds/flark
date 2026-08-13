@@ -16,6 +16,13 @@ portable drivers consume that exact plan:
   controller, Core worker, and Rust engine without a platform window. It owns
   exact source, selection, revision, resync, fault, and settled-presentation
   assertions.
+
+Semantic surface actions use source-relative targets as stable identities. For
+example, `toggleTaskAtUtf16` names any offset inside a certified task row. The
+no-window driver invokes the framework-neutral controller action; a native
+driver resolves the same target to the painted checkbox and performs a real
+pointer click.
+
 - `live_editor_scenario_surface_test.dart` mounts the production render object
   and adds bounded observations emitted by actual paint calls. It uses the same
   actions, barriers, and assertions as the no-window driver.

@@ -452,6 +452,7 @@ final class FlarkEditorController extends ChangeNotifier {
   FlarkCoreCommittedPresentationGapV1? _committedParagraphSplit;
   List<FlarkCoreCommittedPresentationSurfaceV1> _committedStructuralSurfaces =
       const [];
+  final Map<int, bool> _committedTaskChecks = <int, bool>{};
   int _pageIndex = 0;
   int _editGeneration = 0;
   int _pendingEdits = 0;
@@ -805,7 +806,7 @@ final class FlarkEditorController extends ChangeNotifier {
     final leadingText = !rowCertified
         ? exactLeadingText
         : listItem != null
-        ? _projectedListPrefix(listItem)
+        ? _projectedListPrefix(row.ordinal, listItem)
         : blockQuote != null
         ? _projectedBlockQuotePrefix(blockQuote)
         : '';
@@ -2752,6 +2753,7 @@ final class FlarkEditorController extends ChangeNotifier {
     _visibleSource = _inputValue.text;
     _visibleUtf16Start = _inputGlobalUtf16Start;
     _optimisticViewportEdits.clear();
+    _committedTaskChecks.clear();
     _status = _document.isReady
         ? FlarkEditorStatus.ready
         : FlarkEditorStatus.parsing;
@@ -3156,6 +3158,115 @@ final class FlarkEditorController extends ChangeNotifier {
     _editTail = completion.catchError((Object _, StackTrace _) {});
     unawaited(completion);
     notifyListeners();
+  }
+
+  /// Toggles a parser-certified GFM task checkbox without moving selection or
+  /// asking Flutter to synthesize Markdown. The row contributes only a
+  /// bounded target position; Rust returns the committed one-byte splice.
+  Future<bool> toggleTaskChecked(FlarkViewportRow row) {
+    if (_closed ||
+        _status == FlarkEditorStatus.faulted ||
+        _session.compositionActive ||
+        _pendingSemanticInput != null ||
+        _projectionContinuity != null ||
+        _committedParagraphSplit != null ||
+        _committedStructuralSurfaces.isNotEmpty ||
+        (!_semanticViewportCurrent && _committedTaskChecks.isEmpty)) {
+      return Future<bool>.value(false);
+    }
+    FlarkViewportRow? current;
+    for (final candidate in _cachedRows) {
+      if (candidate.ordinal == row.ordinal) {
+        current = candidate;
+        break;
+      }
+    }
+    final item = current?.listItem;
+    final editable = current?.editableUtf16;
+    if (current == null || item?.taskChecked == null || editable == null) {
+      return Future<bool>.value(false);
+    }
+    final target = _mapViewportRange(editable).start;
+    _breakTypingHistoryGroup();
+    _parseTimer?.cancel();
+    _parseTimer = null;
+    final generation = ++_editGeneration;
+    _pendingEdits += 1;
+    _status = FlarkEditorStatus.editing;
+    final operation = _editTail.then(
+      (_) => _session.applySemanticActionV1(
+        FlarkCoreSemanticActionV1.toggleTaskChecked,
+        targetUtf16: target,
+      ),
+    );
+    final completion = _completeTaskToggle(
+      operation,
+      generation,
+      current.ordinal,
+    );
+    _editTail = completion
+        .then<void>((_) {})
+        .catchError((Object _, StackTrace _) {});
+    notifyListeners();
+    return completion;
+  }
+
+  Future<bool> _completeTaskToggle(
+    Future<FlarkCoreEditIntentReceiptV1> operation,
+    int generation,
+    int rowOrdinal,
+  ) async {
+    try {
+      final receipt = await operation;
+      if (!receipt.hasCommit) {
+        _pendingEdits = math.max(0, _pendingEdits - 1);
+        if (generation == _editGeneration) {
+          _status = _semanticViewportCurrent
+              ? FlarkEditorStatus.ready
+              : FlarkEditorStatus.parsing;
+        }
+        notifyListeners();
+        return false;
+      }
+      final checked = switch (receipt.replacement) {
+        'x' => true,
+        ' ' => false,
+        _ => throw StateError('Invalid task-toggle replacement receipt'),
+      };
+      if (!_applyLengthNeutralViewportReplacement(
+        receipt.baseUtf16Start,
+        receipt.baseUtf16End,
+        receipt.replacement,
+      )) {
+        throw StateError('Task-toggle receipt fell outside its visible row');
+      }
+      _applyLengthNeutralInputReplacement(
+        receipt.baseUtf16Start,
+        receipt.baseUtf16End,
+        receipt.replacement,
+      );
+      _committedTaskChecks[rowOrdinal] = checked;
+      // Publish the receipt-backed prefix immediately; parser recertification
+      // may take several bounded pumps on a large document.
+      notifyListeners();
+      if (generation == _editGeneration) {
+        await _refreshViewport(
+          restoreInputWindow: false,
+          expectedEditGeneration: generation,
+          ensureActiveInputVisible: true,
+        );
+        if (generation == _editGeneration) _scheduleParsingAfterInput();
+      }
+      _pendingEdits = math.max(0, _pendingEdits - 1);
+      notifyListeners();
+      return true;
+    } catch (error) {
+      _pendingEdits = math.max(0, _pendingEdits - 1);
+      _lastError = error;
+      _status = FlarkEditorStatus.faulted;
+      notifyListeners();
+      return false;
+    }
   }
 
   void _ensureSemanticInputBarrier() {
@@ -3839,6 +3950,7 @@ final class FlarkEditorController extends ChangeNotifier {
       if (outcome == null) return false;
       final restore = _adapterSnapshot(outcome.restoreSelection);
       _optimisticViewportEdits.clear();
+      _committedTaskChecks.clear();
       // History replay is one authoritative visual transaction. Do not
       // publish a pending exact-source viewport between the native replay and
       // its parser-certified result; retain the prior frame while bounded
@@ -3985,7 +4097,8 @@ final class FlarkEditorController extends ChangeNotifier {
     final hasCommittedSurface =
         _projectionContinuity != null ||
         _committedParagraphSplit != null ||
-        _committedStructuralSurfaces.isNotEmpty;
+        _committedStructuralSurfaces.isNotEmpty ||
+        _committedTaskChecks.isNotEmpty;
     final retainsExistingSurface =
         !viewport.isCertified && hasCommittedSurface && _cachedRows.isNotEmpty;
     final installsFreshRows =
@@ -4006,7 +4119,10 @@ final class FlarkEditorController extends ChangeNotifier {
     }
     _certificationRanges = viewport.certificationRanges;
     _certificationRevisionCurrent = viewport.certificationRanges.isNotEmpty;
-    if (installsFreshRows) _optimisticViewportEdits.clear();
+    if (installsFreshRows) {
+      _optimisticViewportEdits.clear();
+      _committedTaskChecks.clear();
+    }
     _semanticViewportCurrent = viewport.isCertified && installsFreshRows;
     if (_viewportSupersedesProjectionContinuity(viewport)) {
       _projectionContinuity = null;
@@ -4227,6 +4343,57 @@ final class FlarkEditorController extends ChangeNotifier {
     );
   }
 
+  bool _applyLengthNeutralViewportReplacement(
+    int globalStart,
+    int globalEnd,
+    String replacement,
+  ) {
+    if (globalEnd < globalStart ||
+        replacement.length != globalEnd - globalStart) {
+      return false;
+    }
+    final localStart = globalStart - _visibleUtf16Start;
+    final localEnd = globalEnd - _visibleUtf16Start;
+    if (localStart < 0 ||
+        localEnd < localStart ||
+        localEnd > _visibleSource.length) {
+      return false;
+    }
+    _semanticViewportCurrent = false;
+    _certificationRevisionCurrent = false;
+    _certificationRanges = const [];
+    _visibleSource = _visibleSource.replaceRange(
+      localStart,
+      localEnd,
+      replacement,
+    );
+    // No range-map entry is needed: the action is length-neutral, so every
+    // cached source coordinate remains exact at the result revision.
+    return true;
+  }
+
+  void _applyLengthNeutralInputReplacement(
+    int globalStart,
+    int globalEnd,
+    String replacement,
+  ) {
+    final windowStart = _inputGlobalUtf16Start;
+    final windowEnd = windowStart + _inputValue.text.length;
+    if (globalEnd <= windowStart || globalStart >= windowEnd) return;
+    if (globalStart < windowStart ||
+        globalEnd > windowEnd ||
+        replacement.length != globalEnd - globalStart) {
+      throw StateError('Task-toggle receipt crossed the input-window edge');
+    }
+    final localStart = globalStart - windowStart;
+    final localEnd = globalEnd - windowStart;
+    _inputValue = _inputValue.copyWith(
+      text: _inputValue.text.replaceRange(localStart, localEnd, replacement),
+      selection: _inputValue.selection,
+      composing: _inputValue.composing,
+    );
+  }
+
   FlarkSourceRange _mapViewportRange(FlarkSourceRange base) {
     var start = base.start;
     var end = base.end;
@@ -4348,8 +4515,9 @@ final class FlarkEditorController extends ChangeNotifier {
     return row.sourceUtf16;
   }
 
-  String _projectedListPrefix(FlarkListItemPresentation item) {
-    final marker = switch (item.taskChecked) {
+  String _projectedListPrefix(int rowOrdinal, FlarkListItemPresentation item) {
+    final taskChecked = _committedTaskChecks[rowOrdinal] ?? item.taskChecked;
+    final marker = switch (taskChecked) {
       null => item.markerText,
       false => '☐',
       true => '☑',
@@ -4374,6 +4542,7 @@ final class FlarkEditorController extends ChangeNotifier {
     // viewport for one safe keystroke produces a visible page-wide flash.
     if (_projectionContinuity != null) return true;
     if (_committedStructuralSurfaces.isNotEmpty) return true;
+    if (_committedTaskChecks.isNotEmpty) return true;
     if (!_certificationRevisionCurrent) return false;
     return _certificationRanges.any(
       (range) =>

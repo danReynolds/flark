@@ -36,6 +36,8 @@ final class FlarkSurfacePaintObservation {
   final int renderPlanHash;
 }
 
+enum FlarkSurfaceAction { toggleTaskChecked }
+
 final class FlarkSurfaceHit {
   const FlarkSurfaceHit({
     required this.globalUtf16Offset,
@@ -44,6 +46,7 @@ final class FlarkSurfaceHit {
     this.row,
     this.neutralText,
     this.neutralUtf16Start,
+    this.action,
   });
 
   final int globalUtf16Offset;
@@ -52,6 +55,7 @@ final class FlarkSurfaceHit {
   final FlarkViewportRow? row;
   final String? neutralText;
   final int? neutralUtf16Start;
+  final FlarkSurfaceAction? action;
 }
 
 final class _PaintedRow {
@@ -739,15 +743,15 @@ final class RenderFlarkSurface extends RenderBox {
       (candidate) => contentOffset.dy <= candidate.top + candidate.height,
       orElse: () => _paintedRows.last,
     );
-    final position = row.painter.getPositionForOffset(
-      Offset(
-        (contentOffset.dx - _padding.left).clamp(0, row.painter.width),
-        (contentOffset.dy - row.top).clamp(0, row.height),
-      ),
+    final painterPoint = Offset(
+      (contentOffset.dx - _padding.left).clamp(0, row.painter.width),
+      (contentOffset.dy - row.top).clamp(0, row.height),
     );
+    final position = row.painter.getPositionForOffset(painterPoint);
     final local = (position.offset - row.leadingLength + row.fragmentStart)
         .clamp(row.fragmentStart, row.fragmentEnd)
         .clamp(0, row.presentation.text.length);
+    final taskAction = _taskActionBox(row);
     return FlarkSurfaceHit(
       globalUtf16Offset: row.presentation.sourceOffsetForTextOffset(
         local,
@@ -758,7 +762,46 @@ final class RenderFlarkSurface extends RenderBox {
       row: row.row,
       neutralText: row.neutralText,
       neutralUtf16Start: row.neutralUtf16Start,
+      action: taskAction?.inflate(4).contains(painterPoint) == true
+          ? FlarkSurfaceAction.toggleTaskChecked
+          : null,
     );
+  }
+
+  Rect? _taskActionBox(_PaintedRow row) {
+    if (row.fragmentStart != 0 ||
+        row.leadingLength == 0 ||
+        row.row?.listItem?.taskChecked == null) {
+      return null;
+    }
+    final leading = row.presentation.leadingText;
+    var marker = leading.indexOf('☐');
+    if (marker < 0) marker = leading.indexOf('☑');
+    if (marker < 0) return null;
+    final boxes = row.painter.getBoxesForSelection(
+      TextSelection(baseOffset: marker, extentOffset: marker + 1),
+    );
+    return boxes.isEmpty ? null : boxes.first.toRect();
+  }
+
+  Offset? debugLocalPositionForTaskCheckbox(int ordinal) {
+    for (final row in _paintedRows) {
+      if (row.ordinal != ordinal) continue;
+      final box = _taskActionBox(row);
+      if (box == null) return null;
+      final result = Offset(
+        _padding.left + box.center.dx,
+        row.top - _scrollOffset + box.center.dy,
+      );
+      if (result.dx < 0 ||
+          result.dy < 0 ||
+          result.dx > size.width ||
+          result.dy > size.height) {
+        return null;
+      }
+      return result;
+    }
+    return null;
   }
 
   /// Returns a visible local point that hit-tests to [sourceUtf16Offset].
