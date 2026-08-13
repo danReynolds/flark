@@ -460,6 +460,14 @@ paint-geometry vertical movement. Broader word/line/document, bidi, page, and
 platform convention matrices are added only with their corresponding product
 behavior; they are not multiplied through the portable Markdown corpus.
 
+One bounded page-transition receipt now starts at a retained visual column on
+the last row of a 32-row viewport page, drives Down into the adjacent page,
+then drives Shift+Up back. It asserts the exact source is unchanged, the
+horizontal source column is retained, and the reverse selection base stays on
+the newer page through Core anchors. This covers single-step forward/backward
+page continuation; it does not stand in for repeated-key arbitration,
+caret-following scroll, bidi, or platform accessibility navigation.
+
 The read-only widget has one focused host test proving touch scroll over the
 shared bounded render object, unchanged source, zero edit traffic, and no
 `EditableText`. Editing scenarios are intentionally not replayed through it.

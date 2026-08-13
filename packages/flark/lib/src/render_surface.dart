@@ -181,6 +181,7 @@ final class RenderFlarkSurface extends RenderBox {
   double _scrollOffset = 0;
   double _contentHeight = 0;
   int _laidOutPageIndex = 0;
+  bool _layOutThroughPageEnd = false;
   int _laidOutRowCount = 0;
   int _skippedRowCount = 0;
   int _skippedFragmentCount = 0;
@@ -344,11 +345,18 @@ final class RenderFlarkSurface extends RenderBox {
   void performLayout() {
     size = computeDryLayout(constraints);
     final previousPage = _laidOutPageIndex;
-    _buildVisibleLayouts();
-    _laidOutPageIndex = _controller.viewportPageIndex;
-    if (_laidOutPageIndex > previousPage) {
+    final nextPage = _controller.viewportPageIndex;
+    if (nextPage > previousPage) {
       _scrollOffset = 0;
-    } else if (_laidOutPageIndex < previousPage) {
+    }
+    _layOutThroughPageEnd = nextPage < previousPage;
+    try {
+      _buildVisibleLayouts();
+    } finally {
+      _layOutThroughPageEnd = false;
+    }
+    _laidOutPageIndex = nextPage;
+    if (nextPage < previousPage) {
       _scrollOffset = _maximumScrollOffset;
     } else {
       _scrollOffset = _scrollOffset.clamp(0, _maximumScrollOffset);
@@ -378,8 +386,9 @@ final class RenderFlarkSurface extends RenderBox {
   }
 
   /// Rows fully below this content-space line are not laid out this pass.
-  double get _layoutBudgetBottom =>
-      _scrollOffset + (hasSize ? size.height : 480) + _layoutOverscanPx;
+  double get _layoutBudgetBottom => _layOutThroughPageEnd
+      ? double.infinity
+      : _scrollOffset + (hasSize ? size.height : 480) + _layoutOverscanPx;
 
   /// The tallest reasonable estimate for one un-laid-out row: enough that
   /// the scroll range never undershoots badly, cheap enough to be a guess.
@@ -1044,12 +1053,51 @@ final class RenderFlarkSurface extends RenderBox {
     final current = _localPositionForSourceUtf16(offset);
     final row = _logicalRowForSourceUtf16(offset);
     if (current == null || row == null) return null;
-    return positionForOffset(
-      Offset(
-        preferredX ?? current.dx,
-        current.dy + (forward ? 1 : -1) * row.painter.preferredLineHeight,
-      ),
+    final target = Offset(
+      preferredX ?? current.dx,
+      current.dy + (forward ? 1 : -1) * row.painter.preferredLineHeight,
     );
+    final firstTop = _paintedRows.first.top - _scrollOffset;
+    final lastBottom =
+        _paintedRows.last.top + _paintedRows.last.height - _scrollOffset;
+    if (target.dy < firstTop || target.dy > lastBottom) return null;
+    return positionForOffset(target);
+  }
+
+  /// Whether a vertical move from [offset] has exhausted this bounded page.
+  ///
+  /// The editor uses this only after [verticalHit] finds no painted target.
+  /// It deliberately refuses to skip rows that have not yet been laid out.
+  bool isAtViewportPageEdge(int offset, {required bool forward}) {
+    final current = _logicalRowForSourceUtf16(offset);
+    if (current == null) return false;
+    final logicalRows = _logicalRows.toList(growable: false);
+    if (logicalRows.isEmpty) return false;
+    if (forward) {
+      return _skippedRowCount == 0 &&
+          current.ordinal == logicalRows.last.ordinal;
+    }
+    return current.ordinal == logicalRows.first.ordinal;
+  }
+
+  /// Resolves the first or last rendered caret stop after a page transition.
+  FlarkSurfaceHit? verticalPageEdgeHit({
+    required bool forward,
+    required double preferredX,
+  }) {
+    if (_paintedRows.isEmpty) return null;
+    final row = forward ? _paintedRows.first : _paintedRows.last;
+    final point = Offset(
+      (preferredX - _padding.left).clamp(0, row.painter.width),
+      forward
+          ? math.min(row.height / 2, row.painter.preferredLineHeight / 2)
+          : math.max(0, row.height - row.painter.preferredLineHeight / 2),
+    );
+    final position = row.painter.getPositionForOffset(point);
+    final local = (position.offset - row.leadingLength + row.fragmentStart)
+        .clamp(row.fragmentStart, row.fragmentEnd)
+        .clamp(0, row.presentation.text.length);
+    return _hitForTextOffset(row, local, affinity: position.affinity);
   }
 
   double? localXForSourceUtf16(int offset) =>

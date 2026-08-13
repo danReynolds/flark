@@ -516,6 +516,80 @@ void main() {
   );
 
   testWidgets(
+    'vertical navigation continues across bounded viewport pages',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(640, 1600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final source = List<String>.generate(
+        96,
+        (index) => 'Paragraph ${index.toString().padLeft(3, '0')} text.\n\n',
+      ).join();
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final lastRow = controller.rows.last;
+      final sourceColumn = lastRow.editableUtf16!.start + 4;
+      await tester.runAsync(() async {
+        controller.activateRow(lastRow, sourceColumn);
+        await controller.resolveCanonicalSelection();
+      });
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: FlarkEditor(
+              controller: controller,
+              padding: EdgeInsets.zero,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final surface = tester.renderObject<RenderFlarkSurface>(
+        find.byType(FlarkRenderSurfaceWidget),
+      );
+      expect(surface.debugLocalPositionForSourceUtf16(sourceColumn), isNotNull);
+      final dynamic state = tester.state(find.byType(FlarkEditor));
+      final selectionGeneration = controller.canonicalSelectionGeneration;
+
+      state.performSelector('moveDown:');
+      await _pumpUntil(tester, () => controller.viewportPageIndex == 1);
+      await _pumpUntil(
+        tester,
+        () => controller.canonicalSelectionGeneration > selectionGeneration,
+      );
+
+      final firstRow = controller.rows.first;
+      final pageOneCaret = firstRow.editableUtf16!.start + 4;
+      expect(controller.globalCaretOffset, pageOneCaret);
+      expect(controller.globalSelectionBase, controller.globalSelectionExtent);
+
+      final reverseGeneration = controller.canonicalSelectionGeneration;
+      state.performSelector('moveUpAndModifySelection:');
+      await _pumpUntil(tester, () => controller.viewportPageIndex == 0);
+      await _pumpUntil(
+        tester,
+        () => controller.canonicalSelectionGeneration > reverseGeneration,
+      );
+
+      final previousLastRow = controller.rows.last;
+      expect(controller.globalSelectionBase, pageOneCaret);
+      expect(
+        controller.globalSelectionExtent,
+        previousLastRow.editableUtf16!.start + 4,
+      );
+      expect(await tester.runAsync(controller.readSource), source);
+      expect(controller.lastError, isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
     'select-all shortcut installs one exact document-wide selection',
     (tester) async {
       final source = List.generate(

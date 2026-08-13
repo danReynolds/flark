@@ -1041,8 +1041,14 @@ nearest caret at a retained horizontal coordinate. macOS selectors and Flutter
 logical arrow shortcuts share that adapter, including Shift extension, while
 Core installs the resulting source selection through canonical anchors. This
 does not move navigation semantics into Rust: layout-dependent destinations
-belong to the frontend, while word/line/document commands, bidi permutations,
-off-page navigation, and accessibility traversal remain explicit H4 work.
+belong to the frontend. When the current painted target exhausts a fully
+materialized bounded page, the adapter now requests exactly one adjacent Core
+viewport page, waits for its Flutter layout, and resolves the first or last
+rendered caret stop at the retained horizontal coordinate. A reverse Shift+Up
+receipt proves the selection base remains Core-anchored across the page swap.
+Word/line/document conventions beyond the implemented subset, caret-following
+scroll/materialization, bidi permutations, repeated-key arbitration, and
+accessibility traversal remain explicit H4 work.
 
 The public `FlarkMarkdownView` shares the same bounded render object and now
 shares the device-appropriate scroll boundary: wheel and pan/zoom signals on

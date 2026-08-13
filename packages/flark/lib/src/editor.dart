@@ -110,6 +110,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
   TextEditingValue? _lastSentValue;
   FlarkSurfaceHit? _pendingTapHit;
   double? _preferredVerticalNavigationX;
+  bool _verticalPageNavigationPending = false;
 
   FocusNode get _focusNode => widget.focusNode ?? _ownedFocusNode!;
 
@@ -295,17 +296,74 @@ final class _FlarkEditorState extends State<FlarkEditor>
   void _moveVertically({required bool forward, required bool modify}) {
     final surface = _surface;
     if (surface == null) return;
-    final extent = widget.controller.globalSelectionExtent;
+    final controller = widget.controller;
+    final extent = controller.globalSelectionExtent;
     _preferredVerticalNavigationX ??= surface.localXForSourceUtf16(extent);
+    final preferredX = _preferredVerticalNavigationX;
     final hit = surface.verticalHit(
       extent,
       forward: forward,
-      preferredX: _preferredVerticalNavigationX,
+      preferredX: preferredX,
     );
-    if (hit == null) return;
-    final preferredX = _preferredVerticalNavigationX;
-    _adoptNavigationHit(hit, modify: modify);
-    _preferredVerticalNavigationX = preferredX;
+    if (hit != null) {
+      _adoptNavigationHit(hit, modify: modify);
+      _preferredVerticalNavigationX = preferredX;
+      return;
+    }
+    if (preferredX == null ||
+        _verticalPageNavigationPending ||
+        !surface.isAtViewportPageEdge(extent, forward: forward) ||
+        (forward ? !controller.canPageForward : !controller.canPageBackward)) {
+      return;
+    }
+    _verticalPageNavigationPending = true;
+    unawaited(
+      _continueVerticalNavigationAcrossPage(
+        controller: controller,
+        forward: forward,
+        modify: modify,
+        preferredX: preferredX,
+        selectionGeneration: controller.canonicalSelectionGeneration,
+        selectionExtent: extent,
+      ),
+    );
+  }
+
+  Future<void> _continueVerticalNavigationAcrossPage({
+    required FlarkEditorController controller,
+    required bool forward,
+    required bool modify,
+    required double preferredX,
+    required int selectionGeneration,
+    required int selectionExtent,
+  }) async {
+    final moved = forward
+        ? await controller.nextViewportPage()
+        : await controller.previousViewportPage();
+    if (!moved ||
+        !mounted ||
+        !identical(controller, widget.controller) ||
+        controller.canonicalSelectionGeneration != selectionGeneration ||
+        controller.globalSelectionExtent != selectionExtent) {
+      _verticalPageNavigationPending = false;
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _verticalPageNavigationPending = false;
+      if (!mounted ||
+          !identical(controller, widget.controller) ||
+          controller.canonicalSelectionGeneration != selectionGeneration ||
+          controller.globalSelectionExtent != selectionExtent) {
+        return;
+      }
+      final hit = _surface?.verticalPageEdgeHit(
+        forward: forward,
+        preferredX: preferredX,
+      );
+      if (hit == null) return;
+      _adoptNavigationHit(hit, modify: modify);
+      _preferredVerticalNavigationX = preferredX;
+    });
   }
 
   Future<void> _selectAll() async {
