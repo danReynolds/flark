@@ -4050,9 +4050,7 @@ final class FlarkEditorController extends ChangeNotifier {
 
   FlarkSourceRange _activationRange(FlarkViewportRow row) {
     final editable = row.editableUtf16;
-    if (row.listItem != null &&
-        editable != null &&
-        editable.start < row.sourceUtf16.start) {
+    if (editable != null && editable.start < row.sourceUtf16.start) {
       return editable;
     }
     return row.sourceUtf16;

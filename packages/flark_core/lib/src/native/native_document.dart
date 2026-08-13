@@ -35,6 +35,7 @@ const _indentedCodeKind = 6;
 const _fencedCodeKind = 7;
 const _thematicBreakKind = 13;
 const _emptyListItemKind = 14;
+const _emptyBlockQuoteKind = 15;
 const _listMarkerMask = 0x7;
 const _listHyphen = 1;
 const _listPlus = 2;
@@ -130,7 +131,7 @@ const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 15;
+const _abiMinor = 16;
 // Every v4.7 capability is used by the safe core boundary, including
 // resumable close and snapshot continuations.
 const _requiredCapabilityBits = 0x3ffff;
@@ -1662,7 +1663,7 @@ final class FlarkNativeDocument {
       final hasBlockQuotePresentation =
           listMarker == 0 &&
           record.semanticVariant & _blockQuotePresentation != 0 &&
-          record.kind == _paragraphKind;
+          matchesBlockQuoteRowKind(record.kind);
       if (hasBlockQuotePresentation) {
         final depth =
             (record.semanticVariant & _blockQuoteDepthMask) >>
@@ -1915,6 +1916,9 @@ final class FlarkNativeDocument {
 
   static bool matchesListRowKind(int kind) =>
       kind == _paragraphKind || kind == _emptyListItemKind;
+
+  static bool matchesBlockQuoteRowKind(int kind) =>
+      kind == _paragraphKind || kind == _emptyBlockQuoteKind;
 
   static bool _validProjectionSegments(
     List<FlarkProjectionSegment> segments, {

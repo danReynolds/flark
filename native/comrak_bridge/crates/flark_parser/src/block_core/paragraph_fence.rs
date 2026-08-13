@@ -14,9 +14,9 @@ use flark_engine::{DocumentRuntime, SourceVersion};
 
 use super::{
     writer::{
-        FACT_CODE, FACT_HEADING, FACT_ITEM, FACT_LIST, KIND_BLOCK_QUOTE, KIND_EMPTY_ITEM_ROW,
-        KIND_FENCED_CODE, KIND_HEADING, KIND_INDENTED_CODE, KIND_ITEM, KIND_LIST, KIND_PARAGRAPH,
-        KIND_THEMATIC_BREAK,
+        FACT_CODE, FACT_HEADING, FACT_ITEM, FACT_LIST, KIND_BLOCK_QUOTE,
+        KIND_EMPTY_BLOCK_QUOTE_ROW, KIND_EMPTY_ITEM_ROW, KIND_FENCED_CODE, KIND_HEADING,
+        KIND_INDENTED_CODE, KIND_ITEM, KIND_LIST, KIND_PARAGRAPH, KIND_THEMATIC_BREAK,
     },
     BulletMarker, FenceCharacter, HeadingStyle, ListDelimiter,
 };
@@ -91,7 +91,10 @@ pub fn m11_recursive_green_row_presentation(
     if row.kind().get() == KIND_HEADING {
         return heading_row_presentation(row);
     }
-    if matches!(row.kind().get(), KIND_PARAGRAPH | KIND_EMPTY_ITEM_ROW) {
+    if matches!(
+        row.kind().get(),
+        KIND_PARAGRAPH | KIND_EMPTY_ITEM_ROW | KIND_EMPTY_BLOCK_QUOTE_ROW
+    ) {
         if let Some(presentation) = list_item_row_presentation(runtime, row)? {
             return Ok(presentation);
         }
@@ -322,42 +325,87 @@ fn block_quote_row_presentation(
     .map_err(|_| M11RecursiveGreenError::Corrupt("BlockQuote nesting exceeds its parser bound"))?;
     let quote = &path[first_quote_index];
     let row_start = row.physical_range().start;
-    let row_start_utf16 = row.physical_utf16_range().start;
-    let prefix_start = quote.physical_range().start;
-    let prefix_start_utf16 = quote.physical_utf16_range().start;
-    let prefix_len = row_start
-        .checked_sub(prefix_start)
+    let quote_start = quote.physical_range().start;
+    let empty_quote_row = row.kind().get() == KIND_EMPTY_BLOCK_QUOTE_ROW;
+    let read_start = if empty_quote_row {
+        row_start
+            .saturating_sub(MAX_ROW_BLOCK_QUOTE_PREFIX_BYTES as u64)
+            .max(quote_start)
+    } else {
+        quote_start
+    };
+    let read_len = row_start
+        .checked_sub(read_start)
         .ok_or(M11RecursiveGreenError::Corrupt(
             "BlockQuote prefix follows its row",
         ))?;
-    let _prefix_utf16_len =
-        row_start_utf16
-            .checked_sub(prefix_start_utf16)
-            .ok_or(M11RecursiveGreenError::Corrupt(
-                "BlockQuote UTF-16 prefix follows its row",
-            ))?;
-    let Ok(prefix_len) = usize::try_from(prefix_len) else {
+    let Ok(read_len) = usize::try_from(read_len) else {
         return Ok(None);
     };
-    if prefix_len == 0 || prefix_len > MAX_ROW_BLOCK_QUOTE_PREFIX_BYTES {
+    if read_len == 0 || read_len > MAX_ROW_BLOCK_QUOTE_PREFIX_BYTES {
         return Ok(None);
     }
-    let start =
-        usize::try_from(prefix_start).map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+    let start = usize::try_from(read_start).map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
     let end = usize::try_from(row_start).map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
     let mut prefix = [0_u8; MAX_ROW_BLOCK_QUOTE_PREFIX_BYTES];
-    let read = runtime.read_current_source_window(start..end, &mut prefix[..prefix_len])?;
-    if read != prefix_len {
+    let read = runtime.read_current_source_window(start..end, &mut prefix[..read_len])?;
+    if read != read_len {
         return Err(M11RecursiveGreenError::Corrupt(
             "BlockQuote prefix source stopped early",
         ));
     }
-    if prefix[..prefix_len]
-        .iter()
-        .any(|byte| matches!(byte, b'\r' | b'\n'))
+    let trailing_line_ending_len = if empty_quote_row {
+        let prefix = &prefix[..read_len];
+        if prefix.ends_with(b"\r\n") {
+            2
+        } else if prefix.ends_with(b"\n") || prefix.ends_with(b"\r") {
+            1
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+    let marker_end = read_len.saturating_sub(trailing_line_ending_len);
+    let marker_start = if empty_quote_row {
+        prefix[..marker_end]
+            .iter()
+            .rposition(|byte| matches!(byte, b'\r' | b'\n'))
+            .map_or(0, |index| index + 1)
+    } else {
+        0
+    };
+    if empty_quote_row && marker_start == 0 && read_start != quote_start {
+        return Ok(None);
+    }
+    if marker_start == marker_end
+        || prefix[marker_start..marker_end]
+            .iter()
+            .any(|byte| matches!(byte, b'\r' | b'\n'))
     {
         return Ok(None);
     }
+    let prefix_start =
+        read_start
+            .checked_add(marker_start as u64)
+            .ok_or(M11RecursiveGreenError::Corrupt(
+                "BlockQuote prefix start exceeds its row",
+            ))?;
+    let prefix_end =
+        read_start
+            .checked_add(marker_end as u64)
+            .ok_or(M11RecursiveGreenError::Corrupt(
+                "BlockQuote prefix end exceeds its row",
+            ))?;
+    let lease = runtime.snapshot_current_source()?;
+    let prefix_start_utf16 = u64::try_from(lease.utf16_offset_for_byte(
+        usize::try_from(prefix_start).map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+    )?)
+    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+    let prefix_end_utf16 = u64::try_from(lease.utf16_offset_for_byte(
+        usize::try_from(prefix_end).map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+    )?)
+    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
     let simple_continuation = nesting_depth == 1
         && first_quote_index == 1
         && path.len() == 3
@@ -366,9 +414,9 @@ fn block_quote_row_presentation(
         && row_has_one_physical_line(runtime, row)?;
     Ok(Some(M11RecursiveGreenRowPresentation::BlockQuote {
         prefix_start_byte: prefix_start,
-        prefix_end_byte: row_start,
+        prefix_end_byte: prefix_end,
         prefix_start_utf16,
-        prefix_end_utf16: row_start_utf16,
+        prefix_end_utf16,
         nesting_depth,
         simple_continuation,
     }))

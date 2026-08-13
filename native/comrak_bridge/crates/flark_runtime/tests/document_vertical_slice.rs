@@ -303,6 +303,17 @@ fn viewport_preserves_parser_authored_block_structure_presentations() {
     );
     quote.close().expect("close BlockQuote");
 
+    let unterminated_source = "> alpha";
+    let mut unterminated =
+        DocumentSession::begin(unterminated_source).expect("begin unterminated BlockQuote");
+    pump_ready(&mut unterminated);
+    let unterminated_viewport = unterminated
+        .query_viewport(1, 0..unterminated_source.len(), 32)
+        .expect("unterminated BlockQuote viewport");
+    assert_eq!(unterminated_viewport.rows.len(), 1);
+    assert_eq!(unterminated_viewport.rows[0].editable_range, Some(2..7));
+    unterminated.close().expect("close unterminated BlockQuote");
+
     let nested_source = "> > nested\n";
     let mut nested = DocumentSession::begin(nested_source).expect("begin nested BlockQuote");
     pump_ready(&mut nested);
@@ -361,6 +372,75 @@ fn viewport_preserves_parser_authored_block_structure_presentations() {
         vec![2..8, 10..16],
     );
     multiline.close().expect("close multiline BlockQuote");
+
+    let empty_multiline_source = "> first\n> \n";
+    let mut empty_multiline =
+        DocumentSession::begin(empty_multiline_source).expect("begin empty multiline BlockQuote");
+    pump_ready(&mut empty_multiline);
+    let empty_multiline_viewport = empty_multiline
+        .query_viewport(1, 0..empty_multiline_source.len(), 32)
+        .expect("empty multiline BlockQuote viewport");
+    assert_eq!(empty_multiline_viewport.rows.len(), 2);
+    let empty_quote = &empty_multiline_viewport.rows[1];
+    assert_eq!(empty_quote.kind, 15);
+    assert_eq!(empty_quote.source_range, 11..11);
+    assert_eq!(empty_quote.editable_range, Some(10..10));
+    assert_eq!(empty_quote.editable_utf16_range, Some(10..10));
+    assert_eq!(
+        empty_quote.presentation,
+        DocumentViewportRowPresentation::BlockQuote {
+            prefix_start_byte: 8,
+            prefix_end_byte: 10,
+            prefix_start_utf16: 8,
+            prefix_end_utf16: 10,
+            nesting_depth: 1,
+            simple_continuation: true,
+        }
+    );
+    empty_multiline
+        .close()
+        .expect("close empty multiline BlockQuote");
+
+    let long_empty_source = format!("> {}\n> \n", "🌍".repeat(32));
+    let prefix_start_byte = long_empty_source.len() - 3;
+    let prefix_end_byte = long_empty_source.len() - 1;
+    let prefix_start_utf16 = long_empty_source[..prefix_start_byte]
+        .encode_utf16()
+        .count();
+    let prefix_end_utf16 = long_empty_source[..prefix_end_byte].encode_utf16().count();
+    let mut long_empty =
+        DocumentSession::begin(&long_empty_source).expect("begin long empty multiline BlockQuote");
+    pump_ready(&mut long_empty);
+    let long_empty_viewport = long_empty
+        .query_viewport(1, 0..long_empty_source.len(), 32)
+        .expect("long empty multiline BlockQuote viewport");
+    let long_empty_quote = long_empty_viewport
+        .rows
+        .last()
+        .expect("long empty quote row");
+    assert_eq!(long_empty_quote.kind, 15);
+    assert_eq!(
+        long_empty_quote.editable_range,
+        Some(prefix_end_byte as u64..prefix_end_byte as u64),
+    );
+    assert_eq!(
+        long_empty_quote.editable_utf16_range,
+        Some(prefix_end_utf16 as u64..prefix_end_utf16 as u64),
+    );
+    assert_eq!(
+        long_empty_quote.presentation,
+        DocumentViewportRowPresentation::BlockQuote {
+            prefix_start_byte: prefix_start_byte as u64,
+            prefix_end_byte: prefix_end_byte as u64,
+            prefix_start_utf16: prefix_start_utf16 as u64,
+            prefix_end_utf16: prefix_end_utf16 as u64,
+            nesting_depth: 1,
+            simple_continuation: true,
+        },
+    );
+    long_empty
+        .close()
+        .expect("close long empty multiline BlockQuote");
 
     let nested_multiline_source = "> > first\n> > second\n";
     let mut nested_multiline =
@@ -432,7 +512,24 @@ fn viewport_preserves_parser_authored_block_structure_presentations() {
         let viewport = empty
             .query_viewport(1, 0..empty_source.len(), 32)
             .expect("empty BlockQuote viewport");
-        assert!(viewport.rows.is_empty(), "empty quote stays exact/neutral");
+        assert_eq!(viewport.rows.len(), 1);
+        assert_eq!(viewport.rows[0].kind, 15);
+        assert_eq!(
+            viewport.rows[0].source_range,
+            empty_source.len() as u64..empty_source.len() as u64,
+        );
+        assert_eq!(viewport.rows[0].editable_range, Some(2..2));
+        assert_eq!(
+            viewport.rows[0].presentation,
+            DocumentViewportRowPresentation::BlockQuote {
+                prefix_start_byte: 0,
+                prefix_end_byte: 2,
+                prefix_start_utf16: 0,
+                prefix_end_utf16: 2,
+                nesting_depth: 1,
+                simple_continuation: true,
+            }
+        );
         empty.close().expect("close empty BlockQuote");
     }
 }

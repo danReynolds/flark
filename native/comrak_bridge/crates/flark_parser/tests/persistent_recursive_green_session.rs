@@ -123,6 +123,51 @@ fn multiline_block_quote_preserves_hidden_prefix_projection_segments() {
 }
 
 #[test]
+fn empty_multiline_block_quote_publishes_zero_length_row() {
+    let source = "> first\n> \n";
+    let mut runtime =
+        DocumentRuntime::new(source, DocumentRuntimeConfig::default()).expect("quote runtime");
+    let mut session = build_session(&mut runtime);
+    let window = session
+        .query_renderable_rows(
+            &runtime,
+            M11RecursiveGreenPoint::new(0, 0, SourceBoundaryAffinity::After),
+            source.len() as u64,
+            M11RecursiveGreenRowQueryLimits::new(8, 64, 4096, 16, 4096).expect("quote row limits"),
+        )
+        .expect("empty multiline quote row query");
+    assert_eq!(window.start_ordinal(), 0);
+    assert_eq!(window.total_rows(), 2);
+    assert_eq!(
+        window
+            .rows()
+            .iter()
+            .map(|row| (row.ordinal(), row.kind().get(), row.physical_range()))
+            .collect::<Vec<_>>(),
+        vec![(0, 5, 2..8), (1, 15, 11..11)],
+    );
+    assert_eq!(window.rows().len(), 2);
+    let empty = &window.rows()[1];
+    assert_eq!(empty.kind().get(), 15);
+    assert_eq!(empty.physical_range(), 11..11);
+    assert_eq!(empty.physical_utf16_range(), 11..11);
+    assert_eq!(empty.editable_range(), Some(11..11));
+    assert_eq!(
+        empty.edit_capability(),
+        M11RecursiveGreenRowEditCapability::Contiguous
+    );
+    assert!(empty.editable_segments().is_empty());
+    assert_eq!(empty.path()[empty.path().len() - 2].kind().get(), 2);
+    release_session(&mut runtime, &mut session);
+    runtime.begin_close().expect("begin quote runtime close");
+    while !runtime
+        .poll_close(64)
+        .expect("poll quote runtime close")
+        .complete
+    {}
+}
+
+#[test]
 fn clean_session_retains_green_and_reference_authority_for_late_queries() {
     let source = "[a]: /target\n\nbefore\n\nLate **bold** [a].\n";
     let mut runtime =

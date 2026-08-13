@@ -163,9 +163,12 @@ Rust resolves the exact certified physical segment, commits the quote prefix,
 and Core constructs a bounded projected transition that hides it through
 recertification. Prefix Backspace on a later physical line now publishes an
 ordered quote/plain surface set; literal successors map that set through their
-exact splice without dropping an unaffected peer. Empty Return on a
-zero-content projected line remains unavailable until the parser publishes
-zero-length segment ownership; it is not silently inferred by Flutter.
+exact splice without dropping an unaffected peer. ABI 4.16 closes the empty
+continuation boundary: the parser publishes a synthetic zero-length row only
+when a BlockQuote container marker remains unrepresented after its last
+renderable child. Runtime derives the exact final-line prefix and caret, so an
+empty Return exits through the same authoritative receipt without Flutter
+inferring source structure.
 
 ### 4.3 Canonical selection and display selection
 

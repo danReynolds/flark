@@ -4,7 +4,7 @@
   "status": "m0-interface-only",
   "abi": {
     "major": 4,
-    "minor": 15,
+    "minor": 16,
     "header": "native/comrak_bridge/include/flark_v4.h",
     "runtimeCrate": "native/comrak_bridge/crates/flark_runtime",
     "abiCrate": "native/comrak_bridge/crates/flark_abi",

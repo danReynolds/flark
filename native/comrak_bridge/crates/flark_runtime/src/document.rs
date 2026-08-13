@@ -1081,8 +1081,11 @@ impl DocumentSession {
         let requested_start = self
             .snapped_to_scalar_boundary(selection_byte.saturating_sub(16))
             .ok()?;
+        // A parser-authored zero-length row is positioned after its complete
+        // physical line ending. Include both bytes of CRLF when the caret is
+        // immediately before that ending.
         let requested_end = selection_byte
-            .checked_add(1)
+            .checked_add(2)
             .unwrap_or(selection_byte)
             .min(self.source_byte_len());
         let revision = self.revision();
@@ -2685,12 +2688,20 @@ fn document_viewport_row(
             editable_utf16_range = Some(exact_utf16);
         }
     }
-    if let DocumentViewportRowPresentation::ListItem {
-        prefix_end_byte,
-        prefix_end_utf16,
-        ..
-    } = presentation
-    {
+    let empty_container_prefix_end = match presentation {
+        DocumentViewportRowPresentation::ListItem {
+            prefix_end_byte,
+            prefix_end_utf16,
+            ..
+        }
+        | DocumentViewportRowPresentation::BlockQuote {
+            prefix_end_byte,
+            prefix_end_utf16,
+            ..
+        } => Some((prefix_end_byte, prefix_end_utf16)),
+        _ => None,
+    };
+    if let Some((prefix_end_byte, prefix_end_utf16)) = empty_container_prefix_end {
         if prefix_end_byte < source_range.start && prefix_end_utf16 < source_utf16_range.start {
             editable_range = Some(prefix_end_byte..prefix_end_byte);
             editable_utf16_range = Some(prefix_end_utf16..prefix_end_utf16);

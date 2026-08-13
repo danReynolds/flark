@@ -1149,9 +1149,13 @@ pub(super) fn packed_event_summary(
 }
 
 pub(super) const EMPTY_ITEM_ROW_KIND: u16 = 14;
+pub(super) const EMPTY_BLOCK_QUOTE_ROW_KIND: u16 = 15;
 
 pub(super) const fn is_renderable_row_kind(kind: M11RecursiveGreenKind) -> bool {
-    matches!(kind.get(), 5 | 6 | 7 | 8 | 12 | 13 | EMPTY_ITEM_ROW_KIND)
+    matches!(
+        kind.get(),
+        5 | 6 | 7 | 8 | 12 | 13 | EMPTY_ITEM_ROW_KIND | EMPTY_BLOCK_QUOTE_ROW_KIND
+    )
 }
 
 fn validate_atom(

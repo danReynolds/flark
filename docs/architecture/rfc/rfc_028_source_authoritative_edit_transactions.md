@@ -892,9 +892,11 @@ custom render surface consumes the same framework-neutral collection, and an
 immediate literal successor maps only its owning surface while preserving the
 unaffected peer. Delta/full-value Backspace observations enter the same
 semantic arbiter, and a paired desktop selector is acknowledged rather than
-committed twice. Reopened empty projected lines remain fail-closed because the
-parser does not yet publish zero-length segment ownership; no host guesses
-their caret or exit semantics.
+committed twice. ABI 4.16 adds parser-authored zero-length rows for standalone
+and trailing empty quote lines. The writer tracks an unrepresented container
+marker, the viewport publishes its exact final-line prefix/caret, and Return
+exits the quote through the ordinary authoritative transaction and presentation
+receipt.
 
 ### H5 — hardening and later architecture
 

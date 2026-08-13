@@ -275,7 +275,15 @@ pub(crate) fn resolve_document_edit_intent_v1(
             },
         ) => {
             if *empty || context.editable_bytes.is_empty() {
-                let replacement = if context.source_bytes.end == prefix_bytes.end || !starts_quote {
+                let existing_terminal_ending = prefix_bytes
+                    .end
+                    .checked_add(context.ending.text().len())
+                    .is_some_and(|ending_end| context.source_bytes.start == ending_end);
+                let replacement = if context.source_bytes.end == prefix_bytes.end {
+                    context.ending.text().to_owned()
+                } else if existing_terminal_ending {
+                    String::new()
+                } else if !starts_quote {
                     context.ending.text().to_owned()
                 } else {
                     String::new()

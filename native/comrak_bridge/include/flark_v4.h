@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define FLARK_V4_ABI_MAJOR UINT16_C(4)
-#define FLARK_V4_ABI_MINOR UINT16_C(15)
+#define FLARK_V4_ABI_MINOR UINT16_C(16)
 
 /* Zero sentinels are legal only where the operation rules below say so. */
 #define FLARK_V4_CONTINUATION_NONE UINT64_C(0)
@@ -318,7 +318,8 @@ typedef struct FlarkV4ResultPageHeader {
  * adds bounded parser-cooked replacement scalars to those records. ABI 4.7
  * adds parser-owned bounded GFM table cells in the same grouped stream. ABI
  * 4.15 packs the inline-fact count in the low 16 bits and the grouped
- * projected-segment count in the high 16 bits. */
+ * projected-segment count in the high 16 bits. ABI 4.16 admits synthetic
+ * zero-length row kind 15 for parser-certified empty BlockQuote lines. */
 typedef struct FlarkV4ViewportRowRecord {
   uint64_t ordinal;
   uint32_t kind;

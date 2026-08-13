@@ -396,8 +396,8 @@ void main() {
 
       quote.activateRow(quoteRow, quoteRow.editableUtf16!.start);
       quote.deleteBackward();
-      expect(quote.visibleSource, 'quote\n\nParagraph.\n');
       await _settle(quote);
+      expect(quote.visibleSource, 'quote\n\nParagraph.\n');
       expect(quote.rows.first.blockQuote, isNull);
 
       final continuation = await FlarkEditorController.open(
@@ -412,8 +412,16 @@ void main() {
         continuedQuote.editableUtf16!.end,
       );
       continuation.insertNewline();
-      expect(continuation.visibleSource, '> quote\n> \n');
       await _settle(continuation);
+      expect(continuation.visibleSource, '> quote\n> \n');
+      expect(continuation.rows.last.kind, 15);
+      expect(
+        (
+          continuation.rows.last.editableUtf16?.start,
+          continuation.rows.last.editableUtf16?.end,
+        ),
+        (10, 10),
+      );
 
       final structures = await FlarkEditorController.open(
         'Paragraph.\n\n```dart\ncode\n```\n\n    indented\n\n---\n',
@@ -528,6 +536,51 @@ void main() {
       controller.activateRow(row, 16);
       controller.deleteBackward();
       expect(controller.visibleSource, sourceBeforeBoundaryBackspace);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
+    'certified empty quote continuation exits without marker flash',
+    () async {
+      final controller = await FlarkEditorController.open(
+        '> first\n> \n',
+        libraryPath: libraryPath!,
+      );
+      await controller.continueParsing();
+      addTearDown(controller.close);
+
+      final empty = controller.rows.last;
+      expect(empty.kind, 15);
+      expect((empty.editableUtf16?.start, empty.editableUtf16?.end), (10, 10));
+      final initial = controller.surfaceRow(empty);
+      expect(initial.leadingText, '│ ');
+      expect(initial.text, isEmpty);
+
+      final frames = <String>[];
+      void capture() {
+        frames.add(
+          controller.rows
+              .expand(controller.surfaceRowsFor)
+              .map((surface) => '${surface.leadingText}${surface.text}')
+              .join('|'),
+        );
+      }
+
+      controller.addListener(capture);
+      addTearDown(() => controller.removeListener(capture));
+      controller.activateRow(empty, 10);
+      controller.insertNewline();
+      await _settle(controller);
+
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, '> first\n\n');
+      expect(frames, isNotEmpty);
+      expect(
+        frames.where((frame) => frame.contains('>')),
+        isEmpty,
+        reason: 'an empty quote marker flashed in frames: $frames',
+      );
     },
     skip: libraryPath == null,
   );

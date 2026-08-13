@@ -222,6 +222,34 @@ void main() {
   );
 
   test(
+    'empty multiline quote row survives the native worker boundary',
+    () async {
+      const source = '> first\n> \n';
+      final document = await FlarkCoreDocument.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(document.dispose);
+      await document.pumpUntilReady();
+
+      final viewport = await document.queryViewport(maxRows: 8);
+      expect(viewport.rows, hasLength(2));
+      final row = viewport.rows.last;
+      expect(row.kind, 15);
+      expect((row.sourceUtf16.start, row.sourceUtf16.end), (11, 11));
+      expect((row.editableUtf16?.start, row.editableUtf16?.end), (10, 10));
+      expect(
+        (row.blockQuote?.prefixUtf16.start, row.blockQuote?.prefixUtf16.end),
+        (8, 10),
+      );
+      expect(row.blockQuote?.simpleContinuation, isTrue);
+    },
+    skip: libraryPath == null
+        ? 'Set FLARK_V4_LIBRARY_PATH to the built flark_abi library.'
+        : false,
+  );
+
+  test(
     'live query decodes a current-source mixed certification partition',
     () async {
       final source = List<String>.generate(

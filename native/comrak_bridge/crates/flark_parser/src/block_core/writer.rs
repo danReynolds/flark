@@ -56,6 +56,7 @@ const KIND_HTML_BLOCK: u16 = 8;
 pub(super) const KIND_HEADING: u16 = 12;
 pub(super) const KIND_THEMATIC_BREAK: u16 = 13;
 pub(super) const KIND_EMPTY_ITEM_ROW: u16 = 14;
+pub(super) const KIND_EMPTY_BLOCK_QUOTE_ROW: u16 = 15;
 
 pub(super) const FACT_LIST: u16 = 1;
 pub(super) const FACT_ITEM: u16 = 2;
@@ -301,6 +302,7 @@ struct OpenFrame {
     fence: Option<FenceFold>,
     row_editable: Option<RowEditableFold>,
     has_renderable_descendant: bool,
+    has_unrepresented_container_marker: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -4183,7 +4185,7 @@ impl M11BlockWriter {
     ) -> Result<M11BlockWriterOfferStatus, M11BlockWriterError> {
         if is_renderable_block_kind(kind) {
             for ancestor in &mut self.open {
-                if matches!(ancestor.kind, BlockKind::Item(_)) {
+                if matches!(ancestor.kind, BlockKind::Item(_) | BlockKind::BlockQuote) {
                     ancestor.has_renderable_descendant = true;
                 }
             }
@@ -4214,6 +4216,7 @@ impl M11BlockWriter {
                 !matches!(kind, BlockKind::FencedCode(_)),
             )),
             has_renderable_descendant: false,
+            has_unrepresented_container_marker: false,
         });
         let enter = M11RecursiveGreenEvent::Enter {
             frame,
@@ -4236,6 +4239,23 @@ impl M11BlockWriter {
         self.require_no_staged_source()?;
         self.advance_line(source)?;
         let owner_depth = owner_depth(&self.open, owner)?;
+        if part == CoveragePart::ContainerMarker {
+            let owner_index = self
+                .open
+                .len()
+                .checked_sub(
+                    usize::try_from(owner_depth)
+                        .map_err(|_| M11BlockWriterError::CounterOverflow)?
+                        .checked_add(1)
+                        .ok_or(M11BlockWriterError::CounterOverflow)?,
+                )
+                .ok_or(M11BlockWriterError::InvalidCommand(
+                    "container marker owner is outside the open path",
+                ))?;
+            if matches!(self.open[owner_index].kind, BlockKind::BlockQuote) {
+                self.open[owner_index].has_unrepresented_container_marker = true;
+            }
+        }
         self.observe_row_coverage(owner_depth, green_part(part), logical, source.metric())?;
         let logical = green_logical_action(logical)?;
         self.pending = Some(Pending::Events(PendingEvents::one(
@@ -4455,10 +4475,28 @@ impl M11BlockWriter {
         if frame.kind != kind {
             return self.reject("close kind differs from open frame");
         }
-        let needs_empty_item_row =
-            matches!(frame.kind, BlockKind::Item(_)) && !frame.has_renderable_descendant;
+        let empty_container_row_kind = match frame.kind {
+            BlockKind::Item(_) if !frame.has_renderable_descendant => Some(KIND_EMPTY_ITEM_ROW),
+            BlockKind::BlockQuote
+                if !frame.has_renderable_descendant || frame.has_unrepresented_container_marker =>
+            {
+                Some(KIND_EMPTY_BLOCK_QUOTE_ROW)
+            }
+            _ => None,
+        };
         let close = self.close_facts(frame, final_facts)?;
         self.open.pop();
+        if is_renderable_block_kind(frame.kind) {
+            for ancestor in &mut self.open {
+                if matches!(ancestor.kind, BlockKind::Item(_)) {
+                    ancestor.has_renderable_descendant = true;
+                }
+                if matches!(ancestor.kind, BlockKind::BlockQuote) {
+                    ancestor.has_renderable_descendant = true;
+                    ancestor.has_unrepresented_container_marker = false;
+                }
+            }
+        }
         let item_exit = M11RecursiveGreenEvent::Exit {
             frame: frame.id,
             final_kind: green_kind(kind),
@@ -4470,37 +4508,43 @@ impl M11BlockWriter {
                 child.item_loose_if_last(),
             ),
         };
-        self.pending = Some(Pending::Events(if needs_empty_item_row {
-            for ancestor in &mut self.open {
-                if matches!(ancestor.kind, BlockKind::Item(_)) {
-                    ancestor.has_renderable_descendant = true;
+        self.pending = Some(Pending::Events(
+            if let Some(empty_row_kind) = empty_container_row_kind {
+                for ancestor in &mut self.open {
+                    if matches!(ancestor.kind, BlockKind::Item(_)) {
+                        ancestor.has_renderable_descendant = true;
+                    }
+                    if matches!(ancestor.kind, BlockKind::BlockQuote) {
+                        ancestor.has_renderable_descendant = true;
+                        ancestor.has_unrepresented_container_marker = false;
+                    }
                 }
-            }
-            let row_frame = M11RecursiveGreenFrameId::new(self.next_frame)
-                .ok_or(M11BlockWriterError::CounterOverflow)?;
-            self.next_frame = self
-                .next_frame
-                .checked_add(1)
-                .ok_or(M11BlockWriterError::CounterOverflow)?;
-            let row_kind = M11RecursiveGreenKind::new(KIND_EMPTY_ITEM_ROW)
-                .expect("empty-item row kind is nonzero");
-            PendingEvents::three(
-                M11RecursiveGreenEvent::Enter {
-                    frame: row_frame,
-                    kind: row_kind,
-                },
-                M11RecursiveGreenEvent::Exit {
-                    frame: row_frame,
-                    final_kind: row_kind,
-                    close: None,
-                    last_line_blank: false,
-                    child: M11RecursiveGreenClosedChild::new(false, false, false),
-                },
-                item_exit,
-            )
-        } else {
-            PendingEvents::one(item_exit)
-        }));
+                let row_frame = M11RecursiveGreenFrameId::new(self.next_frame)
+                    .ok_or(M11BlockWriterError::CounterOverflow)?;
+                self.next_frame = self
+                    .next_frame
+                    .checked_add(1)
+                    .ok_or(M11BlockWriterError::CounterOverflow)?;
+                let row_kind = M11RecursiveGreenKind::new(empty_row_kind)
+                    .expect("empty-container row kind is nonzero");
+                PendingEvents::three(
+                    M11RecursiveGreenEvent::Enter {
+                        frame: row_frame,
+                        kind: row_kind,
+                    },
+                    M11RecursiveGreenEvent::Exit {
+                        frame: row_frame,
+                        final_kind: row_kind,
+                        close: None,
+                        last_line_blank: false,
+                        child: M11RecursiveGreenClosedChild::new(false, false, false),
+                    },
+                    item_exit,
+                )
+            } else {
+                PendingEvents::one(item_exit)
+            },
+        ));
         Ok(M11BlockWriterOfferStatus::Pending)
     }
 
@@ -4816,6 +4860,7 @@ fn plan_open_row_exit_repairs(
     for (fresh, old) in fresh.iter().zip(old) {
         if fresh.fence != old.fence
             || fresh.has_renderable_descendant != old.has_renderable_descendant
+            || fresh.has_unrepresented_container_marker != old.has_unrepresented_container_marker
         {
             return Err(M11BlockRestartError::Pairing(
                 "ordinary spanning Exit state requires clean fallback",

@@ -16,8 +16,16 @@ use super::codec::{
     M11RecursiveGreenCachedRowEditCapability, M11RecursiveGreenCoveragePart,
     M11RecursiveGreenError, M11RecursiveGreenFrameId, M11RecursiveGreenKind,
     M11RecursiveGreenLogicalAtom, M11RecursiveGreenSourceMetric, PackedGreenEvent,
-    RecursiveGreenSpec, RecursiveGreenSummary, EMPTY_ITEM_ROW_KIND,
+    RecursiveGreenSpec, RecursiveGreenSummary, EMPTY_BLOCK_QUOTE_ROW_KIND, EMPTY_ITEM_ROW_KIND,
 };
+
+const fn empty_container_parent_kind(row_kind: u16) -> Option<u16> {
+    match row_kind {
+        EMPTY_ITEM_ROW_KIND => Some(4),
+        EMPTY_BLOCK_QUOTE_ROW_KIND => Some(2),
+        _ => None,
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct M11RecursiveGreenPoint {
@@ -2083,26 +2091,27 @@ pub(super) fn locate_renderable_rows_in_arena(
                 "renderable-row summary selected a non-row frame",
             ));
         }
-        let empty_item_row_at_requested_end = boundary.final_kind.get() == EMPTY_ITEM_ROW_KIND
-            && open.byte_start == requested_end_byte
-            && boundary.byte_end == requested_end_byte;
+        let empty_container_row_at_requested_end =
+            empty_container_parent_kind(boundary.final_kind.get()).is_some()
+                && open.byte_start == requested_end_byte
+                && boundary.byte_end == requested_end_byte;
         if open.byte_start >= requested_end_byte
             && ordinal != start_ordinal
-            && !empty_item_row_at_requested_end
+            && !empty_container_row_at_requested_end
         {
             complete = true;
             break;
         }
         let editable = point_zipper_row_editable(arena, tree, open, boundary, &mut work)?;
         let mut path = Vec::new();
-        if boundary.final_kind.get() == EMPTY_ITEM_ROW_KIND {
+        if let Some(expected_parent_kind) = empty_container_parent_kind(boundary.final_kind.get()) {
             if open.byte_start != boundary.byte_end
                 || open.utf16_start != boundary.utf16_end
                 || editable.bytes != Some(open.byte_start..open.byte_start)
                 || editable.utf16 != Some(open.utf16_start..open.utf16_start)
             {
                 return Err(M11RecursiveGreenError::Corrupt(
-                    "empty-item row carried nonempty geometry",
+                    "empty-container row carried nonempty geometry",
                 ));
             }
             let point_byte = usize::try_from(open.byte_start)
@@ -2121,7 +2130,7 @@ pub(super) fn locate_renderable_rows_in_arena(
                 &mut work,
             )?
             .ok_or(M11RecursiveGreenError::Corrupt(
-                "empty-item row has no predecessor ancestry",
+                "empty-container row has no predecessor ancestry",
             ))?;
             path.try_reserve_exact(location.zipper_open.len() + 1)
                 .map_err(|_| M11RecursiveGreenError::InvalidState)?;
@@ -2144,10 +2153,10 @@ pub(super) fn locate_renderable_rows_in_arena(
             }
             if path
                 .last()
-                .is_none_or(|ancestor| ancestor.kind().get() != 4)
+                .is_none_or(|ancestor| ancestor.kind().get() != expected_parent_kind)
             {
                 return Err(M11RecursiveGreenError::Corrupt(
-                    "empty-item row is not nested directly in an Item",
+                    "empty-container row has the wrong direct parent",
                 ));
             }
             path.push(M11RecursiveGreenRowPathFrame {
@@ -3420,20 +3429,25 @@ fn locate_point_in_arena_zipper_bounded(
                 ))?;
                 let boundary =
                     point_zipper_frame_boundary(arena, tree, root_leaf_count, row, &mut work)?;
-                if boundary.final_kind.get() == EMPTY_ITEM_ROW_KIND
+                let expected_parent_kind = empty_container_parent_kind(boundary.final_kind.get());
+                if expected_parent_kind.is_some()
                     && row.byte_start == summary.physical_bytes
                     && row.utf16_start == summary.physical_utf16
                     && boundary.byte_end == summary.physical_bytes
                     && boundary.utf16_end == summary.physical_utf16
                 {
+                    let expected_parent_kind =
+                        expected_parent_kind.expect("empty-container kind was checked above");
                     let parent = prepared.zipper_open.last().copied().ok_or(
-                        M11RecursiveGreenError::Corrupt("empty EOF row omitted its Item parent"),
+                        M11RecursiveGreenError::Corrupt(
+                            "empty EOF row omitted its container parent",
+                        ),
                     )?;
                     let parent_kind =
                         point_zipper_final_kind(arena, tree, root_leaf_count, parent, &mut work)?;
-                    if parent_kind.get() != 4 {
+                    if parent_kind.get() != expected_parent_kind {
                         return Err(M11RecursiveGreenError::Corrupt(
-                            "empty EOF row is not nested directly in an Item",
+                            "empty EOF row has the wrong direct parent",
                         ));
                     }
                     prepared.owner_index = prepared.zipper_open.len();
