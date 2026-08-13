@@ -6,7 +6,7 @@
   "activation": {
     "needle": "Line 00",
     "occurrence": 0,
-    "utf16OffsetInNeedle": 0
+    "utf16OffsetInNeedle": 4
   },
   "steps": [
     {
@@ -24,7 +24,7 @@
   ],
   "expect": {
     "source": "Line 00\nLine 01\nLine 02\nLine 03\nLine 04\nLine 05\nLine 06\nLine 07\nLine 08\nLine 09\nLine 10\nLine 11\nLine 12\nLine 13\nLine 14\nLine 15\nLine 16\nLine 17\nLine 18\nLine 19\nLine 20\nLine 21\nLine 22\nLine 23\nLine 24\nLine 25\nLine 26\nLine 27\nLine 28\nLine 29\nLine 30\nLine 31\nLine 32\nLine 33\nLine 34\nLine 35\nLine 36\nLine 37\nLine 38\nLine 39\n",
-    "caretUtf16": 0,
+    "caretUtf16": 4,
     "resyncCount": 0,
     "faulted": false,
     "forbiddenSurfaceSubstrings": ["<empty>"],

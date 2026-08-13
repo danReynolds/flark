@@ -469,13 +469,18 @@ while !shouldStop, let line = readLine() {
     case "activateAtUtf16":
       let offset = try integer(arguments["utf16Offset"], "utf16Offset")
       let window = try focusWindow(pid: appPID)
-      click(try screenPoint(sourceUtf16Offset: offset, window: window))
+      let point = try screenPoint(sourceUtf16Offset: offset, window: window)
+      click(point)
       let activationReceipt = try appRequest(operation: "settle")
-      guard activationReceipt["selectionBaseUtf16"] as? Int == offset,
-        activationReceipt["selectionExtentUtf16"] as? Int == offset
+      let actualBase = activationReceipt["selectionBaseUtf16"] as? Int
+      let actualExtent = activationReceipt["selectionExtentUtf16"] as? Int
+      guard actualBase == offset, actualExtent == offset
       else {
         throw ActuatorFailure.message(
-          "activation did not settle at source offset \(offset)"
+          "activation did not settle at source offset \(offset); " +
+            "actual=\(String(describing: actualBase)).." +
+            "\(String(describing: actualExtent)); " +
+            "point=\(point); window=\(window.origin)/\(window.size)"
         )
       }
       response["snapshot"] = activationReceipt

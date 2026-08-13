@@ -321,6 +321,55 @@ void main() {
     skip: libraryPath == null,
   );
 
+  testWidgets(
+    'source geometry round trips inside a tall soft-break paragraph',
+    (tester) async {
+      final source = List.generate(
+        40,
+        (index) => 'Line ${index.toString().padLeft(2, '0')}\n',
+      ).join();
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final debugHandle = FlarkEditorDebugHandle();
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: FlarkEditor(
+              controller: controller,
+              padding: EdgeInsets.zero,
+              debugHandle: debugHandle,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      const targetOffset = 4;
+      final target = debugHandle.geometryForSourceUtf16(targetOffset);
+      expect(target, isNotNull);
+      final generation = controller.canonicalSelectionGeneration;
+
+      await tester.tapAt(target!.globalPosition, kind: PointerDeviceKind.mouse);
+      await _pumpUntil(
+        tester,
+        () => controller.canonicalSelectionGeneration > generation,
+      );
+
+      final selection = await tester.runAsync(
+        controller.resolveCanonicalSelection,
+      );
+      expect(selection?.base, targetOffset);
+      expect(selection?.extent, targetOffset);
+      expect(await tester.runAsync(controller.readSource), source);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
   testWidgets('mouse double tap selects one rendered styled word', (
     tester,
   ) async {
