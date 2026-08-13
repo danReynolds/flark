@@ -996,6 +996,15 @@ desktop, vertical touch/stylus drag on mobile, and no input connection or
 selection mutation in read-only mode. This is render-surface parity, not a
 second parser or widget-per-block read path.
 
+The render object now publishes stable semantics nodes only for rows inside the
+painted viewport. Headings carry header state; task items carry checked state;
+the editable surface routes semantic task activation through the same
+target-anchor action, while the read-only surface intentionally omits it. Task
+touch hit testing uses a 48-logical-pixel target without enlarging the painted
+glyph. This first accessibility slice proves bounded traversal and one action,
+not a complete editable-text semantics contract, off-page screen-reader
+navigation, platform menus, or physical VoiceOver/TalkBack behavior.
+
 ### H5 — hardening and later architecture
 
 Qualify memory envelopes, fault recovery, giant-line raster behavior, GFM and

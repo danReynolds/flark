@@ -176,6 +176,7 @@ final class RenderFlarkSurface extends RenderBox {
   int _skippedRowCount = 0;
   int _skippedFragmentCount = 0;
   double _skippedFragmentEstimate = 0;
+  Map<int, SemanticsNode> _semanticRowNodes = <int, SemanticsNode>{};
 
   double get scrollOffset => _scrollOffset;
   double get debugContentHeight => _contentHeight;
@@ -256,6 +257,7 @@ final class RenderFlarkSurface extends RenderBox {
     _controller = value;
     if (attached) _controller.addListener(_changed);
     markNeedsLayout();
+    markNeedsSemanticsUpdate();
   }
 
   TextStyle get textStyle => _textStyle;
@@ -291,6 +293,7 @@ final class RenderFlarkSurface extends RenderBox {
     if (value == _includeEditingState) return;
     _includeEditingState = value;
     markNeedsLayout();
+    markNeedsSemanticsUpdate();
   }
 
   TextDirection get textDirection => _textDirection;
@@ -312,7 +315,10 @@ final class RenderFlarkSurface extends RenderBox {
     super.detach();
   }
 
-  void _changed() => markNeedsLayout();
+  void _changed() {
+    markNeedsLayout();
+    markNeedsSemanticsUpdate();
+  }
 
   @override
   bool hitTestSelf(Offset position) => true;
@@ -349,6 +355,7 @@ final class RenderFlarkSurface extends RenderBox {
     _scrollOffset = (_scrollOffset + delta).clamp(0, _maximumScrollOffset);
     if (_scrollOffset != previous) {
       markNeedsPaint();
+      markNeedsSemanticsUpdate();
       // Scrolling toward estimated, un-laid-out rows materializes them.
       if (_skippedRowCount > 0 && _scrollOffset > previous) {
         markNeedsLayout();
@@ -736,7 +743,10 @@ final class RenderFlarkSurface extends RenderBox {
     return result;
   }
 
-  FlarkSurfaceHit? positionForOffset(Offset offset) {
+  FlarkSurfaceHit? positionForOffset(
+    Offset offset, {
+    double minimumActionExtent = 24,
+  }) {
     if (_paintedRows.isEmpty) return null;
     final contentOffset = offset + Offset(0, _scrollOffset);
     final row = _paintedRows.firstWhere(
@@ -751,12 +761,12 @@ final class RenderFlarkSurface extends RenderBox {
     final local = (position.offset - row.leadingLength + row.fragmentStart)
         .clamp(row.fragmentStart, row.fragmentEnd)
         .clamp(0, row.presentation.text.length);
-    final taskAction = _taskActionBox(row);
+    final taskAction = _taskActionHitBox(row, minimumActionExtent);
     return _hitForTextOffset(
       row,
       local,
       affinity: position.affinity,
-      action: taskAction?.inflate(4).contains(painterPoint) == true
+      action: taskAction?.contains(painterPoint) == true
           ? FlarkSurfaceAction.toggleTaskChecked
           : null,
     );
@@ -908,6 +918,16 @@ final class RenderFlarkSurface extends RenderBox {
     return boxes.isEmpty ? null : boxes.first.toRect();
   }
 
+  Rect? _taskActionHitBox(_PaintedRow row, double minimumExtent) {
+    final box = _taskActionBox(row);
+    if (box == null) return null;
+    return Rect.fromCenter(
+      center: box.center,
+      width: math.max(box.width, minimumExtent),
+      height: math.max(box.height, minimumExtent),
+    );
+  }
+
   Offset? debugLocalPositionForTaskCheckbox(int ordinal) {
     for (final row in _paintedRows) {
       if (row.ordinal != ordinal) continue;
@@ -978,6 +998,85 @@ final class RenderFlarkSurface extends RenderBox {
 
   Offset? debugLocalPositionForSourceUtf16(int sourceUtf16Offset) =>
       _localPositionForSourceUtf16(sourceUtf16Offset);
+
+  @override
+  void describeSemanticsConfiguration(SemanticsConfiguration config) {
+    super.describeSemanticsConfiguration(config);
+    config
+      ..isSemanticBoundary = true
+      ..explicitChildNodes = true
+      ..identifier = _includeEditingState
+          ? 'flark-markdown-editor'
+          : 'flark-markdown-view';
+  }
+
+  String _semanticLabel(_PaintedRow row) {
+    final text = row.presentation.text.trim().replaceAll('\n', ' ');
+    if (row.presentation.thematicBreak) return 'Horizontal rule';
+    if (row.presentation.headingLevel case final level?) {
+      return text.isEmpty ? 'Heading level $level' : text;
+    }
+    return text.isEmpty ? 'Blank line' : text;
+  }
+
+  @override
+  void assembleSemanticsNode(
+    SemanticsNode node,
+    SemanticsConfiguration config,
+    Iterable<SemanticsNode> children,
+  ) {
+    final available = Map<int, SemanticsNode>.of(_semanticRowNodes);
+    final next = <int, SemanticsNode>{};
+    final semanticChildren = <SemanticsNode>[];
+    var ordinal = 0.0;
+    for (final row in _logicalRows) {
+      final top = row.top - _scrollOffset;
+      final bottom = top + row.height;
+      if (bottom <= 0 || top >= size.height) continue;
+      final rowConfig = SemanticsConfiguration()
+        ..sortKey = OrdinalSortKey(ordinal++)
+        ..textDirection = _textDirection
+        ..label = _semanticLabel(row);
+      if (row.presentation.headingLevel != null) rowConfig.isHeader = true;
+      final task = row.row?.listItem?.taskChecked;
+      if (task != null) {
+        final checked = row.presentation.leadingText.contains('☑');
+        rowConfig.isChecked = checked;
+        final taskRow = row.row;
+        if (_includeEditingState && taskRow != null) {
+          rowConfig.onTap = () =>
+              unawaited(_controller.toggleTaskChecked(taskRow));
+          rowConfig.hint = checked
+              ? 'Mark task incomplete'
+              : 'Mark task complete';
+        }
+      }
+      final child =
+          available.remove(row.ordinal) ??
+          SemanticsNode(key: ValueKey(('flark-row', row.ordinal)));
+      child
+        ..rect = Rect.fromLTRB(
+          _padding.left,
+          math.max(0, top),
+          math.max(_padding.left, size.width - _padding.right),
+          math.min(size.height, bottom),
+        )
+        ..updateWith(config: rowConfig);
+      next[row.ordinal] = child;
+      semanticChildren.add(child);
+    }
+    _semanticRowNodes = next;
+    node.updateWith(
+      config: config,
+      childrenInInversePaintOrder: semanticChildren,
+    );
+  }
+
+  @override
+  void clearSemantics() {
+    super.clearSemantics();
+    _semanticRowNodes = <int, SemanticsNode>{};
+  }
 
   @override
   void paint(PaintingContext context, Offset offset) {

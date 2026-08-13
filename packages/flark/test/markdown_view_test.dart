@@ -65,4 +65,55 @@ void main() {
     },
     skip: libraryPath == null,
   );
+
+  testWidgets(
+    'read-only semantics expose visible structure without edit actions',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(
+          '# Heading\n\n- [x] done\n\n'
+          '${List.generate(20, (index) => 'Body $index.\n\n').join()}'
+          'Offscreen sentinel.\n',
+          libraryPath: libraryPath!,
+        ),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 420,
+            height: 180,
+            child: FlarkMarkdownView(controller: controller),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final headingFinder = find.semantics.byLabel('Heading');
+      final taskFinder = find.semantics.byLabel('done');
+      expect(headingFinder, findsOne);
+      expect(taskFinder, findsOne);
+      expect(
+        headingFinder.evaluate().single,
+        isSemantics(label: 'Heading', isHeader: true),
+      );
+      expect(
+        taskFinder.evaluate().single,
+        isSemantics(
+          label: 'done',
+          hasCheckedState: true,
+          isChecked: true,
+          hasTapAction: false,
+        ),
+      );
+      expect(find.semantics.byLabel('Offscreen sentinel.'), findsNothing);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+      semantics.dispose();
+    },
+    skip: libraryPath == null,
+  );
 }

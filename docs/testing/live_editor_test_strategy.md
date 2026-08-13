@@ -457,6 +457,12 @@ The read-only widget has one focused host test proving touch scroll over the
 shared bounded render object, unchanged source, zero edit traffic, and no
 `EditableText`. Editing scenarios are intentionally not replayed through it.
 
+The first bounded accessibility checks assert visible heading and task nodes,
+checked-state refresh after a semantic action, the absence of that action in
+read-only mode, a 48-pixel touch target, and omission of an offscreen sentinel
+from the semantics tree. These widget receipts prevent unbounded semantic
+publication; physical screen-reader UX remains device evidence.
+
 ### H3 — Grow from evidence
 
 Promote shipped construct families from the candidate list as their v4 product

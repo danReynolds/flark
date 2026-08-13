@@ -240,7 +240,16 @@ final class _FlarkEditorState extends State<FlarkEditor>
   }
 
   void _handleTapDown(TapDownDetails details) {
-    _pendingTapHit = _surface?.positionForOffset(details.localPosition);
+    final touchLike = switch (details.kind) {
+      PointerDeviceKind.touch ||
+      PointerDeviceKind.stylus ||
+      PointerDeviceKind.invertedStylus => true,
+      _ => false,
+    };
+    _pendingTapHit = _surface?.positionForOffset(
+      details.localPosition,
+      minimumActionExtent: touchLike ? 48 : 24,
+    );
   }
 
   void _adoptNavigationHit(FlarkSurfaceHit hit, {required bool modify}) {

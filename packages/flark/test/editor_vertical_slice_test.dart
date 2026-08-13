@@ -72,6 +72,106 @@ void main() {
   );
 
   testWidgets(
+    'visible headings and tasks expose bounded interactive semantics',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(
+          '# Heading\n\n- [ ] todo\n',
+          libraryPath: libraryPath!,
+        ),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(child: FlarkEditor(controller: controller)),
+        ),
+      );
+      await tester.pump();
+      final headingFinder = find.semantics.byLabel('Heading');
+      expect(headingFinder, findsOne);
+      expect(
+        headingFinder.evaluate().single,
+        isSemantics(label: 'Heading', isHeader: true),
+      );
+      final taskFinder = find.semantics.byLabel('todo');
+      expect(taskFinder, findsOne);
+      final task = taskFinder.evaluate().single;
+      expect(
+        task,
+        isSemantics(
+          label: 'todo',
+          hasCheckedState: true,
+          isChecked: false,
+          hasTapAction: true,
+        ),
+      );
+
+      tester.semantics.tap(taskFinder);
+      await _pumpUntilTransactions(tester, controller);
+      expect(controller.visibleSource, '# Heading\n\n- [x] todo\n');
+      expect(
+        taskFinder.evaluate().single,
+        isSemantics(
+          label: 'todo',
+          hasCheckedState: true,
+          isChecked: true,
+          hasTapAction: true,
+        ),
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+      semantics.dispose();
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'touch task target has a 48 logical pixel interaction extent',
+    (tester) async {
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(
+          '- [ ] todo\n',
+          libraryPath: libraryPath!,
+        ),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final debugHandle = FlarkEditorDebugHandle();
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: FlarkEditor(
+              controller: controller,
+              debugHandle: debugHandle,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final center = debugHandle.geometryForTaskCheckboxOrdinal(
+        controller.rows.single.ordinal,
+      );
+      expect(center, isNotNull);
+      final nearEdge = center!.globalPosition + const Offset(20, 0);
+      final gesture = await tester.startGesture(
+        nearEdge,
+        kind: PointerDeviceKind.touch,
+      );
+      await gesture.up();
+      await _pumpUntilTransactions(tester, controller);
+      expect(controller.visibleSource, '- [x] todo\n');
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
     'touch taps activate text while touch drags scroll without selecting',
     (tester) async {
       final source = List.generate(
