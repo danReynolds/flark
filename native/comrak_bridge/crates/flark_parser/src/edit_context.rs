@@ -36,6 +36,7 @@ pub enum M11SimpleEditLineKind {
         prefix: Range<usize>,
         content: Range<usize>,
         marker_offset: u8,
+        task_checked: Option<bool>,
         empty: bool,
     },
     Unsupported,
@@ -76,8 +77,7 @@ pub fn classify_m11_simple_edit_line(source: &[u8], strip_bom: bool) -> M11Simpl
     if facts.indent < 4 {
         if let Some(item) = facts.list_item {
             let child = item.child;
-            let simple_child = !child.task
-                && !child.block_quote
+            let simple_child = !child.block_quote
                 && !child.atx_heading
                 && !child.fence
                 && !child.html_block_1_to_6
@@ -86,7 +86,7 @@ pub fn classify_m11_simple_edit_line(source: &[u8], strip_bom: bool) -> M11Simpl
                 && !child.thematic_break
                 && !child.list
                 && !child.table_delimiter_candidate
-                && !child.potential_reference_definition;
+                && (!child.potential_reference_definition || child.task);
             if item.opening_indent <= 3 && !item.tab_padded && simple_child {
                 let marker = match item.marker {
                     SegmentedListMarker::Bullet(byte) => {
@@ -109,13 +109,44 @@ pub fn classify_m11_simple_edit_line(source: &[u8], strip_bom: bool) -> M11Simpl
                         M11SimpleEditListMarker::Ordered { value, delimiter }
                     }
                 };
+                let (prefix_end, content_start, task_checked) = if child.task {
+                    let task_start = item.content.start;
+                    let Some(marker) = source.get(task_start..task_start.saturating_add(3)) else {
+                        return unsupported(ending, content_end);
+                    };
+                    let checked = match marker {
+                        [b'[', b' ', b']'] => false,
+                        [b'[', b'x' | b'X', b']'] => true,
+                        _ => return unsupported(ending, content_end),
+                    };
+                    let marker_end = task_start + 3;
+                    let task_end = if source
+                        .get(marker_end)
+                        .is_some_and(|byte| matches!(byte, b' ' | b'\t'))
+                    {
+                        marker_end + 1
+                    } else {
+                        marker_end
+                    };
+                    (task_end, task_end, Some(checked))
+                } else {
+                    (item.hidden_prefix.end, item.content.start, None)
+                };
+                let empty = if task_checked.is_some() {
+                    source[content_start..item.content.end]
+                        .iter()
+                        .all(|byte| matches!(byte, b' ' | b'\t'))
+                } else {
+                    item.empty
+                };
                 return M11SimpleEditLine {
                     kind: M11SimpleEditLineKind::ListItem {
                         marker,
-                        prefix: item.hidden_prefix.start..item.hidden_prefix.end,
-                        content: item.content.start..item.content.end,
+                        prefix: item.hidden_prefix.start..prefix_end,
+                        content: content_start..item.content.end,
                         marker_offset: u8::try_from(item.opening_indent).unwrap_or(u8::MAX),
-                        empty: item.empty,
+                        task_checked,
+                        empty,
                     },
                     ending,
                     content_end,
@@ -178,6 +209,9 @@ mod tests {
             ("  + alpha\r\n", false),
             ("9) alpha", false),
             ("42. \n", true),
+            ("- [ ] task\n", false),
+            ("- [x] \n", true),
+            ("- [ ]   \n", true),
         ];
         for (source, empty) in cases {
             let line = classify_m11_simple_edit_line(source.as_bytes(), false);
@@ -193,7 +227,6 @@ mod tests {
         for source in [
             "# heading\n",
             "> quote\n",
-            "- [ ] task\n",
             "- # child heading\n",
             "```\n",
             "---\n",

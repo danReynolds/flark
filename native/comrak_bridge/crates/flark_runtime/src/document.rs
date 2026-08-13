@@ -1091,7 +1091,7 @@ impl DocumentSession {
                 marker_offset,
                 simple_continuation: true,
                 starts_list,
-                task_checked: None,
+                task_checked,
             } => DocumentSimpleEditRow::ListItem {
                 marker,
                 prefix_bytes: usize::try_from(prefix_start_byte).ok()?
@@ -1100,6 +1100,7 @@ impl DocumentSession {
                     ..usize::try_from(prefix_end_utf16).ok()?,
                 marker_offset,
                 starts_list,
+                task_checked,
                 empty: current.kind == 14 || editable_bytes.is_empty(),
             },
             _ => return None,
@@ -1177,6 +1178,7 @@ impl DocumentSession {
                 prefix,
                 content,
                 marker_offset,
+                task_checked,
                 empty,
             } => {
                 let starts_list =
@@ -1192,6 +1194,7 @@ impl DocumentSession {
                         prefix_utf16,
                         marker_offset,
                         starts_list,
+                        task_checked,
                         empty,
                     },
                     editable,
@@ -1344,18 +1347,21 @@ impl DocumentSession {
                     marker,
                     prefix_bytes,
                     marker_offset,
+                    task_checked,
                     ..
                 },
                 M11SimpleEditLineKind::ListItem {
                     marker: classified_marker,
                     prefix,
                     marker_offset: classified_offset,
+                    task_checked: classified_task_checked,
                     ..
                 },
             ) => {
                 document_marker_matches_parser(*marker, classified_marker)
                     && prefix.end == prefix_bytes.end.saturating_sub(line_start)
                     && classified_offset == *marker_offset
+                    && classified_task_checked == *task_checked
             }
             _ => false,
         }

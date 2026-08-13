@@ -134,6 +134,37 @@ void main() {
   );
 
   test(
+    'task Return continues unchecked and Backspace lifts the whole prefix',
+    () async {
+      const source = '- [x] done\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      final row = controller.rows.first;
+      controller.activateRow(row, row.editableUtf16!.end);
+
+      controller.insertNewline();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, '- [x] done\n- [ ] \n');
+
+      await controller.undo();
+      expect(controller.visibleSource, source);
+      final restored = controller.rows.first;
+      controller.activateRow(restored, restored.editableUtf16!.start);
+      controller.deleteBackward();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, 'done\n');
+      expect(controller.surfaceRow(controller.rows.first).leadingText, '');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'parser-authorized ordinary edits retain projection while pending',
     () async {
       const source = '**bold** after\n';

@@ -100,6 +100,7 @@ pub(crate) enum DocumentSimpleEditRow {
         prefix_utf16: Range<usize>,
         marker_offset: u8,
         starts_list: bool,
+        task_checked: Option<bool>,
         empty: bool,
     },
 }
@@ -190,6 +191,7 @@ pub(crate) fn resolve_document_edit_intent_v1(
                 prefix_utf16,
                 marker_offset,
                 starts_list,
+                task_checked,
                 empty,
             },
         ) => {
@@ -245,7 +247,11 @@ pub(crate) fn resolve_document_edit_intent_v1(
             }
 
             let marker_text = next_marker_text(*marker);
-            let prefix = format!("{}{marker_text} ", " ".repeat(usize::from(*marker_offset)));
+            let task_prefix = task_checked.map_or("", |_| "[ ] ");
+            let prefix = format!(
+                "{}{marker_text} {task_prefix}",
+                " ".repeat(usize::from(*marker_offset))
+            );
             let replacement = format!("{}{prefix}", context.ending.text());
             let result_selection_utf16 = selection_utf16 + replacement.encode_utf16().count();
             let splice = splice(
@@ -274,6 +280,7 @@ pub(crate) fn resolve_document_edit_intent_v1(
                     prefix_utf16: prefix_start_utf16..selection_utf16 + utf16_delta,
                     marker_offset: *marker_offset,
                     starts_list: false,
+                    task_checked: task_checked.map(|_| false),
                     empty: selection_byte == context.editable_bytes.end,
                 },
                 paragraph_merge: None,

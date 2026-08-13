@@ -2698,10 +2698,7 @@ final class FlarkEditorController extends ChangeNotifier {
   bool _supportsSemanticEditV1(FlarkViewportRow row) {
     if (row.editableUtf16 == null) return false;
     final listItem = row.listItem;
-    final simpleList =
-        listItem != null &&
-        listItem.simpleContinuation &&
-        listItem.taskChecked == null;
+    final simpleList = listItem != null && listItem.simpleContinuation;
     final plainParagraph =
         row.kind == 5 &&
         listItem == null &&
@@ -3883,8 +3880,8 @@ final class FlarkEditorController extends ChangeNotifier {
     return true;
   }
 
-  // Transitional fallback for list constructs outside edit-intents-v1 (tasks
-  // today). Plain and non-task simple lists are intercepted by the
+  // Transitional fallback for list constructs outside edit-intents-v1.
+  // Every simple depth-1 list, including tasks, is intercepted by the
   // source-authoritative semantic lane above.
   bool _deleteProjectedListPrefix(int localCaret) {
     final row = _activeCachedRow();

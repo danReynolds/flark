@@ -849,6 +849,12 @@ and exact block-boundary behavior. Add scoped composition, clipboard/bulk
 semantics, drag/drop, and accessibility actions. Each increment removes its
 temporary Dart handler and shares the same native transaction and fixture path.
 
+Implementation checkpoint: depth-1 GFM task items now use the parser-owned
+list context in both ready and exact-pending states. Return creates an unchecked
+successor, empty Return exits, and prefix Backspace lifts the item through the
+same Rust transaction and presentation receipts as ordinary lists; Flutter no
+longer selects its task-specific fallback for those cases.
+
 ### H5 — hardening and later architecture
 
 Qualify memory envelopes, fault recovery, giant-line raster behavior, GFM and

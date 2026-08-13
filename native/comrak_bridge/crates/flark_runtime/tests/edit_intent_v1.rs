@@ -65,6 +65,33 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             expected_transition: DocumentEditPresentationTransitionV1::ContinueList,
         },
         IntentCase {
+            name: "unchecked task continuation",
+            initial: "- [ ] alpha\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 11,
+            expected: "- [ ] alpha\n- [ ] \n",
+            expected_selection_utf16: 18,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueList,
+        },
+        IntentCase {
+            name: "checked task continues unchecked",
+            initial: "- [x] done\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 10,
+            expected: "- [x] done\n- [ ] \n",
+            expected_selection_utf16: 17,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueList,
+        },
+        IntentCase {
+            name: "empty task exits",
+            initial: "- [ ] \n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 6,
+            expected: "\n",
+            expected_selection_utf16: 0,
+            expected_transition: DocumentEditPresentationTransitionV1::ExitList,
+        },
+        IntentCase {
             name: "empty list exits",
             initial: "- \n",
             intent: DocumentEditIntentV1::InsertParagraphBreak,
@@ -105,6 +132,15 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             initial: "- alpha\n",
             intent: DocumentEditIntentV1::DeleteBackward,
             selection_utf16: 2,
+            expected: "alpha\n",
+            expected_selection_utf16: 0,
+            expected_transition: DocumentEditPresentationTransitionV1::LiftList,
+        },
+        IntentCase {
+            name: "task item lifts",
+            initial: "- [X] alpha\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 6,
             expected: "alpha\n",
             expected_selection_utf16: 0,
             expected_transition: DocumentEditPresentationTransitionV1::LiftList,
@@ -170,12 +206,7 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
 
 #[test]
 fn complex_context_fails_closed_and_composition_never_mutates() {
-    for initial in [
-        "> quote\n",
-        "# heading\n",
-        "- [ ] task\n",
-        "```\ncode\n```\n",
-    ] {
+    for initial in ["> quote\n", "# heading\n", "```\ncode\n```\n"] {
         let mut document = DocumentSession::begin(initial).expect("begin complex fixture");
         pump_ready(&mut document);
         let before = source(&document);
@@ -253,6 +284,20 @@ fn initial_pending_exact_context_distinguishes_later_list_items() {
     );
     assert_eq!(source(&document), "- one\n\ntwo\n");
     document.close().expect("close pending list");
+}
+
+#[test]
+fn initial_pending_exact_context_preserves_task_semantics() {
+    let mut document = DocumentSession::begin("- [x] task\n").expect("begin pending task");
+    let receipt = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 10, false)
+        .expect("continue pending task");
+    assert_eq!(
+        receipt.disposition,
+        DocumentEditIntentDispositionV1::Applied
+    );
+    assert_eq!(source(&document), "- [x] task\n- [ ] \n");
+    document.close().expect("close pending task");
 }
 
 #[test]
