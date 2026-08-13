@@ -191,6 +191,24 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             expected_transition: DocumentEditPresentationTransitionV1::OutdentList,
         },
         IntentCase {
+            name: "depth-three continuation preserves its container indentation",
+            initial: "- root\n  - child\n    - leaf\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 27,
+            expected: "- root\n  - child\n    - leaf\n    - \n",
+            expected_selection_utf16: 34,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueList,
+        },
+        IntentCase {
+            name: "depth-three prefix Backspace outdents exactly one level",
+            initial: "- root\n  - child\n    - leaf\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 23,
+            expected: "- root\n  - child\n  - leaf\n",
+            expected_selection_utf16: 21,
+            expected_transition: DocumentEditPresentationTransitionV1::OutdentList,
+        },
+        IntentCase {
             name: "unchecked task continuation",
             initial: "- [ ] alpha\n",
             intent: DocumentEditIntentV1::InsertParagraphBreak,
@@ -481,6 +499,57 @@ fn parser_pending_depth_two_list_continues_then_outdents_without_pumping() {
     assert_eq!(outdented.result_selection_utf16, 21);
     assert_eq!(source(&document), "- parent\n  - child\n- ");
     document.close().expect("close nested sequence");
+}
+
+#[test]
+fn parser_pending_depth_three_list_outdents_one_level_per_command() {
+    let mut document = DocumentSession::begin("- root\n  - child\n    - leaf")
+        .expect("begin depth-three sequence");
+    pump_ready(&mut document);
+    let continued = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 27, false)
+        .expect("continue depth-three item");
+    assert_eq!(source(&document), "- root\n  - child\n    - leaf\n    - ");
+
+    let depth_two = document
+        .try_apply_edit_intent_v1(
+            2,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            continued.result_selection_utf16,
+            false,
+        )
+        .expect("outdent to depth two");
+    assert_eq!(depth_two.result_selection_utf16, 32);
+    assert_eq!(source(&document), "- root\n  - child\n    - leaf\n  - ");
+
+    let depth_one = document
+        .try_apply_edit_intent_v1(
+            3,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            depth_two.result_selection_utf16,
+            false,
+        )
+        .expect("outdent to depth one");
+    assert_eq!(depth_one.result_selection_utf16, 30);
+    assert_eq!(source(&document), "- root\n  - child\n    - leaf\n- ");
+    document.close().expect("close depth-three sequence");
+}
+
+#[test]
+fn nonuniform_nested_list_geometry_fails_closed() {
+    let initial = "10. root\n    - child\n";
+    let mut document = DocumentSession::begin(initial).expect("begin nonuniform nested List");
+    pump_ready(&mut document);
+    let receipt = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::DeleteBackward, 15, false)
+        .expect("resolve nonuniform nested List");
+    assert_eq!(
+        receipt.disposition,
+        DocumentEditIntentDispositionV1::NeedsCurrentSemantics
+    );
+    assert_eq!(document.revision(), 1);
+    assert_eq!(source(&document), initial);
+    document.close().expect("close nonuniform nested List");
 }
 
 #[test]

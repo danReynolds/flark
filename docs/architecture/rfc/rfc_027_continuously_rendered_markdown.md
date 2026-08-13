@@ -386,7 +386,10 @@ surface; no composition is lost, duplicated, reordered, or visually detached.
 Checkpoint: ordinary typing and Backspace now remain projected within one
 parser-authored table cell through recertification. Cross-cell selection,
 navigation, structural row/column actions, and nested-scroll arbitration remain
-in this tranche and fail closed meanwhile.
+in this tranche and fail closed meanwhile. Pure lists with uniform two-space
+container indentation now continue and outdent one level at a time at any
+bounded parser depth; nonuniform and mixed-container geometry remains explicit
+unsupported/fail-closed behavior.
 
 Exit: the complete v2 behavior denominator is exact or an explicitly scoped
 unsupported product feature; “active raw” is not an accepted fallback for a

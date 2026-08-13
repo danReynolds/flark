@@ -864,14 +864,18 @@ fail closed rather than falling through to line-local guessing; an absent
 certified row may use exact source only for an isolated empty structural
 marker.
 
-ABI 4.14 extends the same lane to parser-certified depth-two list rows. Return
+ABI 4.14 extended the same lane to parser-certified depth-two list rows. Return
 preserves the exact container indentation and next marker/task policy; an empty
 successor or prefix Backspace removes one exact indentation span and returns an
 `outdentList` presentation receipt. Empty-marker correlation uses the preceding
 certified list row and exact marker columns so the GFM Setext/list ambiguity is
-never guessed. Non-two-space indentation, tabs, depth three and richer
-container paths remain fail-closed until presentation metadata can describe
-their visual outdent without a frontend-specific spacing assumption.
+never guessed. The parser path and pending lineage now handle any bounded pure
+list depth whose container contribution is exactly two spaces per level,
+removing one level per command even without an intervening parser pump. Current
+item marker offsets remain parser-authored. Parent-width-dependent indentation,
+tabs, and richer container paths remain fail-closed until presentation metadata
+can describe their visual outdent without a frontend-specific spacing
+assumption.
 The final Dart structural-newline and prefix mutation fallbacks are removed;
 unsupported constructs now receive only literal input until Rust admits an
 explicit profile.

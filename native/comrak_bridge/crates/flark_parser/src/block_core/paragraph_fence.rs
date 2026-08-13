@@ -283,13 +283,12 @@ fn list_item_row_presentation(
         .first()
         .is_some_and(|frame| frame.kind().get() == super::writer::KIND_DOCUMENT);
     let simple_continuation = root_document
-        && ((nesting_depth == 1 && path.len() == 4 && list_index == 1 && item_index == 2)
-            || (nesting_depth == 2
-                && path.len() == 6
-                && list_index == 3
-                && item_index == 4
-                && path[1].kind().get() == KIND_LIST
-                && path[2].kind().get() == KIND_ITEM));
+        && item_index == usize::from(nesting_depth) * 2
+        && list_index + 1 == item_index
+        && item_index + 1 == path.len() - 1
+        && path[1..=item_index]
+            .chunks_exact(2)
+            .all(|pair| pair[0].kind().get() == KIND_LIST && pair[1].kind().get() == KIND_ITEM);
     let starts_list = item.physical_range().start == list.physical_range().start;
     Ok(Some(M11RecursiveGreenRowPresentation::ListItem {
         marker,

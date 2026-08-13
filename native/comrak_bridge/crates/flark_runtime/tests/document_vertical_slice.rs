@@ -226,6 +226,24 @@ fn viewport_preserves_parser_authored_list_markers_and_prefix_geometry() {
     );
     empty_nested.close().expect("close empty nested List");
 
+    let depth_three_source = "- root\n  - child\n    - leaf\n";
+    let mut depth_three =
+        DocumentSession::begin(depth_three_source).expect("begin depth-three List");
+    pump_ready(&mut depth_three);
+    let viewport = depth_three
+        .query_viewport(1, 0..depth_three_source.len(), 16)
+        .expect("depth-three List viewport");
+    let leaf = viewport.rows.last().expect("depth-three leaf row");
+    assert!(matches!(
+        leaf.presentation,
+        DocumentViewportRowPresentation::ListItem {
+            nesting_depth: 3,
+            simple_continuation: true,
+            ..
+        }
+    ));
+    depth_three.close().expect("close depth-three List");
+
     let continued_source = "9) alpha\n10) \n";
     let mut continued = DocumentSession::begin(continued_source).expect("begin continued List");
     pump_ready(&mut continued);

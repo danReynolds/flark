@@ -1177,17 +1177,21 @@ impl DocumentSession {
                 simple_continuation: true,
                 starts_list,
                 task_checked,
-            } if matches!(nesting_depth, 1 | 2) => {
+            } if nesting_depth >= 1 => {
                 let prefix_bytes = usize::try_from(prefix_start_byte).ok()?
                     ..usize::try_from(prefix_end_byte).ok()?;
                 let prefix_utf16 = usize::try_from(prefix_start_utf16).ok()?
                     ..usize::try_from(prefix_end_utf16).ok()?;
-                let outdent = (nesting_depth == 2)
+                let outdent = (nesting_depth > 1)
                     .then(|| {
-                        self.capture_depth_two_list_outdent(prefix_bytes.start, prefix_utf16.start)
+                        self.capture_nested_list_outdent(
+                            prefix_bytes.start,
+                            prefix_utf16.start,
+                            nesting_depth,
+                        )
                     })
                     .flatten();
-                if nesting_depth == 2 && outdent.is_none() {
+                if nesting_depth > 1 && outdent.is_none() {
                     return None;
                 }
                 DocumentSimpleEditRow::ListItem {
@@ -1320,13 +1324,23 @@ impl DocumentSession {
         })
     }
 
-    fn capture_depth_two_list_outdent(
+    fn capture_nested_list_outdent(
         &self,
         marker_start_byte: usize,
         marker_start_utf16: usize,
+        nesting_depth: u8,
     ) -> Option<DocumentListOutdent> {
-        self.capture_list_marker_indentation(marker_start_byte, marker_start_utf16)
-            .filter(|outdent| outdent.bytes.len() == 2 && outdent.utf16.len() == 2)
+        let indentation =
+            self.capture_list_marker_indentation(marker_start_byte, marker_start_utf16)?;
+        let expected = usize::from(nesting_depth.checked_sub(1)?).checked_mul(2)?;
+        if indentation.bytes.len() != expected || indentation.utf16.len() != expected {
+            return None;
+        }
+        Some(DocumentListOutdent {
+            bytes: marker_start_byte.checked_sub(2)?..marker_start_byte,
+            utf16: marker_start_utf16.checked_sub(2)?..marker_start_utf16,
+            indentation: indentation.indentation,
+        })
     }
 
     fn capture_list_marker_indentation(
@@ -1334,7 +1348,7 @@ impl DocumentSession {
         marker_start_byte: usize,
         marker_start_utf16: usize,
     ) -> Option<DocumentListOutdent> {
-        const MAX_OUTDENT_PREFIX_BYTES: usize = 16;
+        const MAX_OUTDENT_PREFIX_BYTES: usize = 64;
         let window_start = self
             .snapped_to_scalar_boundary(marker_start_byte.saturating_sub(MAX_OUTDENT_PREFIX_BYTES))
             .ok()?;

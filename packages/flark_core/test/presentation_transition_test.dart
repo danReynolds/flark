@@ -155,6 +155,39 @@ void main() {
     expect(presentation?.runs.single.sourceUtf16Start, 2);
   });
 
+  test('deeper list outdent preserves preceding visual indentation', () {
+    final nested = _row(
+      ordinal: 4,
+      sourceStart: 6,
+      sourceEnd: 12,
+      text: 'leaf',
+      leadingText: '    - ',
+      runs: const [
+        FlarkCorePresentationRun(
+          text: 'leaf',
+          sourceUtf16Start: 6,
+          sourceUtf16End: 10,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
+
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.outdentList,
+        baseStart: 2,
+        baseEnd: 4,
+        replacement: '',
+      ),
+      activeOrdinal: 4,
+      active: nested,
+    );
+
+    expect(transition?.surface?.presentation.leadingText, '  - ');
+    expect(transition?.surface?.presentation.sourceUtf16.start, 4);
+  });
+
   test('projected quote Return hides the new certified prefix', () {
     final quote = _row(
       ordinal: 8,

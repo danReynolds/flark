@@ -202,6 +202,50 @@ void main() {
   );
 
   test(
+    'uniform deeper lists continue and outdent exactly one level at a time',
+    () async {
+      const source = '- root\n  - child\n    - leaf';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      var row = controller.rows.last;
+      expect(row.listItem?.nestingDepth, 3);
+      expect(controller.surfaceRow(row).leadingText, '    - ');
+      controller.activateRow(row, row.editableUtf16!.end);
+
+      controller.insertNewline();
+      await _settle(controller);
+      expect(controller.visibleSource, '$source\n    - ');
+      expect(controller.surfaceRow(controller.rows.last).leadingText, '    - ');
+
+      controller.insertNewline();
+      await _settle(controller);
+      expect(controller.visibleSource, '$source\n  - ');
+      expect(controller.surfaceRow(controller.rows.last).leadingText, '  - ');
+
+      controller.insertNewline();
+      await _settle(controller);
+      expect(controller.visibleSource, '$source\n- ');
+      expect(controller.surfaceRow(controller.rows.last).leadingText, '- ');
+
+      await controller.undo();
+      await controller.undo();
+      await controller.undo();
+      expect(controller.visibleSource, source);
+      row = controller.rows.last;
+      controller.activateRow(row, row.editableUtf16!.start);
+      controller.deleteBackward();
+      await _settle(controller);
+      expect(controller.visibleSource, '- root\n  - child\n  - leaf');
+      expect(controller.surfaceRow(controller.rows.last).leadingText, '  - ');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'block quote Return continues, empty Return exits, and Backspace lifts',
     () async {
       const source = '> alpha';

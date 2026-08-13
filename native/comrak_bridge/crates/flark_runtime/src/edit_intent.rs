@@ -349,7 +349,7 @@ pub(crate) fn resolve_document_edit_intent_v1(
             },
         ) => {
             if *empty || context.editable_bytes.is_empty() {
-                if *nesting_depth == 2 {
+                if *nesting_depth > 1 {
                     return outdent.as_ref().map_or_else(
                         || {
                             disposition(
@@ -363,6 +363,7 @@ pub(crate) fn resolve_document_edit_intent_v1(
                                 *marker,
                                 prefix_bytes,
                                 prefix_utf16,
+                                *nesting_depth,
                                 *marker_offset,
                                 *task_checked,
                                 true,
@@ -417,6 +418,24 @@ pub(crate) fn resolve_document_edit_intent_v1(
             let indentation_utf16 = container_indent.encode_utf16().count();
             let prefix_start_byte = selection_byte + line_ending_bytes + indentation_bytes;
             let prefix_start_utf16 = selection_utf16 + line_ending_utf16 + indentation_utf16;
+            let result_outdent = if outdent.is_some() {
+                let (Some(bytes_start), Some(utf16_start)) = (
+                    prefix_start_byte.checked_sub(2),
+                    prefix_start_utf16.checked_sub(2),
+                ) else {
+                    return disposition(
+                        DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                        selection_utf16,
+                    );
+                };
+                Some(DocumentListOutdent {
+                    bytes: bytes_start..prefix_start_byte,
+                    utf16: utf16_start..prefix_start_utf16,
+                    indentation: container_indent.to_owned(),
+                })
+            } else {
+                None
+            };
             let result_context = DocumentSimpleEditContext {
                 revision: context.revision + 1,
                 source_bytes: selection_byte + byte_delta..context.source_bytes.end + byte_delta,
@@ -435,11 +454,7 @@ pub(crate) fn resolve_document_edit_intent_v1(
                     starts_list: false,
                     task_checked: task_checked.map(|_| false),
                     empty: selection_byte == context.editable_bytes.end,
-                    outdent: outdent.as_ref().map(|_| DocumentListOutdent {
-                        bytes: selection_byte + line_ending_bytes..prefix_start_byte,
-                        utf16: selection_utf16 + line_ending_utf16..prefix_start_utf16,
-                        indentation: container_indent.to_owned(),
-                    }),
+                    outdent: result_outdent,
                 },
                 paragraph_merge: None,
             };
@@ -508,7 +523,7 @@ pub(crate) fn resolve_document_edit_intent_v1(
         ) if selection_byte == context.editable_bytes.start
             && selection_utf16 == context.editable_utf16.start =>
         {
-            if *nesting_depth == 2 {
+            if *nesting_depth > 1 {
                 return outdent.as_ref().map_or_else(
                     || {
                         disposition(
@@ -522,6 +537,7 @@ pub(crate) fn resolve_document_edit_intent_v1(
                             *marker,
                             prefix_bytes,
                             prefix_utf16,
+                            *nesting_depth,
                             *marker_offset,
                             *task_checked,
                             *empty,
@@ -662,15 +678,19 @@ fn outdent_list_row(
     marker: DocumentListMarker,
     prefix_bytes: &Range<usize>,
     prefix_utf16: &Range<usize>,
+    nesting_depth: u8,
     marker_offset: u8,
     task_checked: Option<bool>,
     empty: bool,
     outdent: &DocumentListOutdent,
 ) -> ResolvedDocumentEditIntentV1 {
-    if outdent.bytes.end != prefix_bytes.start
+    let expected_indentation = usize::from(nesting_depth.saturating_sub(1)).saturating_mul(2);
+    if nesting_depth <= 1
+        || outdent.bytes.end != prefix_bytes.start
         || outdent.utf16.end != prefix_utf16.start
-        || outdent.bytes.is_empty()
-        || outdent.utf16.is_empty()
+        || outdent.bytes.len() != 2
+        || outdent.utf16.len() != 2
+        || outdent.indentation.len() != expected_indentation
     {
         return disposition(
             DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
@@ -712,6 +732,29 @@ fn outdent_list_row(
     let splice = splice(outdent.bytes.clone(), outdent.utf16.clone(), String::new());
     let result_prefix_bytes = outdent.bytes.start..prefix_end_byte;
     let result_prefix_utf16 = outdent.utf16.start..prefix_end_utf16;
+    let result_depth = nesting_depth.saturating_sub(1);
+    let remaining_indentation = &outdent.indentation[..expected_indentation - removed_bytes];
+    let result_outdent = if result_depth > 1 {
+        let Some(bytes_start) = result_prefix_bytes.start.checked_sub(2) else {
+            return disposition(
+                DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                context.editable_utf16.start,
+            );
+        };
+        let Some(utf16_start) = result_prefix_utf16.start.checked_sub(2) else {
+            return disposition(
+                DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                context.editable_utf16.start,
+            );
+        };
+        Some(DocumentListOutdent {
+            bytes: bytes_start..result_prefix_bytes.start,
+            utf16: utf16_start..result_prefix_utf16.start,
+            indentation: remaining_indentation.to_owned(),
+        })
+    } else {
+        None
+    };
     let result_context = DocumentSimpleEditContext {
         revision: context.revision + 1,
         source_bytes: source_start_byte..source_end_byte,
@@ -723,12 +766,12 @@ fn outdent_list_row(
             marker,
             prefix_bytes: result_prefix_bytes,
             prefix_utf16: result_prefix_utf16,
-            nesting_depth: 1,
+            nesting_depth: result_depth,
             marker_offset,
             starts_list: false,
             task_checked,
             empty,
-            outdent: None,
+            outdent: result_outdent,
         },
         paragraph_merge: None,
     };
