@@ -119,6 +119,41 @@ void main() {
     expect(presentation?.sourceUtf16.end, 8);
     expect(presentation?.runs.single.sourceUtf16Start, 0);
   });
+
+  test('list outdent removes one certified visual indentation level', () {
+    final nested = _row(
+      ordinal: 3,
+      sourceStart: 4,
+      sourceEnd: 10,
+      text: 'child',
+      leadingText: '  - ',
+      runs: const [
+        FlarkCorePresentationRun(
+          text: 'child',
+          sourceUtf16Start: 4,
+          sourceUtf16End: 9,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
+
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.outdentList,
+        baseStart: 0,
+        baseEnd: 2,
+        replacement: '',
+      ),
+      activeOrdinal: 3,
+      active: nested,
+    );
+
+    final presentation = transition?.surface?.presentation;
+    expect(presentation?.leadingText, '- ');
+    expect(presentation?.sourceUtf16.start, 2);
+    expect(presentation?.runs.single.sourceUtf16Start, 2);
+  });
 }
 
 /// Deliberately has no Flutter dependency. A future Dart UI adapter receives

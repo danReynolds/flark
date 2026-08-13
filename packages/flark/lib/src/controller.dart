@@ -1658,8 +1658,7 @@ final class FlarkEditorController extends ChangeNotifier {
     }
     final selection = _inputValue.selection;
     if (selection.isCollapsed &&
-        (_queueSemanticParagraphBreak(selection.extentOffset) ||
-            _insertProjectedBlockNewline(selection.extentOffset))) {
+        _queueSemanticParagraphBreak(selection.extentOffset)) {
       return;
     }
     replaceSelection('\n');
@@ -3840,33 +3839,6 @@ final class FlarkEditorController extends ChangeNotifier {
 
   bool _isLowSurrogate(int codeUnit) =>
       codeUnit >= 0xdc00 && codeUnit <= 0xdfff;
-
-  bool _insertProjectedBlockNewline(int localCaret) {
-    final row = _activeCachedRow();
-    final editableRange = row?.editableUtf16;
-    if (row == null ||
-        editableRange == null ||
-        (row.kind != 5 && row.kind != 12)) {
-      return false;
-    }
-    final editable = _mapViewportRange(editableRange);
-    final globalCaret = _inputGlobalUtf16Start + localCaret;
-    if (!_rowSemanticsCurrent(editable) ||
-        globalCaret < editable.start ||
-        globalCaret > editable.end) {
-      return false;
-    }
-
-    // A visual block split always inserts a complete Markdown paragraph
-    // boundary. Existing line endings belong to the surrounding blocks; using
-    // one of them for the new block makes subsequent typing a soft-line
-    // continuation of the previous paragraph.
-    const replacement = '\n\n';
-    replaceSelection(replacement);
-    _activeOrdinal = _surfaceOrdinalAt(_globalSelectionExtent);
-    notifyListeners();
-    return true;
-  }
 
   FlarkViewportRow? _activeCachedRow() {
     final activeOrdinal = _activeOrdinal;

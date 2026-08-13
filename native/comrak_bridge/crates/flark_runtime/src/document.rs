@@ -30,8 +30,8 @@ use flark_parser::{
 };
 
 use crate::edit_intent::{
-    resolve_document_edit_intent_v1, DocumentEditLineEnding, DocumentParagraphMerge,
-    DocumentSimpleEditContext, DocumentSimpleEditRow,
+    resolve_document_edit_intent_v1, DocumentEditLineEnding, DocumentListOutdent,
+    DocumentParagraphMerge, DocumentSimpleEditContext, DocumentSimpleEditRow,
 };
 use crate::{
     DocumentEditIntentDispositionV1, DocumentEditIntentReceiptV1, DocumentEditIntentV1,
@@ -955,6 +955,7 @@ impl DocumentSession {
                 result_revision: expected_revision,
                 committed_splice: None,
                 inverse: Vec::new(),
+                result_selection_byte: selection_byte,
                 result_selection_utf16: selection_utf16,
                 result_source_byte_length: self.source_byte_len(),
                 result_source_utf16_length: self.source_utf16_len(),
@@ -986,6 +987,7 @@ impl DocumentSession {
                 result_revision: expected_revision,
                 committed_splice: None,
                 inverse: Vec::new(),
+                result_selection_byte: selection_byte,
                 result_selection_utf16: selection_utf16,
                 result_source_byte_length: self.source_byte_len(),
                 result_source_utf16_length: self.source_utf16_len(),
@@ -1002,6 +1004,7 @@ impl DocumentSession {
                 result_revision: expected_revision,
                 committed_splice: None,
                 inverse: Vec::new(),
+                result_selection_byte: selection_byte,
                 result_selection_utf16: resolved.result_selection_utf16,
                 result_source_byte_length: self.source_byte_len(),
                 result_source_utf16_length: self.source_utf16_len(),
@@ -1009,11 +1012,21 @@ impl DocumentSession {
                 presentation_transition: DocumentEditPresentationTransitionV1::None,
             });
         };
-        if selection_byte != splice.base_byte_range.end
-            || resolved.result_selection_utf16 != splice.result_utf16_range.end
-        {
+        let expected_result_selection_utf16 = transformed_collapsed_selection(
+            selection_utf16,
+            &splice.base_utf16_range,
+            splice.replacement.encode_utf16().count(),
+        )
+        .ok_or(DocumentSessionError::UnsupportedEditIntentSelection)?;
+        if resolved.result_selection_utf16 != expected_result_selection_utf16 {
             return Err(DocumentSessionError::UnsupportedEditIntentSelection);
         }
+        let result_selection_byte = transformed_collapsed_selection(
+            selection_byte,
+            &splice.base_byte_range,
+            splice.replacement.len(),
+        )
+        .ok_or(DocumentSessionError::UnsupportedEditIntentSelection)?;
 
         // Reuse the context already resolved above. Without this handoff the
         // generic one-splice commit path performs a redundant current-row
@@ -1039,6 +1052,7 @@ impl DocumentSession {
             result_revision: edit.revision,
             committed_splice: Some(splice),
             inverse,
+            result_selection_byte,
             result_selection_utf16: resolved.result_selection_utf16,
             result_source_byte_length: self.source_byte_len(),
             result_source_utf16_length: self.source_utf16_len(),
@@ -1082,16 +1096,21 @@ impl DocumentSession {
         let Some(current) = current else {
             // Empty structural markers may have no renderable certified row.
             // Admit only an exact, isolated empty construct in that case.
-            return self
-                .capture_exact_edit_context(selection_byte)
-                .filter(|context| {
-                    matches!(
-                        context.row,
-                        DocumentSimpleEditRow::AtxHeading { empty: true, .. }
-                            | DocumentSimpleEditRow::BlockQuote { empty: true, .. }
-                            | DocumentSimpleEditRow::ListItem { empty: true, .. }
-                    )
-                });
+            let mut exact = self.capture_exact_edit_context(selection_byte)?;
+            if matches!(
+                exact.row,
+                DocumentSimpleEditRow::ListItem { empty: true, .. }
+            ) {
+                self.certify_absent_empty_list(&mut exact, &viewport.rows)?;
+            }
+            return Some(exact).filter(|context| {
+                matches!(
+                    context.row,
+                    DocumentSimpleEditRow::AtxHeading { empty: true, .. }
+                        | DocumentSimpleEditRow::BlockQuote { empty: true, .. }
+                        | DocumentSimpleEditRow::ListItem { empty: true, .. }
+                )
+            });
         };
         if matches!(
             current.presentation,
@@ -1125,22 +1144,36 @@ impl DocumentSession {
                 prefix_end_byte,
                 prefix_start_utf16,
                 prefix_end_utf16,
-                nesting_depth: 1,
+                nesting_depth,
                 marker_offset,
                 simple_continuation: true,
                 starts_list,
                 task_checked,
-            } => DocumentSimpleEditRow::ListItem {
-                marker,
-                prefix_bytes: usize::try_from(prefix_start_byte).ok()?
-                    ..usize::try_from(prefix_end_byte).ok()?,
-                prefix_utf16: usize::try_from(prefix_start_utf16).ok()?
-                    ..usize::try_from(prefix_end_utf16).ok()?,
-                marker_offset,
-                starts_list,
-                task_checked,
-                empty: current.kind == 14 || editable_bytes.is_empty(),
-            },
+            } if matches!(nesting_depth, 1 | 2) => {
+                let prefix_bytes = usize::try_from(prefix_start_byte).ok()?
+                    ..usize::try_from(prefix_end_byte).ok()?;
+                let prefix_utf16 = usize::try_from(prefix_start_utf16).ok()?
+                    ..usize::try_from(prefix_end_utf16).ok()?;
+                let outdent = (nesting_depth == 2)
+                    .then(|| {
+                        self.capture_depth_two_list_outdent(prefix_bytes.start, prefix_utf16.start)
+                    })
+                    .flatten();
+                if nesting_depth == 2 && outdent.is_none() {
+                    return None;
+                }
+                DocumentSimpleEditRow::ListItem {
+                    marker,
+                    prefix_bytes,
+                    prefix_utf16,
+                    nesting_depth,
+                    marker_offset,
+                    starts_list,
+                    task_checked,
+                    empty: current.kind == 14 || editable_bytes.is_empty(),
+                    outdent,
+                }
+            }
             DocumentViewportRowPresentation::BlockQuote {
                 prefix_start_byte,
                 prefix_end_byte,
@@ -1180,6 +1213,115 @@ impl DocumentSession {
             row,
             paragraph_merge,
         })
+    }
+
+    fn capture_depth_two_list_outdent(
+        &self,
+        marker_start_byte: usize,
+        marker_start_utf16: usize,
+    ) -> Option<DocumentListOutdent> {
+        self.capture_list_marker_indentation(marker_start_byte, marker_start_utf16)
+            .filter(|outdent| outdent.bytes.len() == 2 && outdent.utf16.len() == 2)
+    }
+
+    fn capture_list_marker_indentation(
+        &self,
+        marker_start_byte: usize,
+        marker_start_utf16: usize,
+    ) -> Option<DocumentListOutdent> {
+        const MAX_OUTDENT_PREFIX_BYTES: usize = 16;
+        let window_start = self
+            .snapped_to_scalar_boundary(marker_start_byte.saturating_sub(MAX_OUTDENT_PREFIX_BYTES))
+            .ok()?;
+        let window = self.source_bytes(window_start..marker_start_byte).ok()?;
+        let local_line_start = window
+            .iter()
+            .rposition(|byte| matches!(byte, b'\r' | b'\n'))
+            .map_or(0, |index| index + 1);
+        if local_line_start == 0 && window_start != 0 {
+            return None;
+        }
+        let indentation = window.get(local_line_start..)?;
+        if indentation.iter().any(|byte| !matches!(byte, b' ')) {
+            return None;
+        }
+        let indentation_utf16 = std::str::from_utf8(indentation)
+            .ok()?
+            .encode_utf16()
+            .count();
+        Some(DocumentListOutdent {
+            bytes: window_start + local_line_start..marker_start_byte,
+            utf16: marker_start_utf16.checked_sub(indentation_utf16)?..marker_start_utf16,
+            indentation: String::from_utf8(indentation.to_vec()).ok()?,
+        })
+    }
+
+    fn certify_absent_empty_list(
+        &self,
+        context: &mut DocumentSimpleEditContext,
+        rows: &[DocumentViewportRow],
+    ) -> Option<()> {
+        let DocumentSimpleEditRow::ListItem {
+            prefix_bytes,
+            prefix_utf16,
+            nesting_depth,
+            marker_offset,
+            starts_list,
+            outdent,
+            ..
+        } = &mut context.row
+        else {
+            return None;
+        };
+        let previous = rows.iter().rev().find_map(|row| match row.presentation {
+            DocumentViewportRowPresentation::ListItem {
+                prefix_start_byte,
+                prefix_start_utf16,
+                nesting_depth,
+                simple_continuation: true,
+                ..
+            } if row.source_range.end as usize <= context.source_bytes.start => Some((
+                usize::try_from(prefix_start_byte).ok()?,
+                usize::try_from(prefix_start_utf16).ok()?,
+                nesting_depth,
+            )),
+            _ => None,
+        })?;
+        let previous_indentation = self.capture_list_marker_indentation(previous.0, previous.1)?;
+        let current_column = usize::from(*marker_offset);
+        let previous_column = previous_indentation.bytes.len();
+        let certified_depth = if current_column == previous_column {
+            previous.2
+        } else if current_column > previous_column && previous.2 == 1 {
+            2
+        } else {
+            return None;
+        };
+        if certified_depth == 1 {
+            return Some(());
+        }
+        if certified_depth != 2 || current_column != 2 {
+            return None;
+        }
+        let indentation_end_byte = prefix_bytes.start.checked_add(current_column)?;
+        let indentation_end_utf16 = prefix_utf16.start.checked_add(current_column)?;
+        let indentation = self
+            .source_bytes(prefix_bytes.start..indentation_end_byte)
+            .ok()?;
+        if indentation.iter().any(|byte| *byte != b' ') {
+            return None;
+        }
+        *outdent = Some(DocumentListOutdent {
+            bytes: prefix_bytes.start..indentation_end_byte,
+            utf16: prefix_utf16.start..indentation_end_utf16,
+            indentation: String::from_utf8(indentation).ok()?,
+        });
+        prefix_bytes.start = indentation_end_byte;
+        prefix_utf16.start = indentation_end_utf16;
+        *nesting_depth = 2;
+        *marker_offset = 0;
+        *starts_list = true;
+        Some(())
     }
 
     /// Builds the same bounded edit facts directly from exact current source
@@ -1251,10 +1393,12 @@ impl DocumentSession {
                         marker: document_marker_from_parser(marker),
                         prefix_bytes,
                         prefix_utf16,
+                        nesting_depth: 1,
                         marker_offset,
                         starts_list,
                         task_checked,
                         empty,
+                        outdent: None,
                     },
                     editable,
                 )
@@ -1958,6 +2102,20 @@ fn previous_line_ending_start(source: &[u8], end: usize) -> Option<usize> {
         b'\n' | b'\r' => Some(end - 1),
         _ => None,
     }
+}
+
+fn transformed_collapsed_selection(
+    offset: usize,
+    base: &Range<usize>,
+    replacement_len: usize,
+) -> Option<usize> {
+    if offset < base.start {
+        return Some(offset);
+    }
+    if offset <= base.end {
+        return base.start.checked_add(replacement_len);
+    }
+    offset.checked_sub(base.len())?.checked_add(replacement_len)
 }
 
 fn exact_simple_block_quote_is_isolated(

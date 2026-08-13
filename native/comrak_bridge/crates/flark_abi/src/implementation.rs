@@ -37,11 +37,12 @@ use crate::{
     EDIT_PRESENTATION_EXIT_BLOCK_QUOTE, EDIT_PRESENTATION_EXIT_HEADING,
     EDIT_PRESENTATION_EXIT_LIST, EDIT_PRESENTATION_LIFT_BLOCK_QUOTE,
     EDIT_PRESENTATION_LIFT_HEADING, EDIT_PRESENTATION_LIFT_LIST, EDIT_PRESENTATION_MERGE_PARAGRAPH,
-    EDIT_PRESENTATION_NONE, EDIT_PRESENTATION_SPLIT_PARAGRAPH, EDIT_PROFILE_FLARK_V1,
-    INLINE_FACT_AUTOLINK_EMAIL, INLINE_FACT_AUTOLINK_URI, INLINE_FACT_BACKSLASH_ESCAPE,
-    INLINE_FACT_CODE, INLINE_FACT_DIRECT_IMAGE, INLINE_FACT_DIRECT_LINK, INLINE_FACT_EMPHASIS,
-    INLINE_FACT_HARD_LINE_BREAK, INLINE_FACT_REFERENCE_IMAGE, INLINE_FACT_REFERENCE_LINK,
-    INLINE_FACT_REPLACEMENT, INLINE_FACT_STRIKETHROUGH, INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL,
+    EDIT_PRESENTATION_NONE, EDIT_PRESENTATION_OUTDENT_LIST, EDIT_PRESENTATION_SPLIT_PARAGRAPH,
+    EDIT_PROFILE_FLARK_V1, INLINE_FACT_AUTOLINK_EMAIL, INLINE_FACT_AUTOLINK_URI,
+    INLINE_FACT_BACKSLASH_ESCAPE, INLINE_FACT_CODE, INLINE_FACT_DIRECT_IMAGE,
+    INLINE_FACT_DIRECT_LINK, INLINE_FACT_EMPHASIS, INLINE_FACT_HARD_LINE_BREAK,
+    INLINE_FACT_REFERENCE_IMAGE, INLINE_FACT_REFERENCE_LINK, INLINE_FACT_REPLACEMENT,
+    INLINE_FACT_STRIKETHROUGH, INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL,
     SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES,
     SOURCE_TRANSACTION_RECEIPT_COMPOSITE_HISTORY_EXTENDED, SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT,
     SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING, VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_SHIFT,
@@ -1923,6 +1924,7 @@ pub extern "C" fn flark_v4_edit_intent_v1(
             }
             DocumentEditPresentationTransitionV1::ExitHeading => EDIT_PRESENTATION_EXIT_HEADING,
             DocumentEditPresentationTransitionV1::LiftHeading => EDIT_PRESENTATION_LIFT_HEADING,
+            DocumentEditPresentationTransitionV1::OutdentList => EDIT_PRESENTATION_OUTDENT_LIST,
         };
 
         if receipt.disposition != DocumentEditIntentDispositionV1::Applied {
@@ -1990,12 +1992,12 @@ pub extern "C" fn flark_v4_edit_intent_v1(
         debug_assert_eq!(
             anchor_for_request(&registry, request.session, request.selection_base_anchor)
                 .map(|anchor| anchor.byte_offset),
-            Ok(result_end_byte)
+            Ok(receipt.result_selection_byte as u64)
         );
         debug_assert_eq!(
             anchor_for_request(&registry, request.session, request.selection_extent_anchor)
                 .map(|anchor| anchor.byte_offset),
-            Ok(result_end_byte)
+            Ok(receipt.result_selection_byte as u64)
         );
         finalize_edit_intent_history(
             &mut registry,

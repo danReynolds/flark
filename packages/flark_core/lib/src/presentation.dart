@@ -189,6 +189,36 @@ resolveCommittedPresentationTransitionV1({
           ),
         ),
       );
+    case FlarkCoreEditPresentationTransitionV1.outdentList:
+      if (activeRow == null || receipt.replacement.isNotEmpty) return null;
+      final removed = receipt.baseUtf16End - receipt.baseUtf16Start;
+      if (removed <= 0 || activeRow.leadingText.length < removed) return null;
+      final runs = _mapRunsThroughCommittedSplice(activeRow.runs, receipt);
+      if (runs == null) return null;
+      final delta = _utf16Delta(receipt);
+      final source = FlarkSourceRange(
+        activeRow.sourceUtf16.start + delta,
+        activeRow.sourceUtf16.end + delta,
+      );
+      return FlarkCoreCommittedPresentationTransitionV1(
+        surface: FlarkCoreCommittedPresentationSurfaceV1(
+          rowOrdinal: activeRow.ordinal,
+          sourceUtf16: source,
+          presentation: FlarkCorePresentationRow(
+            sourceUtf16: source,
+            leadingText: activeRow.leadingText.substring(removed),
+            text: activeRow.text,
+            globalUtf16Start: source.start,
+            kind: activeRow.kind,
+            headingLevel: activeRow.headingLevel,
+            blockQuoteDepth: activeRow.blockQuoteDepth,
+            codeBlock: activeRow.codeBlock,
+            thematicBreak: activeRow.thematicBreak,
+            ordinal: activeRow.ordinal,
+            runs: runs,
+          ),
+        ),
+      );
     case FlarkCoreEditPresentationTransitionV1.liftList:
     case FlarkCoreEditPresentationTransitionV1.exitList:
     case FlarkCoreEditPresentationTransitionV1.exitBlockQuote:

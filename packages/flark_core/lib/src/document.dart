@@ -28,6 +28,7 @@ enum FlarkCoreEditPresentationTransitionV1 {
   liftBlockQuote,
   exitHeading,
   liftHeading,
+  outdentList,
 }
 
 /// An opaque, one-shot handle to inverse source retained by the native core.

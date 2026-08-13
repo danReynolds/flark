@@ -165,6 +165,43 @@ void main() {
   );
 
   test(
+    'depth-two list Return continues and empty Return or Backspace outdents',
+    () async {
+      const source = '- parent\n  - child';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      var row = controller.rows.last;
+      controller.activateRow(row, row.editableUtf16!.end);
+
+      controller.insertNewline();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, '- parent\n  - child\n  - ');
+
+      controller.insertNewline();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, '- parent\n  - child\n- ');
+
+      await controller.undo();
+      await controller.undo();
+      expect(controller.visibleSource, source);
+      row = controller.rows.last;
+      controller.activateRow(row, row.editableUtf16!.start);
+      controller.deleteBackward();
+      await _settle(controller);
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, '- parent\n- child');
+      expect(controller.surfaceRow(controller.rows.last).leadingText, '- ');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'block quote Return continues, empty Return exits, and Backspace lifts',
     () async {
       const source = '> alpha';

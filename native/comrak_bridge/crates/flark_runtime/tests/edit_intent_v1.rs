@@ -128,6 +128,33 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             expected_transition: DocumentEditPresentationTransitionV1::ContinueList,
         },
         IntentCase {
+            name: "depth-two continuation preserves its container indentation",
+            initial: "- parent\n  - child\n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 18,
+            expected: "- parent\n  - child\n  - \n",
+            expected_selection_utf16: 23,
+            expected_transition: DocumentEditPresentationTransitionV1::ContinueList,
+        },
+        IntentCase {
+            name: "depth-two prefix Backspace outdents one level",
+            initial: "- parent\n  - child\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 13,
+            expected: "- parent\n- child\n",
+            expected_selection_utf16: 11,
+            expected_transition: DocumentEditPresentationTransitionV1::OutdentList,
+        },
+        IntentCase {
+            name: "certified empty depth-two successor outdents one level",
+            initial: "- parent\n  - child\n  - \n",
+            intent: DocumentEditIntentV1::InsertParagraphBreak,
+            selection_utf16: 23,
+            expected: "- parent\n  - child\n- \n",
+            expected_selection_utf16: 21,
+            expected_transition: DocumentEditPresentationTransitionV1::OutdentList,
+        },
+        IntentCase {
             name: "unchecked task continuation",
             initial: "- [ ] alpha\n",
             intent: DocumentEditIntentV1::InsertParagraphBreak,
@@ -391,6 +418,33 @@ fn parser_pending_quote_continues_then_exits_without_pumping() {
     assert_eq!(exited.disposition, DocumentEditIntentDispositionV1::Applied);
     assert_eq!(source(&document), "> alpha\n\n");
     document.close().expect("close pending quote");
+}
+
+#[test]
+fn parser_pending_depth_two_list_continues_then_outdents_without_pumping() {
+    let mut document =
+        DocumentSession::begin("- parent\n  - child").expect("begin nested sequence");
+    pump_ready(&mut document);
+    let continued = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 18, false)
+        .expect("continue nested item");
+    assert_eq!(
+        continued.presentation_transition,
+        DocumentEditPresentationTransitionV1::ContinueList
+    );
+    assert_eq!(source(&document), "- parent\n  - child\n  - ");
+    assert_ne!(document.phase(), DocumentSessionPhase::Ready);
+
+    let outdented = document
+        .try_apply_edit_intent_v1(2, DocumentEditIntentV1::InsertParagraphBreak, 23, false)
+        .expect("outdent generated empty item");
+    assert_eq!(
+        outdented.presentation_transition,
+        DocumentEditPresentationTransitionV1::OutdentList
+    );
+    assert_eq!(outdented.result_selection_utf16, 21);
+    assert_eq!(source(&document), "- parent\n  - child\n- ");
+    document.close().expect("close nested sequence");
 }
 
 #[test]

@@ -176,6 +176,56 @@ fn viewport_preserves_parser_authored_list_markers_and_prefix_geometry() {
     assert!(lists.iter().all(|row| row.11.is_none()));
     document.close().expect("close document");
 
+    let nested_source = "- parent\n  - child\n";
+    let mut nested = DocumentSession::begin(nested_source).expect("begin nested List");
+    pump_ready(&mut nested);
+    let viewport = nested
+        .query_viewport(1, 0..nested_source.len(), 16)
+        .expect("nested List viewport");
+    let child = viewport
+        .rows
+        .iter()
+        .find(|row| row.source_range.start == 13)
+        .expect("nested child row");
+    assert_eq!(child.editable_range, Some(13..18));
+    assert_eq!(
+        child.presentation,
+        DocumentViewportRowPresentation::ListItem {
+            marker: DocumentListMarker::Bullet(DocumentBulletMarker::Hyphen),
+            prefix_start_byte: 11,
+            prefix_end_byte: 13,
+            prefix_start_utf16: 11,
+            prefix_end_utf16: 13,
+            nesting_depth: 2,
+            marker_offset: 0,
+            simple_continuation: true,
+            starts_list: true,
+            task_checked: None,
+        }
+    );
+    nested.close().expect("close nested List");
+
+    let empty_nested_source = "- parent\n  - child\n  - \n";
+    let mut empty_nested =
+        DocumentSession::begin(empty_nested_source).expect("begin empty nested List");
+    pump_ready(&mut empty_nested);
+    let viewport = empty_nested
+        .query_viewport(1, 0..empty_nested_source.len(), 16)
+        .expect("empty nested List viewport");
+    assert!(
+        matches!(
+            viewport.rows.last().expect("empty nested row").presentation,
+            DocumentViewportRowPresentation::ListItem {
+                nesting_depth: 2,
+                simple_continuation: true,
+                ..
+            }
+        ),
+        "{:#?}",
+        viewport.rows
+    );
+    empty_nested.close().expect("close empty nested List");
+
     let continued_source = "9) alpha\n10) \n";
     let mut continued = DocumentSession::begin(continued_source).expect("begin continued List");
     pump_ready(&mut continued);
