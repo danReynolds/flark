@@ -315,6 +315,64 @@ void main() {
         },
       );
 
+      test(
+        'composition cancel restores its base and preserves earlier history',
+        () async {
+          await open('base\n');
+          addTearDown(() async {
+            await session.dispose();
+            await document.dispose();
+          });
+
+          await session.applyEditUtf16(
+            0,
+            0,
+            'x',
+            beforeSelection: caret(0),
+            afterSelection: caret(1),
+          );
+          await session.applyEditUtf16(
+            1,
+            5,
+            'k',
+            beforeSelection: const FlarkCoreSelectionSnapshot(
+              base: 5,
+              extent: 1,
+            ),
+            afterSelection: caret(2),
+            compositionGroup: session.compositionGroupForMutation(
+              composingActive: true,
+            ),
+          );
+          await session.applyEditUtf16(
+            1,
+            2,
+            'ka',
+            beforeSelection: caret(2),
+            afterSelection: caret(3),
+            compositionGroup: session.compositionGroupForMutation(
+              composingActive: true,
+            ),
+          );
+          expect(await document.readSource(), 'xka\n');
+          expect((await document.inspectSession()).liveHistoryTokens, 2);
+
+          final cancelled = await session.cancelComposition();
+          expect(cancelled, isA<FlarkCoreHistoryReplayed>());
+          expect(await document.readSource(), 'xbase\n');
+          final restoredSelection = await session.resolveSelection();
+          expect(restoredSelection?.base, 5);
+          expect(restoredSelection?.extent, 1);
+          expect(session.canUndo, isTrue);
+          expect(session.canRedo, isFalse);
+          expect((await document.inspectSession()).liveHistoryTokens, 1);
+
+          expect(await session.undo(), isA<FlarkCoreHistoryReplayed>());
+          expect(await document.readSource(), 'base\n');
+          expect(session.canUndo, isFalse);
+        },
+      );
+
       test('tracking a composition without mutation reports its end', () async {
         await open('base\n');
         addTearDown(() async {

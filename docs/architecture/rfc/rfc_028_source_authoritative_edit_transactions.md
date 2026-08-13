@@ -615,16 +615,22 @@ E1 suppresses structural intents during an active composition and uses one
 normalized composing predicate. This is a containment rule, not the final IME
 design.
 
-The final composition model is a native scoped operation:
+The final composition model is a framework-neutral Core scope backed by the
+native transaction and composite-history primitives:
 
 ```text
 beginComposition -> updateComposition* -> commitComposition | cancelComposition
 ```
 
-The scope pins its base inverse, selection, and history group. Platform
-composition observations remain in Flutter, while exact source/history meaning
-remains native. Real IME qualification requires physical Android and iOS
-devices; macOS and widget tests cannot close that evidence gap.
+Core owns the lifecycle because only the frontend can normalize platform
+composition observations. The first update retains its exact inverse in one
+required native composite token and records the canonical base selection;
+updates and commit extend that token through the ordinary source-transaction
+gateway. Cancel replays the composite once, discards the generated redo
+inverse, and restores the base selection. This avoids a second native edit
+protocol while keeping exact source, inverse retention, rewind, and history
+state native-authoritative. Real IME qualification requires physical Android
+and iOS devices; macOS and widget tests cannot close that evidence gap.
 
 Clipboard acquisition and platform menu wiring belong to `flark`; exact source
 replacement, selection, and history adoption use the same `flark_core` command
@@ -982,6 +988,20 @@ transaction receipt, retargets canonical anchors in the same native critical
 section, and preserves idempotent terminal replay if the worker reply is lost.
 This closes the normal clipboard and large-deletion correctness gap without
 placing clipboard policy or platform UI in Rust.
+
+The first scoped-composition slice now covers the cancellation boundary without
+adding another mutation lane. Intermediate updates already form one required
+native composite token; `flark_core` can rewind and discard that unit while
+preserving every earlier undo token. Flutter recognizes both macOS
+`cancelOperation:` and exact precomposition echoes from full-value or delta
+input, so either event order converges on the same serialized Core command. A
+rejected composing callback clears the platform composing state, commits the
+already-accepted prefix as one undo unit, and unpins parser convergence. Core,
+controller, and mounted-input regressions prove exact source, restored
+directional selection, zero stray redo, and surviving prior history. This is
+simulated composition evidence: atomic native retention of the base selection
+under anchor-cap exhaustion, real dead keys/CJK/autocorrect/dictation, and
+physical mobile IMEs remain open before composition is complete.
 
 Flutter pointer routing now separates recognizers by intent instead of enabling
 one pan policy on every device: a touch or stylus tap activates text or a

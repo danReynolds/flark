@@ -718,6 +718,9 @@ final class _FlarkEditorState extends State<FlarkEditor>
       case 'redo:':
         _preferredVerticalNavigationX = null;
         unawaited(widget.controller.redo());
+      case 'cancelOperation:':
+        _preferredVerticalNavigationX = null;
+        unawaited(widget.controller.cancelComposition());
       default:
         break;
     }

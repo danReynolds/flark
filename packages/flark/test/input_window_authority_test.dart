@@ -567,6 +567,50 @@ only incomplete or temporarily pending syntax becomes exact source locally.
   );
 
   test(
+    'a rejected composing callback commits the accepted prefix and unpins parsing',
+    () async {
+      final controller = await open('base\n');
+      addTearDown(controller.close);
+      await settle(controller);
+
+      controller.updateEditingValue(
+        const TextEditingValue(
+          text: 'kbase\n',
+          selection: TextSelection.collapsed(offset: 1),
+          composing: TextRange(start: 0, end: 1),
+        ),
+      );
+      await settle(controller);
+      expect(
+        controller.inputValue.composing,
+        const TextRange(start: 0, end: 1),
+      );
+
+      controller.applyDeltas([
+        const TextEditingDeltaInsertion(
+          oldText: 'stale composing window',
+          textInserted: 'x',
+          insertionOffset: 1,
+          selection: TextSelection.collapsed(offset: 2),
+          composing: TextRange(start: 0, end: 2),
+        ),
+      ]);
+
+      expect(controller.visibleSource, 'kbase\n');
+      expect(controller.inputValue.composing, TextRange.empty);
+      expect(
+        controller.lastResyncReason,
+        FlarkInputResyncReason.oldTextMismatch,
+      );
+      await settle(controller);
+      expect(controller.viewport?.revision, controller.revision);
+      expect(await controller.undo(), isTrue);
+      expect(controller.visibleSource, 'base\n');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'an out-of-window range resynchronizes without mutation',
     () async {
       final controller = await open('# Flark\n\nA quick paragraph.\n');

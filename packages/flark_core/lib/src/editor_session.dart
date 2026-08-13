@@ -195,6 +195,51 @@ final class FlarkCoreEditorSession {
   bool get hasCanonicalSelection => _selectionStart != null;
   bool get postCommitUnknown => _postCommitUnknown;
 
+  /// Cancels the active composition as one authoritative history rewind.
+  ///
+  /// Intermediate composition updates are already one native composite
+  /// history token. Cancellation replays that token once, releases the
+  /// otherwise-created redo inverse, and restores the precomposition
+  /// selection. Earlier history remains replayable because native also
+  /// restores the composition token's target history state.
+  Future<FlarkCoreHistoryOutcome?> cancelComposition() =>
+      _serializeCommand(_cancelComposition);
+
+  Future<FlarkCoreHistoryOutcome?> _cancelComposition() async {
+    _ensureAuthoritativeCommandsAvailable();
+    final group = _activeCompositionGroup;
+    _activeCompositionGroup = 0;
+    if (group == 0) return null;
+    if (_undoUnits.isEmpty || _undoUnits.last.compositionGroup != group) {
+      return null;
+    }
+
+    final unit = _undoUnits.removeLast();
+    final replayed = await _replayUnit(unit);
+    if (replayed == null) {
+      final stale = [..._undoUnits, ..._redoUnits];
+      _undoUnits.clear();
+      _redoUnits.clear();
+      await _releaseUnits(stale);
+      await _setSelectionUtf16(
+        unit.afterSelection.base,
+        unit.afterSelection.extent,
+        affinity: unit.afterSelection.affinity,
+        adapterState: unit.afterSelection.adapterState,
+      );
+      return FlarkCoreHistoryDropped(unit.afterSelection);
+    }
+
+    await _releaseUnits([replayed.unit]);
+    await _setSelectionUtf16(
+      unit.beforeSelection.base,
+      unit.beforeSelection.extent,
+      affinity: unit.beforeSelection.affinity,
+      adapterState: unit.beforeSelection.adapterState,
+    );
+    return FlarkCoreHistoryReplayed(unit.beforeSelection, replayed.receipt);
+  }
+
   /// Applies one revision-checked source edit and records it as history.
   ///
   /// With [coalesceTyping], a single-cluster insertion coalesces into the

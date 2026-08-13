@@ -275,6 +275,119 @@ void main() {
   );
 
   test(
+    'IME cancellation restores its exact base without consuming prior undo',
+    () async {
+      const source = 'base\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+
+      final initial = controller.inputValue;
+      controller.applyDeltas([
+        TextEditingDeltaInsertion(
+          oldText: initial.text,
+          textInserted: 'x',
+          insertionOffset: 0,
+          selection: const TextSelection.collapsed(offset: 1),
+          composing: TextRange.empty,
+        ),
+      ]);
+      await _waitForTransactions(controller);
+      expect(controller.visibleSource, 'x$source');
+
+      controller.updateEditingValue(
+        controller.inputValue.copyWith(
+          selection: const TextSelection(baseOffset: 5, extentOffset: 1),
+          composing: TextRange.empty,
+        ),
+      );
+      controller.updateEditingValue(
+        const TextEditingValue(
+          text: 'xk\n',
+          selection: TextSelection.collapsed(offset: 2),
+          composing: TextRange(start: 1, end: 2),
+        ),
+      );
+      controller.updateEditingValue(
+        const TextEditingValue(
+          text: 'xka\n',
+          selection: TextSelection.collapsed(offset: 3),
+          composing: TextRange(start: 1, end: 3),
+        ),
+      );
+      await _waitForTransactions(controller);
+      expect(controller.visibleSource, 'xka\n');
+      expect(
+        controller.inputValue.composing,
+        const TextRange(start: 1, end: 3),
+      );
+
+      expect(await controller.cancelComposition(), isTrue);
+      await _waitForTransactions(controller);
+      expect(controller.visibleSource, 'x$source');
+      expect(controller.inputValue.composing, TextRange.empty);
+      expect(controller.globalSelectionBase, 5);
+      expect(controller.globalSelectionExtent, 1);
+      expect(controller.canUndo, isTrue);
+      expect(controller.canRedo, isFalse);
+
+      // Some platform adaptors report cancellation by echoing the exact
+      // precomposition editing value before (or instead of) a cancel selector.
+      controller.updateEditingValue(
+        const TextEditingValue(
+          text: 'xz\n',
+          selection: TextSelection.collapsed(offset: 2),
+          composing: TextRange(start: 1, end: 2),
+        ),
+      );
+      await _waitForTransactions(controller);
+      controller.updateEditingValue(
+        const TextEditingValue(
+          text: 'xbase\n',
+          selection: TextSelection(baseOffset: 5, extentOffset: 1),
+          composing: TextRange.empty,
+        ),
+      );
+      await _waitForTransactions(controller);
+      expect(controller.visibleSource, 'x$source');
+      expect(controller.globalSelectionBase, 5);
+      expect(controller.globalSelectionExtent, 1);
+
+      // Delta-model adaptors carry the same observation as a replacement.
+      controller.updateEditingValue(
+        const TextEditingValue(
+          text: 'xq\n',
+          selection: TextSelection.collapsed(offset: 2),
+          composing: TextRange(start: 1, end: 2),
+        ),
+      );
+      await _waitForTransactions(controller);
+      controller.applyDeltas([
+        const TextEditingDeltaReplacement(
+          oldText: 'xq\n',
+          replacementText: 'base',
+          replacedRange: TextRange(start: 1, end: 2),
+          selection: TextSelection(baseOffset: 5, extentOffset: 1),
+          composing: TextRange.empty,
+        ),
+      ]);
+      await _waitForTransactions(controller);
+      expect(controller.visibleSource, 'x$source');
+      expect(controller.globalSelectionBase, 5);
+      expect(controller.globalSelectionExtent, 1);
+      expect(controller.canRedo, isFalse);
+
+      expect(await controller.undo(), isTrue);
+      expect(controller.visibleSource, source);
+      expect(controller.canUndo, isFalse);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'backward and forward delete remove one grapheme cluster',
     () async {
       const family = '👨‍👩‍👧‍👦';

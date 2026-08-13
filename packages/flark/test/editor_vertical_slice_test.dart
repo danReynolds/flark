@@ -928,6 +928,58 @@ void main() {
   );
 
   testWidgets(
+    'Mac cancel selector rewinds the active composition scope',
+    (tester) async {
+      const source = 'base\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      addTearDown(controller.close);
+      await tester.runAsync(controller.continueParsing);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: FlarkEditor(controller: controller, autofocus: true),
+          ),
+        ),
+      );
+      await tester.pump();
+      final dynamic state = tester.state(find.byType(FlarkEditor));
+
+      state.updateEditingValue(
+        const TextEditingValue(
+          text: 'kbase\n',
+          selection: TextSelection.collapsed(offset: 1),
+          composing: TextRange(start: 0, end: 1),
+        ),
+      );
+      state.updateEditingValue(
+        const TextEditingValue(
+          text: 'kabase\n',
+          selection: TextSelection.collapsed(offset: 2),
+          composing: TextRange(start: 0, end: 2),
+        ),
+      );
+      await _pumpUntilTransactions(tester, controller);
+      expect(controller.visibleSource, 'ka$source');
+
+      state.performSelector('cancelOperation:');
+      await _pumpUntil(
+        tester,
+        () =>
+            controller.pendingEdits == 0 && controller.visibleSource == source,
+      );
+      expect(controller.inputValue.composing, TextRange.empty);
+      expect(controller.canUndo, isFalse);
+      expect(controller.lastError, isNull);
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
     'macOS newline delta plus action commits exactly once',
     (tester) async {
       final controller = (await tester.runAsync(

@@ -179,6 +179,13 @@ final class _EditorSelectionSnapshot {
   final int? activeOrdinal;
 }
 
+final class _CompositionInputBase {
+  const _CompositionInputBase({required this.windowStart, required this.value});
+
+  final int windowStart;
+  final TextEditingValue value;
+}
+
 sealed class _SemanticInputSuccessor {
   const _SemanticInputSuccessor();
 }
@@ -485,6 +492,7 @@ final class FlarkEditorController extends ChangeNotifier {
   FlarkSemanticEditPerformance? _lastSemanticEditPerformance;
   bool _platformNewlineMutationAwaitingAction = false;
   bool _platformDeleteBackwardMutationAwaitingSelector = false;
+  _CompositionInputBase? _compositionInputBase;
   int _semanticSuccessorHighWatermark = 0;
   int _lastSemanticReconciliationMicros = 0;
 
@@ -593,6 +601,12 @@ final class FlarkEditorController extends ChangeNotifier {
   /// re-exposed on a fresh connection epoch.
   void _resynchronize(FlarkInputResyncReason reason) {
     _lateSemanticInput = null;
+    var compositionEnded = false;
+    if (_session.compositionActive) {
+      _endCompositionHistoryGroup();
+      _inputValue = _inputValue.copyWith(composing: TextRange.empty);
+      compositionEnded = true;
+    }
     _lastResyncReason = reason;
     _resyncCount += 1;
     _windowState = FlarkInputWindowState.resyncRequired;
@@ -603,6 +617,7 @@ final class FlarkEditorController extends ChangeNotifier {
     _shadowWindowStart = _inputGlobalUtf16Start;
     _shadowSelection = _inputValue.selection;
     _windowState = FlarkInputWindowState.synchronized;
+    if (compositionEnded) _scheduleParsingAfterInput();
     super.notifyListeners();
   }
 
@@ -1401,6 +1416,14 @@ final class FlarkEditorController extends ChangeNotifier {
       _resynchronize(rejection);
       return;
     }
+    var observedValue = _inputValue;
+    for (final delta in deltas) {
+      observedValue = delta.apply(observedValue);
+    }
+    if (_isCompositionCancelValue(observedValue)) {
+      unawaited(cancelComposition());
+      return;
+    }
     _platformMutation = true;
     try {
       if (_oversizedSelection) {
@@ -1486,6 +1509,10 @@ final class FlarkEditorController extends ChangeNotifier {
   void _updateEditingValue(TextEditingValue value) {
     if (_historyReplayPending) {
       notifyListeners();
+      return;
+    }
+    if (_isCompositionCancelValue(value)) {
+      unawaited(cancelComposition());
       return;
     }
     if (_captureSemanticSuccessorValue(value)) return;
@@ -1601,6 +1628,9 @@ final class FlarkEditorController extends ChangeNotifier {
   void _adoptPlatformSelectionOnlyValue(TextEditingValue value) {
     _breakTypingHistoryGroup();
     value = _normalizeProjectedSelection(value);
+    if (!_session.compositionActive && value.composing.isValid) {
+      _rememberCompositionInputBase(_inputValue);
+    }
     _inputValue = value;
     _trackCompositionWithoutMutation(value.composing);
     if (_oversizedSelection) {
@@ -2649,17 +2679,53 @@ final class FlarkEditorController extends ChangeNotifier {
 
   void _breakTypingHistoryGroup() => _session.breakTypingGroup();
 
-  int? _compositionGroupForMutation(TextRange composing) =>
-      _session.compositionGroupForMutation(composingActive: composing.isValid);
+  int? _compositionGroupForMutation(TextRange composing) {
+    if (!_session.compositionActive && composing.isValid) {
+      _rememberCompositionInputBase(_inputValue);
+    }
+    final group = _session.compositionGroupForMutation(
+      composingActive: composing.isValid,
+    );
+    if (!composing.isValid) _compositionInputBase = null;
+    return group;
+  }
 
   void _trackCompositionWithoutMutation(TextRange composing) {
+    if (!_session.compositionActive && composing.isValid) {
+      _rememberCompositionInputBase(
+        _inputValue.copyWith(composing: TextRange.empty),
+      );
+    }
     final compositionEnded = _session.trackCompositionWithoutMutation(
       composingActive: composing.isValid,
     );
-    if (compositionEnded) _scheduleParsingAfterInput();
+    if (compositionEnded) {
+      _compositionInputBase = null;
+      _scheduleParsingAfterInput();
+    }
   }
 
-  void _endCompositionHistoryGroup() => _session.endCompositionGroup();
+  void _endCompositionHistoryGroup() {
+    _compositionInputBase = null;
+    _session.endCompositionGroup();
+  }
+
+  void _rememberCompositionInputBase(TextEditingValue value) {
+    _compositionInputBase ??= _CompositionInputBase(
+      windowStart: _inputGlobalUtf16Start,
+      value: value.copyWith(composing: TextRange.empty),
+    );
+  }
+
+  bool _isCompositionCancelValue(TextEditingValue value) {
+    final base = _compositionInputBase;
+    if (base == null || !_session.compositionActive) return false;
+    final expected = base.value;
+    return value.composing == TextRange.empty &&
+        base.windowStart == _inputGlobalUtf16Start &&
+        value.text == expected.text &&
+        value.selection == expected.selection;
+  }
 
   ({int start, String text}) _boundedReplacementWindow(
     String source,
@@ -4129,6 +4195,81 @@ final class FlarkEditorController extends ChangeNotifier {
   Future<bool> undo() => _queueHistoryReplay(undoDirection: true);
 
   Future<bool> redo() => _queueHistoryReplay(undoDirection: false);
+
+  /// Cancels the active platform composition through the authoritative native
+  /// history unit. The composed source is rewound once, its redo inverse is
+  /// discarded, and the precomposition source selection is restored.
+  Future<bool> cancelComposition() {
+    if (_closed ||
+        _status == FlarkEditorStatus.faulted ||
+        _historyReplayPending ||
+        !_session.compositionActive) {
+      return Future<bool>.value(false);
+    }
+    _historyReplayPending = true;
+    _projectionContinuity = null;
+    _committedParagraphSplit = null;
+    _committedStructuralSurfaces = const [];
+    _semanticEditV1Active = false;
+    _breakTypingHistoryGroup();
+    _parseTimer?.cancel();
+    _parseTimer = null;
+    final generation = ++_editGeneration;
+    _pendingEdits += 1;
+    _status = FlarkEditorStatus.editing;
+    notifyListeners();
+
+    final operation = _editTail.then((_) async {
+      try {
+        final outcome = await _session.cancelComposition();
+        if (outcome == null) {
+          _inputValue = _inputValue.copyWith(composing: TextRange.empty);
+          _scheduleParsingAfterInput();
+          return true;
+        }
+        final restore = _adapterSnapshot(outcome.restoreSelection);
+        _optimisticViewportEdits.clear();
+        _committedTaskChecks.clear();
+        while (!_document.isReady && !_closed) {
+          await _document.pump(workUnits: 512);
+        }
+        await _refreshViewport(
+          restoreInputWindow: false,
+          expectedEditGeneration: generation,
+        );
+        await _restoreHistorySelection(restore);
+        _scheduleParsingAfterInput();
+        notifyListeners();
+        return outcome is FlarkCoreHistoryReplayed;
+      } finally {
+        _compositionInputBase = null;
+      }
+    });
+    _editTail = operation
+        .then<void>((_) {})
+        .catchError((Object _, StackTrace _) {});
+    unawaited(
+      operation
+          .then((cancelled) {
+            _pendingEdits = math.max(0, _pendingEdits - 1);
+            _historyReplayPending = false;
+            if (!cancelled) {
+              _status = _semanticViewportCurrent
+                  ? FlarkEditorStatus.ready
+                  : FlarkEditorStatus.parsing;
+            }
+            notifyListeners();
+          })
+          .catchError((Object error, StackTrace stackTrace) {
+            _pendingEdits = math.max(0, _pendingEdits - 1);
+            _historyReplayPending = false;
+            _lastError = error;
+            _status = FlarkEditorStatus.faulted;
+            notifyListeners();
+          }),
+    );
+    return operation;
+  }
 
   Future<bool> _queueHistoryReplay({required bool undoDirection}) {
     if (_closed ||
