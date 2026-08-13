@@ -168,6 +168,104 @@ void main() {
   );
 
   testWidgets(
+    'keyboard selectors navigate rendered graphemes and preserve source selection',
+    (tester) async {
+      const source = 'Before **A🌍B** after\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final row = controller.rows.single;
+      final start = source.indexOf('A');
+      await tester.runAsync(() async {
+        controller.activateRow(row, start);
+        await controller.resolveCanonicalSelection();
+      });
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: FlarkEditor(controller: controller, autofocus: true),
+          ),
+        ),
+      );
+      await tester.pump();
+      final dynamic state = tester.state(find.byType(FlarkEditor));
+
+      await _performSelectorAndWait(tester, controller, state, 'moveRight:');
+      expect(controller.globalCaretOffset, start + 1);
+      await _pressKeyAndWait(tester, controller, LogicalKeyboardKey.arrowRight);
+      expect(
+        controller.globalCaretOffset,
+        start + 3,
+        reason: 'the emoji is one rendered grapheme but two UTF-16 units',
+      );
+      await _performSelectorAndWait(
+        tester,
+        controller,
+        state,
+        'moveRightAndModifySelection:',
+      );
+      expect(controller.globalSelectionBase, start + 3);
+      expect(
+        controller.globalSelectionExtent,
+        start + 6,
+        reason: 'the rendered stop after B skips both closing strong markers',
+      );
+      await _performSelectorAndWait(tester, controller, state, 'moveLeft:');
+      expect(controller.globalSelectionBase, start + 3);
+      expect(controller.globalSelectionExtent, start + 3);
+      await _performSelectorAndWait(tester, controller, state, 'moveLeft:');
+      expect(controller.globalCaretOffset, start + 1);
+      expect(await tester.runAsync(controller.readSource), source);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'vertical keyboard selectors use painted line geometry',
+    (tester) async {
+      const source = 'abc\nuvwxyz\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final row = controller.rows.single;
+      await tester.runAsync(() async {
+        controller.activateRow(row, 2);
+        await controller.resolveCanonicalSelection();
+      });
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 300,
+            child: FlarkEditor(
+              controller: controller,
+              padding: EdgeInsets.zero,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final dynamic state = tester.state(find.byType(FlarkEditor));
+      await _performSelectorAndWait(tester, controller, state, 'moveDown:');
+      expect(controller.globalCaretOffset, 6);
+      await _performSelectorAndWait(tester, controller, state, 'moveUp:');
+      expect(controller.globalCaretOffset, 2);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
     'custom surface paints bounded rows and applies input optimistically',
     (tester) async {
       final controller = (await tester.runAsync(
@@ -415,6 +513,33 @@ Future<void> _pumpUntilTransactions(
     controller.pendingEdits,
     0,
     reason: 'status=${controller.status}; error=${controller.lastError}',
+  );
+}
+
+Future<void> _performSelectorAndWait(
+  WidgetTester tester,
+  FlarkEditorController controller,
+  dynamic state,
+  String selector,
+) async {
+  final generation = controller.canonicalSelectionGeneration;
+  state.performSelector(selector);
+  await _pumpUntil(
+    tester,
+    () => controller.canonicalSelectionGeneration > generation,
+  );
+}
+
+Future<void> _pressKeyAndWait(
+  WidgetTester tester,
+  FlarkEditorController controller,
+  LogicalKeyboardKey key,
+) async {
+  final generation = controller.canonicalSelectionGeneration;
+  await tester.sendKeyEvent(key);
+  await _pumpUntil(
+    tester,
+    () => controller.canonicalSelectionGeneration > generation,
   );
 }
 

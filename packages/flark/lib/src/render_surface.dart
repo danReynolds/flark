@@ -752,21 +752,145 @@ final class RenderFlarkSurface extends RenderBox {
         .clamp(row.fragmentStart, row.fragmentEnd)
         .clamp(0, row.presentation.text.length);
     final taskAction = _taskActionBox(row);
-    return FlarkSurfaceHit(
-      globalUtf16Offset: row.presentation.sourceOffsetForTextOffset(
-        local,
-        affinity: position.affinity,
-      ),
-      ordinal: row.ordinal,
+    return _hitForTextOffset(
+      row,
+      local,
       affinity: position.affinity,
-      row: row.row,
-      neutralText: row.neutralText,
-      neutralUtf16Start: row.neutralUtf16Start,
       action: taskAction?.inflate(4).contains(painterPoint) == true
           ? FlarkSurfaceAction.toggleTaskChecked
           : null,
     );
   }
+
+  FlarkSurfaceHit _hitForTextOffset(
+    _PaintedRow row,
+    int textOffset, {
+    required TextAffinity affinity,
+    FlarkSurfaceAction? action,
+  }) => FlarkSurfaceHit(
+    globalUtf16Offset: row.presentation.sourceOffsetForTextOffset(
+      textOffset,
+      affinity: affinity,
+    ),
+    ordinal: row.ordinal,
+    affinity: affinity,
+    row: row.row,
+    neutralText: row.neutralText,
+    neutralUtf16Start: row.neutralUtf16Start,
+    action: action,
+  );
+
+  Iterable<_PaintedRow> get _logicalRows sync* {
+    int? previousOrdinal;
+    for (final row in _paintedRows) {
+      if (row.ordinal == previousOrdinal) continue;
+      previousOrdinal = row.ordinal;
+      yield row;
+    }
+  }
+
+  ({int start, int end}) _sourceBounds(_PaintedRow row) {
+    final runs = row.presentation.runs;
+    if (runs.isNotEmpty) {
+      return (
+        start: runs.first.sourceUtf16Start,
+        end: runs.last.sourceUtf16End,
+      );
+    }
+    return (
+      start: row.presentation.globalUtf16Start,
+      end: row.presentation.globalUtf16Start + row.presentation.text.length,
+    );
+  }
+
+  _PaintedRow? _logicalRowForSourceUtf16(int offset) {
+    _PaintedRow? boundary;
+    for (final row in _logicalRows) {
+      final bounds = _sourceBounds(row);
+      if (bounds.start < offset && offset < bounds.end) return row;
+      if (offset == bounds.start || offset == bounds.end) {
+        if (row.presentation.active) return row;
+        boundary ??= row;
+      }
+    }
+    return boundary;
+  }
+
+  FlarkSurfaceHit? hitForSourceUtf16(
+    int offset, {
+    TextAffinity affinity = TextAffinity.downstream,
+  }) {
+    final row = _logicalRowForSourceUtf16(offset);
+    if (row == null) return null;
+    return _hitForTextOffset(
+      row,
+      row.presentation.textOffsetForSourceOffset(offset, affinity: affinity),
+      affinity: affinity,
+    );
+  }
+
+  /// Moves by one rendered grapheme, never through a hidden Markdown marker.
+  /// Core remains authoritative for the resulting source selection.
+  FlarkSurfaceHit? adjacentCharacterHit(int offset, {required bool forward}) {
+    final rows = _logicalRows.toList(growable: false);
+    final current = _logicalRowForSourceUtf16(offset);
+    if (current == null) return null;
+    final rowIndex = rows.indexWhere((row) => row.ordinal == current.ordinal);
+    if (rowIndex < 0) return null;
+    final text = current.presentation.text;
+    final textOffset = current.presentation.textOffsetForSourceOffset(
+      offset,
+      affinity: forward ? TextAffinity.downstream : TextAffinity.upstream,
+    );
+    if (forward && textOffset < text.length) {
+      final range = FlarkCoreGraphemePolicy.nextClusterRange(text, textOffset);
+      if (range == null) return null;
+      return _hitForTextOffset(
+        current,
+        range.$2,
+        affinity: TextAffinity.downstream,
+      );
+    }
+    if (!forward && textOffset > 0) {
+      final range = FlarkCoreGraphemePolicy.previousClusterRange(
+        text,
+        textOffset,
+      );
+      if (range == null) return null;
+      return _hitForTextOffset(
+        current,
+        range.$1,
+        affinity: TextAffinity.upstream,
+      );
+    }
+    final adjacentIndex = rowIndex + (forward ? 1 : -1);
+    if (adjacentIndex < 0 || adjacentIndex >= rows.length) return null;
+    final adjacent = rows[adjacentIndex];
+    return _hitForTextOffset(
+      adjacent,
+      forward ? 0 : adjacent.presentation.text.length,
+      affinity: forward ? TextAffinity.downstream : TextAffinity.upstream,
+    );
+  }
+
+  FlarkSurfaceHit? verticalHit(
+    int offset, {
+    required bool forward,
+    double? preferredX,
+  }) {
+    final current = _localPositionForSourceUtf16(offset);
+    final row = _logicalRowForSourceUtf16(offset);
+    if (current == null || row == null) return null;
+    return positionForOffset(
+      Offset(
+        preferredX ?? current.dx,
+        current.dy + (forward ? 1 : -1) * row.painter.preferredLineHeight,
+      ),
+    );
+  }
+
+  double? localXForSourceUtf16(int offset) =>
+      _localPositionForSourceUtf16(offset)?.dx;
 
   Rect? _taskActionBox(_PaintedRow row) {
     if (row.fragmentStart != 0 ||
@@ -809,7 +933,7 @@ final class RenderFlarkSurface extends RenderBox {
   /// This is a debug/integration-test inverse of [positionForOffset]. It is
   /// intentionally bounded to rows laid out by the current viewport; callers
   /// must page/scroll before asking for an offscreen source position.
-  Offset? debugLocalPositionForSourceUtf16(int sourceUtf16Offset) {
+  Offset? _localPositionForSourceUtf16(int sourceUtf16Offset) {
     for (final row in _paintedRows) {
       final sourceStart = row.presentation.runs.isEmpty
           ? row.presentation.globalUtf16Start
@@ -851,6 +975,9 @@ final class RenderFlarkSurface extends RenderBox {
     }
     return null;
   }
+
+  Offset? debugLocalPositionForSourceUtf16(int sourceUtf16Offset) =>
+      _localPositionForSourceUtf16(sourceUtf16Offset);
 
   @override
   void paint(PaintingContext context, Offset offset) {

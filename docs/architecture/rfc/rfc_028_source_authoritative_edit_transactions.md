@@ -979,6 +979,17 @@ scroll-select coupling in the framework adapter; fling physics, selection
 handles, magnifier, platform menus, and physical-device behavior remain H4/H5
 qualification rather than implied by a widget test.
 
+The custom Flutter input client now owns the minimum visual keyboard-navigation
+adapter that `EditableText` previously supplied implicitly. Character movement
+steps through rendered grapheme clusters and crosses hidden delimiters in one
+source-mapped stop; vertical movement asks the bounded painted surface for the
+nearest caret at a retained horizontal coordinate. macOS selectors and Flutter
+logical arrow shortcuts share that adapter, including Shift extension, while
+Core installs the resulting source selection through canonical anchors. This
+does not move navigation semantics into Rust: layout-dependent destinations
+belong to the frontend, while word/line/document commands, bidi permutations,
+off-page navigation, and accessibility traversal remain explicit H4 work.
+
 ### H5 — hardening and later architecture
 
 Qualify memory envelopes, fault recovery, giant-line raster behavior, GFM and

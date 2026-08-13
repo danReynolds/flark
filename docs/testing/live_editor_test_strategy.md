@@ -446,6 +446,13 @@ still reaches the rendered task action. This is host-routing evidence only;
 mobile physics, selection controls, IME, menus, and accessibility stay in the
 simulator/physical canary matrix.
 
+Keyboard-adapter evidence pins both macOS selector delivery and a logical
+hardware-arrow shortcut. The focused cases cover rendered/source delimiter
+crossing, extended-grapheme movement, Shift selection, selection collapse, and
+paint-geometry vertical movement. Broader word/line/document, bidi, page, and
+platform convention matrices are added only with their corresponding product
+behavior; they are not multiplied through the portable Markdown corpus.
+
 ### H3 — Grow from evidence
 
 Promote shipped construct families from the candidate list as their v4 product

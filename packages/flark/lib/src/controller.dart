@@ -500,6 +500,8 @@ final class FlarkEditorController extends ChangeNotifier {
   int get sourceUtf16Length => _document.sourceUtf16Length;
   int get pendingEdits => _pendingEdits;
   Object? get lastError => _lastError;
+  int get globalSelectionBase => _globalSelectionBase;
+  int get globalSelectionExtent => _globalSelectionExtent;
   int get globalCaretOffset => _globalSelectionExtent;
   String? get selectedText {
     final selection = _inputValue.selection;

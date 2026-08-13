@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
@@ -107,6 +108,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
   TextInputConnection? _connection;
   TextEditingValue? _lastSentValue;
   FlarkSurfaceHit? _pendingTapHit;
+  double? _preferredVerticalNavigationX;
 
   FocusNode get _focusNode => widget.focusNode ?? _ownedFocusNode!;
 
@@ -211,6 +213,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
   }
 
   void _activateHit(FlarkSurfaceHit hit, {bool extend = false}) {
+    _preferredVerticalNavigationX = null;
     if (extend) {
       widget.controller.extendSelectionTo(
         hit.globalUtf16Offset,
@@ -238,6 +241,58 @@ final class _FlarkEditorState extends State<FlarkEditor>
 
   void _handleTapDown(TapDownDetails details) {
     _pendingTapHit = _surface?.positionForOffset(details.localPosition);
+  }
+
+  void _adoptNavigationHit(FlarkSurfaceHit hit, {required bool modify}) {
+    if (!modify) {
+      _activateHit(hit);
+      return;
+    }
+    widget.controller.extendSelectionTo(
+      hit.globalUtf16Offset,
+      activeOrdinal: hit.row?.ordinal ?? -hit.ordinal - 1,
+    );
+    _focusNode.requestFocus();
+    _openConnection();
+    _sendEditingState(force: true);
+  }
+
+  void _moveCharacter({required bool forward, required bool modify}) {
+    final surface = _surface;
+    if (surface == null) return;
+    final controller = widget.controller;
+    final base = controller.globalSelectionBase;
+    final extent = controller.globalSelectionExtent;
+    _preferredVerticalNavigationX = null;
+    if (!modify && base != extent) {
+      final boundary = forward
+          ? math.max(base, extent)
+          : math.min(base, extent);
+      final hit = surface.hitForSourceUtf16(
+        boundary,
+        affinity: forward ? TextAffinity.downstream : TextAffinity.upstream,
+      );
+      if (hit != null) _adoptNavigationHit(hit, modify: false);
+      return;
+    }
+    final hit = surface.adjacentCharacterHit(extent, forward: forward);
+    if (hit != null) _adoptNavigationHit(hit, modify: modify);
+  }
+
+  void _moveVertically({required bool forward, required bool modify}) {
+    final surface = _surface;
+    if (surface == null) return;
+    final extent = widget.controller.globalSelectionExtent;
+    _preferredVerticalNavigationX ??= surface.localXForSourceUtf16(extent);
+    final hit = surface.verticalHit(
+      extent,
+      forward: forward,
+      preferredX: _preferredVerticalNavigationX,
+    );
+    if (hit == null) return;
+    final preferredX = _preferredVerticalNavigationX;
+    _adoptNavigationHit(hit, modify: modify);
+    _preferredVerticalNavigationX = preferredX;
   }
 
   void _handleTap() {
@@ -360,6 +415,22 @@ final class _FlarkEditorState extends State<FlarkEditor>
   }
 
   Map<ShortcutActivator, VoidCallback> get _desktopShortcutBindings => {
+    SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
+        _moveCharacter(forward: false, modify: false),
+    SingleActivator(LogicalKeyboardKey.arrowRight): () =>
+        _moveCharacter(forward: true, modify: false),
+    SingleActivator(LogicalKeyboardKey.arrowLeft, shift: true): () =>
+        _moveCharacter(forward: false, modify: true),
+    SingleActivator(LogicalKeyboardKey.arrowRight, shift: true): () =>
+        _moveCharacter(forward: true, modify: true),
+    SingleActivator(LogicalKeyboardKey.arrowUp): () =>
+        _moveVertically(forward: false, modify: false),
+    SingleActivator(LogicalKeyboardKey.arrowDown): () =>
+        _moveVertically(forward: true, modify: false),
+    SingleActivator(LogicalKeyboardKey.arrowUp, shift: true): () =>
+        _moveVertically(forward: false, modify: true),
+    SingleActivator(LogicalKeyboardKey.arrowDown, shift: true): () =>
+        _moveVertically(forward: true, modify: true),
     for (final meta in [true, false]) ...{
       SingleActivator(LogicalKeyboardKey.keyC, meta: meta, control: !meta): () {
         widget.debugInputEventObserver?.call('shortcut:copy');
@@ -401,6 +472,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
 
   @override
   void updateEditingValueWithDeltas(List<TextEditingDelta> textEditingDeltas) {
+    _preferredVerticalNavigationX = null;
     widget.debugInputEventObserver?.call(
       'deltas:${textEditingDeltas.map((delta) => delta.runtimeType).join(',')}'
       ':old=${textEditingDeltas.isEmpty ? -1 : textEditingDeltas.first.oldText.length}',
@@ -410,6 +482,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
 
   @override
   void updateEditingValue(TextEditingValue value) {
+    _preferredVerticalNavigationX = null;
     widget.debugInputEventObserver?.call(
       'full-value:length=${value.text.length}:selection=${value.selection}'
       ':composing=${value.composing}',
@@ -419,6 +492,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
 
   @override
   void performAction(TextInputAction action) {
+    _preferredVerticalNavigationX = null;
     widget.debugInputEventObserver?.call('action:$action');
     if (action == TextInputAction.newline) {
       widget.controller.observePlatformNewlineAction();
@@ -436,14 +510,35 @@ final class _FlarkEditorState extends State<FlarkEditor>
       case 'paste:':
         unawaited(_pasteClipboard());
       case 'deleteBackward:':
+        _preferredVerticalNavigationX = null;
         widget.controller.observePlatformDeleteBackwardAction();
       case 'deleteForward:':
+        _preferredVerticalNavigationX = null;
         widget.controller.deleteForward();
+      case 'moveLeft:' || 'moveBackward:':
+        _moveCharacter(forward: false, modify: false);
+      case 'moveRight:' || 'moveForward:':
+        _moveCharacter(forward: true, modify: false);
+      case 'moveLeftAndModifySelection:':
+        _moveCharacter(forward: false, modify: true);
+      case 'moveRightAndModifySelection:':
+        _moveCharacter(forward: true, modify: true);
+      case 'moveUp:':
+        _moveVertically(forward: false, modify: false);
+      case 'moveDown:':
+        _moveVertically(forward: true, modify: false);
+      case 'moveUpAndModifySelection:':
+        _moveVertically(forward: false, modify: true);
+      case 'moveDownAndModifySelection:':
+        _moveVertically(forward: true, modify: true);
       case 'insertNewline:':
+        _preferredVerticalNavigationX = null;
         widget.controller.insertNewline();
       case 'undo:':
+        _preferredVerticalNavigationX = null;
         unawaited(widget.controller.undo());
       case 'redo:':
+        _preferredVerticalNavigationX = null;
         unawaited(widget.controller.redo());
       default:
         break;
@@ -457,6 +552,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
   }
 
   Future<void> _cutSelection() async {
+    _preferredVerticalNavigationX = null;
     final controller = widget.controller;
     final value = controller.inputValue;
     final text = await controller.readSelectedText();
@@ -470,6 +566,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
   }
 
   Future<void> _pasteClipboard() async {
+    _preferredVerticalNavigationX = null;
     final controller = widget.controller;
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     if (!mounted || !identical(controller, widget.controller)) return;
