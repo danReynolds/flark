@@ -450,6 +450,13 @@ the same user-visible whole-row relay behind an incomplete `<` opener after the
 original `*` case was green, proving why the gate is organized by parser-hazard
 families rather than one reported character.
 
+One ATX-heading lifecycle now closes the common split/lift/history mechanism at
+portable depth. It exercises five mounted states across Return, undo, prefix
+Backspace plus immediate typing, and two-unit undo/redo; raw heading markers are
+forbidden from every painted state. Empty headings and parser permutations stay
+in focused Rust/controller tests because they do not add another cross-layer
+mechanism.
+
 Rendered task-checkbox activation now uses the same portable plan as other
 cross-layer behavior. The no-window lane invokes the framework-neutral target
 action, the mounted lane observes its receipt-backed projection through

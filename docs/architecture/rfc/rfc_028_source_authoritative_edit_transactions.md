@@ -1035,6 +1035,13 @@ without an extra mounted render or selection plan. Paint observations begin
 once after initial activation, so later caret or selection moves cannot erase
 the edit history being asserted.
 
+ATX heading split and lift now share one portable lifecycle with history:
+Return exits the heading, undo restores it, prefix Backspace lifts it to a
+plain paragraph, immediate typing remains ordered behind that receipt, and two
+undo/redo units reproduce the exact source and selection. The mounted lane
+observes exactly the five expected render/selection states and never paints the
+hidden `##` prefix.
+
 Flutter pointer routing now separates recognizers by intent instead of enabling
 one pan policy on every device: a touch or stylus tap activates text or a
 semantic surface action, a touch or stylus vertical drag scrolls without moving

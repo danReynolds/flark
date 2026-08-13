@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "id": "atx-heading-lifecycle",
+  "description": "An ATX heading exits to a plain paragraph, lifts its parser-owned prefix, accepts immediate typing, and round-trips both structural transitions through history.",
+  "initialSource": "## Head",
+  "activation": {
+    "needle": "Head",
+    "occurrence": 0,
+    "utf16OffsetInNeedle": 4
+  },
+  "steps": [
+    {
+      "type": "pressReturn"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "checkpoint",
+      "id": "exited",
+      "source": "## Head\n\n",
+      "caretUtf16": 9
+    },
+    {
+      "type": "undo"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "checkpoint",
+      "id": "exit-undone",
+      "source": "## Head",
+      "caretUtf16": 7
+    },
+    {
+      "type": "selectSourceRange",
+      "baseUtf16": 3,
+      "extentUtf16": 3
+    },
+    {
+      "type": "pressBackspace"
+    },
+    {
+      "type": "typeText",
+      "text": "Plain ",
+      "intervalMs": 0
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "checkpoint",
+      "id": "lifted-and-typed",
+      "source": "Plain Head",
+      "caretUtf16": 6
+    },
+    {
+      "type": "undo"
+    },
+    {
+      "type": "undo"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "checkpoint",
+      "id": "lift-undone",
+      "source": "## Head",
+      "caretUtf16": 3
+    },
+    {
+      "type": "redo"
+    },
+    {
+      "type": "redo"
+    },
+    {
+      "type": "waitForIdle"
+    }
+  ],
+  "schedules": [
+    {
+      "id": "immediate"
+    }
+  ],
+  "expect": {
+    "source": "Plain Head",
+    "caretUtf16": 6,
+    "resyncCount": 0,
+    "faulted": false,
+    "forbiddenSurfaceSubstrings": ["##", "<empty>"],
+    "paintedSurfaceNeverContains": ["##", "<empty>"],
+    "expectedPaintedPresentations": [
+      "Head",
+      "Head",
+      "Plain Head",
+      "Head",
+      "Plain Head"
+    ],
+    "expectedPaintedRenderPlanSamples": 5,
+    "expectedPaintedVisualStateSamples": 5
+  }
+}
