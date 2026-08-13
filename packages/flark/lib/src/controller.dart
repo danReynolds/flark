@@ -445,7 +445,8 @@ final class FlarkEditorController extends ChangeNotifier {
   final List<_OptimisticViewportEdit> _optimisticViewportEdits = [];
   _ProjectionContinuitySurface? _projectionContinuity;
   FlarkCoreCommittedPresentationGapV1? _committedParagraphSplit;
-  FlarkCoreCommittedPresentationSurfaceV1? _committedStructuralSurface;
+  List<FlarkCoreCommittedPresentationSurfaceV1> _committedStructuralSurfaces =
+      const [];
   int _pageIndex = 0;
   int _editGeneration = 0;
   int _pendingEdits = 0;
@@ -474,6 +475,7 @@ final class FlarkEditorController extends ChangeNotifier {
   int? _activePlatformCallbackStartedEpochMicros;
   FlarkSemanticEditPerformance? _lastSemanticEditPerformance;
   bool _platformNewlineMutationAwaitingAction = false;
+  bool _platformDeleteBackwardMutationAwaitingSelector = false;
   int _semanticSuccessorHighWatermark = 0;
   int _lastSemanticReconciliationMicros = 0;
 
@@ -712,8 +714,14 @@ final class FlarkEditorController extends ChangeNotifier {
     FlarkViewportRow row, {
     bool includeEditingState = true,
   }) {
-    final structural = _committedStructuralSurface;
-    if (structural != null && structural.rowOrdinal == row.ordinal) {
+    final structurals = _structuralSurfacesFor(row.ordinal);
+    if (structurals.isNotEmpty) {
+      final structural = structurals.firstWhere(
+        (candidate) =>
+            candidate.sourceUtf16.start <= _globalSelectionExtent &&
+            _globalSelectionExtent <= candidate.sourceUtf16.end,
+        orElse: () => structurals.first,
+      );
       return _committedStructuralSurfaceRow(
         structural,
         includeEditingState: includeEditingState,
@@ -827,11 +835,41 @@ final class FlarkEditorController extends ChangeNotifier {
     );
   }
 
+  /// Ordered framework-neutral presentations currently replacing one stale
+  /// certified row. Most rows return one surface; a structural edit that
+  /// temporarily creates mixed block semantics may return a small set.
+  List<FlarkSurfaceRow> surfaceRowsFor(
+    FlarkViewportRow row, {
+    bool includeEditingState = true,
+  }) {
+    final structurals = _structuralSurfacesFor(row.ordinal);
+    if (structurals.isEmpty) {
+      return [surfaceRow(row, includeEditingState: includeEditingState)];
+    }
+    return List.unmodifiable(
+      structurals.map(
+        (structural) => _committedStructuralSurfaceRow(
+          structural,
+          includeEditingState: includeEditingState,
+        ),
+      ),
+    );
+  }
+
+  List<FlarkCoreCommittedPresentationSurfaceV1> _structuralSurfacesFor(
+    int ordinal,
+  ) => _committedStructuralSurfaces
+      .where((surface) => surface.rowOrdinal == ordinal)
+      .toList(growable: false);
+
   /// Exact source extent currently owned by one rendered row.
   FlarkSourceRange surfaceSourceRange(FlarkViewportRow row) {
-    final structural = _committedStructuralSurface;
-    if (structural != null && structural.rowOrdinal == row.ordinal) {
-      return structural.sourceUtf16;
+    final structurals = _structuralSurfacesFor(row.ordinal);
+    if (structurals.isNotEmpty) {
+      return FlarkSourceRange(
+        structurals.first.sourceUtf16.start,
+        structurals.last.sourceUtf16.end,
+      );
     }
     final mapped = _mappedExactRowRange(row);
     final split = _committedParagraphSplit;
@@ -1207,7 +1245,6 @@ final class FlarkEditorController extends ChangeNotifier {
   }) {
     _semanticEditV1Active = _supportsSemanticEditV1(row);
     _committedParagraphSplit = null;
-    _committedStructuralSurface = null;
     _projectionContinuity = null;
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
@@ -1232,7 +1269,6 @@ final class FlarkEditorController extends ChangeNotifier {
     TextAffinity affinity = TextAffinity.downstream,
   }) {
     _semanticEditV1Active = false;
-    _committedStructuralSurface = null;
     _projectionContinuity = null;
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
@@ -1346,6 +1382,10 @@ final class FlarkEditorController extends ChangeNotifier {
           _queuePlatformSemanticNewline(deltas)) {
         return;
       }
+      if (_isPlatformDeleteBackwardMutation(deltas) &&
+          _queuePlatformSemanticDeleteBackward(deltas)) {
+        return;
+      }
       if (_isPlatformNewlineMutation(deltas)) {
         insertNewline();
         return;
@@ -1426,6 +1466,10 @@ final class FlarkEditorController extends ChangeNotifier {
     try {
       if (_isPlatformNewlineValue(value) &&
           _queuePlatformSemanticNewlineValue(value)) {
+        return;
+      }
+      if (_isPlatformDeleteBackwardValue(value) &&
+          _queuePlatformSemanticDeleteBackwardValue(value)) {
         return;
       }
       _updateEditingValueFromPlatform(value);
@@ -1750,6 +1794,74 @@ final class FlarkEditorController extends ChangeNotifier {
     return queued;
   }
 
+  bool _isPlatformDeleteBackwardMutation(List<TextEditingDelta> deltas) {
+    if (deltas.length != 1 ||
+        _inputValue.composing != TextRange.empty ||
+        deltas.single.composing != TextRange.empty ||
+        !_inputValue.selection.isCollapsed) {
+      return false;
+    }
+    final mutation = _mutationFor(deltas.single);
+    final caret = _inputValue.selection.extentOffset;
+    return mutation != null &&
+        mutation.replacement.isEmpty &&
+        mutation.start < mutation.end &&
+        mutation.end == caret;
+  }
+
+  bool _queuePlatformSemanticDeleteBackward(List<TextEditingDelta> deltas) {
+    return _queueObservedPlatformSemanticDeleteBackward(
+      provisionalMutation: _mutationFor(deltas.single)!,
+      provisionalAfter: deltas.single.apply(_inputValue),
+    );
+  }
+
+  bool _isPlatformDeleteBackwardValue(TextEditingValue value) {
+    if (_inputValue.composing != TextRange.empty ||
+        value.composing != TextRange.empty ||
+        !_inputValue.selection.isCollapsed) {
+      return false;
+    }
+    final mutation = _differenceMutation(_inputValue.text, value.text);
+    final caret = _inputValue.selection.extentOffset;
+    return mutation != null &&
+        mutation.replacement.isEmpty &&
+        mutation.start < mutation.end &&
+        mutation.end == caret;
+  }
+
+  bool _queuePlatformSemanticDeleteBackwardValue(TextEditingValue value) {
+    return _queueObservedPlatformSemanticDeleteBackward(
+      provisionalMutation: _differenceMutation(_inputValue.text, value.text)!,
+      provisionalAfter: value,
+    );
+  }
+
+  bool _queueObservedPlatformSemanticDeleteBackward({
+    required _TextMutation provisionalMutation,
+    required TextEditingValue provisionalAfter,
+  }) {
+    _lateSemanticInput = null;
+    _pendingSemanticInput = _PendingSemanticInput(
+      base: _inputValue,
+      inputGlobalUtf16Start: _inputGlobalUtf16Start,
+      initialCallbackStartedEpochMicros:
+          _activePlatformCallbackStartedEpochMicros ??
+          DateTime.now().microsecondsSinceEpoch,
+      provisionalMutation: provisionalMutation,
+      provisionalAfter: provisionalAfter,
+    );
+    _platformDeleteBackwardMutationAwaitingSelector = true;
+    final queued = _queueSemanticDeleteBackward(
+      _inputValue.selection.extentOffset,
+    );
+    if (!queued) {
+      _pendingSemanticInput = null;
+      _platformDeleteBackwardMutationAwaitingSelector = false;
+    }
+    return queued;
+  }
+
   /// Adopts a platform action only when no preceding text observation already
   /// carried the newline. macOS deliberately emits both for one Return.
   void observePlatformNewlineAction() {
@@ -1758,6 +1870,19 @@ final class FlarkEditorController extends ChangeNotifier {
       return;
     }
     insertNewline();
+  }
+
+  /// Adopts a selector only when no preceding text observation already
+  /// carried the same Backspace. Desktop embedders may emit both; mobile
+  /// generally supplies only the deletion delta or full value.
+  void observePlatformDeleteBackwardAction() {
+    if (_platformDeleteBackwardMutationAwaitingSelector &&
+        (_pendingSemanticInput != null || _lateSemanticInput != null)) {
+      _platformDeleteBackwardMutationAwaitingSelector = false;
+      return;
+    }
+    _platformDeleteBackwardMutationAwaitingSelector = false;
+    deleteBackward();
   }
 
   bool _captureSemanticSuccessors(List<TextEditingDelta> deltas) {
@@ -2638,15 +2763,23 @@ final class FlarkEditorController extends ChangeNotifier {
         (start < split.rowEndUtf16 || end > _committedGapEnd(split))) {
       _committedParagraphSplit = null;
     }
-    final structural = _committedStructuralSurface;
-    _prepareProjectionContinuity(start, end, replacement);
-    if (structural != null) {
-      final touchesStructural = start == end
-          ? structural.sourceUtf16.start <= start &&
-                start <= structural.sourceUtf16.end
-          : start < structural.sourceUtf16.end &&
-                structural.sourceUtf16.start < end;
-      if (touchesStructural) _committedStructuralSurface = null;
+    final structurals = _committedStructuralSurfaces;
+    if (structurals.isNotEmpty) {
+      final mapped = mapCommittedPresentationSurfacesThroughLiteralSpliceV1(
+        surfaces: structurals,
+        startUtf16: start,
+        endUtf16: end,
+        replacement: replacement,
+      );
+      if (mapped != null) {
+        _committedStructuralSurfaces = mapped;
+        _projectionContinuity = null;
+      } else {
+        _prepareProjectionContinuity(start, end, replacement);
+        _committedStructuralSurfaces = const [];
+      }
+    } else {
+      _prepareProjectionContinuity(start, end, replacement);
     }
     _applyOptimisticViewportEdit(start, end, replacement);
     if (recenterAfterOptimisticEdit) {
@@ -2698,8 +2831,10 @@ final class FlarkEditorController extends ChangeNotifier {
     if (!_inputValue.selection.isCollapsed) return false;
     final row = _activeCachedRow();
     final editableRange = row?.editableUtf16;
-    if (row != null && _isProjectedBlockQuote(row)) return false;
-    final rowEligible = row != null && _supportsSemanticDeleteBackwardV1(row);
+    final projectedBlockQuote = row != null && _isProjectedBlockQuote(row);
+    final rowEligible =
+        row != null &&
+        (_supportsSemanticDeleteBackwardV1(row) || projectedBlockQuote);
     if (!rowEligible && (!_semanticEditV1Active || localCaret != 0)) {
       return false;
     }
@@ -2707,7 +2842,14 @@ final class FlarkEditorController extends ChangeNotifier {
       _semanticEditV1Active = true;
       final editable = _mapViewportRange(editableRange!);
       final globalCaret = _inputGlobalUtf16Start + localCaret;
-      if (globalCaret != editable.start &&
+      final atProjectedSegmentStart =
+          projectedBlockQuote &&
+          row.projectionSegments!.any(
+            (segment) =>
+                _mapViewportRange(segment.sourceUtf16).start == globalCaret,
+          );
+      if (!atProjectedSegmentStart &&
+          globalCaret != editable.start &&
           (_semanticViewportCurrent || localCaret != 0)) {
         return false;
       }
@@ -2858,11 +3000,14 @@ final class FlarkEditorController extends ChangeNotifier {
       receipt.baseUtf16End,
       receipt.replacement,
     );
-    _committedStructuralSurface = transition?.surface;
-    final removedRowOrdinal = transition?.surface?.removedRowOrdinal;
-    if (removedRowOrdinal != null) {
+    _committedStructuralSurfaces = transition?.surfaces ?? const [];
+    final removedRowOrdinals = _committedStructuralSurfaces
+        .map((surface) => surface.removedRowOrdinal)
+        .whereType<int>()
+        .toSet();
+    if (removedRowOrdinals.isNotEmpty) {
       _cachedRows = List.unmodifiable(
-        _cachedRows.where((row) => row.ordinal != removedRowOrdinal),
+        _cachedRows.where((row) => !removedRowOrdinals.contains(row.ordinal)),
       );
     }
     _committedParagraphSplit = transition?.gap ?? _committedParagraphSplit;
@@ -3214,7 +3359,7 @@ final class FlarkEditorController extends ChangeNotifier {
     // conservative literal continuation even though the older viewport rows
     // still have an optimistic splice in front of them.
     if (_optimisticViewportEdits.isNotEmpty &&
-        _committedStructuralSurface == null) {
+        _committedStructuralSurfaces.isEmpty) {
       return;
     }
     final row = _activeCachedRow();
@@ -3395,7 +3540,7 @@ final class FlarkEditorController extends ChangeNotifier {
     _historyReplayPending = true;
     _projectionContinuity = null;
     _committedParagraphSplit = null;
-    _committedStructuralSurface = null;
+    _committedStructuralSurfaces = const [];
     _semanticEditV1Active = false;
     _breakTypingHistoryGroup();
     _endCompositionHistoryGroup();
@@ -3551,7 +3696,7 @@ final class FlarkEditorController extends ChangeNotifier {
     final hasCommittedSurface =
         _projectionContinuity != null ||
         _committedParagraphSplit != null ||
-        _committedStructuralSurface != null;
+        _committedStructuralSurfaces.isNotEmpty;
     final retainsExistingSurface =
         !viewport.isCertified && hasCommittedSurface && _cachedRows.isNotEmpty;
     final installsFreshRows =
@@ -3606,7 +3751,7 @@ final class FlarkEditorController extends ChangeNotifier {
     }
     if (_semanticViewportCurrent && (_activeOrdinal ?? -1) >= 0) {
       _committedParagraphSplit = null;
-      _committedStructuralSurface = null;
+      _committedStructuralSurfaces = const [];
     }
     notifyListeners();
   }
@@ -3936,7 +4081,7 @@ final class FlarkEditorController extends ChangeNotifier {
     // content. Keep unchanged cached rows semantic as well; demoting the whole
     // viewport for one safe keystroke produces a visible page-wide flash.
     if (_projectionContinuity != null) return true;
-    if (_committedStructuralSurface != null) return true;
+    if (_committedStructuralSurfaces.isNotEmpty) return true;
     if (!_certificationRevisionCurrent) return false;
     return _certificationRanges.any(
       (range) =>

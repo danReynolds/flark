@@ -161,9 +161,11 @@ segment payload with `SEMANTIC_PROJECTED`, while the older `SEMANTIC` query
 continues to receive an unavailable row. Nonempty Return is also admitted:
 Rust resolves the exact certified physical segment, commits the quote prefix,
 and Core constructs a bounded projected transition that hides it through
-recertification. Backspace that would lift only one physical quote line, and
-empty Return that exits only part of the logical row, still require a later
-multi-surface transition and are not silently inferred by Flutter.
+recertification. Prefix Backspace on a later physical line now publishes an
+ordered quote/plain surface set; literal successors map that set through their
+exact splice without dropping an unaffected peer. Empty Return on a
+zero-content projected line remains unavailable until the parser publishes
+zero-length segment ownership; it is not silently inferred by Flutter.
 
 ### 4.3 Canonical selection and display selection
 

@@ -346,7 +346,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
       case 'paste:':
         unawaited(_pasteClipboard());
       case 'deleteBackward:':
-        widget.controller.deleteBackward();
+        widget.controller.observePlatformDeleteBackwardAction();
       case 'deleteForward:':
         widget.controller.deleteForward();
       case 'insertNewline:':

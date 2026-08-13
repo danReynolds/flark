@@ -398,19 +398,26 @@ final class RenderFlarkSurface extends RenderBox {
           sourceCursor = math.max(sourceCursor, sourceRange.end);
           continue;
         }
-        final presentation = _controller.surfaceRow(
+        final presentations = _controller.surfaceRowsFor(
           row,
           includeEditingState: _includeEditingState,
         );
-        top = _emitFragments(
-          presentation: presentation,
-          ordinal: row.ordinal,
-          top: top,
-          maxWidth: maxWidth,
-          row: row,
-        );
-        top += 6;
-        _laidOutRowCount += 1;
+        for (final presentation in presentations) {
+          if (top > _layoutBudgetBottom) {
+            _skippedRowCount += 1;
+            skippedEstimate += _estimatedRowHeight + 6;
+            continue;
+          }
+          top = _emitFragments(
+            presentation: presentation,
+            ordinal: row.ordinal,
+            top: top,
+            maxWidth: maxWidth,
+            row: row,
+          );
+          top += 6;
+          _laidOutRowCount += 1;
+        }
         sourceCursor = math.max(sourceCursor, sourceRange.end);
       }
       final visibleEnd =
@@ -813,7 +820,12 @@ final class RenderFlarkSurface extends RenderBox {
       final paintedTop = row.top - _scrollOffset;
       if (paintedTop + row.height < 0 || paintedTop > size.height) continue;
       final observationKey = row.row != null
-          ? ('row', row.row!.ordinal)
+          ? (
+              'row',
+              row.row!.ordinal,
+              row.presentation.globalUtf16Start,
+              row.presentation.blockQuoteDepth,
+            )
           : ('neutral', row.ordinal, row.neutralUtf16Start, row.neutralText);
       if (observedKeys.add(observationKey)) {
         observedRows.add(

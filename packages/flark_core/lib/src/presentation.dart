@@ -95,15 +95,20 @@ final class FlarkCoreCommittedPresentationSurfaceV1 {
 /// Complete framework-neutral transitional presentation for one authoritative
 /// semantic edit receipt.
 final class FlarkCoreCommittedPresentationTransitionV1 {
-  const FlarkCoreCommittedPresentationTransitionV1({
+  FlarkCoreCommittedPresentationTransitionV1({
     this.gap,
-    this.surface,
+    List<FlarkCoreCommittedPresentationSurfaceV1> surfaces = const [],
     this.clearPriorGap = false,
-  }) : assert(gap != null || surface != null || clearPriorGap);
+  }) : surfaces = List.unmodifiable(surfaces),
+       assert(gap != null || surfaces.isNotEmpty || clearPriorGap);
 
   final FlarkCoreCommittedPresentationGapV1? gap;
-  final FlarkCoreCommittedPresentationSurfaceV1? surface;
+  final List<FlarkCoreCommittedPresentationSurfaceV1> surfaces;
   final bool clearPriorGap;
+
+  /// Compatibility view for transitions that still publish exactly one row.
+  FlarkCoreCommittedPresentationSurfaceV1? get surface =>
+      surfaces.length == 1 ? surfaces.single : null;
 }
 
 /// Applies the presentation consequence already classified by Rust.
@@ -156,18 +161,14 @@ resolveCommittedPresentationTransitionV1({
       );
     case FlarkCoreEditPresentationTransitionV1.mergeParagraph:
       if (priorGapPending || activeRow == null || precedingRow == null) {
-        return const FlarkCoreCommittedPresentationTransitionV1(
-          clearPriorGap: true,
-        );
+        return FlarkCoreCommittedPresentationTransitionV1(clearPriorGap: true);
       }
       final runs = _mapRunsThroughCommittedSplice([
         ...precedingRow.runs,
         ...activeRow.runs,
       ], receipt);
       if (runs == null) {
-        return const FlarkCoreCommittedPresentationTransitionV1(
-          clearPriorGap: true,
-        );
+        return FlarkCoreCommittedPresentationTransitionV1(clearPriorGap: true);
       }
       final resultEnd = activeRow.sourceUtf16.end + _utf16Delta(receipt);
       final source = FlarkSourceRange(
@@ -176,24 +177,26 @@ resolveCommittedPresentationTransitionV1({
       );
       return FlarkCoreCommittedPresentationTransitionV1(
         clearPriorGap: true,
-        surface: FlarkCoreCommittedPresentationSurfaceV1(
-          rowOrdinal: precedingRow.ordinal,
-          removedRowOrdinal: activeRow.ordinal,
-          sourceUtf16: source,
-          presentation: FlarkCorePresentationRow(
+        surfaces: [
+          FlarkCoreCommittedPresentationSurfaceV1(
+            rowOrdinal: precedingRow.ordinal,
+            removedRowOrdinal: activeRow.ordinal,
             sourceUtf16: source,
-            leadingText: precedingRow.leadingText,
-            text: '${precedingRow.text}${activeRow.text}',
-            globalUtf16Start: precedingRow.sourceUtf16.start,
-            kind: precedingRow.kind,
-            headingLevel: precedingRow.headingLevel,
-            blockQuoteDepth: precedingRow.blockQuoteDepth,
-            codeBlock: precedingRow.codeBlock,
-            thematicBreak: precedingRow.thematicBreak,
-            ordinal: precedingRow.ordinal,
-            runs: runs,
+            presentation: FlarkCorePresentationRow(
+              sourceUtf16: source,
+              leadingText: precedingRow.leadingText,
+              text: '${precedingRow.text}${activeRow.text}',
+              globalUtf16Start: precedingRow.sourceUtf16.start,
+              kind: precedingRow.kind,
+              headingLevel: precedingRow.headingLevel,
+              blockQuoteDepth: precedingRow.blockQuoteDepth,
+              codeBlock: precedingRow.codeBlock,
+              thematicBreak: precedingRow.thematicBreak,
+              ordinal: precedingRow.ordinal,
+              runs: runs,
+            ),
           ),
-        ),
+        ],
       );
     case FlarkCoreEditPresentationTransitionV1.outdentList:
       if (activeRow == null || receipt.replacement.isNotEmpty) return null;
@@ -207,23 +210,25 @@ resolveCommittedPresentationTransitionV1({
         activeRow.sourceUtf16.end + delta,
       );
       return FlarkCoreCommittedPresentationTransitionV1(
-        surface: FlarkCoreCommittedPresentationSurfaceV1(
-          rowOrdinal: activeRow.ordinal,
-          sourceUtf16: source,
-          presentation: FlarkCorePresentationRow(
+        surfaces: [
+          FlarkCoreCommittedPresentationSurfaceV1(
+            rowOrdinal: activeRow.ordinal,
             sourceUtf16: source,
-            leadingText: activeRow.leadingText.substring(removed),
-            text: activeRow.text,
-            globalUtf16Start: source.start,
-            kind: activeRow.kind,
-            headingLevel: activeRow.headingLevel,
-            blockQuoteDepth: activeRow.blockQuoteDepth,
-            codeBlock: activeRow.codeBlock,
-            thematicBreak: activeRow.thematicBreak,
-            ordinal: activeRow.ordinal,
-            runs: runs,
+            presentation: FlarkCorePresentationRow(
+              sourceUtf16: source,
+              leadingText: activeRow.leadingText.substring(removed),
+              text: activeRow.text,
+              globalUtf16Start: source.start,
+              kind: activeRow.kind,
+              headingLevel: activeRow.headingLevel,
+              blockQuoteDepth: activeRow.blockQuoteDepth,
+              codeBlock: activeRow.codeBlock,
+              thematicBreak: activeRow.thematicBreak,
+              ordinal: activeRow.ordinal,
+              runs: runs,
+            ),
           ),
-        ),
+        ],
       );
     case FlarkCoreEditPresentationTransitionV1.liftList:
     case FlarkCoreEditPresentationTransitionV1.exitList:
@@ -232,6 +237,13 @@ resolveCommittedPresentationTransitionV1({
     case FlarkCoreEditPresentationTransitionV1.exitHeading:
     case FlarkCoreEditPresentationTransitionV1.liftHeading:
       if (activeRow == null) return null;
+      if (receipt.presentationTransition ==
+              FlarkCoreEditPresentationTransitionV1.liftBlockQuote ||
+          receipt.presentationTransition ==
+              FlarkCoreEditPresentationTransitionV1.exitBlockQuote) {
+        final projected = _splitProjectedBlockQuote(activeRow, receipt);
+        if (projected != null) return projected;
+      }
       final runs = _mapRunsThroughCommittedSplice(activeRow.runs, receipt);
       if (runs == null) return null;
       final resultEnd = activeRow.sourceUtf16.end + _utf16Delta(receipt);
@@ -240,28 +252,210 @@ resolveCommittedPresentationTransitionV1({
         resultEnd < receipt.resultUtf16End ? receipt.resultUtf16End : resultEnd,
       );
       return FlarkCoreCommittedPresentationTransitionV1(
-        surface: FlarkCoreCommittedPresentationSurfaceV1(
-          rowOrdinal: activeRow.ordinal,
-          sourceUtf16: source,
-          presentation: FlarkCorePresentationRow(
+        surfaces: [
+          FlarkCoreCommittedPresentationSurfaceV1(
+            rowOrdinal: activeRow.ordinal,
             sourceUtf16: source,
-            leadingText: '',
-            text: activeRow.text,
-            globalUtf16Start: receipt.resultUtf16End,
-            kind: 5,
-            headingLevel: null,
-            blockQuoteDepth: null,
-            codeBlock: null,
-            thematicBreak: false,
-            ordinal: activeRow.ordinal,
-            runs: runs,
+            presentation: FlarkCorePresentationRow(
+              sourceUtf16: source,
+              leadingText: '',
+              text: activeRow.text,
+              globalUtf16Start: receipt.resultUtf16End,
+              kind: 5,
+              headingLevel: null,
+              blockQuoteDepth: null,
+              codeBlock: null,
+              thematicBreak: false,
+              ordinal: activeRow.ordinal,
+              runs: runs,
+            ),
           ),
-        ),
+        ],
       );
     case FlarkCoreEditPresentationTransitionV1.none:
       return null;
   }
 }
+
+/// Maps a receipt-backed temporary surface set through one exact literal edit.
+///
+/// This is deliberately presentation-only: source, selection, history, and
+/// admission remain owned by the authoritative transaction. It lets every
+/// Dart frontend preserve unaffected temporary blocks while the active block
+/// accepts ordinary typing before parser recertification.
+List<FlarkCoreCommittedPresentationSurfaceV1>?
+mapCommittedPresentationSurfacesThroughLiteralSpliceV1({
+  required List<FlarkCoreCommittedPresentationSurfaceV1> surfaces,
+  required int startUtf16,
+  required int endUtf16,
+  required String replacement,
+}) {
+  if (startUtf16 < 0 || endUtf16 < startUtf16 || surfaces.isEmpty) {
+    return null;
+  }
+  final delta = replacement.length - (endUtf16 - startUtf16);
+  final mapped = <FlarkCoreCommittedPresentationSurfaceV1>[];
+  var ownerFound = false;
+  for (final surface in surfaces) {
+    final source = surface.sourceUtf16;
+    if (source.end <= startUtf16) {
+      mapped.add(surface);
+      continue;
+    }
+    if (source.start >= endUtf16 && source.start > startUtf16) {
+      mapped.add(_shiftCommittedSurface(surface, delta));
+      continue;
+    }
+    if (ownerFound || startUtf16 < source.start || endUtf16 > source.end) {
+      return null;
+    }
+    final runs = _spliceExactPresentationRuns(
+      surface.presentation.runs,
+      startUtf16,
+      endUtf16,
+      replacement,
+    );
+    if (runs == null) return null;
+    ownerFound = true;
+    final resultSource = FlarkSourceRange(source.start, source.end + delta);
+    mapped.add(
+      FlarkCoreCommittedPresentationSurfaceV1(
+        rowOrdinal: surface.rowOrdinal,
+        sourceUtf16: resultSource,
+        removedRowOrdinal: surface.removedRowOrdinal,
+        presentation: _copyPresentationWithRuns(
+          surface.presentation,
+          sourceUtf16: resultSource,
+          globalUtf16Start: surface.presentation.globalUtf16Start,
+          runs: runs,
+        ),
+      ),
+    );
+  }
+  return ownerFound ? List.unmodifiable(mapped) : null;
+}
+
+FlarkCoreCommittedPresentationSurfaceV1 _shiftCommittedSurface(
+  FlarkCoreCommittedPresentationSurfaceV1 surface,
+  int delta,
+) {
+  final source = FlarkSourceRange(
+    surface.sourceUtf16.start + delta,
+    surface.sourceUtf16.end + delta,
+  );
+  final runs = surface.presentation.runs
+      .map(
+        (run) => FlarkCorePresentationRun(
+          text: run.text,
+          sourceUtf16Start: run.sourceUtf16Start + delta,
+          sourceUtf16End: run.sourceUtf16End + delta,
+          sourceExact: run.sourceExact,
+          styles: run.styles,
+        ),
+      )
+      .toList(growable: false);
+  return FlarkCoreCommittedPresentationSurfaceV1(
+    rowOrdinal: surface.rowOrdinal,
+    sourceUtf16: source,
+    removedRowOrdinal: surface.removedRowOrdinal,
+    presentation: _copyPresentationWithRuns(
+      surface.presentation,
+      sourceUtf16: source,
+      globalUtf16Start: surface.presentation.globalUtf16Start + delta,
+      runs: runs,
+    ),
+  );
+}
+
+List<FlarkCorePresentationRun>? _spliceExactPresentationRuns(
+  List<FlarkCorePresentationRun> runs,
+  int start,
+  int end,
+  String replacement,
+) {
+  final delta = replacement.length - (end - start);
+  final mapped = <FlarkCorePresentationRun>[];
+  var inserted = false;
+  for (final run in runs) {
+    if (run.sourceUtf16End <= start) {
+      mapped.add(run);
+      continue;
+    }
+    if (run.sourceUtf16Start >= end) {
+      if (!inserted) {
+        mapped.add(
+          FlarkCorePresentationRun(
+            text: replacement,
+            sourceUtf16Start: start,
+            sourceUtf16End: start + replacement.length,
+            sourceExact: true,
+            styles: const {},
+          ),
+        );
+        inserted = true;
+      }
+      mapped.add(
+        FlarkCorePresentationRun(
+          text: run.text,
+          sourceUtf16Start: run.sourceUtf16Start + delta,
+          sourceUtf16End: run.sourceUtf16End + delta,
+          sourceExact: run.sourceExact,
+          styles: run.styles,
+        ),
+      );
+      continue;
+    }
+    if (!run.sourceExact ||
+        start < run.sourceUtf16Start ||
+        end > run.sourceUtf16End) {
+      return null;
+    }
+    final localStart = start - run.sourceUtf16Start;
+    final localEnd = end - run.sourceUtf16Start;
+    final text = run.text.replaceRange(localStart, localEnd, replacement);
+    mapped.add(
+      FlarkCorePresentationRun(
+        text: text,
+        sourceUtf16Start: run.sourceUtf16Start,
+        sourceUtf16End: run.sourceUtf16End + delta,
+        sourceExact: true,
+        styles: run.styles,
+      ),
+    );
+    inserted = true;
+  }
+  if (!inserted) {
+    mapped.add(
+      FlarkCorePresentationRun(
+        text: replacement,
+        sourceUtf16Start: start,
+        sourceUtf16End: start + replacement.length,
+        sourceExact: true,
+        styles: const {},
+      ),
+    );
+  }
+  return List.unmodifiable(mapped);
+}
+
+FlarkCorePresentationRow _copyPresentationWithRuns(
+  FlarkCorePresentationRow row, {
+  required FlarkSourceRange sourceUtf16,
+  required int globalUtf16Start,
+  required List<FlarkCorePresentationRun> runs,
+}) => FlarkCorePresentationRow(
+  sourceUtf16: sourceUtf16,
+  leadingText: row.leadingText,
+  text: runs.map((run) => run.text).join(),
+  globalUtf16Start: globalUtf16Start,
+  kind: row.kind,
+  headingLevel: row.headingLevel,
+  blockQuoteDepth: row.blockQuoteDepth,
+  codeBlock: row.codeBlock,
+  thematicBreak: row.thematicBreak,
+  ordinal: row.ordinal,
+  runs: List.unmodifiable(runs),
+);
 
 FlarkCoreCommittedPresentationTransitionV1? _continueProjectedBlockQuote(
   FlarkCorePresentationRow row,
@@ -355,23 +549,118 @@ FlarkCoreCommittedPresentationTransitionV1? _continueProjectedBlockQuote(
   );
   final runs = List<FlarkCorePresentationRun>.unmodifiable(mapped);
   return FlarkCoreCommittedPresentationTransitionV1(
-    surface: FlarkCoreCommittedPresentationSurfaceV1(
-      rowOrdinal: row.ordinal,
-      sourceUtf16: source,
-      presentation: FlarkCorePresentationRow(
+    surfaces: [
+      FlarkCoreCommittedPresentationSurfaceV1(
+        rowOrdinal: row.ordinal,
         sourceUtf16: source,
-        leadingText: row.leadingText,
-        text: runs.map((run) => run.text).join(),
-        globalUtf16Start: row.globalUtf16Start,
-        kind: row.kind,
-        headingLevel: row.headingLevel,
-        blockQuoteDepth: row.blockQuoteDepth,
-        codeBlock: row.codeBlock,
-        thematicBreak: row.thematicBreak,
-        ordinal: row.ordinal,
-        runs: runs,
+        presentation: FlarkCorePresentationRow(
+          sourceUtf16: source,
+          leadingText: row.leadingText,
+          text: runs.map((run) => run.text).join(),
+          globalUtf16Start: row.globalUtf16Start,
+          kind: row.kind,
+          headingLevel: row.headingLevel,
+          blockQuoteDepth: row.blockQuoteDepth,
+          codeBlock: row.codeBlock,
+          thematicBreak: row.thematicBreak,
+          ordinal: row.ordinal,
+          runs: runs,
+        ),
       ),
-    ),
+    ],
+  );
+}
+
+FlarkCoreCommittedPresentationTransitionV1? _splitProjectedBlockQuote(
+  FlarkCorePresentationRow row,
+  FlarkCoreEditIntentReceiptV1 receipt,
+) {
+  if (row.blockQuoteDepth != 1 || row.runs.length < 2) return null;
+  final before = <FlarkCorePresentationRun>[];
+  final after = <FlarkCorePresentationRun>[];
+  final delta = _utf16Delta(receipt);
+  for (final run in row.runs) {
+    if (run.sourceUtf16End <= receipt.baseUtf16Start) {
+      before.add(run);
+      continue;
+    }
+    if (run.sourceUtf16Start >= receipt.baseUtf16End) {
+      after.add(
+        FlarkCorePresentationRun(
+          text: run.text,
+          sourceUtf16Start: run.sourceUtf16Start + delta,
+          sourceUtf16End: run.sourceUtf16End + delta,
+          sourceExact: run.sourceExact,
+          styles: run.styles,
+        ),
+      );
+      continue;
+    }
+    return null;
+  }
+  // The splice must target a hidden gap after at least one retained quoted
+  // run. A first-line lift is represented by the existing single plain
+  // surface, and a range that overlaps a run is not a projected-prefix edit.
+  if (before.isEmpty || receipt.replacement.isEmpty) return null;
+
+  final quoteEnd = receipt.resultUtf16Start;
+  final resultEnd = row.sourceUtf16.end + delta;
+  if (quoteEnd < row.sourceUtf16.start ||
+      resultEnd < receipt.resultUtf16Start) {
+    return null;
+  }
+  final replacementRun = FlarkCorePresentationRun(
+    text: receipt.replacement,
+    sourceUtf16Start: receipt.resultUtf16Start,
+    sourceUtf16End: receipt.resultUtf16End,
+    sourceExact: true,
+    styles: const {},
+  );
+  final quoteRuns = List<FlarkCorePresentationRun>.unmodifiable(before);
+  final plainRuns = List<FlarkCorePresentationRun>.unmodifiable([
+    replacementRun,
+    ...after,
+  ]);
+  final quoteSource = FlarkSourceRange(row.sourceUtf16.start, quoteEnd);
+  final plainSource = FlarkSourceRange(receipt.resultUtf16Start, resultEnd);
+
+  return FlarkCoreCommittedPresentationTransitionV1(
+    surfaces: [
+      FlarkCoreCommittedPresentationSurfaceV1(
+        rowOrdinal: row.ordinal,
+        sourceUtf16: quoteSource,
+        presentation: FlarkCorePresentationRow(
+          sourceUtf16: quoteSource,
+          leadingText: row.leadingText,
+          text: quoteRuns.map((run) => run.text).join(),
+          globalUtf16Start: row.globalUtf16Start,
+          kind: row.kind,
+          headingLevel: row.headingLevel,
+          blockQuoteDepth: row.blockQuoteDepth,
+          codeBlock: row.codeBlock,
+          thematicBreak: row.thematicBreak,
+          ordinal: row.ordinal,
+          runs: quoteRuns,
+        ),
+      ),
+      FlarkCoreCommittedPresentationSurfaceV1(
+        rowOrdinal: row.ordinal,
+        sourceUtf16: plainSource,
+        presentation: FlarkCorePresentationRow(
+          sourceUtf16: plainSource,
+          leadingText: '',
+          text: plainRuns.map((run) => run.text).join(),
+          globalUtf16Start: receipt.resultUtf16Start,
+          kind: 5,
+          headingLevel: null,
+          blockQuoteDepth: null,
+          codeBlock: null,
+          thematicBreak: false,
+          ordinal: row.ordinal,
+          runs: plainRuns,
+        ),
+      ),
+    ],
   );
 }
 

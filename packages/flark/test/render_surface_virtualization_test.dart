@@ -189,6 +189,63 @@ void main() {
   );
 
   testWidgets(
+    'mixed quote and plain transition lays out both temporary surfaces',
+    (tester) async {
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(
+          '> first\n> second\n',
+          libraryPath: libraryPath!,
+        ),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      addTearDown(controller.close);
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 640,
+            height: 320,
+            child: FlarkEditor(controller: controller),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final row = controller.rows.single;
+      controller.activateRow(row, 10);
+      await tester.pump();
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      });
+      controller.deleteBackward();
+      await tester.pump();
+      for (var turn = 0; turn < 8 && controller.pendingEdits != 0; turn += 1) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+        await tester.pump();
+      }
+      expect(controller.pendingEdits, 0);
+      expect(controller.visibleSource, '> first\n\nsecond\n');
+      await tester.pump();
+
+      final surface = tester.renderObject<RenderFlarkSurface>(
+        find.byType(FlarkRenderSurfaceWidget),
+      );
+      final presentations = surface.debugPaintedPlan
+          .where((entry) => entry.ordinal == row.ordinal)
+          .toList(growable: false);
+      expect(presentations, hasLength(2));
+      expect(presentations.map((entry) => entry.text), ['first\n', '\nsecond']);
+      expect(presentations.last.active, isTrue);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
     'below-fold rows are estimated, not laid out, until scrolled',
     (tester) async {
       final source = List<String>.generate(

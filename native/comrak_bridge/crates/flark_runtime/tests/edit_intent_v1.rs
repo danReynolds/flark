@@ -101,6 +101,15 @@ fn collapsed_e1_matrix_commits_one_exact_splice() {
             expected_transition: DocumentEditPresentationTransitionV1::ContinueBlockQuote,
         },
         IntentCase {
+            name: "projected multiline quote lifts one physical line",
+            initial: "> first\n> second\n",
+            intent: DocumentEditIntentV1::DeleteBackward,
+            selection_utf16: 10,
+            expected: "> first\n\nsecond\n",
+            expected_selection_utf16: 9,
+            expected_transition: DocumentEditPresentationTransitionV1::LiftBlockQuote,
+        },
+        IntentCase {
             name: "empty quote exits",
             initial: "> ",
             intent: DocumentEditIntentV1::InsertParagraphBreak,

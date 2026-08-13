@@ -533,6 +533,64 @@ void main() {
   );
 
   test(
+    'multiline block quote Backspace lifts one line without marker flash',
+    () async {
+      final controller = await FlarkEditorController.open(
+        '> first\n> second\n',
+        libraryPath: libraryPath!,
+      );
+      await controller.continueParsing();
+      addTearDown(controller.close);
+
+      final row = controller.rows.single;
+      final frames = <String>[];
+      void capture() {
+        final index = controller.rows.indexWhere(
+          (candidate) => candidate.ordinal == row.ordinal,
+        );
+        if (index < 0) return;
+        frames.add(
+          controller
+              .surfaceRowsFor(controller.rows[index])
+              .map((surface) => '${surface.leadingText}${surface.text}')
+              .join('|'),
+        );
+      }
+
+      controller.addListener(capture);
+      addTearDown(() => controller.removeListener(capture));
+      controller.activateRow(row, 10);
+      final before = controller.inputValue;
+      final caret = before.selection.extentOffset;
+      controller.applyDeltas([
+        TextEditingDeltaDeletion(
+          oldText: before.text,
+          deletedRange: TextRange(start: caret - 1, end: caret),
+          selection: TextSelection.collapsed(offset: caret - 1),
+          composing: TextRange.empty,
+        ),
+      ]);
+      controller.observePlatformDeleteBackwardAction();
+      controller.replaceSelection('X');
+      await _settle(controller);
+
+      expect(controller.lastError, isNull);
+      expect(controller.visibleSource, '> first\n\nXsecond\n');
+      expect(
+        frames.where((frame) => frame.contains('>')),
+        isEmpty,
+        reason: 'a quote marker flashed in frames: $frames',
+      );
+      expect(
+        frames,
+        contains('│ first\n|\nXsecond'),
+        reason: 'the mapped mixed quote/plain successor was never published',
+      );
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'inline Markdown stays marker-free and source-mapped while active',
     () async {
       const source =

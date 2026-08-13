@@ -886,9 +886,15 @@ separate multi-surface receipt problem rather than a frontend text heuristic.
 The first structural subset is now closed: nonempty Return resolves one exact
 physical quote line inside that certified logical row, inserts the parser-owned
 prefix, and maps the committed splice into one marker-free Core surface through
-recertification. Backspace at a hidden segment boundary fails closed. Partial
-line lift and empty-line exit remain the multi-surface problem; no host guesses
-their mixed quote/plain presentation.
+recertification. Prefix Backspace on a later physical line commits in Rust and
+Core publishes the two resulting quote/plain surfaces in source order. The
+custom render surface consumes the same framework-neutral collection, and an
+immediate literal successor maps only its owning surface while preserving the
+unaffected peer. Delta/full-value Backspace observations enter the same
+semantic arbiter, and a paired desktop selector is acknowledged rather than
+committed twice. Reopened empty projected lines remain fail-closed because the
+parser does not yet publish zero-length segment ownership; no host guesses
+their caret or exit semantics.
 
 ### H5 — hardening and later architecture
 

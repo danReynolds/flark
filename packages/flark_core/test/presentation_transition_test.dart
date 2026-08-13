@@ -205,6 +205,119 @@ void main() {
       [('first\n', 2, 8), ('sec', 10, 13), ('\n', 13, 14), ('ond', 16, 19)],
     );
   });
+
+  test('projected quote lift publishes ordered quote and plain surfaces', () {
+    final quote = _row(
+      ordinal: 8,
+      sourceStart: 0,
+      sourceEnd: 17,
+      globalStart: 2,
+      text: 'first\nsecond',
+      leadingText: '│ ',
+      blockQuoteDepth: 1,
+      runs: const [
+        FlarkCorePresentationRun(
+          text: 'first\n',
+          sourceUtf16Start: 2,
+          sourceUtf16End: 8,
+          sourceExact: true,
+          styles: {},
+        ),
+        FlarkCorePresentationRun(
+          text: 'second',
+          sourceUtf16Start: 10,
+          sourceUtf16End: 16,
+          sourceExact: true,
+          styles: {},
+        ),
+      ],
+    );
+
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.liftBlockQuote,
+        baseStart: 8,
+        baseEnd: 10,
+        replacement: '\n',
+      ),
+      activeOrdinal: 8,
+      active: quote,
+    );
+
+    expect(transition?.surface, isNull);
+    expect(transition?.surfaces, hasLength(2));
+    final quoted = transition!.surfaces.first.presentation;
+    final plain = transition.surfaces.last.presentation;
+    expect(quoted.leadingText, '│ ');
+    expect(quoted.text, 'first\n');
+    expect((quoted.sourceUtf16.start, quoted.sourceUtf16.end), (0, 8));
+    expect(plain.leadingText, isEmpty);
+    expect(plain.blockQuoteDepth, isNull);
+    expect(plain.text, '\nsecond');
+    expect((plain.sourceUtf16.start, plain.sourceUtf16.end), (8, 16));
+    expect(
+      plain.runs.map(
+        (run) => (run.text, run.sourceUtf16Start, run.sourceUtf16End),
+      ),
+      [('\n', 8, 9), ('second', 9, 15)],
+    );
+  });
+
+  test('literal successor maps one temporary surface without losing peers', () {
+    final transition = frontend.adopt(
+      receipt: _receipt(
+        transition: FlarkCoreEditPresentationTransitionV1.liftBlockQuote,
+        baseStart: 8,
+        baseEnd: 10,
+        replacement: '\n',
+      ),
+      activeOrdinal: 8,
+      active: _row(
+        ordinal: 8,
+        sourceStart: 0,
+        sourceEnd: 17,
+        globalStart: 2,
+        text: 'first\nsecond',
+        leadingText: '│ ',
+        blockQuoteDepth: 1,
+        runs: const [
+          FlarkCorePresentationRun(
+            text: 'first\n',
+            sourceUtf16Start: 2,
+            sourceUtf16End: 8,
+            sourceExact: true,
+            styles: {},
+          ),
+          FlarkCorePresentationRun(
+            text: 'second',
+            sourceUtf16Start: 10,
+            sourceUtf16End: 16,
+            sourceExact: true,
+            styles: {},
+          ),
+        ],
+      ),
+    );
+
+    final mapped = mapCommittedPresentationSurfacesThroughLiteralSpliceV1(
+      surfaces: transition!.surfaces,
+      startUtf16: 9,
+      endUtf16: 9,
+      replacement: 'X',
+    );
+
+    expect(mapped, hasLength(2));
+    expect(mapped!.first.presentation.text, 'first\n');
+    expect(mapped.last.presentation.text, '\nXsecond');
+    expect(mapped.first.sourceUtf16.end, 8);
+    expect(mapped.last.sourceUtf16.end, 17);
+    expect(
+      mapped.last.presentation.runs.map(
+        (run) => (run.text, run.sourceUtf16Start, run.sourceUtf16End),
+      ),
+      [('\n', 8, 9), ('X', 9, 10), ('second', 10, 16)],
+    );
+  });
 }
 
 /// Deliberately has no Flutter dependency. A future Dart UI adapter receives

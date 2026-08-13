@@ -60,6 +60,7 @@ export 'src/presentation.dart'
         FlarkCorePresentationInlineStyle,
         FlarkCorePresentationRow,
         FlarkCorePresentationRun,
+        mapCommittedPresentationSurfacesThroughLiteralSpliceV1,
         resolveCommittedPresentationTransitionV1;
 export 'src/native/native_document.dart'
     show FlarkNativeDocument, FlarkNativeException;
