@@ -4,6 +4,7 @@ import 'package:flark/flark.dart';
 import 'package:flark/src/render_surface.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart' as material;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1270,6 +1271,145 @@ void main() {
       await _pumpUntilTransactions(tester, controller);
       expect(controller.visibleSource, 'pasted beta\n');
       expect(controller.lastError, isNull);
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'text drops use the mounted caret and ordinary transaction lane',
+    (tester) async {
+      const source = 'alpha beta\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final row = controller.rows.single;
+      final debugHandle = FlarkEditorDebugHandle();
+      await tester.runAsync(() async {
+        controller.activateRow(row, 0);
+        await controller.resolveCanonicalSelection();
+      });
+      final events = <String>[];
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: FlarkEditor(
+              controller: controller,
+              debugHandle: debugHandle,
+              debugInputEventObserver: events.add,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final dropOffset = source.indexOf('beta') + 4;
+      final geometry = debugHandle.geometryForSourceUtf16(dropOffset)!;
+      final target = tester.widget<DragTarget<String>>(
+        find.byType(DragTarget<String>),
+      );
+
+      target.onAcceptWithDetails!(
+        DragTargetDetails<String>(data: '!', offset: geometry.globalPosition),
+      );
+      await _pumpUntilTransactions(tester, controller);
+      expect(controller.visibleSource, 'alpha beta!\n');
+      expect(controller.globalCaretOffset, dropOffset + 1);
+      expect(events, contains('drop:text'));
+      expect(controller.lastError, isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'rich input and private commands cross only configured host callbacks',
+    (tester) async {
+      final inserted = <KeyboardInsertedContent>[];
+      final commands = <(String, Map<String, dynamic>)>[];
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open('alpha\n', libraryPath: libraryPath!),
+      ))!;
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: FlarkEditor(
+            controller: controller,
+            contentInsertionConfiguration: ContentInsertionConfiguration(
+              allowedMimeTypes: const ['image/png'],
+              onContentInserted: inserted.add,
+            ),
+            onAppPrivateCommand: (action, data) {
+              commands.add((action, data));
+            },
+          ),
+        ),
+      );
+      final dynamic state = tester.state(find.byType(FlarkEditor));
+      const accepted = KeyboardInsertedContent(
+        mimeType: 'image/png',
+        uri: 'content://accepted',
+      );
+      const rejected = KeyboardInsertedContent(
+        mimeType: 'text/html',
+        uri: 'content://rejected',
+      );
+
+      state.insertContent(accepted);
+      state.insertContent(rejected);
+      state.performPrivateCommand('flark.test', <String, dynamic>{'value': 7});
+      expect(inserted, [accepted]);
+      expect(commands, hasLength(1));
+      expect(commands.single.$1, 'flark.test');
+      expect(commands.single.$2, {'value': 7});
+      expect(controller.visibleSource, 'alpha\n');
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'platform toolbar request shows adaptive bounded selection actions',
+    (tester) async {
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(
+          'alpha beta\n',
+          libraryPath: libraryPath!,
+        ),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final row = controller.rows.single;
+      await tester.runAsync(() async {
+        controller.activateRow(row, 0, selectionExtent: 5);
+        await controller.resolveCanonicalSelection();
+      });
+      final events = <String>[];
+      await tester.pumpWidget(
+        material.MaterialApp(
+          home: FlarkEditor(
+            controller: controller,
+            debugInputEventObserver: events.add,
+          ),
+        ),
+      );
+      await tester.pump();
+      final dynamic state = tester.state(find.byType(FlarkEditor));
+
+      state.showToolbar();
+      await tester.pump();
+      expect(
+        find.byType(material.AdaptiveTextSelectionToolbar),
+        findsOneWidget,
+      );
+      expect(events, contains('context-menu:show'));
+
+      ContextMenuController.removeAny();
+      await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(controller.close);
     },
     skip: libraryPath == null,

@@ -994,6 +994,31 @@ final class RenderFlarkSurface extends RenderBox {
     );
   }
 
+  /// Global anchors for the platform-adaptive selection toolbar. The render
+  /// surface owns geometry; clipboard and edit policy stay in the editor
+  /// adapter. For an off-page base, the active extent remains a valid bounded
+  /// anchor instead of forcing document-wide layout.
+  TextSelectionToolbarAnchors? selectionToolbarAnchors(int base, int extent) {
+    final extentLocal = _localPositionForSourceUtf16(extent);
+    if (extentLocal == null) return null;
+    final baseLocal = _localPositionForSourceUtf16(base) ?? extentLocal;
+    final primaryLocal = Offset(
+      (baseLocal.dx + extentLocal.dx) / 2,
+      math.min(baseLocal.dy, extentLocal.dy),
+    );
+    final secondaryLocal = Offset(
+      (baseLocal.dx + extentLocal.dx) / 2,
+      math.max(baseLocal.dy, extentLocal.dy) +
+          (_paintedRows.isEmpty
+              ? 0
+              : _paintedRows.first.painter.preferredLineHeight),
+    );
+    return TextSelectionToolbarAnchors(
+      primaryAnchor: localToGlobal(primaryLocal),
+      secondaryAnchor: localToGlobal(secondaryLocal),
+    );
+  }
+
   /// Moves by one rendered grapheme, never through a hidden Markdown marker.
   /// Core remains authoritative for the resulting source selection.
   FlarkSurfaceHit? adjacentCharacterHit(int offset, {required bool forward}) {

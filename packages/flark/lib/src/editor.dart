@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart' as material;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -10,6 +11,11 @@ import 'controller.dart';
 import 'render_surface.dart';
 
 const _maximumQueuedVerticalMoves = 32;
+
+final class _SecondaryTapGestureRecognizer extends TapGestureRecognizer {
+  _SecondaryTapGestureRecognizer({super.debugOwner})
+    : super(supportedDevices: const {PointerDeviceKind.mouse});
+}
 
 /// App-relative geometry exposed only to integration harnesses.
 final class FlarkEditorDebugGeometry {
@@ -78,6 +84,9 @@ final class FlarkEditor extends StatefulWidget {
     this.padding = const EdgeInsets.symmetric(horizontal: 32, vertical: 28),
     this.caretColor = const Color(0xff246bfd),
     this.selectionColor = const Color(0x40246bfd),
+    this.contentInsertionConfiguration,
+    this.onAppPrivateCommand,
+    this.enableTextDrop = true,
     this.debugInputEventObserver,
     this.debugPaintObserver,
     this.debugHandle,
@@ -91,6 +100,9 @@ final class FlarkEditor extends StatefulWidget {
   final EdgeInsets padding;
   final Color caretColor;
   final Color selectionColor;
+  final ContentInsertionConfiguration? contentInsertionConfiguration;
+  final AppPrivateCommandCallback? onAppPrivateCommand;
+  final bool enableTextDrop;
 
   /// Opt-in adapter trace used by native scenario runners. It is never called
   /// unless supplied and does not participate in editing behavior.
@@ -115,6 +127,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
   bool _verticalPageNavigationPending = false;
   bool _verticalMoveDrainScheduled = false;
   final List<({bool forward, bool modify})> _queuedVerticalMoves = [];
+  final ContextMenuController _contextMenuController = ContextMenuController();
 
   FocusNode get _focusNode => widget.focusNode ?? _ownedFocusNode!;
 
@@ -156,6 +169,16 @@ final class _FlarkEditorState extends State<FlarkEditor>
       oldWidget.debugHandle?._detach(_surface);
       WidgetsBinding.instance.addPostFrameCallback((_) => _attachDebugHandle());
     }
+    if (!listEquals(
+          oldWidget.contentInsertionConfiguration?.allowedMimeTypes,
+          widget.contentInsertionConfiguration?.allowedMimeTypes,
+        ) &&
+        _focusNode.hasFocus) {
+      _connection?.close();
+      _connection = null;
+      _lastSentValue = null;
+      _openConnection();
+    }
   }
 
   @override
@@ -164,6 +187,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
     widget.controller.removeListener(_controllerChanged);
     _focusNode.removeListener(_focusChanged);
     widget.controller.commitActiveComposition();
+    _contextMenuController.remove();
     _connection?.close();
     _ownedFocusNode?.dispose();
     super.dispose();
@@ -185,12 +209,14 @@ final class _FlarkEditorState extends State<FlarkEditor>
     if (_connection?.attached ?? false) return;
     _connection = TextInput.attach(
       this,
-      const TextInputConfiguration(
+      TextInputConfiguration(
         inputType: TextInputType.multiline,
         inputAction: TextInputAction.newline,
         autocorrect: true,
         enableSuggestions: true,
         enableDeltaModel: true,
+        allowedMimeTypes:
+            widget.contentInsertionConfiguration?.allowedMimeTypes ?? const [],
       ),
     );
     _sendEditingState(force: true);
@@ -539,6 +565,82 @@ final class _FlarkEditorState extends State<FlarkEditor>
     unawaited(widget.controller.toggleTaskChecked(hit.row!));
   }
 
+  void _handleSecondaryTapDown(TapDownDetails details) {
+    final hit = _surface?.positionForOffset(details.localPosition);
+    if (hit == null) return;
+    final base = widget.controller.globalSelectionBase;
+    final extent = widget.controller.globalSelectionExtent;
+    final start = math.min(base, extent);
+    final end = math.max(base, extent);
+    if (base == extent ||
+        hit.globalUtf16Offset < start ||
+        hit.globalUtf16Offset > end) {
+      _activateHit(hit);
+    } else {
+      _focusNode.requestFocus();
+      _openConnection();
+    }
+  }
+
+  void _showToolbar() {
+    final surface = _surface;
+    if (surface == null || !mounted) return;
+    final controller = widget.controller;
+    final base = controller.globalSelectionBase;
+    final extent = controller.globalSelectionExtent;
+    final anchors = surface.selectionToolbarAnchors(base, extent);
+    if (anchors == null) return;
+    final hasSelection = base != extent;
+    final allSelected =
+        math.min(base, extent) == 0 &&
+        math.max(base, extent) == controller.sourceUtf16Length;
+    void run(Future<void> Function() action) {
+      _contextMenuController.remove();
+      unawaited(action());
+    }
+
+    final items = <ContextMenuButtonItem>[
+      if (hasSelection)
+        ContextMenuButtonItem(
+          type: ContextMenuButtonType.copy,
+          onPressed: () => run(_copySelection),
+        ),
+      if (hasSelection)
+        ContextMenuButtonItem(
+          type: ContextMenuButtonType.cut,
+          onPressed: () => run(_cutSelection),
+        ),
+      ContextMenuButtonItem(
+        type: ContextMenuButtonType.paste,
+        onPressed: () => run(_pasteClipboard),
+      ),
+      if (!allSelected)
+        ContextMenuButtonItem(
+          type: ContextMenuButtonType.selectAll,
+          onPressed: () => run(_selectAll),
+        ),
+    ];
+    _contextMenuController.show(
+      context: context,
+      debugRequiredFor: widget,
+      contextMenuBuilder: (_) =>
+          material.AdaptiveTextSelectionToolbar.buttonItems(
+            anchors: anchors,
+            buttonItems: items,
+          ),
+    );
+    widget.debugInputEventObserver?.call('context-menu:show');
+  }
+
+  void _acceptTextDrop(DragTargetDetails<String> details) {
+    if (!widget.enableTextDrop || details.data.isEmpty) return;
+    final surface = _surface;
+    if (surface == null) return;
+    _activate(surface.globalToLocal(details.offset));
+    widget.controller.replaceSelection(details.data);
+    widget.debugInputEventObserver?.call('drop:text');
+  }
+
   void _selectWordAt(Offset localPosition) {
     _pendingTapHit = null;
     final selection = _surface?.wordSelectionForOffset(localPosition);
@@ -568,6 +670,15 @@ final class _FlarkEditorState extends State<FlarkEditor>
   }
 
   Map<Type, GestureRecognizerFactory> get _gestureRecognizers => {
+    _SecondaryTapGestureRecognizer:
+        GestureRecognizerFactoryWithHandlers<_SecondaryTapGestureRecognizer>(
+          () => _SecondaryTapGestureRecognizer(debugOwner: this),
+          (recognizer) {
+            recognizer
+              ..onSecondaryTapDown = _handleSecondaryTapDown
+              ..onSecondaryTap = _showToolbar;
+          },
+        ),
     TapGestureRecognizer:
         GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
           () => TapGestureRecognizer(
@@ -661,7 +772,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
 
   @override
   Widget build(BuildContext context) {
-    return CallbackShortcuts(
+    final editor = CallbackShortcuts(
       bindings: _desktopShortcutBindings,
       child: Focus(
         focusNode: _focusNode,
@@ -711,6 +822,12 @@ final class _FlarkEditorState extends State<FlarkEditor>
           ),
         ),
       ),
+    );
+    if (!widget.enableTextDrop) return editor;
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (details) => details.data.isNotEmpty,
+      onAcceptWithDetails: _acceptTextDrop,
+      builder: (context, candidateData, rejectedData) => editor,
     );
   }
 
@@ -996,10 +1113,19 @@ final class _FlarkEditorState extends State<FlarkEditor>
   }
 
   @override
-  void performPrivateCommand(String action, Map<String, dynamic> data) {}
+  void performPrivateCommand(String action, Map<String, dynamic> data) {
+    widget.onAppPrivateCommand?.call(action, data);
+  }
 
   @override
-  void insertContent(KeyboardInsertedContent content) {}
+  void insertContent(KeyboardInsertedContent content) {
+    final configuration = widget.contentInsertionConfiguration;
+    if (configuration == null ||
+        !configuration.allowedMimeTypes.contains(content.mimeType)) {
+      return;
+    }
+    configuration.onContentInserted(content);
+  }
 
   @override
   void didChangeInputControl(
@@ -1008,7 +1134,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
   ) {}
 
   @override
-  void showToolbar() {}
+  void showToolbar() => _showToolbar();
 
   @override
   void insertTextPlaceholder(Size size) {}

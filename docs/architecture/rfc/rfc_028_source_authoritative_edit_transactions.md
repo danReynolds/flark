@@ -1005,6 +1005,20 @@ section, and preserves idempotent terminal replay if the worker reply is lost.
 This closes the normal clipboard and large-deletion correctness gap without
 placing clipboard policy or platform UI in Rust.
 
+The H4 host adapter now fills the remaining framework hooks around that same
+transaction lane. Flutter's platform toolbar request and secondary-click path
+show bounded adaptive Copy/Cut/Paste/Select-All actions anchored by current
+render geometry; the actions reuse the existing exact selection and clipboard
+methods. In-app `String` drops resolve one painted source caret and enqueue an
+ordinary source transaction, so drop data receives no Markdown-special
+mutation path. Rich keyboard content and app-private IME commands are forwarded
+only through explicit product callbacks and advertised MIME types; Core does
+not guess how an image URI should become Markdown. Mounted tests pin drop
+placement, configured content filtering, private-command forwarding, and a
+real toolbar overlay. Cross-application OS file drops, selection handles,
+magnifiers, and physical-device IME/menu behavior remain platform
+qualification rather than inferred from these framework receipts.
+
 The first scoped-composition slice now covers the cancellation boundary without
 adding another mutation lane. Intermediate updates already form one required
 native composite token; `flark_core` can rewind and discard that unit while
