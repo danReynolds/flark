@@ -450,6 +450,12 @@ the same user-visible whole-row relay behind an incomplete `<` opener after the
 original `*` case was green, proving why the gate is organized by parser-hazard
 families rather than one reported character.
 
+Rendered direct-link labels add one distinct cross-layer journey: rapid label
+typing, Backspace, and two-unit history must preserve the exact hidden
+destination while every mounted state remains destination-free. Link target
+activation/editing is intentionally not credited by this case; it needs a
+separate parser-value/semantic-action contract rather than a UI-only callback.
+
 One ATX-heading lifecycle now closes the common split/lift/history mechanism at
 portable depth. It exercises five mounted states across Return, undo, prefix
 Backspace plus immediate typing, and two-unit undo/redo; raw heading markers are

@@ -1035,6 +1035,15 @@ without an extra mounted render or selection plan. Paint observations begin
 once after initial activation, so later caret or selection moves cannot erase
 the edit history being asserted.
 
+Certified direct-link labels now have one portable label/history receipt.
+Rapid plain-text insertion and Backspace remain inside the parser-authored
+label continuity range; the hidden destination never enters a painted frame,
+and two-unit undo/redo preserves exact destination bytes and canonical caret.
+This proves rendered label editing, not link-target editing. The latter still
+requires the parser's cooked destination/title value and source ownership to
+cross the ABI into a framework-neutral Core action before Flutter or another
+frontend may offer a popover or activation callback.
+
 ATX heading split and lift now share one portable lifecycle with history:
 Return exits the heading, undo restores it, prefix Backspace lifts it to a
 plain paragraph, immediate typing remains ordered behind that receipt, and two

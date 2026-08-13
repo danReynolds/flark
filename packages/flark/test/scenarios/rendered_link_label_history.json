@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "id": "rendered-link-label-history",
+  "description": "Plain-text edits inside a certified direct-link label preserve the hidden destination and link projection through Backspace and history.",
+  "initialSource": "Before [link](https://example.com) after\n",
+  "activation": {
+    "needle": "link",
+    "occurrence": 0,
+    "utf16OffsetInNeedle": 4
+  },
+  "steps": [
+    {
+      "type": "typeText",
+      "text": "ed",
+      "intervalMs": 0
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "checkpoint",
+      "id": "label-extended",
+      "source": "Before [linked](https://example.com) after\n",
+      "caretUtf16": 14,
+      "settledPresentation": "Before linked after"
+    },
+    {
+      "type": "pressBackspace"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "checkpoint",
+      "id": "label-deleted",
+      "source": "Before [linke](https://example.com) after\n",
+      "caretUtf16": 13,
+      "settledPresentation": "Before linke after"
+    },
+    {
+      "type": "undo"
+    },
+    {
+      "type": "undo"
+    },
+    {
+      "type": "waitForIdle"
+    },
+    {
+      "type": "checkpoint",
+      "id": "undone",
+      "source": "Before [link](https://example.com) after\n",
+      "caretUtf16": 12,
+      "settledPresentation": "Before link after"
+    },
+    {
+      "type": "redo"
+    },
+    {
+      "type": "redo"
+    },
+    {
+      "type": "waitForIdle"
+    }
+  ],
+  "schedules": [
+    {
+      "id": "immediate"
+    }
+  ],
+  "expect": {
+    "source": "Before [linke](https://example.com) after\n",
+    "caretUtf16": 13,
+    "resyncCount": 0,
+    "faulted": false,
+    "forbiddenSurfaceSubstrings": ["https://example.com", "]("],
+    "paintedSurfaceNeverContains": ["https://example.com", "]("],
+    "expectedPaintedPresentations": [
+      "Before linked after",
+      "Before linke after",
+      "Before link after",
+      "Before linke after"
+    ],
+    "expectedPaintedRenderPlanSamples": 4,
+    "expectedPaintedVisualStateSamples": 4
+  }
+}
