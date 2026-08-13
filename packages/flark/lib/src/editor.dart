@@ -158,6 +158,7 @@ final class _FlarkEditorState extends State<FlarkEditor>
     widget.debugHandle?._detach(_surface);
     widget.controller.removeListener(_controllerChanged);
     _focusNode.removeListener(_focusChanged);
+    widget.controller.commitActiveComposition();
     _connection?.close();
     _ownedFocusNode?.dispose();
     super.dispose();
@@ -167,8 +168,10 @@ final class _FlarkEditorState extends State<FlarkEditor>
     if (_focusNode.hasFocus) {
       _openConnection();
     } else {
+      widget.controller.commitActiveComposition();
       _connection?.close();
       _connection = null;
+      _lastSentValue = null;
     }
     setState(() {});
   }
@@ -792,6 +795,12 @@ final class _FlarkEditorState extends State<FlarkEditor>
   @override
   void connectionClosed() {
     widget.debugInputEventObserver?.call('connection-closed');
+    final connection = _connection;
+    if (connection?.attached ?? false) {
+      connection!.connectionClosedReceived();
+    }
     _connection = null;
+    _lastSentValue = null;
+    if (_focusNode.hasFocus) _focusNode.unfocus();
   }
 }

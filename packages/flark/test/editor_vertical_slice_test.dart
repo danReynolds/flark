@@ -980,6 +980,102 @@ void main() {
   );
 
   testWidgets(
+    'input connection survives focus cycling and platform closure',
+    (tester) async {
+      const source = 'base\n';
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      final editorFocus = FocusNode();
+      final otherFocus = FocusNode();
+      final inputEvents = <String>[];
+      var controllerClosed = false;
+      addTearDown(() async {
+        if (!controllerClosed) await tester.runAsync(controller.close);
+        editorFocus.dispose();
+        otherFocus.dispose();
+      });
+      await tester.runAsync(controller.continueParsing);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Column(
+            children: [
+              Expanded(
+                child: FlarkEditor(
+                  controller: controller,
+                  autofocus: true,
+                  focusNode: editorFocus,
+                  debugInputEventObserver: inputEvents.add,
+                ),
+              ),
+              Focus(focusNode: otherFocus, child: const SizedBox(height: 1)),
+            ],
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(editorFocus.hasFocus, isTrue);
+      expect(tester.testTextInput.hasAnyClients, isTrue);
+
+      otherFocus.requestFocus();
+      await tester.pump();
+      expect(editorFocus.hasFocus, isFalse);
+      expect(tester.testTextInput.hasAnyClients, isFalse);
+
+      editorFocus.requestFocus();
+      await tester.pump();
+      expect(editorFocus.hasFocus, isTrue);
+      expect(tester.testTextInput.hasAnyClients, isTrue);
+      expect(tester.testTextInput.editingState?['text'], source);
+
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'xbase\n',
+          selection: TextSelection.collapsed(offset: 1),
+        ),
+      );
+      await _pumpUntilTransactions(tester, controller);
+      expect(controller.visibleSource, 'xbase\n');
+      expect(controller.lastError, isNull);
+
+      tester.testTextInput.closeConnection();
+      await tester.pump();
+      expect(
+        inputEvents.where((event) => event == 'connection-closed'),
+        hasLength(1),
+      );
+      expect(editorFocus.hasFocus, isFalse);
+
+      editorFocus.requestFocus();
+      await tester.pump();
+      expect(editorFocus.hasFocus, isTrue);
+      expect(tester.testTextInput.hasAnyClients, isTrue);
+      expect(tester.testTextInput.editingState?['text'], 'xbase\n');
+
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'xybase\n',
+          selection: TextSelection.collapsed(offset: 2),
+        ),
+      );
+      await _pumpUntilTransactions(tester, controller);
+      expect(controller.visibleSource, 'xybase\n');
+      expect(controller.revision, 3);
+      expect(controller.resyncCount, 0);
+      expect(controller.lastError, isNull);
+
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+      controllerClosed = true;
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
     'macOS newline delta plus action commits exactly once',
     (tester) async {
       final controller = (await tester.runAsync(

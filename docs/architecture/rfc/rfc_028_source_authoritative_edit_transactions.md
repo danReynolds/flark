@@ -1007,6 +1007,16 @@ proves exact cancellation, directional restoration, and reclamation without
 headroom. Real dead keys/CJK/autocorrect/dictation and physical mobile IMEs
 remain open before composition is complete.
 
+Flutter focus teardown now commits any already-accepted composition prefix,
+clears its adapter range, and releases the scoped base through the serialized
+Core tail. The custom text client acknowledges an inbound platform closure via
+Flutter's `connectionClosedReceived` contract before unfocusing; a later focus
+reattaches one client and republishes exact current editing state. A mounted
+regression proves explicit focus loss/regain, platform closure, two exact
+post-reconnect edits, zero resynchronization, and no engine fault. This closes
+widget connection-reopen choreography, not the still-missing native cross-app
+macOS focus receipt or physical mobile lifecycle qualification.
+
 A parser-certified projected-inline regression also proves that an active
 composition inserted inside strong text remains exact in source, keeps its
 local composing range, and stays marker-free and styled on the shared Core

@@ -4282,6 +4282,20 @@ final class FlarkEditorController extends ChangeNotifier {
     return operation;
   }
 
+  /// Commits the currently accepted composition prefix when the platform text
+  /// client loses focus or closes its connection. Source is already native-
+  /// authoritative; this only ends the composition history scope, clears the
+  /// adapter range, and lets parsing converge.
+  void commitActiveComposition() {
+    if (_closed ||
+        (!_session.compositionActive && !_inputValue.composing.isValid)) {
+      return;
+    }
+    _inputValue = _inputValue.copyWith(composing: TextRange.empty);
+    _trackCompositionWithoutMutation(TextRange.empty);
+    notifyListeners();
+  }
+
   Future<bool> _queueHistoryReplay({required bool undoDirection}) {
     if (_closed ||
         _status == FlarkEditorStatus.faulted ||

@@ -242,9 +242,7 @@ void main() {
       );
       expect(controller.visibleSource, '$composed$source');
 
-      controller.updateEditingValue(
-        controller.inputValue.copyWith(composing: TextRange.empty),
-      );
+      controller.commitActiveComposition();
       await controller.continueParsing();
       expect(controller.inputValue.composing, TextRange.empty);
 

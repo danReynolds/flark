@@ -406,7 +406,12 @@ partially implemented; they land with the first native driver that needs them.
    bounded paint assertions. Wheel scrolling is also green. Explicit focus
    loss/regain remains the next distinct macOS canary; automated focus loss was
    observed, but macOS 14+ refused cross-app reactivation from the CLI harness,
-   so no focus-regain pass is claimed.
+   so no native cross-app focus-regain pass is claimed. The mounted Flutter
+   adapter now separately proves ordinary focus loss/regain and inbound
+   `onConnectionClosed`: the client acknowledges the closed connection,
+   unfocuses, reattaches, republishes exact editing state, and accepts two
+   subsequent edits with zero resynchronization. Composition commit on focus
+   teardown is owned by the existing headless transaction/history test.
 
 ### H1 — Establish the portable smoke set — complete
 
