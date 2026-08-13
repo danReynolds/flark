@@ -109,6 +109,12 @@ pub(crate) enum DocumentSimpleEditRow {
         prefix_utf16: Range<usize>,
         nesting_depth: u8,
         marker_offset: u8,
+        /// Parser-authored ancestor item padding widths, packed root-first as
+        /// four-bit values. Each CommonMark item padding is in 2..=14.
+        container_widths: u64,
+        container_count: u8,
+        /// Absolute source column of this row's marker.
+        marker_column: u8,
         starts_list: bool,
         task_checked: Option<bool>,
         empty: bool,
@@ -342,6 +348,9 @@ pub(crate) fn resolve_document_edit_intent_v1(
                 prefix_utf16,
                 nesting_depth,
                 marker_offset,
+                container_widths,
+                container_count,
+                marker_column,
                 starts_list,
                 task_checked,
                 empty,
@@ -365,6 +374,9 @@ pub(crate) fn resolve_document_edit_intent_v1(
                                 prefix_utf16,
                                 *nesting_depth,
                                 *marker_offset,
+                                *container_widths,
+                                *container_count,
+                                *marker_column,
                                 *task_checked,
                                 true,
                                 outdent,
@@ -396,11 +408,11 @@ pub(crate) fn resolve_document_edit_intent_v1(
 
             let marker_text = next_marker_text(*marker);
             let task_prefix = task_checked.map_or("", |_| "[ ] ");
-            let container_indent = outdent
+            let container_indentation = outdent
                 .as_ref()
                 .map_or("", |outdent| outdent.indentation.as_str());
             let prefix = format!(
-                "{container_indent}{}{marker_text} {task_prefix}",
+                "{container_indentation}{}{marker_text} {task_prefix}",
                 " ".repeat(usize::from(*marker_offset))
             );
             let replacement = format!("{}{prefix}", context.ending.text());
@@ -414,14 +426,20 @@ pub(crate) fn resolve_document_edit_intent_v1(
             let utf16_delta = splice.replacement.encode_utf16().count();
             let line_ending_bytes = context.ending.text().len();
             let line_ending_utf16 = context.ending.text().encode_utf16().count();
-            let indentation_bytes = container_indent.len();
-            let indentation_utf16 = container_indent.encode_utf16().count();
+            let indentation_bytes = container_indentation.len();
+            let indentation_utf16 = container_indentation.encode_utf16().count();
             let prefix_start_byte = selection_byte + line_ending_bytes + indentation_bytes;
             let prefix_start_utf16 = selection_utf16 + line_ending_utf16 + indentation_utf16;
-            let result_outdent = if outdent.is_some() {
+            let result_outdent = if *container_count > 0 {
+                let Some(width) = last_container_width(*container_widths, *container_count) else {
+                    return disposition(
+                        DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                        selection_utf16,
+                    );
+                };
                 let (Some(bytes_start), Some(utf16_start)) = (
-                    prefix_start_byte.checked_sub(2),
-                    prefix_start_utf16.checked_sub(2),
+                    prefix_start_byte.checked_sub(width),
+                    prefix_start_utf16.checked_sub(width),
                 ) else {
                     return disposition(
                         DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
@@ -431,7 +449,7 @@ pub(crate) fn resolve_document_edit_intent_v1(
                 Some(DocumentListOutdent {
                     bytes: bytes_start..prefix_start_byte,
                     utf16: utf16_start..prefix_start_utf16,
-                    indentation: container_indent.to_owned(),
+                    indentation: container_indentation.to_owned(),
                 })
             } else {
                 None
@@ -451,6 +469,9 @@ pub(crate) fn resolve_document_edit_intent_v1(
                     prefix_utf16: prefix_start_utf16..selection_utf16 + utf16_delta,
                     nesting_depth: *nesting_depth,
                     marker_offset: *marker_offset,
+                    container_widths: *container_widths,
+                    container_count: *container_count,
+                    marker_column: *marker_column,
                     starts_list: false,
                     task_checked: task_checked.map(|_| false),
                     empty: selection_byte == context.editable_bytes.end,
@@ -514,6 +535,9 @@ pub(crate) fn resolve_document_edit_intent_v1(
                 prefix_utf16,
                 nesting_depth,
                 marker_offset,
+                container_widths,
+                container_count,
+                marker_column,
                 starts_list,
                 task_checked,
                 empty,
@@ -539,6 +563,9 @@ pub(crate) fn resolve_document_edit_intent_v1(
                             prefix_utf16,
                             *nesting_depth,
                             *marker_offset,
+                            *container_widths,
+                            *container_count,
+                            *marker_column,
                             *task_checked,
                             *empty,
                             outdent,
@@ -680,17 +707,33 @@ fn outdent_list_row(
     prefix_utf16: &Range<usize>,
     nesting_depth: u8,
     marker_offset: u8,
+    container_widths: u64,
+    container_count: u8,
+    marker_column: u8,
     task_checked: Option<bool>,
     empty: bool,
     outdent: &DocumentListOutdent,
 ) -> ResolvedDocumentEditIntentV1 {
-    let expected_indentation = usize::from(nesting_depth.saturating_sub(1)).saturating_mul(2);
+    let Some(removed_width) = last_container_width(container_widths, container_count) else {
+        return disposition(
+            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+            context.editable_utf16.start,
+        );
+    };
+    let Some(container_column) = marker_column.checked_sub(marker_offset) else {
+        return disposition(
+            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+            context.editable_utf16.start,
+        );
+    };
     if nesting_depth <= 1
+        || container_count != nesting_depth.saturating_sub(1)
         || outdent.bytes.end != prefix_bytes.start
         || outdent.utf16.end != prefix_utf16.start
-        || outdent.bytes.len() != 2
-        || outdent.utf16.len() != 2
-        || outdent.indentation.len() != expected_indentation
+        || outdent.bytes.len() != removed_width
+        || outdent.utf16.len() != removed_width
+        || outdent.indentation.len() != usize::from(container_column)
+        || outdent.indentation.encode_utf16().count() != usize::from(container_column)
     {
         return disposition(
             DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
@@ -733,15 +776,39 @@ fn outdent_list_row(
     let result_prefix_bytes = outdent.bytes.start..prefix_end_byte;
     let result_prefix_utf16 = outdent.utf16.start..prefix_end_utf16;
     let result_depth = nesting_depth.saturating_sub(1);
-    let remaining_indentation = &outdent.indentation[..expected_indentation - removed_bytes];
+    let result_container_count = container_count - 1;
+    let result_container_widths = pop_container_width(container_widths, container_count);
+    let Some(result_marker_column) =
+        marker_column.checked_sub(u8::try_from(removed_bytes).unwrap_or(u8::MAX))
+    else {
+        return disposition(
+            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+            context.editable_utf16.start,
+        );
+    };
+    let Some(result_container_column) = result_marker_column.checked_sub(marker_offset) else {
+        return disposition(
+            DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+            context.editable_utf16.start,
+        );
+    };
+    let remaining_indentation = &outdent.indentation[..usize::from(result_container_column)];
     let result_outdent = if result_depth > 1 {
-        let Some(bytes_start) = result_prefix_bytes.start.checked_sub(2) else {
+        let Some(next_width) =
+            last_container_width(result_container_widths, result_container_count)
+        else {
             return disposition(
                 DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
                 context.editable_utf16.start,
             );
         };
-        let Some(utf16_start) = result_prefix_utf16.start.checked_sub(2) else {
+        let Some(bytes_start) = result_prefix_bytes.start.checked_sub(next_width) else {
+            return disposition(
+                DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
+                context.editable_utf16.start,
+            );
+        };
+        let Some(utf16_start) = result_prefix_utf16.start.checked_sub(next_width) else {
             return disposition(
                 DocumentEditIntentDispositionV1::NeedsCurrentSemantics,
                 context.editable_utf16.start,
@@ -768,6 +835,9 @@ fn outdent_list_row(
             prefix_utf16: result_prefix_utf16,
             nesting_depth: result_depth,
             marker_offset,
+            container_widths: result_container_widths,
+            container_count: result_container_count,
+            marker_column: result_marker_column,
             starts_list: false,
             task_checked,
             empty,
@@ -781,6 +851,23 @@ fn outdent_list_row(
         Some(result_context),
         DocumentEditPresentationTransitionV1::OutdentList,
     )
+}
+
+fn last_container_width(container_widths: u64, container_count: u8) -> Option<usize> {
+    if !(1..=16).contains(&container_count) {
+        return None;
+    }
+    let shift = u32::from(container_count - 1) * 4;
+    let width = usize::try_from((container_widths >> shift) & 0x0f).ok()?;
+    (2..=14).contains(&width).then_some(width)
+}
+
+fn pop_container_width(container_widths: u64, container_count: u8) -> u64 {
+    if container_count <= 1 {
+        return 0;
+    }
+    let retained_bits = u32::from(container_count - 1) * 4;
+    container_widths & ((1_u64 << retained_bits) - 1)
 }
 
 fn disposition(

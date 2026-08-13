@@ -126,6 +126,7 @@ fn viewport_preserves_parser_authored_list_markers_and_prefix_geometry() {
                 simple_continuation,
                 starts_list,
                 task_checked,
+                ..
             } => Some((
                 row.kind,
                 marker,
@@ -198,6 +199,9 @@ fn viewport_preserves_parser_authored_list_markers_and_prefix_geometry() {
             prefix_end_utf16: 13,
             nesting_depth: 2,
             marker_offset: 0,
+            container_widths: 2,
+            container_count: 1,
+            marker_column: 2,
             simple_continuation: true,
             starts_list: true,
             task_checked: None,
@@ -243,6 +247,52 @@ fn viewport_preserves_parser_authored_list_markers_and_prefix_geometry() {
         }
     ));
     depth_three.close().expect("close depth-three List");
+
+    let nonuniform_source = "10. root\n    - child\n";
+    let mut nonuniform =
+        DocumentSession::begin(nonuniform_source).expect("begin nonuniform nested List");
+    pump_ready(&mut nonuniform);
+    let viewport = nonuniform
+        .query_viewport(1, 0..nonuniform_source.len(), 16)
+        .expect("nonuniform nested List viewport");
+    let child = viewport.rows.last().expect("nonuniform child row");
+    assert!(matches!(
+        child.presentation,
+        DocumentViewportRowPresentation::ListItem {
+            nesting_depth: 2,
+            marker_offset: 0,
+            container_widths: 4,
+            container_count: 1,
+            marker_column: 4,
+            simple_continuation: true,
+            ..
+        }
+    ));
+    nonuniform.close().expect("close nonuniform nested List");
+
+    let offset_nonuniform_source = "10. root\n     - child\n";
+    let mut offset_nonuniform = DocumentSession::begin(offset_nonuniform_source)
+        .expect("begin offset nonuniform nested List");
+    pump_ready(&mut offset_nonuniform);
+    let viewport = offset_nonuniform
+        .query_viewport(1, 0..offset_nonuniform_source.len(), 16)
+        .expect("offset nonuniform nested List viewport");
+    let child = viewport.rows.last().expect("offset nonuniform child row");
+    assert!(matches!(
+        child.presentation,
+        DocumentViewportRowPresentation::ListItem {
+            nesting_depth: 2,
+            marker_offset: 1,
+            container_widths: 4,
+            container_count: 1,
+            marker_column: 5,
+            simple_continuation: true,
+            ..
+        }
+    ));
+    offset_nonuniform
+        .close()
+        .expect("close offset nonuniform nested List");
 
     let continued_source = "9) alpha\n10) \n";
     let mut continued = DocumentSession::begin(continued_source).expect("begin continued List");

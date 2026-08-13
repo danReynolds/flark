@@ -53,12 +53,12 @@ use crate::{
     VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE, VIEWPORT_ROW_FLAG_PROJECTED_RESERVED,
     VIEWPORT_ROW_HEADING_LEVEL_MASK, VIEWPORT_ROW_HEADING_SETEXT,
     VIEWPORT_ROW_INLINE_FACT_COUNT_MASK, VIEWPORT_ROW_LIST_ASTERISK, VIEWPORT_ROW_LIST_DEPTH_SHIFT,
-    VIEWPORT_ROW_LIST_HYPHEN, VIEWPORT_ROW_LIST_MARKER_OFFSET_SHIFT,
-    VIEWPORT_ROW_LIST_ORDERED_PARENTHESIS, VIEWPORT_ROW_LIST_ORDERED_PERIOD,
-    VIEWPORT_ROW_LIST_PLUS, VIEWPORT_ROW_LIST_SIMPLE_CONTINUATION, VIEWPORT_ROW_LIST_STARTS_LIST,
-    VIEWPORT_ROW_LIST_TASK, VIEWPORT_ROW_LIST_TASK_CHECKED,
-    VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_SHIFT, VIEWPORT_ROW_TABLE_PRESENTATION,
-    VIEWPORT_ROW_THEMATIC_BREAK_PRESENTATION,
+    VIEWPORT_ROW_LIST_HYPHEN, VIEWPORT_ROW_LIST_MARKER_COLUMN_SHIFT,
+    VIEWPORT_ROW_LIST_MARKER_OFFSET_SHIFT, VIEWPORT_ROW_LIST_ORDERED_PARENTHESIS,
+    VIEWPORT_ROW_LIST_ORDERED_PERIOD, VIEWPORT_ROW_LIST_PLUS,
+    VIEWPORT_ROW_LIST_SIMPLE_CONTINUATION, VIEWPORT_ROW_LIST_STARTS_LIST, VIEWPORT_ROW_LIST_TASK,
+    VIEWPORT_ROW_LIST_TASK_CHECKED, VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_SHIFT,
+    VIEWPORT_ROW_TABLE_PRESENTATION, VIEWPORT_ROW_THEMATIC_BREAK_PRESENTATION,
 };
 
 const IMPLEMENTED_CAPABILITIES: u64 = (1 << 0)
@@ -78,7 +78,8 @@ const IMPLEMENTED_CAPABILITIES: u64 = (1 << 0)
     | (1 << 14)
     | (1 << 15)
     | (1 << 16)
-    | (1 << 17);
+    | (1 << 17)
+    | (1 << 18);
 
 struct Registry {
     next_handle: u64,
@@ -4207,9 +4208,11 @@ fn viewport_record(
             prefix_end_utf16,
             nesting_depth,
             marker_offset,
+            marker_column,
             simple_continuation,
             starts_list,
             task_checked,
+            ..
         } => {
             let (marker_variant, marker_value) = match marker {
                 DocumentListMarker::Bullet(marker) => (
@@ -4236,6 +4239,7 @@ fn viewport_record(
                 marker_variant
                     | u32::from(nesting_depth) << VIEWPORT_ROW_LIST_DEPTH_SHIFT
                     | u32::from(marker_offset) << VIEWPORT_ROW_LIST_MARKER_OFFSET_SHIFT
+                    | u32::from(marker_column) << VIEWPORT_ROW_LIST_MARKER_COLUMN_SHIFT
                     | if simple_continuation {
                         VIEWPORT_ROW_LIST_SIMPLE_CONTINUATION
                     } else {

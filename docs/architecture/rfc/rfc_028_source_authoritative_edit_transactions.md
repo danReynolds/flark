@@ -872,10 +872,16 @@ certified list row and exact marker columns so the GFM Setext/list ambiguity is
 never guessed. The parser path and pending lineage now handle any bounded pure
 list depth whose container contribution is exactly two spaces per level,
 removing one level per command even without an intervening parser pump. Current
-item marker offsets remain parser-authored. Parent-width-dependent indentation,
-tabs, and richer container paths remain fail-closed until presentation metadata
-can describe their visual outdent without a frontend-specific spacing
-assumption.
+item marker offsets remain parser-authored.
+
+ABI 4.17 removes that uniform-width restriction for bounded pure-list paths.
+The parser packs each ancestor item's CommonMark padding width and publishes the
+current marker column; the runtime validates that lineage against exact source,
+then continuation and each pending outdent preserve or remove one exact
+container contribution. Core exposes only the framework-neutral marker column,
+so renderers do not infer indentation from nesting depth. The lineage is capped
+at sixteen ancestors and 255 columns; tabs and richer mixed-container paths
+remain fail-closed rather than acquiring host spacing policy.
 The final Dart structural-newline and prefix mutation fallbacks are removed;
 unsupported constructs now receive only literal input until Rust admits an
 explicit profile.

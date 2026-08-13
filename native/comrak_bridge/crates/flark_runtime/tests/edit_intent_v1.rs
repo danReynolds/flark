@@ -552,7 +552,7 @@ fn terminal_newline_depth_three_list_continues() {
 }
 
 #[test]
-fn nonuniform_nested_list_geometry_fails_closed() {
+fn nonuniform_nested_list_geometry_outdents_by_parent_width() {
     let initial = "10. root\n    - child\n";
     let mut document = DocumentSession::begin(initial).expect("begin nonuniform nested List");
     pump_ready(&mut document);
@@ -560,12 +560,62 @@ fn nonuniform_nested_list_geometry_fails_closed() {
         .try_apply_edit_intent_v1(1, DocumentEditIntentV1::DeleteBackward, 15, false)
         .expect("resolve nonuniform nested List");
     assert_eq!(
-        receipt.disposition,
-        DocumentEditIntentDispositionV1::NeedsCurrentSemantics
+        receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::OutdentList,
+        "{receipt:#?}"
     );
-    assert_eq!(document.revision(), 1);
-    assert_eq!(source(&document), initial);
+    assert_eq!(receipt.result_selection_utf16, 11);
+    assert_eq!(document.revision(), 2);
+    assert_eq!(source(&document), "10. root\n- child\n");
     document.close().expect("close nonuniform nested List");
+}
+
+#[test]
+fn nonuniform_nested_list_continues_then_outdents_by_parent_width() {
+    let mut document =
+        DocumentSession::begin("10. root\n    - child").expect("begin nonuniform nested sequence");
+    pump_ready(&mut document);
+    let continued = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::InsertParagraphBreak, 20, false)
+        .expect("continue nonuniform nested item");
+    assert_eq!(continued.result_selection_utf16, 27);
+    assert_eq!(source(&document), "10. root\n    - child\n    - ");
+
+    let outdented = document
+        .try_apply_edit_intent_v1(
+            2,
+            DocumentEditIntentV1::InsertParagraphBreak,
+            continued.result_selection_utf16,
+            false,
+        )
+        .expect("outdent nonuniform generated item");
+    assert_eq!(
+        outdented.presentation_transition,
+        DocumentEditPresentationTransitionV1::OutdentList
+    );
+    assert_eq!(outdented.result_selection_utf16, 23);
+    assert_eq!(source(&document), "10. root\n    - child\n- ");
+    document.close().expect("close nonuniform nested sequence");
+}
+
+#[test]
+fn nonuniform_outdent_preserves_the_current_item_marker_offset() {
+    let mut document = DocumentSession::begin("10. root\n     - child\n")
+        .expect("begin offset nonuniform nested List");
+    pump_ready(&mut document);
+    let receipt = document
+        .try_apply_edit_intent_v1(1, DocumentEditIntentV1::DeleteBackward, 16, false)
+        .expect("outdent offset nonuniform nested item");
+    assert_eq!(
+        receipt.presentation_transition,
+        DocumentEditPresentationTransitionV1::OutdentList,
+        "{receipt:#?}"
+    );
+    assert_eq!(receipt.result_selection_utf16, 12);
+    assert_eq!(source(&document), "10. root\n - child\n");
+    document
+        .close()
+        .expect("close offset nonuniform nested List");
 }
 
 #[test]

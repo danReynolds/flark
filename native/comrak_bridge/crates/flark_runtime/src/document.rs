@@ -212,6 +212,9 @@ pub enum DocumentViewportRowPresentation {
         prefix_end_utf16: u64,
         nesting_depth: u8,
         marker_offset: u8,
+        container_widths: u64,
+        container_count: u8,
+        marker_column: u8,
         simple_continuation: bool,
         starts_list: bool,
         task_checked: Option<bool>,
@@ -1174,6 +1177,9 @@ impl DocumentSession {
                 prefix_end_utf16,
                 nesting_depth,
                 marker_offset,
+                container_widths,
+                container_count,
+                marker_column,
                 simple_continuation: true,
                 starts_list,
                 task_checked,
@@ -1188,6 +1194,10 @@ impl DocumentSession {
                             prefix_bytes.start,
                             prefix_utf16.start,
                             nesting_depth,
+                            marker_offset,
+                            marker_column,
+                            container_widths,
+                            container_count,
                         )
                     })
                     .flatten();
@@ -1200,6 +1210,9 @@ impl DocumentSession {
                     prefix_utf16,
                     nesting_depth,
                     marker_offset,
+                    container_widths,
+                    container_count,
+                    marker_column,
                     starts_list,
                     task_checked,
                     empty: current.kind == 14 || editable_bytes.is_empty(),
@@ -1329,16 +1342,29 @@ impl DocumentSession {
         marker_start_byte: usize,
         marker_start_utf16: usize,
         nesting_depth: u8,
+        marker_offset: u8,
+        marker_column: u8,
+        container_widths: u64,
+        container_count: u8,
     ) -> Option<DocumentListOutdent> {
         let indentation =
             self.capture_list_marker_indentation(marker_start_byte, marker_start_utf16)?;
-        let expected = usize::from(nesting_depth.checked_sub(1)?).checked_mul(2)?;
-        if indentation.bytes.len() != expected || indentation.utf16.len() != expected {
+        let container_column = marker_column.checked_sub(marker_offset)?;
+        if container_count != nesting_depth.checked_sub(1)? || container_count == 0 {
+            return None;
+        }
+        let shift = u32::from(container_count - 1) * 4;
+        let width = usize::try_from((container_widths >> shift) & 0x0f).ok()?;
+        if width == 0
+            || indentation.bytes.len() != usize::from(container_column)
+            || indentation.utf16.len() != usize::from(container_column)
+            || width > indentation.bytes.len()
+        {
             return None;
         }
         Some(DocumentListOutdent {
-            bytes: marker_start_byte.checked_sub(2)?..marker_start_byte,
-            utf16: marker_start_utf16.checked_sub(2)?..marker_start_utf16,
+            bytes: marker_start_byte.checked_sub(width)?..marker_start_byte,
+            utf16: marker_start_utf16.checked_sub(width)?..marker_start_utf16,
             indentation: indentation.indentation,
         })
     }
@@ -1348,7 +1374,9 @@ impl DocumentSession {
         marker_start_byte: usize,
         marker_start_utf16: usize,
     ) -> Option<DocumentListOutdent> {
-        const MAX_OUTDENT_PREFIX_BYTES: usize = 64;
+        // One byte beyond the maximum published marker column preserves the
+        // preceding line-boundary proof even at the contract ceiling.
+        const MAX_OUTDENT_PREFIX_BYTES: usize = 256;
         let window_start = self
             .snapped_to_scalar_boundary(marker_start_byte.saturating_sub(MAX_OUTDENT_PREFIX_BYTES))
             .ok()?;
@@ -1385,6 +1413,9 @@ impl DocumentSession {
             prefix_utf16,
             nesting_depth,
             marker_offset,
+            container_widths,
+            container_count,
+            marker_column,
             starts_list,
             outdent,
             ..
@@ -1439,6 +1470,9 @@ impl DocumentSession {
         prefix_utf16.start = indentation_end_utf16;
         *nesting_depth = 2;
         *marker_offset = 0;
+        *container_widths = 2;
+        *container_count = 1;
+        *marker_column = 2;
         *starts_list = true;
         Some(())
     }
@@ -1514,6 +1548,9 @@ impl DocumentSession {
                         prefix_utf16,
                         nesting_depth: 1,
                         marker_offset,
+                        container_widths: 0,
+                        container_count: 0,
+                        marker_column: marker_offset,
                         starts_list,
                         task_checked,
                         empty,
@@ -2612,6 +2649,9 @@ fn document_viewport_row(
             prefix_end_utf16,
             nesting_depth,
             marker_offset,
+            container_widths,
+            container_count,
+            marker_column,
             simple_continuation,
             starts_list,
             task_checked,
@@ -2640,6 +2680,9 @@ fn document_viewport_row(
             prefix_end_utf16,
             nesting_depth,
             marker_offset,
+            container_widths,
+            container_count,
+            marker_column,
             simple_continuation,
             starts_list,
             task_checked,

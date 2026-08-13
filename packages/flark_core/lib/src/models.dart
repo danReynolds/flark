@@ -132,6 +132,7 @@ final class FlarkListItemPresentation {
     required this.prefixUtf16,
     required this.nestingDepth,
     required this.markerOffset,
+    required this.markerColumn,
     required this.simpleContinuation,
     required this.startsList,
     this.taskChecked,
@@ -143,6 +144,7 @@ final class FlarkListItemPresentation {
   final FlarkSourceRange prefixUtf16;
   final int nestingDepth;
   final int markerOffset;
+  final int markerColumn;
   final bool simpleContinuation;
   final bool startsList;
   final bool? taskChecked;
@@ -176,6 +178,7 @@ final class FlarkListItemPresentation {
     'prefixUtf16': prefixUtf16.toMessage(),
     'nestingDepth': nestingDepth,
     'markerOffset': markerOffset,
+    'markerColumn': markerColumn,
     'simpleContinuation': simpleContinuation,
     'startsList': startsList,
     'taskChecked': taskChecked,
@@ -194,6 +197,7 @@ final class FlarkListItemPresentation {
         ),
         nestingDepth: message['nestingDepth']! as int,
         markerOffset: message['markerOffset']! as int,
+        markerColumn: message['markerColumn']! as int,
         simpleContinuation: message['simpleContinuation']! as bool,
         startsList: message['startsList']! as bool,
         taskChecked: message['taskChecked'] as bool?,

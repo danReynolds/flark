@@ -25,7 +25,7 @@ pub use flark_runtime::{
 };
 
 pub const ABI_MAJOR: u16 = 4;
-pub const ABI_MINOR: u16 = 16;
+pub const ABI_MINOR: u16 = 17;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
@@ -291,6 +291,8 @@ pub const VIEWPORT_ROW_LIST_SIMPLE_CONTINUATION: u32 = 1 << 13;
 pub const VIEWPORT_ROW_LIST_STARTS_LIST: u32 = 1 << 14;
 pub const VIEWPORT_ROW_LIST_TASK: u32 = 1 << 15;
 pub const VIEWPORT_ROW_LIST_TASK_CHECKED: u32 = 1 << 16;
+pub const VIEWPORT_ROW_LIST_MARKER_COLUMN_SHIFT: u32 = 17;
+pub const VIEWPORT_ROW_LIST_MARKER_COLUMN_MASK: u32 = 0xff << VIEWPORT_ROW_LIST_MARKER_COLUMN_SHIFT;
 pub const VIEWPORT_ROW_BLOCK_QUOTE_PRESENTATION: u32 = 1 << 16;
 pub const VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_SHIFT: u32 = 17;
 pub const VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_MASK: u32 = 0xff << VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_SHIFT;

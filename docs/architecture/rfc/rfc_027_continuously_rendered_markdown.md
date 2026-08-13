@@ -389,7 +389,11 @@ navigation, structural row/column actions, and nested-scroll arbitration remain
 in this tranche and fail closed meanwhile. Pure lists with uniform two-space
 container indentation now continue and outdent one level at a time at any
 bounded parser depth; nonuniform and mixed-container geometry remains explicit
-unsupported/fail-closed behavior.
+unsupported/fail-closed behavior. ABI 4.17 replaces the uniform-spacing
+assumption with a parser-authored marker column and bounded ancestor padding
+lineage. Pure lists with wide ordered markers now render, continue, and outdent
+through the same framework-neutral transaction lane; tabs and mixed-container
+paths still fail closed.
 
 Exit: the complete v2 behavior denominator is exact or an explicitly scoped
 unsupported product feature; “active raw” is not an accepted fallback for a

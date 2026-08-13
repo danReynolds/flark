@@ -246,6 +246,38 @@ void main() {
   );
 
   test(
+    'nonuniform list containers use parser-authored marker columns',
+    () async {
+      const source = '10. root\n     - child';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      var row = controller.rows.last;
+      expect(row.listItem?.nestingDepth, 2);
+      expect(row.listItem?.markerOffset, 1);
+      expect(row.listItem?.markerColumn, 5);
+      expect(controller.surfaceRow(row).leadingText, '     - ');
+      controller.activateRow(row, row.editableUtf16!.end);
+
+      controller.insertNewline();
+      await _settle(controller);
+      expect(controller.visibleSource, '$source\n     - ');
+      expect(controller.surfaceRow(controller.rows.last).leadingText, '     - ');
+
+      controller.insertNewline();
+      await _settle(controller);
+      expect(controller.visibleSource, '$source\n - ');
+      row = controller.rows.last;
+      expect(row.listItem?.markerColumn, 1);
+      expect(controller.surfaceRow(row).leadingText, ' - ');
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'block quote Return continues, empty Return exits, and Backspace lifts',
     () async {
       const source = '> alpha';

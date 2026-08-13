@@ -50,7 +50,9 @@ const _listSimpleContinuation = 0x2000;
 const _listStartsList = 0x4000;
 const _listTask = 0x8000;
 const _listTaskChecked = 0x10000;
-const _knownListVariantBits = 0x1ffff;
+const _listMarkerColumnShift = 17;
+const _listMarkerColumnMask = 0x1fe0000;
+const _knownListVariantBits = 0x1ffffff;
 const _blockQuotePresentation = 0x10000;
 const _blockQuoteDepthShift = 17;
 const _blockQuoteDepthMask = 0x1fe0000;
@@ -131,10 +133,10 @@ const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 16;
+const _abiMinor = 17;
 // Every v4.7 capability is used by the safe core boundary, including
 // resumable close and snapshot continuations.
-const _requiredCapabilityBits = 0x3ffff;
+const _requiredCapabilityBits = 0x7ffff;
 
 final class FlarkNativeException implements Exception {
   const FlarkNativeException(this.operation, this.status, [this.detail = 0]);
@@ -1697,6 +1699,9 @@ final class FlarkNativeDocument {
         final markerOffset =
             (record.semanticVariant & _listMarkerOffsetMask) >>
             _listMarkerOffsetShift;
+        final markerColumn =
+            (record.semanticVariant & _listMarkerColumnMask) >>
+            _listMarkerColumnShift;
         final markerStyle = switch (listMarker) {
           _listHyphen => FlarkListMarkerStyle.hyphen,
           _listPlus => FlarkListMarkerStyle.plus,
@@ -1711,6 +1716,7 @@ final class FlarkNativeDocument {
         if (!matchesListRowKind(record.kind) ||
             markerStyle == null ||
             depth == 0 ||
+            markerColumn < markerOffset ||
             (taskChecked && !task) ||
             (record.semanticVariant & ~_knownListVariantBits) != 0 ||
             !_hasValidPresentationPrefix(record) ||
@@ -1736,6 +1742,7 @@ final class FlarkNativeDocument {
           ),
           nestingDepth: depth,
           markerOffset: markerOffset,
+          markerColumn: markerColumn,
           simpleContinuation:
               record.semanticVariant & _listSimpleContinuation != 0,
           startsList: record.semanticVariant & _listStartsList != 0,

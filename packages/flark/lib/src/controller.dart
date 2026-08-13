@@ -4272,13 +4272,12 @@ final class FlarkEditorController extends ChangeNotifier {
   }
 
   String _projectedListPrefix(FlarkListItemPresentation item) {
-    final nestingIndent = math.max(0, item.nestingDepth - 1) * 2;
     final marker = switch (item.taskChecked) {
       null => item.markerText,
       false => '☐',
       true => '☑',
     };
-    return '${''.padLeft(nestingIndent + item.markerOffset)}$marker ';
+    return '${''.padLeft(item.markerColumn)}$marker ';
   }
 
   String _projectedBlockQuotePrefix(FlarkBlockQuotePresentation quote) =>

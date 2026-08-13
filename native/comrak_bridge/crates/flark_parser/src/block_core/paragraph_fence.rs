@@ -65,6 +65,9 @@ pub enum M11RecursiveGreenRowPresentation {
         prefix_end_utf16: u64,
         nesting_depth: u8,
         marker_offset: u8,
+        container_widths: u64,
+        container_count: u8,
+        marker_column: u8,
         simple_continuation: bool,
         starts_list: bool,
         task_checked: Option<bool>,
@@ -282,13 +285,57 @@ fn list_item_row_presentation(
     let root_document = path
         .first()
         .is_some_and(|frame| frame.kind().get() == super::writer::KIND_DOCUMENT);
-    let simple_continuation = root_document
+    let pure_list_path = root_document
         && item_index == usize::from(nesting_depth) * 2
         && list_index + 1 == item_index
         && item_index + 1 == path.len() - 1
         && path[1..=item_index]
             .chunks_exact(2)
             .all(|pair| pair[0].kind().get() == KIND_LIST && pair[1].kind().get() == KIND_ITEM);
+    let mut container_widths = 0_u64;
+    let mut container_count = 0_u8;
+    let mut marker_column =
+        u8::try_from(marker_offset).expect("validated Item marker offsets fit in u8");
+    let mut bounded_lineage = pure_list_path;
+    if pure_list_path {
+        for ancestor_item_index in (2..item_index).step_by(2) {
+            if container_count >= 16 {
+                bounded_lineage = false;
+                break;
+            }
+            let ancestor_fact =
+                path[ancestor_item_index]
+                    .property()
+                    .ok_or(M11RecursiveGreenError::Corrupt(
+                        "List ancestor omitted parser-authored Item facts",
+                    ))?;
+            let ancestor_bytes = ancestor_fact.as_bytes();
+            if ancestor_fact.tag().get() != FACT_ITEM || !matches!(ancestor_bytes.len(), 4 | 5) {
+                return Err(M11RecursiveGreenError::Corrupt(
+                    "List ancestor carried invalid parser-authored Item facts",
+                ));
+            }
+            let width = u16::from_le_bytes([ancestor_bytes[2], ancestor_bytes[3]]);
+            if !(2..=14).contains(&width) {
+                return Err(M11RecursiveGreenError::Corrupt(
+                    "List ancestor carried invalid container width",
+                ));
+            }
+            let Some(next_column) = u16::from(marker_column).checked_add(width) else {
+                bounded_lineage = false;
+                break;
+            };
+            let Ok(next_column) = u8::try_from(next_column) else {
+                bounded_lineage = false;
+                break;
+            };
+            container_widths |= u64::from(width) << (u32::from(container_count) * 4);
+            container_count += 1;
+            marker_column = next_column;
+        }
+    }
+    let simple_continuation =
+        pure_list_path && bounded_lineage && container_count == nesting_depth.saturating_sub(1);
     let starts_list = item.physical_range().start == list.physical_range().start;
     Ok(Some(M11RecursiveGreenRowPresentation::ListItem {
         marker,
@@ -299,6 +346,9 @@ fn list_item_row_presentation(
         nesting_depth,
         marker_offset: u8::try_from(marker_offset)
             .expect("validated Item marker offsets fit in u8"),
+        container_widths,
+        container_count,
+        marker_column,
         simple_continuation,
         starts_list,
         task_checked,

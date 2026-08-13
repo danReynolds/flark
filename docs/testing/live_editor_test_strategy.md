@@ -412,10 +412,11 @@ first point at which portable depth plus real routing provides a meaningful
 product checkpoint rather than only semantic confidence.
 
 Current portable depth also includes ordered-list continuation/history,
-depth-three successive outdent, task and quote continuation/exit, fenced-code
-Return/type/history, and conservative table-cell typing. Those additions found
-and closed shared duplicate-action, successor-history, and parser-refresh
-generation races rather than adding construct-local handlers.
+depth-three successive outdent, nonuniform ordered-parent container geometry,
+task and quote continuation/exit, fenced-code Return/type/history, and
+conservative table-cell typing. Those additions found and closed shared
+duplicate-action, successor-history, and parser-refresh generation races rather
+than adding construct-local handlers.
 
 ### H3 — Grow from evidence
 
