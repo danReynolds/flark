@@ -4,7 +4,17 @@ import 'package:crypto/crypto.dart';
 
 const liveEditorScenarioSchemaVersion = 1;
 
-enum LiveEditorScenarioKey { enter, backspace, delete, selectAll, undo, redo }
+enum LiveEditorScenarioKey {
+  enter,
+  backspace,
+  delete,
+  selectAll,
+  copy,
+  cut,
+  paste,
+  undo,
+  redo,
+}
 
 enum LiveEditorScenarioBarrier { editSettled, paintSettled }
 
@@ -608,6 +618,15 @@ final class LiveEditorScenarioCompiler {
         return const LiveEditorKeyOperation(
           key: LiveEditorScenarioKey.selectAll,
         );
+      case 'copySelection':
+        reader.expectKeys(const {'type'});
+        return const LiveEditorKeyOperation(key: LiveEditorScenarioKey.copy);
+      case 'cutSelection':
+        reader.expectKeys(const {'type'});
+        return const LiveEditorKeyOperation(key: LiveEditorScenarioKey.cut);
+      case 'pasteClipboard':
+        reader.expectKeys(const {'type'});
+        return const LiveEditorKeyOperation(key: LiveEditorScenarioKey.paste);
       case 'undo':
         reader.expectKeys(const {'type'});
         return const LiveEditorKeyOperation(key: LiveEditorScenarioKey.undo);

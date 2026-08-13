@@ -13,6 +13,7 @@ base class NoWindowLiveEditorScenarioDriver
   final String libraryPath;
   FlarkEditorController? _controller;
   TextEditingValue? _platformValue;
+  String? _clipboardText;
 
   FlarkEditorController get _activeController =>
       _controller ?? (throw StateError('scenario driver is not started'));
@@ -145,6 +146,22 @@ base class NoWindowLiveEditorScenarioDriver
           controller.sourceUtf16Length,
         );
         _platformValue = controller.inputValue;
+      case LiveEditorScenarioKey.copy:
+        final selected = await controller.readSelectedText();
+        if (selected != null) _clipboardText = selected;
+      case LiveEditorScenarioKey.cut:
+        final selected = await controller.readSelectedText();
+        if (selected != null) {
+          _clipboardText = selected;
+          controller.replaceSelection('');
+          _platformValue = controller.inputValue;
+        }
+      case LiveEditorScenarioKey.paste:
+        final text = _clipboardText;
+        if (text != null && text.isNotEmpty) {
+          controller.replaceSelection(text);
+          _platformValue = controller.inputValue;
+        }
       case LiveEditorScenarioKey.undo:
         await controller.undo();
         _platformValue = controller.inputValue;
@@ -243,6 +260,7 @@ base class NoWindowLiveEditorScenarioDriver
     final controller = _controller;
     _controller = null;
     _platformValue = null;
+    _clipboardText = null;
     if (controller != null) await controller.close();
   }
 }

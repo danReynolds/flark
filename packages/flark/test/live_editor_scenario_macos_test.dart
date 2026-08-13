@@ -18,6 +18,7 @@ void main() {
           File('test/scenarios/cross_block_pointer_replace_history.json'),
           File('test/scenarios/select_all_replace_history.json'),
           File('test/scenarios/select_all_type_history.json'),
+          File('test/scenarios/clipboard_copy_cut_history.json'),
           File('test/scenarios/paragraph_list_boundary_newline.json'),
           File('test/scenarios/paragraph_join_backspace_successor.json'),
           File('test/scenarios/simple_list_continue_exit_type.json'),

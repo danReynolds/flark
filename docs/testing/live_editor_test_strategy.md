@@ -401,10 +401,12 @@ partially implemented; they land with the first native driver that needs them.
 5. Prove the small native keyboard/pointer/clipboard canary pack; do not replay
    the full semantic matrix through raw platform events. **Core slice
    complete:** one reused profile app process runs both rapid Return schedules,
-   Unicode Backspace, source-offset drag selection, system pasteboard paste,
-   undo, and redo with exact source/caret, zero resyncs, and bounded paint
-   assertions. Wheel scrolling and explicit focus loss/regain are the next
-   distinct macOS canaries.
+   Unicode Backspace, source-offset drag selection, system pasteboard
+   copy/cut/paste, undo, and redo with exact source/caret, zero resyncs, and
+   bounded paint assertions. Wheel scrolling is also green. Explicit focus
+   loss/regain remains the next distinct macOS canary; automated focus loss was
+   observed, but macOS 14+ refused cross-app reactivation from the CLI harness,
+   so no focus-regain pass is claimed.
 
 ### H1 — Establish the portable smoke set — complete
 

@@ -153,19 +153,23 @@ func click(_ location: CGPoint) {
     mouseButton: .left
   )?.post(tap: .cghidEventTap)
   pause(milliseconds: 20)
-  CGEvent(
+  let down = CGEvent(
     mouseEventSource: eventSource,
     mouseType: .leftMouseDown,
     mouseCursorPosition: location,
     mouseButton: .left
-  )?.post(tap: .cghidEventTap)
+  )
+  down?.setIntegerValueField(.mouseEventClickState, value: 1)
+  down?.post(tap: .cghidEventTap)
   pause(milliseconds: 10)
-  CGEvent(
+  let up = CGEvent(
     mouseEventSource: eventSource,
     mouseType: .leftMouseUp,
     mouseCursorPosition: location,
     mouseButton: .left
-  )?.post(tap: .cghidEventTap)
+  )
+  up?.setIntegerValueField(.mouseEventClickState, value: 1)
+  up?.post(tap: .cghidEventTap)
   pause(milliseconds: 100)
 }
 
@@ -177,12 +181,14 @@ func drag(from start: CGPoint, to end: CGPoint) {
     mouseButton: .left
   )?.post(tap: .cghidEventTap)
   pause(milliseconds: 20)
-  CGEvent(
+  let down = CGEvent(
     mouseEventSource: eventSource,
     mouseType: .leftMouseDown,
     mouseCursorPosition: start,
     mouseButton: .left
-  )?.post(tap: .cghidEventTap)
+  )
+  down?.setIntegerValueField(.mouseEventClickState, value: 1)
+  down?.post(tap: .cghidEventTap)
   for step in 1...12 {
     let fraction = CGFloat(step) / 12
     let point = CGPoint(
@@ -197,12 +203,14 @@ func drag(from start: CGPoint, to end: CGPoint) {
     )?.post(tap: .cghidEventTap)
     pause(milliseconds: 8)
   }
-  CGEvent(
+  let up = CGEvent(
     mouseEventSource: eventSource,
     mouseType: .leftMouseUp,
     mouseCursorPosition: end,
     mouseButton: .left
-  )?.post(tap: .cghidEventTap)
+  )
+  up?.setIntegerValueField(.mouseEventClickState, value: 1)
+  up?.post(tap: .cghidEventTap)
   pause(milliseconds: 60)
 }
 
@@ -313,6 +321,9 @@ func postKey(named name: String) throws {
   case "backspace": pressKey(51)
   case "delete": pressKey(117)
   case "selectAll": pressCommandShortcut(0)
+  case "copy": pressCommandShortcut(8)
+  case "cut": pressCommandShortcut(7)
+  case "paste": pressCommandShortcut(9)
   case "undo": pressCommandShortcut(6)
   case "redo": pressCommandShortcut(6, shift: true)
   default: throw ActuatorFailure.message("unsupported key \(name)")
@@ -500,7 +511,13 @@ while !shouldStop, let line = readLine() {
       )
     case "key":
       let key = try string(arguments["key"], "key")
+      let pasteboardChange = NSPasteboard.general.changeCount
       try postKey(named: key)
+      if key == "copy" || key == "cut" {
+        try waitUntil("macOS pasteboard (key)") {
+          NSPasteboard.general.changeCount != pasteboardChange
+        }
+      }
     case "pasteText":
       let text = try string(arguments["text"], "text")
       NSPasteboard.general.clearContents()

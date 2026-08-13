@@ -38,6 +38,13 @@ from whole-document selection. Timing schedules deliberately cover both an
 input arriving while a semantic receipt is pending and one arriving just after
 commit but before the platform has adopted the new input window.
 
+Clipboard operations are also expressed as user intent. The no-window and
+mounted lanes use one driver-owned clipboard to prove exact selection and
+history semantics; the macOS driver invokes real Command-C/X/V shortcuts and
+waits for the system pasteboard change before continuing. Platform focus
+loss/regain is deliberately not represented as a portable pass until the
+native actuator can prove both transitions in a controlled session.
+
 - `live_editor_scenario_surface_test.dart` mounts the production render object
   and adds bounded observations emitted by actual paint calls. It uses the same
   actions, barriers, and assertions as the no-window driver.
