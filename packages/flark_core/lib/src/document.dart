@@ -108,6 +108,82 @@ final class FlarkCoreEditReceipt {
   final FlarkCoreHistoryDisposition historyDisposition;
 }
 
+/// Complete authoritative result of one caller-known literal transaction.
+/// The replacement is omitted because Core already owns that bounded input;
+/// every coordinate and the required inverse token come from the native
+/// linearization receipt.
+final class FlarkCoreSourceTransactionReceiptV1 {
+  const FlarkCoreSourceTransactionReceiptV1({
+    required this.baseRevision,
+    required this.resultRevision,
+    required this.baseByteStart,
+    required this.baseByteEnd,
+    required this.baseUtf16Start,
+    required this.baseUtf16End,
+    required this.resultByteStart,
+    required this.resultByteEnd,
+    required this.resultUtf16Start,
+    required this.resultUtf16End,
+    required this.resultSelectionBaseUtf16,
+    required this.resultSelectionExtentUtf16,
+    required this.resultSourceByteLength,
+    required this.resultSourceUtf16Length,
+    required this.historyToken,
+    required this.parserPending,
+    required this.logicalEditId,
+    required this.requestDigest,
+    required this.telemetry,
+  });
+
+  final int baseRevision;
+  final int resultRevision;
+  final int baseByteStart;
+  final int baseByteEnd;
+  final int baseUtf16Start;
+  final int baseUtf16End;
+  final int resultByteStart;
+  final int resultByteEnd;
+  final int resultUtf16Start;
+  final int resultUtf16End;
+  final int resultSelectionBaseUtf16;
+  final int resultSelectionExtentUtf16;
+  final int resultSourceByteLength;
+  final int resultSourceUtf16Length;
+  final FlarkCoreHistoryToken historyToken;
+  final bool parserPending;
+  final int logicalEditId;
+  final int requestDigest;
+  final FlarkCoreEditIntentTelemetryV1 telemetry;
+
+  FlarkCoreSourceTransactionReceiptV1 withCoreTelemetry({
+    required int coreQueueMicros,
+    required int coreAdoptionMicros,
+  }) => FlarkCoreSourceTransactionReceiptV1(
+    baseRevision: baseRevision,
+    resultRevision: resultRevision,
+    baseByteStart: baseByteStart,
+    baseByteEnd: baseByteEnd,
+    baseUtf16Start: baseUtf16Start,
+    baseUtf16End: baseUtf16End,
+    resultByteStart: resultByteStart,
+    resultByteEnd: resultByteEnd,
+    resultUtf16Start: resultUtf16Start,
+    resultUtf16End: resultUtf16End,
+    resultSelectionBaseUtf16: resultSelectionBaseUtf16,
+    resultSelectionExtentUtf16: resultSelectionExtentUtf16,
+    resultSourceByteLength: resultSourceByteLength,
+    resultSourceUtf16Length: resultSourceUtf16Length,
+    historyToken: historyToken,
+    parserPending: parserPending,
+    logicalEditId: logicalEditId,
+    requestDigest: requestDigest,
+    telemetry: telemetry.withCoreStages(
+      coreQueueMicros: coreQueueMicros,
+      coreAdoptionMicros: coreAdoptionMicros,
+    ),
+  );
+}
+
 /// Complete authoritative result of one semantic edit command. The committed
 /// splice is descriptive source truth; Flutter applies it to bounded caches
 /// and never interprets it as a recipe.
@@ -385,6 +461,83 @@ final class FlarkCoreDocument {
     return _editReceipt(result);
   }
 
+  Future<FlarkCoreSourceTransactionReceiptV1> applySourceTransactionV1({
+    required int expectedRevision,
+    required FlarkCoreAnchor selectionBaseAnchor,
+    required FlarkCoreAnchor selectionExtentAnchor,
+    required int logicalEditId,
+    required int requestDigest,
+    required int acknowledgePreviousLogicalEditId,
+    required int selectionGeneration,
+    required int startUtf16,
+    required int endUtf16,
+    required String replacement,
+    required int resultSelectionBaseUtf16,
+    required int resultSelectionExtentUtf16,
+    required bool selectionAffinityDownstream,
+    required bool selectionDirectional,
+  }) async {
+    _requireOwnedAnchor(selectionBaseAnchor);
+    _requireOwnedAnchor(selectionExtentAnchor);
+    final arguments = <String, Object?>{
+      'expectedRevision': expectedRevision,
+      'selectionBaseAnchor': selectionBaseAnchor._value,
+      'selectionExtentAnchor': selectionExtentAnchor._value,
+      'logicalEditId': logicalEditId,
+      'requestDigest': requestDigest,
+      'acknowledgePreviousLogicalEditId': acknowledgePreviousLogicalEditId,
+      'selectionGeneration': selectionGeneration,
+      'startUtf16': startUtf16,
+      'endUtf16': endUtf16,
+      'replacement': replacement,
+      'resultSelectionBaseUtf16': resultSelectionBaseUtf16,
+      'resultSelectionExtentUtf16': resultSelectionExtentUtf16,
+      'selectionAffinityDownstream': selectionAffinityDownstream,
+      'selectionDirectional': selectionDirectional,
+      'dispatchEpochMicros': DateTime.now().microsecondsSinceEpoch,
+    };
+    final roundTrip = Stopwatch()..start();
+    final result = await _requestMutationTerminal(
+      'sourceTransactionV1',
+      arguments,
+    );
+    roundTrip.stop();
+    _revision = result['resultRevision']! as int;
+    _sourceByteLength = result['resultSourceByteLength']! as int;
+    _sourceUtf16Length = result['resultSourceUtf16Length']! as int;
+    _ready = !(result['parserPending']! as bool);
+    return FlarkCoreSourceTransactionReceiptV1(
+      baseRevision: result['baseRevision']! as int,
+      resultRevision: result['resultRevision']! as int,
+      baseByteStart: result['baseByteStart']! as int,
+      baseByteEnd: result['baseByteEnd']! as int,
+      baseUtf16Start: result['baseUtf16Start']! as int,
+      baseUtf16End: result['baseUtf16End']! as int,
+      resultByteStart: result['resultByteStart']! as int,
+      resultByteEnd: result['resultByteEnd']! as int,
+      resultUtf16Start: result['resultUtf16Start']! as int,
+      resultUtf16End: result['resultUtf16End']! as int,
+      resultSelectionBaseUtf16: result['resultSelectionBaseUtf16']! as int,
+      resultSelectionExtentUtf16: result['resultSelectionExtentUtf16']! as int,
+      resultSourceByteLength: _sourceByteLength,
+      resultSourceUtf16Length: _sourceUtf16Length,
+      historyToken: FlarkCoreHistoryToken._(
+        result['historyToken']! as int,
+        _historyOwner,
+      ),
+      parserPending: result['parserPending']! as bool,
+      logicalEditId: result['logicalEditId']! as int,
+      requestDigest: result['requestDigest']! as int,
+      telemetry: FlarkCoreEditIntentTelemetryV1(
+        coreQueueMicros: 0,
+        workerRoundTripMicros: roundTrip.elapsedMicroseconds,
+        workerQueueMicros: result['workerQueueMicros']! as int,
+        nativeFfiMicros: result['nativeFfiMicros']! as int,
+        coreAdoptionMicros: 0,
+      ),
+    );
+  }
+
   Future<FlarkCoreEditIntentReceiptV1> applyEditIntentV1({
     required FlarkCoreEditIntentV1 intent,
     required int expectedRevision,
@@ -621,10 +774,15 @@ final class FlarkCoreDocument {
 
   Future<Map<Object?, Object?>> _requestSemanticTerminal(
     Map<String, Object?> arguments,
+  ) => _requestMutationTerminal('editIntentV1', arguments);
+
+  Future<Map<Object?, Object?>> _requestMutationTerminal(
+    String operation,
+    Map<String, Object?> arguments,
   ) async {
     try {
       return await _send(
-        'editIntentV1',
+        operation,
         arguments,
         replyTimeout: _editIntentReplyTimeout,
       );
@@ -633,7 +791,7 @@ final class FlarkCoreDocument {
       // idempotent whether the first request committed or was merely delayed.
       try {
         return await _send(
-          'editIntentV1',
+          operation,
           arguments,
           replyTimeout: _editIntentReplyTimeout,
         );
@@ -641,7 +799,7 @@ final class FlarkCoreDocument {
         rethrow;
       } on Object catch (error) {
         throw FlarkCoreWorkerException(
-          'semantic terminal recovery failed: $error',
+          '$operation terminal recovery failed: $error',
         );
       }
     }
@@ -735,7 +893,7 @@ Future<void> _documentWorker(List<Object?> startup) async {
       historyBudgetBytes: startup[3]! as int,
     );
     final commands = ReceivePort();
-    var dropNextEditIntentReply = startup[4]! as bool;
+    var dropNextMutationReply = startup[4]! as bool;
     startupPort.send({
       'commands': commands.sendPort,
       'revision': document.revision,
@@ -766,6 +924,62 @@ Future<void> _documentWorker(List<Object?> startup) async {
               'historyToken': receipt.historyToken,
               'historyDisposition': receipt.historyDisposition.index,
             });
+          case 'sourceTransactionV1':
+            final workerReceivedEpochMicros =
+                DateTime.now().microsecondsSinceEpoch;
+            final nativeWatch = Stopwatch()..start();
+            final receipt = document.applySourceTransactionV1(
+              expectedRevision: arguments['expectedRevision']! as int,
+              selectionBaseAnchor: arguments['selectionBaseAnchor']! as int,
+              selectionExtentAnchor: arguments['selectionExtentAnchor']! as int,
+              logicalEditId: arguments['logicalEditId']! as int,
+              requestDigest: arguments['requestDigest']! as int,
+              acknowledgePreviousLogicalEditId:
+                  arguments['acknowledgePreviousLogicalEditId']! as int,
+              selectionGeneration: arguments['selectionGeneration']! as int,
+              startUtf16: arguments['startUtf16']! as int,
+              endUtf16: arguments['endUtf16']! as int,
+              replacement: arguments['replacement']! as String,
+              resultSelectionBaseUtf16:
+                  arguments['resultSelectionBaseUtf16']! as int,
+              resultSelectionExtentUtf16:
+                  arguments['resultSelectionExtentUtf16']! as int,
+              selectionAffinityDownstream:
+                  arguments['selectionAffinityDownstream']! as bool,
+              selectionDirectional: arguments['selectionDirectional']! as bool,
+            );
+            nativeWatch.stop();
+            final envelope = <Object?, Object?>{
+              'baseRevision': receipt.baseRevision,
+              'resultRevision': receipt.resultRevision,
+              'baseByteStart': receipt.baseByteStart,
+              'baseByteEnd': receipt.baseByteEnd,
+              'baseUtf16Start': receipt.baseUtf16Start,
+              'baseUtf16End': receipt.baseUtf16End,
+              'resultByteStart': receipt.resultByteStart,
+              'resultByteEnd': receipt.resultByteEnd,
+              'resultUtf16Start': receipt.resultUtf16Start,
+              'resultUtf16End': receipt.resultUtf16End,
+              'resultSelectionBaseUtf16': receipt.resultSelectionBaseUtf16,
+              'resultSelectionExtentUtf16': receipt.resultSelectionExtentUtf16,
+              'resultSourceByteLength': receipt.resultSourceByteLength,
+              'resultSourceUtf16Length': receipt.resultSourceUtf16Length,
+              'historyToken': receipt.historyToken,
+              'parserPending': receipt.parserPending,
+              'logicalEditId': receipt.logicalEditId,
+              'requestDigest': receipt.requestDigest,
+              'workerQueueMicros': math.max(
+                0,
+                workerReceivedEpochMicros -
+                    (arguments['dispatchEpochMicros']! as int),
+              ),
+              'nativeFfiMicros': nativeWatch.elapsedMicroseconds,
+            };
+            if (dropNextMutationReply) {
+              dropNextMutationReply = false;
+            } else {
+              reply.send(envelope);
+            }
           case 'editIntentV1':
             final workerReceivedEpochMicros =
                 DateTime.now().microsecondsSinceEpoch;
@@ -812,8 +1026,8 @@ Future<void> _documentWorker(List<Object?> startup) async {
               ),
               'nativeFfiMicros': nativeWatch.elapsedMicroseconds,
             };
-            if (dropNextEditIntentReply) {
-              dropNextEditIntentReply = false;
+            if (dropNextMutationReply) {
+              dropNextMutationReply = false;
             } else {
               reply.send(envelope);
             }

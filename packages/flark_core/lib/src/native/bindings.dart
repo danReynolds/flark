@@ -369,6 +369,119 @@ final class FlarkV4EditIntentReceiptV1 extends Struct {
   external Array<Uint64> reserved;
 }
 
+final class FlarkV4SourceTransactionRequestV1 extends Struct {
+  @Uint32()
+  external int structSize;
+
+  @Uint32()
+  external int flags;
+
+  external FlarkV4SessionRef session;
+
+  @Uint64()
+  external int expectedRevision;
+
+  @Uint64()
+  external int selectionBaseAnchor;
+
+  @Uint64()
+  external int selectionExtentAnchor;
+
+  @Uint64()
+  external int logicalEditId;
+
+  @Uint64()
+  external int requestDigest;
+
+  @Uint64()
+  external int acknowledgePreviousLogicalEditId;
+
+  @Uint64()
+  external int selectionGeneration;
+
+  external FlarkV4SourceRange baseUtf16Range;
+
+  @Uint64()
+  external int resultSelectionBaseUtf16;
+
+  @Uint64()
+  external int resultSelectionExtentUtf16;
+
+  @Uint32()
+  external int selectionAffinity;
+
+  @Uint32()
+  external int selectionDirection;
+
+  @Uint64()
+  external int replacementBytesLen;
+
+  external FlarkV4WorkBudget budget;
+
+  @Array(1)
+  external Array<Uint64> reserved;
+}
+
+final class FlarkV4SourceTransactionReceiptV1 extends Struct {
+  @Uint32()
+  external int structSize;
+
+  @Uint32()
+  external int historyDisposition;
+
+  @Uint32()
+  external int flags;
+
+  @Uint32()
+  external int reservedU32;
+
+  @Uint64()
+  external int logicalEditId;
+
+  @Uint64()
+  external int requestDigest;
+
+  @Uint64()
+  external int baseRevision;
+
+  @Uint64()
+  external int resultRevision;
+
+  external FlarkV4SourceRange baseByteRange;
+  external FlarkV4SourceRange baseUtf16Range;
+  external FlarkV4SourceRange resultByteRange;
+  external FlarkV4SourceRange resultUtf16Range;
+
+  @Uint64()
+  external int resultSelectionBaseUtf16;
+
+  @Uint64()
+  external int resultSelectionExtentUtf16;
+
+  @Uint32()
+  external int resultSelectionAffinity;
+
+  @Uint32()
+  external int resultSelectionDirection;
+
+  @Uint64()
+  external int resultSourceByteLength;
+
+  @Uint64()
+  external int resultSourceUtf16Length;
+
+  external FlarkV4SourceRange affectedResultUtf16Range;
+
+  @Uint64()
+  external int historyToken;
+
+  @Uint64()
+  external int replacementBytes;
+
+  @Array(2)
+  external Array<Uint64> reserved;
+}
+
 final class FlarkV4BulkBeginRequest extends Struct {
   @Uint32()
   external int structSize;
@@ -863,6 +976,25 @@ typedef EditIntentV1Dart =
       Pointer<FlarkV4Outcome>,
     );
 
+typedef _SourceTransactionV1Native =
+    Uint32 Function(
+      Pointer<FlarkV4SourceTransactionRequestV1>,
+      Pointer<Uint8>,
+      Uint64,
+      Pointer<Uint8>,
+      Uint64,
+      Pointer<FlarkV4Outcome>,
+    );
+typedef SourceTransactionV1Dart =
+    int Function(
+      Pointer<FlarkV4SourceTransactionRequestV1>,
+      Pointer<Uint8>,
+      int,
+      Pointer<Uint8>,
+      int,
+      Pointer<FlarkV4Outcome>,
+    );
+
 typedef _BulkBeginNative =
     Uint32 Function(Pointer<FlarkV4BulkBeginRequest>, Pointer<FlarkV4Outcome>);
 typedef BulkBeginDart =
@@ -1027,6 +1159,10 @@ final class FlarkV4Bindings {
           .lookupFunction<_EditIntentV1Native, EditIntentV1Dart>(
             'flark_v4_edit_intent_v1',
           ),
+      sourceTransactionV1 = library
+          .lookupFunction<_SourceTransactionV1Native, SourceTransactionV1Dart>(
+            'flark_v4_source_transaction_v1',
+          ),
       bulkBegin = library.lookupFunction<_BulkBeginNative, BulkBeginDart>(
         'flark_v4_bulk_begin',
       ),
@@ -1110,6 +1246,7 @@ final class FlarkV4Bindings {
   final PumpDart pump;
   final SmallEditDart smallEdit;
   final EditIntentV1Dart editIntentV1;
+  final SourceTransactionV1Dart sourceTransactionV1;
   final BulkBeginDart bulkBegin;
   final BulkAppendDart bulkAppend;
   final BulkTransactionDart bulkCommit;

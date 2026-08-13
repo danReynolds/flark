@@ -6,14 +6,16 @@ use flark_abi::{
     flark_v4_close_begin, flark_v4_close_finish, flark_v4_close_pump, flark_v4_create_abort,
     flark_v4_create_begin, flark_v4_create_commit, flark_v4_edit_intent_v1,
     flark_v4_history_release, flark_v4_history_replay, flark_v4_pump, flark_v4_query_viewport,
-    flark_v4_session_inspect, flark_v4_session_transfer_owner, flark_v4_small_edit, AnchorRequest,
-    BulkBeginRequest, CancelRequest, CloseRequest, CreateRequest, EditDescriptor,
-    EditIntentReceiptV1, EditIntentRequestV1, InspectRequest, Outcome, OwnerTransferRequest,
-    PumpRequest, QueryRequest, ResultPageHeader, SessionConfig, SessionInspection, SessionRef,
-    SmallEditRequest, SourceRange, SourceReadRequest, TransactionRequest, WorkBudget,
+    flark_v4_session_inspect, flark_v4_session_transfer_owner, flark_v4_small_edit,
+    flark_v4_source_transaction_v1, AnchorRequest, BulkBeginRequest, CancelRequest, CloseRequest,
+    CreateRequest, EditDescriptor, EditIntentReceiptV1, EditIntentRequestV1, InspectRequest,
+    Outcome, OwnerTransferRequest, PumpRequest, QueryRequest, ResultPageHeader, SessionConfig,
+    SessionInspection, SessionRef, SmallEditRequest, SourceRange, SourceReadRequest,
+    SourceTransactionReceiptV1, SourceTransactionRequestV1, TransactionRequest, WorkBudget,
     EDIT_INTENT_DISPOSITION_APPLIED, EDIT_INTENT_INSERT_PARAGRAPH_BREAK,
     EDIT_INTENT_RECEIPT_HAS_COMMIT, EDIT_INTENT_RECEIPT_SEMANTIC_BYTES,
     EDIT_PRESENTATION_CONTINUE_LIST, EDIT_PRESENTATION_EXIT_LIST, EDIT_PROFILE_FLARK_V1,
+    SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES, SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT,
 };
 use flark_runtime::{HistoryDisposition, SessionState, StatusCode, MAX_LIVE_ANCHORS};
 
@@ -1113,4 +1115,108 @@ fn session_inspect_reports_state_and_live_handles() {
         flark_v4_session_inspect(&inspect, &mut inspection, &mut outcome),
         StatusCode::InvalidHandle as u32
     );
+}
+
+#[test]
+fn source_transaction_commits_history_and_retargets_selection_atomically() {
+    const UTF16: u32 = 2;
+    const DOWNSTREAM: u32 = 2;
+    const UPSTREAM: u32 = 1;
+
+    let initial = "a🌍bc\n";
+    let session = open_session(initial.as_bytes(), 0x5151);
+    let base = create_anchor(session, 1, UTF16, 1, DOWNSTREAM);
+    let extent = create_anchor(session, 1, UTF16, 3, UPSTREAM);
+    let replacement = "éx".as_bytes();
+    let request = SourceTransactionRequestV1 {
+        struct_size: size_of::<SourceTransactionRequestV1>() as u32,
+        flags: 0,
+        session,
+        expected_revision: 1,
+        selection_base_anchor: base,
+        selection_extent_anchor: extent,
+        logical_edit_id: 1,
+        request_digest: 0x5151_0001,
+        acknowledge_previous_logical_edit_id: 0,
+        selection_generation: 1,
+        base_utf16_range: SourceRange {
+            start_byte: 1,
+            end_byte: 3,
+        },
+        result_selection_base_utf16: 1,
+        result_selection_extent_utf16: 3,
+        selection_affinity: DOWNSTREAM,
+        selection_direction: 0,
+        replacement_bytes_len: replacement.len() as u64,
+        budget: budget(1),
+        reserved: [0; 1],
+    };
+    let mut output = vec![0u8; size_of::<SourceTransactionReceiptV1>()];
+    let mut outcome = Outcome::default();
+    assert_eq!(
+        flark_v4_source_transaction_v1(
+            &request,
+            replacement.as_ptr(),
+            replacement.len() as u64,
+            output.as_mut_ptr(),
+            output.len() as u64,
+            &mut outcome,
+        ),
+        StatusCode::Ok as u32
+    );
+    let receipt =
+        unsafe { std::ptr::read_unaligned(output.as_ptr().cast::<SourceTransactionReceiptV1>()) };
+    assert_eq!(
+        receipt.struct_size as usize,
+        size_of::<SourceTransactionReceiptV1>()
+    );
+    assert_eq!(receipt.base_revision, 1);
+    assert_eq!(receipt.result_revision, 2);
+    assert_eq!(
+        receipt.history_disposition,
+        HistoryDisposition::Retained as u32
+    );
+    assert_eq!(receipt.history_token, outcome.primary_handle);
+    assert_ne!(receipt.history_token, 0);
+    assert_eq!(receipt.replacement_bytes, replacement.len() as u64);
+    assert_eq!(
+        receipt.flags
+            & (SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT
+                | SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES),
+        SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT | SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES
+    );
+    assert_eq!(
+        receipt.base_byte_range,
+        SourceRange {
+            start_byte: 1,
+            end_byte: 5,
+        }
+    );
+    assert_eq!(
+        receipt.result_byte_range,
+        SourceRange {
+            start_byte: 1,
+            end_byte: 4,
+        }
+    );
+    assert_eq!(resolve_anchor(session, base, 2, 1), 1);
+    assert_eq!(resolve_anchor(session, extent, 2, 1), 4);
+    assert_eq!(read_source(session, 2, "aéxbc\n".len()), b"a\xc3\xa9xbc\n");
+
+    // A lost-reply retry returns the exact terminal without another commit.
+    let mut retry_output = vec![0u8; size_of::<SourceTransactionReceiptV1>()];
+    assert_eq!(
+        flark_v4_source_transaction_v1(
+            &request,
+            replacement.as_ptr(),
+            replacement.len() as u64,
+            retry_output.as_mut_ptr(),
+            retry_output.len() as u64,
+            &mut outcome,
+        ),
+        StatusCode::Ok as u32
+    );
+    assert_eq!(outcome.revision, 2);
+    assert_eq!(output, retry_output);
+    close_session(session);
 }

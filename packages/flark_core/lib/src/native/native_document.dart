@@ -104,6 +104,9 @@ const _editIntentNeedsCurrentSemantics = 4;
 const _editIntentHasCommit = 1;
 const _editIntentParserPending = 2;
 const _editIntentSemanticBytes = 4;
+const _sourceTransactionHasCommit = 1;
+const _sourceTransactionParserPending = 2;
+const _sourceTransactionCallerKnownBytes = 4;
 const _editPresentationNone = 0;
 const _editPresentationSplitParagraph = 1;
 const _editPresentationContinueList = 2;
@@ -116,10 +119,10 @@ const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
 const _editIntentRetirementMaximumWorkUnits = 512;
 const _abiMajor = 4;
-const _abiMinor = 10;
+const _abiMinor = 11;
 // Every v4.7 capability is used by the safe core boundary, including
 // resumable close and snapshot continuations.
-const _requiredCapabilityBits = 0xffff;
+const _requiredCapabilityBits = 0x1ffff;
 
 final class FlarkNativeException implements Exception {
   const FlarkNativeException(this.operation, this.status, [this.detail = 0]);
@@ -216,6 +219,48 @@ final class FlarkNativeEditIntentReceiptV1 {
 
   bool get hasCommit =>
       disposition == FlarkNativeEditIntentDispositionV1.applied;
+}
+
+final class FlarkNativeSourceTransactionReceiptV1 {
+  const FlarkNativeSourceTransactionReceiptV1({
+    required this.baseRevision,
+    required this.resultRevision,
+    required this.baseByteStart,
+    required this.baseByteEnd,
+    required this.baseUtf16Start,
+    required this.baseUtf16End,
+    required this.resultByteStart,
+    required this.resultByteEnd,
+    required this.resultUtf16Start,
+    required this.resultUtf16End,
+    required this.resultSelectionBaseUtf16,
+    required this.resultSelectionExtentUtf16,
+    required this.resultSourceByteLength,
+    required this.resultSourceUtf16Length,
+    required this.historyToken,
+    required this.parserPending,
+    required this.logicalEditId,
+    required this.requestDigest,
+  });
+
+  final int baseRevision;
+  final int resultRevision;
+  final int baseByteStart;
+  final int baseByteEnd;
+  final int baseUtf16Start;
+  final int baseUtf16End;
+  final int resultByteStart;
+  final int resultByteEnd;
+  final int resultUtf16Start;
+  final int resultUtf16End;
+  final int resultSelectionBaseUtf16;
+  final int resultSelectionExtentUtf16;
+  final int resultSourceByteLength;
+  final int resultSourceUtf16Length;
+  final int historyToken;
+  final bool parserPending;
+  final int logicalEditId;
+  final int requestDigest;
 }
 
 const _coordinateUtf16 = 2;
@@ -574,6 +619,144 @@ final class FlarkNativeDocument {
         ..free(request)
         ..free(descriptor)
         ..free(outcome)
+        ..free(replacementPointer);
+    }
+  }
+
+  /// Commits one caller-known literal edit through the source-transaction
+  /// ABI, returning the native linearization receipt and atomic selection.
+  FlarkNativeSourceTransactionReceiptV1 applySourceTransactionV1({
+    required int expectedRevision,
+    required int selectionBaseAnchor,
+    required int selectionExtentAnchor,
+    required int logicalEditId,
+    required int requestDigest,
+    required int acknowledgePreviousLogicalEditId,
+    required int selectionGeneration,
+    required int startUtf16,
+    required int endUtf16,
+    required String replacement,
+    required int resultSelectionBaseUtf16,
+    required int resultSelectionExtentUtf16,
+    required bool selectionAffinityDownstream,
+    required bool selectionDirectional,
+  }) {
+    final replacementBytes = utf8.encode(replacement);
+    final request = calloc<FlarkV4SourceTransactionRequestV1>();
+    final outcome = calloc<FlarkV4Outcome>();
+    final outputLength = sizeOf<FlarkV4SourceTransactionReceiptV1>();
+    final output = calloc<Uint8>(outputLength);
+    final replacementPointer = _copyBytes(
+      replacementBytes,
+      0,
+      replacementBytes.length,
+    );
+    try {
+      request.ref
+        ..structSize = sizeOf<FlarkV4SourceTransactionRequestV1>()
+        ..flags = 0
+        ..expectedRevision = expectedRevision
+        ..selectionBaseAnchor = selectionBaseAnchor
+        ..selectionExtentAnchor = selectionExtentAnchor
+        ..logicalEditId = logicalEditId
+        ..requestDigest = requestDigest
+        ..acknowledgePreviousLogicalEditId = acknowledgePreviousLogicalEditId
+        ..selectionGeneration = selectionGeneration
+        ..resultSelectionBaseUtf16 = resultSelectionBaseUtf16
+        ..resultSelectionExtentUtf16 = resultSelectionExtentUtf16
+        ..selectionAffinity = selectionAffinityDownstream
+            ? _affinityDownstream
+            : _affinityUpstream
+        ..selectionDirection = selectionDirectional ? 1 : 0
+        ..replacementBytesLen = replacementBytes.length;
+      request.ref.baseUtf16Range
+        ..startByte = startUtf16
+        ..endByte = endUtf16;
+      _fillSession(request.ref.session);
+      _fillBudget(request.ref.budget, workUnits: 1);
+      var status = _bindings.sourceTransactionV1(
+        request,
+        replacementPointer,
+        replacementBytes.length,
+        output,
+        outputLength,
+        outcome,
+      );
+      var retirementWorkUnits = 0;
+      while (status == _backpressure &&
+          retirementWorkUnits < _editIntentRetirementMaximumWorkUnits) {
+        _requireStatus('source_transaction_v1', status, outcome.ref, {
+          _backpressure,
+        });
+        pump(workUnits: _editIntentRetirementPumpUnits);
+        retirementWorkUnits += _editIntentRetirementPumpUnits;
+        status = _bindings.sourceTransactionV1(
+          request,
+          replacementPointer,
+          replacementBytes.length,
+          output,
+          outputLength,
+          outcome,
+        );
+      }
+      _requireStatus('source_transaction_v1', status, outcome.ref, {_ok});
+      final native = output.cast<FlarkV4SourceTransactionReceiptV1>().ref;
+      final historyToken = native.historyToken;
+      if (native.structSize != sizeOf<FlarkV4SourceTransactionReceiptV1>() ||
+          native.logicalEditId != logicalEditId ||
+          native.requestDigest != requestDigest ||
+          native.baseRevision != expectedRevision ||
+          native.historyDisposition != _historyRetained ||
+          historyToken == 0 ||
+          native.replacementBytes != replacementBytes.length ||
+          native.flags & _sourceTransactionHasCommit == 0 ||
+          native.flags & _sourceTransactionCallerKnownBytes == 0 ||
+          native.resultSelectionBaseUtf16 != resultSelectionBaseUtf16 ||
+          native.resultSelectionExtentUtf16 != resultSelectionExtentUtf16 ||
+          outcome.ref.writtenBytes != outputLength) {
+        throw const FlarkNativeException(
+          'source_transaction_v1',
+          _internalFault,
+        );
+      }
+      _revision = native.resultRevision;
+      _sourceByteLength = native.resultSourceByteLength;
+      _sourceUtf16Length = native.resultSourceUtf16Length;
+      _progressToken = 0;
+      final parserPending = native.flags & _sourceTransactionParserPending != 0;
+      _ready = !parserPending;
+      _historyLengthDeltas[historyToken] = _HistoryLengthDelta(
+        (native.baseByteRange.endByte - native.baseByteRange.startByte) -
+            (native.resultByteRange.endByte - native.resultByteRange.startByte),
+        (native.baseUtf16Range.endByte - native.baseUtf16Range.startByte) -
+            (native.resultUtf16Range.endByte -
+                native.resultUtf16Range.startByte),
+      );
+      return FlarkNativeSourceTransactionReceiptV1(
+        baseRevision: native.baseRevision,
+        resultRevision: native.resultRevision,
+        baseByteStart: native.baseByteRange.startByte,
+        baseByteEnd: native.baseByteRange.endByte,
+        baseUtf16Start: native.baseUtf16Range.startByte,
+        baseUtf16End: native.baseUtf16Range.endByte,
+        resultByteStart: native.resultByteRange.startByte,
+        resultByteEnd: native.resultByteRange.endByte,
+        resultUtf16Start: native.resultUtf16Range.startByte,
+        resultUtf16End: native.resultUtf16Range.endByte,
+        resultSelectionBaseUtf16: native.resultSelectionBaseUtf16,
+        resultSelectionExtentUtf16: native.resultSelectionExtentUtf16,
+        resultSourceByteLength: native.resultSourceByteLength,
+        resultSourceUtf16Length: native.resultSourceUtf16Length,
+        historyToken: historyToken,
+        parserPending: parserPending,
+        logicalEditId: native.logicalEditId,
+        requestDigest: native.requestDigest,
+      );
+    } finally {
+      calloc
+        ..free(request)
+        ..free(outcome)
+        ..free(output)
         ..free(replacementPointer);
     }
   }

@@ -180,7 +180,7 @@ fn operations_name_real_header_symbols_and_known_request_records() {
         .into_keys()
         .collect::<BTreeSet<_>>();
     let operations = manifest["operations"].as_array().expect("operations array");
-    assert_eq!(operations.len(), 29);
+    assert_eq!(operations.len(), 30);
     for operation in operations {
         let symbol = operation["symbol"].as_str().expect("operation symbol");
         let request = operation["requestRecord"]

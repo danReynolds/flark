@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:characters/characters.dart';
 
 import 'document.dart';
@@ -127,6 +129,11 @@ final class FlarkCoreHistoryDropped extends FlarkCoreHistoryOutcome {
 const _typingIdleMicros = 1000000;
 const _historyTokenEvicted = 0x0305;
 const _historyTokenStale = 0x0306;
+const _sourceTransactionV1MaximumReplacementBytes = 64 * 1024;
+// A valid UTF-8 source scalar uses at most three bytes per UTF-16 code unit.
+// This conservative host-side cut guarantees native's 64 KiB inverse bound
+// without a coordinate/source preflight on the common transaction lane.
+const _sourceTransactionV1MaximumDeletedUtf16 = 16 * 1024;
 
 /// Canonical editing policy over one [FlarkCoreDocument]: undo/redo ordering
 /// and grouping of opaque native history tokens, typing coalescing,
@@ -211,6 +218,50 @@ final class FlarkCoreEditorSession {
     int? compositionGroup,
   }) async {
     _ensureAuthoritativeCommandsAvailable();
+    if (_selectionStart == null ||
+        _selectionEnd == null ||
+        _selectionBaseUtf16 != beforeSelection.base ||
+        _selectionExtentUtf16 != beforeSelection.extent) {
+      await _setSelectionUtf16(
+        beforeSelection.base,
+        beforeSelection.extent,
+        affinity: beforeSelection.affinity,
+        adapterState: beforeSelection.adapterState,
+      );
+    } else {
+      _selectionAffinity = beforeSelection.affinity;
+      _selectionAdapterState = beforeSelection.adapterState;
+    }
+    if (end - start > _sourceTransactionV1MaximumDeletedUtf16 ||
+        utf8.encode(replacement).length >
+            _sourceTransactionV1MaximumReplacementBytes) {
+      return _applyLegacyBulkEditUtf16(
+        start,
+        end,
+        replacement,
+        beforeSelection: beforeSelection,
+        afterSelection: afterSelection,
+        coalesceTyping: coalesceTyping,
+        compositionGroup: compositionGroup,
+      );
+    }
+    final startAnchor = _selectionStart!;
+    final endAnchor = _selectionEnd!;
+    final baseAnchor = _selectionBaseIsStart ? startAnchor : endAnchor;
+    final extentAnchor = _selectionBaseIsStart ? endAnchor : startAnchor;
+    final baseRevision = document.revision;
+    final baseGeneration = _selectionGeneration;
+    final logicalEditId = ++_nextLogicalEditId;
+    final requestDigest = _sourceTransactionDigest(
+      logicalEditId: logicalEditId,
+      revision: baseRevision,
+      selectionGeneration: baseGeneration,
+      start: start,
+      end: end,
+      replacement: replacement,
+      resultBase: afterSelection.base,
+      resultExtent: afterSelection.extent,
+    );
     final typing = coalesceTyping && compositionGroup == null
         ? _typingEvent(
             start: start,
@@ -220,21 +271,124 @@ final class FlarkCoreEditorSession {
             afterSelection: afterSelection,
           )
         : null;
-    final receipt = await document.applyEditUtf16(start, end, replacement);
+    late final FlarkCoreSourceTransactionReceiptV1 transaction;
+    try {
+      transaction = await document.applySourceTransactionV1(
+        expectedRevision: baseRevision,
+        selectionBaseAnchor: baseAnchor,
+        selectionExtentAnchor: extentAnchor,
+        logicalEditId: logicalEditId,
+        requestDigest: requestDigest,
+        acknowledgePreviousLogicalEditId: _pendingTerminalLogicalEditId,
+        selectionGeneration: baseGeneration,
+        startUtf16: start,
+        endUtf16: end,
+        replacement: replacement,
+        resultSelectionBaseUtf16: afterSelection.base,
+        resultSelectionExtentUtf16: afterSelection.extent,
+        selectionAffinityDownstream:
+            afterSelection.affinity == FlarkCoreAffinity.downstream,
+        selectionDirectional: afterSelection.base > afterSelection.extent,
+      );
+    } on FlarkCoreWorkerException {
+      _postCommitUnknown = true;
+      rethrow;
+    }
+    if (transaction.logicalEditId != logicalEditId ||
+        transaction.requestDigest != requestDigest ||
+        transaction.baseRevision != baseRevision ||
+        transaction.baseUtf16Start != start ||
+        transaction.baseUtf16End != end ||
+        transaction.resultSelectionBaseUtf16 != afterSelection.base ||
+        transaction.resultSelectionExtentUtf16 != afterSelection.extent) {
+      _postCommitUnknown = true;
+      throw StateError('Flark source transaction receipt correlation failed');
+    }
+    _pendingTerminalLogicalEditId = logicalEditId;
+    _selectionBaseIsStart = afterSelection.base <= afterSelection.extent;
+    _selectionStart = _selectionBaseIsStart ? baseAnchor : extentAnchor;
+    _selectionEnd = _selectionBaseIsStart ? extentAnchor : baseAnchor;
+    _selectionBaseUtf16 = afterSelection.base;
+    _selectionExtentUtf16 = afterSelection.extent;
+    _selectionAffinity = afterSelection.affinity;
+    _selectionAdapterState = afterSelection.adapterState;
+    _selectionGeneration += 1;
+    final receipt = FlarkCoreEditReceipt(
+      revision: transaction.resultRevision,
+      sourceByteLength: transaction.resultSourceByteLength,
+      sourceUtf16Length: transaction.resultSourceUtf16Length,
+      historyToken: transaction.historyToken,
+      historyDisposition: FlarkCoreHistoryDisposition.retained,
+    );
+    try {
+      await _recordForward(
+        receipt,
+        beforeSelection: beforeSelection,
+        afterSelection: afterSelection,
+        typing: typing,
+        compositionGroup: compositionGroup,
+      );
+    } on Object {
+      _postCommitUnknown = true;
+      rethrow;
+    }
+    return receipt;
+  }
+
+  /// Temporary staged-ingress bridge for replacements larger than one v1
+  /// source-transaction chunk. H4 replaces this with a receipt-bearing staged
+  /// commit. Keeping the prior bulk lane here prevents large clipboard input
+  /// from regressing while making its weaker postcommit selection adoption
+  /// explicit and fail-stop.
+  Future<FlarkCoreEditReceipt> _applyLegacyBulkEditUtf16(
+    int start,
+    int end,
+    String replacement, {
+    required FlarkCoreSelectionSnapshot beforeSelection,
+    required FlarkCoreSelectionSnapshot afterSelection,
+    required bool coalesceTyping,
+    required int? compositionGroup,
+  }) async {
+    final typing = coalesceTyping && compositionGroup == null
+        ? _typingEvent(
+            start: start,
+            end: end,
+            replacement: replacement,
+            beforeSelection: beforeSelection,
+            afterSelection: afterSelection,
+          )
+        : null;
+    late final FlarkCoreEditReceipt receipt;
+    try {
+      receipt = await document.applyEditUtf16(start, end, replacement);
+    } on FlarkCoreWorkerException {
+      _postCommitUnknown = true;
+      rethrow;
+    }
     _pendingTerminalLogicalEditId = 0;
-    await _recordForward(
-      receipt,
-      beforeSelection: beforeSelection,
-      afterSelection: afterSelection,
-      typing: typing,
-      compositionGroup: compositionGroup,
-    );
-    await _setSelectionUtf16(
-      afterSelection.base,
-      afterSelection.extent,
-      affinity: afterSelection.affinity,
-      adapterState: afterSelection.adapterState,
-    );
+    if (receipt.historyToken == null ||
+        receipt.historyDisposition != FlarkCoreHistoryDisposition.retained) {
+      _postCommitUnknown = true;
+      throw StateError('Flark staged edit committed without required history');
+    }
+    try {
+      await _recordForward(
+        receipt,
+        beforeSelection: beforeSelection,
+        afterSelection: afterSelection,
+        typing: typing,
+        compositionGroup: compositionGroup,
+      );
+      await _setSelectionUtf16(
+        afterSelection.base,
+        afterSelection.extent,
+        affinity: afterSelection.affinity,
+        adapterState: afterSelection.adapterState,
+      );
+    } on Object {
+      _postCommitUnknown = true;
+      rethrow;
+    }
     return receipt;
   }
 
@@ -272,8 +426,7 @@ final class FlarkCoreEditorSession {
     if (start == null || end == null) {
       throw StateError('Flark semantic edit requires a canonical selection');
     }
-    if (!identical(start, end) ||
-        _selectionBaseUtf16 != _selectionExtentUtf16) {
+    if (_selectionBaseUtf16 != _selectionExtentUtf16) {
       throw StateError('flark-edit-v1 currently requires one collapsed caret');
     }
     final baseRevision = document.revision;
@@ -446,9 +599,7 @@ final class FlarkCoreEditorSession {
     final nextStart = await document.createAnchorUtf16(start, downstream: true);
     late final FlarkCoreAnchor nextEnd;
     try {
-      nextEnd = collapsed
-          ? nextStart
-          : await document.createAnchorUtf16(end, downstream: false);
+      nextEnd = await document.createAnchorUtf16(end, downstream: collapsed);
     } catch (_) {
       await document.releaseAnchor(nextStart);
       rethrow;
@@ -753,6 +904,33 @@ final class FlarkCoreEditorSession {
       selectionGeneration,
       intent,
       compositionActive ? 1 : 0,
+    ]) {
+      hash = ((hash ^ value) * 0x100000001b3) & 0x7fffffffffffffff;
+    }
+    return hash == 0 ? 1 : hash;
+  }
+
+  static int _sourceTransactionDigest({
+    required int logicalEditId,
+    required int revision,
+    required int selectionGeneration,
+    required int start,
+    required int end,
+    required String replacement,
+    required int resultBase,
+    required int resultExtent,
+  }) {
+    var hash = 0x510e527fade682d1;
+    for (final value in [
+      logicalEditId,
+      revision,
+      selectionGeneration,
+      start,
+      end,
+      resultBase,
+      resultExtent,
+      replacement.length,
+      ...replacement.codeUnits,
     ]) {
       hash = ((hash ^ value) * 0x100000001b3) & 0x7fffffffffffffff;
     }

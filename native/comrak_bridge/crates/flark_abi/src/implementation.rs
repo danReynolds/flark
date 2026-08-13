@@ -26,23 +26,25 @@ use crate::{
     CloseRequest, ContinuationRequest, CoordinateRequest, CreateRequest, EditDescriptor,
     EditIntentReceiptV1, EditIntentRequestV1, HistoryRequest, InlineFactRecord, InspectRequest,
     NegotiateRequest, Outcome, OwnerTransferRequest, PumpRequest, QueryRequest, ResultPageHeader,
-    SessionInspection, SessionRef, SmallEditRequest, SourceRange, SourceReadRequest, StageRequest,
-    TransactionRequest, ViewportRowRecord, WorkBudget, ABI_MAJOR, ABI_MINOR,
-    EDIT_INTENT_DELETE_BACKWARD, EDIT_INTENT_DISPOSITION_APPLIED,
-    EDIT_INTENT_DISPOSITION_HANDLED_NO_CHANGE, EDIT_INTENT_DISPOSITION_NEEDS_CURRENT_SEMANTICS,
-    EDIT_INTENT_DISPOSITION_NOT_APPLICABLE, EDIT_INTENT_INSERT_PARAGRAPH_BREAK,
-    EDIT_INTENT_RECEIPT_HAS_COMMIT, EDIT_INTENT_RECEIPT_PARSER_PENDING,
-    EDIT_INTENT_RECEIPT_SEMANTIC_BYTES, EDIT_PRESENTATION_CONTINUE_LIST,
-    EDIT_PRESENTATION_EXIT_LIST, EDIT_PRESENTATION_LIFT_LIST, EDIT_PRESENTATION_MERGE_PARAGRAPH,
-    EDIT_PRESENTATION_NONE, EDIT_PRESENTATION_SPLIT_PARAGRAPH, EDIT_PROFILE_FLARK_V1,
-    INLINE_FACT_AUTOLINK_EMAIL, INLINE_FACT_AUTOLINK_URI, INLINE_FACT_BACKSLASH_ESCAPE,
-    INLINE_FACT_CODE, INLINE_FACT_DIRECT_IMAGE, INLINE_FACT_DIRECT_LINK, INLINE_FACT_EMPHASIS,
-    INLINE_FACT_HARD_LINE_BREAK, INLINE_FACT_REFERENCE_IMAGE, INLINE_FACT_REFERENCE_LINK,
-    INLINE_FACT_REPLACEMENT, INLINE_FACT_STRIKETHROUGH, INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL,
-    VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_SHIFT, VIEWPORT_ROW_BLOCK_QUOTE_PRESENTATION,
-    VIEWPORT_ROW_BLOCK_QUOTE_SIMPLE_CONTINUATION, VIEWPORT_ROW_CODE_CLOSED,
-    VIEWPORT_ROW_CODE_FENCED, VIEWPORT_ROW_CODE_FENCE_OFFSET_SHIFT, VIEWPORT_ROW_CODE_PRESENTATION,
-    VIEWPORT_ROW_CODE_TILDE, VIEWPORT_ROW_FLAG_CONTIGUOUS_EDIT,
+    SessionInspection, SessionRef, SmallEditRequest, SourceRange, SourceReadRequest,
+    SourceTransactionReceiptV1, SourceTransactionRequestV1, StageRequest, TransactionRequest,
+    ViewportRowRecord, WorkBudget, ABI_MAJOR, ABI_MINOR, EDIT_INTENT_DELETE_BACKWARD,
+    EDIT_INTENT_DISPOSITION_APPLIED, EDIT_INTENT_DISPOSITION_HANDLED_NO_CHANGE,
+    EDIT_INTENT_DISPOSITION_NEEDS_CURRENT_SEMANTICS, EDIT_INTENT_DISPOSITION_NOT_APPLICABLE,
+    EDIT_INTENT_INSERT_PARAGRAPH_BREAK, EDIT_INTENT_RECEIPT_HAS_COMMIT,
+    EDIT_INTENT_RECEIPT_PARSER_PENDING, EDIT_INTENT_RECEIPT_SEMANTIC_BYTES,
+    EDIT_PRESENTATION_CONTINUE_LIST, EDIT_PRESENTATION_EXIT_LIST, EDIT_PRESENTATION_LIFT_LIST,
+    EDIT_PRESENTATION_MERGE_PARAGRAPH, EDIT_PRESENTATION_NONE, EDIT_PRESENTATION_SPLIT_PARAGRAPH,
+    EDIT_PROFILE_FLARK_V1, INLINE_FACT_AUTOLINK_EMAIL, INLINE_FACT_AUTOLINK_URI,
+    INLINE_FACT_BACKSLASH_ESCAPE, INLINE_FACT_CODE, INLINE_FACT_DIRECT_IMAGE,
+    INLINE_FACT_DIRECT_LINK, INLINE_FACT_EMPHASIS, INLINE_FACT_HARD_LINE_BREAK,
+    INLINE_FACT_REFERENCE_IMAGE, INLINE_FACT_REFERENCE_LINK, INLINE_FACT_REPLACEMENT,
+    INLINE_FACT_STRIKETHROUGH, INLINE_FACT_STRONG, INLINE_FACT_TABLE_CELL,
+    SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES, SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT,
+    SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING, VIEWPORT_ROW_BLOCK_QUOTE_DEPTH_SHIFT,
+    VIEWPORT_ROW_BLOCK_QUOTE_PRESENTATION, VIEWPORT_ROW_BLOCK_QUOTE_SIMPLE_CONTINUATION,
+    VIEWPORT_ROW_CODE_CLOSED, VIEWPORT_ROW_CODE_FENCED, VIEWPORT_ROW_CODE_FENCE_OFFSET_SHIFT,
+    VIEWPORT_ROW_CODE_PRESENTATION, VIEWPORT_ROW_CODE_TILDE, VIEWPORT_ROW_FLAG_CONTIGUOUS_EDIT,
     VIEWPORT_ROW_FLAG_CONTINUITY_PLAIN_TEXT_EDIT, VIEWPORT_ROW_FLAG_EDIT_UNAVAILABLE,
     VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE, VIEWPORT_ROW_FLAG_PROJECTED_RESERVED,
     VIEWPORT_ROW_HEADING_LEVEL_MASK, VIEWPORT_ROW_HEADING_SETEXT, VIEWPORT_ROW_LIST_ASTERISK,
@@ -68,7 +70,8 @@ const IMPLEMENTED_CAPABILITIES: u64 = (1 << 0)
     | (1 << 12)
     | (1 << 13)
     | (1 << 14)
-    | (1 << 15);
+    | (1 << 15)
+    | (1 << 16);
 
 struct Registry {
     next_handle: u64,
@@ -120,6 +123,7 @@ struct StoredSession {
     history_token_count: u32,
     evicted_history_tokens: BTreeSet<u64>,
     terminal_edit_intent: Option<StoredEditIntentTerminal>,
+    terminal_source_transaction: Option<StoredSourceTransactionTerminal>,
     close_token: u64,
     close_complete: bool,
 }
@@ -194,6 +198,11 @@ struct StoredHistory {
 struct StoredEditIntentTerminal {
     receipt: EditIntentReceiptV1,
     replacement: Vec<u8>,
+}
+
+#[derive(Clone, Copy)]
+struct StoredSourceTransactionTerminal {
+    receipt: SourceTransactionReceiptV1,
 }
 
 fn record_evicted_history_token(entry: &mut StoredSession, token: u64) {
@@ -367,6 +376,13 @@ fn acknowledge_edit_terminal_for_ordered_mutation(
     {
         entry.terminal_edit_intent = None;
     }
+    if entry
+        .terminal_source_transaction
+        .as_ref()
+        .is_some_and(|terminal| terminal.receipt.result_revision == expected_revision)
+    {
+        entry.terminal_source_transaction = None;
+    }
 }
 
 fn detach_history(registry: &mut Registry, token: u64) -> Option<StoredHistory> {
@@ -485,18 +501,21 @@ fn retain_history(
     Ok((HistoryToken(token), HistoryDisposition::Retained))
 }
 
-/// Reserves one maximum-size interactive inverse without evicting existing
-/// history. The E1 semantic path is history-required: insufficient maintained
-/// headroom is a mutation-free rejection rather than a committed edit with a
-/// missing undo unit.
+/// Reserves one exact-capacity interactive inverse without evicting existing
+/// history. Authoritative editor mutations are history-required: insufficient
+/// maintained headroom is a mutation-free rejection rather than a committed
+/// edit with a missing undo unit.
 fn reserve_edit_intent_history(
     registry: &mut Registry,
     session: SessionRef,
     applies_state: u64,
     target_state: u64,
+    inverse_capacity: usize,
 ) -> Result<u64, StatusCode> {
     let retained_bytes = HISTORY_TOKEN_OVERHEAD_BYTES
-        .checked_add(u64::from(MAX_SMALL_EDIT_BYTES))
+        .checked_add(
+            u64::try_from(inverse_capacity).map_err(|_| StatusCode::ResourceLimitExceeded)?,
+        )
         .ok_or(StatusCode::ResourceLimitExceeded)?;
     let entry = session_entry(registry, session)?;
     if entry.history_budget_bytes < retained_bytes
@@ -510,7 +529,7 @@ fn reserve_edit_intent_history(
 
     let mut replacement = Vec::new();
     replacement
-        .try_reserve_exact(MAX_SMALL_EDIT_BYTES as usize)
+        .try_reserve_exact(inverse_capacity)
         .map_err(|_| StatusCode::AllocationFailure)?;
     let token = registry.allocate_handle()?;
     let previous = session_entry(registry, session)?.history_tail;
@@ -608,6 +627,39 @@ fn edit_intent_terminal_outcome(terminal: &StoredEditIntentTerminal) -> RuntimeO
             }
         } else {
             OperationResult::None
+        },
+    }
+}
+
+fn source_transaction_output_requirement() -> u64 {
+    size_of::<SourceTransactionReceiptV1>() as u64
+}
+
+unsafe fn write_source_transaction_terminal(
+    terminal: &StoredSourceTransactionTerminal,
+    output: *mut u8,
+) {
+    unsafe {
+        ptr::write_unaligned(
+            output.cast::<SourceTransactionReceiptV1>(),
+            terminal.receipt,
+        );
+    }
+}
+
+fn source_transaction_terminal_outcome(
+    terminal: &StoredSourceTransactionTerminal,
+) -> RuntimeOutcome {
+    RuntimeOutcome {
+        operation: OperationCode::SourceTransactionV1,
+        status: StatusCode::Ok,
+        progress: ProgressState::Complete,
+        required_payload_bytes: 0,
+        written_payload_bytes: size_of::<SourceTransactionReceiptV1>() as u64,
+        result: OperationResult::RevisionCommitted {
+            revision: Revision(terminal.receipt.result_revision),
+            history_token: HistoryToken(terminal.receipt.history_token),
+            history: HistoryDisposition::Retained,
         },
     }
 }
@@ -820,6 +872,7 @@ pub extern "C" fn flark_v4_create_begin(
                 history_token_count: 0,
                 evicted_history_tokens: BTreeSet::new(),
                 terminal_edit_intent: None,
+                terminal_source_transaction: None,
                 close_token: 0,
                 close_complete: false,
             },
@@ -1177,6 +1230,314 @@ pub extern "C" fn flark_v4_small_edit(
 }
 
 #[no_mangle]
+pub extern "C" fn flark_v4_source_transaction_v1(
+    request: *const SourceTransactionRequestV1,
+    replacement_bytes: *const u8,
+    replacement_bytes_len: u64,
+    output: *mut u8,
+    output_capacity: u64,
+    outcome: *mut Outcome,
+) -> u32 {
+    emit(OperationCode::SourceTransactionV1, outcome, || {
+        let request =
+            unsafe { read_record(request, size_of::<SourceTransactionRequestV1>() as u32)? };
+        let required_output = source_transaction_output_requirement();
+        if output.is_null() || output_capacity < required_output {
+            return Ok(RuntimeOutcome {
+                operation: OperationCode::SourceTransactionV1,
+                status: StatusCode::BufferTooSmall,
+                progress: ProgressState::None,
+                required_payload_bytes: required_output,
+                written_payload_bytes: 0,
+                result: OperationResult::None,
+            });
+        }
+        if !valid_budget(request.budget, false)
+            || u64::from(request.budget.max_result_bytes) < required_output
+            || request.flags != 0
+            || request.expected_revision == 0
+            || request.logical_edit_id == 0
+            || request.request_digest == 0
+            || request.base_utf16_range.start_byte > request.base_utf16_range.end_byte
+            || request.replacement_bytes_len != replacement_bytes_len
+            || !matches!(
+                request.selection_affinity,
+                value if value == Affinity::Upstream as u32
+                    || value == Affinity::Downstream as u32
+            )
+            || request.selection_direction > 1
+            || request.reserved != [0; 1]
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        // V1 accepts one bounded ingress chunk. Larger replacements use the
+        // staged transaction lane until a receipt-bearing staged commit is
+        // added. Deleted source is bounded to one inverse chunk below and its
+        // exact capacity is reserved before source mutation.
+        if replacement_bytes_len > u64::from(MAX_BULK_CHUNK_BYTES) {
+            return Err(StatusCode::EditTooLarge);
+        }
+        let replacement = unsafe { borrowed_bytes(replacement_bytes, replacement_bytes_len)? };
+        let replacement = str::from_utf8(replacement).map_err(|_| StatusCode::InvalidUtf8)?;
+
+        let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+        {
+            let entry = session_entry(&mut registry, request.session)?;
+            if let Some(terminal) = entry.terminal_source_transaction.as_ref() {
+                if terminal.receipt.logical_edit_id == request.logical_edit_id {
+                    if terminal.receipt.request_digest != request.request_digest {
+                        return Err(StatusCode::TransactionConflict);
+                    }
+                    unsafe { write_source_transaction_terminal(terminal, output) };
+                    return Ok(source_transaction_terminal_outcome(terminal));
+                }
+            }
+            if entry
+                .terminal_edit_intent
+                .as_ref()
+                .is_some_and(|terminal| terminal.receipt.logical_edit_id == request.logical_edit_id)
+            {
+                return Err(StatusCode::TransactionConflict);
+            }
+            let pending_logical_edit_id = entry
+                .terminal_source_transaction
+                .as_ref()
+                .map(|terminal| terminal.receipt.logical_edit_id)
+                .or_else(|| {
+                    entry
+                        .terminal_edit_intent
+                        .as_ref()
+                        .map(|terminal| terminal.receipt.logical_edit_id)
+                });
+            match pending_logical_edit_id {
+                Some(id) if request.acknowledge_previous_logical_edit_id != id => {
+                    return Err(StatusCode::Backpressure)
+                }
+                None if request.acknowledge_previous_logical_edit_id != 0 => {
+                    return Err(StatusCode::InvalidArgument)
+                }
+                _ => {}
+            }
+        }
+
+        let same_anchor = request.selection_base_anchor == request.selection_extent_anchor;
+        if same_anchor
+            && request.result_selection_base_utf16 != request.result_selection_extent_utf16
+        {
+            return Err(StatusCode::InvalidArgument);
+        }
+        anchor_for_request(&registry, request.session, request.selection_base_anchor)?;
+        anchor_for_request(&registry, request.session, request.selection_extent_anchor)?;
+
+        let (deleted_bytes, applies_state, target_state) = {
+            let entry = session_entry(&mut registry, request.session)?;
+            let StoredSessionState::Open(document) = &entry.state else {
+                return Err(StatusCode::SessionBusy);
+            };
+            let inspection = document
+                .inspect()
+                .map_err(|error| map_actor_error(&error))?;
+            if inspection.revision != request.expected_revision {
+                return Err(StatusCode::StaleRevision);
+            }
+            let start_utf16 = usize::try_from(request.base_utf16_range.start_byte)
+                .map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let end_utf16 = usize::try_from(request.base_utf16_range.end_byte)
+                .map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let start_byte = document
+                .byte_offset_for_utf16(start_utf16)
+                .map_err(|error| map_actor_error(&error))?;
+            let end_byte = document
+                .byte_offset_for_utf16(end_utf16)
+                .map_err(|error| map_actor_error(&error))?;
+            let deleted_bytes = end_byte
+                .checked_sub(start_byte)
+                .ok_or(StatusCode::RangeOutOfBounds)?;
+            if deleted_bytes > MAX_BULK_CHUNK_BYTES as usize {
+                return Err(StatusCode::EditTooLarge);
+            }
+            let result_bytes = inspection
+                .source_byte_len
+                .checked_sub(deleted_bytes)
+                .and_then(|bytes| bytes.checked_add(replacement.len()))
+                .ok_or(StatusCode::ResourceLimitExceeded)?;
+            if entry.max_document_bytes != 0 && result_bytes as u64 > entry.max_document_bytes {
+                return Err(StatusCode::ResourceLimitExceeded);
+            }
+            let applies_state = entry.next_history_state;
+            applies_state
+                .checked_add(1)
+                .ok_or(StatusCode::ResourceLimitExceeded)?;
+            (deleted_bytes, applies_state, entry.history_state)
+        };
+        let reserved_history = reserve_edit_intent_history(
+            &mut registry,
+            request.session,
+            applies_state,
+            target_state,
+            deleted_bytes,
+        )?;
+
+        let actor_result = {
+            let entry = session_entry(&mut registry, request.session)?;
+            let StoredSessionState::Open(document) = &mut entry.state else {
+                detach_history(&mut registry, reserved_history);
+                return Err(StatusCode::SessionBusy);
+            };
+            let start = usize::try_from(request.base_utf16_range.start_byte)
+                .map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let end = usize::try_from(request.base_utf16_range.end_byte)
+                .map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let result_base = usize::try_from(request.result_selection_base_utf16)
+                .map_err(|_| StatusCode::RangeOutOfBounds)?;
+            let result_extent = usize::try_from(request.result_selection_extent_utf16)
+                .map_err(|_| StatusCode::RangeOutOfBounds)?;
+            document.apply_source_transaction_v1(
+                request.expected_revision,
+                start..end,
+                replacement.to_owned(),
+                result_base,
+                result_extent,
+            )
+        };
+        let receipt = match actor_result {
+            Ok(receipt) => receipt,
+            Err(error) => {
+                detach_history(&mut registry, reserved_history);
+                return Err(map_actor_error(&error));
+            }
+        };
+
+        let splice = receipt.committed_splice;
+        let start_byte = splice.base_byte_range.start as u64;
+        let deleted_bytes = splice.base_byte_range.len() as u64;
+        let inserted_bytes = splice.replacement.len() as u64;
+        transform_session_anchors(
+            &mut registry,
+            request.session.session,
+            start_byte,
+            deleted_bytes,
+            inserted_bytes,
+        );
+        registry
+            .anchors
+            .get_mut(&request.selection_base_anchor)
+            .expect("validated source-transaction base anchor must remain live")
+            .byte_offset = receipt.result_selection_base_byte as u64;
+        registry
+            .anchors
+            .get_mut(&request.selection_base_anchor)
+            .expect("validated source-transaction base anchor must remain live")
+            .affinity =
+            if receipt.result_selection_base_byte <= receipt.result_selection_extent_byte {
+                Affinity::Downstream
+            } else {
+                Affinity::Upstream
+            };
+        if !same_anchor {
+            let extent = registry
+                .anchors
+                .get_mut(&request.selection_extent_anchor)
+                .expect("validated source-transaction extent anchor must remain live");
+            extent.byte_offset = receipt.result_selection_extent_byte as u64;
+            extent.affinity =
+                if receipt.result_selection_base_byte < receipt.result_selection_extent_byte {
+                    Affinity::Upstream
+                } else {
+                    Affinity::Downstream
+                };
+        }
+
+        let result_end_byte = splice.result_byte_range.end as u64;
+        finalize_edit_intent_history(
+            &mut registry,
+            reserved_history,
+            start_byte,
+            result_end_byte,
+            &receipt.inverse,
+        );
+        {
+            let entry = registry
+                .sessions
+                .get_mut(&request.session.session)
+                .expect("committed source-transaction session must remain live");
+            entry.history_state = applies_state;
+            entry.next_history_state = applies_state + 1;
+            entry.progress_token = 0;
+            entry.continuations.clear();
+        }
+        registry
+            .continuations
+            .retain(|_, continuation| continuation.session != request.session.session);
+
+        let terminal = StoredSourceTransactionTerminal {
+            receipt: SourceTransactionReceiptV1 {
+                struct_size: size_of::<SourceTransactionReceiptV1>() as u32,
+                history_disposition: HistoryDisposition::Retained as u32,
+                flags: SOURCE_TRANSACTION_RECEIPT_HAS_COMMIT
+                    | SOURCE_TRANSACTION_RECEIPT_CALLER_KNOWN_BYTES
+                    | if receipt.parser_pending {
+                        SOURCE_TRANSACTION_RECEIPT_PARSER_PENDING
+                    } else {
+                        0
+                    },
+                reserved_u32: 0,
+                logical_edit_id: request.logical_edit_id,
+                request_digest: request.request_digest,
+                base_revision: receipt.base_revision,
+                result_revision: receipt.result_revision,
+                base_byte_range: SourceRange {
+                    start_byte,
+                    end_byte: splice.base_byte_range.end as u64,
+                },
+                base_utf16_range: SourceRange {
+                    start_byte: splice.base_utf16_range.start as u64,
+                    end_byte: splice.base_utf16_range.end as u64,
+                },
+                result_byte_range: SourceRange {
+                    start_byte: splice.result_byte_range.start as u64,
+                    end_byte: splice.result_byte_range.end as u64,
+                },
+                result_utf16_range: SourceRange {
+                    start_byte: splice.result_utf16_range.start as u64,
+                    end_byte: splice.result_utf16_range.end as u64,
+                },
+                result_selection_base_utf16: receipt.result_selection_base_utf16 as u64,
+                result_selection_extent_utf16: receipt.result_selection_extent_utf16 as u64,
+                result_selection_affinity: request.selection_affinity,
+                result_selection_direction: request.selection_direction,
+                result_source_byte_length: receipt.result_source_byte_length as u64,
+                result_source_utf16_length: receipt.result_source_utf16_length as u64,
+                affected_result_utf16_range: SourceRange {
+                    start_byte: splice.result_utf16_range.start as u64,
+                    end_byte: splice.result_utf16_range.end as u64,
+                },
+                history_token: reserved_history,
+                replacement_bytes: replacement_bytes_len,
+                reserved: [0; 2],
+            },
+        };
+        let outcome = source_transaction_terminal_outcome(&terminal);
+        let entry = registry
+            .sessions
+            .get_mut(&request.session.session)
+            .expect("committed source-transaction session must remain live");
+        entry.terminal_edit_intent = None;
+        entry.terminal_source_transaction = Some(terminal);
+        unsafe {
+            write_source_transaction_terminal(
+                entry
+                    .terminal_source_transaction
+                    .as_ref()
+                    .expect("stored source terminal must remain live"),
+                output,
+            )
+        };
+        Ok(outcome)
+    })
+}
+
+#[no_mangle]
 pub extern "C" fn flark_v4_edit_intent_v1(
     request: *const EditIntentRequestV1,
     output: *mut u8,
@@ -1226,18 +1587,36 @@ pub extern "C" fn flark_v4_edit_intent_v1(
                     unsafe { write_edit_intent_terminal(terminal, output) };
                     return Ok(edit_intent_terminal_outcome(terminal));
                 }
-                if request.acknowledge_previous_logical_edit_id != terminal.receipt.logical_edit_id
-                {
-                    return Err(StatusCode::Backpressure);
-                }
-                // Keep the acknowledged terminal until this request itself
-                // reaches a terminal. A bounded pre-commit rejection (most
-                // notably parser-retirement backpressure) must be retryable
-                // with the exact same logical request and acknowledgement.
-                // Every successful disposition below atomically replaces it.
-            } else if request.acknowledge_previous_logical_edit_id != 0 {
-                return Err(StatusCode::InvalidArgument);
             }
+            if entry
+                .terminal_source_transaction
+                .as_ref()
+                .is_some_and(|terminal| terminal.receipt.logical_edit_id == request.logical_edit_id)
+            {
+                return Err(StatusCode::TransactionConflict);
+            }
+            let pending_logical_edit_id = entry
+                .terminal_edit_intent
+                .as_ref()
+                .map(|terminal| terminal.receipt.logical_edit_id)
+                .or_else(|| {
+                    entry
+                        .terminal_source_transaction
+                        .as_ref()
+                        .map(|terminal| terminal.receipt.logical_edit_id)
+                });
+            match pending_logical_edit_id {
+                Some(id) if request.acknowledge_previous_logical_edit_id != id => {
+                    return Err(StatusCode::Backpressure)
+                }
+                None if request.acknowledge_previous_logical_edit_id != 0 => {
+                    return Err(StatusCode::InvalidArgument)
+                }
+                _ => {}
+            }
+            // Keep the acknowledged terminal until this request itself
+            // reaches a terminal. A bounded pre-commit rejection must be
+            // retryable with the same request and acknowledgement.
         }
 
         let selection_byte = {
@@ -1268,6 +1647,7 @@ pub extern "C" fn flark_v4_edit_intent_v1(
                 request.session,
                 applies_state,
                 target_state,
+                MAX_SMALL_EDIT_BYTES as usize,
             )?;
             (Some(token), applies_state)
         } else {
@@ -1354,6 +1734,7 @@ pub extern "C" fn flark_v4_edit_intent_v1(
             };
             let outcome = edit_intent_terminal_outcome(&terminal);
             let entry = session_entry(&mut registry, request.session)?;
+            entry.terminal_source_transaction = None;
             entry.terminal_edit_intent = Some(terminal);
             unsafe {
                 write_edit_intent_terminal(
@@ -1469,6 +1850,7 @@ pub extern "C" fn flark_v4_edit_intent_v1(
             .sessions
             .get_mut(&request.session.session)
             .expect("committed semantic session must remain live");
+        entry.terminal_source_transaction = None;
         entry.terminal_edit_intent = Some(terminal);
         unsafe {
             write_edit_intent_terminal(

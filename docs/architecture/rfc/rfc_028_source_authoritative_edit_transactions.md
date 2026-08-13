@@ -321,10 +321,9 @@ after the predecessor publishes.
 
 ## 6. E1 native transaction contracts
 
-The ABI gains minor-version capabilities, provisionally ABI 4.10
-`SOURCE_TRANSACTIONS_V1` and `EDIT_INTENTS_V1`. Both use fixed-layout
-request/result headers plus a caller-owned bounded byte buffer. Neither uses a
-generic argument blob.
+The ABI gains minor-version capabilities: ABI 4.10 `EDIT_INTENTS_V1` and ABI
+4.11 `SOURCE_TRANSACTIONS_V1`. Both use fixed-layout request/result headers
+plus a caller-owned bounded byte buffer. Neither uses a generic argument blob.
 
 Both operations share the linearization, required-history, anchor, and receipt
 rules in this section. They differ only in who determines the splice:
@@ -828,6 +827,15 @@ separate coordinate conversions, postcommit selection-anchor allocation, and
 history-retention ambiguity. Add non-collapsed selection replacement, the
 atomic anchor-retarget primitive, and native composite history before claiming
 the general transaction gateway complete.
+
+Implementation checkpoint: ABI 4.11 and the Core literal lane now use one
+receipt-bearing transaction for replacements and inverses bounded to one 64
+KiB ingress chunk. It validates result selection before commit, reserves the
+exact inverse before mutation, atomically retargets the canonical anchors, and
+recovers a lost reply from the terminal slot. Larger replacements or deletions
+temporarily retain the existing staged bulk lane with explicit fail-stop
+postcommit adoption. Native composite history and a receipt-bearing staged
+commit remain required before the general gateway claim.
 
 ### H4 — structural and production input matrix
 

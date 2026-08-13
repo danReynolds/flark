@@ -7,7 +7,7 @@ use std::thread::{self, JoinHandle};
 use crate::{
     DocumentCloseReceipt, DocumentEditIntentReceiptV1, DocumentEditIntentV1, DocumentEditReceipt,
     DocumentLiveViewport, DocumentPumpReceipt, DocumentSession, DocumentSessionError,
-    DocumentSessionPhase, DocumentViewport,
+    DocumentSessionPhase, DocumentSourceTransactionReceiptV1, DocumentViewport,
 };
 
 const DOCUMENT_ACTOR_STACK_BYTES: usize = 16 * 1024 * 1024;
@@ -128,6 +128,25 @@ impl DocumentActor {
         replacement: String,
     ) -> Result<DocumentEditReceipt, DocumentActorError> {
         self.call(move |document| document.apply_edit(expected_revision, range, &replacement))
+    }
+
+    pub fn apply_source_transaction_v1(
+        &self,
+        expected_revision: u64,
+        base_utf16_range: Range<usize>,
+        replacement: String,
+        result_selection_base_utf16: usize,
+        result_selection_extent_utf16: usize,
+    ) -> Result<DocumentSourceTransactionReceiptV1, DocumentActorError> {
+        self.call(move |document| {
+            document.apply_source_transaction_v1(
+                expected_revision,
+                base_utf16_range,
+                &replacement,
+                result_selection_base_utf16,
+                result_selection_extent_utf16,
+            )
+        })
     }
 
     pub fn try_apply_edit_intent_v1(

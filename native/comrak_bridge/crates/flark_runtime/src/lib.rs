@@ -24,7 +24,7 @@ pub use document::{
 };
 pub use edit_intent::{
     DocumentCommittedSpliceV1, DocumentEditIntentDispositionV1, DocumentEditIntentReceiptV1,
-    DocumentEditIntentV1, DocumentEditPresentationTransitionV1,
+    DocumentEditIntentV1, DocumentEditPresentationTransitionV1, DocumentSourceTransactionReceiptV1,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -266,6 +266,7 @@ pub enum OperationCode {
     SessionTransferOwner = 26,
     SessionInspect = 27,
     EditIntentV1 = 28,
+    SourceTransactionV1 = 29,
 }
 
 impl OperationCode {
@@ -318,6 +319,10 @@ pub const OPERATION_CODES: &[(&str, u32)] = &[
     ),
     ("SESSION_INSPECT", OperationCode::SessionInspect as u32),
     ("EDIT_INTENT_V1", OperationCode::EditIntentV1 as u32),
+    (
+        "SOURCE_TRANSACTION_V1",
+        OperationCode::SourceTransactionV1 as u32,
+    ),
 ];
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -521,6 +526,7 @@ pub const CAPABILITY_BITS: &[(&str, u64)] = &[
     ("COMMONMARK_0_31_2", 1 << 13),
     ("SELECTED_GFM_V1", 1 << 14),
     ("EDIT_INTENTS_V1", 1 << 15),
+    ("SOURCE_TRANSACTIONS_V1", 1 << 16),
 ];
 
 pub const MAX_SMALL_EDIT_BYTES: u32 = 4096;
@@ -827,6 +833,7 @@ impl OperationResult {
                         | OperationCode::BulkCommit
                         | OperationCode::HistoryReplay
                         | OperationCode::EditIntentV1
+                        | OperationCode::SourceTransactionV1
                 ) && revision.0 != Revision::UNCOMMITTED.0
                     && history_is_coherent
             }
@@ -923,8 +930,10 @@ impl Outcome {
         }
         match self.result {
             OperationResult::Page(page) => self.written_payload_bytes == page.payload_bytes as u64,
-            _ if matches!(self.operation, OperationCode::EditIntentV1)
-                && matches!(self.status, StatusCode::Ok) =>
+            _ if matches!(
+                self.operation,
+                OperationCode::EditIntentV1 | OperationCode::SourceTransactionV1
+            ) && matches!(self.status, StatusCode::Ok) =>
             {
                 self.written_payload_bytes != 0
                     && self.written_payload_bytes <= MAX_RESULT_BYTES as u64
@@ -985,6 +994,7 @@ const fn outcome_shape_is_contract_valid(
                     operation,
                     OperationCode::SmallEdit
                         | OperationCode::EditIntentV1
+                        | OperationCode::SourceTransactionV1
                         | OperationCode::HistoryReplay
                         | OperationCode::QueryViewport
                         | OperationCode::ContinuationNext
@@ -1083,7 +1093,8 @@ const fn operation_accepts_terminal_success(
                 OperationCode::SmallEdit
                     | OperationCode::BulkCommit
                     | OperationCode::HistoryReplay
-                    | OperationCode::EditIntentV1,
+                    | OperationCode::EditIntentV1
+                    | OperationCode::SourceTransactionV1,
                 OperationResult::RevisionCommitted { .. }
             )
             | (OperationCode::Pump, OperationResult::Progress { .. })
@@ -1152,6 +1163,7 @@ const fn operation_has_caller_output(operation: OperationCode) -> bool {
         operation,
         OperationCode::Negotiate
             | OperationCode::EditIntentV1
+            | OperationCode::SourceTransactionV1
             | OperationCode::SourceRead
             | OperationCode::QueryViewport
             | OperationCode::ContinuationNext

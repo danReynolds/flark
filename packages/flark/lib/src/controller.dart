@@ -2786,12 +2786,12 @@ final class FlarkEditorController extends ChangeNotifier {
           ),
         );
       }
-      _pendingEdits = math.max(0, _pendingEdits - 1);
-      notifyListeners();
       if (generation != _editGeneration || !receipt.hasCommit) {
         _status = _semanticViewportCurrent
             ? FlarkEditorStatus.ready
             : FlarkEditorStatus.parsing;
+        _pendingEdits = math.max(0, _pendingEdits - 1);
+        notifyListeners();
         return;
       }
       await _refreshViewport(
@@ -2800,6 +2800,8 @@ final class FlarkEditorController extends ChangeNotifier {
         ensureActiveInputVisible: true,
       );
       if (generation == _editGeneration) _scheduleParsingAfterInput();
+      _pendingEdits = math.max(0, _pendingEdits - 1);
+      notifyListeners();
     } catch (error) {
       _projectionContinuity = null;
       _pendingSemanticInput = null;
@@ -3321,25 +3323,19 @@ final class FlarkEditorController extends ChangeNotifier {
   ) async {
     try {
       await operation;
+      if (generation == _editGeneration) {
+        await _refreshViewport(
+          restoreInputWindow: false,
+          expectedEditGeneration: generation,
+          ensureActiveInputVisible: true,
+        );
+        if (generation == _editGeneration) _scheduleParsingAfterInput();
+      }
+      _pendingEdits = math.max(0, _pendingEdits - 1);
+      notifyListeners();
     } catch (error) {
       _projectionContinuity = null;
       _pendingEdits = math.max(0, _pendingEdits - 1);
-      _lastError = error;
-      _status = FlarkEditorStatus.faulted;
-      notifyListeners();
-      return;
-    }
-    _pendingEdits = math.max(0, _pendingEdits - 1);
-    notifyListeners();
-    if (generation != _editGeneration) return;
-    try {
-      await _refreshViewport(
-        restoreInputWindow: false,
-        expectedEditGeneration: generation,
-        ensureActiveInputVisible: true,
-      );
-      if (generation == _editGeneration) _scheduleParsingAfterInput();
-    } catch (error) {
       _lastError = error;
       _status = FlarkEditorStatus.faulted;
       notifyListeners();

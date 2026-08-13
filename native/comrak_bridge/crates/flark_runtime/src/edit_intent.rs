@@ -56,6 +56,24 @@ pub struct DocumentEditIntentReceiptV1 {
     pub presentation_transition: DocumentEditPresentationTransitionV1,
 }
 
+/// Result of one literal source transaction. The caller already knows the
+/// replacement bytes; the runtime still owns coordinate validation, inverse
+/// capture, and the single source commit.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DocumentSourceTransactionReceiptV1 {
+    pub base_revision: u64,
+    pub result_revision: u64,
+    pub committed_splice: DocumentCommittedSpliceV1,
+    pub inverse: Vec<u8>,
+    pub result_selection_base_utf16: usize,
+    pub result_selection_extent_utf16: usize,
+    pub result_selection_base_byte: usize,
+    pub result_selection_extent_byte: usize,
+    pub result_source_byte_length: usize,
+    pub result_source_utf16_length: usize,
+    pub parser_pending: bool,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum DocumentEditLineEnding {
     Lf,
@@ -184,9 +202,7 @@ pub(crate) fn resolve_document_edit_intent_v1(
                 // that starts on this row already has whatever separation its
                 // preceding context requires. An unterminated EOF row needs
                 // one physical ending in either case.
-                let replacement = if context.source_bytes.end == prefix_bytes.end
-                    || !starts_list
-                {
+                let replacement = if context.source_bytes.end == prefix_bytes.end || !starts_list {
                     context.ending.text().to_owned()
                 } else {
                     String::new()

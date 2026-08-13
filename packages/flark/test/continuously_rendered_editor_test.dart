@@ -537,14 +537,12 @@ only incomplete or temporarily pending syntax becomes exact source locally.
       expect(controller.pendingEdits, 0);
       await tester.runAsync(controller.continueParsing);
       await tester.pump();
-      expect(
-        controller.rows.any(
-          (row) =>
-              controller.surfaceRow(row).active &&
-              controller.surfaceRow(row).text == 'x',
-        ),
-        isTrue,
-      );
+      final activeTexts = controller.rows
+          .map(controller.surfaceRow)
+          .where((row) => row.active)
+          .map((row) => row.text)
+          .toList(growable: false);
+      expect(activeTexts, contains('x'));
       expect(
         controller.surfaceRow(controller.rows.first).text,
         isNot(contains('**')),

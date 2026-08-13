@@ -35,7 +35,7 @@ use crate::edit_intent::{
 };
 use crate::{
     DocumentEditIntentDispositionV1, DocumentEditIntentReceiptV1, DocumentEditIntentV1,
-    DocumentEditPresentationTransitionV1,
+    DocumentEditPresentationTransitionV1, DocumentSourceTransactionReceiptV1,
 };
 
 const SYNTAX_PROFILE_GFM_V1: u32 = 1;
@@ -771,6 +771,139 @@ impl DocumentSession {
             };
         }
         result
+    }
+
+    /// Validates and commits one caller-known literal splice while computing
+    /// every coordinate needed for atomic selection-anchor retargeting before
+    /// the source linearization point.
+    pub fn apply_source_transaction_v1(
+        &mut self,
+        expected_revision: u64,
+        base_utf16_range: Range<usize>,
+        replacement: &str,
+        result_selection_base_utf16: usize,
+        result_selection_extent_utf16: usize,
+    ) -> Result<DocumentSourceTransactionReceiptV1, DocumentSessionError> {
+        let actual_revision = self.revision();
+        if expected_revision != actual_revision {
+            return Err(DocumentSessionError::StaleRevision {
+                expected: expected_revision,
+                actual: actual_revision,
+            });
+        }
+        if base_utf16_range.start > base_utf16_range.end {
+            return Err(DocumentSessionError::RangeOutOfBounds);
+        }
+        let base_byte_range = self.byte_offset_for_utf16(base_utf16_range.start)?
+            ..self.byte_offset_for_utf16(base_utf16_range.end)?;
+        let replacement_utf16_length = replacement.encode_utf16().count();
+        let result_source_utf16_length = self
+            .source_utf16_len()
+            .checked_sub(base_utf16_range.len())
+            .and_then(|length| length.checked_add(replacement_utf16_length))
+            .ok_or(DocumentSessionError::RangeOutOfBounds)?;
+        if result_selection_base_utf16 > result_source_utf16_length
+            || result_selection_extent_utf16 > result_source_utf16_length
+        {
+            return Err(DocumentSessionError::RangeOutOfBounds);
+        }
+        let result_utf16_range = base_utf16_range.start
+            ..base_utf16_range
+                .start
+                .checked_add(replacement_utf16_length)
+                .ok_or(DocumentSessionError::RangeOutOfBounds)?;
+        let result_byte_range = base_byte_range.start
+            ..base_byte_range
+                .start
+                .checked_add(replacement.len())
+                .ok_or(DocumentSessionError::RangeOutOfBounds)?;
+
+        // Complete these conversions before apply_edit. ABI finalization can
+        // then transform all anchors and retarget the canonical pair without
+        // another fallible actor call after the source has changed.
+        let result_selection_base_byte = self.result_byte_for_source_transaction_utf16(
+            &base_byte_range,
+            &base_utf16_range,
+            replacement,
+            result_selection_base_utf16,
+        )?;
+        let result_selection_extent_byte = self.result_byte_for_source_transaction_utf16(
+            &base_byte_range,
+            &base_utf16_range,
+            replacement,
+            result_selection_extent_utf16,
+        )?;
+        let inverse = self.source_bytes(base_byte_range.clone())?;
+        let edit = self.apply_edit(expected_revision, base_byte_range.clone(), replacement)?;
+        Ok(DocumentSourceTransactionReceiptV1 {
+            base_revision: expected_revision,
+            result_revision: edit.revision,
+            committed_splice: crate::DocumentCommittedSpliceV1 {
+                base_byte_range,
+                base_utf16_range,
+                replacement: replacement.to_owned(),
+                result_byte_range,
+                result_utf16_range,
+            },
+            inverse,
+            result_selection_base_utf16,
+            result_selection_extent_utf16,
+            result_selection_base_byte,
+            result_selection_extent_byte,
+            result_source_byte_length: self.source_byte_len(),
+            result_source_utf16_length: self.source_utf16_len(),
+            parser_pending: edit.parser_pending,
+        })
+    }
+
+    fn result_byte_for_source_transaction_utf16(
+        &self,
+        base_byte_range: &Range<usize>,
+        base_utf16_range: &Range<usize>,
+        replacement: &str,
+        result_utf16: usize,
+    ) -> Result<usize, DocumentSessionError> {
+        let replacement_utf16_length = replacement.encode_utf16().count();
+        let result_replacement_end = base_utf16_range
+            .start
+            .checked_add(replacement_utf16_length)
+            .ok_or(DocumentSessionError::RangeOutOfBounds)?;
+        if result_utf16 <= base_utf16_range.start {
+            return self.byte_offset_for_utf16(result_utf16);
+        }
+        if result_utf16 >= result_replacement_end {
+            let original_utf16 = base_utf16_range
+                .end
+                .checked_add(result_utf16 - result_replacement_end)
+                .ok_or(DocumentSessionError::RangeOutOfBounds)?;
+            let original_byte = self.byte_offset_for_utf16(original_utf16)?;
+            return original_byte
+                .checked_sub(base_byte_range.len())
+                .and_then(|byte| byte.checked_add(replacement.len()))
+                .ok_or(DocumentSessionError::RangeOutOfBounds);
+        }
+
+        let wanted = result_utf16 - base_utf16_range.start;
+        let mut utf16 = 0usize;
+        for (byte, scalar) in replacement.char_indices() {
+            if utf16 == wanted {
+                return base_byte_range
+                    .start
+                    .checked_add(byte)
+                    .ok_or(DocumentSessionError::RangeOutOfBounds);
+            }
+            utf16 += scalar.len_utf16();
+            if utf16 > wanted {
+                return Err(DocumentSessionError::RangeOutOfBounds);
+            }
+        }
+        if utf16 == wanted {
+            return base_byte_range
+                .start
+                .checked_add(replacement.len())
+                .ok_or(DocumentSessionError::RangeOutOfBounds);
+        }
+        Err(DocumentSessionError::RangeOutOfBounds)
     }
 
     /// Resolves and commits the collapsed-caret `flark-edit-v1` subset without

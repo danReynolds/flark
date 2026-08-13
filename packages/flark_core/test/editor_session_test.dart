@@ -118,6 +118,50 @@ void main() {
         },
       );
 
+      test('oversized replacement retains the staged bulk lane', () async {
+        await open('base\n');
+        addTearDown(() async {
+          await session.dispose();
+          await document.dispose();
+        });
+        final paste = List.filled(96 * 1024, 'p').join();
+
+        await session.applyEditUtf16(
+          0,
+          0,
+          paste,
+          beforeSelection: caret(0),
+          afterSelection: caret(paste.length),
+        );
+        expect(document.sourceUtf16Length, paste.length + 5);
+        expect((await session.resolveSelection())!.extent, paste.length);
+
+        expect(await session.undo(), isA<FlarkCoreHistoryReplayed>());
+        expect(await document.readSource(), 'base\n');
+
+        await session.applyEditUtf16(
+          0,
+          0,
+          paste,
+          beforeSelection: caret(0),
+          afterSelection: caret(paste.length),
+        );
+        const deleted = 20 * 1024;
+        await session.applyEditUtf16(
+          0,
+          deleted,
+          '',
+          beforeSelection: const FlarkCoreSelectionSnapshot(
+            base: 0,
+            extent: deleted,
+          ),
+          afterSelection: caret(0),
+        );
+        expect(document.sourceUtf16Length, paste.length + 5 - deleted);
+        expect(await session.undo(), isA<FlarkCoreHistoryReplayed>());
+        expect(document.sourceUtf16Length, paste.length + 5);
+      });
+
       test(
         'idle gaps, epochs, and non-typing edits break coalescing',
         () async {
@@ -298,6 +342,65 @@ void main() {
         expect(session.canUndo, isFalse);
       });
 
+      test('lost literal reply recovers the terminal exactly once', () async {
+        await open(
+          'base\n',
+          editIntentReplyTimeout: const Duration(milliseconds: 10),
+          debugDropFirstEditIntentReply: true,
+        );
+        addTearDown(() async {
+          await session.dispose();
+          await document.dispose();
+        });
+        final revision = document.revision;
+
+        await session.applyEditUtf16(
+          0,
+          0,
+          'a',
+          beforeSelection: caret(0),
+          afterSelection: caret(1),
+        );
+
+        expect(document.revision, revision + 1);
+        expect(await document.readSource(), 'abase\n');
+        expect(await session.undo(), isA<FlarkCoreHistoryReplayed>());
+        expect(await document.readSource(), 'base\n');
+        expect(session.canUndo, isFalse);
+      });
+
+      test(
+        'non-collapsed replacement retargets selection atomically',
+        () async {
+          await open('a *bold* z\n');
+          addTearDown(() async {
+            await session.dispose();
+            await document.dispose();
+          });
+          final before = FlarkCoreSelectionSnapshot(base: 8, extent: 2);
+          final after = caret(7);
+          await session.setSelectionUtf16(before.base, before.extent);
+
+          await session.applyEditUtf16(
+            2,
+            8,
+            'plain',
+            beforeSelection: before,
+            afterSelection: after,
+          );
+
+          expect(await document.readSource(), 'a plain z\n');
+          final selected = await session.resolveSelection();
+          expect(selected!.base, 7);
+          expect(selected.extent, 7);
+          expect(await session.undo(), isA<FlarkCoreHistoryReplayed>());
+          expect(await document.readSource(), 'a *bold* z\n');
+          final restored = await session.resolveSelection();
+          expect(restored!.base, 8);
+          expect(restored.extent, 2);
+        },
+      );
+
       test(
         'a noncommitting semantic terminal is acknowledged in order',
         () async {
@@ -379,7 +482,7 @@ void main() {
         expect(inspection.liveAnchors, 0);
       });
 
-      test('a disabled history budget clears undo instead of lying', () async {
+      test('required history rejects before mutation when disabled', () async {
         document = await FlarkCoreDocument.open(
           'base\n',
           libraryPath: libraryPath!,
@@ -390,11 +493,17 @@ void main() {
           await session.dispose();
           await document.dispose();
         });
-        final receipt = await type(0, 'a');
-        expect(
-          receipt.historyDisposition,
-          FlarkCoreHistoryDisposition.disabled,
+        await expectLater(
+          type(0, 'a'),
+          throwsA(
+            isA<FlarkCoreNativeException>().having(
+              (error) => error.status,
+              'status',
+              0x0403,
+            ),
+          ),
         );
+        expect(await document.readSource(), 'base\n');
         expect(session.canUndo, isFalse);
         expect(await session.undo(), isNull);
       });
