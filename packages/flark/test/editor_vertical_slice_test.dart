@@ -5,6 +5,7 @@ import 'package:flark/src/render_surface.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' as material;
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -123,6 +124,80 @@ void main() {
           hasTapAction: true,
         ),
       );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+      semantics.dispose();
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'editable row semantics map selections and cursor moves through projection',
+    (tester) async {
+      const source = '**alpha beta**\n';
+      final semantics = tester.ensureSemantics();
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(source, libraryPath: libraryPath!),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+      final row = controller.rows.single;
+      await tester.runAsync(() async {
+        controller.activateRow(row, row.editableUtf16!.start);
+        await controller.resolveCanonicalSelection();
+      });
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(child: FlarkEditor(controller: controller)),
+        ),
+      );
+      await tester.pump();
+      final editable = find.semantics.byValue('alpha beta');
+      expect(editable, findsOne);
+      final data = editable.evaluate().single.getSemanticsData();
+      expect(data.flagsCollection.isTextField, isTrue);
+      expect(data.hasAction(SemanticsAction.setSelection), isTrue);
+      expect(
+        data.hasAction(SemanticsAction.moveCursorForwardByCharacter),
+        isTrue,
+      );
+      expect(data.hasAction(SemanticsAction.copy), isFalse);
+
+      var generation = controller.canonicalSelectionGeneration;
+      tester.semantics.performAction(
+        editable,
+        SemanticsAction.setSelection,
+        args: <String, int>{'base': 0, 'extent': 5},
+      );
+      await _pumpUntil(
+        tester,
+        () => controller.canonicalSelectionGeneration > generation,
+      );
+      expect(controller.globalSelectionBase, 2);
+      expect(controller.globalSelectionExtent, 7);
+
+      generation = controller.canonicalSelectionGeneration;
+      tester.semantics.performAction(
+        editable,
+        SemanticsAction.setSelection,
+        args: <String, int>{'base': 0, 'extent': 0},
+      );
+      await _pumpUntil(
+        tester,
+        () => controller.canonicalSelectionGeneration > generation,
+      );
+      generation = controller.canonicalSelectionGeneration;
+      tester.semantics.performAction(
+        editable,
+        SemanticsAction.moveCursorForwardByCharacter,
+        args: false,
+      );
+      await _pumpUntil(
+        tester,
+        () => controller.canonicalSelectionGeneration > generation,
+      );
+      expect(controller.globalCaretOffset, 3);
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(controller.close);

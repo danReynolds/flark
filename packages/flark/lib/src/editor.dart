@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flark_core/flark_core.dart' show FlarkViewportRow;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' as material;
@@ -299,6 +300,29 @@ final class _FlarkEditorState extends State<FlarkEditor>
     _focusNode.requestFocus();
     _openConnection();
     _sendEditingState(force: true);
+  }
+
+  void _setSemanticsSelection(
+    FlarkViewportRow row,
+    int baseUtf16,
+    int extentUtf16,
+  ) {
+    widget.controller.activateRow(row, baseUtf16, selectionExtent: extentUtf16);
+    _focusNode.requestFocus();
+    _openConnection();
+    _sendEditingState(force: true);
+  }
+
+  void _moveSemanticsCursor({
+    required bool forward,
+    required bool byWord,
+    required bool extendSelection,
+  }) {
+    if (byWord) {
+      _moveWord(forward: forward, modify: extendSelection);
+    } else {
+      _moveCharacter(forward: forward, modify: extendSelection);
+    }
   }
 
   void _moveCharacter({required bool forward, required bool modify}) {
@@ -816,6 +840,14 @@ final class _FlarkEditorState extends State<FlarkEditor>
                 caretColor: widget.caretColor,
                 selectionColor: widget.selectionColor,
                 includeEditingState: true,
+                semanticsActions: FlarkSurfaceSemanticsActions(
+                  onSetSelection: _setSemanticsSelection,
+                  onMoveCursor: _moveSemanticsCursor,
+                  onCopy: () => unawaited(_copySelection()),
+                  onCut: () => unawaited(_cutSelection()),
+                  onPaste: () => unawaited(_pasteClipboard()),
+                  onShowToolbar: _showToolbar,
+                ),
                 debugPaintObserver: widget.debugPaintObserver,
               ),
             ),

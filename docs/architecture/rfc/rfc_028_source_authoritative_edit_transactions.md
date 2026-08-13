@@ -1125,6 +1125,19 @@ glyph. This first accessibility slice proves bounded traversal and one action,
 not a complete editable-text semantics contract, off-page screen-reader
 navigation, platform menus, or physical VoiceOver/TalkBack behavior.
 
+The H4 semantics profile now supplies that bounded editable-text contract for
+every visible source-mapped row. Its value and local selection are the rendered
+projection; set-selection and character/word movement map back through the
+same hidden-marker-safe geometry before Core adopts canonical anchors. Copy,
+cut, paste, long-press menu, focused state, and accessibility scroll actions
+reuse the host adapter's existing command paths. The root exposes only the
+current bounded page and scrolls/paginates to reveal more rows rather than
+materializing a multi-megabyte semantics value. Read-only Markdown retains
+static heading/task labels with no edit actions. Mounted action-level receipts
+prove projected selection, one grapheme move, and semantic scrolling;
+VoiceOver/TalkBack focus order, announcements, selection handles, and physical
+device menus remain H5 qualification.
+
 The basic command adapter now restores two more behaviors that the custom
 surface cannot inherit from `EditableText`: Cmd/Ctrl+A installs one exact
 document-wide anchored selection through Core, and Home/End plus macOS

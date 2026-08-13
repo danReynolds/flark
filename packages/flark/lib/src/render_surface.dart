@@ -76,6 +76,37 @@ final class FlarkSurfaceSelection {
   final FlarkSurfaceHit extent;
 }
 
+typedef FlarkSurfaceSemanticsSelectionCallback =
+    void Function(FlarkViewportRow row, int baseUtf16, int extentUtf16);
+
+typedef FlarkSurfaceSemanticsCursorCallback =
+    void Function({
+      required bool forward,
+      required bool byWord,
+      required bool extendSelection,
+    });
+
+/// Editing actions exposed by the Flutter host to the bounded semantics tree.
+/// The render object owns only current geometry and source mapping; clipboard,
+/// focus, and canonical selection adoption remain host adapter policy.
+final class FlarkSurfaceSemanticsActions {
+  const FlarkSurfaceSemanticsActions({
+    required this.onSetSelection,
+    required this.onMoveCursor,
+    required this.onCopy,
+    required this.onCut,
+    required this.onPaste,
+    required this.onShowToolbar,
+  });
+
+  final FlarkSurfaceSemanticsSelectionCallback onSetSelection;
+  final FlarkSurfaceSemanticsCursorCallback onMoveCursor;
+  final VoidCallback onCopy;
+  final VoidCallback onCut;
+  final VoidCallback onPaste;
+  final VoidCallback onShowToolbar;
+}
+
 final class _PaintedRow {
   const _PaintedRow({
     required this.top,
@@ -118,6 +149,7 @@ final class FlarkRenderSurfaceWidget extends LeafRenderObjectWidget {
     required this.caretColor,
     required this.selectionColor,
     this.includeEditingState = true,
+    this.semanticsActions,
     this.debugPaintObserver,
     super.key,
   });
@@ -128,6 +160,7 @@ final class FlarkRenderSurfaceWidget extends LeafRenderObjectWidget {
   final Color caretColor;
   final Color selectionColor;
   final bool includeEditingState;
+  final FlarkSurfaceSemanticsActions? semanticsActions;
   final ValueChanged<FlarkSurfacePaintObservation>? debugPaintObserver;
 
   @override
@@ -139,6 +172,7 @@ final class FlarkRenderSurfaceWidget extends LeafRenderObjectWidget {
         caretColor: caretColor,
         selectionColor: selectionColor,
         includeEditingState: includeEditingState,
+        semanticsActions: semanticsActions,
         debugPaintObserver: debugPaintObserver,
         textDirection: Directionality.of(context),
       );
@@ -155,6 +189,7 @@ final class FlarkRenderSurfaceWidget extends LeafRenderObjectWidget {
       ..caretColor = caretColor
       ..selectionColor = selectionColor
       ..includeEditingState = includeEditingState
+      ..semanticsActions = semanticsActions
       ..debugPaintObserver = debugPaintObserver
       ..textDirection = Directionality.of(context);
   }
@@ -168,6 +203,7 @@ final class RenderFlarkSurface extends RenderBox {
     required Color caretColor,
     required Color selectionColor,
     required bool includeEditingState,
+    required FlarkSurfaceSemanticsActions? semanticsActions,
     this.debugPaintObserver,
     required TextDirection textDirection,
   }) : _controller = controller,
@@ -176,6 +212,7 @@ final class RenderFlarkSurface extends RenderBox {
        _caretColor = caretColor,
        _selectionColor = selectionColor,
        _includeEditingState = includeEditingState,
+       _semanticsActions = semanticsActions,
        _textDirection = textDirection;
 
   FlarkEditorController _controller;
@@ -184,6 +221,7 @@ final class RenderFlarkSurface extends RenderBox {
   Color _caretColor;
   Color _selectionColor;
   bool _includeEditingState;
+  FlarkSurfaceSemanticsActions? _semanticsActions;
   ValueChanged<FlarkSurfacePaintObservation>? debugPaintObserver;
   TextDirection _textDirection;
   final List<_PaintedRow> _paintedRows = [];
@@ -330,6 +368,13 @@ final class RenderFlarkSurface extends RenderBox {
     if (value == _includeEditingState) return;
     _includeEditingState = value;
     markNeedsLayout();
+    markNeedsSemanticsUpdate();
+  }
+
+  FlarkSurfaceSemanticsActions? get semanticsActions => _semanticsActions;
+  set semanticsActions(FlarkSurfaceSemanticsActions? value) {
+    if (identical(value, _semanticsActions)) return;
+    _semanticsActions = value;
     markNeedsSemanticsUpdate();
   }
 
@@ -1436,12 +1481,27 @@ final class RenderFlarkSurface extends RenderBox {
   @override
   void describeSemanticsConfiguration(SemanticsConfiguration config) {
     super.describeSemanticsConfiguration(config);
+    final maximumScrollOffset = hasSize ? _maximumScrollOffset : 0.0;
     config
       ..isSemanticBoundary = true
       ..explicitChildNodes = true
+      ..hasImplicitScrolling = true
+      ..scrollPosition = _scrollOffset
+      ..scrollExtentMin = 0
+      ..scrollExtentMax = maximumScrollOffset
       ..identifier = _includeEditingState
           ? 'flark-markdown-editor'
           : 'flark-markdown-view';
+    if (maximumScrollOffset > 0 || _controller.canPageForward) {
+      config.onScrollUp = () {
+        if (hasSize) scrollBy(size.height * 0.8);
+      };
+    }
+    if (_scrollOffset > 0 || _controller.canPageBackward) {
+      config.onScrollDown = () {
+        if (hasSize) scrollBy(-size.height * 0.8);
+      };
+    }
   }
 
   String _semanticLabel(_PaintedRow row) {
@@ -1451,6 +1511,30 @@ final class RenderFlarkSurface extends RenderBox {
       return text.isEmpty ? 'Heading level $level' : text;
     }
     return text.isEmpty ? 'Blank line' : text;
+  }
+
+  void _setSemanticSelection(
+    _PaintedRow row,
+    TextSelection selection,
+    FlarkSurfaceSemanticsActions actions,
+  ) {
+    final sourceRow = row.row;
+    if (sourceRow == null) return;
+    final textLength = row.presentation.text.length;
+    final base = selection.baseOffset.clamp(0, textLength);
+    final extent = selection.extentOffset.clamp(0, textLength);
+    final collapsed = base == extent;
+    final baseSource = row.presentation.sourceOffsetForTextOffset(
+      base,
+      affinity: TextAffinity.downstream,
+    );
+    final extentSource = row.presentation.sourceOffsetForTextOffset(
+      extent,
+      affinity: collapsed || extent < base
+          ? TextAffinity.downstream
+          : TextAffinity.upstream,
+    );
+    actions.onSetSelection(sourceRow, baseSource, extentSource);
   }
 
   @override
@@ -1469,8 +1553,58 @@ final class RenderFlarkSurface extends RenderBox {
       if (bottom <= 0 || top >= size.height) continue;
       final rowConfig = SemanticsConfiguration()
         ..sortKey = OrdinalSortKey(ordinal++)
-        ..textDirection = _textDirection
-        ..label = _semanticLabel(row);
+        ..textDirection = _textDirection;
+      final actions = _includeEditingState ? _semanticsActions : null;
+      if (actions != null && row.row != null) {
+        rowConfig
+          ..value = row.presentation.text
+          ..isTextField = true
+          ..isReadOnly = false
+          ..isMultiline = row.presentation.text.contains('\n')
+          ..isFocused = row.presentation.active;
+        rowConfig.onSetSelection = (selection) =>
+            _setSemanticSelection(row, selection, actions);
+        rowConfig.onMoveCursorForwardByCharacter = (extend) =>
+            actions.onMoveCursor(
+              forward: true,
+              byWord: false,
+              extendSelection: extend,
+            );
+        rowConfig.onMoveCursorBackwardByCharacter = (extend) =>
+            actions.onMoveCursor(
+              forward: false,
+              byWord: false,
+              extendSelection: extend,
+            );
+        rowConfig.onMoveCursorForwardByWord = (extend) => actions.onMoveCursor(
+          forward: true,
+          byWord: true,
+          extendSelection: extend,
+        );
+        rowConfig.onMoveCursorBackwardByWord = (extend) => actions.onMoveCursor(
+          forward: false,
+          byWord: true,
+          extendSelection: extend,
+        );
+        rowConfig
+          ..onPaste = actions.onPaste
+          ..onLongPress = actions.onShowToolbar;
+        if (row.presentation.selection case final selection?) {
+          if (selection.isValid &&
+              selection.start >= 0 &&
+              selection.end <= row.presentation.text.length) {
+            rowConfig.textSelection = selection;
+          }
+        }
+        if (_controller.globalSelectionBase !=
+            _controller.globalSelectionExtent) {
+          rowConfig
+            ..onCopy = actions.onCopy
+            ..onCut = actions.onCut;
+        }
+      } else {
+        rowConfig.label = _semanticLabel(row);
+      }
       if (row.presentation.headingLevel != null) rowConfig.isHeader = true;
       final task = row.row?.listItem?.taskChecked;
       if (task != null) {

@@ -4,6 +4,7 @@ import 'package:flark/flark.dart';
 import 'package:flark/src/render_surface.dart';
 import 'package:flark_core/flark_core.dart' show FlarkInlineFactKind;
 import 'package:flutter/gestures.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -110,6 +111,23 @@ void main() {
         ),
       );
       expect(find.semantics.byLabel('Offscreen sentinel.'), findsNothing);
+
+      final surfaceSemantics = find.semantics.byPredicate(
+        (node) => node.getSemanticsData().identifier == 'flark-markdown-view',
+      );
+      expect(surfaceSemantics, findsOne);
+      expect(
+        surfaceSemantics.evaluate().single.getSemanticsData().hasAction(
+          SemanticsAction.scrollUp,
+        ),
+        isTrue,
+      );
+      tester.semantics.performAction(
+        surfaceSemantics,
+        SemanticsAction.scrollUp,
+      );
+      await tester.pump();
+      expect(headingFinder, findsNothing);
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(controller.close);
