@@ -48,7 +48,7 @@ void main() {
   );
 
   test(
-    'unchanged rows stay semantic while the edited structural range is pending',
+    'cached rows keep a stable presentation while a structural edit is pending',
     () async {
       final padding = List<String>.filled(40, 'stable').join(' ');
       final source = List<String>.generate(
@@ -72,8 +72,16 @@ void main() {
 
       controller.activateRow(target, target.sourceUtf16.start);
       controller.replaceSelection('# ');
-      expect(controller.surfaceRow(first).kind, 0);
-      expect(controller.surfaceRow(target).kind, 0);
+      expect(
+        controller.surfaceRow(first).kind,
+        isNot(0),
+        reason: 'a local optimistic edit must not relay unchanged rows',
+      );
+      expect(
+        controller.surfaceRow(target).kind,
+        isNot(0),
+        reason: 'the touched row retains its prior frame until a receipt lands',
+      );
 
       // pendingEdits reaches zero at admission, before the post-edit page is
       // installed; the mixed-partition assertions need the installed viewport
@@ -93,7 +101,12 @@ void main() {
       );
       expect(controller.visibleSource, contains('# Paragraph 024'));
       expect(controller.surfaceRow(first).kind, isNot(0));
-      expect(controller.surfaceRow(target).kind, 0);
+      expect(
+        controller.surfaceRow(target).kind,
+        isNot(0),
+        reason:
+            'the last valid touched-row frame remains until recertification',
+      );
 
       await controller.continueParsing();
       expect(controller.semanticsCurrent, isTrue);

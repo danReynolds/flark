@@ -554,6 +554,10 @@ final class FlarkEditorController extends ChangeNotifier {
   FlarkSemanticEditPerformance? get lastSemanticEditPerformance =>
       _lastSemanticEditPerformance;
 
+  @visibleForTesting
+  List<FlarkCertificationRange> get debugCertificationRanges =>
+      List.unmodifiable(_certificationRanges);
+
   FlarkInputWindowShadow get inputWindowShadow => FlarkInputWindowShadow(
     connectionEpoch: _connectionEpoch,
     windowEpoch: _windowEpoch,
@@ -778,7 +782,13 @@ final class FlarkEditorController extends ChangeNotifier {
     final semanticRange = mappedPrefix == null
         ? mappedSource
         : FlarkSourceRange(mappedPrefix.start, mappedSource.end);
-    final rowCertified = _rowSemanticsCurrent(semanticRange);
+    final baseSemanticRange = FlarkSourceRange(
+      presentationPrefix?.start ?? row.sourceUtf16.start,
+      row.sourceUtf16.end,
+    );
+    final rowCertified =
+        _rowSemanticsCurrent(semanticRange) ||
+        _optimisticEditsLeaveRangeUnchanged(baseSemanticRange);
     final exactLeadingText = mappedPrefix == null
         ? ''
         : _sliceVisibleUtf16(mappedPrefix.start, mappedPrefix.end);
@@ -1720,6 +1730,25 @@ final class FlarkEditorController extends ChangeNotifier {
   /// Reads the complete authoritative Markdown source after every edit
   /// already accepted by this controller has settled in the Core session.
   Future<String> readSource() => _editTail.then((_) => _document.readSource());
+
+  /// Deterministic test/debug barrier for the complete serialized mutation
+  /// tail. Unlike polling [pendingEdits], this also waits for selection-only,
+  /// history, and composition commands ordered through the same tail.
+  @visibleForTesting
+  Future<void> debugWaitForMutationSettled() => _editTail;
+
+  /// Deterministic test/debug barrier for a current-revision presentation.
+  /// Active composition intentionally stops at mutation quiescence because
+  /// parser certification is pinned until the composition ends.
+  @visibleForTesting
+  Future<void> debugWaitForPresentationSettled() async {
+    await _editTail;
+    if (_session.compositionActive) return;
+    await continueParsing();
+    final pageTask = _pageTask;
+    if (pageTask != null) await pageTask;
+    await _editTail;
+  }
 
   Future<FlarkSemanticTarget?> querySemanticTarget(FlarkInlineFact fact) =>
       _editTail.then((_) => _document.querySemanticTarget(fact));
@@ -5029,6 +5058,35 @@ final class FlarkEditorController extends ChangeNotifier {
       end = math.max(edit.start + edit.replacementLength, end + edit.delta);
     }
     return FlarkSourceRange(start, end);
+  }
+
+  /// A pending edit invalidates parser certification, but it does not rewrite
+  /// every cached row. Retain the last certified presentation for rows whose
+  /// exact source range is mechanically unchanged, mapped through any edits
+  /// before it. The touched row still uses its local continuity or exact-source
+  /// fallback until the parser publishes replacement semantics.
+  bool _optimisticEditsLeaveRangeUnchanged(FlarkSourceRange base) {
+    if (_optimisticViewportEdits.isEmpty) return false;
+    var start = base.start;
+    var end = base.end;
+    for (final edit in _optimisticViewportEdits) {
+      if (edit.start == edit.end) {
+        if (start <= edit.start && edit.start <= end) return false;
+        if (start > edit.start) {
+          start += edit.delta;
+          end += edit.delta;
+        }
+        continue;
+      }
+      if (end <= edit.start) continue;
+      if (start >= edit.end) {
+        start += edit.delta;
+        end += edit.delta;
+        continue;
+      }
+      return false;
+    }
+    return true;
   }
 
   ({String text, int globalStart, TextSelection selection}) _paintInputWindow({

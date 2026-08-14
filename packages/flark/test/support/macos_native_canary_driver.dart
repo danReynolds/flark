@@ -2,12 +2,39 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'live_editor_scenario.dart';
-import 'live_editor_scenario_executor.dart';
+final class MacosNativeCanarySnapshot {
+  const MacosNativeCanarySnapshot({
+    required this.source,
+    required this.selectionBaseUtf16,
+    required this.selectionExtentUtf16,
+    required this.resyncCount,
+    required this.lastResyncReason,
+    required this.faulted,
+    required this.lastError,
+    required this.settledPresentation,
+    required this.paintedPresentations,
+    required this.revision,
+    required this.scrollOffset,
+  });
 
-final class MacosNativeLiveEditorScenarioDriver
-    implements LiveEditorScenarioDriver {
-  MacosNativeLiveEditorScenarioDriver({
+  final String source;
+  final int selectionBaseUtf16;
+  final int selectionExtentUtf16;
+  final int resyncCount;
+  final String lastResyncReason;
+  final bool faulted;
+  final Object? lastError;
+  final String settledPresentation;
+  final List<String> paintedPresentations;
+  final int revision;
+  final double scrollOffset;
+}
+
+/// Thin actuator for the few macOS facts that headless Flutter cannot prove:
+/// real key routing, pointer selection, clipboard shortcuts, and scrolling.
+/// Product semantics remain in the ordinary transition and core tests.
+final class MacosNativeCanaryDriver {
+  MacosNativeCanaryDriver({
     required this.appExecutable,
     required this.libraryPath,
     required this.actuatorScript,
@@ -20,32 +47,20 @@ final class MacosNativeLiveEditorScenarioDriver
   StreamIterator<String>? _responses;
   int _sequence = 0;
   int _paintObservationStart = 0;
-  int _pendingPaintObservationStart = 0;
-  LiveEditorScenarioSnapshot? _lastSnapshot;
   Map<String, Object?>? _lastRawSnapshot;
 
   String get debugLastReceipt =>
       const JsonEncoder.withIndent('  ').convert(_lastRawSnapshot);
 
-  @override
-  String get name => 'macos-native';
-
-  @override
-  bool get observesPaint => true;
-
-  @override
-  bool get observesScroll => true;
-
-  @override
-  Future<void> start(LiveEditorScenarioPlan plan) async {
+  Future<MacosNativeCanarySnapshot> reset({
+    required String id,
+    required String source,
+  }) async {
     if (_process == null) await _startActuator();
-    final response = await _request('reset', {
-      'scenarioId': plan.qualifiedId,
-      'source': plan.initialSource,
-    });
     _paintObservationStart = 0;
-    _pendingPaintObservationStart = 0;
-    _lastSnapshot = _snapshot(response);
+    return _snapshot(
+      await _request('reset', {'canaryId': id, 'source': source}),
+    );
   }
 
   Future<void> _startActuator() async {
@@ -65,85 +80,39 @@ final class MacosNativeLiveEditorScenarioDriver
     );
   }
 
-  @override
   Future<void> activateAtUtf16(int offset) async {
     final response = await _request('activateAtUtf16', {'utf16Offset': offset});
     final json = (response['snapshot']! as Map).cast<String, Object?>();
-    _pendingPaintObservationStart = (json['surfaceFrames']! as List).length;
-    _lastSnapshot = null;
+    _paintObservationStart = (json['surfaceFrames']! as List).length;
   }
 
-  @override
-  Future<void> beginInteractionObservation() async {
-    _paintObservationStart = _pendingPaintObservationStart;
-  }
+  void beginPaintObservation() => _paintObservationStart = 0;
 
-  @override
-  Future<void> insertText(String text, {required Duration cadence}) async {
-    await _request('insertText', {
-      'text': text,
-      'cadenceMs': cadence.inMilliseconds,
-    });
-  }
+  Future<void> typeText(
+    String text, {
+    Duration cadence = const Duration(milliseconds: 2),
+  }) => _request('insertText', {
+    'text': text,
+    'cadenceMs': cadence.inMilliseconds,
+  });
 
-  @override
-  Future<void> pressKey(LiveEditorScenarioKey key) async {
-    await _request('key', {'key': key.name});
-  }
+  Future<void> pressKey(String key) => _request('key', {'key': key});
 
-  @override
-  Future<void> selectSourceRange({required int base, required int extent}) {
-    return _request('selectSourceRange', {
-      'baseUtf16': base,
-      'extentUtf16': extent,
-    });
-  }
+  Future<void> selectSourceRange({required int base, required int extent}) =>
+      _request('selectSourceRange', {'baseUtf16': base, 'extentUtf16': extent});
 
-  @override
-  Future<void> pasteText(String text) {
-    return _request('pasteText', {'text': text});
-  }
+  Future<void> pasteText(String text) => _request('pasteText', {'text': text});
 
-  @override
-  Future<void> toggleTaskAtUtf16(int targetUtf16) {
-    return _request('toggleTaskAtUtf16', {'targetUtf16': targetUtf16});
-  }
+  Future<void> scrollBy(int deltaY) => _request('scrollBy', {'deltaY': deltaY});
 
-  @override
-  Future<void> scrollBy(int deltaY) {
-    return _request('scrollBy', {'deltaY': deltaY});
-  }
+  Future<MacosNativeCanarySnapshot> settle() async =>
+      _snapshot(await _request('settle'));
 
-  @override
-  Future<void> pause(Duration duration) async {
-    await _request('pause', {'milliseconds': duration.inMilliseconds});
-  }
-
-  @override
-  Future<void> awaitBarrier(LiveEditorScenarioBarrier barrier) async {
-    final response = await _request('settle');
-    _lastSnapshot = _snapshot(response);
-  }
-
-  @override
-  Future<LiveEditorScenarioSnapshot> snapshot() async {
-    if (_lastSnapshot case final snapshot?) return snapshot;
-    final response = await _request('settle');
-    return _lastSnapshot = _snapshot(response);
-  }
-
-  @override
-  Future<void> stop() async {
-    _lastSnapshot = null;
-  }
-
-  /// Ends the one app process shared by all plans in a native canary run.
   Future<void> close() async {
     final process = _process;
     final responses = _responses;
     _process = null;
     _responses = null;
-    _lastSnapshot = null;
     if (process == null) return;
     try {
       await _requestOn(process, responses!, 'stop');
@@ -163,9 +132,8 @@ final class MacosNativeLiveEditorScenarioDriver
     Map<String, Object?> arguments = const {},
   ]) {
     final process =
-        _process ?? (throw StateError('macOS scenario driver is not started'));
-    final responses = _responses!;
-    return _requestOn(process, responses, operation, arguments);
+        _process ?? (throw StateError('macOS canary driver is not started'));
+    return _requestOn(process, _responses!, operation, arguments);
   }
 
   Future<Map<String, Object?>> _requestOn(
@@ -192,8 +160,8 @@ final class MacosNativeLiveEditorScenarioDriver
     final response = jsonDecode(responses.current) as Map<String, Object?>;
     if (response['sequence'] != sequence) {
       throw StateError(
-        'macOS actuator response sequence ${response['sequence']} '
-        'did not match $sequence',
+        'macOS actuator response ${response['sequence']} did not match '
+        '$sequence',
       );
     }
     if (response['ok'] != true) {
@@ -204,10 +172,10 @@ final class MacosNativeLiveEditorScenarioDriver
     return response;
   }
 
-  LiveEditorScenarioSnapshot _snapshot(Map<String, Object?> response) {
+  MacosNativeCanarySnapshot _snapshot(Map<String, Object?> response) {
     final json = (response['snapshot']! as Map).cast<String, Object?>();
     _lastRawSnapshot = json;
-    return LiveEditorScenarioSnapshot(
+    return MacosNativeCanarySnapshot(
       source: json['source']! as String,
       selectionBaseUtf16: json['selectionBaseUtf16']! as int,
       selectionExtentUtf16: json['selectionExtentUtf16']! as int,
@@ -220,16 +188,6 @@ final class MacosNativeLiveEditorScenarioDriver
         (json['surfaceFrames']! as List).cast<String>().skip(
           _paintObservationStart,
         ),
-      ),
-      paintedRenderPlanHashes: List<int>.unmodifiable(
-        ((json['surfaceFrameHashes'] as List?) ?? const <Object?>[])
-            .cast<int>()
-            .skip(_paintObservationStart),
-      ),
-      paintedVisualStateHashes: List<int>.unmodifiable(
-        ((json['surfaceVisualStateHashes'] as List?) ?? const <Object?>[])
-            .cast<int>()
-            .skip(_paintObservationStart),
       ),
       revision: json['revision']! as int,
       scrollOffset: (json['scrollOffset']! as num).toDouble(),

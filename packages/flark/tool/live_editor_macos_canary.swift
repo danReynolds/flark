@@ -342,7 +342,7 @@ func writeJSONLine(_ value: [String: Any]) {
 
 guard CommandLine.arguments.count == 3 else {
   fputs(
-    "usage: live_editor_scenario_macos.swift APP_EXECUTABLE LIBRARY\n",
+    "usage: live_editor_macos_canary.swift APP_EXECUTABLE LIBRARY\n",
     stderr
   )
   exit(64)
@@ -363,8 +363,8 @@ let appProcess = Process()
 appProcess.executableURL = URL(fileURLWithPath: appExecutable)
 var environment = ProcessInfo.processInfo.environment
 environment["FLARK_V4_LIBRARY_PATH"] = libraryPath
-environment["FLARK_SCENARIO_COMMAND_PATH"] = commandPath
-environment["FLARK_SCENARIO_RECEIPT_PATH"] = receiptPath
+environment["FLARK_CANARY_COMMAND_PATH"] = commandPath
+environment["FLARK_CANARY_RECEIPT_PATH"] = receiptPath
 appProcess.environment = environment
 appProcess.standardOutput = FileHandle.nullDevice
 appProcess.standardError = FileHandle.standardError

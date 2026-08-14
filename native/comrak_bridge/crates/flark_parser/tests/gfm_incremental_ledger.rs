@@ -245,7 +245,7 @@ fn production_gfm_incremental_history_parity_is_complete() {
         "only the pinned edit-before-reference-coverage cases may use clean fallback"
     );
     assert_eq!(
-        receipt_sha256, "40b6b939da32781f413b9ed55960d4f23894139d4770503f5dd07eb4d490aa7f",
+        receipt_sha256, "72bdbecb1082f5f42a62442e1b8a7971e174cdd0e173924da6478642c5da1eb1",
         "review and pin the complete deterministic incremental receipt",
     );
 }

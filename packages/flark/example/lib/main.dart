@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'dogfood_documents.dart';
-import 'scenario_mode.dart';
+import 'native_canary_mode.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,7 +20,7 @@ void main() {
   runApp(
     FlarkDogfoodApp(
       libraryPath: libraryPath,
-      scenarioMode: DogfoodScenarioMode.fromEnvironment(),
+      nativeCanaryMode: DogfoodNativeCanaryMode.fromEnvironment(),
     ),
   );
 }
@@ -28,12 +28,12 @@ void main() {
 final class FlarkDogfoodApp extends StatefulWidget {
   const FlarkDogfoodApp({
     required this.libraryPath,
-    this.scenarioMode,
+    this.nativeCanaryMode,
     super.key,
   });
 
   final String libraryPath;
-  final DogfoodScenarioMode? scenarioMode;
+  final DogfoodNativeCanaryMode? nativeCanaryMode;
 
   @override
   State<FlarkDogfoodApp> createState() => _FlarkDogfoodAppState();
@@ -48,25 +48,23 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
   Object? _loadError;
   int _loadGeneration = 0;
   bool _readOnly = false;
-  DogfoodScenarioReceiptWriter? _scenarioReceiptWriter;
-  DogfoodScenarioCommandMailbox? _scenarioCommandMailbox;
-  final FlarkEditorDebugHandle _scenarioDebugHandle = FlarkEditorDebugHandle();
+  DogfoodNativeCanaryReceiptWriter? _canaryReceiptWriter;
+  DogfoodNativeCanaryCommandMailbox? _canaryCommandMailbox;
+  final FlarkEditorDebugHandle _canaryDebugHandle = FlarkEditorDebugHandle();
 
   bool get _loading => _loadingPreset != null;
 
   @override
   void initState() {
     super.initState();
-    if (widget.scenarioMode case final mode?) {
-      _scenarioReceiptWriter = DogfoodScenarioReceiptWriter(mode);
-      if (mode.commandPath case final commandPath?) {
-        _scenarioCommandMailbox = DogfoodScenarioCommandMailbox(
-          path: commandPath,
-          onCommand: _handleScenarioCommand,
-          onError: (sequence, error) =>
-              _scenarioReceiptWriter!.writeCommandError(sequence, error),
-        )..start();
-      }
+    if (widget.nativeCanaryMode case final mode?) {
+      _canaryReceiptWriter = DogfoodNativeCanaryReceiptWriter(mode);
+      _canaryCommandMailbox = DogfoodNativeCanaryCommandMailbox(
+        path: mode.commandPath,
+        onCommand: _handleCanaryCommand,
+        onError: (sequence, error) =>
+            _canaryReceiptWriter!.writeCommandError(sequence, error),
+      )..start();
     }
     unawaited(_load(DogfoodDocumentPreset.productTour));
   }
@@ -74,8 +72,8 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
   @override
   void dispose() {
     _loadGeneration += 1;
-    _scenarioCommandMailbox?.dispose();
-    _scenarioReceiptWriter?.dispose();
+    _canaryCommandMailbox?.dispose();
+    _canaryReceiptWriter?.dispose();
     final controller = _controller;
     if (controller != null) unawaited(controller.close());
     super.dispose();
@@ -84,7 +82,7 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
   Future<void> _load(DogfoodDocumentPreset preset) async {
     final generationWatch = Stopwatch()..start();
     final String source;
-    if (widget.scenarioMode case final mode?) {
+    if (widget.nativeCanaryMode case final mode?) {
       source = mode.source;
     } else {
       source = await compute(buildDogfoodDocument, preset);
@@ -115,7 +113,7 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
         libraryPath: widget.libraryPath,
       );
       next = opened;
-      if (widget.scenarioMode != null) await opened.continueParsing();
+      if (widget.nativeCanaryMode != null) await opened.continueParsing();
       openWatch.stop();
       if (!mounted || generation != _loadGeneration) {
         await opened.close();
@@ -132,8 +130,8 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
       if (previous != null) {
         unawaited(previous.close());
       }
-      _scenarioReceiptWriter?.attach(opened);
-      if (widget.scenarioMode == null) unawaited(opened.continueParsing());
+      _canaryReceiptWriter?.attach(opened);
+      if (widget.nativeCanaryMode == null) unawaited(opened.continueParsing());
       return opened;
     } catch (error) {
       if (next != null) await next.close();
@@ -146,11 +144,11 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
     }
   }
 
-  Future<void> _handleScenarioCommand(DogfoodScenarioCommand command) async {
-    final writer = _scenarioReceiptWriter!;
+  Future<void> _handleCanaryCommand(DogfoodNativeCanaryCommand command) async {
+    final writer = _canaryReceiptWriter!;
     switch (command.operation) {
       case 'reset':
-        final scenarioId = command.arguments['scenarioId']! as String;
+        final canaryId = command.arguments['canaryId']! as String;
         final source = command.arguments['source']! as String;
         final controller = await _openSource(
           source,
@@ -158,28 +156,28 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
           generationDuration: Duration.zero,
         );
         if (controller == null) {
-          throw StateError('scenario reset was cancelled');
+          throw StateError('canary reset was cancelled');
         }
-        writer.beginScenario(scenarioId);
-        await _settleScenarioController(controller);
-        await _awaitScenarioFrame();
+        writer.beginCanary(canaryId);
+        await _settleCanaryController(controller);
+        await _awaitCanaryFrame();
         await writer.writeNow(commandSequence: command.sequence);
         return;
       case 'settle':
         final controller = _controller;
-        if (controller == null) throw StateError('scenario has no controller');
+        if (controller == null) throw StateError('canary has no controller');
         await writer.waitForPlatformInputQuiescence();
-        await _settleScenarioController(controller);
-        await _awaitScenarioFrame();
+        await _settleCanaryController(controller);
+        await _awaitCanaryFrame();
         await writer.writeNow(commandSequence: command.sequence);
         return;
       case 'lookupSourcePoint':
         final controller = _controller;
-        if (controller == null) throw StateError('scenario has no controller');
+        if (controller == null) throw StateError('canary has no controller');
         final offset = command.arguments['utf16Offset']! as int;
-        await _settleScenarioController(controller);
-        await _awaitScenarioFrame();
-        final geometry = _scenarioDebugHandle.geometryForSourceUtf16(offset);
+        await _settleCanaryController(controller);
+        await _awaitCanaryFrame();
+        final geometry = _canaryDebugHandle.geometryForSourceUtf16(offset);
         if (geometry == null) {
           throw StateError('source offset $offset is not painted');
         }
@@ -191,10 +189,10 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
         return;
       case 'lookupTaskCheckboxPoint':
         final controller = _controller;
-        if (controller == null) throw StateError('scenario has no controller');
+        if (controller == null) throw StateError('canary has no controller');
         final target = command.arguments['targetUtf16']! as int;
-        await _settleScenarioController(controller);
-        await _awaitScenarioFrame();
+        await _settleCanaryController(controller);
+        await _awaitCanaryFrame();
         final row = controller.rows.firstWhere(
           (candidate) =>
               candidate.listItem?.taskChecked != null &&
@@ -205,7 +203,7 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
             'task target $target is not in a certified task row',
           ),
         );
-        final geometry = _scenarioDebugHandle.geometryForTaskCheckboxOrdinal(
+        final geometry = _canaryDebugHandle.geometryForTaskCheckboxOrdinal(
           row.ordinal,
         );
         if (geometry == null) {
@@ -218,25 +216,18 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
         );
         return;
       default:
-        throw StateError('unsupported scenario command ${command.operation}');
+        throw StateError('unsupported canary command ${command.operation}');
     }
   }
 
-  Future<void> _settleScenarioController(
-    FlarkEditorController controller,
-  ) async {
-    final deadline = DateTime.now().add(const Duration(seconds: 5));
-    while (controller.pendingEdits != 0 && DateTime.now().isBefore(deadline)) {
-      await Future<void>.delayed(const Duration(milliseconds: 1));
-    }
-    if (controller.pendingEdits != 0) {
-      throw StateError('scenario edit did not settle in 5 seconds');
-    }
-    await controller.continueParsing();
+  Future<void> _settleCanaryController(FlarkEditorController controller) async {
+    // Native canary mode is test-only instrumentation in the dogfood app.
+    // ignore: invalid_use_of_visible_for_testing_member
+    await controller.debugWaitForPresentationSettled();
     if (controller.lastError case final error?) throw error;
   }
 
-  Future<void> _awaitScenarioFrame() async {
+  Future<void> _awaitCanaryFrame() async {
     WidgetsBinding.instance.ensureVisualUpdate();
     await WidgetsBinding.instance.endOfFrame;
   }
@@ -300,12 +291,12 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
                           controller: controller,
                           autofocus: true,
                           debugInputEventObserver:
-                              _scenarioReceiptWriter?.recordInputEvent,
+                              _canaryReceiptWriter?.recordInputEvent,
                           debugPaintObserver:
-                              _scenarioReceiptWriter?.recordPaintObservation,
-                          debugHandle: _scenarioReceiptWriter == null
+                              _canaryReceiptWriter?.recordPaintObservation,
+                          debugHandle: _canaryReceiptWriter == null
                               ? null
-                              : _scenarioDebugHandle,
+                              : _canaryDebugHandle,
                           textStyle: const TextStyle(
                             color: Color(0xff25272b),
                             fontSize: 17,

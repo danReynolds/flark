@@ -31,18 +31,47 @@ final class FlarkSurfacePaintObservation {
   const FlarkSurfacePaintObservation({
     required this.revision,
     required this.viewportPageIndex,
+    required this.visibleUtf16Start,
+    required this.visibleUtf16Length,
     required this.scrollOffset,
     required this.presentation,
     required this.renderPlanHash,
     required this.visualStateHash,
+    required this.rows,
+    required this.selectionRects,
+    required this.caretRect,
   });
 
   final int revision;
   final int viewportPageIndex;
+  final int visibleUtf16Start;
+  final int visibleUtf16Length;
   final double scrollOffset;
   final String presentation;
   final int renderPlanHash;
   final int visualStateHash;
+  final List<FlarkSurfacePaintRowObservation> rows;
+  final List<Rect> selectionRects;
+  final Rect? caretRect;
+}
+
+/// Bounded geometry for one fragment visited by an actual surface paint.
+final class FlarkSurfacePaintRowObservation {
+  const FlarkSurfacePaintRowObservation({
+    required this.ordinal,
+    required this.neutral,
+    required this.sourceUtf16Start,
+    required this.text,
+    required this.active,
+    required this.rect,
+  });
+
+  final int ordinal;
+  final bool neutral;
+  final int sourceUtf16Start;
+  final String text;
+  final bool active;
+  final Rect rect;
 }
 
 enum FlarkSurfaceAction { toggleTaskChecked }
@@ -247,7 +276,17 @@ final class RenderFlarkSurface extends RenderBox {
 
   int get debugPaintedFragmentCount => _paintedRows.length;
 
-  List<({int ordinal, bool neutral, int sourceStart, String text, bool active})>
+  List<
+    ({
+      int ordinal,
+      bool neutral,
+      int sourceStart,
+      String text,
+      bool active,
+      double top,
+      double height,
+    })
+  >
   get debugPaintedPlan => _paintedRows
       .map(
         (row) => (
@@ -257,6 +296,8 @@ final class RenderFlarkSurface extends RenderBox {
               row.neutralUtf16Start ?? row.presentation.globalUtf16Start,
           text: row.presentation.text,
           active: row.presentation.active,
+          top: row.top - _scrollOffset,
+          height: row.height,
         ),
       )
       .toList(growable: false);
@@ -845,10 +886,21 @@ final class RenderFlarkSurface extends RenderBox {
       style = style.copyWith(fontStyle: FontStyle.italic, height: 1.4);
     }
     final children = <InlineSpan>[];
+    final visualEmptyLine =
+        presentation.kind == 0 &&
+        start == 0 &&
+        end == presentation.text.length &&
+        (presentation.text == '\n' || presentation.text == '\r\n');
     if (includeLeading && presentation.leadingText.isNotEmpty) {
       children.add(TextSpan(text: presentation.leadingText));
     }
-    if (presentation.runs.isNotEmpty) {
+    if (visualEmptyLine) {
+      // A source newline owns two caret boundaries but only one editor line.
+      // Laying the literal newline paints an empty line before and after it,
+      // doubling blank-block height. A single placeholder preserves the same
+      // two TextPainter offsets while keeping source ownership in the model.
+      children.add(TextSpan(text: ''.padLeft(presentation.text.length)));
+    } else if (presentation.runs.isNotEmpty) {
       var cursor = 0;
       for (final run in presentation.runs) {
         final runEnd = cursor + run.text.length;
@@ -1651,6 +1703,9 @@ final class RenderFlarkSurface extends RenderBox {
     final canvas = context.canvas;
     final observedRows = <String>[];
     final observedKeys = <Object>{};
+    final observedGeometry = <FlarkSurfacePaintRowObservation>[];
+    final observedSelectionRects = <Rect>[];
+    Rect? observedCaretRect;
     canvas.save();
     canvas.clipRect(offset & size);
     for (final row in _paintedRows) {
@@ -1670,6 +1725,22 @@ final class RenderFlarkSurface extends RenderBox {
         );
       }
       final origin = offset + Offset(_padding.left, paintedTop);
+      observedGeometry.add(
+        FlarkSurfacePaintRowObservation(
+          ordinal: row.ordinal,
+          neutral: row.row == null,
+          sourceUtf16Start:
+              row.neutralUtf16Start ?? row.presentation.globalUtf16Start,
+          text: row.presentation.text,
+          active: row.presentation.active,
+          rect: Rect.fromLTWH(
+            origin.dx,
+            origin.dy,
+            row.painter.width,
+            row.height,
+          ),
+        ),
+      );
       if (row.presentation.thematicBreak) {
         final lineY = origin.dy + row.height / 2;
         canvas.drawLine(
@@ -1709,7 +1780,9 @@ final class RenderFlarkSurface extends RenderBox {
           for (final box in row.painter.getBoxesForSelection(
             paintedSelection,
           )) {
-            canvas.drawRect(box.toRect().shift(origin), paint);
+            final rect = box.toRect().shift(origin);
+            observedSelectionRects.add(rect);
+            canvas.drawRect(rect, paint);
           }
         }
       }
@@ -1728,15 +1801,14 @@ final class RenderFlarkSurface extends RenderBox {
             ),
             Rect.zero,
           );
-          canvas.drawRect(
-            Rect.fromLTWH(
-              origin.dx + caret.dx,
-              origin.dy + caret.dy,
-              1.5,
-              row.painter.preferredLineHeight,
-            ),
-            Paint()..color = _caretColor,
+          final rect = Rect.fromLTWH(
+            origin.dx + caret.dx,
+            origin.dy + caret.dy,
+            1.5,
+            row.painter.preferredLineHeight,
           );
+          observedCaretRect = rect;
+          canvas.drawRect(rect, Paint()..color = _caretColor);
         }
       }
     }
@@ -1745,12 +1817,17 @@ final class RenderFlarkSurface extends RenderBox {
       FlarkSurfacePaintObservation(
         revision: _controller.revision,
         viewportPageIndex: _controller.viewportPageIndex,
+        visibleUtf16Start: _controller.visibleUtf16Start,
+        visibleUtf16Length: _controller.visibleSource.length,
         scrollOffset: _scrollOffset,
         presentation: observedRows.isEmpty
             ? '<empty>'
             : observedRows.join('\n'),
         renderPlanHash: debugRenderPlanHash,
         visualStateHash: debugVisualStateHash,
+        rows: List.unmodifiable(observedGeometry),
+        selectionRects: List.unmodifiable(observedSelectionRects),
+        caretRect: observedCaretRect,
       ),
     );
   }

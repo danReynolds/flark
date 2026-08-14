@@ -662,25 +662,26 @@ authoritative in a frontend adapter at the destination. A non-Flutter Dart UI
 must implement its own input, layout, hit-testing, accessibility, and paint
 adapters, but not Markdown edit or structural-transition semantics.
 
-## 11. Scenario and proof harness
+## 11. Test and proof harness
 
-Each edit scenario is one data fixture containing:
+The v4 suite uses ordinary layer-owned tests plus a compact typed temporal
+probe. It does not serialize live-editor journeys or replay one universal
+fixture through Rust, Core, Flutter, and native platforms: those layers expose
+different facts, and universal replay duplicated coverage while obscuring the
+owner of a failure.
 
-- exact source bytes and line-ending profile;
-- viewport/window state where relevant;
-- canonical selection and composing range;
-- ordered platform observations;
-- expected number of logical edits and native commits;
-- exact result source bytes and selection;
-- history/undo/redo result;
-- allowed intermediate presentation states; and
-- final projection/certification expectations.
+Rust owns resolver, parser, incremental-versus-clean, cap, and property
+matrices. `flark_core` owns transaction, selection, history, queue, and failure
+receipts. The Dart controller transition probe records every synchronous
+publication around one logical action and its deterministic mutation and
+presentation barriers. Mounted Flutter tests add actual paint, layout, and
+geometry observations. A few direct native canaries prove only OS input,
+pointer, clipboard, and scroll routing.
 
-The same semantic fixtures run against the pure Rust resolver, ABI, headless
-`flark_core`, and Flutter surface. Flutter-only fixtures add raw key/delta/action/
-selector permutations and frame assertions. Earlier Flark suites and public
-editor suites are mined for cases, but v4 expected behavior comes from
-`flark-edit-v1`, not from preserving superseded implementations.
+Earlier Flark suites and public editor suites are mined for cases, but v4
+expected behavior comes from `flark-edit-v1`, not from preserving superseded
+implementations. The GFM/CommonMark data corpus remains an independent parser
+oracle; it is not an editor-interaction DSL.
 
 Required perturbations include duplicate newline entrances, stale connection
 events, parser pending, an in-flight pump, backpressure, reply loss, history

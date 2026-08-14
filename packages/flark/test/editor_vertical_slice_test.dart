@@ -93,19 +93,19 @@ void main() {
         ),
       );
       await tester.pump();
-      final headingFinder = find.semantics.byLabel('Heading');
+      final headingFinder = find.semantics.byValue('Heading');
       expect(headingFinder, findsOne);
       expect(
         headingFinder.evaluate().single,
-        isSemantics(label: 'Heading', isHeader: true),
+        isSemantics(value: 'Heading', isHeader: true),
       );
-      final taskFinder = find.semantics.byLabel('todo');
+      final taskFinder = find.semantics.byValue('todo');
       expect(taskFinder, findsOne);
       final task = taskFinder.evaluate().single;
       expect(
         task,
         isSemantics(
-          label: 'todo',
+          value: 'todo',
           hasCheckedState: true,
           isChecked: false,
           hasTapAction: true,
@@ -118,7 +118,7 @@ void main() {
       expect(
         taskFinder.evaluate().single,
         isSemantics(
-          label: 'todo',
+          value: 'todo',
           hasCheckedState: true,
           isChecked: true,
           hasTapAction: true,

@@ -5,49 +5,30 @@ import 'dart:io';
 import 'package:flark/flark.dart';
 import 'package:flutter/widgets.dart';
 
-final class DogfoodScenarioMode {
-  const DogfoodScenarioMode({
-    required this.id,
-    required this.source,
+final class DogfoodNativeCanaryMode {
+  const DogfoodNativeCanaryMode({
     required this.receiptPath,
-    this.commandPath,
+    required this.commandPath,
   });
 
-  static DogfoodScenarioMode? fromEnvironment() {
-    final receiptPath = Platform.environment['FLARK_SCENARIO_RECEIPT_PATH'];
+  static DogfoodNativeCanaryMode? fromEnvironment() {
+    final receiptPath = Platform.environment['FLARK_CANARY_RECEIPT_PATH'];
     if (receiptPath == null) return null;
-    final commandPath = Platform.environment['FLARK_SCENARIO_COMMAND_PATH'];
-    if (commandPath != null) {
-      return DogfoodScenarioMode(
-        id: 'native-harness',
-        source: '',
-        receiptPath: receiptPath,
-        commandPath: commandPath,
-      );
-    }
-    final scenarioPath = Platform.environment['FLARK_SCENARIO_PATH'];
-    if (scenarioPath == null) return null;
-    final json =
-        jsonDecode(File(scenarioPath).readAsStringSync())
-            as Map<String, Object?>;
-    return DogfoodScenarioMode(
-      id: json['id']! as String,
-      source: json['initialSource']! as String,
+    final commandPath = Platform.environment['FLARK_CANARY_COMMAND_PATH'];
+    if (commandPath == null) return null;
+    return DogfoodNativeCanaryMode(
       receiptPath: receiptPath,
+      commandPath: commandPath,
     );
   }
 
-  final String id;
-  final String source;
+  String get source => '';
   final String receiptPath;
-
-  /// Present only for the primitive native actuator. The app polls this one
-  /// atomic request slot while the external actuator owns OS input events.
-  final String? commandPath;
+  final String commandPath;
 }
 
-final class DogfoodScenarioCommand {
-  DogfoodScenarioCommand.fromJson(Map<String, Object?> json)
+final class DogfoodNativeCanaryCommand {
+  DogfoodNativeCanaryCommand.fromJson(Map<String, Object?> json)
     : sequence = json['sequence']! as int,
       operation = json['operation']! as String,
       arguments = Map<String, Object?>.unmodifiable(
@@ -59,19 +40,16 @@ final class DogfoodScenarioCommand {
   final Map<String, Object?> arguments;
 }
 
-/// A deliberately tiny, opt-in mailbox for native integration actuation.
-/// Product semantics and assertions stay in the shared Dart scenario executor;
-/// this slot only lets one already-running app reset, settle, or resolve a
-/// source offset to painted geometry.
-final class DogfoodScenarioCommandMailbox {
-  DogfoodScenarioCommandMailbox({
+/// One opt-in command slot for the real macOS actuator.
+final class DogfoodNativeCanaryCommandMailbox {
+  DogfoodNativeCanaryCommandMailbox({
     required this.path,
     required this.onCommand,
     required this.onError,
   });
 
   final String path;
-  final Future<void> Function(DogfoodScenarioCommand command) onCommand;
+  final Future<void> Function(DogfoodNativeCanaryCommand command) onCommand;
   final Future<void> Function(int sequence, Object error) onError;
   Timer? _timer;
   bool _polling = false;
@@ -97,7 +75,7 @@ final class DogfoodScenarioCommandMailbox {
       if (!await file.exists()) return;
       final json = jsonDecode(await file.readAsString());
       if (json is! Map<String, Object?>) return;
-      final command = DogfoodScenarioCommand.fromJson(json);
+      final command = DogfoodNativeCanaryCommand.fromJson(json);
       if (command.sequence <= _lastSequence) return;
       _lastSequence = command.sequence;
       try {
@@ -114,13 +92,13 @@ final class DogfoodScenarioCommandMailbox {
   }
 }
 
-/// Opt-in dogfood instrumentation for native scenario runners. It retains
+/// Opt-in dogfood instrumentation for native canaries. It retains
 /// bounded observations in memory and publishes atomic receipts outside the
 /// product input callback itself.
-final class DogfoodScenarioReceiptWriter {
-  DogfoodScenarioReceiptWriter(this.mode) : _scenarioId = mode.id;
+final class DogfoodNativeCanaryReceiptWriter {
+  DogfoodNativeCanaryReceiptWriter(this.mode);
 
-  final DogfoodScenarioMode mode;
+  final DogfoodNativeCanaryMode mode;
   final List<String> _surfaceFrames = [];
   final List<int> _surfaceFrameHashes = [];
   final List<int> _surfaceVisualStateHashes = [];
@@ -129,7 +107,7 @@ final class DogfoodScenarioReceiptWriter {
   Timer? _timer;
   int _writeGeneration = 0;
   bool _frameScheduled = false;
-  String _scenarioId;
+  String _canaryId = 'native-canary';
   String _settledPresentation = '<empty>';
   int _commandSequence = 0;
   Object? _commandError;
@@ -140,8 +118,8 @@ final class DogfoodScenarioReceiptWriter {
   DateTime? _lastInputEventAt;
   double _lastScrollOffset = 0;
 
-  void beginScenario(String id) {
-    _scenarioId = id;
+  void beginCanary(String id) {
+    _canaryId = id;
     _surfaceFrames.clear();
     _surfaceFrameHashes.clear();
     _surfaceVisualStateHashes.clear();
@@ -240,7 +218,7 @@ final class DogfoodScenarioReceiptWriter {
     _timer = null;
     final controller = _controller;
     if (controller == null) {
-      throw StateError('scenario receipt writer has no controller');
+      throw StateError('canary receipt writer has no controller');
     }
     final generation = ++_writeGeneration;
     await _write(controller, generation);
@@ -294,7 +272,7 @@ final class DogfoodScenarioReceiptWriter {
     final taskGeometry = _taskActionGeometry;
     final receipt = <String, Object?>{
       'schemaVersion': 2,
-      'scenarioId': _scenarioId,
+      'canaryId': _canaryId,
       'commandSequence': _commandSequence,
       'commandError': _commandError?.toString(),
       'status': controller.status.name,

@@ -1066,10 +1066,11 @@ impl SemanticRenderer<'_> {
                 self.lf();
                 Ok(())
             }
-            // Marker-only list items carry one presentation row so the live
-            // editor has a real caret target. It contributes no CommonMark
-            // semantic output; the containing Item still emits `<li></li>`.
-            14 => Ok(()),
+            // Marker-only list items and empty block quotes carry one
+            // presentation row so the live editor has a real caret target.
+            // They contribute no CommonMark semantic output; their containing
+            // Item or BlockQuote emits the structural HTML.
+            14 | 15 => Ok(()),
             other => Err(RenderFailure::Invalid(format!(
                 "recursive Green carries unknown block kind {other}"
             ))),

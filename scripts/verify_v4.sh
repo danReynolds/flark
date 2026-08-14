@@ -31,7 +31,10 @@ cargo test --manifest-path "$BRIDGE/Cargo.toml" -p flark-runtime -p flark-abi
 (cd "$ROOT/packages/flark_core" && dart analyze)
 (cd "$ROOT/packages/flark_core" && FLARK_V4_LIBRARY_PATH="$LIBRARY" dart test)
 (cd "$ROOT/packages/flark" && FLARK_V4_LIBRARY_PATH="$LIBRARY" flutter analyze)
-(cd "$ROOT/packages/flark" && FLARK_V4_LIBRARY_PATH="$LIBRARY" flutter test)
+# The package loads one native worker library per test process. Serial execution
+# is the stable, still-fast contract (about 20 s warm); concurrent flutter_test
+# processes can deadlock during native-worker teardown after all assertions.
+(cd "$ROOT/packages/flark" && FLARK_V4_LIBRARY_PATH="$LIBRARY" flutter test --concurrency=1)
 (cd "$ROOT/packages/flark_flutter" && flutter test test/v4/contracts)
 
 echo "verify_v4: active rust + dart + flutter v4 suites executed and passed."
