@@ -15,6 +15,7 @@ final class MacosNativeCanarySnapshot {
     required this.paintedPresentations,
     required this.revision,
     required this.scrollOffset,
+    required this.paintedCaretIdentities,
   });
 
   final String source;
@@ -28,6 +29,7 @@ final class MacosNativeCanarySnapshot {
   final List<String> paintedPresentations;
   final int revision;
   final double scrollOffset;
+  final List<bool> paintedCaretIdentities;
 }
 
 /// Thin actuator for the few macOS facts that headless Flutter cannot prove:
@@ -47,6 +49,8 @@ final class MacosNativeCanaryDriver {
   StreamIterator<String>? _responses;
   int _sequence = 0;
   int _paintObservationStart = 0;
+  int _windowWidth = 800;
+  int _windowHeight = 632;
   Map<String, Object?>? _lastRawSnapshot;
 
   String get debugLastReceipt =>
@@ -80,9 +84,20 @@ final class MacosNativeCanaryDriver {
     );
   }
 
-  Future<void> activateAtUtf16(int offset) async {
-    final response = await _request('activateAtUtf16', {'utf16Offset': offset});
-    final json = (response['snapshot']! as Map).cast<String, Object?>();
+  Future<void> activateAtUtf16(
+    int offset, {
+    int windowWidth = 800,
+    int windowHeight = 632,
+  }) async {
+    _windowWidth = windowWidth;
+    _windowHeight = windowHeight;
+    final response = await _request('activateAtUtf16', {
+      'utf16Offset': offset,
+      'windowWidth': windowWidth,
+      'windowHeight': windowHeight,
+    });
+    _snapshot(response);
+    final json = _lastRawSnapshot!;
     _paintObservationStart = (json['surfaceFrames']! as List).length;
   }
 
@@ -91,15 +106,39 @@ final class MacosNativeCanaryDriver {
   Future<void> typeText(
     String text, {
     Duration cadence = const Duration(milliseconds: 2),
-  }) => _request('insertText', {
-    'text': text,
-    'cadenceMs': cadence.inMilliseconds,
-  });
+  }) {
+    final selection = _expectedSelectionArguments();
+    return _request('insertText', {
+      'text': text,
+      'cadenceMs': cadence.inMilliseconds,
+      ...selection,
+    });
+  }
 
-  Future<void> pressKey(String key) => _request('key', {'key': key});
+  Future<void> pressKey(String key) =>
+      _request('key', {'key': key, ..._expectedSelectionArguments()});
 
-  Future<void> selectSourceRange({required int base, required int extent}) =>
-      _request('selectSourceRange', {'baseUtf16': base, 'extentUtf16': extent});
+  Map<String, Object?> _expectedSelectionArguments() {
+    final snapshot = _lastRawSnapshot;
+    if (snapshot == null) return const {};
+    return {
+      'expectedBaseUtf16': snapshot['selectionBaseUtf16'],
+      'expectedExtentUtf16': snapshot['selectionExtentUtf16'],
+      'windowWidth': _windowWidth,
+      'windowHeight': _windowHeight,
+    };
+  }
+
+  Future<void> selectSourceRange({
+    required int base,
+    required int extent,
+  }) async {
+    await _request('selectSourceRange', {
+      'baseUtf16': base,
+      'extentUtf16': extent,
+    });
+    _snapshot(await _request('settle'));
+  }
 
   Future<void> pasteText(String text) => _request('pasteText', {'text': text});
 
@@ -191,6 +230,11 @@ final class MacosNativeCanaryDriver {
       ),
       revision: json['revision']! as int,
       scrollOffset: (json['scrollOffset']! as num).toDouble(),
+      paintedCaretIdentities: List<bool>.unmodifiable(
+        (json['surfaceCaretIdentities']! as List).cast<bool>().skip(
+          _paintObservationStart,
+        ),
+      ),
     );
   }
 }

@@ -107,7 +107,11 @@ func focusWindow(
     throw ActuatorFailure.message("dogfood window was not accessible")
   }
 
-  var requestedOrigin = CGPoint(x: 180, y: 100)
+  let screenSize = NSScreen.main?.frame.size ?? CGSize(width: 1920, height: 1080)
+  var requestedOrigin = CGPoint(
+    x: max(0, (screenSize.width - CGFloat(width)) / 2),
+    y: max(0, (screenSize.height - CGFloat(height)) / 2)
+  )
   var requestedSize = CGSize(width: width, height: height)
   setAXValue(
     accessibleWindow,
@@ -135,12 +139,42 @@ func focusWindow(
   NSRunningApplication(processIdentifier: pid)?.activate(
     options: [.activateAllWindows]
   )
-  pause(milliseconds: 250)
-
-  if let window = cgWindow(pid: pid) {
-    return (window.bounds.origin, window.bounds.size, window.number)
+  try waitUntil("frontmost dogfood application") {
+    NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
   }
-  return (requestedOrigin, requestedSize, 0)
+
+  let systemWide = AXUIElementCreateSystemWide()
+  try waitUntil("focused dogfood accessibility target") {
+    var value: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(
+      systemWide,
+      kAXFocusedUIElementAttribute as CFString,
+      &value
+    ) == .success,
+      let focused = value as! AXUIElement?
+    else { return false }
+    var focusedPID: pid_t = 0
+    return AXUIElementGetPid(focused, &focusedPID) == .success &&
+      focusedPID == pid
+  }
+
+  var resolvedWindow: (number: Int, bounds: CGRect)?
+  try waitUntil("dogfood window geometry") {
+    guard let window = cgWindow(pid: pid),
+      abs(window.bounds.width - requestedSize.width) <= 1,
+      abs(window.bounds.height - requestedSize.height) <= 1
+    else { return false }
+    resolvedWindow = window
+    return true
+  }
+  guard let resolvedWindow else {
+    throw ActuatorFailure.message("dogfood window geometry was unavailable")
+  }
+  return (
+    resolvedWindow.bounds.origin,
+    resolvedWindow.bounds.size,
+    resolvedWindow.number
+  )
 }
 
 let eventSource = CGEventSource(stateID: .hidSystemState)
@@ -404,6 +438,23 @@ func appRequest(
   return receipt
 }
 
+func verifyExpectedSelection(_ arguments: [String: Any]) throws {
+  guard let expectedBase = arguments["expectedBaseUtf16"] as? Int,
+    let expectedExtent = arguments["expectedExtentUtf16"] as? Int
+  else { return }
+  let receipt = try appRequest(operation: "settle")
+  let actualBase = receipt["selectionBaseUtf16"] as? Int
+  let actualExtent = receipt["selectionExtentUtf16"] as? Int
+  guard actualBase == expectedBase, actualExtent == expectedExtent else {
+    throw ActuatorFailure.message(
+      "input target selection drifted before delivery; expected=" +
+        "\(expectedBase)..\(expectedExtent), actual=" +
+        "\(String(describing: actualBase)).." +
+        "\(String(describing: actualExtent))"
+    )
+  }
+}
+
 func screenPoint(
   sourceUtf16Offset: Int,
   window: (origin: CGPoint, size: CGSize, number: Int)
@@ -480,7 +531,11 @@ while !shouldStop, let line = readLine() {
       )
     case "activateAtUtf16":
       let offset = try integer(arguments["utf16Offset"], "utf16Offset")
-      let window = try focusWindow(pid: appPID)
+      let window = try focusWindow(
+        pid: appPID,
+        width: arguments["windowWidth"] as? Int ?? 800,
+        height: arguments["windowHeight"] as? Int ?? 632
+      )
       let point = try screenPoint(sourceUtf16Offset: offset, window: window)
       click(point)
       let activationReceipt = try appRequest(operation: "settle")
@@ -505,11 +560,23 @@ while !shouldStop, let line = readLine() {
         to: try screenPoint(sourceUtf16Offset: extent, window: window)
       )
     case "insertText":
+      _ = try focusWindow(
+        pid: appPID,
+        width: arguments["windowWidth"] as? Int ?? 800,
+        height: arguments["windowHeight"] as? Int ?? 632
+      )
+      try verifyExpectedSelection(arguments)
       typeText(
         try string(arguments["text"], "text"),
         intervalMs: try integer(arguments["cadenceMs"], "cadenceMs")
       )
     case "key":
+      _ = try focusWindow(
+        pid: appPID,
+        width: arguments["windowWidth"] as? Int ?? 800,
+        height: arguments["windowHeight"] as? Int ?? 632
+      )
+      try verifyExpectedSelection(arguments)
       let key = try string(arguments["key"], "key")
       let pasteboardChange = NSPasteboard.general.changeCount
       try postKey(named: key)

@@ -50,7 +50,8 @@ For one action the observable phases are:
 The deterministic barriers are controller futures. Tests do not poll
 `pendingEdits`, sleep, or guess when parsing has caught up.
 
-Every sample can assert mechanical invariants: valid projected ranges and
+Every sample automatically asserts mechanical invariants: valid projected
+ranges and selection, the platform input selection representing the canonical
 selection, exact runs matching their represented source, no resync or fault,
 and bounded state. Tests then add the smallest user-visible invariant, such as
 “an unrelated strong block is never exposed as `**source**`.”
@@ -58,8 +59,10 @@ and bounded state. Tests then add the smallest user-visible invariant, such as
 The mounted recorder observes `FlarkSurfacePaintObservation` from the production
 render object. Its receipt includes revision, visible source range, rendered
 rows, row geometry, selection rectangles, caret rectangle, scroll offset, and
-content/visual hashes. Controller publication is not accepted as proof that a
-frame painted.
+content/visual hashes. Each painted caret also reports the source offset it
+represents; the recorder automatically requires that offset to equal the
+controller's canonical extent in the same frame. Controller publication is not
+accepted as proof that a frame painted.
 
 ## What stays an ordinary test
 
@@ -99,13 +102,20 @@ punctuation mark.
 ## Native canaries
 
 Native canaries deliberately do not replay the semantic suite. The macOS pack
-reuses one app process and checks four routing boundaries:
+reuses one app process and checks five routing boundaries:
 
 1. real character input, including syntax punctuation, reaches the intended
    source position without a raw-projection flash;
 2. real Return and Backspace route once and preserve exact source/selection;
 3. pointer selection plus cut/undo uses the real AppKit paths;
 4. wheel scrolling changes scroll position without changing selection.
+5. sustained human-cadence editing across wrapped Markdown and internal layout
+   fragments never rehomes the visible caret.
+
+Before sending native input, the actuator requires the exact dogfood PID to be
+frontmost and accessibility-focused, waits for requested window geometry to
+converge, and verifies the expected source selection again. A canary is invalid
+if any of those preconditions drift; it must not type into an assumed target.
 
 iOS and Android later get similarly small canaries for touch, clipboard/menu,
 lifecycle, and accessibility routing. Real IME, autocorrect, dictation,

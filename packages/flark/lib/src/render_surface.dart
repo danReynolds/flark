@@ -40,6 +40,8 @@ final class FlarkSurfacePaintObservation {
     required this.rows,
     required this.selectionRects,
     required this.caretRect,
+    required this.caretSourceUtf16,
+    required this.canonicalSelectionExtentUtf16,
   });
 
   final int revision;
@@ -53,6 +55,11 @@ final class FlarkSurfacePaintObservation {
   final List<FlarkSurfacePaintRowObservation> rows;
   final List<Rect> selectionRects;
   final Rect? caretRect;
+
+  /// The authoritative source offset represented by [caretRect]. This makes
+  /// caret ownership testable without inferring it from coincident geometry.
+  final int? caretSourceUtf16;
+  final int canonicalSelectionExtentUtf16;
 }
 
 /// Bounded geometry for one fragment visited by an actual surface paint.
@@ -1706,6 +1713,7 @@ final class RenderFlarkSurface extends RenderBox {
     final observedGeometry = <FlarkSurfacePaintRowObservation>[];
     final observedSelectionRects = <Rect>[];
     Rect? observedCaretRect;
+    int? observedCaretSourceUtf16;
     canvas.save();
     canvas.clipRect(offset & size);
     for (final row in _paintedRows) {
@@ -1808,6 +1816,10 @@ final class RenderFlarkSurface extends RenderBox {
             row.painter.preferredLineHeight,
           );
           observedCaretRect = rect;
+          observedCaretSourceUtf16 = row.presentation.sourceOffsetForTextOffset(
+            extent,
+            affinity: selection.affinity,
+          );
           canvas.drawRect(rect, Paint()..color = _caretColor);
         }
       }
@@ -1828,6 +1840,8 @@ final class RenderFlarkSurface extends RenderBox {
         rows: List.unmodifiable(observedGeometry),
         selectionRects: List.unmodifiable(observedSelectionRects),
         caretRect: observedCaretRect,
+        caretSourceUtf16: observedCaretSourceUtf16,
+        canonicalSelectionExtentUtf16: _controller.globalSelectionExtent,
       ),
     );
   }

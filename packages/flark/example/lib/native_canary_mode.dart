@@ -102,6 +102,7 @@ final class DogfoodNativeCanaryReceiptWriter {
   final List<String> _surfaceFrames = [];
   final List<int> _surfaceFrameHashes = [];
   final List<int> _surfaceVisualStateHashes = [];
+  final List<bool> _surfaceCaretIdentities = [];
   final List<String> _inputEvents = [];
   FlarkEditorController? _controller;
   Timer? _timer;
@@ -123,6 +124,7 @@ final class DogfoodNativeCanaryReceiptWriter {
     _surfaceFrames.clear();
     _surfaceFrameHashes.clear();
     _surfaceVisualStateHashes.clear();
+    _surfaceCaretIdentities.clear();
     _inputEvents.clear();
     _settledPresentation = '<empty>';
     _commandError = null;
@@ -183,10 +185,16 @@ final class DogfoodNativeCanaryReceiptWriter {
         _surfaceFrames.removeAt(0);
         _surfaceFrameHashes.removeAt(0);
         _surfaceVisualStateHashes.removeAt(0);
+        _surfaceCaretIdentities.removeAt(0);
       }
       _surfaceFrames.add(surface);
       _surfaceFrameHashes.add(observation.renderPlanHash);
       _surfaceVisualStateHashes.add(observation.visualStateHash);
+      _surfaceCaretIdentities.add(
+        observation.caretSourceUtf16 == null ||
+            observation.caretSourceUtf16 ==
+                observation.canonicalSelectionExtentUtf16,
+      );
     }
     final controller = _controller;
     if (controller == null) return;
@@ -291,6 +299,9 @@ final class DogfoodNativeCanaryReceiptWriter {
       'surfaceFrameHashes': List<int>.unmodifiable(_surfaceFrameHashes),
       'surfaceVisualStateHashes': List<int>.unmodifiable(
         _surfaceVisualStateHashes,
+      ),
+      'surfaceCaretIdentities': List<bool>.unmodifiable(
+        _surfaceCaretIdentities,
       ),
       'scrollOffset': _lastScrollOffset,
       'inputEvents': List<String>.unmodifiable(_inputEvents),

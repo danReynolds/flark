@@ -73,6 +73,45 @@ void main() {
       expect(scrolled.scrollOffset, greaterThan(0));
       expect(scrolled.selectionBaseUtf16, 2);
       expect(scrolled.selectionExtentUtf16, 2);
+
+      const wrappedSource = '''# Flark dogfood
+
+This is the real **Rust → Dart → Flutter** editor path. Use it like an editor,
+not a static Markdown preview. Certified Markdown stays rendered while focused;
+only incomplete or temporarily pending syntax becomes exact source locally.
+
+# Start here
+''';
+      await driver.reset(id: 'wrapped-caret-stability', source: wrappedSource);
+      await driver.activateAtUtf16(
+        wrappedSource.indexOf('This'),
+        windowWidth: 1569,
+        windowHeight: 906,
+      );
+      await driver.typeText('keepwhat');
+      await driver.settle();
+      await driver.pressKey('enter');
+      final prepared = await driver.settle();
+      final wrappedCaret =
+          prepared.source.indexOf('locally.') + 'locally.'.length;
+      await driver.activateAtUtf16(
+        wrappedCaret,
+        windowWidth: 1569,
+        windowHeight: 906,
+      );
+      const successor = ' Testing is somewhat useful but lik';
+      await driver.typeText(
+        successor,
+        cadence: const Duration(milliseconds: 80),
+      );
+      final wrapped = await driver.settle();
+      _expectHealthy(wrapped, driver);
+      expect(
+        wrapped.source,
+        prepared.source.replaceRange(wrappedCaret, wrappedCaret, successor),
+      );
+      expect(wrapped.selectionBaseUtf16, wrappedCaret + successor.length);
+      expect(wrapped.selectionExtentUtf16, wrappedCaret + successor.length);
     },
     skip: enabled
         ? false
@@ -88,4 +127,9 @@ void _expectHealthy(
   expect(snapshot.lastError, isNull, reason: driver.debugLastReceipt);
   expect(snapshot.resyncCount, 0, reason: driver.debugLastReceipt);
   expect(snapshot.lastResyncReason, 'none', reason: driver.debugLastReceipt);
+  expect(
+    snapshot.paintedCaretIdentities,
+    everyElement(isTrue),
+    reason: driver.debugLastReceipt,
+  );
 }

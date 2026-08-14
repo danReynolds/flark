@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flark/flark.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -88,6 +89,56 @@ void main() {
         expect(await tester.runAsync(probe.controller.readSource), afterFirst);
         await tester.runAsync(probe.expectHealthy);
         await tester.runAsync(probe.expectConvergesWithCleanRebuild);
+      } finally {
+        await mounted.close();
+        await tester.runAsync(probe.close);
+      }
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'sustained editing keeps the painted caret at its source offset',
+    (tester) async {
+      const marked = '''# Flark dogfood
+
+¦This is the real **Rust → Dart → Flutter** editor path. Use it like an editor,
+not a static Markdown preview. Certified Markdown stays rendered while focused;
+only incomplete or temporarily pending syntax becomes exact source locally.
+
+# Start here
+''';
+      final probe = (await tester.runAsync(
+        () => LiveEditorTransitionProbe.open(marked, libraryPath: libraryPath!),
+      ))!;
+      final mounted = await MountedTransitionRecorder.mount(
+        tester,
+        probe,
+        size: const Size(640, 600),
+      );
+      try {
+        await mounted.typeTextAndPumpEachCharacter('keepwhat');
+        await mounted.pressReturn();
+        await mounted.pumpPresentationSettled();
+
+        final beforeLaterEdit = await tester.runAsync(
+          probe.controller.readSource,
+        );
+        final laterCaret =
+            beforeLaterEdit!.indexOf('locally.') + 'locally.'.length;
+        await mounted.moveCaret(laterCaret);
+        const successor = ' Testing is somewhat useful but lik';
+        await mounted.typeTextAndPumpEachCharacter(successor);
+        await mounted.pumpPresentationSettled();
+
+        final expectedCaret = laterCaret + successor.length;
+        expect(
+          await tester.runAsync(probe.controller.readSource),
+          beforeLaterEdit.replaceRange(laterCaret, laterCaret, successor),
+        );
+        expect(probe.controller.globalCaretOffset, expectedCaret);
+        expect(mounted.paints.last.caretSourceUtf16, expectedCaret);
+        await tester.runAsync(probe.expectHealthy);
       } finally {
         await mounted.close();
         await tester.runAsync(probe.close);

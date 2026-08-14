@@ -92,6 +92,7 @@ final class PublicationSample {
     required this.inputValue,
     required this.globalSelectionBase,
     required this.globalSelectionExtent,
+    required this.hasOversizedSelection,
     required this.resyncCount,
     required this.lastError,
     required this.rows,
@@ -113,6 +114,7 @@ final class PublicationSample {
     inputValue: controller.inputValue,
     globalSelectionBase: controller.globalSelectionBase,
     globalSelectionExtent: controller.globalSelectionExtent,
+    hasOversizedSelection: controller.hasOversizedSelection,
     resyncCount: controller.resyncCount,
     lastError: controller.lastError,
     rows: controller.rows
@@ -133,6 +135,7 @@ final class PublicationSample {
   final TextEditingValue inputValue;
   final int globalSelectionBase;
   final int globalSelectionExtent;
+  final bool hasOversizedSelection;
   final int resyncCount;
   final Object? lastError;
   final List<SurfaceRowSample> rows;
@@ -161,6 +164,18 @@ final class PublicationSample {
     expect(selection.isValid, isTrue);
     expect(selection.start, inInclusiveRange(0, inputValue.text.length));
     expect(selection.end, inInclusiveRange(0, inputValue.text.length));
+    if (!hasOversizedSelection) {
+      expect(
+        inputGlobalStart + selection.baseOffset,
+        globalSelectionBase,
+        reason: 'the platform input base must represent the canonical base',
+      );
+      expect(
+        inputGlobalStart + selection.extentOffset,
+        globalSelectionExtent,
+        reason: 'the platform input extent must represent the canonical extent',
+      );
+    }
     final composing = inputValue.composing;
     if (composing != TextRange.empty) {
       expect(composing.isValid, isTrue);
@@ -341,6 +356,22 @@ final class LiveEditorTransitionProbe {
     return trace;
   }
 
+  void moveCaret(int globalUtf16Offset) {
+    final row = controller.rows.firstWhere(
+      (candidate) {
+        final editable = candidate.editableUtf16;
+        return editable != null &&
+            editable.start <= globalUtf16Offset &&
+            globalUtf16Offset <= editable.end;
+      },
+      orElse: () => throw StateError(
+        'caret $globalUtf16Offset is not in an editable certified row',
+      ),
+    );
+    controller.activateRow(row, globalUtf16Offset);
+    _platformValue = controller.inputValue;
+  }
+
   Future<PublicationSample> presentationSettled() async {
     await controller.debugWaitForPresentationSettled();
     _platformValue = controller.inputValue;
@@ -413,7 +444,7 @@ final class MountedTransitionRecorder {
             padding: EdgeInsets.zero,
             caretColor: const Color(0xff246bfd),
             selectionColor: const Color(0x40246bfd),
-            debugPaintObserver: recorder.paints.add,
+            debugPaintObserver: recorder._recordPaint,
           ),
         ),
       ),
@@ -427,14 +458,41 @@ final class MountedTransitionRecorder {
   final LiveEditorTransitionProbe probe;
   final List<FlarkSurfacePaintObservation> paints = [];
 
+  void _recordPaint(FlarkSurfacePaintObservation paint) {
+    if (paint.caretRect != null) {
+      expect(
+        paint.caretSourceUtf16,
+        paint.canonicalSelectionExtentUtf16,
+        reason:
+            'every painted caret must represent the controller selection in '
+            'the same frame',
+      );
+    }
+    paints.add(paint);
+  }
+
   Future<List<ActionTrace>> typeText(String text) async =>
       (await tester.runAsync(() async => probe.typeText(text)))!;
+
+  Future<List<ActionTrace>> typeTextAndPumpEachCharacter(String text) async {
+    final traces = <ActionTrace>[];
+    for (final rune in text.runes) {
+      traces.addAll(await typeText(String.fromCharCode(rune)));
+      await pumpImmediate();
+    }
+    return traces;
+  }
 
   Future<ActionTrace> pressReturn() async =>
       (await tester.runAsync(() async => probe.pressReturn()))!;
 
   Future<ActionTrace> pressBackspace() async =>
       (await tester.runAsync(() async => probe.pressBackspace()))!;
+
+  Future<void> moveCaret(int globalUtf16Offset) async {
+    await tester.runAsync(() async => probe.moveCaret(globalUtf16Offset));
+    await tester.pump();
+  }
 
   Future<void> pumpImmediate() => tester.pump();
 
