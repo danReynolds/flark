@@ -1,5 +1,5 @@
 name: flark_example
-description: macOS-first runnable vertical slice for Flark.
+description: macOS and Android dogfood app for the Flark v4 vertical slice.
 publish_to: none
 version: 0.1.0+1
 

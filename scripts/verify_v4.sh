@@ -28,6 +28,11 @@ cargo test --manifest-path "$BRIDGE/Cargo.toml" -p flark-runtime -p flark-abi
 "$ROOT/scripts/verify_v4_markdown_conformance.sh"
 
 (cd "$ROOT" && dart test test/v4/contracts --exclude-tags historical-receipt)
+# A fresh worktree has no package-local .dart_tool state. Resolve each v4
+# package explicitly so this gate does not depend on a previous developer run.
+(cd "$ROOT/packages/flark_core" && dart pub get)
+(cd "$ROOT/packages/flark" && flutter pub get)
+(cd "$ROOT/packages/flark_flutter" && flutter pub get)
 (cd "$ROOT/packages/flark_core" && dart analyze)
 (cd "$ROOT/packages/flark_core" && FLARK_V4_LIBRARY_PATH="$LIBRARY" dart test)
 (cd "$ROOT/packages/flark" && FLARK_V4_LIBRARY_PATH="$LIBRARY" flutter analyze)

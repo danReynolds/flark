@@ -11,12 +11,17 @@ import 'native_canary_mode.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  final configured = Platform.environment['FLARK_V4_LIBRARY_PATH'];
+  const configuredAtBuild = String.fromEnvironment('FLARK_V4_LIBRARY_PATH');
+  final configured = configuredAtBuild.isNotEmpty
+      ? configuredAtBuild
+      : Platform.environment['FLARK_V4_LIBRARY_PATH'];
   final libraryPath =
       configured ??
-      File(
-        '../../../native/comrak_bridge/target/release/libflark_abi.dylib',
-      ).absolute.path;
+      (Platform.isAndroid
+          ? 'libflark_abi.so'
+          : File(
+              '../../../native/comrak_bridge/target/release/libflark_abi.dylib',
+            ).absolute.path);
   runApp(
     FlarkDogfoodApp(
       libraryPath: libraryPath,
@@ -364,129 +369,203 @@ final class _DogfoodToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final displayed = loadingPreset ?? preset;
-    return SizedBox(
-      height: 58,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 18),
-        child: Row(
-          children: [
-            const Text(
-              'FLARK',
-              style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5),
-            ),
-            const SizedBox(width: 9),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: const Color(0xffe4e9ff),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                child: Text(
-                  'DOGFOOD',
-                  style: TextStyle(
-                    color: Color(0xff2548bf),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.8,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 22),
-            PopupMenuButton<DogfoodDocumentPreset>(
-              enabled: onPresetSelected != null,
-              tooltip: 'Switch dogfood document',
-              onSelected: onPresetSelected,
-              itemBuilder: (context) => [
-                for (final candidate in DogfoodDocumentPreset.values)
-                  PopupMenuItem(
-                    value: candidate,
-                    child: SizedBox(
-                      width: 270,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            candidate.label,
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            candidate.description,
-                            style: const TextStyle(
-                              color: Color(0xff6d7179),
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border.all(color: const Color(0xffd8d6d0)),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        displayed.label,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(width: 8),
-                      const Icon(Icons.expand_more, size: 18),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 6),
-            IconButton(
-              onPressed: onReload,
-              tooltip: 'Reset this document',
-              icon: const Icon(Icons.refresh, size: 20),
-            ),
-            const SizedBox(width: 8),
-            SegmentedButton<bool>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(
-                  value: false,
-                  icon: Icon(Icons.edit_outlined, size: 17),
-                  label: Text('EDIT'),
-                ),
-                ButtonSegment(
-                  value: true,
-                  icon: Icon(Icons.visibility_outlined, size: 17),
-                  label: Text('READ'),
-                ),
-              ],
-              selected: {readOnly},
-              onSelectionChanged: (selection) {
-                onReadOnlyChanged(selection.single);
-              },
-            ),
-            const Spacer(),
-            OutlinedButton.icon(
-              onPressed: onShowGuide,
-              icon: const Icon(Icons.fact_check_outlined, size: 18),
-              label: const Text('FEEDBACK GUIDE'),
-            ),
-          ],
+    return LayoutBuilder(
+      builder: (context, constraints) => SizedBox(
+        height: 58,
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: constraints.maxWidth < 700 ? 12 : 18,
+          ),
+          child: constraints.maxWidth < 700
+              ? _compactToolbar(displayed)
+              : _wideToolbar(displayed),
         ),
       ),
     );
   }
+
+  Widget _compactToolbar(DogfoodDocumentPreset displayed) => Row(
+    children: [
+      const Text(
+        'FLARK',
+        style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5),
+      ),
+      const SizedBox(width: 10),
+      Expanded(child: _documentPicker(displayed, compact: true)),
+      IconButton(
+        onPressed: onReload,
+        tooltip: 'Reset this document',
+        icon: const Icon(Icons.refresh, size: 20),
+      ),
+      PopupMenuButton<_DogfoodToolbarAction>(
+        tooltip: 'Dogfood actions',
+        onSelected: (action) {
+          switch (action) {
+            case _DogfoodToolbarAction.edit:
+              onReadOnlyChanged(false);
+              return;
+            case _DogfoodToolbarAction.read:
+              onReadOnlyChanged(true);
+              return;
+            case _DogfoodToolbarAction.guide:
+              onShowGuide();
+              return;
+          }
+        },
+        itemBuilder: (context) => const [
+          PopupMenuItem(
+            value: _DogfoodToolbarAction.edit,
+            child: ListTile(
+              leading: Icon(Icons.edit_outlined),
+              title: Text('Edit mode'),
+            ),
+          ),
+          PopupMenuItem(
+            value: _DogfoodToolbarAction.read,
+            child: ListTile(
+              leading: Icon(Icons.visibility_outlined),
+              title: Text('Read mode'),
+            ),
+          ),
+          PopupMenuItem(
+            value: _DogfoodToolbarAction.guide,
+            child: ListTile(
+              leading: Icon(Icons.fact_check_outlined),
+              title: Text('Feedback guide'),
+            ),
+          ),
+        ],
+      ),
+    ],
+  );
+
+  Widget _wideToolbar(DogfoodDocumentPreset displayed) => Row(
+    children: [
+      const Text(
+        'FLARK',
+        style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5),
+      ),
+      const SizedBox(width: 9),
+      DecoratedBox(
+        decoration: BoxDecoration(
+          color: const Color(0xffe4e9ff),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+          child: Text(
+            'DOGFOOD',
+            style: TextStyle(
+              color: Color(0xff2548bf),
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.8,
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(width: 22),
+      _documentPicker(displayed),
+      const SizedBox(width: 6),
+      IconButton(
+        onPressed: onReload,
+        tooltip: 'Reset this document',
+        icon: const Icon(Icons.refresh, size: 20),
+      ),
+      const SizedBox(width: 8),
+      SegmentedButton<bool>(
+        showSelectedIcon: false,
+        segments: const [
+          ButtonSegment(
+            value: false,
+            icon: Icon(Icons.edit_outlined, size: 17),
+            label: Text('EDIT'),
+          ),
+          ButtonSegment(
+            value: true,
+            icon: Icon(Icons.visibility_outlined, size: 17),
+            label: Text('READ'),
+          ),
+        ],
+        selected: {readOnly},
+        onSelectionChanged: (selection) {
+          onReadOnlyChanged(selection.single);
+        },
+      ),
+      const Spacer(),
+      OutlinedButton.icon(
+        onPressed: onShowGuide,
+        icon: const Icon(Icons.fact_check_outlined, size: 18),
+        label: const Text('FEEDBACK GUIDE'),
+      ),
+    ],
+  );
+
+  Widget _documentPicker(
+    DogfoodDocumentPreset displayed, {
+    bool compact = false,
+  }) => PopupMenuButton<DogfoodDocumentPreset>(
+    enabled: onPresetSelected != null,
+    tooltip: 'Switch dogfood document',
+    onSelected: onPresetSelected,
+    itemBuilder: (context) => [
+      for (final candidate in DogfoodDocumentPreset.values)
+        PopupMenuItem(
+          value: candidate,
+          child: SizedBox(
+            width: 270,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  candidate.label,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  candidate.description,
+                  style: const TextStyle(
+                    color: Color(0xff6d7179),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+    ],
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xffd8d6d0)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 10 : 12,
+          vertical: 8,
+        ),
+        child: Row(
+          mainAxisSize: compact ? MainAxisSize.max : MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                displayed.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Icon(Icons.expand_more, size: 18),
+          ],
+        ),
+      ),
+    ),
+  );
 }
+
+enum _DogfoodToolbarAction { edit, read, guide }
 
 final class _DiagnosticsBar extends StatelessWidget {
   const _DiagnosticsBar({
@@ -529,7 +608,12 @@ final class _DiagnosticsBar extends StatelessWidget {
                 _Separator(),
                 _Metric('input ${controller.inputWindowState.name}'),
                 _Separator(),
-                _Metric('${controller.resyncCount} resyncs'),
+                _Metric(
+                  controller.resyncCount == 0
+                      ? '0 resyncs'
+                      : '${controller.resyncCount} resyncs '
+                            '(${controller.lastResyncReason.name})',
+                ),
                 if (generationDuration case final duration?) ...[
                   _Separator(),
                   _Metric('generated ${_formatDuration(duration)}'),

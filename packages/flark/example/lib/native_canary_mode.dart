@@ -12,9 +12,15 @@ final class DogfoodNativeCanaryMode {
   });
 
   static DogfoodNativeCanaryMode? fromEnvironment() {
-    final receiptPath = Platform.environment['FLARK_CANARY_RECEIPT_PATH'];
+    const receiptAtBuild = String.fromEnvironment('FLARK_CANARY_RECEIPT_PATH');
+    const commandAtBuild = String.fromEnvironment('FLARK_CANARY_COMMAND_PATH');
+    final receiptPath = receiptAtBuild.isNotEmpty
+        ? receiptAtBuild
+        : Platform.environment['FLARK_CANARY_RECEIPT_PATH'];
     if (receiptPath == null) return null;
-    final commandPath = Platform.environment['FLARK_CANARY_COMMAND_PATH'];
+    final commandPath = commandAtBuild.isNotEmpty
+        ? commandAtBuild
+        : Platform.environment['FLARK_CANARY_COMMAND_PATH'];
     if (commandPath == null) return null;
     return DogfoodNativeCanaryMode(
       receiptPath: receiptPath,

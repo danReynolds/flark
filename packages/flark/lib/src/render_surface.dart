@@ -1816,10 +1816,23 @@ final class RenderFlarkSurface extends RenderBox {
             row.painter.preferredLineHeight,
           );
           observedCaretRect = rect;
-          observedCaretSourceUtf16 = row.presentation.sourceOffsetForTextOffset(
-            extent,
+          // A projected display position can represent a range of hidden
+          // source offsets (for example source offsets 0..2 all paint before
+          // the first visible character of an ATX heading). Preserve the
+          // authoritative source identity when the painted display position
+          // is exactly its projection; only reverse-map when the painted
+          // caret is genuinely somewhere else.
+          final canonicalSource = _controller.globalSelectionExtent;
+          final canonicalDisplay = row.presentation.textOffsetForSourceOffset(
+            canonicalSource,
             affinity: selection.affinity,
           );
+          observedCaretSourceUtf16 = canonicalDisplay == extent
+              ? canonicalSource
+              : row.presentation.sourceOffsetForTextOffset(
+                  extent,
+                  affinity: selection.affinity,
+                );
           canvas.drawRect(rect, Paint()..color = _caretColor);
         }
       }

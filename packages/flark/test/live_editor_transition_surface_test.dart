@@ -1,7 +1,7 @@
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:flark/flark.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/live_editor_transition_probe.dart';
@@ -201,6 +201,47 @@ void main() {
           await mounted.close();
           await tester.runAsync(probe.close);
         }
+      }
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'projected heading start retains its hidden-prefix source identity',
+    (tester) async {
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(
+          '# Flark dogfood\n',
+          libraryPath: libraryPath!,
+        ),
+      ))!;
+      final paints = <FlarkSurfacePaintObservation>[];
+      try {
+        await tester.runAsync(controller.continueParsing);
+        await tester.binding.setSurfaceSize(const Size(360, 420));
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: FlarkEditor(
+              controller: controller,
+              autofocus: true,
+              debugPaintObserver: paints.add,
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.runAsync(controller.debugWaitForPresentationSettled);
+        await tester.pump();
+
+        expect(controller.globalSelectionExtent, 0);
+        expect(paints, isNotEmpty);
+        expect(paints.last.canonicalSelectionExtentUtf16, 0);
+        expect(paints.last.caretSourceUtf16, 0);
+        expect(controller.lastError, isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.binding.setSurfaceSize(null);
+        await tester.runAsync(controller.close);
       }
     },
     skip: libraryPath == null,
