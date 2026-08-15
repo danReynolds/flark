@@ -273,6 +273,53 @@ void main() {
   );
 
   test(
+    'dead-key delta replacement commits at a projected paragraph boundary',
+    () async {
+      const source = 'caf\n';
+      final controller = await FlarkEditorController.open(
+        source,
+        libraryPath: libraryPath!,
+      );
+      addTearDown(controller.close);
+      await controller.continueParsing();
+      controller.activateRow(controller.rows.single, 3);
+
+      controller.applyDeltas([
+        TextEditingDeltaInsertion(
+          oldText: source,
+          textInserted: '´',
+          insertionOffset: 3,
+          selection: const TextSelection.collapsed(offset: 4),
+          composing: const TextRange(start: 3, end: 4),
+        ),
+      ]);
+      controller.applyDeltas([
+        const TextEditingDeltaReplacement(
+          oldText: 'caf´\n',
+          replacementText: 'é',
+          replacedRange: TextRange(start: 3, end: 4),
+          selection: TextSelection.collapsed(offset: 4),
+          composing: TextRange.empty,
+        ),
+      ]);
+
+      await _waitForTransactions(controller);
+      await controller.continueParsing();
+      expect(controller.visibleSource, 'café\n');
+      expect(controller.inputValue.composing, TextRange.empty);
+      expect(controller.globalSelectionBase, 4);
+      expect(controller.globalSelectionExtent, 4);
+      expect(controller.resyncCount, 0);
+      expect(controller.lastError, isNull);
+
+      expect(await controller.undo(), isTrue);
+      expect(controller.visibleSource, source);
+      expect(controller.canUndo, isFalse);
+    },
+    skip: libraryPath == null,
+  );
+
+  test(
     'IME cancellation restores its exact base without consuming prior undo',
     () async {
       const source = 'base\n';

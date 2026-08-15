@@ -812,13 +812,57 @@ also complete in the active v4 path. The everyday gate remains
 `scripts/verify_v4.sh`; the large density proof remains
 `scripts/verify_v4_certification_stress.sh`.
 
-The remaining evidence boundary is intentionally narrow: pin the exact
-CommonMark/GFM/live-projection profile and execute its conformance lane; run a
-controlled foreground Mac session for claim-eligible performance and real IME;
-and keep the one unreproduced bulk `INTERNAL_FAULT` diagnostic armed until a
-reoccurrence identifies its source or the controlled session clears the
-targeted workload. Android/iOS device qualification and the eventual legacy
-identity cutover remain later milestones.
+### H5 hardening result (2026-08-15)
+
+The machine-verifiable H5 boundary is now closed. The normative semantic lane
+is 672/672 exact for GFM 0.29-gfm, and all six deterministic histories for
+every case are exact against clean selected-profile results: 4,032 edits,
+4,027 local adoptions and five pinned clean fallbacks. The receipt drift caused
+when the temporal test cutover changed those five path labels is reconciled in
+the active ledger, and the semantic profile now points at active
+`flark-live-v2` rather than the frozen v1 prototype.
+
+Every non-device live-v2 family now names an executable product-path test.
+The compact temporal circuits cover syntax hazards, structural Return plus an
+immediate successor, blank-line Return/Backspace geometry, sustained wrapped
+typing, cross-range replacement/history, pending certification, GFM objects,
+source gaps/oversized fallback, view parity, and bounded hostile shapes. The
+Mac native canary remains the narrow OS-routing lane for real keys, clipboard,
+pointer selection, scrolling, every-painted-frame caret identity, and a real
+Option-E/E dead-key composition route. CJK IME, autocorrect, dictation, and
+touch behavior remain physical-device receipts rather than simulated claims.
+
+The fixed 64 MiB admitted-payload contract supports ordinary and giant-line
+documents through 10 MiB and the deliberately pathological four-byte-block
+shape through 5 MiB (more than 1.3 million blocks). The release certification
+receipt for that 5 MiB dense case reached `Ready` in 16.98 seconds with
+64,844,455 live payload bytes and closed to zero state. A 10 MiB four-byte-block
+fixture is outside that explicit density envelope and fails with typed
+`PayloadBudgetExceeded`; the sweep records the exclusion instead of turning a
+known capacity contract into an anonymous missing receipt.
+
+The controlled 1 MiB ordinary typing run is claim-eligible at 120 Hz:
+input-to-frame p99 8.500 ms, editor latency p99 1.564 ms, build p99 1.581 ms,
+raster p99 0.907 ms, and no editor, display, or unexplained over-budget sample.
+The current 1 MiB giant-line run kept editor latency at 3.395 ms p99, build at
+2.144 ms p99, raster at 0.950 ms p99, and zero editor-attributed misses. Its
+panel served the synthetic test at 20 Hz, so all 120 wall delays are explicitly
+display-attributed and the run remains defect-resolution evidence rather than
+a wall-clock claim. A test-only animation failed to change that cadence and was
+discarded rather than retained as ineffective harness machinery.
+
+The previously one-off bulk `INTERNAL_FAULT` did not recur through a controlled
+14-cycle 32 KiB paste/undo surface workload or the focused Core/Flutter lanes,
+so its temporary diagnostic printing is removed. The workload exposed a
+separate honest performance residue: after a 32 KiB paste into a 1 MiB file,
+large undo waits about 0.9 seconds for full recertification while retaining the
+old coherent frame. That is not typing jank or a correctness fault, but it is a
+post-dogfood optimization target for receipt-backed history presentation.
+
+Android and iOS source/build checks may run on this Mac, but interaction and
+performance claims still require physical devices. Windows is outside the
+current program scope. The eventual legacy identity cutover remains a separate
+release decision, not part of H5 editor hardening.
 
 ## 1. Destination and current state
 

@@ -311,11 +311,7 @@ fn map_document_error(error: &DocumentSessionError) -> StatusCode {
         DocumentSessionError::UnsupportedEditIntentSelection => StatusCode::InvalidArgument,
         DocumentSessionError::QueryBudgetExceeded => StatusCode::QueryLimitExceeded,
         error if error.is_backpressure() => StatusCode::Backpressure,
-        DocumentSessionError::Engine(error) => {
-            // TEMP-DIAG: remove after the bulk-commit fault is identified.
-            eprintln!("flark-diag internal-fault engine: {error:?}");
-            StatusCode::InternalFault
-        }
+        DocumentSessionError::Engine(_) => StatusCode::InternalFault,
     }
 }
 
@@ -493,19 +489,10 @@ fn retain_history(
         }
         let oldest = entry.history_head;
         if oldest == 0 {
-            // TEMP-DIAG: remove after the bulk-commit fault is identified.
-            eprintln!(
-                "flark-diag internal-fault retain: empty head, used={} budget={}",
-                entry.history_used_bytes, history_budget_bytes
-            );
             return Err(StatusCode::InternalFault);
         }
-        let evicted = detach_history(registry, oldest).ok_or_else(|| {
-            eprintln!("flark-diag internal-fault retain: detach miss {oldest}");
-            StatusCode::InternalFault
-        })?;
+        let evicted = detach_history(registry, oldest).ok_or(StatusCode::InternalFault)?;
         if evicted.session != session.session || evicted.owner != session.owner_token {
-            eprintln!("flark-diag internal-fault retain: foreign eviction");
             return Err(StatusCode::InternalFault);
         }
         record_evicted_history_token(session_entry(registry, session)?, oldest);

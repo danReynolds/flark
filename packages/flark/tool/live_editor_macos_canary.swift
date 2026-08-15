@@ -349,6 +349,31 @@ func pressCommandShortcut(_ virtualKey: CGKeyCode, shift: Bool = false) {
   modifier(55, down: false, flags: [])
 }
 
+/// Exercises AppKit's real dead-key/composition route rather than injecting a
+/// precomposed Unicode scalar. Key codes are the physical E key and left
+/// Option key; the current macOS input source resolves Option-E, E to `é`.
+func pressAcuteE() {
+  let leftOption = CGEventFlags(
+    rawValue: CGEventFlags.maskAlternate.rawValue | 0x00000020
+  )
+  func modifier(_ down: Bool, flags: CGEventFlags) {
+    let event = CGEvent(
+      keyboardEventSource: eventSource,
+      virtualKey: 58,
+      keyDown: down
+    )
+    event?.type = .flagsChanged
+    event?.flags = flags
+    event?.post(tap: .cghidEventTap)
+    pause(milliseconds: 10)
+  }
+
+  modifier(true, flags: leftOption)
+  pressKey(14, flags: leftOption)
+  modifier(false, flags: [])
+  pressKey(14)
+}
+
 func postKey(named name: String) throws {
   switch name {
   case "enter": pressKey(36)
@@ -360,6 +385,7 @@ func postKey(named name: String) throws {
   case "paste": pressCommandShortcut(9)
   case "undo": pressCommandShortcut(6)
   case "redo": pressCommandShortcut(6, shift: true)
+  case "acuteE": pressAcuteE()
   default: throw ActuatorFailure.message("unsupported key \(name)")
   }
 }
@@ -543,11 +569,13 @@ while !shouldStop, let line = readLine() {
       let actualExtent = activationReceipt["selectionExtentUtf16"] as? Int
       guard actualBase == offset, actualExtent == offset
       else {
+        let events = activationReceipt["inputEvents"] as? [String] ?? []
         throw ActuatorFailure.message(
           "activation did not settle at source offset \(offset); " +
             "actual=\(String(describing: actualBase)).." +
             "\(String(describing: actualExtent)); " +
-            "point=\(point); window=\(window.origin)/\(window.size)"
+            "point=\(point); window=\(window.origin)/\(window.size); " +
+            "events=\(events)"
         )
       }
       response["snapshot"] = activationReceipt

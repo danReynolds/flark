@@ -2586,7 +2586,20 @@ final class FlarkEditorController extends ChangeNotifier {
         mutation.end > source.length) {
       return false;
     }
-    if (_mutationTouchesOnlyHiddenProjection(mutation)) return false;
+    // A platform composition may temporarily occupy a source position that
+    // the last certified projection still describes as a hidden delimiter or
+    // trailing newline. Once that range was accepted, later IME updates own
+    // it authoritatively; rejecting the replacement against stale projection
+    // facts drops real dead-key/CJK commits and forces a needless resync.
+    final activeComposition = _inputValue.composing;
+    final replacesAcceptedComposition =
+        activeComposition.isValid &&
+        mutation.start >= activeComposition.start &&
+        mutation.end <= activeComposition.end;
+    if (!replacesAcceptedComposition &&
+        _mutationTouchesOnlyHiddenProjection(mutation)) {
+      return false;
+    }
     final nextLength = _replacementLength(
       source,
       mutation.start,

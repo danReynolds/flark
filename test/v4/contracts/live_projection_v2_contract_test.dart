@@ -33,6 +33,34 @@ void main() {
     expect(receipt['wallClockDeferral'], contains('foreground'));
   });
 
+  test('pins H5 Mac qualification without disguising display throttling', () {
+    final receipts = _list(
+      profile['h5MacQualificationReceipts'],
+    ).map(_map).toList();
+    final ordinary = receipts.singleWhere(
+      (entry) => entry['fixtureShape'] == 'ordinary',
+    );
+    expect(ordinary['measuredEdits'], 120);
+    expect(ordinary['servedDisplayHz'], 120);
+    expect(ordinary['inputToFrameP99Ms'], lessThan(16));
+    expect(ordinary['editorLatencyP99Ms'], lessThan(16));
+    expect(ordinary['editorAttributedOverBudget'], 0);
+    expect(ordinary['displayAttributedOverBudget'], 0);
+    expect(ordinary['unexplainedOverBudget'], 0);
+    expect(ordinary['wallClockClaimEligible'], isTrue);
+
+    final giant = receipts.singleWhere(
+      (entry) => entry['fixtureShape'] == 'giant-line',
+    );
+    expect(giant['servedDisplayHz'], lessThan(60));
+    expect(giant['editorLatencyP99Ms'], lessThan(16));
+    expect(giant['editorAttributedOverBudget'], 0);
+    expect(giant['displayAttributedOverBudget'], 120);
+    expect(giant['unexplainedOverBudget'], 0);
+    expect(giant['wallClockClaimEligible'], isFalse);
+    expect(giant['wallClockDeferral'], contains('20 Hz'));
+  });
+
   test('owns the complete projection behavior denominator', () {
     expect(
       families.map((entry) => entry['id']).toSet(),
@@ -65,6 +93,11 @@ void main() {
       expect(family['status'], isIn(statuses));
       expect(family['evidence'], isA<String>());
     }
+    expect(
+      families.where((family) => family['status'] == 'planned'),
+      isEmpty,
+      reason: 'all machine-verifiable live-v2 families must be implemented',
+    );
   });
 
   test('records source, anchors, projection authority, and outcomes', () {

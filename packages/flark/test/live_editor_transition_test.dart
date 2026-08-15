@@ -62,20 +62,30 @@ void main() {
   );
 
   test(
-    'Return plus an immediate successor remains one exact lineage',
+    'structural Return plus an immediate successor remains one exact lineage',
     () async {
-      final probe = await LiveEditorTransitionProbe.open(
-        'Paragraph.¦\n1. item\n',
-        libraryPath: libraryPath!,
-      );
-      try {
-        probe.pressReturn();
-        probe.typeText('Next');
-        await probe.expectSourceAndCaret('Paragraph.\n\nNext¦\n1. item\n');
-        await probe.expectHealthy();
-        await probe.expectConvergesWithCleanRebuild();
-      } finally {
-        await probe.close();
+      const cases = <(String, String)>[
+        ('Paragraph.¦\n1. item\n', 'Paragraph.\n\nNext¦\n1. item\n'),
+        ('## Heading¦', '## Heading\n\nNext¦'),
+        ('- item¦', '- item\n- Next¦'),
+        ('9) item¦', '9) item\n10) Next¦'),
+        ('- [x] done¦', '- [x] done\n- [ ] Next¦'),
+        ('> quote¦', '> quote\n> Next¦'),
+      ];
+      for (final (initial, expected) in cases) {
+        final probe = await LiveEditorTransitionProbe.open(
+          initial,
+          libraryPath: libraryPath!,
+        );
+        try {
+          probe.pressReturn();
+          probe.typeText('Next');
+          await probe.expectSourceAndCaret(expected);
+          await probe.expectHealthy();
+          await probe.expectConvergesWithCleanRebuild();
+        } finally {
+          await probe.close();
+        }
       }
     },
     skip: libraryPath == null,

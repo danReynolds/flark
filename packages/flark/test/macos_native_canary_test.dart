@@ -32,6 +32,16 @@ void main() {
         everyElement(isNot(contains('**sentinel**'))),
       );
 
+      const deadKeySource = 'caf\n';
+      await driver.reset(id: 'dead-key-composition', source: deadKeySource);
+      await driver.activateAtUtf16(3);
+      await driver.pressKey('acuteE');
+      final deadKey = await driver.settle();
+      _expectHealthy(deadKey, driver);
+      expect(deadKey.source, 'café\n');
+      expect(deadKey.selectionBaseUtf16, 4);
+      expect(deadKey.selectionExtentUtf16, 4);
+
       const blankSource = 'alpha\n\n## next\n';
       await driver.reset(id: 'return-backspace-routing', source: blankSource);
       await driver.activateAtUtf16(5);

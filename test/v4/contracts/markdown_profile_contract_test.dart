@@ -61,14 +61,14 @@ void main() {
     );
   });
 
-  test('keeps flark-live-v1 independent from semantic conformance', () {
+  test('keeps active flark-live-v2 independent from semantic conformance', () {
     final selected = _map(profile['liveProjectionProfile']);
-    expect(selected['profileId'], 'flark-live-v1');
+    expect(selected['profileId'], 'flark-live-v2');
     expect(selected['rule'], contains('never counted as semantic GFM'));
     final manifestPath = selected['manifest'] as String;
     _expectHash(manifestPath, selected['manifestSha256'] as String);
     final manifest = _object(manifestPath);
-    expect(manifest['profileId'], 'flark-live-v1');
+    expect(manifest['profileId'], 'flark-live-v2');
     expect(manifest['semanticProfileId'], profile['profileId']);
     expect(manifest['separationRule'], contains('never changes GFM'));
     _expectHash(
@@ -131,7 +131,7 @@ void main() {
     });
     expect(
       ledgers['gfm_incremental']!['receiptSha256'],
-      '40b6b939da32781f413b9ed55960d4f23894139d4770503f5dd07eb4d490aa7f',
+      '72bdbecb1082f5f42a62442e1b8a7971e174cdd0e173924da6478642c5da1eb1',
     );
     expect(ledgers['commonmark_semantic']!['counts'], {
       'exact': 652,

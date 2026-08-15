@@ -42,6 +42,18 @@ void main() {
       libraryPath: libraryPath,
     );
     await controller.continueParsing();
+    if (controller.lastError != null) {
+      stdout.writeln(
+        'FLARK_PROFILE_REJECTION ${jsonEncode({'fixtureShape': fixtureShape, 'workload': workload, 'sourceBytes': controller.sourceByteLength, 'status': controller.status.name, 'error': controller.lastError.toString()})}',
+      );
+    }
+    expect(
+      controller.lastError,
+      isNull,
+      reason:
+          '$fixtureShape at $sourceBytes bytes must complete initial '
+          'certification before performance sampling',
+    );
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,

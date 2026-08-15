@@ -10,43 +10,98 @@ void main() {
   final libraryPath = Platform.environment['FLARK_V4_LIBRARY_PATH'];
 
   testWidgets(
-    'syntax hazard never paints an unrelated certified block as source',
+    'syntax hazards never paint an unrelated certified block as source',
     (tester) async {
-      final probe = (await tester.runAsync(
-        () => LiveEditorTransitionProbe.open(
-          '**sentinel**\n\npla¦in\n',
-          libraryPath: libraryPath!,
-        ),
-      ))!;
-      final mounted = await MountedTransitionRecorder.mount(tester, probe);
-      try {
-        await mounted.typeText('*');
-        await mounted.pumpImmediate();
+      const cases = <(String, String)>[
+        ('pla¦in', '*'),
+        ('pla¦in', '['),
+        ('**bo¦ld**', '_'),
+        ('**bo¦ld**', ']'),
+        ('_e¦m_', '`'),
+        ('_e¦m_', '~'),
+        ('`co¦de`', '['),
+        ('[la¦bel](https://example.test)', ']'),
+        ('[la¦bel](https://example.test)', '>'),
+        ('- it¦em', '~'),
+        ('> qu¦ote', '>'),
+        ('> qu¦ote', '*'),
+        ('*op¦en', '_'),
+        (r'escaped \¦* literal', 'a'),
+        (r'escaped \¦* literal', '`'),
+      ];
+      for (final (subject, character) in cases) {
+        final marked = '**sentinel**\n\n$subject\n';
+        final initial = MarkedSource.parse(marked);
+        final expectedSource = initial.source.replaceRange(
+          initial.caret,
+          initial.caret,
+          character,
+        );
+        final probe = (await tester.runAsync(
+          () =>
+              LiveEditorTransitionProbe.open(marked, libraryPath: libraryPath!),
+        ))!;
+        final mounted = await MountedTransitionRecorder.mount(tester, probe);
+        try {
+          await mounted.typeText(character);
+          await mounted.pumpImmediate();
 
-        expect(mounted.paints, isNotEmpty);
-        expect(
-          mounted.paints,
-          everyElement(
-            isA<FlarkSurfacePaintObservation>().having(
-              (paint) => paint.presentation,
-              'presentation',
-              isNot(contains('**sentinel**')),
+          expect(mounted.paints, isNotEmpty, reason: '$subject + $character');
+          expect(
+            mounted.paints,
+            everyElement(
+              isA<FlarkSurfacePaintObservation>().having(
+                (paint) => paint.presentation,
+                'presentation for $subject + $character',
+                isNot(contains('**sentinel**')),
+              ),
             ),
-          ),
-        );
-        expect(
-          mounted.paints.last.rows.any(
-            (row) => !row.neutral && row.text == 'sentinel',
-          ),
-          isTrue,
-        );
+          );
+          expect(
+            mounted.paints.last.rows.any(
+              (row) => !row.neutral && row.text == 'sentinel',
+            ),
+            isTrue,
+            reason: '$subject + $character demoted the sentinel',
+          );
 
-        await mounted.pumpPresentationSettled();
-        await tester.runAsync(probe.expectHealthy);
-        await tester.runAsync(probe.expectConvergesWithCleanRebuild);
-      } finally {
-        await mounted.close();
-        await tester.runAsync(probe.close);
+          await mounted.pumpPresentationSettled();
+          expect(
+            await tester.runAsync(probe.controller.readSource),
+            expectedSource,
+          );
+          expect(
+            probe.controller.globalCaretOffset,
+            initial.caret + character.length,
+          );
+          await tester.runAsync(probe.expectHealthy);
+          await tester.runAsync(probe.expectConvergesWithCleanRebuild);
+
+          if (subject == 'pla¦in' && character == '*') {
+            mounted.paints.clear();
+            await mounted.pressBackspace();
+            await mounted.pumpImmediate();
+            await mounted.pumpPresentationSettled();
+            expect(
+              await tester.runAsync(probe.controller.readSource),
+              initial.source,
+            );
+            expect(probe.controller.globalCaretOffset, initial.caret);
+            expect(
+              mounted.paints,
+              everyElement(
+                isA<FlarkSurfacePaintObservation>().having(
+                  (paint) => paint.presentation,
+                  'presentation after deleting the syntax hazard',
+                  isNot(contains('**sentinel**')),
+                ),
+              ),
+            );
+          }
+        } finally {
+          await mounted.close();
+          await tester.runAsync(probe.close);
+        }
       }
     },
     skip: libraryPath == null,
@@ -98,6 +153,60 @@ void main() {
   );
 
   testWidgets(
+    'structural Return with immediate typing paints one exact lineage',
+    (tester) async {
+      const cases = <(String, String)>[
+        (
+          '**sentinel**\n\nParagraph.¦\n1. item\n',
+          '**sentinel**\n\nParagraph.\n\nNext¦\n1. item\n',
+        ),
+        ('**sentinel**\n\n## Heading¦', '**sentinel**\n\n## Heading\n\nNext¦'),
+        ('**sentinel**\n\n- item¦', '**sentinel**\n\n- item\n- Next¦'),
+        ('**sentinel**\n\n9) item¦', '**sentinel**\n\n9) item\n10) Next¦'),
+        (
+          '**sentinel**\n\n- [x] done¦',
+          '**sentinel**\n\n- [x] done\n- [ ] Next¦',
+        ),
+        ('**sentinel**\n\n> quote¦', '**sentinel**\n\n> quote\n> Next¦'),
+      ];
+      for (final (initial, expected) in cases) {
+        final probe = (await tester.runAsync(
+          () => LiveEditorTransitionProbe.open(
+            initial,
+            libraryPath: libraryPath!,
+          ),
+        ))!;
+        final mounted = await MountedTransitionRecorder.mount(tester, probe);
+        try {
+          await mounted.pressReturn();
+          await mounted.typeText('Next');
+          await mounted.pumpImmediate();
+          await mounted.pumpPresentationSettled();
+
+          await tester.runAsync(() => probe.expectSourceAndCaret(expected));
+          expect(mounted.paints, isNotEmpty, reason: initial);
+          expect(
+            mounted.paints,
+            everyElement(
+              isA<FlarkSurfacePaintObservation>().having(
+                (paint) => paint.presentation,
+                'presentation for $initial',
+                isNot(contains('**sentinel**')),
+              ),
+            ),
+          );
+          await tester.runAsync(probe.expectHealthy);
+          await tester.runAsync(probe.expectConvergesWithCleanRebuild);
+        } finally {
+          await mounted.close();
+          await tester.runAsync(probe.close);
+        }
+      }
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
     'sustained editing keeps the painted caret at its source offset',
     (tester) async {
       const marked = '''# Flark dogfood
@@ -139,6 +248,70 @@ only incomplete or temporarily pending syntax becomes exact source locally.
         expect(probe.controller.globalCaretOffset, expectedCaret);
         expect(mounted.paints.last.caretSourceUtf16, expectedCaret);
         await tester.runAsync(probe.expectHealthy);
+      } finally {
+        await mounted.close();
+        await tester.runAsync(probe.close);
+      }
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'mixed Markdown typing stays source-exact across wraps and recertification',
+    (tester) async {
+      const marked = '''**sentinel**
+
+¦A plain paragraph that is already long enough to wrap on a narrow surface.
+''';
+      final initial = MarkedSource.parse(marked);
+      final probe = (await tester.runAsync(
+        () => LiveEditorTransitionProbe.open(marked, libraryPath: libraryPath!),
+      ))!;
+      final mounted = await MountedTransitionRecorder.mount(
+        tester,
+        probe,
+        size: const Size(360, 420),
+      );
+      try {
+        const inserted =
+            'Rapid **bold** and _emphasis_ with `code` and [label](https://a.test). ';
+        await mounted.typeTextAndPumpEachCharacter(inserted);
+        await mounted.pumpPresentationSettled();
+
+        final expected = initial.source.replaceRange(
+          initial.caret,
+          initial.caret,
+          inserted,
+        );
+        expect(await tester.runAsync(probe.controller.readSource), expected);
+        expect(
+          probe.controller.globalCaretOffset,
+          initial.caret + inserted.length,
+        );
+        expect(
+          mounted.paints,
+          everyElement(
+            isA<FlarkSurfacePaintObservation>().having(
+              (paint) => paint.presentation,
+              'presentation',
+              isNot(contains('**sentinel**')),
+            ),
+          ),
+        );
+
+        final boldCaret = expected.indexOf('bold') + 2;
+        await mounted.moveCaret(boldCaret);
+        mounted.paints.clear();
+        await mounted.typeTextAndPumpEachCharacter('Xy');
+        await mounted.pumpPresentationSettled();
+        expect(
+          await tester.runAsync(probe.controller.readSource),
+          expected.replaceRange(boldCaret, boldCaret, 'Xy'),
+        );
+        expect(probe.controller.globalCaretOffset, boldCaret + 2);
+        expect(mounted.paints, isNotEmpty);
+        await tester.runAsync(probe.expectHealthy);
+        await tester.runAsync(probe.expectConvergesWithCleanRebuild);
       } finally {
         await mounted.close();
         await tester.runAsync(probe.close);

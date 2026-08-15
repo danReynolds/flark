@@ -1010,10 +1010,31 @@ final class _FlarkEditorState extends State<FlarkEditor>
   void updateEditingValueWithDeltas(List<TextEditingDelta> textEditingDeltas) {
     _preferredVerticalNavigationX = null;
     widget.debugInputEventObserver?.call(
-      'deltas:${textEditingDeltas.map((delta) => delta.runtimeType).join(',')}'
-      ':old=${textEditingDeltas.isEmpty ? -1 : textEditingDeltas.first.oldText.length}',
+      'deltas:${textEditingDeltas.map(_debugTextEditingDelta).join('|')}',
     );
     widget.controller.applyDeltas(textEditingDeltas);
+  }
+
+  String _debugTextEditingDelta(TextEditingDelta delta) {
+    final mutation = switch (delta) {
+      TextEditingDeltaInsertion insertion =>
+        '${insertion.insertionOffset}..${insertion.insertionOffset}'
+            '=${insertion.textInserted}',
+      TextEditingDeltaDeletion deletion =>
+        '${deletion.deletedRange.start}..${deletion.deletedRange.end}=',
+      TextEditingDeltaReplacement replacement =>
+        '${replacement.replacedRange.start}..${replacement.replacedRange.end}'
+            '=${replacement.replacementText}',
+      TextEditingDeltaNonTextUpdate() => 'none',
+      _ => 'unknown',
+    };
+    final selection = delta.selection;
+    final composing = delta.composing;
+    return '${delta.runtimeType}:old=${delta.oldText.length}:mutation=$mutation'
+        ':selection=${selection.baseOffset}..${selection.extentOffset}'
+        ':selectionValid=${selection.isValid}'
+        ':composing=${composing.start}..${composing.end}'
+        ':composingValid=${composing.isValid}';
   }
 
   @override

@@ -40,9 +40,9 @@
     }
   ],
   "liveProjectionProfile": {
-    "profileId": "flark-live-v1",
-    "manifest": "test/fixtures/v4/live_projection_profile_v1.json",
-    "manifestSha256": "6d18e9af77969c0d29325436058af018fb729795f742849c1cfda279684b57a2",
+    "profileId": "flark-live-v2",
+    "manifest": "test/fixtures/v4/live_projection_profile_v2.json",
+    "manifestSha256": "e485cb4843b039c705676f8bd6334cbe9448ce21fede8d8a84a4ba3d2698c250",
     "rule": "Live editor projection is independently versioned and never counted as semantic GFM conformance."
   },
   "sourcePolicy": {
