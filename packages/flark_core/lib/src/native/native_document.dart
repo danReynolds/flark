@@ -387,14 +387,15 @@ final class FlarkNativeDocument {
 
   static FlarkNativeDocument open(
     String source, {
-    required String libraryPath,
+    String? libraryPath,
     int historyBudgetBytes = 8 * 1024 * 1024,
   }) {
     if (historyBudgetBytes < 0) {
       throw RangeError.value(historyBudgetBytes, 'historyBudgetBytes');
     }
-    final library = DynamicLibrary.open(libraryPath);
-    final bindings = FlarkV4Bindings(library);
+    final bindings = libraryPath == null
+        ? FlarkV4Bindings.nativeAsset()
+        : FlarkV4Bindings(DynamicLibrary.open(libraryPath));
     _negotiate(bindings);
     final bytes = utf8.encode(source);
     final ownerToken = _nextOwnerToken++;

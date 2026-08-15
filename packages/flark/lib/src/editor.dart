@@ -207,7 +207,14 @@ final class _FlarkEditorState extends State<FlarkEditor>
   }
 
   void _openConnection() {
-    if (_connection?.attached ?? false) return;
+    if (_connection?.attached ?? false) {
+      // A platform keyboard can be dismissed while Flutter keeps the input
+      // connection attached. A subsequent user activation must ask the
+      // platform to show it again instead of treating the connection itself as
+      // proof that the keyboard is visible.
+      _connection!.show();
+      return;
+    }
     _connection = TextInput.attach(
       this,
       TextInputConfiguration(
@@ -282,6 +289,14 @@ final class _FlarkEditorState extends State<FlarkEditor>
       PointerDeviceKind.invertedStylus => true,
       _ => false,
     };
+    if (touchLike &&
+        _focusNode.hasFocus &&
+        (_connection?.attached ?? false)) {
+      // Android can hide the IME without closing Flutter's input connection.
+      // Treat a fresh touch activation as an explicit request to bring it
+      // back, even before the gesture resolves to a caret position.
+      _connection!.show();
+    }
     _pendingTapHit = _surface?.positionForOffset(
       details.localPosition,
       minimumActionExtent: touchLike ? 48 : 24,
@@ -789,6 +804,9 @@ final class _FlarkEditorState extends State<FlarkEditor>
           (recognizer) {
             recognizer.onLongPressStart = (details) {
               _selectWordAt(details.localPosition);
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _showToolbar();
+              });
             };
           },
         ),

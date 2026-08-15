@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flark/flark.dart';
 import 'package:flutter/foundation.dart';
@@ -12,16 +11,7 @@ import 'native_canary_mode.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   const configuredAtBuild = String.fromEnvironment('FLARK_V4_LIBRARY_PATH');
-  final configured = configuredAtBuild.isNotEmpty
-      ? configuredAtBuild
-      : Platform.environment['FLARK_V4_LIBRARY_PATH'];
-  final libraryPath =
-      configured ??
-      (Platform.isAndroid
-          ? 'libflark_abi.so'
-          : File(
-              '../../../native/comrak_bridge/target/release/libflark_abi.dylib',
-            ).absolute.path);
+  final libraryPath = configuredAtBuild.isEmpty ? null : configuredAtBuild;
   runApp(
     FlarkDogfoodApp(
       libraryPath: libraryPath,
@@ -31,13 +21,9 @@ void main() {
 }
 
 final class FlarkDogfoodApp extends StatefulWidget {
-  const FlarkDogfoodApp({
-    required this.libraryPath,
-    this.nativeCanaryMode,
-    super.key,
-  });
+  const FlarkDogfoodApp({this.libraryPath, this.nativeCanaryMode, super.key});
 
-  final String libraryPath;
+  final String? libraryPath;
   final DogfoodNativeCanaryMode? nativeCanaryMode;
 
   @override

@@ -30,16 +30,66 @@ void main() {
       'FLARK_PROFILE_SOURCE_BYTES',
       defaultValue: 1024 * 1024,
     );
-    final libraryPath = configuredLibrary.isNotEmpty
-        ? configuredLibrary
-        : File(
-            '../../../native/comrak_bridge/target/release/libflark_abi.dylib',
-          ).absolute.path;
-    final controller = await FlarkEditorController.open(
-      _fixture(sourceBytes, shape: fixtureShape),
+    const sampleCount = int.fromEnvironment(
+      'FLARK_PROFILE_SAMPLE_COUNT',
+      defaultValue: 120,
+    );
+    const reopenCount = int.fromEnvironment(
+      'FLARK_PROFILE_REOPEN_COUNT',
+      defaultValue: 0,
+    );
+    expect(sampleCount, greaterThan(0));
+    expect(reopenCount, greaterThanOrEqualTo(0));
+    final libraryPath = configuredLibrary.isEmpty ? null : configuredLibrary;
+    final coldProcessRssBytes = ProcessInfo.currentRss;
+    final warmupController = await FlarkEditorController.open(
+      'Warm **renderer** and native runtime.\n',
       libraryPath: libraryPath,
     );
+    await warmupController.continueParsing();
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: SizedBox.expand(
+          child: FlarkEditor(controller: warmupController, autofocus: true),
+        ),
+      ),
+    );
+    for (var index = 0; index < 8; index += 1) {
+      await tester.pump();
+    }
+    final warmupValue = warmupController.inputValue;
+    final warmupOffset = warmupValue.selection.extentOffset;
+    warmupController.applyDeltas([
+      TextEditingDeltaInsertion(
+        oldText: warmupValue.text,
+        textInserted: 'x',
+        insertionOffset: warmupOffset,
+        selection: TextSelection.collapsed(offset: warmupOffset + 1),
+        composing: TextRange.empty,
+      ),
+    ]);
+    await tester.pump();
+    await _waitForPending(warmupController);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await warmupController.close();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    final initialRssBytes = ProcessInfo.currentRss;
+    final fixtureWatch = Stopwatch()..start();
+    var fixtureSource = _fixture(sourceBytes, shape: fixtureShape);
+    fixtureWatch.stop();
+    final openWatch = Stopwatch()..start();
+    final controller = await FlarkEditorController.open(
+      fixtureSource,
+      libraryPath: libraryPath,
+    );
+    openWatch.stop();
+    final afterOpenRssBytes = ProcessInfo.currentRss;
+    fixtureSource = '';
+    final certificationWatch = Stopwatch()..start();
     await controller.continueParsing();
+    certificationWatch.stop();
+    final afterCertificationRssBytes = ProcessInfo.currentRss;
     if (controller.lastError != null) {
       stdout.writeln(
         'FLARK_PROFILE_REJECTION ${jsonEncode({'fixtureShape': fixtureShape, 'workload': workload, 'sourceBytes': controller.sourceByteLength, 'status': controller.status.name, 'error': controller.lastError.toString()})}',
@@ -101,7 +151,7 @@ void main() {
         // display from its idle cadence to full rate, so the measured
         // samples describe sustained typing rather than the ramp.
         const typingWarmups = 20;
-        for (var index = 0; index < typingWarmups + 120; index += 1) {
+        for (var index = 0; index < typingWarmups + sampleCount; index += 1) {
           final measured = index >= typingWarmups;
           final before = controller.inputValue;
           final offset = before.selection.extentOffset;
@@ -138,7 +188,7 @@ void main() {
         controller.activateRow(inlineRow, strong.contentUtf16.start + 2);
         await tester.pump();
         const typingWarmups = 20;
-        for (var index = 0; index < typingWarmups + 120; index += 1) {
+        for (var index = 0; index < typingWarmups + sampleCount; index += 1) {
           final measured = index >= typingWarmups;
           final before = controller.inputValue;
           final offset = before.selection.extentOffset;
@@ -274,7 +324,7 @@ void main() {
         );
         var previousSourceBytes = controller.sourceByteLength;
         const warmups = 20;
-        for (var index = 0; index < warmups + 120; index += 1) {
+        for (var index = 0; index < warmups + sampleCount; index += 1) {
           final measured = index >= warmups;
           // Structural input normally follows active typing. Keep the
           // adaptive mobile display at its active cadence before measuring
@@ -552,7 +602,17 @@ void main() {
       'fixtureShape': fixtureShape,
       'workload': workload,
       'sourceBytes': controller.sourceByteLength,
+      'configuredSampleCount': sampleCount,
+      'fixtureGenerationMs': fixtureWatch.elapsedMicroseconds / 1000,
+      'controllerOpenMs': openWatch.elapsedMicroseconds / 1000,
+      'initialCertificationMs': certificationWatch.elapsedMicroseconds / 1000,
       'inputSamples': inputToFrameMicros.length,
+      'coldProcessRssBytes': coldProcessRssBytes,
+      'initialRssBytes': initialRssBytes,
+      'afterOpenRssBytes': afterOpenRssBytes,
+      'afterCertificationRssBytes': afterCertificationRssBytes,
+      'finalRssBytes': ProcessInfo.currentRss,
+      'maximumRssBytes': ProcessInfo.maxRss,
       'projectedContinuitySamples': projectedContinuitySamples,
       'rawProjectionFrames': rawProjectionFrames,
       'missingActiveProjectionFrames': missingActiveProjectionFrames,
@@ -646,7 +706,7 @@ void main() {
     expect(controller.pendingEdits, 0);
     expect(controller.lastError, isNull);
     if (workload == 'inline-typing') {
-      expect(projectedContinuitySamples, 120);
+      expect(projectedContinuitySamples, sampleCount);
       expect(
         rawProjectionFrames,
         0,
@@ -655,6 +715,36 @@ void main() {
     }
     await tester.pumpWidget(const SizedBox.shrink());
     await controller.close();
+    final postCloseRssSamples = <Map<String, int>>[];
+    for (var index = 0; index <= 20; index += 1) {
+      if (index != 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      postCloseRssSamples.add({
+        'elapsedMs': index * 100,
+        'rssBytes': ProcessInfo.currentRss,
+      });
+    }
+    final postCloseRssBytes = postCloseRssSamples
+        .map((sample) => sample['rssBytes']!)
+        .reduce(math.min);
+    profileReceipt['postCloseRssRaw'] = postCloseRssSamples;
+    profileReceipt['postCloseRssBytes'] = postCloseRssBytes;
+    final reopenRssBytes = <int>[];
+    for (var index = 0; index < reopenCount; index += 1) {
+      final reopened = await FlarkEditorController.open(
+        _fixture(sourceBytes, shape: fixtureShape),
+        libraryPath: libraryPath,
+      );
+      await reopened.continueParsing();
+      await reopened.close();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      reopenRssBytes.add(ProcessInfo.currentRss);
+    }
+    profileReceipt['reopenRssBytes'] = reopenRssBytes;
+    stdout.writeln(
+      'FLARK_PROFILE_POST_CLOSE ${jsonEncode({'warmedBaselineRssBytes': initialRssBytes, 'postCloseRssBytes': postCloseRssBytes, 'retainedOverBaselineBytes': postCloseRssBytes - initialRssBytes, 'reopenRssBytes': reopenRssBytes})}',
+    );
   });
 }
 

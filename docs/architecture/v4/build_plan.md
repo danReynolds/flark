@@ -861,17 +861,21 @@ post-dogfood optimization target for receipt-backed history presentation.
 
 Android and iOS source/build checks may run on this Mac, but interaction and
 performance claims still require physical devices. Windows is outside the
-current program scope. The eventual legacy identity cutover remains a separate
-release decision, not part of H5 editor hardening.
+current program scope. The product identity cutover is complete: active code
+lives only in `packages/flark_core` and `packages/flark`; superseded v2/v3
+sources are inert under `legacy/` and are excluded from active gates.
 
 ### Android qualification development update (2026-08-15)
 
 A physical Pixel 6a running Android 16 (API 36, arm64) now has one explicit
 v4 lane: `scripts/v4_android.sh verify|profile|run <device>`. The command
-builds and stages the arm64 Rust ABI before every app artifact, so functional
-and profile runs cannot silently omit the engine. The physical functional
-smoke passes source open, live projection, `*`, Backspace, structural Return
-plus its immediate successor, undo, and the narrow dogfood shell.
+uses `flark_core`'s package build hook to compile and bundle the Rust ABI in the
+Flutter artifact. It does not accept a manually staged `jniLibs` copy or need
+`FLARK_V4_LIBRARY_PATH`. A separate clean macOS consumer that depends only on
+the two product packages also built and launched through the package-native
+asset path. The same clean consumer builds for the iOS simulator and bundles a
+universal arm64/x86_64 `flark_abi.framework`; this is packaging evidence only,
+not physical iOS interaction or performance qualification.
 
 The profile driver now preserves its JSON receipt on both PASS and FAIL and
 records whether foreground validity came from immediate input-wall evidence
@@ -887,13 +891,36 @@ reuse regression. On the same named device and workload after that change,
 editor-attributed misses, 1.321 ms platform-callback p99, and 10.610 ms
 callback-to-authoritative-receipt p99 at a served 60 Hz cadence.
 
-This is development and defect-resolution evidence, not an M7 pass. The run
-used an uncommitted tree and an explicitly staged arm64 library; the automatic
-final-package native-asset path, competitor-derived Android size envelope,
-repeatable clean multi-shape matrix, real Gboard composition/autocorrect,
-touch selection handles and magnifier, accessibility, lifecycle, memory,
-thermal, and long-session receipts remain open. iOS remains entirely
-unqualified on physical hardware.
+The final package-native physical passes also cover real Gboard text and `*`
+input, keyboard reshow on an already attached connection, touch scrolling
+without accidental selection, long-press word selection with the adaptive
+Copy/Cut/Paste/Select All toolbar, background/resume, meaningful editable and
+read-only semantics, and display-only task checkboxes. The deterministic
+device smoke covers source open, live projection, `*`, Backspace, structural
+Return plus its immediate successor, undo, and the dogfood shell. The retained
+checks remained input-synchronized with zero resyncs.
+
+The compact profile matrix is strong for foreground editing. Across 1 MiB
+ordinary, 10 MiB ordinary, 10 MiB giant-line, and 5 MiB tiny-block shapes,
+editor p99/max stayed below 16 ms with zero editor-attributed or unexplained
+over-budget frames. The final 10 MiB ordinary run served 60 Hz, painted no raw
+Markdown projection frames, and measured 9.174 ms p99 / 9.368 ms max. Removing
+two complete source ownership duplicates cut 10 MiB controller open from
+249.778 ms to 138.319 ms and the absolute process peak by 13.3 MiB.
+
+This is still development and defect-resolution evidence, not an M7 pass.
+Complete 10 MiB background certification takes 93.136 seconds. Its 95.4 MiB
+peak-over-warm-baseline exceeds the provisional 60.0 MiB mobile allowance, and
+61.5 MiB remains above baseline after close versus the 8 MiB limit. A 1 MiB
+same-process reopen diagnostic plateaued rather than growing linearly across
+four additional full parse/close cycles, but it also missed the retained-RSS
+gate. The raw receipts and evidence boundaries are recorded under
+`benchmark/v4/android_pixel6a_2026-08-15/`.
+
+Selection handles and magnifier, TalkBack, real Gboard composition/autocorrect,
+predictive text, dictation, the competitor-derived Android size envelope,
+release-floor/current-device coverage, and long thermal sessions remain open.
+iOS remains entirely unqualified on physical hardware.
 
 ## 1. Destination and current state
 
@@ -907,7 +934,7 @@ flark (Flutter)
                  -> flark-parser + flark-engine
 ```
 
-The migration starts from different package names and a broader legacy bridge:
+The direct package cutover from the broader legacy bridge is complete:
 
 | Current | Destination | Treatment |
 | --- | --- | --- |
@@ -1116,71 +1143,45 @@ Exit evidence:
 **Review checkpoint:** approve the runtime/ABI and input-window contracts before
 the M1 identity change and M2 implementation grow around them.
 
-### M1 — Establish the final package identities
+### M1 — Establish the final package identities (complete)
 
 Purpose: make subsequent implementation land in the product structure the user
 will actually consume. This milestone changes names and ownership declarations,
 not runtime behavior.
 
-#### M1A — Headless Dart rename
+#### M1A — Headless Dart package
 
-- [ ] Rename the root Dart package from `flark` to `flark_core`.
-- [ ] Preserve `package:flark_core/flark_core.dart` as the existing narrow core
-  barrel and map the former supported barrel to
-  `package:flark_core/flark.dart`; export-set consolidation belongs to M3.
-- [ ] Update Dart imports, tests, examples, build hooks, archive consumers,
-  metadata, docs, and hosted-package keys mechanically.
-- [ ] Update every dependent, including the still-named `flark_flutter`, to
-  depend on/import `flark_core` so the repository is green at this commit.
-- [ ] Preserve the existing export sets of `lib/flark.dart` and
-  `lib/flark_core.dart`; changing the final `flark_core.dart` API belongs to M3,
-  not the identity commit.
-- [ ] Assert that `flark_core` has no Flutter SDK dependency or Flutter import.
+- [x] Establish `packages/flark_core` as the only active headless Dart package.
+- [x] Expose the supported API through
+  `package:flark_core/flark_core.dart`.
+- [x] Move the Rust workspace and build hook under the package that owns them.
+- [x] Update active imports, tests, scripts, fixtures, metadata, and docs.
+- [x] Assert that `flark_core` has no Flutter SDK dependency or Flutter import.
 
-M1A exits when the analyzer, Dart tests, the still-named `flark_flutter`
-package, example, native build hooks, and an immutable archive-backed headless
-consumer all pass using only the `flark_core` identity.
+M1A exits when analysis/tests and a clean external package-native consumer pass
+using only the `flark_core` identity. That evidence is green.
 
-#### M1B — Flutter product rename
+#### M1B — Flutter product package
 
-- [ ] Rename the Flutter package from `flark_flutter` to `flark`.
-- [ ] Add a behavior-free `package:flark/flark.dart` forwarding barrel while
-  retaining the old barrel for migration verification, and keep the dependency
-  on `flark_core` explicit.
-- [ ] Update Flutter imports, tests, example applications, scripts, assets,
-  metadata, docs, and hosted-package keys mechanically.
-- [ ] Assert that production Dart imports in Flutter reach engine APIs through
-  `flark_core`, with no accidental self-import after `flark` takes the product
-  name.
+- [x] Establish `packages/flark` as the only active Flutter product package.
+- [x] Expose the supported API through `package:flark/flark.dart` with an
+  explicit `flark_core` dependency.
+- [x] Update active Flutter imports, tests, example applications, scripts,
+  metadata, and docs.
+- [x] Assert that production Flutter code reaches engine APIs through
+  `flark_core`.
 
-M1B exits when Flutter analyze/test/build, an archive-backed macOS Flutter
-build/launch smoke, and an immutable product consumer pass with **only** a
-direct `flark` dependency/import. Its generated package config must contain
-`flark_core` transitively. The full root/nested/example suites pass at the clean
-committed SHA without dirty-checkout warning suppression.
+M1B exits when Flutter analyze/test/build and a clean macOS product consumer
+build/launch with only a direct `flark` dependency. That package-native
+consumer evidence is green; final committed-SHA gates remain the closeout step.
 
 Constraints:
 
-- M1A and M1B are separate green commits.
-- Neither commit changes runtime behavior, parser behavior, ABI, or filesystem
-  package-directory layout. Required public-barrel filename changes are part of
-  the mechanical rename; broader directory moves are not.
-- Existing Flutter-packaged Web/worker artifacts may remain as an explicitly
-  inventoried legacy exception so the rename is behavior-free. No v4 code may
-  adopt that ownership, and M5 removes the exception with the old runtime.
-- M1A runs a standalone archive-backed `flark_core` browser-runtime migration
-  receipt. Negative assertions require its legacy default asset paths to use
-  `/packages/flark_core/` and never silently resolve duplicate assets from the
-  newly named Flutter `/packages/flark/` package. This protects migration
-  integrity only; Web is not a v4 product target.
-- Exact M1 scans require: zero active `package:flark_flutter/` imports; zero
-  core-source imports of `package:flark/`; Flutter production engine imports
-  pointing to `package:flark_core/`; the exact root `flark_core`, nested
-  `flark`, and nested dependency `flark_core` pubspec graph; and zero stale
-  logical asset namespaces outside an explicit allowlist for unchanged
-  physical paths and historical records.
-- If one fails, revert that commit only; do not build v4 under a half-migrated
-  identity.
+- The user selected a direct cutover rather than staged compatibility aliases.
+- Superseded sources may remain under `legacy/`, but active package resolution,
+  build hooks, imports, tests, and scripts must not depend on them.
+- `flark_core` owns Rust/native delivery and cannot import Flutter; `flark`
+  owns the Flutter surface and depends on the headless package.
 - Recheck package-registry availability immediately before first publication.
 
 **Review checkpoint:** inspect the two mechanical diffs separately and verify

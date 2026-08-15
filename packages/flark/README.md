@@ -4,14 +4,13 @@
 `flark_core`; parser and source authority live in the Rust runtime behind the
 fixed v4 ABI.
 
-The current macOS vertical slice uses a custom `RenderBox`, Flutter delta text
-input, a bounded 16 Ki UTF-16 input window, optimistic next-frame painting, and
-certified incremental viewport rows.
+The editor uses a custom `RenderBox`, Flutter delta text input, a bounded
+16 Ki UTF-16 input window, next-frame exact-source painting, and certified
+incremental viewport rows.
 
-Build and run from the repository worktree:
+Native Rust assets are built and bundled automatically by `flark_core`. A
+consumer does not configure a library path:
 
-```sh
-cargo build --manifest-path native/comrak_bridge/Cargo.toml --package flark-abi
-cd packages/flark/example
-FLARK_V4_LIBRARY_PATH="$PWD/../../../native/comrak_bridge/target/debug/libflark_abi.dylib" flutter run -d macos
+```dart
+final controller = await FlarkEditorController.open(markdown);
 ```

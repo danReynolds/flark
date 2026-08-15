@@ -1,0 +1,27 @@
+name: flark_flutter
+description: Archived v2/v3 Flark Flutter implementation; not a product package.
+version: 0.1.1
+publish_to: none
+homepage: https://danreynolds.github.io/flark/
+repository: https://github.com/danReynolds/flark
+issue_tracker: https://github.com/danReynolds/flark/issues
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flark: ^0.1.1
+  highlight: ^0.7.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - lib/assets/wasm/flark_comrak_bridge.wasm
+    - lib/assets/worker/flark_v3_parser_worker.js

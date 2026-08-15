@@ -393,9 +393,8 @@ void main() {
       await tester.runAsync(controller.continueParsing);
       final debugHandle = FlarkEditorDebugHandle();
       await tester.pumpWidget(
-        Directionality(
-          textDirection: TextDirection.ltr,
-          child: SizedBox.expand(
+        material.MaterialApp(
+          home: SizedBox.expand(
             child: FlarkEditor(
               controller: controller,
               debugHandle: debugHandle,
@@ -529,9 +528,8 @@ void main() {
       await tester.runAsync(controller.continueParsing);
       final debugHandle = FlarkEditorDebugHandle();
       await tester.pumpWidget(
-        Directionality(
-          textDirection: TextDirection.ltr,
-          child: SizedBox.expand(
+        material.MaterialApp(
+          home: SizedBox.expand(
             child: FlarkEditor(
               controller: controller,
               debugHandle: debugHandle,
@@ -557,7 +555,12 @@ void main() {
       expect(controller.globalSelectionExtent, source.indexOf('this') + 4);
       expect(await tester.runAsync(controller.readSelectedText), 'this');
       expect(await tester.runAsync(controller.readSource), source);
+      expect(
+        find.byType(material.AdaptiveTextSelectionToolbar),
+        findsOneWidget,
+      );
 
+      ContextMenuController.removeAny();
       controller.replaceSelection('that');
       await _pumpUntilTransactions(tester, controller);
       expect(
@@ -1634,6 +1637,50 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(controller.close);
       controllerClosed = true;
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
+    'tapping an attached editor reshows a dismissed platform keyboard',
+    (tester) async {
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(
+          'Tap here to keep editing.\n',
+          libraryPath: libraryPath!,
+        ),
+      ))!;
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox.expand(
+            child: FlarkEditor(controller: controller, autofocus: true),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(tester.testTextInput.hasAnyClients, isTrue);
+      expect(tester.testTextInput.isVisible, isTrue);
+
+      tester.testTextInput.hide();
+      expect(tester.testTextInput.hasAnyClients, isTrue);
+      expect(tester.testTextInput.isVisible, isFalse);
+
+      final surface = find.byType(FlarkRenderSurfaceWidget);
+      final gesture = await tester.startGesture(
+        tester.getTopLeft(surface) + const Offset(80, 24),
+      );
+      await tester.pump(const Duration(milliseconds: 150));
+
+      expect(tester.testTextInput.hasAnyClients, isTrue);
+      expect(tester.testTextInput.isVisible, isTrue);
+      await gesture.cancel();
+      await tester.pump();
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
     },
     skip: libraryPath == null,
   );

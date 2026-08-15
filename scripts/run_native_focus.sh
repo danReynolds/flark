@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-MANIFEST="$REPO_ROOT/native/comrak_bridge/Cargo.toml"
+MANIFEST="$REPO_ROOT/packages/flark_core/native/comrak_bridge/Cargo.toml"
 USER_ID="$(id -u)"
 LEASE_DIR="/tmp/flark-native-focus-$USER_ID.lease"
 LOG_DIR="/tmp/flark-native-focus-logs-$USER_ID"

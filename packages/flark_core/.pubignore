@@ -1,0 +1,12 @@
+.dart_tool/
+build/
+coverage/
+pubspec.lock
+benchmark/
+test/
+tool/
+native/comrak_bridge/target/
+native/comrak_bridge/dist/
+native/comrak_bridge/**/tests/
+native/comrak_bridge/**/benches/
+**/.DS_Store

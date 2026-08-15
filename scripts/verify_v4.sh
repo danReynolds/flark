@@ -10,7 +10,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BRIDGE="$ROOT/native/comrak_bridge"
+BRIDGE="$ROOT/packages/flark_core/native/comrak_bridge"
 PROFILE="${FLARK_V4_PROFILE:-debug}"
 
 if [[ "$PROFILE" == "release" ]]; then
@@ -27,12 +27,12 @@ fi
 cargo test --manifest-path "$BRIDGE/Cargo.toml" -p flark-runtime -p flark-abi
 "$ROOT/scripts/verify_v4_markdown_conformance.sh"
 
-(cd "$ROOT" && dart test test/v4/contracts --exclude-tags historical-receipt)
+(cd "$ROOT" && dart test test/qualification/v4 --exclude-tags historical-receipt)
+
 # A fresh worktree has no package-local .dart_tool state. Resolve each v4
 # package explicitly so this gate does not depend on a previous developer run.
 (cd "$ROOT/packages/flark_core" && dart pub get)
 (cd "$ROOT/packages/flark" && flutter pub get)
-(cd "$ROOT/packages/flark_flutter" && flutter pub get)
 (cd "$ROOT/packages/flark_core" && dart analyze)
 (cd "$ROOT/packages/flark_core" && FLARK_V4_LIBRARY_PATH="$LIBRARY" dart test)
 (cd "$ROOT/packages/flark" && FLARK_V4_LIBRARY_PATH="$LIBRARY" flutter analyze)
@@ -40,7 +40,6 @@ cargo test --manifest-path "$BRIDGE/Cargo.toml" -p flark-runtime -p flark-abi
 # is the stable, still-fast contract (about 20 s warm); concurrent flutter_test
 # processes can deadlock during native-worker teardown after all assertions.
 (cd "$ROOT/packages/flark" && FLARK_V4_LIBRARY_PATH="$LIBRARY" flutter test --concurrency=1)
-(cd "$ROOT/packages/flark_flutter" && flutter test test/v4/contracts)
 
 echo "verify_v4: active rust + dart + flutter v4 suites executed and passed."
 echo "verify_v4: run scripts/verify_v4_certification_stress.sh for slow stress lanes."

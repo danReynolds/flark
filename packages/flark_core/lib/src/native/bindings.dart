@@ -1237,6 +1237,39 @@ typedef NegotiateDart =
     );
 
 final class FlarkV4Bindings {
+  FlarkV4Bindings.nativeAsset()
+    : negotiate = _nativeNegotiate,
+      createBegin = _nativeCreateBegin,
+      createAppend = _nativeCreateAppend,
+      createCommit = _nativeCreateCommit,
+      pump = _nativePump,
+      smallEdit = _nativeSmallEdit,
+      editIntentV1 = _nativeEditIntentV1,
+      sourceTransactionV1 = _nativeSourceTransactionV1,
+      stagedSourceTransactionV1 = _nativeStagedSourceTransactionV1,
+      bulkBegin = _nativeBulkBegin,
+      bulkAppend = _nativeBulkAppend,
+      bulkCommit = _nativeBulkCommit,
+      bulkAbort = _nativeBulkAbort,
+      coordinateConvert = _nativeCoordinateConvert,
+      historyReplay = _nativeHistoryReplay,
+      historyRelease = _nativeHistoryRelease,
+      sourceRead = _nativeSourceRead,
+      queryViewport = _nativeQueryViewport,
+      continuationNext = _nativeContinuationNext,
+      continuationRelease = _nativeContinuationRelease,
+      closeBegin = _nativeCloseBegin,
+      closePump = _nativeClosePump,
+      closeFinish = _nativeCloseFinish,
+      createAbort = _nativeCreateAbort,
+      anchorCreate = _nativeAnchorCreate,
+      anchorTransform = _nativeAnchorTransform,
+      anchorResolve = _nativeAnchorResolve,
+      anchorRelease = _nativeAnchorRelease,
+      cancel = _nativeCancel,
+      sessionTransferOwner = _nativeSessionTransferOwner,
+      sessionInspect = _nativeSessionInspect;
+
   FlarkV4Bindings(DynamicLibrary library)
     : negotiate = library.lookupFunction<_NegotiateNative, NegotiateDart>(
         'flark_v4_negotiate',
@@ -1377,3 +1410,217 @@ final class FlarkV4Bindings {
   final OwnerTransferDart sessionTransferOwner;
   final SessionInspectDart sessionInspect;
 }
+
+@Native<_NegotiateNative>(symbol: 'flark_v4_negotiate')
+external int _nativeNegotiate(
+  Pointer<FlarkV4NegotiateRequest> request,
+  Pointer<FlarkV4AbiInfo> info,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_CreateBeginNative>(symbol: 'flark_v4_create_begin')
+external int _nativeCreateBegin(
+  Pointer<FlarkV4CreateRequest> request,
+  Pointer<Uint8> source,
+  int sourceLength,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_CreateAppendNative>(symbol: 'flark_v4_create_append')
+external int _nativeCreateAppend(
+  Pointer<FlarkV4StageRequest> request,
+  Pointer<Uint8> source,
+  int sourceLength,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_CreateCommitNative>(symbol: 'flark_v4_create_commit')
+external int _nativeCreateCommit(
+  Pointer<FlarkV4TransactionRequest> request,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_PumpNative>(symbol: 'flark_v4_pump')
+external int _nativePump(
+  Pointer<FlarkV4PumpRequest> request,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_SmallEditNative>(symbol: 'flark_v4_small_edit')
+external int _nativeSmallEdit(
+  Pointer<FlarkV4SmallEditRequest> request,
+  Pointer<FlarkV4EditDescriptor> edits,
+  int editCount,
+  Pointer<Uint8> replacement,
+  int replacementLength,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_EditIntentV1Native>(symbol: 'flark_v4_edit_intent_v1')
+external int _nativeEditIntentV1(
+  Pointer<FlarkV4EditIntentRequestV1> request,
+  Pointer<Uint8> result,
+  int resultLength,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_SourceTransactionV1Native>(symbol: 'flark_v4_source_transaction_v1')
+external int _nativeSourceTransactionV1(
+  Pointer<FlarkV4SourceTransactionRequestV1> request,
+  Pointer<Uint8> replacement,
+  int replacementLength,
+  Pointer<Uint8> result,
+  int resultLength,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_StagedSourceTransactionV1Native>(
+  symbol: 'flark_v4_staged_source_transaction_v1',
+)
+external int _nativeStagedSourceTransactionV1(
+  Pointer<FlarkV4StagedSourceTransactionRequestV1> request,
+  Pointer<Uint8> result,
+  int resultLength,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_BulkBeginNative>(symbol: 'flark_v4_bulk_begin')
+external int _nativeBulkBegin(
+  Pointer<FlarkV4BulkBeginRequest> request,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_BulkAppendNative>(symbol: 'flark_v4_bulk_append')
+external int _nativeBulkAppend(
+  Pointer<FlarkV4StageRequest> request,
+  Pointer<Uint8> source,
+  int sourceLength,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_BulkTransactionNative>(symbol: 'flark_v4_bulk_commit')
+external int _nativeBulkCommit(
+  Pointer<FlarkV4TransactionRequest> request,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_BulkTransactionNative>(symbol: 'flark_v4_bulk_abort')
+external int _nativeBulkAbort(
+  Pointer<FlarkV4TransactionRequest> request,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_CoordinateConvertNative>(symbol: 'flark_v4_coordinate_convert')
+external int _nativeCoordinateConvert(
+  Pointer<FlarkV4CoordinateRequest> request,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_HistoryNative>(symbol: 'flark_v4_history_replay')
+external int _nativeHistoryReplay(
+  Pointer<FlarkV4HistoryRequest> request,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_HistoryNative>(symbol: 'flark_v4_history_release')
+external int _nativeHistoryRelease(
+  Pointer<FlarkV4HistoryRequest> request,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_SourceReadNative>(symbol: 'flark_v4_source_read')
+external int _nativeSourceRead(
+  Pointer<FlarkV4SourceReadRequest> request,
+  Pointer<Uint8> result,
+  int resultLength,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_QueryViewportNative>(symbol: 'flark_v4_query_viewport')
+external int _nativeQueryViewport(
+  Pointer<FlarkV4QueryRequest> request,
+  Pointer<Uint8> result,
+  int resultLength,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_ContinuationNextNative>(symbol: 'flark_v4_continuation_next')
+external int _nativeContinuationNext(
+  Pointer<FlarkV4ContinuationRequest> request,
+  Pointer<Uint8> result,
+  int resultLength,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_ContinuationReleaseNative>(symbol: 'flark_v4_continuation_release')
+external int _nativeContinuationRelease(
+  Pointer<FlarkV4ContinuationRequest> request,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_CloseNative>(symbol: 'flark_v4_close_begin')
+external int _nativeCloseBegin(
+  Pointer<FlarkV4CloseRequest> request,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_CloseNative>(symbol: 'flark_v4_close_pump')
+external int _nativeClosePump(
+  Pointer<FlarkV4CloseRequest> request,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_CloseNative>(symbol: 'flark_v4_close_finish')
+external int _nativeCloseFinish(
+  Pointer<FlarkV4CloseRequest> request,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_CreateCommitNative>(symbol: 'flark_v4_create_abort')
+external int _nativeCreateAbort(
+  Pointer<FlarkV4TransactionRequest> request,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_AnchorNative>(symbol: 'flark_v4_anchor_create')
+external int _nativeAnchorCreate(
+  Pointer<FlarkV4AnchorRequest> request,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_AnchorNative>(symbol: 'flark_v4_anchor_transform')
+external int _nativeAnchorTransform(
+  Pointer<FlarkV4AnchorRequest> request,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_AnchorNative>(symbol: 'flark_v4_anchor_resolve')
+external int _nativeAnchorResolve(
+  Pointer<FlarkV4AnchorRequest> request,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_AnchorNative>(symbol: 'flark_v4_anchor_release')
+external int _nativeAnchorRelease(
+  Pointer<FlarkV4AnchorRequest> request,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_CancelNative>(symbol: 'flark_v4_cancel')
+external int _nativeCancel(
+  Pointer<FlarkV4CancelRequest> request,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_OwnerTransferNative>(symbol: 'flark_v4_session_transfer_owner')
+external int _nativeSessionTransferOwner(
+  Pointer<FlarkV4OwnerTransferRequest> request,
+  Pointer<FlarkV4Outcome> outcome,
+);
+
+@Native<_SessionInspectNative>(symbol: 'flark_v4_session_inspect')
+external int _nativeSessionInspect(
+  Pointer<FlarkV4InspectRequest> request,
+  Pointer<FlarkV4SessionInspection> inspection,
+  Pointer<FlarkV4Outcome> outcome,
+);

@@ -1,72 +1,21 @@
 #!/usr/bin/env bash
-# Build, run, or verify the current v4 Android dogfood slice. This is an
-# arm64 physical-device qualification lane; final package-native delivery and
-# the wider ABI matrix belong to the package identity cutover.
+# Build, run, verify, or profile the physical Android product path. flark_core's
+# build hook owns the Rust compilation and APK native-asset delivery; this
+# script must never stage a parallel jniLibs copy.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BRIDGE="$ROOT/native/comrak_bridge"
 EXAMPLE="$ROOT/packages/flark/example"
 ACTION="${1:-verify}"
 DEVICE="${2:-${FLARK_ANDROID_DEVICE:-}}"
-API_LEVEL="${ANDROID_API_LEVEL:-24}"
 PROFILE_SHAPE="${FLARK_PROFILE_SHAPE:-ordinary}"
 PROFILE_WORKLOAD="${FLARK_PROFILE_WORKLOAD:-inline-typing}"
 PROFILE_SOURCE_BYTES="${FLARK_PROFILE_SOURCE_BYTES:-1048576}"
-
-if [[ -z "${ANDROID_NDK_HOME:-}" ]]; then
-  if [[ -z "${ANDROID_HOME:-}" ]]; then
-    echo "v4_android: set ANDROID_NDK_HOME or ANDROID_HOME" >&2
-    exit 1
-  fi
-  ANDROID_NDK_HOME="$(find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
-fi
-
-case "$(uname -s)" in
-  Darwin)
-    if [[ -d "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/darwin-arm64" ]]; then
-      HOST_TAG="darwin-arm64"
-    else
-      HOST_TAG="darwin-x86_64"
-    fi
-    ;;
-  Linux) HOST_TAG="linux-x86_64" ;;
-  *)
-    echo "v4_android: unsupported host OS $(uname -s)" >&2
-    exit 1
-    ;;
-esac
-
-TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/$HOST_TAG/bin"
-LINKER="$TOOLCHAIN/aarch64-linux-android${API_LEVEL}-clang"
-ARCHIVER="$TOOLCHAIN/llvm-ar"
-TARGET="aarch64-linux-android"
-OUTPUT="$BRIDGE/target/$TARGET/release/libflark_abi.so"
-STAGED="$EXAMPLE/android/app/src/main/jniLibs/arm64-v8a/libflark_abi.so"
+PROFILE_SAMPLE_COUNT="${FLARK_PROFILE_SAMPLE_COUNT:-120}"
+PROFILE_REOPEN_COUNT="${FLARK_PROFILE_REOPEN_COUNT:-0}"
 
 build() {
-  if [[ ! -x "$LINKER" || ! -x "$ARCHIVER" ]]; then
-    echo "v4_android: incomplete NDK toolchain under $TOOLCHAIN" >&2
-    exit 1
-  fi
-  rustup target add --toolchain stable "$TARGET" >/dev/null
-  local rustc
-  rustc="$(rustup which rustc --toolchain stable)"
-  env \
-    RUSTC="$rustc" \
-    CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$LINKER" \
-    CARGO_TARGET_AARCH64_LINUX_ANDROID_AR="$ARCHIVER" \
-    CC_aarch64_linux_android="$LINKER" \
-    AR_aarch64_linux_android="$ARCHIVER" \
-    rustup run stable cargo build \
-      --manifest-path "$BRIDGE/Cargo.toml" \
-      --locked \
-      --release \
-      --target "$TARGET" \
-      --package flark-abi
-  mkdir -p "$(dirname "$STAGED")"
-  cp "$OUTPUT" "$STAGED"
-  echo "v4_android: staged $STAGED"
+  (cd "$EXAMPLE" && flutter build apk --profile --target-platform android-arm64)
 }
 
 require_device() {
@@ -80,17 +29,14 @@ case "$ACTION" in
   build) build ;;
   verify)
     require_device
-    build
     (cd "$EXAMPLE" && flutter test integration_test/android_device_smoke_test.dart -d "$DEVICE")
     ;;
   run)
     require_device
-    build
     (cd "$EXAMPLE" && exec flutter run -d "$DEVICE" --profile)
     ;;
   profile)
     require_device
-    build
     (
       cd "$EXAMPLE"
       flutter drive \
@@ -98,10 +44,11 @@ case "$ACTION" in
         --driver=test_driver/integration_test.dart \
         --target=integration_test/frame_profile_test.dart \
         -d "$DEVICE" \
-        --dart-define=FLARK_V4_LIBRARY_PATH=libflark_abi.so \
         --dart-define=FLARK_PROFILE_SHAPE="$PROFILE_SHAPE" \
         --dart-define=FLARK_PROFILE_WORKLOAD="$PROFILE_WORKLOAD" \
-        --dart-define=FLARK_PROFILE_SOURCE_BYTES="$PROFILE_SOURCE_BYTES"
+        --dart-define=FLARK_PROFILE_SOURCE_BYTES="$PROFILE_SOURCE_BYTES" \
+        --dart-define=FLARK_PROFILE_SAMPLE_COUNT="$PROFILE_SAMPLE_COUNT" \
+        --dart-define=FLARK_PROFILE_REOPEN_COUNT="$PROFILE_REOPEN_COUNT"
     )
     echo "v4_android: receipt $EXAMPLE/build/integration_response_data.json"
     ;;

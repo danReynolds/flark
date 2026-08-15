@@ -708,7 +708,7 @@ final class FlarkEditorController extends ChangeNotifier {
 
   static Future<FlarkEditorController> open(
     String source, {
-    required String libraryPath,
+    String? libraryPath,
     int historyBudgetBytes = 8 * 1024 * 1024,
   }) async {
     final document = await FlarkCoreDocument.open(

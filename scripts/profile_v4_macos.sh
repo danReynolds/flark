@@ -9,14 +9,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LIBRARY="$ROOT/native/comrak_bridge/target/release/libflark_abi.dylib"
 SHAPE="${FLARK_PROFILE_SHAPE:-ordinary}"
 WORKLOAD="${FLARK_PROFILE_WORKLOAD:-typing}"
 SOURCE_BYTES="${FLARK_PROFILE_SOURCE_BYTES:-1048576}"
 START_DELAY_MS="${FLARK_PROFILE_START_DELAY_MS:-0}"
-
-cargo build --manifest-path "$ROOT/native/comrak_bridge/Cargo.toml" \
-  --package flark-abi --release
 
 # Wake the display now; a run that starts against a sleeping display has no
 # vsync at all.
@@ -28,7 +24,6 @@ exec caffeinate -dis flutter drive \
   --driver=test_driver/integration_test.dart \
   --target=integration_test/frame_profile_test.dart \
   -d macos \
-  --dart-define=FLARK_V4_LIBRARY_PATH="$LIBRARY" \
   --dart-define=FLARK_PROFILE_SHAPE="$SHAPE" \
   --dart-define=FLARK_PROFILE_WORKLOAD="$WORKLOAD" \
   --dart-define=FLARK_PROFILE_SOURCE_BYTES="$SOURCE_BYTES" \

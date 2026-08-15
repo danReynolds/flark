@@ -14,7 +14,6 @@ void main() {
     final controller = (await tester.runAsync(() async {
       final opened = await FlarkEditorController.open(
         '**sentinel**\n\nalpha\n',
-        libraryPath: 'libflark_abi.so',
       ).timeout(const Duration(seconds: 10));
       debugPrint('FLARK_ANDROID_STEP parse');
       await opened.continueParsing().timeout(const Duration(seconds: 10));
@@ -118,9 +117,7 @@ void main() {
         tester.view.physicalSize.width / tester.view.devicePixelRatio;
     expect(logicalWidth, lessThan(700));
 
-    await tester.pumpWidget(
-      const FlarkDogfoodApp(libraryPath: 'libflark_abi.so'),
-    );
+    await tester.pumpWidget(const FlarkDogfoodApp());
     Object? frameworkError;
     for (var attempt = 0; attempt < 100; attempt += 1) {
       await tester.pump(const Duration(milliseconds: 50));

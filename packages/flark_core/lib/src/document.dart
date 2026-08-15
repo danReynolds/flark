@@ -375,7 +375,7 @@ final class FlarkCoreDocument {
 
   static Future<FlarkCoreDocument> open(
     String source, {
-    required String libraryPath,
+    String? libraryPath,
     int historyBudgetBytes = 8 * 1024 * 1024,
     Duration editIntentReplyTimeout = const Duration(milliseconds: 250),
     bool debugDropFirstEditIntentReply = false,
@@ -1021,7 +1021,7 @@ Future<void> _documentWorker(List<Object?> startup) async {
   try {
     final document = FlarkNativeDocument.open(
       startup[1]! as String,
-      libraryPath: startup[2]! as String,
+      libraryPath: startup[2] as String?,
       historyBudgetBytes: startup[3]! as int,
     );
     final commands = ReceivePort();
