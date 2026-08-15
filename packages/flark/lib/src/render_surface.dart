@@ -153,6 +153,7 @@ final class _PaintedRow {
     required this.fragmentStart,
     required this.fragmentEnd,
     required this.leadingLength,
+    required this.layoutMaxWidth,
     this.row,
     this.neutralText,
     this.neutralUtf16Start,
@@ -171,6 +172,11 @@ final class _PaintedRow {
   /// Length of the leading text painted before the fragment body; nonzero
   /// only on a row's first fragment.
   final int leadingLength;
+
+  /// Width constraint used to lay out [painter]. TextPainter's public width
+  /// is the resulting content width, not the max-width constraint, so retain
+  /// the latter explicitly for safe cross-frame reuse.
+  final double layoutMaxWidth;
 
   final FlarkViewportRow? row;
   final String? neutralText;
@@ -261,6 +267,7 @@ final class RenderFlarkSurface extends RenderBox {
   ValueChanged<FlarkSurfacePaintObservation>? debugPaintObserver;
   TextDirection _textDirection;
   final List<_PaintedRow> _paintedRows = [];
+  final List<_PaintedRow> _reusablePaintedRows = [];
   double _scrollOffset = 0;
   double _contentHeight = 0;
   int _laidOutPageIndex = 0;
@@ -269,6 +276,7 @@ final class RenderFlarkSurface extends RenderBox {
   int _skippedRowCount = 0;
   int _skippedFragmentCount = 0;
   double _skippedFragmentEstimate = 0;
+  int _reusedPainterCount = 0;
   Map<int, SemanticsNode> _semanticRowNodes = <int, SemanticsNode>{};
 
   double get scrollOffset => _scrollOffset;
@@ -282,6 +290,9 @@ final class RenderFlarkSurface extends RenderBox {
   int get debugSkippedRowCount => _skippedRowCount;
 
   int get debugPaintedFragmentCount => _paintedRows.length;
+
+  /// Text layouts reused from the immediately preceding frame.
+  int get debugReusedPainterCount => _reusedPainterCount;
 
   List<
     ({
@@ -445,6 +456,19 @@ final class RenderFlarkSurface extends RenderBox {
     super.detach();
   }
 
+  @override
+  void dispose() {
+    for (final row in _paintedRows) {
+      row.painter.dispose();
+    }
+    _paintedRows.clear();
+    for (final row in _reusablePaintedRows) {
+      row.painter.dispose();
+    }
+    _reusablePaintedRows.clear();
+    super.dispose();
+  }
+
   void _changed() {
     markNeedsLayout();
     markNeedsSemanticsUpdate();
@@ -518,11 +542,25 @@ final class RenderFlarkSurface extends RenderBox {
   }
 
   void _buildVisibleLayouts() {
+    assert(_reusablePaintedRows.isEmpty);
+    _reusablePaintedRows.addAll(_paintedRows);
     _paintedRows.clear();
+    try {
+      _buildVisibleLayoutsBody();
+    } finally {
+      for (final row in _reusablePaintedRows) {
+        row.painter.dispose();
+      }
+      _reusablePaintedRows.clear();
+    }
+  }
+
+  void _buildVisibleLayoutsBody() {
     _laidOutRowCount = 0;
     _skippedRowCount = 0;
     _skippedFragmentCount = 0;
     _skippedFragmentEstimate = 0;
+    _reusedPainterCount = 0;
     final maxWidth = math.max(0.0, size.width - _padding.horizontal);
     var top = _padding.top;
     final rows = _controller.rows;
@@ -762,6 +800,7 @@ final class RenderFlarkSurface extends RenderBox {
           fragmentStart: fragmentStart,
           fragmentEnd: fragmentEnd,
           leadingLength: first ? presentation.leadingText.length : 0,
+          layoutMaxWidth: maxWidth,
           row: row,
           neutralText: neutralText,
           neutralUtf16Start: neutralUtf16Start,
@@ -813,6 +852,7 @@ final class RenderFlarkSurface extends RenderBox {
         fragmentStart: fragmentStart,
         fragmentEnd: probeEnd,
         includeLeading: includeLeading,
+        allowReuse: false,
       );
       try {
         final targetLocal =
@@ -865,6 +905,7 @@ final class RenderFlarkSurface extends RenderBox {
     int? fragmentStart,
     int? fragmentEnd,
     bool includeLeading = true,
+    bool allowReuse = true,
   }) {
     final start = fragmentStart ?? 0;
     final end = fragmentEnd ?? presentation.text.length;
@@ -930,10 +971,24 @@ final class RenderFlarkSurface extends RenderBox {
     if (children.isEmpty) {
       children.add(const TextSpan(text: ' '));
     }
-    return TextPainter(
-      text: TextSpan(style: style, children: children),
-      textDirection: _textDirection,
-    )..layout(maxWidth: maxWidth);
+    final span = TextSpan(style: style, children: children);
+    if (allowReuse) {
+      for (var index = 0; index < _reusablePaintedRows.length; index += 1) {
+        final candidate = _reusablePaintedRows[index];
+        final previousSpan = candidate.painter.text;
+        if (candidate.layoutMaxWidth != maxWidth ||
+            candidate.painter.textDirection != _textDirection ||
+            previousSpan == null ||
+            previousSpan.compareTo(span) != RenderComparison.identical) {
+          continue;
+        }
+        _reusablePaintedRows.removeAt(index);
+        _reusedPainterCount += 1;
+        return candidate.painter;
+      }
+    }
+    return TextPainter(text: span, textDirection: _textDirection)
+      ..layout(maxWidth: maxWidth);
   }
 
   TextStyle _inlineStyle(TextStyle base, Set<FlarkSurfaceInlineStyle> styles) {

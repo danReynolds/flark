@@ -9,6 +9,51 @@ void main() {
   final libraryPath = Platform.environment['FLARK_V4_LIBRARY_PATH'];
 
   testWidgets(
+    'unchanged visible text layouts are reused across editor notifications',
+    (tester) async {
+      final controller = (await tester.runAsync(
+        () => FlarkEditorController.open(
+          'First paragraph.\n\nSecond paragraph.\n\nThird paragraph.\n',
+          libraryPath: libraryPath!,
+        ),
+      ))!;
+      await tester.runAsync(controller.continueParsing);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: SizedBox(
+            width: 640,
+            height: 400,
+            child: FlarkEditor(controller: controller),
+          ),
+        ),
+      );
+      await tester.pump();
+      final surface = tester.renderObject<RenderFlarkSurface>(
+        find.byType(FlarkRenderSurfaceWidget),
+      );
+      final paintedBefore = surface.debugPaintedFragmentCount;
+      expect(paintedBefore, greaterThan(1));
+
+      await tester.runAsync(() async {
+        controller.activateRow(
+          controller.rows[1],
+          controller.rows[1].editableUtf16!.start,
+        );
+        await controller.resolveCanonicalSelection();
+      });
+      await tester.pump();
+      expect(surface.debugPaintedFragmentCount, paintedBefore);
+      expect(surface.debugReusedPainterCount, paintedBefore);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(controller.close);
+    },
+    skip: libraryPath == null,
+  );
+
+  testWidgets(
     'a giant physical line lays out as bounded fragments',
     (tester) async {
       final giant = List.filled(8 * 1024, 'p').join();

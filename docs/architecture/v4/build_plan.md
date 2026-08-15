@@ -864,6 +864,37 @@ performance claims still require physical devices. Windows is outside the
 current program scope. The eventual legacy identity cutover remains a separate
 release decision, not part of H5 editor hardening.
 
+### Android qualification development update (2026-08-15)
+
+A physical Pixel 6a running Android 16 (API 36, arm64) now has one explicit
+v4 lane: `scripts/v4_android.sh verify|profile|run <device>`. The command
+builds and stages the arm64 Rust ABI before every app artifact, so functional
+and profile runs cannot silently omit the engine. The physical functional
+smoke passes source open, live projection, `*`, Backspace, structural Return
+plus its immediate successor, undo, and the narrow dogfood shell.
+
+The profile driver now preserves its JSON receipt on both PASS and FAIL and
+records whether foreground validity came from immediate input-wall evidence
+or engine-vsync cadence. That distinction exposed a real Flutter cost rather
+than blaming Rust: the first eligible 1 MiB structural burst measured 28.659 ms
+editor-attributed p99 with 60 over-budget samples, while callback-to-receipt
+remained bounded. The surface was rebuilding new `TextPainter` paragraphs for
+unchanged visible rows on every controller notification and never disposing
+the prior paragraphs. It now reuses only deep-identical spans at the same
+width/direction, disposes every unused or terminal painter, and has a focused
+reuse regression. On the same named device and workload after that change,
+120/120 structural edits completed with 8.153 ms editor-attributed p99, zero
+editor-attributed misses, 1.321 ms platform-callback p99, and 10.610 ms
+callback-to-authoritative-receipt p99 at a served 60 Hz cadence.
+
+This is development and defect-resolution evidence, not an M7 pass. The run
+used an uncommitted tree and an explicitly staged arm64 library; the automatic
+final-package native-asset path, competitor-derived Android size envelope,
+repeatable clean multi-shape matrix, real Gboard composition/autocorrect,
+touch selection handles and magnifier, accessibility, lifecycle, memory,
+thermal, and long-session receipts remain open. iOS remains entirely
+unqualified on physical hardware.
+
 ## 1. Destination and current state
 
 The destination is fixed:

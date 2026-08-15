@@ -10,6 +10,9 @@ EXAMPLE="$ROOT/packages/flark/example"
 ACTION="${1:-verify}"
 DEVICE="${2:-${FLARK_ANDROID_DEVICE:-}}"
 API_LEVEL="${ANDROID_API_LEVEL:-24}"
+PROFILE_SHAPE="${FLARK_PROFILE_SHAPE:-ordinary}"
+PROFILE_WORKLOAD="${FLARK_PROFILE_WORKLOAD:-inline-typing}"
+PROFILE_SOURCE_BYTES="${FLARK_PROFILE_SOURCE_BYTES:-1048576}"
 
 if [[ -z "${ANDROID_NDK_HOME:-}" ]]; then
   if [[ -z "${ANDROID_HOME:-}" ]]; then
@@ -85,8 +88,25 @@ case "$ACTION" in
     build
     (cd "$EXAMPLE" && exec flutter run -d "$DEVICE" --profile)
     ;;
+  profile)
+    require_device
+    build
+    (
+      cd "$EXAMPLE"
+      flutter drive \
+        --profile \
+        --driver=test_driver/integration_test.dart \
+        --target=integration_test/frame_profile_test.dart \
+        -d "$DEVICE" \
+        --dart-define=FLARK_V4_LIBRARY_PATH=libflark_abi.so \
+        --dart-define=FLARK_PROFILE_SHAPE="$PROFILE_SHAPE" \
+        --dart-define=FLARK_PROFILE_WORKLOAD="$PROFILE_WORKLOAD" \
+        --dart-define=FLARK_PROFILE_SOURCE_BYTES="$PROFILE_SOURCE_BYTES"
+    )
+    echo "v4_android: receipt $EXAMPLE/build/integration_response_data.json"
+    ;;
   *)
-    echo "usage: $0 [build|verify|run] [flutter-device-id]" >&2
+    echo "usage: $0 [build|verify|profile|run] [flutter-device-id]" >&2
     exit 64
     ;;
 esac
