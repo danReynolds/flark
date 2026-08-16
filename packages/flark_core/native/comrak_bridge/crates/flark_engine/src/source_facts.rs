@@ -1003,7 +1003,7 @@ mod persistent_sequence_codec {
     // collision-resistant hash. Five distinct evaluations expose 305 field
     // bits, while the final domain-separated BLAKE3 role digest caps the claim
     // at conventional 128-bit collision security.
-    pub(super) const COMMITMENT_MODULUS: u64 = (1_u64 << 61) - 1;
+    pub(super) const COMMITMENT_MODULUS: u64 = crate::mersenne61::MODULUS;
     pub(super) const COMMITMENT_BASES: [u64; SOURCE_FACT_SEQUENCE_COMMITMENT_LANES] = [
         0x0a09_e667_f3bc_c909,
         0x1b67_ae85_84ca_a73b,
@@ -1413,13 +1413,11 @@ mod persistent_sequence_codec {
     }
 
     pub(super) fn add_mod(left: u64, right: u64) -> u64 {
-        u64::try_from((u128::from(left) + u128::from(right)) % u128::from(COMMITMENT_MODULUS))
-            .expect("reduced commitment sum fits u64")
+        crate::mersenne61::add_mod(left, right)
     }
 
     pub(super) fn mul_mod(left: u64, right: u64) -> u64 {
-        u64::try_from((u128::from(left) * u128::from(right)) % u128::from(COMMITMENT_MODULUS))
-            .expect("reduced commitment product fits u64")
+        crate::mersenne61::multiply_mod(left, right)
     }
 
     fn encode_sequence_commitment(

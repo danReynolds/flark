@@ -20,6 +20,7 @@ use crate::measured_sequence::{
     ResumableSequenceProgress, SequenceInspectionReceipt, SequenceLeafVisitControl,
     SequenceMeasure, SequenceMutationReceipt, SequenceSpec, SequenceSpecInspection,
 };
+use crate::mersenne61::{add_mod, multiply_mod, MODULUS as COMMITMENT_MODULUS};
 use crate::source::{SourceBoundaryAffinity, SourceEditError, SourceSnapshotLease, SourceVersion};
 use crate::storage::{ArenaBuildOwner, ArenaBuildSession, ArenaError, CandidateBuild, PageArena};
 use crate::{ReclaimReceipt, ARENA_PAGE_BYTES};
@@ -33,7 +34,6 @@ const BLOCK_LANE_CANONICAL_HEADER_BYTES: u64 = 32;
 const BLOCK_SUMMARY_COUNTERS: usize = 11;
 const COMMITMENT_LANES: usize = 4;
 const COMMITMENT_BYTES: usize = COMMITMENT_LANES * 2 * 8;
-const COMMITMENT_MODULUS: u64 = (1_u64 << 61) - 1;
 const BLOCK_LEAF_HEADER_BYTES: usize =
     4 + 4 + 2 + 2 + 4 + BLOCK_SUMMARY_COUNTERS * 8 + 2 * COMMITMENT_BYTES;
 const BLOCK_BRANCH_BYTES: usize = 4 + 4 + 8 + 2 + BLOCK_SUMMARY_COUNTERS * 8 + 2 * COMMITMENT_BYTES;
@@ -140,19 +140,6 @@ impl LaneCommitment {
         }
         checksum
     }
-}
-
-const fn add_mod(left: u64, right: u64) -> u64 {
-    let sum = left + right;
-    if sum >= COMMITMENT_MODULUS {
-        sum - COMMITMENT_MODULUS
-    } else {
-        sum
-    }
-}
-
-const fn multiply_mod(left: u64, right: u64) -> u64 {
-    ((left as u128 * right as u128) % COMMITMENT_MODULUS as u128) as u64
 }
 
 /// Shape-independent semantic summary stored in every measured branch.

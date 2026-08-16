@@ -4,6 +4,7 @@ use std::fmt;
 
 use crate::document::DocumentRuntimeError;
 use crate::measured_sequence::{SequenceMeasure, SequenceSpec, SequenceSpecInspection};
+use crate::mersenne61::{add_mod, multiply_mod, MODULUS as COMMITMENT_MODULUS};
 use crate::source::SourceEditError;
 use crate::storage::{ArenaError, ARENA_PAGE_BYTES};
 
@@ -12,7 +13,6 @@ const GREEN_BRANCH_MAGIC: [u8; 4] = *b"RGB1";
 const GREEN_SCHEMA: u32 = 4;
 const COMMITMENT_LANES: usize = 4;
 const COMMITMENT_BYTES: usize = COMMITMENT_LANES * 2 * 8;
-const COMMITMENT_MODULUS: u64 = (1_u64 << 61) - 1;
 const COMMITMENT_BASES: [u64; COMMITMENT_LANES] = [
     0x0a09_e667_f3bc_c909,
     0x1b67_ae85_84ca_a73b,
@@ -888,19 +888,6 @@ impl Default for RecursiveGreenCommitment {
     fn default() -> Self {
         Self::empty()
     }
-}
-
-const fn add_mod(left: u64, right: u64) -> u64 {
-    let sum = left + right;
-    if sum >= COMMITMENT_MODULUS {
-        sum - COMMITMENT_MODULUS
-    } else {
-        sum
-    }
-}
-
-const fn multiply_mod(left: u64, right: u64) -> u64 {
-    ((left as u128 * right as u128) % COMMITMENT_MODULUS as u128) as u64
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

@@ -26,6 +26,7 @@ mod inline_projection;
 pub mod m11_host;
 #[allow(dead_code)] // Activated by the M1.2 SourceFacts persistent-root cutover.
 mod measured_sequence;
+mod mersenne61;
 #[cfg_attr(not(feature = "parser-internal"), allow(dead_code))]
 mod recursive_green;
 #[cfg(feature = "parser-internal")]

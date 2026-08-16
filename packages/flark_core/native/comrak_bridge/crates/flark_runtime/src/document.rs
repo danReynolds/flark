@@ -586,9 +586,22 @@ impl DocumentSession {
                 break;
             }
             let state = mem::replace(&mut self.parser, ParseState::Transition);
-            let next = self.advance_one(state);
+            let remaining = max_work_units - consumed;
+            let next = match state {
+                // A clean build already owns a fuel-bounded inner state
+                // machine. Let it consume the remaining grant directly
+                // instead of moving its large state through `ParseState` once
+                // per transition. Retirement is still polled before each
+                // bounded grant, and the caller's work-unit ceiling remains
+                // exact.
+                ParseState::Clean(build) => self.advance_clean(build, remaining),
+                other => self.advance_one(other).map(|state| (state, 1)),
+            };
             match next {
-                Ok(state) => self.parser = state,
+                Ok((state, work_units)) => {
+                    self.parser = state;
+                    consumed += work_units;
+                }
                 Err(error) => {
                     if self.fault_arena_metrics.is_none() {
                         self.fault_arena_metrics = Some(self.runtime.arena_metrics());
@@ -597,7 +610,6 @@ impl DocumentSession {
                     return Err(error);
                 }
             }
-            consumed += 1;
         }
 
         Ok(DocumentPumpReceipt {
@@ -610,36 +622,7 @@ impl DocumentSession {
 
     fn advance_one(&mut self, state: ParseState) -> Result<ParseState, DocumentSessionError> {
         match state {
-            ParseState::Clean(mut build) => {
-                // A recursive-green build asserts on drop unless its root was
-                // transferred or it was explicitly cancelled, so an error here
-                // must release the build rather than let it fall out of scope:
-                // otherwise the assertion kills the document actor thread and
-                // every later call reports an opaque internal fault instead of
-                // this typed parser error.
-                let poll = match build.poll(&mut self.runtime, 1) {
-                    Ok(poll) => poll,
-                    Err(error) => {
-                        self.fault_arena_metrics = Some(self.runtime.arena_metrics());
-                        release_failed_clean_build(&mut self.runtime, build);
-                        return Err(error.into());
-                    }
-                };
-                if poll.status() == M11PersistentRecursiveGreenBuildStatus::Complete {
-                    match build.take_session() {
-                        Some(session) => Ok(ParseState::Ready(Box::new(session))),
-                        None => {
-                            release_failed_clean_build(&mut self.runtime, build);
-                            Err(M11PersistentRecursiveGreenSessionError::InvalidState(
-                                "completed clean build omitted its session",
-                            )
-                            .into())
-                        }
-                    }
-                } else {
-                    Ok(ParseState::Clean(build))
-                }
-            }
+            ParseState::Clean(build) => self.advance_clean(build, 1).map(|(state, _)| state),
             ParseState::CancellingClean(mut build) => {
                 let poll = build.poll_cancel(&mut self.runtime, 1)?;
                 if poll.status() == M11PersistentRecursiveGreenBuildStatus::Cancelled {
@@ -727,6 +710,48 @@ impl DocumentSession {
             | ParseState::ClosingRuntime
             | ParseState::Closed => Err(DocumentSessionError::Busy),
             ParseState::Faulted | ParseState::Transition => Err(DocumentSessionError::Faulted),
+        }
+    }
+
+    fn advance_clean(
+        &mut self,
+        mut build: Box<M11PersistentRecursiveGreenCleanBuild>,
+        max_work_units: usize,
+    ) -> Result<(ParseState, usize), DocumentSessionError> {
+        // A recursive-green build asserts on drop unless its root was
+        // transferred or it was explicitly cancelled, so an error here must
+        // release the build rather than let it fall out of scope: otherwise
+        // the assertion kills the document actor thread and every later call
+        // reports an opaque internal fault instead of this typed parser error.
+        let poll = match build.poll(&mut self.runtime, max_work_units) {
+            Ok(poll) => poll,
+            Err(error) => {
+                self.fault_arena_metrics = Some(self.runtime.arena_metrics());
+                release_failed_clean_build(&mut self.runtime, build);
+                return Err(error.into());
+            }
+        };
+        let work_units = poll.transitions();
+        if work_units == 0 || work_units > max_work_units {
+            release_failed_clean_build(&mut self.runtime, build);
+            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "clean build violated its bounded work grant",
+            )
+            .into());
+        }
+        if poll.status() == M11PersistentRecursiveGreenBuildStatus::Complete {
+            match build.take_session() {
+                Some(session) => Ok((ParseState::Ready(Box::new(session)), work_units)),
+                None => {
+                    release_failed_clean_build(&mut self.runtime, build);
+                    Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "completed clean build omitted its session",
+                    )
+                    .into())
+                }
+            }
+        } else {
+            Ok((ParseState::Clean(build), work_units))
         }
     }
 

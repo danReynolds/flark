@@ -922,6 +922,57 @@ predictive text, dictation, the competitor-derived Android size envelope,
 release-floor/current-device coverage, and long thermal sessions remain open.
 iOS remains entirely unqualified on physical hardware.
 
+### Cold-certification investigation (2026-08-16)
+
+The 93.136-second 10 MiB Pixel result is a real architecture signal, not Dart
+isolate scheduling or source scanning. On the exact ordinary fixture, a
+temporary phase diagnostic attributed a 6.082-second Mac clean build as
+3.385 seconds in persistent Green writing, 1.377 seconds in the block
+controller, 0.692 seconds in active/pending-line work, and only 0.074 seconds
+in the source scanner. The build performed 7.42 million event-authentication
+operations for 2.47 million Green events.
+
+Two exact production optimizations survived the investigation. Commitment
+arithmetic over the Mersenne prime `2^61 - 1` now uses shift-and-fold reduction
+instead of software `u128` remainder on ARM, with a property test against the
+old arithmetic over boundary values and 100,000 deterministic pairs. The
+runtime also passes each remaining bounded pump grant directly to the clean
+builder instead of moving its large state once per transition. The 10 MiB Mac
+receipt moved from 5.315 seconds to 4.457 seconds. The Pixel 1 MiB receipt moved
+from 7.28 seconds to 3.864 seconds, but 10 MiB moved only from 93.136 seconds to
+88.923 seconds. These changes are worthwhile; they do not make a full tree a
+viable foreground readiness gate.
+
+A physical bounded-source curve established the useful foreground scale on
+the Pixel 6a: 16 KiB certified in 163.105 ms, 64 KiB in 283.762 ms, and
+256 KiB in 874.563 ms. A disposable same-parser differential then falsified
+the obvious dual-document shortcut. A 4 KiB prefix produced the same first
+1 KiB rows as the full source for ordinary prose, but differed when a later
+reference definition resolved an earlier link and when fenced code, a lazy
+list, or an HTML block crossed the prefix cut. A truncated parse is therefore
+never current-revision certification, even when it looks plausible.
+
+The resulting scale correction is:
+
+- keep exact source available and editable immediately;
+- let the primary parser expose a bounded first viewport progressively from
+  its own event stream, without a second grammar or truncated-document parse;
+- publish only closed rows whose local and global dependencies are proven
+  current; keep unresolved references and spanning constructs source-faithful
+  and neutral;
+- continue or replace the monolithic full-tree build outside the foreground
+  path; ultimately retain compact restart/reference state and materialize
+  bounded Green fragments on demand rather than requiring a 10 MiB Green root
+  before semantic queries work.
+
+The next implementation experiment is one bounded recorder on the primary
+writer: at most the first 32 rows plus their open ancestry, with a differential
+oracle against the eventual full viewport. It succeeds only if candidate facts
+are byte-for-byte identical to the final current-revision facts, dependency-
+unsafe rows remain neutral, no parser policy is duplicated, and the physical
+first-meaningful-paint lane stays below 200 ms. Only then does the progressive
+receipt cross the ABI into Dart and Flutter.
+
 ## 1. Destination and current state
 
 The destination is fixed:
