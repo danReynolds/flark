@@ -1253,6 +1253,15 @@ authoritative empty fact list. The runtime now shares one row mapper and one
 inline-capture path between full-reference and no-reference authority, which
 removes a future second semantic implementation.
 
+The first end-to-end engine timing is also inside the provisional Gate-one Mac
+budget. Five fresh release test processes opened the ordinary 10 MiB fixture
+and produced the same 32-row, 2,751-byte slice. The primary-stream boundary was
+available in 2.275-2.680 ms, and the bounded Green rows plus authoritative
+inline facts and cooked direct-link values were ready in 13.557-13.733 ms,
+timed from before source admission and before EOF indexing completed. This is
+not the `<50 ms` rendered-slice receipt: it excludes the runtime/ABI payload,
+Flutter layout, paint, and raster, and therefore remains engine-only evidence.
+
 The direction is accepted for prototyping, not yet for production migration.
 The remaining Gate-one semantic proof is a frozen mixed-construct slice matrix
 through the complete runtime/ABI payload, including tables and activated

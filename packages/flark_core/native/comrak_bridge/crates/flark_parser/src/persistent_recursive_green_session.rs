@@ -4511,13 +4511,25 @@ mod tests {
             M11RecursiveGreenRowQueryLimits, M11RecursiveGreenSliceBuild,
         };
 
-        let source = (0..96)
-            .map(|index| {
-                format!(
-                    "Paragraph {index} has **strong**, _emphasis_, and a [direct link](https://example.invalid/{index}).\n\n"
-                )
-            })
-            .collect::<String>();
+        let source = if let Some(target) = std::env::var("FLARK_FIRST_SLICE_TARGET_BYTES")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+        {
+            repeat_ascii_exact(
+                "",
+                "Paragraph has **strong**, _emphasis_, and a [direct link](https://example.invalid/).\n\n",
+                target,
+            )
+        } else {
+            (0..96)
+                .map(|index| {
+                    format!(
+                        "Paragraph {index} has **strong**, _emphasis_, and a [direct link](https://example.invalid/{index}).\n\n"
+                    )
+                })
+                .collect::<String>()
+        };
+        let admitted_at = Instant::now();
         let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
             .expect("first-slice runtime");
         let plan = M11PersistentRecursiveGreenCleanPlan::new(
@@ -4540,6 +4552,7 @@ mod tests {
                 "ordinary source must publish its first slice before EOF"
             );
         };
+        let captured_at = admitted_at.elapsed();
 
         assert!(slice.physical.bytes() < source.len() as u64);
         assert!(slice.physical.bytes() <= 64 * 1024);
@@ -4559,19 +4572,7 @@ mod tests {
                 .count()
                 >= 32
         );
-
-        loop {
-            if build
-                .poll(&mut runtime, 4_096)
-                .expect("finish compact source")
-                .status()
-                == M11PersistentRecursiveGreenBuildStatus::Complete
-            {
-                break;
-            }
-        }
-        let mut session = build.take_session().expect("compact session");
-        release_session(&mut runtime, &mut session);
+        let slice_event_count = slice.events.len();
 
         let source_end = usize::try_from(slice.physical.bytes()).expect("slice end");
         let mut slice_build = M11RecursiveGreenSliceBuild::new(
@@ -4642,6 +4643,42 @@ mod tests {
             .expect("query Green slice")
             .rows()
             .to_vec();
+        let slice_inline = slice_rows
+            .iter()
+            .map(|slice_row| {
+                let slice_point = M11RecursiveGreenPoint::new(
+                    usize::try_from(slice_row.physical_range().start).expect("slice row byte"),
+                    usize::try_from(slice_row.physical_utf16_range().start)
+                        .expect("slice row UTF-16"),
+                    SourceBoundaryAffinity::After,
+                );
+                let prepared = crate::prepare_m11_recursive_green_slice_inline_leaf(
+                    &runtime,
+                    &slice_root,
+                    slice_point,
+                )
+                .expect("prepare slice inline leaf");
+                capture_inline_facts_for_slice_differential(&mut runtime, prepared)
+            })
+            .collect::<Vec<_>>();
+        let engine_ready_at = admitted_at.elapsed();
+        eprintln!(
+            "primary first slice: captured={captured_at:?} engine_ready={engine_ready_at:?} source_bytes={source_end} events={slice_event_count} rows={}",
+            slice_rows.len()
+        );
+
+        loop {
+            if build
+                .poll(&mut runtime, 4_096)
+                .expect("finish compact source")
+                .status()
+                == M11PersistentRecursiveGreenBuildStatus::Complete
+            {
+                break;
+            }
+        }
+        let mut session = build.take_session().expect("compact session");
+        release_session(&mut runtime, &mut session);
 
         let mut complete = build_session(&mut runtime);
         let complete_rows = complete
@@ -4655,7 +4692,9 @@ mod tests {
             .rows()
             .to_vec();
         assert_eq!(slice_rows.len(), complete_rows.len());
-        for (slice_row, complete_row) in slice_rows.iter().zip(&complete_rows) {
+        for ((slice_row, complete_row), expected_inline) in
+            slice_rows.iter().zip(&complete_rows).zip(&slice_inline)
+        {
             assert_eq!(slice_row.ordinal(), complete_row.ordinal());
             assert_eq!(slice_row.frame(), complete_row.frame());
             assert_eq!(slice_row.kind(), complete_row.kind());
@@ -4686,18 +4725,13 @@ mod tests {
                 usize::try_from(slice_row.physical_utf16_range().start).expect("slice row UTF-16"),
                 SourceBoundaryAffinity::After,
             );
-            let slice_inline = crate::prepare_m11_recursive_green_slice_inline_leaf(
-                &runtime,
-                &slice_root,
-                slice_point,
-            )
-            .expect("prepare slice inline leaf");
             let complete_inline = complete
                 .prepare_inline_leaf(&runtime, slice_point)
                 .expect("prepare complete inline leaf");
+            let actual_inline =
+                capture_inline_facts_for_slice_differential(&mut runtime, complete_inline);
             assert_eq!(
-                capture_inline_facts_for_slice_differential(&mut runtime, slice_inline),
-                capture_inline_facts_for_slice_differential(&mut runtime, complete_inline),
+                expected_inline, &actual_inline,
                 "bounded primary-stream slice must yield the eventual inline facts"
             );
         }
