@@ -380,6 +380,7 @@ pub struct M11RecursiveGreenBuild {
     pub(super) green_identity: StrongIdentity,
     pub(super) lease: Option<SourceSnapshotLease>,
     pub(super) source: SourceVersion,
+    pub(super) source_base: M11RecursiveGreenSourceMetric,
     required_physical: M11RecursiveGreenSourceMetric,
     pub(super) phase: BuildPhase,
     input_closed: bool,
@@ -434,27 +435,48 @@ impl M11RecursiveGreenBuild {
             u64::try_from(lease.version().utf16_len())
                 .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
         );
-        Self::new_with_required_physical(runtime, lease, required_physical)
+        Self::new_with_required_physical(
+            runtime,
+            lease,
+            M11RecursiveGreenSourceMetric::from_validated(0, 0),
+            required_physical,
+        )
     }
 
     fn new_with_required_physical(
         runtime: &DocumentRuntime,
         lease: SourceSnapshotLease,
+        source_base: M11RecursiveGreenSourceMetric,
         required_physical: M11RecursiveGreenSourceMetric,
     ) -> Result<Self, M11RecursiveGreenError> {
         let source = lease.version();
         if runtime.current_source_version() != Some(source) {
             return Err(M11RecursiveGreenError::SourceAuthorityMismatch);
         }
-        let required_end = usize::try_from(required_physical.bytes())
+        let source_start = usize::try_from(source_base.bytes())
             .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
-        if required_end > source.byte_len()
-            || usize::try_from(required_physical.utf16())
+        let required_end = usize::try_from(
+            source_base
+                .bytes()
+                .checked_add(required_physical.bytes())
+                .ok_or(M11RecursiveGreenError::CounterOverflow)?,
+        )
+        .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+        let required_end_utf16 = source_base
+            .utf16()
+            .checked_add(required_physical.utf16())
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        if source_start > required_end
+            || required_end > source.byte_len()
+            || usize::try_from(required_end_utf16)
                 .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
                 > source.utf16_len()
+            || u64::try_from(lease.utf16_offset_for_byte(source_start)?)
+                .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
+                != source_base.utf16()
             || u64::try_from(lease.utf16_offset_for_byte(required_end)?)
                 .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
-                != required_physical.utf16()
+                != required_end_utf16
         {
             return Err(M11RecursiveGreenError::InvalidPoint);
         }
@@ -467,6 +489,7 @@ impl M11RecursiveGreenBuild {
             green_identity,
             lease: Some(lease),
             source,
+            source_base,
             required_physical,
             phase: BuildPhase::Accepting,
             input_closed: false,
@@ -941,18 +964,34 @@ impl M11RecursiveGreenBuild {
         part: super::codec::M11RecursiveGreenCoveragePart,
         logical: M11RecursiveGreenLogicalAction,
     ) -> Result<(), M11RecursiveGreenError> {
-        let start = usize::try_from(self.expected_summary.physical_bytes)
-            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+        let start = usize::try_from(
+            self.source_base
+                .bytes()
+                .checked_add(self.expected_summary.physical_bytes)
+                .ok_or(M11RecursiveGreenError::CounterOverflow)?,
+        )
+        .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
         let end_u64 = self
             .expected_summary
             .physical_bytes
             .checked_add(physical.bytes())
             .ok_or(M11RecursiveGreenError::CounterOverflow)?;
-        let end = usize::try_from(end_u64).map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+        let end = usize::try_from(
+            self.source_base
+                .bytes()
+                .checked_add(end_u64)
+                .ok_or(M11RecursiveGreenError::CounterOverflow)?,
+        )
+        .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
         let expected_utf16 = self
-            .expected_summary
-            .physical_utf16
-            .checked_add(physical.utf16())
+            .source_base
+            .utf16()
+            .checked_add(
+                self.expected_summary
+                    .physical_utf16
+                    .checked_add(physical.utf16())
+                    .ok_or(M11RecursiveGreenError::CounterOverflow)?,
+            )
             .ok_or(M11RecursiveGreenError::CounterOverflow)?;
         if end > self.source.byte_len()
             || expected_utf16
@@ -1377,6 +1416,7 @@ impl M11RecursiveGreenBuild {
             green_identity: self.green_identity,
             lease: Some(lease),
             source: self.source,
+            source_base: self.source_base,
             summary: measure.summary(),
             page_count: measure.leaves(),
             tree_height: measure.height(),
@@ -1559,6 +1599,8 @@ impl Drop for M11RecursiveGreenBuild {
 #[must_use = "recursive-green slice builds require root transfer or explicit cancellation"]
 pub struct M11RecursiveGreenSliceBuild {
     build: M11RecursiveGreenBuild,
+    source_base: M11RecursiveGreenSourceMetric,
+    row_base: u64,
 }
 
 impl M11RecursiveGreenSliceBuild {
@@ -1567,17 +1609,42 @@ impl M11RecursiveGreenSliceBuild {
         lease: SourceSnapshotLease,
         source_end_byte: usize,
     ) -> Result<Self, M11RecursiveGreenError> {
+        Self::new_at(runtime, lease, 0, source_end_byte, 0)
+    }
+
+    pub fn new_at(
+        runtime: &DocumentRuntime,
+        lease: SourceSnapshotLease,
+        source_start_byte: usize,
+        source_end_byte: usize,
+        row_base: u64,
+    ) -> Result<Self, M11RecursiveGreenError> {
+        if source_start_byte > source_end_byte {
+            return Err(M11RecursiveGreenError::InvalidPoint);
+        }
+        let source_start_utf16 = lease.utf16_offset_for_byte(source_start_byte)?;
         let source_end_utf16 = lease.utf16_offset_for_byte(source_end_byte)?;
+        let source_base = M11RecursiveGreenSourceMetric::from_validated(
+            u64::try_from(source_start_byte)
+                .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+            u64::try_from(source_start_utf16)
+                .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+        );
         let required_physical = M11RecursiveGreenSourceMetric::from_validated(
-            u64::try_from(source_end_byte).map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
-            u64::try_from(source_end_utf16).map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+            u64::try_from(source_end_byte - source_start_byte)
+                .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+            u64::try_from(source_end_utf16 - source_start_utf16)
+                .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
         );
         Ok(Self {
             build: M11RecursiveGreenBuild::new_with_required_physical(
                 runtime,
                 lease,
+                source_base,
                 required_physical,
             )?,
+            source_base,
+            row_base,
         })
     }
 
@@ -1604,7 +1671,11 @@ impl M11RecursiveGreenSliceBuild {
     pub fn take_root(&mut self) -> Option<M11RecursiveGreenSliceRoot> {
         self.build
             .take_root()
-            .map(|root| M11RecursiveGreenSliceRoot { root })
+            .map(|root| M11RecursiveGreenSliceRoot {
+                root,
+                source_base: self.source_base,
+                row_base: self.row_base,
+            })
     }
 
     pub fn begin_cancel(
@@ -1631,6 +1702,8 @@ impl M11RecursiveGreenSliceBuild {
 #[must_use = "recursive-green slice roots require explicit release"]
 pub struct M11RecursiveGreenSliceRoot {
     pub(super) root: M11RecursiveGreenRoot,
+    pub(super) source_base: M11RecursiveGreenSourceMetric,
+    pub(super) row_base: u64,
 }
 
 impl M11RecursiveGreenSliceRoot {
@@ -1647,6 +1720,29 @@ impl M11RecursiveGreenSliceRoot {
     #[must_use]
     pub const fn source_utf16_len(&self) -> u64 {
         self.root.source_utf16_len()
+    }
+
+    #[must_use]
+    pub fn source_range(&self) -> std::ops::Range<u64> {
+        self.source_base.bytes()
+            ..self
+                .source_base
+                .bytes()
+                .saturating_add(self.root.source_byte_len())
+    }
+
+    #[must_use]
+    pub fn source_utf16_range(&self) -> std::ops::Range<u64> {
+        self.source_base.utf16()
+            ..self
+                .source_base
+                .utf16()
+                .saturating_add(self.root.source_utf16_len())
+    }
+
+    #[must_use]
+    pub const fn row_base(&self) -> u64 {
+        self.row_base
     }
 
     #[must_use]
@@ -1676,6 +1772,7 @@ pub struct M11RecursiveGreenRoot {
     pub(super) green_identity: StrongIdentity,
     pub(super) lease: Option<SourceSnapshotLease>,
     pub(super) source: SourceVersion,
+    pub(super) source_base: M11RecursiveGreenSourceMetric,
     pub(super) summary: RecursiveGreenSummary,
     pub(super) page_count: u64,
     pub(super) tree_height: u16,
@@ -1712,6 +1809,7 @@ impl M11RecursiveGreenRoot {
             green_identity,
             source: lease.version(),
             lease: Some(lease),
+            source_base: M11RecursiveGreenSourceMetric::from_validated(0, 0),
             summary,
             page_count,
             tree_height,

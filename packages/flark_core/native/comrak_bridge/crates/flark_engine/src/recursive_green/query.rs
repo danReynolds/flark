@@ -832,9 +832,32 @@ impl M11RecursiveGreenRoot {
             .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
         let covered_utf16 = usize::try_from(self.summary.physical_utf16)
             .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+        let absolute_byte = self
+            .source_base
+            .bytes()
+            .checked_add(
+                u64::try_from(point.byte_offset)
+                    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+            )
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        let absolute_utf16 = self
+            .source_base
+            .utf16()
+            .checked_add(
+                u64::try_from(point.utf16_offset)
+                    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+            )
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
         if point.byte_offset > covered_bytes
             || point.utf16_offset > covered_utf16
-            || self.lease()?.utf16_offset_for_byte(point.byte_offset)? != point.utf16_offset
+            || u64::try_from(
+                self.lease()?.utf16_offset_for_byte(
+                    usize::try_from(absolute_byte)
+                        .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+                )?,
+            )
+            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
+                != absolute_utf16
             || requested_end_byte > self.summary.physical_bytes
         {
             return Err(M11RecursiveGreenError::InvalidPoint);
@@ -890,13 +913,33 @@ impl M11RecursiveGreenRoot {
             .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
         let covered_utf16 = usize::try_from(self.summary.physical_utf16)
             .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+        let absolute_byte = self
+            .source_base
+            .bytes()
+            .checked_add(
+                u64::try_from(point.byte_offset)
+                    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+            )
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        let absolute_utf16 = self
+            .source_base
+            .utf16()
+            .checked_add(
+                u64::try_from(point.utf16_offset)
+                    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+            )
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
         if point.byte_offset > covered_bytes
             || point.utf16_offset > covered_utf16
             || self
                 .lease()?
-                .utf16_offset_for_byte(point.byte_offset)
+                .utf16_offset_for_byte(
+                    usize::try_from(absolute_byte)
+                        .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+                )
                 .map_err(M11RecursiveGreenError::from)?
-                != point.utf16_offset
+                != usize::try_from(absolute_utf16)
+                    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
         {
             return Err(M11RecursiveGreenError::InvalidPoint.into());
         }
@@ -2011,8 +2054,40 @@ impl M11RecursiveGreenSliceRoot {
         requested_end_byte: u64,
         limits: M11RecursiveGreenRowQueryLimits,
     ) -> Result<M11RecursiveGreenRowQueryOutcome, M11RecursiveGreenError> {
-        self.root
-            .locate_renderable_rows_bounded(runtime, point, requested_end_byte, limits)
+        let byte_base = self.source_base.bytes();
+        let utf16_base = self.source_base.utf16();
+        let local_point = M11RecursiveGreenPoint::new(
+            usize::try_from(
+                u64::try_from(point.byte_offset)
+                    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
+                    .checked_sub(byte_base)
+                    .ok_or(M11RecursiveGreenError::InvalidPoint)?,
+            )
+            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+            usize::try_from(
+                u64::try_from(point.utf16_offset)
+                    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
+                    .checked_sub(utf16_base)
+                    .ok_or(M11RecursiveGreenError::InvalidPoint)?,
+            )
+            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+            point.affinity,
+        );
+        let local_end = requested_end_byte
+            .checked_sub(byte_base)
+            .ok_or(M11RecursiveGreenError::InvalidPoint)?;
+        match self
+            .root
+            .locate_renderable_rows_bounded(runtime, local_point, local_end, limits)?
+        {
+            M11RecursiveGreenRowQueryOutcome::Window(mut window) => {
+                offset_slice_row_window(&mut window, byte_base, utf16_base, self.row_base)?;
+                Ok(M11RecursiveGreenRowQueryOutcome::Window(window))
+            }
+            M11RecursiveGreenRowQueryOutcome::BudgetExceeded(exceeded) => {
+                Ok(M11RecursiveGreenRowQueryOutcome::BudgetExceeded(exceeded))
+            }
+        }
     }
 
     pub fn locate_renderable_rows(
@@ -2022,8 +2097,12 @@ impl M11RecursiveGreenSliceRoot {
         requested_end_byte: u64,
         limits: M11RecursiveGreenRowQueryLimits,
     ) -> Result<M11RecursiveGreenRowWindow, M11RecursiveGreenError> {
-        self.root
-            .locate_renderable_rows(runtime, point, requested_end_byte, limits)
+        match self.locate_renderable_rows_bounded(runtime, point, requested_end_byte, limits)? {
+            M11RecursiveGreenRowQueryOutcome::Window(window) => Ok(window),
+            M11RecursiveGreenRowQueryOutcome::BudgetExceeded(_) => {
+                Err(M11RecursiveGreenError::ZeroFuel)
+            }
+        }
     }
 
     pub fn locate_renderable_row_fence_for_kinds(
@@ -2034,14 +2113,143 @@ impl M11RecursiveGreenSliceRoot {
         limits: M11RecursiveGreenRowQueryLimits,
         maximum_inline_source_bytes: u64,
     ) -> Result<Option<M11RecursiveGreenFrameFence>, M11RecursiveGreenFrameQueryError> {
-        self.root.locate_renderable_row_fence_for_kinds(
+        if maximum_inline_source_bytes == 0 || limits.maximum_rows != 1 {
+            return Err(M11RecursiveGreenError::InvalidState.into());
+        }
+        let requested_end = self
+            .source_base
+            .bytes()
+            .checked_add(self.root.summary.physical_bytes)
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        let window =
+            match self.locate_renderable_rows_bounded(runtime, point, requested_end, limits)? {
+                M11RecursiveGreenRowQueryOutcome::Window(window) => window,
+                M11RecursiveGreenRowQueryOutcome::BudgetExceeded(exceeded) => {
+                    let bound = match exceeded.limit() {
+                        M11RecursiveGreenRowQueryLimit::StoragePages => {
+                            M11RecursiveGreenFrameQueryBound::StoragePagesVisited
+                        }
+                        M11RecursiveGreenRowQueryLimit::EventsScanned => {
+                            M11RecursiveGreenFrameQueryBound::EventsScanned
+                        }
+                        M11RecursiveGreenRowQueryLimit::TreeNodes => {
+                            M11RecursiveGreenFrameQueryBound::TreeNodesVisited
+                        }
+                        M11RecursiveGreenRowQueryLimit::OpenDepth => {
+                            M11RecursiveGreenFrameQueryBound::OpenDepth
+                        }
+                    };
+                    return Err(M11RecursiveGreenFrameQueryError::BoundExceeded(bound));
+                }
+            };
+        let Some(row) = window.rows.first() else {
+            return Ok(None);
+        };
+        let effective_byte = match (point.affinity, point.byte_offset) {
+            (SourceBoundaryAffinity::Before, offset) if offset > 0 => offset - 1,
+            (_, offset) if u64::try_from(offset).ok() == Some(requested_end) && offset > 0 => {
+                offset - 1
+            }
+            (_, offset) => offset,
+        };
+        let effective_byte =
+            u64::try_from(effective_byte).map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+        if effective_byte < row.physical.start || effective_byte >= row.physical.end {
+            return Ok(None);
+        }
+        if !expected_kinds.contains(&row.kind)
+            || row.edit_capability != M11RecursiveGreenRowEditCapability::Contiguous
+        {
+            return Ok(None);
+        }
+        let Some(inline_source) = row.editable.clone() else {
+            return Err(M11RecursiveGreenError::Corrupt(
+                "contiguous recursive-Green slice row omitted editable bytes",
+            )
+            .into());
+        };
+        let Some(inline_source_utf16) = row.editable_utf16.clone() else {
+            return Err(M11RecursiveGreenError::Corrupt(
+                "contiguous recursive-Green slice row omitted editable UTF-16",
+            )
+            .into());
+        };
+        if inline_source.end.saturating_sub(inline_source.start) > maximum_inline_source_bytes {
+            return Err(M11RecursiveGreenFrameQueryError::BoundExceeded(
+                M11RecursiveGreenFrameQueryBound::InlineSourceBytes,
+            ));
+        }
+        let authority = M11ParserSourceRangeAuthority::new(
             runtime,
-            point,
-            expected_kinds,
-            limits,
-            maximum_inline_source_bytes,
-        )
+            self.root.lease()?.duplicate(),
+            usize::try_from(inline_source.start)
+                .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
+                ..usize::try_from(inline_source.end)
+                    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+        )?;
+        Ok(Some(M11RecursiveGreenFrameFence {
+            source: self.root.source(),
+            frame: row.frame,
+            kind: row.kind,
+            block_source: row.physical.clone(),
+            block_source_utf16: row.physical_utf16.clone(),
+            inline_source,
+            inline_source_utf16,
+            receipt: window.receipt,
+            authority,
+        }))
     }
+}
+
+fn offset_slice_row_window(
+    window: &mut M11RecursiveGreenRowWindow,
+    byte_base: u64,
+    utf16_base: u64,
+    row_base: u64,
+) -> Result<(), M11RecursiveGreenError> {
+    window.start_ordinal = window
+        .start_ordinal
+        .checked_add(row_base)
+        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+    window.total_rows = window
+        .total_rows
+        .checked_add(row_base)
+        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+    for row in &mut window.rows {
+        row.ordinal = row
+            .ordinal
+            .checked_add(row_base)
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        offset_slice_range(&mut row.physical, byte_base)?;
+        offset_slice_range(&mut row.physical_utf16, utf16_base)?;
+        if let Some(editable) = &mut row.editable {
+            offset_slice_range(editable, byte_base)?;
+        }
+        if let Some(editable_utf16) = &mut row.editable_utf16 {
+            offset_slice_range(editable_utf16, utf16_base)?;
+        }
+        for segment in &mut row.editable_segments {
+            offset_slice_range(&mut segment.bytes, byte_base)?;
+            offset_slice_range(&mut segment.utf16, utf16_base)?;
+        }
+        for frame in &mut row.path {
+            offset_slice_range(&mut frame.physical, byte_base)?;
+            offset_slice_range(&mut frame.physical_utf16, utf16_base)?;
+        }
+    }
+    Ok(())
+}
+
+fn offset_slice_range(range: &mut Range<u64>, offset: u64) -> Result<(), M11RecursiveGreenError> {
+    range.start = range
+        .start
+        .checked_add(offset)
+        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+    range.end = range
+        .end
+        .checked_add(offset)
+        .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+    Ok(())
 }
 
 pub(super) fn locate_point_in_arena(

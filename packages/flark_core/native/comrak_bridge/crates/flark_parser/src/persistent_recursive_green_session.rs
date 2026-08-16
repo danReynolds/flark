@@ -4402,6 +4402,77 @@ mod tests {
         (facts, links)
     }
 
+    fn build_green_slice_from_primary_events(
+        runtime: &mut DocumentRuntime,
+        source_start_byte: usize,
+        source_end_byte: usize,
+        row_base: u64,
+        events: &[M11RecursiveGreenEvent],
+    ) -> flark_engine::parser_internal::M11RecursiveGreenSliceRoot {
+        use flark_engine::parser_internal::{
+            M11RecursiveGreenBuildStatus, M11RecursiveGreenClosedChild, M11RecursiveGreenSliceBuild,
+        };
+
+        let (document_frame, document_kind) = match events.first().copied() {
+            Some(M11RecursiveGreenEvent::Enter { frame, kind }) => (frame, kind),
+            _ => panic!("primary slice omitted its Document enter"),
+        };
+        let mut slice_build = M11RecursiveGreenSliceBuild::new_at(
+            runtime,
+            runtime.snapshot_current_source().expect("slice source"),
+            source_start_byte,
+            source_end_byte,
+            row_base,
+        )
+        .expect("begin Green slice");
+        for event in events.iter().copied() {
+            slice_build.offer_event(event).expect("offer slice event");
+            loop {
+                match slice_build
+                    .poll(runtime, 4_096)
+                    .expect("poll slice event")
+                    .status()
+                {
+                    M11RecursiveGreenBuildStatus::NeedsInput => break,
+                    M11RecursiveGreenBuildStatus::Pending => {}
+                    status => panic!("slice event terminated build as {status:?}"),
+                }
+            }
+        }
+        slice_build
+            .offer_event(M11RecursiveGreenEvent::Exit {
+                frame: document_frame,
+                final_kind: document_kind,
+                close: None,
+                last_line_blank: false,
+                child: M11RecursiveGreenClosedChild::default(),
+            })
+            .expect("offer synthetic slice envelope close");
+        loop {
+            match slice_build
+                .poll(runtime, 4_096)
+                .expect("poll slice envelope")
+                .status()
+            {
+                M11RecursiveGreenBuildStatus::NeedsInput => break,
+                M11RecursiveGreenBuildStatus::Pending => {}
+                status => panic!("slice envelope terminated build as {status:?}"),
+            }
+        }
+        slice_build.finish_input().expect("finish slice input");
+        loop {
+            if slice_build
+                .poll(runtime, 4_096)
+                .expect("finish Green slice")
+                .status()
+                == M11RecursiveGreenBuildStatus::Complete
+            {
+                break;
+            }
+        }
+        slice_build.take_root().expect("Green slice root")
+    }
+
     fn build_session(runtime: &mut DocumentRuntime) -> M11PersistentRecursiveGreenSession {
         let plan = M11PersistentRecursiveGreenCleanPlan::new(
             runtime.snapshot_current_source().expect("scanner lease"),
@@ -4506,10 +4577,7 @@ mod tests {
 
     #[test]
     fn compact_probe_captures_one_bounded_primary_stream_slice() {
-        use flark_engine::parser_internal::{
-            M11RecursiveGreenBuildStatus, M11RecursiveGreenClosedChild,
-            M11RecursiveGreenRowQueryLimits, M11RecursiveGreenSliceBuild,
-        };
+        use flark_engine::parser_internal::M11RecursiveGreenRowQueryLimits;
 
         let source = if let Some(target) = std::env::var("FLARK_FIRST_SLICE_TARGET_BYTES")
             .ok()
@@ -4575,62 +4643,8 @@ mod tests {
         let slice_event_count = slice.events.len();
 
         let source_end = usize::try_from(slice.physical.bytes()).expect("slice end");
-        let mut slice_build = M11RecursiveGreenSliceBuild::new(
-            &runtime,
-            runtime.snapshot_current_source().expect("slice source"),
-            source_end,
-        )
-        .expect("begin Green slice");
-        let (document_frame, document_kind) = match slice.events.first().copied() {
-            Some(M11RecursiveGreenEvent::Enter { frame, kind }) => (frame, kind),
-            _ => panic!("primary slice omitted its Document enter"),
-        };
-        for event in slice.events {
-            slice_build.offer_event(event).expect("offer slice event");
-            loop {
-                match slice_build
-                    .poll(&mut runtime, 4_096)
-                    .expect("poll slice event")
-                    .status()
-                {
-                    M11RecursiveGreenBuildStatus::NeedsInput => break,
-                    M11RecursiveGreenBuildStatus::Pending => {}
-                    status => panic!("slice event terminated build as {status:?}"),
-                }
-            }
-        }
-        slice_build
-            .offer_event(M11RecursiveGreenEvent::Exit {
-                frame: document_frame,
-                final_kind: document_kind,
-                close: None,
-                last_line_blank: false,
-                child: M11RecursiveGreenClosedChild::default(),
-            })
-            .expect("offer synthetic slice envelope close");
-        loop {
-            match slice_build
-                .poll(&mut runtime, 4_096)
-                .expect("poll slice envelope")
-                .status()
-            {
-                M11RecursiveGreenBuildStatus::NeedsInput => break,
-                M11RecursiveGreenBuildStatus::Pending => {}
-                status => panic!("slice envelope terminated build as {status:?}"),
-            }
-        }
-        slice_build.finish_input().expect("finish slice input");
-        loop {
-            if slice_build
-                .poll(&mut runtime, 4_096)
-                .expect("finish Green slice")
-                .status()
-                == M11RecursiveGreenBuildStatus::Complete
-            {
-                break;
-            }
-        }
-        let mut slice_root = slice_build.take_root().expect("Green slice root");
+        let mut slice_root =
+            build_green_slice_from_primary_events(&mut runtime, 0, source_end, 0, &slice.events);
         let limits = M11RecursiveGreenRowQueryLimits::new(64, 4_096, 32_768, 64, 32_768)
             .expect("slice query limits");
         let slice_rows = slice_root
@@ -4736,6 +4750,82 @@ mod tests {
             );
         }
 
+        const REBASED_ROW: u64 = 73;
+        let prefix = "outside 🦀 prefix\n\n";
+        let prefix_bytes = prefix.len();
+        let prefix_utf16 = prefix.encode_utf16().count();
+        let rebased_source = format!("{prefix}{}trailing source", &source[..source_end]);
+        let rebased_end = prefix_bytes + source_end;
+        let mut rebased_runtime =
+            DocumentRuntime::new(&rebased_source, DocumentRuntimeConfig::default())
+                .expect("rebased slice runtime");
+        let mut rebased_root = build_green_slice_from_primary_events(
+            &mut rebased_runtime,
+            prefix_bytes,
+            rebased_end,
+            REBASED_ROW,
+            &slice.events,
+        );
+        assert_eq!(
+            rebased_root.source_range(),
+            prefix_bytes as u64..rebased_end as u64
+        );
+        assert_eq!(
+            rebased_root.source_utf16_range(),
+            prefix_utf16 as u64
+                ..(prefix_utf16 + source[..source_end].encode_utf16().count()) as u64
+        );
+        assert_eq!(rebased_root.row_base(), REBASED_ROW);
+        let rebased_rows = rebased_root
+            .locate_renderable_rows(
+                &rebased_runtime,
+                M11RecursiveGreenPoint::new(
+                    prefix_bytes,
+                    prefix_utf16,
+                    SourceBoundaryAffinity::After,
+                ),
+                rebased_end as u64,
+                limits,
+            )
+            .expect("query rebased Green slice")
+            .rows()
+            .to_vec();
+        assert_eq!(rebased_rows.len(), slice_rows.len());
+        for ((rebased_row, slice_row), expected_inline) in
+            rebased_rows.iter().zip(&slice_rows).zip(&slice_inline)
+        {
+            assert_eq!(rebased_row.ordinal(), slice_row.ordinal() + REBASED_ROW);
+            assert_eq!(rebased_row.frame(), slice_row.frame());
+            assert_eq!(rebased_row.kind(), slice_row.kind());
+            assert_eq!(
+                rebased_row.physical_range(),
+                (slice_row.physical_range().start + prefix_bytes as u64
+                    ..slice_row.physical_range().end + prefix_bytes as u64)
+            );
+            assert_eq!(
+                rebased_row.physical_utf16_range(),
+                (slice_row.physical_utf16_range().start + prefix_utf16 as u64
+                    ..slice_row.physical_utf16_range().end + prefix_utf16 as u64)
+            );
+            let point = M11RecursiveGreenPoint::new(
+                usize::try_from(rebased_row.physical_range().start).expect("rebased row byte"),
+                usize::try_from(rebased_row.physical_utf16_range().start)
+                    .expect("rebased row UTF-16"),
+                SourceBoundaryAffinity::After,
+            );
+            let prepared = crate::prepare_m11_recursive_green_slice_inline_leaf(
+                &rebased_runtime,
+                &rebased_root,
+                point,
+            )
+            .expect("prepare rebased inline leaf");
+            assert_eq!(
+                expected_inline,
+                &capture_inline_facts_for_slice_differential(&mut rebased_runtime, prepared),
+                "rebasing must not change parser-authored inline semantics"
+            );
+        }
+
         release_session(&mut runtime, &mut complete);
         slice_root
             .begin_release(&mut runtime)
@@ -4745,6 +4835,15 @@ mod tests {
             .expect("poll slice release")
             .complete()
         {}
+        rebased_root
+            .begin_release(&mut rebased_runtime)
+            .expect("begin rebased slice release");
+        while !rebased_root
+            .poll_release(&mut rebased_runtime, 256)
+            .expect("poll rebased slice release")
+            .complete()
+        {}
+        close_runtime(&mut rebased_runtime);
         close_runtime(&mut runtime);
     }
 
