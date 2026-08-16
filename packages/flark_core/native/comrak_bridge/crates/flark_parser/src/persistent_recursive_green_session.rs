@@ -41,7 +41,8 @@ use crate::block_core::{
 };
 #[cfg(test)]
 use crate::block_core::{
-    M11CompactProbeWriterReceipt, M11CompactReferenceJournal, M11CompactReferenceReceipt,
+    M11CompactProbeCheckpointFacts, M11CompactProbeWriterReceipt, M11CompactReferenceJournal,
+    M11CompactReferenceReceipt, M11DirectDurableBlockRestart,
 };
 use crate::recursive_green_block_quote_projection::{
     resolve_m11_recursive_green_block_quote_projection_fence,
@@ -70,6 +71,8 @@ const LATER_CONVERGENCE_MAX_PHYSICAL_LINES: u64 = 512;
 // scanning, block commands, and reference rendezvous work.
 const LATER_CONVERGENCE_MAX_TRANSITIONS: usize = 16_384;
 const CHECKPOINT_PAGE_CAPACITY: usize = 64;
+#[cfg(test)]
+const COMPACT_RESTART_PAGE_BYTES: usize = 4 * 1024;
 
 #[derive(Debug)]
 pub enum M11PersistentRecursiveGreenSessionError {
@@ -231,6 +234,8 @@ impl M11PersistentRecursiveGreenCleanPlan {
             journal: Some(journal),
             #[cfg(test)]
             compact_reference_journal: None,
+            #[cfg(test)]
+            compact_checkpoint_journal: None,
             checkpoints: Vec::new(),
             terminal_convergence: None,
             initial_boundary_captured: false,
@@ -287,6 +292,7 @@ impl M11PersistentRecursiveGreenCleanPlan {
             rendezvous: None,
             journal: None,
             compact_reference_journal: Some(M11CompactReferenceJournal::new()),
+            compact_checkpoint_journal: Some(M11CompactCheckpointJournal::new()),
             checkpoints: Vec::new(),
             terminal_convergence: None,
             initial_boundary_captured: false,
@@ -367,6 +373,8 @@ pub struct M11PersistentRecursiveGreenCleanBuild {
     journal: Option<M11ReferenceJournal>,
     #[cfg(test)]
     compact_reference_journal: Option<M11CompactReferenceJournal>,
+    #[cfg(test)]
+    compact_checkpoint_journal: Option<M11CompactCheckpointJournal>,
     checkpoints: Vec<M11BlockRestartCheckpoint>,
     terminal_convergence: Option<M11BlockTerminalConvergenceCheckpoint>,
     initial_boundary_captured: bool,
@@ -749,6 +757,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
                         checkpoints: M11CheckpointStore::from_contiguous(std::mem::take(
                             &mut self.checkpoints,
                         )),
+                        compact_checkpoints: self.compact_checkpoint_journal.take(),
                         terminal_convergence: self.terminal_convergence.take(),
                         release_begun: false,
                         green_release_complete: true,
@@ -782,6 +791,8 @@ impl M11PersistentRecursiveGreenCleanBuild {
                         references_release_complete: false,
                         #[cfg(test)]
                         compact_probe: self.compact_probe,
+                        #[cfg(test)]
+                        compact_checkpoints: self.compact_checkpoint_journal.take(),
                     });
                     self.phase = CleanPhase::Complete;
                 }
@@ -824,27 +835,51 @@ impl M11PersistentRecursiveGreenCleanBuild {
                 ))?
                 .compact_probe_checkpoint_candidate()?;
             let previous_cut = self
-                .checkpoints
-                .last()
-                .map_or(0, |previous| previous.accepted_physical().bytes());
+                .compact_checkpoint_journal
+                .as_ref()
+                .and_then(M11CompactCheckpointJournal::last_cut)
+                .map_or(0, SourceMetric::bytes);
             let minimum_stride = CHECKPOINT_STRIDE_BYTES
                 .checked_mul(u64::try_from(open_depth).unwrap_or(u64::MAX).max(1))
                 .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
                     "compact checkpoint spacing fits u64",
                 ))?;
             let distinct = self
-                .checkpoints
-                .last()
-                .is_none_or(|previous| previous.accepted_physical() != metric);
+                .compact_checkpoint_journal
+                .as_ref()
+                .and_then(M11CompactCheckpointJournal::last_cut)
+                != Some(metric);
             if !distinct || (!force && metric.bytes().saturating_sub(previous_cut) < minimum_stride)
             {
                 return Ok(());
             }
+            let Some(parser) = self
+                .controller_mut()?
+                .capture_durable_restart_if_available()?
+            else {
+                return Ok(());
+            };
+            let facts = self
+                .writer_mut()?
+                .capture_compact_probe_checkpoint_facts(&parser)?;
+            if facts.accepted_physical != metric || facts.open_depth != open_depth {
+                return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "compact checkpoint selection and joined durable facts differ",
+                ));
+            }
+            self.compact_checkpoint_journal
+                .as_mut()
+                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "compact checkpoint journal is missing",
+                ))?
+                .push(&parser, facts)
+                .map_err(M11PersistentRecursiveGreenSessionError::InvalidState)?;
             self.compact_restart_captures = self.compact_restart_captures.checked_add(1).ok_or(
                 M11PersistentRecursiveGreenSessionError::InvalidState(
                     "compact restart capture count fits usize",
                 ),
             )?;
+            return Ok(());
         }
         let Some(parser) = self.controller_mut()?.capture_restart_if_available()? else {
             return Ok(());
@@ -889,6 +924,45 @@ impl M11PersistentRecursiveGreenCleanBuild {
     fn capture_document_start_checkpoint(
         &mut self,
     ) -> Result<(), M11PersistentRecursiveGreenSessionError> {
+        #[cfg(test)]
+        if self.compact_probe {
+            let journal_empty = self
+                .compact_checkpoint_journal
+                .as_ref()
+                .is_some_and(|journal| journal.entries.is_empty());
+            if !journal_empty {
+                return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "compact BOF checkpoint must be first",
+                ));
+            }
+            let parser = self
+                .controller_mut()?
+                .capture_durable_document_start_restart()?;
+            let facts = self
+                .writer_mut()?
+                .capture_compact_probe_checkpoint_facts(&parser)?;
+            if facts.accepted_physical != SourceMetric::default()
+                || facts.logical != SourceMetric::default()
+                || facts.open_depth != 1
+            {
+                return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "compact BOF checkpoint is Document-only at source zero",
+                ));
+            }
+            self.compact_checkpoint_journal
+                .as_mut()
+                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "compact checkpoint journal is missing",
+                ))?
+                .push(&parser, facts)
+                .map_err(M11PersistentRecursiveGreenSessionError::InvalidState)?;
+            self.compact_restart_captures = self.compact_restart_captures.checked_add(1).ok_or(
+                M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "compact BOF restart capture count fits usize",
+                ),
+            )?;
+            return Ok(());
+        }
         if !self.checkpoints.is_empty() {
             return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
                 "recursive-Green BOF checkpoint must be first",
@@ -1331,6 +1405,230 @@ pub struct M11PersistentRecursiveGreenSession {
     references_release_complete: bool,
     #[cfg(test)]
     compact_probe: bool,
+    #[cfg(test)]
+    compact_checkpoints: Option<M11CompactCheckpointJournal>,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct M11CompactCheckpointEntry {
+    stream_offset: u64,
+    encoded_len: u32,
+    line_ordinal: u64,
+    last_line_length: u64,
+    accepted_physical: SourceMetric,
+    logical: SourceMetric,
+    event_cut: u64,
+    renderable_rows: u64,
+    open_depth: u32,
+}
+
+#[cfg(test)]
+#[derive(Debug, Default)]
+struct M11CompactCheckpointJournal {
+    pages: Vec<Box<[u8]>>,
+    entries: Vec<M11CompactCheckpointEntry>,
+    stream_len: usize,
+}
+
+#[cfg(test)]
+impl M11CompactCheckpointJournal {
+    const fn new() -> Self {
+        Self {
+            pages: Vec::new(),
+            entries: Vec::new(),
+            stream_len: 0,
+        }
+    }
+
+    fn last_cut(&self) -> Option<SourceMetric> {
+        self.entries.last().map(|entry| entry.accepted_physical)
+    }
+
+    fn append_bytes(&mut self, mut bytes: &[u8]) -> Result<(), &'static str> {
+        while !bytes.is_empty() {
+            let page_index = self.stream_len / COMPACT_RESTART_PAGE_BYTES;
+            let page_offset = self.stream_len % COMPACT_RESTART_PAGE_BYTES;
+            if page_index == self.pages.len() {
+                let mut page = Vec::new();
+                page.try_reserve_exact(COMPACT_RESTART_PAGE_BYTES)
+                    .map_err(|_| "compact restart page allocation failed")?;
+                page.resize(COMPACT_RESTART_PAGE_BYTES, 0);
+                self.pages
+                    .try_reserve(1)
+                    .map_err(|_| "compact restart page directory allocation failed")?;
+                self.pages.push(page.into_boxed_slice());
+            }
+            let accepted = bytes
+                .len()
+                .min(COMPACT_RESTART_PAGE_BYTES.saturating_sub(page_offset));
+            self.pages[page_index][page_offset..page_offset + accepted]
+                .copy_from_slice(&bytes[..accepted]);
+            self.stream_len = self
+                .stream_len
+                .checked_add(accepted)
+                .ok_or("compact restart stream length overflow")?;
+            bytes = &bytes[accepted..];
+        }
+        Ok(())
+    }
+
+    fn push(
+        &mut self,
+        parser: &M11DirectDurableBlockRestart,
+        facts: M11CompactProbeCheckpointFacts,
+    ) -> Result<(), &'static str> {
+        let encoded_len = u32::try_from(parser.encoded_len())
+            .map_err(|_| "compact restart record length fits u32")?;
+        let stream_offset =
+            u64::try_from(self.stream_len).map_err(|_| "compact restart offset fits u64")?;
+        let open_depth =
+            u32::try_from(facts.open_depth).map_err(|_| "compact restart open depth fits u32")?;
+        self.entries
+            .try_reserve(1)
+            .map_err(|_| "compact restart entry allocation failed")?;
+        let mut append_error = None;
+        parser.visit_encoded_bytes(|bytes| {
+            if append_error.is_none() {
+                append_error = self.append_bytes(bytes).err();
+            }
+        });
+        if let Some(error) = append_error {
+            return Err(error);
+        }
+        self.entries.push(M11CompactCheckpointEntry {
+            stream_offset,
+            encoded_len,
+            line_ordinal: parser.line_ordinal(),
+            last_line_length: parser.last_line_length(),
+            accepted_physical: facts.accepted_physical,
+            logical: facts.logical,
+            event_cut: facts.event_cut,
+            renderable_rows: facts.renderable_rows,
+            open_depth,
+        });
+        Ok(())
+    }
+
+    fn receipt(&self) -> CheckpointStorageReceipt {
+        let retained_open_frames = self.entries.iter().fold(0_usize, |sum, entry| {
+            sum.saturating_add(entry.open_depth as usize)
+        });
+        let maximum_open_depth = self
+            .entries
+            .iter()
+            .map(|entry| entry.open_depth as usize)
+            .max()
+            .unwrap_or(0);
+        CheckpointStorageReceipt {
+            checkpoints: self.entries.len(),
+            retained_open_frames,
+            maximum_open_depth,
+            allocated_bytes: self
+                .pages
+                .capacity()
+                .saturating_mul(std::mem::size_of::<Box<[u8]>>())
+                .saturating_add(
+                    self.pages
+                        .iter()
+                        .fold(0_usize, |sum, page| sum.saturating_add(page.len())),
+                )
+                .saturating_add(
+                    self.entries
+                        .capacity()
+                        .saturating_mul(std::mem::size_of::<M11CompactCheckpointEntry>()),
+                ),
+        }
+    }
+
+    fn encoded_entry(&self, index: usize) -> Result<Vec<u8>, &'static str> {
+        let entry = self
+            .entries
+            .get(index)
+            .ok_or("compact restart entry index is in bounds")?;
+        let start = usize::try_from(entry.stream_offset)
+            .map_err(|_| "compact restart offset fits usize")?;
+        let len = entry.encoded_len as usize;
+        let end = start
+            .checked_add(len)
+            .ok_or("compact restart range does not overflow")?;
+        if end > self.stream_len {
+            return Err("compact restart range is inside the encoded stream");
+        }
+        let mut encoded = Vec::new();
+        encoded
+            .try_reserve_exact(len)
+            .map_err(|_| "compact restart decode allocation failed")?;
+        let mut cursor = start;
+        while cursor < end {
+            let page_index = cursor / COMPACT_RESTART_PAGE_BYTES;
+            let page_offset = cursor % COMPACT_RESTART_PAGE_BYTES;
+            let accepted = (end - cursor).min(COMPACT_RESTART_PAGE_BYTES - page_offset);
+            encoded.extend_from_slice(
+                self.pages
+                    .get(page_index)
+                    .and_then(|page| page.get(page_offset..page_offset + accepted))
+                    .ok_or("compact restart bytes are inside retained pages")?,
+            );
+            cursor += accepted;
+        }
+        Ok(encoded)
+    }
+
+    fn validate_metadata_and_durable_samples(&self) -> Result<(), &'static str> {
+        let first = self
+            .entries
+            .first()
+            .ok_or("compact restart journal retains BOF")?;
+        if first.accepted_physical != SourceMetric::default()
+            || first.logical != SourceMetric::default()
+            || first.event_cut != 1
+            || first.renderable_rows != 0
+            || first.line_ordinal != 0
+            || first.last_line_length != 0
+        {
+            return Err("compact restart journal begins with canonical BOF metadata");
+        }
+        for pair in self.entries.windows(2) {
+            if pair[0].accepted_physical >= pair[1].accepted_physical
+                || pair[0].logical > pair[1].logical
+                || pair[0].event_cut > pair[1].event_cut
+                || pair[0].renderable_rows > pair[1].renderable_rows
+                || pair[0].stream_offset + u64::from(pair[0].encoded_len) != pair[1].stream_offset
+            {
+                return Err("compact restart metadata and stream offsets are monotonic");
+            }
+        }
+        // BOF is reconstructed from the canonical fresh-parser constructor;
+        // persisted restart decoding is needed only for interior/EOF cuts.
+        let mut indices = vec![self.entries.len() / 2, self.entries.len() - 1];
+        indices.sort_unstable();
+        indices.dedup();
+        for index in indices {
+            let entry = self.entries[index];
+            let encoded = self.encoded_entry(index)?;
+            let resumed = M11DirectBlockController::resume_durable_encoded_restart(
+                &encoded,
+                entry.line_ordinal,
+                entry.last_line_length,
+                None,
+            )
+            .map_err(|_| "compact donor restart decodes without a Green root")?;
+            let recaptured = resumed
+                .capture_durable_restart_if_available()
+                .map_err(|_| "decoded compact restart can be recaptured")?
+                .ok_or("decoded compact restart remains donor-reachable")?;
+            let mut roundtrip = Vec::new();
+            roundtrip
+                .try_reserve_exact(recaptured.encoded_len())
+                .map_err(|_| "compact restart roundtrip allocation failed")?;
+            recaptured.visit_encoded_bytes(|bytes| roundtrip.extend_from_slice(bytes));
+            if roundtrip != encoded {
+                return Err("compact durable restart roundtrips canonically");
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -3000,6 +3298,8 @@ impl M11PersistentRecursiveGreenAdoption {
             references_release_complete: false,
             #[cfg(test)]
             compact_probe: false,
+            #[cfg(test)]
+            compact_checkpoints: None,
         };
         self.output = Some(M11PersistentRecursiveGreenUpdate {
             base: Some(base),
@@ -3307,6 +3607,10 @@ impl M11PersistentRecursiveGreenSession {
 
     #[must_use]
     pub fn checkpoint_count(&self) -> usize {
+        #[cfg(test)]
+        if let Some(compact) = &self.compact_checkpoints {
+            return compact.entries.len();
+        }
         self.checkpoints.len()
     }
 
@@ -3346,6 +3650,9 @@ impl M11PersistentRecursiveGreenSession {
 
     #[cfg(test)]
     fn checkpoint_storage_receipt_for_diagnostics(&self) -> CheckpointStorageReceipt {
+        if let Some(compact) = &self.compact_checkpoints {
+            return compact.receipt();
+        }
         let mut retained_open_frames = 0_usize;
         let mut maximum_open_depth = 0_usize;
         let mut allocated_bytes = match &self.checkpoints {
@@ -4123,6 +4430,12 @@ mod tests {
         assert!(captures <= SOURCE.len().div_ceil(CHECKPOINT_STRIDE_BYTES as usize) + 2);
         assert!(session.green.is_none());
         assert!(session.checkpoint_count() <= captures);
+        session
+            .compact_checkpoints
+            .as_ref()
+            .expect("compact restart pages")
+            .validate_metadata_and_durable_samples()
+            .expect("root-independent durable restart samples");
         assert!(first_32_rows <= admitted_at.elapsed());
 
         release_session(&mut runtime, &mut session);
@@ -4296,6 +4609,12 @@ mod tests {
                 build_compact_probe(&mut runtime, started);
             let elapsed = started.elapsed();
             let storage = session.checkpoint_storage_receipt_for_diagnostics();
+            session
+                .compact_checkpoints
+                .as_ref()
+                .unwrap_or_else(|| panic!("{name}: compact restart pages"))
+                .validate_metadata_and_durable_samples()
+                .unwrap_or_else(|error| panic!("{name}: {error}"));
             println!(
                 "COMPACT_GATE_ONE name={name} bytes={} first32_us={} elapsed_us={} transitions={} high_events={} packed_events={} rows={} boundaries={} captures={} retained={} checkpoint_bytes={} open_frames={} max_depth={} source_reads={} max_reference_events={} max_reference_window_bytes={} references={} winners={} reference_bytes={} label_bytes={} reference_phases={:?}",
                 source.len(),

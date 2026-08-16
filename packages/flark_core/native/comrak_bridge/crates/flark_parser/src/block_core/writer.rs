@@ -439,6 +439,16 @@ pub(crate) struct M11CompactProbeWriterReceipt {
     pub(crate) reference_phase_transitions: [u64; 8],
 }
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct M11CompactProbeCheckpointFacts {
+    pub(crate) accepted_physical: SourceMetric,
+    pub(crate) logical: SourceMetric,
+    pub(crate) event_cut: u64,
+    pub(crate) renderable_rows: u64,
+    pub(crate) open_depth: usize,
+}
+
 /// Source identity shared with the donor while a terminal Paragraph
 /// projection is frozen.  The fragment arm is intentionally opaque: unlike a
 /// Green identity it certifies the writer-local high-level event journal.
@@ -3098,6 +3108,86 @@ impl M11BlockWriter {
             ));
         }
         Ok((self.current_physical_metric()?, self.open.len()))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn capture_compact_probe_checkpoint_facts(
+        &self,
+        parser: &super::M11DirectDurableBlockRestart,
+    ) -> Result<M11CompactProbeCheckpointFacts, M11BlockRestartError> {
+        if self.poisoned
+            || self.document_complete
+            || self.pending.is_some()
+            || self.line_cursor != LineSourcePosition::default()
+        {
+            return Err(M11BlockRestartError::Pairing(
+                "compact writer is not at a quiescent physical-line boundary",
+            ));
+        }
+        if parser.open_kinds().len() != self.open.len()
+            || !parser
+                .open_kinds()
+                .iter()
+                .copied()
+                .eq(self.open.iter().map(|frame| frame.kind))
+        {
+            return Err(M11BlockRestartError::Pairing(
+                "durable parser and compact writer open paths differ",
+            ));
+        }
+        if parser.restart_join() != self.restart_join {
+            return Err(M11BlockRestartError::Pairing(
+                "durable parser and compact writer restart transactions differ",
+            ));
+        }
+        let deferred_matches = match (parser.deferred_role(), self.staged) {
+            (M11DirectBlockDeferredRole::None, None) => true,
+            (
+                M11DirectBlockDeferredRole::Terminator,
+                Some(StagedSource::Terminator {
+                    terminal,
+                    terminal_index,
+                    ..
+                }),
+            ) => self
+                .open
+                .get(terminal_index)
+                .is_some_and(|frame| frame.id == terminal),
+            (
+                M11DirectBlockDeferredRole::BlankGap { floor_depth },
+                Some(StagedSource::BlankGap { .. }),
+            ) => floor_depth.is_none_or(|depth| {
+                self.open.get(depth).is_some_and(|frame| {
+                    matches!(frame.kind, BlockKind::BlockQuote | BlockKind::Item(_))
+                })
+            }),
+            _ => false,
+        };
+        if !deferred_matches {
+            return Err(M11BlockRestartError::Pairing(
+                "durable parser and compact writer deferred-source roles differ",
+            ));
+        }
+        let receipt = match &self.output {
+            WriterOutput::CompactProbe(probe) => probe.receipt(),
+            _ => {
+                return Err(M11BlockRestartError::Pairing(
+                    "compact checkpoint requires the compact writer sink",
+                ));
+            }
+        };
+        Ok(M11CompactProbeCheckpointFacts {
+            accepted_physical: SourceMetric::new(receipt.source_bytes, receipt.source_utf16)
+                .ok_or(M11BlockRestartError::Pairing(
+                    "compact checkpoint physical metric is valid",
+                ))?,
+            logical: SourceMetric::new(receipt.logical_bytes, receipt.logical_utf16).ok_or(
+                M11BlockRestartError::Pairing("compact checkpoint logical metric is valid"),
+            )?,
+            event_cut: receipt.packed_events,
+            renderable_rows: receipt.renderable_rows,
+            open_depth: self.open.len(),
+        })
     }
 
     pub(super) fn reference_paragraph_frame(

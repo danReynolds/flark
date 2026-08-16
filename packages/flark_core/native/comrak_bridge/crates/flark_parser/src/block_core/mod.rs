@@ -27,6 +27,8 @@ pub use command::{
     ListFacts, ListStyle, LogicalAction, ParagraphOutcome, PartialTab, SetextHeadingLevel,
     SourceMetric, StackOwner, TerminatorResolution,
 };
+#[cfg(test)]
+pub(crate) use controller::M11DirectDurableBlockRestart;
 pub use controller::{
     M11DirectBlockController, M11DirectBlockControllerError, M11DirectBlockDeferredRole,
     M11DirectBlockError, M11DirectBlockPollReceipt, M11DirectBlockPollStatus,
@@ -47,8 +49,6 @@ pub use reference_rendezvous::{
     M11ReferenceRendezvous, M11ReferenceRendezvousError, M11ReferenceRendezvousPoll,
     M11ReferenceRendezvousStatus,
 };
-#[cfg(test)]
-pub(crate) use writer::M11CompactProbeWriterReceipt;
 pub(crate) use writer::{
     M11BlockCheckpointRebase, M11BlockOrdinaryCheckpointAdoption,
     M11BlockTerminalCheckpointAdoption, KIND_BLOCK_QUOTE, KIND_DOCUMENT, KIND_PARAGRAPH,
@@ -58,3 +58,5 @@ pub use writer::{
     M11BlockTerminalConvergenceCheckpoint, M11BlockWriter, M11BlockWriterError,
     M11BlockWriterOfferStatus, M11BlockWriterPoll, M11BlockWriterPollStatus,
 };
+#[cfg(test)]
+pub(crate) use writer::{M11CompactProbeCheckpointFacts, M11CompactProbeWriterReceipt};

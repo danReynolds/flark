@@ -101,6 +101,45 @@ fn gfm_profile_survives_direct_pause_resume() {
 }
 
 #[test]
+fn gfm_profile_survives_both_durable_restart_codecs() {
+    let mut parser = DirectValueBlockParser::new(SyntaxProfile::Gfm).expect("GFM parser");
+    parser
+        .acknowledge_command()
+        .expect("acknowledge document open");
+    drive_line(&mut parser, "ordinary paragraph\n");
+
+    let pause = parser
+        .capture_line_boundary_pause()
+        .expect("GFM line boundary");
+    let view = pause.pairing_view();
+    let cursor = DirectLineBoundaryResumeCursor::new(
+        u64::try_from(view.line_number()).expect("line number"),
+        u64::try_from(view.last_line_length()).expect("line length"),
+    )
+    .expect("resume cursor");
+    let durable = pause
+        .into_durable_line_boundary_capture()
+        .expect("durable GFM capture");
+    let resumed = DirectValueBlockParser::resume_durable_line_boundary_checkpoint(
+        durable.header(),
+        durable.frame_records(),
+        cursor,
+    )
+    .expect("resume durable GFM parser");
+    assert_eq!(resumed.parser.profile, SyntaxProfile::Gfm);
+
+    let grammar = parser
+        .capture_durable_grammar_line_boundary_checkpoint()
+        .expect("durable GFM grammar capture");
+    let (decoded, _) = DirectValueBlockParser::decode_durable_grammar_restart_parts(
+        grammar.header(),
+        grammar.frame_records(),
+    )
+    .expect("decode durable GFM grammar");
+    assert_eq!(decoded.profile, SyntaxProfile::Gfm);
+}
+
+#[test]
 fn optional_capture_propagates_malformed_parser_state() {
     let mut parser = DirectValueBlockParser::new(SyntaxProfile::CommonMark).expect("parser");
     parser

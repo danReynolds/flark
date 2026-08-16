@@ -130,6 +130,55 @@ pub struct M11DirectBlockRestart {
     restart_join: Option<u64>,
 }
 
+#[cfg(test)]
+#[must_use = "durable parser state must be joined to writer/source authority or discarded"]
+pub(crate) struct M11DirectDurableBlockRestart {
+    capture: donor::DirectDurableLineBoundaryCapture,
+    line_ordinal: u64,
+    last_line_length: u64,
+    open_kinds: Box<[BlockKind]>,
+    deferred: M11DirectBlockDeferredRole,
+    restart_join: Option<u64>,
+}
+
+#[cfg(test)]
+impl M11DirectDurableBlockRestart {
+    pub(crate) const fn line_ordinal(&self) -> u64 {
+        self.line_ordinal
+    }
+
+    pub(crate) const fn last_line_length(&self) -> u64 {
+        self.last_line_length
+    }
+
+    pub(crate) fn open_kinds(&self) -> &[BlockKind] {
+        &self.open_kinds
+    }
+
+    pub(crate) const fn deferred_role(&self) -> M11DirectBlockDeferredRole {
+        self.deferred
+    }
+
+    pub(crate) const fn restart_join(&self) -> Option<u64> {
+        self.restart_join
+    }
+
+    pub(crate) fn encoded_len(&self) -> usize {
+        let receipt = self.capture.receipt();
+        receipt
+            .sample_header_bytes
+            .saturating_add(receipt.materialized_path_bytes)
+    }
+
+    pub(crate) fn visit_encoded_bytes(&self, mut visitor: impl FnMut(&[u8])) {
+        let header = self.capture.header();
+        visitor(header.as_bytes());
+        for frame in self.capture.frame_records() {
+            visitor(frame.as_bytes());
+        }
+    }
+}
+
 /// Donor-certified semantic continuation at the internal cut after leading
 /// reference definitions and before their visible Paragraph remainder.
 /// Physical cursor and writer/Green authority are joined separately.
@@ -451,6 +500,115 @@ impl M11DirectBlockController {
             open_kinds: open_kinds.into_boxed_slice(),
             deferred,
             restart_join: self.restart_join,
+        })
+    }
+
+    #[cfg(test)]
+    fn durable_restart_from_pause(
+        &self,
+        pause: donor::DirectLineBoundaryPause,
+    ) -> Result<M11DirectDurableBlockRestart, M11DirectBlockError> {
+        let view = pause.pairing_view();
+        let line_ordinal = u64::try_from(view.line_number())
+            .map_err(|_| M11DirectBlockError::Invariant("line ordinal fits u64"))?;
+        let last_line_length = u64::try_from(view.last_line_length())
+            .map_err(|_| M11DirectBlockError::Invariant("line length fits u64"))?;
+        let mut open_kinds = Vec::new();
+        open_kinds
+            .try_reserve_exact(view.open_frame_count())
+            .map_err(|_| M11DirectBlockError::Invariant("restart path allocation failed"))?;
+        for kind in view.open_kinds() {
+            open_kinds.push(map_kind(kind)?);
+        }
+        let deferred = map_deferred_role(view.deferred_role())?;
+        let capture = pause
+            .into_durable_line_boundary_capture()
+            .map_err(map_parse_error)?;
+        Ok(M11DirectDurableBlockRestart {
+            capture,
+            line_ordinal,
+            last_line_length,
+            open_kinds: open_kinds.into_boxed_slice(),
+            deferred,
+            restart_join: self.restart_join,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn capture_durable_restart_if_available(
+        &self,
+    ) -> Result<Option<M11DirectDurableBlockRestart>, M11DirectBlockError> {
+        self.ensure_live()?;
+        match self
+            .parser
+            .capture_line_boundary_pause_if_available()
+            .map_err(map_parse_error)?
+        {
+            donor::DirectLineBoundaryPauseCapture::Available(pause) => {
+                self.durable_restart_from_pause(pause).map(Some)
+            }
+            donor::DirectLineBoundaryPauseCapture::Unavailable => Ok(None),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn capture_durable_document_start_restart(
+        &self,
+    ) -> Result<M11DirectDurableBlockRestart, M11DirectBlockError> {
+        self.ensure_live()?;
+        let pause = self
+            .parser
+            .capture_document_start_pause()
+            .map_err(map_parse_error)?;
+        self.durable_restart_from_pause(pause)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn resume_durable_encoded_restart(
+        encoded: &[u8],
+        line_ordinal: u64,
+        last_line_length: u64,
+        restart_join: Option<u64>,
+    ) -> Result<Self, M11DirectBlockError> {
+        let header_end = donor::DIRECT_DURABLE_LINE_BOUNDARY_HEADER_BYTES;
+        let header =
+            donor::DirectDurableLineBoundaryHeader::from_bytes(encoded.get(..header_end).ok_or(
+                M11DirectBlockError::Invariant("durable restart includes its fixed header"),
+            )?)
+            .map_err(map_parse_error)?;
+        let frames = encoded
+            .get(header_end..)
+            .ok_or(M11DirectBlockError::Invariant(
+                "durable restart payload follows its header",
+            ))?;
+        if frames.len() % donor::DIRECT_DURABLE_LINE_BOUNDARY_FRAME_BYTES != 0 {
+            return Err(M11DirectBlockError::Invariant(
+                "durable restart frame payload has fixed records",
+            ));
+        }
+        let mut records = Vec::new();
+        records
+            .try_reserve_exact(frames.len() / donor::DIRECT_DURABLE_LINE_BOUNDARY_FRAME_BYTES)
+            .map_err(|_| M11DirectBlockError::Invariant("durable decode allocation failed"))?;
+        for bytes in frames.chunks_exact(donor::DIRECT_DURABLE_LINE_BOUNDARY_FRAME_BYTES) {
+            records.push(
+                donor::DirectDurableLineBoundaryFrameRecord::from_bytes(bytes)
+                    .map_err(map_parse_error)?,
+            );
+        }
+        let cursor = donor::DirectLineBoundaryResumeCursor::new(line_ordinal, last_line_length)
+            .map_err(map_parse_error)?;
+        let parser = donor::DirectValueBlockParser::resume_durable_line_boundary_checkpoint(
+            header, records, cursor,
+        )
+        .map_err(map_parse_error)?;
+        Ok(Self {
+            id: next_controller_id()?,
+            parser,
+            pending_command: None,
+            coordinates: None,
+            restart_join,
+            poisoned: false,
         })
     }
 

@@ -3316,6 +3316,16 @@ impl DirectLineBoundaryPause {
         };
         direct_restart_output_into_parts(output)
     }
+
+    /// Encode this already-authenticated transient pause into the donor-owned
+    /// fixed durable representation. Cursor and writer authority remain
+    /// external to the returned semantic payload.
+    #[doc(hidden)]
+    pub fn into_durable_line_boundary_capture(
+        self,
+    ) -> Result<DirectDurableLineBoundaryCapture, ParseError> {
+        direct_pause_to_durable_capture(&self)
+    }
 }
 
 fn direct_restart_output_into_parts(
@@ -4142,6 +4152,7 @@ fn decode_direct_durable_header(
     }
     let profile = match bytes[16] {
         0 => SyntaxProfile::CommonMark,
+        1 => SyntaxProfile::Gfm,
         _ => {
             return Err(ParseError::Invariant(
                 "direct durable header profile is supported by this schema",
@@ -4303,6 +4314,7 @@ fn decode_direct_durable_grammar_header(
     }
     let profile = match bytes[16] {
         0 => SyntaxProfile::CommonMark,
+        1 => SyntaxProfile::Gfm,
         _ => {
             return Err(ParseError::Invariant(
                 "direct durable grammar profile is supported",

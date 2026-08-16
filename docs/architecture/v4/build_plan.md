@@ -1054,11 +1054,12 @@ The corrected architecture is deliberately austere:
 
 - Source remains the sole mutation and coordinate authority. There is still one
   primary GFM parser and no truncated-document or second-grammar shortcut.
-- Background work writes coarse, delta-coded parse pages, selected *before*
-  cloning restart state. A page carries source/UTF-16 cuts, prefix row-count
+- Background work writes coarse, fixed-record parse pages, selected *before*
+  capturing restart state. A page carries source/UTF-16 cuts, prefix row-count
   summaries, dependency epochs, and a durable parser/writer restart independent
-  of any Green tree. It does not allocate one object per block or retain the
-  transient event stream.
+  of any Green tree. The records are versioned and checksummed; delta coding is
+  permitted only if retained-byte evidence later requires it. It does not
+  allocate one object per block or retain the transient event stream.
 - Reference state is source-backed and compact: normalized-label digests,
   winner links, source ranges, and immutable committed-prefix snapshots. A
   fixed-revision first winner becomes final only after a BOF-to-frontier commit;
@@ -1145,7 +1146,7 @@ eligibility.
 No production cutover begins until four falsifiable probes pass:
 
 1. **True compact-stream sink.** Consume primary-parser events directly into
-   4 KiB-class delta pages with compact references and no event `Vec` or Green
+   4 KiB-class fixed-record pages with compact references and no document event `Vec` or Green
    root. Run ordinary, tiny-block, nested, many-reference, giant paragraph and
    line, open fence, and every HTML termination family. Record first rendered
    slice, EOF time, attempted versus retained checkpoints, allocations, index
@@ -1207,6 +1208,28 @@ No production cutover begins until four falsifiable probes pass:
    passes and all live state is zero after close. Repeat memory/cancellation
    coverage for tiny-block and many-reference shapes even if their declared
    density envelope prevents the 3-second ordinary-document claim.
+
+Gate-one structural implementation receipt (2026-08-16, release mode on the
+development Mac): the primary parser now streams into a no-Green diagnostic
+sink, retains only parser-proven reference Paragraph windows, writes selected
+donor restarts through the existing versioned/checksummed durable codec into
+owned 4 KiB pages, and keeps source-backed compact reference records. It
+completed the frozen 16-shape matrix, including every CommonMark HTML block
+termination family. Ordinary 10 MiB completed in 0.697 s with 0.612 MiB of
+checkpoint pages; tiny-block 5 MiB completed in 1.941 s; many-reference 5 MiB
+completed in 1.070 s with 0.308 MiB of checkpoint pages plus 9.713 MiB of
+reference state. The maximum provisional reference window was 352 bytes.
+Interior and EOF samples decode and canonically re-encode without a Green root.
+This evidence rejects mandatory delta coding: fixed records already clear the
+component budget with simpler corruption and random-access behavior.
+
+This is not yet a complete Gate-one pass. The reported first-32-row time is a
+parser structural counter, not a complete public viewport payload or rendered
+frame; writer/output restart reconstruction, public row/inline/table/target
+differential equality, peak RSS, explicit scratch drain, and physical frame
+receipts remain open. The durable roundtrip exposed and fixed a latent codec
+defect where GFM was encoded but only CommonMark decoded; both durable codecs
+now have direct GFM regression coverage.
 
 The direction is accepted for prototyping, not yet for production migration.
 Its first product gate is five Mac and three Pixel cold runs with a physical
