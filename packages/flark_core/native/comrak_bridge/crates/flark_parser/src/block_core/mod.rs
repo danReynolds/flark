@@ -41,10 +41,14 @@ pub use paragraph_fence::{
     M11RecursiveGreenInlineLeafKind, M11RecursiveGreenListMarker, M11RecursiveGreenParagraphFence,
     M11RecursiveGreenRowPresentation,
 };
+#[cfg(test)]
+pub(crate) use reference_rendezvous::{M11CompactReferenceJournal, M11CompactReferenceReceipt};
 pub use reference_rendezvous::{
     M11ReferenceRendezvous, M11ReferenceRendezvousError, M11ReferenceRendezvousPoll,
     M11ReferenceRendezvousStatus,
 };
+#[cfg(test)]
+pub(crate) use writer::M11CompactProbeWriterReceipt;
 pub(crate) use writer::{
     M11BlockCheckpointRebase, M11BlockOrdinaryCheckpointAdoption,
     M11BlockTerminalCheckpointAdoption, KIND_BLOCK_QUOTE, KIND_DOCUMENT, KIND_PARAGRAPH,

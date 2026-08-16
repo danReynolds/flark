@@ -2671,6 +2671,16 @@ pub struct DirectRestartLineLocalContinuation {
 }
 
 impl DirectRestartOutput {
+    /// Heap payload retained by this opaque restart half. This excludes the
+    /// inline `Self` bytes owned by the enclosing checkpoint allocation.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn allocated_bytes_for_diagnostics(&self) -> usize {
+        self.frames
+            .len()
+            .saturating_mul(std::mem::size_of::<DirectPauseFrame>())
+    }
+
     /// Borrow only the line-local output seam from this opaque restart sample.
     ///
     /// This does not authorize reuse. Identical-line stabilization and current
@@ -3111,6 +3121,16 @@ fn project_direct_grammar_continuation(
 }
 
 impl DirectGrammarContinuation {
+    /// Heap payload retained by this opaque restart half. This excludes the
+    /// inline `Self` bytes owned by the enclosing checkpoint allocation.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn allocated_bytes_for_diagnostics(&self) -> usize {
+        self.frames
+            .len()
+            .saturating_mul(std::mem::size_of::<DirectGrammarFrame>())
+    }
+
     /// Deferred source role encoded by this exact grammar continuation.
     ///
     /// A composite source ledger uses this read-only projection to reject a
@@ -7866,6 +7886,33 @@ impl DirectValueBlockParser {
             next_source_line_admission: 1,
             active_source_line_admission: None,
         })
+    }
+
+    /// Reports whether the currently open Paragraph can still begin with one
+    /// or more link-reference definitions.
+    ///
+    /// Callers use this only at an acknowledged physical-line boundary. Once
+    /// false, the donor will not request reference-prefix replay for the
+    /// current Paragraph, so a compact output may discard its provisional
+    /// event window without guessing from source text.
+    #[doc(hidden)]
+    pub fn paragraph_may_have_reference_prefix(&self) -> Result<bool, ParseError> {
+        if !self.line_complete
+            || self.finished
+            || self.line_work.is_some()
+            || self.finish_work.is_some()
+            || self.active_source_line_admission.is_some()
+        {
+            return Err(ParseError::Invariant(
+                "reference-prefix possibility is observed at a quiescent line boundary",
+            ));
+        }
+        let direct = self
+            .parser
+            .direct
+            .as_ref()
+            .ok_or(ParseError::Invariant("direct hooks are present"))?;
+        Ok(direct.paragraph_may_have_reference_prefix)
     }
 
     /// Capture the parser half of a direct restart immediately after an

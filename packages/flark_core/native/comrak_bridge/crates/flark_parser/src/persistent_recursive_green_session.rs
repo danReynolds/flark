@@ -39,6 +39,10 @@ use crate::block_core::{
     M11DirectBlockPollStatus, M11DirectSourceLineAdmission, M11ReferenceRendezvous,
     M11ReferenceRendezvousError, M11ReferenceRendezvousStatus, SourceMetric,
 };
+#[cfg(test)]
+use crate::block_core::{
+    M11CompactProbeWriterReceipt, M11CompactReferenceJournal, M11CompactReferenceReceipt,
+};
 use crate::recursive_green_block_quote_projection::{
     resolve_m11_recursive_green_block_quote_projection_fence,
     M11RecursiveGreenBlockQuoteProjectionPreparation,
@@ -225,6 +229,8 @@ impl M11PersistentRecursiveGreenCleanPlan {
             writer_command_pending: false,
             rendezvous: None,
             journal: Some(journal),
+            #[cfg(test)]
+            compact_reference_journal: None,
             checkpoints: Vec::new(),
             terminal_convergence: None,
             initial_boundary_captured: false,
@@ -236,6 +242,67 @@ impl M11PersistentRecursiveGreenCleanPlan {
             journal_cancel_complete: false,
             green_release_complete: false,
             references_release_complete: false,
+            #[cfg(test)]
+            compact_probe: false,
+            #[cfg(test)]
+            compact_probe_receipt: None,
+            #[cfg(test)]
+            compact_reference_receipt: None,
+            #[cfg(test)]
+            compact_checkpoint_boundaries_seen: 0,
+            #[cfg(test)]
+            compact_restart_captures: 0,
+        })
+    }
+
+    #[cfg(test)]
+    fn begin_compact_probe(
+        self,
+        runtime: &mut DocumentRuntime,
+    ) -> Result<M11PersistentRecursiveGreenCleanBuild, M11PersistentRecursiveGreenSessionError>
+    {
+        let source = self.scanner_lease.version();
+        if runtime.current_source_version() != Some(source) {
+            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "compact clean probe is not current",
+            ));
+        }
+        let scanner = SnapshotLineScanner::new(self.scanner_lease)?;
+        let controller = if self.syntax_profile == SYNTAX_PROFILE_GFM_V1 {
+            M11DirectBlockController::new_gfm()?
+        } else {
+            M11DirectBlockController::new()?
+        };
+        let writer = M11BlockWriter::new_compact_probe(runtime, self.writer_lease)?;
+        Ok(M11PersistentRecursiveGreenCleanBuild {
+            source,
+            syntax_profile: self.syntax_profile,
+            phase: CleanPhase::ControllerLine,
+            scanner: Some(scanner),
+            pending_line: None,
+            active_line: None,
+            controller: Some(controller),
+            writer: Some(writer),
+            writer_command_pending: false,
+            rendezvous: None,
+            journal: None,
+            compact_reference_journal: Some(M11CompactReferenceJournal::new()),
+            checkpoints: Vec::new(),
+            terminal_convergence: None,
+            initial_boundary_captured: false,
+            green: None,
+            references: None,
+            output: None,
+            cancelling: false,
+            writer_cancel_complete: false,
+            journal_cancel_complete: false,
+            green_release_complete: false,
+            references_release_complete: false,
+            compact_probe: true,
+            compact_probe_receipt: None,
+            compact_reference_receipt: None,
+            compact_checkpoint_boundaries_seen: 0,
+            compact_restart_captures: 0,
         })
     }
 }
@@ -298,6 +365,8 @@ pub struct M11PersistentRecursiveGreenCleanBuild {
     writer_command_pending: bool,
     rendezvous: Option<M11ReferenceRendezvous>,
     journal: Option<M11ReferenceJournal>,
+    #[cfg(test)]
+    compact_reference_journal: Option<M11CompactReferenceJournal>,
     checkpoints: Vec<M11BlockRestartCheckpoint>,
     terminal_convergence: Option<M11BlockTerminalConvergenceCheckpoint>,
     initial_boundary_captured: bool,
@@ -309,6 +378,16 @@ pub struct M11PersistentRecursiveGreenCleanBuild {
     journal_cancel_complete: bool,
     green_release_complete: bool,
     references_release_complete: bool,
+    #[cfg(test)]
+    compact_probe: bool,
+    #[cfg(test)]
+    compact_probe_receipt: Option<M11CompactProbeWriterReceipt>,
+    #[cfg(test)]
+    compact_reference_receipt: Option<M11CompactReferenceReceipt>,
+    #[cfg(test)]
+    compact_checkpoint_boundaries_seen: usize,
+    #[cfg(test)]
+    compact_restart_captures: usize,
 }
 
 impl M11PersistentRecursiveGreenCleanBuild {
@@ -350,6 +429,8 @@ impl M11PersistentRecursiveGreenCleanBuild {
         runtime: &mut DocumentRuntime,
     ) -> Result<(), M11PersistentRecursiveGreenSessionError> {
         if let Some(mut rendezvous) = self.rendezvous.take() {
+            #[cfg(test)]
+            let compact_probe = self.compact_probe;
             let controller = self.controller.as_mut().ok_or(
                 M11PersistentRecursiveGreenSessionError::InvalidState(
                     "recursive-Green controller is missing",
@@ -360,12 +441,31 @@ impl M11PersistentRecursiveGreenCleanBuild {
                     "recursive-Green writer is missing",
                 ),
             )?;
-            let journal = self.journal.as_mut().ok_or(
-                M11PersistentRecursiveGreenSessionError::InvalidState(
-                    "recursive-Green reference journal is missing",
-                ),
-            )?;
-            let poll = rendezvous.poll(controller, writer, journal, runtime, 1)?;
+            #[cfg(test)]
+            let poll = if compact_probe {
+                let journal = self.compact_reference_journal.as_mut().ok_or(
+                    M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "compact reference journal is missing",
+                    ),
+                )?;
+                rendezvous.poll_compact(controller, writer, journal, runtime, 256)?
+            } else {
+                let journal = self.journal.as_mut().ok_or(
+                    M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "recursive-Green reference journal is missing",
+                    ),
+                )?;
+                rendezvous.poll(controller, writer, journal, runtime, 1)?
+            };
+            #[cfg(not(test))]
+            let poll = {
+                let journal = self.journal.as_mut().ok_or(
+                    M11PersistentRecursiveGreenSessionError::InvalidState(
+                        "recursive-Green reference journal is missing",
+                    ),
+                )?;
+                rendezvous.poll(controller, writer, journal, runtime, 1)?
+            };
             if poll.status != M11ReferenceRendezvousStatus::Complete {
                 self.rendezvous = Some(rendezvous);
             } else {
@@ -512,6 +612,15 @@ impl M11PersistentRecursiveGreenCleanBuild {
                         self.rendezvous = Some(M11ReferenceRendezvous::begin(controller, writer)?);
                     }
                     M11DirectBlockPollStatus::Complete => {
+                        #[cfg(test)]
+                        if self.compact_probe
+                            && !self
+                                .controller_mut()?
+                                .paragraph_may_have_reference_prefix()?
+                        {
+                            self.writer_mut()?
+                                .compact_probe_abandon_reference_window()?;
+                        }
                         self.capture_checkpoint(false)?;
                         self.phase = CleanPhase::Scanning;
                     }
@@ -589,17 +698,66 @@ impl M11PersistentRecursiveGreenCleanBuild {
                                 "clean parse omitted its terminal convergence cut",
                             ));
                         }
-                        self.green = Some(self.writer_mut()?.take_root().ok_or(
-                            M11PersistentRecursiveGreenSessionError::InvalidState(
-                                "completed recursive-Green writer omitted its root",
-                            ),
-                        )?);
+                        #[cfg(test)]
+                        if self.compact_probe {
+                            self.compact_probe_receipt =
+                                Some(self.writer_mut()?.compact_probe_receipt()?);
+                        } else {
+                            self.green = Some(self.writer_mut()?.take_root().ok_or(
+                                M11PersistentRecursiveGreenSessionError::InvalidState(
+                                    "completed recursive-Green writer omitted its root",
+                                ),
+                            )?);
+                        }
+                        #[cfg(not(test))]
+                        {
+                            self.green = Some(self.writer_mut()?.take_root().ok_or(
+                                M11PersistentRecursiveGreenSessionError::InvalidState(
+                                    "completed recursive-Green writer omitted its root",
+                                ),
+                            )?);
+                        }
+                        #[cfg(test)]
+                        if self.compact_probe {
+                            let journal = self.compact_reference_journal.as_mut().ok_or(
+                                M11PersistentRecursiveGreenSessionError::InvalidState(
+                                    "compact reference journal is missing",
+                                ),
+                            )?;
+                            journal.finish_input()?;
+                            self.compact_reference_receipt = Some(journal.receipt());
+                        } else {
+                            self.journal_mut()?.finish_input(runtime)?;
+                        }
+                        #[cfg(not(test))]
                         self.journal_mut()?.finish_input(runtime)?;
                         self.phase = CleanPhase::FinishReferences;
                     }
                 }
             }
             CleanPhase::FinishReferences => {
+                #[cfg(test)]
+                if self.compact_probe {
+                    self.writer = None;
+                    self.compact_reference_journal = None;
+                    self.controller = None;
+                    self.output = Some(M11PersistentRecursiveGreenSession {
+                        source: self.source,
+                        syntax_profile: self.syntax_profile,
+                        green: self.green.take(),
+                        references: None,
+                        checkpoints: M11CheckpointStore::from_contiguous(std::mem::take(
+                            &mut self.checkpoints,
+                        )),
+                        terminal_convergence: self.terminal_convergence.take(),
+                        release_begun: false,
+                        green_release_complete: true,
+                        references_release_complete: true,
+                        compact_probe: true,
+                    });
+                    self.phase = CleanPhase::Complete;
+                    return Ok(());
+                }
                 let poll = self.journal_mut()?.poll(runtime, 1)?;
                 if poll.status() == M11ReferenceJournalStatus::Complete {
                     self.references = Some(self.journal_mut()?.take_root().ok_or(
@@ -622,6 +780,8 @@ impl M11PersistentRecursiveGreenCleanBuild {
                         release_begun: false,
                         green_release_complete: false,
                         references_release_complete: false,
+                        #[cfg(test)]
+                        compact_probe: self.compact_probe,
                     });
                     self.phase = CleanPhase::Complete;
                 }
@@ -648,6 +808,44 @@ impl M11PersistentRecursiveGreenCleanBuild {
         &mut self,
         force: bool,
     ) -> Result<(), M11PersistentRecursiveGreenSessionError> {
+        #[cfg(test)]
+        if self.compact_probe {
+            self.compact_checkpoint_boundaries_seen = self
+                .compact_checkpoint_boundaries_seen
+                .checked_add(1)
+                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "compact checkpoint boundary count fits usize",
+                ))?;
+            let (metric, open_depth) = self
+                .writer
+                .as_ref()
+                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "compact writer is missing",
+                ))?
+                .compact_probe_checkpoint_candidate()?;
+            let previous_cut = self
+                .checkpoints
+                .last()
+                .map_or(0, |previous| previous.accepted_physical().bytes());
+            let minimum_stride = CHECKPOINT_STRIDE_BYTES
+                .checked_mul(u64::try_from(open_depth).unwrap_or(u64::MAX).max(1))
+                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "compact checkpoint spacing fits u64",
+                ))?;
+            let distinct = self
+                .checkpoints
+                .last()
+                .is_none_or(|previous| previous.accepted_physical() != metric);
+            if !distinct || (!force && metric.bytes().saturating_sub(previous_cut) < minimum_stride)
+            {
+                return Ok(());
+            }
+            self.compact_restart_captures = self.compact_restart_captures.checked_add(1).ok_or(
+                M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "compact restart capture count fits usize",
+                ),
+            )?;
+        }
         let Some(parser) = self.controller_mut()?.capture_restart_if_available()? else {
             return Ok(());
         };
@@ -720,6 +918,14 @@ impl M11PersistentRecursiveGreenCleanBuild {
             )
         })?;
         self.checkpoints.push(checkpoint);
+        #[cfg(test)]
+        if self.compact_probe {
+            self.compact_restart_captures = self.compact_restart_captures.checked_add(1).ok_or(
+                M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "compact BOF restart capture count fits usize",
+                ),
+            )?;
+        }
         Ok(())
     }
 
@@ -757,6 +963,36 @@ impl M11PersistentRecursiveGreenCleanBuild {
     pub fn take_session(&mut self) -> Option<M11PersistentRecursiveGreenSession> {
         (self.phase == CleanPhase::Complete)
             .then(|| self.output.take())
+            .flatten()
+    }
+
+    #[cfg(test)]
+    fn take_compact_probe_receipt(
+        &mut self,
+    ) -> Option<(M11CompactProbeWriterReceipt, usize, usize)> {
+        if self.phase != CleanPhase::Complete || !self.compact_probe {
+            return None;
+        }
+        self.compact_probe_receipt.take().map(|mut receipt| {
+            if let Some(reference) = self.compact_reference_receipt.take() {
+                receipt.reference_occurrences = reference.occurrences;
+                receipt.reference_winners = reference.winners;
+                receipt.reference_allocated_bytes = reference.allocated_bytes;
+                receipt.reference_normalized_label_bytes = reference.normalized_label_bytes;
+                receipt.reference_phase_transitions = reference.rendezvous_phase_transitions;
+            }
+            (
+                receipt,
+                self.compact_checkpoint_boundaries_seen,
+                self.compact_restart_captures,
+            )
+        })
+    }
+
+    #[cfg(test)]
+    fn compact_probe_current_writer_receipt(&self) -> Option<M11CompactProbeWriterReceipt> {
+        self.compact_probe
+            .then(|| self.writer.as_ref()?.compact_probe_receipt().ok())
             .flatten()
     }
 
@@ -1093,6 +1329,8 @@ pub struct M11PersistentRecursiveGreenSession {
     release_begun: bool,
     green_release_complete: bool,
     references_release_complete: bool,
+    #[cfg(test)]
+    compact_probe: bool,
 }
 
 #[cfg(test)]
@@ -1101,6 +1339,7 @@ struct CheckpointStorageReceipt {
     checkpoints: usize,
     retained_open_frames: usize,
     maximum_open_depth: usize,
+    allocated_bytes: usize,
 }
 
 #[cfg(test)]
@@ -1118,6 +1357,11 @@ impl CheckpointStorageReceipt {
     #[must_use]
     const fn maximum_open_depth(self) -> usize {
         self.maximum_open_depth
+    }
+
+    #[must_use]
+    const fn allocated_bytes(self) -> usize {
+        self.allocated_bytes
     }
 }
 
@@ -2754,6 +2998,8 @@ impl M11PersistentRecursiveGreenAdoption {
             release_begun: false,
             green_release_complete: false,
             references_release_complete: false,
+            #[cfg(test)]
+            compact_probe: false,
         };
         self.output = Some(M11PersistentRecursiveGreenUpdate {
             base: Some(base),
@@ -3102,15 +3348,35 @@ impl M11PersistentRecursiveGreenSession {
     fn checkpoint_storage_receipt_for_diagnostics(&self) -> CheckpointStorageReceipt {
         let mut retained_open_frames = 0_usize;
         let mut maximum_open_depth = 0_usize;
+        let mut allocated_bytes = match &self.checkpoints {
+            M11CheckpointStore::Contiguous(checkpoints) => checkpoints
+                .capacity()
+                .saturating_mul(std::mem::size_of::<M11BlockRestartCheckpoint>()),
+            M11CheckpointStore::Paged { pages, .. } => {
+                pages.values().fold(0_usize, |bytes, page| {
+                    bytes.saturating_add(
+                        page.len()
+                            .saturating_mul(std::mem::size_of::<M11BlockRestartCheckpoint>()),
+                    )
+                })
+            }
+        };
         for checkpoint in self.checkpoints.iter() {
             let depth = checkpoint.open_kinds().len();
             retained_open_frames = retained_open_frames.saturating_add(depth);
             maximum_open_depth = maximum_open_depth.max(depth);
+            allocated_bytes =
+                allocated_bytes.saturating_add(checkpoint.heap_allocated_bytes_for_diagnostics());
+        }
+        if let Some(terminal) = &self.terminal_convergence {
+            allocated_bytes =
+                allocated_bytes.saturating_add(terminal.heap_allocated_bytes_for_diagnostics());
         }
         CheckpointStorageReceipt {
             checkpoints: self.checkpoints.len(),
             retained_open_frames,
             maximum_open_depth,
+            allocated_bytes,
         }
     }
 
@@ -3667,6 +3933,20 @@ impl M11PersistentRecursiveGreenSession {
                 "recursive-Green session release already began",
             ));
         }
+        #[cfg(test)]
+        if self.compact_probe {
+            self.green_release_complete = true;
+            self.references_release_complete = true;
+        } else {
+            self.green
+                .as_mut()
+                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "recursive-Green session omitted its structural root",
+                ))?
+                .begin_release(runtime)
+                .map_err(M11BlockWriterError::from)?;
+        }
+        #[cfg(not(test))]
         self.green
             .as_mut()
             .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -3674,6 +3954,16 @@ impl M11PersistentRecursiveGreenSession {
             ))?
             .begin_release(runtime)
             .map_err(M11BlockWriterError::from)?;
+        #[cfg(test)]
+        if !self.compact_probe {
+            self.references
+                .as_mut()
+                .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "recursive-Green session omitted its reference root",
+                ))?
+                .begin_release(runtime)?;
+        }
+        #[cfg(not(test))]
         self.references
             .as_mut()
             .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -3741,6 +4031,7 @@ fn to_u32_range(range: Range<u64>) -> Result<Range<u32>, M11PersistentRecursiveG
 mod tests {
     use super::*;
     use flark_engine::DocumentRuntimeConfig;
+    use std::time::Instant;
 
     fn build_session(runtime: &mut DocumentRuntime) -> M11PersistentRecursiveGreenSession {
         let plan = M11PersistentRecursiveGreenCleanPlan::new(
@@ -3755,6 +4046,307 @@ mod tests {
             if poll.status() == M11PersistentRecursiveGreenBuildStatus::Complete {
                 return build.take_session().expect("persistent session");
             }
+        }
+    }
+
+    fn build_compact_probe(
+        runtime: &mut DocumentRuntime,
+        admitted_at: Instant,
+    ) -> (
+        M11PersistentRecursiveGreenSession,
+        M11CompactProbeWriterReceipt,
+        usize,
+        usize,
+        std::time::Duration,
+    ) {
+        let plan = M11PersistentRecursiveGreenCleanPlan::new(
+            runtime.snapshot_current_source().expect("scanner lease"),
+            runtime.snapshot_current_source().expect("writer lease"),
+            1,
+        )
+        .expect("compact plan");
+        let mut build = plan
+            .begin_compact_probe(runtime)
+            .expect("compact probe build");
+        let mut first_32_rows = None;
+        let mut driver_transitions = 0_u64;
+        loop {
+            let fuel = if first_32_rows.is_none() { 64 } else { 4_096 };
+            let poll = build.poll(runtime, fuel).expect("poll compact probe");
+            driver_transitions = driver_transitions
+                .checked_add(u64::try_from(poll.transitions()).expect("transition count"))
+                .expect("driver transition count");
+            if first_32_rows.is_none()
+                && build
+                    .compact_probe_current_writer_receipt()
+                    .is_some_and(|receipt| receipt.renderable_rows >= 32)
+            {
+                first_32_rows = Some(admitted_at.elapsed());
+            }
+            if poll.status() == M11PersistentRecursiveGreenBuildStatus::Complete {
+                let (mut receipt, boundaries, captures) = build
+                    .take_compact_probe_receipt()
+                    .expect("compact probe receipt");
+                receipt.driver_transitions = driver_transitions;
+                return (
+                    build.take_session().expect("compact probe session"),
+                    receipt,
+                    boundaries,
+                    captures,
+                    first_32_rows.unwrap_or_else(|| admitted_at.elapsed()),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn compact_probe_streams_exact_structure_without_green_or_event_journal() {
+        const SOURCE: &str = "# Heading\n\n[alpha]: /one \"title\"\n[αλφα]: /δ \"τίτλος\"\n\nParagraph with **strong**, `code`, [alpha], and [αλφα].\n\n- one\n- two\n\n> quote\n\n```dart\nvoid main() {}\n```\n";
+        let admitted_at = Instant::now();
+        let mut runtime = DocumentRuntime::new(SOURCE, DocumentRuntimeConfig::default())
+            .expect("compact smoke runtime");
+        let (mut session, receipt, boundaries, captures, first_32_rows) =
+            build_compact_probe(&mut runtime, admitted_at);
+
+        assert_eq!(receipt.source_bytes as usize, SOURCE.len());
+        assert_eq!(receipt.source_utf16 as usize, SOURCE.encode_utf16().count());
+        assert!(receipt.high_level_events > 0);
+        assert!(receipt.renderable_rows >= 6);
+        assert!(receipt.packed_events >= receipt.high_level_events);
+        assert!(receipt.logical_bytes > 0);
+        assert!(receipt.source_bytes_read <= (SOURCE.len() as u64).saturating_mul(8));
+        assert!(receipt.maximum_reference_events > 0);
+        assert_eq!(receipt.reference_occurrences, 2);
+        assert_eq!(receipt.reference_winners, 2);
+        assert!(receipt.logical_bytes < receipt.source_bytes);
+        assert!(boundaries > 1);
+        assert!(captures <= SOURCE.len().div_ceil(CHECKPOINT_STRIDE_BYTES as usize) + 2);
+        assert!(session.green.is_none());
+        assert!(session.checkpoint_count() <= captures);
+        assert!(first_32_rows <= admitted_at.elapsed());
+
+        release_session(&mut runtime, &mut session);
+        close_runtime(&mut runtime);
+    }
+
+    fn repeat_ascii_exact(prefix: &str, cycle: &str, target_bytes: usize) -> String {
+        assert!(prefix.is_ascii() && cycle.is_ascii() && !cycle.is_empty());
+        assert!(prefix.len() <= target_bytes);
+        let mut output = String::with_capacity(target_bytes);
+        output.push_str(prefix);
+        let remaining = target_bytes - prefix.len();
+        output.push_str(&cycle.repeat(remaining / cycle.len()));
+        output.push_str(&cycle[..remaining % cycle.len()]);
+        output
+    }
+
+    fn indexed_ascii_exact(record: &str, target_bytes: usize) -> String {
+        assert!(record.is_ascii() && record.contains("{index}"));
+        let mut output = String::with_capacity(target_bytes);
+        let mut index = 0_u64;
+        while output.len() < target_bytes {
+            let row = record.replace("{index}", &format!("{index:08}"));
+            let remaining = target_bytes - output.len();
+            output.push_str(&row[..remaining.min(row.len())]);
+            index += 1;
+        }
+        output
+    }
+
+    #[test]
+    #[ignore = "gate-one release receipt"]
+    fn compact_probe_gate_one_structural_receipt() {
+        const MIB: usize = 1024 * 1024;
+        let target_override = std::env::var("FLARK_COMPACT_TARGET_BYTES")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok());
+        let ordinary_target = target_override.unwrap_or(10 * MIB);
+        let stress_target = target_override.unwrap_or(5 * MIB);
+        let shapes = [
+            (
+                "ordinary-10mib",
+                repeat_ascii_exact(
+                    "",
+                    "Ordinary prose opens with a clear sentence and a small **bold** run.\nIt continues with _emphasis_, `code`, and a direct [link](https://example.invalid/).\n\n",
+                    ordinary_target,
+                ),
+            ),
+            (
+                "tiny-block-5mib",
+                indexed_ascii_exact("p-{index}\n\n", stress_target),
+            ),
+            (
+                "nested-5mib",
+                repeat_ascii_exact(
+                    "",
+                    "> - outer item\n>   1. inner item with **bold**\n>      - third level\n>\n> lazy continuation\n\n",
+                    stress_target,
+                ),
+            ),
+            (
+                "giant-paragraph-5mib",
+                repeat_ascii_exact(
+                    "",
+                    "One paragraph continues across this physical line with words and **markup**.\n",
+                    stress_target,
+                ),
+            ),
+            (
+                "giant-line-5mib",
+                repeat_ascii_exact(
+                    "",
+                    "one-giant-line-with-words-and-**markup**-",
+                    stress_target,
+                ),
+            ),
+            (
+                "open-fence-5mib",
+                repeat_ascii_exact(
+                    "~~~markdown\n",
+                    "literal **marker** and [reference] text remains inside the open fence\n",
+                    stress_target,
+                ),
+            ),
+            (
+                "delimiter-dense-5mib",
+                repeat_ascii_exact(
+                    "",
+                    "***strong-em*** ~~strike~~ `code * literal` [label](https://example.invalid/a_(b)) ![alt](img.png)  \\\nnext\\*line\\_ []() <tag> &amp;\n\n",
+                    stress_target,
+                ),
+            ),
+            (
+                "tables-tasks-5mib",
+                repeat_ascii_exact(
+                    "",
+                    "| Name | Value |\n| --- | ---: |\n| alpha | 1 |\n| beta | 2 |\n\n- [x] complete\n- [ ] pending\n\n",
+                    stress_target,
+                ),
+            ),
+            (
+                "many-references-5mib",
+                indexed_ascii_exact(
+                    "Use [ref-{index}] here.\n\n[ref-{index}]: https://example.invalid/{index}\n\n",
+                    stress_target,
+                ),
+            ),
+            (
+                "html-type-1-5mib",
+                repeat_ascii_exact(
+                    "",
+                    "<script>\nconst marker = '<!-- not a terminator -->';\n</script>\n\n",
+                    stress_target,
+                ),
+            ),
+            (
+                "html-type-2-5mib",
+                repeat_ascii_exact(
+                    "",
+                    "<!--\ncomment with **literal** markdown\n-->\n\n",
+                    stress_target,
+                ),
+            ),
+            (
+                "html-type-3-5mib",
+                repeat_ascii_exact(
+                    "",
+                    "<?processing\nvalue='**literal**'\n?>\n\n",
+                    stress_target,
+                ),
+            ),
+            (
+                "html-type-4-5mib",
+                repeat_ascii_exact("", "<!DOCTYPE html PUBLIC 'flark'>\n\n", stress_target),
+            ),
+            (
+                "html-type-5-5mib",
+                repeat_ascii_exact(
+                    "",
+                    "<![CDATA[\n<literal>**markdown**</literal>\n]]>\n\n",
+                    stress_target,
+                ),
+            ),
+            (
+                "html-type-6-5mib",
+                repeat_ascii_exact(
+                    "",
+                    "<div>\nblock tag continues until the blank line\n\n",
+                    stress_target,
+                ),
+            ),
+            (
+                "html-type-7-5mib",
+                repeat_ascii_exact(
+                    "",
+                    "<flark-panel data-mode='live'>\ncustom tag continues until the blank line\n\n",
+                    stress_target,
+                ),
+            ),
+        ];
+
+        let shape_filter = std::env::var("FLARK_COMPACT_SHAPE").ok();
+        for (name, source) in shapes {
+            if shape_filter.as_deref().is_some_and(|filter| filter != name) {
+                continue;
+            }
+            let started = Instant::now();
+            let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
+                .unwrap_or_else(|error| panic!("{name} runtime: {error}"));
+            let (mut session, receipt, boundaries, captures, first_32_rows) =
+                build_compact_probe(&mut runtime, started);
+            let elapsed = started.elapsed();
+            let storage = session.checkpoint_storage_receipt_for_diagnostics();
+            println!(
+                "COMPACT_GATE_ONE name={name} bytes={} first32_us={} elapsed_us={} transitions={} high_events={} packed_events={} rows={} boundaries={} captures={} retained={} checkpoint_bytes={} open_frames={} max_depth={} source_reads={} max_reference_events={} max_reference_window_bytes={} references={} winners={} reference_bytes={} label_bytes={} reference_phases={:?}",
+                source.len(),
+                first_32_rows.as_micros(),
+                elapsed.as_micros(),
+                receipt.driver_transitions,
+                receipt.high_level_events,
+                receipt.packed_events,
+                receipt.renderable_rows,
+                boundaries,
+                captures,
+                storage.checkpoints(),
+                storage.allocated_bytes(),
+                storage.retained_open_frames(),
+                storage.maximum_open_depth(),
+                receipt.source_bytes_read,
+                receipt.maximum_reference_events,
+                receipt.maximum_reference_allocated_bytes,
+                receipt.reference_occurrences,
+                receipt.reference_winners,
+                receipt.reference_allocated_bytes,
+                receipt.reference_normalized_label_bytes,
+                receipt.reference_phase_transitions,
+            );
+            assert_eq!(receipt.source_bytes as usize, source.len(), "{name}");
+            assert_eq!(
+                receipt.source_utf16 as usize,
+                source.encode_utf16().count(),
+                "{name}"
+            );
+            assert!(
+                captures <= source.len().div_ceil(CHECKPOINT_STRIDE_BYTES as usize) + 2,
+                "{name}: captures={captures}"
+            );
+            assert!(storage.checkpoints() <= captures, "{name}");
+            assert!(
+                storage
+                    .allocated_bytes()
+                    .saturating_add(receipt.reference_allocated_bytes)
+                    <= 12 * 1024 * 1024,
+                "{name}: checkpoint_bytes={} reference_bytes={}",
+                storage.allocated_bytes(),
+                receipt.reference_allocated_bytes,
+            );
+            assert!(
+                receipt.maximum_reference_allocated_bytes <= 8 * 1024 * 1024,
+                "{name}: reference_window_bytes={}",
+                receipt.maximum_reference_allocated_bytes,
+            );
+            release_session(&mut runtime, &mut session);
+            close_runtime(&mut runtime);
         }
     }
 

@@ -147,6 +147,16 @@ impl M11ReferenceJournalRange {
     pub const fn new(bytes: Range<u64>, utf16: Range<u64>) -> Self {
         Self { bytes, utf16 }
     }
+
+    #[must_use]
+    pub const fn byte_range(&self) -> &Range<u64> {
+        &self.bytes
+    }
+
+    #[must_use]
+    pub const fn utf16_range(&self) -> &Range<u64> {
+        &self.utf16
+    }
 }
 
 /// One parser-authenticated occurrence. Recognition, normalization and value
@@ -216,6 +226,29 @@ impl M11ReferenceJournalOccurrenceStart {
             destination_len,
             title_len,
         }
+    }
+
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        M11ReferenceJournalRange,
+        M11ReferenceJournalRange,
+        M11ReferenceJournalRange,
+        Option<M11ReferenceJournalRange>,
+        Box<[u8]>,
+        usize,
+        Option<usize>,
+    ) {
+        (
+            self.source,
+            self.label_source,
+            self.destination_source,
+            self.title_source,
+            self.normalized_label,
+            self.destination_len,
+            self.title_len,
+        )
     }
 }
 

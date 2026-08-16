@@ -383,6 +383,8 @@ struct WriterOutputReceipt {
 enum WriterOutput {
     Document(M11RecursiveGreenBuild),
     Fragment(M11BlockFragmentOutput),
+    #[cfg(test)]
+    CompactProbe(M11CompactProbeOutput),
 }
 
 struct M11BlockFragmentOutput {
@@ -391,6 +393,50 @@ struct M11BlockFragmentOutput {
     receipt: WriterOutputReceipt,
     source_bytes_read: u64,
     reference: Option<M11FragmentReferenceState>,
+}
+
+/// Test-only exact event sink used to decide whether the compact-index
+/// architecture is worth promoting. It deliberately retains no Green root and
+/// no high-level event journal. Parser and writer validation remain identical
+/// to the production path; only the durable output changes.
+#[cfg(test)]
+struct M11CompactProbeOutput {
+    fragment: M11BlockFragmentOutput,
+    high_level_events: u64,
+    renderable_rows: u64,
+    paragraph: Option<M11CompactProbeParagraph>,
+    maximum_reference_events: usize,
+    maximum_reference_allocated_bytes: usize,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+struct M11CompactProbeParagraph {
+    frame: M11RecursiveGreenFrameId,
+    base_receipt: WriterOutputReceipt,
+    base_high_level_events: u64,
+    base_renderable_rows: u64,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct M11CompactProbeWriterReceipt {
+    pub(crate) high_level_events: u64,
+    pub(crate) packed_events: u64,
+    pub(crate) renderable_rows: u64,
+    pub(crate) source_bytes: u64,
+    pub(crate) source_utf16: u64,
+    pub(crate) logical_bytes: u64,
+    pub(crate) logical_utf16: u64,
+    pub(crate) source_bytes_read: u64,
+    pub(crate) maximum_reference_events: usize,
+    pub(crate) maximum_reference_allocated_bytes: usize,
+    pub(crate) reference_occurrences: usize,
+    pub(crate) reference_winners: usize,
+    pub(crate) reference_allocated_bytes: usize,
+    pub(crate) reference_normalized_label_bytes: usize,
+    pub(crate) driver_transitions: u64,
+    pub(crate) reference_phase_transitions: [u64; 8],
 }
 
 /// Source identity shared with the donor while a terminal Paragraph
@@ -417,7 +463,7 @@ impl M11ReferenceOutputBinding {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct M11FragmentReferenceBinding {
+pub(super) struct M11FragmentReferenceBinding {
     generation: u64,
     frame: M11RecursiveGreenFrameId,
     enter_event: usize,
@@ -463,7 +509,7 @@ impl M11ReferenceOutputRange {
 }
 
 #[derive(Debug)]
-struct M11FragmentReferenceRange {
+pub(super) struct M11FragmentReferenceRange {
     generation: u64,
     logical: M11RecursiveGreenLogicalRange,
     physical: Option<(std::ops::Range<u64>, std::ops::Range<u64>)>,
@@ -821,6 +867,84 @@ impl M11FragmentReferenceCursor {
     }
 }
 
+#[cfg(test)]
+fn begin_compact_probe_reference_output(
+    probe: &mut M11CompactProbeOutput,
+    frame: M11RecursiveGreenFrameId,
+) -> Result<(), M11BlockWriterError> {
+    let paragraph = probe.paragraph.ok_or(M11BlockWriterError::InvalidCommand(
+        "compact reference finalization has no active Paragraph",
+    ))?;
+    if paragraph.frame != frame || probe.fragment.reference.is_some() {
+        return Err(M11BlockWriterError::InvalidCommand(
+            "compact reference finalization crossed its Paragraph",
+        ));
+    }
+    let paragraph_kind = green_kind(BlockKind::Paragraph);
+    let mut physical = SourceMetric::new(
+        paragraph.base_receipt.source_bytes,
+        paragraph.base_receipt.source_utf16,
+    )
+    .ok_or(M11BlockWriterError::CounterOverflow)?;
+    let mut local_enter = None;
+    for (index, event) in probe.fragment.events.iter().copied().enumerate() {
+        match event {
+            M11RecursiveGreenEvent::Enter {
+                frame: candidate,
+                kind,
+            } if candidate == frame && kind == paragraph_kind => {
+                if local_enter.replace((index, physical)).is_some() {
+                    return Err(M11BlockWriterError::InvalidCommand(
+                        "compact reference Paragraph has more than one Enter",
+                    ));
+                }
+            }
+            M11RecursiveGreenEvent::Coverage {
+                physical: metric, ..
+            } => {
+                physical = physical
+                    .checked_add(
+                        SourceMetric::new(metric.bytes(), metric.utf16())
+                            .ok_or(M11BlockWriterError::CounterOverflow)?,
+                    )
+                    .ok_or(M11BlockWriterError::CounterOverflow)?;
+            }
+            _ => {}
+        }
+    }
+    let (enter_event, physical_before) = local_enter.ok_or(M11BlockWriterError::InvalidCommand(
+        "compact reference Paragraph Enter is unavailable",
+    ))?;
+    let physical_end = SourceMetric::new(
+        probe.fragment.receipt.source_bytes,
+        probe.fragment.receipt.source_utf16,
+    )
+    .ok_or(M11BlockWriterError::CounterOverflow)?;
+    if physical != physical_end {
+        return Err(M11BlockWriterError::InvalidCommand(
+            "compact reference event window and physical receipt differ",
+        ));
+    }
+    let generation = REFERENCE_FRAGMENT_IDS
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+            current.checked_add(1)
+        })
+        .map_err(|_| M11BlockWriterError::CounterOverflow)?;
+    probe.fragment.reference = Some(M11FragmentReferenceState {
+        binding: M11FragmentReferenceBinding {
+            generation,
+            frame,
+            enter_event,
+            events_end: probe.fragment.events.len(),
+            physical_before,
+            physical_end,
+            base_receipt: paragraph.base_receipt,
+        },
+        phase: M11FragmentReferencePhase::Barrier,
+    });
+    Ok(())
+}
+
 fn validate_fragment_reference_binding(
     fragment: &M11BlockFragmentOutput,
     binding: &M11FragmentReferenceBinding,
@@ -911,6 +1035,12 @@ fn step_fragment_reference_cursor(
                 canonical_text,
             } => {
                 if cursor.physical_position == *end {
+                    return Ok(());
+                }
+                if emit_fragment_projected_ascii_chunk(fragment, cursor, *end, *canonical_text)? {
+                    if cursor.physical_position != *end {
+                        cursor.atom = Some(atom);
+                    }
                     return Ok(());
                 }
                 let scalar_start = cursor.physical_position;
@@ -1114,6 +1244,140 @@ fn step_fragment_reference_cursor(
         }
     });
     Ok(())
+}
+
+fn emit_fragment_projected_ascii_chunk(
+    fragment: &mut M11BlockFragmentOutput,
+    cursor: &mut M11FragmentReferenceCursor,
+    physical_end: SourceMetric,
+    canonical_text: bool,
+) -> Result<bool, M11BlockWriterError> {
+    let physical_start = cursor.physical_position;
+    let remaining = physical_end
+        .bytes()
+        .checked_sub(physical_start.bytes())
+        .ok_or(M11BlockWriterError::CounterOverflow)?;
+    if remaining == 0 {
+        return Ok(false);
+    }
+    let ready_len = cursor.ready_bytes.len().saturating_sub(cursor.ready_start);
+    let ready_capacity = flark_engine::SOURCE_CURSOR_WINDOW_BYTES.saturating_sub(ready_len);
+    if ready_capacity == 0 {
+        return Ok(false);
+    }
+    let mut chunk_len = usize::try_from(remaining)
+        .unwrap_or(usize::MAX)
+        .min(ready_capacity.max(1));
+    if cursor.yield_bytes.end != u64::MAX && cursor.yield_bytes.end > cursor.logical_bytes {
+        chunk_len = chunk_len.min(
+            usize::try_from(cursor.yield_bytes.end - cursor.logical_bytes)
+                .map_err(|_| M11BlockWriterError::CounterOverflow)?,
+        );
+    }
+    let source_start = usize::try_from(physical_start.bytes())
+        .map_err(|_| M11BlockWriterError::CounterOverflow)?;
+    let source_end = source_start
+        .checked_add(chunk_len)
+        .ok_or(M11BlockWriterError::CounterOverflow)?;
+    let raw = read_fragment_bytes(&mut fragment.lease, source_start, source_end)?;
+    if !raw.is_ascii() || canonical_text && raw.contains(&0) {
+        return Ok(false);
+    }
+    fragment.source_bytes_read = fragment
+        .source_bytes_read
+        .checked_add(u64::try_from(raw.len()).unwrap_or(u64::MAX))
+        .ok_or(M11BlockWriterError::CounterOverflow)?;
+    let metric = SourceMetric::new(
+        u64::try_from(raw.len()).map_err(|_| M11BlockWriterError::CounterOverflow)?,
+        u64::try_from(raw.len()).map_err(|_| M11BlockWriterError::CounterOverflow)?,
+    )
+    .ok_or(M11BlockWriterError::CounterOverflow)?;
+    let next_physical = physical_start
+        .checked_add(metric)
+        .ok_or(M11BlockWriterError::CounterOverflow)?;
+    let logical_start = cursor.logical_bytes;
+    let logical_end = logical_start
+        .checked_add(metric.bytes())
+        .ok_or(M11BlockWriterError::CounterOverflow)?;
+    let utf16_start = cursor.logical_utf16;
+    let utf16_end = utf16_start
+        .checked_add(metric.utf16())
+        .ok_or(M11BlockWriterError::CounterOverflow)?;
+    if let Some(expected) = &cursor.expected_yield_utf16 {
+        if cursor.yield_bytes.start >= logical_start
+            && cursor.yield_bytes.start <= logical_end
+            && expected.start
+                != utf16_start
+                    .checked_add(cursor.yield_bytes.start - logical_start)
+                    .ok_or(M11BlockWriterError::CounterOverflow)?
+            || cursor.yield_bytes.end >= logical_start
+                && cursor.yield_bytes.end <= logical_end
+                && expected.end
+                    != utf16_start
+                        .checked_add(cursor.yield_bytes.end - logical_start)
+                        .ok_or(M11BlockWriterError::CounterOverflow)?
+        {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "fragment ASCII reference range UTF-16 endpoint is not exact",
+            ));
+        }
+    }
+    let selected_start = cursor.yield_bytes.start.max(logical_start);
+    let selected_end = cursor.yield_bytes.end.min(logical_end);
+    if selected_start < selected_end {
+        let start_offset = usize::try_from(selected_start - logical_start)
+            .map_err(|_| M11BlockWriterError::CounterOverflow)?;
+        let end_offset = usize::try_from(selected_end - logical_start)
+            .map_err(|_| M11BlockWriterError::CounterOverflow)?;
+        let selected = &raw[start_offset..end_offset];
+        cursor
+            .ready_bytes
+            .try_reserve(selected.len())
+            .map_err(|_| M11BlockWriterError::Allocation)?;
+        cursor
+            .ready_raw_contributions
+            .try_reserve(selected.len())
+            .map_err(|_| M11BlockWriterError::Allocation)?;
+        cursor.ready_bytes.extend_from_slice(selected);
+        cursor
+            .ready_raw_contributions
+            .extend(std::iter::repeat_n(1, selected.len()));
+        cursor.yielded_bytes = cursor
+            .yielded_bytes
+            .checked_add(
+                u64::try_from(selected.len()).map_err(|_| M11BlockWriterError::CounterOverflow)?,
+            )
+            .ok_or(M11BlockWriterError::CounterOverflow)?;
+        let selected_physical_start = physical_start
+            .checked_add(
+                SourceMetric::new(start_offset as u64, start_offset as u64)
+                    .ok_or(M11BlockWriterError::CounterOverflow)?,
+            )
+            .ok_or(M11BlockWriterError::CounterOverflow)?;
+        let selected_physical_end = physical_start
+            .checked_add(
+                SourceMetric::new(end_offset as u64, end_offset as u64)
+                    .ok_or(M11BlockWriterError::CounterOverflow)?,
+            )
+            .ok_or(M11BlockWriterError::CounterOverflow)?;
+        match &mut cursor.yielded_physical {
+            Some((_, end)) => *end = selected_physical_end,
+            None => {
+                cursor.yielded_physical = Some((selected_physical_start, selected_physical_end));
+            }
+        }
+    }
+    cursor.logical_bytes = logical_end;
+    cursor.logical_utf16 = utf16_end;
+    cursor.physical_position = next_physical;
+    if logical_end == cursor.yield_bytes.end {
+        cursor.complete = true;
+    } else if logical_end > cursor.yield_bytes.end {
+        return Err(M11BlockWriterError::InvalidCommand(
+            "fragment ASCII reference range endpoint was skipped",
+        ));
+    }
+    Ok(true)
 }
 
 fn emit_fragment_projected_scalar(
@@ -1810,6 +2074,15 @@ impl fmt::Debug for M11BlockFragmentOutput {
 }
 
 impl WriterOutput {
+    const fn is_synchronous(&self) -> bool {
+        match self {
+            Self::Document(_) => false,
+            Self::Fragment(_) => true,
+            #[cfg(test)]
+            Self::CompactProbe(_) => true,
+        }
+    }
+
     fn receipt(&self) -> WriterOutputReceipt {
         match self {
             Self::Document(build) => {
@@ -1823,6 +2096,8 @@ impl WriterOutput {
                 }
             }
             Self::Fragment(fragment) => fragment.receipt,
+            #[cfg(test)]
+            Self::CompactProbe(probe) => probe.fragment.receipt,
         }
     }
 
@@ -1830,155 +2105,310 @@ impl WriterOutput {
         match self {
             Self::Document(build) => Ok(build.offer_event(event)?),
             Self::Fragment(fragment) => fragment.offer_event(event),
+            #[cfg(test)]
+            Self::CompactProbe(probe) => probe.offer_event(event),
         }
     }
 }
 
 impl M11BlockFragmentOutput {
     fn offer_event(&mut self, event: M11RecursiveGreenEvent) -> Result<(), M11BlockWriterError> {
-        let mut packed_events = 1_u64;
-        let mut logical = SourceMetric::default();
-        if let M11RecursiveGreenEvent::Coverage {
-            physical,
-            logical: action,
-            ..
-        } = event
-        {
-            let start = usize::try_from(self.receipt.source_bytes)
-                .map_err(|_| M11BlockWriterError::CounterOverflow)?;
-            let physical_bytes = usize::try_from(physical.bytes())
-                .map_err(|_| M11BlockWriterError::CounterOverflow)?;
-            let end = start
-                .checked_add(physical_bytes)
-                .ok_or(M11BlockWriterError::CounterOverflow)?;
-            let lease = self.lease.as_ref().ok_or(M11BlockWriterError::Poisoned)?;
-            if end > lease.version().byte_len() {
-                return Err(M11BlockWriterError::InvalidCommand(
-                    "fragment coverage exceeds target source",
-                ));
-            }
-            let utf16_start = lease.utf16_offset_for_byte(start)?;
-            let utf16_end = lease.utf16_offset_for_byte(end)?;
-            if u64::try_from(utf16_end - utf16_start).ok() != Some(physical.utf16()) {
-                return Err(M11BlockWriterError::InvalidCommand(
-                    "fragment coverage UTF-16 metric differs from target source",
-                ));
-            }
-            logical = match action {
-                M11RecursiveGreenLogicalAction::None
-                | M11RecursiveGreenLogicalAction::HiddenUpstream => SourceMetric::default(),
-                M11RecursiveGreenLogicalAction::Identity => {
-                    SourceMetric::new(physical.bytes(), physical.utf16())
-                        .expect("engine physical metrics are valid")
-                }
-                M11RecursiveGreenLogicalAction::PartialTab {
-                    remaining_spaces, ..
-                } => {
-                    let bytes = read_fragment_bytes(&mut self.lease, start, end)?;
-                    self.source_bytes_read = self
-                        .source_bytes_read
-                        .checked_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX))
-                        .ok_or(M11BlockWriterError::CounterOverflow)?;
-                    if bytes != [b'\t'] || !(1..=3).contains(&remaining_spaces) {
-                        return Err(M11BlockWriterError::InvalidCommand(
-                            "fragment partial-tab recipe differs from target source",
-                        ));
-                    }
-                    SourceMetric::new(u64::from(remaining_spaces), u64::from(remaining_spaces))
-                        .expect("tab replacement metrics are valid")
-                }
-                M11RecursiveGreenLogicalAction::CanonicalNewline => {
-                    let bytes = read_fragment_bytes(&mut self.lease, start, end)?;
-                    self.source_bytes_read = self
-                        .source_bytes_read
-                        .checked_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX))
-                        .ok_or(M11BlockWriterError::CounterOverflow)?;
-                    if !matches!(bytes.as_slice(), b"\n" | b"\r" | b"\r\n") {
-                        return Err(M11BlockWriterError::InvalidCommand(
-                            "fragment newline recipe differs from target source",
-                        ));
-                    }
-                    SourceMetric::new(1, 1).expect("newline metric is valid")
-                }
-                M11RecursiveGreenLogicalAction::CanonicalText => {
-                    let bytes = read_fragment_bytes(&mut self.lease, start, end)?;
-                    self.source_bytes_read = self
-                        .source_bytes_read
-                        .checked_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX))
-                        .ok_or(M11BlockWriterError::CounterOverflow)?;
-                    let mut atoms = 0_u64;
-                    let mut in_identity = false;
-                    let mut nul_count = 0_u64;
-                    for byte in bytes {
-                        if byte == 0 {
-                            if in_identity {
-                                atoms = atoms
-                                    .checked_add(1)
-                                    .ok_or(M11BlockWriterError::CounterOverflow)?;
-                                in_identity = false;
-                            }
-                            atoms = atoms
-                                .checked_add(1)
-                                .ok_or(M11BlockWriterError::CounterOverflow)?;
-                            nul_count = nul_count
-                                .checked_add(1)
-                                .ok_or(M11BlockWriterError::CounterOverflow)?;
-                        } else {
-                            in_identity = true;
-                        }
-                    }
-                    if in_identity {
-                        atoms = atoms
-                            .checked_add(1)
-                            .ok_or(M11BlockWriterError::CounterOverflow)?;
-                    }
-                    packed_events = atoms.max(1);
-                    SourceMetric::new(
-                        physical
-                            .bytes()
-                            .checked_add(
-                                nul_count
-                                    .checked_mul(2)
-                                    .ok_or(M11BlockWriterError::CounterOverflow)?,
-                            )
-                            .ok_or(M11BlockWriterError::CounterOverflow)?,
-                        physical.utf16(),
-                    )
-                    .ok_or(M11BlockWriterError::CounterOverflow)?
-                }
-            };
-            self.receipt.source_bytes = self
-                .receipt
-                .source_bytes
-                .checked_add(physical.bytes())
-                .ok_or(M11BlockWriterError::CounterOverflow)?;
-            self.receipt.source_utf16 = self
-                .receipt
-                .source_utf16
-                .checked_add(physical.utf16())
-                .ok_or(M11BlockWriterError::CounterOverflow)?;
-        }
-        self.receipt.logical_bytes = self
-            .receipt
-            .logical_bytes
-            .checked_add(logical.bytes())
-            .ok_or(M11BlockWriterError::CounterOverflow)?;
-        self.receipt.logical_utf16 = self
-            .receipt
-            .logical_utf16
-            .checked_add(logical.utf16())
-            .ok_or(M11BlockWriterError::CounterOverflow)?;
-        self.receipt.events = self
-            .receipt
-            .events
-            .checked_add(packed_events)
-            .ok_or(M11BlockWriterError::CounterOverflow)?;
+        advance_output_receipt(
+            &mut self.lease,
+            &mut self.receipt,
+            &mut self.source_bytes_read,
+            event,
+        )?;
         self.events
             .try_reserve(1)
             .map_err(|_| M11BlockWriterError::Allocation)?;
         self.events.push(event);
         Ok(())
     }
+}
+
+#[cfg(test)]
+impl M11CompactProbeOutput {
+    fn offer_event(&mut self, event: M11RecursiveGreenEvent) -> Result<(), M11BlockWriterError> {
+        let opens_paragraph = match event {
+            M11RecursiveGreenEvent::Enter { frame, kind }
+                if kind == green_kind(BlockKind::Paragraph) =>
+            {
+                if self.paragraph.is_some() || self.fragment.reference.is_some() {
+                    return Err(M11BlockWriterError::InvalidCommand(
+                        "compact reference window crossed an open Paragraph",
+                    ));
+                }
+                self.fragment.events.clear();
+                self.paragraph = Some(M11CompactProbeParagraph {
+                    frame,
+                    base_receipt: self.fragment.receipt,
+                    base_high_level_events: self.high_level_events,
+                    base_renderable_rows: self.renderable_rows,
+                });
+                true
+            }
+            _ => false,
+        };
+        if self.paragraph.is_some() {
+            self.fragment.offer_event(event)?;
+            self.maximum_reference_events = self
+                .maximum_reference_events
+                .max(self.fragment.events.len());
+            self.maximum_reference_allocated_bytes = self.maximum_reference_allocated_bytes.max(
+                self.fragment
+                    .events
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<M11RecursiveGreenEvent>()),
+            );
+        } else {
+            advance_output_receipt(
+                &mut self.fragment.lease,
+                &mut self.fragment.receipt,
+                &mut self.fragment.source_bytes_read,
+                event,
+            )?;
+        }
+        self.high_level_events = self
+            .high_level_events
+            .checked_add(1)
+            .ok_or(M11BlockWriterError::CounterOverflow)?;
+        if matches!(
+            event,
+            M11RecursiveGreenEvent::Exit { final_kind, .. }
+                if matches!(final_kind.get(), 5 | 6 | 7 | 8 | 12 | 13)
+        ) {
+            self.renderable_rows = self
+                .renderable_rows
+                .checked_add(1)
+                .ok_or(M11BlockWriterError::CounterOverflow)?;
+        }
+        if !opens_paragraph
+            && matches!(
+                (event, self.paragraph),
+                (
+                    M11RecursiveGreenEvent::Exit { frame, .. },
+                    Some(M11CompactProbeParagraph {
+                        frame: paragraph_frame,
+                        ..
+                    })
+                ) if frame == paragraph_frame
+            )
+        {
+            if self.fragment.reference.is_some() {
+                return Err(M11BlockWriterError::InvalidCommand(
+                    "compact Paragraph closed during reference work",
+                ));
+            }
+            self.fragment.events.clear();
+            self.paragraph = None;
+        }
+        Ok(())
+    }
+
+    const fn receipt(&self) -> M11CompactProbeWriterReceipt {
+        M11CompactProbeWriterReceipt {
+            high_level_events: self.high_level_events,
+            packed_events: self.fragment.receipt.events,
+            renderable_rows: self.renderable_rows,
+            source_bytes: self.fragment.receipt.source_bytes,
+            source_utf16: self.fragment.receipt.source_utf16,
+            logical_bytes: self.fragment.receipt.logical_bytes,
+            logical_utf16: self.fragment.receipt.logical_utf16,
+            source_bytes_read: self.fragment.source_bytes_read,
+            maximum_reference_events: self.maximum_reference_events,
+            maximum_reference_allocated_bytes: self.maximum_reference_allocated_bytes,
+            reference_occurrences: 0,
+            reference_winners: 0,
+            reference_allocated_bytes: 0,
+            reference_normalized_label_bytes: 0,
+            driver_transitions: 0,
+            reference_phase_transitions: [0; 8],
+        }
+    }
+
+    fn reconcile_reference_rewrite(
+        &mut self,
+        disposition: M11RecursiveGreenTerminalFragmentDisposition,
+    ) -> Result<(), M11BlockWriterError> {
+        let paragraph = self.paragraph.ok_or(M11BlockWriterError::InvalidCommand(
+            "compact reference rewrite lost its Paragraph",
+        ))?;
+        self.high_level_events = paragraph
+            .base_high_level_events
+            .checked_add(
+                u64::try_from(self.fragment.events.len())
+                    .map_err(|_| M11BlockWriterError::CounterOverflow)?,
+            )
+            .ok_or(M11BlockWriterError::CounterOverflow)?;
+        let rewritten_rows = self
+            .fragment
+            .events
+            .iter()
+            .filter(|event| is_renderable_exit(**event))
+            .count();
+        self.renderable_rows = paragraph
+            .base_renderable_rows
+            .checked_add(
+                u64::try_from(rewritten_rows).map_err(|_| M11BlockWriterError::CounterOverflow)?,
+            )
+            .ok_or(M11BlockWriterError::CounterOverflow)?;
+        self.maximum_reference_events = self
+            .maximum_reference_events
+            .max(self.fragment.events.len());
+        if disposition == M11RecursiveGreenTerminalFragmentDisposition::Removed {
+            self.fragment.events.clear();
+            self.paragraph = None;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+fn is_renderable_exit(event: M11RecursiveGreenEvent) -> bool {
+    matches!(
+        event,
+        M11RecursiveGreenEvent::Exit { final_kind, .. }
+            if matches!(final_kind.get(), 5 | 6 | 7 | 8 | 12 | 13)
+    )
+}
+
+fn advance_output_receipt(
+    lease_slot: &mut Option<SourceSnapshotLease>,
+    receipt: &mut WriterOutputReceipt,
+    source_bytes_read: &mut u64,
+    event: M11RecursiveGreenEvent,
+) -> Result<(), M11BlockWriterError> {
+    let mut packed_events = 1_u64;
+    let mut logical = SourceMetric::default();
+    if let M11RecursiveGreenEvent::Coverage {
+        physical,
+        logical: action,
+        ..
+    } = event
+    {
+        let start = usize::try_from(receipt.source_bytes)
+            .map_err(|_| M11BlockWriterError::CounterOverflow)?;
+        let physical_bytes =
+            usize::try_from(physical.bytes()).map_err(|_| M11BlockWriterError::CounterOverflow)?;
+        let end = start
+            .checked_add(physical_bytes)
+            .ok_or(M11BlockWriterError::CounterOverflow)?;
+        let lease = lease_slot.as_ref().ok_or(M11BlockWriterError::Poisoned)?;
+        if end > lease.version().byte_len() {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "writer coverage exceeds target source",
+            ));
+        }
+        let utf16_start = lease.utf16_offset_for_byte(start)?;
+        let utf16_end = lease.utf16_offset_for_byte(end)?;
+        if u64::try_from(utf16_end - utf16_start).ok() != Some(physical.utf16()) {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "writer coverage UTF-16 metric differs from target source",
+            ));
+        }
+        logical = match action {
+            M11RecursiveGreenLogicalAction::None
+            | M11RecursiveGreenLogicalAction::HiddenUpstream => SourceMetric::default(),
+            M11RecursiveGreenLogicalAction::Identity => {
+                SourceMetric::new(physical.bytes(), physical.utf16())
+                    .expect("engine physical metrics are valid")
+            }
+            M11RecursiveGreenLogicalAction::PartialTab {
+                remaining_spaces, ..
+            } => {
+                let bytes = read_fragment_bytes(lease_slot, start, end)?;
+                *source_bytes_read = source_bytes_read
+                    .checked_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX))
+                    .ok_or(M11BlockWriterError::CounterOverflow)?;
+                if bytes != [b'\t'] || !(1..=3).contains(&remaining_spaces) {
+                    return Err(M11BlockWriterError::InvalidCommand(
+                        "writer partial-tab recipe differs from target source",
+                    ));
+                }
+                SourceMetric::new(u64::from(remaining_spaces), u64::from(remaining_spaces))
+                    .expect("tab replacement metrics are valid")
+            }
+            M11RecursiveGreenLogicalAction::CanonicalNewline => {
+                let bytes = read_fragment_bytes(lease_slot, start, end)?;
+                *source_bytes_read = source_bytes_read
+                    .checked_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX))
+                    .ok_or(M11BlockWriterError::CounterOverflow)?;
+                if !matches!(bytes.as_slice(), b"\n" | b"\r" | b"\r\n") {
+                    return Err(M11BlockWriterError::InvalidCommand(
+                        "writer newline recipe differs from target source",
+                    ));
+                }
+                SourceMetric::new(1, 1).expect("newline metric is valid")
+            }
+            M11RecursiveGreenLogicalAction::CanonicalText => {
+                let bytes = read_fragment_bytes(lease_slot, start, end)?;
+                *source_bytes_read = source_bytes_read
+                    .checked_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX))
+                    .ok_or(M11BlockWriterError::CounterOverflow)?;
+                let mut atoms = 0_u64;
+                let mut in_identity = false;
+                let mut nul_count = 0_u64;
+                for byte in bytes {
+                    if byte == 0 {
+                        if in_identity {
+                            atoms = atoms
+                                .checked_add(1)
+                                .ok_or(M11BlockWriterError::CounterOverflow)?;
+                            in_identity = false;
+                        }
+                        atoms = atoms
+                            .checked_add(1)
+                            .ok_or(M11BlockWriterError::CounterOverflow)?;
+                        nul_count = nul_count
+                            .checked_add(1)
+                            .ok_or(M11BlockWriterError::CounterOverflow)?;
+                    } else {
+                        in_identity = true;
+                    }
+                }
+                if in_identity {
+                    atoms = atoms
+                        .checked_add(1)
+                        .ok_or(M11BlockWriterError::CounterOverflow)?;
+                }
+                packed_events = atoms.max(1);
+                SourceMetric::new(
+                    physical
+                        .bytes()
+                        .checked_add(
+                            nul_count
+                                .checked_mul(2)
+                                .ok_or(M11BlockWriterError::CounterOverflow)?,
+                        )
+                        .ok_or(M11BlockWriterError::CounterOverflow)?,
+                    physical.utf16(),
+                )
+                .ok_or(M11BlockWriterError::CounterOverflow)?
+            }
+        };
+        receipt.source_bytes = receipt
+            .source_bytes
+            .checked_add(physical.bytes())
+            .ok_or(M11BlockWriterError::CounterOverflow)?;
+        receipt.source_utf16 = receipt
+            .source_utf16
+            .checked_add(physical.utf16())
+            .ok_or(M11BlockWriterError::CounterOverflow)?;
+    }
+    receipt.logical_bytes = receipt
+        .logical_bytes
+        .checked_add(logical.bytes())
+        .ok_or(M11BlockWriterError::CounterOverflow)?;
+    receipt.logical_utf16 = receipt
+        .logical_utf16
+        .checked_add(logical.utf16())
+        .ok_or(M11BlockWriterError::CounterOverflow)?;
+    receipt.events = receipt
+        .events
+        .checked_add(packed_events)
+        .ok_or(M11BlockWriterError::CounterOverflow)?;
+    Ok(())
 }
 
 /// One source-bound, unpublished recursive-Green build.
@@ -2086,6 +2516,17 @@ impl fmt::Debug for M11BlockRestartCheckpoint {
 }
 
 impl M11BlockRestartCheckpoint {
+    #[cfg(test)]
+    pub(crate) fn heap_allocated_bytes_for_diagnostics(&self) -> usize {
+        self.parser
+            .heap_allocated_bytes_for_diagnostics()
+            .saturating_add(
+                self.open
+                    .len()
+                    .saturating_mul(std::mem::size_of::<OpenFrame>()),
+            )
+    }
+
     pub(crate) fn allocate_adoption_transaction_id() -> Result<u64, M11BlockRestartError> {
         Ok(M11BlockAdoptionTransactionId::allocate()?.get())
     }
@@ -2344,6 +2785,13 @@ impl fmt::Debug for M11BlockTerminalConvergenceCheckpoint {
 }
 
 impl M11BlockTerminalConvergenceCheckpoint {
+    #[cfg(test)]
+    pub(crate) fn heap_allocated_bytes_for_diagnostics(&self) -> usize {
+        self.open
+            .len()
+            .saturating_mul(std::mem::size_of::<OpenFrame>())
+    }
+
     pub(crate) fn replicate_for_transaction(
         &self,
         transaction_id: u64,
@@ -2556,6 +3004,102 @@ impl M11BlockWriter {
         })
     }
 
+    #[cfg(test)]
+    pub(crate) fn new_compact_probe(
+        runtime: &DocumentRuntime,
+        lease: SourceSnapshotLease,
+    ) -> Result<Self, M11BlockWriterError> {
+        let source = lease.version();
+        let geometry_lease = runtime.snapshot_current_source().map_err(|_| {
+            M11BlockWriterError::InvalidCommand("row geometry source is unavailable")
+        })?;
+        if geometry_lease.version() != source {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "row geometry source differs from compact probe source",
+            ));
+        }
+        Ok(Self {
+            source,
+            geometry_lease: Some(geometry_lease),
+            output: WriterOutput::CompactProbe(M11CompactProbeOutput {
+                fragment: M11BlockFragmentOutput {
+                    lease: Some(lease),
+                    events: Vec::new(),
+                    receipt: WriterOutputReceipt::default(),
+                    source_bytes_read: 0,
+                    reference: None,
+                },
+                high_level_events: 0,
+                renderable_rows: 0,
+                paragraph: None,
+                maximum_reference_events: 0,
+                maximum_reference_allocated_bytes: 0,
+            }),
+            open: Vec::new(),
+            next_frame: 1,
+            line_cursor: LineSourcePosition::default(),
+            staged: None,
+            pending: None,
+            restart_join: None,
+            restart_provenance: None,
+            document_complete: false,
+            poisoned: false,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn compact_probe_receipt(
+        &self,
+    ) -> Result<M11CompactProbeWriterReceipt, M11BlockWriterError> {
+        match &self.output {
+            WriterOutput::CompactProbe(probe) => Ok(probe.receipt()),
+            _ => Err(M11BlockWriterError::InvalidCommand(
+                "writer is not a compact probe",
+            )),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn compact_probe_abandon_reference_window(
+        &mut self,
+    ) -> Result<(), M11BlockWriterError> {
+        match &mut self.output {
+            WriterOutput::CompactProbe(probe) => {
+                if probe.fragment.reference.is_some() {
+                    return Err(M11BlockWriterError::InvalidCommand(
+                        "compact reference window cannot be abandoned during reference work",
+                    ));
+                }
+                if probe.paragraph.take().is_some() {
+                    // Replace rather than clear: retaining the capacity would
+                    // preserve the giant-Paragraph memory spike this seam is
+                    // designed to remove.
+                    probe.fragment.events = Vec::new();
+                }
+                Ok(())
+            }
+            _ => Err(M11BlockWriterError::InvalidCommand(
+                "writer is not a compact probe",
+            )),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn compact_probe_checkpoint_candidate(
+        &self,
+    ) -> Result<(SourceMetric, usize), M11BlockWriterError> {
+        if self.poisoned
+            || self.document_complete
+            || self.pending.is_some()
+            || self.line_cursor != LineSourcePosition::default()
+        {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "compact checkpoint candidate requires a quiescent line boundary",
+            ));
+        }
+        Ok((self.current_physical_metric()?, self.open.len()))
+    }
+
     pub(super) fn reference_paragraph_frame(
         &self,
     ) -> Result<M11RecursiveGreenFrameId, M11BlockWriterError> {
@@ -2662,6 +3206,8 @@ impl M11BlockWriter {
                 });
                 Ok(())
             }
+            #[cfg(test)]
+            WriterOutput::CompactProbe(probe) => begin_compact_probe_reference_output(probe, frame),
         }
     }
 
@@ -2700,6 +3246,29 @@ impl M11BlockWriter {
                     }
                 }
             }
+            #[cfg(test)]
+            WriterOutput::CompactProbe(probe) => {
+                if fuel == 0 {
+                    return Err(M11BlockWriterError::ZeroFuel);
+                }
+                let state = probe.fragment.reference.as_mut().ok_or(
+                    M11BlockWriterError::InvalidCommand("compact reference barrier is not active"),
+                )?;
+                match state.phase {
+                    M11FragmentReferencePhase::Barrier => {
+                        state.phase = M11FragmentReferencePhase::Frozen;
+                        Ok(M11RecursiveGreenTerminalFragmentBarrierStatus::Ready)
+                    }
+                    M11FragmentReferencePhase::Frozen => {
+                        Ok(M11RecursiveGreenTerminalFragmentBarrierStatus::Ready)
+                    }
+                    M11FragmentReferencePhase::Rewriting => {
+                        Err(M11BlockWriterError::InvalidCommand(
+                            "compact reference barrier is already rewriting",
+                        ))
+                    }
+                }
+            }
         }
     }
 
@@ -2725,6 +3294,18 @@ impl M11BlockWriter {
                 }
                 Ok(M11ReferenceOutputBinding::Fragment(state.binding))
             }
+            #[cfg(test)]
+            WriterOutput::CompactProbe(probe) => {
+                let state = probe.fragment.reference.as_ref().ok_or(
+                    M11BlockWriterError::InvalidCommand("compact reference binding is not active"),
+                )?;
+                if state.phase != M11FragmentReferencePhase::Frozen {
+                    return Err(M11BlockWriterError::InvalidCommand(
+                        "compact reference binding is not frozen",
+                    ));
+                }
+                Ok(M11ReferenceOutputBinding::Fragment(state.binding))
+            }
         }
     }
 
@@ -2738,6 +3319,13 @@ impl M11BlockWriter {
             ),
             (WriterOutput::Fragment(fragment), M11ReferenceOutputBinding::Fragment(binding)) => {
                 validate_fragment_reference_binding(fragment, binding)?;
+                Ok(M11ReferenceOutputCursor::Fragment(
+                    M11FragmentReferenceCursor::new(*binding, None)?,
+                ))
+            }
+            #[cfg(test)]
+            (WriterOutput::CompactProbe(probe), M11ReferenceOutputBinding::Fragment(binding)) => {
+                validate_fragment_reference_binding(&probe.fragment, binding)?;
                 Ok(M11ReferenceOutputCursor::Fragment(
                     M11FragmentReferenceCursor::new(*binding, None)?,
                 ))
@@ -2761,6 +3349,18 @@ impl M11BlockWriter {
             }
             (WriterOutput::Fragment(fragment), M11ReferenceOutputBinding::Fragment(binding)) => {
                 validate_fragment_reference_binding(fragment, binding)?;
+                Ok(M11ReferenceOutputRange::Fragment(
+                    M11FragmentReferenceRange {
+                        generation: binding.generation,
+                        logical: range,
+                        physical: None,
+                        replay_validated: false,
+                    },
+                ))
+            }
+            #[cfg(test)]
+            (WriterOutput::CompactProbe(probe), M11ReferenceOutputBinding::Fragment(binding)) => {
+                validate_fragment_reference_binding(&probe.fragment, binding)?;
                 Ok(M11ReferenceOutputRange::Fragment(
                     M11FragmentReferenceRange {
                         generation: binding.generation,
@@ -2804,6 +3404,22 @@ impl M11BlockWriter {
                     M11FragmentReferenceCursor::new(*binding, Some(range))?,
                 ))
             }
+            #[cfg(test)]
+            (
+                WriterOutput::CompactProbe(probe),
+                M11ReferenceOutputBinding::Fragment(binding),
+                M11ReferenceOutputRange::Fragment(range),
+            ) => {
+                validate_fragment_reference_binding(&probe.fragment, binding)?;
+                if range.generation != binding.generation {
+                    return Err(M11BlockWriterError::InvalidCommand(
+                        "compact reference range crossed its binding",
+                    ));
+                }
+                Ok(M11ReferenceOutputCursor::Fragment(
+                    M11FragmentReferenceCursor::new(*binding, Some(range))?,
+                ))
+            }
             _ => Err(M11BlockWriterError::InvalidCommand(
                 "reference replay crossed its writer output",
             )),
@@ -2832,6 +3448,16 @@ impl M11BlockWriter {
                 validate_fragment_reference_binding(fragment, binding)?;
                 cursor.retarget_forward(range)
             }
+            #[cfg(test)]
+            (
+                WriterOutput::CompactProbe(probe),
+                M11ReferenceOutputBinding::Fragment(binding),
+                M11ReferenceOutputCursor::Fragment(cursor),
+                M11ReferenceOutputRange::Fragment(range),
+            ) => {
+                validate_fragment_reference_binding(&probe.fragment, binding)?;
+                cursor.retarget_forward(range)
+            }
             _ => Err(M11BlockWriterError::InvalidCommand(
                 "reference replay retarget crossed its writer output",
             )),
@@ -2856,6 +3482,10 @@ impl M11BlockWriter {
             }
             (WriterOutput::Fragment(fragment), M11ReferenceOutputCursor::Fragment(cursor)) => {
                 poll_fragment_reference_cursor(fragment, cursor, fuel, chunked)
+            }
+            #[cfg(test)]
+            (WriterOutput::CompactProbe(probe), M11ReferenceOutputCursor::Fragment(cursor)) => {
+                poll_fragment_reference_cursor(&mut probe.fragment, cursor, fuel, chunked)
             }
             _ => Err(M11BlockWriterError::InvalidCommand(
                 "reference cursor crossed its writer output",
@@ -2916,6 +3546,14 @@ impl M11BlockWriter {
             ) => Ok(M11ReferenceOutputRewriteWork::Fragment(
                 begin_fragment_reference_rewrite(fragment, binding, rewrite)?,
             )),
+            #[cfg(test)]
+            (
+                WriterOutput::CompactProbe(probe),
+                M11ReferenceOutputBinding::Fragment(binding),
+                rewrite,
+            ) => Ok(M11ReferenceOutputRewriteWork::Fragment(
+                begin_fragment_reference_rewrite(&mut probe.fragment, binding, rewrite)?,
+            )),
             _ => Err(M11BlockWriterError::InvalidCommand(
                 "reference rewrite crossed its writer output",
             )),
@@ -2959,6 +3597,14 @@ impl M11BlockWriter {
             (WriterOutput::Fragment(fragment), M11ReferenceOutputRewriteWork::Fragment(work)) => {
                 poll_fragment_reference_rewrite(fragment, work, fuel)
             }
+            #[cfg(test)]
+            (WriterOutput::CompactProbe(probe), M11ReferenceOutputRewriteWork::Fragment(work)) => {
+                let poll = poll_fragment_reference_rewrite(&mut probe.fragment, work, fuel)?;
+                if let M11ReferenceOutputRewritePoll::Complete(authority) = &poll {
+                    probe.reconcile_reference_rewrite(authority.disposition())?;
+                }
+                Ok(poll)
+            }
             _ => Err(M11BlockWriterError::InvalidCommand(
                 "reference rewrite work crossed its writer output",
             )),
@@ -2981,6 +3627,10 @@ impl M11BlockWriter {
             WriterOutput::Document(build) => Ok(build.poll(runtime, fuel)?.status()),
             WriterOutput::Fragment(_) if fuel == 0 => Err(M11BlockWriterError::ZeroFuel),
             WriterOutput::Fragment(_) => Ok(M11RecursiveGreenBuildStatus::NeedsInput),
+            #[cfg(test)]
+            WriterOutput::CompactProbe(_) if fuel == 0 => Err(M11BlockWriterError::ZeroFuel),
+            #[cfg(test)]
+            WriterOutput::CompactProbe(_) => Ok(M11RecursiveGreenBuildStatus::NeedsInput),
         }
     }
 
@@ -3173,6 +3823,8 @@ impl M11BlockWriter {
         let green_boundary = match &self.output {
             WriterOutput::Document(build) => Some(build.capture_structural_boundary()?),
             WriterOutput::Fragment(_) => None,
+            #[cfg(test)]
+            WriterOutput::CompactProbe(_) => None,
         };
         if let Some(boundary) = &green_boundary {
             let physical = boundary.physical_metric();
@@ -3288,10 +3940,15 @@ impl M11BlockWriter {
                 "writer is not at the pre-Document-close EOF boundary",
             ));
         }
-        let WriterOutput::Document(build) = &self.output else {
-            return Err(M11BlockRestartError::Pairing(
-                "only a clean Green build can mint the base EOF boundary",
-            ));
+        let green_boundary = match &self.output {
+            WriterOutput::Document(build) => Some(build.capture_structural_boundary()?),
+            #[cfg(test)]
+            WriterOutput::CompactProbe(_) => None,
+            WriterOutput::Fragment(_) => {
+                return Err(M11BlockRestartError::Pairing(
+                    "a local fragment cannot mint the base EOF boundary",
+                ));
+            }
         };
         let receipt = self.output.receipt();
         let accepted_physical = SourceMetric::new(receipt.source_bytes, receipt.source_utf16)
@@ -3316,7 +3973,7 @@ impl M11BlockWriter {
             accepted_physical,
             logical,
             event_cut: receipt.events,
-            green_boundary: Some(build.capture_structural_boundary()?),
+            green_boundary,
         })
     }
 
@@ -4047,7 +4704,7 @@ impl M11BlockWriter {
                 self.output.offer_event(event)?;
                 events.in_flight = true;
             }
-            if matches!(&self.output, WriterOutput::Fragment(_)) {
+            if self.output.is_synchronous() {
                 transitions = transitions
                     .checked_add(1)
                     .ok_or(M11BlockWriterError::CounterOverflow)?;
@@ -4065,7 +4722,7 @@ impl M11BlockWriter {
                 continue;
             }
             let WriterOutput::Document(build) = &mut self.output else {
-                unreachable!("fragment output handled above")
+                unreachable!("synchronous output handled above")
             };
             let poll = build.poll(runtime, fuel - transitions)?;
             transitions = transitions
@@ -4110,6 +4767,14 @@ impl M11BlockWriter {
         runtime: &mut DocumentRuntime,
         fuel: usize,
     ) -> Result<M11BlockWriterPoll, M11BlockWriterError> {
+        #[cfg(test)]
+        if matches!(&self.output, WriterOutput::CompactProbe(_)) {
+            self.document_complete = true;
+            return Ok(M11BlockWriterPoll {
+                status: M11BlockWriterPollStatus::DocumentComplete,
+                transitions: 1,
+            });
+        }
         let WriterOutput::Document(build) = &mut self.output else {
             return Err(M11BlockWriterError::InvalidCommand(
                 "a local fragment cannot finish the complete document",
@@ -4145,6 +4810,8 @@ impl M11BlockWriter {
         match &mut self.output {
             WriterOutput::Document(build) => build.take_root(),
             WriterOutput::Fragment(_) => None,
+            #[cfg(test)]
+            WriterOutput::CompactProbe(_) => None,
         }
     }
 
@@ -4162,6 +4829,12 @@ impl M11BlockWriter {
                     "fragment cancellation is owned by its adoption transaction",
                 ));
             }
+            #[cfg(test)]
+            WriterOutput::CompactProbe(_) => {
+                return Err(M11BlockWriterError::InvalidCommand(
+                    "compact probe cancellation is owned by its harness",
+                ));
+            }
         }
         Ok(())
     }
@@ -4175,6 +4848,10 @@ impl M11BlockWriter {
             WriterOutput::Document(build) => Ok(build.poll_cancel(runtime, fuel)?),
             WriterOutput::Fragment(_) => Err(M11BlockWriterError::InvalidCommand(
                 "fragment cancellation completes synchronously",
+            )),
+            #[cfg(test)]
+            WriterOutput::CompactProbe(_) => Err(M11BlockWriterError::InvalidCommand(
+                "compact probe cancellation completes synchronously",
             )),
         }
     }
@@ -4568,10 +5245,14 @@ impl M11BlockWriter {
         {
             return self.reject("FinishDocument has outstanding writer state");
         }
-        let WriterOutput::Document(build) = &mut self.output else {
-            return self.reject("a local fragment cannot emit FinishDocument");
-        };
-        build.finish_input()?;
+        match &mut self.output {
+            WriterOutput::Document(build) => build.finish_input()?,
+            #[cfg(test)]
+            WriterOutput::CompactProbe(_) => {}
+            WriterOutput::Fragment(_) => {
+                return self.reject("a local fragment cannot emit FinishDocument");
+            }
+        }
         self.pending = Some(Pending::Finish);
         Ok(M11BlockWriterOfferStatus::Pending)
     }

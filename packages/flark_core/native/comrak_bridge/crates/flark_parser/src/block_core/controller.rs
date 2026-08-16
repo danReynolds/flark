@@ -235,6 +235,18 @@ impl std::fmt::Debug for M11DirectBlockRestart {
 }
 
 impl M11DirectBlockRestart {
+    #[cfg(test)]
+    pub(crate) fn heap_allocated_bytes_for_diagnostics(&self) -> usize {
+        self.grammar
+            .allocated_bytes_for_diagnostics()
+            .saturating_add(self.output.allocated_bytes_for_diagnostics())
+            .saturating_add(
+                self.open_kinds
+                    .len()
+                    .saturating_mul(std::mem::size_of::<BlockKind>()),
+            )
+    }
+
     pub(crate) fn replicate_for_transaction(
         &self,
         transaction_id: u64,
@@ -461,6 +473,13 @@ impl M11DirectBlockController {
             }
             donor::DirectLineBoundaryPauseCapture::Unavailable => Ok(None),
         }
+    }
+
+    pub(crate) fn paragraph_may_have_reference_prefix(&self) -> Result<bool, M11DirectBlockError> {
+        self.ensure_live()?;
+        self.parser
+            .paragraph_may_have_reference_prefix()
+            .map_err(map_parse_error)
     }
 
     /// Reconstructs a fresh direct controller from one joined parser restart.

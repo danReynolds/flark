@@ -35,6 +35,378 @@ type Work = donor::DirectReferencePrefixWork<Identity>;
 type OutputAck = donor::DirectReferencePrefixOutputAck<Identity>;
 type TerminalOutput = donor::DirectReferencePrefixTerminalOutput<Identity>;
 
+trait M11ReferenceJournalSink {
+    fn source_backed_values(&self) -> bool {
+        false
+    }
+
+    fn record_rendezvous_phase(&mut self, _phase: usize) {}
+
+    fn is_idle(&self) -> bool;
+
+    fn poll_one(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+    ) -> Result<(), M11ReferenceRendezvousError>;
+
+    fn stream_capacity(
+        &self,
+        kind: M11ReferenceJournalValueKind,
+    ) -> Result<usize, M11ReferenceRendezvousError>;
+
+    fn offer_stream_bytes(
+        &mut self,
+        kind: M11ReferenceJournalValueKind,
+        bytes: &[u8],
+    ) -> Result<usize, M11ReferenceRendezvousError>;
+
+    fn begin_occurrence_stream(
+        &mut self,
+        runtime: &DocumentRuntime,
+        occurrence: M11ReferenceJournalOccurrenceStart,
+    ) -> Result<(), M11ReferenceRendezvousError>;
+}
+
+impl M11ReferenceJournalSink for M11ReferenceJournal {
+    fn is_idle(&self) -> bool {
+        M11ReferenceJournal::is_idle(self)
+    }
+
+    fn poll_one(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+    ) -> Result<(), M11ReferenceRendezvousError> {
+        let _ = M11ReferenceJournal::poll(self, runtime, 1)?;
+        Ok(())
+    }
+
+    fn stream_capacity(
+        &self,
+        kind: M11ReferenceJournalValueKind,
+    ) -> Result<usize, M11ReferenceRendezvousError> {
+        Ok(M11ReferenceJournal::stream_capacity(self, kind)?)
+    }
+
+    fn offer_stream_bytes(
+        &mut self,
+        kind: M11ReferenceJournalValueKind,
+        bytes: &[u8],
+    ) -> Result<usize, M11ReferenceRendezvousError> {
+        Ok(M11ReferenceJournal::offer_stream_bytes(self, kind, bytes)?)
+    }
+
+    fn begin_occurrence_stream(
+        &mut self,
+        runtime: &DocumentRuntime,
+        occurrence: M11ReferenceJournalOccurrenceStart,
+    ) -> Result<(), M11ReferenceRendezvousError> {
+        Ok(M11ReferenceJournal::begin_occurrence_stream(
+            self, runtime, occurrence,
+        )?)
+    }
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct M11CompactReferenceRecord {
+    digest: [u8; 16],
+    source_start: u32,
+    source_end: u32,
+    label_source_start: u32,
+    label_source_end: u32,
+    destination_source_start: u32,
+    destination_source_end: u32,
+    title_source_start: u32,
+    title_source_end: u32,
+    normalized_start: u32,
+    normalized_len: u32,
+    winner: u32,
+}
+
+#[cfg(test)]
+#[derive(Debug)]
+struct M11CompactReferencePending {
+    record: M11CompactReferenceRecord,
+    destination_len: usize,
+    destination_received: usize,
+    title_len: Option<usize>,
+    title_received: usize,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct M11CompactReferenceReceipt {
+    pub(crate) occurrences: usize,
+    pub(crate) winners: usize,
+    pub(crate) allocated_bytes: usize,
+    pub(crate) normalized_label_bytes: usize,
+    pub(crate) rendezvous_phase_transitions: [u64; 8],
+}
+
+#[cfg(test)]
+#[derive(Debug, Default)]
+pub(crate) struct M11CompactReferenceJournal {
+    records: Vec<M11CompactReferenceRecord>,
+    normalized_labels: Vec<u8>,
+    order: Vec<u32>,
+    pending: Option<M11CompactReferencePending>,
+    complete: bool,
+    winners: usize,
+    rendezvous_phase_transitions: [u64; 8],
+}
+
+#[cfg(test)]
+impl M11CompactReferenceJournal {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn finish_input(&mut self) -> Result<(), M11ReferenceRendezvousError> {
+        if self.pending.is_some() || self.complete {
+            return Err(M11ReferenceRendezvousError::InvalidState(
+                "compact reference index finished in a non-idle state",
+            ));
+        }
+        self.order
+            .try_reserve_exact(self.records.len())
+            .map_err(|_| {
+                M11ReferenceRendezvousError::InvalidState(
+                    "compact reference order allocation failed",
+                )
+            })?;
+        for ordinal in 0..self.records.len() {
+            self.order.push(
+                u32::try_from(ordinal).map_err(|_| M11ReferenceRendezvousError::CounterOverflow)?,
+            );
+        }
+        let records = &self.records;
+        let labels = &self.normalized_labels;
+        self.order.sort_unstable_by(|left, right| {
+            let left_record = &records[*left as usize];
+            let right_record = &records[*right as usize];
+            let left_label = compact_reference_label(labels, left_record);
+            let right_label = compact_reference_label(labels, right_record);
+            left_record
+                .digest
+                .cmp(&right_record.digest)
+                .then_with(|| left_label.cmp(right_label))
+                .then_with(|| left_record.source_start.cmp(&right_record.source_start))
+        });
+        let mut previous: Option<u32> = None;
+        for ordinal in self.order.iter().copied() {
+            let winner = previous.filter(|previous_ordinal| {
+                let previous_record = &self.records[*previous_ordinal as usize];
+                let current = &self.records[ordinal as usize];
+                previous_record.digest == current.digest
+                    && compact_reference_label(&self.normalized_labels, previous_record)
+                        == compact_reference_label(&self.normalized_labels, current)
+            });
+            let winner = winner.unwrap_or_else(|| {
+                self.winners += 1;
+                ordinal
+            });
+            self.records[ordinal as usize].winner = winner;
+            previous = Some(winner);
+        }
+        self.complete = true;
+        Ok(())
+    }
+
+    pub(crate) fn receipt(&self) -> M11CompactReferenceReceipt {
+        M11CompactReferenceReceipt {
+            occurrences: self.records.len(),
+            winners: self.winners,
+            allocated_bytes: self
+                .records
+                .capacity()
+                .saturating_mul(std::mem::size_of::<M11CompactReferenceRecord>())
+                .saturating_add(self.normalized_labels.capacity())
+                .saturating_add(
+                    self.order
+                        .capacity()
+                        .saturating_mul(std::mem::size_of::<u32>()),
+                ),
+            normalized_label_bytes: self.normalized_labels.len(),
+            rendezvous_phase_transitions: self.rendezvous_phase_transitions,
+        }
+    }
+
+    fn finish_pending_if_ready(&mut self) -> Result<(), M11ReferenceRendezvousError> {
+        let Some(pending) = self.pending.as_ref() else {
+            return Ok(());
+        };
+        if pending.destination_received != pending.destination_len
+            || pending.title_received != pending.title_len.unwrap_or(0)
+        {
+            return Ok(());
+        }
+        let pending = self
+            .pending
+            .take()
+            .ok_or(M11ReferenceRendezvousError::InvalidState(
+                "compact reference occurrence disappeared",
+            ))?;
+        self.records.try_reserve(1).map_err(|_| {
+            M11ReferenceRendezvousError::InvalidState("compact reference record allocation failed")
+        })?;
+        self.records.push(pending.record);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+fn compact_reference_label<'a>(labels: &'a [u8], record: &M11CompactReferenceRecord) -> &'a [u8] {
+    let start = record.normalized_start as usize;
+    let end = start.saturating_add(record.normalized_len as usize);
+    labels.get(start..end).unwrap_or_default()
+}
+
+#[cfg(test)]
+impl M11ReferenceJournalSink for M11CompactReferenceJournal {
+    fn source_backed_values(&self) -> bool {
+        true
+    }
+
+    fn record_rendezvous_phase(&mut self, phase: usize) {
+        if let Some(count) = self.rendezvous_phase_transitions.get_mut(phase) {
+            *count = count.saturating_add(1);
+        }
+    }
+
+    fn is_idle(&self) -> bool {
+        self.pending.is_none() && !self.complete
+    }
+
+    fn poll_one(
+        &mut self,
+        _runtime: &mut DocumentRuntime,
+    ) -> Result<(), M11ReferenceRendezvousError> {
+        self.finish_pending_if_ready()
+    }
+
+    fn stream_capacity(
+        &self,
+        kind: M11ReferenceJournalValueKind,
+    ) -> Result<usize, M11ReferenceRendezvousError> {
+        let pending = self
+            .pending
+            .as_ref()
+            .ok_or(M11ReferenceRendezvousError::InvalidState(
+                "compact reference stream has no occurrence",
+            ))?;
+        let remaining = match kind {
+            M11ReferenceJournalValueKind::Destination => pending
+                .destination_len
+                .saturating_sub(pending.destination_received),
+            M11ReferenceJournalValueKind::Title => pending
+                .title_len
+                .unwrap_or(0)
+                .saturating_sub(pending.title_received),
+        };
+        Ok(remaining.min(flark_engine::SOURCE_CURSOR_WINDOW_BYTES))
+    }
+
+    fn offer_stream_bytes(
+        &mut self,
+        kind: M11ReferenceJournalValueKind,
+        bytes: &[u8],
+    ) -> Result<usize, M11ReferenceRendezvousError> {
+        let pending = self
+            .pending
+            .as_mut()
+            .ok_or(M11ReferenceRendezvousError::InvalidState(
+                "compact reference stream has no occurrence",
+            ))?;
+        let received = match kind {
+            M11ReferenceJournalValueKind::Destination => &mut pending.destination_received,
+            M11ReferenceJournalValueKind::Title => &mut pending.title_received,
+        };
+        let expected = match kind {
+            M11ReferenceJournalValueKind::Destination => pending.destination_len,
+            M11ReferenceJournalValueKind::Title => pending.title_len.unwrap_or(0),
+        };
+        let accepted = bytes.len().min(expected.saturating_sub(*received));
+        *received = received
+            .checked_add(accepted)
+            .ok_or(M11ReferenceRendezvousError::CounterOverflow)?;
+        self.finish_pending_if_ready()?;
+        Ok(accepted)
+    }
+
+    fn begin_occurrence_stream(
+        &mut self,
+        _runtime: &DocumentRuntime,
+        occurrence: M11ReferenceJournalOccurrenceStart,
+    ) -> Result<(), M11ReferenceRendezvousError> {
+        if !self.is_idle() {
+            return Err(M11ReferenceRendezvousError::InvalidState(
+                "compact reference index was not idle",
+            ));
+        }
+        let (
+            source,
+            label_source,
+            destination_source,
+            title_source,
+            normalized,
+            destination_len,
+            title_len,
+        ) = occurrence.into_parts();
+        let normalized_start = u32::try_from(self.normalized_labels.len())
+            .map_err(|_| M11ReferenceRendezvousError::CounterOverflow)?;
+        let normalized_len = u32::try_from(normalized.len())
+            .map_err(|_| M11ReferenceRendezvousError::CounterOverflow)?;
+        self.normalized_labels
+            .try_reserve(normalized.len())
+            .map_err(|_| {
+                M11ReferenceRendezvousError::InvalidState(
+                    "compact normalized-label allocation failed",
+                )
+            })?;
+        self.normalized_labels.extend_from_slice(&normalized);
+        let digest = blake3::hash(&normalized);
+        let mut digest_prefix = [0_u8; 16];
+        digest_prefix.copy_from_slice(&digest.as_bytes()[..16]);
+        let range = |range: &M11ReferenceJournalRange| {
+            Ok::<(u32, u32), M11ReferenceRendezvousError>((
+                u32::try_from(range.byte_range().start)
+                    .map_err(|_| M11ReferenceRendezvousError::CounterOverflow)?,
+                u32::try_from(range.byte_range().end)
+                    .map_err(|_| M11ReferenceRendezvousError::CounterOverflow)?,
+            ))
+        };
+        let (source_start, source_end) = range(&source)?;
+        let (label_source_start, label_source_end) = range(&label_source)?;
+        let (destination_source_start, destination_source_end) = range(&destination_source)?;
+        let (title_source_start, title_source_end) = title_source
+            .as_ref()
+            .map(range)
+            .transpose()?
+            .unwrap_or((u32::MAX, u32::MAX));
+        self.pending = Some(M11CompactReferencePending {
+            record: M11CompactReferenceRecord {
+                digest: digest_prefix,
+                source_start,
+                source_end,
+                label_source_start,
+                label_source_end,
+                destination_source_start,
+                destination_source_end,
+                title_source_start,
+                title_source_end,
+                normalized_start,
+                normalized_len,
+                winner: u32::MAX,
+            },
+            destination_len,
+            destination_received: 0,
+            title_len,
+            title_received: 0,
+        });
+        self.finish_pending_if_ready()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum M11ReferenceRendezvousStatus {
     Pending,
@@ -713,6 +1085,29 @@ impl M11ReferenceRendezvous {
         runtime: &mut DocumentRuntime,
         fuel: usize,
     ) -> Result<M11ReferenceRendezvousPoll, M11ReferenceRendezvousError> {
+        self.poll_with_sink(controller, writer, journal, runtime, fuel)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn poll_compact(
+        &mut self,
+        controller: &mut M11DirectBlockController,
+        writer: &mut M11BlockWriter,
+        journal: &mut M11CompactReferenceJournal,
+        runtime: &mut DocumentRuntime,
+        fuel: usize,
+    ) -> Result<M11ReferenceRendezvousPoll, M11ReferenceRendezvousError> {
+        self.poll_with_sink(controller, writer, journal, runtime, fuel)
+    }
+
+    fn poll_with_sink<J: M11ReferenceJournalSink>(
+        &mut self,
+        controller: &mut M11DirectBlockController,
+        writer: &mut M11BlockWriter,
+        journal: &mut J,
+        runtime: &mut DocumentRuntime,
+        fuel: usize,
+    ) -> Result<M11ReferenceRendezvousPoll, M11ReferenceRendezvousError> {
         if fuel == 0 {
             return Err(M11ReferenceRendezvousError::ZeroFuel);
         }
@@ -746,13 +1141,23 @@ impl M11ReferenceRendezvous {
         })
     }
 
-    fn drive_one(
+    fn drive_one<J: M11ReferenceJournalSink>(
         &mut self,
         controller: &mut M11DirectBlockController,
         writer: &mut M11BlockWriter,
-        journal: &mut M11ReferenceJournal,
+        journal: &mut J,
         runtime: &mut DocumentRuntime,
     ) -> Result<(), M11ReferenceRendezvousError> {
+        journal.record_rendezvous_phase(match self.phase {
+            Phase::Barrier => 0,
+            Phase::Scan => 1,
+            Phase::Occurrence => 2,
+            Phase::TerminalRange => 3,
+            Phase::Rewrite => 4,
+            Phase::Gap => 5,
+            Phase::Commit => 6,
+            Phase::Complete | Phase::Failed => 7,
+        });
         match self.phase {
             Phase::Barrier => self.poll_barrier(controller, writer, runtime),
             Phase::Scan => self.poll_scan(writer, runtime),
@@ -889,10 +1294,10 @@ impl M11ReferenceRendezvous {
         Ok(())
     }
 
-    fn poll_occurrence(
+    fn poll_occurrence<J: M11ReferenceJournalSink>(
         &mut self,
         writer: &mut M11BlockWriter,
-        journal: &mut M11ReferenceJournal,
+        journal: &mut J,
         runtime: &mut DocumentRuntime,
     ) -> Result<(), M11ReferenceRendezvousError> {
         let phase = self
@@ -909,14 +1314,16 @@ impl M11ReferenceRendezvous {
             | OccurrencePhase::Destination
             | OccurrencePhase::DestinationTitleGap
             | OccurrencePhase::Title
-            | OccurrencePhase::SourceSuffix => self.poll_occurrence_segment(writer, runtime),
+            | OccurrencePhase::SourceSuffix => {
+                self.poll_occurrence_segment(writer, runtime, journal.source_backed_values())
+            }
             OccurrencePhase::BeginJournal => self.begin_journal(journal, runtime),
             OccurrencePhase::EmitDestination | OccurrencePhase::EmitTitle => {
                 self.poll_occurrence_scratch(journal, runtime)
             }
             OccurrencePhase::AwaitJournal => {
                 if !journal.is_idle() {
-                    let _ = journal.poll(runtime, 1)?;
+                    journal.poll_one(runtime)?;
                     return Ok(());
                 }
                 let mut active =
@@ -965,6 +1372,7 @@ impl M11ReferenceRendezvous {
         &mut self,
         writer: &mut M11BlockWriter,
         runtime: &mut DocumentRuntime,
+        source_backed_values: bool,
     ) -> Result<(), M11ReferenceRendezvousError> {
         let base = self.request.logical_base();
         let fragment_end = self.fragment_logical_end()?;
@@ -1054,7 +1462,7 @@ impl M11ReferenceRendezvous {
         let empty =
             clipped.bytes.start == clipped.bytes.end && clipped.utf16.start == clipped.utf16.end;
 
-        if matches!(kind, SegmentKind::Destination | SegmentKind::Title) {
+        if !source_backed_values && matches!(kind, SegmentKind::Destination | SegmentKind::Title) {
             let active = self
                 .active
                 .as_mut()
@@ -1175,7 +1583,9 @@ impl M11ReferenceRendezvous {
                 .ok_or(M11ReferenceRendezvousError::InvalidState(
                     "reference forward replay disappeared",
                 ))?;
-        let polled = if matches!(kind, SegmentKind::Destination | SegmentKind::Title) {
+        let polled = if !source_backed_values
+            && matches!(kind, SegmentKind::Destination | SegmentKind::Title)
+        {
             writer.poll_reference_output_cursor(runtime, replay, 1, false)?
         } else {
             writer.poll_reference_output_cursor(runtime, replay, 1, true)?
@@ -1260,9 +1670,9 @@ impl M11ReferenceRendezvous {
         }
     }
 
-    fn poll_occurrence_scratch(
+    fn poll_occurrence_scratch<J: M11ReferenceJournalSink>(
         &mut self,
-        journal: &mut M11ReferenceJournal,
+        journal: &mut J,
         runtime: &mut DocumentRuntime,
     ) -> Result<(), M11ReferenceRendezvousError> {
         let active = self
@@ -1306,7 +1716,7 @@ impl M11ReferenceRendezvous {
         }
         let capacity = journal.stream_capacity(kind.journal())?;
         if capacity == 0 {
-            let _ = journal.poll(runtime, 1)?;
+            journal.poll_one(runtime)?;
             return Ok(());
         }
         let bytes = scratch.remaining_from(active.emit_offset, capacity);
@@ -1322,9 +1732,9 @@ impl M11ReferenceRendezvous {
             .ok_or(M11ReferenceRendezvousError::CounterOverflow)?;
         Ok(())
     }
-    fn begin_journal(
+    fn begin_journal<J: M11ReferenceJournalSink>(
         &mut self,
-        journal: &mut M11ReferenceJournal,
+        journal: &mut J,
         runtime: &DocumentRuntime,
     ) -> Result<(), M11ReferenceRendezvousError> {
         if !journal.is_idle() {
@@ -1341,14 +1751,23 @@ impl M11ReferenceRendezvous {
         let normalized = std::mem::take(&mut active.definition.normalized_label)
             .into_bytes()
             .into_boxed_slice();
-        let destination_len = active
-            .cooked_destination
-            .as_ref()
-            .ok_or(M11ReferenceRendezvousError::InvalidState(
-                "reference occurrence lost its cooked destination",
-            ))?
-            .len();
-        let title_len = active.cooked_title.as_ref().map(CookedScratch::len);
+        let source_backed_values = journal.source_backed_values();
+        let destination_len = if source_backed_values {
+            0
+        } else {
+            active
+                .cooked_destination
+                .as_ref()
+                .ok_or(M11ReferenceRendezvousError::InvalidState(
+                    "reference occurrence lost its cooked destination",
+                ))?
+                .len()
+        };
+        let title_len = if source_backed_values {
+            active.definition.logical_title.as_ref().map(|_| 0)
+        } else {
+            active.cooked_title.as_ref().map(CookedScratch::len)
+        };
         journal.begin_occurrence_stream(
             runtime,
             M11ReferenceJournalOccurrenceStart::new(
@@ -1375,7 +1794,11 @@ impl M11ReferenceRendezvous {
                 title_len,
             ),
         )?;
-        active.phase = OccurrencePhase::EmitDestination;
+        active.phase = if source_backed_values {
+            OccurrencePhase::AwaitJournal
+        } else {
+            OccurrencePhase::EmitDestination
+        };
         Ok(())
     }
 
