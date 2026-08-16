@@ -383,7 +383,7 @@ struct WriterOutputReceipt {
 enum WriterOutput {
     Document(M11RecursiveGreenBuild),
     Fragment(M11BlockFragmentOutput),
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     CompactProbe(M11CompactProbeOutput),
 }
 
@@ -399,7 +399,7 @@ struct M11BlockFragmentOutput {
 /// architecture is worth promoting. It deliberately retains no Green root and
 /// no high-level event journal. Parser and writer validation remain identical
 /// to the production path; only the durable output changes.
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 struct M11CompactProbeOutput {
     fragment: M11BlockFragmentOutput,
     high_level_events: u64,
@@ -413,14 +413,14 @@ struct M11CompactProbeOutput {
     maximum_reference_allocated_bytes: usize,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 const COMPACT_PROBE_FIRST_SLICE_ROWS: u64 = 32;
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 const COMPACT_PROBE_FIRST_SLICE_MAX_SOURCE_BYTES: u64 = 64 * 1024;
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 const COMPACT_PROBE_FIRST_SLICE_MAX_EVENTS: usize = 8 * 1024;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 enum M11CompactProbeFirstSliceState {
     Collecting(Vec<M11RecursiveGreenEvent>),
     Ready(M11CompactProbeFirstSlice),
@@ -428,7 +428,7 @@ enum M11CompactProbeFirstSliceState {
     Taken,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 pub(crate) struct M11CompactProbeFirstSlice {
     pub(crate) physical_start: SourceMetric,
     pub(crate) physical_end: SourceMetric,
@@ -436,7 +436,7 @@ pub(crate) struct M11CompactProbeFirstSlice {
     pub(crate) events: Vec<M11RecursiveGreenEvent>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 #[derive(Clone, Copy, Debug)]
 struct M11CompactProbeParagraph {
     frame: M11RecursiveGreenFrameId,
@@ -445,7 +445,7 @@ struct M11CompactProbeParagraph {
     base_renderable_rows: u64,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct M11CompactProbeWriterReceipt {
     pub(crate) high_level_events: u64,
@@ -466,7 +466,7 @@ pub(crate) struct M11CompactProbeWriterReceipt {
     pub(crate) reference_phase_transitions: [u64; 8],
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct M11CompactProbeCheckpointFacts {
     pub(crate) accepted_physical: SourceMetric,
@@ -482,18 +482,18 @@ pub(crate) struct M11CompactProbeCheckpointFacts {
     pub(crate) next_frame: u64,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 const COMPACT_CONTAINER_RESTART_HEADER_BYTES: usize = 32;
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 const COMPACT_CONTAINER_RESTART_FRAME_BYTES: usize = 32;
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 const COMPACT_CONTAINER_RESTART_MAGIC: &[u8; 8] = b"FLWRCT01";
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 const COMPACT_CONTAINER_RESTART_CHECKSUM_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 const COMPACT_CONTAINER_RESTART_CHECKSUM_PRIME: u64 = 0x0000_0100_0000_01b3;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 fn compact_container_restart_checksum(mut checksum: u64, bytes: &[u8]) -> u64 {
     for byte in bytes {
         checksum ^= u64::from(*byte);
@@ -502,7 +502,7 @@ fn compact_container_restart_checksum(mut checksum: u64, bytes: &[u8]) -> u64 {
     checksum
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 fn encode_compact_container_restart(
     open: &[OpenFrame],
     physical_bases: &[SourceMetric],
@@ -569,7 +569,7 @@ fn encode_compact_container_restart(
     Ok(Some(encoded))
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 fn decode_compact_container_restart(
     encoded: &[u8],
     expected_kinds: &[BlockKind],
@@ -1127,7 +1127,7 @@ impl M11FragmentReferenceCursor {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 fn begin_compact_probe_reference_output(
     probe: &mut M11CompactProbeOutput,
     frame: M11RecursiveGreenFrameId,
@@ -2338,7 +2338,7 @@ impl WriterOutput {
         match self {
             Self::Document(_) => false,
             Self::Fragment(_) => true,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             Self::CompactProbe(_) => true,
         }
     }
@@ -2356,7 +2356,7 @@ impl WriterOutput {
                 }
             }
             Self::Fragment(fragment) => fragment.receipt,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             Self::CompactProbe(probe) => probe.fragment.receipt,
         }
     }
@@ -2365,7 +2365,7 @@ impl WriterOutput {
         match self {
             Self::Document(build) => Ok(build.offer_event(event)?),
             Self::Fragment(fragment) => fragment.offer_event(event),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             Self::CompactProbe(probe) => probe.offer_event(event),
         }
     }
@@ -2387,7 +2387,7 @@ impl M11BlockFragmentOutput {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 impl M11CompactProbeOutput {
     fn push_first_slice_event(
         &mut self,
@@ -2660,7 +2660,7 @@ impl M11CompactProbeOutput {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 fn is_renderable_exit(event: M11RecursiveGreenEvent) -> bool {
     matches!(
         event,
@@ -2912,7 +2912,7 @@ impl fmt::Debug for M11BlockRestartCheckpoint {
 }
 
 impl M11BlockRestartCheckpoint {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn heap_allocated_bytes_for_diagnostics(&self) -> usize {
         self.parser
             .heap_allocated_bytes_for_diagnostics()
@@ -3181,7 +3181,7 @@ impl fmt::Debug for M11BlockTerminalConvergenceCheckpoint {
 }
 
 impl M11BlockTerminalConvergenceCheckpoint {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn heap_allocated_bytes_for_diagnostics(&self) -> usize {
         self.open
             .len()
@@ -3400,7 +3400,7 @@ impl M11BlockWriter {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn new_compact_probe(
         runtime: &DocumentRuntime,
         lease: SourceSnapshotLease,
@@ -3447,7 +3447,7 @@ impl M11BlockWriter {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn resume_compact_probe_containers(
         runtime: &DocumentRuntime,
         lease: SourceSnapshotLease,
@@ -3588,7 +3588,7 @@ impl M11BlockWriter {
         ))
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn compact_probe_receipt(
         &self,
     ) -> Result<M11CompactProbeWriterReceipt, M11BlockWriterError> {
@@ -3600,7 +3600,7 @@ impl M11BlockWriter {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn compact_probe_abandon_reference_window(
         &mut self,
     ) -> Result<(), M11BlockWriterError> {
@@ -3631,7 +3631,7 @@ impl M11BlockWriter {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn compact_probe_maybe_freeze_first_slice(
         &mut self,
         physical: SourceMetric,
@@ -3647,7 +3647,7 @@ impl M11BlockWriter {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn compact_probe_take_first_slice(
         &mut self,
     ) -> Result<Option<M11CompactProbeFirstSlice>, M11BlockWriterError> {
@@ -3659,7 +3659,7 @@ impl M11BlockWriter {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn compact_probe_first_slice_over_cap(&self) -> Result<bool, M11BlockWriterError> {
         match &self.output {
             WriterOutput::CompactProbe(probe) => Ok(probe.first_slice_over_cap()),
@@ -3669,7 +3669,7 @@ impl M11BlockWriter {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn compact_probe_checkpoint_candidate(
         &self,
     ) -> Result<(SourceMetric, usize), M11BlockWriterError> {
@@ -3685,7 +3685,7 @@ impl M11BlockWriter {
         Ok((self.current_physical_metric()?, self.open.len()))
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn capture_compact_probe_checkpoint_facts(
         &self,
         parser: &super::M11DirectDurableBlockRestart,
@@ -3906,7 +3906,7 @@ impl M11BlockWriter {
                 });
                 Ok(())
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             WriterOutput::CompactProbe(probe) => begin_compact_probe_reference_output(probe, frame),
         }
     }
@@ -3946,7 +3946,7 @@ impl M11BlockWriter {
                     }
                 }
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             WriterOutput::CompactProbe(probe) => {
                 if fuel == 0 {
                     return Err(M11BlockWriterError::ZeroFuel);
@@ -3994,7 +3994,7 @@ impl M11BlockWriter {
                 }
                 Ok(M11ReferenceOutputBinding::Fragment(state.binding))
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             WriterOutput::CompactProbe(probe) => {
                 let state = probe.fragment.reference.as_ref().ok_or(
                     M11BlockWriterError::InvalidCommand("compact reference binding is not active"),
@@ -4023,7 +4023,7 @@ impl M11BlockWriter {
                     M11FragmentReferenceCursor::new(*binding, None)?,
                 ))
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             (WriterOutput::CompactProbe(probe), M11ReferenceOutputBinding::Fragment(binding)) => {
                 validate_fragment_reference_binding(&probe.fragment, binding)?;
                 Ok(M11ReferenceOutputCursor::Fragment(
@@ -4058,7 +4058,7 @@ impl M11BlockWriter {
                     },
                 ))
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             (WriterOutput::CompactProbe(probe), M11ReferenceOutputBinding::Fragment(binding)) => {
                 validate_fragment_reference_binding(&probe.fragment, binding)?;
                 Ok(M11ReferenceOutputRange::Fragment(
@@ -4104,7 +4104,7 @@ impl M11BlockWriter {
                     M11FragmentReferenceCursor::new(*binding, Some(range))?,
                 ))
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             (
                 WriterOutput::CompactProbe(probe),
                 M11ReferenceOutputBinding::Fragment(binding),
@@ -4148,7 +4148,7 @@ impl M11BlockWriter {
                 validate_fragment_reference_binding(fragment, binding)?;
                 cursor.retarget_forward(range)
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             (
                 WriterOutput::CompactProbe(probe),
                 M11ReferenceOutputBinding::Fragment(binding),
@@ -4183,7 +4183,7 @@ impl M11BlockWriter {
             (WriterOutput::Fragment(fragment), M11ReferenceOutputCursor::Fragment(cursor)) => {
                 poll_fragment_reference_cursor(fragment, cursor, fuel, chunked)
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             (WriterOutput::CompactProbe(probe), M11ReferenceOutputCursor::Fragment(cursor)) => {
                 poll_fragment_reference_cursor(&mut probe.fragment, cursor, fuel, chunked)
             }
@@ -4246,7 +4246,7 @@ impl M11BlockWriter {
             ) => Ok(M11ReferenceOutputRewriteWork::Fragment(
                 begin_fragment_reference_rewrite(fragment, binding, rewrite)?,
             )),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             (
                 WriterOutput::CompactProbe(probe),
                 M11ReferenceOutputBinding::Fragment(binding),
@@ -4297,7 +4297,7 @@ impl M11BlockWriter {
             (WriterOutput::Fragment(fragment), M11ReferenceOutputRewriteWork::Fragment(work)) => {
                 poll_fragment_reference_rewrite(fragment, work, fuel)
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             (WriterOutput::CompactProbe(probe), M11ReferenceOutputRewriteWork::Fragment(work)) => {
                 let poll = poll_fragment_reference_rewrite(&mut probe.fragment, work, fuel)?;
                 if let M11ReferenceOutputRewritePoll::Complete(authority) = &poll {
@@ -4327,9 +4327,9 @@ impl M11BlockWriter {
             WriterOutput::Document(build) => Ok(build.poll(runtime, fuel)?.status()),
             WriterOutput::Fragment(_) if fuel == 0 => Err(M11BlockWriterError::ZeroFuel),
             WriterOutput::Fragment(_) => Ok(M11RecursiveGreenBuildStatus::NeedsInput),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             WriterOutput::CompactProbe(_) if fuel == 0 => Err(M11BlockWriterError::ZeroFuel),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             WriterOutput::CompactProbe(_) => Ok(M11RecursiveGreenBuildStatus::NeedsInput),
         }
     }
@@ -4382,7 +4382,7 @@ impl M11BlockWriter {
         }
         if remove_paragraph {
             self.open.pop();
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             if let WriterOutput::CompactProbe(probe) = &mut self.output {
                 if probe.open_physical_bases.pop().is_none() {
                     return Err(M11BlockWriterError::InvalidCommand(
@@ -4531,7 +4531,7 @@ impl M11BlockWriter {
         let green_boundary = match &self.output {
             WriterOutput::Document(build) => Some(build.capture_structural_boundary()?),
             WriterOutput::Fragment(_) => None,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             WriterOutput::CompactProbe(_) => None,
         };
         if let Some(boundary) = &green_boundary {
@@ -4650,7 +4650,7 @@ impl M11BlockWriter {
         }
         let green_boundary = match &self.output {
             WriterOutput::Document(build) => Some(build.capture_structural_boundary()?),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             WriterOutput::CompactProbe(_) => None,
             WriterOutput::Fragment(_) => {
                 return Err(M11BlockRestartError::Pairing(
@@ -5475,7 +5475,7 @@ impl M11BlockWriter {
         runtime: &mut DocumentRuntime,
         fuel: usize,
     ) -> Result<M11BlockWriterPoll, M11BlockWriterError> {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "m11-compact-probe"))]
         if matches!(&self.output, WriterOutput::CompactProbe(_)) {
             self.document_complete = true;
             return Ok(M11BlockWriterPoll {
@@ -5518,7 +5518,7 @@ impl M11BlockWriter {
         match &mut self.output {
             WriterOutput::Document(build) => build.take_root(),
             WriterOutput::Fragment(_) => None,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             WriterOutput::CompactProbe(_) => None,
         }
     }
@@ -5537,7 +5537,7 @@ impl M11BlockWriter {
                     "fragment cancellation is owned by its adoption transaction",
                 ));
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             WriterOutput::CompactProbe(_) => {
                 return Err(M11BlockWriterError::InvalidCommand(
                     "compact probe cancellation is owned by its harness",
@@ -5557,7 +5557,7 @@ impl M11BlockWriter {
             WriterOutput::Fragment(_) => Err(M11BlockWriterError::InvalidCommand(
                 "fragment cancellation completes synchronously",
             )),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             WriterOutput::CompactProbe(_) => Err(M11BlockWriterError::InvalidCommand(
                 "compact probe cancellation completes synchronously",
             )),
@@ -5955,7 +5955,7 @@ impl M11BlockWriter {
         }
         match &mut self.output {
             WriterOutput::Document(build) => build.finish_input()?,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             WriterOutput::CompactProbe(_) => {}
             WriterOutput::Fragment(_) => {
                 return self.reject("a local fragment cannot emit FinishDocument");

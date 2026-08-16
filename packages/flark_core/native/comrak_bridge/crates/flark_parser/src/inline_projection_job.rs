@@ -73,17 +73,17 @@ pub(crate) struct M11InlineProjectionUnsupported {
 }
 
 impl M11InlineProjectionUnsupported {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn source_range(&self) -> Range<u32> {
         self.source_range.clone()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn first_blocker_range(&self) -> Range<u32> {
         self.first_blocker_range.clone()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) const fn reason(&self) -> M11InlineProjectionUnsupportedReason {
         self.reason
     }
@@ -253,7 +253,7 @@ impl M11InlineProjectionOutput {
         self.parser_profile
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) const fn disposition(&self) -> &M11InlineProjectionDisposition {
         &self.disposition
     }
@@ -585,7 +585,7 @@ pub struct M11InlineProjectionJob {
     opaque: Option<Box<M11InlineOpaqueCandidates>>,
     direct_job: Option<Box<M11InlineDirectJob>>,
     reference_resolver: Option<M11ReferenceResolver>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     compact_reference_resolver: Option<crate::block_core::M11CompactReferenceResolver>,
     direct: Option<M11InlineDirectCandidates>,
     bare_autolink_job: Option<M11InlineBareAutolinkJob>,
@@ -814,7 +814,7 @@ impl M11InlineProjectionJob {
         )
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn new_for_recursive_green_inline_leaf_with_compact_reference_resolver_and_fact_capture(
         runtime: &DocumentRuntime,
         fence: M11RecursiveGreenInlineLeafFence,
@@ -966,7 +966,7 @@ impl M11InlineProjectionJob {
             opaque: None,
             direct_job: None,
             reference_resolver,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             compact_reference_resolver: None,
             direct: None,
             bare_autolink_job: None,
@@ -1269,7 +1269,7 @@ impl M11InlineProjectionJob {
             .opaque
             .as_ref()
             .ok_or(M11InlineProjectionJobError::InvalidState)?;
-        #[cfg(test)]
+        #[cfg(any(test, feature = "m11-compact-probe"))]
         let direct = if let Some(resolver) = self.compact_reference_resolver.take() {
             M11InlineDirectJob::new_with_compact_reference_resolver(runtime, opaque, resolver)?
         } else if let Some(resolver) = self.reference_resolver.take() {
@@ -1277,7 +1277,7 @@ impl M11InlineProjectionJob {
         } else {
             M11InlineDirectJob::new(runtime, opaque)?
         };
-        #[cfg(not(test))]
+        #[cfg(not(any(test, feature = "m11-compact-probe")))]
         let direct = if let Some(resolver) = self.reference_resolver.take() {
             M11InlineDirectJob::new_with_reference_resolver(runtime, opaque, resolver)?
         } else {

@@ -18,7 +18,7 @@ use flark_engine::parser_internal::{
 };
 use flark_engine::{DocumentRuntime, SourceVersion};
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 use crate::block_core::M11CompactReferenceResolver;
 
 use crate::inline_autolink::{
@@ -838,7 +838,7 @@ enum DirectPhase {
 
 enum M11InlineReferenceResolver {
     Persistent(M11ReferenceResolver),
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     Compact(M11CompactReferenceResolver),
 }
 
@@ -853,7 +853,7 @@ impl M11InlineReferenceResolver {
             Self::Persistent(resolver) => {
                 Ok(resolver.resolve(runtime, normalized_label, maximum_cooked_bytes)?)
             }
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             Self::Compact(resolver) => resolver
                 .resolve(runtime, normalized_label, maximum_cooked_bytes)
                 .map_err(|_| M11InlineDirectError::InvalidState),
@@ -912,7 +912,7 @@ impl M11InlineDirectJob {
         )
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn new_with_compact_reference_resolver(
         runtime: &DocumentRuntime,
         opaque: &M11InlineOpaqueCandidates,

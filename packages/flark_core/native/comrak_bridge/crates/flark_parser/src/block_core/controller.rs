@@ -130,7 +130,7 @@ pub struct M11DirectBlockRestart {
     restart_join: Option<u64>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 #[must_use = "durable parser state must be joined to writer/source authority or discarded"]
 pub(crate) struct M11DirectDurableBlockRestart {
     capture: donor::DirectDurableLineBoundaryCapture,
@@ -141,7 +141,7 @@ pub(crate) struct M11DirectDurableBlockRestart {
     restart_join: Option<u64>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 impl M11DirectDurableBlockRestart {
     pub(crate) const fn line_ordinal(&self) -> u64 {
         self.line_ordinal
@@ -284,7 +284,7 @@ impl std::fmt::Debug for M11DirectBlockRestart {
 }
 
 impl M11DirectBlockRestart {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn heap_allocated_bytes_for_diagnostics(&self) -> usize {
         self.grammar
             .allocated_bytes_for_diagnostics()
@@ -503,7 +503,7 @@ impl M11DirectBlockController {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     fn durable_restart_from_pause(
         &self,
         pause: donor::DirectLineBoundaryPause,
@@ -534,7 +534,7 @@ impl M11DirectBlockController {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn capture_durable_restart_if_available(
         &self,
     ) -> Result<Option<M11DirectDurableBlockRestart>, M11DirectBlockError> {
@@ -551,7 +551,7 @@ impl M11DirectBlockController {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn capture_durable_document_start_restart(
         &self,
     ) -> Result<M11DirectDurableBlockRestart, M11DirectBlockError> {
@@ -563,7 +563,7 @@ impl M11DirectBlockController {
         self.durable_restart_from_pause(pause)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn resume_durable_encoded_restart(
         encoded: &[u8],
         line_ordinal: u64,

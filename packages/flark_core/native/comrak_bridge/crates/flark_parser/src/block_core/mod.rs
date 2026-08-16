@@ -27,7 +27,7 @@ pub use command::{
     ListFacts, ListStyle, LogicalAction, ParagraphOutcome, PartialTab, SetextHeadingLevel,
     SourceMetric, StackOwner, TerminatorResolution,
 };
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 pub(crate) use controller::M11DirectDurableBlockRestart;
 pub use controller::{
     M11DirectBlockController, M11DirectBlockControllerError, M11DirectBlockDeferredRole,
@@ -43,7 +43,7 @@ pub use paragraph_fence::{
     M11RecursiveGreenInlineLeafFence, M11RecursiveGreenInlineLeafKind, M11RecursiveGreenListMarker,
     M11RecursiveGreenParagraphFence, M11RecursiveGreenRowPresentation,
 };
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 pub(crate) use reference_rendezvous::{
     M11CompactReferenceJournal, M11CompactReferenceReceipt, M11CompactReferenceResolver,
 };
@@ -60,7 +60,7 @@ pub use writer::{
     M11BlockTerminalConvergenceCheckpoint, M11BlockWriter, M11BlockWriterError,
     M11BlockWriterOfferStatus, M11BlockWriterPoll, M11BlockWriterPollStatus,
 };
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 pub(crate) use writer::{
     M11CompactProbeCheckpointFacts, M11CompactProbeFirstSlice, M11CompactProbeWriterReceipt,
 };

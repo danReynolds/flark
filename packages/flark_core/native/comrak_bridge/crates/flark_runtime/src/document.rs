@@ -3477,6 +3477,125 @@ mod tests {
     }
 
     #[test]
+    fn compact_slice_matches_complete_product_rows_and_reference_target() {
+        let mut source = String::from(concat!(
+            "# Mixed cold viewport\n\n",
+            "Paragraph with **strong**, &amp;, and [direct](https://example.com/path \"title\").\n\n",
+            "| f\\|oo | bar |\n",
+            "| :--- | ---: |\n",
+            "| `x\\|y` | baz |\n\n",
+            "- [x] task\n\n",
+            "> quoted row\n\n",
+            "Forward [late] and [missing].\n\n",
+        ));
+        for index in 0..48 {
+            source.push_str(&format!(
+                "Tail paragraph {index:02} keeps the reference definition beyond the first slice.\n\n"
+            ));
+        }
+        let definition_start = source.len();
+        source.push_str("[late]: /resolved \"late title\"\n");
+
+        let mut compact_runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
+            .expect("compact product runtime");
+        let mut compact =
+            flark_parser::build_m11_compact_first_viewport_probe(&mut compact_runtime, 1)
+                .expect("build compact first viewport");
+        let slice_range = compact.root().source_range();
+        assert_eq!(slice_range.start, 0);
+        assert!(
+            slice_range.end < definition_start as u64,
+            "final reference authority must come from outside the cold slice"
+        );
+        let limits = row_query_limits(64).expect("compact product limits");
+        let outcome = compact
+            .root()
+            .locate_renderable_rows_bounded(
+                &compact_runtime,
+                M11RecursiveGreenPoint::new(0, 0, SourceBoundaryAffinity::After),
+                slice_range.end,
+                limits,
+            )
+            .expect("query compact product rows");
+        let compact_rows = match outcome {
+            M11RecursiveGreenRowQueryOutcome::Window(window) => window.rows().to_vec(),
+            M11RecursiveGreenRowQueryOutcome::BudgetExceeded(_) => {
+                panic!("compact product query exceeded its frozen budget")
+            }
+        };
+        let mapped =
+            map_document_viewport_rows(&mut compact_runtime, &compact_rows, |runtime, row| {
+                document_inline_facts_from_compact_probe(runtime, &compact, row)
+            })
+            .expect("map compact product rows");
+
+        let mut oracle = DocumentSession::begin(&source).expect("begin product oracle");
+        while oracle.pump(512).expect("pump product oracle").phase != DocumentSessionPhase::Ready {}
+        let oracle_rows = oracle
+            .query_viewport(
+                oracle.revision(),
+                0..usize::try_from(slice_range.end).expect("slice end fits usize"),
+                64,
+            )
+            .expect("query complete product oracle")
+            .rows;
+        assert_eq!(mapped, oracle_rows);
+        assert_eq!(mapped.len(), 32);
+        assert!(mapped
+            .iter()
+            .any(|row| row.presentation == DocumentViewportRowPresentation::Table));
+
+        let late_start = source.find("[late]").expect("late reference start");
+        let late_end = late_start + "[late]".len();
+        let requested = late_start as u64..late_end as u64;
+        let compact_target = {
+            let row = compact_rows
+                .iter()
+                .find(|row| {
+                    let physical = row.physical_range();
+                    physical.start <= requested.start && physical.end >= requested.end
+                })
+                .expect("late reference row");
+            let captured = capture_document_inline_projection_from_compact_probe(
+                &mut compact_runtime,
+                &compact,
+                row,
+            )
+            .expect("capture compact target")
+            .expect("compact reference facts are authoritative");
+            map_document_semantic_target(&compact_runtime, captured, requested)
+                .expect("map compact target")
+        };
+        let oracle_target = oracle
+            .query_semantic_target(oracle.revision(), late_start..late_end)
+            .expect("query oracle target");
+        assert_eq!(compact_target, oracle_target);
+        assert_eq!(
+            compact_target
+                .as_ref()
+                .map(|target| (target.destination.as_str(), target.title.as_deref())),
+            Some(("/resolved", Some("late title")))
+        );
+
+        oracle.close().expect("close product oracle");
+        compact
+            .begin_release(&mut compact_runtime)
+            .expect("begin compact product release");
+        while !compact
+            .poll_release(&mut compact_runtime, 256)
+            .expect("poll compact product release")
+        {}
+        compact_runtime
+            .begin_close()
+            .expect("begin compact runtime close");
+        while !compact_runtime
+            .poll_close(256)
+            .expect("poll compact runtime close")
+            .complete
+        {}
+    }
+
+    #[test]
     fn semantic_targets_are_parser_cooked_and_resolved_on_demand() {
         let source = "[direct](https://example.com \"title\") <me@example.com> www.example.com ![alt][img]\n\n[img]: /asset.png 'cap'\n";
         let mut document = DocumentSession::begin(source).expect("begin target document");
@@ -4135,6 +4254,71 @@ fn capture_document_inline_projection_without_reference_authority(
         editable_utf16,
         parser_profile,
         None,
+    )
+}
+
+#[cfg(test)]
+fn capture_document_inline_projection_from_compact_probe(
+    runtime: &mut DocumentRuntime,
+    probe: &flark_parser::M11CompactViewportProbe,
+    row: &M11RecursiveGreenRenderableRow,
+) -> Result<Option<CapturedDocumentInlineProjection>, DocumentSessionError> {
+    if M11RecursiveGreenInlineLeafKind::from_green_kind(row.kind()).is_none()
+        || row.edit_capability() != M11RecursiveGreenRowEditCapability::Contiguous
+    {
+        return Ok(None);
+    }
+    let (Some(editable), Some(editable_utf16)) = (row.editable_range(), row.editable_utf16_range())
+    else {
+        return Ok(None);
+    };
+    if editable.end.saturating_sub(editable.start) > VIEWPORT_INLINE_LEAF_MAX_BYTES {
+        return Ok(None);
+    }
+    let point = M11RecursiveGreenPoint::new(
+        usize::try_from(row.physical_range().start)
+            .map_err(|_| DocumentSessionError::RangeOutOfBounds)?,
+        usize::try_from(row.physical_utf16_range().start)
+            .map_err(|_| DocumentSessionError::RangeOutOfBounds)?,
+        SourceBoundaryAffinity::After,
+    );
+    let Some(captured) = probe
+        .capture_inline_projection(runtime, point)
+        .map_err(|_| DocumentSessionError::Faulted)?
+    else {
+        return Ok(None);
+    };
+    if u64::from(captured.inline_source.start) != editable.start
+        || u64::from(captured.inline_source.end) != editable.end
+        || u64::from(captured.inline_source_utf16.start) != editable_utf16.start
+        || u64::from(captured.inline_source_utf16.end) != editable_utf16.end
+    {
+        return Ok(None);
+    }
+    Ok(Some(CapturedDocumentInlineProjection {
+        inline_source: captured.inline_source,
+        editable,
+        facts: captured.facts,
+        link_values: captured.link_values,
+    }))
+}
+
+#[cfg(test)]
+fn document_inline_facts_from_compact_probe(
+    runtime: &mut DocumentRuntime,
+    probe: &flark_parser::M11CompactViewportProbe,
+    row: &M11RecursiveGreenRenderableRow,
+) -> Result<Option<Vec<DocumentInlineFact>>, DocumentSessionError> {
+    let Some(captured) =
+        capture_document_inline_projection_from_compact_probe(runtime, probe, row)?
+    else {
+        return Ok(None);
+    };
+    map_document_inline_facts(
+        runtime,
+        captured.inline_source,
+        captured.editable,
+        captured.facts,
     )
 }
 

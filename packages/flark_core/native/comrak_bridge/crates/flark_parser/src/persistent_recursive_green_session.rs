@@ -11,10 +11,10 @@ use std::{
     ops::{Index, Range},
 };
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 use std::{collections::btree_map, slice};
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 use flark_engine::parser_internal::M11RecursiveGreenEvent;
 use flark_engine::parser_internal::{
     M11RecursiveGreenError, M11RecursiveGreenFrameQueryError, M11RecursiveGreenFrameQueryLimits,
@@ -41,7 +41,7 @@ use crate::block_core::{
     M11DirectBlockPollStatus, M11DirectSourceLineAdmission, M11ReferenceRendezvous,
     M11ReferenceRendezvousError, M11ReferenceRendezvousStatus, SourceMetric,
 };
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 use crate::block_core::{
     M11CompactProbeCheckpointFacts, M11CompactProbeFirstSlice, M11CompactProbeWriterReceipt,
     M11CompactReferenceJournal, M11CompactReferenceReceipt, M11DirectDurableBlockRestart,
@@ -73,7 +73,7 @@ const LATER_CONVERGENCE_MAX_PHYSICAL_LINES: u64 = 512;
 // scanning, block commands, and reference rendezvous work.
 const LATER_CONVERGENCE_MAX_TRANSITIONS: usize = 16_384;
 const CHECKPOINT_PAGE_CAPACITY: usize = 64;
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 const COMPACT_RESTART_PAGE_BYTES: usize = 4 * 1024;
 
 #[derive(Debug)]
@@ -234,9 +234,9 @@ impl M11PersistentRecursiveGreenCleanPlan {
             writer_command_pending: false,
             rendezvous: None,
             journal: Some(journal),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             compact_reference_journal: None,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             compact_checkpoint_journal: None,
             checkpoints: Vec::new(),
             terminal_convergence: None,
@@ -249,22 +249,22 @@ impl M11PersistentRecursiveGreenCleanPlan {
             journal_cancel_complete: false,
             green_release_complete: false,
             references_release_complete: false,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             compact_probe: false,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             compact_probe_receipt: None,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             compact_reference_receipt: None,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             compact_reference_resolver: None,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             compact_checkpoint_boundaries_seen: 0,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             compact_restart_captures: 0,
         })
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     fn begin_compact_probe(
         self,
         runtime: &mut DocumentRuntime,
@@ -376,9 +376,9 @@ pub struct M11PersistentRecursiveGreenCleanBuild {
     writer_command_pending: bool,
     rendezvous: Option<M11ReferenceRendezvous>,
     journal: Option<M11ReferenceJournal>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     compact_reference_journal: Option<M11CompactReferenceJournal>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     compact_checkpoint_journal: Option<M11CompactCheckpointJournal>,
     checkpoints: Vec<M11BlockRestartCheckpoint>,
     terminal_convergence: Option<M11BlockTerminalConvergenceCheckpoint>,
@@ -391,17 +391,17 @@ pub struct M11PersistentRecursiveGreenCleanBuild {
     journal_cancel_complete: bool,
     green_release_complete: bool,
     references_release_complete: bool,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     compact_probe: bool,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     compact_probe_receipt: Option<M11CompactProbeWriterReceipt>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     compact_reference_receipt: Option<M11CompactReferenceReceipt>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     compact_reference_resolver: Option<crate::block_core::M11CompactReferenceResolver>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     compact_checkpoint_boundaries_seen: usize,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     compact_restart_captures: usize,
 }
 
@@ -444,7 +444,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
         runtime: &mut DocumentRuntime,
     ) -> Result<(), M11PersistentRecursiveGreenSessionError> {
         if let Some(mut rendezvous) = self.rendezvous.take() {
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             let compact_probe = self.compact_probe;
             let controller = self.controller.as_mut().ok_or(
                 M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -456,7 +456,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
                     "recursive-Green writer is missing",
                 ),
             )?;
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             let poll = if compact_probe {
                 let journal = self.compact_reference_journal.as_mut().ok_or(
                     M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -472,7 +472,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
                 )?;
                 rendezvous.poll(controller, writer, journal, runtime, 1)?
             };
-            #[cfg(not(test))]
+            #[cfg(not(any(test, feature = "m11-compact-probe")))]
             let poll = {
                 let journal = self.journal.as_mut().ok_or(
                     M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -627,7 +627,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
                         self.rendezvous = Some(M11ReferenceRendezvous::begin(controller, writer)?);
                     }
                     M11DirectBlockPollStatus::Complete => {
-                        #[cfg(test)]
+                        #[cfg(any(test, feature = "m11-compact-probe"))]
                         if self.compact_probe
                             && !self
                                 .controller_mut()?
@@ -713,7 +713,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
                                 "clean parse omitted its terminal convergence cut",
                             ));
                         }
-                        #[cfg(test)]
+                        #[cfg(any(test, feature = "m11-compact-probe"))]
                         if self.compact_probe {
                             self.compact_probe_receipt =
                                 Some(self.writer_mut()?.compact_probe_receipt()?);
@@ -724,7 +724,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
                                 ),
                             )?);
                         }
-                        #[cfg(not(test))]
+                        #[cfg(not(any(test, feature = "m11-compact-probe")))]
                         {
                             self.green = Some(self.writer_mut()?.take_root().ok_or(
                                 M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -732,7 +732,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
                                 ),
                             )?);
                         }
-                        #[cfg(test)]
+                        #[cfg(any(test, feature = "m11-compact-probe"))]
                         if self.compact_probe {
                             let journal = self.compact_reference_journal.as_mut().ok_or(
                                 M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -744,14 +744,14 @@ impl M11PersistentRecursiveGreenCleanBuild {
                         } else {
                             self.journal_mut()?.finish_input(runtime)?;
                         }
-                        #[cfg(not(test))]
+                        #[cfg(not(any(test, feature = "m11-compact-probe")))]
                         self.journal_mut()?.finish_input(runtime)?;
                         self.phase = CleanPhase::FinishReferences;
                     }
                 }
             }
             CleanPhase::FinishReferences => {
-                #[cfg(test)]
+                #[cfg(any(test, feature = "m11-compact-probe"))]
                 if self.compact_probe {
                     self.writer = None;
                     let journal = self.compact_reference_journal.take().ok_or(
@@ -802,11 +802,11 @@ impl M11PersistentRecursiveGreenCleanBuild {
                         release_begun: false,
                         green_release_complete: false,
                         references_release_complete: false,
-                        #[cfg(test)]
+                        #[cfg(any(test, feature = "m11-compact-probe"))]
                         compact_probe: self.compact_probe,
-                        #[cfg(test)]
+                        #[cfg(any(test, feature = "m11-compact-probe"))]
                         compact_checkpoints: self.compact_checkpoint_journal.take(),
-                        #[cfg(test)]
+                        #[cfg(any(test, feature = "m11-compact-probe"))]
                         compact_reference_resolver: self.compact_reference_resolver.take(),
                     });
                     self.phase = CleanPhase::Complete;
@@ -834,7 +834,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
         &mut self,
         force: bool,
     ) -> Result<(), M11PersistentRecursiveGreenSessionError> {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "m11-compact-probe"))]
         if self.compact_probe {
             self.compact_checkpoint_boundaries_seen = self
                 .compact_checkpoint_boundaries_seen
@@ -941,7 +941,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
     fn capture_document_start_checkpoint(
         &mut self,
     ) -> Result<(), M11PersistentRecursiveGreenSessionError> {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "m11-compact-probe"))]
         if self.compact_probe {
             let journal_empty = self
                 .compact_checkpoint_journal
@@ -1009,7 +1009,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
             )
         })?;
         self.checkpoints.push(checkpoint);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "m11-compact-probe"))]
         if self.compact_probe {
             self.compact_restart_captures = self.compact_restart_captures.checked_add(1).ok_or(
                 M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -1057,7 +1057,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
             .flatten()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     fn take_compact_probe_receipt(
         &mut self,
     ) -> Option<(M11CompactProbeWriterReceipt, usize, usize)> {
@@ -1080,14 +1080,14 @@ impl M11PersistentRecursiveGreenCleanBuild {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     fn compact_probe_current_writer_receipt(&self) -> Option<M11CompactProbeWriterReceipt> {
         self.compact_probe
             .then(|| self.writer.as_ref()?.compact_probe_receipt().ok())
             .flatten()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     fn take_compact_probe_first_slice(&mut self) -> Option<M11CompactProbeFirstSlice> {
         self.compact_probe
             .then(|| {
@@ -1099,7 +1099,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
             .flatten()
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     fn compact_probe_first_slice_over_cap(&self) -> bool {
         self.compact_probe
             && self
@@ -1318,7 +1318,7 @@ impl M11CheckpointStore {
         left - start.min(self.len())
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     fn iter(&self) -> M11CheckpointStoreIter<'_> {
         match self {
             Self::Contiguous(checkpoints) => M11CheckpointStoreIter::Contiguous(checkpoints.iter()),
@@ -1339,7 +1339,7 @@ impl Index<usize> for M11CheckpointStore {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 enum M11CheckpointStoreIter<'a> {
     Contiguous(slice::Iter<'a, M11BlockRestartCheckpoint>),
     Paged {
@@ -1348,7 +1348,7 @@ enum M11CheckpointStoreIter<'a> {
     },
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 impl<'a> Iterator for M11CheckpointStoreIter<'a> {
     type Item = &'a M11BlockRestartCheckpoint;
 
@@ -1441,15 +1441,15 @@ pub struct M11PersistentRecursiveGreenSession {
     release_begun: bool,
     green_release_complete: bool,
     references_release_complete: bool,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     compact_probe: bool,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     compact_checkpoints: Option<M11CompactCheckpointJournal>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     compact_reference_resolver: Option<crate::block_core::M11CompactReferenceResolver>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct M11CompactCheckpointEntry {
     stream_offset: u64,
@@ -1470,7 +1470,7 @@ struct M11CompactCheckpointEntry {
     next_frame: u64,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 #[derive(Debug, Default)]
 struct M11CompactCheckpointJournal {
     pages: Vec<Box<[u8]>>,
@@ -1478,7 +1478,7 @@ struct M11CompactCheckpointJournal {
     stream_len: usize,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 impl M11CompactCheckpointJournal {
     const fn new() -> Self {
         Self {
@@ -1874,7 +1874,7 @@ impl M11CompactCheckpointJournal {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct CheckpointStorageReceipt {
     checkpoints: usize,
@@ -1883,7 +1883,7 @@ struct CheckpointStorageReceipt {
     allocated_bytes: usize,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 impl CheckpointStorageReceipt {
     #[must_use]
     const fn checkpoints(self) -> usize {
@@ -3539,11 +3539,11 @@ impl M11PersistentRecursiveGreenAdoption {
             release_begun: false,
             green_release_complete: false,
             references_release_complete: false,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             compact_probe: false,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             compact_checkpoints: None,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             compact_reference_resolver: None,
         };
         self.output = Some(M11PersistentRecursiveGreenUpdate {
@@ -3852,7 +3852,7 @@ impl M11PersistentRecursiveGreenSession {
 
     #[must_use]
     pub fn checkpoint_count(&self) -> usize {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "m11-compact-probe"))]
         if let Some(compact) = &self.compact_checkpoints {
             return compact.entries.len();
         }
@@ -3893,7 +3893,7 @@ impl M11PersistentRecursiveGreenSession {
         })
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     fn checkpoint_storage_receipt_for_diagnostics(&self) -> CheckpointStorageReceipt {
         if let Some(compact) = &self.compact_checkpoints {
             return compact.receipt();
@@ -4485,7 +4485,7 @@ impl M11PersistentRecursiveGreenSession {
                 "recursive-Green session release already began",
             ));
         }
-        #[cfg(test)]
+        #[cfg(any(test, feature = "m11-compact-probe"))]
         if self.compact_probe {
             self.green_release_complete = true;
             self.references_release_complete = true;
@@ -4498,7 +4498,7 @@ impl M11PersistentRecursiveGreenSession {
                 .begin_release(runtime)
                 .map_err(M11BlockWriterError::from)?;
         }
-        #[cfg(not(test))]
+        #[cfg(not(any(test, feature = "m11-compact-probe")))]
         self.green
             .as_mut()
             .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -4506,7 +4506,7 @@ impl M11PersistentRecursiveGreenSession {
             ))?
             .begin_release(runtime)
             .map_err(M11BlockWriterError::from)?;
-        #[cfg(test)]
+        #[cfg(any(test, feature = "m11-compact-probe"))]
         if !self.compact_probe {
             self.references
                 .as_mut()
@@ -4515,7 +4515,7 @@ impl M11PersistentRecursiveGreenSession {
                 ))?
                 .begin_release(runtime)?;
         }
-        #[cfg(not(test))]
+        #[cfg(not(any(test, feature = "m11-compact-probe")))]
         self.references
             .as_mut()
             .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -4577,6 +4577,341 @@ fn to_u32_range(range: Range<u64>) -> Result<Range<u32>, M11PersistentRecursiveG
             "recursive-Green range exceeds the candidate ABI",
         )
     })?)
+}
+
+/// Opaque correctness bridge for exercising the sparse-index viewport path
+/// through upper product layers before that path is eligible for production
+/// session selection.
+#[cfg(feature = "m11-compact-probe")]
+#[must_use = "compact viewport probes own a Green slice that requires explicit release"]
+pub struct M11CompactViewportProbe {
+    root: flark_engine::parser_internal::M11RecursiveGreenSliceRoot,
+    reference_resolver: crate::block_core::M11CompactReferenceResolver,
+    syntax_profile: u32,
+}
+
+#[cfg(feature = "m11-compact-probe")]
+#[derive(Debug)]
+pub enum M11CompactViewportProbeError {
+    Session(M11PersistentRecursiveGreenSessionError),
+    Inline(crate::M11InlineProjectionJobError),
+    Preparation(crate::M11RecursiveGreenParagraphPreparationError),
+    InvalidState(&'static str),
+}
+
+#[cfg(feature = "m11-compact-probe")]
+impl fmt::Display for M11CompactViewportProbeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Session(error) => error.fmt(formatter),
+            Self::Inline(error) => error.fmt(formatter),
+            Self::Preparation(error) => error.fmt(formatter),
+            Self::InvalidState(message) => formatter.write_str(message),
+        }
+    }
+}
+
+#[cfg(feature = "m11-compact-probe")]
+impl std::error::Error for M11CompactViewportProbeError {}
+
+#[cfg(feature = "m11-compact-probe")]
+impl From<M11PersistentRecursiveGreenSessionError> for M11CompactViewportProbeError {
+    fn from(error: M11PersistentRecursiveGreenSessionError) -> Self {
+        Self::Session(error)
+    }
+}
+
+#[cfg(feature = "m11-compact-probe")]
+impl From<DocumentRuntimeError> for M11CompactViewportProbeError {
+    fn from(error: DocumentRuntimeError) -> Self {
+        Self::Session(M11PersistentRecursiveGreenSessionError::Document(error))
+    }
+}
+
+#[cfg(feature = "m11-compact-probe")]
+impl From<M11RecursiveGreenError> for M11CompactViewportProbeError {
+    fn from(error: M11RecursiveGreenError) -> Self {
+        Self::Session(M11PersistentRecursiveGreenSessionError::Green(error))
+    }
+}
+
+#[cfg(feature = "m11-compact-probe")]
+impl From<crate::M11InlineProjectionJobError> for M11CompactViewportProbeError {
+    fn from(error: crate::M11InlineProjectionJobError) -> Self {
+        Self::Inline(error)
+    }
+}
+
+#[cfg(feature = "m11-compact-probe")]
+impl From<crate::M11RecursiveGreenParagraphPreparationError> for M11CompactViewportProbeError {
+    fn from(error: crate::M11RecursiveGreenParagraphPreparationError) -> Self {
+        Self::Preparation(error)
+    }
+}
+
+#[cfg(feature = "m11-compact-probe")]
+pub struct M11CompactInlineProjectionProbe {
+    pub inline_source: Range<u32>,
+    pub inline_source_utf16: Range<u32>,
+    pub facts: Vec<flark_engine::parser_internal::M11InlineProjectionFact>,
+    pub link_values: Vec<flark_engine::parser_internal::M11InlineLinkValue>,
+}
+
+#[cfg(feature = "m11-compact-probe")]
+impl M11CompactViewportProbe {
+    #[must_use]
+    pub fn root(&self) -> &flark_engine::parser_internal::M11RecursiveGreenSliceRoot {
+        &self.root
+    }
+
+    pub fn capture_inline_projection(
+        &self,
+        runtime: &mut DocumentRuntime,
+        point: M11RecursiveGreenPoint,
+    ) -> Result<Option<M11CompactInlineProjectionProbe>, M11CompactViewportProbeError> {
+        let prepared = match crate::prepare_m11_recursive_green_slice_inline_leaf(
+            runtime, &self.root, point,
+        ) {
+            Ok(prepared) => prepared,
+            Err(crate::M11RecursiveGreenParagraphPreparationError::NotParagraph) => {
+                return Ok(None)
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let inline_source = prepared.inline_source_range();
+        let inline_source_utf16 = prepared.inline_source_utf16_range();
+        let profile = flark_engine::ParserProfileId::new(u64::from(self.syntax_profile)).ok_or(
+            M11CompactViewportProbeError::InvalidState(
+                "compact viewport parser profile is nonzero",
+            ),
+        )?;
+        let mut job = crate::M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_compact_reference_resolver_and_fact_capture(
+            runtime,
+            prepared.into_fence(),
+            crate::M11ParserBinding::current(profile),
+            self.reference_resolver.clone(),
+        )?;
+        loop {
+            let poll = job.poll(
+                runtime,
+                crate::M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
+            )?;
+            if poll.status() == crate::M11InlineProjectionJobPollStatus::Complete {
+                break;
+            }
+            if poll.transitions() == 0 {
+                return Err(M11CompactViewportProbeError::InvalidState(
+                    "compact inline capture stopped without completing",
+                ));
+            }
+        }
+        if job.projected_facts_are_authoritative() != Some(true) {
+            release_compact_inline_job(runtime, &mut job)?;
+            return Ok(None);
+        }
+        let facts =
+            job.take_projected_facts()
+                .ok_or(M11CompactViewportProbeError::InvalidState(
+                    "compact inline capture omitted its facts",
+                ))?;
+        let link_values =
+            job.take_projected_link_values()
+                .ok_or(M11CompactViewportProbeError::InvalidState(
+                    "compact inline capture omitted its link values",
+                ))?;
+        release_compact_inline_job(runtime, &mut job)?;
+        Ok(Some(M11CompactInlineProjectionProbe {
+            inline_source,
+            inline_source_utf16,
+            facts,
+            link_values,
+        }))
+    }
+
+    pub fn begin_release(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+    ) -> Result<(), M11CompactViewportProbeError> {
+        self.root.begin_release(runtime).map_err(|error| {
+            M11CompactViewportProbeError::Session(M11PersistentRecursiveGreenSessionError::Green(
+                error,
+            ))
+        })
+    }
+
+    pub fn poll_release(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+        fuel: usize,
+    ) -> Result<bool, M11CompactViewportProbeError> {
+        Ok(self
+            .root
+            .poll_release(runtime, fuel)
+            .map_err(|error| {
+                M11CompactViewportProbeError::Session(
+                    M11PersistentRecursiveGreenSessionError::Green(error),
+                )
+            })?
+            .complete())
+    }
+}
+
+#[cfg(feature = "m11-compact-probe")]
+fn release_compact_inline_job(
+    runtime: &mut DocumentRuntime,
+    job: &mut crate::M11InlineProjectionJob,
+) -> Result<(), M11CompactViewportProbeError> {
+    job.begin_abort(runtime)?;
+    loop {
+        let poll = job.poll_abort(
+            runtime,
+            crate::M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
+        )?;
+        if poll.complete() {
+            return Ok(());
+        }
+    }
+}
+
+/// Builds the first bounded certified slice while consuming the same primary
+/// parser stream to EOF for final reference-winner authority. The returned
+/// value is intentionally a probe, not a selectable production session.
+#[cfg(feature = "m11-compact-probe")]
+pub fn build_m11_compact_first_viewport_probe(
+    runtime: &mut DocumentRuntime,
+    syntax_profile: u32,
+) -> Result<M11CompactViewportProbe, M11CompactViewportProbeError> {
+    let plan = M11PersistentRecursiveGreenCleanPlan::new(
+        runtime.snapshot_current_source()?,
+        runtime.snapshot_current_source()?,
+        syntax_profile,
+    )?;
+    let mut build = plan.begin_compact_probe(runtime)?;
+    let mut first_slice = None;
+    loop {
+        let poll = build.poll(runtime, if first_slice.is_some() { 4_096 } else { 64 })?;
+        if first_slice.is_none() {
+            first_slice = build.take_compact_probe_first_slice();
+        }
+        if poll.status() == M11PersistentRecursiveGreenBuildStatus::Complete {
+            break;
+        }
+    }
+    let first_slice = first_slice.ok_or(M11CompactViewportProbeError::InvalidState(
+        "source did not produce a bounded first viewport slice",
+    ))?;
+    let source_start = usize::try_from(first_slice.physical_start.bytes()).map_err(|_| {
+        M11CompactViewportProbeError::InvalidState("compact slice start fits usize")
+    })?;
+    let source_end = usize::try_from(first_slice.physical_end.bytes())
+        .map_err(|_| M11CompactViewportProbeError::InvalidState("compact slice end fits usize"))?;
+    let root = build_compact_green_slice(
+        runtime,
+        source_start,
+        source_end,
+        first_slice.row_base,
+        &[],
+        &first_slice.events,
+    )?;
+    let mut session = build
+        .take_session()
+        .ok_or(M11CompactViewportProbeError::InvalidState(
+            "compact build omitted its session",
+        ))?;
+    let reference_resolver = session
+        .compact_reference_resolver
+        .as_ref()
+        .ok_or(M11CompactViewportProbeError::InvalidState(
+            "compact build omitted final reference authority",
+        ))?
+        .clone();
+    session.begin_release(runtime)?;
+    while !session.poll_release(runtime, 4_096)? {}
+    Ok(M11CompactViewportProbe {
+        root,
+        reference_resolver,
+        syntax_profile,
+    })
+}
+
+#[cfg(feature = "m11-compact-probe")]
+fn build_compact_green_slice(
+    runtime: &mut DocumentRuntime,
+    source_start_byte: usize,
+    source_end_byte: usize,
+    row_base: u64,
+    open_frame_bases: &[flark_engine::parser_internal::M11RecursiveGreenSliceOpenFrameBase],
+    events: &[M11RecursiveGreenEvent],
+) -> Result<flark_engine::parser_internal::M11RecursiveGreenSliceRoot, M11CompactViewportProbeError>
+{
+    use flark_engine::parser_internal::{
+        M11RecursiveGreenBuildStatus, M11RecursiveGreenClosedChild, M11RecursiveGreenSliceBuild,
+    };
+
+    let (document_frame, document_kind) = match events.first().copied() {
+        Some(M11RecursiveGreenEvent::Enter { frame, kind }) => (frame, kind),
+        _ => {
+            return Err(M11CompactViewportProbeError::InvalidState(
+                "compact slice omitted its Document enter",
+            ))
+        }
+    };
+    let mut slice_build = M11RecursiveGreenSliceBuild::new_at_with_open_frame_bases(
+        runtime,
+        runtime.snapshot_current_source()?,
+        source_start_byte,
+        source_end_byte,
+        row_base,
+        open_frame_bases,
+    )?;
+    for event in events.iter().copied() {
+        slice_build.offer_event(event)?;
+        poll_compact_slice_input(runtime, &mut slice_build)?;
+    }
+    slice_build.offer_event(M11RecursiveGreenEvent::Exit {
+        frame: document_frame,
+        final_kind: document_kind,
+        close: None,
+        last_line_blank: false,
+        child: M11RecursiveGreenClosedChild::default(),
+    })?;
+    poll_compact_slice_input(runtime, &mut slice_build)?;
+    slice_build.finish_input()?;
+    loop {
+        match slice_build.poll(runtime, 4_096)?.status() {
+            M11RecursiveGreenBuildStatus::Complete => break,
+            M11RecursiveGreenBuildStatus::Pending => {}
+            _ => {
+                return Err(M11CompactViewportProbeError::InvalidState(
+                    "compact Green slice stopped before completion",
+                ))
+            }
+        }
+    }
+    slice_build
+        .take_root()
+        .ok_or(M11CompactViewportProbeError::InvalidState(
+            "compact Green slice omitted its root",
+        ))
+}
+
+#[cfg(feature = "m11-compact-probe")]
+fn poll_compact_slice_input(
+    runtime: &mut DocumentRuntime,
+    build: &mut flark_engine::parser_internal::M11RecursiveGreenSliceBuild,
+) -> Result<(), M11CompactViewportProbeError> {
+    use flark_engine::parser_internal::M11RecursiveGreenBuildStatus;
+    loop {
+        match build.poll(runtime, 4_096)?.status() {
+            M11RecursiveGreenBuildStatus::NeedsInput => return Ok(()),
+            M11RecursiveGreenBuildStatus::Pending => {}
+            _ => {
+                return Err(M11CompactViewportProbeError::InvalidState(
+                    "compact Green slice event terminated the build",
+                ))
+            }
+        }
+    }
 }
 
 #[cfg(test)]

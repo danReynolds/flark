@@ -1344,14 +1344,25 @@ record plus cooked destination/title bytes. An intentionally malformed direct
 link failed closed to neutral inline output during development of the fixture,
 which is the required behavior rather than an authoritative empty projection.
 
-This is compositional evidence, not yet the final cold-product differential:
-the actual compact `M11RecursiveGreenSliceRoot` and compact reference resolver
-still meet the product mapper only inside their separate parser/runtime proof
-lanes. Gate two remains open until one mixed cold slice crosses that boundary
-and its complete runtime and ABI bytes compare with the full-root oracle. The
-runtime contract must also represent an unknown total row count until EOF;
-the ready-only `DocumentViewport.total_rows` field cannot be reused as a
-progressive total.
+The crate-boundary gap is now closed for the runtime payload. A dormant
+`m11-compact-probe` feature exposes one opaque correctness bridge without
+making the sparse path selectable by production sessions. Through it, a real
+compact first-slice root and the final source-backed compact reference resolver
+fed the production runtime mapper. All 32 mixed rows matched the complete-root
+`DocumentViewportRow` oracle exactly, including heading, paragraph, table,
+task, quote, direct link, character-reference, autolink and missing-reference
+behavior. A forward `[late]` use resolved to `/resolved` with `late title`, and
+the definition was asserted to begin after the compact slice ended; its
+activated `DocumentSemanticTarget` matched the full-session oracle. Both the
+slice root and its `DocumentRuntime` were explicitly fuel-drained to zero.
+
+This correctness probe intentionally waits for EOF reference authority before
+mapping the mixed slice, so it does not replace the earlier pre-EOF timing
+receipt for the ordinary no-reference fixture. Gate two also remains open for
+the actual compact-session ABI routing and byte-for-byte encoded payload, the
+frozen multi-coordinate/family matrix, and layout/paint. The runtime contract
+must represent an unknown total row count until EOF; the ready-only
+`DocumentViewport.total_rows` field cannot be reused as a progressive total.
 
 The direction is accepted for prototyping, not yet for production migration.
 The remaining Gate-one semantic proof is a frozen mixed-construct slice matrix

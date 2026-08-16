@@ -10,3 +10,6 @@ path = "src/lib.rs"
 [dependencies]
 flark-engine = { path = "../flark_engine", features = ["parser-internal"] }
 flark-parser = { path = "../flark_parser" }
+
+[dev-dependencies]
+flark-parser = { path = "../flark_parser", features = ["m11-compact-probe"] }

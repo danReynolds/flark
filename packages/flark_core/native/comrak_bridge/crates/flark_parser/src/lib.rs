@@ -119,6 +119,11 @@ pub use inline_projection_job::{
     M11InlineProjectionPublication, M11InlineProjectionPublicationParts,
     M11InlineProjectionUnsupportedRecord, M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
 };
+#[cfg(feature = "m11-compact-probe")]
+pub use persistent_recursive_green_session::{
+    build_m11_compact_first_viewport_probe, M11CompactInlineProjectionProbe,
+    M11CompactViewportProbe, M11CompactViewportProbeError,
+};
 pub use persistent_recursive_green_session::{
     M11PersistentRecursiveGreenAdoption, M11PersistentRecursiveGreenAdoptionPoll,
     M11PersistentRecursiveGreenAdoptionStartFailure, M11PersistentRecursiveGreenAdoptionStatus,

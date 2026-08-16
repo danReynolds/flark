@@ -7,7 +7,14 @@ publish = false
 # controller/protocol retains Comrak's BSD-2-Clause terms and notice.
 license = "MIT AND BSD-2-Clause"
 
+[features]
+default = []
+# Internal only: compiles the sparse-index/cold-slice prototype so an upper
+# layer can run end-to-end product differentials before production cutover.
+m11-compact-probe = ["dep:blake3"]
+
 [dependencies]
+blake3 = { version = "1.8", optional = true }
 caseless = "=0.2.2"
 comrak = { version = "=0.54.0", default-features = false }
 finl_unicode = { version = "=1.4.0", features = ["categories"] }

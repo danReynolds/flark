@@ -7,7 +7,7 @@
 
 use std::fmt;
 use std::ops::Range;
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 use std::sync::Arc;
 
 use flark_block_core_donor as donor;
@@ -19,7 +19,7 @@ use flark_engine::parser_internal::{
     M11RecursiveGreenTerminalFragmentDisposition, M11ReferenceJournal, M11ReferenceJournalError,
     M11ReferenceJournalOccurrenceStart, M11ReferenceJournalRange, M11ReferenceJournalValueKind,
 };
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 use flark_engine::parser_internal::{
     M11ReferenceResolution, M11ResolvedReference, M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES,
 };
@@ -41,7 +41,7 @@ type Work = donor::DirectReferencePrefixWork<Identity>;
 type OutputAck = donor::DirectReferencePrefixOutputAck<Identity>;
 type TerminalOutput = donor::DirectReferencePrefixTerminalOutput<Identity>;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 const COMPACT_REFERENCE_LOOKUP_MAX_SOURCE_BYTES: usize = 64 * 1024;
 
 trait M11ReferenceJournalSink {
@@ -115,7 +115,7 @@ impl M11ReferenceJournalSink for M11ReferenceJournal {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct M11CompactReferenceRecord {
     digest: [u8; 16],
@@ -132,7 +132,7 @@ struct M11CompactReferenceRecord {
     winner: u32,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 #[derive(Debug)]
 struct M11CompactReferencePending {
     record: M11CompactReferenceRecord,
@@ -142,7 +142,7 @@ struct M11CompactReferencePending {
     title_received: usize,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct M11CompactReferenceReceipt {
     pub(crate) occurrences: usize,
@@ -152,7 +152,7 @@ pub(crate) struct M11CompactReferenceReceipt {
     pub(crate) rendezvous_phase_transitions: [u64; 8],
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 #[derive(Debug, Default)]
 pub(crate) struct M11CompactReferenceJournal {
     records: Vec<M11CompactReferenceRecord>,
@@ -169,14 +169,14 @@ pub(crate) struct M11CompactReferenceJournal {
 /// tree: one sorted ordinal directory points into packed labels and exact
 /// source ranges. Cooked values are derived on demand through the same bounded
 /// parser-owned cleaner, keeping dense documents inside the retained budget.
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 #[derive(Clone, Debug)]
 pub(crate) struct M11CompactReferenceResolver {
     source: flark_engine::SourceVersion,
     index: Arc<M11CompactReferenceIndex>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 #[derive(Debug)]
 struct M11CompactReferenceIndex {
     records: Box<[M11CompactReferenceRecord]>,
@@ -184,7 +184,7 @@ struct M11CompactReferenceIndex {
     order: Box<[u32]>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 impl M11CompactReferenceJournal {
     pub(crate) fn new() -> Self {
         Self::default()
@@ -302,7 +302,7 @@ impl M11CompactReferenceJournal {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 impl M11CompactReferenceResolver {
     pub(crate) fn resolve(
         &self,
@@ -399,7 +399,7 @@ impl M11CompactReferenceResolver {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 fn cook_compact_reference_value(
     runtime: &DocumentRuntime,
     range: Range<u32>,
@@ -440,14 +440,14 @@ fn cook_compact_reference_value(
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 fn compact_reference_label<'a>(labels: &'a [u8], record: &M11CompactReferenceRecord) -> &'a [u8] {
     let start = record.normalized_start as usize;
     let end = start.saturating_add(record.normalized_len as usize);
     labels.get(start..end).unwrap_or_default()
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "m11-compact-probe"))]
 impl M11ReferenceJournalSink for M11CompactReferenceJournal {
     fn source_backed_values(&self) -> bool {
         true
@@ -852,7 +852,7 @@ impl CookedScratch {
         self.len
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     fn into_boxed_str(self) -> Result<Box<str>, M11ReferenceRendezvousError> {
         let mut bytes = Vec::new();
         bytes.try_reserve_exact(self.len).map_err(|_| {
@@ -1300,7 +1300,7 @@ impl M11ReferenceRendezvous {
         self.poll_with_sink(controller, writer, journal, runtime, fuel)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "m11-compact-probe"))]
     pub(crate) fn poll_compact(
         &mut self,
         controller: &mut M11DirectBlockController,
