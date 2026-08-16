@@ -1442,10 +1442,15 @@ struct M11CompactCheckpointEntry {
     line_ordinal: u64,
     last_line_length: u64,
     accepted_physical: SourceMetric,
+    parser_physical: SourceMetric,
     logical: SourceMetric,
     event_cut: u64,
+    high_level_events: u64,
     renderable_rows: u64,
     open_depth: u32,
+    cold_document_frame: Option<flark_engine::parser_internal::M11RecursiveGreenFrameId>,
+    cold_staged_blank_gap: Option<SourceMetric>,
+    next_frame: u64,
 }
 
 #[cfg(test)]
@@ -1527,10 +1532,15 @@ impl M11CompactCheckpointJournal {
             line_ordinal: parser.line_ordinal(),
             last_line_length: parser.last_line_length(),
             accepted_physical: facts.accepted_physical,
+            parser_physical: facts.parser_physical,
             logical: facts.logical,
             event_cut: facts.event_cut,
+            high_level_events: facts.high_level_events,
             renderable_rows: facts.renderable_rows,
             open_depth,
+            cold_document_frame: facts.cold_document_frame,
+            cold_staged_blank_gap: facts.cold_staged_blank_gap,
+            next_frame: facts.next_frame,
         });
         Ok(())
     }
@@ -1600,28 +1610,145 @@ impl M11CompactCheckpointJournal {
         Ok(encoded)
     }
 
+    fn begin_cold_slice_probe(
+        &self,
+        index: usize,
+        runtime: &mut DocumentRuntime,
+        syntax_profile: u32,
+    ) -> Result<
+        (
+            M11PersistentRecursiveGreenCleanBuild,
+            M11CompactCheckpointEntry,
+        ),
+        M11PersistentRecursiveGreenSessionError,
+    > {
+        let entry = *self.entries.get(index).ok_or(
+            M11PersistentRecursiveGreenSessionError::InvalidState(
+                "compact cold restart index is in bounds",
+            ),
+        )?;
+        let document_frame = entry.cold_document_frame.ok_or(
+            M11PersistentRecursiveGreenSessionError::InvalidState(
+                "compact cold restart is a Document-only boundary",
+            ),
+        )?;
+        let encoded = self
+            .encoded_entry(index)
+            .map_err(M11PersistentRecursiveGreenSessionError::InvalidState)?;
+        let controller = M11DirectBlockController::resume_durable_encoded_restart(
+            &encoded,
+            entry.line_ordinal,
+            entry.last_line_length,
+            None,
+        )?;
+        let next_line_ordinal = u32::try_from(entry.line_ordinal).map_err(|_| {
+            M11PersistentRecursiveGreenSessionError::InvalidState(
+                "compact cold restart line ordinal fits u32",
+            )
+        })?;
+        let scanner = SnapshotLineScanner::new_at(
+            runtime.snapshot_current_source()?,
+            usize::try_from(entry.parser_physical.bytes()).map_err(|_| {
+                M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "compact cold restart byte offset fits usize",
+                )
+            })?,
+            next_line_ordinal,
+        )?;
+        let writer = M11BlockWriter::resume_compact_probe_document_only(
+            runtime,
+            runtime.snapshot_current_source()?,
+            document_frame,
+            entry.next_frame,
+            entry.accepted_physical,
+            entry.cold_staged_blank_gap,
+            entry.logical,
+            entry.event_cut,
+            entry.high_level_events,
+            entry.renderable_rows,
+        )?;
+        let source = runtime.current_source_version().ok_or(
+            M11PersistentRecursiveGreenSessionError::InvalidState(
+                "compact cold restart source is current",
+            ),
+        )?;
+        Ok((
+            M11PersistentRecursiveGreenCleanBuild {
+                source,
+                syntax_profile,
+                phase: CleanPhase::ControllerLine,
+                scanner: Some(scanner),
+                pending_line: None,
+                active_line: None,
+                controller: Some(controller),
+                writer: Some(writer),
+                writer_command_pending: false,
+                rendezvous: None,
+                journal: None,
+                compact_reference_journal: Some(M11CompactReferenceJournal::new()),
+                compact_checkpoint_journal: Some(M11CompactCheckpointJournal::new()),
+                checkpoints: Vec::new(),
+                terminal_convergence: None,
+                initial_boundary_captured: true,
+                green: None,
+                references: None,
+                output: None,
+                cancelling: false,
+                writer_cancel_complete: false,
+                journal_cancel_complete: false,
+                green_release_complete: false,
+                references_release_complete: false,
+                compact_probe: true,
+                compact_probe_receipt: None,
+                compact_reference_receipt: None,
+                compact_checkpoint_boundaries_seen: 0,
+                compact_restart_captures: 0,
+            },
+            entry,
+        ))
+    }
+
     fn validate_metadata_and_durable_samples(&self) -> Result<(), &'static str> {
         let first = self
             .entries
             .first()
             .ok_or("compact restart journal retains BOF")?;
         if first.accepted_physical != SourceMetric::default()
+            || first.parser_physical != SourceMetric::default()
             || first.logical != SourceMetric::default()
             || first.event_cut != 1
+            || first.high_level_events != 1
             || first.renderable_rows != 0
             || first.line_ordinal != 0
             || first.last_line_length != 0
+            || first.cold_document_frame.map(|frame| frame.get()) != Some(1)
+            || first.cold_staged_blank_gap.is_some()
+            || first.next_frame != 2
         {
             return Err("compact restart journal begins with canonical BOF metadata");
         }
         for pair in self.entries.windows(2) {
             if pair[0].accepted_physical >= pair[1].accepted_physical
+                || pair[0].parser_physical >= pair[1].parser_physical
                 || pair[0].logical > pair[1].logical
                 || pair[0].event_cut > pair[1].event_cut
+                || pair[0].high_level_events > pair[1].high_level_events
                 || pair[0].renderable_rows > pair[1].renderable_rows
+                || pair[0].next_frame > pair[1].next_frame
                 || pair[0].stream_offset + u64::from(pair[0].encoded_len) != pair[1].stream_offset
             {
                 return Err("compact restart metadata and stream offsets are monotonic");
+            }
+        }
+        for entry in &self.entries {
+            let joined_parser_physical = entry
+                .accepted_physical
+                .checked_add(entry.cold_staged_blank_gap.unwrap_or_default())
+                .ok_or("compact restart joined physical metric is valid")?;
+            if entry.cold_document_frame.is_some()
+                && joined_parser_physical != entry.parser_physical
+            {
+                return Err("compact cold restart preserves its deferred physical gap");
             }
         }
         // BOF is reconstructed from the canonical fresh-parser constructor;
@@ -4622,8 +4749,10 @@ mod tests {
         };
         let captured_at = admitted_at.elapsed();
 
-        assert!(slice.physical.bytes() < source.len() as u64);
-        assert!(slice.physical.bytes() <= 64 * 1024);
+        assert_eq!(slice.physical_start, SourceMetric::default());
+        assert_eq!(slice.row_base, 0);
+        assert!(slice.physical_end.bytes() < source.len() as u64);
+        assert!(slice.physical_end.bytes() <= 64 * 1024);
         assert!(slice.events.len() <= 8 * 1024);
         assert!(matches!(
             slice.events.first(),
@@ -4642,7 +4771,7 @@ mod tests {
         );
         let slice_event_count = slice.events.len();
 
-        let source_end = usize::try_from(slice.physical.bytes()).expect("slice end");
+        let source_end = usize::try_from(slice.physical_end.bytes()).expect("slice end");
         let mut slice_root =
             build_green_slice_from_primary_events(&mut runtime, 0, source_end, 0, &slice.events);
         let limits = M11RecursiveGreenRowQueryLimits::new(64, 4_096, 32_768, 64, 32_768)
@@ -4691,7 +4820,122 @@ mod tests {
                 break;
             }
         }
+        let (compact_receipt, _, _) = build
+            .take_compact_probe_receipt()
+            .expect("complete compact receipt");
         let mut session = build.take_session().expect("compact session");
+        assert!(
+            session.green.is_none(),
+            "cold restart proof must not retain the monolithic Green root"
+        );
+        let cold_target = (source.len() / 2) as u64;
+        let (cold_index, _) = session
+            .compact_checkpoints
+            .as_ref()
+            .expect("compact restart journal")
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| {
+                entry.accepted_physical.bytes() > 0
+                    && entry.cold_document_frame.is_some()
+                    && compact_receipt
+                        .renderable_rows
+                        .saturating_sub(entry.renderable_rows)
+                        >= 32
+            })
+            .min_by_key(|(_, entry)| entry.accepted_physical.bytes().abs_diff(cold_target))
+            .expect("ordinary source retains a cold Document-only midpoint checkpoint");
+        let cold_started_at = Instant::now();
+        let (mut cold_build, cold_entry) = session
+            .compact_checkpoints
+            .as_ref()
+            .expect("compact restart journal")
+            .begin_cold_slice_probe(cold_index, &mut runtime, SYNTAX_PROFILE_GFM_V1)
+            .expect("begin root-independent cold slice");
+        let cold_slice = loop {
+            let poll = cold_build.poll(&mut runtime, 64).expect("poll cold slice");
+            if let Some(slice) = cold_build.take_compact_probe_first_slice() {
+                break slice;
+            }
+            assert_ne!(
+                poll.status(),
+                M11PersistentRecursiveGreenBuildStatus::Complete,
+                "ordinary cold restart must publish its slice before EOF"
+            );
+        };
+        let cold_captured_at = cold_started_at.elapsed();
+        assert_eq!(cold_slice.physical_start, cold_entry.accepted_physical);
+        assert_eq!(cold_slice.row_base, cold_entry.renderable_rows);
+        assert!(
+            cold_slice
+                .physical_end
+                .bytes()
+                .saturating_sub(cold_slice.physical_start.bytes())
+                <= 64 * 1024
+        );
+        assert!(cold_slice.events.len() <= 8 * 1024);
+        let cold_start =
+            usize::try_from(cold_slice.physical_start.bytes()).expect("cold slice source start");
+        let cold_end =
+            usize::try_from(cold_slice.physical_end.bytes()).expect("cold slice source end");
+        let mut cold_root = build_green_slice_from_primary_events(
+            &mut runtime,
+            cold_start,
+            cold_end,
+            cold_slice.row_base,
+            &cold_slice.events,
+        );
+        let cold_start_utf16 =
+            usize::try_from(cold_slice.physical_start.utf16()).expect("cold slice UTF-16 start");
+        let cold_rows = cold_root
+            .locate_renderable_rows(
+                &runtime,
+                M11RecursiveGreenPoint::new(
+                    cold_start,
+                    cold_start_utf16,
+                    SourceBoundaryAffinity::After,
+                ),
+                cold_end as u64,
+                limits,
+            )
+            .expect("query cold Green slice")
+            .rows()
+            .to_vec();
+        let cold_inline = cold_rows
+            .iter()
+            .map(|row| {
+                let point = M11RecursiveGreenPoint::new(
+                    usize::try_from(row.physical_range().start).expect("cold row byte"),
+                    usize::try_from(row.physical_utf16_range().start).expect("cold row UTF-16"),
+                    SourceBoundaryAffinity::After,
+                );
+                let prepared = crate::prepare_m11_recursive_green_slice_inline_leaf(
+                    &runtime, &cold_root, point,
+                )
+                .expect("prepare cold inline leaf");
+                capture_inline_facts_for_slice_differential(&mut runtime, prepared)
+            })
+            .collect::<Vec<_>>();
+        let cold_engine_ready_at = cold_started_at.elapsed();
+        eprintln!(
+            "primary cold slice: captured={cold_captured_at:?} engine_ready={cold_engine_ready_at:?} source_start={cold_start} source_bytes={} events={} row_base={} rows={}",
+            cold_end - cold_start,
+            cold_slice.events.len(),
+            cold_slice.row_base,
+            cold_rows.len()
+        );
+        while cold_build
+            .poll(&mut runtime, 4_096)
+            .expect("finish cold compact source")
+            .status()
+            != M11PersistentRecursiveGreenBuildStatus::Complete
+        {}
+        let _ = cold_build
+            .take_compact_probe_receipt()
+            .expect("cold compact receipt");
+        let mut cold_session = cold_build.take_session().expect("cold compact session");
+        release_session(&mut runtime, &mut cold_session);
         release_session(&mut runtime, &mut session);
 
         let mut complete = build_session(&mut runtime);
@@ -4747,6 +4991,62 @@ mod tests {
             assert_eq!(
                 expected_inline, &actual_inline,
                 "bounded primary-stream slice must yield the eventual inline facts"
+            );
+        }
+        let complete_cold_rows = complete
+            .query_renderable_rows(
+                &runtime,
+                M11RecursiveGreenPoint::new(
+                    cold_start,
+                    cold_start_utf16,
+                    SourceBoundaryAffinity::After,
+                ),
+                cold_end as u64,
+                limits,
+            )
+            .expect("query eventual cold range")
+            .rows()
+            .to_vec();
+        assert_eq!(cold_rows.len(), complete_cold_rows.len());
+        for ((cold_row, complete_row), expected_inline) in
+            cold_rows.iter().zip(&complete_cold_rows).zip(&cold_inline)
+        {
+            assert_eq!(cold_row.ordinal(), complete_row.ordinal());
+            assert_eq!(cold_row.frame(), complete_row.frame());
+            assert_eq!(cold_row.kind(), complete_row.kind());
+            assert_eq!(cold_row.physical_range(), complete_row.physical_range());
+            assert_eq!(
+                cold_row.physical_utf16_range(),
+                complete_row.physical_utf16_range()
+            );
+            assert_eq!(cold_row.edit_capability(), complete_row.edit_capability());
+            assert_eq!(cold_row.editable_range(), complete_row.editable_range());
+            assert_eq!(
+                cold_row.editable_utf16_range(),
+                complete_row.editable_utf16_range()
+            );
+            assert_eq!(
+                cold_row.editable_segments(),
+                complete_row.editable_segments()
+            );
+            assert_eq!(cold_row.path().len(), complete_row.path().len());
+            assert_eq!(
+                &cold_row.path()[1..],
+                &complete_row.path()[1..],
+                "only the bounded synthetic Document envelope may differ"
+            );
+            let point = M11RecursiveGreenPoint::new(
+                usize::try_from(cold_row.physical_range().start).expect("cold row byte"),
+                usize::try_from(cold_row.physical_utf16_range().start).expect("cold row UTF-16"),
+                SourceBoundaryAffinity::After,
+            );
+            let prepared = complete
+                .prepare_inline_leaf(&runtime, point)
+                .expect("prepare eventual cold inline leaf");
+            assert_eq!(
+                expected_inline,
+                &capture_inline_facts_for_slice_differential(&mut runtime, prepared),
+                "root-independent cold slice must yield the eventual inline facts"
             );
         }
 
@@ -4841,6 +5141,14 @@ mod tests {
         while !rebased_root
             .poll_release(&mut rebased_runtime, 256)
             .expect("poll rebased slice release")
+            .complete()
+        {}
+        cold_root
+            .begin_release(&mut runtime)
+            .expect("begin cold slice release");
+        while !cold_root
+            .poll_release(&mut runtime, 256)
+            .expect("poll cold slice release")
             .complete()
         {}
         close_runtime(&mut rebased_runtime);

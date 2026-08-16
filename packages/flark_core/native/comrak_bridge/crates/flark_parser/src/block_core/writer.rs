@@ -404,6 +404,8 @@ struct M11CompactProbeOutput {
     fragment: M11BlockFragmentOutput,
     high_level_events: u64,
     renderable_rows: u64,
+    first_slice_start_physical: SourceMetric,
+    first_slice_start_rows: u64,
     paragraph: Option<M11CompactProbeParagraph>,
     first_slice: M11CompactProbeFirstSliceState,
     maximum_reference_events: usize,
@@ -427,7 +429,9 @@ enum M11CompactProbeFirstSliceState {
 
 #[cfg(test)]
 pub(crate) struct M11CompactProbeFirstSlice {
-    pub(crate) physical: SourceMetric,
+    pub(crate) physical_start: SourceMetric,
+    pub(crate) physical_end: SourceMetric,
+    pub(crate) row_base: u64,
     pub(crate) events: Vec<M11RecursiveGreenEvent>,
 }
 
@@ -465,10 +469,15 @@ pub(crate) struct M11CompactProbeWriterReceipt {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct M11CompactProbeCheckpointFacts {
     pub(crate) accepted_physical: SourceMetric,
+    pub(crate) parser_physical: SourceMetric,
     pub(crate) logical: SourceMetric,
     pub(crate) event_cut: u64,
+    pub(crate) high_level_events: u64,
     pub(crate) renderable_rows: u64,
     pub(crate) open_depth: usize,
+    pub(crate) cold_document_frame: Option<M11RecursiveGreenFrameId>,
+    pub(crate) cold_staged_blank_gap: Option<SourceMetric>,
+    pub(crate) next_frame: u64,
 }
 
 /// Source identity shared with the donor while a terminal Paragraph
@@ -2199,7 +2208,12 @@ impl M11CompactProbeOutput {
     }
 
     fn enforce_first_slice_source_cap(&mut self) {
-        if self.fragment.receipt.source_bytes > COMPACT_PROBE_FIRST_SLICE_MAX_SOURCE_BYTES
+        if self
+            .fragment
+            .receipt
+            .source_bytes
+            .saturating_sub(self.first_slice_start_physical.bytes())
+            > COMPACT_PROBE_FIRST_SLICE_MAX_SOURCE_BYTES
             && matches!(
                 self.first_slice,
                 M11CompactProbeFirstSliceState::Collecting(_)
@@ -2299,20 +2313,28 @@ impl M11CompactProbeOutput {
     ) -> Result<(), M11BlockWriterError> {
         if open_depth != 1
             || self.paragraph.is_some()
-            || self.renderable_rows < COMPACT_PROBE_FIRST_SLICE_ROWS
+            || self
+                .renderable_rows
+                .saturating_sub(self.first_slice_start_rows)
+                < COMPACT_PROBE_FIRST_SLICE_ROWS
         {
             return Ok(());
         }
         let state = std::mem::replace(&mut self.first_slice, M11CompactProbeFirstSliceState::Taken);
         self.first_slice = match state {
             M11CompactProbeFirstSliceState::Collecting(events) => {
-                if physical.bytes() > COMPACT_PROBE_FIRST_SLICE_MAX_SOURCE_BYTES
+                if physical
+                    .bytes()
+                    .saturating_sub(self.first_slice_start_physical.bytes())
+                    > COMPACT_PROBE_FIRST_SLICE_MAX_SOURCE_BYTES
                     || events.len() > COMPACT_PROBE_FIRST_SLICE_MAX_EVENTS
                 {
                     M11CompactProbeFirstSliceState::OverCap
                 } else {
                     M11CompactProbeFirstSliceState::Ready(M11CompactProbeFirstSlice {
-                        physical,
+                        physical_start: self.first_slice_start_physical,
+                        physical_end: physical,
+                        row_base: self.first_slice_start_rows,
                         events,
                     })
                 }
@@ -3162,6 +3184,8 @@ impl M11BlockWriter {
                 },
                 high_level_events: 0,
                 renderable_rows: 0,
+                first_slice_start_physical: SourceMetric::default(),
+                first_slice_start_rows: 0,
                 paragraph: None,
                 first_slice: M11CompactProbeFirstSliceState::Collecting(Vec::new()),
                 maximum_reference_events: 0,
@@ -3171,6 +3195,113 @@ impl M11BlockWriter {
             next_frame: 1,
             line_cursor: LineSourcePosition::default(),
             staged: None,
+            pending: None,
+            restart_join: None,
+            restart_provenance: None,
+            document_complete: false,
+            poisoned: false,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn resume_compact_probe_document_only(
+        runtime: &DocumentRuntime,
+        lease: SourceSnapshotLease,
+        document_frame: M11RecursiveGreenFrameId,
+        next_frame: u64,
+        accepted_physical: SourceMetric,
+        staged_blank_gap: Option<SourceMetric>,
+        logical: SourceMetric,
+        event_cut: u64,
+        high_level_events: u64,
+        renderable_rows: u64,
+    ) -> Result<Self, M11BlockWriterError> {
+        let source = lease.version();
+        let geometry_lease = runtime.snapshot_current_source().map_err(|_| {
+            M11BlockWriterError::InvalidCommand("row geometry source is unavailable")
+        })?;
+        let accepted_byte = usize::try_from(accepted_physical.bytes())
+            .map_err(|_| M11BlockWriterError::CounterOverflow)?;
+        let accepted_utf16 = usize::try_from(accepted_physical.utf16())
+            .map_err(|_| M11BlockWriterError::CounterOverflow)?;
+        let parser_physical = accepted_physical
+            .checked_add(staged_blank_gap.unwrap_or_default())
+            .ok_or(M11BlockWriterError::CounterOverflow)?;
+        let parser_byte = usize::try_from(parser_physical.bytes())
+            .map_err(|_| M11BlockWriterError::CounterOverflow)?;
+        let parser_utf16 = usize::try_from(parser_physical.utf16())
+            .map_err(|_| M11BlockWriterError::CounterOverflow)?;
+        if geometry_lease.version() != source
+            || runtime.current_source_version() != Some(source)
+            || accepted_byte > source.byte_len()
+            || accepted_utf16 > source.utf16_len()
+            || parser_byte > source.byte_len()
+            || parser_utf16 > source.utf16_len()
+            || lease
+                .utf16_offset_for_byte(accepted_byte)
+                .map_err(M11BlockWriterError::Source)?
+                != accepted_utf16
+            || !lease
+                .is_physical_line_start(accepted_byte)
+                .map_err(M11BlockWriterError::Source)?
+            || lease
+                .utf16_offset_for_byte(parser_byte)
+                .map_err(M11BlockWriterError::Source)?
+                != parser_utf16
+            || !lease
+                .is_physical_line_start(parser_byte)
+                .map_err(M11BlockWriterError::Source)?
+            || document_frame.get() >= next_frame
+        {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "compact cold restart is not a current Document-only line boundary",
+            ));
+        }
+        let mut first_slice_events = Vec::new();
+        first_slice_events
+            .try_reserve_exact(1)
+            .map_err(|_| M11BlockWriterError::Allocation)?;
+        first_slice_events.push(M11RecursiveGreenEvent::Enter {
+            frame: document_frame,
+            kind: green_kind(BlockKind::Document),
+        });
+        Ok(Self {
+            source,
+            geometry_lease: Some(geometry_lease),
+            output: WriterOutput::CompactProbe(M11CompactProbeOutput {
+                fragment: M11BlockFragmentOutput {
+                    lease: Some(lease),
+                    events: Vec::new(),
+                    receipt: WriterOutputReceipt {
+                        events: event_cut,
+                        source_bytes: accepted_physical.bytes(),
+                        source_utf16: accepted_physical.utf16(),
+                        logical_bytes: logical.bytes(),
+                        logical_utf16: logical.utf16(),
+                    },
+                    source_bytes_read: 0,
+                    reference: None,
+                },
+                high_level_events,
+                renderable_rows,
+                first_slice_start_physical: accepted_physical,
+                first_slice_start_rows: renderable_rows,
+                paragraph: None,
+                first_slice: M11CompactProbeFirstSliceState::Collecting(first_slice_events),
+                maximum_reference_events: 0,
+                maximum_reference_allocated_bytes: 0,
+            }),
+            open: vec![OpenFrame {
+                id: document_frame,
+                kind: BlockKind::Document,
+                fence: None,
+                row_editable: None,
+                has_renderable_descendant: false,
+                has_unrepresented_container_marker: false,
+            }],
+            next_frame,
+            line_cursor: LineSourcePosition::default(),
+            staged: staged_blank_gap.map(|metric| StagedSource::BlankGap { metric }),
             pending: None,
             restart_join: None,
             restart_provenance: None,
@@ -3342,17 +3473,41 @@ impl M11BlockWriter {
                 ));
             }
         };
+        let accepted_physical = SourceMetric::new(receipt.source_bytes, receipt.source_utf16)
+            .ok_or(M11BlockRestartError::Pairing(
+                "compact checkpoint physical metric is valid",
+            ))?;
+        let cold_staged_blank_gap = match self.staged {
+            None => None,
+            Some(StagedSource::BlankGap { metric }) => Some(metric),
+            Some(StagedSource::Terminator { .. }) => None,
+        };
+        let parser_physical = accepted_physical
+            .checked_add(match self.staged {
+                Some(StagedSource::BlankGap { metric })
+                | Some(StagedSource::Terminator { metric, .. }) => metric,
+                None => SourceMetric::default(),
+            })
+            .ok_or(M11BlockRestartError::Pairing(
+                "compact checkpoint parser metric is valid",
+            ))?;
         Ok(M11CompactProbeCheckpointFacts {
-            accepted_physical: SourceMetric::new(receipt.source_bytes, receipt.source_utf16)
-                .ok_or(M11BlockRestartError::Pairing(
-                    "compact checkpoint physical metric is valid",
-                ))?,
+            accepted_physical,
+            parser_physical,
             logical: SourceMetric::new(receipt.logical_bytes, receipt.logical_utf16).ok_or(
                 M11BlockRestartError::Pairing("compact checkpoint logical metric is valid"),
             )?,
             event_cut: receipt.packed_events,
+            high_level_events: receipt.high_level_events,
             renderable_rows: receipt.renderable_rows,
             open_depth: self.open.len(),
+            cold_document_frame: (self.open.len() == 1
+                && self.open[0].kind == BlockKind::Document
+                && (self.staged.is_none() || cold_staged_blank_gap.is_some())
+                && self.restart_join.is_none())
+            .then_some(self.open[0].id),
+            cold_staged_blank_gap,
+            next_frame: self.next_frame,
         })
     }
 

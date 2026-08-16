@@ -1262,6 +1262,31 @@ timed from before source admission and before EOF indexing completed. This is
 not the `<50 ms` rendered-slice receipt: it excludes the runtime/ABI payload,
 Flutter layout, paint, and raster, and therefore remains engine-only evidence.
 
+The first Gate-two cache-miss experiment now passes for ordinary blocks. A
+compact session with `green == None` selected a Document-only durable
+checkpoint near the middle of the same 10 MiB source, decoded the primary
+parser restart, restored the writer's distinct accepted/parser cuts (including
+its one deferred blank-line metric), and resumed the normal scanner,
+controller, writer, and reference-rendezvous driver. It did not parse a cropped
+source or invoke a second grammar. The resulting fragment was attached to the
+full current source with absolute byte, UTF-16, and row bases. Its 32 public
+rows, frame identities, editable geometry, inline facts, and cooked direct-link
+values matched the eventual full-root oracle. A Unicode-prefix differential
+also proved that nonzero byte and UTF-16 bases cannot be conflated; that test
+exposed and fixed one convenience query that had bypassed slice-coordinate
+translation.
+
+One fresh release process measured the 10 MiB midpoint restart at byte
+5,242,559. Durable decode plus primary-stream capture took 0.229 ms; bounded
+Green rows and authoritative inline/link facts were engine-ready in 11.307 ms.
+The slice covered 2,752 bytes and began at row 60,960. The entire differential
+test, including compact EOF indexing and eventual full-root comparison,
+finished in 2.63 seconds. This is strong evidence for cold random access, but
+only for ordinary Document-level blocks. Nested open-path serialization,
+reference-winner snapshots, tables/targets, the frozen 100-coordinate family
+matrix, ABI/layout/paint, and physical-device receipts remain open; Gate two is
+not yet claimed complete.
+
 The direction is accepted for prototyping, not yet for production migration.
 The remaining Gate-one semantic proof is a frozen mixed-construct slice matrix
 through the complete runtime/ABI payload, including tables and activated
