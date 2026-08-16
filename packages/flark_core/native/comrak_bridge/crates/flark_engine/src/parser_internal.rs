@@ -2379,6 +2379,27 @@ pub enum M11ReferenceResolution {
 }
 
 impl M11ResolvedReference {
+    /// Constructs parser-authenticated reference authority from an alternate
+    /// exact winner index. The caller remains responsible for binding every
+    /// range and cooked value to the same current source revision.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn new(
+        definition_ordinal: u64,
+        destination_source: Range<u64>,
+        title_source: Option<Range<u64>>,
+        cooked_destination: Box<str>,
+        cooked_title: Option<Box<str>>,
+    ) -> Self {
+        Self {
+            definition_ordinal,
+            destination_source,
+            title_source,
+            cooked_destination,
+            cooked_title,
+        }
+    }
+
     #[must_use]
     pub const fn definition_ordinal(&self) -> u64 {
         self.definition_ordinal

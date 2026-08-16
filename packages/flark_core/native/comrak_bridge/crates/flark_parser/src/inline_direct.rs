@@ -18,6 +18,9 @@ use flark_engine::parser_internal::{
 };
 use flark_engine::{DocumentRuntime, SourceVersion};
 
+#[cfg(test)]
+use crate::block_core::M11CompactReferenceResolver;
+
 use crate::inline_autolink::{
     M11InlineAutolinkError, M11InlineOpaqueCandidate, M11InlineOpaqueCandidates,
     M11InlineOpaqueKind,
@@ -833,6 +836,31 @@ enum DirectPhase {
     Transferred,
 }
 
+enum M11InlineReferenceResolver {
+    Persistent(M11ReferenceResolver),
+    #[cfg(test)]
+    Compact(M11CompactReferenceResolver),
+}
+
+impl M11InlineReferenceResolver {
+    fn resolve(
+        &self,
+        runtime: &DocumentRuntime,
+        normalized_label: &str,
+        maximum_cooked_bytes: usize,
+    ) -> Result<M11ReferenceResolution, M11InlineDirectError> {
+        match self {
+            Self::Persistent(resolver) => {
+                Ok(resolver.resolve(runtime, normalized_label, maximum_cooked_bytes)?)
+            }
+            #[cfg(test)]
+            Self::Compact(resolver) => resolver
+                .resolve(runtime, normalized_label, maximum_cooked_bytes)
+                .map_err(|_| M11InlineDirectError::InvalidState),
+        }
+    }
+}
+
 /// Resumable direct-link/image derivation over one parser-authenticated leaf.
 pub(crate) struct M11InlineDirectJob {
     source: SourceVersion,
@@ -851,7 +879,7 @@ pub(crate) struct M11InlineDirectJob {
     pending_image_bang: Option<u32>,
     attempt: Option<TailAttempt>,
     pending_fact: Option<PendingFact>,
-    reference_resolver: Option<M11ReferenceResolver>,
+    reference_resolver: Option<M11InlineReferenceResolver>,
     exhaustive_bracket_classification: bool,
     facts_by_order: BTreeMap<(u32, Reverse<u32>), M11InlineDirectFact>,
     syntax_by_start: BTreeMap<u32, u32>,
@@ -877,13 +905,33 @@ impl M11InlineDirectJob {
         // move-only resolver against the same live document actor now rather
         // than deferring a wrong-runtime error until the first reference.
         let _ = reference_resolver.resolve(runtime, "", 0)?;
-        Self::new_inner(runtime, opaque, Some(reference_resolver))
+        Self::new_inner(
+            runtime,
+            opaque,
+            Some(M11InlineReferenceResolver::Persistent(reference_resolver)),
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_with_compact_reference_resolver(
+        runtime: &DocumentRuntime,
+        opaque: &M11InlineOpaqueCandidates,
+        reference_resolver: M11CompactReferenceResolver,
+    ) -> Result<Self, M11InlineDirectError> {
+        let _ = reference_resolver
+            .resolve(runtime, "", 0)
+            .map_err(|_| M11InlineDirectError::InvalidState)?;
+        Self::new_inner(
+            runtime,
+            opaque,
+            Some(M11InlineReferenceResolver::Compact(reference_resolver)),
+        )
     }
 
     fn new_inner(
         runtime: &DocumentRuntime,
         opaque: &M11InlineOpaqueCandidates,
-        reference_resolver: Option<M11ReferenceResolver>,
+        reference_resolver: Option<M11InlineReferenceResolver>,
     ) -> Result<Self, M11InlineDirectError> {
         opaque.validate_source(runtime)?;
         // Start optimistic and revoke only when this leaf actually contains a

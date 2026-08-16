@@ -585,6 +585,8 @@ pub struct M11InlineProjectionJob {
     opaque: Option<Box<M11InlineOpaqueCandidates>>,
     direct_job: Option<Box<M11InlineDirectJob>>,
     reference_resolver: Option<M11ReferenceResolver>,
+    #[cfg(test)]
+    compact_reference_resolver: Option<crate::block_core::M11CompactReferenceResolver>,
     direct: Option<M11InlineDirectCandidates>,
     bare_autolink_job: Option<M11InlineBareAutolinkJob>,
     hazard_job: Option<Box<M11InlineHazardJob>>,
@@ -812,6 +814,20 @@ impl M11InlineProjectionJob {
         )
     }
 
+    #[cfg(test)]
+    pub(crate) fn new_for_recursive_green_inline_leaf_with_compact_reference_resolver_and_fact_capture(
+        runtime: &DocumentRuntime,
+        fence: M11RecursiveGreenInlineLeafFence,
+        binding: M11ParserBinding,
+        reference_resolver: crate::block_core::M11CompactReferenceResolver,
+    ) -> Result<Self, M11InlineProjectionJobError> {
+        let mut job = Self::new_for_recursive_green_inline_leaf_with_optional_reference_resolver(
+            runtime, fence, binding, None, true,
+        )?;
+        job.compact_reference_resolver = Some(reference_resolver);
+        Ok(job)
+    }
+
     fn new_for_recursive_green_inline_leaf_with_optional_reference_resolver(
         runtime: &DocumentRuntime,
         fence: M11RecursiveGreenInlineLeafFence,
@@ -950,6 +966,8 @@ impl M11InlineProjectionJob {
             opaque: None,
             direct_job: None,
             reference_resolver,
+            #[cfg(test)]
+            compact_reference_resolver: None,
             direct: None,
             bare_autolink_job: None,
             hazard_job: None,
@@ -1251,13 +1269,21 @@ impl M11InlineProjectionJob {
             .opaque
             .as_ref()
             .ok_or(M11InlineProjectionJobError::InvalidState)?;
-        self.direct_job = Some(Box::new(
-            if let Some(resolver) = self.reference_resolver.take() {
-                M11InlineDirectJob::new_with_reference_resolver(runtime, opaque, resolver)?
-            } else {
-                M11InlineDirectJob::new(runtime, opaque)?
-            },
-        ));
+        #[cfg(test)]
+        let direct = if let Some(resolver) = self.compact_reference_resolver.take() {
+            M11InlineDirectJob::new_with_compact_reference_resolver(runtime, opaque, resolver)?
+        } else if let Some(resolver) = self.reference_resolver.take() {
+            M11InlineDirectJob::new_with_reference_resolver(runtime, opaque, resolver)?
+        } else {
+            M11InlineDirectJob::new(runtime, opaque)?
+        };
+        #[cfg(not(test))]
+        let direct = if let Some(resolver) = self.reference_resolver.take() {
+            M11InlineDirectJob::new_with_reference_resolver(runtime, opaque, resolver)?
+        } else {
+            M11InlineDirectJob::new(runtime, opaque)?
+        };
+        self.direct_job = Some(Box::new(direct));
         self.phase = ProjectionJobPhase::Direct;
         *transitions += 1;
         Ok(())

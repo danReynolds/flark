@@ -256,6 +256,8 @@ impl M11PersistentRecursiveGreenCleanPlan {
             #[cfg(test)]
             compact_reference_receipt: None,
             #[cfg(test)]
+            compact_reference_resolver: None,
+            #[cfg(test)]
             compact_checkpoint_boundaries_seen: 0,
             #[cfg(test)]
             compact_restart_captures: 0,
@@ -309,6 +311,7 @@ impl M11PersistentRecursiveGreenCleanPlan {
             compact_probe: true,
             compact_probe_receipt: None,
             compact_reference_receipt: None,
+            compact_reference_resolver: None,
             compact_checkpoint_boundaries_seen: 0,
             compact_restart_captures: 0,
         })
@@ -394,6 +397,8 @@ pub struct M11PersistentRecursiveGreenCleanBuild {
     compact_probe_receipt: Option<M11CompactProbeWriterReceipt>,
     #[cfg(test)]
     compact_reference_receipt: Option<M11CompactReferenceReceipt>,
+    #[cfg(test)]
+    compact_reference_resolver: Option<crate::block_core::M11CompactReferenceResolver>,
     #[cfg(test)]
     compact_checkpoint_boundaries_seen: usize,
     #[cfg(test)]
@@ -749,7 +754,12 @@ impl M11PersistentRecursiveGreenCleanBuild {
                 #[cfg(test)]
                 if self.compact_probe {
                     self.writer = None;
-                    self.compact_reference_journal = None;
+                    let journal = self.compact_reference_journal.take().ok_or(
+                        M11PersistentRecursiveGreenSessionError::InvalidState(
+                            "completed compact reference journal is missing",
+                        ),
+                    )?;
+                    self.compact_reference_resolver = Some(journal.into_resolver(self.source)?);
                     self.controller = None;
                     self.output = Some(M11PersistentRecursiveGreenSession {
                         source: self.source,
@@ -765,6 +775,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
                         green_release_complete: true,
                         references_release_complete: true,
                         compact_probe: true,
+                        compact_reference_resolver: self.compact_reference_resolver.take(),
                     });
                     self.phase = CleanPhase::Complete;
                     return Ok(());
@@ -795,6 +806,8 @@ impl M11PersistentRecursiveGreenCleanBuild {
                         compact_probe: self.compact_probe,
                         #[cfg(test)]
                         compact_checkpoints: self.compact_checkpoint_journal.take(),
+                        #[cfg(test)]
+                        compact_reference_resolver: self.compact_reference_resolver.take(),
                     });
                     self.phase = CleanPhase::Complete;
                 }
@@ -1432,6 +1445,8 @@ pub struct M11PersistentRecursiveGreenSession {
     compact_probe: bool,
     #[cfg(test)]
     compact_checkpoints: Option<M11CompactCheckpointJournal>,
+    #[cfg(test)]
+    compact_reference_resolver: Option<crate::block_core::M11CompactReferenceResolver>,
 }
 
 #[cfg(test)]
@@ -1770,6 +1785,7 @@ impl M11CompactCheckpointJournal {
                 compact_probe: true,
                 compact_probe_receipt: None,
                 compact_reference_receipt: None,
+                compact_reference_resolver: None,
                 compact_checkpoint_boundaries_seen: 0,
                 compact_restart_captures: 0,
             },
@@ -3527,6 +3543,8 @@ impl M11PersistentRecursiveGreenAdoption {
             compact_probe: false,
             #[cfg(test)]
             compact_checkpoints: None,
+            #[cfg(test)]
+            compact_reference_resolver: None,
         };
         self.output = Some(M11PersistentRecursiveGreenUpdate {
             base: Some(base),
@@ -4576,13 +4594,63 @@ mod tests {
     ) {
         let profile =
             ParserProfileId::new(u64::from(SYNTAX_PROFILE_GFM_V1)).expect("GFM profile identity");
-        let mut job =
+        let job =
             crate::M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_fact_capture(
                 runtime,
                 prepared.into_fence(),
                 crate::M11ParserBinding::current(profile),
             )
             .expect("start inline fact capture");
+        finish_inline_fact_capture(runtime, job)
+    }
+
+    fn capture_inline_facts_with_compact_references(
+        runtime: &mut DocumentRuntime,
+        prepared: M11RecursiveGreenInlineLeafPreparation,
+        resolver: crate::block_core::M11CompactReferenceResolver,
+    ) -> (
+        Vec<flark_engine::parser_internal::M11InlineProjectionFact>,
+        Vec<flark_engine::parser_internal::M11InlineLinkValue>,
+    ) {
+        let profile =
+            ParserProfileId::new(u64::from(SYNTAX_PROFILE_GFM_V1)).expect("GFM profile identity");
+        let job = crate::M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_compact_reference_resolver_and_fact_capture(
+            runtime,
+            prepared.into_fence(),
+            crate::M11ParserBinding::current(profile),
+            resolver,
+        )
+        .expect("start compact-reference inline fact capture");
+        finish_inline_fact_capture(runtime, job)
+    }
+
+    fn capture_inline_facts_with_persistent_references(
+        runtime: &mut DocumentRuntime,
+        prepared: M11RecursiveGreenInlineLeafPreparation,
+        resolver: flark_engine::parser_internal::M11ReferenceResolver,
+    ) -> (
+        Vec<flark_engine::parser_internal::M11InlineProjectionFact>,
+        Vec<flark_engine::parser_internal::M11InlineLinkValue>,
+    ) {
+        let profile =
+            ParserProfileId::new(u64::from(SYNTAX_PROFILE_GFM_V1)).expect("GFM profile identity");
+        let job = crate::M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_reference_resolver_and_fact_capture(
+            runtime,
+            prepared.into_fence(),
+            crate::M11ParserBinding::current(profile),
+            resolver,
+        )
+        .expect("start persistent-reference inline fact capture");
+        finish_inline_fact_capture(runtime, job)
+    }
+
+    fn finish_inline_fact_capture(
+        runtime: &mut DocumentRuntime,
+        mut job: crate::M11InlineProjectionJob,
+    ) -> (
+        Vec<flark_engine::parser_internal::M11InlineProjectionFact>,
+        Vec<flark_engine::parser_internal::M11InlineLinkValue>,
+    ) {
         loop {
             let poll = job.poll(runtime, 4_096).expect("poll inline fact capture");
             if poll.status() == crate::M11InlineProjectionJobPollStatus::Complete {
@@ -5453,6 +5521,236 @@ mod tests {
         while !root
             .poll_release(&mut runtime, 256)
             .expect("poll nested slice release")
+            .complete()
+        {}
+        close_runtime(&mut runtime);
+    }
+
+    #[test]
+    fn compact_probe_cold_restart_uses_final_reference_winners() {
+        use flark_engine::parser_internal::{
+            M11RecursiveGreenRowQueryLimits, M11ReferenceResolver,
+        };
+
+        let mut source = String::from(
+            "[dup]: /first \"first title\"\n[dup]: /second \"loses\"\n[MiXeD  Label]: /m\\*ixed&amp; \"ti&amp;tle\"\n[αλφα]: /δ \"τίτλος\"\n\n",
+        );
+        for index in 0..96 {
+            source.push_str(&format!(
+                "Prelude paragraph {index:03} keeps the cold restart away from BOF.\n\n"
+            ));
+        }
+        let target_start = source.len();
+        source.push_str(
+            "Reference viewport has [dup], [late], [mixed label], [αλφα], and [missing].\n\n",
+        );
+        for index in 0..96 {
+            source.push_str(&format!(
+                "Suffix paragraph {index:03} keeps the late definition outside the slice.\n\n"
+            ));
+        }
+        let late_definition_start = source.len();
+        source.push_str("[late]: /late \"later title\"\n");
+
+        let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
+            .expect("reference cold runtime");
+        let (mut compact, receipt, _, _, _) = build_compact_probe(&mut runtime, Instant::now());
+        assert!(compact.green.is_none());
+        assert_eq!(receipt.reference_occurrences, 5);
+        assert_eq!(receipt.reference_winners, 4);
+        let compact_resolver = compact
+            .compact_reference_resolver
+            .as_ref()
+            .expect("compact final reference authority")
+            .clone();
+
+        let (index, selected) = compact
+            .compact_checkpoints
+            .as_ref()
+            .expect("reference compact journal")
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| {
+                entry.accepted_physical.bytes() <= target_start as u64
+                    && entry.cold_document_frame.is_some()
+                    && entry.writer_encoded_len > 0
+                    && receipt
+                        .renderable_rows
+                        .saturating_sub(entry.renderable_rows)
+                        >= 32
+            })
+            .max_by_key(|(_, entry)| entry.accepted_physical.bytes())
+            .expect("reference viewport has a preceding Document-only checkpoint");
+        let selected = *selected;
+        let started_at = Instant::now();
+        let (mut cold_build, entry, open_frame_bases) = compact
+            .compact_checkpoints
+            .as_ref()
+            .expect("reference compact journal")
+            .begin_cold_slice_probe(index, &mut runtime, SYNTAX_PROFILE_GFM_V1)
+            .expect("begin reference cold slice");
+        assert_eq!(entry, selected);
+        let slice = loop {
+            let poll = cold_build
+                .poll(&mut runtime, 64)
+                .expect("poll reference cold slice");
+            if let Some(slice) = cold_build.take_compact_probe_first_slice() {
+                break slice;
+            }
+            assert_ne!(
+                poll.status(),
+                M11PersistentRecursiveGreenBuildStatus::Complete,
+                "reference cold slice must publish before EOF"
+            );
+        };
+        let captured_at = started_at.elapsed();
+        let start = usize::try_from(slice.physical_start.bytes()).expect("reference slice start");
+        let start_utf16 =
+            usize::try_from(slice.physical_start.utf16()).expect("reference slice UTF-16 start");
+        let end = usize::try_from(slice.physical_end.bytes()).expect("reference slice end");
+        assert!(start <= target_start && target_start < end);
+        assert!(
+            end < late_definition_start,
+            "forward winner must come from final compact authority, not local replay"
+        );
+        let mut root = build_green_slice_from_primary_events(
+            &mut runtime,
+            start,
+            end,
+            slice.row_base,
+            &open_frame_bases,
+            &slice.events,
+        );
+        let limits = M11RecursiveGreenRowQueryLimits::new(64, 8_192, 65_536, 64, 65_536)
+            .expect("reference slice query limits");
+        let rows = root
+            .locate_renderable_rows(
+                &runtime,
+                M11RecursiveGreenPoint::new(start, start_utf16, SourceBoundaryAffinity::After),
+                end as u64,
+                limits,
+            )
+            .expect("query reference cold slice")
+            .rows()
+            .to_vec();
+        let inline = rows
+            .iter()
+            .map(|row| {
+                let point = M11RecursiveGreenPoint::new(
+                    usize::try_from(row.physical_range().start).expect("reference row byte"),
+                    usize::try_from(row.physical_utf16_range().start)
+                        .expect("reference row UTF-16"),
+                    SourceBoundaryAffinity::After,
+                );
+                let prepared =
+                    crate::prepare_m11_recursive_green_slice_inline_leaf(&runtime, &root, point)
+                        .expect("prepare compact-reference inline leaf");
+                capture_inline_facts_with_compact_references(
+                    &mut runtime,
+                    prepared,
+                    compact_resolver.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let cooked = inline
+            .iter()
+            .flat_map(|(_, links)| links.iter())
+            .map(|link| link.cooked_destination())
+            .collect::<Vec<_>>();
+        assert!(cooked.contains(&"/first"));
+        assert!(cooked.contains(&"/late"));
+        assert!(cooked.contains(&"/m*ixed&"));
+        assert!(cooked.contains(&"/δ"));
+        assert!(!cooked.contains(&"/second"));
+        assert_eq!(cooked.len(), 4, "undefined labels remain literal");
+        assert!(
+            inline
+                .iter()
+                .flat_map(|(_, links)| links.iter())
+                .any(|link| {
+                    link.cooked_destination() == "/m*ixed&" && link.cooked_title() == Some("ti&tle")
+                }),
+            "source-backed lookup must reuse exact destination/title cooking"
+        );
+        let engine_ready_at = started_at.elapsed();
+        eprintln!(
+            "reference cold slice: captured={captured_at:?} engine_ready={engine_ready_at:?} source_start={start} source_bytes={} rows={} links={} retained_reference_bytes={}",
+            end - start,
+            rows.len(),
+            cooked.len(),
+            receipt.reference_allocated_bytes,
+        );
+
+        while cold_build
+            .poll(&mut runtime, 4_096)
+            .expect("finish reference cold source")
+            .status()
+            != M11PersistentRecursiveGreenBuildStatus::Complete
+        {}
+        let _ = cold_build
+            .take_compact_probe_receipt()
+            .expect("reference cold receipt");
+        let mut cold_session = cold_build.take_session().expect("reference cold session");
+        release_session(&mut runtime, &mut cold_session);
+        release_session(&mut runtime, &mut compact);
+
+        let mut complete = build_session(&mut runtime);
+        let persistent_resolver = M11ReferenceResolver::from_live_reference_journal(
+            &runtime,
+            complete
+                .references
+                .as_ref()
+                .expect("eventual reference authority"),
+        )
+        .expect("eventual reference resolver");
+        let complete_rows = complete
+            .query_renderable_rows(
+                &runtime,
+                M11RecursiveGreenPoint::new(start, start_utf16, SourceBoundaryAffinity::After),
+                end as u64,
+                limits,
+            )
+            .expect("query eventual reference range")
+            .rows()
+            .to_vec();
+        assert_eq!(rows.len(), complete_rows.len());
+        for ((row, expected), compact_inline) in rows.iter().zip(&complete_rows).zip(&inline) {
+            assert_eq!(row.ordinal(), expected.ordinal());
+            assert_eq!(row.frame(), expected.frame());
+            assert_eq!(row.kind(), expected.kind());
+            assert_eq!(row.physical_range(), expected.physical_range());
+            assert_eq!(row.physical_utf16_range(), expected.physical_utf16_range());
+            assert_eq!(row.edit_capability(), expected.edit_capability());
+            assert_eq!(row.editable_range(), expected.editable_range());
+            assert_eq!(row.editable_utf16_range(), expected.editable_utf16_range());
+            assert_eq!(row.editable_segments(), expected.editable_segments());
+            assert_eq!(&row.path()[1..], &expected.path()[1..]);
+            let point = M11RecursiveGreenPoint::new(
+                usize::try_from(row.physical_range().start).expect("reference row byte"),
+                usize::try_from(row.physical_utf16_range().start).expect("reference row UTF-16"),
+                SourceBoundaryAffinity::After,
+            );
+            let prepared = complete
+                .prepare_inline_leaf(&runtime, point)
+                .expect("prepare eventual reference inline leaf");
+            assert_eq!(
+                compact_inline,
+                &capture_inline_facts_with_persistent_references(
+                    &mut runtime,
+                    prepared,
+                    persistent_resolver.clone(),
+                ),
+                "compact final winners must match persistent reference authority"
+            );
+        }
+
+        release_session(&mut runtime, &mut complete);
+        root.begin_release(&mut runtime)
+            .expect("begin reference slice release");
+        while !root
+            .poll_release(&mut runtime, 256)
+            .expect("poll reference slice release")
             .complete()
         {}
         close_runtime(&mut runtime);

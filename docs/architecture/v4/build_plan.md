@@ -1308,6 +1308,29 @@ inline values—matched the eventual full-root oracle. This clears the initial
 bounded list/quote mechanism under the provisional 100 ms request target, but
 is one development receipt rather than the required repeated family matrix.
 
+The compact-reference dependency has now passed its first cold-slice
+differential without introducing a second reference grammar. The EOF index
+retains normalized labels, exact definition/value source ranges, sorted
+first-winner ordinals, and the source revision. A cold inline lookup binary
+searches that immutable authority and runs only the selected winner's bounded
+destination/title ranges through the same parser-owned cleaner used during
+full publication. A fixture whose viewport preceded a late definition matched
+the eventual persistent reference root for complete inline facts and target
+geometry: the first of two duplicate definitions won, the forward reference
+resolved, case/whitespace and Unicode labels resolved, cooked Unicode
+destination/title values matched, and an undefined label remained literal.
+Two release-mode runs of the final escaped/entity fixture made the 32-row cold
+result engine-ready in 15.760-20.428 ms.
+
+One rejected variant usefully hardened the storage rule. Retaining every
+cooked destination/title in the compact index increased the 5 MiB
+many-reference fixture from 9.713 MiB to 16.005 MiB and failed the 12 MiB
+component cap. Source-backed on-demand cooking restored 9.713 MiB of reference
+state plus 0.544 MiB of checkpoint pages, retained exact behavior, and
+completed EOF indexing in 1.073 seconds. Compact reference values therefore
+remain source-backed; a later value cache, if any, belongs to the bounded hot
+fragment budget rather than the revision-wide index.
+
 The direction is accepted for prototyping, not yet for production migration.
 The remaining Gate-one semantic proof is a frozen mixed-construct slice matrix
 through the complete runtime/ABI payload, including tables and activated

@@ -44,7 +44,9 @@ pub use paragraph_fence::{
     M11RecursiveGreenParagraphFence, M11RecursiveGreenRowPresentation,
 };
 #[cfg(test)]
-pub(crate) use reference_rendezvous::{M11CompactReferenceJournal, M11CompactReferenceReceipt};
+pub(crate) use reference_rendezvous::{
+    M11CompactReferenceJournal, M11CompactReferenceReceipt, M11CompactReferenceResolver,
+};
 pub use reference_rendezvous::{
     M11ReferenceRendezvous, M11ReferenceRendezvousError, M11ReferenceRendezvousPoll,
     M11ReferenceRendezvousStatus,

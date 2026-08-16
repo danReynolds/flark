@@ -7,6 +7,8 @@
 
 use std::fmt;
 use std::ops::Range;
+#[cfg(test)]
+use std::sync::Arc;
 
 use flark_block_core_donor as donor;
 use flark_block_core_donor::DirectReferencePrefixSource;
@@ -16,6 +18,10 @@ use flark_engine::parser_internal::{
     M11RecursiveGreenTerminalFragmentBarrierStatus, M11RecursiveGreenTerminalFragmentCursorStatus,
     M11RecursiveGreenTerminalFragmentDisposition, M11ReferenceJournal, M11ReferenceJournalError,
     M11ReferenceJournalOccurrenceStart, M11ReferenceJournalRange, M11ReferenceJournalValueKind,
+};
+#[cfg(test)]
+use flark_engine::parser_internal::{
+    M11ReferenceResolution, M11ResolvedReference, M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES,
 };
 use flark_engine::DocumentRuntime;
 
@@ -34,6 +40,9 @@ type Identity = M11ReferenceOutputIdentity;
 type Work = donor::DirectReferencePrefixWork<Identity>;
 type OutputAck = donor::DirectReferencePrefixOutputAck<Identity>;
 type TerminalOutput = donor::DirectReferencePrefixTerminalOutput<Identity>;
+
+#[cfg(test)]
+const COMPACT_REFERENCE_LOOKUP_MAX_SOURCE_BYTES: usize = 64 * 1024;
 
 trait M11ReferenceJournalSink {
     fn source_backed_values(&self) -> bool {
@@ -155,6 +164,26 @@ pub(crate) struct M11CompactReferenceJournal {
     rendezvous_phase_transitions: [u64; 8],
 }
 
+/// Immutable, source-version-bound first-winner authority retained by the
+/// compact parse index. Unlike the full reference journal, this owns no arena
+/// tree: one sorted ordinal directory points into packed labels and exact
+/// source ranges. Cooked values are derived on demand through the same bounded
+/// parser-owned cleaner, keeping dense documents inside the retained budget.
+#[cfg(test)]
+#[derive(Clone, Debug)]
+pub(crate) struct M11CompactReferenceResolver {
+    source: flark_engine::SourceVersion,
+    index: Arc<M11CompactReferenceIndex>,
+}
+
+#[cfg(test)]
+#[derive(Debug)]
+struct M11CompactReferenceIndex {
+    records: Box<[M11CompactReferenceRecord]>,
+    normalized_labels: Box<[u8]>,
+    order: Box<[u32]>,
+}
+
 #[cfg(test)]
 impl M11CompactReferenceJournal {
     pub(crate) fn new() -> Self {
@@ -231,6 +260,25 @@ impl M11CompactReferenceJournal {
         }
     }
 
+    pub(crate) fn into_resolver(
+        self,
+        source: flark_engine::SourceVersion,
+    ) -> Result<M11CompactReferenceResolver, M11ReferenceRendezvousError> {
+        if !self.complete || self.pending.is_some() {
+            return Err(M11ReferenceRendezvousError::InvalidState(
+                "compact reference resolver requires a completed index",
+            ));
+        }
+        Ok(M11CompactReferenceResolver {
+            source,
+            index: Arc::new(M11CompactReferenceIndex {
+                records: self.records.into_boxed_slice(),
+                normalized_labels: self.normalized_labels.into_boxed_slice(),
+                order: self.order.into_boxed_slice(),
+            }),
+        })
+    }
+
     fn finish_pending_if_ready(&mut self) -> Result<(), M11ReferenceRendezvousError> {
         let Some(pending) = self.pending.as_ref() else {
             return Ok(());
@@ -251,6 +299,144 @@ impl M11CompactReferenceJournal {
         })?;
         self.records.push(pending.record);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+impl M11CompactReferenceResolver {
+    pub(crate) fn resolve(
+        &self,
+        runtime: &DocumentRuntime,
+        normalized_label: &str,
+        maximum_cooked_bytes: usize,
+    ) -> Result<M11ReferenceResolution, M11ReferenceRendezvousError> {
+        if runtime.current_source_version() != Some(self.source) {
+            return Err(M11ReferenceRendezvousError::InvalidState(
+                "compact reference resolver crossed source authority",
+            ));
+        }
+        if normalized_label.is_empty() {
+            return Ok(M11ReferenceResolution::Missing);
+        }
+        let digest = blake3::hash(normalized_label.as_bytes());
+        let digest = &digest.as_bytes()[..16];
+        let found = self.index.order.binary_search_by(|ordinal| {
+            let record = &self.index.records[*ordinal as usize];
+            record.digest.as_slice().cmp(digest).then_with(|| {
+                compact_reference_label(&self.index.normalized_labels, record)
+                    .cmp(normalized_label.as_bytes())
+            })
+        });
+        let Ok(found) = found else {
+            return Ok(M11ReferenceResolution::Missing);
+        };
+        let record = self
+            .index
+            .records
+            .get(self.index.order[found] as usize)
+            .ok_or(M11ReferenceRendezvousError::InvalidState(
+                "compact reference ordinal is in bounds",
+            ))?;
+        let winner = self.index.records.get(record.winner as usize).ok_or(
+            M11ReferenceRendezvousError::InvalidState("compact reference winner is in bounds"),
+        )?;
+        let destination_source_len = winner
+            .destination_source_end
+            .checked_sub(winner.destination_source_start)
+            .ok_or(M11ReferenceRendezvousError::InvalidState(
+                "compact reference destination range is monotonic",
+            ))? as usize;
+        let title_source_len = if winner.title_source_start == u32::MAX {
+            0
+        } else {
+            winner
+                .title_source_end
+                .checked_sub(winner.title_source_start)
+                .ok_or(M11ReferenceRendezvousError::InvalidState(
+                    "compact reference title range is monotonic",
+                ))? as usize
+        };
+        if destination_source_len
+            .checked_add(title_source_len)
+            .is_none_or(|total| total > COMPACT_REFERENCE_LOOKUP_MAX_SOURCE_BYTES)
+        {
+            return Ok(M11ReferenceResolution::ValueTooLarge);
+        }
+        let maximum_cooked_bytes =
+            maximum_cooked_bytes.min(M11_INLINE_LINK_VALUES_MAX_ENCODED_BYTES.saturating_sub(32));
+        let Some(destination) = cook_compact_reference_value(
+            runtime,
+            winner.destination_source_start..winner.destination_source_end,
+            ValueKind::Destination,
+            maximum_cooked_bytes,
+        )?
+        else {
+            return Ok(M11ReferenceResolution::ValueTooLarge);
+        };
+        let title = if winner.title_source_start == u32::MAX {
+            None
+        } else {
+            let remaining = maximum_cooked_bytes.saturating_sub(destination.len());
+            let Some(title) = cook_compact_reference_value(
+                runtime,
+                winner.title_source_start..winner.title_source_end,
+                ValueKind::Title,
+                remaining,
+            )?
+            else {
+                return Ok(M11ReferenceResolution::ValueTooLarge);
+            };
+            Some(title)
+        };
+        Ok(M11ReferenceResolution::Resolved(M11ResolvedReference::new(
+            u64::from(record.winner),
+            u64::from(winner.destination_source_start)..u64::from(winner.destination_source_end),
+            (winner.title_source_start != u32::MAX)
+                .then(|| u64::from(winner.title_source_start)..u64::from(winner.title_source_end)),
+            destination,
+            title,
+        )))
+    }
+}
+
+#[cfg(test)]
+fn cook_compact_reference_value(
+    runtime: &DocumentRuntime,
+    range: Range<u32>,
+    kind: ValueKind,
+    maximum: usize,
+) -> Result<Option<Box<str>>, M11ReferenceRendezvousError> {
+    let mut cursor = runtime
+        .snapshot_current_source()
+        .map_err(|_| {
+            M11ReferenceRendezvousError::InvalidState(
+                "compact reference resolver lost current source",
+            )
+        })?
+        .cursor_in(range.start as usize..range.end as usize)
+        .map_err(|_| {
+            M11ReferenceRendezvousError::InvalidState(
+                "compact reference value range is not source-aligned",
+            )
+        })?;
+    let mut cook = StreamingValueCook::new(kind, maximum);
+    loop {
+        match cook.poll_one() {
+            Ok(StreamingValuePoll::NeedsSource) => {
+                let mut byte = [0_u8; 1];
+                if cursor.read(&mut byte) == 1 {
+                    cook.offer_source_byte(byte[0])?;
+                } else {
+                    cook.finish_source()?;
+                }
+            }
+            Ok(StreamingValuePoll::Progress) => {}
+            Ok(StreamingValuePoll::Complete) => return cook.output.into_boxed_str().map(Some),
+            Err(M11ReferenceRendezvousError::InvalidState(
+                "reference cooked value exceeds its hard per-fact bound",
+            )) => return Ok(None),
+            Err(error) => return Err(error),
+        }
     }
 }
 
@@ -664,6 +850,32 @@ impl CookedScratch {
 
     const fn len(&self) -> usize {
         self.len
+    }
+
+    #[cfg(test)]
+    fn into_boxed_str(self) -> Result<Box<str>, M11ReferenceRendezvousError> {
+        let mut bytes = Vec::new();
+        bytes.try_reserve_exact(self.len).map_err(|_| {
+            M11ReferenceRendezvousError::InvalidState("compact reference result allocation failed")
+        })?;
+        let mut remaining = self.len;
+        for page in self.pages {
+            let accepted = remaining.min(page.len());
+            bytes.extend_from_slice(&page[..accepted]);
+            remaining -= accepted;
+        }
+        if remaining != 0 {
+            return Err(M11ReferenceRendezvousError::InvalidState(
+                "compact reference result pages were truncated",
+            ));
+        }
+        String::from_utf8(bytes)
+            .map(String::into_boxed_str)
+            .map_err(|_| {
+                M11ReferenceRendezvousError::InvalidState(
+                    "compact reference cooked value remains UTF-8",
+                )
+            })
     }
 }
 
