@@ -2147,6 +2147,20 @@ impl M11InlineProjectionJob {
         Some(output)
     }
 
+    /// Whether captured facts represent a complete authoritative projection.
+    /// `Some(false)` means the parser deliberately failed the leaf closed;
+    /// callers must present exact source rather than treating an empty fact
+    /// vector as proof that no syntax exists.
+    #[must_use]
+    pub fn projected_facts_are_authoritative(&self) -> Option<bool> {
+        self.output.as_ref().map(|output| {
+            matches!(
+                output.disposition,
+                M11InlineProjectionDisposition::Authoritative
+            )
+        })
+    }
+
     /// Transfers facts captured by [`Self::new_for_exact_projected_source`].
     /// The authoritative/unsupported publication must still be transferred
     /// separately so its scratch-runtime storage can be reclaimed correctly.

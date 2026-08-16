@@ -14,6 +14,8 @@ use std::{
 #[cfg(test)]
 use std::{collections::btree_map, slice};
 
+#[cfg(test)]
+use flark_engine::parser_internal::M11RecursiveGreenEvent;
 use flark_engine::parser_internal::{
     M11RecursiveGreenError, M11RecursiveGreenFrameQueryError, M11RecursiveGreenFrameQueryLimits,
     M11RecursiveGreenLocation, M11RecursiveGreenPoint, M11RecursiveGreenRoot,
@@ -41,8 +43,8 @@ use crate::block_core::{
 };
 #[cfg(test)]
 use crate::block_core::{
-    M11CompactProbeCheckpointFacts, M11CompactProbeWriterReceipt, M11CompactReferenceJournal,
-    M11CompactReferenceReceipt, M11DirectDurableBlockRestart,
+    M11CompactProbeCheckpointFacts, M11CompactProbeFirstSlice, M11CompactProbeWriterReceipt,
+    M11CompactReferenceJournal, M11CompactReferenceReceipt, M11DirectDurableBlockRestart,
 };
 use crate::recursive_green_block_quote_projection::{
     resolve_m11_recursive_green_block_quote_projection_fence,
@@ -834,6 +836,8 @@ impl M11PersistentRecursiveGreenCleanBuild {
                     "compact writer is missing",
                 ))?
                 .compact_probe_checkpoint_candidate()?;
+            self.writer_mut()?
+                .compact_probe_maybe_freeze_first_slice(metric, open_depth)?;
             let previous_cut = self
                 .compact_checkpoint_journal
                 .as_ref()
@@ -1068,6 +1072,27 @@ impl M11PersistentRecursiveGreenCleanBuild {
         self.compact_probe
             .then(|| self.writer.as_ref()?.compact_probe_receipt().ok())
             .flatten()
+    }
+
+    #[cfg(test)]
+    fn take_compact_probe_first_slice(&mut self) -> Option<M11CompactProbeFirstSlice> {
+        self.compact_probe
+            .then(|| {
+                self.writer
+                    .as_mut()?
+                    .compact_probe_take_first_slice()
+                    .ok()?
+            })
+            .flatten()
+    }
+
+    #[cfg(test)]
+    fn compact_probe_first_slice_over_cap(&self) -> bool {
+        self.compact_probe
+            && self
+                .writer
+                .as_ref()
+                .is_some_and(|writer| writer.compact_probe_first_slice_over_cap().unwrap_or(false))
     }
 
     pub fn begin_cancel(
@@ -4337,8 +4362,45 @@ fn to_u32_range(range: Range<u64>) -> Result<Range<u32>, M11PersistentRecursiveG
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flark_engine::DocumentRuntimeConfig;
+    use flark_engine::{DocumentRuntimeConfig, ParserProfileId, SourceBoundaryAffinity};
     use std::time::Instant;
+
+    fn capture_inline_facts_for_slice_differential(
+        runtime: &mut DocumentRuntime,
+        prepared: M11RecursiveGreenInlineLeafPreparation,
+    ) -> (
+        Vec<flark_engine::parser_internal::M11InlineProjectionFact>,
+        Vec<flark_engine::parser_internal::M11InlineLinkValue>,
+    ) {
+        let profile =
+            ParserProfileId::new(u64::from(SYNTAX_PROFILE_GFM_V1)).expect("GFM profile identity");
+        let mut job =
+            crate::M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_fact_capture(
+                runtime,
+                prepared.into_fence(),
+                crate::M11ParserBinding::current(profile),
+            )
+            .expect("start inline fact capture");
+        loop {
+            let poll = job.poll(runtime, 4_096).expect("poll inline fact capture");
+            if poll.status() == crate::M11InlineProjectionJobPollStatus::Complete {
+                break;
+            }
+            assert!(poll.transitions() > 0, "inline fact capture must progress");
+        }
+        assert_eq!(job.projected_facts_are_authoritative(), Some(true));
+        let facts = job.take_projected_facts().expect("captured inline facts");
+        let links = job
+            .take_projected_link_values()
+            .expect("captured inline link values");
+        job.begin_abort(runtime).expect("begin inline cleanup");
+        while !job
+            .poll_abort(runtime, 4_096)
+            .expect("poll inline cleanup")
+            .complete()
+        {}
+        (facts, links)
+    }
 
     fn build_session(runtime: &mut DocumentRuntime) -> M11PersistentRecursiveGreenSession {
         let plan = M11PersistentRecursiveGreenCleanPlan::new(
@@ -4438,6 +4500,251 @@ mod tests {
             .expect("root-independent durable restart samples");
         assert!(first_32_rows <= admitted_at.elapsed());
 
+        release_session(&mut runtime, &mut session);
+        close_runtime(&mut runtime);
+    }
+
+    #[test]
+    fn compact_probe_captures_one_bounded_primary_stream_slice() {
+        use flark_engine::parser_internal::{
+            M11RecursiveGreenBuildStatus, M11RecursiveGreenClosedChild,
+            M11RecursiveGreenRowQueryLimits, M11RecursiveGreenSliceBuild,
+        };
+
+        let source = (0..96)
+            .map(|index| {
+                format!(
+                    "Paragraph {index} has **strong**, _emphasis_, and a [direct link](https://example.invalid/{index}).\n\n"
+                )
+            })
+            .collect::<String>();
+        let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
+            .expect("first-slice runtime");
+        let plan = M11PersistentRecursiveGreenCleanPlan::new(
+            runtime.snapshot_current_source().expect("scanner lease"),
+            runtime.snapshot_current_source().expect("writer lease"),
+            1,
+        )
+        .expect("first-slice plan");
+        let mut build = plan
+            .begin_compact_probe(&mut runtime)
+            .expect("first-slice compact build");
+        let slice = loop {
+            let poll = build.poll(&mut runtime, 64).expect("poll first slice");
+            if let Some(slice) = build.take_compact_probe_first_slice() {
+                break slice;
+            }
+            assert_ne!(
+                poll.status(),
+                M11PersistentRecursiveGreenBuildStatus::Complete,
+                "ordinary source must publish its first slice before EOF"
+            );
+        };
+
+        assert!(slice.physical.bytes() < source.len() as u64);
+        assert!(slice.physical.bytes() <= 64 * 1024);
+        assert!(slice.events.len() <= 8 * 1024);
+        assert!(matches!(
+            slice.events.first(),
+            Some(M11RecursiveGreenEvent::Enter { .. })
+        ));
+        assert!(
+            slice
+                .events
+                .iter()
+                .filter(
+                    |event| matches!(event, M11RecursiveGreenEvent::Exit { final_kind, .. }
+                    if matches!(final_kind.get(), 5 | 6 | 7 | 8 | 12 | 13))
+                )
+                .count()
+                >= 32
+        );
+
+        loop {
+            if build
+                .poll(&mut runtime, 4_096)
+                .expect("finish compact source")
+                .status()
+                == M11PersistentRecursiveGreenBuildStatus::Complete
+            {
+                break;
+            }
+        }
+        let mut session = build.take_session().expect("compact session");
+        release_session(&mut runtime, &mut session);
+
+        let source_end = usize::try_from(slice.physical.bytes()).expect("slice end");
+        let mut slice_build = M11RecursiveGreenSliceBuild::new(
+            &runtime,
+            runtime.snapshot_current_source().expect("slice source"),
+            source_end,
+        )
+        .expect("begin Green slice");
+        let (document_frame, document_kind) = match slice.events.first().copied() {
+            Some(M11RecursiveGreenEvent::Enter { frame, kind }) => (frame, kind),
+            _ => panic!("primary slice omitted its Document enter"),
+        };
+        for event in slice.events {
+            slice_build.offer_event(event).expect("offer slice event");
+            loop {
+                match slice_build
+                    .poll(&mut runtime, 4_096)
+                    .expect("poll slice event")
+                    .status()
+                {
+                    M11RecursiveGreenBuildStatus::NeedsInput => break,
+                    M11RecursiveGreenBuildStatus::Pending => {}
+                    status => panic!("slice event terminated build as {status:?}"),
+                }
+            }
+        }
+        slice_build
+            .offer_event(M11RecursiveGreenEvent::Exit {
+                frame: document_frame,
+                final_kind: document_kind,
+                close: None,
+                last_line_blank: false,
+                child: M11RecursiveGreenClosedChild::default(),
+            })
+            .expect("offer synthetic slice envelope close");
+        loop {
+            match slice_build
+                .poll(&mut runtime, 4_096)
+                .expect("poll slice envelope")
+                .status()
+            {
+                M11RecursiveGreenBuildStatus::NeedsInput => break,
+                M11RecursiveGreenBuildStatus::Pending => {}
+                status => panic!("slice envelope terminated build as {status:?}"),
+            }
+        }
+        slice_build.finish_input().expect("finish slice input");
+        loop {
+            if slice_build
+                .poll(&mut runtime, 4_096)
+                .expect("finish Green slice")
+                .status()
+                == M11RecursiveGreenBuildStatus::Complete
+            {
+                break;
+            }
+        }
+        let mut slice_root = slice_build.take_root().expect("Green slice root");
+        let limits = M11RecursiveGreenRowQueryLimits::new(64, 4_096, 32_768, 64, 32_768)
+            .expect("slice query limits");
+        let slice_rows = slice_root
+            .locate_renderable_rows(
+                &runtime,
+                M11RecursiveGreenPoint::new(0, 0, flark_engine::SourceBoundaryAffinity::After),
+                source_end as u64,
+                limits,
+            )
+            .expect("query Green slice")
+            .rows()
+            .to_vec();
+
+        let mut complete = build_session(&mut runtime);
+        let complete_rows = complete
+            .query_renderable_rows(
+                &runtime,
+                M11RecursiveGreenPoint::new(0, 0, flark_engine::SourceBoundaryAffinity::After),
+                source_end as u64,
+                limits,
+            )
+            .expect("query complete Green")
+            .rows()
+            .to_vec();
+        assert_eq!(slice_rows.len(), complete_rows.len());
+        for (slice_row, complete_row) in slice_rows.iter().zip(&complete_rows) {
+            assert_eq!(slice_row.ordinal(), complete_row.ordinal());
+            assert_eq!(slice_row.frame(), complete_row.frame());
+            assert_eq!(slice_row.kind(), complete_row.kind());
+            assert_eq!(slice_row.physical_range(), complete_row.physical_range());
+            assert_eq!(
+                slice_row.physical_utf16_range(),
+                complete_row.physical_utf16_range()
+            );
+            assert_eq!(slice_row.edit_capability(), complete_row.edit_capability());
+            assert_eq!(slice_row.editable_range(), complete_row.editable_range());
+            assert_eq!(
+                slice_row.editable_utf16_range(),
+                complete_row.editable_utf16_range()
+            );
+            assert_eq!(
+                slice_row.editable_segments(),
+                complete_row.editable_segments()
+            );
+            assert_eq!(slice_row.path().len(), complete_row.path().len());
+            assert_eq!(
+                &slice_row.path()[1..],
+                &complete_row.path()[1..],
+                "only the deliberately shorter synthetic Document envelope may differ"
+            );
+
+            let slice_point = M11RecursiveGreenPoint::new(
+                usize::try_from(slice_row.physical_range().start).expect("slice row byte"),
+                usize::try_from(slice_row.physical_utf16_range().start).expect("slice row UTF-16"),
+                SourceBoundaryAffinity::After,
+            );
+            let slice_inline = crate::prepare_m11_recursive_green_slice_inline_leaf(
+                &runtime,
+                &slice_root,
+                slice_point,
+            )
+            .expect("prepare slice inline leaf");
+            let complete_inline = complete
+                .prepare_inline_leaf(&runtime, slice_point)
+                .expect("prepare complete inline leaf");
+            assert_eq!(
+                capture_inline_facts_for_slice_differential(&mut runtime, slice_inline),
+                capture_inline_facts_for_slice_differential(&mut runtime, complete_inline),
+                "bounded primary-stream slice must yield the eventual inline facts"
+            );
+        }
+
+        release_session(&mut runtime, &mut complete);
+        slice_root
+            .begin_release(&mut runtime)
+            .expect("begin slice release");
+        while !slice_root
+            .poll_release(&mut runtime, 256)
+            .expect("poll slice release")
+            .complete()
+        {}
+        close_runtime(&mut runtime);
+    }
+
+    #[test]
+    fn compact_probe_abandons_unbounded_first_slice() {
+        let source = format!(
+            "~~~markdown\n{}",
+            "literal text remains fenced\n".repeat(4_096)
+        );
+        let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
+            .expect("over-cap runtime");
+        let plan = M11PersistentRecursiveGreenCleanPlan::new(
+            runtime.snapshot_current_source().expect("scanner lease"),
+            runtime.snapshot_current_source().expect("writer lease"),
+            1,
+        )
+        .expect("over-cap plan");
+        let mut build = plan
+            .begin_compact_probe(&mut runtime)
+            .expect("over-cap compact build");
+        let mut observed_cap = false;
+        loop {
+            let poll = build.poll(&mut runtime, 256).expect("poll over-cap source");
+            observed_cap |= build.compact_probe_first_slice_over_cap();
+            assert!(build.take_compact_probe_first_slice().is_none());
+            if poll.status() == M11PersistentRecursiveGreenBuildStatus::Complete {
+                break;
+            }
+        }
+        assert!(
+            observed_cap,
+            "spanning construct must use the bounded fallback"
+        );
+        let mut session = build.take_session().expect("compact session");
         release_session(&mut runtime, &mut session);
         close_runtime(&mut runtime);
     }

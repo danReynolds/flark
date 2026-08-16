@@ -9,6 +9,7 @@ use flark_engine::parser_internal::{
     M11RecursiveGreenFrameId, M11RecursiveGreenFrameQueryError, M11RecursiveGreenFrameQueryLimits,
     M11RecursiveGreenKind, M11RecursiveGreenPoint, M11RecursiveGreenQueryReceipt,
     M11RecursiveGreenRenderableRow, M11RecursiveGreenRoot, M11RecursiveGreenRowQueryLimits,
+    M11RecursiveGreenSliceRoot,
 };
 use flark_engine::{DocumentRuntime, SourceVersion};
 
@@ -945,6 +946,36 @@ pub fn resolve_m11_recursive_green_inline_leaf_fence(
 pub fn resolve_m11_recursive_green_inline_leaf_row_fence(
     runtime: &DocumentRuntime,
     root: &M11RecursiveGreenRoot,
+    point: M11RecursiveGreenPoint,
+    limits: M11RecursiveGreenRowQueryLimits,
+    maximum_inline_source_bytes: u64,
+) -> Result<Option<M11RecursiveGreenInlineLeafFence>, M11RecursiveGreenFrameQueryError> {
+    let expected = [
+        M11RecursiveGreenInlineLeafKind::Paragraph.green_kind(),
+        M11RecursiveGreenInlineLeafKind::Heading.green_kind(),
+    ];
+    root.locate_renderable_row_fence_for_kinds(
+        runtime,
+        point,
+        &expected,
+        limits,
+        maximum_inline_source_bytes,
+    )
+    .map(|fence| {
+        fence.map(|inner| M11RecursiveGreenInlineLeafFence {
+            kind: M11RecursiveGreenInlineLeafKind::from_green_kind(inner.kind())
+                .expect("accepted Green kind is inline-bearing"),
+            inner,
+        })
+    })
+}
+
+/// Slice-root counterpart of
+/// [`resolve_m11_recursive_green_inline_leaf_row_fence`]. The distinct root
+/// type prevents bounded prefix authority from entering whole-document paths.
+pub fn resolve_m11_recursive_green_slice_inline_leaf_row_fence(
+    runtime: &DocumentRuntime,
+    root: &M11RecursiveGreenSliceRoot,
     point: M11RecursiveGreenPoint,
     limits: M11RecursiveGreenRowQueryLimits,
     maximum_inline_source_bytes: u64,

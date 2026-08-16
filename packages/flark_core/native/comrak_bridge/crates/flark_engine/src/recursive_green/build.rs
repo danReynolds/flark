@@ -380,6 +380,7 @@ pub struct M11RecursiveGreenBuild {
     pub(super) green_identity: StrongIdentity,
     pub(super) lease: Option<SourceSnapshotLease>,
     pub(super) source: SourceVersion,
+    required_physical: M11RecursiveGreenSourceMetric,
     pub(super) phase: BuildPhase,
     input_closed: bool,
     pending_input: Option<M11RecursiveGreenEvent>,
@@ -427,9 +428,35 @@ impl M11RecursiveGreenBuild {
         runtime: &DocumentRuntime,
         lease: SourceSnapshotLease,
     ) -> Result<Self, M11RecursiveGreenError> {
+        let required_physical = M11RecursiveGreenSourceMetric::from_validated(
+            u64::try_from(lease.version().byte_len())
+                .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+            u64::try_from(lease.version().utf16_len())
+                .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+        );
+        Self::new_with_required_physical(runtime, lease, required_physical)
+    }
+
+    fn new_with_required_physical(
+        runtime: &DocumentRuntime,
+        lease: SourceSnapshotLease,
+        required_physical: M11RecursiveGreenSourceMetric,
+    ) -> Result<Self, M11RecursiveGreenError> {
         let source = lease.version();
         if runtime.current_source_version() != Some(source) {
             return Err(M11RecursiveGreenError::SourceAuthorityMismatch);
+        }
+        let required_end = usize::try_from(required_physical.bytes())
+            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+        if required_end > source.byte_len()
+            || usize::try_from(required_physical.utf16())
+                .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
+                > source.utf16_len()
+            || u64::try_from(lease.utf16_offset_for_byte(required_end)?)
+                .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
+                != required_physical.utf16()
+        {
+            return Err(M11RecursiveGreenError::InvalidPoint);
         }
         let mut open = Vec::new();
         open.try_reserve_exact(64)
@@ -440,6 +467,7 @@ impl M11RecursiveGreenBuild {
             green_identity,
             lease: Some(lease),
             source,
+            required_physical,
             phase: BuildPhase::Accepting,
             input_closed: false,
             pending_input: None,
@@ -669,12 +697,8 @@ impl M11RecursiveGreenBuild {
             || self.expected_summary.balance != 0
             || self.expected_summary.minimum_prefix != 0
             || self.expected_summary.oldest_open.is_some()
-            || self.expected_summary.physical_bytes
-                != u64::try_from(self.source.byte_len())
-                    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
-            || self.expected_summary.physical_utf16
-                != u64::try_from(self.source.utf16_len())
-                    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
+            || self.expected_summary.physical_bytes != self.required_physical.bytes()
+            || self.expected_summary.physical_utf16 != self.required_physical.utf16()
         {
             return Err(M11RecursiveGreenError::IncompleteCoverage);
         }
@@ -1524,6 +1548,125 @@ impl Drop for M11RecursiveGreenBuild {
                 "recursive-green builds require root transfer or explicit cancellation"
             );
         }
+    }
+}
+
+/// A bounded Green materialization from one exact prefix of the current
+/// source. The caller supplies parser-authored events and a synthetic outer
+/// Document close only after every source-backed child in the prefix is
+/// closed. Keeping this authority distinct prevents a prefix from entering
+/// whole-document adoption or publication paths.
+#[must_use = "recursive-green slice builds require root transfer or explicit cancellation"]
+pub struct M11RecursiveGreenSliceBuild {
+    build: M11RecursiveGreenBuild,
+}
+
+impl M11RecursiveGreenSliceBuild {
+    pub fn new(
+        runtime: &DocumentRuntime,
+        lease: SourceSnapshotLease,
+        source_end_byte: usize,
+    ) -> Result<Self, M11RecursiveGreenError> {
+        let source_end_utf16 = lease.utf16_offset_for_byte(source_end_byte)?;
+        let required_physical = M11RecursiveGreenSourceMetric::from_validated(
+            u64::try_from(source_end_byte).map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+            u64::try_from(source_end_utf16).map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+        );
+        Ok(Self {
+            build: M11RecursiveGreenBuild::new_with_required_physical(
+                runtime,
+                lease,
+                required_physical,
+            )?,
+        })
+    }
+
+    pub fn offer_event(
+        &mut self,
+        event: M11RecursiveGreenEvent,
+    ) -> Result<(), M11RecursiveGreenError> {
+        self.build.offer_event(event)
+    }
+
+    pub fn finish_input(&mut self) -> Result<(), M11RecursiveGreenError> {
+        self.build.finish_input()
+    }
+
+    pub fn poll(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+        fuel: usize,
+    ) -> Result<M11RecursiveGreenBuildPoll, M11RecursiveGreenError> {
+        self.build.poll(runtime, fuel)
+    }
+
+    #[must_use]
+    pub fn take_root(&mut self) -> Option<M11RecursiveGreenSliceRoot> {
+        self.build
+            .take_root()
+            .map(|root| M11RecursiveGreenSliceRoot { root })
+    }
+
+    pub fn begin_cancel(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+    ) -> Result<(), M11RecursiveGreenError> {
+        self.build.begin_cancel(runtime)
+    }
+
+    pub fn poll_cancel(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+        fuel: usize,
+    ) -> Result<M11RecursiveGreenReclaimPoll, M11RecursiveGreenError> {
+        self.build.poll_cancel(runtime, fuel)
+    }
+
+    #[must_use]
+    pub fn receipt(&self) -> M11RecursiveGreenBuildReceipt {
+        self.build.receipt()
+    }
+}
+
+#[must_use = "recursive-green slice roots require explicit release"]
+pub struct M11RecursiveGreenSliceRoot {
+    pub(super) root: M11RecursiveGreenRoot,
+}
+
+impl M11RecursiveGreenSliceRoot {
+    #[must_use]
+    pub const fn source(&self) -> SourceVersion {
+        self.root.source()
+    }
+
+    #[must_use]
+    pub const fn source_byte_len(&self) -> u64 {
+        self.root.source_byte_len()
+    }
+
+    #[must_use]
+    pub const fn source_utf16_len(&self) -> u64 {
+        self.root.source_utf16_len()
+    }
+
+    #[must_use]
+    pub const fn build_receipt(&self) -> M11RecursiveGreenBuildReceipt {
+        self.root.build_receipt()
+    }
+
+    pub fn begin_release(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+    ) -> Result<(), M11RecursiveGreenError> {
+        self.root.begin_release(runtime)
+    }
+
+    pub fn poll_release(
+        &self,
+        runtime: &mut DocumentRuntime,
+        fuel: usize,
+    ) -> Result<M11RecursiveGreenReclaimPoll, M11RecursiveGreenError> {
+        self.root.poll_release(runtime, fuel)
     }
 }
 

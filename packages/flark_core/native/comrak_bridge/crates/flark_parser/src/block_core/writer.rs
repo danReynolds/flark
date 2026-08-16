@@ -405,8 +405,30 @@ struct M11CompactProbeOutput {
     high_level_events: u64,
     renderable_rows: u64,
     paragraph: Option<M11CompactProbeParagraph>,
+    first_slice: M11CompactProbeFirstSliceState,
     maximum_reference_events: usize,
     maximum_reference_allocated_bytes: usize,
+}
+
+#[cfg(test)]
+const COMPACT_PROBE_FIRST_SLICE_ROWS: u64 = 32;
+#[cfg(test)]
+const COMPACT_PROBE_FIRST_SLICE_MAX_SOURCE_BYTES: u64 = 64 * 1024;
+#[cfg(test)]
+const COMPACT_PROBE_FIRST_SLICE_MAX_EVENTS: usize = 8 * 1024;
+
+#[cfg(test)]
+enum M11CompactProbeFirstSliceState {
+    Collecting(Vec<M11RecursiveGreenEvent>),
+    Ready(M11CompactProbeFirstSlice),
+    OverCap,
+    Taken,
+}
+
+#[cfg(test)]
+pub(crate) struct M11CompactProbeFirstSlice {
+    pub(crate) physical: SourceMetric,
+    pub(crate) events: Vec<M11RecursiveGreenEvent>,
 }
 
 #[cfg(test)]
@@ -2139,6 +2161,54 @@ impl M11BlockFragmentOutput {
 
 #[cfg(test)]
 impl M11CompactProbeOutput {
+    fn push_first_slice_event(
+        &mut self,
+        event: M11RecursiveGreenEvent,
+    ) -> Result<(), M11BlockWriterError> {
+        let M11CompactProbeFirstSliceState::Collecting(events) = &mut self.first_slice else {
+            return Ok(());
+        };
+        if events.len() == COMPACT_PROBE_FIRST_SLICE_MAX_EVENTS {
+            self.first_slice = M11CompactProbeFirstSliceState::OverCap;
+            return Ok(());
+        }
+        events
+            .try_reserve(1)
+            .map_err(|_| M11BlockWriterError::Allocation)?;
+        events.push(event);
+        Ok(())
+    }
+
+    fn append_first_slice_paragraph(&mut self) -> Result<(), M11BlockWriterError> {
+        let M11CompactProbeFirstSliceState::Collecting(events) = &mut self.first_slice else {
+            return Ok(());
+        };
+        if events
+            .len()
+            .checked_add(self.fragment.events.len())
+            .is_none_or(|length| length > COMPACT_PROBE_FIRST_SLICE_MAX_EVENTS)
+        {
+            self.first_slice = M11CompactProbeFirstSliceState::OverCap;
+            return Ok(());
+        }
+        events
+            .try_reserve(self.fragment.events.len())
+            .map_err(|_| M11BlockWriterError::Allocation)?;
+        events.extend_from_slice(&self.fragment.events);
+        Ok(())
+    }
+
+    fn enforce_first_slice_source_cap(&mut self) {
+        if self.fragment.receipt.source_bytes > COMPACT_PROBE_FIRST_SLICE_MAX_SOURCE_BYTES
+            && matches!(
+                self.first_slice,
+                M11CompactProbeFirstSliceState::Collecting(_)
+            )
+        {
+            self.first_slice = M11CompactProbeFirstSliceState::OverCap;
+        }
+    }
+
     fn offer_event(&mut self, event: M11RecursiveGreenEvent) -> Result<(), M11BlockWriterError> {
         let opens_paragraph = match event {
             M11RecursiveGreenEvent::Enter { frame, kind }
@@ -2160,6 +2230,7 @@ impl M11CompactProbeOutput {
             }
             _ => false,
         };
+        let was_in_paragraph = self.paragraph.is_some();
         if self.paragraph.is_some() {
             self.fragment.offer_event(event)?;
             self.maximum_reference_events = self
@@ -2178,6 +2249,9 @@ impl M11CompactProbeOutput {
                 &mut self.fragment.source_bytes_read,
                 event,
             )?;
+        }
+        if !was_in_paragraph && !opens_paragraph {
+            self.push_first_slice_event(event)?;
         }
         self.high_level_events = self
             .high_level_events
@@ -2210,10 +2284,57 @@ impl M11CompactProbeOutput {
                     "compact Paragraph closed during reference work",
                 ));
             }
+            self.append_first_slice_paragraph()?;
             self.fragment.events.clear();
             self.paragraph = None;
         }
+        self.enforce_first_slice_source_cap();
         Ok(())
+    }
+
+    fn maybe_freeze_first_slice(
+        &mut self,
+        physical: SourceMetric,
+        open_depth: usize,
+    ) -> Result<(), M11BlockWriterError> {
+        if open_depth != 1
+            || self.paragraph.is_some()
+            || self.renderable_rows < COMPACT_PROBE_FIRST_SLICE_ROWS
+        {
+            return Ok(());
+        }
+        let state = std::mem::replace(&mut self.first_slice, M11CompactProbeFirstSliceState::Taken);
+        self.first_slice = match state {
+            M11CompactProbeFirstSliceState::Collecting(events) => {
+                if physical.bytes() > COMPACT_PROBE_FIRST_SLICE_MAX_SOURCE_BYTES
+                    || events.len() > COMPACT_PROBE_FIRST_SLICE_MAX_EVENTS
+                {
+                    M11CompactProbeFirstSliceState::OverCap
+                } else {
+                    M11CompactProbeFirstSliceState::Ready(M11CompactProbeFirstSlice {
+                        physical,
+                        events,
+                    })
+                }
+            }
+            other => other,
+        };
+        Ok(())
+    }
+
+    fn take_first_slice(&mut self) -> Option<M11CompactProbeFirstSlice> {
+        let state = std::mem::replace(&mut self.first_slice, M11CompactProbeFirstSliceState::Taken);
+        match state {
+            M11CompactProbeFirstSliceState::Ready(slice) => Some(slice),
+            other => {
+                self.first_slice = other;
+                None
+            }
+        }
+    }
+
+    const fn first_slice_over_cap(&self) -> bool {
+        matches!(self.first_slice, M11CompactProbeFirstSliceState::OverCap)
     }
 
     const fn receipt(&self) -> M11CompactProbeWriterReceipt {
@@ -3042,6 +3163,7 @@ impl M11BlockWriter {
                 high_level_events: 0,
                 renderable_rows: 0,
                 paragraph: None,
+                first_slice: M11CompactProbeFirstSliceState::Collecting(Vec::new()),
                 maximum_reference_events: 0,
                 maximum_reference_allocated_bytes: 0,
             }),
@@ -3080,6 +3202,12 @@ impl M11BlockWriter {
                         "compact reference window cannot be abandoned during reference work",
                     ));
                 }
+                if matches!(
+                    probe.first_slice,
+                    M11CompactProbeFirstSliceState::Collecting(_)
+                ) {
+                    return Ok(());
+                }
                 if probe.paragraph.take().is_some() {
                     // Replace rather than clear: retaining the capacity would
                     // preserve the giant-Paragraph memory spike this seam is
@@ -3088,6 +3216,44 @@ impl M11BlockWriter {
                 }
                 Ok(())
             }
+            _ => Err(M11BlockWriterError::InvalidCommand(
+                "writer is not a compact probe",
+            )),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn compact_probe_maybe_freeze_first_slice(
+        &mut self,
+        physical: SourceMetric,
+        open_depth: usize,
+    ) -> Result<(), M11BlockWriterError> {
+        match &mut self.output {
+            WriterOutput::CompactProbe(probe) => {
+                probe.maybe_freeze_first_slice(physical, open_depth)
+            }
+            _ => Err(M11BlockWriterError::InvalidCommand(
+                "writer is not a compact probe",
+            )),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn compact_probe_take_first_slice(
+        &mut self,
+    ) -> Result<Option<M11CompactProbeFirstSlice>, M11BlockWriterError> {
+        match &mut self.output {
+            WriterOutput::CompactProbe(probe) => Ok(probe.take_first_slice()),
+            _ => Err(M11BlockWriterError::InvalidCommand(
+                "writer is not a compact probe",
+            )),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn compact_probe_first_slice_over_cap(&self) -> Result<bool, M11BlockWriterError> {
+        match &self.output {
+            WriterOutput::CompactProbe(probe) => Ok(probe.first_slice_over_cap()),
             _ => Err(M11BlockWriterError::InvalidCommand(
                 "writer is not a compact probe",
             )),

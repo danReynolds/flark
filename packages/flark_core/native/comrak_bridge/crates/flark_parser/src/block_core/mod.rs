@@ -39,9 +39,9 @@ pub use paragraph_fence::{
     m11_block_quote_prefix_lineage, m11_recursive_green_row_presentation,
     resolve_m11_recursive_green_inline_leaf_fence,
     resolve_m11_recursive_green_inline_leaf_row_fence, resolve_m11_recursive_green_paragraph_fence,
-    M11RecursiveGreenCodeBlockStyle, M11RecursiveGreenInlineLeafFence,
-    M11RecursiveGreenInlineLeafKind, M11RecursiveGreenListMarker, M11RecursiveGreenParagraphFence,
-    M11RecursiveGreenRowPresentation,
+    resolve_m11_recursive_green_slice_inline_leaf_row_fence, M11RecursiveGreenCodeBlockStyle,
+    M11RecursiveGreenInlineLeafFence, M11RecursiveGreenInlineLeafKind, M11RecursiveGreenListMarker,
+    M11RecursiveGreenParagraphFence, M11RecursiveGreenRowPresentation,
 };
 #[cfg(test)]
 pub(crate) use reference_rendezvous::{M11CompactReferenceJournal, M11CompactReferenceReceipt};
@@ -59,4 +59,6 @@ pub use writer::{
     M11BlockWriterOfferStatus, M11BlockWriterPoll, M11BlockWriterPollStatus,
 };
 #[cfg(test)]
-pub(crate) use writer::{M11CompactProbeCheckpointFacts, M11CompactProbeWriterReceipt};
+pub(crate) use writer::{
+    M11CompactProbeCheckpointFacts, M11CompactProbeFirstSlice, M11CompactProbeWriterReceipt,
+};

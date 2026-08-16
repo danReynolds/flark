@@ -10,7 +10,7 @@ use crate::measured_sequence::{
 use crate::parser_pages::{M11ParserPageError, M11ParserSourceRangeAuthority};
 use crate::source::{SourceBoundaryAffinity, SourceVersion};
 
-use super::build::M11RecursiveGreenRoot;
+use super::build::{M11RecursiveGreenRoot, M11RecursiveGreenSliceRoot};
 use super::codec::{
     decode_leaf, decode_packed_event, is_renderable_row_kind,
     M11RecursiveGreenCachedRowEditCapability, M11RecursiveGreenCoveragePart,
@@ -828,10 +828,14 @@ impl M11RecursiveGreenRoot {
         limits: M11RecursiveGreenRowQueryLimits,
     ) -> Result<M11RecursiveGreenRowQueryOutcome, M11RecursiveGreenError> {
         self.ensure_runtime(runtime)?;
-        if point.byte_offset > self.source().byte_len()
-            || point.utf16_offset > self.source().utf16_len()
+        let covered_bytes = usize::try_from(self.summary.physical_bytes)
+            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+        let covered_utf16 = usize::try_from(self.summary.physical_utf16)
+            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+        if point.byte_offset > covered_bytes
+            || point.utf16_offset > covered_utf16
             || self.lease()?.utf16_offset_for_byte(point.byte_offset)? != point.utf16_offset
-            || requested_end_byte > self.source().byte_len() as u64
+            || requested_end_byte > self.summary.physical_bytes
         {
             return Err(M11RecursiveGreenError::InvalidPoint);
         }
@@ -882,8 +886,12 @@ impl M11RecursiveGreenRoot {
         limits: M11RecursiveGreenFrameQueryLimits,
     ) -> Result<Option<M11RecursiveGreenFrameFence>, M11RecursiveGreenFrameQueryError> {
         self.ensure_runtime(runtime)?;
-        if point.byte_offset > self.source().byte_len()
-            || point.utf16_offset > self.source().utf16_len()
+        let covered_bytes = usize::try_from(self.summary.physical_bytes)
+            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+        let covered_utf16 = usize::try_from(self.summary.physical_utf16)
+            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+        if point.byte_offset > covered_bytes
+            || point.utf16_offset > covered_utf16
             || self
                 .lease()?
                 .utf16_offset_for_byte(point.byte_offset)
@@ -897,7 +905,7 @@ impl M11RecursiveGreenRoot {
         }
         let effective_byte = match (point.affinity, point.byte_offset) {
             (SourceBoundaryAffinity::Before, offset) if offset > 0 => offset - 1,
-            (_, offset) if offset == self.source().byte_len() => offset - 1,
+            (_, offset) if offset == covered_bytes => offset - 1,
             (_, offset) => offset,
         };
         let effective_byte =
@@ -1562,8 +1570,7 @@ impl M11RecursiveGreenRoot {
         if maximum_inline_source_bytes == 0 || limits.maximum_rows != 1 {
             return Err(M11RecursiveGreenError::InvalidState.into());
         }
-        let requested_end_byte = u64::try_from(self.source().byte_len())
-            .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+        let requested_end_byte = self.summary.physical_bytes;
         let window = match self.locate_renderable_rows_bounded(
             runtime,
             point,
@@ -1594,7 +1601,12 @@ impl M11RecursiveGreenRoot {
         };
         let effective_byte = match (point.affinity, point.byte_offset) {
             (SourceBoundaryAffinity::Before, offset) if offset > 0 => offset - 1,
-            (_, offset) if offset == self.source().byte_len() && offset > 0 => offset - 1,
+            (_, offset)
+                if u64::try_from(offset).ok() == Some(self.summary.physical_bytes)
+                    && offset > 0 =>
+            {
+                offset - 1
+            }
             (_, offset) => offset,
         };
         let effective_byte =
@@ -1988,6 +2000,47 @@ impl M11RecursiveGreenRoot {
             .as_ref()
             .ok_or(M11RecursiveGreenError::InvalidState)?;
         locate_point_in_arena(runtime.producer_arena(), tree.as_ref(), self.summary, point)
+    }
+}
+
+impl M11RecursiveGreenSliceRoot {
+    pub fn locate_renderable_rows_bounded(
+        &self,
+        runtime: &DocumentRuntime,
+        point: M11RecursiveGreenPoint,
+        requested_end_byte: u64,
+        limits: M11RecursiveGreenRowQueryLimits,
+    ) -> Result<M11RecursiveGreenRowQueryOutcome, M11RecursiveGreenError> {
+        self.root
+            .locate_renderable_rows_bounded(runtime, point, requested_end_byte, limits)
+    }
+
+    pub fn locate_renderable_rows(
+        &self,
+        runtime: &DocumentRuntime,
+        point: M11RecursiveGreenPoint,
+        requested_end_byte: u64,
+        limits: M11RecursiveGreenRowQueryLimits,
+    ) -> Result<M11RecursiveGreenRowWindow, M11RecursiveGreenError> {
+        self.root
+            .locate_renderable_rows(runtime, point, requested_end_byte, limits)
+    }
+
+    pub fn locate_renderable_row_fence_for_kinds(
+        &self,
+        runtime: &DocumentRuntime,
+        point: M11RecursiveGreenPoint,
+        expected_kinds: &[M11RecursiveGreenKind],
+        limits: M11RecursiveGreenRowQueryLimits,
+        maximum_inline_source_bytes: u64,
+    ) -> Result<Option<M11RecursiveGreenFrameFence>, M11RecursiveGreenFrameQueryError> {
+        self.root.locate_renderable_row_fence_for_kinds(
+            runtime,
+            point,
+            expected_kinds,
+            limits,
+            maximum_inline_source_bytes,
+        )
     }
 }
 

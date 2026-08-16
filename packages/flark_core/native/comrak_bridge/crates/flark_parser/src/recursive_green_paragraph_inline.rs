@@ -10,12 +10,14 @@ use std::{fmt, ops::Range};
 
 use flark_engine::parser_internal::{
     M11RecursiveGreenFrameQueryError, M11RecursiveGreenFrameQueryLimits, M11RecursiveGreenPoint,
-    M11RecursiveGreenQueryReceipt, M11RecursiveGreenRoot,
+    M11RecursiveGreenQueryReceipt, M11RecursiveGreenRoot, M11RecursiveGreenRowQueryLimits,
+    M11RecursiveGreenSliceRoot,
 };
 use flark_engine::{DocumentRuntime, DocumentRuntimeError, SOURCE_CURSOR_WINDOW_BYTES};
 
 use crate::block_core::{
-    resolve_m11_recursive_green_inline_leaf_fence, M11BlockWriter, M11BlockWriterError,
+    resolve_m11_recursive_green_inline_leaf_fence,
+    resolve_m11_recursive_green_slice_inline_leaf_row_fence, M11BlockWriter, M11BlockWriterError,
     M11BlockWriterOfferStatus, M11BlockWriterPollStatus, M11DirectBlockController,
     M11DirectBlockControllerError, M11DirectBlockError, M11DirectBlockPollStatus,
     M11DirectBlockUnsupported, M11RecursiveGreenInlineLeafFence, M11RecursiveGreenInlineLeafKind,
@@ -355,6 +357,39 @@ pub fn prepare_m11_recursive_green_paragraph_inline(
 ) -> Result<M11RecursiveGreenParagraphInlinePreparation, M11RecursiveGreenParagraphPreparationError>
 {
     prepare_m11_recursive_green_inline_leaf(runtime, point)?.into_paragraph()
+}
+
+/// Prepares one inline-bearing row from a bounded Green slice without
+/// rebuilding or consulting a whole-document structural root.
+pub fn prepare_m11_recursive_green_slice_inline_leaf(
+    runtime: &DocumentRuntime,
+    root: &M11RecursiveGreenSliceRoot,
+    point: M11RecursiveGreenPoint,
+) -> Result<M11RecursiveGreenInlineLeafPreparation, M11RecursiveGreenParagraphPreparationError> {
+    let limits = M11RecursiveGreenRowQueryLimits::new(1, 25, 3_200, 64, 512).ok_or(
+        M11RecursiveGreenParagraphPreparationError::InvalidState(
+            "recursive-Green slice query limits must be nonzero",
+        ),
+    )?;
+    let fence = resolve_m11_recursive_green_slice_inline_leaf_row_fence(
+        runtime, root, point, limits, 8192,
+    )?
+    .ok_or(M11RecursiveGreenParagraphPreparationError::NotParagraph)?;
+    let block_source = to_u32_range(fence.block_source_range())?;
+    let block_source_utf16 = to_u32_range(fence.block_source_utf16_range())?;
+    let inline_source = to_u32_range(fence.inline_source_range())?;
+    let inline_source_utf16 = to_u32_range(fence.inline_source_utf16_range())?;
+    let query_receipt = fence.receipt();
+    Ok(
+        M11RecursiveGreenInlineLeafPreparation::from_persistent_session(
+            block_source,
+            block_source_utf16,
+            inline_source,
+            inline_source_utf16,
+            query_receipt,
+            fence,
+        ),
+    )
 }
 
 fn drive_document(

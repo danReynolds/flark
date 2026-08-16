@@ -5,7 +5,7 @@ use std::ops::Range;
 use flark_engine::parser_internal::{
     M11InlineLinkValue, M11InlineProjectionFact, M11InlineProjectionKind, M11RecursiveGreenPoint,
     M11RecursiveGreenRenderableRow, M11RecursiveGreenRowEditCapability,
-    M11RecursiveGreenRowQueryLimits, M11RecursiveGreenRowQueryOutcome,
+    M11RecursiveGreenRowQueryLimits, M11RecursiveGreenRowQueryOutcome, M11ReferenceResolver,
     M11_INLINE_PROJECTION_FLAG_AUTOLINK_URI_WWW,
     M11_INLINE_PROJECTION_FLAG_CODE_NORMALIZE_LINE_ENDINGS,
     M11_INLINE_PROJECTION_FLAG_CODE_TRIM_ONE_SPACE,
@@ -27,8 +27,9 @@ use flark_parser::{
     M11PersistentRecursiveGreenAdoptionStatus, M11PersistentRecursiveGreenAdoptionWork,
     M11PersistentRecursiveGreenBuildStatus, M11PersistentRecursiveGreenCleanBuild,
     M11PersistentRecursiveGreenCleanPlan, M11PersistentRecursiveGreenSession,
-    M11PersistentRecursiveGreenSessionError, M11SimpleEditLineKind, M11SimpleEditListMarker,
-    M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS, M11_SIMPLE_EDIT_LINE_MAX_BYTES,
+    M11PersistentRecursiveGreenSessionError, M11RecursiveGreenInlineLeafPreparation,
+    M11SimpleEditLineKind, M11SimpleEditListMarker, M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
+    M11_SIMPLE_EDIT_LINE_MAX_BYTES,
 };
 
 use crate::edit_intent::{
@@ -3216,6 +3217,127 @@ fn document_marker_from_parser(marker: M11SimpleEditListMarker) -> DocumentListM
 mod tests {
     use super::*;
 
+    fn ready_viewport_rows(
+        source: &str,
+        requested_range: Range<usize>,
+        maximum_rows: u32,
+    ) -> Vec<DocumentViewportRow> {
+        let mut document = DocumentSession::begin(source).expect("begin viewport oracle");
+        while document.pump(512).expect("pump viewport oracle").phase != DocumentSessionPhase::Ready
+        {
+        }
+        let rows = document
+            .query_viewport(document.revision(), requested_range, maximum_rows)
+            .expect("query viewport oracle")
+            .rows;
+        document.close().expect("close viewport oracle");
+        rows
+    }
+
+    #[test]
+    fn closed_prefix_rows_match_complete_public_viewport_output() {
+        let prefix = (0..40)
+            .map(|index| {
+                format!(
+                    "Paragraph {index} has **strong**, _emphasis_, `code`, and a [direct link](https://example.invalid/{index}).\n\n"
+                )
+            })
+            .collect::<String>();
+        let suffix = (40..80)
+            .map(|index| format!("Later paragraph {index} cannot change the prefix.\n\n"))
+            .collect::<String>();
+        let full = format!("{prefix}{suffix}");
+
+        let prefix_rows = ready_viewport_rows(&prefix, 0..prefix.len(), 24);
+        let full_rows = ready_viewport_rows(&full, 0..prefix.len(), 24);
+
+        assert_eq!(prefix_rows.len(), 24);
+        assert_eq!(full_rows, prefix_rows);
+    }
+
+    #[test]
+    fn closed_block_is_not_by_itself_a_publication_proof() {
+        let cases = [
+            ("[later]\n\n", "[later]: /resolved\n"),
+            ("| heading |\n", "| --- |\n| cell |\n"),
+            ("setext candidate\n", "---\n"),
+        ];
+
+        for (prefix, suffix) in cases {
+            let full = format!("{prefix}{suffix}");
+            let prefix_rows = ready_viewport_rows(prefix, 0..prefix.len(), 8);
+            let full_rows = ready_viewport_rows(&full, 0..prefix.len(), 8);
+            assert_ne!(
+                full_rows.first(),
+                prefix_rows.first(),
+                "later source must be visible to the publication classifier for {prefix:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn unsupported_inline_projection_is_neutral_not_authoritative_empty() {
+        let plain = "ordinary text\n";
+        let plain_rows = ready_viewport_rows(plain, 0..plain.len(), 1);
+        assert_eq!(
+            plain_rows[0].inline_facts,
+            Some(Vec::new()),
+            "an exhaustively classified plain leaf is authoritative"
+        );
+
+        let unsupported = "ordinary <span>inline HTML</span> text\n";
+        let unsupported_rows = ready_viewport_rows(unsupported, 0..unsupported.len(), 1);
+        assert_eq!(
+            unsupported_rows[0].inline_facts, None,
+            "a failed-closed inline leaf must render from exact source"
+        );
+    }
+
+    #[test]
+    fn reference_dependent_slice_fails_closed_without_final_winners() {
+        let source = "[later]\n\n[later]: /resolved\n";
+        let mut document = DocumentSession::begin(source).expect("begin reference document");
+        while document.pump(512).expect("pump reference document").phase
+            != DocumentSessionPhase::Ready
+        {}
+
+        let prepared = match &document.parser {
+            ParseState::Ready(session) => session
+                .prepare_inline_leaf(
+                    &document.runtime,
+                    M11RecursiveGreenPoint::new(0, 0, SourceBoundaryAffinity::After),
+                )
+                .expect("prepare reference-shaped leaf"),
+            _ => panic!("reference document must be ready"),
+        };
+        let parser_profile =
+            ParserProfileId::new(u64::from(SYNTAX_PROFILE_GFM_V1)).expect("GFM profile identity");
+        assert!(
+            capture_prepared_inline_projection(
+                &mut document.runtime,
+                prepared,
+                0..7,
+                0..7,
+                parser_profile,
+                None,
+            )
+            .expect("capture reference-shaped slice")
+            .is_none(),
+            "a progressive slice without final reference winners must remain neutral"
+        );
+
+        let viewport = document
+            .query_viewport(document.revision(), 0..7, 1)
+            .expect("query final reference row");
+        assert!(viewport.rows[0]
+            .inline_facts
+            .as_ref()
+            .is_some_and(|facts| facts
+                .iter()
+                .any(|fact| fact.kind == DocumentInlineFactKind::ReferenceLink)));
+        document.close().expect("close reference document");
+    }
+
     #[test]
     fn gfm_table_projection_reaches_the_viewport_as_typed_cells() {
         let source = "| f\\|oo | bar |\n| :--- | ---: |\n| `x\\|y` | baz |\n";
@@ -3573,6 +3695,15 @@ fn document_viewport_row(
     session: &M11PersistentRecursiveGreenSession,
     row: &M11RecursiveGreenRenderableRow,
 ) -> Result<DocumentViewportRow, DocumentSessionError> {
+    let inline_facts = document_inline_facts(runtime, session, row)?;
+    document_viewport_row_with_inline_facts(runtime, row, inline_facts)
+}
+
+fn document_viewport_row_with_inline_facts(
+    runtime: &mut DocumentRuntime,
+    row: &M11RecursiveGreenRenderableRow,
+    inline_facts: Option<Vec<DocumentInlineFact>>,
+) -> Result<DocumentViewportRow, DocumentSessionError> {
     let mut presentation = match m11_recursive_green_row_presentation(runtime, row)
         .map_err(M11PersistentRecursiveGreenSessionError::from)?
     {
@@ -3719,7 +3850,6 @@ fn document_viewport_row(
             editable_utf16_range = Some(prefix_end_utf16..prefix_end_utf16);
         }
     }
-    let inline_facts = document_inline_facts(runtime, session, row)?;
     if presentation == DocumentViewportRowPresentation::Plain
         && inline_facts.as_ref().is_some_and(|facts| {
             facts
@@ -3886,6 +4016,27 @@ fn capture_document_inline_projection(
             SourceBoundaryAffinity::After,
         ),
     )?;
+    let parser_profile = ParserProfileId::new(u64::from(session.syntax_profile()))
+        .ok_or(DocumentSessionError::Faulted)?;
+    let reference_resolver = session.reference_resolver(runtime)?;
+    capture_prepared_inline_projection(
+        runtime,
+        prepared,
+        editable,
+        editable_utf16,
+        parser_profile,
+        Some(reference_resolver),
+    )
+}
+
+fn capture_prepared_inline_projection(
+    runtime: &mut DocumentRuntime,
+    prepared: M11RecursiveGreenInlineLeafPreparation,
+    editable: Range<u64>,
+    editable_utf16: Range<u64>,
+    parser_profile: ParserProfileId,
+    reference_resolver: Option<M11ReferenceResolver>,
+) -> Result<Option<CapturedDocumentInlineProjection>, DocumentSessionError> {
     let inline_source = prepared.inline_source_range();
     let inline_source_utf16 = prepared.inline_source_utf16_range();
     if u64::from(inline_source.start) != editable.start
@@ -3895,16 +4046,22 @@ fn capture_document_inline_projection(
     {
         return Ok(None);
     }
-    let parser_profile = ParserProfileId::new(u64::from(session.syntax_profile()))
-        .ok_or(DocumentSessionError::Faulted)?;
-    let reference_resolver = session.reference_resolver(runtime)?;
-    let mut job =
-        M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_reference_resolver_and_fact_capture(
+    let binding = M11ParserBinding::current(parser_profile);
+    let mut job = match reference_resolver {
+        Some(reference_resolver) => {
+            M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_reference_resolver_and_fact_capture(
+                runtime,
+                prepared.into_fence(),
+                binding,
+                reference_resolver,
+            )?
+        }
+        None => M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_fact_capture(
             runtime,
             prepared.into_fence(),
-            M11ParserBinding::current(parser_profile),
-            reference_resolver,
-        )?;
+            binding,
+        )?,
+    };
     let mut transitions = 0_usize;
     loop {
         let remaining = VIEWPORT_INLINE_TOTAL_TRANSITIONS_MAX.saturating_sub(transitions);
@@ -3932,6 +4089,11 @@ fn capture_document_inline_projection(
             abort_inline_fact_job(runtime, &mut job)?;
             return Ok(None);
         }
+    }
+
+    if job.projected_facts_are_authoritative() != Some(true) {
+        abort_inline_fact_job(runtime, &mut job)?;
+        return Ok(None);
     }
 
     let facts = job

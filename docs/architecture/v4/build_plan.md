@@ -1231,7 +1231,34 @@ receipts remain open. The durable roundtrip exposed and fixed a latent codec
 defect where GFM was encoded but only CommonMark decoded; both durable codecs
 now have direct GFM regression coverage.
 
+The first-slice mechanism has also passed its initial correctness experiment.
+The compact primary stream retained exactly one candidate bounded by 32 rows,
+64 KiB of source, and 8,192 events; Paragraph events remained private until
+reference-prefix rewriting was final. Those same events built a distinct Green
+slice tied to the full current source revision but covering only the certified
+prefix, so it cannot be mistaken for or adopted as a whole-document root. For
+an ordinary 96-block document, all 32 slice rows matched the eventual full root
+for ordinals, kinds, byte/UTF-16 ranges, edit capabilities, editable ranges and
+segments, nested path facts, inline facts, and cooked direct-link values. A
+document-spanning fence crossed the fixed cap and returned no slice rather than
+growing an unbounded buffer.
+
+This experiment tightened the publication rule further. Complete public
+viewport rows for an ordinary closed prefix matched the same rows after a later
+independent suffix, while a later reference definition, GFM table delimiter,
+or Setext underline each changed the earlier public row. Inline projection is
+now explicitly fail-closed: unsupported inline HTML and a reference-shaped
+slice without final winner authority return `None`/neutral exact source, not an
+authoritative empty fact list. The runtime now shares one row mapper and one
+inline-capture path between full-reference and no-reference authority, which
+removes a future second semantic implementation.
+
 The direction is accepted for prototyping, not yet for production migration.
+The remaining Gate-one semantic proof is a frozen mixed-construct slice matrix
+through the complete runtime/ABI payload, including tables and activated
+targets; the current result proves ordinary structural and inline equivalence,
+the dependency fallback, and the bounded failure mode but not a rendered
+frame.
 Its first product gate is five Mac and three Pixel cold runs with a physical
 rendered, literal-editable first viewport below 200 ms for the ordinary 10 MiB
 fixture. The entire frozen visible-plus-overscan range must be
