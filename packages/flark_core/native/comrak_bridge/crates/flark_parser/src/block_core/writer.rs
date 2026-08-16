@@ -406,6 +406,7 @@ struct M11CompactProbeOutput {
     renderable_rows: u64,
     first_slice_start_physical: SourceMetric,
     first_slice_start_rows: u64,
+    open_physical_bases: Vec<SourceMetric>,
     paragraph: Option<M11CompactProbeParagraph>,
     first_slice: M11CompactProbeFirstSliceState,
     maximum_reference_events: usize,
@@ -466,7 +467,7 @@ pub(crate) struct M11CompactProbeWriterReceipt {
 }
 
 #[cfg(test)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub(crate) struct M11CompactProbeCheckpointFacts {
     pub(crate) accepted_physical: SourceMetric,
     pub(crate) parser_physical: SourceMetric,
@@ -477,7 +478,225 @@ pub(crate) struct M11CompactProbeCheckpointFacts {
     pub(crate) open_depth: usize,
     pub(crate) cold_document_frame: Option<M11RecursiveGreenFrameId>,
     pub(crate) cold_staged_blank_gap: Option<SourceMetric>,
+    pub(crate) cold_container_restart: Option<Vec<u8>>,
     pub(crate) next_frame: u64,
+}
+
+#[cfg(test)]
+const COMPACT_CONTAINER_RESTART_HEADER_BYTES: usize = 32;
+#[cfg(test)]
+const COMPACT_CONTAINER_RESTART_FRAME_BYTES: usize = 32;
+#[cfg(test)]
+const COMPACT_CONTAINER_RESTART_MAGIC: &[u8; 8] = b"FLWRCT01";
+#[cfg(test)]
+const COMPACT_CONTAINER_RESTART_CHECKSUM_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+#[cfg(test)]
+const COMPACT_CONTAINER_RESTART_CHECKSUM_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+#[cfg(test)]
+fn compact_container_restart_checksum(mut checksum: u64, bytes: &[u8]) -> u64 {
+    for byte in bytes {
+        checksum ^= u64::from(*byte);
+        checksum = checksum.wrapping_mul(COMPACT_CONTAINER_RESTART_CHECKSUM_PRIME);
+    }
+    checksum
+}
+
+#[cfg(test)]
+fn encode_compact_container_restart(
+    open: &[OpenFrame],
+    physical_bases: &[SourceMetric],
+) -> Result<Option<Vec<u8>>, M11BlockRestartError> {
+    if open.len() != physical_bases.len()
+        || open.is_empty()
+        || open.iter().any(|frame| {
+            !matches!(
+                frame.kind,
+                BlockKind::Document
+                    | BlockKind::BlockQuote
+                    | BlockKind::List(_)
+                    | BlockKind::Item(_)
+            ) || frame.fence.is_some()
+                || frame.row_editable.is_some()
+        })
+    {
+        return Ok(None);
+    }
+    let frame_count = u32::try_from(open.len())
+        .map_err(|_| M11BlockRestartError::Pairing("compact container depth fits u32"))?;
+    let encoded_len = COMPACT_CONTAINER_RESTART_HEADER_BYTES
+        .checked_add(
+            open.len()
+                .checked_mul(COMPACT_CONTAINER_RESTART_FRAME_BYTES)
+                .ok_or(M11BlockRestartError::Pairing(
+                    "compact container record length fits usize",
+                ))?,
+        )
+        .ok_or(M11BlockRestartError::Pairing(
+            "compact container restart length fits usize",
+        ))?;
+    let mut encoded = Vec::new();
+    encoded
+        .try_reserve_exact(encoded_len)
+        .map_err(|_| M11BlockRestartError::Pairing("compact container allocation succeeds"))?;
+    encoded.resize(encoded_len, 0);
+    encoded[..8].copy_from_slice(COMPACT_CONTAINER_RESTART_MAGIC);
+    encoded[8..10].copy_from_slice(&1_u16.to_le_bytes());
+    encoded[10..12].copy_from_slice(
+        &u16::try_from(COMPACT_CONTAINER_RESTART_FRAME_BYTES)
+            .expect("compact container frame size fits u16")
+            .to_le_bytes(),
+    );
+    encoded[12..16].copy_from_slice(&frame_count.to_le_bytes());
+    let mut path_checksum = COMPACT_CONTAINER_RESTART_CHECKSUM_OFFSET;
+    for (index, (frame, physical_base)) in open.iter().zip(physical_bases).enumerate() {
+        let start =
+            COMPACT_CONTAINER_RESTART_HEADER_BYTES + index * COMPACT_CONTAINER_RESTART_FRAME_BYTES;
+        let record = &mut encoded[start..start + COMPACT_CONTAINER_RESTART_FRAME_BYTES];
+        record[..8].copy_from_slice(&frame.id.get().to_le_bytes());
+        record[8..16].copy_from_slice(&physical_base.bytes().to_le_bytes());
+        record[16..24].copy_from_slice(&physical_base.utf16().to_le_bytes());
+        record[24] = u8::from(frame.has_renderable_descendant)
+            | (u8::from(frame.has_unrepresented_container_marker) << 1);
+        path_checksum = compact_container_restart_checksum(path_checksum, record);
+    }
+    encoded[16..24].copy_from_slice(&path_checksum.to_le_bytes());
+    let header_checksum = compact_container_restart_checksum(
+        COMPACT_CONTAINER_RESTART_CHECKSUM_OFFSET,
+        &encoded[..24],
+    );
+    encoded[24..32].copy_from_slice(&header_checksum.to_le_bytes());
+    Ok(Some(encoded))
+}
+
+#[cfg(test)]
+fn decode_compact_container_restart(
+    encoded: &[u8],
+    expected_kinds: &[BlockKind],
+) -> Result<(Vec<OpenFrame>, Vec<SourceMetric>), M11BlockWriterError> {
+    if encoded.len() < COMPACT_CONTAINER_RESTART_HEADER_BYTES
+        || encoded.get(..8) != Some(COMPACT_CONTAINER_RESTART_MAGIC.as_slice())
+        || u16::from_le_bytes([encoded[8], encoded[9]]) != 1
+        || usize::from(u16::from_le_bytes([encoded[10], encoded[11]]))
+            != COMPACT_CONTAINER_RESTART_FRAME_BYTES
+        || encoded[24..32]
+            != compact_container_restart_checksum(
+                COMPACT_CONTAINER_RESTART_CHECKSUM_OFFSET,
+                &encoded[..24],
+            )
+            .to_le_bytes()
+    {
+        return Err(M11BlockWriterError::InvalidCommand(
+            "compact container restart header is invalid",
+        ));
+    }
+    let frame_count = usize::try_from(u32::from_le_bytes([
+        encoded[12],
+        encoded[13],
+        encoded[14],
+        encoded[15],
+    ]))
+    .map_err(|_| M11BlockWriterError::CounterOverflow)?;
+    let expected_len = COMPACT_CONTAINER_RESTART_HEADER_BYTES
+        .checked_add(
+            frame_count
+                .checked_mul(COMPACT_CONTAINER_RESTART_FRAME_BYTES)
+                .ok_or(M11BlockWriterError::CounterOverflow)?,
+        )
+        .ok_or(M11BlockWriterError::CounterOverflow)?;
+    if frame_count == 0 || expected_len != encoded.len() || frame_count != expected_kinds.len() {
+        return Err(M11BlockWriterError::InvalidCommand(
+            "compact container restart depth is invalid",
+        ));
+    }
+    let stored_path_checksum = u64::from_le_bytes(
+        encoded[16..24]
+            .try_into()
+            .expect("compact container checksum slice has fixed width"),
+    );
+    if compact_container_restart_checksum(
+        COMPACT_CONTAINER_RESTART_CHECKSUM_OFFSET,
+        &encoded[COMPACT_CONTAINER_RESTART_HEADER_BYTES..],
+    ) != stored_path_checksum
+    {
+        return Err(M11BlockWriterError::InvalidCommand(
+            "compact container restart path checksum is invalid",
+        ));
+    }
+    let mut open = Vec::new();
+    let mut physical_bases = Vec::new();
+    open.try_reserve_exact(frame_count)
+        .map_err(|_| M11BlockWriterError::Allocation)?;
+    physical_bases
+        .try_reserve_exact(frame_count)
+        .map_err(|_| M11BlockWriterError::Allocation)?;
+    let mut previous_frame = 0_u64;
+    let mut previous_base = SourceMetric::default();
+    for (index, kind) in expected_kinds.iter().copied().enumerate() {
+        if !matches!(
+            kind,
+            BlockKind::Document | BlockKind::BlockQuote | BlockKind::List(_) | BlockKind::Item(_)
+        ) {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "compact container restart contains a non-container kind",
+            ));
+        }
+        let start =
+            COMPACT_CONTAINER_RESTART_HEADER_BYTES + index * COMPACT_CONTAINER_RESTART_FRAME_BYTES;
+        let record = &encoded[start..start + COMPACT_CONTAINER_RESTART_FRAME_BYTES];
+        if record[24] & !0b11 != 0 || record[25..].iter().any(|byte| *byte != 0) {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "compact container restart reserved fields are invalid",
+            ));
+        }
+        let frame_value = u64::from_le_bytes(
+            record[..8]
+                .try_into()
+                .expect("compact container frame id has fixed width"),
+        );
+        let frame = M11RecursiveGreenFrameId::new(frame_value).ok_or(
+            M11BlockWriterError::InvalidCommand("compact container frame id is nonzero"),
+        )?;
+        let physical_base = SourceMetric::new(
+            u64::from_le_bytes(
+                record[8..16]
+                    .try_into()
+                    .expect("compact container byte base has fixed width"),
+            ),
+            u64::from_le_bytes(
+                record[16..24]
+                    .try_into()
+                    .expect("compact container UTF-16 base has fixed width"),
+            ),
+        )
+        .ok_or(M11BlockWriterError::InvalidCommand(
+            "compact container physical base is valid",
+        ))?;
+        if frame_value <= previous_frame || physical_base < previous_base {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "compact container restart path is ordered",
+            ));
+        }
+        previous_frame = frame_value;
+        previous_base = physical_base;
+        open.push(OpenFrame {
+            id: frame,
+            kind,
+            fence: None,
+            row_editable: None,
+            has_renderable_descendant: record[24] & 1 != 0,
+            has_unrepresented_container_marker: record[24] & 2 != 0,
+        });
+        physical_bases.push(physical_base);
+    }
+    if open.first().map(|frame| frame.kind) != Some(BlockKind::Document)
+        || physical_bases.first().copied() != Some(SourceMetric::default())
+    {
+        return Err(M11BlockWriterError::InvalidCommand(
+            "compact container restart begins with Document at BOF",
+        ));
+    }
+    Ok((open, physical_bases))
 }
 
 /// Source identity shared with the donor while a terminal Paragraph
@@ -2224,6 +2443,20 @@ impl M11CompactProbeOutput {
     }
 
     fn offer_event(&mut self, event: M11RecursiveGreenEvent) -> Result<(), M11BlockWriterError> {
+        let opening_base = matches!(event, M11RecursiveGreenEvent::Enter { .. })
+            .then(|| {
+                SourceMetric::new(
+                    self.fragment.receipt.source_bytes,
+                    self.fragment.receipt.source_utf16,
+                )
+                .ok_or(M11BlockWriterError::CounterOverflow)
+            })
+            .transpose()?;
+        if opening_base.is_some() {
+            self.open_physical_bases
+                .try_reserve(1)
+                .map_err(|_| M11BlockWriterError::Allocation)?;
+        }
         let opens_paragraph = match event {
             M11RecursiveGreenEvent::Enter { frame, kind }
                 if kind == green_kind(BlockKind::Paragraph) =>
@@ -2303,6 +2536,16 @@ impl M11CompactProbeOutput {
             self.paragraph = None;
         }
         self.enforce_first_slice_source_cap();
+        if let Some(base) = opening_base {
+            self.open_physical_bases.push(base);
+        }
+        if matches!(event, M11RecursiveGreenEvent::Exit { .. })
+            && self.open_physical_bases.pop().is_none()
+        {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "compact open-frame base stack underflowed",
+            ));
+        }
         Ok(())
     }
 
@@ -3186,6 +3429,7 @@ impl M11BlockWriter {
                 renderable_rows: 0,
                 first_slice_start_physical: SourceMetric::default(),
                 first_slice_start_rows: 0,
+                open_physical_bases: Vec::new(),
                 paragraph: None,
                 first_slice: M11CompactProbeFirstSliceState::Collecting(Vec::new()),
                 maximum_reference_events: 0,
@@ -3204,10 +3448,11 @@ impl M11BlockWriter {
     }
 
     #[cfg(test)]
-    pub(crate) fn resume_compact_probe_document_only(
+    pub(crate) fn resume_compact_probe_containers(
         runtime: &DocumentRuntime,
         lease: SourceSnapshotLease,
-        document_frame: M11RecursiveGreenFrameId,
+        encoded_writer_restart: &[u8],
+        expected_open_kinds: &[BlockKind],
         next_frame: u64,
         accepted_physical: SourceMetric,
         staged_blank_gap: Option<SourceMetric>,
@@ -3215,8 +3460,10 @@ impl M11BlockWriter {
         event_cut: u64,
         high_level_events: u64,
         renderable_rows: u64,
-    ) -> Result<Self, M11BlockWriterError> {
+    ) -> Result<(Self, Vec<(M11RecursiveGreenFrameId, SourceMetric)>), M11BlockWriterError> {
         let source = lease.version();
+        let (open, open_physical_bases) =
+            decode_compact_container_restart(encoded_writer_restart, expected_open_kinds)?;
         let geometry_lease = runtime.snapshot_current_source().map_err(|_| {
             M11BlockWriterError::InvalidCommand("row geometry source is unavailable")
         })?;
@@ -3231,9 +3478,12 @@ impl M11BlockWriter {
             .map_err(|_| M11BlockWriterError::CounterOverflow)?;
         let parser_utf16 = usize::try_from(parser_physical.utf16())
             .map_err(|_| M11BlockWriterError::CounterOverflow)?;
-        if geometry_lease.version() != source
-            || runtime.current_source_version() != Some(source)
-            || accepted_byte > source.byte_len()
+        if geometry_lease.version() != source || runtime.current_source_version() != Some(source) {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "compact cold restart source is not current",
+            ));
+        }
+        if accepted_byte > source.byte_len()
             || accepted_utf16 > source.utf16_len()
             || parser_byte > source.byte_len()
             || parser_utf16 > source.utf16_len()
@@ -3241,73 +3491,101 @@ impl M11BlockWriter {
                 .utf16_offset_for_byte(accepted_byte)
                 .map_err(M11BlockWriterError::Source)?
                 != accepted_utf16
-            || !lease
-                .is_physical_line_start(accepted_byte)
-                .map_err(M11BlockWriterError::Source)?
             || lease
                 .utf16_offset_for_byte(parser_byte)
                 .map_err(M11BlockWriterError::Source)?
                 != parser_utf16
-            || !lease
-                .is_physical_line_start(parser_byte)
-                .map_err(M11BlockWriterError::Source)?
-            || document_frame.get() >= next_frame
         {
             return Err(M11BlockWriterError::InvalidCommand(
-                "compact cold restart is not a current Document-only line boundary",
+                "compact cold restart metrics are not current scalar boundaries",
             ));
         }
+        if !lease
+            .is_physical_line_start(parser_byte)
+            .map_err(M11BlockWriterError::Source)?
+        {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "compact cold parser cut is not a physical-line start",
+            ));
+        }
+        if open.last().is_none_or(|frame| frame.id.get() >= next_frame) {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "compact cold open-frame identities cross the next frame",
+            ));
+        }
+        for physical_base in &open_physical_bases {
+            let base_byte = usize::try_from(physical_base.bytes())
+                .map_err(|_| M11BlockWriterError::CounterOverflow)?;
+            if *physical_base > accepted_physical
+                || lease
+                    .utf16_offset_for_byte(base_byte)
+                    .map_err(M11BlockWriterError::Source)?
+                    != usize::try_from(physical_base.utf16())
+                        .map_err(|_| M11BlockWriterError::CounterOverflow)?
+            {
+                return Err(M11BlockWriterError::InvalidCommand(
+                    "compact container start is authenticated source geometry",
+                ));
+            }
+        }
+        let open_frame_bases = open
+            .iter()
+            .zip(&open_physical_bases)
+            .map(|(frame, physical)| (frame.id, *physical))
+            .collect::<Vec<_>>();
         let mut first_slice_events = Vec::new();
         first_slice_events
-            .try_reserve_exact(1)
+            .try_reserve_exact(open.len().saturating_mul(2))
             .map_err(|_| M11BlockWriterError::Allocation)?;
-        first_slice_events.push(M11RecursiveGreenEvent::Enter {
-            frame: document_frame,
-            kind: green_kind(BlockKind::Document),
-        });
-        Ok(Self {
-            source,
-            geometry_lease: Some(geometry_lease),
-            output: WriterOutput::CompactProbe(M11CompactProbeOutput {
-                fragment: M11BlockFragmentOutput {
-                    lease: Some(lease),
-                    events: Vec::new(),
-                    receipt: WriterOutputReceipt {
-                        events: event_cut,
-                        source_bytes: accepted_physical.bytes(),
-                        source_utf16: accepted_physical.utf16(),
-                        logical_bytes: logical.bytes(),
-                        logical_utf16: logical.utf16(),
+        for frame in &open {
+            first_slice_events.push(M11RecursiveGreenEvent::Enter {
+                frame: frame.id,
+                kind: green_kind(frame.kind),
+            });
+            if let Some(property) = open_property(frame.kind)? {
+                first_slice_events.push(M11RecursiveGreenEvent::Property(property));
+            }
+        }
+        Ok((
+            Self {
+                source,
+                geometry_lease: Some(geometry_lease),
+                output: WriterOutput::CompactProbe(M11CompactProbeOutput {
+                    fragment: M11BlockFragmentOutput {
+                        lease: Some(lease),
+                        events: Vec::new(),
+                        receipt: WriterOutputReceipt {
+                            events: event_cut,
+                            source_bytes: accepted_physical.bytes(),
+                            source_utf16: accepted_physical.utf16(),
+                            logical_bytes: logical.bytes(),
+                            logical_utf16: logical.utf16(),
+                        },
+                        source_bytes_read: 0,
+                        reference: None,
                     },
-                    source_bytes_read: 0,
-                    reference: None,
-                },
-                high_level_events,
-                renderable_rows,
-                first_slice_start_physical: accepted_physical,
-                first_slice_start_rows: renderable_rows,
-                paragraph: None,
-                first_slice: M11CompactProbeFirstSliceState::Collecting(first_slice_events),
-                maximum_reference_events: 0,
-                maximum_reference_allocated_bytes: 0,
-            }),
-            open: vec![OpenFrame {
-                id: document_frame,
-                kind: BlockKind::Document,
-                fence: None,
-                row_editable: None,
-                has_renderable_descendant: false,
-                has_unrepresented_container_marker: false,
-            }],
-            next_frame,
-            line_cursor: LineSourcePosition::default(),
-            staged: staged_blank_gap.map(|metric| StagedSource::BlankGap { metric }),
-            pending: None,
-            restart_join: None,
-            restart_provenance: None,
-            document_complete: false,
-            poisoned: false,
-        })
+                    high_level_events,
+                    renderable_rows,
+                    first_slice_start_physical: accepted_physical,
+                    first_slice_start_rows: renderable_rows,
+                    open_physical_bases,
+                    paragraph: None,
+                    first_slice: M11CompactProbeFirstSliceState::Collecting(first_slice_events),
+                    maximum_reference_events: 0,
+                    maximum_reference_allocated_bytes: 0,
+                }),
+                open,
+                next_frame,
+                line_cursor: LineSourcePosition::default(),
+                staged: staged_blank_gap.map(|metric| StagedSource::BlankGap { metric }),
+                pending: None,
+                restart_join: None,
+                restart_provenance: None,
+                document_complete: false,
+                poisoned: false,
+            },
+            open_frame_bases,
+        ))
     }
 
     #[cfg(test)]
@@ -3465,8 +3743,18 @@ impl M11BlockWriter {
                 "durable parser and compact writer deferred-source roles differ",
             ));
         }
-        let receipt = match &self.output {
-            WriterOutput::CompactProbe(probe) => probe.receipt(),
+        let (receipt, cold_container_restart) = match &self.output {
+            WriterOutput::CompactProbe(probe) => {
+                if probe.open_physical_bases.len() != self.open.len() {
+                    return Err(M11BlockRestartError::Pairing(
+                        "compact writer open frames and physical bases differ",
+                    ));
+                }
+                (
+                    probe.receipt(),
+                    encode_compact_container_restart(&self.open, &probe.open_physical_bases)?,
+                )
+            }
             _ => {
                 return Err(M11BlockRestartError::Pairing(
                     "compact checkpoint requires the compact writer sink",
@@ -3507,6 +3795,7 @@ impl M11BlockWriter {
                 && self.restart_join.is_none())
             .then_some(self.open[0].id),
             cold_staged_blank_gap,
+            cold_container_restart,
             next_frame: self.next_frame,
         })
     }
@@ -4093,6 +4382,14 @@ impl M11BlockWriter {
         }
         if remove_paragraph {
             self.open.pop();
+            #[cfg(test)]
+            if let WriterOutput::CompactProbe(probe) = &mut self.output {
+                if probe.open_physical_bases.pop().is_none() {
+                    return Err(M11BlockWriterError::InvalidCommand(
+                        "compact reference removal lost its open-frame base",
+                    ));
+                }
+            }
         } else if let Some(visible_remainder) = visible_remainder {
             self.open
                 .last_mut()

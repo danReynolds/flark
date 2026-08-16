@@ -1439,6 +1439,8 @@ pub struct M11PersistentRecursiveGreenSession {
 struct M11CompactCheckpointEntry {
     stream_offset: u64,
     encoded_len: u32,
+    writer_stream_offset: u64,
+    writer_encoded_len: u32,
     line_ordinal: u64,
     last_line_length: u64,
     accepted_physical: SourceMetric,
@@ -1526,9 +1528,24 @@ impl M11CompactCheckpointJournal {
         if let Some(error) = append_error {
             return Err(error);
         }
+        let writer_stream_offset =
+            u64::try_from(self.stream_len).map_err(|_| "compact writer restart offset fits u64")?;
+        let writer_encoded_len =
+            facts
+                .cold_container_restart
+                .as_ref()
+                .map_or(Ok(0_u32), |encoded| {
+                    u32::try_from(encoded.len())
+                        .map_err(|_| "compact writer restart length fits u32")
+                })?;
+        if let Some(encoded) = &facts.cold_container_restart {
+            self.append_bytes(encoded)?;
+        }
         self.entries.push(M11CompactCheckpointEntry {
             stream_offset,
             encoded_len,
+            writer_stream_offset,
+            writer_encoded_len,
             line_ordinal: parser.line_ordinal(),
             last_line_length: parser.last_line_length(),
             accepted_physical: facts.accepted_physical,
@@ -1610,6 +1627,43 @@ impl M11CompactCheckpointJournal {
         Ok(encoded)
     }
 
+    fn encoded_writer_entry(&self, index: usize) -> Result<Vec<u8>, &'static str> {
+        let entry = self
+            .entries
+            .get(index)
+            .ok_or("compact writer restart entry index is in bounds")?;
+        let start = usize::try_from(entry.writer_stream_offset)
+            .map_err(|_| "compact writer restart offset fits usize")?;
+        let len = entry.writer_encoded_len as usize;
+        if len == 0 {
+            return Err("compact checkpoint has no bounded writer restart");
+        }
+        let end = start
+            .checked_add(len)
+            .ok_or("compact writer restart range does not overflow")?;
+        if end > self.stream_len {
+            return Err("compact writer restart range is inside the encoded stream");
+        }
+        let mut encoded = Vec::new();
+        encoded
+            .try_reserve_exact(len)
+            .map_err(|_| "compact writer restart decode allocation failed")?;
+        let mut cursor = start;
+        while cursor < end {
+            let page_index = cursor / COMPACT_RESTART_PAGE_BYTES;
+            let page_offset = cursor % COMPACT_RESTART_PAGE_BYTES;
+            let accepted = (end - cursor).min(COMPACT_RESTART_PAGE_BYTES - page_offset);
+            encoded.extend_from_slice(
+                self.pages
+                    .get(page_index)
+                    .and_then(|page| page.get(page_offset..page_offset + accepted))
+                    .ok_or("compact writer restart bytes are inside retained pages")?,
+            );
+            cursor += accepted;
+        }
+        Ok(encoded)
+    }
+
     fn begin_cold_slice_probe(
         &self,
         index: usize,
@@ -1619,6 +1673,7 @@ impl M11CompactCheckpointJournal {
         (
             M11PersistentRecursiveGreenCleanBuild,
             M11CompactCheckpointEntry,
+            Vec<flark_engine::parser_internal::M11RecursiveGreenSliceOpenFrameBase>,
         ),
         M11PersistentRecursiveGreenSessionError,
     > {
@@ -1627,19 +1682,22 @@ impl M11CompactCheckpointJournal {
                 "compact cold restart index is in bounds",
             ),
         )?;
-        let document_frame = entry.cold_document_frame.ok_or(
-            M11PersistentRecursiveGreenSessionError::InvalidState(
-                "compact cold restart is a Document-only boundary",
-            ),
-        )?;
         let encoded = self
             .encoded_entry(index)
+            .map_err(M11PersistentRecursiveGreenSessionError::InvalidState)?;
+        let encoded_writer = self
+            .encoded_writer_entry(index)
             .map_err(M11PersistentRecursiveGreenSessionError::InvalidState)?;
         let controller = M11DirectBlockController::resume_durable_encoded_restart(
             &encoded,
             entry.line_ordinal,
             entry.last_line_length,
             None,
+        )?;
+        let resumed_parser = controller.capture_durable_restart_if_available()?.ok_or(
+            M11PersistentRecursiveGreenSessionError::InvalidState(
+                "decoded compact parser remains at a line boundary",
+            ),
         )?;
         let next_line_ordinal = u32::try_from(entry.line_ordinal).map_err(|_| {
             M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -1655,10 +1713,11 @@ impl M11CompactCheckpointJournal {
             })?,
             next_line_ordinal,
         )?;
-        let writer = M11BlockWriter::resume_compact_probe_document_only(
+        let (writer, writer_open_frame_bases) = M11BlockWriter::resume_compact_probe_containers(
             runtime,
             runtime.snapshot_current_source()?,
-            document_frame,
+            &encoded_writer,
+            resumed_parser.open_kinds(),
             entry.next_frame,
             entry.accepted_physical,
             entry.cold_staged_blank_gap,
@@ -1667,6 +1726,16 @@ impl M11CompactCheckpointJournal {
             entry.high_level_events,
             entry.renderable_rows,
         )?;
+        let open_frame_bases = writer_open_frame_bases
+            .into_iter()
+            .map(|(frame, physical)| {
+                flark_engine::parser_internal::M11RecursiveGreenSliceOpenFrameBase::new(
+                    frame,
+                    physical.bytes(),
+                    physical.utf16(),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let source = runtime.current_source_version().ok_or(
             M11PersistentRecursiveGreenSessionError::InvalidState(
                 "compact cold restart source is current",
@@ -1705,6 +1774,7 @@ impl M11CompactCheckpointJournal {
                 compact_restart_captures: 0,
             },
             entry,
+            open_frame_bases,
         ))
     }
 
@@ -1723,6 +1793,8 @@ impl M11CompactCheckpointJournal {
             || first.last_line_length != 0
             || first.cold_document_frame.map(|frame| frame.get()) != Some(1)
             || first.cold_staged_blank_gap.is_some()
+            || first.writer_encoded_len == 0
+            || first.writer_stream_offset != first.stream_offset + u64::from(first.encoded_len)
             || first.next_frame != 2
         {
             return Err("compact restart journal begins with canonical BOF metadata");
@@ -1735,7 +1807,10 @@ impl M11CompactCheckpointJournal {
                 || pair[0].high_level_events > pair[1].high_level_events
                 || pair[0].renderable_rows > pair[1].renderable_rows
                 || pair[0].next_frame > pair[1].next_frame
-                || pair[0].stream_offset + u64::from(pair[0].encoded_len) != pair[1].stream_offset
+                || pair[0].writer_stream_offset
+                    != pair[0].stream_offset + u64::from(pair[0].encoded_len)
+                || pair[0].writer_stream_offset + u64::from(pair[0].writer_encoded_len)
+                    != pair[1].stream_offset
             {
                 return Err("compact restart metadata and stream offsets are monotonic");
             }
@@ -4534,6 +4609,7 @@ mod tests {
         source_start_byte: usize,
         source_end_byte: usize,
         row_base: u64,
+        open_frame_bases: &[flark_engine::parser_internal::M11RecursiveGreenSliceOpenFrameBase],
         events: &[M11RecursiveGreenEvent],
     ) -> flark_engine::parser_internal::M11RecursiveGreenSliceRoot {
         use flark_engine::parser_internal::{
@@ -4544,12 +4620,13 @@ mod tests {
             Some(M11RecursiveGreenEvent::Enter { frame, kind }) => (frame, kind),
             _ => panic!("primary slice omitted its Document enter"),
         };
-        let mut slice_build = M11RecursiveGreenSliceBuild::new_at(
+        let mut slice_build = M11RecursiveGreenSliceBuild::new_at_with_open_frame_bases(
             runtime,
             runtime.snapshot_current_source().expect("slice source"),
             source_start_byte,
             source_end_byte,
             row_base,
+            open_frame_bases,
         )
         .expect("begin Green slice");
         for event in events.iter().copied() {
@@ -4772,8 +4849,14 @@ mod tests {
         let slice_event_count = slice.events.len();
 
         let source_end = usize::try_from(slice.physical_end.bytes()).expect("slice end");
-        let mut slice_root =
-            build_green_slice_from_primary_events(&mut runtime, 0, source_end, 0, &slice.events);
+        let mut slice_root = build_green_slice_from_primary_events(
+            &mut runtime,
+            0,
+            source_end,
+            0,
+            &[],
+            &slice.events,
+        );
         let limits = M11RecursiveGreenRowQueryLimits::new(64, 4_096, 32_768, 64, 32_768)
             .expect("slice query limits");
         let slice_rows = slice_root
@@ -4847,7 +4930,7 @@ mod tests {
             .min_by_key(|(_, entry)| entry.accepted_physical.bytes().abs_diff(cold_target))
             .expect("ordinary source retains a cold Document-only midpoint checkpoint");
         let cold_started_at = Instant::now();
-        let (mut cold_build, cold_entry) = session
+        let (mut cold_build, cold_entry, cold_open_frame_bases) = session
             .compact_checkpoints
             .as_ref()
             .expect("compact restart journal")
@@ -4884,6 +4967,7 @@ mod tests {
             cold_start,
             cold_end,
             cold_slice.row_base,
+            &cold_open_frame_bases,
             &cold_slice.events,
         );
         let cold_start_utf16 =
@@ -5064,6 +5148,7 @@ mod tests {
             prefix_bytes,
             rebased_end,
             REBASED_ROW,
+            &[],
             &slice.events,
         );
         assert_eq!(
@@ -5186,7 +5271,190 @@ mod tests {
             "spanning construct must use the bounded fallback"
         );
         let mut session = build.take_session().expect("compact session");
+        assert!(
+            session
+                .compact_checkpoints
+                .as_ref()
+                .expect("spanning-fence compact checkpoints")
+                .entries
+                .iter()
+                .skip(1)
+                .all(|entry| entry.writer_encoded_len == 0),
+            "open fenced-code state must remain an explicit cold-jump fallback"
+        );
         release_session(&mut runtime, &mut session);
+        close_runtime(&mut runtime);
+    }
+
+    #[test]
+    fn compact_probe_cold_restart_certifies_bounded_open_nested_list_quote() {
+        use flark_engine::parser_internal::M11RecursiveGreenRowQueryLimits;
+
+        let mut source = String::new();
+        for index in 0..384 {
+            source.push_str(&format!(
+                "> - Nested item {index:03} has **strong** and a [direct link](https://example.invalid/{index}).\n>\n"
+            ));
+        }
+        source.push_str(
+            "\nOutside paragraph closes the bounded list and quote.\n\nTrailing paragraph.\n",
+        );
+        let mut runtime = DocumentRuntime::new(&source, DocumentRuntimeConfig::default())
+            .expect("nested cold runtime");
+        let (mut compact, receipt, _, _, _) = build_compact_probe(&mut runtime, Instant::now());
+        assert!(compact.green.is_none());
+        let target = (source.len() / 2) as u64;
+        let (index, selected) = compact
+            .compact_checkpoints
+            .as_ref()
+            .expect("nested compact journal")
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| {
+                entry.accepted_physical.bytes() > 0
+                    && entry.open_depth > 3
+                    && entry.writer_encoded_len > 0
+                    && receipt
+                        .renderable_rows
+                        .saturating_sub(entry.renderable_rows)
+                        >= 32
+            })
+            .min_by_key(|(_, entry)| entry.accepted_physical.bytes().abs_diff(target))
+            .expect("bounded nested list/quote retains an interior container checkpoint");
+        let selected = *selected;
+        let started_at = Instant::now();
+        let (mut cold_build, entry, open_frame_bases) = compact
+            .compact_checkpoints
+            .as_ref()
+            .expect("nested compact journal")
+            .begin_cold_slice_probe(index, &mut runtime, SYNTAX_PROFILE_GFM_V1)
+            .expect("begin nested cold slice");
+        assert_eq!(entry, selected);
+        let slice = loop {
+            let poll = cold_build
+                .poll(&mut runtime, 64)
+                .expect("poll nested cold slice");
+            if let Some(slice) = cold_build.take_compact_probe_first_slice() {
+                break slice;
+            }
+            assert_ne!(
+                poll.status(),
+                M11PersistentRecursiveGreenBuildStatus::Complete,
+                "bounded nested list/quote must close and publish before EOF"
+            );
+        };
+        let captured_at = started_at.elapsed();
+        assert_eq!(slice.physical_start, selected.accepted_physical);
+        assert_eq!(slice.row_base, selected.renderable_rows);
+        assert!(open_frame_bases.len() > 1);
+        let start = usize::try_from(slice.physical_start.bytes()).expect("nested slice start");
+        let start_utf16 =
+            usize::try_from(slice.physical_start.utf16()).expect("nested slice UTF-16 start");
+        let end = usize::try_from(slice.physical_end.bytes()).expect("nested slice end");
+        let mut root = build_green_slice_from_primary_events(
+            &mut runtime,
+            start,
+            end,
+            slice.row_base,
+            &open_frame_bases,
+            &slice.events,
+        );
+        let limits = M11RecursiveGreenRowQueryLimits::new(32, 8_192, 65_536, 64, 65_536)
+            .expect("nested slice query limits");
+        let rows = root
+            .locate_renderable_rows(
+                &runtime,
+                M11RecursiveGreenPoint::new(start, start_utf16, SourceBoundaryAffinity::After),
+                end as u64,
+                limits,
+            )
+            .expect("query nested cold slice")
+            .rows()
+            .to_vec();
+        let inline = rows
+            .iter()
+            .map(|row| {
+                let point = M11RecursiveGreenPoint::new(
+                    usize::try_from(row.physical_range().start).expect("nested row byte"),
+                    usize::try_from(row.physical_utf16_range().start).expect("nested row UTF-16"),
+                    SourceBoundaryAffinity::After,
+                );
+                let prepared =
+                    crate::prepare_m11_recursive_green_slice_inline_leaf(&runtime, &root, point)
+                        .expect("prepare nested inline leaf");
+                capture_inline_facts_for_slice_differential(&mut runtime, prepared)
+            })
+            .collect::<Vec<_>>();
+        let engine_ready_at = started_at.elapsed();
+        eprintln!(
+            "nested list/quote cold slice: captured={captured_at:?} engine_ready={engine_ready_at:?} source_start={start} source_bytes={} open_depth={} rows={}",
+            end - start,
+            selected.open_depth,
+            rows.len()
+        );
+        while cold_build
+            .poll(&mut runtime, 4_096)
+            .expect("finish nested cold source")
+            .status()
+            != M11PersistentRecursiveGreenBuildStatus::Complete
+        {}
+        let _ = cold_build
+            .take_compact_probe_receipt()
+            .expect("nested cold receipt");
+        let mut cold_session = cold_build.take_session().expect("nested cold session");
+        release_session(&mut runtime, &mut cold_session);
+        release_session(&mut runtime, &mut compact);
+
+        let mut complete = build_session(&mut runtime);
+        let complete_rows = complete
+            .query_renderable_rows(
+                &runtime,
+                M11RecursiveGreenPoint::new(start, start_utf16, SourceBoundaryAffinity::After),
+                end as u64,
+                limits,
+            )
+            .expect("query eventual nested range")
+            .rows()
+            .to_vec();
+        assert_eq!(rows.len(), complete_rows.len());
+        for ((row, expected), inline_facts) in rows.iter().zip(&complete_rows).zip(&inline) {
+            assert_eq!(row.ordinal(), expected.ordinal());
+            assert_eq!(row.frame(), expected.frame());
+            assert_eq!(row.kind(), expected.kind());
+            assert_eq!(row.physical_range(), expected.physical_range());
+            assert_eq!(row.physical_utf16_range(), expected.physical_utf16_range());
+            assert_eq!(row.edit_capability(), expected.edit_capability());
+            assert_eq!(row.editable_range(), expected.editable_range());
+            assert_eq!(row.editable_utf16_range(), expected.editable_utf16_range());
+            assert_eq!(row.editable_segments(), expected.editable_segments());
+            assert_eq!(
+                &row.path()[1..],
+                &expected.path()[1..],
+                "authenticated open-container starts and certified closes must match"
+            );
+            let point = M11RecursiveGreenPoint::new(
+                usize::try_from(row.physical_range().start).expect("nested row byte"),
+                usize::try_from(row.physical_utf16_range().start).expect("nested row UTF-16"),
+                SourceBoundaryAffinity::After,
+            );
+            let prepared = complete
+                .prepare_inline_leaf(&runtime, point)
+                .expect("prepare eventual nested inline leaf");
+            assert_eq!(
+                inline_facts,
+                &capture_inline_facts_for_slice_differential(&mut runtime, prepared)
+            );
+        }
+
+        release_session(&mut runtime, &mut complete);
+        root.begin_release(&mut runtime)
+            .expect("begin nested slice release");
+        while !root
+            .poll_release(&mut runtime, 256)
+            .expect("poll nested slice release")
+            .complete()
+        {}
         close_runtime(&mut runtime);
     }
 

@@ -1282,10 +1282,31 @@ Green rows and authoritative inline/link facts were engine-ready in 11.307 ms.
 The slice covered 2,752 bytes and began at row 60,960. The entire differential
 test, including compact EOF indexing and eventual full-root comparison,
 finished in 2.63 seconds. This is strong evidence for cold random access, but
-only for ordinary Document-level blocks. Nested open-path serialization,
-reference-winner snapshots, tables/targets, the frozen 100-coordinate family
-matrix, ABI/layout/paint, and physical-device receipts remain open; Gate two is
-not yet claimed complete.
+only for ordinary Document-level blocks. Full open-row/fence/HTML restart
+serialization, reference-winner snapshots, tables/targets, the frozen
+100-coordinate family matrix, ABI/layout/paint, and physical-device receipts
+remain open; Gate two is not yet claimed complete.
+
+The next bounded-container experiment removes the first item from that open
+list. Compact checkpoints now join the donor restart with a separate
+versioned/checksummed writer record: a 32-byte header plus 32 bytes per open
+Document/list/item/quote frame. The record retains frame identity, authenticated
+absolute block start, and the two close-time container folds; the parser record
+remains the sole owner of semantic kinds and list/item properties. Decode
+requires both paths to agree. A slice seeds the open event envelope from that
+joined authority, replays the primary parser until the bounded containers
+close, and substitutes authenticated ancestor starts into public path geometry.
+Open rows, fences, and HTML are intentionally not encoded by this record and
+therefore retain a typed cache-miss fallback.
+
+One release-mode nested fixture restarted inside an open block quote, list, and
+item at depth four. It replayed 16,879 source bytes to the certified container
+close, captured in 3.349 ms, and materialized the frozen 32-row viewport plus
+authoritative inline/link facts in 89.188 ms. Complete public rows—including
+container properties, absolute paths, frame identities, editable geometry, and
+inline values—matched the eventual full-root oracle. This clears the initial
+bounded list/quote mechanism under the provisional 100 ms request target, but
+is one development receipt rather than the required repeated family matrix.
 
 The direction is accepted for prototyping, not yet for production migration.
 The remaining Gate-one semantic proof is a frozen mixed-construct slice matrix

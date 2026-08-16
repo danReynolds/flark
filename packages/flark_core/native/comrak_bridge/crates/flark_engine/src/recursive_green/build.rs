@@ -1596,11 +1596,42 @@ impl Drop for M11RecursiveGreenBuild {
 /// Document close only after every source-backed child in the prefix is
 /// closed. Keeping this authority distinct prevents a prefix from entering
 /// whole-document adoption or publication paths.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct M11RecursiveGreenSliceOpenFrameBase {
+    frame: M11RecursiveGreenFrameId,
+    physical_start: M11RecursiveGreenSourceMetric,
+}
+
+impl M11RecursiveGreenSliceOpenFrameBase {
+    pub fn new(
+        frame: M11RecursiveGreenFrameId,
+        byte_start: u64,
+        utf16_start: u64,
+    ) -> Result<Self, M11RecursiveGreenError> {
+        Ok(Self {
+            frame,
+            physical_start: M11RecursiveGreenSourceMetric::new(byte_start, utf16_start)
+                .ok_or(M11RecursiveGreenError::InvalidPoint)?,
+        })
+    }
+
+    #[must_use]
+    pub const fn frame(self) -> M11RecursiveGreenFrameId {
+        self.frame
+    }
+
+    #[must_use]
+    pub const fn physical_start(self) -> M11RecursiveGreenSourceMetric {
+        self.physical_start
+    }
+}
+
 #[must_use = "recursive-green slice builds require root transfer or explicit cancellation"]
 pub struct M11RecursiveGreenSliceBuild {
     build: M11RecursiveGreenBuild,
     source_base: M11RecursiveGreenSourceMetric,
     row_base: u64,
+    open_frame_bases: Box<[M11RecursiveGreenSliceOpenFrameBase]>,
 }
 
 impl M11RecursiveGreenSliceBuild {
@@ -1619,11 +1650,47 @@ impl M11RecursiveGreenSliceBuild {
         source_end_byte: usize,
         row_base: u64,
     ) -> Result<Self, M11RecursiveGreenError> {
+        Self::new_at_with_open_frame_bases(
+            runtime,
+            lease,
+            source_start_byte,
+            source_end_byte,
+            row_base,
+            &[],
+        )
+    }
+
+    pub fn new_at_with_open_frame_bases(
+        runtime: &DocumentRuntime,
+        lease: SourceSnapshotLease,
+        source_start_byte: usize,
+        source_end_byte: usize,
+        row_base: u64,
+        open_frame_bases: &[M11RecursiveGreenSliceOpenFrameBase],
+    ) -> Result<Self, M11RecursiveGreenError> {
         if source_start_byte > source_end_byte {
             return Err(M11RecursiveGreenError::InvalidPoint);
         }
         let source_start_utf16 = lease.utf16_offset_for_byte(source_start_byte)?;
         let source_end_utf16 = lease.utf16_offset_for_byte(source_end_byte)?;
+        let mut previous_frame = 0_u64;
+        for open in open_frame_bases {
+            let byte_start = usize::try_from(open.physical_start.bytes())
+                .map_err(|_| M11RecursiveGreenError::CounterOverflow)?;
+            if open.frame.get() <= previous_frame
+                || byte_start > source_start_byte
+                || usize::try_from(open.physical_start.utf16())
+                    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
+                    > source_start_utf16
+                || lease.utf16_offset_for_byte(byte_start)?
+                    != usize::try_from(open.physical_start.utf16())
+                        .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
+            {
+                return Err(M11RecursiveGreenError::InvalidPoint);
+            }
+            previous_frame = open.frame.get();
+        }
+        let open_frame_bases = open_frame_bases.to_vec().into_boxed_slice();
         let source_base = M11RecursiveGreenSourceMetric::from_validated(
             u64::try_from(source_start_byte)
                 .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
@@ -1645,6 +1712,7 @@ impl M11RecursiveGreenSliceBuild {
             )?,
             source_base,
             row_base,
+            open_frame_bases,
         })
     }
 
@@ -1675,6 +1743,7 @@ impl M11RecursiveGreenSliceBuild {
                 root,
                 source_base: self.source_base,
                 row_base: self.row_base,
+                open_frame_bases: std::mem::take(&mut self.open_frame_bases),
             })
     }
 
@@ -1704,6 +1773,7 @@ pub struct M11RecursiveGreenSliceRoot {
     pub(super) root: M11RecursiveGreenRoot,
     pub(super) source_base: M11RecursiveGreenSourceMetric,
     pub(super) row_base: u64,
+    pub(super) open_frame_bases: Box<[M11RecursiveGreenSliceOpenFrameBase]>,
 }
 
 impl M11RecursiveGreenSliceRoot {

@@ -10,7 +10,9 @@ use crate::measured_sequence::{
 use crate::parser_pages::{M11ParserPageError, M11ParserSourceRangeAuthority};
 use crate::source::{SourceBoundaryAffinity, SourceVersion};
 
-use super::build::{M11RecursiveGreenRoot, M11RecursiveGreenSliceRoot};
+use super::build::{
+    M11RecursiveGreenRoot, M11RecursiveGreenSliceOpenFrameBase, M11RecursiveGreenSliceRoot,
+};
 use super::codec::{
     decode_leaf, decode_packed_event, is_renderable_row_kind,
     M11RecursiveGreenCachedRowEditCapability, M11RecursiveGreenCoveragePart,
@@ -2081,7 +2083,13 @@ impl M11RecursiveGreenSliceRoot {
             .locate_renderable_rows_bounded(runtime, local_point, local_end, limits)?
         {
             M11RecursiveGreenRowQueryOutcome::Window(mut window) => {
-                offset_slice_row_window(&mut window, byte_base, utf16_base, self.row_base)?;
+                offset_slice_row_window(
+                    &mut window,
+                    byte_base,
+                    utf16_base,
+                    self.row_base,
+                    &self.open_frame_bases,
+                )?;
                 Ok(M11RecursiveGreenRowQueryOutcome::Window(window))
             }
             M11RecursiveGreenRowQueryOutcome::BudgetExceeded(exceeded) => {
@@ -2206,6 +2214,7 @@ fn offset_slice_row_window(
     byte_base: u64,
     utf16_base: u64,
     row_base: u64,
+    open_frame_bases: &[M11RecursiveGreenSliceOpenFrameBase],
 ) -> Result<(), M11RecursiveGreenError> {
     window.start_ordinal = window
         .start_ordinal
@@ -2235,6 +2244,21 @@ fn offset_slice_row_window(
         for frame in &mut row.path {
             offset_slice_range(&mut frame.physical, byte_base)?;
             offset_slice_range(&mut frame.physical_utf16, utf16_base)?;
+            if let Some(open) = open_frame_bases
+                .iter()
+                .find(|open| open.frame() == frame.frame)
+                .copied()
+            {
+                frame.physical.start = open.physical_start().bytes();
+                frame.physical_utf16.start = open.physical_start().utf16();
+                if frame.physical.start > frame.physical.end
+                    || frame.physical_utf16.start > frame.physical_utf16.end
+                {
+                    return Err(M11RecursiveGreenError::Corrupt(
+                        "slice open-frame base follows its certified close",
+                    ));
+                }
+            }
         }
     }
     Ok(())
