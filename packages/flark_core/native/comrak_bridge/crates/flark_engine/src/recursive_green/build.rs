@@ -39,6 +39,7 @@ pub(super) type GreenSequenceTree = CommittedMeasuredSequenceRoot<RecursiveGreen
 pub struct M11RecursiveGreenBuildReceipt {
     transitions: usize,
     events: u64,
+    renderable_rows: u64,
     source_bytes: u64,
     source_utf16: u64,
     logical_bytes: u64,
@@ -63,6 +64,7 @@ impl M11RecursiveGreenBuildReceipt {
         Self {
             transitions,
             events: summary.events,
+            renderable_rows: summary.renderable_row_exits,
             source_bytes: summary.physical_bytes,
             source_utf16: summary.physical_utf16,
             logical_bytes: summary.logical_bytes,
@@ -85,6 +87,10 @@ impl M11RecursiveGreenBuildReceipt {
     #[must_use]
     pub const fn events(self) -> u64 {
         self.events
+    }
+    #[must_use]
+    pub const fn renderable_rows(self) -> u64 {
+        self.renderable_rows
     }
     #[must_use]
     pub const fn source_bytes(self) -> u64 {

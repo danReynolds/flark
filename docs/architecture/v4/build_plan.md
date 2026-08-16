@@ -965,13 +965,99 @@ The resulting scale correction is:
   bounded Green fragments on demand rather than requiring a 10 MiB Green root
   before semantic queries work.
 
-The next implementation experiment is one bounded recorder on the primary
-writer: at most the first 32 rows plus their open ancestry, with a differential
-oracle against the eventual full viewport. It succeeds only if candidate facts
-are byte-for-byte identical to the final current-revision facts, dependency-
-unsafe rows remain neutral, no parser policy is duplicated, and the physical
-first-meaningful-paint lane stays below 200 ms. Only then does the progressive
-receipt cross the ABI into Dart and Flutter.
+The bounded-recorder experiment succeeded and changed the selected storage
+architecture. On the exact primary parser stream, an ordinary 10 MiB document
+closed its first row after 1.343 ms and its first 32 rows after 7.787 ms in an
+unoptimized diagnostic build; those 32 rows covered only 3,007 source bytes.
+A 2 MiB document with a late reference definition reached 32 closed block rows
+after 6.719 ms. A 2 MiB document-spanning fenced block correctly produced no
+closed row until EOF. These are architecture timings, not claim-eligible
+foreground receipts, but they prove that useful work is available independently
+of total document size and that the exact parser already exposes the required
+safety boundary.
+
+A disposable differential replay then sealed only closed top-level regions
+from that same event stream. Row geometry, editability, nested container facts,
+and source coordinates matched the eventual full Green result for ordinary
+prose, a bounded list, and a document whose early reference use was resolved by
+a late definition. The fragment's synthetic storage envelope necessarily had a
+shorter Document range; every parser-authored fact below that envelope matched.
+The late reference remains an inline dependency and must stay neutral until its
+winner is known. The spanning-fence case proved the complementary rule: an open
+top-level construct cannot be certified merely because it intersects the
+viewport.
+
+A second disposable release-mode probe ran the same 10 MiB ordinary source
+through the complete scanner, block controller, writer geometry, and reference
+journal while replacing persistent Green construction with the existing local
+event journal. It still retained all 557,756 high-level events in a `Vec`, yet
+finished the document body in 791.832 ms over 5,912,211 bounded transitions.
+The comparable persistent-Green path is 4.457 seconds on this Mac. The roughly
+5.6x separation is large enough that per-event durable authentication and
+whole-document Green storage are the wrong background representation, not just
+an implementation detail to micro-optimize. The probes were removed after the
+receipts were recorded.
+
+#### Selected scale architecture: compact regions plus hot Green fragments
+
+The production direction is now intentionally narrower than either a flat row
+rewrite or a monolithic-tree optimization:
+
+- Source remains the sole, immediately visible and editable authority.
+- The one primary block parser streams from that source and retains a compact
+  region index: authenticated restart checkpoints, closed top-level source
+  ranges, renderable-row counts, structural dependency state, and reference
+  scan progress. Low-level Green events are transient outside materialization.
+- Exact recursive Green remains the generic nested representation, but only as
+  bounded fragments for the visible, edited, or explicitly requested regions.
+  This preserves the proven arbitrary-container query machinery without making
+  every offscreen event durable.
+- A bounded fragment becomes publishable only after its top-level ancestors
+  close. A document-spanning list, quote, HTML block, fence, or paragraph stays
+  current-source neutral until that dependency closes.
+- Inline reference resolution is tri-state. A known first definition is final;
+  an unresolved label is `unknown` until the reference scan reaches EOF. The
+  inline parser must report that dependency rather than treating `not seen yet`
+  as `absent`.
+- A viewport request first consults the fragment cache. On a miss it reparses
+  from the nearest current-revision restart checkpoint into one bounded Green
+  fragment. If the scan frontier has not produced such a checkpoint, Flutter
+  receives exact source immediately and the semantic fragment follows later.
+- Edits invalidate intersecting fragments and downstream checkpoint/reference
+  dependencies, then use the existing restart/convergence machinery to splice
+  new compact regions and rematerialize only hot fragments.
+
+This rejects three tempting alternatives. A truncated second parse is not
+certification. A new flat row schema would recreate the fixed-record and nested
+ancestry limitations that recursive Green displaced. Page-level authentication
+optimizations may still help each hot fragment, but cannot solve foreground
+publication, retained memory, or whole-document work by themselves.
+
+The implementation sequence is:
+
+1. Add a bounded primary-stream region recorder and immutable Green fragment
+   envelope. Prove every published row against the final full-tree oracle over
+   the GFM corpus plus spanning/dependency adversaries.
+2. Let `DocumentSession::query_live_viewport` mix certified fragment ranges and
+   explicit pending source ranges while a clean build is still running. Carry
+   that existing live-viewport model through the ABI; do not add a second
+   provisional semantic state.
+3. Introduce the compact index writer, initially alongside the monolithic root,
+   and reproduce the sub-second 10 MiB Mac scan without retaining the event
+   journal. The index must have a source-proportional byte receipt and bounded
+   checkpoint-depth envelope.
+4. Materialize and evict Green fragments on demand, then remove the monolithic
+   root from cold-open readiness and ordinary background completion. Keep it
+   temporarily as a differential oracle until fragment/index conformance is
+   exhaustive.
+5. Requalify cold open, random scroll, typing during scan, reference upgrades,
+   edits across region boundaries, memory, and fault cleanup on Mac and the
+   Pixel before resuming broader H5 work.
+
+The first product gate remains a physical first-meaningful-paint receipt below
+200 ms for an ordinary 10 MiB document. Exact source may paint sooner; only a
+current-revision certified fragment counts as semantic paint. Pathological
+spanning constructs are expected to stay neutral, not to violate the work cap.
 
 ## 1. Destination and current state
 
