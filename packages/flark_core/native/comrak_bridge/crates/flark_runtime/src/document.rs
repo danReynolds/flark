@@ -3372,6 +3372,111 @@ mod tests {
     }
 
     #[test]
+    fn slice_style_mapping_matches_public_rows_tables_and_activated_targets() {
+        let source = concat!(
+            "# Mixed viewport\n\n",
+            "Paragraph with **strong**, &amp;, [direct](https://example.com/path \"title\"), and <me@example.com>.\n\n",
+            "| f\\|oo | bar |\n",
+            "| :--- | ---: |\n",
+            "| `x\\|y` | baz |\n\n",
+            "- [x] task\n",
+        );
+        let mut document = DocumentSession::begin(source).expect("begin mixed viewport");
+        while document.pump(512).expect("pump mixed viewport").phase != DocumentSessionPhase::Ready
+        {
+        }
+        let revision = document.revision();
+        let oracle = document
+            .query_viewport(revision, 0..source.len(), 16)
+            .expect("query complete public viewport");
+
+        let rows = {
+            let session = match &document.parser {
+                ParseState::Ready(session) => session,
+                _ => panic!("mixed viewport must be ready"),
+            };
+            let limits = row_query_limits(16).expect("mixed viewport limits");
+            let outcome = session
+                .query_renderable_rows_bounded(
+                    &document.runtime,
+                    M11RecursiveGreenPoint::new(0, 0, SourceBoundaryAffinity::After),
+                    source.len() as u64,
+                    limits,
+                )
+                .expect("query mixed Green rows");
+            match outcome {
+                M11RecursiveGreenRowQueryOutcome::Window(window) => window.rows().to_vec(),
+                M11RecursiveGreenRowQueryOutcome::BudgetExceeded(_) => {
+                    panic!("mixed viewport query exceeded its frozen budget")
+                }
+            }
+        };
+
+        let mapped = {
+            let session = match &document.parser {
+                ParseState::Ready(session) => session,
+                _ => panic!("mixed viewport must be ready"),
+            };
+            map_document_viewport_rows(&mut document.runtime, &rows, |runtime, row| {
+                document_inline_facts_without_reference_authority(runtime, session, row)
+            })
+            .expect("map slice-style public rows")
+        };
+        assert_eq!(mapped, oracle.rows);
+        assert!(mapped
+            .iter()
+            .any(|row| row.presentation == DocumentViewportRowPresentation::Table));
+        assert!(mapped.iter().any(|row| {
+            row.inline_facts.as_ref().is_some_and(|facts| {
+                facts
+                    .iter()
+                    .any(|fact| fact.kind == DocumentInlineFactKind::TableCell)
+            })
+        }));
+
+        let direct_start = source.find("[direct]").expect("direct link start");
+        let direct_end = source[direct_start..]
+            .find(')')
+            .map(|offset| direct_start + offset + 1)
+            .expect("direct link end");
+        let requested = direct_start as u64..direct_end as u64;
+        let slice_target = {
+            let row = rows
+                .iter()
+                .find(|row| {
+                    let physical = row.physical_range();
+                    physical.start <= requested.start && physical.end >= requested.end
+                })
+                .expect("direct link row");
+            let session = match &document.parser {
+                ParseState::Ready(session) => session,
+                _ => panic!("mixed viewport must be ready"),
+            };
+            let captured = capture_document_inline_projection_without_reference_authority(
+                &mut document.runtime,
+                session,
+                row,
+            )
+            .expect("capture slice-style direct target")
+            .expect("direct target facts are authoritative");
+            map_document_semantic_target(&document.runtime, captured, requested.clone())
+                .expect("map slice-style direct target")
+        };
+        let oracle_target = document
+            .query_semantic_target(revision, direct_start..direct_end)
+            .expect("query complete direct target");
+        assert_eq!(slice_target, oracle_target);
+        assert_eq!(
+            slice_target
+                .as_ref()
+                .map(|target| target.destination.as_str()),
+            Some("https://example.com/path")
+        );
+
+        document.close().expect("close mixed viewport");
+    }
+
+    #[test]
     fn semantic_targets_are_parser_cooked_and_resolved_on_demand() {
         let source = "[direct](https://example.com \"title\") <me@example.com> www.example.com ![alt][img]\n\n[img]: /asset.png 'cap'\n";
         let mut document = DocumentSession::begin(source).expect("begin target document");
@@ -3514,11 +3619,9 @@ fn query_session_viewport(
         }
     };
     let receipt = window.receipt();
-    let rows = window
-        .rows()
-        .iter()
-        .map(|row| document_viewport_row(runtime, session, row))
-        .collect::<Result<Vec<_>, _>>()?;
+    let rows = map_document_viewport_rows(runtime, window.rows(), |runtime, row| {
+        document_inline_facts(runtime, session, row)
+    })?;
     Ok(DocumentViewport {
         revision,
         requested_range: requested_range.start as u64..requested_range.end as u64,
@@ -3533,6 +3636,22 @@ fn query_session_viewport(
             maximum_open_depth: receipt.maximum_open_depth(),
         },
     })
+}
+
+fn map_document_viewport_rows(
+    runtime: &mut DocumentRuntime,
+    rows: &[M11RecursiveGreenRenderableRow],
+    mut inline_facts: impl FnMut(
+        &mut DocumentRuntime,
+        &M11RecursiveGreenRenderableRow,
+    ) -> Result<Option<Vec<DocumentInlineFact>>, DocumentSessionError>,
+) -> Result<Vec<DocumentViewportRow>, DocumentSessionError> {
+    rows.iter()
+        .map(|row| {
+            let inline_facts = inline_facts(runtime, row)?;
+            document_viewport_row_with_inline_facts(runtime, row, inline_facts)
+        })
+        .collect()
 }
 
 fn query_session_semantic_target(
@@ -3688,15 +3807,6 @@ fn read_utf8_source_range(
         return Err(DocumentSessionError::RangeOutOfBounds);
     }
     String::from_utf8(bytes).map_err(|_| DocumentSessionError::Faulted)
-}
-
-fn document_viewport_row(
-    runtime: &mut DocumentRuntime,
-    session: &M11PersistentRecursiveGreenSession,
-    row: &M11RecursiveGreenRenderableRow,
-) -> Result<DocumentViewportRow, DocumentSessionError> {
-    let inline_facts = document_inline_facts(runtime, session, row)?;
-    document_viewport_row_with_inline_facts(runtime, row, inline_facts)
 }
 
 fn document_viewport_row_with_inline_facts(
@@ -3988,11 +4098,80 @@ fn document_inline_facts(
     )
 }
 
+#[cfg(test)]
+fn document_inline_facts_without_reference_authority(
+    runtime: &mut DocumentRuntime,
+    session: &M11PersistentRecursiveGreenSession,
+    row: &M11RecursiveGreenRenderableRow,
+) -> Result<Option<Vec<DocumentInlineFact>>, DocumentSessionError> {
+    let Some(captured) =
+        capture_document_inline_projection_without_reference_authority(runtime, session, row)?
+    else {
+        return Ok(None);
+    };
+    map_document_inline_facts(
+        runtime,
+        captured.inline_source,
+        captured.editable,
+        captured.facts,
+    )
+}
+
+#[cfg(test)]
+fn capture_document_inline_projection_without_reference_authority(
+    runtime: &mut DocumentRuntime,
+    session: &M11PersistentRecursiveGreenSession,
+    row: &M11RecursiveGreenRenderableRow,
+) -> Result<Option<CapturedDocumentInlineProjection>, DocumentSessionError> {
+    let Some((prepared, editable, editable_utf16, parser_profile)) =
+        prepare_document_inline_projection(runtime, session, row)?
+    else {
+        return Ok(None);
+    };
+    capture_prepared_inline_projection(
+        runtime,
+        prepared,
+        editable,
+        editable_utf16,
+        parser_profile,
+        None,
+    )
+}
+
 fn capture_document_inline_projection(
     runtime: &mut DocumentRuntime,
     session: &M11PersistentRecursiveGreenSession,
     row: &M11RecursiveGreenRenderableRow,
 ) -> Result<Option<CapturedDocumentInlineProjection>, DocumentSessionError> {
+    let Some((prepared, editable, editable_utf16, parser_profile)) =
+        prepare_document_inline_projection(runtime, session, row)?
+    else {
+        return Ok(None);
+    };
+    let reference_resolver = session.reference_resolver(runtime)?;
+    capture_prepared_inline_projection(
+        runtime,
+        prepared,
+        editable,
+        editable_utf16,
+        parser_profile,
+        Some(reference_resolver),
+    )
+}
+
+fn prepare_document_inline_projection(
+    runtime: &DocumentRuntime,
+    session: &M11PersistentRecursiveGreenSession,
+    row: &M11RecursiveGreenRenderableRow,
+) -> Result<
+    Option<(
+        M11RecursiveGreenInlineLeafPreparation,
+        Range<u64>,
+        Range<u64>,
+        ParserProfileId,
+    )>,
+    DocumentSessionError,
+> {
     if M11RecursiveGreenInlineLeafKind::from_green_kind(row.kind()).is_none()
         || row.edit_capability() != M11RecursiveGreenRowEditCapability::Contiguous
     {
@@ -4018,15 +4197,7 @@ fn capture_document_inline_projection(
     )?;
     let parser_profile = ParserProfileId::new(u64::from(session.syntax_profile()))
         .ok_or(DocumentSessionError::Faulted)?;
-    let reference_resolver = session.reference_resolver(runtime)?;
-    capture_prepared_inline_projection(
-        runtime,
-        prepared,
-        editable,
-        editable_utf16,
-        parser_profile,
-        Some(reference_resolver),
-    )
+    Ok(Some((prepared, editable, editable_utf16, parser_profile)))
 }
 
 fn capture_prepared_inline_projection(

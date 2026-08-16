@@ -6,11 +6,12 @@ use flark_abi::{
     flark_v4_history_release, flark_v4_history_replay, flark_v4_pump, flark_v4_query_viewport,
     flark_v4_small_edit, flark_v4_source_read, CloseRequest, ContinuationRequest, CreateRequest,
     EditDescriptor, HistoryRequest, InlineFactRecord, Outcome, ProjectionSegmentRecord,
-    PumpRequest, QueryRequest, ResultPageHeader, SessionConfig, SessionRef, SmallEditRequest,
-    SourceRange, SourceReadRequest, TransactionRequest, ViewportRowRecord, WorkBudget,
-    INLINE_FACT_EMPHASIS, VIEWPORT_ROW_FLAG_CONTINUITY_PLAIN_TEXT_EDIT,
-    VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE, VIEWPORT_ROW_FLAG_PROJECTED_RESERVED,
-    VIEWPORT_ROW_INLINE_FACT_COUNT_MASK, VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_SHIFT,
+    PumpRequest, QueryRequest, ResultPageHeader, SemanticTargetRecord, SessionConfig, SessionRef,
+    SmallEditRequest, SourceRange, SourceReadRequest, TransactionRequest, ViewportRowRecord,
+    WorkBudget, INLINE_FACT_EMPHASIS, INLINE_FACT_TABLE_CELL,
+    VIEWPORT_ROW_FLAG_CONTINUITY_PLAIN_TEXT_EDIT, VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE,
+    VIEWPORT_ROW_FLAG_PROJECTED_RESERVED, VIEWPORT_ROW_INLINE_FACT_COUNT_MASK,
+    VIEWPORT_ROW_PROJECTION_SEGMENT_COUNT_SHIFT, VIEWPORT_ROW_TABLE_PRESENTATION,
 };
 use flark_runtime::{HistoryDisposition, StatusCode};
 
@@ -28,7 +29,7 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
     assert_eq!(size_of::<ViewportRowRecord>(), 128);
     assert_eq!(size_of::<ProjectionSegmentRecord>(), 32);
     assert_eq!(size_of::<InlineFactRecord>(), 80);
-    let source = b"# *Flark*\n\nA quick paragraph.\n\n- one\n- two\n\n> first\n> second\n";
+    let source = b"# *Flark*\n\nA quick paragraph.\n\n- one\n- two\n\n> first\n> second\n\n| left | right |\n| :--- | ---: |\n| a | b |\n\nA [target](https://example.com/path \"title\").\n";
     let owner = 71;
     let create = CreateRequest {
         struct_size: size_of::<CreateRequest>() as u32,
@@ -199,6 +200,94 @@ fn fixed_abi_drives_open_edit_source_and_semantic_viewport() {
             end_byte: (quote_start + 16) as u64,
         },
     );
+
+    let table_start = source
+        .windows(b"| left |".len())
+        .position(|window| window == b"| left |")
+        .expect("table offset");
+    let table_query = QueryRequest {
+        range: SourceRange {
+            start_byte: table_start as u64,
+            end_byte: source.len() as u64,
+        },
+        ..query
+    };
+    page.fill(0);
+    status = flark_v4_query_viewport(
+        &table_query,
+        page.as_mut_ptr(),
+        page.len() as u64,
+        &mut outcome,
+    );
+    assert!(status == StatusCode::Ok as u32 || status == StatusCode::ResultCapReached as u32);
+    let table_header = unsafe { page.as_ptr().cast::<ResultPageHeader>().read_unaligned() };
+    assert_eq!(table_header.item_count, 1);
+    let table = unsafe {
+        page.as_ptr()
+            .add(size_of::<ResultPageHeader>())
+            .cast::<ViewportRowRecord>()
+            .read_unaligned()
+    };
+    assert_ne!(table.semantic_variant & VIEWPORT_ROW_TABLE_PRESENTATION, 0);
+    assert_ne!(table.flags & VIEWPORT_ROW_FLAG_INLINE_AUTHORITATIVE, 0);
+    assert_eq!(
+        table.inline_fact_count & VIEWPORT_ROW_INLINE_FACT_COUNT_MASK,
+        4
+    );
+    let table_facts = unsafe {
+        std::slice::from_raw_parts(
+            page.as_ptr()
+                .add(size_of::<ResultPageHeader>() + size_of::<ViewportRowRecord>())
+                .cast::<InlineFactRecord>(),
+            4,
+        )
+    };
+    assert!(table_facts
+        .iter()
+        .all(|fact| fact.kind == INLINE_FACT_TABLE_CELL));
+
+    let target_start = source
+        .windows(b"[target]".len())
+        .position(|window| window == b"[target]")
+        .expect("target offset");
+    let target_end = source[target_start..]
+        .iter()
+        .position(|byte| *byte == b')')
+        .map(|offset| target_start + offset + 1)
+        .expect("target end");
+    let target_query = QueryRequest {
+        query_kind: 5,
+        range: SourceRange {
+            start_byte: target_start as u64,
+            end_byte: target_end as u64,
+        },
+        budget: budget(64),
+        ..query
+    };
+    page.fill(0);
+    status = flark_v4_query_viewport(
+        &target_query,
+        page.as_mut_ptr(),
+        page.len() as u64,
+        &mut outcome,
+    );
+    assert_eq!(status, StatusCode::Ok as u32);
+    let target_header = unsafe { page.as_ptr().cast::<ResultPageHeader>().read_unaligned() };
+    assert_eq!(target_header.item_count, 1);
+    let target = unsafe {
+        page.as_ptr()
+            .add(size_of::<ResultPageHeader>())
+            .cast::<SemanticTargetRecord>()
+            .read_unaligned()
+    };
+    assert_eq!(target.kind, 1, "link target");
+    assert_eq!(target.syntax, 3, "direct-link syntax");
+    let value_start = size_of::<ResultPageHeader>() + size_of::<SemanticTargetRecord>();
+    let destination = &page[value_start..value_start + target.destination_bytes as usize];
+    let title = &page[value_start + target.destination_bytes as usize
+        ..value_start + target.destination_bytes as usize + target.title_bytes as usize];
+    assert_eq!(destination, b"https://example.com/path");
+    assert_eq!(title, b"title");
 
     let continuation = ContinuationRequest {
         struct_size: size_of::<ContinuationRequest>() as u32,

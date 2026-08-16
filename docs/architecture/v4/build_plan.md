@@ -1331,6 +1331,28 @@ completed EOF indexing in 1.073 seconds. Compact reference values therefore
 remain source-backed; a later value cache, if any, belongs to the bounded hot
 fragment budget rather than the revision-wide index.
 
+The product-mapping seam has now been narrowed without adding a cold-only
+renderer. `flark-runtime` maps a bounded row set through one production row
+mapper while the caller supplies the exact inline-authority capture. A focused
+slice-style differential (no reference authority) matched the complete public
+viewport for an ATX heading, strong text, a character reference, a direct
+link, an email autolink, a typed GFM table, and a task item, including every
+byte/UTF-16 range, edit/continuity capability, table cell/replacement fact and
+activated cooked direct-link target. The existing fixed ABI vertical slice now
+also asserts the encoded table presentation/cell payload and semantic-target
+record plus cooked destination/title bytes. An intentionally malformed direct
+link failed closed to neutral inline output during development of the fixture,
+which is the required behavior rather than an authoritative empty projection.
+
+This is compositional evidence, not yet the final cold-product differential:
+the actual compact `M11RecursiveGreenSliceRoot` and compact reference resolver
+still meet the product mapper only inside their separate parser/runtime proof
+lanes. Gate two remains open until one mixed cold slice crosses that boundary
+and its complete runtime and ABI bytes compare with the full-root oracle. The
+runtime contract must also represent an unknown total row count until EOF;
+the ready-only `DocumentViewport.total_rows` field cannot be reused as a
+progressive total.
+
 The direction is accepted for prototyping, not yet for production migration.
 The remaining Gate-one semantic proof is a frozen mixed-construct slice matrix
 through the complete runtime/ABI payload, including tables and activated
