@@ -952,7 +952,7 @@ reference definition resolved an earlier link and when fenced code, a lazy
 list, or an HTML block crossed the prefix cut. A truncated parse is therefore
 never current-revision certification, even when it looks plausible.
 
-The resulting scale correction is:
+The preliminary scale correction was:
 
 - keep exact source available and editable immediately;
 - let the primary parser expose a bounded first viewport progressively from
@@ -965,6 +965,9 @@ The resulting scale correction is:
   bounded Green fragments on demand rather than requiring a 10 MiB Green root
   before semantic queries work.
 
+The architecture challenge below supersedes the closure-only publication and
+per-region storage parts of this preliminary correction.
+
 The bounded-recorder experiment succeeded and changed the selected storage
 architecture. On the exact primary parser stream, an ordinary 10 MiB document
 closed its first row after 1.343 ms and its first 32 rows after 7.787 ms in an
@@ -973,8 +976,8 @@ A 2 MiB document with a late reference definition reached 32 closed block rows
 after 6.719 ms. A 2 MiB document-spanning fenced block correctly produced no
 closed row until EOF. These are architecture timings, not claim-eligible
 foreground receipts, but they prove that useful work is available independently
-of total document size and that the exact parser already exposes the required
-safety boundary.
+of total document size and that the exact parser exposes one useful publication
+boundary. They do not prove that boundary is sufficient for every legal shape.
 
 A disposable differential replay then sealed only closed top-level regions
 from that same event stream. Row geometry, editability, nested container facts,
@@ -998,66 +1001,225 @@ whole-document Green storage are the wrong background representation, not just
 an implementation detail to micro-optimize. The probes were removed after the
 receipts were recorded.
 
-#### Selected scale architecture: compact regions plus hot Green fragments
+#### Architecture challenge and corrected direction: sparse pages plus certified viewport slices
 
-The production direction is now intentionally narrower than either a flat row
-rewrite or a monolithic-tree optimization:
+The initial compact-region proposal survived only at the strategic level. Two
+independent read-only reviews and four disposable release-mode diagnostics
+found that its literal fragment and publication rules were not implementable
+or correct enough to begin a production migration.
 
-- Source remains the sole, immediately visible and editable authority.
-- The one primary block parser streams from that source and retains a compact
-  region index: authenticated restart checkpoints, closed top-level source
-  ranges, renderable-row counts, structural dependency state, and reference
-  scan progress. Low-level Green events are transient outside materialization.
-- Exact recursive Green remains the generic nested representation, but only as
-  bounded fragments for the visible, edited, or explicitly requested regions.
-  This preserves the proven arbitrary-container query machinery without making
-  every offscreen event durable.
-- A bounded fragment becomes publishable only after its top-level ancestors
-  close. A document-spanning list, quote, HTML block, fence, or paragraph stays
-  current-source neutral until that dependency closes.
-- Inline reference resolution is tri-state. A known first definition is final;
-  an unresolved label is `unknown` until the reference scan reaches EOF. The
-  inline parser must report that dependency rather than treating `not seen yet`
-  as `absent`.
-- A viewport request first consults the fragment cache. On a miss it reparses
-  from the nearest current-revision restart checkpoint into one bounded Green
-  fragment. If the scan frontier has not produced such a checkpoint, Flutter
-  receives exact source immediately and the semantic fragment follows later.
-- Edits invalidate intersecting fragments and downstream checkpoint/reference
-  dependencies, then use the existing restart/convergence machinery to splice
-  new compact regions and rematerialize only hot fragments.
+The frontier diagnostic used approximately 256 KiB of each adversarial shape.
+Ordinary prose retained 65 checkpoints and reached a Document-only cut at byte
+4,160. A spanning fence retained 33 checkpoints, a quote 23, and a list 17;
+all had useful interior open-path cuts but no closed Document-only frontier.
+A type-6 HTML block retained only the BOF checkpoint, while one giant physical
+line retained only BOF and EOF. An interior restart is therefore continuation
+authority, not publication authority, and some legal GFM shapes expose no
+interior restart at all.
 
-This rejects three tempting alternatives. A truncated second parse is not
-certification. A new flat row schema would recreate the fixed-record and nested
-ancestry limitations that recursive Green displaced. Page-level authentication
-optimizations may still help each hot fragment, but cannot solve foreground
-publication, retained memory, or whole-document work by themselves.
+A prefix-versus-full differential found stable broad styling but non-final row
+authority. Extending the source changed the first fence row from `0..36872` to
+`0..36876` and its `closed` fact from false to true; the quote row changed from
+`2..47104` to `2..47125`; the list row changed from `2..40968` to `2..40989`
+and its `item_end` changed; and the paragraph row changed from `0..49152` to
+`0..49172`. A 110,613-byte prefix had no winner for an early `[late]` use,
+while appending the definition at EOF produced winner ordinal zero. Stable kind
+or typography is not final range, geometry, edit, or reference authority.
 
-The implementation sequence is:
+The storage diagnostic was encouraging only for a *sparse* index. On this Mac
+compiler layout a current checkpoint is 496 inline bytes and each writer open
+frame is 160 bytes, making a shallow 4 KiB cadence plausible. It does not
+justify one record per block: the 5 MiB tiny-block receipt contains roughly
+1.3 million block units, so even 16 bytes per unit would cost about 20.8 MiB.
+Current reference storage is a similar trap for the many-reference workload.
+These layouts are diagnostic, not a stable ABI or a retained-heap receipt.
 
-1. Add a bounded primary-stream region recorder and immutable Green fragment
-   envelope. Prove every published row against the final full-tree oracle over
-   the GFM corpus plus spanning/dependency adversaries.
-2. Let `DocumentSession::query_live_viewport` mix certified fragment ranges and
-   explicit pending source ranges while a clean build is still running. Carry
-   that existing live-viewport model through the ABI; do not add a second
-   provisional semantic state.
-3. Introduce the compact index writer, initially alongside the monolithic root,
-   and reproduce the sub-second 10 MiB Mac scan without retaining the event
-   journal. The index must have a source-proportional byte receipt and bounded
-   checkpoint-depth envelope.
-4. Materialize and evict Green fragments on demand, then remove the monolithic
-   root from cold-open readiness and ordinary background completion. Keep it
-   temporarily as a differential oracle until fragment/index conformance is
-   exhaustive.
-5. Requalify cold open, random scroll, typing during scan, reference upgrades,
-   edits across region boundaries, memory, and fault cleanup on Mac and the
-   Pixel before resuming broader H5 work.
+The reviews also exposed four contract corrections:
 
-The first product gate remains a physical first-meaningful-paint receipt below
-200 ms for an ordinary 10 MiB document. Exact source may paint sooner; only a
-current-revision certified fragment counts as semantic paint. Pathological
-spanning constructs are expected to stay neutral, not to violate the work cap.
+- Closed does not mean bounded. A list, quote, paragraph, table, fence, or HTML
+  block can close only after megabytes, so a cache miss may exceed its work cap
+  even after the correct natural closure rule is known.
+- Invalidations have backward edges. A later blank can change list tightness, a
+  following line can promote Setext or a GFM table, a terminator can change a
+  fence or HTML extent, and a definition can change earlier reference leaves.
+- Today's restart checkpoint cannot outlive the monolithic Green root. Resume
+  validates its Green identity, event cut, structural boundary, and base root.
+  Root-independent materialization is a new authority and codec, not plumbing.
+- Green equality is not the product oracle. GFM tables and inline/reference
+  facts are produced after block Green queries. Differential tests must compare
+  complete public viewport rows, inline facts, table cells, semantic targets,
+  source/display coordinates, and edit capabilities.
+
+The corrected architecture is deliberately austere:
+
+- Source remains the sole mutation and coordinate authority. There is still one
+  primary GFM parser and no truncated-document or second-grammar shortcut.
+- Background work writes coarse, delta-coded parse pages, selected *before*
+  cloning restart state. A page carries source/UTF-16 cuts, prefix row-count
+  summaries, dependency epochs, and a durable parser/writer restart independent
+  of any Green tree. It does not allocate one object per block or retain the
+  transient event stream.
+- Reference state is source-backed and compact: normalized-label digests,
+  winner links, source ranges, and immutable committed-prefix snapshots. A
+  fixed-revision first winner becomes final only after a BOF-to-frontier commit;
+  absence remains unknown until EOF.
+- The renderer consumes one bounded viewport-slice contract. A slice always
+  carries exact current source, revision-qualified byte/UTF-16 coverage, and
+  source-anchor mapping. It may additionally carry complete
+  `DocumentViewportRow` payloads only for certified ranges. `total_rows` is
+  unknown until EOF; a known prefix count is not an exact total.
+- There is no weaker `provisional` row. A range without complete current
+  semantic authority uses the existing `pending_exact` or `source_gap_exact`
+  state from `flark-live-v2`. It advertises no row ordinal, marker hiding,
+  geometry, source/display projection, structural edit, inline, or target fact.
+  The initial scale probe adds no new display-hint category. Any later hint must
+  version an explicit allowed-fact set and pass its own differential oracle;
+  it cannot masquerade as a partial `DocumentViewportRow`.
+- Literal insertion, deletion, paste, caret, and selection remain source-anchor
+  operations in exact ranges. Pending ranges are not structural-edit authority.
+  A transaction-bound continuity receipt may preserve exactly the presentation
+  already authorized by `flark-live-v2`; it is not a cold-open shortcut.
+- Some legal inputs have no bounded semantic answer: a giant physical line, an
+  open or megabyte-scale container, and Setext/table/reference ambiguity can
+  force exact pending presentation until more work or EOF. The no-raw-source
+  promise is therefore a falsifiable product gate for the ordinary 10 MiB
+  fixture, not a universal claim. Pending exact source remains the correctness
+  fallback required by M4 and the live-projection contract.
+- Recursive Green remains the exact generic representation for naturally
+  bounded, certified hot regions. Fragments have absolute byte/UTF-16/logical
+  and row bases, immutable dependency epochs, authenticated start/end context,
+  and a hard cache byte/page cap. A fragment that cannot reach certifying
+  closure within budget is not silently called bounded.
+- Edits invalidate by dependency footprint, including backward label and
+  enclosing-structure edges. Immutable page storage may be shared only behind
+  exact lineage plus parser, writer, reference, coordinate, and prefix-summary
+  convergence. Equal local bytes do not make a page authoritative at a new
+  revision. Revision-local indirection must avoid cloning or physically
+  rebasing every later page without reusing stale coordinates or summaries.
+
+This still rejects a persistent flat row model, a globally retained event
+journal, and further optimization of the monolithic Green as the scale
+solution. It retains a compact locator/dependency index plus hot generic Green,
+but corrects “region” to mean sparse page summaries and “fragment” to mean only
+work-bounded certified materialization.
+
+The probes use a small frozen development contract. Rust parser/index work uses
+an optimized release build; physical rendering uses a profile build. A cold run
+starts a fresh process with no fragment cache. Before *each* cold jump, the
+completed compact index remains but the 8 MiB hot-fragment cache is cleared,
+destroyed, and observed at zero allocated capacity. Receipts name the exact Mac
+and Pixel 6a build, OS, power, thermal, display, fixture and contract hashes.
+Each Mac cold result repeats five times and each Pixel result three times; every
+repetition must pass. Timers have explicit endpoints:
+
+- every open timer begins at the named host-to-ABI open-request event, before
+  any source copy, rope construction, parser construction, or indexing;
+- first-slice engine time ends at publication of 32 consecutive certified rows
+  from BOF for the ordinary fixture;
+- first rendered viewport ends at the raster-complete frame with certified
+  rows covering every source-owned glyph and layout row from BOF through the
+  first row below the frozen viewport plus one overscan row;
+- EOF index time ends only when the page/reference index for that revision is
+  atomically queryable; and
+- jump time runs from the qualified source-coordinate request through slice
+  response, fragment/inline work, ABI, layout, paint and raster, with each layer
+  also reported separately.
+
+The ordinary 10 MiB fixture, 5 MiB tiny-block fixture, and 5 MiB many-reference
+fixture must each retain at most 12 MiB for compact pages plus reference state
+and at most 8 MiB for hot fragments. The accounting measure is allocated
+capacity after EOF publication and one explicit scratch/reclamation drain, not
+serialized logical length. It includes checkpoints and open paths, maps,
+metadata, allocator-owned page/reference buffers, cached inline facts, and all
+fragment-arena overhead; only exact source storage is excluded from the 12/8
+MiB component caps, while the global physical RSS gate includes everything.
+The two 5 MiB stress fixtures are the minimum supported density envelope: they
+must publish a complete index, answer their certification-required cold jumps,
+and, for references, resolve and retarget the declared winners. Their EOF index
+gate is below 3 seconds on Mac and below 10 seconds on Pixel. The existing
+global physical memory and close-state gates still apply. Thresholds,
+fixture-coordinate dispositions, cache state and repetitions are frozen before
+the first measured run; a result cannot become passing through post-hoc
+eligibility.
+
+No production cutover begins until four falsifiable probes pass:
+
+1. **True compact-stream sink.** Consume primary-parser events directly into
+   4 KiB-class delta pages with compact references and no event `Vec` or Green
+   root. Run ordinary, tiny-block, nested, many-reference, giant paragraph and
+   line, open fence, and every HTML termination family. Record first rendered
+   slice, EOF time, attempted versus retained checkpoints, allocations, index
+   bytes by component, peak RSS, and release state on Mac and the Pixel. Restart
+   cloning/allocation occurs only at selected page cuts: retained restarts are
+   at most `ceil(source_bytes / 4096) + 2`, and rejected physical-line cuts do
+   not clone the open path. On ordinary 10 MiB, first certified slice is at most
+   50 ms on Mac and 100 ms on Pixel, and EOF index publication is below 1 second
+   on Mac and below 3 seconds on Pixel. Every adversarial cell must complete or
+   return its predeclared typed cap outcome without an unbounded allocation.
+2. **Green-independent restart and cache miss.** Release the monolithic root,
+   decode durable restarts, and issue 100 fixture-manifested cold jumps from
+   every declared family per repetition; the total is `100 * family_count`, not
+   a fixed denominator. Coordinates are generated before implementation from a
+   frozen seed: 70 are uniform source-coordinate samples rounded to legal
+   grapheme boundaries and 30 are stratified across page cuts, construct
+   starts/ends, reference uses/definitions, and closure-cap boundaries. Ordinary,
+   tiny-block, nested-container, many-reference, bounded
+   fence/paragraph/list/quote, and each bounded HTML termination family are
+   certification-required: all 100 coordinates in each must certify.
+   Document-spanning giant-line, paragraph/table, list, quote, open-fence, and
+   over-cap HTML families are separately fallback-required. Classification
+   comes before implementation from a clean full-root oracle plus a fixed
+   closure/replay-cap calculation, not from the compact implementation's
+   outcome. Every coordinate predeclares its exact expected disposition.
+   Certified results compare complete public viewport rows, inline facts, table
+   cells, targets, source/display coordinates and edit capabilities with a clean
+   full-root oracle. Exact fallbacks compare complete current-source coverage
+   and prove that no semantic/edit authority leaked.
+   Every request has p99 below 100 ms and maximum below 200 ms; mismatches,
+   timeouts and undeclared outcomes are zero. Separately report lookup, replay
+   bytes, closure distance, fragment build, inline work, ABI, layout, paint and
+   raster; never omit over-cap HTML or giant-line outcomes.
+3. **Publication and invalidation oracle.** Attempt publication after every
+   parser command/rendezvous boundary across Setext, tables, tight/loose lists,
+   lazy continuation, fences, all HTML types, references/duplicates, CRLF, and
+   Unicode. Certified output must equal the complete public full-root oracle;
+   pending output must cover exact source, expose none of the forbidden row
+   facts above, and reconcile atomically to one revision. After later edits,
+   prove no stale earlier row or inline leaf is served. Green-only equality
+   cannot satisfy this gate.
+4. **Concurrent physical receipt.** On Pixel, run separate typing and scrolling
+   passes while indexing an ordinary 10 MiB document. Typing uses 20 warmups and
+   120 measured single-character insertions at the existing 2 ms requested
+   cadence, preserving the exact delivered callback times. Scrolling uses 120
+   predeclared uncached jumps, at most one per presented frame. Background grants
+   request a 1 ms deadline as well as a transition cap and yield immediately to
+   foreground work. Observed active grant wall time is at most 1.25 ms p99 and
+   strictly below 4 ms maximum; requested and observed values are both retained.
+   Accepted source/caret/selection, backlog, p99 and hard
+   frame/span results must pass the existing Tier B contract; editor-attributed
+   misses are zero. Against the same warmed workload with indexing paused,
+   foreground p99 regresses by at most 10% and gains no hard miss. The index
+   publishes within 3 seconds after input stops. Supersession detaches old
+   authority synchronously; at most one retired generation may remain allocated,
+   and its allocated capacity must be destroyed before a second replacement is
+   admitted or within 50 ms, whichever occurs first. Allocator RSS need not fall
+   until close, but it remains charged to peak RSS. The physical memory envelope
+   passes and all live state is zero after close. Repeat memory/cancellation
+   coverage for tiny-block and many-reference shapes even if their declared
+   density envelope prevents the 3-second ordinary-document claim.
+
+The direction is accepted for prototyping, not yet for production migration.
+Its first product gate is five Mac and three Pixel cold runs with a physical
+rendered, literal-editable first viewport below 200 ms for the ordinary 10 MiB
+fixture. The entire frozen visible-plus-overscan range must be
+`certified_projected` or `certified_literal`; `pending_exact`,
+`source_gap_exact`, uncovered space, and mixed-revision coverage all fail. This
+prevents one tiny certified row from satisfying the gate. “Editable” here proves
+exact source, caret, selection, literal insert/delete/paste and receipt-backed
+mapping; it does not grant pending content semantic Return/Backspace behavior.
+Cold-jump and background gates are the explicit predicates above rather than
+an undefined “eligible” subset. Only passing raw receipts can promote this
+section from prototype direction to implementation architecture.
 
 ## 1. Destination and current state
 
