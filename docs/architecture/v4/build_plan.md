@@ -125,12 +125,20 @@ Three conclusions bind Experiment B's design:
   becomes the aggregate measure tree (per-entry deltas at leaves, summed
   measures at nodes, O(log n) updates) with structural sharing.
 
-Not yet measured: the compact reference index stores exact absolute
-definition/value source ranges and needs the same probe treatment (or a
-measure-tree/remap decision) during Experiment B design, and a multi-byte
-insertion cell should confirm byte/UTF-16 dimensions relocate independently.
-The probe is retained `#[ignore]`d in-crate as the regression check for any
-future durable-codec change.
+Both recorded follow-ups closed the same day. The multibyte cell (a
+two-byte, one-unit scalar inserted at BOF) keeps all 2,532 checkpoint
+payloads byte-identical while every manifest entry shifts by exactly +2
+bytes and +1 UTF-16 unit: the coordinate dimensions relocate
+independently. The reference cell measures the compact reference index
+under the same edit: 22,901 records, zero unmatched, zero identical, zero
+structural, 22,901 uniformly shifted with stable digests, labels, and
+winner ordinals. Reference records therefore do carry absolute coordinates
+in their payload — unlike checkpoint pages they cannot share as stored —
+but the perfect uniformity proves the remap is well-defined, so Experiment
+B's storage design splits cleanly: checkpoint payload pages share as
+stored, and reference records take the same measure-tree/indirection
+treatment as the entry manifest. The probe is retained `#[ignore]`d
+in-crate as the regression check for any future durable-codec change.
 
 ### Experiment A loop-closure receipt (2026-08-17)
 
