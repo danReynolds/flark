@@ -1374,6 +1374,14 @@ impl M11InlineDirectJob {
                 // examples 569-571).
                 return self.replay_attempt(attempt);
             }
+            M11ReferenceResolution::Unknown => {
+                // Committed-prefix authority cannot prove this label absent:
+                // a later definition may still bind it, so literal-text facts
+                // here would be falsifiable by the suffix. Revoke the whole-
+                // leaf bracket certificate and fail the leaf closed.
+                self.exhaustive_bracket_classification = false;
+                return self.replay_attempt(attempt);
+            }
             M11ReferenceResolution::ValueTooLarge => {
                 // This is a real reference, not literal text. The bounded
                 // companion lane cannot represent it, so revoke the whole-

@@ -5377,9 +5377,9 @@ where
                     first_structural_slice_before_eof = !build.progressive_sealed;
                     first_structural_slice_elapsed = started.elapsed();
                     let slice = first_slice.as_ref().expect("just observed first slice");
-                    if first_structural_slice_before_eof
-                        && !compact_slice_has_reference_hazard(runtime, slice)?
-                    {
+                    if first_structural_slice_before_eof {
+                        let bracket_hazard =
+                            compact_slice_has_reference_hazard(runtime, slice)?;
                         let source_start =
                             usize::try_from(slice.physical_start.bytes()).map_err(|_| {
                                 M11CompactViewportProbeError::InvalidState(
@@ -5392,27 +5392,73 @@ where
                                     "early compact slice end fits usize",
                                 )
                             })?;
-                        let root = build_compact_green_slice(
+                        // A slice whose range covers leading reference
+                        // definitions cannot build yet: those rows live in
+                        // the writer's reference windows, not the ordinary
+                        // event stream. Degrade that one typed outcome to
+                        // no-certification; every other failure propagates.
+                        let root = match build_compact_green_slice(
                             runtime,
                             source_start,
                             source_end,
                             slice.row_base,
                             &[],
                             &slice.events,
-                        )?;
-                        let mut references = M11CompactReferenceJournal::new();
-                        references.finish_input()?;
-                        let source = runtime.current_source_version().ok_or(
-                            M11CompactViewportProbeError::InvalidState(
-                                "early compact slice source is current",
-                            ),
-                        )?;
-                        early_viewport = Some(M11CompactViewportProbe {
-                            root,
-                            reference_resolver: references.into_resolver(source)?,
-                            syntax_profile: build.syntax_profile,
-                        });
-                        early_certification_elapsed = Some(started.elapsed());
+                        ) {
+                            Ok(root) => Some(root),
+                            Err(M11CompactViewportProbeError::Session(
+                                M11PersistentRecursiveGreenSessionError::Green(
+                                    flark_engine::parser_internal::M11RecursiveGreenError::IncompleteCoverage,
+                                ),
+                            )) => None,
+                            Err(error) => return Err(error),
+                        };
+                        if let Some(root) = root {
+                            let source = runtime.current_source_version().ok_or(
+                                M11CompactViewportProbeError::InvalidState(
+                                    "early compact slice source is current",
+                                ),
+                            )?;
+                            // Committed-prefix winners are final under the
+                            // GFM first-winner rule; only absence stays
+                            // unknown.
+                            let resolver = build
+                                .compact_reference_journal
+                                .as_ref()
+                                .ok_or(M11CompactViewportProbeError::InvalidState(
+                                    "progressive build retains its reference journal",
+                                ))?
+                                .committed_prefix_resolver(source)?;
+                            let candidate = M11CompactViewportProbe {
+                                root,
+                                reference_resolver: resolver.clone(),
+                                syntax_profile: build.syntax_profile,
+                            };
+                            let certified = if bracket_hazard {
+                                match early_compact_viewport_is_certifiable(
+                                    runtime, &candidate, &resolver,
+                                ) {
+                                    Ok(certified) => certified,
+                                    Err(error) => {
+                                        let mut discarded = Some(candidate);
+                                        release_early_compact_viewport(
+                                            runtime,
+                                            &mut discarded,
+                                        );
+                                        return Err(error);
+                                    }
+                                }
+                            } else {
+                                true
+                            };
+                            if certified {
+                                early_viewport = Some(candidate);
+                                early_certification_elapsed = Some(started.elapsed());
+                            } else {
+                                let mut discarded = Some(candidate);
+                                release_early_compact_viewport(runtime, &mut discarded);
+                            }
+                        }
                     }
                 }
             }
@@ -5478,6 +5524,111 @@ where
     })
 }
 
+/// Audits one early slice candidate for suffix-independence of its
+/// reference-bearing content. Every inline-bearing row is captured against
+/// the committed-prefix resolver: a capture that consumed an `Unknown`
+/// lookup depended on an absent winner a later definition could bind, so
+/// the candidate is not certifiable. Rows without an inline-leaf fence are
+/// held to a conservative bracket scan, because their bracket text (table
+/// cells, HTML) is not audited by capture. Captures that fail closed for
+/// suffix-independent reasons certify: the eventual viewport refuses them
+/// identically.
+#[cfg(feature = "m11-compact-probe")]
+fn early_compact_viewport_is_certifiable(
+    runtime: &mut DocumentRuntime,
+    candidate: &M11CompactViewportProbe,
+    resolver: &crate::block_core::M11CompactReferenceResolver,
+) -> Result<bool, M11CompactViewportProbeError> {
+    use flark_engine::parser_internal::{M11RecursiveGreenPoint, M11RecursiveGreenRowQueryLimits};
+
+    let source_range = candidate.root.source_range();
+    let start = usize::try_from(source_range.start).map_err(|_| {
+        M11CompactViewportProbeError::InvalidState("early audit start fits usize")
+    })?;
+    let start_utf16 =
+        usize::try_from(candidate.root.source_utf16_range().start).map_err(|_| {
+            M11CompactViewportProbeError::InvalidState("early audit UTF-16 start fits usize")
+        })?;
+    let limits = M11RecursiveGreenRowQueryLimits::new(32, 8_192, 65_536, 64, 65_536).ok_or(
+        M11CompactViewportProbeError::InvalidState("early audit query limits are nonzero"),
+    )?;
+    let batch = crate::prepare_m11_recursive_green_slice_inline_leaf_rows(
+        runtime,
+        &candidate.root,
+        M11RecursiveGreenPoint::new(
+            start,
+            start_utf16,
+            flark_engine::SourceBoundaryAffinity::After,
+        ),
+        limits,
+    )?;
+    let (window, preparations) = batch.into_parts();
+    for (row, preparation) in window.rows().iter().zip(preparations) {
+        match preparation {
+            Some(preparation) => {
+                let unknown_before = resolver.unknown_lookups();
+                audit_prepared_inline_capture(runtime, candidate.syntax_profile, resolver, preparation)?;
+                if resolver.unknown_lookups() > unknown_before {
+                    return Ok(false);
+                }
+            }
+            None => {
+                let row_start = usize::try_from(row.physical_range().start).map_err(|_| {
+                    M11CompactViewportProbeError::InvalidState("early audit row start fits usize")
+                })?;
+                let row_end = usize::try_from(row.physical_range().end).map_err(|_| {
+                    M11CompactViewportProbeError::InvalidState("early audit row end fits usize")
+                })?;
+                if row_has_unexplained_bracket(runtime, row_start..row_end, resolver)? {
+                    return Ok(false);
+                }
+            }
+        }
+    }
+    Ok(true)
+}
+
+/// Runs one bounded fact-capture job purely for its resolver traffic; the
+/// caller reads the shared `Unknown` counter afterward. The job is released
+/// unconditionally, and non-authoritative outcomes are legal here — only the
+/// counter decides certifiability.
+#[cfg(feature = "m11-compact-probe")]
+fn audit_prepared_inline_capture(
+    runtime: &mut DocumentRuntime,
+    syntax_profile: u32,
+    resolver: &crate::block_core::M11CompactReferenceResolver,
+    prepared: M11RecursiveGreenInlineLeafPreparation,
+) -> Result<(), M11CompactViewportProbeError> {
+    let profile = flark_engine::ParserProfileId::new(u64::from(syntax_profile)).ok_or(
+        M11CompactViewportProbeError::InvalidState("compact viewport parser profile is nonzero"),
+    )?;
+    let mut job = crate::M11InlineProjectionJob::new_for_recursive_green_inline_leaf_with_compact_reference_resolver_and_fact_capture(
+        runtime,
+        prepared.into_fence(),
+        crate::M11ParserBinding::current(profile),
+        resolver.clone(),
+    )?;
+    let drive = (|| -> Result<(), M11CompactViewportProbeError> {
+        loop {
+            let poll = job.poll(runtime, crate::M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS)?;
+            if poll.status() == crate::M11InlineProjectionJobPollStatus::Complete {
+                return Ok(());
+            }
+            if poll.transitions() == 0 {
+                return Err(M11CompactViewportProbeError::InvalidState(
+                    "early audit inline capture stopped without completing",
+                ));
+            }
+        }
+    })();
+    // The job owns a projection builder; reclaim it on every path so a
+    // failed audit surfaces as its typed error, not a drop assertion.
+    let release = release_compact_inline_job(runtime, &mut job);
+    drive?;
+    release?;
+    Ok(())
+}
+
 #[cfg(feature = "m11-compact-probe")]
 fn release_early_compact_viewport(
     runtime: &mut DocumentRuntime,
@@ -5500,9 +5651,50 @@ fn compact_slice_has_reference_hazard(
     })?;
     let end = usize::try_from(slice.physical_end.bytes())
         .map_err(|_| M11CompactViewportProbeError::InvalidState("compact hazard end fits usize"))?;
+    source_range_has_bracket(runtime, start..end)
+}
+
+/// Scans one unaudited row for bracket bytes that are not accounted for by a
+/// committed reference definition. Definition text is suffix-independent;
+/// any other bracket in an uncaptured row (table cell, HTML) could be a
+/// reference use this audit cannot prove final.
+#[cfg(feature = "m11-compact-probe")]
+fn row_has_unexplained_bracket(
+    runtime: &DocumentRuntime,
+    range: Range<usize>,
+    resolver: &crate::block_core::M11CompactReferenceResolver,
+) -> Result<bool, M11CompactViewportProbeError> {
+    let base = range.start;
     let mut cursor = runtime
         .snapshot_current_source()?
-        .cursor_in(start..end)
+        .cursor_in(range)
+        .map_err(SourceAdapterError::from)?;
+    let mut buffer = [0_u8; flark_engine::SOURCE_CURSOR_WINDOW_BYTES];
+    let mut scanned = 0_usize;
+    loop {
+        let read = cursor.read(&mut buffer);
+        for (offset, byte) in buffer[..read].iter().enumerate() {
+            if *byte == b'['
+                && !resolver.byte_is_inside_committed_definition(base + scanned + offset)
+            {
+                return Ok(true);
+            }
+        }
+        if read == 0 {
+            return Ok(false);
+        }
+        scanned += read;
+    }
+}
+
+#[cfg(feature = "m11-compact-probe")]
+fn source_range_has_bracket(
+    runtime: &DocumentRuntime,
+    range: Range<usize>,
+) -> Result<bool, M11CompactViewportProbeError> {
+    let mut cursor = runtime
+        .snapshot_current_source()?
+        .cursor_in(range)
         .map_err(SourceAdapterError::from)?;
     let mut buffer = [0_u8; flark_engine::SOURCE_CURSOR_WINDOW_BYTES];
     loop {
@@ -5587,29 +5779,43 @@ fn build_compact_green_slice(
         row_base,
         open_frame_bases,
     )?;
-    for event in events.iter().copied() {
-        slice_build.offer_event(event)?;
+    let offered = (|| -> Result<(), M11CompactViewportProbeError> {
+        for event in events.iter().copied() {
+            slice_build.offer_event(event)?;
+            poll_compact_slice_input(runtime, &mut slice_build)?;
+        }
+        slice_build.offer_event(M11RecursiveGreenEvent::Exit {
+            frame: document_frame,
+            final_kind: document_kind,
+            close: None,
+            last_line_blank: false,
+            child: M11RecursiveGreenClosedChild::default(),
+        })?;
         poll_compact_slice_input(runtime, &mut slice_build)?;
-    }
-    slice_build.offer_event(M11RecursiveGreenEvent::Exit {
-        frame: document_frame,
-        final_kind: document_kind,
-        close: None,
-        last_line_blank: false,
-        child: M11RecursiveGreenClosedChild::default(),
-    })?;
-    poll_compact_slice_input(runtime, &mut slice_build)?;
-    slice_build.finish_input()?;
-    loop {
-        match slice_build.poll(runtime, 4_096)?.status() {
-            M11RecursiveGreenBuildStatus::Complete => break,
-            M11RecursiveGreenBuildStatus::Pending => {}
-            _ => {
-                return Err(M11CompactViewportProbeError::InvalidState(
-                    "compact Green slice stopped before completion",
-                ))
+        slice_build.finish_input()?;
+        loop {
+            match slice_build.poll(runtime, 4_096)?.status() {
+                M11RecursiveGreenBuildStatus::Complete => return Ok(()),
+                M11RecursiveGreenBuildStatus::Pending => {}
+                _ => {
+                    return Err(M11CompactViewportProbeError::InvalidState(
+                        "compact Green slice stopped before completion",
+                    ))
+                }
             }
         }
+    })();
+    if let Err(error) = offered {
+        // A failed slice build still owns its arena builder; cancel it so
+        // the caller sees the typed error instead of a drop assertion.
+        if slice_build.begin_cancel(runtime).is_ok() {
+            while !slice_build
+                .poll_cancel(runtime, 4_096)
+                .map(|poll| poll.complete())
+                .unwrap_or(true)
+            {}
+        }
+        return Err(error);
     }
     slice_build
         .take_root()

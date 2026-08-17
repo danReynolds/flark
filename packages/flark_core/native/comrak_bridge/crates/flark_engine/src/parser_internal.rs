@@ -2371,9 +2371,17 @@ pub struct M11ResolvedReference {
 /// real CommonMark reference whose cooked payload cannot fit the caller's
 /// bounded sidecar envelope. Inline parsing must fail that leaf closed rather
 /// than misclassifying the use as literal text.
+///
+/// `Unknown` is the committed-prefix analog of that rule: the resolver's
+/// authority covers only an admitted prefix, the label has no committed
+/// winner there, and a later definition could still bind it. Absence before
+/// EOF is never literalness, so inline parsing must fail the leaf closed
+/// rather than emit literal-text facts a suffix could falsify. A resolver
+/// with final (EOF) authority never returns it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum M11ReferenceResolution {
     Missing,
+    Unknown,
     ValueTooLarge,
     Resolved(M11ResolvedReference),
 }

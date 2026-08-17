@@ -164,6 +164,21 @@ pub(crate) struct M11CompactReferenceJournal {
     rendezvous_phase_transitions: [u64; 8],
 }
 
+/// The reach of one compact reference resolver's winner directory.
+///
+/// A `Final` resolver was built after EOF: a missing label is authoritative
+/// literalness. A `CommittedPrefix` resolver covers only an admitted prefix:
+/// its present winners are final under the GFM first-winner rule (every
+/// earlier position is already admitted, so a later duplicate always loses),
+/// but a missing label stays `Unknown` because a later definition could
+/// still bind it.
+#[cfg(any(test, feature = "m11-compact-probe"))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum M11CompactReferenceAuthority {
+    Final,
+    CommittedPrefix,
+}
+
 /// Immutable, source-version-bound first-winner authority retained by the
 /// compact parse index. Unlike the full reference journal, this owns no arena
 /// tree: one sorted ordinal directory points into packed labels and exact
@@ -173,6 +188,11 @@ pub(crate) struct M11CompactReferenceJournal {
 #[derive(Clone, Debug)]
 pub(crate) struct M11CompactReferenceResolver {
     source: flark_engine::SourceVersion,
+    authority: M11CompactReferenceAuthority,
+    /// Count of `Unknown` outcomes served, shared across clones so a bounded
+    /// certification audit can prove that no capture in a pass depended on an
+    /// absent winner. Final-authority resolvers never increment it.
+    unknown_lookups: Arc<std::sync::atomic::AtomicU64>,
     index: Arc<M11CompactReferenceIndex>,
 }
 
@@ -196,49 +216,57 @@ impl M11CompactReferenceJournal {
                 "compact reference index finished in a non-idle state",
             ));
         }
-        self.order
-            .try_reserve_exact(self.records.len())
-            .map_err(|_| {
-                M11ReferenceRendezvousError::InvalidState(
-                    "compact reference order allocation failed",
-                )
-            })?;
-        for ordinal in 0..self.records.len() {
-            self.order.push(
-                u32::try_from(ordinal).map_err(|_| M11ReferenceRendezvousError::CounterOverflow)?,
-            );
-        }
-        let records = &self.records;
-        let labels = &self.normalized_labels;
-        self.order.sort_unstable_by(|left, right| {
-            let left_record = &records[*left as usize];
-            let right_record = &records[*right as usize];
-            let left_label = compact_reference_label(labels, left_record);
-            let right_label = compact_reference_label(labels, right_record);
-            left_record
-                .digest
-                .cmp(&right_record.digest)
-                .then_with(|| left_label.cmp(right_label))
-                .then_with(|| left_record.source_start.cmp(&right_record.source_start))
-        });
-        let mut previous: Option<u32> = None;
-        for ordinal in self.order.iter().copied() {
-            let winner = previous.filter(|previous_ordinal| {
-                let previous_record = &self.records[*previous_ordinal as usize];
-                let current = &self.records[ordinal as usize];
-                previous_record.digest == current.digest
-                    && compact_reference_label(&self.normalized_labels, previous_record)
-                        == compact_reference_label(&self.normalized_labels, current)
-            });
-            let winner = winner.unwrap_or_else(|| {
-                self.winners += 1;
-                ordinal
-            });
-            self.records[ordinal as usize].winner = winner;
-            previous = Some(winner);
-        }
+        self.winners = compute_compact_reference_winners(
+            &mut self.records,
+            &self.normalized_labels,
+            &mut self.order,
+        )?;
         self.complete = true;
         Ok(())
+    }
+
+    /// Snapshots the committed prefix into an immutable resolver without
+    /// consuming or finishing the journal. Present winners are final under
+    /// the GFM first-winner rule; missing labels stay `Unknown`. A definition
+    /// still pending at the frontier is deliberately absent: it follows every
+    /// committed record, so ignoring it can only defer, never misresolve.
+    pub(crate) fn committed_prefix_resolver(
+        &self,
+        source: flark_engine::SourceVersion,
+    ) -> Result<M11CompactReferenceResolver, M11ReferenceRendezvousError> {
+        if self.complete {
+            return Err(M11ReferenceRendezvousError::InvalidState(
+                "a finished compact reference index resolves with final authority",
+            ));
+        }
+        let mut records = Vec::new();
+        records.try_reserve_exact(self.records.len()).map_err(|_| {
+            M11ReferenceRendezvousError::InvalidState(
+                "compact prefix record allocation failed",
+            )
+        })?;
+        records.extend_from_slice(&self.records);
+        let mut normalized_labels = Vec::new();
+        normalized_labels
+            .try_reserve_exact(self.normalized_labels.len())
+            .map_err(|_| {
+                M11ReferenceRendezvousError::InvalidState(
+                    "compact prefix label allocation failed",
+                )
+            })?;
+        normalized_labels.extend_from_slice(&self.normalized_labels);
+        let mut order = Vec::new();
+        compute_compact_reference_winners(&mut records, &normalized_labels, &mut order)?;
+        Ok(M11CompactReferenceResolver {
+            source,
+            authority: M11CompactReferenceAuthority::CommittedPrefix,
+            unknown_lookups: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            index: Arc::new(M11CompactReferenceIndex {
+                records: records.into_boxed_slice(),
+                normalized_labels: normalized_labels.into_boxed_slice(),
+                order: order.into_boxed_slice(),
+            }),
+        })
     }
 
     pub(crate) fn receipt(&self) -> M11CompactReferenceReceipt {
@@ -271,6 +299,8 @@ impl M11CompactReferenceJournal {
         }
         Ok(M11CompactReferenceResolver {
             source,
+            authority: M11CompactReferenceAuthority::Final,
+            unknown_lookups: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             index: Arc::new(M11CompactReferenceIndex {
                 records: self.records.into_boxed_slice(),
                 normalized_labels: self.normalized_labels.into_boxed_slice(),
@@ -302,8 +332,72 @@ impl M11CompactReferenceJournal {
     }
 }
 
+/// Sorts one record set into the winner directory and assigns each record its
+/// first-winner ordinal. Shared by EOF completion and committed-prefix
+/// snapshots so both authorities apply the identical GFM first-winner rule.
+#[cfg(any(test, feature = "m11-compact-probe"))]
+fn compute_compact_reference_winners(
+    records: &mut [M11CompactReferenceRecord],
+    normalized_labels: &[u8],
+    order: &mut Vec<u32>,
+) -> Result<usize, M11ReferenceRendezvousError> {
+    order.try_reserve_exact(records.len()).map_err(|_| {
+        M11ReferenceRendezvousError::InvalidState("compact reference order allocation failed")
+    })?;
+    for ordinal in 0..records.len() {
+        order.push(u32::try_from(ordinal).map_err(|_| M11ReferenceRendezvousError::CounterOverflow)?);
+    }
+    order.sort_unstable_by(|left, right| {
+        let left_record = &records[*left as usize];
+        let right_record = &records[*right as usize];
+        let left_label = compact_reference_label(normalized_labels, left_record);
+        let right_label = compact_reference_label(normalized_labels, right_record);
+        left_record
+            .digest
+            .cmp(&right_record.digest)
+            .then_with(|| left_label.cmp(right_label))
+            .then_with(|| left_record.source_start.cmp(&right_record.source_start))
+    });
+    let mut winners = 0;
+    let mut previous: Option<u32> = None;
+    for ordinal in order.iter().copied() {
+        let winner = previous.filter(|previous_ordinal| {
+            let previous_record = &records[*previous_ordinal as usize];
+            let current = &records[ordinal as usize];
+            previous_record.digest == current.digest
+                && compact_reference_label(normalized_labels, previous_record)
+                    == compact_reference_label(normalized_labels, current)
+        });
+        let winner = winner.unwrap_or_else(|| {
+            winners += 1;
+            ordinal
+        });
+        records[ordinal as usize].winner = winner;
+        previous = Some(winner);
+    }
+    Ok(winners)
+}
+
 #[cfg(any(test, feature = "m11-compact-probe"))]
 impl M11CompactReferenceResolver {
+    /// Returns how many lookups this resolver (including every clone sharing
+    /// its counter) answered with `Unknown`. Zero after a bounded capture
+    /// pass proves no captured fact depended on an absent winner.
+    pub(crate) fn unknown_lookups(&self) -> u64 {
+        self.unknown_lookups
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Returns whether one source byte lies inside a committed reference
+    /// definition's exact range. Definition text is suffix-independent — its
+    /// presentation is fixed and its first-winner status is final — so
+    /// bracket bytes inside it are not reference-use hazards.
+    pub(crate) fn byte_is_inside_committed_definition(&self, byte: usize) -> bool {
+        self.index.records.iter().any(|record| {
+            (record.source_start as usize) <= byte && byte < record.source_end as usize
+        })
+    }
+
     pub(crate) fn resolve(
         &self,
         runtime: &DocumentRuntime,
@@ -328,6 +422,14 @@ impl M11CompactReferenceResolver {
             })
         });
         let Ok(found) = found else {
+            // Prefix authority cannot prove absence: a later definition may
+            // still bind this label, so the caller must fail closed instead
+            // of treating the use as literal text.
+            if self.authority == M11CompactReferenceAuthority::CommittedPrefix {
+                self.unknown_lookups
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                return Ok(M11ReferenceResolution::Unknown);
+            }
             return Ok(M11ReferenceResolution::Missing);
         };
         let record = self

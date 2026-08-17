@@ -164,6 +164,58 @@ fn starvation_is_not_eof_across_setext_lookahead_and_late_reference_authority() 
 }
 
 #[test]
+fn direct_links_escapes_and_code_spans_certify_before_eof() {
+    // Bracket-bearing prose whose brackets are not reference uses — direct
+    // links, escaped brackets, code spans — has no suffix dependency: the
+    // audited capture consumes no Unknown lookup, so the slice certifies
+    // before EOF with cooked link values equal to the eventual viewport.
+    let mut source = String::new();
+    for index in 0..48 {
+        source.push_str(&format!(
+            "Paragraph {index} has a [direct link](https://example.invalid/{index} \"T{index}\"), \\[escaped\\], and `arr[{index}]`.\n\n"
+        ));
+    }
+    let after_visible = source.len();
+    source.push_str("Tail paragraph.\n");
+    let frontiers = [after_visible, source.len()];
+    let inline_point = source.find("Paragraph 2").expect("linked paragraph") + 2;
+
+    let (structural_frontier, structural_before_eof, early_certified) =
+        assert_progressive_matches_clean(&source, &frontiers, inline_point);
+    assert!(structural_before_eof);
+    assert!(structural_frontier <= after_visible);
+    assert!(early_certified);
+}
+
+#[test]
+fn leading_definition_slices_are_a_typed_gap_not_a_panic() {
+    // KNOWN GAP: a first slice whose range covers leading reference
+    // definitions cannot build a bounded Green slice — definition rows live
+    // in the writer's reference windows, not the ordinary event stream — so
+    // the compact first-viewport probe fails with a typed error for
+    // documents that open with definitions. The early path already degrades
+    // to no-certification; the final slice cannot. When slice reference
+    // windows land, this fixture should produce a viewport resolving [top]
+    // to /admitted with the later duplicate losing — replace this test with
+    // that differential then.
+    let mut source = String::from("[top]: /admitted \"Top title\"\n\n");
+    for index in 0..48 {
+        source.push_str(&format!(
+            "Paragraph {index} links [top] and [top][] with **bold**.\n\n"
+        ));
+    }
+    let after_visible = source.len();
+    source.push_str("[top]: /displaced \"Loser\"\n");
+    let frontiers = [after_visible, source.len()];
+
+    let mut runtime =
+        DocumentRuntime::new(&source, DocumentRuntimeConfig::default()).expect("runtime");
+    let result = build_m11_progressive_compact_probe(&mut runtime, 1, &frontiers);
+    assert!(result.is_err(), "typed gap, not a panic or a wrong viewport");
+    close(runtime);
+}
+
+#[test]
 fn open_fence_survives_multiple_starvations_and_closes_only_on_real_input() {
     let mut source = String::from("```text\n");
     for index in 0..12 {
@@ -201,12 +253,14 @@ fn opening_store_appends_drive_the_live_parser_to_clean_equality() {
     use flark_engine::{OpeningSourceStore, SourceRevision};
     use flark_parser::{build_m11_progressive_open_probe, M11ProgressiveOpenFeed};
 
-    // CRLF paragraphs, a fence spanning pages, late reference uses resolved
-    // by a definition in the final page, and an unterminated tail sealed by
-    // transport exhaustion.
+    // CRLF paragraphs with direct links (audited early certification), a
+    // fence spanning pages, late reference uses resolved by a definition in
+    // the final page, and an unterminated tail sealed by exhaustion.
     let mut source = String::from("Heading\n---\n\n");
     for index in 0..40 {
-        source.push_str(&format!("Paragraph {index} with **bold** content here.\r\n\r\n"));
+        source.push_str(&format!(
+            "Paragraph {index} has [a link](https://example.invalid/{index}) and **bold**.\r\n\r\n"
+        ));
     }
     source.push_str("```text\n");
     for index in 0..24 {

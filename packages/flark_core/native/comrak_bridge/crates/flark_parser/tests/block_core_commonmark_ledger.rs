@@ -1219,6 +1219,11 @@ impl SemanticRenderer<'_> {
                     RenderFailure::Invalid(format!("bounded reference resolution: {error}"))
                 })? {
                 M11ReferenceResolution::Missing => {}
+                M11ReferenceResolution::Unknown => {
+                    return Err(RenderFailure::Invalid(
+                        "final reference authority returned a prefix-only outcome".to_string(),
+                    ));
+                }
                 M11ReferenceResolution::ValueTooLarge => {
                     return Err(RenderFailure::Missing("bounded-reference-value"));
                 }
