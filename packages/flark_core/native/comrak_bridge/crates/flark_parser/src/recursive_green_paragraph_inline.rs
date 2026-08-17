@@ -11,13 +11,14 @@ use std::{fmt, ops::Range};
 use flark_engine::parser_internal::{
     M11RecursiveGreenFrameQueryError, M11RecursiveGreenFrameQueryLimits, M11RecursiveGreenPoint,
     M11RecursiveGreenQueryReceipt, M11RecursiveGreenRoot, M11RecursiveGreenRowQueryLimits,
-    M11RecursiveGreenSliceRoot,
+    M11RecursiveGreenRowWindow, M11RecursiveGreenSliceRoot,
 };
 use flark_engine::{DocumentRuntime, DocumentRuntimeError, SOURCE_CURSOR_WINDOW_BYTES};
 
 use crate::block_core::{
     resolve_m11_recursive_green_inline_leaf_fence,
-    resolve_m11_recursive_green_slice_inline_leaf_row_fence, M11BlockWriter, M11BlockWriterError,
+    resolve_m11_recursive_green_slice_inline_leaf_row_fence,
+    resolve_m11_recursive_green_slice_inline_leaf_row_fences, M11BlockWriter, M11BlockWriterError,
     M11BlockWriterOfferStatus, M11BlockWriterPollStatus, M11DirectBlockController,
     M11DirectBlockControllerError, M11DirectBlockError, M11DirectBlockPollStatus,
     M11DirectBlockUnsupported, M11RecursiveGreenInlineLeafFence, M11RecursiveGreenInlineLeafKind,
@@ -390,6 +391,78 @@ pub fn prepare_m11_recursive_green_slice_inline_leaf(
             fence,
         ),
     )
+}
+
+/// One bounded-slice renderable-row window with the inline preparation of
+/// every qualifying row, all minted by a single shared ancestor-context walk.
+///
+/// `preparations` is index-aligned with `window.rows()`; `None` marks a row
+/// the per-point preparation would reject as `NotParagraph`. Every returned
+/// preparation carries the shared walk's query receipt.
+pub struct M11RecursiveGreenSliceInlineLeafRowBatch {
+    window: M11RecursiveGreenRowWindow,
+    preparations: Vec<Option<M11RecursiveGreenInlineLeafPreparation>>,
+}
+
+impl M11RecursiveGreenSliceInlineLeafRowBatch {
+    #[must_use]
+    pub const fn window(&self) -> &M11RecursiveGreenRowWindow {
+        &self.window
+    }
+
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        M11RecursiveGreenRowWindow,
+        Vec<Option<M11RecursiveGreenInlineLeafPreparation>>,
+    ) {
+        (self.window, self.preparations)
+    }
+}
+
+/// Batch counterpart of [`prepare_m11_recursive_green_slice_inline_leaf`]:
+/// locates the bounded row window and prepares every inline-bearing row in
+/// one walk instead of re-deriving the shared ancestor context per row. The
+/// per-row admission and inline-source cap are identical to the per-point
+/// preparation anchored at each row's own start.
+pub fn prepare_m11_recursive_green_slice_inline_leaf_rows(
+    runtime: &DocumentRuntime,
+    root: &M11RecursiveGreenSliceRoot,
+    point: M11RecursiveGreenPoint,
+    limits: M11RecursiveGreenRowQueryLimits,
+) -> Result<M11RecursiveGreenSliceInlineLeafRowBatch, M11RecursiveGreenParagraphPreparationError> {
+    let (window, fences) = resolve_m11_recursive_green_slice_inline_leaf_row_fences(
+        runtime, root, point, limits, 8192,
+    )?;
+    let preparations = fences
+        .into_iter()
+        .map(|fence| {
+            fence
+                .map(|fence| {
+                    let block_source = to_u32_range(fence.block_source_range())?;
+                    let block_source_utf16 = to_u32_range(fence.block_source_utf16_range())?;
+                    let inline_source = to_u32_range(fence.inline_source_range())?;
+                    let inline_source_utf16 = to_u32_range(fence.inline_source_utf16_range())?;
+                    let query_receipt = fence.receipt();
+                    Ok(
+                        M11RecursiveGreenInlineLeafPreparation::from_persistent_session(
+                            block_source,
+                            block_source_utf16,
+                            inline_source,
+                            inline_source_utf16,
+                            query_receipt,
+                            fence,
+                        ),
+                    )
+                })
+                .transpose()
+        })
+        .collect::<Result<Vec<_>, M11RecursiveGreenParagraphPreparationError>>()?;
+    Ok(M11RecursiveGreenSliceInlineLeafRowBatch {
+        window,
+        preparations,
+    })
 }
 
 fn drive_document(

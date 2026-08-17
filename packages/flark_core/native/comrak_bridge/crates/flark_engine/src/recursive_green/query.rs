@@ -4,7 +4,7 @@ use std::ops::Range;
 
 use crate::document::DocumentRuntime;
 use crate::measured_sequence::{
-    MeasuredSequenceRef, SequenceInspectionReceipt, SequenceLeafVisitControl,
+    MeasuredSequenceRef, SequenceInspectionReceipt, SequenceLeafVisitControl, SequenceNodeCache,
     SequenceSpecInspection, SequenceSummaryPartitionDirection,
 };
 use crate::parser_pages::{M11ParserPageError, M11ParserSourceRangeAuthority};
@@ -2048,6 +2048,36 @@ impl M11RecursiveGreenRoot {
     }
 }
 
+/// One bounded renderable-row window together with the inline-leaf fences its
+/// single shared walk minted.
+///
+/// `fences` is index-aligned with `window.rows()`: `None` marks a row whose
+/// final kind or edit capability disqualifies it, exactly as the per-point
+/// fence query would report for that row's own start. Every returned fence
+/// carries the shared window receipt, which reports the one walk that
+/// authenticated all of them.
+pub struct M11RecursiveGreenRowFenceWindow {
+    window: M11RecursiveGreenRowWindow,
+    fences: Vec<Option<M11RecursiveGreenFrameFence>>,
+}
+
+impl M11RecursiveGreenRowFenceWindow {
+    #[must_use]
+    pub const fn window(&self) -> &M11RecursiveGreenRowWindow {
+        &self.window
+    }
+
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        M11RecursiveGreenRowWindow,
+        Vec<Option<M11RecursiveGreenFrameFence>>,
+    ) {
+        (self.window, self.fences)
+    }
+}
+
 impl M11RecursiveGreenSliceRoot {
     pub fn locate_renderable_rows_bounded(
         &self,
@@ -2207,6 +2237,106 @@ impl M11RecursiveGreenSliceRoot {
             authority,
         }))
     }
+
+    /// Locates a bounded renderable-row window and mints the inline-leaf
+    /// fence of every qualifying row through the one shared walk.
+    ///
+    /// Row-for-row this applies the same admission as
+    /// [`Self::locate_renderable_row_fence_for_kinds`] anchored at each row's
+    /// own start: a row outside `expected_kinds` or without a contiguous edit
+    /// capability yields `None`, a contiguous row missing its editable
+    /// geometry is corrupt, and a contiguous inline run larger than
+    /// `maximum_inline_source_bytes` fails the whole request closed with the
+    /// same typed bound. Budget exhaustion maps to the same typed bounds as
+    /// the per-point query. No caller-supplied range can widen a fence: every
+    /// range is parser-authored row geometry from the walk itself.
+    pub fn locate_renderable_row_fences_for_kinds(
+        &self,
+        runtime: &DocumentRuntime,
+        point: M11RecursiveGreenPoint,
+        expected_kinds: &[M11RecursiveGreenKind],
+        limits: M11RecursiveGreenRowQueryLimits,
+        maximum_inline_source_bytes: u64,
+    ) -> Result<M11RecursiveGreenRowFenceWindow, M11RecursiveGreenFrameQueryError> {
+        if maximum_inline_source_bytes == 0 {
+            return Err(M11RecursiveGreenError::InvalidState.into());
+        }
+        let requested_end = self
+            .source_base
+            .bytes()
+            .checked_add(self.root.summary.physical_bytes)
+            .ok_or(M11RecursiveGreenError::CounterOverflow)?;
+        let window =
+            match self.locate_renderable_rows_bounded(runtime, point, requested_end, limits)? {
+                M11RecursiveGreenRowQueryOutcome::Window(window) => window,
+                M11RecursiveGreenRowQueryOutcome::BudgetExceeded(exceeded) => {
+                    let bound = match exceeded.limit() {
+                        M11RecursiveGreenRowQueryLimit::StoragePages => {
+                            M11RecursiveGreenFrameQueryBound::StoragePagesVisited
+                        }
+                        M11RecursiveGreenRowQueryLimit::EventsScanned => {
+                            M11RecursiveGreenFrameQueryBound::EventsScanned
+                        }
+                        M11RecursiveGreenRowQueryLimit::TreeNodes => {
+                            M11RecursiveGreenFrameQueryBound::TreeNodesVisited
+                        }
+                        M11RecursiveGreenRowQueryLimit::OpenDepth => {
+                            M11RecursiveGreenFrameQueryBound::OpenDepth
+                        }
+                    };
+                    return Err(M11RecursiveGreenFrameQueryError::BoundExceeded(bound));
+                }
+            };
+        let mut fences = Vec::new();
+        fences
+            .try_reserve_exact(window.rows.len())
+            .map_err(|_| M11RecursiveGreenError::InvalidState)?;
+        for row in &window.rows {
+            if !expected_kinds.contains(&row.kind)
+                || row.edit_capability != M11RecursiveGreenRowEditCapability::Contiguous
+            {
+                fences.push(None);
+                continue;
+            }
+            let Some(inline_source) = row.editable.clone() else {
+                return Err(M11RecursiveGreenError::Corrupt(
+                    "contiguous recursive-Green slice row omitted editable bytes",
+                )
+                .into());
+            };
+            let Some(inline_source_utf16) = row.editable_utf16.clone() else {
+                return Err(M11RecursiveGreenError::Corrupt(
+                    "contiguous recursive-Green slice row omitted editable UTF-16",
+                )
+                .into());
+            };
+            if inline_source.end.saturating_sub(inline_source.start) > maximum_inline_source_bytes {
+                return Err(M11RecursiveGreenFrameQueryError::BoundExceeded(
+                    M11RecursiveGreenFrameQueryBound::InlineSourceBytes,
+                ));
+            }
+            let authority = M11ParserSourceRangeAuthority::new(
+                runtime,
+                self.root.lease()?.duplicate(),
+                usize::try_from(inline_source.start)
+                    .map_err(|_| M11RecursiveGreenError::CounterOverflow)?
+                    ..usize::try_from(inline_source.end)
+                        .map_err(|_| M11RecursiveGreenError::CounterOverflow)?,
+            )?;
+            fences.push(Some(M11RecursiveGreenFrameFence {
+                source: self.root.source(),
+                frame: row.frame,
+                kind: row.kind,
+                block_source: row.physical.clone(),
+                block_source_utf16: row.physical_utf16.clone(),
+                inline_source,
+                inline_source_utf16,
+                receipt: window.receipt,
+                authority,
+            }));
+        }
+        Ok(M11RecursiveGreenRowFenceWindow { window, fences })
+    }
 }
 
 fn offset_slice_row_window(
@@ -2324,14 +2454,13 @@ pub(super) fn locate_renderable_rows_in_arena(
             },
         ));
     }
-    let mut work = PointZipperWork::default();
+    let mut work = PointZipperWork::with_node_cache();
     let start_location =
         locate_point_in_arena_zipper_prepared(arena, tree, summary, point, &mut work)?.ok_or(
             M11RecursiveGreenError::Corrupt("nonempty renderable Green root has no start location"),
         )?;
     let start_ordinal = start_location.renderable_rows_before.min(total_rows);
-    let root_leaf_count = tree
-        .summary(arena, &mut work.inspection)?
+    let root_leaf_count = tree_summary(arena, tree, &mut work)?
         .ok_or(M11RecursiveGreenError::Corrupt(
             "renderable Green query lost its root measure",
         ))?
@@ -2661,9 +2790,107 @@ struct PointZipperWork {
     events_scanned: u64,
     decoded_leaves: Vec<(crate::ArenaId, Vec<PackedGreenEvent>)>,
     frame_boundaries: Vec<(PointZipperOpenFrame, PointZipperFrameBoundary)>,
+    // Walk-scoped authenticated node memo. `Some` shares each node's
+    // decode-and-validate across every descent of one query walk; `None`
+    // preserves the historical per-descent decode pattern exactly, which the
+    // bounded point queries rely on for their precise header-fuel receipts.
+    node_cache: Option<SequenceNodeCache<RecursiveGreenSpec>>,
+}
+
+fn tree_summary(
+    arena: &crate::storage::PageArena,
+    tree: MeasuredSequenceRef<'_, RecursiveGreenSpec>,
+    work: &mut PointZipperWork,
+) -> Result<
+    Option<crate::measured_sequence::SequenceMeasure<RecursiveGreenSummary>>,
+    M11RecursiveGreenError,
+> {
+    match work.node_cache.as_mut() {
+        Some(cache) => tree.summary_with_node_cache(arena, &mut work.inspection, cache),
+        None => tree.summary(arena, &mut work.inspection),
+    }
+}
+
+fn tree_locate_leaf_with_prefix(
+    arena: &crate::storage::PageArena,
+    tree: MeasuredSequenceRef<'_, RecursiveGreenSpec>,
+    leaf_index: u64,
+    work: &mut PointZipperWork,
+) -> Result<
+    Option<crate::measured_sequence::LocatedSequenceLeaf<RecursiveGreenSummary>>,
+    M11RecursiveGreenError,
+> {
+    match work.node_cache.as_mut() {
+        Some(cache) => tree.locate_leaf_with_prefix_with_node_cache(
+            arena,
+            leaf_index,
+            &mut work.inspection,
+            cache,
+        ),
+        None => tree.locate_leaf_with_prefix(arena, leaf_index, &mut work.inspection),
+    }
+}
+
+fn tree_locate_leaf_containing_metric(
+    arena: &crate::storage::PageArena,
+    tree: MeasuredSequenceRef<'_, RecursiveGreenSpec>,
+    position: u64,
+    metric: impl Fn(RecursiveGreenSummary) -> u64,
+    work: &mut PointZipperWork,
+) -> Result<
+    Option<crate::measured_sequence::LocatedSequenceLeaf<RecursiveGreenSummary>>,
+    M11RecursiveGreenError,
+> {
+    match work.node_cache.as_mut() {
+        Some(cache) => tree.locate_leaf_containing_metric_with_node_cache(
+            arena,
+            position,
+            metric,
+            &mut work.inspection,
+            cache,
+        ),
+        None => tree.locate_leaf_containing_metric(arena, position, metric, &mut work.inspection),
+    }
+}
+
+fn tree_locate_leaf_by_monotone_summary(
+    arena: &crate::storage::PageArena,
+    tree: MeasuredSequenceRef<'_, RecursiveGreenSpec>,
+    range: Range<u64>,
+    direction: SequenceSummaryPartitionDirection,
+    work: &mut PointZipperWork,
+    predicate: impl FnMut(RecursiveGreenSummary) -> Result<bool, M11RecursiveGreenError>,
+) -> Result<
+    Option<crate::measured_sequence::LocatedSequenceSummaryPartition<RecursiveGreenSummary>>,
+    M11RecursiveGreenError,
+> {
+    match work.node_cache.as_mut() {
+        Some(cache) => tree.locate_leaf_by_monotone_summary_with_node_cache(
+            arena,
+            range,
+            direction,
+            &mut work.inspection,
+            cache,
+            predicate,
+        ),
+        None => tree.locate_leaf_by_monotone_summary(
+            arena,
+            range,
+            direction,
+            &mut work.inspection,
+            predicate,
+        ),
+    }
 }
 
 impl PointZipperWork {
+    fn with_node_cache() -> Self {
+        Self {
+            node_cache: Some(SequenceNodeCache::new()),
+            ..Self::default()
+        }
+    }
+
     fn decode_leaf_events(
         &mut self,
         arena: &crate::storage::PageArena,
@@ -2762,17 +2989,17 @@ fn point_zipper_external_open(
         ));
     }
 
-    let owner_leaf = tree
-        .locate_leaf_by_monotone_summary(
-            arena,
-            0..prefix_end,
-            SequenceSummaryPartitionDirection::Reverse,
-            &mut work.inspection,
-            |suffix| Ok(suffix.unmatched_opens()? >= threshold),
-        )?
-        .ok_or(M11RecursiveGreenError::Corrupt(
-            "summary-guided Green ancestry leaf is absent",
-        ))?;
+    let owner_leaf = tree_locate_leaf_by_monotone_summary(
+        arena,
+        tree,
+        0..prefix_end,
+        SequenceSummaryPartitionDirection::Reverse,
+        work,
+        |suffix| Ok(suffix.unmatched_opens()? >= threshold),
+    )?
+    .ok_or(M11RecursiveGreenError::Corrupt(
+        "summary-guided Green ancestry leaf is absent",
+    ))?;
     let suffix = owner_leaf.accumulated;
     let (suffix_opens, suffix_closes) = match suffix {
         Some(summary) => (summary.unmatched_opens()?, summary.unmatched_closes()?),
@@ -2974,22 +3201,22 @@ fn point_zipper_frame_boundary_uncached(
             "open Green frame reaches beyond the final leaf",
         ));
     }
-    let exit_leaf = tree
-        .locate_leaf_by_monotone_summary(
-            arena,
-            range_start..root_leaf_count,
-            SequenceSummaryPartitionDirection::Forward,
-            &mut work.inspection,
-            |candidate| {
-                Ok(relative_depth
-                    .checked_add(candidate.minimum_prefix)
-                    .ok_or(M11RecursiveGreenError::CounterOverflow)?
-                    < 0)
-            },
-        )?
-        .ok_or(M11RecursiveGreenError::Corrupt(
-            "open Green frame has no matching Exit",
-        ))?;
+    let exit_leaf = tree_locate_leaf_by_monotone_summary(
+        arena,
+        tree,
+        range_start..root_leaf_count,
+        SequenceSummaryPartitionDirection::Forward,
+        work,
+        |candidate| {
+            Ok(relative_depth
+                .checked_add(candidate.minimum_prefix)
+                .ok_or(M11RecursiveGreenError::CounterOverflow)?
+                < 0)
+        },
+    )?
+    .ok_or(M11RecursiveGreenError::Corrupt(
+        "open Green frame has no matching Exit",
+    ))?;
     let before_exit_leaf = exit_leaf
         .accumulated
         .unwrap_or_else(RecursiveGreenSummary::empty);
@@ -3118,11 +3345,12 @@ fn point_zipper_open_for_row_ordinal(
     ordinal: u64,
     work: &mut PointZipperWork,
 ) -> Result<Option<PointZipperOpenFrame>, M11RecursiveGreenError> {
-    let Some(leaf) = tree.locate_leaf_containing_metric(
+    let Some(leaf) = tree_locate_leaf_containing_metric(
         arena,
+        tree,
         ordinal,
         |summary| summary.renderable_row_exits,
-        &mut work.inspection,
+        work,
     )?
     else {
         return Ok(None);
@@ -3416,11 +3644,9 @@ fn point_zipper_row_editable(
     let mut projected_safe = true;
     let mut editable_segments = Vec::<M11RecursiveGreenRowEditableSegment>::new();
     for leaf_ordinal in open.enter_leaf_ordinal..=boundary.exit_leaf_ordinal {
-        let leaf = tree
-            .locate_leaf_with_prefix(arena, leaf_ordinal, &mut work.inspection)?
-            .ok_or(M11RecursiveGreenError::Corrupt(
-                "renderable-row traversal lost a Green leaf",
-            ))?;
+        let leaf = tree_locate_leaf_with_prefix(arena, tree, leaf_ordinal, work)?.ok_or(
+            M11RecursiveGreenError::Corrupt("renderable-row traversal lost a Green leaf"),
+        )?;
         let events = work.decode_leaf_events(arena, leaf.id)?;
         let first = if leaf_ordinal == open.enter_leaf_ordinal {
             open.enter_event_index + 1
@@ -3821,16 +4047,16 @@ fn locate_point_in_arena_zipper_prepared(
         (_, offset) => offset,
     };
 
-    let point_leaf = tree
-        .locate_leaf_containing_metric(
-            arena,
-            effective_byte,
-            |summary| summary.physical_bytes,
-            &mut work.inspection,
-        )?
-        .ok_or(M11RecursiveGreenError::Corrupt(
-            "recursive-green point has no coverage leaf",
-        ))?;
+    let point_leaf = tree_locate_leaf_containing_metric(
+        arena,
+        tree,
+        effective_byte,
+        |summary| summary.physical_bytes,
+        work,
+    )?
+    .ok_or(M11RecursiveGreenError::Corrupt(
+        "recursive-green point has no coverage leaf",
+    ))?;
     let point_prefix = point_leaf
         .prefix
         .unwrap_or_else(RecursiveGreenSummary::empty);

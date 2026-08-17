@@ -177,8 +177,10 @@ pub use recursive_green_block_quote_projection::{
 };
 pub use recursive_green_paragraph_inline::{
     prepare_m11_recursive_green_inline_leaf, prepare_m11_recursive_green_paragraph_inline,
-    prepare_m11_recursive_green_slice_inline_leaf, M11RecursiveGreenInlineLeafPreparation,
+    prepare_m11_recursive_green_slice_inline_leaf,
+    prepare_m11_recursive_green_slice_inline_leaf_rows, M11RecursiveGreenInlineLeafPreparation,
     M11RecursiveGreenParagraphInlinePreparation, M11RecursiveGreenParagraphPreparationError,
+    M11RecursiveGreenSliceInlineLeafRowBatch,
     M11_RECURSIVE_GREEN_PARAGRAPH_BRIDGE_MAX_SOURCE_BYTES,
 };
 pub use reference_cook::{M11ReferenceCookReceipt, ReferenceCookError};
