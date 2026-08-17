@@ -359,15 +359,96 @@ fn sequence_node<Spec: SequenceSpec>(
     id: ArenaId,
     inspection: &mut SequenceInspectionReceipt,
 ) -> Result<DecodedSequenceNode<Spec::Summary>, Spec::Error> {
+    sequence_node_shared::<Spec>(arena, id, inspection, None)
+}
+
+/// Authenticated node-header memo scoped to one bounded query walk.
+///
+/// An entry is inserted only after the exact uncached decode-and-validate
+/// path succeeded against the same immutable arena pages, so a hit replays a
+/// fact this walk already proved instead of re-deriving it; corrupt or
+/// fuel-refused decodes are never cached. Inspection receipts keep reporting
+/// only work actually performed: a hit charges nothing because it decodes
+/// nothing. The cache must never outlive the arena snapshot it was filled
+/// against; walk-scoped ownership provides that without lifetime plumbing.
+pub(crate) struct SequenceNodeCache<Spec: SequenceSpec> {
+    headers: Vec<((u64, u32, u32), DecodedSequenceNodeHeader<Spec::Summary>)>,
+}
+
+impl<Spec: SequenceSpec> SequenceNodeCache<Spec> {
+    pub(crate) const fn new() -> Self {
+        Self {
+            headers: Vec::new(),
+        }
+    }
+
+    const fn key(id: ArenaId) -> (u64, u32, u32) {
+        (id.arena().get(), id.slot(), id.generation())
+    }
+
+    fn get(&self, id: ArenaId) -> Option<DecodedSequenceNodeHeader<Spec::Summary>> {
+        let key = Self::key(id);
+        self.headers
+            .binary_search_by_key(&key, |(entry_key, _)| *entry_key)
+            .ok()
+            .map(|index| self.headers[index].1)
+    }
+
+    fn insert(
+        &mut self,
+        id: ArenaId,
+        header: DecodedSequenceNodeHeader<Spec::Summary>,
+    ) -> Result<(), Spec::Error> {
+        let key = Self::key(id);
+        if let Err(index) = self
+            .headers
+            .binary_search_by_key(&key, |(entry_key, _)| *entry_key)
+        {
+            self.headers
+                .try_reserve(1)
+                .map_err(|_| Spec::invalid("sequence node cache reservation failed"))?;
+            self.headers.insert(index, (key, header));
+        }
+        Ok(())
+    }
+}
+
+fn sequence_node_header_shared<Spec: SequenceSpec>(
+    arena: &PageArena,
+    id: ArenaId,
+    inspection: &mut SequenceInspectionReceipt,
+    cache: Option<&mut SequenceNodeCache<Spec>>,
+) -> Result<DecodedSequenceNodeHeader<Spec::Summary>, Spec::Error> {
+    if let Some(cache) = &cache {
+        if let Some(header) = cache.get(id) {
+            return Ok(header);
+        }
+    }
     let header = sequence_node_header::<Spec>(arena, id, inspection)?;
+    if let Some(cache) = cache {
+        cache.insert(id, header)?;
+    }
+    Ok(header)
+}
+
+fn sequence_node_shared<Spec: SequenceSpec>(
+    arena: &PageArena,
+    id: ArenaId,
+    inspection: &mut SequenceInspectionReceipt,
+    mut cache: Option<&mut SequenceNodeCache<Spec>>,
+) -> Result<DecodedSequenceNode<Spec::Summary>, Spec::Error> {
+    let header = sequence_node_header_shared::<Spec>(arena, id, inspection, cache.as_deref_mut())?;
     match header.kind {
         SequenceNodeHeaderKind::Leaf => Ok(DecodedSequenceNode {
             measure: header.measure,
             kind: SequenceNodeKind::Leaf,
         }),
         SequenceNodeHeaderKind::Branch { left, right } => {
-            let left_measure = sequence_node_header::<Spec>(arena, left, inspection)?.measure;
-            let right_measure = sequence_node_header::<Spec>(arena, right, inspection)?.measure;
+            let left_measure =
+                sequence_node_header_shared::<Spec>(arena, left, inspection, cache.as_deref_mut())?
+                    .measure;
+            let right_measure =
+                sequence_node_header_shared::<Spec>(arena, right, inspection, cache)?.measure;
             let expected = combine_measures::<Spec>(left_measure, right_measure, inspection)?;
             if header.measure != expected {
                 return Err(Spec::invalid(
@@ -754,8 +835,30 @@ impl<'root, Spec: SequenceSpec> MeasuredSequenceRef<'root, Spec> {
         arena: &PageArena,
         inspection: &mut SequenceInspectionReceipt,
     ) -> Result<Option<SequenceMeasure<Spec::Summary>>, Spec::Error> {
+        self.summary_shared(arena, inspection, None)
+    }
+
+    /// [`Self::summary`] sharing authenticated node decodes through `cache`.
+    pub(crate) fn summary_with_node_cache(
+        self,
+        arena: &PageArena,
+        inspection: &mut SequenceInspectionReceipt,
+        cache: &mut SequenceNodeCache<Spec>,
+    ) -> Result<Option<SequenceMeasure<Spec::Summary>>, Spec::Error> {
+        self.summary_shared(arena, inspection, Some(cache))
+    }
+
+    fn summary_shared(
+        self,
+        arena: &PageArena,
+        inspection: &mut SequenceInspectionReceipt,
+        cache: Option<&mut SequenceNodeCache<Spec>>,
+    ) -> Result<Option<SequenceMeasure<Spec::Summary>>, Spec::Error> {
         self.root
-            .map(|root| sequence_node::<Spec>(arena, root, inspection).map(|node| node.measure))
+            .map(|root| {
+                sequence_node_shared::<Spec>(arena, root, inspection, cache)
+                    .map(|node| node.measure)
+            })
             .transpose()
     }
 
@@ -780,10 +883,32 @@ impl<'root, Spec: SequenceSpec> MeasuredSequenceRef<'root, Spec> {
         leaf_index: u64,
         inspection: &mut SequenceInspectionReceipt,
     ) -> Result<Option<LocatedSequenceLeaf<Spec::Summary>>, Spec::Error> {
+        self.locate_leaf_with_prefix_shared(arena, leaf_index, inspection, None)
+    }
+
+    /// [`Self::locate_leaf_with_prefix`] sharing authenticated node decodes
+    /// through `cache`.
+    pub(crate) fn locate_leaf_with_prefix_with_node_cache(
+        self,
+        arena: &PageArena,
+        leaf_index: u64,
+        inspection: &mut SequenceInspectionReceipt,
+        cache: &mut SequenceNodeCache<Spec>,
+    ) -> Result<Option<LocatedSequenceLeaf<Spec::Summary>>, Spec::Error> {
+        self.locate_leaf_with_prefix_shared(arena, leaf_index, inspection, Some(cache))
+    }
+
+    fn locate_leaf_with_prefix_shared(
+        self,
+        arena: &PageArena,
+        leaf_index: u64,
+        inspection: &mut SequenceInspectionReceipt,
+        mut cache: Option<&mut SequenceNodeCache<Spec>>,
+    ) -> Result<Option<LocatedSequenceLeaf<Spec::Summary>>, Spec::Error> {
         let Some(mut id) = self.root else {
             return Ok(None);
         };
-        let root = sequence_node::<Spec>(arena, id, inspection)?;
+        let root = sequence_node_shared::<Spec>(arena, id, inspection, cache.as_deref_mut())?;
         if leaf_index >= root.measure.leaves {
             return Ok(None);
         }
@@ -792,7 +917,7 @@ impl<'root, Spec: SequenceSpec> MeasuredSequenceRef<'root, Spec> {
         let mut index = leaf_index;
         let mut prefix = None;
         for _ in 0..usize::from(root.measure.height) {
-            let node = sequence_node::<Spec>(arena, id, inspection)?;
+            let node = sequence_node_shared::<Spec>(arena, id, inspection, cache.as_deref_mut())?;
             if node.measure != expected {
                 return Err(Spec::invalid(
                     "sequence child measure changed during descent",
@@ -860,6 +985,46 @@ impl<'root, Spec: SequenceSpec> MeasuredSequenceRef<'root, Spec> {
         inspection: &mut SequenceInspectionReceipt,
         mut predicate: impl FnMut(Spec::Summary) -> Result<bool, Spec::Error>,
     ) -> Result<Option<LocatedSequenceSummaryPartition<Spec::Summary>>, Spec::Error> {
+        self.locate_leaf_by_monotone_summary_shared(
+            arena,
+            range,
+            direction,
+            inspection,
+            None,
+            &mut predicate,
+        )
+    }
+
+    /// [`Self::locate_leaf_by_monotone_summary`] sharing authenticated node
+    /// decodes through `cache`.
+    pub(crate) fn locate_leaf_by_monotone_summary_with_node_cache(
+        self,
+        arena: &PageArena,
+        range: Range<u64>,
+        direction: SequenceSummaryPartitionDirection,
+        inspection: &mut SequenceInspectionReceipt,
+        cache: &mut SequenceNodeCache<Spec>,
+        mut predicate: impl FnMut(Spec::Summary) -> Result<bool, Spec::Error>,
+    ) -> Result<Option<LocatedSequenceSummaryPartition<Spec::Summary>>, Spec::Error> {
+        self.locate_leaf_by_monotone_summary_shared(
+            arena,
+            range,
+            direction,
+            inspection,
+            Some(cache),
+            &mut predicate,
+        )
+    }
+
+    fn locate_leaf_by_monotone_summary_shared(
+        self,
+        arena: &PageArena,
+        range: Range<u64>,
+        direction: SequenceSummaryPartitionDirection,
+        inspection: &mut SequenceInspectionReceipt,
+        mut cache: Option<&mut SequenceNodeCache<Spec>>,
+        predicate: &mut impl FnMut(Spec::Summary) -> Result<bool, Spec::Error>,
+    ) -> Result<Option<LocatedSequenceSummaryPartition<Spec::Summary>>, Spec::Error> {
         if range.start > range.end {
             return Err(Spec::invalid("sequence partition range is reversed"));
         }
@@ -871,7 +1036,7 @@ impl<'root, Spec: SequenceSpec> MeasuredSequenceRef<'root, Spec> {
                 "nonempty partition requested from empty sequence",
             ));
         };
-        let root = sequence_node::<Spec>(arena, root_id, inspection)?;
+        let root = sequence_node_shared::<Spec>(arena, root_id, inspection, cache.as_deref_mut())?;
         if range.end > root.measure.leaves {
             return Err(Spec::invalid("sequence partition range exceeds its root"));
         }
@@ -885,7 +1050,8 @@ impl<'root, Spec: SequenceSpec> MeasuredSequenceRef<'root, Spec> {
             direction,
             &mut accumulated,
             inspection,
-            &mut predicate,
+            cache,
+            predicate,
         )
     }
 
@@ -902,10 +1068,34 @@ impl<'root, Spec: SequenceSpec> MeasuredSequenceRef<'root, Spec> {
         metric: impl Fn(Spec::Summary) -> u64,
         inspection: &mut SequenceInspectionReceipt,
     ) -> Result<Option<LocatedSequenceLeaf<Spec::Summary>>, Spec::Error> {
+        self.locate_leaf_containing_metric_shared(arena, position, metric, inspection, None)
+    }
+
+    /// [`Self::locate_leaf_containing_metric`] sharing authenticated node
+    /// decodes through `cache`.
+    pub(crate) fn locate_leaf_containing_metric_with_node_cache(
+        self,
+        arena: &PageArena,
+        position: u64,
+        metric: impl Fn(Spec::Summary) -> u64,
+        inspection: &mut SequenceInspectionReceipt,
+        cache: &mut SequenceNodeCache<Spec>,
+    ) -> Result<Option<LocatedSequenceLeaf<Spec::Summary>>, Spec::Error> {
+        self.locate_leaf_containing_metric_shared(arena, position, metric, inspection, Some(cache))
+    }
+
+    fn locate_leaf_containing_metric_shared(
+        self,
+        arena: &PageArena,
+        position: u64,
+        metric: impl Fn(Spec::Summary) -> u64,
+        inspection: &mut SequenceInspectionReceipt,
+        mut cache: Option<&mut SequenceNodeCache<Spec>>,
+    ) -> Result<Option<LocatedSequenceLeaf<Spec::Summary>>, Spec::Error> {
         let Some(mut id) = self.root else {
             return Ok(None);
         };
-        let root = sequence_node::<Spec>(arena, id, inspection)?;
+        let root = sequence_node_shared::<Spec>(arena, id, inspection, cache.as_deref_mut())?;
         if position >= metric(root.measure.summary) {
             return Ok(None);
         }
@@ -915,7 +1105,7 @@ impl<'root, Spec: SequenceSpec> MeasuredSequenceRef<'root, Spec> {
         let mut ordinal = 0_u64;
         let mut prefix = None;
         for _ in 0..usize::from(root.measure.height) {
-            let node = sequence_node::<Spec>(arena, id, inspection)?;
+            let node = sequence_node_shared::<Spec>(arena, id, inspection, cache.as_deref_mut())?;
             if node.measure != expected {
                 return Err(Spec::invalid(
                     "sequence child measure changed during metric descent",
@@ -1160,6 +1350,7 @@ fn locate_leaf_by_monotone_summary_inner<Spec: SequenceSpec>(
     direction: SequenceSummaryPartitionDirection,
     accumulated: &mut Option<Spec::Summary>,
     inspection: &mut SequenceInspectionReceipt,
+    mut cache: Option<&mut SequenceNodeCache<Spec>>,
     predicate: &mut impl FnMut(Spec::Summary) -> Result<bool, Spec::Error>,
 ) -> Result<Option<LocatedSequenceSummaryPartition<Spec::Summary>>, Spec::Error> {
     let end = start
@@ -1197,7 +1388,7 @@ fn locate_leaf_by_monotone_summary_inner<Spec: SequenceSpec>(
         }
     }
 
-    let node = sequence_node::<Spec>(arena, id, inspection)?;
+    let node = sequence_node_shared::<Spec>(arena, id, inspection, cache.as_deref_mut())?;
     if node.measure != expected {
         return Err(Spec::invalid(
             "sequence child measure changed during summary partition",
@@ -1244,6 +1435,7 @@ fn locate_leaf_by_monotone_summary_inner<Spec: SequenceSpec>(
                 direction,
                 accumulated,
                 inspection,
+                cache.as_deref_mut(),
                 predicate,
             )? {
                 return Ok(Some(found));
@@ -1257,6 +1449,7 @@ fn locate_leaf_by_monotone_summary_inner<Spec: SequenceSpec>(
                 direction,
                 accumulated,
                 inspection,
+                cache,
                 predicate,
             )
         }
