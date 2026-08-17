@@ -7958,8 +7958,163 @@ mod tests {
     }
 
     use super::compact_index_revision::{
-        M11CompactRevisionCarriedDeltas, M11CompactRevisionEdit, M11CompactRevisionRemap,
+        M11CompactIndexRevision, M11CompactIndexRevisionStatus, M11CompactIndexRevisionUpdate,
+        M11CompactRevisionCarriedDeltas, M11CompactRevisionEdit, M11CompactRevisionReferences,
+        M11CompactRevisionRemap, M11CompactRevisionResolvedEntry,
     };
+
+    /// Builds the committed-edit description for one literal replacement in
+    /// `base_source`, deriving both coordinate dimensions from the fixture.
+    fn committed_revision_edit(
+        base_source: &str,
+        range: Range<usize>,
+        replacement: &str,
+        carried: M11CompactRevisionCarriedDeltas,
+    ) -> M11CompactRevisionEdit {
+        let utf16_at = |byte: usize| base_source[..byte].encode_utf16().count() as u64;
+        M11CompactRevisionEdit::new(
+            range.start as u64..range.end as u64,
+            utf16_at(range.start)..utf16_at(range.end),
+            replacement.len() as u64,
+            replacement.encode_utf16().count() as u64,
+            carried,
+        )
+        .expect("committed revision edit")
+    }
+
+    /// Carried deltas for a plain paragraph-content edit: the replaced text
+    /// appears verbatim in the logical projection, and nothing else moves.
+    fn paragraph_content_carried(byte_delta: i64, utf16_delta: i64) -> M11CompactRevisionCarriedDeltas {
+        M11CompactRevisionCarriedDeltas {
+            logical_bytes: byte_delta,
+            logical_utf16: utf16_delta,
+            ..M11CompactRevisionCarriedDeltas::default()
+        }
+    }
+
+    /// First byte at or after `from` that sits strictly inside an ASCII word,
+    /// so replacing or extending it preserves block structure.
+    fn interior_word_letter_at_or_after(source: &str, from: usize) -> usize {
+        let bytes = source.as_bytes();
+        (from.max(1)..bytes.len().saturating_sub(1))
+            .find(|&index| {
+                bytes[index].is_ascii_lowercase()
+                    && bytes[index - 1].is_ascii_lowercase()
+                    && bytes[index + 1].is_ascii_lowercase()
+            })
+            .expect("fixture has an interior word letter")
+    }
+
+    fn replacement_letter_at(source: &str, index: usize) -> &'static str {
+        if source.as_bytes()[index] == b'q' {
+            "z"
+        } else {
+            "q"
+        }
+    }
+
+    fn take_compact_index_parts(
+        runtime: &mut DocumentRuntime,
+        session: &mut M11PersistentRecursiveGreenSession,
+    ) -> (
+        M11CompactCheckpointJournal,
+        crate::block_core::M11CompactReferenceResolver,
+    ) {
+        let journal = session
+            .compact_checkpoints
+            .take()
+            .expect("compact base journal");
+        let resolver = session
+            .compact_reference_resolver
+            .take()
+            .expect("compact base reference resolver");
+        release_session(runtime, session);
+        (journal, resolver)
+    }
+
+    fn drive_compact_index_revision(
+        runtime: &mut DocumentRuntime,
+        base: M11CompactCheckpointJournal,
+        references: crate::block_core::M11CompactReferenceResolver,
+        edit: M11CompactRevisionEdit,
+    ) -> (M11CompactIndexRevision, usize) {
+        let mut update = M11CompactIndexRevisionUpdate::begin(base, references, edit, runtime, 1)
+            .expect("begin revision update");
+        let mut poll_transitions = 0_usize;
+        loop {
+            let poll = update.poll(runtime, 4_096).expect("poll revision update");
+            poll_transitions += poll.transitions();
+            if poll.status() == M11CompactIndexRevisionStatus::Complete {
+                break;
+            }
+        }
+        (
+            update.take_revision().expect("revision output"),
+            poll_transitions,
+        )
+    }
+
+    /// The Experiment B differential: the updated index must equal a clean
+    /// full rebuild of the edited source entry by entry — bit-equal payload
+    /// records and equal metadata after coordinate translation — and the
+    /// carried reference index must equal the rebuilt one under the same
+    /// translation.
+    fn assert_compact_revision_matches_clean_rebuild(
+        revision: &M11CompactIndexRevision,
+        rebuild: &M11PersistentRecursiveGreenSession,
+    ) {
+        let journal = rebuild
+            .compact_checkpoints
+            .as_ref()
+            .expect("rebuild compact journal");
+        assert_eq!(
+            revision.entry_count(),
+            journal.entries.len(),
+            "revision and clean rebuild entry counts"
+        );
+        for index in 0..journal.entries.len() {
+            let resolved = revision
+                .resolved_entry(index)
+                .expect("resolved revision entry");
+            let expected =
+                M11CompactRevisionResolvedEntry::from_current_entry(&journal.entries[index]);
+            assert_eq!(resolved, expected, "entry {index} resolved metadata");
+            assert_eq!(
+                revision
+                    .encoded_parser_record(index)
+                    .expect("revision parser payload"),
+                journal.encoded_entry(index).expect("rebuild parser payload"),
+                "entry {index} parser payload bytes"
+            );
+            let expected_writer = (journal.entries[index].writer_encoded_len > 0).then(|| {
+                journal
+                    .encoded_writer_entry(index)
+                    .expect("rebuild writer payload")
+            });
+            assert_eq!(
+                revision
+                    .encoded_writer_record(index)
+                    .expect("revision writer payload"),
+                expected_writer,
+                "entry {index} writer payload bytes"
+            );
+        }
+        match revision.references() {
+            M11CompactRevisionReferences::CarriedForward { .. } => {
+                let resolved = revision
+                    .resolved_reference_records()
+                    .expect("resolved carried reference records")
+                    .expect("carried disposition yields records");
+                let expected = rebuild
+                    .compact_reference_resolver
+                    .as_ref()
+                    .expect("rebuild reference resolver")
+                    .probe_records();
+                assert_eq!(resolved, expected, "carried reference records");
+            }
+            M11CompactRevisionReferences::RebuildRequired { .. } => {}
+        }
+    }
 
     #[test]
     fn compact_revision_remap_translates_dimensions_and_rejects_dead_coordinates() {
@@ -8063,6 +8218,207 @@ mod tests {
         )
         .expect("overlapping edit");
         assert!(M11CompactRevisionRemap::from_edits(&[replace, overlapping]).is_err());
+    }
+
+    #[test]
+    fn compact_index_revision_middle_replacement_converges_and_splices() {
+        const BLOCK: &str = "Ordinary paragraph with **bold** text and plain words.\n\n";
+        let base_source = repeat_ascii_exact("", BLOCK, 48 * 1024);
+        let mut runtime = DocumentRuntime::new(&base_source, DocumentRuntimeConfig::default())
+            .expect("revision runtime");
+        let (mut base_session, ..) = build_compact_probe(&mut runtime, Instant::now());
+        let source = base_session.source();
+        let (base_journal, base_refs) = take_compact_index_parts(&mut runtime, &mut base_session);
+        let base_total = base_journal.entries.len();
+
+        let edit_start = interior_word_letter_at_or_after(&base_source, base_source.len() / 2);
+        let replacement = replacement_letter_at(&base_source, edit_start);
+        let edit = committed_revision_edit(
+            &base_source,
+            edit_start..edit_start + 1,
+            replacement,
+            paragraph_content_carried(0, 0),
+        );
+        runtime
+            .apply_edit(source, edit_start..edit_start + 1, replacement)
+            .expect("commit middle replacement");
+
+        let (revision, _) =
+            drive_compact_index_revision(&mut runtime, base_journal, base_refs, edit);
+        let receipt = *revision.receipt();
+        assert!(receipt.converged, "ordinary replacement converges: {receipt:?}");
+        assert!(receipt.predecessor_index > 0, "middle edit resumes past BOF");
+        assert!(
+            receipt.source_bytes_replayed <= 64 * 1024,
+            "replay stays inside the 64 KiB locality envelope: {receipt:?}"
+        );
+        assert_eq!(
+            receipt.checkpoints_reused_prefix + receipt.checkpoints_replaced
+                + receipt.checkpoints_reused_suffix,
+            base_total,
+            "every base entry is reused or replaced: {receipt:?}"
+        );
+        assert!(
+            receipt.checkpoints_replaced <= 2,
+            "an ordinary replacement replaces at most the straddling entries: {receipt:?}"
+        );
+        assert!(!receipt.references_rebuild_required);
+
+        let (mut rebuild, ..) = build_compact_probe(&mut runtime, Instant::now());
+        assert_compact_revision_matches_clean_rebuild(&revision, &rebuild);
+        release_session(&mut runtime, &mut rebuild);
+        close_runtime(&mut runtime);
+    }
+
+    #[test]
+    fn compact_index_revision_insertion_translates_suffix_through_remap() {
+        const BLOCK: &str = "Ordinary paragraph with **bold** text and plain words.\n\n";
+        let base_source = repeat_ascii_exact("", BLOCK, 48 * 1024);
+        let mut runtime = DocumentRuntime::new(&base_source, DocumentRuntimeConfig::default())
+            .expect("insertion runtime");
+        let (mut base_session, ..) = build_compact_probe(&mut runtime, Instant::now());
+        let source = base_session.source();
+        let (base_journal, base_refs) = take_compact_index_parts(&mut runtime, &mut base_session);
+
+        let edit_start = interior_word_letter_at_or_after(&base_source, base_source.len() / 2);
+        let edit = committed_revision_edit(
+            &base_source,
+            edit_start..edit_start,
+            "q",
+            paragraph_content_carried(1, 1),
+        );
+        runtime
+            .apply_edit(source, edit_start..edit_start, "q")
+            .expect("commit middle insertion");
+
+        let (revision, _) =
+            drive_compact_index_revision(&mut runtime, base_journal, base_refs, edit);
+        let receipt = *revision.receipt();
+        assert!(receipt.converged, "insertion converges: {receipt:?}");
+        assert!(receipt.source_bytes_replayed <= 64 * 1024, "{receipt:?}");
+        assert!(receipt.checkpoints_reused_suffix > 0, "{receipt:?}");
+        assert!(receipt.pages_appended <= 1, "{receipt:?}");
+
+        let (mut rebuild, ..) = build_compact_probe(&mut runtime, Instant::now());
+        assert_compact_revision_matches_clean_rebuild(&revision, &rebuild);
+        release_session(&mut runtime, &mut rebuild);
+        close_runtime(&mut runtime);
+    }
+
+    #[test]
+    fn compact_index_revision_bof_edit_resumes_from_document_start() {
+        const BLOCK: &str = "Ordinary paragraph with **bold** text and plain words.\n\n";
+        let base_source = repeat_ascii_exact("", BLOCK, 48 * 1024);
+        let mut runtime = DocumentRuntime::new(&base_source, DocumentRuntimeConfig::default())
+            .expect("BOF revision runtime");
+        let (mut base_session, ..) = build_compact_probe(&mut runtime, Instant::now());
+        let source = base_session.source();
+        let (base_journal, base_refs) = take_compact_index_parts(&mut runtime, &mut base_session);
+
+        let edit_start = interior_word_letter_at_or_after(&base_source, 1);
+        let replacement = replacement_letter_at(&base_source, edit_start);
+        let edit = committed_revision_edit(
+            &base_source,
+            edit_start..edit_start + 1,
+            replacement,
+            paragraph_content_carried(0, 0),
+        );
+        runtime
+            .apply_edit(source, edit_start..edit_start + 1, replacement)
+            .expect("commit BOF replacement");
+
+        let (revision, _) =
+            drive_compact_index_revision(&mut runtime, base_journal, base_refs, edit);
+        let receipt = *revision.receipt();
+        assert_eq!(
+            receipt.predecessor_index, 0,
+            "an edit before every interior checkpoint falls back to BOF: {receipt:?}"
+        );
+        assert!(receipt.converged, "BOF replacement converges: {receipt:?}");
+        assert!(receipt.source_bytes_replayed <= 64 * 1024, "{receipt:?}");
+
+        let (mut rebuild, ..) = build_compact_probe(&mut runtime, Instant::now());
+        assert_compact_revision_matches_clean_rebuild(&revision, &rebuild);
+        release_session(&mut runtime, &mut rebuild);
+        close_runtime(&mut runtime);
+    }
+
+    #[test]
+    fn compact_index_revision_eof_edit_replays_bounded_tail() {
+        const BLOCK: &str = "Ordinary paragraph with **bold** text and plain words.\n\n";
+        let base_source = repeat_ascii_exact("", BLOCK, 48 * 1024);
+        let mut runtime = DocumentRuntime::new(&base_source, DocumentRuntimeConfig::default())
+            .expect("EOF revision runtime");
+        let (mut base_session, ..) = build_compact_probe(&mut runtime, Instant::now());
+        let source = base_session.source();
+        let (base_journal, base_refs) = take_compact_index_parts(&mut runtime, &mut base_session);
+
+        let edit_start =
+            interior_word_letter_at_or_after(&base_source, base_source.len() - BLOCK.len());
+        let replacement = replacement_letter_at(&base_source, edit_start);
+        let edit = committed_revision_edit(
+            &base_source,
+            edit_start..edit_start + 1,
+            replacement,
+            paragraph_content_carried(0, 0),
+        );
+        runtime
+            .apply_edit(source, edit_start..edit_start + 1, replacement)
+            .expect("commit EOF replacement");
+
+        let (revision, _) =
+            drive_compact_index_revision(&mut runtime, base_journal, base_refs, edit);
+        let receipt = *revision.receipt();
+        assert!(receipt.source_bytes_replayed <= 64 * 1024, "{receipt:?}");
+
+        let (mut rebuild, ..) = build_compact_probe(&mut runtime, Instant::now());
+        assert_compact_revision_matches_clean_rebuild(&revision, &rebuild);
+        release_session(&mut runtime, &mut rebuild);
+        close_runtime(&mut runtime);
+    }
+
+    #[test]
+    fn compact_index_revision_structural_edit_replays_to_eof_without_convergence() {
+        const BLOCK: &str = "Ordinary paragraph with **bold** text and plain words.\n\n";
+        let base_source = repeat_ascii_exact("", BLOCK, 24 * 1024);
+        let mut runtime = DocumentRuntime::new(&base_source, DocumentRuntimeConfig::default())
+            .expect("structural revision runtime");
+        let (mut base_session, ..) = build_compact_probe(&mut runtime, Instant::now());
+        let source = base_session.source();
+        let (base_journal, base_refs) = take_compact_index_parts(&mut runtime, &mut base_session);
+        let base_total = base_journal.entries.len();
+
+        // Splitting one physical line inside a paragraph shifts every later
+        // line ordinal; the declared zero deltas are then wrong for every
+        // candidate, so convergence must decline and the bounded replay must
+        // honestly become the complete new index.
+        let edit_start = interior_word_letter_at_or_after(&base_source, base_source.len() / 2);
+        let edit = committed_revision_edit(
+            &base_source,
+            edit_start..edit_start + 1,
+            "\n",
+            paragraph_content_carried(0, 0),
+        );
+        runtime
+            .apply_edit(source, edit_start..edit_start + 1, "\n")
+            .expect("commit structural replacement");
+
+        let (revision, _) =
+            drive_compact_index_revision(&mut runtime, base_journal, base_refs, edit);
+        let receipt = *revision.receipt();
+        assert!(!receipt.converged, "wrong declared deltas decline convergence: {receipt:?}");
+        assert!(receipt.last_convergence_reject.is_some(), "{receipt:?}");
+        assert_eq!(receipt.checkpoints_reused_suffix, 0, "{receipt:?}");
+        assert_eq!(
+            receipt.checkpoints_reused_prefix + receipt.checkpoints_replaced,
+            base_total,
+            "{receipt:?}"
+        );
+
+        let (mut rebuild, ..) = build_compact_probe(&mut runtime, Instant::now());
+        assert_compact_revision_matches_clean_rebuild(&revision, &rebuild);
+        release_session(&mut runtime, &mut rebuild);
+        close_runtime(&mut runtime);
     }
 
     #[test]

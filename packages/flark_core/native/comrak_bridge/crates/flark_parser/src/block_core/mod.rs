@@ -48,7 +48,8 @@ pub use paragraph_fence::{
 };
 #[cfg(any(test, feature = "m11-compact-probe"))]
 pub(crate) use reference_rendezvous::{
-    M11CompactReferenceJournal, M11CompactReferenceReceipt, M11CompactReferenceResolver,
+    M11CompactReferenceJournal, M11CompactReferenceProbeRecord, M11CompactReferenceReceipt,
+    M11CompactReferenceResolver,
 };
 pub use reference_rendezvous::{
     M11ReferenceRendezvous, M11ReferenceRendezvousError, M11ReferenceRendezvousPoll,
