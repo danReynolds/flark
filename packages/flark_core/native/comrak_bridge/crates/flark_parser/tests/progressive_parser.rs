@@ -181,6 +181,24 @@ fn open_fence_survives_multiple_starvations_and_closes_only_on_real_input() {
 }
 
 #[test]
+fn a_frontier_between_carriage_return_and_line_feed_is_rejected() {
+    let source = "alpha\r\nbeta\r\ngamma\r\n";
+    let mut runtime =
+        DocumentRuntime::new(source, DocumentRuntimeConfig::default()).expect("runtime");
+    let result = build_m11_progressive_compact_probe(
+        &mut runtime,
+        1,
+        &[
+            "alpha\r".len(),
+            "alpha\r\nbeta\r\n".len(),
+            source.len(),
+        ],
+    );
+    assert!(result.is_err());
+    close(runtime);
+}
+
+#[test]
 fn an_unsealed_frontier_inside_a_physical_line_is_rejected() {
     let source = "first line\nsecond line\nthird line\n";
     let mut runtime =

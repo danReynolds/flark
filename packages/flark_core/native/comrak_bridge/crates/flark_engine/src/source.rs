@@ -1039,12 +1039,14 @@ impl OpeningSourceAppendProof {
     }
 
     /// Returns whether the admitted frontier can be exposed to a parser as an
-    /// unsealed physical-line boundary. A sealed final frontier may instead
-    /// terminate the last line without a line ending.
-    pub fn current_ends_at_physical_line_boundary(&self) -> Result<bool, SourceEditError> {
+    /// unsealed physical-line boundary. A trailing bare CR fails: a later LF
+    /// may still join it into one CRLF ending, so the parser must not consume
+    /// that CR as a complete line ending yet. A sealed final frontier may
+    /// instead terminate the last line without a line ending.
+    pub fn current_admits_unsealed_line_frontier(&self) -> Result<bool, SourceEditError> {
         self.snapshot
             .source
-            .is_physical_line_start(self.current.current_bytes)
+            .is_unsealed_physical_line_frontier(self.current.current_bytes)
     }
 
     fn into_parts(
@@ -1542,6 +1544,32 @@ impl SourceSnapshotLease {
         match self.root.rope.byte(offset - 1) {
             b'\n' => Ok(true),
             b'\r' if offset == self.root.rope.byte_len() => Ok(true),
+            b'\r' => Ok(self.root.rope.byte(offset) != b'\n'),
+            _ => Ok(false),
+        }
+    }
+
+    /// Returns whether one scalar-aligned cut is admissible as an *unsealed*
+    /// parser frontier: a physical-line start that no later byte can
+    /// reinterpret.
+    ///
+    /// This differs from [`Self::is_physical_line_start`] in exactly one
+    /// case: a trailing bare CR. In a sealed snapshot that CR is a complete
+    /// line ending, but at an unsealed frontier a later LF may still join it
+    /// into one CRLF ending — and the LF alone would then scan as a phantom
+    /// blank line — so the cut stays inadmissible until the next byte or the
+    /// seal decides.
+    pub fn is_unsealed_physical_line_frontier(
+        &self,
+        offset: usize,
+    ) -> Result<bool, SourceEditError> {
+        validate_range(&self.root.rope, &(offset..offset))?;
+        if offset == 0 {
+            return Ok(true);
+        }
+        match self.root.rope.byte(offset - 1) {
+            b'\n' => Ok(true),
+            b'\r' if offset == self.root.rope.byte_len() => Ok(false),
             b'\r' => Ok(self.root.rope.byte(offset) != b'\n'),
             _ => Ok(false),
         }

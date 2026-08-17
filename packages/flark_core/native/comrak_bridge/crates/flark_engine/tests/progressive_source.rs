@@ -164,6 +164,50 @@ fn stale_or_malformed_opening_operations_never_mutate_silently() {
 }
 
 #[test]
+fn a_trailing_bare_cr_is_not_an_unsealed_frontier() {
+    let mut opening = OpeningSourceStore::new(SourceRevision::new(2), 9).expect("opening");
+    let initial = opening.version();
+    let first = opening
+        .append_page(initial, 0..7, "alpha\r\r")
+        .expect("first page");
+    let lease = opening.snapshot().into_source_lease();
+
+    // An interior bare CR is a complete ending under both interpretations;
+    // the trailing CR is a line start only for a sealed snapshot, because a
+    // later LF may still join it into one CRLF ending.
+    assert!(lease.is_physical_line_start(6).expect("interior sealed"));
+    assert!(lease
+        .is_unsealed_physical_line_frontier(6)
+        .expect("interior unsealed"));
+    assert!(lease.is_physical_line_start(7).expect("trailing sealed"));
+    assert!(!lease
+        .is_unsealed_physical_line_frontier(7)
+        .expect("trailing unsealed"));
+
+    // The append-lineage proof exposes the same rule to the parser seam.
+    let proof = opening.prove_append_since(initial).expect("proof");
+    assert!(!proof
+        .current_admits_unsealed_line_frontier()
+        .expect("proof frontier"));
+
+    let _ = opening.append_page(first, 7..9, "\nz").expect("second page");
+    let joined = opening.snapshot().into_source_lease();
+    // The LF arrived: the pair is one CRLF ending, and the old frontier is
+    // now interior to it under both interpretations.
+    assert!(!joined.is_physical_line_start(7).expect("joined sealed"));
+    assert!(!joined
+        .is_unsealed_physical_line_frontier(7)
+        .expect("joined unsealed"));
+    assert!(joined
+        .is_unsealed_physical_line_frontier(8)
+        .expect("after crlf"));
+    let proof = opening.prove_append_since(first).expect("later proof");
+    assert!(!proof
+        .current_admits_unsealed_line_frontier()
+        .expect("mid-line tail"));
+}
+
+#[test]
 fn empty_source_seals_without_a_phantom_page_and_opening_store_is_send() {
     fn assert_send<T: Send>() {}
     assert_send::<OpeningSourceStore>();

@@ -363,7 +363,7 @@ impl M11PersistentRecursiveGreenCleanPlan {
             || first_frontier > source.byte_len()
             || !self
                 .scanner_lease
-                .is_physical_line_start(first_frontier)
+                .is_unsealed_physical_line_frontier(first_frontier)
                 .map_err(SourceAdapterError::from)?
         {
             return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
@@ -1303,7 +1303,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
             || (seal && frontier != self.source.byte_len())
             || (!seal
                 && !lease
-                    .is_physical_line_start(frontier)
+                    .is_unsealed_physical_line_frontier(frontier)
                     .map_err(SourceAdapterError::from)?)
         {
             self.progressive_source_lease = Some(lease);
@@ -1362,7 +1362,7 @@ impl M11PersistentRecursiveGreenCleanBuild {
             || (seal && !current_opening.input_complete())
             || (!seal
                 && !proof
-                    .current_ends_at_physical_line_boundary()
+                    .current_admits_unsealed_line_frontier()
                     .map_err(SourceAdapterError::from)?)
             || self
                 .progressive_source_lease
