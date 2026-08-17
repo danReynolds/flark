@@ -324,6 +324,122 @@ fn opening_store_appends_drive_the_live_parser_to_clean_equality() {
 }
 
 #[test]
+fn open_session_regenerates_certification_as_definitions_arrive() {
+    use flark_engine::{OpeningSourceStore, SourceRevision};
+    use flark_parser::{M11ProgressiveOpenSession, M11ProgressiveOpenSessionPoll};
+
+    fn drive_to_starvation(
+        session: &mut M11ProgressiveOpenSession,
+        runtime: &mut DocumentRuntime,
+    ) -> M11ProgressiveOpenSessionPoll {
+        loop {
+            match session.poll(runtime, 256).expect("session poll") {
+                M11ProgressiveOpenSessionPoll::Pending => {}
+                status => return status,
+            }
+        }
+    }
+
+    // Page 1: linked paragraphs whose label has no admitted definition, so
+    // the captured slice cannot certify. Page 2 delivers the definition;
+    // certification must appear at the following starvation, bound to the
+    // page-2 generation, with rows queryable there. Page 3 rebinds it again.
+    let mut page1 = String::new();
+    for index in 0..40 {
+        page1.push_str(&format!(
+            "Paragraph {index} links [late] with **bold** text.\n\n"
+        ));
+    }
+    let page2 = "[late]: /resolved \"Late title\"\n\nMiddle paragraph.\n\n".to_string();
+    let page3 = "Tail paragraph.\n".to_string();
+
+    let mut store = OpeningSourceStore::new(SourceRevision::new(3), None).expect("opening store");
+    let v0 = store.version();
+    store
+        .append_page(v0, 0..page1.len(), &page1)
+        .expect("page 1");
+    let mut runtime = DocumentRuntime::from_opening_snapshot(
+        store.snapshot(),
+        DocumentRuntimeConfig::default(),
+    )
+    .expect("opening runtime");
+    let mut session = M11ProgressiveOpenSession::begin(&mut runtime, 1).expect("open session");
+
+    assert_eq!(
+        drive_to_starvation(&mut session, &mut runtime),
+        M11ProgressiveOpenSessionPoll::Starved
+    );
+    assert!(
+        session.certified_early().is_none(),
+        "no committed definition can certify [late] uses yet"
+    );
+
+    let before = store.version();
+    store
+        .append_page(before, page1.len()..page1.len() + page2.len(), &page2)
+        .expect("page 2");
+    session
+        .adopt_append(
+            &mut runtime,
+            store.prove_append_since(before).expect("page 2 proof"),
+            false,
+        )
+        .expect("adopt page 2");
+    assert_eq!(
+        drive_to_starvation(&mut session, &mut runtime),
+        M11ProgressiveOpenSessionPoll::Starved
+    );
+    let (early, bound_source) = session
+        .certified_early()
+        .expect("definition arrival upgrades certification");
+    assert_eq!(runtime.current_source_version(), Some(bound_source));
+    let early_rows = rows(early, &runtime);
+    assert_eq!(early_rows.rows().len(), 32);
+    let inline_point = page1.find("Paragraph 2").expect("linked paragraph") + 2;
+    let early_inline = early
+        .capture_inline_projection(
+            &mut runtime,
+            M11RecursiveGreenPoint::new(inline_point, inline_point, SourceBoundaryAffinity::After),
+        )
+        .expect("early inline")
+        .expect("early paragraph");
+    assert!(
+        format!("{:?}", early_inline.link_values).contains("/resolved"),
+        "certified early rows resolve [late] through the committed winner"
+    );
+
+    // The next append rebinds the certified viewport to the new generation.
+    let before = store.version();
+    let page3_start = page1.len() + page2.len();
+    store
+        .append_page(before, page3_start..page3_start + page3.len(), &page3)
+        .expect("page 3");
+    session
+        .adopt_append(
+            &mut runtime,
+            store.prove_append_since(before).expect("page 3 proof"),
+            true,
+        )
+        .expect("adopt page 3");
+    let (_, rebound_source) = session
+        .certified_early()
+        .expect("certification survives the next generation by regeneration");
+    assert_ne!(rebound_source, bound_source);
+    assert_eq!(runtime.current_source_version(), Some(rebound_source));
+
+    while session.poll(&mut runtime, 4_096).expect("seal poll")
+        != M11ProgressiveOpenSessionPoll::Complete
+    {}
+    let final_viewport = session.take_final(&mut runtime).expect("final viewport");
+    let final_rows = rows(&final_viewport, &runtime);
+    assert_eq!(final_rows.rows().len(), 32);
+    release(final_viewport, &mut runtime);
+    close(runtime);
+
+    let _ = store.seal().expect("seal exhausted store");
+}
+
+#[test]
 fn a_frontier_between_carriage_return_and_line_feed_is_rejected() {
     let source = "alpha\r\nbeta\r\ngamma\r\n";
     let mut runtime =

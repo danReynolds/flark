@@ -124,6 +124,7 @@ pub use persistent_recursive_green_session::{
     build_m11_compact_first_viewport_probe, build_m11_progressive_compact_probe,
     build_m11_progressive_open_probe, M11CompactInlineProjectionProbe, M11CompactViewportProbe,
     M11CompactViewportProbeError, M11ProgressiveCompactProbe, M11ProgressiveOpenFeed,
+    M11ProgressiveOpenSession, M11ProgressiveOpenSessionPoll,
 };
 pub use persistent_recursive_green_session::{
     M11PersistentRecursiveGreenAdoption, M11PersistentRecursiveGreenAdoptionPoll,

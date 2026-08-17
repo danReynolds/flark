@@ -5262,6 +5262,261 @@ pub fn build_m11_progressive_compact_probe(
     })
 }
 
+/// Poll status of one incremental progressive open session.
+#[cfg(feature = "m11-compact-probe")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum M11ProgressiveOpenSessionPoll {
+    /// Parser work remains against the currently adopted source.
+    Pending,
+    /// The parser consumed every admissible line; it needs an adopted
+    /// append, an exhaustion seal, or nothing until the transport moves.
+    Starved,
+    /// The sealed document is fully parsed; the final viewport is takeable.
+    Complete,
+}
+
+/// Session-shaped incremental progressive open driver: one compact primary
+/// parser over store-admitted source, advanced by poll/adopt/seal instead of
+/// the probes' run-to-completion loops.
+///
+/// The certified early viewport is generation-bound and regenerates on every
+/// adopted append: the retained first slice's facts are proven unchanged by
+/// the append receipt's prefix lineage, so the slice re-certifies against
+/// the newly committed prefix — and certification can only improve, because
+/// later pages commit more reference winners. Callers therefore always hold
+/// an early viewport queryable at the *current* generation, or none.
+#[cfg(feature = "m11-compact-probe")]
+#[must_use = "progressive open sessions own live parser and viewport state requiring release"]
+pub struct M11ProgressiveOpenSession {
+    build: Option<M11PersistentRecursiveGreenCleanBuild>,
+    first_slice: Option<M11CompactProbeFirstSlice>,
+    first_slice_before_eof: bool,
+    early: Option<M11CompactViewportProbe>,
+    early_source: Option<SourceVersion>,
+    complete: bool,
+}
+
+#[cfg(feature = "m11-compact-probe")]
+impl M11ProgressiveOpenSession {
+    /// Begins one open session over the runtime's current (possibly empty)
+    /// admitted replica. The parser frontier starts at the last
+    /// unsealed-admissible line boundary.
+    pub fn begin(
+        runtime: &mut DocumentRuntime,
+        syntax_profile: u32,
+    ) -> Result<Self, M11CompactViewportProbeError> {
+        let first_frontier = runtime
+            .snapshot_current_source()?
+            .last_unsealed_physical_line_frontier(0)
+            .map_err(SourceAdapterError::from)?
+            .unwrap_or(0);
+        let plan = M11PersistentRecursiveGreenCleanPlan::new(
+            runtime.snapshot_current_source()?,
+            runtime.snapshot_current_source()?,
+            syntax_profile,
+        )?;
+        let build = plan.begin_progressive_compact_probe(runtime, first_frontier)?;
+        Ok(Self {
+            build: Some(build),
+            first_slice: None,
+            first_slice_before_eof: false,
+            early: None,
+            early_source: None,
+            complete: false,
+        })
+    }
+
+    fn build_mut(
+        &mut self,
+    ) -> Result<&mut M11PersistentRecursiveGreenCleanBuild, M11CompactViewportProbeError> {
+        self.build
+            .as_mut()
+            .ok_or(M11CompactViewportProbeError::InvalidState(
+                "progressive open session already finished",
+            ))
+    }
+
+    /// Drives parser work. On first-slice capture (and never again for the
+    /// same generation) certification is attempted inline.
+    pub fn poll(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+        fuel: usize,
+    ) -> Result<M11ProgressiveOpenSessionPoll, M11CompactViewportProbeError> {
+        if self.complete {
+            return Ok(M11ProgressiveOpenSessionPoll::Complete);
+        }
+        let build = self
+            .build
+            .as_mut()
+            .ok_or(M11CompactViewportProbeError::InvalidState(
+                "progressive open session already finished",
+            ))?;
+        let status = build.poll(runtime, fuel)?.status();
+        if self.first_slice.is_none() {
+            if let Some(slice) = build.take_compact_probe_first_slice() {
+                self.first_slice_before_eof = !build.progressive_sealed;
+                if self.first_slice_before_eof {
+                    self.early = certify_first_slice_candidate(runtime, build, &slice)?;
+                    self.early_source = self
+                        .early
+                        .is_some()
+                        .then(|| runtime.current_source_version())
+                        .flatten();
+                }
+                self.first_slice = Some(slice);
+            }
+        }
+        Ok(match status {
+            M11PersistentRecursiveGreenBuildStatus::Pending => {
+                M11ProgressiveOpenSessionPoll::Pending
+            }
+            M11PersistentRecursiveGreenBuildStatus::Starved => {
+                // A completed window can commit reference winners the slice
+                // was waiting for, so an uncertified slice retries here;
+                // the source version is unchanged by scanning, so an
+                // existing certified viewport stays bound and untouched.
+                if self.early.is_none() {
+                    self.try_certify(runtime)?;
+                }
+                M11ProgressiveOpenSessionPoll::Starved
+            }
+            M11PersistentRecursiveGreenBuildStatus::Complete => {
+                self.complete = true;
+                M11ProgressiveOpenSessionPoll::Complete
+            }
+            M11PersistentRecursiveGreenBuildStatus::Cancelled => {
+                return Err(M11CompactViewportProbeError::InvalidState(
+                    "progressive open parser cancelled unexpectedly",
+                ));
+            }
+        })
+    }
+
+    fn try_certify(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+    ) -> Result<(), M11CompactViewportProbeError> {
+        let Some(build) = self.build.as_ref() else {
+            return Ok(());
+        };
+        if let Some(slice) = self.first_slice.as_ref() {
+            if self.first_slice_before_eof {
+                self.early = certify_first_slice_candidate(runtime, build, slice)?;
+                self.early_source = self
+                    .early
+                    .is_some()
+                    .then(|| runtime.current_source_version())
+                    .flatten();
+            }
+        }
+        Ok(())
+    }
+
+    /// Adopts one authenticated append into the starved parser, then
+    /// regenerates the early viewport against the new generation. A slice
+    /// that could not certify before is retried: later pages can only add
+    /// committed winners.
+    pub fn adopt_append(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+        proof: OpeningSourceAppendProof,
+        last: bool,
+    ) -> Result<(), M11CompactViewportProbeError> {
+        self.build_mut()?
+            .adopt_progressive_opening_append(runtime, proof, last)?;
+        // Each adoption retires one replica root; append roots share
+        // structure, so draining per grant is cheap.
+        let _ = runtime.poll_retirement(64);
+        self.regenerate_early(runtime)
+    }
+
+    /// Seals the load at the currently admitted text after transport
+    /// exhaustion; the unterminated tail, if any, becomes final.
+    pub fn seal_exhausted(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+    ) -> Result<(), M11CompactViewportProbeError> {
+        let build = self.build_mut()?;
+        let sealed_end = build.source.byte_len();
+        build.extend_progressive_frontier(sealed_end, true)?;
+        Ok(())
+    }
+
+    fn regenerate_early(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+    ) -> Result<(), M11CompactViewportProbeError> {
+        release_early_compact_viewport(runtime, &mut self.early);
+        self.early_source = None;
+        self.try_certify(runtime)
+    }
+
+    /// Returns the certified early viewport with the source version it is
+    /// bound to; queries are valid only while the runtime is at exactly that
+    /// version.
+    #[must_use]
+    pub fn certified_early(&self) -> Option<(&M11CompactViewportProbe, SourceVersion)> {
+        match (&self.early, self.early_source) {
+            (Some(early), Some(source)) => Some((early, source)),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn starvation_count(&self) -> usize {
+        self.build
+            .as_ref()
+            .map_or(0, |build| build.progressive_starvations)
+    }
+
+    /// Consumes the completed session into the final EOF-authority viewport,
+    /// releasing the generation-bound early viewport first.
+    pub fn take_final(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+    ) -> Result<M11CompactViewportProbe, M11CompactViewportProbeError> {
+        if !self.complete {
+            return Err(M11CompactViewportProbeError::InvalidState(
+                "progressive open session has not completed",
+            ));
+        }
+        release_early_compact_viewport(runtime, &mut self.early);
+        self.early_source = None;
+        let build = self
+            .build
+            .take()
+            .ok_or(M11CompactViewportProbeError::InvalidState(
+                "progressive open session already finished",
+            ))?;
+        let first_slice =
+            self.first_slice
+                .take()
+                .ok_or(M11CompactViewportProbeError::InvalidState(
+                    "progressive open session captured no first slice",
+                ))?;
+        finish_compact_viewport_probe(runtime, build, first_slice)
+    }
+
+    /// Reclaims every live resource on the abandonment path: the early
+    /// viewport releases and the unfinished build cancels.
+    pub fn release(&mut self, runtime: &mut DocumentRuntime) {
+        release_early_compact_viewport(runtime, &mut self.early);
+        self.early_source = None;
+        if let Some(mut build) = self.build.take() {
+            if build.begin_cancel(runtime).is_ok() {
+                while build
+                    .poll(runtime, 4_096)
+                    .map(|poll| {
+                        poll.status() != M11PersistentRecursiveGreenBuildStatus::Cancelled
+                    })
+                    .unwrap_or(false)
+                {}
+            }
+        }
+    }
+}
+
 /// One transport step for [`build_m11_progressive_open_probe`], reported by
 /// the caller's feed callback after it mutated the opening store.
 #[cfg(feature = "m11-compact-probe")]
@@ -5378,86 +5633,9 @@ where
                     first_structural_slice_elapsed = started.elapsed();
                     let slice = first_slice.as_ref().expect("just observed first slice");
                     if first_structural_slice_before_eof {
-                        let bracket_hazard =
-                            compact_slice_has_reference_hazard(runtime, slice)?;
-                        let source_start =
-                            usize::try_from(slice.physical_start.bytes()).map_err(|_| {
-                                M11CompactViewportProbeError::InvalidState(
-                                    "early compact slice start fits usize",
-                                )
-                            })?;
-                        let source_end =
-                            usize::try_from(slice.physical_end.bytes()).map_err(|_| {
-                                M11CompactViewportProbeError::InvalidState(
-                                    "early compact slice end fits usize",
-                                )
-                            })?;
-                        // A slice whose range covers leading reference
-                        // definitions cannot build yet: those rows live in
-                        // the writer's reference windows, not the ordinary
-                        // event stream. Degrade that one typed outcome to
-                        // no-certification; every other failure propagates.
-                        let root = match build_compact_green_slice(
-                            runtime,
-                            source_start,
-                            source_end,
-                            slice.row_base,
-                            &[],
-                            &slice.events,
-                        ) {
-                            Ok(root) => Some(root),
-                            Err(M11CompactViewportProbeError::Session(
-                                M11PersistentRecursiveGreenSessionError::Green(
-                                    flark_engine::parser_internal::M11RecursiveGreenError::IncompleteCoverage,
-                                ),
-                            )) => None,
-                            Err(error) => return Err(error),
-                        };
-                        if let Some(root) = root {
-                            let source = runtime.current_source_version().ok_or(
-                                M11CompactViewportProbeError::InvalidState(
-                                    "early compact slice source is current",
-                                ),
-                            )?;
-                            // Committed-prefix winners are final under the
-                            // GFM first-winner rule; only absence stays
-                            // unknown.
-                            let resolver = build
-                                .compact_reference_journal
-                                .as_ref()
-                                .ok_or(M11CompactViewportProbeError::InvalidState(
-                                    "progressive build retains its reference journal",
-                                ))?
-                                .committed_prefix_resolver(source)?;
-                            let candidate = M11CompactViewportProbe {
-                                root,
-                                reference_resolver: resolver.clone(),
-                                syntax_profile: build.syntax_profile,
-                            };
-                            let certified = if bracket_hazard {
-                                match early_compact_viewport_is_certifiable(
-                                    runtime, &candidate, &resolver,
-                                ) {
-                                    Ok(certified) => certified,
-                                    Err(error) => {
-                                        let mut discarded = Some(candidate);
-                                        release_early_compact_viewport(
-                                            runtime,
-                                            &mut discarded,
-                                        );
-                                        return Err(error);
-                                    }
-                                }
-                            } else {
-                                true
-                            };
-                            if certified {
-                                early_viewport = Some(candidate);
-                                early_certification_elapsed = Some(started.elapsed());
-                            } else {
-                                let mut discarded = Some(candidate);
-                                release_early_compact_viewport(runtime, &mut discarded);
-                            }
+                        early_viewport = certify_first_slice_candidate(runtime, &build, slice)?;
+                        if early_viewport.is_some() {
+                            early_certification_elapsed = Some(started.elapsed());
                         }
                     }
                 }
@@ -5522,6 +5700,85 @@ where
         early_certification_elapsed,
         complete_elapsed,
     })
+}
+
+/// Attempts pre-EOF certification of one captured first slice against the
+/// build's current committed-prefix authority. Returns the certified early
+/// viewport, or `None` when the slice cannot be proven suffix-independent
+/// yet — a later attempt against a larger committed prefix may succeed, so
+/// the caller retains the slice. A slice whose range covers structure the
+/// event stream cannot yet rebuild degrades to `None` as fail-closed
+/// insurance; every other failure propagates typed.
+#[cfg(feature = "m11-compact-probe")]
+fn certify_first_slice_candidate(
+    runtime: &mut DocumentRuntime,
+    build: &M11PersistentRecursiveGreenCleanBuild,
+    slice: &M11CompactProbeFirstSlice,
+) -> Result<Option<M11CompactViewportProbe>, M11CompactViewportProbeError> {
+    let bracket_hazard = compact_slice_has_reference_hazard(runtime, slice)?;
+    let source_start = usize::try_from(slice.physical_start.bytes()).map_err(|_| {
+        M11CompactViewportProbeError::InvalidState("early compact slice start fits usize")
+    })?;
+    let source_end = usize::try_from(slice.physical_end.bytes()).map_err(|_| {
+        M11CompactViewportProbeError::InvalidState("early compact slice end fits usize")
+    })?;
+    let root = match build_compact_green_slice(
+        runtime,
+        source_start,
+        source_end,
+        slice.row_base,
+        &[],
+        &slice.events,
+    ) {
+        Ok(root) => Some(root),
+        Err(M11CompactViewportProbeError::Session(
+            M11PersistentRecursiveGreenSessionError::Green(
+                flark_engine::parser_internal::M11RecursiveGreenError::IncompleteCoverage,
+            ),
+        )) => None,
+        Err(error) => return Err(error),
+    };
+    let Some(root) = root else {
+        return Ok(None);
+    };
+    let source = runtime
+        .current_source_version()
+        .ok_or(M11CompactViewportProbeError::InvalidState(
+            "early compact slice source is current",
+        ))?;
+    // Committed-prefix winners are final under the GFM first-winner rule;
+    // only absence stays unknown.
+    let resolver = build
+        .compact_reference_journal
+        .as_ref()
+        .ok_or(M11CompactViewportProbeError::InvalidState(
+            "progressive build retains its reference journal",
+        ))?
+        .committed_prefix_resolver(source)?;
+    let candidate = M11CompactViewportProbe {
+        root,
+        reference_resolver: resolver.clone(),
+        syntax_profile: build.syntax_profile,
+    };
+    let certified = if bracket_hazard {
+        match early_compact_viewport_is_certifiable(runtime, &candidate, &resolver) {
+            Ok(certified) => certified,
+            Err(error) => {
+                let mut discarded = Some(candidate);
+                release_early_compact_viewport(runtime, &mut discarded);
+                return Err(error);
+            }
+        }
+    } else {
+        true
+    };
+    if certified {
+        Ok(Some(candidate))
+    } else {
+        let mut discarded = Some(candidate);
+        release_early_compact_viewport(runtime, &mut discarded);
+        Ok(None)
+    }
 }
 
 /// Audits one early slice candidate for suffix-independence of its
