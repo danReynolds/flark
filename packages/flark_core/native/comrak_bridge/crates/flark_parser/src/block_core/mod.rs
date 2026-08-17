@@ -41,7 +41,8 @@ pub use paragraph_fence::{
     m11_block_quote_prefix_lineage, m11_recursive_green_row_presentation,
     resolve_m11_recursive_green_inline_leaf_fence,
     resolve_m11_recursive_green_inline_leaf_row_fence, resolve_m11_recursive_green_paragraph_fence,
-    resolve_m11_recursive_green_slice_inline_leaf_row_fence, M11RecursiveGreenCodeBlockStyle,
+    resolve_m11_recursive_green_slice_inline_leaf_row_fence,
+    resolve_m11_recursive_green_slice_inline_leaf_row_fences, M11RecursiveGreenCodeBlockStyle,
     M11RecursiveGreenInlineLeafFence, M11RecursiveGreenInlineLeafKind, M11RecursiveGreenListMarker,
     M11RecursiveGreenParagraphFence, M11RecursiveGreenRowPresentation,
 };

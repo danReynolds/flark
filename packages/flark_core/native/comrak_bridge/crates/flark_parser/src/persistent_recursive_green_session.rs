@@ -6325,32 +6325,34 @@ mod tests {
         let green_built_at = started_at.elapsed();
         let limits = M11RecursiveGreenRowQueryLimits::new(32, 8_192, 65_536, 64, 65_536)
             .expect("nested slice query limits");
-        let rows = root
-            .locate_renderable_rows(
-                &runtime,
-                M11RecursiveGreenPoint::new(start, start_utf16, SourceBoundaryAffinity::After),
-                end as u64,
-                limits,
-            )
-            .expect("query nested cold slice")
-            .rows()
-            .to_vec();
+        let (window, mut preparations) = crate::prepare_m11_recursive_green_slice_inline_leaf_rows(
+            &runtime,
+            &root,
+            M11RecursiveGreenPoint::new(start, start_utf16, SourceBoundaryAffinity::After),
+            limits,
+        )
+        .expect("query nested cold slice")
+        .into_parts();
+        let rows = window.rows().to_vec();
         let rows_located_at = started_at.elapsed();
+        assert_eq!(rows.len(), preparations.len());
         let mut prepare_total = std::time::Duration::ZERO;
         let mut capture_total = std::time::Duration::ZERO;
         let mut slowest_row = std::time::Duration::ZERO;
+        let mut prepared_ranges = Vec::new();
         let inline = rows
             .iter()
-            .map(|row| {
+            .zip(preparations.iter_mut())
+            .map(|(_, slot)| {
                 let row_started = Instant::now();
-                let point = M11RecursiveGreenPoint::new(
-                    usize::try_from(row.physical_range().start).expect("nested row byte"),
-                    usize::try_from(row.physical_utf16_range().start).expect("nested row UTF-16"),
-                    SourceBoundaryAffinity::After,
-                );
-                let prepared =
-                    crate::prepare_m11_recursive_green_slice_inline_leaf(&runtime, &root, point)
-                        .expect("prepare nested inline leaf");
+                let prepared = slot.take().expect("prepare nested inline leaf");
+                prepared_ranges.push((
+                    prepared.kind(),
+                    prepared.block_source_range(),
+                    prepared.block_source_utf16_range(),
+                    prepared.inline_source_range(),
+                    prepared.inline_source_utf16_range(),
+                ));
                 prepare_total += row_started.elapsed();
                 let capture_started = Instant::now();
                 let facts = capture_inline_facts_for_slice_differential(&mut runtime, prepared);
@@ -6415,6 +6417,17 @@ mod tests {
                 usize::try_from(row.physical_utf16_range().start).expect("nested row UTF-16"),
                 SourceBoundaryAffinity::After,
             );
+            let single =
+                crate::prepare_m11_recursive_green_slice_inline_leaf(&runtime, &root, point)
+                    .expect("prepare nested inline leaf per point");
+            let (batch_kind, batch_block, batch_block_utf16, batch_inline, batch_inline_utf16) =
+                &prepared_ranges[usize::try_from(row.ordinal() - window.start_ordinal())
+                    .expect("nested row index")];
+            assert_eq!(single.kind(), *batch_kind);
+            assert_eq!(single.block_source_range(), *batch_block);
+            assert_eq!(single.block_source_utf16_range(), *batch_block_utf16);
+            assert_eq!(single.inline_source_range(), *batch_inline);
+            assert_eq!(single.inline_source_utf16_range(), *batch_inline_utf16);
             let prepared = complete
                 .prepare_inline_leaf(&runtime, point)
                 .expect("prepare eventual nested inline leaf");

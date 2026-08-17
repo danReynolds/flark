@@ -9,7 +9,7 @@ use flark_engine::parser_internal::{
     M11RecursiveGreenFrameId, M11RecursiveGreenFrameQueryError, M11RecursiveGreenFrameQueryLimits,
     M11RecursiveGreenKind, M11RecursiveGreenPoint, M11RecursiveGreenQueryReceipt,
     M11RecursiveGreenRenderableRow, M11RecursiveGreenRoot, M11RecursiveGreenRowQueryLimits,
-    M11RecursiveGreenSliceRoot,
+    M11RecursiveGreenRowWindow, M11RecursiveGreenSliceRoot,
 };
 use flark_engine::{DocumentRuntime, SourceVersion};
 
@@ -998,6 +998,51 @@ pub fn resolve_m11_recursive_green_slice_inline_leaf_row_fence(
             inner,
         })
     })
+}
+
+/// Batch counterpart of
+/// [`resolve_m11_recursive_green_slice_inline_leaf_row_fence`]: one shared
+/// walk locates the bounded row window and mints every qualifying row's
+/// inline-leaf fence. The returned fences are index-aligned with the window's
+/// rows; a non-inline-bearing row is `None` with the same admission the
+/// per-point resolver applies at that row's own start.
+pub fn resolve_m11_recursive_green_slice_inline_leaf_row_fences(
+    runtime: &DocumentRuntime,
+    root: &M11RecursiveGreenSliceRoot,
+    point: M11RecursiveGreenPoint,
+    limits: M11RecursiveGreenRowQueryLimits,
+    maximum_inline_source_bytes: u64,
+) -> Result<
+    (
+        M11RecursiveGreenRowWindow,
+        Vec<Option<M11RecursiveGreenInlineLeafFence>>,
+    ),
+    M11RecursiveGreenFrameQueryError,
+> {
+    let expected = [
+        M11RecursiveGreenInlineLeafKind::Paragraph.green_kind(),
+        M11RecursiveGreenInlineLeafKind::Heading.green_kind(),
+    ];
+    let (window, fences) = root
+        .locate_renderable_row_fences_for_kinds(
+            runtime,
+            point,
+            &expected,
+            limits,
+            maximum_inline_source_bytes,
+        )?
+        .into_parts();
+    let fences = fences
+        .into_iter()
+        .map(|fence| {
+            fence.map(|inner| M11RecursiveGreenInlineLeafFence {
+                kind: M11RecursiveGreenInlineLeafKind::from_green_kind(inner.kind())
+                    .expect("accepted Green kind is inline-bearing"),
+                inner,
+            })
+        })
+        .collect();
+    Ok((window, fences))
 }
 
 /// Resolves the physical coverage owner at one authenticated source point and
