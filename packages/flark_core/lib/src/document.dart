@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -452,6 +453,25 @@ final class FlarkCoreDocument {
     );
   }
 
+  /// Opens [source] through the streamed admission path of [openUtf8Stream]:
+  /// the string is encoded chunk-by-chunk at Unicode scalar boundaries, so
+  /// no second complete UTF-8 copy of the document is ever allocated and
+  /// certified viewport rows become queryable while the tail is still being
+  /// admitted. [open] remains the ordinary buffered path.
+  static Future<FlarkCoreDocument> openStreaming(
+    String source, {
+    String? libraryPath,
+    int historyBudgetBytes = 8 * 1024 * 1024,
+    Duration editIntentReplyTimeout = const Duration(milliseconds: 250),
+    bool debugDropFirstEditIntentReply = false,
+  }) => openUtf8Stream(
+    _utf8Chunks(source, _openingForwardChunkBytes),
+    libraryPath: libraryPath,
+    historyBudgetBytes: historyBudgetBytes,
+    editIntentReplyTimeout: editIntentReplyTimeout,
+    debugDropFirstEditIntentReply: debugDropFirstEditIntentReply,
+  );
+
   static Future<FlarkCoreDocument> _open({
     required String? source,
     required Stream<Uint8List>? chunks,
@@ -605,6 +625,42 @@ final class FlarkCoreDocument {
       // A failed stream or admission leaves the document opening forever;
       // the typed failure surfaces to anyone awaiting the seal.
       if (!sealed.isCompleted) sealed.completeError(error, stackTrace);
+    }
+  }
+
+  /// Splits [source] into UTF-8 chunks of at most [maxBytes] without ever
+  /// materializing a second complete encoded copy: each chunk's byte width
+  /// is measured code unit by code unit and only that substring is encoded.
+  /// Cuts always land on Unicode scalar boundaries (a surrogate pair moves
+  /// as one), matching how [Utf8Codec.encode] would treat the whole string —
+  /// including its U+FFFD replacement of unpaired surrogates.
+  static Stream<Uint8List> _utf8Chunks(String source, int maxBytes) async* {
+    assert(maxBytes >= 4, 'a chunk must fit any single scalar');
+    var start = 0;
+    while (start < source.length) {
+      var end = start;
+      var bytes = 0;
+      while (end < source.length) {
+        final unit = source.codeUnitAt(end);
+        var width = unit < 0x80
+            ? 1
+            : unit < 0x800
+            ? 2
+            : 3;
+        var step = 1;
+        if (unit >= 0xd800 && unit <= 0xdbff && end + 1 < source.length) {
+          final next = source.codeUnitAt(end + 1);
+          if (next >= 0xdc00 && next <= 0xdfff) {
+            width = 4;
+            step = 2;
+          }
+        }
+        if (bytes + width > maxBytes) break;
+        bytes += width;
+        end += step;
+      }
+      yield utf8.encode(source.substring(start, end));
+      start = end;
     }
   }
 
