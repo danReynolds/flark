@@ -188,16 +188,13 @@ fn direct_links_escapes_and_code_spans_certify_before_eof() {
 }
 
 #[test]
-fn leading_definition_slices_are_a_typed_gap_not_a_panic() {
-    // KNOWN GAP: a first slice whose range covers leading reference
-    // definitions cannot build a bounded Green slice — definition rows live
-    // in the writer's reference windows, not the ordinary event stream — so
-    // the compact first-viewport probe fails with a typed error for
-    // documents that open with definitions. The early path already degrades
-    // to no-certification; the final slice cannot. When slice reference
-    // windows land, this fixture should produce a viewport resolving [top]
-    // to /admitted with the later duplicate losing — replace this test with
-    // that differential then.
+fn admitted_definitions_certify_linked_slices_before_eof() {
+    // The removed reference window's rewritten journal — hidden coverage
+    // for the definition bytes — flushes into the first-slice candidate, so
+    // a document opening with definitions builds its slice; the committed
+    // definition is the final GFM first winner (the later duplicate loses),
+    // and the audited slice certifies before EOF with cooked link values
+    // equal to the eventual full-authority viewport.
     let mut source = String::from("[top]: /admitted \"Top title\"\n\n");
     for index in 0..48 {
         source.push_str(&format!(
@@ -207,12 +204,13 @@ fn leading_definition_slices_are_a_typed_gap_not_a_panic() {
     let after_visible = source.len();
     source.push_str("[top]: /displaced \"Loser\"\n");
     let frontiers = [after_visible, source.len()];
+    let inline_point = source.find("Paragraph 2").expect("linked paragraph") + 2;
 
-    let mut runtime =
-        DocumentRuntime::new(&source, DocumentRuntimeConfig::default()).expect("runtime");
-    let result = build_m11_progressive_compact_probe(&mut runtime, 1, &frontiers);
-    assert!(result.is_err(), "typed gap, not a panic or a wrong viewport");
-    close(runtime);
+    let (structural_frontier, structural_before_eof, early_certified) =
+        assert_progressive_matches_clean(&source, &frontiers, inline_point);
+    assert!(structural_before_eof);
+    assert!(structural_frontier <= after_visible);
+    assert!(early_certified);
 }
 
 #[test]

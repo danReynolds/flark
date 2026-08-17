@@ -195,18 +195,22 @@ slice deferred); the late-definition fixture still refuses certification;
 and the opening-store path certifies direct-linked CRLF paragraphs across
 real appends.
 
-One pre-existing hole was exposed and pinned by the new differential: a
-first slice whose range covers *leading* reference definitions cannot
-build a bounded Green slice at all, because definition rows live in the
-writer's reference windows rather than the ordinary event stream.
-Documents opening with definitions therefore fail the compact
-first-viewport probe with a typed error — early certification degrades to
-none, but the final slice has no fallback. Slice reference windows are
-the named completion item, and they are a prerequisite for the A3
-ordinary fixture matrix, where top-of-document definitions are a common
-real shape. Error paths in the slice builder and the audit now cancel
-their builders, so every failure in this area surfaces as its typed error
-rather than a root or builder drop assertion.
+One pre-existing hole was exposed by the new differential and closed the
+same day: a first slice whose range covered *leading* reference
+definitions could not build a bounded Green slice, because a removed
+reference window's events were discarded rather than flushed — including
+the hidden coverage for the definition bytes. The window's rewritten
+journal is already the final Green form (physical coverage preserved by
+the rewrite invariant, no renderable row), so the fix flushes it into the
+first-slice candidate before the buffer clears. Documents opening with
+definitions now build their slice, certify early through the audit
+(definition brackets are inside committed record ranges), and resolve
+uses to the admitted first winner with a later duplicate losing — proven
+by the flipped differential against the eventual full-authority viewport.
+Error paths in the slice builder and the audit now cancel their builders,
+so every failure in this area surfaces as its typed error rather than a
+root or builder drop assertion. The early-path degradation for any future
+coverage gap remains in place as fail-closed insurance.
 
 ### Pixel 6a engine multiplier receipt (2026-08-17)
 

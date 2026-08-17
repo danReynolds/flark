@@ -2655,6 +2655,12 @@ impl M11CompactProbeOutput {
             .maximum_reference_events
             .max(self.fragment.events.len());
         if disposition == M11RecursiveGreenTerminalFragmentDisposition::Removed {
+            // The rewritten journal is the final Green form of the removed
+            // window — hidden coverage for the definition bytes with no
+            // renderable row — and a first slice spanning this range needs
+            // exactly that coverage, so it flushes into the candidate before
+            // the buffer clears.
+            self.append_first_slice_paragraph()?;
             self.fragment.events.clear();
             self.paragraph = None;
         }
