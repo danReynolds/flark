@@ -75,6 +75,13 @@ Passing one obligation does not imply another. In particular, a fast parser
 fragment does not prove a fast public open, and a bounded pump does not prove
 bounded total work.
 
+The flagship performance claim is flatness, not a threshold: claim-eligible
+receipts show the same open, typing, and edit-locality numbers across the
+1 MiB, product, and 4x detector tiers. Interaction targets derive from
+physics — next-frame presentation at native refresh, perceived-instant open —
+never from peer parity. A peer measurement is taken once at claim time to
+document leadership; it does not define the targets.
+
 ## 3. Non-negotiable invariants
 
 - Exact valid UTF-8 source in Rust remains the sole mutation authority after
@@ -324,6 +331,13 @@ All, and accessibility traversal load only geometry near active endpoints.
 Copy/export of a large range is asynchronous and chunked through Core even
 when the final platform clipboard API ultimately requires a String.
 
+Whole-document queries are a declared feature class, not ad-hoc additions:
+find-in-document, word count, outline, spell-check scoping, and export are
+chunked background work through Core with bounded foreground slices. No
+feature materializes a complete Dart String of the document, and a feature
+in this class enters the RFC with its foreground work class and background
+contract stated before any UI work.
+
 ## 9. Capacity model
 
 Capacity is a vector, not one byte number:
@@ -411,6 +425,10 @@ unless explicitly labelled engine-only.
   local glyph position. Page/cache boundaries produce no observable scroll
   discontinuity.
 - Resize, text-scale, and width changes remain bounded and anchor-stable.
+- Accessibility traversal, summaries, and text-service requests at the
+  envelope perform bounded work per step: no platform accessibility or text
+  API response materializes complete document text, and per-step work is
+  bounded by the visible window plus declared caps.
 
 ### 10.5 Memory and lifecycle
 

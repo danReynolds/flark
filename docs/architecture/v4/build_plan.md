@@ -36,6 +36,60 @@ index convergence and suffix sharing across edits. No compact-session ABI or
 Flutter production cutover begins merely because the existing first-slice and
 cold-jump engine probes pass.
 
+### Experiment A engine receipt (2026-08-17)
+
+RFC 029 Experiment A1 and the parser half of A2 now have passing engine
+receipts, feature-gated (`progressive-source-probe`, `m11-compact-probe`) and
+unreachable from production sessions.
+
+A1 source lifecycle: `OpeningSourceStore` publishes immutable exact prefix
+roots through structural sharing under separate load/generation/edit-revision
+identities; an admitted-prefix edit advances only the edit revision while the
+append frontier re-anchors; append lineage is provable only through
+store-minted move-only proofs; sealing promotes the current root without
+copying or reparsing (`seal_reused_root` asserted). Release probe on the
+development Mac: first 512 KiB frontier in 0.35–0.63 ms, total admission at
+575–1,165 MiB/s across 1/10/40 MiB with one interleaved admitted-prefix edit.
+
+A2 parser lifecycle (fixed-source frontier simulation): the one primary
+parser suspends at cursor starvation (`CleanPhase::Starved`) with a
+checkpoint and source baton instead of treating exhaustion as EOF, resumes
+across authenticated line frontiers, and seals explicitly. Differential
+suites prove starvation/resume equality with a clean parse across Setext
+lookahead, a late reference definition, and a multi-starvation open fence;
+early certification stays fail-closed behind the reference-hazard scan.
+Release probe: certified slice with inline facts engine-ready in
+0.33–0.52 ms at 2,240 admitted bytes, independent of 1/10/40 MiB total size;
+EOF compact indexing 115.6 ms / 0.99 s / 4.01 s. The 10 MiB result straddles
+the 1-second Mac gate within run-to-run noise, and 40 MiB costs 4.05x the
+10 MiB time, so scaling is linear through the 4x detector tier.
+
+Two caveats keep these engine-only: the parser probe slices a fully resident
+source rather than consuming `OpeningSourceStore` appends (the
+`adopt_progressive_opening_append` seam exists with no callers yet), and the
+early-certification fixture is deliberately link-free. The A2 wiring tranche
+must add the opening-store-driven differential — including a split-CRLF page
+boundary — and the A3 ordinary fixture must contain links, which requires an
+admitted-first-winner reference proof (a use whose label already has an
+admitted definition is final under the GFM first-winner rule).
+
+Two corrections landed with this receipt. An unsealed frontier ending in a
+bare CR is now inadmissible: a later LF may still join it into one CRLF
+ending, and the LF alone would scan as a phantom blank line, so
+`is_unsealed_physical_line_frontier` answers the frontier question separately
+from the sealed line-start rule. And the authenticated incremental-adoption
+regression was restored as an in-crate unit test after the a210a12 cutover
+had silently broken `cargo test -p flark-parser` compilation; the everyday
+gate now checks every first-party crate target so a target that stops
+compiling fails visibly.
+
+The standing scale audit for this correction is
+[scale_alignment_audit_2026-08-17.md](scale_alignment_audit_2026-08-17.md):
+a work-class ledger over every existing and planned operation, the ranked
+flags (nested cold-jump constant, page relocatability, accessibility gate,
+whole-document query class), and the recurrence-prevention rules adopted
+into section 2 below.
+
 ## 2026-08-11 continuously-rendered product correction
 
 The first real dogfood pass falsified the prototype's focus behavior. The
@@ -1480,6 +1534,27 @@ must never be presented as a total in another.
    filesystem moves, generated artifacts, or broad cleanup.
 8. **Stop at gates.** A milestone advances on executable receipts and review,
    not a plausible status summary.
+9. **Declare total work class before building.** A tranche that adds or
+   reroutes any foreground or readiness operation states, in its plan entry
+   before implementation, the operation's total work as a function of
+   document size and shape, and names the frozen gate that falsifies it. A
+   bounded pump is not a bounded total, and "background" is a scheduling
+   claim, not a total-work claim.
+10. **Arithmetic before receipts.** Any operation whose declared class is
+    linear in a capacity dimension shows `units x unit cost x slowest-device
+    factor` at the envelope on paper before its first implementation commit.
+    A paper fail rejects the design; no receipt is required to kill it.
+11. **Cheapest falsification first.** Within an experiment, the property
+    most likely to invalidate the design is probed with a disposable
+    diagnostic before dependent machinery is built.
+12. **Every claim receipt carries its detector tier.** Claim-eligible
+    performance receipts include the 4x size tier and the declared hostile
+    shapes where applicable, so hidden linear foreground work cannot pass by
+    fixture selection.
+13. **New feature classes declare their work class at proposal time.** A
+    product feature touching document content — find, export, accessibility
+    summaries, text services — enters the RFC with its foreground work class
+    and background contract stated before any UI work.
 
 The legacy and direct boundaries may coexist only as a pre-release migration
 scaffold between M2 and M5. The legacy path is baseline/test-only for the new
