@@ -85,6 +85,13 @@ const CHECKPOINT_PAGE_CAPACITY: usize = 64;
 #[cfg(any(test, feature = "m11-compact-probe"))]
 const COMPACT_RESTART_PAGE_BYTES: usize = 4 * 1024;
 
+// RFC 029 Experiment B: revision-local compact-index updates. Probe-only
+// machinery behind the compact-probe discipline; reachable from tests and the
+// probe feature, never from production builds.
+#[cfg(any(test, feature = "m11-compact-probe"))]
+#[cfg_attr(not(test), allow(dead_code))]
+mod compact_index_revision;
+
 #[derive(Debug)]
 pub enum M11PersistentRecursiveGreenSessionError {
     ZeroFuel,
@@ -7948,6 +7955,114 @@ mod tests {
         close_runtime(&mut base_runtime);
         release_session(&mut edited_runtime, &mut edited_session);
         close_runtime(&mut edited_runtime);
+    }
+
+    use super::compact_index_revision::{
+        M11CompactRevisionCarriedDeltas, M11CompactRevisionEdit, M11CompactRevisionRemap,
+    };
+
+    #[test]
+    fn compact_revision_remap_translates_dimensions_and_rejects_dead_coordinates() {
+        let metric = |bytes, utf16| SourceMetric::new(bytes, utf16).expect("test metric");
+        let replace = M11CompactRevisionEdit::new(
+            10..13,
+            10..13,
+            2,
+            2,
+            M11CompactRevisionCarriedDeltas::default(),
+        )
+        .expect("replacement edit");
+        let insert = M11CompactRevisionEdit::new(
+            100..100,
+            100..100,
+            3,
+            3,
+            M11CompactRevisionCarriedDeltas {
+                line_ordinal: 1,
+                event_cut: 2,
+                ..M11CompactRevisionCarriedDeltas::default()
+            },
+        )
+        .expect("insertion edit");
+        let remap =
+            M11CompactRevisionRemap::from_edits(&[replace.clone(), insert]).expect("remap table");
+        assert_eq!(remap.breakpoint_count(), 2);
+
+        // Identity strictly before the first breakpoint and at its start.
+        assert_eq!(remap.map_metric(metric(9, 9)).expect("before"), metric(9, 9));
+        assert_eq!(remap.map_metric(metric(10, 10)).expect("at start"), metric(10, 10));
+        // No image inside a replaced range.
+        assert!(remap.map_metric(metric(12, 12)).is_err());
+        // The replacement's -1 byte delta applies from its end onward.
+        assert_eq!(remap.map_metric(metric(13, 13)).expect("at end"), metric(12, 12));
+        assert_eq!(remap.map_metric(metric(50, 50)).expect("between"), metric(49, 49));
+        // Both deltas apply beyond the insertion point.
+        assert_eq!(remap.map_metric(metric(100, 100)).expect("at insert"), metric(102, 102));
+        assert_eq!(remap.map_metric(metric(400, 400)).expect("after"), metric(402, 402));
+
+        // Manifest translation applies every declared dimension uniformly.
+        let entry = M11CompactCheckpointEntry {
+            stream_offset: 0,
+            encoded_len: 8,
+            writer_stream_offset: 8,
+            writer_encoded_len: 4,
+            line_ordinal: 40,
+            last_line_length: 12,
+            accepted_physical: metric(200, 200),
+            parser_physical: metric(200, 200),
+            logical: metric(150, 150),
+            event_cut: 60,
+            high_level_events: 70,
+            renderable_rows: 20,
+            open_depth: 1,
+            cold_document_frame: None,
+            cold_staged_blank_gap: None,
+            next_frame: 9,
+        };
+        let resolved = remap.resolve_entry(&entry).expect("resolved entry");
+        assert_eq!(resolved.accepted_physical, metric(202, 202));
+        assert_eq!(resolved.parser_physical, metric(202, 202));
+        assert_eq!(resolved.line_ordinal, 41);
+        assert_eq!(resolved.event_cut, 62);
+        assert_eq!(resolved.logical, metric(150, 150));
+        assert_eq!(resolved.high_level_events, 70);
+        assert_eq!(resolved.next_frame, 9);
+        assert_eq!(resolved.last_line_length, 12);
+
+        // A prefix entry resolves as the identity.
+        let prefix_entry = M11CompactCheckpointEntry {
+            accepted_physical: metric(4, 4),
+            parser_physical: metric(4, 4),
+            ..entry
+        };
+        let resolved_prefix = remap.resolve_entry(&prefix_entry).expect("prefix entry");
+        assert_eq!(resolved_prefix.accepted_physical, metric(4, 4));
+        assert_eq!(resolved_prefix.line_ordinal, 40);
+
+        // Entries inside or straddling a replaced range have no uniform image.
+        let dead_entry = M11CompactCheckpointEntry {
+            accepted_physical: metric(11, 11),
+            parser_physical: metric(11, 11),
+            ..entry
+        };
+        assert!(remap.resolve_entry(&dead_entry).is_err());
+        let straddling_entry = M11CompactCheckpointEntry {
+            accepted_physical: metric(9, 9),
+            parser_physical: metric(14, 14),
+            ..entry
+        };
+        assert!(remap.resolve_entry(&straddling_entry).is_err());
+
+        // Unsorted or overlapping edits fail closed at construction.
+        let overlapping = M11CompactRevisionEdit::new(
+            12..14,
+            12..14,
+            1,
+            1,
+            M11CompactRevisionCarriedDeltas::default(),
+        )
+        .expect("overlapping edit");
+        assert!(M11CompactRevisionRemap::from_edits(&[replace, overlapping]).is_err());
     }
 
     #[test]
