@@ -15,6 +15,8 @@
 mod child_fold;
 mod command;
 mod controller;
+#[cfg(test)]
+mod incremental_adoption_tests;
 mod paragraph_fence;
 mod reference_rendezvous;
 mod writer;

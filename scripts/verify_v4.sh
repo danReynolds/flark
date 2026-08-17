@@ -24,6 +24,11 @@ if [[ ! -f "$LIBRARY" ]]; then
   exit 1
 fi
 
+# Every first-party target must at least compile, so a broken engine/parser
+# test or example cannot rot invisibly outside the runtime/abi suites.
+cargo check --manifest-path "$BRIDGE/Cargo.toml" \
+  -p flark-engine -p flark-parser -p flark-runtime -p flark-abi --all-targets
+
 cargo test --manifest-path "$BRIDGE/Cargo.toml" -p flark-runtime -p flark-abi
 "$ROOT/scripts/verify_v4_markdown_conformance.sh"
 

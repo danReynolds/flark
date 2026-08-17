@@ -1,14 +1,20 @@
+//! White-box regression for authenticated incremental Green adoption. This
+//! lives inside the crate because it drives the crate-private
+//! `adopt_converged_fragment` lifecycle directly; the public product path is
+//! exercised by the session and ledger suites.
+
 use flark_engine::parser_internal::M11RecursiveGreenRoot;
 use flark_engine::{
     DocumentRuntime, DocumentRuntimeConfig, ExactUnchangedPrefixWitness,
     ExactUnchangedSuffixWitness, SOURCE_CURSOR_WINDOW_BYTES,
 };
-use flark_parser::block_core::{
+
+use crate::block_core::{
     BlockCommand, BlockKind, M11BlockRestartCheckpoint, M11BlockStructuralAdoptionReceipt,
     M11BlockTerminalConvergenceCheckpoint, M11BlockWriter, M11BlockWriterOfferStatus,
     M11BlockWriterPollStatus, M11DirectBlockController, M11DirectBlockPollStatus,
 };
-use flark_parser::{
+use crate::{
     M11ExactController, M11SourceLinePollStatus, M11SourceLineSource, SnapshotLinePoll,
     SnapshotLineScanner, SnapshotLineSource,
 };
@@ -370,7 +376,7 @@ fn local_edit(
     let parser = controller
         .capture_restart()
         .expect("target convergence parser capture");
-    let (root, receipt, checkpoints, terminal) = writer
+    let (root, receipt, adoption) = writer
         .adopt_converged_fragment(
             parser,
             target_restart,
@@ -379,23 +385,16 @@ fn local_edit(
             base_root,
             Some(green_prefix),
             Some(green_suffix),
-            Vec::new(),
-            Vec::new(),
             retained_terminal,
         )
         .expect("authenticated structural Green adoption");
-    let mut checkpoints = checkpoints.into_iter();
-    let restart = checkpoints
-        .next()
-        .expect("target restart checkpoint was retained");
-    let convergence = checkpoints
-        .next()
-        .expect("target convergence checkpoint was retained");
-    assert!(
-        checkpoints.next().is_none(),
-        "fixture retains only restart and convergence checkpoints"
-    );
-    (root, receipt, restart, convergence, terminal)
+    (
+        root,
+        receipt,
+        adoption.target_restart,
+        adoption.target_convergence,
+        adoption.retained_terminal,
+    )
 }
 
 fn release(runtime: &mut DocumentRuntime, mut root: M11RecursiveGreenRoot) {
