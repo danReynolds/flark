@@ -11,6 +11,8 @@ use std::{
     ops::{Index, Range},
 };
 
+#[cfg(feature = "m11-compact-probe")]
+use std::time::{Duration, Instant};
 #[cfg(any(test, feature = "m11-compact-probe"))]
 use std::{collections::btree_map, slice};
 
@@ -29,6 +31,13 @@ use flark_engine::parser_internal::{
 use flark_engine::{
     DocumentRuntime, DocumentRuntimeError, ExactUnchangedPrefixWitness,
     ExactUnchangedSuffixWitness, SourceSnapshotLease, SourceVersion,
+};
+#[cfg(any(test, feature = "m11-compact-probe"))]
+use flark_engine::SourceAuthority;
+#[cfg(feature = "m11-compact-probe")]
+use flark_engine::{
+    OpeningSourceAppendProof, OpeningSourceStore, OpeningSourceVersion,
+    SOURCE_SEED_PAGE_MAX_UTF16,
 };
 
 use crate::block_core::{
@@ -261,6 +270,22 @@ impl M11PersistentRecursiveGreenCleanPlan {
             compact_checkpoint_boundaries_seen: 0,
             #[cfg(any(test, feature = "m11-compact-probe"))]
             compact_restart_captures: 0,
+            #[cfg(any(test, feature = "m11-compact-probe"))]
+            progressive_probe: false,
+            #[cfg(any(test, feature = "m11-compact-probe"))]
+            progressive_authority: None,
+            #[cfg(any(test, feature = "m11-compact-probe"))]
+            progressive_source_lease: None,
+            #[cfg(any(test, feature = "m11-compact-probe"))]
+            progressive_frontier: 0,
+            #[cfg(any(test, feature = "m11-compact-probe"))]
+            progressive_target_frontier: source.byte_len(),
+            #[cfg(any(test, feature = "m11-compact-probe"))]
+            progressive_next_ordinal: 0,
+            #[cfg(any(test, feature = "m11-compact-probe"))]
+            progressive_sealed: true,
+            #[cfg(any(test, feature = "m11-compact-probe"))]
+            progressive_starvations: 0,
         })
     }
 
@@ -314,6 +339,94 @@ impl M11PersistentRecursiveGreenCleanPlan {
             compact_reference_resolver: None,
             compact_checkpoint_boundaries_seen: 0,
             compact_restart_captures: 0,
+            progressive_probe: false,
+            progressive_authority: None,
+            progressive_source_lease: None,
+            progressive_frontier: 0,
+            progressive_target_frontier: source.byte_len(),
+            progressive_next_ordinal: 0,
+            progressive_sealed: true,
+            progressive_starvations: 0,
+        })
+    }
+
+    #[cfg(any(test, feature = "m11-compact-probe"))]
+    fn begin_progressive_compact_probe(
+        self,
+        runtime: &mut DocumentRuntime,
+        first_frontier: usize,
+    ) -> Result<M11PersistentRecursiveGreenCleanBuild, M11PersistentRecursiveGreenSessionError>
+    {
+        let source = self.scanner_lease.version();
+        let authority = self.scanner_lease.authority();
+        if runtime.current_source_version() != Some(source)
+            || first_frontier > source.byte_len()
+            || !self
+                .scanner_lease
+                .is_physical_line_start(first_frontier)
+                .map_err(SourceAdapterError::from)?
+        {
+            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "progressive compact frontier is not a current physical-line boundary",
+            ));
+        }
+        let scanner = (first_frontier > 0)
+            .then(|| SnapshotLineScanner::new_in(self.scanner_lease, 0..first_frontier, 0))
+            .transpose()?;
+        let source_lease = if scanner.is_none() {
+            Some(runtime.snapshot_current_source()?)
+        } else {
+            None
+        };
+        let controller = if self.syntax_profile == SYNTAX_PROFILE_GFM_V1 {
+            M11DirectBlockController::new_gfm()?
+        } else {
+            M11DirectBlockController::new()?
+        };
+        let writer = M11BlockWriter::new_compact_probe(runtime, self.writer_lease)?;
+        Ok(M11PersistentRecursiveGreenCleanBuild {
+            source,
+            syntax_profile: self.syntax_profile,
+            phase: if scanner.is_some() {
+                CleanPhase::ControllerLine
+            } else {
+                CleanPhase::Starved
+            },
+            scanner,
+            pending_line: None,
+            active_line: None,
+            controller: Some(controller),
+            writer: Some(writer),
+            writer_command_pending: false,
+            rendezvous: None,
+            journal: None,
+            compact_reference_journal: Some(M11CompactReferenceJournal::new()),
+            compact_checkpoint_journal: Some(M11CompactCheckpointJournal::new()),
+            checkpoints: Vec::new(),
+            terminal_convergence: None,
+            initial_boundary_captured: false,
+            green: None,
+            references: None,
+            output: None,
+            cancelling: false,
+            writer_cancel_complete: false,
+            journal_cancel_complete: false,
+            green_release_complete: false,
+            references_release_complete: false,
+            compact_probe: true,
+            compact_probe_receipt: None,
+            compact_reference_receipt: None,
+            compact_reference_resolver: None,
+            compact_checkpoint_boundaries_seen: 0,
+            compact_restart_captures: 0,
+            progressive_probe: true,
+            progressive_authority: Some(authority),
+            progressive_source_lease: source_lease,
+            progressive_frontier: 0,
+            progressive_target_frontier: first_frontier,
+            progressive_next_ordinal: 0,
+            progressive_sealed: false,
+            progressive_starvations: usize::from(first_frontier == 0),
         })
     }
 }
@@ -329,6 +442,8 @@ struct ActiveLine {
 enum CleanPhase {
     ControllerLine,
     Scanning,
+    #[cfg(any(test, feature = "m11-compact-probe"))]
+    Starved,
     BeginFinish,
     ControllerFinish,
     FinishReferences,
@@ -338,6 +453,8 @@ enum CleanPhase {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum M11PersistentRecursiveGreenBuildStatus {
     Pending,
+    #[cfg(any(test, feature = "m11-compact-probe"))]
+    Starved,
     Complete,
     Cancelled,
 }
@@ -403,6 +520,22 @@ pub struct M11PersistentRecursiveGreenCleanBuild {
     compact_checkpoint_boundaries_seen: usize,
     #[cfg(any(test, feature = "m11-compact-probe"))]
     compact_restart_captures: usize,
+    #[cfg(any(test, feature = "m11-compact-probe"))]
+    progressive_probe: bool,
+    #[cfg(any(test, feature = "m11-compact-probe"))]
+    progressive_authority: Option<SourceAuthority>,
+    #[cfg(any(test, feature = "m11-compact-probe"))]
+    progressive_source_lease: Option<SourceSnapshotLease>,
+    #[cfg(any(test, feature = "m11-compact-probe"))]
+    progressive_frontier: usize,
+    #[cfg(any(test, feature = "m11-compact-probe"))]
+    progressive_target_frontier: usize,
+    #[cfg(any(test, feature = "m11-compact-probe"))]
+    progressive_next_ordinal: u32,
+    #[cfg(any(test, feature = "m11-compact-probe"))]
+    progressive_sealed: bool,
+    #[cfg(any(test, feature = "m11-compact-probe"))]
+    progressive_starvations: usize,
 }
 
 impl M11PersistentRecursiveGreenCleanBuild {
@@ -426,14 +559,19 @@ impl M11PersistentRecursiveGreenCleanBuild {
         }
         let mut transitions = 0;
         while transitions < fuel && self.phase != CleanPhase::Complete {
+            #[cfg(any(test, feature = "m11-compact-probe"))]
+            if self.phase == CleanPhase::Starved {
+                break;
+            }
             self.poll_one(runtime)?;
             transitions += 1;
         }
         Ok(M11PersistentRecursiveGreenBuildPoll {
-            status: if self.phase == CleanPhase::Complete {
-                M11PersistentRecursiveGreenBuildStatus::Complete
-            } else {
-                M11PersistentRecursiveGreenBuildStatus::Pending
+            status: match self.phase {
+                CleanPhase::Complete => M11PersistentRecursiveGreenBuildStatus::Complete,
+                #[cfg(any(test, feature = "m11-compact-probe"))]
+                CleanPhase::Starved => M11PersistentRecursiveGreenBuildStatus::Starved,
+                _ => M11PersistentRecursiveGreenBuildStatus::Pending,
             },
             transitions,
         })
@@ -655,12 +793,47 @@ impl M11PersistentRecursiveGreenCleanBuild {
                         self.phase = CleanPhase::ControllerLine;
                     }
                     SnapshotLineRetainedPoll::Complete(scanner) => {
-                        drop(scanner.into_source_lease());
-                        self.capture_checkpoint(true)?;
-                        self.phase = CleanPhase::BeginFinish;
+                        #[cfg(any(test, feature = "m11-compact-probe"))]
+                        if self.progressive_probe {
+                            let (lease, next_ordinal, frontier) =
+                                scanner.into_progressive_resume_parts();
+                            if frontier != self.progressive_target_frontier {
+                                return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                                    "progressive scanner did not reach its admitted frontier",
+                                ));
+                            }
+                            self.progressive_frontier = frontier;
+                            self.progressive_next_ordinal = next_ordinal;
+                            self.capture_checkpoint(true)?;
+                            if self.progressive_sealed {
+                                drop(lease);
+                                self.phase = CleanPhase::BeginFinish;
+                            } else {
+                                self.progressive_source_lease = Some(lease);
+                                self.progressive_starvations =
+                                    self.progressive_starvations.checked_add(1).ok_or(
+                                        M11PersistentRecursiveGreenSessionError::InvalidState(
+                                            "progressive starvation count fits usize",
+                                        ),
+                                    )?;
+                                self.phase = CleanPhase::Starved;
+                            }
+                        } else {
+                            drop(scanner.into_source_lease());
+                            self.capture_checkpoint(true)?;
+                            self.phase = CleanPhase::BeginFinish;
+                        }
+                        #[cfg(not(any(test, feature = "m11-compact-probe")))]
+                        {
+                            drop(scanner.into_source_lease());
+                            self.capture_checkpoint(true)?;
+                            self.phase = CleanPhase::BeginFinish;
+                        }
                     }
                 }
             }
+            #[cfg(any(test, feature = "m11-compact-probe"))]
+            CleanPhase::Starved => {}
             CleanPhase::BeginFinish => {
                 self.controller_mut()?.begin_finish()?;
                 self.phase = CleanPhase::ControllerFinish;
@@ -1106,6 +1279,135 @@ impl M11PersistentRecursiveGreenCleanBuild {
                 .writer
                 .as_ref()
                 .is_some_and(|writer| writer.compact_probe_first_slice_over_cap().unwrap_or(false))
+    }
+
+    #[cfg(any(test, feature = "m11-compact-probe"))]
+    fn extend_progressive_frontier(
+        &mut self,
+        frontier: usize,
+        seal: bool,
+    ) -> Result<(), M11PersistentRecursiveGreenSessionError> {
+        if !self.progressive_probe || self.phase != CleanPhase::Starved {
+            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "only a starved progressive build accepts more source",
+            ));
+        }
+        let lease = self.progressive_source_lease.take().ok_or(
+            M11PersistentRecursiveGreenSessionError::InvalidState(
+                "starved progressive build omitted its source baton",
+            ),
+        )?;
+        if lease.version() != self.source
+            || frontier < self.progressive_frontier
+            || frontier > self.source.byte_len()
+            || (seal && frontier != self.source.byte_len())
+            || (!seal
+                && !lease
+                    .is_physical_line_start(frontier)
+                    .map_err(SourceAdapterError::from)?)
+        {
+            self.progressive_source_lease = Some(lease);
+            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "progressive extension is not an authenticated source frontier",
+            ));
+        }
+        if frontier == self.progressive_frontier {
+            if !seal {
+                self.progressive_source_lease = Some(lease);
+                return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                    "unsealed progressive extension must advance",
+                ));
+            }
+            self.progressive_sealed = true;
+            self.progressive_target_frontier = frontier;
+            if frontier == 0 && !self.initial_boundary_captured {
+                self.scanner = Some(SnapshotLineScanner::new_in(lease, 0..0, 0)?);
+                self.phase = CleanPhase::ControllerLine;
+            } else {
+                drop(lease);
+                self.phase = CleanPhase::BeginFinish;
+            }
+            return Ok(());
+        }
+
+        self.scanner = Some(SnapshotLineScanner::new_in(
+            lease,
+            self.progressive_frontier..frontier,
+            self.progressive_next_ordinal,
+        )?);
+        self.progressive_target_frontier = frontier;
+        self.progressive_sealed = seal;
+        self.phase = CleanPhase::Scanning;
+        Ok(())
+    }
+
+    #[cfg(feature = "m11-compact-probe")]
+    fn adopt_progressive_opening_append(
+        &mut self,
+        runtime: &mut DocumentRuntime,
+        proof: OpeningSourceAppendProof,
+        seal: bool,
+    ) -> Result<(), M11PersistentRecursiveGreenSessionError> {
+        let previous = proof.previous_source_version();
+        let current = proof.current_source_version();
+        let authority = proof.authority();
+        let current_opening = proof.current();
+        if !self.progressive_probe
+            || self.phase != CleanPhase::Starved
+            || self.progressive_authority != Some(authority)
+            || self.source != previous
+            || runtime.current_source_version() != Some(previous)
+            || self.progressive_frontier != previous.byte_len()
+            || current.byte_len() <= previous.byte_len()
+            || (seal && !current_opening.input_complete())
+            || (!seal
+                && !proof
+                    .current_ends_at_physical_line_boundary()
+                    .map_err(SourceAdapterError::from)?)
+            || self
+                .progressive_source_lease
+                .as_ref()
+                .is_none_or(|lease| {
+                    lease.version() != previous || lease.authority() != authority
+                })
+        {
+            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "opening append does not continue the starved parser authority",
+            ));
+        }
+
+        let receipt = runtime.adopt_opening_append(proof)?;
+        if receipt.previous() != previous
+            || receipt.current() != current
+            || receipt.authority() != authority
+            || receipt.unchanged_prefix_bytes() != self.progressive_frontier
+        {
+            return Err(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "runtime append receipt diverged from parser frontier",
+            ));
+        }
+        self.writer
+            .as_mut()
+            .ok_or(M11PersistentRecursiveGreenSessionError::InvalidState(
+                "progressive writer is missing",
+            ))?
+            .adopt_progressive_append_source(runtime, receipt)?;
+        drop(self.progressive_source_lease.take().ok_or(
+            M11PersistentRecursiveGreenSessionError::InvalidState(
+                "progressive source baton is missing",
+            ),
+        )?);
+        let lease = runtime.snapshot_current_source()?;
+        self.scanner = Some(SnapshotLineScanner::new_in(
+            lease,
+            self.progressive_frontier..current.byte_len(),
+            self.progressive_next_ordinal,
+        )?);
+        self.source = current;
+        self.progressive_target_frontier = current.byte_len();
+        self.progressive_sealed = seal;
+        self.phase = CleanPhase::Scanning;
+        Ok(())
     }
 
     pub fn begin_cancel(
@@ -1788,6 +2090,14 @@ impl M11CompactCheckpointJournal {
                 compact_reference_resolver: None,
                 compact_checkpoint_boundaries_seen: 0,
                 compact_restart_captures: 0,
+                progressive_probe: false,
+                progressive_authority: None,
+                progressive_source_lease: None,
+                progressive_frontier: 0,
+                progressive_target_frontier: source.byte_len(),
+                progressive_next_ordinal: 0,
+                progressive_sealed: true,
+                progressive_starvations: 0,
             },
             entry,
             open_frame_bases,
@@ -4636,6 +4946,20 @@ impl From<M11RecursiveGreenError> for M11CompactViewportProbeError {
 }
 
 #[cfg(feature = "m11-compact-probe")]
+impl From<SourceAdapterError> for M11CompactViewportProbeError {
+    fn from(error: SourceAdapterError) -> Self {
+        Self::Session(M11PersistentRecursiveGreenSessionError::Source(error))
+    }
+}
+
+#[cfg(feature = "m11-compact-probe")]
+impl From<M11ReferenceRendezvousError> for M11CompactViewportProbeError {
+    fn from(error: M11ReferenceRendezvousError) -> Self {
+        Self::Session(M11PersistentRecursiveGreenSessionError::Reference(error))
+    }
+}
+
+#[cfg(feature = "m11-compact-probe")]
 impl From<crate::M11InlineProjectionJobError> for M11CompactViewportProbeError {
     fn from(error: crate::M11InlineProjectionJobError) -> Self {
         Self::Inline(error)
@@ -4773,6 +5097,64 @@ fn release_compact_inline_job(
     }
 }
 
+/// Receipt from starving and extending one live primary-parser instance at
+/// authenticated source frontiers before sealing EOF.
+#[cfg(feature = "m11-compact-probe")]
+#[must_use = "progressive compact probes own a viewport probe requiring release"]
+pub struct M11ProgressiveCompactProbe {
+    early_viewport: Option<M11CompactViewportProbe>,
+    viewport: M11CompactViewportProbe,
+    starvation_count: usize,
+    first_structural_slice_admitted_bytes: usize,
+    first_structural_slice_before_eof: bool,
+    first_structural_slice_elapsed: Duration,
+    early_certification_elapsed: Option<Duration>,
+    complete_elapsed: Duration,
+}
+
+#[cfg(feature = "m11-compact-probe")]
+impl M11ProgressiveCompactProbe {
+    #[must_use]
+    pub const fn starvation_count(&self) -> usize {
+        self.starvation_count
+    }
+
+    #[must_use]
+    pub const fn first_structural_slice_admitted_bytes(&self) -> usize {
+        self.first_structural_slice_admitted_bytes
+    }
+
+    #[must_use]
+    pub const fn first_structural_slice_before_eof(&self) -> bool {
+        self.first_structural_slice_before_eof
+    }
+
+    #[must_use]
+    pub const fn first_structural_slice_elapsed(&self) -> Duration {
+        self.first_structural_slice_elapsed
+    }
+
+    #[must_use]
+    pub const fn early_certification_elapsed(&self) -> Option<Duration> {
+        self.early_certification_elapsed
+    }
+
+    #[must_use]
+    pub const fn complete_elapsed(&self) -> Duration {
+        self.complete_elapsed
+    }
+
+    #[must_use]
+    pub const fn early_plain_closed_prefix_certified(&self) -> bool {
+        self.early_viewport.is_some()
+    }
+
+    #[must_use]
+    pub fn into_viewports(self) -> (Option<M11CompactViewportProbe>, M11CompactViewportProbe) {
+        (self.early_viewport, self.viewport)
+    }
+}
+
 /// Builds the first bounded certified slice while consuming the same primary
 /// parser stream to EOF for final reference-winner authority. The returned
 /// value is intentionally a probe, not a selectable production session.
@@ -4800,6 +5182,182 @@ pub fn build_m11_compact_first_viewport_probe(
     let first_slice = first_slice.ok_or(M11CompactViewportProbeError::InvalidState(
         "source did not produce a bounded first viewport slice",
     ))?;
+    finish_compact_viewport_probe(runtime, build, first_slice)
+}
+
+/// Drives the same compact parser/writer through multiple admitted frontiers.
+/// Every frontier except the last must be a physical-line boundary; the last
+/// is the exact sealed source length and may end in an unterminated line.
+#[cfg(feature = "m11-compact-probe")]
+pub fn build_m11_progressive_compact_probe(
+    runtime: &mut DocumentRuntime,
+    syntax_profile: u32,
+    frontiers: &[usize],
+) -> Result<M11ProgressiveCompactProbe, M11CompactViewportProbeError> {
+    let source =
+        runtime
+            .current_source_version()
+            .ok_or(M11CompactViewportProbeError::InvalidState(
+                "progressive source is current",
+            ))?;
+    if frontiers.len() < 2
+        || frontiers.last().copied() != Some(source.byte_len())
+        || frontiers.windows(2).any(|window| window[0] >= window[1])
+    {
+        return Err(M11CompactViewportProbeError::InvalidState(
+            "progressive frontiers are increasing and end at sealed source length",
+        ));
+    }
+    let plan = M11PersistentRecursiveGreenCleanPlan::new(
+        runtime.snapshot_current_source()?,
+        runtime.snapshot_current_source()?,
+        syntax_profile,
+    )?;
+    let build = plan.begin_progressive_compact_probe(runtime, frontiers[0])?;
+    let mut next_frontier = 1;
+    drive_m11_progressive_compact_probe(runtime, build, Instant::now(), |_, build| {
+        let frontier = frontiers.get(next_frontier).copied().ok_or(
+            M11CompactViewportProbeError::InvalidState(
+                "progressive parser starved after its final frontier",
+            ),
+        )?;
+        let seal = next_frontier + 1 == frontiers.len();
+        build.extend_progressive_frontier(frontier, seal)?;
+        next_frontier += 1;
+        Ok(())
+    })
+}
+
+#[cfg(feature = "m11-compact-probe")]
+fn drive_m11_progressive_compact_probe<F>(
+    runtime: &mut DocumentRuntime,
+    mut build: M11PersistentRecursiveGreenCleanBuild,
+    started: Instant,
+    mut extend: F,
+) -> Result<M11ProgressiveCompactProbe, M11CompactViewportProbeError>
+where
+    F: FnMut(
+        &mut DocumentRuntime,
+        &mut M11PersistentRecursiveGreenCleanBuild,
+    ) -> Result<(), M11CompactViewportProbeError>,
+{
+    let mut first_slice = None;
+    let mut first_structural_slice_admitted_bytes = 0;
+    let mut first_structural_slice_before_eof = false;
+    let mut first_structural_slice_elapsed = Duration::ZERO;
+    let mut early_certification_elapsed = None;
+    let mut early_viewport = None;
+    loop {
+        let poll = build.poll(runtime, if first_slice.is_some() { 4_096 } else { 64 })?;
+        if first_slice.is_none() {
+            first_slice = build.take_compact_probe_first_slice();
+            if first_slice.is_some() {
+                first_structural_slice_admitted_bytes = build.progressive_target_frontier;
+                first_structural_slice_before_eof = !build.progressive_sealed;
+                first_structural_slice_elapsed = started.elapsed();
+                let slice = first_slice.as_ref().expect("just observed first slice");
+                if first_structural_slice_before_eof
+                    && !compact_slice_has_reference_hazard(runtime, slice)?
+                {
+                    let source_start =
+                        usize::try_from(slice.physical_start.bytes()).map_err(|_| {
+                            M11CompactViewportProbeError::InvalidState(
+                                "early compact slice start fits usize",
+                            )
+                        })?;
+                    let source_end = usize::try_from(slice.physical_end.bytes()).map_err(|_| {
+                        M11CompactViewportProbeError::InvalidState(
+                            "early compact slice end fits usize",
+                        )
+                    })?;
+                    let root = build_compact_green_slice(
+                        runtime,
+                        source_start,
+                        source_end,
+                        slice.row_base,
+                        &[],
+                        &slice.events,
+                    )?;
+                    let mut references = M11CompactReferenceJournal::new();
+                    references.finish_input()?;
+                    let source = runtime.current_source_version().ok_or(
+                        M11CompactViewportProbeError::InvalidState(
+                            "early compact slice source is current",
+                        ),
+                    )?;
+                    early_viewport = Some(M11CompactViewportProbe {
+                        root,
+                        reference_resolver: references.into_resolver(source)?,
+                        syntax_profile: build.syntax_profile,
+                    });
+                    early_certification_elapsed = Some(started.elapsed());
+                }
+            }
+        }
+        match poll.status() {
+            M11PersistentRecursiveGreenBuildStatus::Pending => {}
+            M11PersistentRecursiveGreenBuildStatus::Starved => {
+                extend(runtime, &mut build)?;
+            }
+            M11PersistentRecursiveGreenBuildStatus::Complete => break,
+            M11PersistentRecursiveGreenBuildStatus::Cancelled => {
+                return Err(M11CompactViewportProbeError::InvalidState(
+                    "progressive parser cancelled unexpectedly",
+                ));
+            }
+        }
+    }
+    let first_slice = first_slice.ok_or(M11CompactViewportProbeError::InvalidState(
+        "progressive source did not produce a bounded first viewport slice",
+    ))?;
+    let starvation_count = build.progressive_starvations;
+    let viewport = finish_compact_viewport_probe(runtime, build, first_slice)?;
+    let complete_elapsed = started.elapsed();
+    Ok(M11ProgressiveCompactProbe {
+        early_viewport,
+        viewport,
+        starvation_count,
+        first_structural_slice_admitted_bytes,
+        first_structural_slice_before_eof,
+        first_structural_slice_elapsed,
+        early_certification_elapsed,
+        complete_elapsed,
+    })
+}
+
+#[cfg(feature = "m11-compact-probe")]
+fn compact_slice_has_reference_hazard(
+    runtime: &DocumentRuntime,
+    slice: &M11CompactProbeFirstSlice,
+) -> Result<bool, M11CompactViewportProbeError> {
+    let start = usize::try_from(slice.physical_start.bytes()).map_err(|_| {
+        M11CompactViewportProbeError::InvalidState("compact hazard start fits usize")
+    })?;
+    let end = usize::try_from(slice.physical_end.bytes())
+        .map_err(|_| M11CompactViewportProbeError::InvalidState("compact hazard end fits usize"))?;
+    let mut cursor = runtime
+        .snapshot_current_source()?
+        .cursor_in(start..end)
+        .map_err(SourceAdapterError::from)?;
+    let mut buffer = [0_u8; flark_engine::SOURCE_CURSOR_WINDOW_BYTES];
+    loop {
+        let read = cursor.read(&mut buffer);
+        if buffer[..read].contains(&b'[') {
+            return Ok(true);
+        }
+        if read == 0 {
+            return Ok(false);
+        }
+    }
+}
+
+#[cfg(feature = "m11-compact-probe")]
+fn finish_compact_viewport_probe(
+    runtime: &mut DocumentRuntime,
+    mut build: M11PersistentRecursiveGreenCleanBuild,
+    first_slice: M11CompactProbeFirstSlice,
+) -> Result<M11CompactViewportProbe, M11CompactViewportProbeError> {
+    let syntax_profile = build.syntax_profile;
     let source_start = usize::try_from(first_slice.physical_start.bytes()).map_err(|_| {
         M11CompactViewportProbeError::InvalidState("compact slice start fits usize")
     })?;

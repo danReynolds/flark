@@ -33,6 +33,8 @@ use flark_engine::{
     DocumentRuntime, DocumentRuntimeError, ExactUnchangedPrefixWitness,
     ExactUnchangedSuffixWitness, SourceEditError, SourceSnapshotLease, SourceVersion,
 };
+#[cfg(feature = "m11-compact-probe")]
+use flark_engine::SourceAppendReceipt;
 
 use super::controller::{
     M11DirectBlockRestartTransactionReplica, M11DirectLeadingReferenceRemainderContinuation,
@@ -3445,6 +3447,64 @@ impl M11BlockWriter {
             document_complete: false,
             poisoned: false,
         })
+    }
+
+    /// Rebinds the compact opening writer to a store-authenticated append
+    /// snapshot. Existing event/checkpoint payloads remain coordinate-relative;
+    /// only their revision manifest authority advances to the larger readable
+    /// root.
+    #[cfg(feature = "m11-compact-probe")]
+    pub(crate) fn adopt_progressive_append_source(
+        &mut self,
+        runtime: &DocumentRuntime,
+        receipt: SourceAppendReceipt,
+    ) -> Result<(), M11BlockWriterError> {
+        if self.source != receipt.previous()
+            || runtime.current_source_version() != Some(receipt.current())
+            || self.pending.is_some()
+            || self.line_cursor != LineSourcePosition::default()
+            || self.document_complete
+            || !matches!(&self.output, WriterOutput::CompactProbe(_))
+        {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "progressive append crossed a non-quiescent writer authority",
+            ));
+        }
+        let geometry = runtime.snapshot_current_source().map_err(|_| {
+            M11BlockWriterError::InvalidCommand("progressive geometry source is unavailable")
+        })?;
+        let output_source = runtime.snapshot_current_source().map_err(|_| {
+            M11BlockWriterError::InvalidCommand("progressive output source is unavailable")
+        })?;
+        if geometry.version() != receipt.current()
+            || output_source.version() != receipt.current()
+            || geometry.authority() != receipt.authority()
+            || output_source.authority() != receipt.authority()
+        {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "progressive append receipt does not match runtime source",
+            ));
+        }
+        let WriterOutput::CompactProbe(probe) = &mut self.output else {
+            unreachable!("compact output was validated above")
+        };
+        let previous_output = probe.fragment.lease.replace(output_source).ok_or(
+            M11BlockWriterError::InvalidCommand("progressive output source lease is missing"),
+        )?;
+        let previous_geometry = self.geometry_lease.replace(geometry).ok_or(
+            M11BlockWriterError::InvalidCommand("progressive geometry source lease is missing"),
+        )?;
+        if previous_output.version() != receipt.previous()
+            || previous_geometry.version() != receipt.previous()
+        {
+            probe.fragment.lease = Some(previous_output);
+            self.geometry_lease = Some(previous_geometry);
+            return Err(M11BlockWriterError::InvalidCommand(
+                "progressive writer source history diverged",
+            ));
+        }
+        self.source = receipt.current();
+        Ok(())
     }
 
     #[cfg(any(test, feature = "m11-compact-probe"))]

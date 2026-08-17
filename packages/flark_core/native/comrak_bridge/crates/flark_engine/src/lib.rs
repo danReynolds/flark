@@ -57,7 +57,12 @@ pub use document::{
     PersistentSourceFactsDeltaWitness, PersistentSourceFactsInfo, PersistentSourceFactsPageInfo,
     RuntimeSourceFactsPoll, Utf16EditReceipt,
 };
-pub use identity::{ArenaId, ArenaIdentity, CandidateGeneration, SourceRevision, SourceRootId};
+#[cfg(feature = "progressive-source-probe")]
+pub use identity::SourceLoadId;
+pub use identity::{
+    ArenaId, ArenaIdentity, CandidateGeneration, SourceAuthority, SourceDocumentId, SourceRevision,
+    SourceRootId,
+};
 pub use source::{
     LineDescriptor, LineEnding, LinePoll, PhysicalLineCursor, PlannedSourceEditIntent,
     PreparedSourceEdit, PreparedSourceEditIntent, SourceBoundaryAffinity, SourceCommit,
@@ -67,6 +72,11 @@ pub use source::{
     SourceSnapshotLease, SourceStore, SourceUtf16Operation, SourceVersion,
     SOURCE_CURSOR_WINDOW_BYTES, SOURCE_EDIT_MAX_OPERATIONS, SOURCE_EDIT_MAX_REPLACEMENT_UTF16,
     SOURCE_SEED_PAGE_MAX_UTF16,
+};
+#[cfg(feature = "progressive-source-probe")]
+pub use source::{
+    OpeningSourceAppendProof, OpeningSourceError, OpeningSourceSnapshot, OpeningSourceStore,
+    OpeningSourceVersion, SourceAppendCommit, SourceAppendReceipt,
 };
 pub use source_facts::{
     CertifiedSource, ParserProfileId, PersistentSourceFactsWork, SourceContentFingerprint,

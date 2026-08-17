@@ -1,6 +1,9 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_SOURCE_ROOT_ID: AtomicU64 = AtomicU64::new(1);
+static NEXT_SOURCE_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
+#[cfg(feature = "progressive-source-probe")]
+static NEXT_SOURCE_LOAD_ID: AtomicU64 = AtomicU64::new(1);
 static NEXT_ARENA_ID: AtomicU64 = AtomicU64::new(1);
 
 /// A monotonically increasing source revision within one document.
@@ -30,6 +33,60 @@ impl SourceRevision {
     }
 }
 
+/// Identifies one logical document across immutable source roots and edits.
+///
+/// A root identifies storage. A document identity identifies continuity. In
+/// particular, progressive append generations mint new roots without changing
+/// this identity, while user edits advance the paired [`SourceRevision`].
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SourceDocumentId(u64);
+
+impl SourceDocumentId {
+    pub(crate) fn allocate() -> Option<Self> {
+        NEXT_SOURCE_DOCUMENT_ID
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                value.checked_add(1)
+            })
+            .ok()
+            .map(Self)
+    }
+
+    /// Returns the process-local logical document identity.
+    #[must_use]
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+/// Stable parser/publication authority for one logical source revision.
+///
+/// This deliberately omits the immutable root and its current admitted
+/// dimensions. Those belong to a readable snapshot, not to semantic
+/// continuity across append-only loading generations.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SourceAuthority {
+    document: SourceDocumentId,
+    revision: SourceRevision,
+}
+
+impl SourceAuthority {
+    pub(crate) const fn new(document: SourceDocumentId, revision: SourceRevision) -> Self {
+        Self { document, revision }
+    }
+
+    /// Returns the logical document identity.
+    #[must_use]
+    pub const fn document(self) -> SourceDocumentId {
+        self.document
+    }
+
+    /// Returns the user-edit revision within that document.
+    #[must_use]
+    pub const fn revision(self) -> SourceRevision {
+        self.revision
+    }
+}
+
 /// Identifies one immutable source root.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SourceRootId(u64);
@@ -53,6 +110,34 @@ impl SourceRootId {
     }
 
     /// Returns the numeric identity.
+    #[must_use]
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+/// Identifies one progressive source-admission transaction across immutable
+/// prefix roots and user-edit revisions.
+///
+/// This is deliberately distinct from [`SourceRootId`]. Every published
+/// prefix is one immutable root, while all of those roots belong to the same
+/// load transaction until it is sealed or abandoned.
+#[cfg(feature = "progressive-source-probe")]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SourceLoadId(u64);
+
+#[cfg(feature = "progressive-source-probe")]
+impl SourceLoadId {
+    pub(crate) fn allocate() -> Option<Self> {
+        NEXT_SOURCE_LOAD_ID
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                value.checked_add(1)
+            })
+            .ok()
+            .map(Self)
+    }
+
+    /// Returns the process-local load identity.
     #[must_use]
     pub const fn get(self) -> u64 {
         self.0

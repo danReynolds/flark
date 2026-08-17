@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 use crop::{Rope, RopeBuilder};
 
-use crate::identity::{SourceRevision, SourceRootId};
+#[cfg(feature = "progressive-source-probe")]
+use crate::identity::SourceLoadId;
+use crate::identity::{SourceAuthority, SourceDocumentId, SourceRevision, SourceRootId};
 
 /// Maximum source bytes copied into a cursor's reusable window.
 pub const SOURCE_CURSOR_WINDOW_BYTES: usize = 4 * 1024;
@@ -894,11 +896,503 @@ impl SourceSeedBuilder {
             return Err(SourceEditError::MetricOverflow);
         }
         let id = SourceRootId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
+        let document =
+            SourceDocumentId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
         Ok(SourceStore {
+            document,
             revision: self.revision,
             root: Arc::new(SourceRoot { id, rope }),
             _not_sync: PhantomData,
         })
+    }
+}
+
+/// Exact authority of one published prefix during progressive source loading.
+///
+/// `generation` advances for both stream appends and admitted-prefix edits.
+/// `revision` advances only for user edits. This keeps transport progress and
+/// edit history as separate axes while every published immutable root remains
+/// unambiguous.
+#[cfg(feature = "progressive-source-probe")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OpeningSourceVersion {
+    load: SourceLoadId,
+    generation: u64,
+    revision: SourceRevision,
+    root: SourceRootId,
+    admitted_input_bytes: usize,
+    admitted_input_utf16: usize,
+    expected_input_utf16: usize,
+    current_bytes: usize,
+    current_utf16: usize,
+}
+
+#[cfg(feature = "progressive-source-probe")]
+impl OpeningSourceVersion {
+    #[must_use]
+    pub const fn load(self) -> SourceLoadId {
+        self.load
+    }
+
+    #[must_use]
+    pub const fn generation(self) -> u64 {
+        self.generation
+    }
+
+    #[must_use]
+    pub const fn revision(self) -> SourceRevision {
+        self.revision
+    }
+
+    #[must_use]
+    pub const fn root(self) -> SourceRootId {
+        self.root
+    }
+
+    #[must_use]
+    pub const fn admitted_input_bytes(self) -> usize {
+        self.admitted_input_bytes
+    }
+
+    #[must_use]
+    pub const fn admitted_input_utf16(self) -> usize {
+        self.admitted_input_utf16
+    }
+
+    #[must_use]
+    pub const fn expected_input_utf16(self) -> usize {
+        self.expected_input_utf16
+    }
+
+    #[must_use]
+    pub const fn current_bytes(self) -> usize {
+        self.current_bytes
+    }
+
+    #[must_use]
+    pub const fn current_utf16(self) -> usize {
+        self.current_utf16
+    }
+
+    #[must_use]
+    pub const fn input_complete(self) -> bool {
+        self.admitted_input_utf16 == self.expected_input_utf16
+    }
+}
+
+/// One immutable, readable prefix snapshot paired with its opening authority.
+#[cfg(feature = "progressive-source-probe")]
+pub struct OpeningSourceSnapshot {
+    opening: OpeningSourceVersion,
+    source: SourceSnapshotLease,
+}
+
+/// Store-minted proof that one newer opening snapshot only appends to the
+/// exact previous snapshot under the same logical edit authority.
+///
+/// The proof is move-only and owns the newer readable snapshot. Consumers do
+/// not infer append safety from matching coordinates, generations, or roots.
+#[cfg(feature = "progressive-source-probe")]
+pub struct OpeningSourceAppendProof {
+    previous: OpeningSourceVersion,
+    current: OpeningSourceVersion,
+    snapshot: OpeningSourceSnapshot,
+}
+
+#[cfg(feature = "progressive-source-probe")]
+impl fmt::Debug for OpeningSourceAppendProof {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OpeningSourceAppendProof")
+            .field("previous", &self.previous)
+            .field("current", &self.current)
+            .field("authority", &self.authority())
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "progressive-source-probe")]
+impl OpeningSourceAppendProof {
+    #[must_use]
+    pub const fn previous(&self) -> OpeningSourceVersion {
+        self.previous
+    }
+
+    #[must_use]
+    pub const fn current(&self) -> OpeningSourceVersion {
+        self.current
+    }
+
+    #[must_use]
+    pub const fn authority(&self) -> SourceAuthority {
+        self.snapshot.authority()
+    }
+
+    #[must_use]
+    pub fn previous_source_version(&self) -> SourceVersion {
+        source_version_for_opening(self.previous)
+    }
+
+    #[must_use]
+    pub fn current_source_version(&self) -> SourceVersion {
+        source_version_for_opening(self.current)
+    }
+
+    /// Returns whether the admitted frontier can be exposed to a parser as an
+    /// unsealed physical-line boundary. A sealed final frontier may instead
+    /// terminate the last line without a line ending.
+    pub fn current_ends_at_physical_line_boundary(&self) -> Result<bool, SourceEditError> {
+        self.snapshot
+            .source
+            .is_physical_line_start(self.current.current_bytes)
+    }
+
+    fn into_parts(
+        self,
+    ) -> (
+        OpeningSourceVersion,
+        OpeningSourceVersion,
+        OpeningSourceSnapshot,
+    ) {
+        (self.previous, self.current, self.snapshot)
+    }
+}
+
+#[cfg(feature = "progressive-source-probe")]
+impl OpeningSourceSnapshot {
+    #[must_use]
+    pub const fn opening_version(&self) -> OpeningSourceVersion {
+        self.opening
+    }
+
+    #[must_use]
+    pub fn source_version(&self) -> SourceVersion {
+        self.source.version()
+    }
+
+    /// Returns the logical document/revision authority shared by compatible
+    /// append generations.
+    #[must_use]
+    pub const fn authority(&self) -> SourceAuthority {
+        self.source.authority()
+    }
+
+    #[must_use]
+    pub fn into_source_lease(self) -> SourceSnapshotLease {
+        self.source
+    }
+
+    pub(crate) fn into_source_store_replica(self) -> SourceStore {
+        SourceStore {
+            document: self.source.document,
+            revision: self.source.revision,
+            root: self.source.root,
+            _not_sync: PhantomData,
+        }
+    }
+}
+
+/// Failure while operating one progressive source-admission transaction.
+#[cfg(feature = "progressive-source-probe")]
+#[derive(Debug, Eq, PartialEq)]
+pub enum OpeningSourceError {
+    StaleVersion {
+        expected: OpeningSourceVersion,
+        actual: OpeningSourceVersion,
+    },
+    NotAppendLineage {
+        previous: OpeningSourceVersion,
+        current: OpeningSourceVersion,
+    },
+    ForeignAuthority,
+    Source(SourceEditError),
+}
+
+#[cfg(feature = "progressive-source-probe")]
+impl fmt::Display for OpeningSourceError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::StaleVersion { .. } => formatter.write_str("opening source version is stale"),
+            Self::NotAppendLineage { .. } => {
+                formatter.write_str("opening source generations do not prove append-only lineage")
+            }
+            Self::ForeignAuthority => {
+                formatter.write_str("opening source proof belongs to a different document")
+            }
+            Self::Source(error) => write!(formatter, "opening source failed: {error}"),
+        }
+    }
+}
+
+#[cfg(feature = "progressive-source-probe")]
+impl std::error::Error for OpeningSourceError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::StaleVersion { .. }
+            | Self::NotAppendLineage { .. }
+            | Self::ForeignAuthority => None,
+            Self::Source(error) => Some(error),
+        }
+    }
+}
+
+#[cfg(feature = "progressive-source-probe")]
+impl From<SourceEditError> for OpeningSourceError {
+    fn from(error: SourceEditError) -> Self {
+        Self::Source(error)
+    }
+}
+
+/// Append-published exact source used by RFC 029 Experiment A1.
+///
+/// Each mutation creates one immutable Crop root by structural sharing. Old
+/// snapshots remain readable; sealing consumes the current root directly into
+/// [`SourceStore`] without rebuilding or copying the complete source.
+#[cfg(feature = "progressive-source-probe")]
+pub struct OpeningSourceStore {
+    load: SourceLoadId,
+    document: SourceDocumentId,
+    generation: u64,
+    revision: SourceRevision,
+    expected_input_utf16: usize,
+    admitted_input_bytes: usize,
+    admitted_input_utf16: usize,
+    root: Arc<SourceRoot>,
+    poisoned: bool,
+    _not_sync: PhantomData<Cell<()>>,
+}
+
+#[cfg(feature = "progressive-source-probe")]
+impl fmt::Debug for OpeningSourceStore {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OpeningSourceStore")
+            .field("version", &self.version())
+            .field("poisoned", &self.poisoned)
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "progressive-source-probe")]
+impl OpeningSourceStore {
+    pub fn new(
+        revision: SourceRevision,
+        expected_input_utf16: usize,
+    ) -> Result<Self, OpeningSourceError> {
+        let load = SourceLoadId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
+        let document =
+            SourceDocumentId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
+        let root = SourceRootId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
+        Ok(Self {
+            load,
+            document,
+            generation: 0,
+            revision,
+            expected_input_utf16,
+            admitted_input_bytes: 0,
+            admitted_input_utf16: 0,
+            root: Arc::new(SourceRoot {
+                id: root,
+                rope: Rope::from(""),
+            }),
+            poisoned: false,
+            _not_sync: PhantomData,
+        })
+    }
+
+    #[must_use]
+    pub fn version(&self) -> OpeningSourceVersion {
+        OpeningSourceVersion {
+            load: self.load,
+            generation: self.generation,
+            revision: self.revision,
+            root: self.root.id,
+            admitted_input_bytes: self.admitted_input_bytes,
+            admitted_input_utf16: self.admitted_input_utf16,
+            expected_input_utf16: self.expected_input_utf16,
+            current_bytes: self.root.rope.byte_len(),
+            current_utf16: self.root.rope.utf16_len(),
+        }
+    }
+
+    /// Returns semantic continuity independent of the current append root.
+    #[must_use]
+    pub const fn authority(&self) -> SourceAuthority {
+        SourceAuthority::new(self.document, self.revision)
+    }
+
+    #[must_use]
+    pub fn snapshot(&self) -> OpeningSourceSnapshot {
+        OpeningSourceSnapshot {
+            opening: self.version(),
+            source: SourceSnapshotLease {
+                document: self.document,
+                revision: self.revision,
+                root: Arc::clone(&self.root),
+                _not_sync: PhantomData,
+            },
+        }
+    }
+
+    /// Mints an append-only lineage proof from an earlier published version to
+    /// the exact current snapshot. Any intervening user edit changes the edit
+    /// revision and fails closed, even if later text happens to match.
+    pub fn prove_append_since(
+        &self,
+        previous: OpeningSourceVersion,
+    ) -> Result<OpeningSourceAppendProof, OpeningSourceError> {
+        let current = self.version();
+        let is_append = previous.load == current.load
+            && previous.generation < current.generation
+            && previous.revision == current.revision
+            && previous.admitted_input_bytes < current.admitted_input_bytes
+            && previous.admitted_input_utf16 < current.admitted_input_utf16
+            && previous.current_bytes < current.current_bytes
+            && previous.current_utf16 < current.current_utf16;
+        if !is_append {
+            return Err(OpeningSourceError::NotAppendLineage { previous, current });
+        }
+        Ok(OpeningSourceAppendProof {
+            previous,
+            current,
+            snapshot: self.snapshot(),
+        })
+    }
+
+    /// Publishes one bounded continuation of the original input stream.
+    pub fn append_page(
+        &mut self,
+        expected: OpeningSourceVersion,
+        input_utf16_range: Range<usize>,
+        text: &str,
+    ) -> Result<OpeningSourceVersion, OpeningSourceError> {
+        self.validate_expected(expected)?;
+        if self.poisoned {
+            return Err(SourceEditError::SeedPoisoned.into());
+        }
+
+        let page_utf16_len = text.encode_utf16().count();
+        if page_utf16_len > SOURCE_SEED_PAGE_MAX_UTF16 {
+            self.poisoned = true;
+            return Err(SourceEditError::SeedPageTooLarge {
+                observed: page_utf16_len,
+                limit: SOURCE_SEED_PAGE_MAX_UTF16,
+            }
+            .into());
+        }
+        let expected_end = input_utf16_range.start.checked_add(page_utf16_len);
+        if text.is_empty()
+            || page_utf16_len == 0
+            || input_utf16_range.start != self.admitted_input_utf16
+            || expected_end != Some(input_utf16_range.end)
+            || input_utf16_range.end > self.expected_input_utf16
+        {
+            self.poisoned = true;
+            return Err(SourceEditError::InvalidSeedPage {
+                expected_start: self.admitted_input_utf16,
+                start: input_utf16_range.start,
+                end: input_utf16_range.end,
+                page_utf16_len,
+                expected_total: self.expected_input_utf16,
+            }
+            .into());
+        }
+
+        let admitted_input_bytes = self
+            .admitted_input_bytes
+            .checked_add(text.len())
+            .ok_or(SourceEditError::MetricOverflow)?;
+        let generation = self
+            .generation
+            .checked_add(1)
+            .ok_or(SourceEditError::IdentityExhausted)?;
+        let id = SourceRootId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
+        let mut rope = self.root.rope.clone();
+        let append_at = rope.byte_len();
+        rope.replace(append_at..append_at, text);
+
+        self.root = Arc::new(SourceRoot { id, rope });
+        self.generation = generation;
+        self.admitted_input_bytes = admitted_input_bytes;
+        self.admitted_input_utf16 = input_utf16_range.end;
+        Ok(self.version())
+    }
+
+    /// Applies one bounded user edit entirely inside currently admitted text.
+    pub fn apply_utf16_edit(
+        &mut self,
+        expected: OpeningSourceVersion,
+        range: Range<usize>,
+        replacement: &str,
+    ) -> Result<OpeningSourceVersion, OpeningSourceError> {
+        self.validate_expected(expected)?;
+        if self.poisoned {
+            return Err(SourceEditError::SeedPoisoned.into());
+        }
+        let current_utf16 = self.root.rope.utf16_len();
+        if range.start > range.end || range.end > current_utf16 {
+            return Err(SourceEditError::InvalidUtf16Range {
+                start: range.start,
+                end: range.end,
+                len: current_utf16,
+            }
+            .into());
+        }
+        let replacement_utf16 = replacement.encode_utf16().count();
+        if replacement_utf16 > SOURCE_EDIT_MAX_REPLACEMENT_UTF16 {
+            return Err(SourceEditError::EditReplacementTooLarge {
+                observed: replacement_utf16,
+                limit: SOURCE_EDIT_MAX_REPLACEMENT_UTF16,
+            }
+            .into());
+        }
+
+        let start_byte = checked_byte_offset_for_utf16(&self.root.rope, range.start)?;
+        let end_byte = checked_byte_offset_for_utf16(&self.root.rope, range.end)?;
+        let revision = self
+            .revision
+            .checked_next()
+            .ok_or(SourceEditError::IdentityExhausted)?;
+        let generation = self
+            .generation
+            .checked_add(1)
+            .ok_or(SourceEditError::IdentityExhausted)?;
+        let id = SourceRootId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
+        let mut rope = self.root.rope.clone();
+        rope.replace(start_byte..end_byte, replacement);
+
+        self.root = Arc::new(SourceRoot { id, rope });
+        self.revision = revision;
+        self.generation = generation;
+        Ok(self.version())
+    }
+
+    /// Seals EOF and promotes the current immutable root without rebuilding it.
+    pub fn seal(self) -> Result<SourceStore, OpeningSourceError> {
+        if self.poisoned {
+            return Err(SourceEditError::SeedPoisoned.into());
+        }
+        if self.admitted_input_utf16 != self.expected_input_utf16 {
+            return Err(SourceEditError::IncompleteSeed {
+                expected: self.expected_input_utf16,
+                observed: self.admitted_input_utf16,
+            }
+            .into());
+        }
+        Ok(SourceStore {
+            document: self.document,
+            revision: self.revision,
+            root: self.root,
+            _not_sync: PhantomData,
+        })
+    }
+
+    fn validate_expected(&self, expected: OpeningSourceVersion) -> Result<(), OpeningSourceError> {
+        let actual = self.version();
+        if expected != actual {
+            return Err(OpeningSourceError::StaleVersion { expected, actual });
+        }
+        Ok(())
     }
 }
 
@@ -946,6 +1440,7 @@ impl<'a> SourceUtf16Operation<'a> {
 /// let duplicate = lease.clone();
 /// ```
 pub struct SourceSnapshotLease {
+    document: SourceDocumentId,
     revision: SourceRevision,
     root: Arc<SourceRoot>,
     _not_sync: PhantomData<Cell<()>>,
@@ -999,6 +1494,7 @@ impl fmt::Debug for SourceSnapshotLease {
 impl SourceSnapshotLease {
     pub(crate) fn duplicate(&self) -> Self {
         Self {
+            document: self.document,
             revision: self.revision,
             root: Arc::clone(&self.root),
             _not_sync: PhantomData,
@@ -1009,6 +1505,12 @@ impl SourceSnapshotLease {
     #[must_use]
     pub fn version(&self) -> SourceVersion {
         version_for(self.revision, &self.root)
+    }
+
+    /// Returns semantic continuity independent of this immutable root.
+    #[must_use]
+    pub const fn authority(&self) -> SourceAuthority {
+        SourceAuthority::new(self.document, self.revision)
     }
 
     /// Maps a UTF-16 code-unit boundary to its exact UTF-8 byte offset.
@@ -1138,6 +1640,7 @@ impl SourceSnapshotLease {
 ///
 /// This capability is `Send` but deliberately `!Sync`.
 pub struct SourceStore {
+    document: SourceDocumentId,
     revision: SourceRevision,
     root: Arc<SourceRoot>,
     _not_sync: PhantomData<Cell<()>>,
@@ -1156,7 +1659,10 @@ impl SourceStore {
     /// Creates revision zero from UTF-8 source text.
     pub fn new(text: &str) -> Result<Self, SourceEditError> {
         let id = SourceRootId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
+        let document =
+            SourceDocumentId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
         Ok(Self {
+            document,
             revision: SourceRevision::ZERO,
             root: Arc::new(SourceRoot {
                 id,
@@ -1178,10 +1684,54 @@ impl SourceStore {
         version_for(self.revision, &self.root)
     }
 
+    /// Returns semantic continuity independent of the current immutable root.
+    #[must_use]
+    pub const fn authority(&self) -> SourceAuthority {
+        SourceAuthority::new(self.document, self.revision)
+    }
+
+    /// Advances this read replica through one store-authenticated append-only
+    /// opening transition without manufacturing an edit revision.
+    #[cfg(feature = "progressive-source-probe")]
+    pub fn adopt_opening_append(
+        &mut self,
+        proof: OpeningSourceAppendProof,
+    ) -> Result<SourceAppendCommit, OpeningSourceError> {
+        let (previous_opening, current_opening, snapshot) = proof.into_parts();
+        let previous = source_version_for_opening(previous_opening);
+        let current = source_version_for_opening(current_opening);
+        if self.version() != previous || self.authority() != snapshot.authority() {
+            return Err(OpeningSourceError::ForeignAuthority);
+        }
+        let source = snapshot.into_source_lease();
+        if source.version() != current || source.authority() != self.authority() {
+            return Err(OpeningSourceError::ForeignAuthority);
+        }
+        let retired_root = std::mem::replace(&mut self.root, source.root);
+        Ok(SourceAppendCommit {
+            receipt: SourceAppendReceipt {
+                authority: self.authority(),
+                previous,
+                current,
+                previous_generation: previous_opening.generation,
+                current_generation: current_opening.generation,
+                unchanged_prefix_bytes: previous.byte_len,
+                unchanged_prefix_utf16: previous.utf16_len,
+            },
+            retired: SourceSnapshotLease {
+                document: self.document,
+                revision: self.revision,
+                root: retired_root,
+                _not_sync: PhantomData,
+            },
+        })
+    }
+
     /// Acquires an immutable lease on the current root.
     #[must_use]
     pub fn snapshot(&self) -> SourceSnapshotLease {
         SourceSnapshotLease {
+            document: self.document,
             revision: self.revision,
             root: Arc::clone(&self.root),
             _not_sync: PhantomData,
@@ -1470,6 +2020,7 @@ impl SourceStore {
                 replacement_byte_len: prepared.replacement_byte_len,
             },
             retired: SourceSnapshotLease {
+                document: self.document,
                 revision: previous.revision,
                 root: retired_root,
                 _not_sync: PhantomData,
@@ -1505,6 +2056,7 @@ impl SourceStore {
                 replacement_utf16_len: prepared.replacement_utf16_len,
             },
             retired: SourceSnapshotLease {
+                document: self.document,
                 revision: previous.revision,
                 root: retired_root,
                 _not_sync: PhantomData,
@@ -1514,10 +2066,82 @@ impl SourceStore {
 
     pub(crate) fn into_snapshot(self) -> SourceSnapshotLease {
         SourceSnapshotLease {
+            document: self.document,
             revision: self.revision,
             root: self.root,
             _not_sync: PhantomData,
         }
+    }
+}
+
+/// Exact receipt for one append-only read-replica transition.
+#[cfg(feature = "progressive-source-probe")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SourceAppendReceipt {
+    authority: SourceAuthority,
+    previous: SourceVersion,
+    current: SourceVersion,
+    previous_generation: u64,
+    current_generation: u64,
+    unchanged_prefix_bytes: usize,
+    unchanged_prefix_utf16: usize,
+}
+
+#[cfg(feature = "progressive-source-probe")]
+impl SourceAppendReceipt {
+    #[must_use]
+    pub const fn authority(self) -> SourceAuthority {
+        self.authority
+    }
+
+    #[must_use]
+    pub const fn previous(self) -> SourceVersion {
+        self.previous
+    }
+
+    #[must_use]
+    pub const fn current(self) -> SourceVersion {
+        self.current
+    }
+
+    #[must_use]
+    pub const fn previous_generation(self) -> u64 {
+        self.previous_generation
+    }
+
+    #[must_use]
+    pub const fn current_generation(self) -> u64 {
+        self.current_generation
+    }
+
+    #[must_use]
+    pub const fn unchanged_prefix_bytes(self) -> usize {
+        self.unchanged_prefix_bytes
+    }
+
+    #[must_use]
+    pub const fn unchanged_prefix_utf16(self) -> usize {
+        self.unchanged_prefix_utf16
+    }
+}
+
+/// Ownership result of adopting one append-only opening snapshot.
+#[cfg(feature = "progressive-source-probe")]
+pub struct SourceAppendCommit {
+    receipt: SourceAppendReceipt,
+    retired: SourceSnapshotLease,
+}
+
+#[cfg(feature = "progressive-source-probe")]
+impl SourceAppendCommit {
+    #[must_use]
+    pub const fn receipt(&self) -> SourceAppendReceipt {
+        self.receipt
+    }
+
+    #[must_use]
+    pub fn into_parts(self) -> (SourceAppendReceipt, SourceSnapshotLease) {
+        (self.receipt, self.retired)
     }
 }
 
@@ -2211,6 +2835,16 @@ fn version_for(revision: SourceRevision, root: &SourceRoot) -> SourceVersion {
         byte_len: root.rope.byte_len(),
         utf16_len: root.rope.utf16_len(),
     }
+}
+
+#[cfg(feature = "progressive-source-probe")]
+fn source_version_for_opening(opening: OpeningSourceVersion) -> SourceVersion {
+    SourceVersion::from_authenticated_parts(
+        opening.revision,
+        opening.root,
+        opening.current_bytes,
+        opening.current_utf16,
+    )
 }
 
 fn validate_range(rope: &Rope, range: &Range<usize>) -> Result<(), SourceEditError> {

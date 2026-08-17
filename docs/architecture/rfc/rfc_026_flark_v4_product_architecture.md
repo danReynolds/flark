@@ -11,7 +11,11 @@ package boundary, platform scope, and selected implementation direction. The
 
 **Amended by:**
 [RFC 027](rfc_027_continuously_rendered_markdown.md), which makes continuously
-rendered editing and a shared read-only render contract the v4 product target.
+rendered editing and a shared read-only render contract the v4 product target;
+and [RFC 029](rfc_029_large_document_architecture.md), which replaces a
+document-sized semantic readiness model with bounded source admission, a
+persistent compact index, certified Green fragments, and a source-anchored
+virtual viewport.
 
 ## 1. Product directive
 

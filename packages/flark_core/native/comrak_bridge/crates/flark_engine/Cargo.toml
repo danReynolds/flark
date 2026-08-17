@@ -8,6 +8,9 @@ license = "MIT"
 [features]
 default = []
 parser-internal = []
+# Risk-first RFC 029 source-lifecycle proof. This remains unreachable from
+# production until the progressive admission, parser, and product gates pass.
+progressive-source-probe = []
 
 [dependencies]
 blake3 = "1.8"
@@ -32,6 +35,16 @@ required-features = ["parser-internal"]
 name = "parser_source_authority"
 path = "tests/parser_source_authority.rs"
 required-features = ["parser-internal"]
+
+[[test]]
+name = "progressive_source"
+path = "tests/progressive_source.rs"
+required-features = ["progressive-source-probe"]
+
+[[example]]
+name = "progressive_source_probe"
+path = "examples/progressive_source_probe.rs"
+required-features = ["progressive-source-probe"]
 
 [lints.rust]
 unsafe_code = "forbid"

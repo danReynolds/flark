@@ -2,12 +2,39 @@
 
 **Execution contract for
 [RFC 026](../rfc/rfc_026_flark_v4_product_architecture.md) as amended by
-[RFC 027](../rfc/rfc_027_continuously_rendered_markdown.md).** 2026-08-08.
+[RFC 027](../rfc/rfc_027_continuously_rendered_markdown.md) and
+[RFC 029](../rfc/rfc_029_large_document_architecture.md).** 2026-08-16.
 
 This plan builds a headless Dart `flark_core` over the selected incremental
 Rust engine, then builds the Flutter product `flark` on top. The first proof and
 all initial performance work run on the available Mac. Android and iOS claims
 wait for physical devices; Windows follows later.
+
+## 2026-08-16 large-document architecture correction
+
+The 10 MiB full-Green certification and memory receipts falsified a hidden
+whole-document readiness premise. The subsequent compact-index/Green-fragment
+probes established a promising replacement, but a lifecycle audit found three
+more document-sized risks that must be resolved before production routing:
+
+- the public Dart open path still encodes and commits the complete source
+  before the first viewport query;
+- the compact index has no proven revision-local update path and may not be
+  rebuilt from BOF after every ordinary edit; and
+- the current 32-row Flutter page surface is a bounded dogfood mechanism, not
+  the final continuous virtual-scroll model.
+
+[RFC 029](../rfc/rfc_029_large_document_architecture.md) now controls this
+work. It selects bounded source admission, a persistent revision-shared compact
+index, certified Green fragments, and a source-anchored continuous virtual
+viewport. It also reconciles the continuously-rendered promise with constructs
+whose final GFM meaning genuinely requires later source.
+
+The next work is deliberately risk-first: Experiment A proves first viewport
+publication before complete source admission, then Experiment B proves local
+index convergence and suffix sharing across edits. No compact-session ABI or
+Flutter production cutover begins merely because the existing first-slice and
+cold-jump engine probes pass.
 
 ## 2026-08-11 continuously-rendered product correction
 

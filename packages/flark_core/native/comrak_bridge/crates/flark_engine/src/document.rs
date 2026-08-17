@@ -16,6 +16,10 @@ use crate::source::{
     SourceEditLineageError, SourceEditReceipt, SourceSnapshotLease, SourceStore,
     SourceUtf16Operation, SourceVersion, SOURCE_CURSOR_WINDOW_BYTES,
 };
+#[cfg(feature = "progressive-source-probe")]
+use crate::source::{
+    OpeningSourceAppendProof, OpeningSourceError, OpeningSourceSnapshot, SourceAppendReceipt,
+};
 use crate::source_facts::{
     splice_persistent_source_facts_atomic_with_receipt, CertifiedSource, ParserProfileId,
     PersistentSourceFactsBuild, PersistentSourceFactsBuildPoll, PersistentSourceFactsRoot,
@@ -946,6 +950,10 @@ pub enum DocumentRuntimeError {
         limit: usize,
     },
     IdentityExhausted,
+    #[cfg(feature = "progressive-source-probe")]
+    OpeningAppendBusy,
+    #[cfg(feature = "progressive-source-probe")]
+    OpeningSource(OpeningSourceError),
     Source(SourceEditError),
     SourceFacts(SourceFactsError),
     SourceFactsAssembly(SourceFactsAssemblyError),
@@ -1029,6 +1037,14 @@ impl fmt::Display for DocumentRuntimeError {
                 "source has {source_bytes} logical bytes but the retirement budget is {limit}"
             ),
             Self::IdentityExhausted => formatter.write_str("candidate identity space is exhausted"),
+            #[cfg(feature = "progressive-source-probe")]
+            Self::OpeningAppendBusy => formatter.write_str(
+                "opening append cannot cross an active root-bound runtime job",
+            ),
+            #[cfg(feature = "progressive-source-probe")]
+            Self::OpeningSource(error) => {
+                write!(formatter, "opening source transition failed: {error}")
+            }
             Self::Source(error) => write!(formatter, "source transition failed: {error}"),
             Self::SourceFacts(error) => write!(formatter, "source-fact scan failed: {error}"),
             Self::SourceFactsAssembly(error) => {
@@ -1042,6 +1058,8 @@ impl fmt::Display for DocumentRuntimeError {
 impl std::error::Error for DocumentRuntimeError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            #[cfg(feature = "progressive-source-probe")]
+            Self::OpeningSource(error) => Some(error),
             Self::Source(error) => Some(error),
             Self::SourceFacts(error) => Some(error),
             Self::SourceFactsAssembly(error) => Some(error),
@@ -1054,6 +1072,13 @@ impl std::error::Error for DocumentRuntimeError {
 impl From<SourceEditError> for DocumentRuntimeError {
     fn from(error: SourceEditError) -> Self {
         Self::Source(error)
+    }
+}
+
+#[cfg(feature = "progressive-source-probe")]
+impl From<OpeningSourceError> for DocumentRuntimeError {
+    fn from(error: OpeningSourceError) -> Self {
+        Self::OpeningSource(error)
     }
 }
 
@@ -1318,6 +1343,66 @@ impl DocumentRuntime {
     ) -> Result<Self, DocumentRuntimeError> {
         Self::validate_initial_source(source.version().byte_len(), config)?;
         Self::from_validated_source_store(source, config)
+    }
+
+    /// Creates the probe runtime over one exact admitted opening snapshot.
+    ///
+    /// The opening store remains the mutation authority. This runtime owns a
+    /// serialized read replica that can advance only through a store-minted
+    /// append proof; it cannot infer append continuity from roots or lengths.
+    #[cfg(feature = "progressive-source-probe")]
+    pub fn from_opening_snapshot(
+        snapshot: OpeningSourceSnapshot,
+        config: DocumentRuntimeConfig,
+    ) -> Result<Self, DocumentRuntimeError> {
+        let source = snapshot.into_source_store_replica();
+        Self::validate_initial_source(source.version().byte_len(), config)?;
+        Self::from_validated_source_store(source, config)
+    }
+
+    /// Advances the runtime's exact read replica through one append-only
+    /// opening transition while retaining the same edit revision.
+    ///
+    /// Root-bound candidate and source-fact jobs are rejected rather than
+    /// silently rebound. The progressive compact-index builder is external to
+    /// those jobs and consumes the returned receipt explicitly.
+    #[cfg(feature = "progressive-source-probe")]
+    pub fn adopt_opening_append(
+        &mut self,
+        proof: OpeningSourceAppendProof,
+    ) -> Result<SourceAppendReceipt, DocumentRuntimeError> {
+        self.ensure_open()?;
+        if self.active_candidate.is_some()
+            || self.source_facts_job.is_some()
+            || self.persistent_source_facts.is_some()
+            || self.pending_persistent_source_facts_delta.is_some()
+        {
+            return Err(DocumentRuntimeError::OpeningAppendBusy);
+        }
+        let current = self
+            .source
+            .as_ref()
+            .expect("open documents always own a source")
+            .version();
+        if self.latest_plan.is_some_and(|plan| plan.source != current) {
+            return Err(DocumentRuntimeError::OpeningAppendBusy);
+        }
+        self.ensure_retirement_capacity(RetirementDemand {
+            leases: 1,
+            bytes: current.byte_len(),
+        })?;
+        let commit = self
+            .source
+            .as_mut()
+            .expect("open documents always own a source")
+            .adopt_opening_append(proof)?;
+        let (receipt, retired) = commit.into_parts();
+        if let Some(plan) = &mut self.latest_plan {
+            debug_assert_eq!(plan.source, receipt.previous());
+            plan.source = receipt.current();
+        }
+        self.enqueue_retired_source(retired);
+        Ok(receipt)
     }
 
     fn validate_initial_source(

@@ -184,6 +184,15 @@ impl SnapshotLineScanner {
     pub(crate) fn into_source_lease(self) -> SourceSnapshotLease {
         self.cursor.cancel()
     }
+
+    #[cfg(any(test, feature = "m11-compact-probe"))]
+    pub(crate) fn into_progressive_resume_parts(self) -> (SourceSnapshotLease, u32, usize) {
+        (
+            self.cursor.cancel(),
+            self.next_ordinal,
+            self.scanned_byte_position,
+        )
+    }
 }
 
 pub(crate) enum SnapshotLineRetainedPoll {
