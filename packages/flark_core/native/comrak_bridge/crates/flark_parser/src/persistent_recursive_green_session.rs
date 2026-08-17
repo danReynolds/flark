@@ -7790,7 +7790,10 @@ mod tests {
         let mut edited_by_line = std::collections::BTreeMap::new();
         for (index, entry) in edited_journal.entries.iter().enumerate() {
             let previous = edited_by_line.insert(entry.line_ordinal, index);
-            assert!(previous.is_none(), "edited checkpoint line ordinals are unique");
+            assert!(
+                previous.is_none(),
+                "edited checkpoint line ordinals are unique"
+            );
         }
 
         let mut aligned = 0_usize;
@@ -7840,8 +7843,10 @@ mod tests {
             if base_entry.open_depth > 0 {
                 base_open_cuts += 1;
             }
-            let writer_equal = match (base_entry.writer_encoded_len, edited_entry.writer_encoded_len)
-            {
+            let writer_equal = match (
+                base_entry.writer_encoded_len,
+                edited_entry.writer_encoded_len,
+            ) {
                 (0, 0) => true,
                 (0, _) | (_, 0) => false,
                 _ => {
@@ -7881,10 +7886,20 @@ mod tests {
             // Every cut strictly after the edited first line shifts by the
             // insertion's exact byte and UTF-16 widths; a BOF cut stays at
             // zero. The two dimensions relocate independently.
-            let expected_bytes =
-                |base_metric: SourceMetric| if base_metric.bytes() > 0 { byte_delta } else { 0 };
-            let expected_utf16 =
-                |base_metric: SourceMetric| if base_metric.bytes() > 0 { utf16_delta } else { 0 };
+            let expected_bytes = |base_metric: SourceMetric| {
+                if base_metric.bytes() > 0 {
+                    byte_delta
+                } else {
+                    0
+                }
+            };
+            let expected_utf16 = |base_metric: SourceMetric| {
+                if base_metric.bytes() > 0 {
+                    utf16_delta
+                } else {
+                    0
+                }
+            };
             let uniform = edited_entry.accepted_physical.bytes()
                 == base_entry.accepted_physical.bytes()
                     + expected_bytes(base_entry.accepted_physical)
@@ -7950,7 +7965,10 @@ mod tests {
             anomalies.join(","),
         );
 
-        assert!(aligned > 1_000, "the 4 KiB cadence yields thousands of aligned checkpoints");
+        assert!(
+            aligned > 1_000,
+            "the 4 KiB cadence yields thousands of aligned checkpoints"
+        );
         release_session(&mut base_runtime, &mut base_session);
         close_runtime(&mut base_runtime);
         release_session(&mut edited_runtime, &mut edited_session);
@@ -7984,7 +8002,10 @@ mod tests {
 
     /// Carried deltas for a plain paragraph-content edit: the replaced text
     /// appears verbatim in the logical projection, and nothing else moves.
-    fn paragraph_content_carried(byte_delta: i64, utf16_delta: i64) -> M11CompactRevisionCarriedDeltas {
+    fn paragraph_content_carried(
+        byte_delta: i64,
+        utf16_delta: i64,
+    ) -> M11CompactRevisionCarriedDeltas {
         M11CompactRevisionCarriedDeltas {
             logical_bytes: byte_delta,
             logical_utf16: utf16_delta,
@@ -8083,7 +8104,9 @@ mod tests {
                 revision
                     .encoded_parser_record(index)
                     .expect("revision parser payload"),
-                journal.encoded_entry(index).expect("rebuild parser payload"),
+                journal
+                    .encoded_entry(index)
+                    .expect("rebuild parser payload"),
                 "entry {index} parser payload bytes"
             );
             let expected_writer = (journal.entries[index].writer_encoded_len > 0).then(|| {
@@ -8144,16 +8167,34 @@ mod tests {
         assert_eq!(remap.breakpoint_count(), 2);
 
         // Identity strictly before the first breakpoint and at its start.
-        assert_eq!(remap.map_metric(metric(9, 9)).expect("before"), metric(9, 9));
-        assert_eq!(remap.map_metric(metric(10, 10)).expect("at start"), metric(10, 10));
+        assert_eq!(
+            remap.map_metric(metric(9, 9)).expect("before"),
+            metric(9, 9)
+        );
+        assert_eq!(
+            remap.map_metric(metric(10, 10)).expect("at start"),
+            metric(10, 10)
+        );
         // No image inside a replaced range.
         assert!(remap.map_metric(metric(12, 12)).is_err());
         // The replacement's -1 byte delta applies from its end onward.
-        assert_eq!(remap.map_metric(metric(13, 13)).expect("at end"), metric(12, 12));
-        assert_eq!(remap.map_metric(metric(50, 50)).expect("between"), metric(49, 49));
+        assert_eq!(
+            remap.map_metric(metric(13, 13)).expect("at end"),
+            metric(12, 12)
+        );
+        assert_eq!(
+            remap.map_metric(metric(50, 50)).expect("between"),
+            metric(49, 49)
+        );
         // Both deltas apply beyond the insertion point.
-        assert_eq!(remap.map_metric(metric(100, 100)).expect("at insert"), metric(102, 102));
-        assert_eq!(remap.map_metric(metric(400, 400)).expect("after"), metric(402, 402));
+        assert_eq!(
+            remap.map_metric(metric(100, 100)).expect("at insert"),
+            metric(102, 102)
+        );
+        assert_eq!(
+            remap.map_metric(metric(400, 400)).expect("after"),
+            metric(402, 402)
+        );
 
         // Manifest translation applies every declared dimension uniformly.
         let entry = M11CompactCheckpointEntry {
@@ -8246,14 +8287,21 @@ mod tests {
         let (revision, _) =
             drive_compact_index_revision(&mut runtime, base_journal, base_refs, edit);
         let receipt = *revision.receipt();
-        assert!(receipt.converged, "ordinary replacement converges: {receipt:?}");
-        assert!(receipt.predecessor_index > 0, "middle edit resumes past BOF");
+        assert!(
+            receipt.converged,
+            "ordinary replacement converges: {receipt:?}"
+        );
+        assert!(
+            receipt.predecessor_index > 0,
+            "middle edit resumes past BOF"
+        );
         assert!(
             receipt.source_bytes_replayed <= 64 * 1024,
             "replay stays inside the 64 KiB locality envelope: {receipt:?}"
         );
         assert_eq!(
-            receipt.checkpoints_reused_prefix + receipt.checkpoints_replaced
+            receipt.checkpoints_reused_prefix
+                + receipt.checkpoints_replaced
                 + receipt.checkpoints_reused_suffix,
             base_total,
             "every base entry is reused or replaced: {receipt:?}"
@@ -8406,7 +8454,10 @@ mod tests {
         let (revision, _) =
             drive_compact_index_revision(&mut runtime, base_journal, base_refs, edit);
         let receipt = *revision.receipt();
-        assert!(!receipt.converged, "wrong declared deltas decline convergence: {receipt:?}");
+        assert!(
+            !receipt.converged,
+            "wrong declared deltas decline convergence: {receipt:?}"
+        );
         assert!(receipt.last_convergence_reject.is_some(), "{receipt:?}");
         assert_eq!(receipt.checkpoints_reused_suffix, 0, "{receipt:?}");
         assert_eq!(
@@ -8429,7 +8480,9 @@ mod tests {
         source.push_str("\n\n");
         let definitions_start = source.len();
         for ordinal in 0..8 {
-            source.push_str(&format!("[ref{ordinal}]: /destination/{ordinal} \"title {ordinal}\"\n"));
+            source.push_str(&format!(
+                "[ref{ordinal}]: /destination/{ordinal} \"title {ordinal}\"\n"
+            ));
         }
         source.push('\n');
         (source, definitions_start)
@@ -8617,9 +8670,11 @@ mod tests {
             receipt.references_rebuild_required,
             receipt.window_definition_records,
             receipt.base_definitions_intersecting,
-            receipt.last_convergence_reject.map_or("null".to_string(), |(index, reason)| {
-                format!("{{\"candidate\":{index},\"dimension\":\"{reason}\"}}")
-            }),
+            receipt
+                .last_convergence_reject
+                .map_or("null".to_string(), |(index, reason)| {
+                    format!("{{\"candidate\":{index},\"dimension\":\"{reason}\"}}")
+                }),
         );
         RevisionLocalityCellOutcome { receipt }
     }

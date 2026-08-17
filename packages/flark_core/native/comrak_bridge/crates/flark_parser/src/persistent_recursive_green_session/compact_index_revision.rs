@@ -19,11 +19,10 @@
 //! index — bounded by the document and never wrong.
 
 use super::{
-    CleanPhase, DocumentRuntime, M11CompactCheckpointEntry,
-    M11CompactCheckpointJournal, M11PersistentRecursiveGreenBuildStatus,
-    M11PersistentRecursiveGreenCleanBuild, M11PersistentRecursiveGreenCleanPlan,
-    M11PersistentRecursiveGreenSession, M11PersistentRecursiveGreenSessionError, SourceMetric,
-    CHECKPOINT_STRIDE_BYTES,
+    CleanPhase, DocumentRuntime, M11CompactCheckpointEntry, M11CompactCheckpointJournal,
+    M11PersistentRecursiveGreenBuildStatus, M11PersistentRecursiveGreenCleanBuild,
+    M11PersistentRecursiveGreenCleanPlan, M11PersistentRecursiveGreenSession,
+    M11PersistentRecursiveGreenSessionError, SourceMetric, CHECKPOINT_STRIDE_BYTES,
 };
 use crate::block_core::{
     M11CompactProbeCheckpointFacts, M11CompactReferenceProbeRecord, M11CompactReferenceResolver,
@@ -293,7 +292,8 @@ impl M11CompactRevisionRemap {
         &self,
         entry: &M11CompactCheckpointEntry,
     ) -> Result<M11CompactRevisionResolvedEntry, RevisionError> {
-        let (accepted_region, deltas) = self.region_at_base_byte(entry.accepted_physical.bytes())?;
+        let (accepted_region, deltas) =
+            self.region_at_base_byte(entry.accepted_physical.bytes())?;
         let (parser_region, _) = self.region_at_base_byte(entry.parser_physical.bytes())?;
         if accepted_region != parser_region {
             return Err(invalid(
@@ -379,8 +379,7 @@ pub(super) struct M11CompactRevisionResolvedEntry {
     pub(super) high_level_events: u64,
     pub(super) renderable_rows: u64,
     pub(super) open_depth: u32,
-    pub(super) cold_document_frame:
-        Option<flark_engine::parser_internal::M11RecursiveGreenFrameId>,
+    pub(super) cold_document_frame: Option<flark_engine::parser_internal::M11RecursiveGreenFrameId>,
     pub(super) cold_staged_blank_gap: Option<SourceMetric>,
     pub(super) next_frame: u64,
     pub(super) encoded_len: u32,
@@ -587,7 +586,9 @@ impl M11CompactIndexRevision {
         let (start_region, deltas) = self
             .remap
             .region_at_base_byte(u64::from(record.source.start))?;
-        let (end_region, _) = self.remap.region_at_base_byte(u64::from(record.source.end))?;
+        let (end_region, _) = self
+            .remap
+            .region_at_base_byte(u64::from(record.source.end))?;
         if start_region != end_region {
             return Err(invalid(
                 "carried reference record straddles a replaced range",
@@ -604,9 +605,8 @@ impl M11CompactIndexRevision {
                 deltas.bytes,
                 "remapped reference coordinate left the document",
             )?;
-            Ok(u32::try_from(start).map_err(|_| {
-                invalid("remapped reference coordinate exceeds the candidate ABI")
-            })?
+            Ok(u32::try_from(start)
+                .map_err(|_| invalid("remapped reference coordinate exceeds the candidate ABI"))?
                 ..u32::try_from(end).map_err(|_| {
                     invalid("remapped reference coordinate exceeds the candidate ABI")
                 })?)
@@ -739,7 +739,9 @@ impl M11CompactIndexRevisionUpdate {
         syntax_profile: u32,
     ) -> Result<Self, RevisionError> {
         if syntax_profile == 0 {
-            return Err(invalid("revision update requires a declared syntax profile"));
+            return Err(invalid(
+                "revision update requires a declared syntax profile",
+            ));
         }
         base.validate_metadata_and_durable_samples()
             .map_err(invalid)?;
@@ -767,7 +769,8 @@ impl M11CompactIndexRevisionUpdate {
             remap.breakpoints.last().map_or(0, |b| b.cumulative.utf16),
             "edited source extent reconciles with the base extent",
         )?;
-        if current.byte_len() as u64 != expected_bytes || current.utf16_len() as u64 != expected_utf16
+        if current.byte_len() as u64 != expected_bytes
+            || current.utf16_len() as u64 != expected_utf16
         {
             return Err(invalid(
                 "committed edit description does not reconcile base and current source extents",
@@ -1164,9 +1167,7 @@ impl M11CompactIndexRevisionUpdate {
             .try_reserve_exact(parser.encoded_len())
             .map_err(|_| invalid("convergence parser payload allocation failed"))?;
         parser.visit_encoded_bytes(|bytes| live_parser_payload.extend_from_slice(bytes));
-        let stored_parser_payload = base
-            .encoded_entry(candidate_index)
-            .map_err(invalid)?;
+        let stored_parser_payload = base.encoded_entry(candidate_index).map_err(invalid)?;
         if live_parser_payload != stored_parser_payload {
             return Ok(Err("encoded parser payload bytes"));
         }
