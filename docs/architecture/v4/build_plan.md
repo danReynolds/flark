@@ -255,6 +255,54 @@ replaces. Remaining for the A3 receipt: the ABI opening transaction,
 `flark_core` streaming admission, Flutter paint, and the frozen
 five-run physical measurement.
 
+### Experiment B revision-locality receipt (2026-08-17): ALL GATES PASS
+
+The compact index now updates through bounded convergence instead of BOF
+rebuilds. The build follows the measurement-determined design exactly: a
+piecewise revision remap layer (the section 5 explicit remapping layer)
+carries every absolute coordinate dimension; the convergence updater
+selects the nearest resumable predecessor on the parser cut (walking back
+past entries without a bounded writer restart), resumes the real primary
+parser through the durable-decode machinery, and tests convergence at
+every replayed line boundary against the next candidate's remapped cut —
+convergence equality is encoded parser and writer payload byte equality
+plus remap-consistent manifest metadata, which the relocatability
+receipts proved is state equality through the durable codec. On
+convergence the journal splices: prefix and suffix entries reuse their
+payload records as stored under the remap.
+
+The nine-cell falsification differential (1 and 10 MiB at BOF, middle,
+and EOF; same-length replacements and a one-byte insertion; one
+definition-bearing 2 MiB cell), independently re-run and reproduced:
+
+- **Replay ceiling**: 144–4,144 bytes replayed per ordinary edit — 16x
+  inside the frozen 64 KiB gate.
+- **Perfect sharing**: zero checkpoints replaced and zero pages appended
+  in every ordinary cell; every payload page shared as stored, with
+  convergence on the first candidate every time.
+- **Size independence**: update cost 0.22–7.8 ms with identical replay
+  bytes at 1 and 10 MiB, against clean rebuilds of 100 ms and 1.03 s —
+  a ~200x advantage at 10 MiB that does not trend with size.
+- **Equality**: all nine cells entry-by-entry equal to a clean rebuild
+  of the edited source through the remap, including carried reference
+  records; the definition-bearing window converges its checkpoint index
+  identically in 7.8 ms and pays the declared v1 whole-document
+  reference rebuild (~380 ms), recorded as named future work per
+  section 5.2 rather than silent cost.
+
+Recorded design decisions: predecessor selection on the parser cut with
+a resumability walk-back; convergence tested against remapped candidate
+cuts (the post-resume cadence cannot land on them by accident,
+especially under insertions, and window re-emission still applies the
+production stride rule); non-position deltas are caller-declared and
+verified by convergence — a wrong declaration can only suppress
+convergence into a bounded, still-correct full replay, proven by the
+structural-edit test; frame-identity translation under a nonzero frame
+delta fails closed as declared future work. With this receipt the
+architecture's final unproven claim — revision locality — is closed;
+what remains for the compact path is integration (post-seal authority
+cutover deleting the full-Green tail) and qualification.
+
 ### Dart-layer streamed open receipt (2026-08-17)
 
 The A3 vertical now reaches the public Dart API.
