@@ -153,6 +153,11 @@ const _coordinateOutOfRange = 0x0206;
 // backpressure.
 const _openingAdoptionPumpUnits = 2048;
 const _openingAdoptionMaximumPumps = 65536;
+// Head window for the mid-load certification probe: matches the bounded
+// page ranges parse-pending consumers already use, and certified early
+// slices are BOF-anchored, so a head probe decides certification for any
+// range that starts inside the certified prefix.
+const _openingCertificationProbeBytes = 4096;
 const _resultPayloadBytes = 64 * 1024;
 const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
@@ -1831,20 +1836,35 @@ final class FlarkNativeDocument {
       // ends, but its semantic query is only defined once an early slice is
       // certified: the fixed ABI cannot encode the pre-certification
       // NOT_READY_SOURCE_GAP answer (outcome coherence collapses it to an
-      // internal fault), so the certification-range query — the same
+      // internal fault), so a certification-range probe — the same
       // pending-neutral answer any parse-pending document serves today —
-      // decides first whether certified rows exist to fetch. Nothing else
-      // can touch the session between these two synchronous calls, so a
-      // certified span cannot retire in between; any semantic-query error
-      // after a certified span is a real fault and stays loud.
-      final live = _queryViewportPage(3, startByte, resolvedEnd, maxRows);
-      final certified = live.certificationRanges.any(
+      // decides first whether certified rows exist to fetch. The probe stays
+      // within a bounded head window because its answer carries the covered
+      // source bytes, and certified early slices are BOF-anchored, so the
+      // window sees exactly the certification the requested range's head
+      // would. Nothing else can touch the session between these synchronous
+      // calls, so a certified span cannot retire in between; any
+      // semantic-query error after a certified span is a real fault and
+      // stays loud.
+      final probeEnd = math.min(
+        resolvedEnd,
+        startByte + _openingCertificationProbeBytes,
+      );
+      final probe = _queryViewportPage(3, startByte, probeEnd, maxRows);
+      final certified = probe.certificationRanges.any(
         (range) =>
             range.certification == FlarkCertification.currentCertified &&
             range.sourceBytes.start < range.sourceBytes.end,
       );
-      if (!certified) return live;
-      return _queryViewportPage(4, startByte, resolvedEnd, maxRows);
+      if (certified) {
+        return _queryViewportPage(4, startByte, resolvedEnd, maxRows);
+      }
+      // Uncertified: the pending answer for the full requested range keeps
+      // exact parity with today's parse-pending query, including its result
+      // caps; a request already inside the probe window is already answered.
+      return probeEnd == resolvedEnd
+          ? probe
+          : _queryViewportPage(3, startByte, resolvedEnd, maxRows);
     }
     return _queryViewportPage(_ready ? 4 : 3, startByte, resolvedEnd, maxRows);
   }

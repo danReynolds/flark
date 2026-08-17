@@ -431,6 +431,12 @@ final class FlarkCoreDocument {
   /// Requires a native library built with the `opening-session` cargo
   /// feature; default builds reject the streamed open with a typed
   /// [FlarkCoreNativeException] (INVALID_ARGUMENT) at open.
+  ///
+  /// Current experiment limitation: the native opening session can only
+  /// seal once it has captured a first compact slice, so streams smaller
+  /// than roughly the first certified slice (a few kilobytes of Markdown)
+  /// fail the seal with a typed PARSER_FAULT instead of completing. Use
+  /// [open] for tiny documents.
   static Future<FlarkCoreDocument> openUtf8Stream(
     Stream<Uint8List> chunks, {
     int? expectedBytes,
