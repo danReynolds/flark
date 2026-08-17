@@ -132,6 +132,73 @@ insertion cell should confirm byte/UTF-16 dimensions relocate independently.
 The probe is retained `#[ignore]`d in-crate as the regression check for any
 future durable-codec change.
 
+### Experiment A loop-closure receipt (2026-08-17)
+
+The append-adoption seam now has callers and a differential.
+`build_m11_progressive_open_probe` drives the one compact primary parser
+over source admitted for real through an `OpeningSourceStore`: the runtime
+replica advances only through store-minted append proofs, the parser
+frontier trails the admitted frontier at line granularity (unterminated and
+CR-ambiguous tails wait for later input or the seal), an append with no
+complete line advances source/writer authority while the parser stays
+starved, and unknown-length streams (`expected_input_utf16: None`) end only
+at an explicit seal. The store-driven differential proves clean-parse
+equality across CRLF endings split between transport pages, mid-word page
+cuts, a fence spanning pages, late reference resolution, and an
+unterminated sealed tail. The early pre-EOF viewport remains
+generation-bound: querying it after later appends fails closed with a
+source-authority mismatch, which is the required behavior; carrying it
+forward through append receipts is A3 continuity work, not a default.
+
+Closing the loop surfaced two real defects, both fixed with regressions:
+a first resume from an empty admission bypassed the controller's initial
+document-open command (both resume sites now select the ControllerLine
+phase until the initial boundary is captured), and per-append root
+retirement was never drained, so a 128-page load failed with typed
+`RetirementBackpressure` (the drive now drains one grant per adoption; a
+failed drive cancels the build and releases the early viewport so the
+typed error survives instead of a root-release drop assertion). The
+production document actor must own the same reclamation work class.
+
+True-path release numbers on the development Mac (8 Ki UTF-16 pages,
+unknown length, admission included in the timer): first certified slice
+0.358 ms at 1 MiB and 0.341 ms at 10 MiB; complete admission plus EOF
+compact indexing 98.7 ms and 1,034.8 ms with 130 and 1,282 starvation
+cycles — about 3% protocol overhead against the fixed-source simulation,
+and the 10 MiB result again straddles the 1-second Mac gate with the known
+~30% sink headroom still unexploited.
+
+### Pixel 6a engine multiplier receipt (2026-08-17)
+
+The compact engine suite ran on the physical Pixel 6a (release,
+aarch64-linux-android, charging, no thermal throttling: status 0
+throughout, battery 25.5–26.9 °C, repetition spread under 1.5%; three
+repetitions per metric; same build measured on the M1 Pro within the hour
+for apples-to-apples ratios).
+
+- Ordinary 10 MiB EOF compact indexing: 1,954.6–1,979.9 ms (nested cell
+  1,654.2–1,660.4 ms; the progressive probe path agrees at
+  1,881.3–1,914.0 ms). **The frozen <3 s Pixel gate passes with ~34%
+  headroom.** 1 MiB steady-state completes in ~193 ms.
+- Early certification stays sub-millisecond on device (0.614–0.675 ms at
+  10 MiB) at the identical 2,240-byte admission point: size-independence
+  survives the device.
+- The device multiplier is not flat. Bulk indexing throughput is a tight
+  1.79–1.94x across sizes and shapes. Small-slice query latency scales
+  worse: ordinary midpoint cold jump 28.5–29.4 ms (2.46x, inside the
+  100 ms gate), reference cold jump 25.8–33.5 ms (2.40x, inside), nested
+  depth-four 132.9–139.1 ms (1.92x apples-to-apples) — exceeding the
+  100 ms request gate by ~1.35x exactly as projected before the slice-query
+  optimization. Device phase split matches the Mac shape: rows_located
+  48.7 ms plus inline_prepare 69.8 ms is ~87% of engine_ready, with the
+  query half scaling 2.4–4.0x and the inline half 1.2–1.6x.
+- Planning rule frozen from this receipt: budget 1.9x for throughput and
+  2.5x for slice-query latency; a single flat multiplier under-predicts
+  cold-jump work by ~25%.
+- The relocatability probe ran on-device with byte-identical results
+  (2,532/2,532 and 1,013/1,013 aligned, zero payload diffs), extending the
+  Experiment B storage receipt to ARM.
+
 ### Nested cold-jump decomposition (2026-08-17)
 
 The 89 ms depth-four nested cold-jump receipt threatened the frozen
