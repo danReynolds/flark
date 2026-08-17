@@ -199,6 +199,36 @@ for apples-to-apples ratios).
   (2,532/2,532 and 1,013/1,013 aligned, zero payload diffs), extending the
   Experiment B storage receipt to ARM.
 
+### Slice-query optimization receipt (2026-08-17)
+
+The named optimization from the decomposition below landed the same day.
+The measured hot loop was per-visit leaf re-authentication:
+`sequence_node_header` re-decoded and re-summarized every packed event of
+a leaf page (~0.36 us/event, ~900 events per descent on the nested slice)
+on every node visit of every descent, with a fresh descent set per row and
+five ancestor boundaries recomputed per fence call. Two hoisting-only
+changes remove it: a walk-scoped `SequenceNodeCache` memoizing node
+headers that already passed the exact decode-and-validate path against the
+same immutable arena during that walk (full arena identity key including
+generation; failed decodes never cached; the historical uncached paths and
+their receipt-exact point-query tests untouched), and an additive batch
+fence API (`locate_renderable_row_fences_for_kinds` /
+`prepare_m11_recursive_green_slice_inline_leaf_rows`) minting every
+qualifying row's fence in one bounded window walk with per-row admission
+identical to the per-point query.
+
+Merged-tree release receipt: nested depth-four cold jump engine_ready
+**84.6 ms → 7.4 ms** (captured 1.77 ms, green built 3.3 ms, rows plus all
+32 fences 5.8 ms total, batch preparation residue 1.7 us, slowest complete
+row 0.51 ms); the ordinary path improved from 16.4 ms to 3.7 ms with no
+regression. At the frozen 2.5x device slice-query multiplier this projects
+the nested jump to ~19 ms on the Pixel — inside the 100 ms request gate
+with 5x margin, closing the one pre-optimization device exceedance. The
+nested receipt now additionally asserts per-row equality between per-point
+and batch preparations; GFM 672/672, the 4,032-edit incremental ledger,
+all engine/parser/runtime/abi suites, and the byte-identical
+relocatability receipts all hold on the merged tree.
+
 ### Nested cold-jump decomposition (2026-08-17)
 
 The 89 ms depth-four nested cold-jump receipt threatened the frozen

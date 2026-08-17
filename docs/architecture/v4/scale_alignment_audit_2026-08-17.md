@@ -89,17 +89,22 @@ without any gate noticing.
 
 ## 4. Flags (ranked)
 
-**F1 — DECOMPOSED 2026-08-17: the cost is the slice query layer, not the
-restart.** Instrumentation splits the depth-4 nested 84.6 ms as decode
-0.03 ms + replay 2.25 ms + Green slice build 3.2 ms (restart machinery
-exonerated at 5.5 ms) versus `locate_renderable_rows` 26.1 ms and 32×
-`prepare_m11_recursive_green_slice_inline_leaf` 50.7 ms (~1.6 ms/row via
-the per-point row-fence resolver); inline capture itself is 2.3 ms. The
-optimization target is one shared ancestor-context walk per
-materialization in `recursive_green` queries instead of a fresh fence
-resolution per row — it pays on every deep viewport, not just cold jumps.
-Remains open as a named engine optimization ahead of Pixel qualification
-(projected ~250 ms on Pixel unoptimized vs the 100/200 ms gate).
+**F1 — RESOLVED 2026-08-17: slice-query layer optimized 11x.** The
+decomposition found the hot loop precisely: `sequence_node_header`
+re-decoded and re-summarized every packed leaf event on every node visit
+of every descent, multiplied by a fresh descent set per row and five
+recomputed ancestor boundaries per fence call. The fix is hoisting-only —
+a walk-scoped `SequenceNodeCache` of node headers that already passed the
+exact decode-and-validate path against the same immutable arena during
+that walk (keyed on full arena identity including generation; errors never
+cached; receipt-exact point-query paths untouched), plus an additive batch
+API that mints every row's inline-leaf fence in one bounded window walk
+with per-row admission identical to the per-point query. Nested depth-4
+engine_ready: **84.6 ms → 7.4 ms** (device projection ~19 ms at the
+measured 2.5x multiplier, inside the 100 ms gate with 5x margin);
+ordinary path improved 16.4 → 3.7 ms. Differentials assert per-point vs
+batch equality per row; GFM 672/672 and the 4,032-edit incremental ledger
+stay exact; the relocatability receipts are unchanged.
 
 **F2 — RESOLVED 2026-08-17: durable payloads are relocatable as stored.**
 The falsification probe ran before any convergence machinery was designed
