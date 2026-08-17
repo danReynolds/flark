@@ -168,6 +168,46 @@ cycles — about 3% protocol overhead against the fixed-source simulation,
 and the 10 MiB result again straddles the 1-second Mac gate with the known
 ~30% sink headroom still unexploited.
 
+### Admitted-first-winner reference certification (2026-08-17)
+
+Early certification no longer defers on every bracket. The compact
+reference resolver now carries typed authority: `Final` (EOF), where a
+missing label is authoritatively literal, and `CommittedPrefix`, where
+present winners are final under the GFM first-winner rule — every earlier
+position is already admitted, so a later duplicate always loses — but a
+missing label returns the new fail-closed
+`M11ReferenceResolution::Unknown`. Absence before EOF is never
+literalness: the inline reference stage treats `Unknown` exactly like the
+oversized-value case, revoking the whole-leaf bracket certificate so the
+leaf fails closed to neutral, and a prefix resolver therefore cannot emit
+literal-text facts a suffix could falsify.
+
+Certification is now an audit, not a byte scan. Every inline-bearing row
+of the candidate slice is captured against the committed-prefix resolver,
+which shares one `Unknown` counter across clones; a capture that consumed
+an `Unknown` lookup defers certification, other fail-closed captures
+certify because the eventual viewport refuses them identically, and rows
+without an inline-leaf fence defer only on bracket bytes not accounted
+for by a committed definition's exact source range. Differentials: direct
+links, escaped brackets, and inline code spans certify before EOF with
+cooked link values equal to the eventual viewport (previously every such
+slice deferred); the late-definition fixture still refuses certification;
+and the opening-store path certifies direct-linked CRLF paragraphs across
+real appends.
+
+One pre-existing hole was exposed and pinned by the new differential: a
+first slice whose range covers *leading* reference definitions cannot
+build a bounded Green slice at all, because definition rows live in the
+writer's reference windows rather than the ordinary event stream.
+Documents opening with definitions therefore fail the compact
+first-viewport probe with a typed error — early certification degrades to
+none, but the final slice has no fallback. Slice reference windows are
+the named completion item, and they are a prerequisite for the A3
+ordinary fixture matrix, where top-of-document definitions are a common
+real shape. Error paths in the slice builder and the audit now cancel
+their builders, so every failure in this area surfaces as its typed error
+rather than a root or builder drop assertion.
+
 ### Pixel 6a engine multiplier receipt (2026-08-17)
 
 The compact engine suite ran on the physical Pixel 6a (release,
