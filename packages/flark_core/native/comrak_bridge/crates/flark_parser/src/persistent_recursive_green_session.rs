@@ -8421,6 +8421,108 @@ mod tests {
         close_runtime(&mut runtime);
     }
 
+    fn reference_tail_fixture() -> (String, usize) {
+        const BLOCK: &str = "Paragraph uses [ref3] with **bold** and plain words.\n\n";
+        let mut source = repeat_ascii_exact("", BLOCK, 32 * 1024);
+        // The exact-length repeat ends mid-line; close that paragraph so the
+        // trailing definition block starts its own.
+        source.push_str("\n\n");
+        let definitions_start = source.len();
+        for ordinal in 0..8 {
+            source.push_str(&format!("[ref{ordinal}]: /destination/{ordinal} \"title {ordinal}\"\n"));
+        }
+        source.push('\n');
+        (source, definitions_start)
+    }
+
+    #[test]
+    fn compact_index_revision_carries_references_past_a_definition_free_window() {
+        let (base_source, definitions_start) = reference_tail_fixture();
+        let mut runtime = DocumentRuntime::new(&base_source, DocumentRuntimeConfig::default())
+            .expect("carried reference runtime");
+        let (mut base_session, ..) = build_compact_probe(&mut runtime, Instant::now());
+        let source = base_session.source();
+        let (base_journal, base_refs) = take_compact_index_parts(&mut runtime, &mut base_session);
+
+        // A +1 insertion before the trailing definition block shifts every
+        // stored reference record, so the carried index must translate them
+        // through the remap rather than reuse stale coordinates.
+        let edit_start = interior_word_letter_at_or_after(&base_source, definitions_start / 2);
+        let edit = committed_revision_edit(
+            &base_source,
+            edit_start..edit_start,
+            "q",
+            paragraph_content_carried(1, 1),
+        );
+        runtime
+            .apply_edit(source, edit_start..edit_start, "q")
+            .expect("commit definition-free insertion");
+
+        let (revision, _) =
+            drive_compact_index_revision(&mut runtime, base_journal, base_refs, edit);
+        let receipt = *revision.receipt();
+        assert!(receipt.converged, "{receipt:?}");
+        assert!(!receipt.references_rebuild_required, "{receipt:?}");
+        assert_eq!(receipt.window_definition_records, 0, "{receipt:?}");
+        assert_eq!(receipt.base_definitions_intersecting, 0, "{receipt:?}");
+        assert!(matches!(
+            revision.references(),
+            M11CompactRevisionReferences::CarriedForward { .. }
+        ));
+
+        let (mut rebuild, ..) = build_compact_probe(&mut runtime, Instant::now());
+        assert_compact_revision_matches_clean_rebuild(&revision, &rebuild);
+        release_session(&mut runtime, &mut rebuild);
+        close_runtime(&mut runtime);
+    }
+
+    #[test]
+    fn compact_index_revision_definition_bearing_window_requires_reference_rebuild() {
+        let (base_source, definitions_start) = reference_tail_fixture();
+        let mut runtime = DocumentRuntime::new(&base_source, DocumentRuntimeConfig::default())
+            .expect("definition-bearing runtime");
+        let (mut base_session, ..) = build_compact_probe(&mut runtime, Instant::now());
+        let source = base_session.source();
+        let (base_journal, base_refs) = take_compact_index_parts(&mut runtime, &mut base_session);
+
+        // Rename one letter inside a definition title: structure-preserving
+        // for the checkpoint index, content-changing for the reference index.
+        let edit_start = base_source[definitions_start..]
+            .find("title 4")
+            .map(|offset| definitions_start + offset)
+            .expect("definition title");
+        let replacement = replacement_letter_at(&base_source, edit_start);
+        let edit = committed_revision_edit(
+            &base_source,
+            edit_start..edit_start + 1,
+            replacement,
+            M11CompactRevisionCarriedDeltas::default(),
+        );
+        runtime
+            .apply_edit(source, edit_start..edit_start + 1, replacement)
+            .expect("commit definition edit");
+
+        let (revision, _) =
+            drive_compact_index_revision(&mut runtime, base_journal, base_refs, edit);
+        let receipt = *revision.receipt();
+        assert!(receipt.references_rebuild_required, "{receipt:?}");
+        assert!(
+            receipt.window_definition_records > 0 || receipt.base_definitions_intersecting > 0,
+            "{receipt:?}"
+        );
+        assert!(matches!(
+            revision.references(),
+            M11CompactRevisionReferences::RebuildRequired
+        ));
+
+        // The checkpoint index still splices and equals the clean rebuild;
+        // only the reference index pays the declared rebuild.
+        let (mut rebuild, ..) = build_compact_probe(&mut runtime, Instant::now());
+        assert_compact_revision_matches_clean_rebuild(&revision, &rebuild);
+        release_session(&mut runtime, &mut rebuild);
+        close_runtime(&mut runtime);
+    }
+
     #[test]
     fn dynamic_reference_replacement_keeps_the_prefix_before_a_remainder_restart() {
         const BASE: &str = "[base]: /base\n!x]: /new\nsee [x]\n";
