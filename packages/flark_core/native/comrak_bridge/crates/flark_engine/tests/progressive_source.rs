@@ -23,7 +23,7 @@ fn close_runtime(mut runtime: DocumentRuntime) {
 
 #[test]
 fn append_publishes_immutable_prefixes_and_seal_reuses_the_last_root() {
-    let mut opening = OpeningSourceStore::new(SourceRevision::new(41), 10).expect("opening");
+    let mut opening = OpeningSourceStore::new(SourceRevision::new(41), Some(10)).expect("opening");
     let initial = opening.version();
     let initial_authority = opening.authority();
     let first = opening
@@ -77,7 +77,7 @@ fn append_publishes_immutable_prefixes_and_seal_reuses_the_last_root() {
 
 #[test]
 fn admitted_prefix_edit_and_later_stream_append_are_separate_axes() {
-    let mut opening = OpeningSourceStore::new(SourceRevision::new(8), 11).expect("opening");
+    let mut opening = OpeningSourceStore::new(SourceRevision::new(8), Some(11)).expect("opening");
     let first = opening
         .append_page(opening.version(), 0..6, "alpha\n")
         .expect("first page");
@@ -123,7 +123,7 @@ fn admitted_prefix_edit_and_later_stream_append_are_separate_axes() {
 
 #[test]
 fn stale_or_malformed_opening_operations_never_mutate_silently() {
-    let mut opening = OpeningSourceStore::new(SourceRevision::new(1), 3).expect("opening");
+    let mut opening = OpeningSourceStore::new(SourceRevision::new(1), Some(3)).expect("opening");
     let initial = opening.version();
     let first = opening.append_page(initial, 0..1, "a").expect("first page");
 
@@ -165,7 +165,7 @@ fn stale_or_malformed_opening_operations_never_mutate_silently() {
 
 #[test]
 fn a_trailing_bare_cr_is_not_an_unsealed_frontier() {
-    let mut opening = OpeningSourceStore::new(SourceRevision::new(2), 9).expect("opening");
+    let mut opening = OpeningSourceStore::new(SourceRevision::new(2), Some(9)).expect("opening");
     let initial = opening.version();
     let first = opening
         .append_page(initial, 0..7, "alpha\r\r")
@@ -208,11 +208,38 @@ fn a_trailing_bare_cr_is_not_an_unsealed_frontier() {
 }
 
 #[test]
+fn the_last_unsealed_frontier_skips_ambiguous_tails_and_unknown_lengths_seal() {
+    let mut opening = OpeningSourceStore::new(SourceRevision::new(4), None).expect("opening");
+    let version = opening
+        .append_page(opening.version(), 0..10, "a\nb\rc\r\nd\r\r")
+        .expect("page");
+    let lease = opening.snapshot().into_source_lease();
+
+    // Admissible boundaries walk backward past the ambiguous trailing CR to
+    // the interior bare CR whose successor is known not to be LF.
+    assert_eq!(
+        lease.last_unsealed_physical_line_frontier(0).expect("scan"),
+        Some(9)
+    );
+    assert_eq!(
+        lease.last_unsealed_physical_line_frontier(9).expect("floor"),
+        None
+    );
+
+    // An unknown-length stream is never "input complete"; only the seal ends
+    // it, at exactly the admitted text.
+    assert_eq!(version.declared_input_complete(), None);
+    assert!(!version.input_complete());
+    let sealed = opening.seal().expect("unknown-length seal");
+    assert_eq!(sealed.version().byte_len(), 10);
+}
+
+#[test]
 fn empty_source_seals_without_a_phantom_page_and_opening_store_is_send() {
     fn assert_send<T: Send>() {}
     assert_send::<OpeningSourceStore>();
 
-    let opening = OpeningSourceStore::new(SourceRevision::new(3), 0).expect("empty opening");
+    let opening = OpeningSourceStore::new(SourceRevision::new(3), Some(0)).expect("empty opening");
     assert!(opening.version().input_complete());
     let root = opening.version().root();
     let source = opening.seal().expect("seal empty source");
@@ -222,7 +249,7 @@ fn empty_source_seals_without_a_phantom_page_and_opening_store_is_send() {
 
 #[test]
 fn runtime_replica_advances_only_through_store_minted_append_lineage() {
-    let mut opening = OpeningSourceStore::new(SourceRevision::new(5), 12).expect("opening");
+    let mut opening = OpeningSourceStore::new(SourceRevision::new(5), Some(12)).expect("opening");
     let first = opening
         .append_page(opening.version(), 0..6, "first\n")
         .expect("first page");

@@ -17,7 +17,7 @@ struct Receipt {
 fn run(size_mib: usize) -> Receipt {
     let total = size_mib * 1024 * 1024;
     let page = "x".repeat(SOURCE_SEED_PAGE_MAX_UTF16);
-    let mut opening = OpeningSourceStore::new(SourceRevision::new(1), total).expect("opening");
+    let mut opening = OpeningSourceStore::new(SourceRevision::new(1), Some(total)).expect("opening");
     let started = Instant::now();
     let mut first_frontier = None;
     let mut edited = false;

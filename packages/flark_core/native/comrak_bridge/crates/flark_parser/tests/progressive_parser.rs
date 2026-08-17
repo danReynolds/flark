@@ -57,8 +57,17 @@ fn assert_progressive_matches_clean(
         .expect("progressive runtime");
     let progressive = build_m11_progressive_compact_probe(&mut progressive_runtime, 1, frontiers)
         .expect("progressive compact probe");
-    let starvation_count = progressive.starvation_count();
-    assert_eq!(starvation_count, frontiers.len() - 1);
+    assert_eq!(progressive.starvation_count(), frontiers.len() - 1);
+    assert_probe_matches_clean(progressive, progressive_runtime, source, inline_point, true)
+}
+
+fn assert_probe_matches_clean(
+    progressive: flark_parser::M11ProgressiveCompactProbe,
+    mut progressive_runtime: DocumentRuntime,
+    source: &str,
+    inline_point: usize,
+    early_queryable: bool,
+) -> (usize, bool, bool) {
     let structural_before_eof = progressive.first_structural_slice_before_eof();
     let structural_frontier = progressive.first_structural_slice_admitted_bytes();
     let early_certified = progressive.early_plain_closed_prefix_certified();
@@ -102,7 +111,13 @@ fn assert_progressive_matches_clean(
     assert_eq!(progressive_inline.facts, clean_inline.facts);
     assert_eq!(progressive_inline.link_values, clean_inline.link_values);
 
+    // An early viewport is bound to its mid-load generation; once later
+    // appends advanced the source, querying it must fail closed, so the
+    // equality comparison only runs when the generation still matches.
     if let Some(early) = early_viewport {
+        if !early_queryable {
+            release(early, &mut progressive_runtime);
+        } else {
         let early_rows = rows(&early, &progressive_runtime);
         assert_eq!(early_rows.rows(), progressive_rows.rows());
         let early_inline = early
@@ -113,6 +128,7 @@ fn assert_progressive_matches_clean(
         assert_eq!(early_inline.facts, progressive_inline.facts);
         assert_eq!(early_inline.link_values, progressive_inline.link_values);
         release(early, &mut progressive_runtime);
+        }
     }
 
     release(progressive_viewport, &mut progressive_runtime);
@@ -178,6 +194,81 @@ fn open_fence_survives_multiple_starvations_and_closes_only_on_real_input() {
     assert!(structural_before_eof);
     assert!(structural_frontier >= closed_fence);
     assert!(early_certified);
+}
+
+#[test]
+fn opening_store_appends_drive_the_live_parser_to_clean_equality() {
+    use flark_engine::{OpeningSourceStore, SourceRevision};
+    use flark_parser::{build_m11_progressive_open_probe, M11ProgressiveOpenFeed};
+
+    // CRLF paragraphs, a fence spanning pages, late reference uses resolved
+    // by a definition in the final page, and an unterminated tail sealed by
+    // transport exhaustion.
+    let mut source = String::from("Heading\n---\n\n");
+    for index in 0..40 {
+        source.push_str(&format!("Paragraph {index} with **bold** content here.\r\n\r\n"));
+    }
+    source.push_str("```text\n");
+    for index in 0..24 {
+        source.push_str(&format!("code line {index}\n"));
+    }
+    source.push_str("```\n\n");
+    for index in 0..24 {
+        source.push_str(&format!("After fence {index} uses [late].\n\n"));
+    }
+    source.push_str("[late]: https://example.com \"Late winner\"\n\nTail without newline");
+    assert!(source.is_ascii(), "byte offsets double as UTF-16 offsets");
+
+    // Hostile page cuts: between the CR and LF of one ending, mid-word,
+    // inside the open fence, and at the late definition.
+    let cuts = [
+        source.find("\r\n").expect("first CRLF") + 1,
+        source.find("Paragraph 7").expect("mid paragraph") + 6,
+        source.find("code line 10").expect("inside fence") + 5,
+        source.find("[late]:").expect("late definition"),
+    ];
+    assert!(cuts.windows(2).all(|window| window[0] < window[1]));
+    let mut pages = Vec::new();
+    let mut start = 0;
+    for cut in cuts.into_iter().chain([source.len()]) {
+        pages.push((start..cut, source[start..cut].to_string()));
+        start = cut;
+    }
+
+    let mut store = OpeningSourceStore::new(SourceRevision::new(7), None).expect("opening store");
+    let mut progressive_runtime = DocumentRuntime::from_opening_snapshot(
+        store.snapshot(),
+        DocumentRuntimeConfig::default(),
+    )
+    .expect("opening runtime");
+    let admitted = store.version();
+    let mut remaining = pages.into_iter();
+    let probe = build_m11_progressive_open_probe(
+        &mut progressive_runtime,
+        1,
+        &mut store,
+        admitted,
+        |store| match remaining.next() {
+            Some((range, text)) => {
+                let version = store.version();
+                store
+                    .append_page(version, range, &text)
+                    .expect("transport page append");
+                Ok(M11ProgressiveOpenFeed::Appended)
+            }
+            None => Ok(M11ProgressiveOpenFeed::Exhausted),
+        },
+    )
+    .expect("opening-store progressive probe");
+
+    assert!(probe.first_structural_slice_before_eof());
+    assert!(probe.early_plain_closed_prefix_certified());
+    assert!(probe.starvation_count() >= 5);
+    let inline_point = source.find("Paragraph 3").expect("early paragraph") + 2;
+    assert_probe_matches_clean(probe, progressive_runtime, &source, inline_point, false);
+
+    let sealed = store.seal().expect("seal exhausted opening store");
+    assert_eq!(sealed.version().byte_len(), source.len());
 }
 
 #[test]

@@ -922,7 +922,7 @@ pub struct OpeningSourceVersion {
     root: SourceRootId,
     admitted_input_bytes: usize,
     admitted_input_utf16: usize,
-    expected_input_utf16: usize,
+    expected_input_utf16: Option<usize>,
     current_bytes: usize,
     current_utf16: usize,
 }
@@ -959,8 +959,11 @@ impl OpeningSourceVersion {
         self.admitted_input_utf16
     }
 
+    /// Returns the declared total input length, when the transport declared
+    /// one. Streams of unknown length carry `None`; only sealing decides
+    /// their end.
     #[must_use]
-    pub const fn expected_input_utf16(self) -> usize {
+    pub const fn expected_input_utf16(self) -> Option<usize> {
         self.expected_input_utf16
     }
 
@@ -974,9 +977,20 @@ impl OpeningSourceVersion {
         self.current_utf16
     }
 
+    /// Returns whether the admitted input matches a declared total. This is
+    /// `None` for unknown-length streams: absence of bytes is never evidence
+    /// of completion, and only an explicit seal ends such a load.
+    #[must_use]
+    pub const fn declared_input_complete(self) -> Option<bool> {
+        match self.expected_input_utf16 {
+            Some(expected) => Some(self.admitted_input_utf16 == expected),
+            None => None,
+        }
+    }
+
     #[must_use]
     pub const fn input_complete(self) -> bool {
-        self.admitted_input_utf16 == self.expected_input_utf16
+        matches!(self.declared_input_complete(), Some(true))
     }
 }
 
@@ -1156,7 +1170,7 @@ pub struct OpeningSourceStore {
     document: SourceDocumentId,
     generation: u64,
     revision: SourceRevision,
-    expected_input_utf16: usize,
+    expected_input_utf16: Option<usize>,
     admitted_input_bytes: usize,
     admitted_input_utf16: usize,
     root: Arc<SourceRoot>,
@@ -1177,9 +1191,12 @@ impl fmt::Debug for OpeningSourceStore {
 
 #[cfg(feature = "progressive-source-probe")]
 impl OpeningSourceStore {
+    /// Begins one progressive source-admission transaction. A transport that
+    /// knows its total length declares it through `expected_input_utf16`; an
+    /// unknown-length stream passes `None` and only [`Self::seal`] ends it.
     pub fn new(
         revision: SourceRevision,
-        expected_input_utf16: usize,
+        expected_input_utf16: Option<usize>,
     ) -> Result<Self, OpeningSourceError> {
         let load = SourceLoadId::allocate().ok_or(SourceEditError::IdentityExhausted)?;
         let document =
@@ -1287,7 +1304,9 @@ impl OpeningSourceStore {
             || page_utf16_len == 0
             || input_utf16_range.start != self.admitted_input_utf16
             || expected_end != Some(input_utf16_range.end)
-            || input_utf16_range.end > self.expected_input_utf16
+            || self
+                .expected_input_utf16
+                .is_some_and(|expected| input_utf16_range.end > expected)
         {
             self.poisoned = true;
             return Err(SourceEditError::InvalidSeedPage {
@@ -1295,7 +1314,8 @@ impl OpeningSourceStore {
                 start: input_utf16_range.start,
                 end: input_utf16_range.end,
                 page_utf16_len,
-                expected_total: self.expected_input_utf16,
+                // Unknown-length streams have no declared total to violate.
+                expected_total: self.expected_input_utf16.unwrap_or(usize::MAX),
             }
             .into());
         }
@@ -1369,17 +1389,21 @@ impl OpeningSourceStore {
         Ok(self.version())
     }
 
-    /// Seals EOF and promotes the current immutable root without rebuilding it.
+    /// Seals EOF and promotes the current immutable root without rebuilding
+    /// it. A declared total must be fully admitted first; an unknown-length
+    /// stream seals wherever its transport ended.
     pub fn seal(self) -> Result<SourceStore, OpeningSourceError> {
         if self.poisoned {
             return Err(SourceEditError::SeedPoisoned.into());
         }
-        if self.admitted_input_utf16 != self.expected_input_utf16 {
-            return Err(SourceEditError::IncompleteSeed {
-                expected: self.expected_input_utf16,
-                observed: self.admitted_input_utf16,
+        if let Some(expected) = self.expected_input_utf16 {
+            if self.admitted_input_utf16 != expected {
+                return Err(SourceEditError::IncompleteSeed {
+                    expected,
+                    observed: self.admitted_input_utf16,
+                }
+                .into());
             }
-            .into());
         }
         Ok(SourceStore {
             document: self.document,
@@ -1573,6 +1597,34 @@ impl SourceSnapshotLease {
             b'\r' => Ok(self.root.rope.byte(offset) != b'\n'),
             _ => Ok(false),
         }
+    }
+
+    /// Returns the largest offset strictly above `floor` that is admissible
+    /// as an unsealed parser frontier, or `None` when everything after
+    /// `floor` is one unterminated (or CR-ambiguous) tail that must wait for
+    /// more input or the seal.
+    ///
+    /// The scan walks backward from the end, so its cost is bounded by the
+    /// unterminated tail length, not the document.
+    pub fn last_unsealed_physical_line_frontier(
+        &self,
+        floor: usize,
+    ) -> Result<Option<usize>, SourceEditError> {
+        let len = self.root.rope.byte_len();
+        validate_range(&self.root.rope, &(floor..floor))?;
+        let mut offset = len;
+        while offset > floor {
+            match self.root.rope.byte(offset - 1) {
+                b'\n' => return Ok(Some(offset)),
+                // A bare CR is a complete ending only when the byte after it
+                // is known not to be LF; at the very end it stays ambiguous.
+                b'\r' if offset < len && self.root.rope.byte(offset) != b'\n' => {
+                    return Ok(Some(offset));
+                }
+                _ => offset -= 1,
+            }
+        }
+        Ok(None)
     }
 
     /// Resolves the physical line selected at one exact scalar-aligned byte
