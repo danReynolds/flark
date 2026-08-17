@@ -350,7 +350,7 @@ impl M11PersistentRecursiveGreenCleanPlan {
         })
     }
 
-    #[cfg(any(test, feature = "m11-compact-probe"))]
+    #[cfg(feature = "m11-compact-probe")]
     fn begin_progressive_compact_probe(
         self,
         runtime: &mut DocumentRuntime,
@@ -6934,6 +6934,224 @@ mod tests {
             .poll_release(runtime, 64)
             .expect("poll session release")
         {}
+    }
+
+    /// RFC 029 Experiment B falsification probe (build plan rule 11): after a
+    /// one-byte BOF insertion, how much of the durable compact checkpoint
+    /// stream is reusable as stored? Aligned suffix checkpoints are compared
+    /// as raw payload bytes (parser and writer records) and as manifest
+    /// metadata under the expected uniform +1 byte/UTF-16 shift. The receipt
+    /// prints as JSON; run explicitly in release mode:
+    /// `cargo test --release -p flark-parser --lib -- --ignored relocatability --nocapture`
+    #[test]
+    #[ignore = "release-mode Experiment B relocatability probe"]
+    fn compact_checkpoint_relocatability_under_bof_insertion() {
+        const TARGET: usize = 10 * 1024 * 1024;
+        const BLOCK: &str = "Ordinary paragraph with **bold** text and plain words.\n\n";
+        relocatability_cell("ordinary", &repeat_ascii_exact("", BLOCK, TARGET));
+
+        // Long quotes and lists span the 4 KiB checkpoint stride, so cuts land
+        // inside open containers and carry the bounded writer restart record —
+        // the record that retains authenticated absolute block starts.
+        let mut nested_cycle = String::new();
+        for _ in 0..96 {
+            nested_cycle.push_str("> quote line with sustained content for the nested cell.\n");
+        }
+        nested_cycle.push('\n');
+        for _ in 0..96 {
+            nested_cycle.push_str("- item with sustained content for the nested cell.\n");
+        }
+        nested_cycle.push('\n');
+        relocatability_cell(
+            "nested",
+            &repeat_ascii_exact("Ordinary opening paragraph.\n\n", &nested_cycle, TARGET),
+        );
+    }
+
+    fn relocatability_cell(cell: &str, base_source: &str) {
+        let edited_source = format!("x{base_source}");
+
+        let started = Instant::now();
+        let mut base_runtime = DocumentRuntime::new(&base_source, DocumentRuntimeConfig::default())
+            .expect("base runtime");
+        let (mut base_session, ..) = build_compact_probe(&mut base_runtime, started);
+        let base_indexed = started.elapsed();
+        let mut edited_runtime =
+            DocumentRuntime::new(&edited_source, DocumentRuntimeConfig::default())
+                .expect("edited runtime");
+        let (mut edited_session, ..) = build_compact_probe(&mut edited_runtime, started);
+
+        let base_journal = base_session
+            .compact_checkpoints
+            .as_ref()
+            .expect("base compact journal");
+        let edited_journal = edited_session
+            .compact_checkpoints
+            .as_ref()
+            .expect("edited compact journal");
+
+        let mut edited_by_line = std::collections::BTreeMap::new();
+        for (index, entry) in edited_journal.entries.iter().enumerate() {
+            let previous = edited_by_line.insert(entry.line_ordinal, index);
+            assert!(previous.is_none(), "edited checkpoint line ordinals are unique");
+        }
+
+        let mut aligned = 0_usize;
+        let mut unmatched_base = 0_usize;
+        let mut payload_identical = 0_usize;
+        let mut parser_payload_diffs = 0_usize;
+        let mut writer_payload_diffs = 0_usize;
+        let mut open_frame_pairs = 0_usize;
+        let mut base_open_cuts = 0_usize;
+        let mut metadata_uniform = 0_usize;
+        let mut anomalies: Vec<String> = Vec::new();
+        let mut first_parser_diff: Option<String> = None;
+        let mut first_writer_diff: Option<String> = None;
+
+        for (base_index, base_entry) in base_journal.entries.iter().enumerate() {
+            let Some(&edited_index) = edited_by_line.get(&base_entry.line_ordinal) else {
+                unmatched_base += 1;
+                continue;
+            };
+            let edited_entry = &edited_journal.entries[edited_index];
+            aligned += 1;
+
+            let base_parser = base_journal
+                .encoded_entry(base_index)
+                .expect("base parser payload");
+            let edited_parser = edited_journal
+                .encoded_entry(edited_index)
+                .expect("edited parser payload");
+            let parser_equal = base_parser == edited_parser;
+            if !parser_equal {
+                parser_payload_diffs += 1;
+                if first_parser_diff.is_none() {
+                    let position = base_parser
+                        .iter()
+                        .zip(edited_parser.iter())
+                        .position(|(base, edited)| base != edited);
+                    first_parser_diff = Some(format!(
+                        "{{\"checkpoint\":{},\"line\":{},\"base_len\":{},\"edited_len\":{},\"first_diff_byte\":{:?}}}",
+                        base_index,
+                        base_entry.line_ordinal,
+                        base_parser.len(),
+                        edited_parser.len(),
+                        position,
+                    ));
+                }
+            }
+            if base_entry.open_depth > 0 {
+                base_open_cuts += 1;
+            }
+            let writer_equal = match (base_entry.writer_encoded_len, edited_entry.writer_encoded_len)
+            {
+                (0, 0) => true,
+                (0, _) | (_, 0) => false,
+                _ => {
+                    open_frame_pairs += 1;
+                    let base_writer = base_journal
+                        .encoded_writer_entry(base_index)
+                        .expect("base writer payload");
+                    let edited_writer = edited_journal
+                        .encoded_writer_entry(edited_index)
+                        .expect("edited writer payload");
+                    let equal = base_writer == edited_writer;
+                    if !equal && first_writer_diff.is_none() {
+                        let position = base_writer
+                            .iter()
+                            .zip(edited_writer.iter())
+                            .position(|(base, edited)| base != edited);
+                        first_writer_diff = Some(format!(
+                            "{{\"checkpoint\":{},\"line\":{},\"open_depth\":{},\"base_len\":{},\"edited_len\":{},\"first_diff_byte\":{:?}}}",
+                            base_index,
+                            base_entry.line_ordinal,
+                            base_entry.open_depth,
+                            base_writer.len(),
+                            edited_writer.len(),
+                            position,
+                        ));
+                    }
+                    equal
+                }
+            };
+            if !writer_equal {
+                writer_payload_diffs += 1;
+            }
+            if parser_equal && writer_equal {
+                payload_identical += 1;
+            }
+
+            // Every cut strictly after the edited first line shifts by exactly
+            // one byte and one UTF-16 unit; a BOF cut stays at zero.
+            let expected =
+                |base_metric: SourceMetric| u64::from(base_metric.bytes() > 0);
+            let uniform = edited_entry.accepted_physical.bytes()
+                == base_entry.accepted_physical.bytes() + expected(base_entry.accepted_physical)
+                && edited_entry.accepted_physical.utf16()
+                    == base_entry.accepted_physical.utf16()
+                        + expected(base_entry.accepted_physical)
+                && edited_entry.parser_physical.bytes()
+                    == base_entry.parser_physical.bytes() + expected(base_entry.parser_physical)
+                && edited_entry.parser_physical.utf16()
+                    == base_entry.parser_physical.utf16() + expected(base_entry.parser_physical)
+                && edited_entry.logical.bytes()
+                    == base_entry.logical.bytes() + expected(base_entry.logical)
+                && edited_entry.logical.utf16()
+                    == base_entry.logical.utf16() + expected(base_entry.logical)
+                && edited_entry.event_cut == base_entry.event_cut
+                && edited_entry.high_level_events == base_entry.high_level_events
+                && edited_entry.renderable_rows == base_entry.renderable_rows
+                && edited_entry.last_line_length == base_entry.last_line_length
+                && edited_entry.open_depth == base_entry.open_depth
+                && edited_entry.cold_document_frame == base_entry.cold_document_frame
+                && edited_entry.cold_staged_blank_gap == base_entry.cold_staged_blank_gap
+                && edited_entry.next_frame == base_entry.next_frame;
+            if uniform {
+                metadata_uniform += 1;
+            } else if anomalies.len() < 4 {
+                anomalies.push(format!(
+                    "{{\"checkpoint\":{},\"line\":{},\"base\":\"{:?}\",\"edited\":\"{:?}\"}}",
+                    base_index, base_entry.line_ordinal, base_entry, edited_entry,
+                ));
+            }
+        }
+
+        println!(
+            "{{\"probe\":\"compact_checkpoint_relocatability\",\"cell\":\"{}\",\
+             \"source_bytes\":{},\"base_index_ms\":{:.1},\
+             \"base_checkpoints\":{},\"edited_checkpoints\":{},\
+             \"aligned\":{},\"unmatched_base\":{},\
+             \"payload_identical\":{},\"parser_payload_diffs\":{},\
+             \"writer_payload_diffs\":{},\"open_frame_pairs\":{},\
+             \"base_open_cuts\":{},\"metadata_uniform\":{},\
+             \"base_stream_bytes\":{},\"edited_stream_bytes\":{},\
+             \"first_parser_diff\":{},\"first_writer_diff\":{},\
+             \"metadata_anomalies\":[{}]}}",
+            cell,
+            base_source.len(),
+            base_indexed.as_secs_f64() * 1000.0,
+            base_journal.entries.len(),
+            edited_journal.entries.len(),
+            aligned,
+            unmatched_base,
+            payload_identical,
+            parser_payload_diffs,
+            writer_payload_diffs,
+            open_frame_pairs,
+            base_open_cuts,
+            metadata_uniform,
+            base_journal.stream_len,
+            edited_journal.stream_len,
+            first_parser_diff.as_deref().unwrap_or("null"),
+            first_writer_diff.as_deref().unwrap_or("null"),
+            anomalies.join(","),
+        );
+
+        assert!(aligned > 1_000, "the 4 KiB cadence yields thousands of aligned checkpoints");
+        release_session(&mut base_runtime, &mut base_session);
+        close_runtime(&mut base_runtime);
+        release_session(&mut edited_runtime, &mut edited_session);
+        close_runtime(&mut edited_runtime);
     }
 
     #[test]

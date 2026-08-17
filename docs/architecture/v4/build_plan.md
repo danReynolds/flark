@@ -90,6 +90,48 @@ flags (nested cold-jump constant, page relocatability, accessibility gate,
 whole-document query class), and the recurrence-prevention rules adopted
 into section 2 below.
 
+### Experiment B relocatability receipt (2026-08-17)
+
+The rule-11 falsification probe for compact-page relocatability ran before
+any convergence machinery was designed, and it falsified the risk in the
+favorable direction. `compact_checkpoint_relocatability_under_bof_insertion`
+(release mode, `--ignored`, in-crate) builds the compact checkpoint journal
+for a 10 MiB fixture, rebuilds it for the same source with one byte inserted
+at BOF inside the opening paragraph, aligns checkpoints by line ordinal, and
+compares raw durable payload bytes plus manifest metadata.
+
+Ordinary cell: 2,532 checkpoints in both builds, all aligned, zero
+unmatched. Nested cell (5.5 KiB quotes and 5 KiB lists spanning the 4 KiB
+stride, so 1,013 of 1,013 cuts sit inside open containers and 1,012 carry
+the bounded writer restart record): all aligned, zero unmatched. In both
+cells every parser payload and every writer payload is byte-identical
+between the two builds, both encoded streams have identical length
+(445,616 and 178,320 bytes), and every manifest entry differs exactly by
+the uniform +1 byte/+1 UTF-16 shift with equal event cuts, row counts,
+line ordinals, frame identities, and open depths.
+
+Three conclusions bind Experiment B's design:
+
+- The durable payload codec is already translation-invariant, including the
+  writer open-frame record whose absolute block starts are reconstructed
+  from manifest authority rather than baked into payload bytes. Suffix
+  sharing may reuse payload pages as stored; no record re-encoding layer is
+  required for these shapes.
+- Checkpoint selection is shift-stable: both builds selected the same
+  logical boundaries, so suffix sharing does not fight cadence churn.
+- The remaining storage design work is the manifest, exactly as RFC 029
+  section 5 prescribes: roughly 2,500 entries of absolute coordinates per
+  10 MiB cannot be rewritten record-by-record per edit, so the entry index
+  becomes the aggregate measure tree (per-entry deltas at leaves, summed
+  measures at nodes, O(log n) updates) with structural sharing.
+
+Not yet measured: the compact reference index stores exact absolute
+definition/value source ranges and needs the same probe treatment (or a
+measure-tree/remap decision) during Experiment B design, and a multi-byte
+insertion cell should confirm byte/UTF-16 dimensions relocate independently.
+The probe is retained `#[ignore]`d in-crate as the regression check for any
+future durable-codec change.
+
 ## 2026-08-11 continuously-rendered product correction
 
 The first real dogfood pass falsified the prototype's focus behavior. The

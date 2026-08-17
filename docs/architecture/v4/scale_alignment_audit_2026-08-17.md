@@ -98,14 +98,19 @@ nesting multiplier is the anomaly. Decompose (replay vs Green build vs inline
 capture) and optimize before Pixel qualification, or the frozen matrix fails
 on first contact.
 
-**F2 — Prove page relocatability before building Experiment B.** Convergence
-semantics are already proven on the Green path (4,027/4,032 local adoptions,
-≤274 bytes read); the unproven half is that durable pages survive an edit
-*as stored*. Writer restart records carry authenticated absolute block
-starts — exactly the coordinate-baking §5 warns about. Cheapest falsification
-first: build the 10 MiB index, apply a one-byte BOF edit, measure the
-fraction of pages reusable without re-encoding. If the answer is low, fix the
-record layout before writing the convergence engine, not after.
+**F2 — RESOLVED 2026-08-17: durable payloads are relocatable as stored.**
+The falsification probe ran before any convergence machinery was designed
+(build-plan receipt "Experiment B relocatability receipt"). Under a one-byte
+BOF insertion at 10 MiB, both the ordinary cell (2,532 checkpoints) and the
+nested cell (1,013 checkpoints, all inside open containers with writer
+records) produced byte-identical parser and writer payloads, identical
+stream lengths, shift-stable checkpoint selection, and uniformly shifted
+manifest metadata. The feared absolute-block-start baking does not exist in
+the payload bytes — absolutes are confined to the entry manifest.
+Experiment B's storage work therefore narrows to the §5 measure-tree
+manifest (O(log n) coordinate updates over ~2,500 entries per 10 MiB) plus
+two follow-ups: the same probe for the compact reference index's absolute
+source ranges, and a multi-byte insertion cell.
 
 **F3 — Accessibility has prose but no gate.** §8 claims traversal loads only
 geometry near active endpoints, but §10 freezes no gate for it. Platform
@@ -191,7 +196,9 @@ Two clarifications that make "best in class" testable:
 The architecture as selected is aligned with the goal: everything proven so
 far is bounded by construction, everything planned has a falsifiable gate,
 and the two audit gaps (F3, F4) are contract omissions, not design flaws.
-The direction does not need correction; it needs the four flags closed in
-order (F5 before wiring, F2 before Experiment B, F1 before Pixel
-qualification, F3/F4 as RFC amendments) and the five rules adopted so the
-next document-sized prerequisite dies on paper instead of on a Pixel.
+The direction does not need correction; it needs the flags closed in order
+and the five rules adopted so the next document-sized prerequisite dies on
+paper instead of on a Pixel. Status as of 2026-08-17: F5 (CRLF frontier),
+F6 (gate hygiene), F3/F4 (RFC amendments), and the rules are landed; F2 is
+resolved favorably by the relocatability receipt; F1 (nested cold-jump
+decomposition) remains open ahead of Pixel qualification.
