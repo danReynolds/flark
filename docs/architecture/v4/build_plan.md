@@ -212,6 +212,41 @@ so every failure in this area surfaces as its typed error rather than a
 root or builder drop assertion. The early-path degradation for any future
 coverage gap remains in place as fail-closed insurance.
 
+### Session-layer progressive open receipt (2026-08-17)
+
+The A3 vertical now reaches the runtime session layer. `DocumentSession`
+gains a feature-gated opening mode (`opening-session`; the production
+`begin()` path and the default build are unchanged): the incremental
+parser open session from the previous receipt is driven by the ordinary
+pump under the session state machine, transport pages adopt in one
+authenticated step at parser starvation, `query_live_viewport` serves the
+certified early viewport as a certified span with exact pending source
+elsewhere, and `query_viewport` serves complete mapped
+`DocumentViewportRow` payloads clamped to the certified range — with
+`total_rows` reporting only the known prefix and `complete=false`,
+because a pre-EOF count is never an exact total. Literal edits during
+load mutate the opening store and rebuild the replica and parser session
+from the post-edit snapshot (restart, not convergence: load-time edits
+trade locality for correctness until Experiment B).
+
+The headless dress rehearsal proves the full A3 lifecycle through real
+session calls: paged admission, certified rows before EOF, a mid-load
+edit with stale-revision rejection and recertification, sealing, and
+final viewport rows byte-equal to the complete-source oracle including
+the load-time edit.
+
+Release probe, session layer, ordinary 10 MiB with 8 KiB pages: **first
+certified 32-row viewport in 2.874 ms with 32,768 bytes admitted** —
+the session, store-proof, pump, and query machinery add roughly 2.5 ms
+over the raw engine number, leaving ~70x headroom against the 200 ms
+public gate before the ABI, Dart, and Flutter layers take their share.
+Pump-to-Ready measures 2.99 s because the post-seal path still runs the
+old full-Green build for full editing semantics; that is background work
+outside the first-visibility gate and is exactly what Experiment B
+replaces. Remaining for the A3 receipt: the ABI opening transaction,
+`flark_core` streaming admission, Flutter paint, and the frozen
+five-run physical measurement.
+
 ### Pixel 6a engine multiplier receipt (2026-08-17)
 
 The compact engine suite ran on the physical Pixel 6a (release,
