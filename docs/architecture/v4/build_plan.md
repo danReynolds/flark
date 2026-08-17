@@ -255,6 +255,51 @@ replaces. Remaining for the A3 receipt: the ABI opening transaction,
 `flark_core` streaming admission, Flutter paint, and the frozen
 five-run physical measurement.
 
+### Dart-layer streamed open receipt (2026-08-17)
+
+The A3 vertical now reaches the public Dart API.
+`FlarkCoreDocument.openUtf8Stream(Stream<Uint8List>, {expectedBytes})` and
+the lazy `openStreaming(String)` convenience drive the opening-query C ABI
+through the existing worker-isolate protocol extended with append/seal
+messages: chunks transfer to the worker without accumulation (scalar-split
+carry mirrored at the boundary; chunks over 64 KiB split before staging),
+the worker stages and pumps per chunk, queries work mid-load through the
+ordinary machinery, and stream close seals through create_commit. The
+feature lane is opt-in end to end: `FLARK_V4_FEATURES=opening-session`
+for the library build, `FLARK_V4_OPENING_LIBRARY_PATH` keying the gated
+Dart suites, defaults byte-identical.
+
+Development cold-open receipt (10,485,776-byte ordinary fixture, chunk
+sizes cycling 8–64 KiB, Dart VM, release feature dylib, five runs,
+measured from before the `openUtf8Stream` call — isolate spawn, dylib
+load, negotiate, and opening create inside — to the owner isolate
+observing its first fully certified viewport reply with semantic rows):
+**first certified viewport in 7.7–8.8 ms steady-state and 55.4 ms on the
+true-cold first run (JIT plus first dylib load), with 57,344 bytes
+admitted at certification.** Open-to-ready remains ~3.4 s (seal plus the
+post-seal full-Green build; the Experiment B replacement target).
+Suites: full `verify_v4.sh` with the feature lane exits green end to
+end; flark_core 79/79; flark 137 passed; qualification 48/48;
+runtime/abi green under both feature sets.
+
+Two native findings are recorded as named defects rather than worked
+around: an opening session smaller than its first compact slice cannot
+seal (`create_commit` faults typed — the final viewport path requires a
+captured slice; small and empty documents need a slice-free completion
+path), and a pre-certification opening semantic query cannot surface
+`NOT_READY_SOURCE_GAP` through the C ABI because `runtime_error` leaves
+`ProgressState::None` where outcome coherence demands `PendingSourceGap`,
+collapsing to an anonymous internal fault (the Dart layer structurally
+avoids the state via a bounded certification probe before row fetches).
+
+The remaining distance to dogfooding is exactly the Flutter controller:
+`FlarkEditorController.open` accepts only a complete String; its finish
+loop pumps to Ready before any viewport refresh, so streaming needs a
+certification-aware loop plus a streaming status; the input-window
+authority needs an explicit stance on admission growth; and the frame
+receipt needs a workload mode correlating first-certified-paint to
+`FrameTiming`. Four named items, no unknowns.
+
 ### Pixel 6a engine multiplier receipt (2026-08-17)
 
 The compact engine suite ran on the physical Pixel 6a (release,
