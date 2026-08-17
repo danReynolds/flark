@@ -12,16 +12,32 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BRIDGE="$ROOT/packages/flark_core/native/comrak_bridge"
 PROFILE="${FLARK_V4_PROFILE:-debug}"
+# Experiment opt-in: extra cargo features for the flark-abi library build
+# (e.g. FLARK_V4_FEATURES=opening-session for the RFC 029 A3 streamed-open
+# surface). Empty by default so the everyday gate exercises exactly the
+# default feature set; the feature-gated Dart suites additionally key off
+# FLARK_V4_OPENING_LIBRARY_PATH and skip unless it is exported below.
+FEATURES="${FLARK_V4_FEATURES:-}"
 
+build_args=(--manifest-path "$BRIDGE/Cargo.toml" --package flark-abi)
 if [[ "$PROFILE" == "release" ]]; then
-  cargo build --manifest-path "$BRIDGE/Cargo.toml" --package flark-abi --release
-else
-  cargo build --manifest-path "$BRIDGE/Cargo.toml" --package flark-abi
+  build_args+=(--release)
 fi
+if [[ -n "$FEATURES" ]]; then
+  build_args+=(--features "$FEATURES")
+fi
+cargo build "${build_args[@]}"
 LIBRARY="$BRIDGE/target/$PROFILE/libflark_abi.dylib"
 if [[ ! -f "$LIBRARY" ]]; then
   echo "verify_v4: missing $LIBRARY" >&2
   exit 1
+fi
+# The streamed-open Dart suites need the opening-session entry points, which
+# only exist when the feature was compiled in. Exporting the path is the
+# explicit signal that this library carries them; without it those suites
+# skip rather than fail against a default-feature library.
+if [[ ",$FEATURES," == *",opening-session,"* ]]; then
+  export FLARK_V4_OPENING_LIBRARY_PATH="$LIBRARY"
 fi
 
 # Every first-party target must at least compile, so a broken engine/parser

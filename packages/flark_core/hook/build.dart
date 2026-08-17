@@ -95,6 +95,13 @@ Future<Uri> _buildRustArtifact({
     await _ensureRustTargetInstalled(cargo, plan.triple, packageRootPath);
   }
 
+  // Experiment opt-in: FLARK_V4_CARGO_FEATURES adds cargo features to the
+  // bridge build (e.g. `opening-session` for the RFC 029 A3 streamed-open
+  // surface). Unset means the default feature set, so ordinary builds are
+  // byte-identical to before this hook learned about features.
+  final experimentFeatures =
+      Platform.environment['FLARK_V4_CARGO_FEATURES']?.trim() ?? '';
+
   await _run(
     cargo.executable,
     [
@@ -112,6 +119,7 @@ Future<Uri> _buildRustArtifact({
       '--release',
       '--target',
       plan.triple,
+      if (experimentFeatures.isNotEmpty) ...['--features', experimentFeatures],
     ],
     workingDirectory: packageRootPath,
     environment: cargo.buildEnvironment(plan.environment, cargoTargetPath),
