@@ -7623,10 +7623,118 @@ mod tests {
             "nested",
             &repeat_ascii_exact("Ordinary opening paragraph.\n\n", &nested_cycle, TARGET),
         );
+
+        // Byte and UTF-16 dimensions must relocate independently: a two-byte
+        // one-unit scalar shifts them by different amounts.
+        relocatability_cell_with_insertion(
+            "multibyte",
+            &repeat_ascii_exact("", BLOCK, TARGET),
+            "é",
+        );
+
+        // The compact reference index stores exact absolute source ranges in
+        // its record payload; this cell measures how they behave under the
+        // same BOF insertion.
+        let mut reference_source = String::from("Ordinary opening paragraph.\n\n");
+        let mut ordinal = 0_u64;
+        while reference_source.len() < 2 * 1024 * 1024 {
+            reference_source.push_str(&format!(
+                "[ref{ordinal}]: /destination/{ordinal} \"title {ordinal}\"\n\nParagraph {ordinal} uses [ref{ordinal}] with **bold**.\n\n"
+            ));
+            ordinal += 1;
+        }
+        reference_relocatability_cell("references", &reference_source);
     }
 
     fn relocatability_cell(cell: &str, base_source: &str) {
+        relocatability_cell_with_insertion(cell, base_source, "x");
+    }
+
+    fn reference_relocatability_cell(cell: &str, base_source: &str) {
         let edited_source = format!("x{base_source}");
+        let byte_delta = 1_u32;
+        let started = Instant::now();
+        let mut base_runtime = DocumentRuntime::new(base_source, DocumentRuntimeConfig::default())
+            .expect("base reference runtime");
+        let (mut base_session, ..) = build_compact_probe(&mut base_runtime, started);
+        let mut edited_runtime =
+            DocumentRuntime::new(&edited_source, DocumentRuntimeConfig::default())
+                .expect("edited reference runtime");
+        let (mut edited_session, ..) = build_compact_probe(&mut edited_runtime, started);
+
+        let base_records = base_session
+            .compact_reference_resolver
+            .as_ref()
+            .expect("base reference resolver")
+            .probe_records();
+        let edited_records = edited_session
+            .compact_reference_resolver
+            .as_ref()
+            .expect("edited reference resolver")
+            .probe_records();
+
+        let mut identical = 0_usize;
+        let mut shift_uniform = 0_usize;
+        let mut structural = 0_usize;
+        let mut unmatched = 0_usize;
+        let mut edited_by_label = std::collections::BTreeMap::new();
+        for (index, record) in edited_records.iter().enumerate() {
+            edited_by_label.insert((record.digest, record.label.clone()), index);
+        }
+        for base_record in &base_records {
+            let Some(&edited_index) =
+                edited_by_label.get(&(base_record.digest, base_record.label.clone()))
+            else {
+                unmatched += 1;
+                continue;
+            };
+            let edited_record = &edited_records[edited_index];
+            if edited_record == base_record {
+                identical += 1;
+                continue;
+            }
+            let shifted_range = |base: &std::ops::Range<u32>, edited: &std::ops::Range<u32>| {
+                edited.start == base.start + byte_delta && edited.end == base.end + byte_delta
+            };
+            let title_shifted = match (&base_record.title, &edited_record.title) {
+                (None, None) => true,
+                (Some(base), Some(edited)) => shifted_range(base, edited),
+                _ => false,
+            };
+            if shifted_range(&base_record.source, &edited_record.source)
+                && shifted_range(&base_record.destination, &edited_record.destination)
+                && title_shifted
+                && edited_record.winner == base_record.winner
+            {
+                shift_uniform += 1;
+            } else {
+                structural += 1;
+            }
+        }
+        println!(
+            "{{\"probe\":\"compact_reference_relocatability\",\"cell\":\"{}\",\
+             \"source_bytes\":{},\"base_records\":{},\"edited_records\":{},\
+             \"identical\":{},\"shift_uniform\":{},\"structural\":{},\"unmatched\":{}}}",
+            cell,
+            base_source.len(),
+            base_records.len(),
+            edited_records.len(),
+            identical,
+            shift_uniform,
+            structural,
+            unmatched,
+        );
+        assert!(base_records.len() > 1_000);
+        release_session(&mut base_runtime, &mut base_session);
+        close_runtime(&mut base_runtime);
+        release_session(&mut edited_runtime, &mut edited_session);
+        close_runtime(&mut edited_runtime);
+    }
+
+    fn relocatability_cell_with_insertion(cell: &str, base_source: &str, insertion: &str) {
+        let edited_source = format!("{insertion}{base_source}");
+        let byte_delta = insertion.len() as u64;
+        let utf16_delta = insertion.encode_utf16().count() as u64;
 
         let started = Instant::now();
         let mut base_runtime = DocumentRuntime::new(&base_source, DocumentRuntimeConfig::default())
@@ -7738,23 +7846,29 @@ mod tests {
                 payload_identical += 1;
             }
 
-            // Every cut strictly after the edited first line shifts by exactly
-            // one byte and one UTF-16 unit; a BOF cut stays at zero.
-            let expected =
-                |base_metric: SourceMetric| u64::from(base_metric.bytes() > 0);
+            // Every cut strictly after the edited first line shifts by the
+            // insertion's exact byte and UTF-16 widths; a BOF cut stays at
+            // zero. The two dimensions relocate independently.
+            let expected_bytes =
+                |base_metric: SourceMetric| if base_metric.bytes() > 0 { byte_delta } else { 0 };
+            let expected_utf16 =
+                |base_metric: SourceMetric| if base_metric.bytes() > 0 { utf16_delta } else { 0 };
             let uniform = edited_entry.accepted_physical.bytes()
-                == base_entry.accepted_physical.bytes() + expected(base_entry.accepted_physical)
+                == base_entry.accepted_physical.bytes()
+                    + expected_bytes(base_entry.accepted_physical)
                 && edited_entry.accepted_physical.utf16()
                     == base_entry.accepted_physical.utf16()
-                        + expected(base_entry.accepted_physical)
+                        + expected_utf16(base_entry.accepted_physical)
                 && edited_entry.parser_physical.bytes()
-                    == base_entry.parser_physical.bytes() + expected(base_entry.parser_physical)
+                    == base_entry.parser_physical.bytes()
+                        + expected_bytes(base_entry.parser_physical)
                 && edited_entry.parser_physical.utf16()
-                    == base_entry.parser_physical.utf16() + expected(base_entry.parser_physical)
+                    == base_entry.parser_physical.utf16()
+                        + expected_utf16(base_entry.parser_physical)
                 && edited_entry.logical.bytes()
-                    == base_entry.logical.bytes() + expected(base_entry.logical)
+                    == base_entry.logical.bytes() + expected_bytes(base_entry.logical)
                 && edited_entry.logical.utf16()
-                    == base_entry.logical.utf16() + expected(base_entry.logical)
+                    == base_entry.logical.utf16() + expected_utf16(base_entry.logical)
                 && edited_entry.event_cut == base_entry.event_cut
                 && edited_entry.high_level_events == base_entry.high_level_events
                 && edited_entry.renderable_rows == base_entry.renderable_rows

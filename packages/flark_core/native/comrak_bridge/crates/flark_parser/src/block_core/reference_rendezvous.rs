@@ -332,6 +332,18 @@ impl M11CompactReferenceJournal {
     }
 }
 
+/// One retained reference record flattened for relocatability probes.
+#[cfg(any(test, feature = "m11-compact-probe"))]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct M11CompactReferenceProbeRecord {
+    pub(crate) digest: [u8; 16],
+    pub(crate) label: Vec<u8>,
+    pub(crate) source: std::ops::Range<u32>,
+    pub(crate) destination: std::ops::Range<u32>,
+    pub(crate) title: Option<std::ops::Range<u32>>,
+    pub(crate) winner: u32,
+}
+
 /// Sorts one record set into the winner directory and assigns each record its
 /// first-winner ordinal. Shared by EOF completion and committed-prefix
 /// snapshots so both authorities apply the identical GFM first-winner rule.
@@ -396,6 +408,25 @@ impl M11CompactReferenceResolver {
         self.index.records.iter().any(|record| {
             (record.source_start as usize) <= byte && byte < record.source_end as usize
         })
+    }
+
+    /// Flattens the retained record layout for relocatability probes: the
+    /// digest and label identify a record across revisions, everything else
+    /// is the exact stored coordinate payload under measurement.
+    pub(crate) fn probe_records(&self) -> Vec<M11CompactReferenceProbeRecord> {
+        self.index
+            .records
+            .iter()
+            .map(|record| M11CompactReferenceProbeRecord {
+                digest: record.digest,
+                label: compact_reference_label(&self.index.normalized_labels, record).to_vec(),
+                source: record.source_start..record.source_end,
+                destination: record.destination_source_start..record.destination_source_end,
+                title: (record.title_source_start != u32::MAX)
+                    .then(|| record.title_source_start..record.title_source_end),
+                winner: record.winner,
+            })
+            .collect()
     }
 
     pub(crate) fn resolve(
