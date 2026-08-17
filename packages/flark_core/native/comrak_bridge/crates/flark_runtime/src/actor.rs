@@ -84,12 +84,26 @@ impl fmt::Debug for DocumentActor {
 
 impl DocumentActor {
     pub fn begin(source: String) -> Result<Self, DocumentActorError> {
+        Self::begin_with_factory(Box::new(move || DocumentSession::begin(&source)))
+    }
+
+    /// Spawns the actor over a progressive open: no source up front, pages
+    /// admitted through [`Self::opening_append_page`], sealed by
+    /// [`Self::seal_opening`].
+    #[cfg(feature = "opening-session")]
+    pub fn begin_opening() -> Result<Self, DocumentActorError> {
+        Self::begin_with_factory(Box::new(DocumentSession::begin_opening))
+    }
+
+    fn begin_with_factory(
+        factory: Box<dyn FnOnce() -> Result<DocumentSession, DocumentSessionError> + Send>,
+    ) -> Result<Self, DocumentActorError> {
         let (commands, receiver) = mpsc::sync_channel(0);
         let (startup_sender, startup_receiver) = mpsc::sync_channel(0);
         let thread = thread::Builder::new()
             .name("flark-document".to_owned())
             .stack_size(DOCUMENT_ACTOR_STACK_BYTES)
-            .spawn(move || run_document_actor(source, receiver, startup_sender))
+            .spawn(move || run_document_actor(factory, receiver, startup_sender))
             .map_err(DocumentActorError::Spawn)?;
         match startup_receiver.recv() {
             Ok(Ok(())) => Ok(Self {
@@ -116,6 +130,18 @@ impl DocumentActor {
                 phase: document.phase(),
             })
         })
+    }
+
+    /// Admits one bounded transport page during a progressive open.
+    #[cfg(feature = "opening-session")]
+    pub fn opening_append_page(&self, text: String) -> Result<(), DocumentActorError> {
+        self.call(move |document| document.opening_append_page(&text).map_err(Into::into))
+    }
+
+    /// Declares transport end for a progressive open.
+    #[cfg(feature = "opening-session")]
+    pub fn seal_opening(&self) -> Result<(), DocumentActorError> {
+        self.call(|document| document.seal_opening().map_err(Into::into))
     }
 
     pub fn pump(&self, max_work_units: usize) -> Result<DocumentPumpReceipt, DocumentActorError> {
@@ -337,15 +363,14 @@ impl Drop for DocumentActor {
 }
 
 fn run_document_actor(
-    source: String,
+    factory: Box<dyn FnOnce() -> Result<DocumentSession, DocumentSessionError> + Send>,
     commands: Receiver<ActorCommand>,
     startup: SyncSender<Result<(), DocumentSessionError>>,
 ) {
-    let document_result = DocumentSession::begin(&source);
-    // DocumentSession has copied the canonical source into its persistent
-    // runtime. Do not retain the actor's full startup buffer for the lifetime
-    // of a large document.
-    drop(source);
+    // The factory owns any startup buffer; DocumentSession copies canonical
+    // source into its persistent runtime, so nothing document-sized survives
+    // this call.
+    let document_result = factory();
     let mut document = match document_result {
         Ok(document) => {
             let _ = startup.send(Ok(()));

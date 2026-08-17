@@ -130,9 +130,23 @@ impl Registry {
     }
 }
 
+/// Bookkeeping for one progressive opening-query transaction: the staged
+/// transaction handle, the raw-byte offset the transport has delivered, the
+/// declared total (zero when the stream length is unknown), and at most three
+/// carried bytes of one UTF-8 scalar split across transport chunks.
+#[cfg(feature = "opening-session")]
+struct OpeningTransaction {
+    transaction: u64,
+    received_bytes: u64,
+    expected_bytes: u64,
+    utf8_carry: Vec<u8>,
+}
+
 struct StoredSession {
     owner: u64,
     state: StoredSessionState,
+    #[cfg(feature = "opening-session")]
+    opening: Option<OpeningTransaction>,
     transactions: BTreeSet<u64>,
     max_document_bytes: u64,
     progress_token: u64,
@@ -310,6 +324,10 @@ fn map_document_error(error: &DocumentSessionError) -> StatusCode {
         DocumentSessionError::EditIntentLimitExceeded => StatusCode::EditTooLarge,
         DocumentSessionError::UnsupportedEditIntentSelection => StatusCode::InvalidArgument,
         DocumentSessionError::QueryBudgetExceeded => StatusCode::QueryLimitExceeded,
+        #[cfg(feature = "opening-session")]
+        DocumentSessionError::Opening(_) => StatusCode::TransactionConflict,
+        #[cfg(feature = "opening-session")]
+        DocumentSessionError::Compact(_) => StatusCode::ParserFault,
         error if error.is_backpressure() => StatusCode::Backpressure,
         DocumentSessionError::Engine(_) => StatusCode::InternalFault,
     }
@@ -324,6 +342,138 @@ fn map_actor_error(error: &DocumentActorError) -> StatusCode {
         // rather than collapsing into an anonymous internal fault.
         DocumentActorError::Panicked => StatusCode::PanicContained,
     }
+}
+
+/// Begins one progressive opening-query session: the document actor exists
+/// immediately over an empty admitted source, the staged transaction tracks
+/// raw transport bytes, and any initial chunk stages through the same
+/// incremental UTF-8 path as later appends. A declared total of zero means
+/// the stream length is unknown and only commit ends it.
+#[cfg(feature = "opening-session")]
+fn opening_create_begin(
+    request: &crate::CreateRequest,
+    input: &[u8],
+) -> Result<RuntimeOutcome, StatusCode> {
+    if request.owner_token == 0
+        || input.len() > MAX_SOURCE_CHUNK_BYTES as usize
+        || (request.expected_total_bytes != 0
+            && input.len() as u64 > request.expected_total_bytes)
+        || request.config.struct_size != size_of::<crate::SessionConfig>() as u32
+    {
+        return Err(StatusCode::InvalidArgument);
+    }
+    if request.config.max_document_bytes != 0
+        && request.expected_total_bytes > request.config.max_document_bytes
+    {
+        return Err(StatusCode::ResourceLimitExceeded);
+    }
+    let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
+    let session = registry.allocate_handle()?;
+    let transaction = registry.allocate_handle()?;
+    let document = DocumentActor::begin_opening().map_err(|error| map_actor_error(&error))?;
+    let mut opening = OpeningTransaction {
+        transaction,
+        received_bytes: 0,
+        expected_bytes: request.expected_total_bytes,
+        utf8_carry: Vec::new(),
+    };
+    opening_stage_bytes(&document, &mut opening, input)?;
+    registry.sessions.insert(
+        session,
+        StoredSession {
+            owner: request.owner_token,
+            state: StoredSessionState::Open(document),
+            opening: Some(opening),
+            transactions: BTreeSet::new(),
+            max_document_bytes: request.config.max_document_bytes,
+            progress_token: 0,
+            continuations: BTreeSet::new(),
+            anchors: BTreeSet::new(),
+            history_budget_bytes: request.config.history_budget_bytes,
+            history_used_bytes: 0,
+            history_head: 0,
+            history_tail: 0,
+            history_state: 1,
+            next_history_state: 2,
+            history_token_count: 0,
+            evicted_history_tokens: BTreeSet::new(),
+            terminal_edit_intent: None,
+            terminal_source_transaction: None,
+            close_token: 0,
+            close_complete: false,
+        },
+    );
+    Ok(RuntimeOutcome {
+        operation: OperationCode::CreateBegin,
+        status: StatusCode::Ok,
+        progress: ProgressState::Complete,
+        required_payload_bytes: 0,
+        written_payload_bytes: 0,
+        result: OperationResult::SessionCreated {
+            session: SessionHandle(session),
+            transaction: TransactionHandle(transaction),
+        },
+    })
+}
+
+/// Stages raw transport bytes into the opening actor: at most three carried
+/// bytes join the chunk, the longest valid UTF-8 prefix splits into pages
+/// bounded by the store's UTF-16 page cap, an incomplete trailing scalar
+/// carries to the next chunk, and an actually invalid sequence fails typed.
+#[cfg(feature = "opening-session")]
+fn opening_stage_bytes(
+    document: &DocumentActor,
+    opening: &mut OpeningTransaction,
+    input: &[u8],
+) -> Result<(), StatusCode> {
+    let joined;
+    let bytes: &[u8] = if opening.utf8_carry.is_empty() {
+        input
+    } else {
+        let mut buffer = std::mem::take(&mut opening.utf8_carry);
+        buffer.extend_from_slice(input);
+        joined = buffer;
+        &joined
+    };
+    let (text, carry) = match std::str::from_utf8(bytes) {
+        Ok(text) => (text, &[][..]),
+        Err(error) => {
+            if error.error_len().is_some() {
+                return Err(StatusCode::InvalidUtf8);
+            }
+            let (head, tail) = bytes.split_at(error.valid_up_to());
+            let head = std::str::from_utf8(head).map_err(|_| StatusCode::InternalFault)?;
+            (head, tail)
+        }
+    };
+    let mut remaining = text;
+    while !remaining.is_empty() {
+        let cut = utf16_bounded_prefix(remaining, flark_runtime::SOURCE_SEED_PAGE_MAX_UTF16);
+        document
+            .opening_append_page(remaining[..cut].to_owned())
+            .map_err(|error| map_actor_error(&error))?;
+        remaining = &remaining[cut..];
+    }
+    opening.utf8_carry = carry.to_vec();
+    opening.received_bytes = opening
+        .received_bytes
+        .checked_add(input.len() as u64)
+        .ok_or(StatusCode::ResourceLimitExceeded)?;
+    Ok(())
+}
+
+/// Returns the longest prefix byte length whose UTF-16 width fits the cap.
+#[cfg(feature = "opening-session")]
+fn utf16_bounded_prefix(text: &str, max_utf16: usize) -> usize {
+    let mut units = 0;
+    for (offset, character) in text.char_indices() {
+        let width = character.len_utf16();
+        if units + width > max_utf16 {
+            return offset;
+        }
+        units += width;
+    }
+    text.len()
 }
 
 fn emit<F>(operation: OperationCode, outcome: *mut Outcome, call: F) -> u32
@@ -1137,6 +1287,12 @@ pub extern "C" fn flark_v4_create_begin(
     emit(OperationCode::CreateBegin, outcome, || {
         let request = unsafe { read_record(request, size_of::<CreateRequest>() as u32)? };
         let input = unsafe { borrowed_bytes(input, input_len)? };
+        if request.flags & crate::CREATE_FLAG_OPENING != 0 {
+            #[cfg(not(feature = "opening-session"))]
+            return Err(StatusCode::InvalidArgument);
+            #[cfg(feature = "opening-session")]
+            return opening_create_begin(&request, input);
+        }
         if request.owner_token == 0
             || input.len() > MAX_SOURCE_CHUNK_BYTES as usize
             || input.len() as u64 > request.expected_total_bytes
@@ -1168,6 +1324,8 @@ pub extern "C" fn flark_v4_create_begin(
                     expected_bytes,
                     bytes,
                 },
+                #[cfg(feature = "opening-session")]
+                opening: None,
                 transactions: BTreeSet::new(),
                 max_document_bytes: request.config.max_document_bytes,
                 progress_token: 0,
@@ -1216,6 +1374,31 @@ pub extern "C" fn flark_v4_create_append(
         }
         let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
         let entry = session_entry(&mut registry, request.session)?;
+        #[cfg(feature = "opening-session")]
+        if let Some(opening) = entry.opening.as_mut() {
+            if opening.transaction != request.transaction
+                || request.chunk_offset != opening.received_bytes
+                || (opening.expected_bytes != 0
+                    && opening.received_bytes.saturating_add(input.len() as u64)
+                        > opening.expected_bytes)
+            {
+                return Err(StatusCode::TransactionConflict);
+            }
+            let StoredSessionState::Open(document) = &entry.state else {
+                return Err(StatusCode::InternalFault);
+            };
+            opening_stage_bytes(document, opening, input)?;
+            return Ok(RuntimeOutcome {
+                operation: OperationCode::CreateAppend,
+                status: StatusCode::Ok,
+                progress: ProgressState::Complete,
+                required_payload_bytes: 0,
+                written_payload_bytes: 0,
+                result: OperationResult::TransactionStaged {
+                    transaction: TransactionHandle(request.transaction),
+                },
+            });
+        }
         let StoredSessionState::Creating {
             transaction,
             expected_bytes,
@@ -1259,6 +1442,58 @@ pub extern "C" fn flark_v4_create_commit(
         }
         let mut registry = registry().lock().map_err(|_| StatusCode::InternalFault)?;
         let entry = session_entry(&mut registry, request.session)?;
+        #[cfg(feature = "opening-session")]
+        if let Some(opening) = entry.opening.as_ref() {
+            if opening.transaction != request.transaction {
+                return Err(StatusCode::TransactionConflict);
+            }
+            if !opening.utf8_carry.is_empty() {
+                return Err(StatusCode::InvalidUtf8);
+            }
+            if opening.expected_bytes != 0 && opening.received_bytes != opening.expected_bytes {
+                return Err(StatusCode::TransactionIncomplete);
+            }
+            let StoredSessionState::Open(document) = &entry.state else {
+                return Err(StatusCode::InternalFault);
+            };
+            document
+                .seal_opening()
+                .map_err(|error| map_actor_error(&error))?;
+            let receipt = document
+                .pump(usize::try_from(request.budget.max_work_units).unwrap_or(usize::MAX))
+                .map_err(|error| map_actor_error(&error))?;
+            let revision = document
+                .inspect()
+                .map_err(|error| map_actor_error(&error))?
+                .revision;
+            entry.opening = None;
+            entry.progress_token = entry.progress_token.max(1);
+            return Ok(if receipt.phase == DocumentSessionPhase::Ready {
+                RuntimeOutcome {
+                    operation: OperationCode::CreateCommit,
+                    status: StatusCode::Ok,
+                    progress: ProgressState::Complete,
+                    required_payload_bytes: 0,
+                    written_payload_bytes: 0,
+                    result: OperationResult::RevisionCreated {
+                        session: SessionHandle(request.session.session),
+                        revision: Revision(revision),
+                    },
+                }
+            } else {
+                RuntimeOutcome {
+                    operation: OperationCode::CreateCommit,
+                    status: StatusCode::BudgetExhausted,
+                    progress: ProgressState::BudgetExhausted,
+                    required_payload_bytes: 0,
+                    written_payload_bytes: 0,
+                    result: OperationResult::Progress {
+                        revision: Revision(revision),
+                        token: ProgressToken(entry.progress_token),
+                    },
+                }
+            });
+        }
         let state = std::mem::replace(
             &mut entry.state,
             StoredSessionState::Creating {
@@ -4340,6 +4575,12 @@ fn query_page(
     let owner = session.owner_token;
     let (page, status, payload) = {
         let entry = session_entry(registry, session)?;
+        // An opening-query session serves certified semantic rows before it
+        // is Ready; the session's own typed state decides per query.
+        #[cfg(feature = "opening-session")]
+        let opening_semantic_query = entry.opening.is_some();
+        #[cfg(not(feature = "opening-session"))]
+        let opening_semantic_query = false;
         let StoredSessionState::Open(document) = &mut entry.state else {
             return Err(StatusCode::SessionBusy);
         };
@@ -4512,7 +4753,9 @@ fn query_page(
                 },
                 QueryPayload::CertificationRanges { records, source },
             )
-        } else if inspection.phase != DocumentSessionPhase::Ready || query_kind == 1 {
+        } else if (inspection.phase != DocumentSessionPhase::Ready && !opening_semantic_query)
+            || query_kind == 1
+        {
             let maximum = payload_capacity
                 .min(MAX_SOURCE_CHUNK_BYTES as usize)
                 .min(budget.max_result_bytes as usize);

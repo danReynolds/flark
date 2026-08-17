@@ -268,6 +268,12 @@ pub struct ProjectionSegmentRecord {
     pub source_utf16_range: SourceRange,
 }
 
+/// CreateRequest.flags bit selecting the progressive opening-query mode:
+/// the session exists immediately, pages stream through create_append with
+/// incremental UTF-8 validation, certified rows are queryable before EOF,
+/// and create_commit seals the load instead of parsing a buffered copy.
+pub const CREATE_FLAG_OPENING: u32 = 1 << 0;
+
 pub const VIEWPORT_ROW_FLAG_CONTIGUOUS_EDIT: u32 = 1 << 0;
 pub const VIEWPORT_ROW_FLAG_PROJECTED_RESERVED: u32 = 1 << 1;
 pub const VIEWPORT_ROW_FLAG_EDIT_UNAVAILABLE: u32 = 1 << 2;

@@ -1557,3 +1557,6 @@ impl RuntimeRequest<'_> {
 pub trait RuntimeContract {
     fn dispatch(&mut self, request: RuntimeRequest<'_>, output: &mut [u8]) -> Outcome;
 }
+
+#[cfg(feature = "opening-session")]
+pub use flark_engine::SOURCE_SEED_PAGE_MAX_UTF16;
