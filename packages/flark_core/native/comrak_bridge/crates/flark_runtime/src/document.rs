@@ -10,6 +10,8 @@ use flark_engine::parser_internal::{
     M11_INLINE_PROJECTION_FLAG_CODE_NORMALIZE_LINE_ENDINGS,
     M11_INLINE_PROJECTION_FLAG_CODE_TRIM_ONE_SPACE,
 };
+#[cfg(feature = "opening-session")]
+use flark_engine::{OpeningSourceError, OpeningSourceStore, OpeningSourceVersion, SourceRevision};
 use flark_engine::{
     ArenaMetrics, DocumentRuntime, DocumentRuntimeConfig, DocumentRuntimeError, ParserProfileId,
     SourceBoundaryAffinity, SourceEditError, SourceSnapshotLease, SourceVersion,
@@ -30,6 +32,11 @@ use flark_parser::{
     M11PersistentRecursiveGreenSessionError, M11RecursiveGreenInlineLeafPreparation,
     M11SimpleEditLineKind, M11SimpleEditListMarker, M11_INLINE_PROJECTION_JOB_MAX_POLL_TRANSITIONS,
     M11_SIMPLE_EDIT_LINE_MAX_BYTES,
+};
+
+#[cfg(feature = "opening-session")]
+use flark_parser::{
+    M11CompactViewportProbeError, M11ProgressiveOpenSession, M11ProgressiveOpenSessionPoll,
 };
 
 use crate::edit_intent::{
@@ -378,6 +385,10 @@ pub enum DocumentSessionError {
     Source(SourceEditError),
     Parser(M11PersistentRecursiveGreenSessionError),
     Inline(M11InlineProjectionJobError),
+    #[cfg(feature = "opening-session")]
+    Opening(OpeningSourceError),
+    #[cfg(feature = "opening-session")]
+    Compact(M11CompactViewportProbeError),
 }
 
 impl DocumentSessionError {
@@ -415,6 +426,10 @@ impl fmt::Display for DocumentSessionError {
             Self::Source(error) => error.fmt(formatter),
             Self::Parser(error) => error.fmt(formatter),
             Self::Inline(error) => error.fmt(formatter),
+            #[cfg(feature = "opening-session")]
+            Self::Opening(error) => error.fmt(formatter),
+            #[cfg(feature = "opening-session")]
+            Self::Compact(error) => error.fmt(formatter),
         }
     }
 }
@@ -439,13 +454,40 @@ impl From<M11PersistentRecursiveGreenSessionError> for DocumentSessionError {
     }
 }
 
+#[cfg(feature = "opening-session")]
+impl From<OpeningSourceError> for DocumentSessionError {
+    fn from(value: OpeningSourceError) -> Self {
+        Self::Opening(value)
+    }
+}
+
+#[cfg(feature = "opening-session")]
+impl From<M11CompactViewportProbeError> for DocumentSessionError {
+    fn from(value: M11CompactViewportProbeError) -> Self {
+        Self::Compact(value)
+    }
+}
+
 impl From<M11InlineProjectionJobError> for DocumentSessionError {
     fn from(value: M11InlineProjectionJobError) -> Self {
         Self::Inline(value)
     }
 }
 
+#[cfg(feature = "opening-session")]
+/// Progressive-open authority: the session owns the store (sole mutation
+/// authority during load), the incremental parser session over the replica,
+/// and the last store version adopted into runtime and parser.
+struct OpeningState {
+    store: OpeningSourceStore,
+    session: M11ProgressiveOpenSession,
+    adopted: OpeningSourceVersion,
+    seal_requested: bool,
+}
+
 enum ParseState {
+    #[cfg(feature = "opening-session")]
+    Opening(Box<OpeningState>),
     Clean(Box<M11PersistentRecursiveGreenCleanBuild>),
     CancellingClean(Box<M11PersistentRecursiveGreenCleanBuild>),
     Ready(Box<M11PersistentRecursiveGreenSession>),
@@ -490,6 +532,65 @@ impl fmt::Debug for DocumentSession {
 impl DocumentSession {
     pub fn begin(source: &str) -> Result<Self, DocumentSessionError> {
         Self::begin_with_config(source, DocumentRuntimeConfig::default())
+    }
+
+    #[cfg(feature = "opening-session")]
+    /// Begins one progressive open: no source is required up front, pages
+    /// are admitted through [`Self::opening_append_page`], and the load ends
+    /// only at [`Self::seal_opening`]. The first certified viewport becomes
+    /// queryable before EOF.
+    pub fn begin_opening() -> Result<Self, DocumentSessionError> {
+        let store = OpeningSourceStore::new(SourceRevision::new(0), None)?;
+        let mut runtime = DocumentRuntime::from_opening_snapshot(
+            store.snapshot(),
+            DocumentRuntimeConfig::default(),
+        )?;
+        let session = M11ProgressiveOpenSession::begin(&mut runtime, SYNTAX_PROFILE_GFM_V1)?;
+        let adopted = store.version();
+        Ok(Self {
+            runtime,
+            parser: ParseState::Opening(Box::new(OpeningState {
+                store,
+                session,
+                adopted,
+                seal_requested: false,
+            })),
+            last_edit_work: M11PersistentRecursiveGreenAdoptionWork::default(),
+            fault_arena_metrics: None,
+            edit_context: None,
+            fallback_line_ending: dominant_edit_line_ending(b""),
+        })
+    }
+
+    #[cfg(feature = "opening-session")]
+    /// Admits one bounded transport page during a progressive open. The
+    /// parser adopts it at its next starvation inside [`Self::pump`].
+    pub fn opening_append_page(&mut self, text: &str) -> Result<(), DocumentSessionError> {
+        let ParseState::Opening(state) = &mut self.parser else {
+            return Err(DocumentSessionError::NotReady);
+        };
+        if state.seal_requested {
+            return Err(DocumentSessionError::Busy);
+        }
+        let version = state.store.version();
+        let start = version.admitted_input_utf16();
+        let page_utf16 = text.encode_utf16().count();
+        state
+            .store
+            .append_page(version, start..start + page_utf16, text)?;
+        Ok(())
+    }
+
+    #[cfg(feature = "opening-session")]
+    /// Declares transport end: after every admitted page is adopted, the
+    /// load seals at exactly the admitted text and parsing runs to EOF
+    /// authority.
+    pub fn seal_opening(&mut self) -> Result<(), DocumentSessionError> {
+        let ParseState::Opening(state) = &mut self.parser else {
+            return Err(DocumentSessionError::NotReady);
+        };
+        state.seal_requested = true;
+        Ok(())
     }
 
     fn begin_with_config(
@@ -548,6 +649,8 @@ impl DocumentSession {
     #[must_use]
     pub const fn phase(&self) -> DocumentSessionPhase {
         match self.parser {
+            #[cfg(feature = "opening-session")]
+            ParseState::Opening(_) => DocumentSessionPhase::Building,
             ParseState::Ready(_) => DocumentSessionPhase::Ready,
             ParseState::ClosingClean(_)
             | ParseState::ClosingAdoption(_)
@@ -596,6 +699,8 @@ impl DocumentSession {
                 // bounded grant, and the caller's work-unit ceiling remains
                 // exact.
                 ParseState::Clean(build) => self.advance_clean(build, remaining),
+                #[cfg(feature = "opening-session")]
+                ParseState::Opening(state) => self.advance_opening(state, remaining),
                 other => self.advance_one(other).map(|state| (state, 1)),
             };
             match next {
@@ -623,6 +728,10 @@ impl DocumentSession {
 
     fn advance_one(&mut self, state: ParseState) -> Result<ParseState, DocumentSessionError> {
         match state {
+            #[cfg(feature = "opening-session")]
+            ParseState::Opening(state) => {
+                self.advance_opening(state, 1).map(|(state, _)| state)
+            }
             ParseState::Clean(build) => self.advance_clean(build, 1).map(|(state, _)| state),
             ParseState::CancellingClean(mut build) => {
                 let poll = build.poll_cancel(&mut self.runtime, 1)?;
@@ -768,6 +877,10 @@ impl DocumentSession {
                 expected: expected_revision,
                 actual: actual_revision,
             });
+        }
+        #[cfg(feature = "opening-session")]
+        if matches!(&self.parser, ParseState::Opening(_)) {
+            return self.apply_opening_edit(range, replacement);
         }
         let base_utf16_range = self
             .runtime
@@ -2607,6 +2720,16 @@ impl DocumentSession {
             ..self.snapped_to_scalar_boundary(requested_range.end)?;
         let session = match &self.parser {
             ParseState::Ready(session) => session,
+            #[cfg(feature = "opening-session")]
+            ParseState::Opening(state) => {
+                return query_opening_viewport(
+                    &mut self.runtime,
+                    state,
+                    revision,
+                    requested_range,
+                    maximum_rows,
+                )
+            }
             ParseState::Faulted => return Err(DocumentSessionError::Faulted),
             _ => return Err(DocumentSessionError::NotReady),
         };
@@ -2684,6 +2807,14 @@ impl DocumentSession {
                 requested_range,
                 maximum_spans,
             ),
+            #[cfg(feature = "opening-session")]
+            ParseState::Opening(state) => opening_live_viewport(
+                &self.runtime,
+                state,
+                revision,
+                requested_range,
+                maximum_spans,
+            ),
             ParseState::Faulted => Err(DocumentSessionError::Faulted),
             _ => pending_live_viewport(&self.runtime, revision, requested_range, maximum_spans),
         }
@@ -2693,6 +2824,16 @@ impl DocumentSession {
     pub fn begin_close(&mut self) -> Result<(), DocumentSessionError> {
         let state = mem::replace(&mut self.parser, ParseState::Transition);
         self.parser = match state {
+            #[cfg(feature = "opening-session")]
+            ParseState::Opening(mut state) => {
+                // The open session's release drains its cancel and viewport
+                // loops synchronously; the store simply drops, because the
+                // replica never outlives its authority.
+                state.session.release(&mut self.runtime);
+                drop(state);
+                self.runtime.begin_close()?;
+                ParseState::ClosingRuntime
+            }
             ParseState::Clean(mut build) => {
                 if let Err(error) = build.begin_cancel(&mut self.runtime) {
                     self.parser = ParseState::Clean(build);
@@ -4257,7 +4398,7 @@ fn capture_document_inline_projection_without_reference_authority(
     )
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "opening-session"))]
 fn capture_document_inline_projection_from_compact_probe(
     runtime: &mut DocumentRuntime,
     probe: &flark_parser::M11CompactViewportProbe,
@@ -4303,7 +4444,7 @@ fn capture_document_inline_projection_from_compact_probe(
     }))
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "opening-session"))]
 fn document_inline_facts_from_compact_probe(
     runtime: &mut DocumentRuntime,
     probe: &flark_parser::M11CompactViewportProbe,
@@ -4809,6 +4950,143 @@ const fn document_edit_capability(
     }
 }
 
+/// Serves live-projection spans during a progressive open: the certified
+/// early viewport's range (when bound to the current generation) is
+/// certified, and everything else is exact pending source.
+#[cfg(feature = "opening-session")]
+fn opening_live_viewport(
+    runtime: &DocumentRuntime,
+    state: &OpeningState,
+    revision: u64,
+    requested_range: Range<usize>,
+    maximum_spans: u32,
+) -> Result<DocumentLiveViewport, DocumentSessionError> {
+    let certified = state.session.certified_early().and_then(|(early, source)| {
+        if runtime.current_source_version() != Some(source) {
+            return None;
+        }
+        let range = early.root().source_range();
+        let start = usize::try_from(range.start).ok()?;
+        let end = usize::try_from(range.end).ok()?;
+        let start = start.max(requested_range.start);
+        let end = end.min(requested_range.end);
+        (start < end).then_some(start..end)
+    });
+    let Some(certified) = certified else {
+        return pending_live_viewport(runtime, revision, requested_range, maximum_spans);
+    };
+    let lease = runtime.snapshot_current_source()?;
+    let utf16 = |range: &Range<usize>| -> Result<Range<u64>, DocumentSessionError> {
+        Ok(lease.utf16_offset_for_byte(range.start)? as u64
+            ..lease.utf16_offset_for_byte(range.end)? as u64)
+    };
+    let mut spans = Vec::new();
+    let maximum_spans = maximum_spans as usize;
+    if requested_range.start < certified.start && spans.len() < maximum_spans {
+        let range = requested_range.start..certified.start;
+        spans.push(DocumentLiveViewportSpan::Pending {
+            source_range: range.start as u64..range.end as u64,
+            source_utf16_range: utf16(&range)?,
+        });
+    }
+    if spans.len() < maximum_spans {
+        spans.push(DocumentLiveViewportSpan::CertifiedUnchanged {
+            source_range: certified.start as u64..certified.end as u64,
+            source_utf16_range: utf16(&certified)?,
+        });
+    }
+    if certified.end < requested_range.end && spans.len() < maximum_spans {
+        let range = certified.end..requested_range.end;
+        spans.push(DocumentLiveViewportSpan::Pending {
+            source_range: range.start as u64..range.end as u64,
+            source_utf16_range: utf16(&range)?,
+        });
+    }
+    Ok(DocumentLiveViewport {
+        revision,
+        requested_range: requested_range.start as u64..requested_range.end as u64,
+        covered_range: requested_range.start as u64..requested_range.end as u64,
+        complete: true,
+        spans,
+        receipt: DocumentQueryReceipt::default(),
+    })
+}
+
+/// Serves complete certified viewport rows during a progressive open,
+/// clamped to the certified early viewport's range at its bound generation.
+/// `total_rows` reports only the known certified prefix and `complete` stays
+/// false: a pre-EOF row count is never an exact total.
+#[cfg(feature = "opening-session")]
+fn query_opening_viewport(
+    runtime: &mut DocumentRuntime,
+    state: &OpeningState,
+    revision: u64,
+    requested_range: Range<usize>,
+    maximum_rows: u32,
+) -> Result<DocumentViewport, DocumentSessionError> {
+    let Some((early, source)) = state.session.certified_early() else {
+        return Err(DocumentSessionError::NotReady);
+    };
+    if runtime.current_source_version() != Some(source) {
+        return Err(DocumentSessionError::NotReady);
+    }
+    let slice = early.root().source_range();
+    let slice_start = usize::try_from(slice.start)
+        .map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
+    let slice_end =
+        usize::try_from(slice.end).map_err(|_| DocumentSessionError::RangeOutOfBounds)?;
+    let start = requested_range.start.max(slice_start);
+    let end = requested_range.end.min(slice_end);
+    if start >= end {
+        return Ok(DocumentViewport {
+            revision,
+            requested_range: requested_range.start as u64..requested_range.end as u64,
+            start_ordinal: 0,
+            total_rows: 0,
+            complete: false,
+            rows: Vec::new(),
+            receipt: DocumentQueryReceipt::default(),
+        });
+    }
+    let limits =
+        row_query_limits(maximum_rows).ok_or(DocumentSessionError::QueryBudgetExceeded)?;
+    let lease = runtime.snapshot_current_source()?;
+    let start_utf16 = lease.utf16_offset_for_byte(start)?;
+    drop(lease);
+    let outcome = early
+        .root()
+        .locate_renderable_rows_bounded(
+            runtime,
+            M11RecursiveGreenPoint::new(start, start_utf16, SourceBoundaryAffinity::After),
+            end as u64,
+            limits,
+        )
+        .map_err(|error| {
+            DocumentSessionError::Parser(M11PersistentRecursiveGreenSessionError::Green(error))
+        })?;
+    let window = match outcome {
+        M11RecursiveGreenRowQueryOutcome::Window(window) => window,
+        M11RecursiveGreenRowQueryOutcome::BudgetExceeded(_) => {
+            return Err(DocumentSessionError::QueryBudgetExceeded)
+        }
+    };
+    let start_ordinal = window.start_ordinal();
+    let rows = window.rows().to_vec();
+    let mapped = map_document_viewport_rows(runtime, &rows, |runtime, row| {
+        document_inline_facts_from_compact_probe(runtime, early, row)
+    })?;
+    let total_rows = start_ordinal.saturating_add(mapped.len() as u64);
+    Ok(DocumentViewport {
+        revision,
+        requested_range: requested_range.start as u64..requested_range.end as u64,
+        start_ordinal,
+        total_rows,
+        complete: false,
+        rows: mapped,
+        receipt: DocumentQueryReceipt::default(),
+    })
+}
+
 fn certified_range_live_viewport(
     runtime: &DocumentRuntime,
     revision: u64,
@@ -4944,6 +5222,115 @@ fn release_failed_clean_build(
         }
     }
     mem::forget(build);
+}
+
+#[cfg(feature = "opening-session")]
+impl DocumentSession {
+    /// Advances one progressive open by a bounded grant: parser work first,
+    /// then at starvation the outstanding transport pages adopt in one
+    /// authenticated step, an exhaustion seal applies, or the pump yields to
+    /// await transport. Completion releases the final compact viewport and
+    /// starts the ordinary clean build over the sealed source.
+    fn advance_opening(
+        &mut self,
+        mut state: Box<OpeningState>,
+        fuel: usize,
+    ) -> Result<(ParseState, usize), DocumentSessionError> {
+        match state.session.poll(&mut self.runtime, fuel)? {
+            M11ProgressiveOpenSessionPoll::Pending => Ok((ParseState::Opening(state), fuel)),
+            M11ProgressiveOpenSessionPoll::Starved => {
+                if state.store.version() != state.adopted {
+                    let proof = state.store.prove_append_since(state.adopted)?;
+                    let current = proof.current();
+                    state
+                        .session
+                        .adopt_append(&mut self.runtime, proof, state.seal_requested)?;
+                    state.adopted = current;
+                    Ok((ParseState::Opening(state), 1))
+                } else if state.seal_requested {
+                    state.session.seal_exhausted(&mut self.runtime)?;
+                    Ok((ParseState::Opening(state), 1))
+                } else {
+                    // Awaiting transport: consume the grant so the pump
+                    // yields instead of spinning on starvation.
+                    Ok((ParseState::Opening(state), fuel))
+                }
+            }
+            M11ProgressiveOpenSessionPoll::Complete => {
+                let mut final_viewport = state.session.take_final(&mut self.runtime)?;
+                final_viewport.begin_release(&mut self.runtime)?;
+                while !final_viewport.poll_release(&mut self.runtime, 4_096)? {}
+                let build = begin_clean_build(&mut self.runtime)?;
+                Ok((ParseState::Clean(Box::new(build)), 1))
+            }
+        }
+    }
+
+    /// Applies one literal edit during a progressive open. The store is the
+    /// mutation authority: the edit advances the edit revision, and the
+    /// replica, parser session, and certified viewport rebuild from the
+    /// post-edit snapshot. Load-time edits trade locality for correctness;
+    /// Experiment B convergence replaces the restart later.
+    fn apply_opening_edit(
+        &mut self,
+        range: Range<usize>,
+        replacement: &str,
+    ) -> Result<DocumentEditReceipt, DocumentSessionError> {
+        let lease = self.runtime.snapshot_current_source()?;
+        let utf16_range =
+            lease.utf16_offset_for_byte(range.start)?..lease.utf16_offset_for_byte(range.end)?;
+        drop(lease);
+        let ParseState::Opening(state) = mem::replace(&mut self.parser, ParseState::Transition)
+        else {
+            return Err(DocumentSessionError::NotReady);
+        };
+        let OpeningState {
+            mut store,
+            mut session,
+            seal_requested,
+            ..
+        } = *state;
+        let restart = (|| -> Result<OpeningState, DocumentSessionError> {
+            session.release(&mut self.runtime);
+            let version = store.version();
+            store.apply_utf16_edit(version, utf16_range, replacement)?;
+            let mut old = mem::replace(
+                &mut self.runtime,
+                DocumentRuntime::from_opening_snapshot(
+                    store.snapshot(),
+                    DocumentRuntimeConfig::default(),
+                )?,
+            );
+            old.begin_close()?;
+            while !old.poll_close(4_096)?.complete {}
+            let session =
+                M11ProgressiveOpenSession::begin(&mut self.runtime, SYNTAX_PROFILE_GFM_V1)?;
+            let adopted = store.version();
+            Ok(OpeningState {
+                store,
+                session,
+                adopted,
+                seal_requested,
+            })
+        })();
+        match restart {
+            Ok(state) => {
+                self.parser = ParseState::Opening(Box::new(state));
+                self.edit_context = None;
+                Ok(DocumentEditReceipt {
+                    revision: self.revision(),
+                    parser_pending: true,
+                })
+            }
+            Err(error) => {
+                if self.fault_arena_metrics.is_none() {
+                    self.fault_arena_metrics = Some(self.runtime.arena_metrics());
+                }
+                self.parser = ParseState::Faulted;
+                Err(error)
+            }
+        }
+    }
 }
 
 fn begin_clean_build(
