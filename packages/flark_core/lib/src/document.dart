@@ -1,11 +1,17 @@
 import 'dart:async';
 import 'dart:isolate';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'models.dart';
 import 'native/native_document.dart';
 
 const _notReadySourceGapStatus = 8;
+// One streamed-open transport slice: the ABI's MAX_SOURCE_CHUNK_BYTES. The
+// owner isolate forwards at most one slice per worker acknowledgement, so
+// derived ingress buffers stay bounded far below the 2 MiB product gate and
+// the complete document never accumulates on the Dart side.
+const _openingForwardChunkBytes = 64 * 1024;
 
 enum FlarkCoreHistoryDisposition { retained, disabled, overBudget }
 
@@ -341,6 +347,7 @@ final class FlarkCoreDocument {
     required int sourceByteLength,
     required int sourceUtf16Length,
     required bool ready,
+    required bool opening,
   }) : _workerErrors = workerErrors,
        _workerExits = workerExits,
        _workerErrorSubscription = workerErrorSubscription,
@@ -350,7 +357,8 @@ final class FlarkCoreDocument {
        _revision = revision,
        _sourceByteLength = sourceByteLength,
        _sourceUtf16Length = sourceUtf16Length,
-       _ready = ready;
+       _ready = ready,
+       _opening = opening;
 
   final Isolate _isolate;
   final SendPort _commands;
@@ -366,12 +374,24 @@ final class FlarkCoreDocument {
   int _sourceByteLength;
   int _sourceUtf16Length;
   bool _ready;
+  bool _opening;
   bool _disposed = false;
+  Completer<void>? _openingSealed;
 
   int get revision => _revision;
   int get sourceByteLength => _sourceByteLength;
   int get sourceUtf16Length => _sourceUtf16Length;
   bool get isReady => _ready;
+
+  /// True while a streamed open ([openUtf8Stream] or [openStreaming]) is
+  /// still admitting source. The document is fully usable in this state:
+  /// lengths and [revision] track the admitted prefix, [queryViewport]
+  /// serves certified rows as soon as the parser certifies them (and the
+  /// familiar pending-neutral answers before that), and literal edits
+  /// commit against the current revision. Flips false once the stream ends
+  /// and the load seals; a failed stream leaves it true and surfaces its
+  /// error through [pumpUntilReady].
+  bool get isOpening => _opening;
 
   static Future<FlarkCoreDocument> open(
     String source, {
@@ -379,6 +399,67 @@ final class FlarkCoreDocument {
     int historyBudgetBytes = 8 * 1024 * 1024,
     Duration editIntentReplyTimeout = const Duration(milliseconds: 250),
     bool debugDropFirstEditIntentReply = false,
+  }) => _open(
+    source: source,
+    chunks: null,
+    expectedBytes: 0,
+    libraryPath: libraryPath,
+    historyBudgetBytes: historyBudgetBytes,
+    editIntentReplyTimeout: editIntentReplyTimeout,
+    debugDropFirstEditIntentReply: debugDropFirstEditIntentReply,
+  );
+
+  /// Opens a document from a raw UTF-8 byte stream without ever holding the
+  /// complete source on the Dart side (RFC 029 A3).
+  ///
+  /// The returned document is usable before [chunks] ends: the worker
+  /// admits each chunk into the native opening transaction, so queries and
+  /// literal edits run against the admitted prefix at revision 1 onward,
+  /// and [queryViewport] serves certified semantic rows as soon as the
+  /// parser certifies an early slice. When the stream closes, the load
+  /// seals and the ordinary pump-to-ready flow finishes the parse; await
+  /// [pumpUntilReady] for that (it also rethrows a failed stream's error).
+  ///
+  /// Chunks may cut anywhere — the native runtime carries a UTF-8 scalar
+  /// split across chunk boundaries — and oversized chunks are forwarded as
+  /// bounded transport slices, so at most one slice is in flight between
+  /// the isolates at a time. [expectedBytes] declares a known stream length
+  /// for the runtime to enforce; null (or zero) declares an unknown-length
+  /// stream that only the close of [chunks] ends.
+  ///
+  /// Requires a native library built with the `opening-session` cargo
+  /// feature; default builds reject the streamed open with a typed
+  /// [FlarkCoreNativeException] (INVALID_ARGUMENT) at open.
+  static Future<FlarkCoreDocument> openUtf8Stream(
+    Stream<Uint8List> chunks, {
+    int? expectedBytes,
+    String? libraryPath,
+    int historyBudgetBytes = 8 * 1024 * 1024,
+    Duration editIntentReplyTimeout = const Duration(milliseconds: 250),
+    bool debugDropFirstEditIntentReply = false,
+  }) {
+    if (expectedBytes != null && expectedBytes < 0) {
+      throw RangeError.value(expectedBytes, 'expectedBytes');
+    }
+    return _open(
+      source: null,
+      chunks: chunks,
+      expectedBytes: expectedBytes ?? 0,
+      libraryPath: libraryPath,
+      historyBudgetBytes: historyBudgetBytes,
+      editIntentReplyTimeout: editIntentReplyTimeout,
+      debugDropFirstEditIntentReply: debugDropFirstEditIntentReply,
+    );
+  }
+
+  static Future<FlarkCoreDocument> _open({
+    required String? source,
+    required Stream<Uint8List>? chunks,
+    required int expectedBytes,
+    required String? libraryPath,
+    required int historyBudgetBytes,
+    required Duration editIntentReplyTimeout,
+    required bool debugDropFirstEditIntentReply,
   }) async {
     if (historyBudgetBytes < 0) {
       throw RangeError.value(historyBudgetBytes, 'historyBudgetBytes');
@@ -409,10 +490,14 @@ final class FlarkCoreDocument {
       _documentWorker,
       [
         startup.sendPort,
+        // A null source selects the streamed opening session; the worker
+        // then expects openAppend/openCommit commands instead of a
+        // buffered create.
         source,
         libraryPath,
         historyBudgetBytes,
         debugDropFirstEditIntentReply,
+        expectedBytes,
       ],
       onError: errors.sendPort,
       onExit: exits.sendPort,
@@ -455,8 +540,18 @@ final class FlarkCoreDocument {
         sourceByteLength: envelope['sourceByteLength']! as int,
         sourceUtf16Length: envelope['sourceUtf16Length']! as int,
         ready: envelope['ready']! as bool,
+        opening: envelope['opening']! as bool,
       );
       monitoringTransferred = true;
+      if (chunks != null) {
+        // The seal future always has an internal listener: an abandoned or
+        // failed load must never become an unhandled async error, while
+        // pumpUntilReady still observes the failure.
+        final sealed = Completer<void>();
+        sealed.future.ignore();
+        document._openingSealed = sealed;
+        unawaited(document._feedOpeningStream(chunks));
+      }
       return document;
     } finally {
       startup.close();
@@ -467,6 +562,49 @@ final class FlarkCoreDocument {
         errors.close();
         exits.close();
       }
+    }
+  }
+
+  /// Drives the owner side of a streamed open. Every source chunk crosses
+  /// the isolate boundary as one bounded transferable slice at a time, each
+  /// awaited before the next (`await for` additionally pauses the producer
+  /// between events), so the in-flight ingress window is a single slice and
+  /// the complete document never exists on this side. Worker
+  /// acknowledgements carry the admitted lengths, keeping owner-side
+  /// coordinates current mid-load.
+  Future<void> _feedOpeningStream(Stream<Uint8List> chunks) async {
+    final sealed = _openingSealed!;
+    try {
+      await for (final chunk in chunks) {
+        var offset = 0;
+        while (offset < chunk.length) {
+          if (_disposed) return;
+          final length = math.min(
+            _openingForwardChunkBytes,
+            chunk.length - offset,
+          );
+          final slice = TransferableTypedData.fromList([
+            Uint8List.sublistView(chunk, offset, offset + length),
+          ]);
+          final result = await _send('openAppend', {'chunk': slice});
+          _revision = result['revision']! as int;
+          _sourceByteLength = result['sourceByteLength']! as int;
+          _sourceUtf16Length = result['sourceUtf16Length']! as int;
+          offset += length;
+        }
+      }
+      if (_disposed) return;
+      final result = await _send('openCommit', const {});
+      _revision = result['revision']! as int;
+      _sourceByteLength = result['sourceByteLength']! as int;
+      _sourceUtf16Length = result['sourceUtf16Length']! as int;
+      _ready = result['ready']! as bool;
+      _opening = false;
+      sealed.complete();
+    } on Object catch (error, stackTrace) {
+      // A failed stream or admission leaves the document opening forever;
+      // the typed failure surfaces to anyone awaiting the seal.
+      if (!sealed.isCompleted) sealed.completeError(error, stackTrace);
     }
   }
 
@@ -751,6 +889,12 @@ final class FlarkCoreDocument {
   }
 
   Future<void> pumpUntilReady({int workUnits = 512}) async {
+    // A streamed open cannot converge before its stream ends: the worker's
+    // bounded pump loop would spin against a starved transport. Await the
+    // seal first — which also rethrows a failed load's typed error — then
+    // finish the ordinary post-commit parse.
+    final sealed = _openingSealed;
+    if (sealed != null) await sealed.future;
     final result = await _request('pumpUntilReady', {'workUnits': workUnits});
     _ready = result['ready']! as bool;
   }
@@ -1019,11 +1163,18 @@ String _workerErrorText(Object? error) {
 Future<void> _documentWorker(List<Object?> startup) async {
   final startupPort = startup[0]! as SendPort;
   try {
-    final document = FlarkNativeDocument.open(
-      startup[1]! as String,
-      libraryPath: startup[2] as String?,
-      historyBudgetBytes: startup[3]! as int,
-    );
+    final source = startup[1] as String?;
+    final document = source == null
+        ? FlarkNativeDocument.openStream(
+            libraryPath: startup[2] as String?,
+            historyBudgetBytes: startup[3]! as int,
+            expectedTotalBytes: startup[5]! as int,
+          )
+        : FlarkNativeDocument.open(
+            source,
+            libraryPath: startup[2] as String?,
+            historyBudgetBytes: startup[3]! as int,
+          );
     final commands = ReceivePort();
     var dropNextMutationReply = startup[4]! as bool;
     startupPort.send({
@@ -1032,6 +1183,7 @@ Future<void> _documentWorker(List<Object?> startup) async {
       'sourceByteLength': document.sourceByteLength,
       'sourceUtf16Length': document.sourceUtf16Length,
       'ready': document.isReady,
+      'opening': document.isOpening,
     });
     await for (final raw in commands) {
       final message = raw! as List<Object?>;
@@ -1230,6 +1382,28 @@ Future<void> _documentWorker(List<Object?> startup) async {
           case 'releaseHistory':
             document.releaseHistory(arguments['historyToken']! as int);
             reply.send(const <Object?, Object?>{});
+          case 'openAppend':
+            // Staging drains to adoption inside the native document, so the
+            // acknowledged lengths are the queryable truth and certification
+            // work interleaves with transport without further pumping here.
+            document.appendOpeningChunk(
+              (arguments['chunk']! as TransferableTypedData)
+                  .materialize()
+                  .asUint8List(),
+            );
+            reply.send({
+              'revision': document.revision,
+              'sourceByteLength': document.sourceByteLength,
+              'sourceUtf16Length': document.sourceUtf16Length,
+            });
+          case 'openCommit':
+            document.commitOpeningCreate();
+            reply.send({
+              'revision': document.revision,
+              'sourceByteLength': document.sourceByteLength,
+              'sourceUtf16Length': document.sourceUtf16Length,
+              'ready': document.isReady,
+            });
           case 'pump':
             final ready = document.pump(
               workUnits: arguments['workUnits']! as int,

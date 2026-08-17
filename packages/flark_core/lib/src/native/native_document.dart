@@ -142,6 +142,17 @@ const _editPresentationToggleTaskChecked = 17;
 const _editPresentationIndentList = 18;
 const _editPresentationRetainParagraphGap = 19;
 const _bulkCommitWorkUnits = 1;
+// CreateRequest.flags bit selecting the RFC 029 progressive opening-query
+// mode. Only honored by runtimes built with the `opening-session` cargo
+// feature; default builds reject it with INVALID_ARGUMENT.
+const _createFlagOpening = 1;
+const _coordinateOutOfRange = 0x0206;
+// Per-grant parser budget while draining staged opening pages to adoption,
+// and a fail-stop ceiling on grants per append: a bounded chunk implies
+// bounded parse work, so exhausting the ceiling is a runtime defect, not
+// backpressure.
+const _openingAdoptionPumpUnits = 2048;
+const _openingAdoptionMaximumPumps = 65536;
 const _resultPayloadBytes = 64 * 1024;
 const _defaultWorkUnits = 512;
 const _editIntentRetirementPumpUnits = 64;
@@ -379,11 +390,20 @@ final class FlarkNativeDocument {
   int _sourceUtf16Length;
   bool _ready = false;
   bool _closed = false;
+  bool _opening = false;
+  int _openingStagedBytes = 0;
+  Uint8List _openingCarry = Uint8List(0);
 
   int get revision => _revision;
   int get sourceByteLength => _sourceByteLength;
   int get sourceUtf16Length => _sourceUtf16Length;
   bool get isReady => _ready;
+
+  /// True while a streamed open ([openStream]) is still admitting source:
+  /// the creation transaction has begun but [commitOpeningCreate] has not
+  /// sealed it. Queries and edits are valid in this state; they operate on
+  /// the admitted prefix at the current revision.
+  bool get isOpening => _opening;
 
   static FlarkNativeDocument open(
     String source, {
@@ -456,6 +476,184 @@ final class FlarkNativeDocument {
         ..free(request)
         ..free(outcome);
     }
+  }
+
+  /// Begins one RFC 029 progressive opening-query session: the native
+  /// document exists immediately over an empty admitted source and grows
+  /// through [appendOpeningChunk] until [commitOpeningCreate] seals the
+  /// load. [expectedTotalBytes] of zero declares an unknown-length stream —
+  /// only the commit ends it; a nonzero value is enforced by the runtime
+  /// (over-length appends and short commits fail typed).
+  ///
+  /// Requires a runtime built with the `opening-session` cargo feature;
+  /// default builds reject the opening flag with INVALID_ARGUMENT.
+  static FlarkNativeDocument openStream({
+    String? libraryPath,
+    int historyBudgetBytes = 8 * 1024 * 1024,
+    int expectedTotalBytes = 0,
+  }) {
+    if (historyBudgetBytes < 0) {
+      throw RangeError.value(historyBudgetBytes, 'historyBudgetBytes');
+    }
+    if (expectedTotalBytes < 0) {
+      throw RangeError.value(expectedTotalBytes, 'expectedTotalBytes');
+    }
+    final bindings = libraryPath == null
+        ? FlarkV4Bindings.nativeAsset()
+        : FlarkV4Bindings(DynamicLibrary.open(libraryPath));
+    _negotiate(bindings);
+    final ownerToken = _nextOwnerToken++;
+    final outcome = calloc<FlarkV4Outcome>();
+    final request = calloc<FlarkV4CreateRequest>();
+    // The session exists before any byte: begin with an empty initial chunk.
+    final empty = calloc<Uint8>(1);
+    try {
+      request.ref
+        ..structSize = sizeOf<FlarkV4CreateRequest>()
+        ..flags = _createFlagOpening
+        ..ownerToken = ownerToken
+        ..expectedTotalBytes = expectedTotalBytes;
+      request.ref.config
+        ..structSize = sizeOf<FlarkV4SessionConfig>()
+        ..parserProfile = 2
+        ..historyBudgetBytes = historyBudgetBytes
+        ..maxDocumentBytes = math.max(1024 * 1024 * 1024, expectedTotalBytes)
+        ..flags = 0;
+      final status = bindings.createBegin(request, empty, 0, outcome);
+      _requireStatus('create_begin', status, outcome.ref, {_ok});
+      return FlarkNativeDocument._(
+        bindings: bindings,
+        session: outcome.ref.primaryHandle,
+        ownerToken: ownerToken,
+        transaction: outcome.ref.secondaryHandle,
+        sourceByteLength: 0,
+        sourceUtf16Length: 0,
+      ).._opening = true;
+    } finally {
+      calloc
+        ..free(request)
+        ..free(outcome)
+        ..free(empty);
+    }
+  }
+
+  /// Stages one raw transport chunk of UTF-8 bytes into the opening
+  /// transaction. Chunks larger than the ABI source-chunk cap split
+  /// transparently; the runtime carries a multi-byte scalar divided across
+  /// chunk boundaries (at most three bytes), so [chunk] may cut anywhere.
+  ///
+  /// The admitted lengths advance to cover every complete scalar staged so
+  /// far — carried split-scalar bytes count only once their scalar
+  /// completes — keeping the bounds that queries and edits validate against
+  /// exact mid-load.
+  void appendOpeningChunk(Uint8List chunk) {
+    if (!_opening) {
+      throw StateError('FlarkNativeDocument is not in an opening session');
+    }
+    if (chunk.isEmpty) return;
+    final carryBefore = _openingCarry.length;
+    final request = calloc<FlarkV4StageRequest>();
+    final outcome = calloc<FlarkV4Outcome>();
+    try {
+      var cursor = 0;
+      while (cursor < chunk.length) {
+        final length = math.min(_maxChunkBytes, chunk.length - cursor);
+        final piece = _copyBytes(chunk, cursor, length);
+        try {
+          request.ref
+            ..structSize = sizeOf<FlarkV4StageRequest>()
+            ..flags = 0
+            ..transaction = _transaction
+            // Offsets are raw transport bytes: the runtime tracks received
+            // bytes including any carried split scalar.
+            ..chunkOffset = _openingStagedBytes
+            ..chunkLen = length;
+          _fillSession(request.ref.session);
+          final status = _bindings.createAppend(request, piece, length, outcome);
+          _requireStatus('create_append', status, outcome.ref, {_ok});
+        } finally {
+          calloc.free(piece);
+        }
+        _openingStagedBytes += length;
+        cursor += length;
+      }
+    } finally {
+      calloc
+        ..free(request)
+        ..free(outcome);
+    }
+    // Mirror the runtime's split-scalar carry so the admitted byte length —
+    // the bound every query and coordinate conversion validates against —
+    // stays exact. The runtime already rejected invalid UTF-8 above, so the
+    // combined tail is a valid (possibly incomplete) scalar prefix. The
+    // length advances by delta, not by recomputation from staged bytes:
+    // mid-load edits move the document length independently of the stream.
+    _openingCarry = _openingCarryAfter(_openingCarry, chunk);
+    _sourceByteLength += chunk.length + carryBefore - _openingCarry.length;
+    _drainOpeningAdoption();
+    _sourceUtf16Length = _convertCoordinate(_sourceByteLength, from: 1, to: 2);
+  }
+
+  /// Pumps the opening parser until the runtime has adopted every staged
+  /// transport page. Staged pages become queryable source only at a
+  /// starvation inside pump (the proven drive pattern drains per grant), so
+  /// this keeps the document's own lengths — and everything validated
+  /// against them — authoritative at every call boundary. The byte→byte
+  /// coordinate probe is exact: it validates against the same adopted
+  /// length every query is gated by.
+  void _drainOpeningAdoption() {
+    for (var attempt = 0; attempt < _openingAdoptionMaximumPumps; attempt++) {
+      try {
+        _convertCoordinate(_sourceByteLength, from: 1, to: 1);
+        return;
+      } on FlarkNativeException catch (error) {
+        if (error.status != _coordinateOutOfRange) rethrow;
+      }
+      pump(workUnits: _openingAdoptionPumpUnits);
+    }
+    throw const FlarkNativeException('opening_adoption', _internalFault);
+  }
+
+  /// Seals the streamed load after the final chunk: the source becomes
+  /// complete and the ordinary post-commit parse (pump-to-ready) takes over.
+  /// The runtime rejects a stream that ends inside a multi-byte scalar
+  /// (INVALID_UTF8) or short of a declared expected length
+  /// (TRANSACTION_INCOMPLETE); the session stays opening on failure.
+  void commitOpeningCreate() {
+    if (!_opening) {
+      throw StateError('FlarkNativeDocument is not in an opening session');
+    }
+    _commitCreate();
+    _opening = false;
+    _openingCarry = Uint8List(0);
+  }
+
+  /// The split-scalar carry after staging [chunk]: the trailing bytes of
+  /// (carry + chunk) that form an incomplete UTF-8 scalar, at most three.
+  /// Only the final three bytes can hold the incomplete scalar's lead, and
+  /// [carry] matters only when [chunk] is shorter than that window.
+  static Uint8List _openingCarryAfter(Uint8List carry, Uint8List chunk) {
+    final combinedLength = carry.length + chunk.length;
+    final window = math.min(3, combinedLength);
+    final tail = Uint8List(window);
+    for (var index = 0; index < window; index++) {
+      final position = combinedLength - window + index;
+      tail[index] = position < carry.length
+          ? carry[position]
+          : chunk[position - carry.length];
+    }
+    for (var index = 0; index < window; index++) {
+      final byte = tail[index];
+      // ASCII and continuation bytes are never an incomplete scalar's start.
+      if (byte < 0xc0) continue;
+      final needed = byte >= 0xf0
+          ? 4
+          : byte >= 0xe0
+          ? 3
+          : 2;
+      if (window - index < needed) return Uint8List.sublistView(tail, index);
+    }
+    return Uint8List(0);
   }
 
   void _appendSource(List<int> source, int offset) {
@@ -1628,6 +1826,35 @@ final class FlarkNativeDocument {
         resolvedEnd > _sourceByteLength) {
       throw RangeError.range(resolvedEnd, startByte, _sourceByteLength);
     }
+    if (_opening) {
+      // An opening session serves certified semantic rows before the stream
+      // ends, but its semantic query is only defined once an early slice is
+      // certified: the fixed ABI cannot encode the pre-certification
+      // NOT_READY_SOURCE_GAP answer (outcome coherence collapses it to an
+      // internal fault), so the certification-range query — the same
+      // pending-neutral answer any parse-pending document serves today —
+      // decides first whether certified rows exist to fetch. Nothing else
+      // can touch the session between these two synchronous calls, so a
+      // certified span cannot retire in between; any semantic-query error
+      // after a certified span is a real fault and stays loud.
+      final live = _queryViewportPage(3, startByte, resolvedEnd, maxRows);
+      final certified = live.certificationRanges.any(
+        (range) =>
+            range.certification == FlarkCertification.currentCertified &&
+            range.sourceBytes.start < range.sourceBytes.end,
+      );
+      if (!certified) return live;
+      return _queryViewportPage(4, startByte, resolvedEnd, maxRows);
+    }
+    return _queryViewportPage(_ready ? 4 : 3, startByte, resolvedEnd, maxRows);
+  }
+
+  FlarkViewport _queryViewportPage(
+    int queryKind,
+    int startByte,
+    int endByte,
+    int maxRows,
+  ) {
     final request = calloc<FlarkV4QueryRequest>();
     final outcome = calloc<FlarkV4Outcome>();
     final capacity = sizeOf<FlarkV4ResultPageHeader>() + _resultPayloadBytes;
@@ -1635,14 +1862,14 @@ final class FlarkNativeDocument {
     try {
       request.ref
         ..structSize = sizeOf<FlarkV4QueryRequest>()
-        ..queryKind = _ready ? 4 : 3
+        ..queryKind = queryKind
         ..revision = _revision
         ..snapshot = 0
         ..continuation = 0;
       _fillSession(request.ref.session);
       request.ref.range
         ..startByte = startByte
-        ..endByte = resolvedEnd;
+        ..endByte = endByte;
       _fillBudget(request.ref.budget, workUnits: 1, maxRows: maxRows);
       final status = _bindings.queryViewport(
         request,
