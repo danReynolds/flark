@@ -62,6 +62,32 @@ fn opening_mode_serves_certified_rows_before_commit_and_seals_on_commit() {
     };
     let transaction = outcome.secondary_handle;
 
+    // A pre-certification semantic query is a typed not-ready reply through
+    // the C encoding, never an anonymous internal fault.
+    let mut probe_page = vec![0_u8; 4096];
+    let early_query = QueryRequest {
+        struct_size: size_of::<QueryRequest>() as u32,
+        query_kind: 2,
+        session,
+        revision: 1,
+        snapshot: 0,
+        range: SourceRange {
+            start_byte: 0,
+            end_byte: 0,
+        },
+        continuation: 0,
+        budget: budget(64),
+        reserved: [0; 1],
+    };
+    let status = flark_v4_query_viewport(
+        &early_query,
+        probe_page.as_mut_ptr(),
+        probe_page.len() as u64,
+        &mut outcome,
+    );
+    // Exact pending source with NotCertified — never an anonymous fault.
+    assert_eq!(status, StatusCode::NotCertified as u32);
+
     // Chunk so one boundary lands inside the two-byte 'é' of "café".
     let split_at = source
         .iter()

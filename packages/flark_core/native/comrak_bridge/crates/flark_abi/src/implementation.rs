@@ -296,6 +296,10 @@ fn runtime_error(operation: OperationCode, status: StatusCode) -> RuntimeOutcome
         status,
         progress: match status {
             StatusCode::Backpressure => ProgressState::Backpressured,
+            // Outcome coherence pairs this status with PendingSourceGap;
+            // leaving None here collapsed a typed not-ready reply into an
+            // anonymous internal fault at the encoding boundary.
+            StatusCode::NotReadySourceGap => ProgressState::PendingSourceGap,
             StatusCode::ProgressStalled
             | StatusCode::PanicContained
             | StatusCode::InternalFault
@@ -4575,15 +4579,21 @@ fn query_page(
     let owner = session.owner_token;
     let (page, status, payload) = {
         let entry = session_entry(registry, session)?;
-        // An opening-query session serves certified semantic rows before it
-        // is Ready; the session's own typed state decides per query.
         #[cfg(feature = "opening-session")]
-        let opening_semantic_query = entry.opening.is_some();
-        #[cfg(not(feature = "opening-session"))]
-        let opening_semantic_query = false;
+        let opening = entry.opening.is_some();
         let StoredSessionState::Open(document) = &mut entry.state else {
             return Err(StatusCode::SessionBusy);
         };
+        // An opening-query session serves certified semantic rows before it
+        // is Ready, and exact pending source until certification exists —
+        // the contract's honest pre-certification reply.
+        #[cfg(feature = "opening-session")]
+        let opening_semantic_query = opening
+            && document
+                .opening_certified()
+                .map_err(|error| map_actor_error(&error))?;
+        #[cfg(not(feature = "opening-session"))]
+        let opening_semantic_query = false;
         let inspection = document
             .inspect()
             .map_err(|error| map_actor_error(&error))?;

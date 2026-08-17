@@ -144,6 +144,13 @@ impl DocumentActor {
         self.call(|document| document.seal_opening().map_err(Into::into))
     }
 
+    /// Returns whether the progressive open holds a certified viewport at
+    /// the live generation.
+    #[cfg(feature = "opening-session")]
+    pub fn opening_certified(&self) -> Result<bool, DocumentActorError> {
+        self.call(|document| Ok(document.opening_certified()))
+    }
+
     pub fn pump(&self, max_work_units: usize) -> Result<DocumentPumpReceipt, DocumentActorError> {
         self.call(move |document| document.pump(max_work_units))
     }

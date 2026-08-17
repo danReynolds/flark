@@ -581,6 +581,22 @@ impl DocumentSession {
         Ok(())
     }
 
+    /// Returns whether a progressive open currently holds a certified early
+    /// viewport at the live generation. False for every non-opening state:
+    /// callers use this to route pre-certification queries to exact pending
+    /// source rather than semantic paths.
+    #[cfg(feature = "opening-session")]
+    #[must_use]
+    pub fn opening_certified(&self) -> bool {
+        let ParseState::Opening(state) = &self.parser else {
+            return false;
+        };
+        state
+            .session
+            .certified_early()
+            .is_some_and(|(_, source)| self.runtime.current_source_version() == Some(source))
+    }
+
     #[cfg(feature = "opening-session")]
     /// Declares transport end: after every admitted page is adopted, the
     /// load seals at exactly the admitted text and parsing runs to EOF

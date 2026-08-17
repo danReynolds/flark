@@ -2589,6 +2589,45 @@ impl M11CompactProbeOutput {
         Ok(())
     }
 
+    /// Finalizes a still-collecting candidate at document completion: a
+    /// document with fewer rows than the slice target is its own first
+    /// slice, ending at the exact final position. Idempotent after the
+    /// first freeze.
+    fn freeze_first_slice_at_completion(&mut self) -> Result<(), M11BlockWriterError> {
+        if self.paragraph.is_some() {
+            return Err(M11BlockWriterError::InvalidCommand(
+                "compact completion crossed an open reference window",
+            ));
+        }
+        let physical = SourceMetric::new(
+            self.fragment.receipt.source_bytes,
+            self.fragment.receipt.source_utf16,
+        )
+        .ok_or(M11BlockWriterError::CounterOverflow)?;
+        let state = std::mem::replace(&mut self.first_slice, M11CompactProbeFirstSliceState::Taken);
+        self.first_slice = match state {
+            M11CompactProbeFirstSliceState::Collecting(events) => {
+                if physical
+                    .bytes()
+                    .saturating_sub(self.first_slice_start_physical.bytes())
+                    > COMPACT_PROBE_FIRST_SLICE_MAX_SOURCE_BYTES
+                    || events.len() > COMPACT_PROBE_FIRST_SLICE_MAX_EVENTS
+                {
+                    M11CompactProbeFirstSliceState::OverCap
+                } else {
+                    M11CompactProbeFirstSliceState::Ready(M11CompactProbeFirstSlice {
+                        physical_start: self.first_slice_start_physical,
+                        physical_end: physical,
+                        row_base: self.first_slice_start_rows,
+                        events,
+                    })
+                }
+            }
+            other => other,
+        };
+        Ok(())
+    }
+
     fn take_first_slice(&mut self) -> Option<M11CompactProbeFirstSlice> {
         let state = std::mem::replace(&mut self.first_slice, M11CompactProbeFirstSliceState::Taken);
         match state {
@@ -3691,6 +3730,18 @@ impl M11BlockWriter {
                 }
                 Ok(())
             }
+            _ => Err(M11BlockWriterError::InvalidCommand(
+                "writer is not a compact probe",
+            )),
+        }
+    }
+
+    #[cfg(any(test, feature = "m11-compact-probe"))]
+    pub(crate) fn compact_probe_freeze_first_slice_at_completion(
+        &mut self,
+    ) -> Result<(), M11BlockWriterError> {
+        match &mut self.output {
+            WriterOutput::CompactProbe(probe) => probe.freeze_first_slice_at_completion(),
             _ => Err(M11BlockWriterError::InvalidCommand(
                 "writer is not a compact probe",
             )),
@@ -5542,7 +5593,10 @@ impl M11BlockWriter {
         fuel: usize,
     ) -> Result<M11BlockWriterPoll, M11BlockWriterError> {
         #[cfg(any(test, feature = "m11-compact-probe"))]
-        if matches!(&self.output, WriterOutput::CompactProbe(_)) {
+        if let WriterOutput::CompactProbe(probe) = &mut self.output {
+            // A document shorter than the slice target finalizes its
+            // still-collecting candidate here, at the exact final position.
+            probe.freeze_first_slice_at_completion()?;
             self.document_complete = true;
             return Ok(M11BlockWriterPoll {
                 status: M11BlockWriterPollStatus::DocumentComplete,

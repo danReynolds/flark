@@ -271,6 +271,8 @@ impl M11PersistentRecursiveGreenCleanPlan {
             #[cfg(any(test, feature = "m11-compact-probe"))]
             compact_restart_captures: 0,
             #[cfg(any(test, feature = "m11-compact-probe"))]
+            compact_probe_completion_slice: None,
+            #[cfg(any(test, feature = "m11-compact-probe"))]
             progressive_probe: false,
             #[cfg(any(test, feature = "m11-compact-probe"))]
             progressive_authority: None,
@@ -339,6 +341,7 @@ impl M11PersistentRecursiveGreenCleanPlan {
             compact_reference_resolver: None,
             compact_checkpoint_boundaries_seen: 0,
             compact_restart_captures: 0,
+            compact_probe_completion_slice: None,
             progressive_probe: false,
             progressive_authority: None,
             progressive_source_lease: None,
@@ -419,6 +422,7 @@ impl M11PersistentRecursiveGreenCleanPlan {
             compact_reference_resolver: None,
             compact_checkpoint_boundaries_seen: 0,
             compact_restart_captures: 0,
+            compact_probe_completion_slice: None,
             progressive_probe: true,
             progressive_authority: Some(authority),
             progressive_source_lease: source_lease,
@@ -520,6 +524,8 @@ pub struct M11PersistentRecursiveGreenCleanBuild {
     compact_checkpoint_boundaries_seen: usize,
     #[cfg(any(test, feature = "m11-compact-probe"))]
     compact_restart_captures: usize,
+    #[cfg(any(test, feature = "m11-compact-probe"))]
+    compact_probe_completion_slice: Option<M11CompactProbeFirstSlice>,
     #[cfg(any(test, feature = "m11-compact-probe"))]
     progressive_probe: bool,
     #[cfg(any(test, feature = "m11-compact-probe"))]
@@ -888,6 +894,14 @@ impl M11PersistentRecursiveGreenCleanBuild {
                         }
                         #[cfg(any(test, feature = "m11-compact-probe"))]
                         if self.compact_probe {
+                            // A document shorter than the slice target owns
+                            // its completion-frozen slice; stash it before
+                            // the writer is released.
+                            let writer = self.writer_mut()?;
+                            writer.compact_probe_freeze_first_slice_at_completion()?;
+                            if let Ok(Some(slice)) = writer.compact_probe_take_first_slice() {
+                                self.compact_probe_completion_slice = Some(slice);
+                            }
                             self.compact_probe_receipt =
                                 Some(self.writer_mut()?.compact_probe_receipt()?);
                         } else {
@@ -1262,14 +1276,16 @@ impl M11PersistentRecursiveGreenCleanBuild {
 
     #[cfg(any(test, feature = "m11-compact-probe"))]
     fn take_compact_probe_first_slice(&mut self) -> Option<M11CompactProbeFirstSlice> {
-        self.compact_probe
-            .then(|| {
-                self.writer
-                    .as_mut()?
-                    .compact_probe_take_first_slice()
-                    .ok()?
-            })
-            .flatten()
+        if !self.compact_probe {
+            return None;
+        }
+        if let Some(slice) = self.compact_probe_completion_slice.take() {
+            return Some(slice);
+        }
+        self.writer
+            .as_mut()?
+            .compact_probe_take_first_slice()
+            .ok()?
     }
 
     #[cfg(any(test, feature = "m11-compact-probe"))]
@@ -2124,6 +2140,7 @@ impl M11CompactCheckpointJournal {
                 compact_reference_resolver: None,
                 compact_checkpoint_boundaries_seen: 0,
                 compact_restart_captures: 0,
+                compact_probe_completion_slice: None,
                 progressive_probe: false,
                 progressive_authority: None,
                 progressive_source_lease: None,
@@ -6036,19 +6053,27 @@ fn build_compact_green_slice(
         row_base,
         open_frame_bases,
     )?;
+    // A completion-frozen slice already carries its Document Exit; an early
+    // mid-document slice needs the synthetic close.
+    let has_document_exit = matches!(
+        events.last().copied(),
+        Some(M11RecursiveGreenEvent::Exit { frame, .. }) if frame == document_frame
+    );
     let offered = (|| -> Result<(), M11CompactViewportProbeError> {
         for event in events.iter().copied() {
             slice_build.offer_event(event)?;
             poll_compact_slice_input(runtime, &mut slice_build)?;
         }
-        slice_build.offer_event(M11RecursiveGreenEvent::Exit {
-            frame: document_frame,
-            final_kind: document_kind,
-            close: None,
-            last_line_blank: false,
-            child: M11RecursiveGreenClosedChild::default(),
-        })?;
-        poll_compact_slice_input(runtime, &mut slice_build)?;
+        if !has_document_exit {
+            slice_build.offer_event(M11RecursiveGreenEvent::Exit {
+                frame: document_frame,
+                final_kind: document_kind,
+                close: None,
+                last_line_blank: false,
+                child: M11RecursiveGreenClosedChild::default(),
+            })?;
+            poll_compact_slice_input(runtime, &mut slice_build)?;
+        }
         slice_build.finish_input()?;
         loop {
             match slice_build.poll(runtime, 4_096)?.status() {

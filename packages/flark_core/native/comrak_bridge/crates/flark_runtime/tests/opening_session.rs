@@ -99,6 +99,24 @@ fn session_layer_first_certified_viewport_timing() {
 }
 
 #[test]
+fn tiny_and_empty_opens_seal_to_ready() {
+    // A document shorter than the slice target is its own first slice,
+    // frozen at completion; sealing must work down to the empty stream.
+    for source in ["", "Hello brave world.\n"] {
+        let mut session = DocumentSession::begin_opening().expect("begin opening");
+        if !source.is_empty() {
+            session.opening_append_page(source).expect("append page");
+        }
+        session.seal_opening().expect("seal");
+        while session.phase() != DocumentSessionPhase::Ready {
+            session.pump(4_096).expect("pump tiny open");
+        }
+        assert_eq!(session.source_byte_len(), source.len());
+        session.close().expect("close tiny open");
+    }
+}
+
+#[test]
 fn progressive_open_serves_certified_rows_before_eof_and_matches_the_oracle() {
     let source = fixture();
     let mut session = DocumentSession::begin_opening().expect("begin opening");
