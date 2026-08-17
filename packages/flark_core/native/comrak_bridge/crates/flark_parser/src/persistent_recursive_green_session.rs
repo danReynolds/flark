@@ -8523,6 +8523,253 @@ mod tests {
         close_runtime(&mut runtime);
     }
 
+    struct RevisionLocalityCellOutcome {
+        receipt: super::compact_index_revision::M11CompactIndexRevisionReceipt,
+    }
+
+    /// Runs one Experiment B revision-locality cell: build the base compact
+    /// index, commit one ordinary edit, converge the index through the
+    /// revision updater, and verify entry-by-entry equality against a clean
+    /// full rebuild of the edited source. Prints one JSON receipt line.
+    fn run_revision_locality_cell(
+        cell: &str,
+        base_source: &str,
+        edit_range: Range<usize>,
+        replacement: &str,
+        carried: M11CompactRevisionCarriedDeltas,
+    ) -> RevisionLocalityCellOutcome {
+        let base_started = Instant::now();
+        let mut runtime = DocumentRuntime::new(base_source, DocumentRuntimeConfig::default())
+            .expect("revision locality runtime");
+        let (mut base_session, ..) = build_compact_probe(&mut runtime, base_started);
+        let base_index_time = base_started.elapsed();
+        let source = base_session.source();
+        let (base_journal, base_refs) = take_compact_index_parts(&mut runtime, &mut base_session);
+        let base_total = base_journal.entries.len();
+
+        let edit = committed_revision_edit(base_source, edit_range.clone(), replacement, carried);
+        runtime
+            .apply_edit(source, edit_range.clone(), replacement)
+            .expect("commit revision cell edit");
+
+        let update_started = Instant::now();
+        let (revision, poll_transitions) =
+            drive_compact_index_revision(&mut runtime, base_journal, base_refs, edit);
+        let update_time = update_started.elapsed();
+        let receipt = *revision.receipt();
+
+        let rebuild_started = Instant::now();
+        let (mut rebuild, ..) = build_compact_probe(&mut runtime, rebuild_started);
+        let rebuild_time = rebuild_started.elapsed();
+        assert_compact_revision_matches_clean_rebuild(&revision, &rebuild);
+        release_session(&mut runtime, &mut rebuild);
+        close_runtime(&mut runtime);
+
+        let byte_delta = replacement.len() as i64 - (edit_range.end - edit_range.start) as i64;
+        let convergence_distance = receipt
+            .convergence_cut_bytes
+            .map(|cut| cut.saturating_sub(edit_range.start as u64));
+        println!(
+            "{{\"probe\":\"compact_index_revision_locality\",\"cell\":\"{}\",\
+             \"source_bytes\":{},\"edit_byte\":{},\"byte_delta\":{},\
+             \"base_index_ms\":{:.1},\"update_ms\":{:.3},\"rebuild_ms\":{:.1},\
+             \"predecessor_index\":{},\"replay_start_bytes\":{},\
+             \"source_bytes_replayed\":{},\"boundaries_observed\":{},\
+             \"replay_transitions\":{},\"poll_transitions\":{},\
+             \"converged\":{},\"convergence_entry\":{},\"convergence_distance\":{},\
+             \"candidates_rejected\":{},\"checkpoints_reused\":{},\
+             \"checkpoints_reused_prefix\":{},\"checkpoints_reused_suffix\":{},\
+             \"checkpoints_replaced\":{},\"checkpoints_window\":{},\
+             \"base_entries_total\":{},\"pages_shared\":{},\"pages_appended\":{},\
+             \"base_stream_bytes\":{},\"overlay_stream_bytes\":{},\
+             \"references_rebuild_required\":{},\"window_definition_records\":{},\
+             \"base_definitions_intersecting\":{},\"last_convergence_reject\":{},\
+             \"equal_to_clean_rebuild\":true}}",
+            cell,
+            base_source.len(),
+            edit_range.start,
+            byte_delta,
+            base_index_time.as_secs_f64() * 1000.0,
+            update_time.as_secs_f64() * 1000.0,
+            rebuild_time.as_secs_f64() * 1000.0,
+            receipt.predecessor_index,
+            receipt.replay_start_bytes,
+            receipt.source_bytes_replayed,
+            receipt.boundaries_observed,
+            receipt.replay_transitions,
+            poll_transitions,
+            receipt.converged,
+            receipt
+                .convergence_entry_index
+                .map_or("null".to_string(), |index| index.to_string()),
+            convergence_distance.map_or("null".to_string(), |distance| distance.to_string()),
+            receipt.candidates_rejected,
+            receipt.checkpoints_reused_prefix + receipt.checkpoints_reused_suffix,
+            receipt.checkpoints_reused_prefix,
+            receipt.checkpoints_reused_suffix,
+            receipt.checkpoints_replaced,
+            receipt.checkpoints_window,
+            receipt.base_entries_total,
+            receipt.pages_shared,
+            receipt.pages_appended,
+            receipt.base_stream_bytes,
+            receipt.overlay_stream_bytes,
+            receipt.references_rebuild_required,
+            receipt.window_definition_records,
+            receipt.base_definitions_intersecting,
+            receipt.last_convergence_reject.map_or("null".to_string(), |(index, reason)| {
+                format!("{{\"candidate\":{index},\"dimension\":\"{reason}\"}}")
+            }),
+        );
+        RevisionLocalityCellOutcome { receipt }
+    }
+
+    /// RFC 029 Experiment B falsification differential (build plan rule 11):
+    /// after one committed ordinary single-character edit at BOF, middle, and
+    /// EOF — plus one +1-byte middle insertion — the revision-local update
+    /// must replay at most 64 KiB of source, must not scale its non-reused
+    /// checkpoint work with total document size, and must equal a clean full
+    /// rebuild of the edited source entry by entry with coordinates resolved
+    /// through the remap. The definition-bearing reference cell records the
+    /// declared whole-document reference rebuild cost. One JSON receipt line
+    /// per cell; run explicitly in release mode:
+    /// `cargo test --release -p flark-parser --lib -- --ignored revision_locality --nocapture`
+    #[test]
+    #[ignore = "release-mode Experiment B revision-locality probe"]
+    fn compact_index_revision_locality_under_ordinary_edits() {
+        const BLOCK: &str = "Ordinary paragraph with **bold** text and plain words.\n\n";
+        const EDIT_KINDS: [&str; 4] = ["bof_replace", "mid_replace", "eof_replace", "mid_insert"];
+        let mut not_reused: std::collections::BTreeMap<(usize, &str), usize> =
+            std::collections::BTreeMap::new();
+        for target in [1024 * 1024_usize, 10 * 1024 * 1024] {
+            let base_source = repeat_ascii_exact("", BLOCK, target);
+            for kind in EDIT_KINDS {
+                let (edit_range, replacement, carried) = match kind {
+                    "bof_replace" => {
+                        let at = interior_word_letter_at_or_after(&base_source, 1);
+                        (
+                            at..at + 1,
+                            replacement_letter_at(&base_source, at),
+                            paragraph_content_carried(0, 0),
+                        )
+                    }
+                    "mid_replace" => {
+                        let at =
+                            interior_word_letter_at_or_after(&base_source, base_source.len() / 2);
+                        (
+                            at..at + 1,
+                            replacement_letter_at(&base_source, at),
+                            paragraph_content_carried(0, 0),
+                        )
+                    }
+                    "eof_replace" => {
+                        let at = interior_word_letter_at_or_after(
+                            &base_source,
+                            base_source.len() - BLOCK.len(),
+                        );
+                        (
+                            at..at + 1,
+                            replacement_letter_at(&base_source, at),
+                            paragraph_content_carried(0, 0),
+                        )
+                    }
+                    "mid_insert" => {
+                        let at =
+                            interior_word_letter_at_or_after(&base_source, base_source.len() / 2);
+                        (at..at, "q", paragraph_content_carried(1, 1))
+                    }
+                    _ => unreachable!("declared edit kinds"),
+                };
+                let label = format!("{}MiB_{kind}", target / (1024 * 1024));
+                let outcome = run_revision_locality_cell(
+                    &label,
+                    &base_source,
+                    edit_range,
+                    replacement,
+                    carried,
+                );
+                // Frozen gate (RFC 029 section 10.3): an ordinary
+                // single-character edit replays at most 64 KiB of source and
+                // never restarts from BOF unless BOF is the selected
+                // predecessor.
+                assert!(
+                    outcome.receipt.source_bytes_replayed <= 64 * 1024,
+                    "{label}: replayed {} bytes",
+                    outcome.receipt.source_bytes_replayed
+                );
+                assert!(
+                    outcome.receipt.converged,
+                    "{label}: ordinary edit must converge: {:?}",
+                    outcome.receipt
+                );
+                if kind != "bof_replace" {
+                    assert!(
+                        outcome.receipt.predecessor_index > 0,
+                        "{label}: interior edits resume past BOF"
+                    );
+                }
+                assert!(!outcome.receipt.references_rebuild_required, "{label}");
+                not_reused.insert(
+                    (target, kind),
+                    outcome.receipt.checkpoints_replaced + outcome.receipt.checkpoints_window,
+                );
+            }
+        }
+        // Frozen gate: the non-reused checkpoint work (replaced plus
+        // re-emitted window entries) does not trend with total document
+        // size. The reused count itself necessarily scales with the journal
+        // — that is the structural sharing working — so the trend gate binds
+        // its complement.
+        for kind in EDIT_KINDS {
+            let one = not_reused[&(1024 * 1024, kind)];
+            let ten = not_reused[&(10 * 1024 * 1024, kind)];
+            assert!(
+                one <= 16 && ten <= 16,
+                "{kind}: non-reused checkpoint work stays inside the replay envelope \
+                 (1MiB={one}, 10MiB={ten})"
+            );
+            assert!(
+                ten <= one + 2,
+                "{kind}: non-reused checkpoint work must not trend with document size \
+                 (1MiB={one}, 10MiB={ten})"
+            );
+        }
+
+        // Definition-bearing cell: the checkpoint index still converges and
+        // splices, while the reference index honestly declares its
+        // whole-document rebuild; the printed rebuild_ms is that declared
+        // cost's upper bound (a complete clean rebuild of the edited source).
+        let mut reference_source = String::from("Ordinary opening paragraph.\n\n");
+        let mut ordinal = 0_u64;
+        while reference_source.len() < 2 * 1024 * 1024 {
+            reference_source.push_str(&format!(
+                "[ref{ordinal}]: /destination/{ordinal} \"title {ordinal}\"\n\nParagraph {ordinal} uses [ref{ordinal}] with **bold**.\n\n"
+            ));
+            ordinal += 1;
+        }
+        let definition_edit = reference_source
+            .find("/destination/900 ")
+            .expect("interior definition destination")
+            + "/destination/".len();
+        let outcome = run_revision_locality_cell(
+            "2MiB_definition_replace",
+            &reference_source,
+            definition_edit..definition_edit + 1,
+            "8",
+            M11CompactRevisionCarriedDeltas::default(),
+        );
+        assert!(
+            outcome.receipt.references_rebuild_required,
+            "definition-bearing window declares the reference rebuild: {:?}",
+            outcome.receipt
+        );
+        assert!(
+            outcome.receipt.source_bytes_replayed <= 64 * 1024,
+            "definition cell replay stays bounded: {:?}",
+            outcome.receipt
+        );
+    }
+
     #[test]
     fn dynamic_reference_replacement_keeps_the_prefix_before_a_remainder_restart() {
         const BASE: &str = "[base]: /base\n!x]: /new\nsee [x]\n";
