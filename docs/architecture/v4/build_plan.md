@@ -132,6 +132,30 @@ insertion cell should confirm byte/UTF-16 dimensions relocate independently.
 The probe is retained `#[ignore]`d in-crate as the regression check for any
 future durable-codec change.
 
+### Nested cold-jump decomposition (2026-08-17)
+
+The 89 ms depth-four nested cold-jump receipt threatened the frozen
+100 ms p99 / 200 ms maximum request gate once the historical Mac-to-Pixel
+factor is applied, so the phase split was measured before any optimization.
+The instrumented release run divides 84.6 ms as: durable decode 0.027 ms,
+replay to the certified slice 2.25 ms, bounded Green slice build 3.2 ms,
+`locate_renderable_rows` 26.1 ms for the single 32-row window, and
+`prepare_m11_recursive_green_slice_inline_leaf` 50.7 ms across 32 rows
+(about 1.6 ms per row through
+`resolve_m11_recursive_green_slice_inline_leaf_row_fence`), with the actual
+inline capture at 2.3 ms and the slowest complete row at 2.5 ms.
+
+The compact restart architecture is therefore exonerated: decode, replay,
+and slice construction total 5.5 ms at depth four. More than ninety percent
+of the time is the slice query layer, whose per-row fence resolution and
+row-window location cost roughly nine times their ordinary-depth
+equivalents. Because every deep-viewport materialization pays these same
+two functions — not only cold jumps — optimizing them (for example, one
+shared ancestor-context walk per materialization instead of a fresh
+fence resolution per row) improves the ordinary path as well. This is a
+named engine optimization target ahead of Pixel qualification, not an
+architecture correction; no gate threshold changes.
+
 ## 2026-08-11 continuously-rendered product correction
 
 The first real dogfood pass falsified the prototype's focus behavior. The

@@ -6291,6 +6291,7 @@ mod tests {
             .expect("nested compact journal")
             .begin_cold_slice_probe(index, &mut runtime, SYNTAX_PROFILE_GFM_V1)
             .expect("begin nested cold slice");
+        let decoded_at = started_at.elapsed();
         assert_eq!(entry, selected);
         let slice = loop {
             let poll = cold_build
@@ -6321,6 +6322,7 @@ mod tests {
             &open_frame_bases,
             &slice.events,
         );
+        let green_built_at = started_at.elapsed();
         let limits = M11RecursiveGreenRowQueryLimits::new(32, 8_192, 65_536, 64, 65_536)
             .expect("nested slice query limits");
         let rows = root
@@ -6333,9 +6335,14 @@ mod tests {
             .expect("query nested cold slice")
             .rows()
             .to_vec();
+        let rows_located_at = started_at.elapsed();
+        let mut prepare_total = std::time::Duration::ZERO;
+        let mut capture_total = std::time::Duration::ZERO;
+        let mut slowest_row = std::time::Duration::ZERO;
         let inline = rows
             .iter()
             .map(|row| {
+                let row_started = Instant::now();
                 let point = M11RecursiveGreenPoint::new(
                     usize::try_from(row.physical_range().start).expect("nested row byte"),
                     usize::try_from(row.physical_utf16_range().start).expect("nested row UTF-16"),
@@ -6344,12 +6351,21 @@ mod tests {
                 let prepared =
                     crate::prepare_m11_recursive_green_slice_inline_leaf(&runtime, &root, point)
                         .expect("prepare nested inline leaf");
-                capture_inline_facts_for_slice_differential(&mut runtime, prepared)
+                prepare_total += row_started.elapsed();
+                let capture_started = Instant::now();
+                let facts = capture_inline_facts_for_slice_differential(&mut runtime, prepared);
+                capture_total += capture_started.elapsed();
+                slowest_row = slowest_row.max(row_started.elapsed());
+                facts
             })
             .collect::<Vec<_>>();
         let engine_ready_at = started_at.elapsed();
         eprintln!(
-            "nested list/quote cold slice: captured={captured_at:?} engine_ready={engine_ready_at:?} source_start={start} source_bytes={} open_depth={} rows={}",
+            "nested list/quote cold slice: decoded={decoded_at:?} captured={captured_at:?} \
+             green_built={green_built_at:?} rows_located={rows_located_at:?} \
+             engine_ready={engine_ready_at:?} inline_prepare_total={prepare_total:?} \
+             inline_capture_total={capture_total:?} slowest_row={slowest_row:?} \
+             source_start={start} source_bytes={} open_depth={} rows={}",
             end - start,
             selected.open_depth,
             rows.len()

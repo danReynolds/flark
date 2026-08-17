@@ -89,14 +89,17 @@ without any gate noticing.
 
 ## 4. Flags (ranked)
 
-**F1 — Nested cold-jump constant projects to a mobile gate miss.** The
-depth-4 nested restart materialized its 32-row viewport in 89.188 ms on the
-Mac against a 100 ms p99 / 200 ms max gate, for a certification-required
-family. The historical Mac→Pixel factor (≈3×+) puts this at ~270 ms+ on the
-qualified device. The ordinary midpoint constant is 11.3 ms, so the ~8×
-nesting multiplier is the anomaly. Decompose (replay vs Green build vs inline
-capture) and optimize before Pixel qualification, or the frozen matrix fails
-on first contact.
+**F1 — DECOMPOSED 2026-08-17: the cost is the slice query layer, not the
+restart.** Instrumentation splits the depth-4 nested 84.6 ms as decode
+0.03 ms + replay 2.25 ms + Green slice build 3.2 ms (restart machinery
+exonerated at 5.5 ms) versus `locate_renderable_rows` 26.1 ms and 32×
+`prepare_m11_recursive_green_slice_inline_leaf` 50.7 ms (~1.6 ms/row via
+the per-point row-fence resolver); inline capture itself is 2.3 ms. The
+optimization target is one shared ancestor-context walk per
+materialization in `recursive_green` queries instead of a fresh fence
+resolution per row — it pays on every deep viewport, not just cold jumps.
+Remains open as a named engine optimization ahead of Pixel qualification
+(projected ~250 ms on Pixel unoptimized vs the 100/200 ms gate).
 
 **F2 — RESOLVED 2026-08-17: durable payloads are relocatable as stored.**
 The falsification probe ran before any convergence machinery was designed
