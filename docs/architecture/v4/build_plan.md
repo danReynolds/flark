@@ -398,6 +398,72 @@ authority needs an explicit stance on admission growth; and the frame
 receipt needs a workload mode correlating first-certified-paint to
 `FrameTiming`. Four named items, no unknowns.
 
+### Flutter streamed-open paint receipt (2026-08-18)
+
+The A3 vertical now reaches painted pixels. `FlarkEditorController` gains
+the streamed-open entry points (`openUtf8Stream`, `openStreaming`, and a
+bounded `streamedOpenSupported` capability probe), and startup no longer
+discards the head: instead of pumping to Ready before the first refresh,
+it interleaves bounded pump slices with a bounded head-window
+certification probe, publishes the first certified viewport through the
+ordinary refresh path — so the editor paints and accepts input for the
+certified region while admission continues — republishes only on genuine
+certification upgrades, and converges to the existing ready flow once the
+stream seals. A new `FlarkEditorStatus.streaming` reports the live
+mid-load state; ranges past certification present as pending exact source
+under the unchanged live-projection contract.
+
+The input-window stance is now declared and proven rather than implied:
+**streamed admission is epoch-neutral.** An append only adds bytes after
+the admitted frontier, the engine proves no byte inside the previously
+admitted prefix changes, and the input window always lies inside
+certified text — so admission never advances the window or connection
+epoch and never forces a resync. It only grows the length mirrors, which
+a new owner-side admission hook surfaces for length-derived UI. A literal
+edit during load remains the separate case and flows through the ordinary
+revision-resync machinery unchanged. The regression types into the
+certified head while admission continues and asserts an unchanged resync
+count and connection epoch.
+
+Development receipt, five runs (profile mode, 10,485,776-byte ordinary
+fixture, 8–64 KiB chunks): the open call returns in 2.2–5.1 ms, the first
+certified viewport publishes in 60.6–77.0 ms, and **the first painted
+frame carrying certified rows lands at 74.4–88.3 ms** with 32 certified
+rows and 264–288 KiB admitted, while the status is still `streaming`.
+Every run sits inside the frozen 200 ms first-editable-viewport gate with
+better than 2x margin, and the measurement is pessimistic: `flutter
+drive` launched the universal profile binary's x86_64 slice under
+Rosetta. This is a development receipt; the frozen five-run claim still
+requires the controlled bench.
+
+Three defects surfaced and were fixed on the way, each of which would
+have reached a user:
+
+- The startup probe keyed on per-range certification, which a semantic
+  row query never populates (that breakdown belongs to live-projection
+  queries), so the loop could never publish and the certified head was
+  unreachable.
+- A streamed open's parse task deliberately runs until the stream seals,
+  so the presentation barrier's await on `continueParsing` turned a
+  bounded settle into a wait-for-the-whole-load; any caller settling
+  mid-load hung until transport ended. The barrier now keys on the
+  published certified head for the current revision, and every exit from
+  the opening loop releases its waiters.
+- The capability probe opened a stream that never emitted, so an
+  unsupported library waited forever instead of answering false.
+
+Dogfooding is live: the tour gains a "Streamed · 10 MiB" preset that
+admits its fixture in transport-sized chunks so a person can type in the
+certified head while the tail loads, gated behind the capability probe.
+One operational note — Flutter's build-hook runner does not propagate
+`FLARK_V4_CARGO_FEATURES`, so the bundled library is always a
+default-feature build; point the app at a feature library explicitly with
+`--dart-define=FLARK_V4_LIBRARY_PATH=<dylib>`. Universal (x86_64 + arm64)
+libraries are needed for profile-mode drives, and cross-compiling on this
+Mac requires rustup's toolchain explicitly (`RUSTC=$(rustup which rustc)
+rustup run stable cargo build …`) because Homebrew's rustc carries only
+the host target.
+
 ### Pixel 6a engine multiplier receipt (2026-08-17)
 
 The compact engine suite ran on the physical Pixel 6a (release,
