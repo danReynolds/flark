@@ -255,6 +255,56 @@ replaces. Remaining for the A3 receipt: the ABI opening transaction,
 `flark_core` streaming admission, Flutter paint, and the frozen
 five-run physical measurement.
 
+### Hostile-shape sweep of the revision updater (2026-08-17)
+
+The rule-12 detector pass over Experiment B's own results, run before any
+integration consumed them: the same convergence gates against hostile
+shapes instead of uniform prose, plus certification differentials for
+nested and table first screenfuls.
+
+Confirmed. Nested quote/list (10,369 bytes replayed — the open-container
+closure widens the window, still 6x inside the 64 KiB gate), CRLF
+endings, multibyte content (replace and a +2-byte/+1-unit insertion
+through the remap), and GFM tables at mid and BOF (4,107–4,132 bytes)
+all converge on the first candidate with zero checkpoints replaced, zero
+pages appended, and entry-by-entry equality against clean rebuilds — the
+uniform-fixture results were not fixture artifacts. Nested and table
+heads certify before EOF with early facts equal to the eventual
+viewport. The clustered-reference cell proves the reference carry path
+at density when the replayed window holds no definition. The
+spanning-fence adversary replays 525,534 bytes from its resumable
+predecessor — the honest, printed cost of the no-restart-record class —
+and still converges with full equality.
+
+Two real findings, pinned typed in the probe rather than worked around:
+
+- **Interleaved-definition rebuild cliff.** A document that interleaves
+  definitions with prose has definitions in every possible replay
+  window, so v1 pays the declared whole-document reference rebuild on
+  every edit (~hundreds of ms at 2 MiB). Correct, honest, and the named
+  section 5.2 fix is label-scoped invalidation: revalidate the window's
+  unchanged definitions by range equality under the remap instead of
+  keying the rebuild on window intersection alone.
+- **Definition-run base-journal defect.** A consecutive definition run
+  spanning checkpoint strides produces a base journal that violates its
+  own metadata/stream monotonicity validation; the updater rejects it
+  with a typed error instead of converging over a corrupt base. This is
+  a pre-existing capture-discipline defect in the journal across
+  reference windows, exposed by the updater's begin validation; those
+  documents keep clean-rebuild behavior until the journal fix lands.
+
+**Structural-edit stance, made explicit.** The v1 authority split is a
+declared hybrid: compact convergence owns structure-preserving edits and
+the load/scale path; persistent-Green adoption remains the editing
+authority for structural edits (Enter, merges, paste), where its
+4,032-edit ledger already proves locality. An edit whose declared deltas
+change frame identities fails closed in the compact updater to a
+bounded, still-equal full replay — proven by the declining structural
+cell — so a wrong declaration can cost time, never correctness.
+Frame-identity translation is the named B2 completion item; the
+editing-authority cutover (and with it the full deletion of the
+post-seal build) is gated on B2 plus the two findings above.
+
 ### Experiment B revision-locality receipt (2026-08-17): ALL GATES PASS
 
 The compact index now updates through bounded convergence instead of BOF
