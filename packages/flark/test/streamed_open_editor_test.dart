@@ -129,6 +129,72 @@ void main() {
   );
 
   test(
+    'admission appends never resync the input window mid-typing',
+    () async {
+      // The stance under test: an append can only add bytes after the
+      // admitted frontier, so it cannot disturb an input window that lies
+      // inside certified text. Typing through a live admission must keep
+      // the same window epochs, take no resync, and land the character.
+      final source = buildSource(6000);
+      final bytes = Uint8List.fromList(utf8.encode(source));
+      final chunks = StreamController<Uint8List>();
+      final controller = await FlarkEditorController.openUtf8Stream(
+        chunks.stream,
+        libraryPath: libraryPath,
+      );
+      addTearDown(controller.close);
+      final parseTask = controller.continueParsing();
+      var fed = feedRange(chunks, bytes, 0, 96 * 1024);
+      await waitUntil(
+        () => controller.firstCertifiedPublicationEpochMicros != null,
+        reason: 'no certified head to type into',
+      );
+      expect(controller.status, FlarkEditorStatus.streaming);
+
+      final row = controller.rows.first;
+      controller.activateRow(row, row.editableUtf16!.end);
+      final resyncBefore = controller.resyncCount;
+      final connectionEpochBefore = controller.connectionEpoch;
+      final before = controller.inputValue;
+
+      // Admit more source while the window is active, then type into it.
+      fed = feedRange(chunks, bytes, fed, fed + 96 * 1024);
+      await waitUntil(
+        () => controller.sourceByteLength > 96 * 1024,
+        reason: 'admission did not advance under an active input window',
+      );
+      controller.updateEditingValue(
+        TextEditingValue(
+          text:
+              '${before.text.substring(0, before.selection.extentOffset)}Z'
+              '${before.text.substring(before.selection.extentOffset)}',
+          selection: TextSelection.collapsed(
+            offset: before.selection.extentOffset + 1,
+          ),
+        ),
+      );
+      await controller.debugWaitForMutationSettled();
+      await controller.debugWaitForPresentationSettled();
+
+      expect(
+        controller.resyncCount,
+        resyncBefore,
+        reason: 'admission is epoch-neutral: appends must not force a resync',
+      );
+      expect(controller.connectionEpoch, connectionEpochBefore);
+      expect(controller.inputValue.text, contains('Z'));
+
+      feedRange(chunks, bytes, fed, bytes.length);
+      await chunks.close();
+      await parseTask;
+      expect(controller.status, FlarkEditorStatus.ready);
+      expect(await controller.readSource(), contains('Z'));
+    },
+    skip: libraryPath == null ? _librarySkipMessage : false,
+    timeout: const Timeout(Duration(minutes: 4)),
+  );
+
+  test(
     'openStreaming round-trips a large source through the streamed path',
     () async {
       final source = buildSource(3000);

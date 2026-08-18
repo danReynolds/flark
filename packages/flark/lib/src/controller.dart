@@ -36,6 +36,33 @@ enum FlarkEditorStatus {
   disposed,
 }
 
+/// Carries admission acknowledgements that arrive before the controller they
+/// belong to exists, then forwards them for the rest of the load.
+///
+/// **Streamed admission is epoch-neutral for the input window.** An admitted
+/// append can only add bytes after the admitted frontier: the engine proves
+/// no byte inside the previously admitted prefix changes, and the edit
+/// revision does not advance. The input window always lies inside certified
+/// text, which is inside that unchanged prefix, so an append cannot
+/// invalidate the window text, its hash identity, or the selection it
+/// carries. Admission therefore never advances the window or connection
+/// epoch and never forces a resync — it only grows the document's length
+/// mirrors, which the notification below surfaces for length-derived UI
+/// (scroll extent estimates, progress) without touching input authority.
+///
+/// A literal edit during load is the separate case: it advances the edit
+/// revision and flows through the ordinary revision-resync machinery
+/// unchanged, exactly as an edit against a fully loaded document does.
+final class _AdmissionHost {
+  FlarkEditorController? controller;
+
+  void onAdmission() {
+    final controller = this.controller;
+    if (controller == null || controller._closed) return;
+    controller.notifyListeners();
+  }
+}
+
 enum FlarkSurfaceInlineStyle { emphasis, strong, code, strikethrough, link }
 
 final class FlarkSurfaceTextRun {
@@ -529,6 +556,12 @@ final class FlarkEditorController extends ChangeNotifier {
   int _lastSemanticReconciliationMicros = 0;
   final Completer<void> _firstCertifiedPublication = Completer<void>();
   int? _firstCertifiedPublicationEpochMicros;
+  // The revision whose certified head the streamed-open loop has published,
+  // and the waiter woken by the next publication. A streamed open's parse
+  // task deliberately runs for the whole load, so presentation barriers key
+  // on these instead of on the task completing.
+  int _openingPublishedRevision = -1;
+  Completer<void>? _openingPublication;
 
   FlarkEditorStatus get status => _status;
 
@@ -787,13 +820,21 @@ final class FlarkEditorController extends ChangeNotifier {
     String? libraryPath,
     int historyBudgetBytes = 8 * 1024 * 1024,
   }) async {
+    // The hook fires on the owner isolate after each admission
+    // acknowledgement, which happens before this future completes for the
+    // first chunks; the holder lets those early acknowledgements find the
+    // controller once it exists instead of forcing admission to wait.
+    final host = _AdmissionHost();
     final document = await FlarkCoreDocument.openUtf8Stream(
       chunks,
       expectedBytes: expectedBytes,
       libraryPath: libraryPath,
       historyBudgetBytes: historyBudgetBytes,
+      onOpeningProgress: host.onAdmission,
     );
-    return _openDocument(document);
+    final controller = await _openDocument(document);
+    host.controller = controller;
+    return controller;
   }
 
   /// Opens [source] through the streamed admission path of [openUtf8Stream]:
@@ -1867,6 +1908,22 @@ final class FlarkEditorController extends ChangeNotifier {
   Future<void> debugWaitForPresentationSettled() async {
     await _editTail;
     if (_session.compositionActive) return;
+    if (_document.isOpening) {
+      // A streamed open's parse task runs until the stream seals, so
+      // awaiting it here would turn a presentation barrier into a
+      // wait-for-the-whole-load. The settled presentation mid-load is the
+      // published certified head for the current revision — including the
+      // recertification an edit during admission produces.
+      unawaited(continueParsing());
+      while (_openingPublishedRevision != revision &&
+          _document.isOpening &&
+          !_closed &&
+          !_session.compositionActive) {
+        await (_openingPublication ??= Completer<void>()).future;
+      }
+      await _editTail;
+      return;
+    }
     await continueParsing();
     final pageTask = _pageTask;
     if (pageTask != null) await pageTask;
@@ -4738,7 +4795,6 @@ final class FlarkEditorController extends ChangeNotifier {
       // exactly as the projection-continuity machinery already guarantees
       // during recertification. When the stream seals, fall through to the
       // ordinary pump-to-ready convergence below.
-      var openingPublishedRevision = -1;
       var openingPublishedCertifiedEnd = -1;
       Object? openingError;
       StackTrace? openingErrorStackTrace;
@@ -4776,7 +4832,7 @@ final class FlarkEditorController extends ChangeNotifier {
         final certified = probe.isCertified && probe.rows.isNotEmpty;
         final certifiedEnd = certified ? probe.rows.last.sourceBytes.end : 0;
         final upgraded =
-            probe.revision != openingPublishedRevision ||
+            probe.revision != _openingPublishedRevision ||
             certifiedEnd > openingPublishedCertifiedEnd;
         if (probe.continuation != 0) {
           await _document.releaseViewportContinuation(probe);
@@ -4791,9 +4847,16 @@ final class FlarkEditorController extends ChangeNotifier {
           ensureActiveInputVisible: true,
         );
         if (generation != _editGeneration) continue;
-        openingPublishedRevision = probe.revision;
+        _openingPublishedRevision = probe.revision;
         openingPublishedCertifiedEnd = certifiedEnd;
+        _openingPublication?.complete();
+        _openingPublication = null;
       }
+      // Leaving the opening loop for any reason — sealed, closed, faulted,
+      // or a composition taking over — releases every presentation barrier
+      // waiting on the next publication; none is coming from this loop.
+      _openingPublication?.complete();
+      _openingPublication = null;
       if (_closed || _session.compositionActive) return;
       if (_status == FlarkEditorStatus.streaming) {
         // The stream sealed; the post-seal parse converges below.
@@ -4820,6 +4883,11 @@ final class FlarkEditorController extends ChangeNotifier {
       _lastError = error;
       _status = FlarkEditorStatus.faulted;
       notifyListeners();
+    } finally {
+      // No publication can follow this task; release any barrier waiting on
+      // one, including on the faulted and early-return paths.
+      _openingPublication?.complete();
+      _openingPublication = null;
     }
   }
 
