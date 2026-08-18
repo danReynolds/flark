@@ -324,6 +324,44 @@ fn opening_store_appends_drive_the_live_parser_to_clean_equality() {
 }
 
 #[test]
+fn hostile_shape_heads_certify_before_eof() {
+    // Nested containers and tables in the first screenful must certify
+    // through the audit (their bracket-free rows are suffix-independent
+    // once closed) with early facts equal to the eventual viewport.
+    let mut nested = String::new();
+    for index in 0..24 {
+        nested.push_str(&format!(
+            "> quote {index} with **bold** content.\n\n- item {index} one\n- item {index} two\n\n"
+        ));
+    }
+    let nested_visible = nested.len();
+    nested.push_str("Tail paragraph.\n");
+    let (_, before_eof, certified) = assert_progressive_matches_clean(
+        &nested,
+        &[nested_visible, nested.len()],
+        nested.find("quote 2").expect("nested paragraph") + 1,
+    );
+    assert!(before_eof);
+    assert!(certified, "nested heads certify");
+
+    let mut tables = String::new();
+    for index in 0..24 {
+        tables.push_str(&format!(
+            "| left {index} | right {index} |\n| :--- | ---: |\n| alpha | beta |\n\nParagraph {index} with **bold** words.\n\n"
+        ));
+    }
+    let tables_visible = tables.len();
+    tables.push_str("Tail paragraph.\n");
+    let (_, before_eof, certified) = assert_progressive_matches_clean(
+        &tables,
+        &[tables_visible, tables.len()],
+        tables.find("Paragraph 2").expect("table-adjacent paragraph") + 1,
+    );
+    assert!(before_eof);
+    assert!(certified, "table heads certify");
+}
+
+#[test]
 fn open_session_regenerates_certification_as_definitions_arrive() {
     use flark_engine::{OpeningSourceStore, SourceRevision};
     use flark_parser::{M11ProgressiveOpenSession, M11ProgressiveOpenSessionPoll};

@@ -8688,6 +8688,243 @@ mod tests {
     /// through the remap. The definition-bearing reference cell records the
     /// declared whole-document reference rebuild cost. One JSON receipt line
     /// per cell; run explicitly in release mode:
+    /// The rule-12 detector sweep for the revision updater: the same
+    /// convergence gates under hostile shapes rather than uniform prose.
+    /// Every cell must equal a clean rebuild (asserted inside the cell);
+    /// the bounded cells must also converge inside the 64 KiB replay gate,
+    /// while the spanning-fence adversary is the declared no-restart-record
+    /// class whose honest cost is the printed receipt, not a locality claim.
+    /// `cargo test --release -p flark-parser --lib -- --ignored revision_hostile --nocapture`
+    #[test]
+    #[ignore = "release-mode Experiment B hostile-shape revision probe"]
+    fn compact_index_revision_hostile_shapes() {
+        const TARGET: usize = 2 * 1024 * 1024;
+
+        // Nested: every stride cut sits inside an open quote or list, so the
+        // bounded writer restart record is live in every compared payload.
+        let mut nested_cycle = String::new();
+        for _ in 0..96 {
+            nested_cycle.push_str("> quote line with sustained content for the nested cell.\n");
+        }
+        nested_cycle.push('\n');
+        for _ in 0..96 {
+            nested_cycle.push_str("- item with sustained content for the nested cell.\n");
+        }
+        nested_cycle.push('\n');
+        let nested = repeat_ascii_exact("Ordinary opening paragraph.\n\n", &nested_cycle, TARGET);
+
+        // CRLF endings, multibyte content, and GFM tables between paragraphs.
+        let crlf = repeat_ascii_exact(
+            "",
+            "Paragraph with **bold** words and steady content.\r\n\r\n",
+            TARGET,
+        );
+        let mut multibyte = String::new();
+        while multibyte.len() < TARGET {
+            multibyte.push_str("Paragraph on the café terrace has **bold** words.\n\n");
+        }
+        let table = repeat_ascii_exact(
+            "",
+            "| left | right |\n| :--- | ---: |\n| alpha | beta |\n\nParagraph between tables with steady words.\n\n",
+            TARGET,
+        );
+
+        let bounded_cells: [(&str, &str, usize, M11CompactRevisionCarriedDeltas); 5] = [
+            ("nested_mid_replace", &nested, nested.len() / 2, paragraph_content_carried(0, 0)),
+            ("crlf_mid_replace", &crlf, crlf.len() / 2, paragraph_content_carried(0, 0)),
+            (
+                "multibyte_mid_replace",
+                &multibyte,
+                multibyte.len() / 2,
+                paragraph_content_carried(0, 0),
+            ),
+            ("table_mid_replace", &table, table.len() / 2, paragraph_content_carried(0, 0)),
+            (
+                "table_bof_replace",
+                &table,
+                1,
+                paragraph_content_carried(0, 0),
+            ),
+        ];
+        for (label, source, from, carried) in bounded_cells {
+            let at = interior_word_letter_at_or_after(source, from);
+            let outcome = run_revision_locality_cell(
+                label,
+                source,
+                at..at + 1,
+                replacement_letter_at(source, at),
+                carried,
+            );
+            assert!(
+                outcome.receipt.source_bytes_replayed <= 64 * 1024,
+                "{label}: replayed {} bytes",
+                outcome.receipt.source_bytes_replayed
+            );
+            assert!(
+                outcome.receipt.converged,
+                "{label}: hostile bounded shape must converge: {:?}",
+                outcome.receipt
+            );
+        }
+
+        // Multibyte insertion: byte and UTF-16 dimensions shift by different
+        // amounts through the remap.
+        let at = interior_word_letter_at_or_after(&multibyte, multibyte.len() / 2);
+        let outcome = run_revision_locality_cell(
+            "multibyte_mid_insert",
+            &multibyte,
+            at..at,
+            "é",
+            paragraph_content_carried(2, 1),
+        );
+        assert!(outcome.receipt.converged, "{:?}", outcome.receipt);
+        assert!(outcome.receipt.source_bytes_replayed <= 64 * 1024);
+
+        // Clustered definitions: an edit in the body, far from every
+        // definition, carries the whole reference index under the remap. The
+        // definition run stays inside one checkpoint stride; longer runs are
+        // the pinned base-journal defect below.
+        let mut clustered = String::from("Ordinary opening paragraph.\n\n");
+        for ordinal in 0..12 {
+            clustered.push_str(&format!(
+                "[ref{ordinal}]: /destination/{ordinal} \"title {ordinal}\"\n"
+            ));
+        }
+        clustered.push('\n');
+        while clustered.len() < TARGET {
+            clustered.push_str("Body paragraph with **bold** and steady words.\n\n");
+        }
+        let at = interior_word_letter_at_or_after(&clustered, clustered.len() / 2);
+        let outcome = run_revision_locality_cell(
+            "reference_clustered_carry",
+            &clustered,
+            at..at + 1,
+            replacement_letter_at(&clustered, at),
+            paragraph_content_carried(0, 0),
+        );
+        assert!(
+            !outcome.receipt.references_rebuild_required,
+            "an edit whose window holds no definition carries the reference index: {:?}",
+            outcome.receipt
+        );
+        assert!(outcome.receipt.source_bytes_replayed <= 64 * 1024);
+
+        // Interleaved definitions: ANY window in this shape intersects
+        // definitions, so v1 honestly pays the declared whole-document
+        // reference rebuild on every edit — the named section 5.2 cost
+        // cliff this sweep exists to expose, pinned here until label-scoped
+        // invalidation lands.
+        let mut interleaved = String::from("Ordinary opening paragraph.\n\n");
+        let mut ordinal = 0_u64;
+        while interleaved.len() < TARGET {
+            interleaved.push_str(&format!(
+                "[ref{ordinal}]: /destination/{ordinal} \"title {ordinal}\"\n\nParagraph {ordinal} uses [ref{ordinal}] with **bold**.\n\n"
+            ));
+            ordinal += 1;
+        }
+        let paragraph_at = interleaved
+            .find("uses [ref900]")
+            .expect("interior reference paragraph")
+            + 1;
+        let outcome = run_revision_locality_cell(
+            "reference_interleaved_rebuild",
+            &interleaved,
+            paragraph_at..paragraph_at + 1,
+            replacement_letter_at(&interleaved, paragraph_at),
+            paragraph_content_carried(0, 0),
+        );
+        assert!(
+            outcome.receipt.references_rebuild_required,
+            "a definition-intersecting window declares the rebuild: {:?}",
+            outcome.receipt
+        );
+        assert!(outcome.receipt.source_bytes_replayed <= 64 * 1024);
+
+        // PINNED FINDING (this sweep, 2026-08-17): a long consecutive
+        // definition run spanning checkpoint strides produces a base journal
+        // that violates its own metadata/stream monotonicity validation, so
+        // the revision updater rejects it with a typed error instead of
+        // converging over a corrupt base. Fail-closed and never wrong, but a
+        // named defect: the journal's capture discipline across reference
+        // windows needs the fix before definition-run documents get
+        // revision locality.
+        let mut definition_run = String::from("Ordinary opening paragraph.\n\n");
+        for ordinal in 0..2_000 {
+            definition_run.push_str(&format!(
+                "[run{ordinal}]: /destination/{ordinal} \"title {ordinal}\"\n"
+            ));
+        }
+        definition_run.push('\n');
+        while definition_run.len() < TARGET {
+            definition_run.push_str("Body paragraph with **bold** and steady words.\n\n");
+        }
+        {
+            let base_started = Instant::now();
+            let mut runtime =
+                DocumentRuntime::new(&definition_run, DocumentRuntimeConfig::default())
+                    .expect("definition-run runtime");
+            let (mut base_session, ..) = build_compact_probe(&mut runtime, base_started);
+            let source = base_session.source();
+            let (base_journal, base_refs) =
+                take_compact_index_parts(&mut runtime, &mut base_session);
+            let at = interior_word_letter_at_or_after(&definition_run, definition_run.len() / 2);
+            let edit = committed_revision_edit(
+                &definition_run,
+                at..at + 1,
+                replacement_letter_at(&definition_run, at),
+                paragraph_content_carried(0, 0),
+            );
+            runtime
+                .apply_edit(source, at..at + 1, replacement_letter_at(&definition_run, at))
+                .expect("definition-run edit");
+            let rejected = M11CompactIndexRevisionUpdate::begin(
+                base_journal,
+                base_refs,
+                edit,
+                &mut runtime,
+                1,
+            );
+            assert!(
+                rejected.is_err(),
+                "a definition-run base journal must be rejected typed, not converged over"
+            );
+            println!(
+                "{{\"probe\":\"compact_index_revision_locality\",\"cell\":\"definition_run_base_rejected\",\"source_bytes\":{},\"typed_rejection\":true}}",
+                definition_run.len(),
+            );
+            close_runtime(&mut runtime);
+        }
+
+        // The declared adversary: one document-spanning fence. Interior
+        // checkpoints carry no bounded writer restart, so the updater walks
+        // back to a resumable predecessor and replays honestly; equality is
+        // still asserted inside the cell, and the printed receipt records
+        // the true cost of the no-restart-record class.
+        let mut fence = String::from("```text\n");
+        let mut line = 0_u64;
+        while fence.len() < 1024 * 1024 {
+            fence.push_str(&format!("code line {line} with sustained words.\n"));
+            line += 1;
+        }
+        fence.push_str("```\n");
+        let at = interior_word_letter_at_or_after(&fence, fence.len() / 2);
+        let outcome = run_revision_locality_cell(
+            "spanning_fence_adversary",
+            &fence,
+            at..at + 1,
+            replacement_letter_at(&fence, at),
+            paragraph_content_carried(0, 0),
+        );
+        // No locality claim here — only honesty: the update terminated,
+        // equaled the clean rebuild (asserted in the cell), and its replay
+        // cost is visible in the receipt.
+        assert!(
+            outcome.receipt.source_bytes_replayed as usize <= fence.len(),
+            "{:?}",
+            outcome.receipt
+        );
+    }
+
     /// `cargo test --release -p flark-parser --lib -- --ignored revision_locality --nocapture`
     #[test]
     #[ignore = "release-mode Experiment B revision-locality probe"]
