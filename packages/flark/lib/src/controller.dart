@@ -862,18 +862,20 @@ final class FlarkEditorController extends ChangeNotifier {
   /// session; the capability answer is decided at open, before any source
   /// is admitted.
   static Future<bool> streamedOpenSupported({String? libraryPath}) async {
-    final chunks = StreamController<Uint8List>();
+    // An already-complete stream keeps the probe bounded: a library with the
+    // entry points opens and seals an empty load immediately, and one
+    // without rejects at the creation transaction. A stream that stayed open
+    // would instead leave an unsupported library waiting for bytes it will
+    // never be asked for.
     try {
       final document = await FlarkCoreDocument.openUtf8Stream(
-        chunks.stream,
+        const Stream<Uint8List>.empty(),
         libraryPath: libraryPath,
       );
       await document.dispose();
       return true;
     } on FlarkCoreNativeException {
       return false;
-    } finally {
-      await chunks.close();
     }
   }
 

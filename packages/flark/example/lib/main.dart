@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flark/flark.dart';
 import 'package:flutter/foundation.dart';
@@ -39,6 +41,7 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
   Object? _loadError;
   int _loadGeneration = 0;
   bool _readOnly = false;
+  bool? _streamedOpenSupported;
   DogfoodNativeCanaryReceiptWriter? _canaryReceiptWriter;
   DogfoodNativeCanaryCommandMailbox? _canaryCommandMailbox;
   final FlarkEditorDebugHandle _canaryDebugHandle = FlarkEditorDebugHandle();
@@ -57,6 +60,7 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
             _canaryReceiptWriter!.writeCommandError(sequence, error),
       )..start();
     }
+    unawaited(_probeStreamedOpenSupport());
     unawaited(_load(DogfoodDocumentPreset.productTour));
   }
 
@@ -68,6 +72,17 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
     final controller = _controller;
     if (controller != null) unawaited(controller.close());
     super.dispose();
+  }
+
+  /// Answers once, at startup, whether the loaded library carries the
+  /// streamed-open entry points, so the picker can disable streamed presets
+  /// instead of failing an open after the click.
+  Future<void> _probeStreamedOpenSupport() async {
+    final supported = await FlarkEditorController.streamedOpenSupported(
+      libraryPath: widget.libraryPath,
+    );
+    if (!mounted) return;
+    setState(() => _streamedOpenSupported = supported);
   }
 
   Future<void> _load(DogfoodDocumentPreset preset) async {
@@ -99,10 +114,22 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
     FlarkEditorController? next;
     try {
       final openWatch = Stopwatch()..start();
-      final opened = await FlarkEditorController.open(
-        source,
-        libraryPath: widget.libraryPath,
-      );
+      // A streamed preset admits the source in transport-sized chunks: the
+      // certified head paints and accepts typing while the tail is still
+      // being admitted, so the recorded open duration is time-to-editable,
+      // not time-to-complete-document. The length stays undeclared —
+      // measuring it up front would encode the whole document a second
+      // time, which this path exists to avoid — so closing the chunk
+      // stream is what ends the load.
+      final opened = preset.streamed
+          ? await FlarkEditorController.openUtf8Stream(
+              _streamSourceChunks(source),
+              libraryPath: widget.libraryPath,
+            )
+          : await FlarkEditorController.open(
+              source,
+              libraryPath: widget.libraryPath,
+            );
       next = opened;
       if (widget.nativeCanaryMode != null) await opened.continueParsing();
       openWatch.stop();
@@ -257,6 +284,7 @@ final class _FlarkDogfoodAppState extends State<FlarkDogfoodApp> {
                 onShowGuide: _showGuide,
                 readOnly: _readOnly,
                 onReadOnlyChanged: (value) => setState(() => _readOnly = value),
+                streamedOpenSupported: _streamedOpenSupported,
               ),
               if (controller != null)
                 AnimatedBuilder(
@@ -342,6 +370,7 @@ final class _DogfoodToolbar extends StatelessWidget {
     required this.onShowGuide,
     required this.readOnly,
     required this.onReadOnlyChanged,
+    required this.streamedOpenSupported,
   });
 
   final DogfoodDocumentPreset preset;
@@ -351,6 +380,9 @@ final class _DogfoodToolbar extends StatelessWidget {
   final VoidCallback onShowGuide;
   final bool readOnly;
   final ValueChanged<bool> onReadOnlyChanged;
+
+  /// Null while the capability probe is still running.
+  final bool? streamedOpenSupported;
 
   @override
   Widget build(BuildContext context) {
@@ -496,29 +528,56 @@ final class _DogfoodToolbar extends StatelessWidget {
     onSelected: onPresetSelected,
     itemBuilder: (context) => [
       for (final candidate in DogfoodDocumentPreset.values)
-        PopupMenuItem(
-          value: candidate,
-          child: SizedBox(
-            width: 270,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  candidate.label,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  candidate.description,
-                  style: const TextStyle(
-                    color: Color(0xff6d7179),
-                    fontSize: 12,
+        // A streamed preset needs the opening-session entry points; against
+        // an ordinary library the item stays visible but unselectable and
+        // says why, instead of failing the open after the click.
+        if (candidate.streamed && streamedOpenSupported == false)
+          PopupMenuItem(
+            value: candidate,
+            enabled: false,
+            child: SizedBox(
+              width: 270,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    candidate.label,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Needs a library built with the opening-session cargo '
+                    'feature',
+                    style: TextStyle(color: Color(0xff9a6b1a), fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          PopupMenuItem(
+            value: candidate,
+            child: SizedBox(
+              width: 270,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    candidate.label,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    candidate.description,
+                    style: const TextStyle(
+                      color: Color(0xff6d7179),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
     ],
     child: DecoratedBox(
       decoration: BoxDecoration(
@@ -928,3 +987,29 @@ String _formatDuration(Duration duration) {
   if (duration.inMilliseconds < 1000) return '${duration.inMilliseconds} ms';
   return '${(duration.inMilliseconds / 1000).toStringAsFixed(2)} s';
 }
+
+/// Emits [source] as transport-sized UTF-8 chunks, encoding one slice at a
+/// time so no second complete copy of the document is ever allocated. Cuts
+/// land between UTF-16 code units of different scalars — never inside a
+/// surrogate pair — and yields between chunks so the editor keeps painting
+/// and accepting input while admission continues.
+Stream<Uint8List> _streamSourceChunks(String source) async* {
+  const targetUnits = 32 * 1024;
+  var start = 0;
+  while (start < source.length) {
+    var end = math.min(start + targetUnits, source.length);
+    // A cut immediately after a high surrogate would split one scalar.
+    if (end < source.length &&
+        _isHighSurrogate(source.codeUnitAt(end - 1)) &&
+        _isLowSurrogate(source.codeUnitAt(end))) {
+      end -= 1;
+    }
+    yield Uint8List.fromList(utf8.encode(source.substring(start, end)));
+    start = end;
+    await Future<void>.delayed(Duration.zero);
+  }
+}
+
+bool _isHighSurrogate(int unit) => unit >= 0xD800 && unit <= 0xDBFF;
+
+bool _isLowSurrogate(int unit) => unit >= 0xDC00 && unit <= 0xDFFF;

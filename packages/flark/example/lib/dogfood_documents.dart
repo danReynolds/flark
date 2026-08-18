@@ -29,24 +29,38 @@ enum DogfoodDocumentPreset {
     label: 'Dense blocks · 1 MiB',
     description: 'Many short headings and paragraphs',
     targetBytes: 1 * 1024 * 1024,
+  ),
+  streamed10MiB(
+    label: 'Streamed · 10 MiB',
+    description: 'Type in the head while the tail admits',
+    targetBytes: 10 * 1024 * 1024,
+    streamed: true,
   );
 
   const DogfoodDocumentPreset({
     required this.label,
     required this.description,
     this.targetBytes,
+    this.streamed = false,
   });
 
   final String label;
   final String description;
   final int? targetBytes;
+
+  /// Opens through the streamed admission path instead of the buffered one,
+  /// so the certified head paints and accepts typing while the rest of the
+  /// document is still being admitted. Requires a native library built with
+  /// the `opening-session` cargo feature.
+  final bool streamed;
 }
 
 String buildDogfoodDocument(DogfoodDocumentPreset preset) => switch (preset) {
   DogfoodDocumentPreset.productTour => _productTour,
   DogfoodDocumentPreset.prose1MiB ||
   DogfoodDocumentPreset.prose5MiB ||
-  DogfoodDocumentPreset.prose10MiB => _buildSizedDocument(
+  DogfoodDocumentPreset.prose10MiB ||
+  DogfoodDocumentPreset.streamed10MiB => _buildSizedDocument(
     preset.targetBytes!,
     _ordinaryBlock,
   ),
