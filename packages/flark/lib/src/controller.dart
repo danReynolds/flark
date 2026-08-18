@@ -16,8 +16,25 @@ const _smallEditDescriptorBytes = 32;
 const _viewportRowsPerPage = 32;
 const _parseIdleDelay = Duration(milliseconds: 32);
 const _maximumSemanticSuccessors = 7;
+// The bounded head window every parse-pending consumer polls during a
+// streamed open: the same 4 KiB certification-probe discipline the core
+// layer applies inside its own opening viewport query.
+const _openingHeadProbeBytes = 4 * 1024;
 
-enum FlarkEditorStatus { opening, parsing, ready, editing, faulted, disposed }
+enum FlarkEditorStatus {
+  opening,
+
+  /// A streamed open ([FlarkEditorController.openUtf8Stream]) is still
+  /// admitting source. The editor is live: the certified head paints and
+  /// accepts edits while the tail loads, and [sourceByteLength] grows with
+  /// each admission acknowledgement.
+  streaming,
+  parsing,
+  ready,
+  editing,
+  faulted,
+  disposed,
+}
 
 enum FlarkSurfaceInlineStyle { emphasis, strong, code, strikethrough, link }
 
@@ -510,8 +527,21 @@ final class FlarkEditorController extends ChangeNotifier {
   _CompositionInputBase? _compositionInputBase;
   int _semanticSuccessorHighWatermark = 0;
   int _lastSemanticReconciliationMicros = 0;
+  final Completer<void> _firstCertifiedPublication = Completer<void>();
+  int? _firstCertifiedPublicationEpochMicros;
 
   FlarkEditorStatus get status => _status;
+
+  /// The quiescent (non-editing, non-faulted) status for the document's
+  /// current phase. While a streamed open is still admitting source the
+  /// editor is live but neither parsing-toward-ready nor ready, so every
+  /// quiescent transition reports [FlarkEditorStatus.streaming]; otherwise
+  /// [current] picks the familiar ready/parsing split.
+  FlarkEditorStatus _idleStatus({required bool current}) {
+    if (_document.isOpening) return FlarkEditorStatus.streaming;
+    return current ? FlarkEditorStatus.ready : FlarkEditorStatus.parsing;
+  }
+
   FlarkViewport? get viewport => _viewport;
   String get visibleSource => _visibleSource;
   int get visibleUtf16Start => _visibleUtf16Start;
@@ -553,6 +583,20 @@ final class FlarkEditorController extends ChangeNotifier {
   int get lastSemanticReconciliationMicros => _lastSemanticReconciliationMicros;
   FlarkSemanticEditPerformance? get lastSemanticEditPerformance =>
       _lastSemanticEditPerformance;
+
+  /// Completes when this controller first publishes a viewport that carries
+  /// parser-certified semantic rows — for a streamed open, the moment the
+  /// certified head becomes paintable and editable while admission
+  /// continues. Never completes if the controller closes or faults first.
+  /// This is a receipt hook: the frame-profile harness joins it to the next
+  /// engine frame to measure open-call to first-certified-painted-frame.
+  Future<void> get firstCertifiedPublication =>
+      _firstCertifiedPublication.future;
+
+  /// Epoch microseconds of [firstCertifiedPublication], or null while no
+  /// certified viewport has been published.
+  int? get firstCertifiedPublicationEpochMicros =>
+      _firstCertifiedPublicationEpochMicros;
 
   @visibleForTesting
   List<FlarkCertificationRange> get debugCertificationRanges =>
@@ -716,6 +760,85 @@ final class FlarkEditorController extends ChangeNotifier {
       libraryPath: libraryPath,
       historyBudgetBytes: historyBudgetBytes,
     );
+    return _openDocument(document);
+  }
+
+  /// Opens a document from a raw UTF-8 byte stream through the streamed
+  /// admission path (RFC 029 A3) without ever holding the complete source on
+  /// the Dart side.
+  ///
+  /// The returned controller is live before [chunks] ends: it publishes the
+  /// first parser-certified head viewport as soon as [continueParsing] (or
+  /// the editor widget, which calls it) drives certification there, reports
+  /// [FlarkEditorStatus.streaming] until the stream seals, and accepts
+  /// literal edits against the admitted prefix throughout. Regions beyond
+  /// certification present as pending exact source under the ordinary
+  /// live-projection contract. [expectedBytes] declares a known stream
+  /// length for the runtime to enforce; null declares an unknown-length
+  /// stream that only the close of [chunks] ends.
+  ///
+  /// Requires a native library built with the `opening-session` cargo
+  /// feature; other builds reject the streamed open here with the same
+  /// typed [FlarkCoreNativeException] surface every failed open uses
+  /// (probe availability first with [streamedOpenSupported]).
+  static Future<FlarkEditorController> openUtf8Stream(
+    Stream<Uint8List> chunks, {
+    int? expectedBytes,
+    String? libraryPath,
+    int historyBudgetBytes = 8 * 1024 * 1024,
+  }) async {
+    final document = await FlarkCoreDocument.openUtf8Stream(
+      chunks,
+      expectedBytes: expectedBytes,
+      libraryPath: libraryPath,
+      historyBudgetBytes: historyBudgetBytes,
+    );
+    return _openDocument(document);
+  }
+
+  /// Opens [source] through the streamed admission path of [openUtf8Stream]:
+  /// the string is encoded chunk-by-chunk at Unicode scalar boundaries, so
+  /// no second complete UTF-8 copy of the document is allocated and the
+  /// certified head becomes editable while the tail is still being
+  /// admitted. [open] remains the ordinary buffered path.
+  static Future<FlarkEditorController> openStreaming(
+    String source, {
+    String? libraryPath,
+    int historyBudgetBytes = 8 * 1024 * 1024,
+  }) async {
+    final document = await FlarkCoreDocument.openStreaming(
+      source,
+      libraryPath: libraryPath,
+      historyBudgetBytes: historyBudgetBytes,
+    );
+    return _openDocument(document);
+  }
+
+  /// Probes whether the loaded native library carries the streamed-open
+  /// entry points (`opening-session` cargo feature builds), so applications
+  /// can gate streamed-open affordances up front instead of surfacing a
+  /// rejected open. The probe opens and immediately disposes one streamed
+  /// session; the capability answer is decided at open, before any source
+  /// is admitted.
+  static Future<bool> streamedOpenSupported({String? libraryPath}) async {
+    final chunks = StreamController<Uint8List>();
+    try {
+      final document = await FlarkCoreDocument.openUtf8Stream(
+        chunks.stream,
+        libraryPath: libraryPath,
+      );
+      await document.dispose();
+      return true;
+    } on FlarkCoreNativeException {
+      return false;
+    } finally {
+      await chunks.close();
+    }
+  }
+
+  static Future<FlarkEditorController> _openDocument(
+    FlarkCoreDocument document,
+  ) async {
     final controller = FlarkEditorController._(document);
     await controller._refreshViewport(restoreInputWindow: true);
     await controller._session.setSelectionUtf16(
@@ -3071,9 +3194,7 @@ final class FlarkEditorController extends ChangeNotifier {
     _visibleUtf16Start = _inputGlobalUtf16Start;
     _optimisticViewportEdits.clear();
     _committedTaskChecks.clear();
-    _status = _document.isReady
-        ? FlarkEditorStatus.ready
-        : FlarkEditorStatus.parsing;
+    _status = _idleStatus(current: _document.isReady);
     return true;
   }
 
@@ -3116,9 +3237,7 @@ final class FlarkEditorController extends ChangeNotifier {
       _certificationRevisionCurrent = false;
       _semanticViewportCurrent = false;
       _optimisticViewportEdits.clear();
-      _status = _document.isReady
-          ? FlarkEditorStatus.ready
-          : FlarkEditorStatus.parsing;
+      _status = _idleStatus(current: _document.isReady);
     }
     _restoreSelectionSnapshot(snapshot);
   }
@@ -3591,9 +3710,7 @@ final class FlarkEditorController extends ChangeNotifier {
       if (!receipt.hasCommit) {
         _pendingEdits = math.max(0, _pendingEdits - 1);
         if (generation == _editGeneration) {
-          _status = _semanticViewportCurrent
-              ? FlarkEditorStatus.ready
-              : FlarkEditorStatus.parsing;
+          _status = _idleStatus(current: _semanticViewportCurrent);
         }
         notifyListeners();
         return false;
@@ -3699,9 +3816,7 @@ final class FlarkEditorController extends ChangeNotifier {
         );
       }
       if (generation != _editGeneration || !receipt.hasCommit) {
-        _status = _semanticViewportCurrent
-            ? FlarkEditorStatus.ready
-            : FlarkEditorStatus.parsing;
+        _status = _idleStatus(current: _semanticViewportCurrent);
         _pendingEdits = math.max(0, _pendingEdits - 1);
         notifyListeners();
         return;
@@ -4491,9 +4606,7 @@ final class FlarkEditorController extends ChangeNotifier {
             _pendingEdits = math.max(0, _pendingEdits - 1);
             _historyReplayPending = false;
             if (!cancelled) {
-              _status = _semanticViewportCurrent
-                  ? FlarkEditorStatus.ready
-                  : FlarkEditorStatus.parsing;
+              _status = _idleStatus(current: _semanticViewportCurrent);
             }
             notifyListeners();
           })
@@ -4579,9 +4692,7 @@ final class FlarkEditorController extends ChangeNotifier {
             _pendingEdits = math.max(0, _pendingEdits - 1);
             _historyReplayPending = false;
             if (!didReplay) {
-              _status = _semanticViewportCurrent
-                  ? FlarkEditorStatus.ready
-                  : FlarkEditorStatus.parsing;
+              _status = _idleStatus(current: _semanticViewportCurrent);
             }
             notifyListeners();
           })
@@ -4611,8 +4722,84 @@ final class FlarkEditorController extends ChangeNotifier {
 
   Future<void> _finishParsing() async {
     try {
-      _status = FlarkEditorStatus.parsing;
+      _status = _idleStatus(current: false);
       notifyListeners();
+      // Streamed-open startup (RFC 029 A3): a document that is still
+      // admitting source cannot pump to Ready first — that would discard the
+      // certified head the whole path exists to serve. Instead, interleave
+      // bounded pump slices with the bounded head-window certification probe
+      // and publish through the ordinary viewport refresh path: the first
+      // certified viewport makes the editor paint and accept input for the
+      // certified region, and later publications happen only on genuine
+      // certification upgrades (an adopted append rebinds the same certified
+      // head, so republishing it would be a no-op; a mid-load edit's
+      // recertification arrives at a new revision). Uncertified turns
+      // publish nothing, so the last certified presentation stays painted
+      // exactly as the projection-continuity machinery already guarantees
+      // during recertification. When the stream seals, fall through to the
+      // ordinary pump-to-ready convergence below.
+      var openingPublishedRevision = -1;
+      var openingPublishedCertifiedEnd = -1;
+      Object? openingError;
+      StackTrace? openingErrorStackTrace;
+      if (_document.isOpening) {
+        // A failed stream never seals, so the loop below would otherwise
+        // keep serving the admitted prefix forever without surfacing the
+        // typed failure the core layer is holding for it.
+        unawaited(
+          _document.openingSealed.then<void>(
+            (_) {},
+            onError: (Object error, StackTrace stackTrace) {
+              openingError = error;
+              openingErrorStackTrace = stackTrace;
+            },
+          ),
+        );
+      }
+      while (_document.isOpening && !_closed && !_session.compositionActive) {
+        if (openingError case final error?) {
+          Error.throwWithStackTrace(error, openingErrorStackTrace!);
+        }
+        await _document.pump(workUnits: 512);
+        if (_closed || _session.compositionActive) return;
+        if (!_document.isOpening) break;
+        final probe = await _document.queryViewport(
+          endByte: math.min(sourceByteLength, _openingHeadProbeBytes),
+          maxRows: _viewportRowsPerPage,
+        );
+        // A semantic row query answers with whole-page certification; the
+        // per-range breakdown belongs to live-projection queries and is
+        // always empty here. During a streamed open the runtime clamps the
+        // page to the certified head, so a certified answer carrying rows is
+        // exactly the publishable event, and its last row's end is the
+        // certified frontier that decides whether a later turn upgraded.
+        final certified = probe.isCertified && probe.rows.isNotEmpty;
+        final certifiedEnd = certified ? probe.rows.last.sourceBytes.end : 0;
+        final upgraded =
+            probe.revision != openingPublishedRevision ||
+            certifiedEnd > openingPublishedCertifiedEnd;
+        if (probe.continuation != 0) {
+          await _document.releaseViewportContinuation(probe);
+        }
+        // An in-flight edit owns its own refresh; publishing around it would
+        // race the optimistic window against a not-yet-committed splice.
+        if (!certified || !upgraded || _pendingEdits != 0) continue;
+        final generation = _editGeneration;
+        await _refreshViewport(
+          restoreInputWindow: true,
+          expectedEditGeneration: generation,
+          ensureActiveInputVisible: true,
+        );
+        if (generation != _editGeneration) continue;
+        openingPublishedRevision = probe.revision;
+        openingPublishedCertifiedEnd = certifiedEnd;
+      }
+      if (_closed || _session.compositionActive) return;
+      if (_status == FlarkEditorStatus.streaming) {
+        // The stream sealed; the post-seal parse converges below.
+        _status = FlarkEditorStatus.parsing;
+        notifyListeners();
+      }
       while (!_closed && !_session.compositionActive) {
         while (!_document.isReady && !_closed) {
           await _document.pump(workUnits: 512);
@@ -4725,12 +4912,24 @@ final class FlarkEditorController extends ChangeNotifier {
       _committedTaskChecks.clear();
     }
     _semanticViewportCurrent = viewport.isCertified && installsFreshRows;
+    // A streamed open's head page is typically mixed — certified head rows
+    // ahead of pending-exact tail — so the first-certified receipt keys on
+    // published rows inside any certified range, not on the whole-viewport
+    // certification that only a converged parse restores.
+    if (installsFreshRows &&
+        !_firstCertifiedPublication.isCompleted &&
+        (viewport.isCertified ||
+            viewport.certificationRanges.any(
+              (range) => range.isCertified && range.sourceBytes.length > 0,
+            ))) {
+      _firstCertifiedPublicationEpochMicros =
+          DateTime.now().microsecondsSinceEpoch;
+      _firstCertifiedPublication.complete();
+    }
     if (_viewportSupersedesProjectionContinuity(viewport)) {
       _projectionContinuity = null;
     }
-    _status = _semanticViewportCurrent
-        ? FlarkEditorStatus.ready
-        : FlarkEditorStatus.parsing;
+    _status = _idleStatus(current: _semanticViewportCurrent);
     if (restoreInputWindow) {
       if (!ensureActiveInputVisible || !_ensureActiveInputVisible()) {
         _restoreInputWindow();

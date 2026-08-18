@@ -570,6 +570,7 @@ final class _DiagnosticsBar extends StatelessWidget {
     final faulted = status == FlarkEditorStatus.faulted;
     final publicStatus = switch (status) {
       FlarkEditorStatus.opening => 'opening',
+      FlarkEditorStatus.streaming => 'streaming',
       FlarkEditorStatus.faulted => 'faulted',
       FlarkEditorStatus.disposed => 'disposed',
       _ => 'live',
@@ -639,6 +640,7 @@ final class _StatusDot extends StatelessWidget {
       FlarkEditorStatus.faulted => const Color(0xffc83b30),
       FlarkEditorStatus.disposed => const Color(0xff777777),
       FlarkEditorStatus.opening => const Color(0xffd38812),
+      FlarkEditorStatus.streaming => const Color(0xff315efb),
       FlarkEditorStatus.editing ||
       FlarkEditorStatus.parsing => const Color(0xff16834a),
     };

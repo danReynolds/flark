@@ -344,6 +344,7 @@ final class FlarkCoreDocument {
     required StreamSubscription<Object?> workerExitSubscription,
     required Completer<FlarkCoreWorkerException> workerFailure,
     required Duration editIntentReplyTimeout,
+    void Function()? onOpeningProgress,
     required int revision,
     required int sourceByteLength,
     required int sourceUtf16Length,
@@ -355,6 +356,7 @@ final class FlarkCoreDocument {
        _workerExitSubscription = workerExitSubscription,
        _workerFailure = workerFailure,
        _editIntentReplyTimeout = editIntentReplyTimeout,
+       _onOpeningProgress = onOpeningProgress,
        _revision = revision,
        _sourceByteLength = sourceByteLength,
        _sourceUtf16Length = sourceUtf16Length,
@@ -369,6 +371,7 @@ final class FlarkCoreDocument {
   final StreamSubscription<Object?> _workerExitSubscription;
   final Completer<FlarkCoreWorkerException> _workerFailure;
   final Duration _editIntentReplyTimeout;
+  final void Function()? _onOpeningProgress;
   final Object _historyOwner = Object();
 
   int _revision;
@@ -393,6 +396,16 @@ final class FlarkCoreDocument {
   /// and the load seals; a failed stream leaves it true and surfaces its
   /// error through [pumpUntilReady].
   bool get isOpening => _opening;
+
+  /// Completes when a streamed open seals ([isOpening] flips false), or with
+  /// the load's error when the chunk stream or an admission fails. An
+  /// ordinary buffered open is already sealed. Observing the error here does
+  /// not consume it: [pumpUntilReady] still rethrows a failed load, so a
+  /// non-blocking observer (a pump loop deciding whether to keep serving the
+  /// admitted prefix) and the blocking convergence path see the same typed
+  /// failure.
+  Future<void> get openingSealed =>
+      _openingSealed?.future ?? Future<void>.value();
 
   static Future<FlarkCoreDocument> open(
     String source, {
@@ -432,6 +445,14 @@ final class FlarkCoreDocument {
   /// feature; default builds reject the streamed open with a typed
   /// [FlarkCoreNativeException] (INVALID_ARGUMENT) at open.
   ///
+  /// [onOpeningProgress] is the owner-side admission hook: it runs on the
+  /// owner isolate after every admission acknowledgement has updated
+  /// [revision], [sourceByteLength], and [sourceUtf16Length], and once more
+  /// when the stream seals ([isOpening] flips false). It carries no payload
+  /// because the updated mirrors on this document are the payload. A hook
+  /// that throws fails the load with its own error, exactly as a failing
+  /// chunk stream would, surfaced through [pumpUntilReady].
+  ///
   /// Current experiment limitation: the native opening session can only
   /// seal once it has captured a first compact slice, so streams smaller
   /// than roughly the first certified slice (a few kilobytes of Markdown)
@@ -443,6 +464,7 @@ final class FlarkCoreDocument {
     String? libraryPath,
     int historyBudgetBytes = 8 * 1024 * 1024,
     Duration editIntentReplyTimeout = const Duration(milliseconds: 250),
+    void Function()? onOpeningProgress,
     bool debugDropFirstEditIntentReply = false,
   }) {
     if (expectedBytes != null && expectedBytes < 0) {
@@ -455,6 +477,7 @@ final class FlarkCoreDocument {
       libraryPath: libraryPath,
       historyBudgetBytes: historyBudgetBytes,
       editIntentReplyTimeout: editIntentReplyTimeout,
+      onOpeningProgress: onOpeningProgress,
       debugDropFirstEditIntentReply: debugDropFirstEditIntentReply,
     );
   }
@@ -469,12 +492,14 @@ final class FlarkCoreDocument {
     String? libraryPath,
     int historyBudgetBytes = 8 * 1024 * 1024,
     Duration editIntentReplyTimeout = const Duration(milliseconds: 250),
+    void Function()? onOpeningProgress,
     bool debugDropFirstEditIntentReply = false,
   }) => openUtf8Stream(
     _utf8Chunks(source, _openingForwardChunkBytes),
     libraryPath: libraryPath,
     historyBudgetBytes: historyBudgetBytes,
     editIntentReplyTimeout: editIntentReplyTimeout,
+    onOpeningProgress: onOpeningProgress,
     debugDropFirstEditIntentReply: debugDropFirstEditIntentReply,
   );
 
@@ -485,6 +510,7 @@ final class FlarkCoreDocument {
     required String? libraryPath,
     required int historyBudgetBytes,
     required Duration editIntentReplyTimeout,
+    void Function()? onOpeningProgress,
     required bool debugDropFirstEditIntentReply,
   }) async {
     if (historyBudgetBytes < 0) {
@@ -562,6 +588,7 @@ final class FlarkCoreDocument {
         workerExitSubscription: exitSubscription,
         workerFailure: workerFailure,
         editIntentReplyTimeout: editIntentReplyTimeout,
+        onOpeningProgress: chunks == null ? null : onOpeningProgress,
         revision: envelope['revision']! as int,
         sourceByteLength: envelope['sourceByteLength']! as int,
         sourceUtf16Length: envelope['sourceUtf16Length']! as int,
@@ -597,7 +624,8 @@ final class FlarkCoreDocument {
   /// between events), so the in-flight ingress window is a single slice and
   /// the complete document never exists on this side. Worker
   /// acknowledgements carry the admitted lengths, keeping owner-side
-  /// coordinates current mid-load.
+  /// coordinates current mid-load; each acknowledged update is surfaced to
+  /// the opening-progress hook after the mirrors have adopted it.
   Future<void> _feedOpeningStream(Stream<Uint8List> chunks) async {
     final sealed = _openingSealed!;
     try {
@@ -617,6 +645,7 @@ final class FlarkCoreDocument {
           _sourceByteLength = result['sourceByteLength']! as int;
           _sourceUtf16Length = result['sourceUtf16Length']! as int;
           offset += length;
+          _onOpeningProgress?.call();
         }
       }
       if (_disposed) return;
@@ -626,6 +655,7 @@ final class FlarkCoreDocument {
       _sourceUtf16Length = result['sourceUtf16Length']! as int;
       _ready = result['ready']! as bool;
       _opening = false;
+      _onOpeningProgress?.call();
       sealed.complete();
     } on Object catch (error, stackTrace) {
       // A failed stream or admission leaves the document opening forever;
