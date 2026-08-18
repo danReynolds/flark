@@ -212,6 +212,91 @@ receipt then observed 0 raw/missing active projections across 120 measured
 edits in a 1 MiB dense-inline document. That is the T2 continuity proof, not a
 mobile, IME, wall-clock latency, or full performance-matrix claim.
 
+### 4.4.1 Amendment (2026-08-18): parser-published literal-safe envelopes
+
+The continuity-permission design above is superseded. It is replaced, not
+loosened: the invariant that nothing is painted without a proof for the
+committed revision and range is retained exactly, and the mechanism that
+decides *which* edits keep their presentation moves entirely into the parser.
+
+**What falsified it.** The first dogfood typing session reproduced a flicker
+in three keystrokes: typing an emphasis run and then an ordinary space
+reveals the row's raw delimiters for a frame before settling back to the
+rendered presentation. The cause is structural, not a coding slip. Rust
+publishes only a binary per-row permission (`PlainTextEdit` or `None`) and
+delegates the per-edit decision to "the host's bounded validator" — so
+`flark_core` must reconstruct the geometry of that permission itself, using a
+hardcoded Markdown-sensitive character list and a rule that refuses any edit
+whose caret touches an inline fact's source range, boundary-inclusive. A
+keystroke immediately after a closing delimiter therefore counts as touching
+the construct and is refused, even though the grammar can prove it harmless.
+
+Two consequences follow. The host holds Markdown knowledge it must not hold,
+which is the one surviving breach of the one-grammar rule. And the decision
+can only ever be conservative, because `flark_core` cannot distinguish a
+space after a closing delimiter (harmless) from a space after an opening one
+(destroys the construct) — the same character at adjacent positions with
+opposite meanings.
+
+The T2 receipt did not catch this because it could not: its workload types
+alphanumerics strictly inside an already-certified `**strong**` run, which is
+the single shape the permission retains. No measurement typed a delimiter,
+created a construct, or edited at a construct boundary.
+
+**Selected replacement.** At certification, the parser publishes, per row, the
+exact source ranges within which a literal edit of a declared character class
+provably cannot change any published fact of that row — a *literal-safe
+envelope*. The host's entire decision becomes a containment test:
+
+- an edit contained in an envelope for its class retains the row's
+  presentation, with every parser-published range in that row transformed
+  through the edit;
+- an edit outside every envelope presents a local exact-source island around
+  the affected range until recertification.
+
+This is one decision procedure with two defined outcomes, both governed by
+parser-published data. There is no timeout, no second mechanism, and no path
+in which the host guesses. Presentation retained through an envelope is
+*proven* correct for the new revision: the parser computed the proof in
+advance and the host applied it, so section 4.4's invariant holds unchanged.
+
+**Envelope semantics.** Envelopes are class-qualified because safety is
+positional, not lexical. Whitespace after a closing delimiter run is inert;
+the same whitespace after an opening run destroys the construct. The
+implementation publishes at minimum the conservative intersection — ranges
+safe for any grammar-inert insertion — and may publish wider per-class ranges
+where the grammar permits. Insertion, deletion, and replacement are covered
+uniformly; deletions carry their own adjacency effects and are not assumed
+safe because their inserted text is empty.
+
+**Transform.** Retained presentation is transformed by pure range arithmetic
+over the ranges the parser already publishes: the row's source and editable
+ranges, each inline fact's source and content ranges, and each projection
+segment. Both byte and UTF-16 dimensions transform independently from the
+edit's own two deltas. Ranges after the edit shift; ranges strictly
+containing it grow; ranges ending exactly at its start shift rather than
+grow. Because the source/display mapping is derived from those same
+structures, transforming them keeps caret and selection geometry coherent
+without a separate mechanism. The transform never inspects source text.
+
+**Deleted by this amendment.** The row continuity policy and its ABI field,
+the inline and table continuity receipts, and the host-side
+Markdown-sensitive character classification. No Markdown decision remains in
+`flark_core` or `flark`.
+
+**Soundness obligation.** An envelope is a claim the parser must be able to
+prove exhaustively: for every position in a published envelope, applying an
+edit of the declared class must leave the row's published facts unchanged.
+This is differentially testable across the conformance corpus and replaces a
+measured frame count with a structural guarantee. A frame receipt remains a
+quality measurement; it is no longer the evidence for the continuity claim.
+
+**Unchanged.** Genuinely uncertified regions — during load, over-cap
+constructs, composition — keep the existing pending exact-source island
+mechanism; envelopes govern certified content awaiting recertification, a
+different domain. Structural-edit capability remains gated on current
+certification, and a retained presentation never grants edit authority.
+
 ### 4.5 Composition islands
 
 An active platform composing range is exact current source and remains stable

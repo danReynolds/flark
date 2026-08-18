@@ -221,6 +221,26 @@ samples. Flutter failed to foreground the final harness run, so its wall-clock
 outliers are explicitly not claim evidence; controlled wall-clock, broad
 shape/size, and device qualification remain open.
 
+**Amendment (2026-08-18): literal-safe envelopes replace the continuity
+receipt.** The clauses above are superseded by
+[RFC 027 section 4.4.1](../../rfc/rfc_027_continuously_rendered_markdown.md).
+The rule "does not authorize ... edits that touch an inline fact" is the
+normative source of the dogfood flicker: it refuses boundary-adjacent
+keystrokes the grammar can prove harmless, and it forces `flark_core` to
+classify Markdown-sensitive characters itself, which the one-grammar rule
+forbids. Both are contract defects, not implementation defects.
+
+Under the amendment the runtime publishes, per certified row, the exact source
+ranges in which a literal edit of a declared character class provably cannot
+change that row's published facts. The surface's decision is a containment
+test: an edit inside an envelope for its class retains the presentation with
+every published range transformed through the edit; an edit outside every
+envelope presents a local exact-source island around the affected range.
+Retained presentation is proven, not assumed, so option 1 above remains the
+only authority — the proof is simply computed before the edit rather than
+after it. The typed continuity policy, the transaction-bound receipt, and all
+host-side character classification are removed.
+
 Old facts plus a source splice are not sufficient authority. Flutter may keep
 layout/cache storage internally, but it cannot paint stale semantic identity as
 current.

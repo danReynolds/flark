@@ -98,14 +98,14 @@ void main() {
       );
       expect(activeProjection(controller), isNot(contains('*')));
     },
-    // KNOWN DEFECT: this reproduces the dogfood flicker and currently fails
-    // at the `immediate` assertion. Row continuity refuses any edit whose
-    // caret touches an inline fact's source range — the boundary comparison
-    // is inclusive at both ends — and the refusal falls back to a whole-row
-    // exact-source reveal instead of an island around the edit. Both halves
-    // need a decision (see the build plan's continuity note), so the
-    // regression is pinned here rather than deleted.
-    skip: 'pinned dogfood defect: adjacency reveals raw row markers',
+    // ACCEPTANCE TEST for RFC 027 section 4.4.1 (literal-safe envelopes).
+    // Fails today at the `immediate` assertion: the superseded contract
+    // refuses any edit whose caret touches an inline fact's source range,
+    // boundary-inclusive, so a space after a closing delimiter is refused
+    // and the row reveals its raw source. Under envelopes the parser proves
+    // that position harmless and the presentation is retained. Unskip when
+    // envelopes land.
+    skip: 'awaiting RFC 027 4.4.1 literal-safe envelopes',
     timeout: const Timeout(Duration(minutes: 2)),
   );
 }

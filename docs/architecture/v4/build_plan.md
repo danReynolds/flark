@@ -398,6 +398,47 @@ authority needs an explicit stance on admission growth; and the frame
 receipt needs a workload mode correlating first-certified-paint to
 `FrameTiming`. Four named items, no unknowns.
 
+### Edit-presentation architecture correction (2026-08-18)
+
+The first dogfood typing session falsified the T2 continuity design in three
+keystrokes: typing an emphasis run and then an ordinary space reveals the
+row's raw delimiters for a frame before settling back. The cause is
+contractual, not a coding slip — `live_projection_v2` itself refuses "edits
+that touch an inline fact", boundary-inclusive, and delegates the per-edit
+decision to a host validator that must therefore classify Markdown-sensitive
+characters in Dart. That is simultaneously the source of the flicker and the
+one surviving breach of the one-grammar rule.
+
+Two replacements were considered. *Presentation lag* — always paint the last
+certified styling transformed through subsequent edits — removes the flicker
+entirely and deletes code, but buys that by painting styling not yet proven
+for the current revision. *Literal-safe envelopes* — the parser publishes, per
+row, the exact ranges in which a literal edit of a declared class provably
+cannot change published facts — keeps every painted frame provably correct at
+the cost of a new payload and a new proof obligation. Envelopes were selected:
+the correctness bar is not for sale, and the flicker then retreats to exactly
+the edits whose semantics are genuinely in question, where showing literal
+source is correct feedback rather than a defect.
+
+[RFC 027 section 4.4.1](../rfc/rfc_027_continuously_rendered_markdown.md)
+carries the amendment and `live_projection_v2` carries the normative change.
+Implementation removes the row continuity policy and its ABI field, the inline
+and table continuity receipts, and all host-side character classification. The
+transform inside the positive branch is pure range arithmetic over ranges the
+parser already publishes — row, inline-fact source/content, projection
+segments, in both dimensions — and because the source/display mapping is
+derived from those same structures, caret geometry stays coherent without new
+machinery. Verified before selection: no new engine support is required.
+
+The soundness obligation replaces a measured frame count with a structural
+guarantee — for every position in a published envelope, an edit of the
+declared class must leave published facts unchanged, differentially tested
+across the conformance corpus. The T2 receipt's "0 raw projected frames" could
+not have caught this: its workload types alphanumerics strictly inside an
+already-certified strong run, the single shape the old permission retained.
+The pinned regression in `packages/flark/test/emphasis_continuity_test.dart`
+is the acceptance test and flips from skipped to passing when envelopes land.
+
 ### Flutter streamed-open paint receipt (2026-08-18)
 
 The A3 vertical now reaches painted pixels. `FlarkEditorController` gains
